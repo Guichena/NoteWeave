@@ -153,6 +153,8 @@ CREATE TABLE document_upload (
     object_key VARCHAR(512),
     status VARCHAR(32) NOT NULL DEFAULT 'INIT',
     error_message TEXT,
+    expires_at DATETIME,
+    cancelled_at DATETIME,
     merged_at DATETIME,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
@@ -181,6 +183,28 @@ CREATE TABLE upload_chunk (
 );
 ```
 
+#### file_object
+
+按 Space 分区管理可复用对象存储文件，避免跨 Space 因相同 hash 共享权限边界。
+
+```sql
+CREATE TABLE file_object (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    space_id BIGINT NOT NULL,
+    content_hash CHAR(64) NOT NULL,
+    object_key VARCHAR(512) NOT NULL,
+    size BIGINT NOT NULL,
+    content_type VARCHAR(128),
+    ref_count INT NOT NULL DEFAULT 0,
+    status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    UNIQUE KEY uk_file_object_space_hash (space_id, content_hash),
+    INDEX idx_file_object_space (space_id),
+    INDEX idx_file_object_status (status)
+);
+```
+
 #### document
 
 ```sql
@@ -188,11 +212,13 @@ CREATE TABLE document (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     space_id BIGINT NOT NULL,
     knowledge_base_id BIGINT NOT NULL,
+    file_object_id BIGINT,
     title VARCHAR(255) NOT NULL,
     source_type VARCHAR(32) NOT NULL,
     object_key VARCHAR(512),
     original_filename VARCHAR(255),
     content_hash CHAR(64),
+    active_index_version INT DEFAULT 0,
     parse_status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
     index_status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
     status VARCHAR(32) NOT NULL DEFAULT 'PENDING_PROCESS',
@@ -218,6 +244,7 @@ CREATE TABLE document_chunk (
     space_id BIGINT NOT NULL,
     knowledge_base_id BIGINT NOT NULL,
     document_id BIGINT NOT NULL,
+    index_version INT NOT NULL DEFAULT 1,
     chunk_index INT NOT NULL,
     content TEXT NOT NULL,
     content_hash CHAR(64),
@@ -228,8 +255,9 @@ CREATE TABLE document_chunk (
     es_doc_id VARCHAR(128),
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
-    UNIQUE KEY uk_doc_chunk_index (document_id, chunk_index),
+    UNIQUE KEY uk_doc_chunk_index (document_id, index_version, chunk_index),
     INDEX idx_chunk_doc (document_id),
+    INDEX idx_chunk_doc_version (document_id, index_version),
     INDEX idx_chunk_kb (knowledge_base_id),
     INDEX idx_chunk_space (space_id)
 );
@@ -311,10 +339,11 @@ CREATE TABLE source (
     research_project_id BIGINT,
     title VARCHAR(255) NOT NULL,
     source_type VARCHAR(32) NOT NULL,
-    url VARCHAR(1024),
-    object_key VARCHAR(512),
-    raw_text_object_key VARCHAR(512),
-    content_hash CHAR(64),
+        url VARCHAR(1024),
+        object_key VARCHAR(512),
+        raw_text_object_key VARCHAR(512),
+        parsed_text_object_key VARCHAR(512),
+        content_hash CHAR(64),
     import_status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
     compile_status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
     token_count INT DEFAULT 0,
@@ -360,10 +389,12 @@ CREATE TABLE concept_card (
     name VARCHAR(255) NOT NULL,
     normalized_name VARCHAR(255) NOT NULL,
     definition TEXT,
-    explanation LONGTEXT,
-    use_cases_json JSON,
-    common_misunderstandings_json JSON,
-    confidence DECIMAL(5,4) DEFAULT 0.0000,
+        explanation LONGTEXT,
+        use_cases_json JSON,
+        common_misunderstandings_json JSON,
+        source_ids_json JSON,
+        evidence_quotes_json JSON,
+        confidence DECIMAL(5,4) DEFAULT 0.0000,
     card_status VARCHAR(32) NOT NULL DEFAULT 'READY',
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
@@ -412,6 +443,7 @@ CREATE TABLE article_concept_relation (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     article_card_id BIGINT NOT NULL,
     concept_card_id BIGINT NOT NULL,
+    source_id BIGINT,
     evidence TEXT,
     relevance_score DECIMAL(5,4) DEFAULT 0.0000,
     created_at DATETIME NOT NULL,
@@ -437,6 +469,8 @@ CREATE TABLE methodology_card (
     output_structure_json JSON,
     quality_checklist_json JSON,
     card_source VARCHAR(32) NOT NULL DEFAULT 'PRESET',
+    status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
+    version INT NOT NULL DEFAULT 1,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     INDEX idx_method_project (research_project_id),
@@ -512,7 +546,7 @@ CREATE TABLE session_summary (
     confidence_score DECIMAL(5,4),
     stale TINYINT NOT NULL DEFAULT 0,
     pin TINYINT NOT NULL DEFAULT 0,
-    expired_at DATETIME,
+    expires_at DATETIME,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     INDEX idx_summary_user_created (user_id, created_at),
@@ -589,6 +623,25 @@ CREATE TABLE artifact (
 );
 ```
 
+#### artifact_version
+
+```sql
+CREATE TABLE artifact_version (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    artifact_id BIGINT NOT NULL,
+    version_no INT NOT NULL,
+    task_id BIGINT,
+    title VARCHAR(255) NOT NULL,
+    content LONGTEXT,
+    change_note VARCHAR(512),
+    created_by BIGINT NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    UNIQUE KEY uk_artifact_version_no (artifact_id, version_no),
+    INDEX idx_artifact_version_task (task_id)
+);
+```
+
 #### session_artifact
 
 ```sql
@@ -633,9 +686,10 @@ CREATE TABLE task (
     task_status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
     idempotency_key VARCHAR(255),
     input_json JSON,
-    output_json JSON,
-    error_message TEXT,
-    retry_count INT NOT NULL DEFAULT 0,
+        output_json JSON,
+        error_message TEXT,
+        cancel_requested TINYINT NOT NULL DEFAULT 0,
+        retry_count INT NOT NULL DEFAULT 0,
     max_retry_count INT NOT NULL DEFAULT 3,
     result_ref_type VARCHAR(64),
     result_ref_id BIGINT,
@@ -652,12 +706,58 @@ CREATE TABLE task (
 );
 ```
 
+#### task_attempt
+
+```sql
+CREATE TABLE task_attempt (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    task_id BIGINT NOT NULL,
+    attempt_no INT NOT NULL,
+    worker_id VARCHAR(128),
+    status VARCHAR(32) NOT NULL,
+    started_at DATETIME,
+    finished_at DATETIME,
+    error_code VARCHAR(64),
+    error_message TEXT,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    UNIQUE KEY uk_task_attempt_no (task_id, attempt_no),
+    INDEX idx_attempt_task (task_id),
+    INDEX idx_attempt_status (status)
+);
+```
+
+#### task_outbox
+
+```sql
+CREATE TABLE task_outbox (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    task_id BIGINT NOT NULL,
+    event_type VARCHAR(64) NOT NULL,
+    aggregate_type VARCHAR(64) NOT NULL,
+    aggregate_id BIGINT NOT NULL,
+    idempotency_key VARCHAR(255) NOT NULL,
+    payload_json JSON NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+    retry_count INT NOT NULL DEFAULT 0,
+    next_retry_at DATETIME,
+    sent_at DATETIME,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    UNIQUE KEY uk_task_outbox_idem (idempotency_key),
+    INDEX idx_outbox_status_retry (status, next_retry_at),
+    INDEX idx_outbox_task (task_id)
+);
+```
+
 #### skill_execution_log
 
 ```sql
 CREATE TABLE skill_execution_log (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     task_id BIGINT NOT NULL,
+    artifact_id BIGINT,
+    artifact_version_id BIGINT,
     skill_name VARCHAR(128) NOT NULL,
     input_json JSON,
     output_json JSON,
@@ -831,6 +931,15 @@ Authorization: Bearer <token>
   }
 }
 ```
+
+实现约定：
+
+```text
+ApiResponse<T>
+PageResponse<T>
+```
+
+所有列表接口返回 `ApiResponse<PageResponse<T>>`，分页参数统一为 `page`、`pageSize`、`sort`，筛选参数进入 Query DTO。
 
 ---
 
@@ -1134,4 +1243,3 @@ DELETE /api/v1/spaces/{spaceId}/members/{memberId}
 ```
 
 后续阶段按 `implementation_breakdown.md` 和对应 feature 文档推进。
-
