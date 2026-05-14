@@ -21,6 +21,9 @@
 | [Phase 11: 个人 Wiki-based Generation](./phase_11_personal_generation.md) | 个人研究报告、学习指南、对比分析、方案表达训练、Artifact |
 | [Phase 12: 长期 Memory 深化](./phase_12_long_term_memory.md) | SessionSummary、SpaceMemory、UserMemory、上下文按需加载、记忆写回 |
 | [Phase 13: MethodologyCard 方法论卡片](./phase_13_methodology_card.md) | 预置方法论模板、任务匹配、输出结构、质量检查清单 |
+| [Phase 14: 评测与可观测性](./phase_14_evaluation_observability.md) | LLM 调用日志、检索 Trace、RAG Eval、Citation 质量、用户反馈 |
+| [Phase 15: 管理后台与运维能力](./phase_15_admin_ops.md) | Admin Console、任务重试、资源清理、健康检查、AuditLog |
+| [Phase 16: 前端工作台](./phase_16_frontend_workspace.md) | Workspace UI、团队知识库、个人研究、Chat、Studio、Artifact、Admin |
 | [数据库与 API 蓝图](./database_api_blueprint.md) | 从全量架构文档抽取并修正后的 MySQL 表结构与 `/api/v1` API 总览 |
 | [文件上传与异步处理链路](./file_upload_async_pipeline.md) | 分片上传、断点续传、MinIO、Redis Bitmap、Kafka、解析、向量化、ES 索引 |
 | [工作台会话执行与记忆底座](./workspace_chat_runtime_memory.md) | WebSocket、正式会话、临时草稿、流式生成、中断停止、上下文恢复、分层记忆 |
