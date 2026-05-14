@@ -71,6 +71,8 @@ chunk_size
 total_chunks
 object_key
 status
+expires_at
+cancelled_at
 created_at
 updated_at
 merged_at
@@ -110,6 +112,7 @@ created_at
 
 ```text
 id
+space_id
 content_hash
 object_key
 size
@@ -119,6 +122,14 @@ status
 created_at
 updated_at
 ```
+
+约束：
+
+```text
+UNIQUE(space_id, content_hash)
+```
+
+`ref_count` 只在同一 Space 内统计引用，禁止跨 Space 共享 FileObject 权限边界。
 
 ### 3.4 Document
 
@@ -259,12 +270,15 @@ created_at
 - 使用 `idempotency_key = DOCUMENT_PROCESS:{documentId}:{fileMd5}` 防重复。
 - TaskOutbox 发送成功后标记为 `SENT`；业务 Task 等 Phase 3 Worker 真实处理后再进入 `RUNNING/SUCCESS/FAILED`。
 - Kafka 发送失败时，Outbox 保留 `PENDING` 或进入可重试失败状态，等待补偿投递。
+- Task 与 TaskOutbox 必须在同一个 DB 事务内创建，事务提交后再发送 Kafka。
+- Kafka key 固定为 `task_id`，Consumer 使用 `task_id + document_id + index_version` 做幂等。
 
 消费要求：
 
 - Consumer 先检查 Document 是否存在。
 - Document 已删除则跳过。
 - Document 已 `INDEXED` 且 Chunk 存在时，重复消息直接幂等返回。
+- Worker 在解析、切片、索引等安全点检查 `cancelRequested`。
 - 解析、切片、索引任一步失败，都要回写 Task 和 Document 错误状态。
 
 ---
@@ -322,6 +336,8 @@ POST uploads/{uploadId}/merge
   ↓
 ComposeObject 合并为 objects/{contentHash}
   ↓
+创建或复用同 Space 的 FileObject，并 ref_count + 1
+  ↓
 更新 Document / DocumentUpload 状态
   ↓
 删除分片对象
@@ -332,6 +348,22 @@ ComposeObject 合并为 objects/{contentHash}
   ↓
 写入 TaskOutbox，由 dispatcher 发送 Kafka
 ```
+
+### 6.3.1 取消与过期清理
+
+```text
+POST uploads/{uploadId}/cancel
+  ↓
+校验 upload 归属与权限
+  ↓
+标记 CANCELLED / 写 cancelled_at
+  ↓
+删除临时分片对象
+  ↓
+清理 Redis Bitmap
+```
+
+`UploadCleanupService` 定期扫描 `expires_at < now` 且仍处于 `INIT / UPLOADING / FAILED` 的上传，按同样流程清理。已经合并为 FileObject 的正式对象不由上传清理删除，必须等 Document 引用清理后再递减 `ref_count`。
 
 ### 6.4 异步处理
 
