@@ -1,4 +1,4 @@
-# Phase 5: 工作台 WebSocket 会话执行底座
+﻿# Phase 5: 工作台 WebSocket 会话执行底座
 
 本文档用于指导 NoteWeave 第五阶段编码实现。
 
@@ -130,6 +130,7 @@ Phase 4 已有 `chat_session`，本阶段必须启用：
 ```text
 session_kind: FORMAL / DRAFT
 runtime_status: IDLE / RUNNING / STOPPED / FAILED
+draft_status: DRAFT_ACTIVE / DRAFT_EXPIRED / CONVERTED / DISCARDED
 latest_context_snapshot_json
 last_active_at
 ```
@@ -141,7 +142,31 @@ Phase 4 已有 `chat_message`，本阶段继续复用。
 ```text
 chat_session.session_kind = DRAFT
 chat_session.status = ACTIVE
+chat_session.draft_status = DRAFT_ACTIVE
 ```
+
+草稿生命周期：
+
+```text
+DRAFT_ACTIVE
+  ↓ TTL 到期
+DRAFT_EXPIRED
+
+DRAFT_ACTIVE
+  ↓ 用户保存
+CONVERTED
+
+DRAFT_ACTIVE
+  ↓ 用户丢弃
+DISCARDED
+```
+
+要求：
+
+- DRAFT 必须设置 TTL，过期后不可继续写入消息。
+- `convert-to-formal` 只能从 `DRAFT_ACTIVE` 转为 `CONVERTED`，并创建或更新正式会话。
+- `discard-draft` 只能从 `DRAFT_ACTIVE` 转为 `DISCARDED`。
+- 任何状态转换都要写入审计字段或事件日志，便于刷新恢复时判断。
 
 草稿消息是否落库：
 
@@ -181,12 +206,20 @@ Stream 内容示例：
 
 ```json
 {
+  "event": "chat.delta",
   "status": "running",
   "partialContent": "已经生成的内容",
   "streamId": "uuid",
+  "seq": 12,
   "updatedAt": "2026-05-14T10:00:00"
 }
 ```
+
+要求：
+
+- `chat.started`、`chat.delta`、`chat.completed`、`chat.stopped`、`chat.failed`、`session.state.updated` 都要写入 Redis stream。
+- stream event 必须带 `seq`，刷新重连时按 `seq` 恢复，不依赖内存状态。
+- Runtime、Short Term、Stream TTL 必须一致延长，避免只恢复到部分状态。
 
 ---
 
@@ -217,19 +250,27 @@ chat.completed
 chat.stopped
 chat.failed
 chat.restored
+session.state.updated
 ```
 
 ### chat.message
 
 ```json
 {
-  "type": "chat.message",
+  "event": "chat.message",
+  "requestId": "uuid",
+  "streamId": "uuid",
   "sessionId": 100,
-  "spaceId": 10,
-  "sessionKind": "FORMAL",
-  "scopeType": "KNOWLEDGE_BASE",
-  "scopeIds": [1001],
-  "content": "部署流程是什么？"
+  "messageId": null,
+  "seq": 1,
+  "payload": {
+    "spaceId": 10,
+    "sessionKind": "FORMAL",
+    "scopeType": "KNOWLEDGE_BASE",
+    "scopeIds": [1001],
+    "content": "部署流程是什么？"
+  },
+  "error": null
 }
 ```
 
@@ -237,7 +278,9 @@ chat.restored
 
 ```json
 {
-  "type": "chat.stop",
+  "event": "chat.stop",
+  "requestId": "uuid",
+  "streamId": "uuid",
   "sessionId": 100
 }
 ```
@@ -246,7 +289,8 @@ chat.restored
 
 ```json
 {
-  "type": "chat.resume",
+  "event": "chat.resume",
+  "requestId": "uuid",
   "sessionId": 100
 }
 ```
@@ -257,6 +301,8 @@ chat.restored
 
 ```http
 POST /api/v1/chat/ws-ticket
+POST /api/v1/chat/sessions/{sessionId}/convert-to-formal
+POST /api/v1/chat/sessions/{sessionId}/discard-draft
 ```
 
 响应：
@@ -303,6 +349,8 @@ void writeShortTermContext(Long sessionId, ShortTermContext context);
 void writeStreamState(Long sessionId, StreamState state);
 Optional<RuntimeSnapshot> readSnapshot(Long sessionId);
 void clearRuntime(Long sessionId);
+void transitionDraftStatus(Long sessionId, DraftStatus nextStatus);
+void expireDrafts(Instant now);
 ```
 
 ### ActiveExecutionRegistry
@@ -461,4 +509,6 @@ ChatRuntimeServiceTest
 - 所有 HTTP API 必须使用 `/api/v1`。
 - WebSocket endpoint 使用 `/ws/chat/{ticket}`。
 - 运行态必须写 Redis，不要只放 JVM Map。
+
+
 

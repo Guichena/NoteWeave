@@ -1,4 +1,4 @@
-# Phase 6: 个人 ResearchProject 与 Source 导入
+﻿# Phase 6: 个人 ResearchProject 与 Source 导入
 
 本文档用于指导 NoteWeave 第六阶段编码实现。
 
@@ -201,29 +201,36 @@ SourceResponse triggerImport(Long userId, Long sourceId);
 - 保存 objectKey。
 - 创建 Source。
 - 创建 `SOURCE_IMPORT` Task。
+- `SOURCE_IMPORT` 必须复用 DocumentParser 或等价解析服务，产出 `rawTextObjectKey` 或 `parsedTextObjectKey`。
 
 URL Source：
 
 - 保存 URL。
-- MVP 可不抓取正文，只创建 Source 和 Task。
-- 后续由 SourceImportService 抓取。
+- 创建 `SOURCE_IMPORT` Task。
+- `SOURCE_IMPORT` 必须抓取正文并保存 raw/parsed text；抓取失败时进入 FAILED 或 RETRYABLE，不得标记 READY。
 
 Text Source：
 
 - 将文本保存为 Raw Source object。
 - 创建 Source。
 - 可直接标记 importStatus = READY。
+- 计算 contentHash，用于项目内去重。
 
 ### SourceImportService
 
-本阶段可做最小实现：
+本阶段最小实现：
 
 ```text
 FILE:
-  标记 READY，等待 Phase 7 编译
+  读取 MinIO 原始对象
+  使用解析服务提取文本
+  写 rawTextObjectKey / parsedTextObjectKey
+  标记 READY
 
 URL:
-  可先只保存 URL，标记 READY
+  抓取 URL 正文
+  写 rawTextObjectKey / parsedTextObjectKey
+  成功标记 READY，失败标记 FAILED / RETRYABLE
 
 TEXT:
   已有 rawTextObjectKey，标记 READY
@@ -330,4 +337,6 @@ SOURCE_TYPE_UNSUPPORTED
 - 不要做复杂网页搜索。
 - 所有 API 必须使用 `/api/v1`。
 - 个人资源必须严格 owner-only。
+
+
 

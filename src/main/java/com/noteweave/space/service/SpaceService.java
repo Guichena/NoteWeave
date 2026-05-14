@@ -18,6 +18,7 @@ import com.noteweave.space.repository.SpaceMemberRepository;
 import com.noteweave.space.repository.SpaceRepository;
 import com.noteweave.user.model.User;
 import com.noteweave.user.repository.UserRepository;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -53,6 +54,7 @@ public class SpaceService {
         member.setUserId(userId);
         member.setRole(SpaceRole.OWNER);
         member.setStatus(SpaceMemberStatus.ACTIVE);
+        member.setJoinedAt(LocalDateTime.now());
         spaceMemberRepository.save(member);
 
         return toSpaceResponse(space);
@@ -101,6 +103,9 @@ public class SpaceService {
 
         member.setStatus(SpaceMemberStatus.ACTIVE);
         member.setRole(request.getRole());
+        member.setJoinedAt(LocalDateTime.now());
+        member.setRemovedAt(null);
+        member.setRemovedBy(null);
         SpaceMember saved = spaceMemberRepository.save(member);
         return toMemberResponse(saved, targetUser);
     }
@@ -159,6 +164,8 @@ public class SpaceService {
             throw new BusinessException(ErrorCode.OWNER_CANNOT_BE_REMOVED);
         }
         member.setStatus(SpaceMemberStatus.REMOVED);
+        member.setRemovedAt(LocalDateTime.now());
+        member.setRemovedBy(operatorId);
         spaceMemberRepository.save(member);
     }
 

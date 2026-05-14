@@ -1,4 +1,4 @@
-# Phase 8: Studio 与 Artifact 生成系统
+﻿# Phase 8: Studio 与 Artifact 生成系统
 
 本文档用于指导 NoteWeave 第八阶段编码实现。
 
@@ -8,9 +8,9 @@
 Phase 8: Studio Button / Task Plan / Skill Execution / Artifact / Export
 ```
 
-第八阶段目标是把报告、测验、学习指南、Briefing、FAQ、Comparison 等产物从聊天消息中独立出来，作为可管理、可查看、可导出、可再次生成的 `Artifact`。
+第八阶段目标是把报告、学习指南、Briefing、FAQ、Comparison、Wiki Draft 等产物从聊天消息中独立出来，作为可管理、可查看、可导出、可再次生成且可追踪版本的 `Artifact`。
 
-本阶段不做 Team Wiki 发布，不做复杂 Agent 自主规划，不做 Quiz 答题评分闭环。
+本阶段不做 Team Wiki 发布，不做复杂 Agent 自主规划，不做 Quiz、测验、答题、评分或题库。
 
 ---
 
@@ -48,7 +48,7 @@ docs/implementation_breakdown.md
 - 不做复杂自主 Agent 规划。
 - 不做 Team Wiki 发布。
 - 不做 Wiki 审核流。
-- 不做 Quiz 答题记录和评分。
+- 不做 Quiz、测验、答题记录、评分和题库。
 - 不做 PPT / DOCX / PDF 高级导出。
 - 不做多人协作编辑 Artifact。
 
@@ -60,17 +60,16 @@ MVP 支持：
 
 ```text
 REPORT
-QUIZ
 STUDY_GUIDE
 BRIEFING
 FAQ
 COMPARISON
+WIKI_DRAFT
 ```
 
 后续：
 
 ```text
-WIKI_DRAFT
 INTERVIEW_PREP
 ONBOARDING_GUIDE
 TECHNICAL_SUMMARY
@@ -78,8 +77,7 @@ TECHNICAL_SUMMARY
 
 说明：
 
-- `WIKI_DRAFT` 可以先作为 Artifact 类型保留，但发布到 Wiki 放到 Phase 10。
-- `QUIZ` 本阶段只生成题目内容，不实现答题评分。
+- `WIKI_DRAFT` 可以作为 Artifact 类型保留，但发布到 Wiki 放到 Phase 10。
 
 ---
 
@@ -117,6 +115,22 @@ FAILED
 ARCHIVED
 PUBLISHED_TO_WIKI
 ```
+
+### ArtifactVersion
+
+表：`artifact_version`
+
+```text
+artifactId
+versionNo
+title
+content
+changeNote
+createdBy
+createdAt
+```
+
+说明：编辑、重新生成和发布 Wiki 都必须绑定具体 ArtifactVersion。
 
 ### ArtifactSource
 
@@ -176,11 +190,11 @@ GENERATED_NEXT
 
 ```text
 REPORT_GENERATION
-QUIZ_GENERATION
 STUDY_GUIDE_GENERATION
 BRIEFING_GENERATION
 FAQ_GENERATION
 COMPARISON_GENERATION
+WIKI_DRAFT_GENERATION
 ```
 
 ### SkillExecutionLog
@@ -200,15 +214,6 @@ LoadGenerationContextSkill
 SelectEvidenceSkill
 GenerateReportSkill
 CitationBacktraceSkill
-SaveArtifactSkill
-```
-
-### Quiz Plan
-
-```text
-LoadGenerationContextSkill
-SelectConceptSkill
-GenerateQuizSkill
 SaveArtifactSkill
 ```
 
@@ -384,7 +389,7 @@ SkillExecutionLogTest
 - 创建 Report 任务。
 - Task 选择正确 Plan。
 - Skill 执行顺序正确。
-- 生成 Artifact 后状态为 READY。
+- 生成 Artifact 后状态为 READY，并生成 ArtifactVersion。
 - Artifact 与来源关联正确。
 - Artifact 与 Session 关联正确。
 - 用户不能访问无权限 Artifact。
@@ -398,7 +403,7 @@ SkillExecutionLogTest
 - 可以查询 Task 状态。
 - Task 可以生成 Artifact。
 - Artifact 可以列表和详情查看。
-- Artifact 可以更新标题和内容。
+- Artifact 可以更新标题和内容，并产生可追踪版本。
 - Artifact 可以 Markdown 导出。
 - Artifact 可以重新生成。
 - Artifact 默认不进入 Wiki。
@@ -410,9 +415,12 @@ SkillExecutionLogTest
 
 - 不要实现复杂 Agent 自主规划。
 - 不要发布 Wiki。
-- 不要实现 Quiz 答题评分。
+- 不要实现 Quiz、测验、答题、评分、题库。
 - 不要实现高级导出格式。
 - 不要把 Artifact 存在 ChatMessage JSON 字段里。
 - 不要使用 `generated_artifact`，必须使用 `artifact`。
 - 所有 API 必须使用 `/api/v1`。
+
+
+
 

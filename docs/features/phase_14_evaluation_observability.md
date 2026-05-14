@@ -1,4 +1,4 @@
-# Phase 14: 评测与可观测性
+﻿# Phase 14: 评测与可观测性
 
 本文档用于指导 NoteWeave 第十四阶段编码实现。
 
@@ -8,7 +8,7 @@
 Phase 14: LLM Call Log / Prompt Version / RAG Evaluation / Retrieval Metrics / Citation Quality / User Feedback
 ```
 
-第十四阶段目标是为已经落地的检索、问答、生成和引用链路补齐可观测能力：能看到一次回答用了什么 Prompt、检索到了哪些证据、消耗了多少 Token、延迟和错误在哪里，并能用小规模黄金样例持续验证 RAG 效果。
+第十四阶段目标是在 Phase 4 已接入最小 `LLMCallLog / RetrievalTrace / AnswerFeedback` 的基础上，补齐检索、问答、生成和引用链路的可观测增强能力：能看到一次回答用了什么 Prompt、检索到了哪些证据、消耗了多少 Token、延迟和错误在哪里，并能用小规模黄金样例持续验证 RAG 效果。
 
 ---
 
@@ -28,12 +28,14 @@ docs/features/database_api_blueprint.md
 ## 2. 阶段目标
 
 - 记录 LLM 调用日志，包含模型、Prompt 版本、Token、耗时、错误和业务来源。
+- 扩展 Phase 4 的最小 LLMCallLog 和 RetrievalTrace，而不是第一次接入日志。
 - 为 Chat、RAG、Studio、个人生成等链路统一埋点。
 - 记录每次检索的 query、召回来源、召回分数、RRF 合并结果和最终证据。
 - 支持用户对回答进行点赞、点踩、问题反馈。
 - 支持管理员维护小规模 RAG Eval Case。
 - 支持手动触发 Eval Run，并产出检索与回答质量指标。
 - 能从日志反查某次回答的 Prompt、引用证据和生成结果。
+- Eval Run 必须隔离执行，不写正式会话历史，也不写 UserMemory / SpaceMemory。
 
 ---
 
@@ -477,3 +479,5 @@ GET  /api/v1/admin/rag-eval-runs/{runId}/results
 - 不要让 Eval Run 写入正式用户会话。
 - 不要引入 Quiz 题库、答题、评分等暂缓功能。
 - 所有 API 必须使用 `/api/v1`。
+
+

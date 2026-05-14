@@ -1,4 +1,4 @@
-# Phase 10: 团队 Wiki Draft、发布与入索引
+﻿# Phase 10: 团队 Wiki Draft、发布与入索引
 
 本文档用于指导 NoteWeave 第十阶段编码实现。
 
@@ -160,7 +160,7 @@ wiki_page.status = PUBLISHED
   ↓
 wiki_page.published_version_id = version.id
   ↓
-写入 ES wiki index
+创建 WIKI_INDEX Task 异步写入 ES wiki index
   ↓
 如果来源是 Artifact，artifact.status 可更新 PUBLISHED_TO_WIKI
 ```
@@ -176,6 +176,9 @@ GET  /api/v1/team/wiki-pages/{pageId}
 PUT  /api/v1/team/wiki-pages/{pageId}
 POST /api/v1/team/wiki-pages/{pageId}/publish
 DELETE /api/v1/team/wiki-pages/{pageId}
+GET  /api/v1/team/spaces/{spaceId}/wiki-pages/search
+GET  /api/v1/team/wiki-pages/{pageId}/versions
+POST /api/v1/team/chat-messages/{messageId}/wiki-drafts
 POST /api/v1/artifacts/{artifactId}/publish-to-wiki
 ```
 
@@ -203,7 +206,7 @@ PublishArtifactToWikiRequest：
 {
   "spaceId": 10,
   "title": "新人入门指南",
-  "needReview": true
+  "artifactVersionId": 3
 }
 ```
 
@@ -216,7 +219,7 @@ PublishArtifactToWikiRequest：
 | 查看 Wiki | Y | Y | Y |
 | 创建草稿 | Y | Y | N |
 | 编辑草稿 | Y | Y | N |
-| 发布 Wiki | Y | 可选 | N |
+| 发布 Wiki | Y | N | N |
 | 归档 Wiki | Y | N | N |
 
 MVP 建议：
@@ -281,4 +284,6 @@ WikiRetrieverTest
 - 发布必须人工触发。
 - WikiRetriever 只召回 PUBLISHED。
 - 所有 API 必须使用 `/api/v1`。
+
+
 

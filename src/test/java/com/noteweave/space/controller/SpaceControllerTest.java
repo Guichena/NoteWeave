@@ -101,6 +101,6 @@ class SpaceControllerTest {
                 .andReturn();
 
         JsonNode root = objectMapper.readTree(result.getResponse().getContentAsString());
-        return root.path("data").path("token").asText();
+        return root.path("data").path("accessToken").asText();
     }
 }

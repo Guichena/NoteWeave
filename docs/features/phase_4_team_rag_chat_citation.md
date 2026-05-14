@@ -1,4 +1,4 @@
-# Phase 4: 团队基础 RAG 问答与 Citation 回溯
+﻿# Phase 4: 团队基础 RAG 问答与 Citation 回溯
 
 本文档用于指导 NoteWeave 第四阶段编码实现。
 
@@ -237,6 +237,7 @@ sessionKind
 title
 scopeType
 scopeIdsJson
+scope 表：chat_session_scope
 summary
 status
 runtimeStatus
@@ -273,6 +274,10 @@ role
 content
 messageType
 artifactId
+status
+requestId
+tokenUsageJson
+errorCode
 createdAt
 updatedAt
 ```
@@ -299,6 +304,11 @@ chunkId
 title
 quoteText
 locationInfo
+pageNo
+startOffset
+endOffset
+quoteHash
+snapshotObjectKey
 createdAt
 updatedAt
 ```
@@ -323,6 +333,21 @@ messageId
 citationId
 createdAt
 updatedAt
+```
+
+### 8.5 RetrievalTrace / LLMCallLog / AnswerFeedback
+
+本阶段落最小字段，Phase 14 再扩展为完整评测平台。
+
+```text
+retrieval_trace:
+  id, userId, spaceId, sessionId, messageId, queryText, topK, latencyMs, createdAt
+
+llm_call_log:
+  id, userId, spaceId, sessionId, messageId, provider, model, promptHash, inputTokens, outputTokens, latencyMs, success, errorCode, createdAt
+
+answer_feedback:
+  id, userId, spaceId, sessionId, messageId, rating, reason, comment, createdAt
 ```
 
 ---
@@ -390,6 +415,8 @@ void archive(Long userId, Long sessionId);
 
 - 从 ES 中按关键词检索 Chunk。
 - 必须带权限过滤字段。
+- 检索前必须由调用方完成 `SpacePermissionService.canViewSpace / canAskQuestion` 校验。
+- ES 查询必须内嵌 metadata filter，不能先全局召回再在 Java 内存中过滤。
 
 方法：
 
@@ -417,6 +444,7 @@ public record RetrievedChunk(
     Long documentId,
     Long knowledgeBaseId,
     Long spaceId,
+    Integer indexVersion,
     Integer chunkIndex,
     String documentTitle,
     String content,
@@ -433,6 +461,8 @@ must:
 filter:
   spaceId = 当前 Space
   knowledgeBaseId in scopeIds
+  document.status = INDEXED
+  document.activeIndexVersion = chunk.indexVersion
 ```
 
 如果 `scopeType = SPACE`：
@@ -453,6 +483,7 @@ filter:
 
 ```text
 去重
+相邻 Chunk 合并
 按分数排序
 同文档限流
 上下文长度截断
@@ -464,6 +495,22 @@ filter:
 List<EvidenceItem> process(List<RetrievedChunk> chunks, EvidenceOptions options);
 ```
 
+默认参数：
+
+```text
+maxEvidencePerDocument = 3
+mergeAdjacentChunks = true
+maxMergedChars = 2400
+finalTopK = 8 ~ 12
+maxContextChars = 按模型上下文窗口配置
+```
+
+合并边界：
+
+- 只合并同一 `documentId`、同一 `indexVersion` 且 `chunkIndex` 连续的 Chunk。
+- 合并后仍算作该文档的一个 evidence block。
+- 超过 `maxEvidencePerDocument` 的同文档证据必须丢弃或降级为候选，不进入 Prompt。
+
 EvidenceItem：
 
 ```java
@@ -472,6 +519,7 @@ public record EvidenceItem(
     Long chunkId,
     Long documentId,
     String documentTitle,
+    Integer indexVersion,
     Integer chunkIndex,
     String content,
     Double score
@@ -691,6 +739,18 @@ GET /api/v1/chat/messages/{messageId}/citations
 
 - 只能查看自己可访问 Space 下消息的引用。
 
+### 11.4 Answer Feedback
+
+```http
+POST /api/v1/chat/messages/{messageId}/feedback
+GET  /api/v1/chat/messages/{messageId}/feedback
+```
+
+说明：
+
+- 只能对自己可访问 Space 下的消息提交反馈。
+- Phase 14 可以扩展反馈查询、统计和 RAG Eval。
+
 ---
 
 ## 12. 权限要求
@@ -850,8 +910,10 @@ Phase 4 验收：
 - 不要实现 Wiki Draft。
 - 不要实现 Artifact。
 - 不要实现个人 ResearchProject。
-- 不要把 Citation 存进 `citation_ids` JSON 字段，必须使用 `message_citation` 关联表。
+- 不要把 Citation 存进消息 JSON 字段，必须使用 `message_citation` 关联表。
 - 所有 API 必须使用 `/api/v1`。
 - ES 检索必须带 `spaceId` 和 `knowledgeBaseId` filter。
 - LLM 调用失败必须返回明确错误或可观测失败状态。
+
+
 

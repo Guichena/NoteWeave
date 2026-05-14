@@ -29,10 +29,10 @@ class AuthControllerTest {
 
     @Test
     void registerAndGetMe_ShouldSucceed() throws Exception {
-        String token = registerAndGetToken("auth_test_user_" + System.nanoTime());
+        TokenPair tokenPair = registerAndGetTokens("auth_test_user_" + System.nanoTime());
 
         mockMvc.perform(get("/api/v1/users/me")
-                        .header("Authorization", "Bearer " + token))
+                        .header("Authorization", "Bearer " + tokenPair.accessToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.code").value("OK"))
@@ -41,7 +41,47 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.data.email").exists());
     }
 
-    private String registerAndGetToken(String username) throws Exception {
+    @Test
+    void refreshAndLogout_ShouldRevokeRefreshToken() throws Exception {
+        TokenPair initialTokens = registerAndGetTokens("refresh_test_user_" + System.nanoTime());
+
+        Map<String, Object> refreshPayload = new HashMap<>();
+        refreshPayload.put("refreshToken", initialTokens.refreshToken());
+
+        MvcResult refreshResult = mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(refreshPayload)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.accessToken").exists())
+                .andExpect(jsonPath("$.data.refreshToken").exists())
+                .andReturn();
+
+        JsonNode refreshRoot = objectMapper.readTree(refreshResult.getResponse().getContentAsString());
+        String refreshedAccessToken = refreshRoot.path("data").path("accessToken").asText();
+        String refreshedRefreshToken = refreshRoot.path("data").path("refreshToken").asText();
+
+        Map<String, Object> logoutPayload = new HashMap<>();
+        logoutPayload.put("refreshToken", refreshedRefreshToken);
+
+        mockMvc.perform(post("/api/v1/auth/logout")
+                        .header("Authorization", "Bearer " + refreshedAccessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(logoutPayload)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        Map<String, Object> secondRefreshPayload = new HashMap<>();
+        secondRefreshPayload.put("refreshToken", refreshedRefreshToken);
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(secondRefreshPayload)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+    }
+
+    private TokenPair registerAndGetTokens(String username) throws Exception {
         Map<String, Object> payload = new HashMap<>();
         payload.put("username", username);
         payload.put("email", username + "@example.com");
@@ -54,10 +94,17 @@ class AuthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.code").value("OK"))
-                .andExpect(jsonPath("$.data.token").exists())
+                .andExpect(jsonPath("$.data.accessToken").exists())
+                .andExpect(jsonPath("$.data.refreshToken").exists())
                 .andReturn();
 
         JsonNode root = objectMapper.readTree(result.getResponse().getContentAsString());
-        return root.path("data").path("token").asText();
+        return new TokenPair(
+                root.path("data").path("accessToken").asText(),
+                root.path("data").path("refreshToken").asText()
+        );
+    }
+
+    private record TokenPair(String accessToken, String refreshToken) {
     }
 }

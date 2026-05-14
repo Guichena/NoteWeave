@@ -1,4 +1,4 @@
-# Phase 15: 管理后台与运维能力
+﻿# Phase 15: 管理后台与运维能力
 
 本文档用于指导 NoteWeave 第十五阶段编码实现。
 
@@ -28,8 +28,10 @@ docs/features/database_api_blueprint.md
 ## 2. 阶段目标
 
 - 支持管理员查看用户、空间、知识库、文档、任务、Artifact 的基础状态。
+- 管理员身份来自 `User.systemRole = ADMIN` 或等价系统角色，不能复用 Space OWNER。
 - 支持失败任务重试、取消和标记终止。
 - 支持清理上传中断、合并失败、索引失败后残留的 MinIO 对象和数据库记录。
+- 支持 `ops_cleanup_item` 记录清理候选对象、原因、执行状态和错误。
 - 支持检查 MySQL、Redis、MinIO、Kafka、Elasticsearch、LLM Provider 的健康状态。
 - 支持关键管理操作写入 AuditLog。
 - 支持基础系统统计：任务数量、失败率、存储占用、索引状态、LLM 调用量。
@@ -116,6 +118,27 @@ ES_ORPHAN_INDEX
 SOFT_DELETE_PURGE
 FAILED_MERGE_OBJECT
 ```
+
+### OpsCleanupItem
+
+表：`ops_cleanup_item`
+
+核心字段：
+
+```text
+id
+jobId
+targetType
+targetId
+objectKey
+reason
+status
+errorMessage
+createdAt
+updatedAt
+```
+
+清理必须先 scan 生成 item，再 execute 逐项处理并记录结果。
 
 ### SystemHealthSnapshot
 
@@ -310,7 +333,7 @@ GET /api/v1/admin/audit-logs
 ```text
 PENDING
 RUNNING
-SUCCEEDED
+SUCCESS
 FAILED
 CANCELLED
 TIMEOUT
@@ -394,3 +417,7 @@ deletedAt 超过保留期
 - 不要绕过资源权限校验重试任务。
 - 不要引入暂缓的 Quiz 或外部发现功能。
 - 所有 API 必须使用 `/api/v1`。
+
+
+
+

@@ -22,19 +22,20 @@ public class JwtService {
         this.secretKey = Keys.hmacShaKeyFor(jwtProperties.secretKey().getBytes(StandardCharsets.UTF_8));
     }
 
-    public String generateToken(User user) {
+    public String generateAccessToken(User user) {
         Instant now = Instant.now();
-        Instant expiration = now.plusSeconds(jwtProperties.expirationSeconds());
+        Instant expiration = now.plusSeconds(jwtProperties.accessTokenExpirationSeconds());
         return Jwts.builder()
                 .setSubject(String.valueOf(user.getId()))
                 .claim("username", user.getUsername())
+                .claim("systemRole", user.getSystemRole().name())
                 .setIssuedAt(Date.from(now))
                 .setExpiration(Date.from(expiration))
                 .signWith(secretKey, SignatureAlgorithm.HS256)
                 .compact();
     }
 
-    public Claims parseToken(String token) {
+    public Claims parseAccessToken(String token) {
         return Jwts.parserBuilder()
                 .setSigningKey(secretKey)
                 .build()
@@ -42,7 +43,11 @@ public class JwtService {
                 .getBody();
     }
 
-    public long getExpirationSeconds() {
-        return jwtProperties.expirationSeconds();
+    public long getAccessTokenExpirationSeconds() {
+        return jwtProperties.accessTokenExpirationSeconds();
+    }
+
+    public long getRefreshTokenExpirationSeconds() {
+        return jwtProperties.refreshTokenExpirationSeconds();
     }
 }

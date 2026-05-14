@@ -10,8 +10,11 @@ spring:
   jpa:
     open-in-view: false
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     show-sql: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -20,7 +23,8 @@ spring:
 
 jwt:
   secret-key: ${JWT_SECRET_KEY:change-me-in-dev-change-me-in-dev}
-  expiration-seconds: ${JWT_EXPIRATION_SECONDS:86400}
+  access-token-expiration-seconds: ${JWT_ACCESS_TOKEN_EXPIRATION_SECONDS:900}
+  refresh-token-expiration-seconds: ${JWT_REFRESH_TOKEN_EXPIRATION_SECONDS:1209600}
 
 management:
   endpoints:

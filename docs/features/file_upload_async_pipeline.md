@@ -1,4 +1,4 @@
-# 文件上传与异步处理链路
+﻿# 文件上传与异步处理链路
 
 本文档描述 NoteWeave 的文件上传、断点续传、任务投递和异步处理链路。
 
@@ -20,8 +20,8 @@ D:\java-projects\PaiSmart-main\src\main\java\com\yizhaoqi\smartpai\config\MinioC
 
 参考点：
 
-- Redis Bitmap 记录分片上传状态。
-- MinIO 存储分片和合并后的文件。
+- Redis Bitmap 记录分片上传状态，key 以 uploadId 为准。
+- MinIO 存储分片和 FileObject 管理的合并文件。
 - MD5 作为内容级标识。
 - 合并成功后投递 Kafka。
 - Consumer 负责解析和向量化。
@@ -104,7 +104,23 @@ object_key
 created_at
 ```
 
-### 3.3 Document
+### 3.3 FileObject
+
+表示可复用的对象存储文件。
+
+```text
+id
+content_hash
+object_key
+size
+content_type
+ref_count
+status
+created_at
+updated_at
+```
+
+### 3.4 Document
 
 团队知识库中的正式文档。
 
@@ -113,6 +129,7 @@ id
 space_id
 knowledge_base_id
 uploaded_by
+file_object_id
 file_md5
 file_name
 content_type
@@ -123,7 +140,7 @@ created_at
 updated_at
 ```
 
-### 3.4 Task
+### 3.5 Task
 
 异步处理任务。
 
@@ -162,16 +179,16 @@ target_id = document_id
 key：
 
 ```text
-upload:{userId}:{fileMd5}
+upload:{uploadId}
 ```
 
 操作：
 
 ```text
-SETBIT upload:{userId}:{fileMd5} {chunkIndex} 1
-GETBIT upload:{userId}:{fileMd5} {chunkIndex}
-GET upload:{userId}:{fileMd5}
-DEL upload:{userId}:{fileMd5}
+SETBIT upload:{uploadId} {chunkIndex} 1
+GETBIT upload:{uploadId} {chunkIndex}
+GET upload:{uploadId}
+DEL upload:{uploadId}
 ```
 
 说明：
@@ -185,18 +202,18 @@ DEL upload:{userId}:{fileMd5}
 分片：
 
 ```text
-chunks/{fileMd5}/{chunkIndex}
+chunks/{uploadId}/{chunkIndex}
 ```
 
 合并文件：
 
 ```text
-merged/{fileMd5}
+objects/{contentHash}
 ```
 
 说明：
 
-- 使用 MD5 作为合并后对象路径，避免同名文件覆盖。
+- 使用内容 hash 作为 FileObject 身份；对象复用必须通过 FileObject 引用计数管理，不能作为权限依据。
 - 原始文件永远作为 Raw Source 保留。
 
 ---
@@ -238,10 +255,10 @@ created_at
 
 生产要求：
 
-- 合并成功后创建 Task。
+- 合并成功后创建 Task 和 TaskOutbox。
 - 使用 `idempotency_key = DOCUMENT_PROCESS:{documentId}:{fileMd5}` 防重复。
-- Kafka send 成功后，Document 进入 `PROCESSING`。
-- Kafka 发送失败时，Task 标记 `FAILED` 或保留 `PENDING` 等待补偿。
+- TaskOutbox 发送成功后标记为 `SENT`；业务 Task 等 Phase 3 Worker 真实处理后再进入 `RUNNING/SUCCESS/FAILED`。
+- Kafka 发送失败时，Outbox 保留 `PENDING` 或进入可重试失败状态，等待补偿投递。
 
 消费要求：
 
@@ -283,7 +300,7 @@ POST uploads/{uploadId}/chunks
   ↓
 计算 chunkMd5
   ↓
-上传 chunks/{fileMd5}/{chunkIndex} 到 MinIO
+上传 chunks/{uploadId}/{chunkIndex} 到 MinIO
   ↓
 写 UploadChunk
   ↓
@@ -303,7 +320,7 @@ POST uploads/{uploadId}/merge
   ↓
 检查 MinIO 分片存在
   ↓
-ComposeObject 合并为 merged/{fileMd5}
+ComposeObject 合并为 objects/{contentHash}
   ↓
 更新 Document / DocumentUpload 状态
   ↓
@@ -313,17 +330,17 @@ ComposeObject 合并为 merged/{fileMd5}
   ↓
 创建 Task
   ↓
-发送 Kafka
+写入 TaskOutbox，由 dispatcher 发送 Kafka
 ```
 
 ### 6.4 异步处理
 
 ```text
-Kafka Consumer 接收 DocumentProcessMessage
+Phase 3 Worker 接收 DocumentProcessMessage
   ↓
 检查 Document 生命周期
   ↓
-从 MinIO 读取 merged/{fileMd5}
+从 FileObject.objectKey 读取原始对象
   ↓
 DocumentParserService 解析文本
   ↓
@@ -337,7 +354,7 @@ SearchIndexService 写 ES
   ↓
 更新 Document = INDEXED
   ↓
-更新 Task = SUCCESS
+真实处理完成后更新 Task = SUCCESS
 ```
 
 MVP 可以先跳过 Embedding，只写 BM25 文本索引，但接口要保留。
@@ -347,13 +364,14 @@ MVP 可以先跳过 Embedding，只写 BM25 文本索引，但接口要保留。
 ## 7. 接口设计
 
 ```http
-POST /api/team/knowledge-bases/{knowledgeBaseId}/documents/uploads/init
-POST /api/team/document-uploads/{uploadId}/chunks
-GET  /api/team/document-uploads/{uploadId}/status
-POST /api/team/document-uploads/{uploadId}/merge
-GET  /api/team/knowledge-bases/{knowledgeBaseId}/documents
-GET  /api/team/documents/{documentId}
-GET  /api/team/documents/{documentId}/chunks
+POST /api/v1/team/knowledge-bases/{knowledgeBaseId}/documents/uploads/init
+POST /api/v1/team/document-uploads/{uploadId}/chunks
+GET  /api/v1/team/document-uploads/{uploadId}/status
+POST /api/v1/team/document-uploads/{uploadId}/merge
+POST /api/v1/team/document-uploads/{uploadId}/cancel
+GET  /api/v1/team/knowledge-bases/{knowledgeBaseId}/documents
+GET  /api/v1/team/documents/{documentId}
+GET  /api/v1/team/documents/{documentId}/chunks
 ```
 
 ### 7.1 Init Request
@@ -409,4 +427,5 @@ GET  /api/team/documents/{documentId}/chunks
 - 失败时能看到 Task 和 Document 的错误状态。
 - 重复 Kafka 消息不会重复创建 Chunk。
 - 删除中的文档不会继续索引。
+
 

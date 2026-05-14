@@ -1,16 +1,16 @@
-# Phase 2: KnowledgeBase、文件存储、分片上传与异步任务投递
+﻿# Phase 2: KnowledgeBase、文件存储、分片上传与异步任务投递
 
 本文档用于指导 NoteWeave 第二阶段编码实现。
 
 范围：
 
 ```text
-Phase 2: MinIO FileStorage / Kafka Task Dispatch / KnowledgeBase / DocumentUpload / UploadChunk / Document
+Phase 2: MinIO FileStorage / TaskOutbox Dispatch / KnowledgeBase / FileObject / DocumentUpload / UploadChunk / Document
 ```
 
-第二阶段目标是让团队文档能通过分片上传进入系统，完成断点续传、MinIO 合并、Document 元数据创建和 Kafka 异步处理任务投递。
+第二阶段目标是让团队文档能通过分片上传进入系统，完成断点续传、MinIO 合并、FileObject 引用、Document 元数据创建和 TaskOutbox 异步处理任务投递。
 
-本阶段不要求完成文档解析、Chunk 切片、Embedding、Elasticsearch 索引或 RAG 问答。Kafka Consumer 可以先做最小占位处理。
+本阶段不要求完成文档解析、Chunk 切片、Embedding、Elasticsearch 索引或 RAG 问答。本阶段只负责创建 Task 和 TaskOutbox，并由 dispatcher 投递消息；真实 Consumer 处理放到 Phase 3。
 
 ---
 
@@ -49,10 +49,10 @@ D:\java-projects\PaiSmart-main\src\main\java\com\yizhaoqi\smartpai\config\MinioC
 - Redis Bitmap 记录分片上传状态。
 - 上传状态可查询。
 - 已上传分片可跳过，实现断点续传。
-- 所有分片上传完成后可以合并为 `merged/{fileMd5}`。
+- 所有分片上传完成后可以合并为 `FileObject` 管理的对象，例如 `objects/{contentHash}`。
 - 合并成功后创建 Document 元数据。
-- 合并成功后创建 Task。
-- 合并成功后投递 Kafka `DOCUMENT_PROCESS` 消息。
+- 合并成功后创建 Task 和 TaskOutbox。
+- Outbox dispatcher 投递 Kafka `DOCUMENT_PROCESS` 消息，发送失败可补偿。
 - VIEWER 不能上传文档。
 - 非成员不能访问团队 KnowledgeBase 和上传链路。
 
@@ -288,6 +288,8 @@ totalChunks
 objectKey
 status
 errorMessage
+expiresAt
+cancelledAt
 mergedAt
 createdAt
 updatedAt
@@ -303,6 +305,7 @@ PROCESSING
 INDEXED
 FAILED
 CANCELLED
+EXPIRED
 DELETED
 ```
 
@@ -330,7 +333,38 @@ updatedAt
 upload_id + chunk_index
 ```
 
-### 8.4 Document
+### 8.4 FileObject
+
+表：`file_object`
+
+字段：
+
+```text
+id
+spaceId
+contentHash
+objectKey
+size
+contentType
+refCount
+status
+createdAt
+updatedAt
+```
+
+约束：
+
+```text
+UNIQUE(space_id, content_hash)
+```
+
+说明：
+
+- `FileObject` 按 Space 分区复用，避免不同 Space 因相同 content hash 共享对象导致权限边界混淆。
+- `refCount` 只统计同一 Space 内 Document 引用数。
+- Document 创建成功时 `refCount + 1`，Document 物理清理完成后 `refCount - 1`。
+
+### 8.5 Document
 
 表：`document`
 
@@ -340,6 +374,7 @@ upload_id + chunk_index
 id
 spaceId
 knowledgeBaseId
+fileObjectId
 title
 sourceType
 objectKey
@@ -366,7 +401,7 @@ FAILED
 
 `INDEXED` 留给 Phase 3。
 
-### 8.5 Task
+### 8.6 Task
 
 表：`task`
 
@@ -391,6 +426,7 @@ idempotencyKey
 inputJson
 outputJson
 errorMessage
+cancelRequested
 retryCount
 maxRetryCount
 resultRefType
@@ -411,6 +447,59 @@ FAILED
 CANCELLED
 ```
 
+### 8.7 TaskAttempt
+
+表：`task_attempt`
+
+字段：
+
+```text
+id
+taskId
+attemptNo
+workerId
+status
+startedAt
+finishedAt
+errorCode
+errorMessage
+createdAt
+updatedAt
+```
+
+用途：
+
+- 记录每次 Worker 实际执行，便于排查重复执行和重试原因。
+- 同一个 `taskId` 的 attemptNo 单调递增。
+
+### 8.8 TaskOutbox
+
+表：`task_outbox`
+
+字段：
+
+```text
+id
+taskId
+eventType
+aggregateType
+aggregateId
+idempotencyKey
+payloadJson
+status
+retryCount
+nextRetryAt
+sentAt
+createdAt
+updatedAt
+```
+
+要求：
+
+- Task 与 TaskOutbox 必须在同一个 DB 事务中创建。
+- 事务提交后由 dispatcher 投递 Kafka，Kafka key 固定为 `taskId`。
+- `idempotencyKey` 唯一，避免重复投递造成重复业务任务。
+
 ---
 
 ## 9. Repository 清单
@@ -428,6 +517,7 @@ Optional<KnowledgeBase> findByIdAndStatus(Long id, KnowledgeBaseStatus status);
 Optional<DocumentUpload> findByIdAndStatusNot(Long id, DocumentUploadStatus status);
 Optional<DocumentUpload> findByIdAndUserId(Long id, Long userId);
 Optional<DocumentUpload> findFirstByUserIdAndFileMd5AndStatusIn(Long userId, String fileMd5, Collection<DocumentUploadStatus> statuses);
+List<DocumentUpload> findExpiredUploads(Instant now, Collection<DocumentUploadStatus> statuses);
 ```
 
 ### UploadChunkRepository
@@ -436,6 +526,14 @@ Optional<DocumentUpload> findFirstByUserIdAndFileMd5AndStatusIn(Long userId, Str
 Optional<UploadChunk> findByUploadIdAndChunkIndex(Long uploadId, Integer chunkIndex);
 List<UploadChunk> findByUploadIdOrderByChunkIndexAsc(Long uploadId);
 long countByUploadId(Long uploadId);
+```
+
+### FileObjectRepository
+
+```java
+Optional<FileObject> findBySpaceIdAndContentHash(Long spaceId, String contentHash);
+void incrementRefCount(Long fileObjectId);
+void decrementRefCount(Long fileObjectId);
 ```
 
 ### DocumentRepository
@@ -505,8 +603,8 @@ String getPresignedUrl(String objectKey);
 MinIO object key：
 
 ```text
-chunks/{fileMd5}/{chunkIndex}
-merged/{fileMd5}
+chunks/{uploadId}/{chunkIndex}
+objects/{contentHash}
 ```
 
 ### 10.3 UploadBitmapService
@@ -518,16 +616,16 @@ merged/{fileMd5}
 key：
 
 ```text
-upload:{userId}:{fileMd5}
+upload:{uploadId}
 ```
 
 方法：
 
 ```java
-boolean isChunkUploaded(Long userId, String fileMd5, int chunkIndex);
-void markChunkUploaded(Long userId, String fileMd5, int chunkIndex);
-List<Integer> getUploadedChunks(Long userId, String fileMd5, int totalChunks);
-void clear(Long userId, String fileMd5);
+boolean isChunkUploaded(Long uploadId, int chunkIndex);
+void markChunkUploaded(Long uploadId, int chunkIndex);
+List<Integer> getUploadedChunks(Long uploadId, int totalChunks);
+void clear(Long uploadId);
 ```
 
 ### 10.4 DocumentUploadService
@@ -548,6 +646,7 @@ InitUploadResponse initUpload(Long userId, Long knowledgeBaseId, InitUploadReque
 UploadChunkResponse uploadChunk(Long userId, Long uploadId, Integer chunkIndex, MultipartFile file);
 UploadStatusResponse getStatus(Long userId, Long uploadId);
 MergeUploadResponse merge(Long userId, Long uploadId);
+void cancelUpload(Long userId, Long uploadId);
 ```
 
 初始化流程：
@@ -579,7 +678,7 @@ MergeUploadResponse merge(Long userId, Long uploadId);
   ↓
 计算 chunkMd5
   ↓
-上传 chunks/{fileMd5}/{chunkIndex} 到 MinIO
+上传 chunks/{uploadId}/{chunkIndex} 到 MinIO
   ↓
 保存 UploadChunk
   ↓
@@ -599,19 +698,21 @@ SETBIT
   ↓
 检查 MinIO 分片存在
   ↓
-ComposeObject 合并到 merged/{fileMd5}
+ComposeObject 合并到 objects/{contentHash} 并写入 FileObject
   ↓
 创建 Document
   ↓
-更新 DocumentUpload.documentId / objectKey / status
+更新 DocumentUpload.documentId / objectKey / status，并创建或复用同 Space 的 FileObject 引用
+  ↓
+FileObject.refCount + 1
   ↓
 清理分片对象
   ↓
 清理 Redis Bitmap
   ↓
-创建 Task(DOCUMENT_PROCESS)
+创建 Task(DOCUMENT_PROCESS) 和 TaskOutbox
   ↓
-投递 Kafka
+由 Outbox dispatcher 投递 Kafka，可失败补偿
 ```
 
 幂等要求：
@@ -619,6 +720,23 @@ ComposeObject 合并到 merged/{fileMd5}
 - 重复上传同一分片不应重复写 MinIO。
 - 重复 merge 不应重复创建 Document。
 - Task 使用 `idempotencyKey = DOCUMENT_PROCESS:{documentId}:{fileMd5}`。
+- 重复 cancel 只返回当前取消状态，不重复删除对象。
+
+取消流程：
+
+```text
+读取 DocumentUpload
+  ↓
+校验归属和权限
+  ↓
+仅 INIT / UPLOADING / FAILED 可取消
+  ↓
+标记 CANCELLED，写 cancelledAt
+  ↓
+删除 chunks/{uploadId}/ 下分片对象
+  ↓
+清理 Redis Bitmap
+```
 
 ### 10.5 TaskService
 
@@ -636,11 +754,39 @@ Task createIfAbsent(CreateTaskCommand command);
 TaskResponse getTask(Long userId, Long taskId);
 void markRunning(Long taskId);
 void markSuccess(Long taskId, String resultRefType, Long resultRefId);
+void requestCancel(Long userId, Long taskId);
 void markFailed(Long taskId, String errorMessage);
 void cancel(Long userId, Long taskId);
 ```
 
-### 10.6 DocumentProcessProducer
+要求：
+
+- `requestCancel` 只设置 `cancelRequested = true`，RUNNING 任务由 Worker 在安全点停止。
+- 每次 Worker 执行必须创建 `TaskAttempt`，失败和取消都要记录 attempt 结果。
+- 重复创建任务时先按 `idempotencyKey` 查询既有任务。
+
+### 10.6 UploadCleanupService
+
+职责：
+
+- 定期扫描过期或取消的分片上传。
+- 清理 MinIO 分片对象、Redis Bitmap 和 DB 残留状态。
+- 生成清理日志，供 Phase 15 Admin / Ops 查询。
+
+方法：
+
+```java
+int cleanupExpiredUploads(Instant now);
+void cleanupUpload(Long uploadId);
+```
+
+规则：
+
+- `DocumentUpload.expiresAt < now` 且状态为 `INIT / UPLOADING / FAILED` 时标记 `CANCELLED` 或 `EXPIRED`。
+- 清理只删除分片临时对象，不删除已经合并并被 `FileObject` 引用的正式对象。
+- 清理失败要记录 errorMessage，等待下次任务重试。
+
+### 10.7 DocumentProcessProducer
 
 职责：
 
@@ -652,34 +798,38 @@ void cancel(Long userId, Long taskId);
 void send(DocumentProcessMessage message);
 ```
 
-### 10.7 DocumentProcessConsumer
+### 10.8 DocumentProcessDispatcher
 
-本阶段只做占位消费，不做真实解析。
+本阶段只做 TaskOutbox 投递，不做真实解析，也不把业务 Task 标记为 `SUCCESS`。
 
 流程：
 
 ```text
-接收 DocumentProcessMessage
+读取 TaskOutbox PENDING 记录
   ↓
-Task 标记 RUNNING
+事务外发送 DocumentProcessMessage，Kafka key = taskId
   ↓
-Document 标记 PROCESSING
+Outbox 标记 SENT
   ↓
-记录日志
+Document 保持 PENDING_PROCESS 或 DISPATCHED
   ↓
-不创建 Chunk
-  ↓
-Task 标记 SUCCESS 或保留 RUNNING 由 Phase 3 接管
+Task 保持 PENDING，等待 Phase 3 Worker 真实处理
 ```
 
-建议本阶段将 Task 标记为 `SUCCESS`，Document 保持 `PROCESSING`，并在 `outputJson` 中写明：
+如需写 `outputJson`，只能写明：
 
 ```json
 {
-  "phase": "PHASE_2_PLACEHOLDER",
-  "message": "Document process message consumed; parsing will be implemented in Phase 3."
+  "phase": "PHASE_2_DISPATCHED",
+  "message": "Document process task dispatched; parsing will be implemented in Phase 3."
 }
 ```
+
+投递要求：
+
+- Dispatcher 只处理已提交事务中的 PENDING Outbox 记录。
+- Kafka 发送失败不回滚业务数据，只更新 Outbox retryCount / nextRetryAt。
+- 同一个 Outbox 多次投递时，Consumer 必须依赖 `taskId` 和业务幂等键去重。
 
 ---
 
@@ -750,6 +900,7 @@ POST /api/v1/team/knowledge-bases/{knowledgeBaseId}/documents/uploads/init
 POST /api/v1/team/document-uploads/{uploadId}/chunks
 GET  /api/v1/team/document-uploads/{uploadId}/status
 POST /api/v1/team/document-uploads/{uploadId}/merge
+POST /api/v1/team/document-uploads/{uploadId}/cancel
 ```
 
 InitUploadRequest：
@@ -828,7 +979,7 @@ MergeUploadResponse：
   "documentId": 10,
   "taskId": 100,
   "status": "PROCESSING",
-  "objectKey": "merged/d41d8cd98f00b204e9800998ecf8427e"
+  "objectKey": "objects/sha256-content-hash"
 }
 ```
 
@@ -845,7 +996,7 @@ POST   /api/v1/team/documents/{documentId}/reindex
 
 - `GET documents` 返回 Document 元数据和处理状态。
 - `DELETE document` 可先做软删除。
-- `reindex` 可先创建新的 `DOCUMENT_PROCESS` Task。
+- `reindex` 创建新的 `DOCUMENT_PROCESS` Task；实际重建必须由 Phase 3 的 indexVersion 机制处理，不能覆盖旧索引。
 
 ### 12.4 Task
 
@@ -945,7 +1096,7 @@ Phase 2 验收：
 - 可以查询上传进度。
 - 分片不完整时 merge 失败。
 - 分片完整时 merge 成功。
-- merge 成功后 MinIO 中存在 `merged/{fileMd5}`。
+- merge 成功后 MinIO 中存在 FileObject 指向的 `objects/{contentHash}`。
 - merge 成功后创建 Document。
 - merge 成功后创建 Task。
 - merge 成功后发送 Kafka 消息。
@@ -969,7 +1120,7 @@ Phase 2 验收：
 10. 实现 DocumentUploadService
 11. 实现 DocumentUploadController
 12. 实现 DocumentController
-13. 实现占位 DocumentProcessConsumer
+13. 实现 TaskOutbox dispatcher，不实现占位成功 Consumer
 14. 补测试
 15. 运行 mvn test 或 mvn package
 ```
@@ -989,4 +1140,7 @@ Phase 2 验收：
 - 所有权限必须经过 `SpacePermissionService`。
 - 不要使用 `generation_task`，必须使用通用 `task`。
 - 不要使用普通 multipart 一步上传替代分片上传。
+
+
+
 

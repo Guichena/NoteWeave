@@ -1,4 +1,4 @@
-# Phase 16: 前端工作台
+﻿# Phase 16: 前端工作台
 
 本文档用于指导 NoteWeave 第十六阶段编码实现。
 
@@ -8,7 +8,7 @@
 Phase 16: Workspace UI / Team Knowledge / Personal Research / Chat Runtime / Studio / Artifact / Admin Console
 ```
 
-第十六阶段目标是把前面已经设计的团队知识库、个人研究、工作台会话、Studio 生成、Artifact、Wiki、Memory、管理后台等能力组织成一个可使用的前端工作台。首屏应是实际工作界面，而不是产品介绍页。
+第十六阶段目标是把前面各阶段已经交付的前端薄片组织成一个可使用的前端工作台。首屏应是实际工作界面，而不是产品介绍页；本阶段不再从零一次性实现全部页面。
 
 ---
 
@@ -217,11 +217,12 @@ GET  /api/v1/spaces/{spaceId}/members
 接口：
 
 ```http
-GET  /api/v1/spaces/{spaceId}/knowledge-bases
-POST /api/v1/spaces/{spaceId}/knowledge-bases
-POST /api/v1/knowledge-bases/{knowledgeBaseId}/uploads/init
-PUT  /api/v1/uploads/{uploadId}/chunks/{chunkIndex}
-POST /api/v1/uploads/{uploadId}/complete
+GET  /api/v1/team/spaces/{spaceId}/knowledge-bases
+POST /api/v1/team/spaces/{spaceId}/knowledge-bases
+POST /api/v1/team/knowledge-bases/{knowledgeBaseId}/documents/uploads/init
+POST /api/v1/team/document-uploads/{uploadId}/chunks
+POST /api/v1/team/document-uploads/{uploadId}/merge
+POST /api/v1/team/document-uploads/{uploadId}/cancel
 GET  /api/v1/tasks/{taskId}
 ```
 
@@ -256,17 +257,18 @@ GET  /api/v1/tasks/{taskId}
 WebSocket 事件：
 
 ```text
-chat.message.delta
-chat.message.completed
-chat.message.failed
-chat.message.stopped
+chat.delta
+chat.completed
+chat.failed
+chat.stopped
+chat.restored
 session.state.updated
 ```
 
 接口：
 
 ```http
-GET  /api/v1/chat/sessions
+GET  /api/v1/spaces/{spaceId}/chat-sessions
 POST /api/v1/chat/sessions
 GET  /api/v1/chat/sessions/{sessionId}/messages
 POST /api/v1/chat/messages/{messageId}/feedback
@@ -342,10 +344,12 @@ Generate：
 GET  /api/v1/personal/research-projects
 POST /api/v1/personal/research-projects
 GET  /api/v1/personal/research-projects/{projectId}/sources
-POST /api/v1/personal/research-projects/{projectId}/sources
+POST /api/v1/personal/research-projects/{projectId}/sources/upload
+POST /api/v1/personal/research-projects/{projectId}/sources/url
+POST /api/v1/personal/research-projects/{projectId}/sources/text
 GET  /api/v1/personal/research-projects/{projectId}/article-cards
 GET  /api/v1/personal/research-projects/{projectId}/concept-cards
-POST /api/v1/personal/research-projects/{projectId}/generate
+POST /api/v1/studio/tasks
 GET  /api/v1/personal/research-projects/{projectId}/methodology-cards
 ```
 
@@ -398,7 +402,7 @@ GET  /api/v1/studio/skills
 POST /api/v1/studio/tasks
 GET  /api/v1/artifacts/{artifactId}
 PUT  /api/v1/artifacts/{artifactId}
-POST /api/v1/artifacts/{artifactId}/export
+GET  /api/v1/artifacts/{artifactId}/export?format=markdown
 ```
 
 ---
@@ -488,7 +492,7 @@ AuditLog 查询
 src/api/auth.ts
 src/api/spaces.ts
 src/api/knowledgeBases.ts
-src/api/uploads.ts
+src/api/documentUploads.ts
 src/api/tasks.ts
 src/api/chat.ts
 src/api/personalResearch.ts
@@ -586,3 +590,7 @@ artifact generating
 - 不要实现暂缓的 Quiz 或外部资料发现。
 - 不要引入与后端文档不一致的 API 前缀。
 - 所有 API 必须使用 `/api/v1`。
+
+
+
+

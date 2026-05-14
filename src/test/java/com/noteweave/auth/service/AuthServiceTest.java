@@ -19,7 +19,9 @@ import com.noteweave.space.model.SpaceRole;
 import com.noteweave.space.repository.SpaceMemberRepository;
 import com.noteweave.space.repository.SpaceRepository;
 import com.noteweave.user.model.User;
+import com.noteweave.user.model.UserSession;
 import com.noteweave.user.model.UserStatus;
+import com.noteweave.user.repository.UserSessionRepository;
 import com.noteweave.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,6 +40,8 @@ class AuthServiceTest {
     private SpaceRepository spaceRepository;
     @Mock
     private SpaceMemberRepository spaceMemberRepository;
+    @Mock
+    private UserSessionRepository userSessionRepository;
     @Mock
     private PasswordEncoder passwordEncoder;
     @Mock
@@ -67,12 +71,15 @@ class AuthServiceTest {
             saved.setId(10L);
             return saved;
         });
-        when(jwtService.generateToken(any(User.class))).thenReturn("jwt-token");
-        when(jwtService.getExpirationSeconds()).thenReturn(86400L);
+        when(jwtService.generateAccessToken(any(User.class))).thenReturn("jwt-token");
+        when(jwtService.getAccessTokenExpirationSeconds()).thenReturn(900L);
+        when(jwtService.getRefreshTokenExpirationSeconds()).thenReturn(1209600L);
+        when(userSessionRepository.save(any(UserSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         AuthResponse response = authService.register(request);
 
-        assertThat(response.getToken()).isEqualTo("jwt-token");
+        assertThat(response.getAccessToken()).isEqualTo("jwt-token");
+        assertThat(response.getRefreshToken()).isNotBlank();
         assertThat(response.getUser().getUsername()).isEqualTo("alice");
 
         ArgumentCaptor<SpaceMember> memberCaptor = ArgumentCaptor.forClass(SpaceMember.class);
@@ -81,6 +88,7 @@ class AuthServiceTest {
         assertThat(member.getUserId()).isEqualTo(1L);
         assertThat(member.getSpaceId()).isEqualTo(10L);
         assertThat(member.getRole()).isEqualTo(SpaceRole.OWNER);
+        verify(userSessionRepository).save(any(UserSession.class));
     }
 
     @Test

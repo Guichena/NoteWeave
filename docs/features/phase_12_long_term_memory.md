@@ -1,4 +1,4 @@
-# Phase 12: 长期 Memory 深化
+﻿# Phase 12: 长期 Memory 深化
 
 本文档用于指导 NoteWeave 第十二阶段编码实现。
 
@@ -37,6 +37,8 @@ D:\java-projects\PaiSmart-main\src\main\java\com\yizhaoqi\smartpai\service\Sessi
 - 重要会话轮次归档到 `session_summary`。
 - Space 级长期记忆写入 `space_memory`。
 - 用户稳定偏好写入 `user_memory`。
+- Memory 按 item 多主题存储，支持来源、置信度、重要性、过期和删除。
+- 用户可以查看、编辑、删除、禁用记忆写入。
 - 当前轮上下文按需加载近期消息、相关摘要、SpaceMemory、UserMemory、检索证据。
 - 临时草稿不写长期 Memory。
 - Memory 支持过期、置顶、重要性和可信度。
@@ -92,6 +94,32 @@ resolvedEntitiesJson
 artifactPreferencesJson
 conversationPatternsJson
 expiresAt
+```
+
+说明：
+
+- `space_memory` 当前阶段是 user-space 私有记忆，不是团队共享记忆。
+- 团队共享 Memory 当前阶段暂缓，如后续需要应另建 `team_memory`。
+
+### MemoryItem
+
+用于多主题、可删除、可追踪来源的记忆条目。
+
+```text
+id
+userId
+spaceId
+memoryType
+topic
+summary
+sourceType
+sourceId
+importanceScore
+confidenceScore
+expiresAt
+deletedAt
+createdAt
+updatedAt
 ```
 
 ### UserMemory
@@ -236,8 +264,12 @@ ContextReadRouter 决策
 ```http
 GET /api/v1/spaces/{spaceId}/memory
 PUT /api/v1/spaces/{spaceId}/memory
+DELETE /api/v1/spaces/{spaceId}/memory/{memoryItemId}
 GET /api/v1/users/me/memory
 PUT /api/v1/users/me/memory
+DELETE /api/v1/users/me/memory/{memoryItemId}
+POST /api/v1/users/me/memory/disable
+POST /api/v1/users/me/memory/enable
 GET /api/v1/chat/sessions/{sessionId}/summaries
 ```
 
@@ -265,6 +297,7 @@ GET /api/v1/chat/sessions/{sessionId}/summaries
 - DRAFT 不写 Memory。
 - Prompt 构造时能加载 Memory。
 - 用户可以查看/编辑自己的 Memory。
+- 用户可以删除 Memory 条目或禁用记忆写入。
 - Memory 不会全量塞入 Prompt，而是摘要式加载。
 
 ---
@@ -276,4 +309,6 @@ GET /api/v1/chat/sessions/{sessionId}/summaries
 - 不要让 DRAFT 写长期记忆。
 - 不要覆盖用户稳定偏好，除非置信度足够。
 - 所有 API 必须使用 `/api/v1`。
+
+
 

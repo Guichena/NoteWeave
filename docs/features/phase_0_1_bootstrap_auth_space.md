@@ -1,4 +1,4 @@
-# Phase 0/1: 工程骨架、认证、用户、空间与权限
+﻿# Phase 0/1: 工程骨架、认证、用户、空间与权限
 
 本文档用于指导 NoteWeave 第一阶段编码实现。
 
@@ -211,6 +211,32 @@ data
 timestamp
 ```
 
+列表接口必须统一返回分页结构，避免前端为不同模块写特殊适配。
+
+建议类：
+
+```text
+common.api.PageResponse<T>
+```
+
+字段：
+
+```text
+items
+page
+pageSize
+total
+totalPages
+sort
+filters
+```
+
+要求：
+
+- 所有 `GET list` 类接口都返回 `ApiResponse<PageResponse<T>>`。
+- 分页参数统一使用 `page`、`pageSize`、`sort`，默认 `page=1`、`pageSize=20`。
+- 列表筛选条件进入对应 Query DTO，不允许 Controller 临时拼接散乱参数。
+
 ### 5.2 错误码
 
 第一阶段至少定义：
@@ -262,6 +288,7 @@ JWT Claims：
 ```text
 sub = userId
 username
+systemRole
 iat
 exp
 ```
@@ -271,8 +298,15 @@ exp
 ```yaml
 jwt:
   secret-key: ${JWT_SECRET_KEY:change-me-in-dev}
-  expiration-seconds: ${JWT_EXPIRATION_SECONDS:86400}
+  access-token-expiration-seconds: ${JWT_ACCESS_TOKEN_EXPIRATION_SECONDS:900}
+  refresh-token-expiration-seconds: ${JWT_REFRESH_TOKEN_EXPIRATION_SECONDS:1209600}
 ```
+
+安全约束：
+
+- `change-me-in-dev` 只允许 `dev` / `test` profile 使用。
+- `prod` / `staging` 启动时如果 `JWT_SECRET_KEY` 为空、过短或仍为默认值，应用必须 fail fast。
+- 生产环境密钥必须来自环境变量或密钥管理服务，不写入仓库配置文件。
 
 ### 6.2 SecurityConfig
 
@@ -317,7 +351,11 @@ username VARCHAR(64) NOT NULL UNIQUE
 email VARCHAR(128) UNIQUE
 password_hash VARCHAR(255) NOT NULL
 display_name VARCHAR(64)
+avatar_url VARCHAR(255)
+system_role VARCHAR(32) NOT NULL DEFAULT 'USER'
 status VARCHAR(32) NOT NULL
+last_login_at DATETIME
+disabled_at DATETIME
 created_at DATETIME NOT NULL
 updated_at DATETIME NOT NULL
 ```
@@ -325,8 +363,8 @@ updated_at DATETIME NOT NULL
 枚举：
 
 ```text
-ACTIVE
-DISABLED
+status: ACTIVE, DISABLED
+system_role: USER, ADMIN
 ```
 
 说明：
@@ -384,6 +422,9 @@ space_id BIGINT NOT NULL
 user_id BIGINT NOT NULL
 role VARCHAR(32) NOT NULL
 status VARCHAR(32) NOT NULL
+joined_at DATETIME
+removed_at DATETIME
+removed_by BIGINT
 created_at DATETIME NOT NULL
 updated_at DATETIME NOT NULL
 ```
@@ -406,12 +447,42 @@ UNIQUE(space_id, user_id)
 - Space OWNER 也必须有 SpaceMember 记录。
 - PERSONAL Space 的 owner 是唯一成员，角色为 OWNER。
 
+### 7.4 UserSession / RefreshToken
+
+表名：
+
+```text
+user_session
+```
+
+字段：
+
+```text
+id BIGINT PK AUTO_INCREMENT
+user_id BIGINT NOT NULL
+refresh_token_hash VARCHAR(255) NOT NULL UNIQUE
+device_info VARCHAR(255)
+ip_address VARCHAR(64)
+user_agent VARCHAR(512)
+expires_at DATETIME NOT NULL
+revoked_at DATETIME
+created_at DATETIME NOT NULL
+updated_at DATETIME NOT NULL
+```
+
+说明：
+
+- refresh token 只保存 hash，不保存明文。
+- logout 吊销当前 session，logout-all 吊销当前用户全部未过期 session。
+- 禁用用户后，所有未过期 session 必须失效。
+
 ---
 
 ## 8. JPA 实体清单
 
 ```text
 user.model.User
+user.model.UserSession
 space.model.Space
 space.model.SpaceMember
 ```
@@ -471,12 +542,17 @@ boolean existsBySpaceIdAndUserIdAndStatus(Long spaceId, Long userId, MemberStatu
 - 注册。
 - 登录。
 - 生成 JWT。
+- 刷新 token。
+- 退出登录并吊销 refresh token。
 
 方法：
 
 ```java
 AuthResponse register(RegisterRequest request);
 AuthResponse login(LoginRequest request);
+AuthResponse refresh(RefreshTokenRequest request);
+void logout(Long userId, LogoutRequest request);
+void logoutAll(Long userId);
 ```
 
 注册流程：
@@ -507,11 +583,15 @@ BCrypt 加密密码
 
 - 查询当前用户。
 - 查询用户基础信息。
+- 更新当前用户资料。
+- 修改密码。
 
 方法：
 
 ```java
 UserProfileResponse getMe(Long userId);
+UserProfileResponse updateMe(Long userId, UpdateUserProfileRequest request);
+void changePassword(Long userId, ChangePasswordRequest request);
 User getRequiredUser(Long userId);
 ```
 
@@ -528,12 +608,19 @@ User getRequiredUser(Long userId);
 
 ```java
 SpaceResponse createTeamSpace(Long userId, CreateSpaceRequest request);
+Space createPersonalSpace(Long userId);
 List<SpaceResponse> listMySpaces(Long userId);
 SpaceResponse getSpace(Long userId, Long spaceId);
 MemberResponse addMember(Long operatorId, Long spaceId, AddMemberRequest request);
 MemberResponse updateMemberRole(Long operatorId, Long spaceId, Long memberId, UpdateMemberRoleRequest request);
 void removeMember(Long operatorId, Long spaceId, Long memberId);
 ```
+
+`createPersonalSpace` 要求：
+
+- 只能由注册流程或用户初始化修复任务调用。
+- 必须和 `User` 创建处于同一事务，保证用户、PERSONAL Space、OWNER SpaceMember 同时成功或同时回滚。
+- 创建前检查用户是否已有 PERSONAL Space，重复调用应幂等返回既有空间。
 
 ### 10.4 SpacePermissionService
 
@@ -585,6 +672,9 @@ TEAM Space：
 ```http
 POST /api/v1/auth/register
 POST /api/v1/auth/login
+POST /api/v1/auth/refresh
+POST /api/v1/auth/logout
+POST /api/v1/auth/logout-all
 ```
 
 RegisterRequest：
@@ -611,9 +701,10 @@ AuthResponse：
 
 ```json
 {
-  "token": "jwt",
+  "accessToken": "jwt",
+  "refreshToken": "refresh-token",
   "tokenType": "Bearer",
-  "expiresIn": 86400,
+  "expiresIn": 900,
   "user": {
     "id": 1,
     "username": "alice",
@@ -626,6 +717,8 @@ AuthResponse：
 
 ```http
 GET /api/v1/users/me
+PUT /api/v1/users/me
+PUT /api/v1/users/me/password
 ```
 
 ### 11.3 SpaceController
@@ -690,7 +783,7 @@ spring:
   jpa:
     open-in-view: false
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     show-sql: false
   data:
     redis:
@@ -700,7 +793,8 @@ spring:
 
 jwt:
   secret-key: ${JWT_SECRET_KEY:change-me-in-dev}
-  expiration-seconds: ${JWT_EXPIRATION_SECONDS:86400}
+  access-token-expiration-seconds: ${JWT_ACCESS_TOKEN_EXPIRATION_SECONDS:900}
+  refresh-token-expiration-seconds: ${JWT_REFRESH_TOKEN_EXPIRATION_SECONDS:1209600}
 
 logging:
   level:
@@ -708,7 +802,7 @@ logging:
     com.noteweave: INFO
 ```
 
-开发阶段可以先用 `ddl-auto: update`，后续进入稳定实现后改 Flyway / Liquibase。
+本阶段必须启用 Flyway 或 Liquibase 管理迁移；`ddl-auto=update` 只能作为本地临时实验配置，不进入提交默认配置。
 
 ---
 
@@ -766,6 +860,9 @@ Phase 1 验收：
 - 注册后自动创建 PERSONAL Space。
 - 注册后自动创建 PERSONAL SpaceMember OWNER。
 - 用户可以登录并获得 JWT。
+- 用户可以刷新 token。
+- 用户可以退出登录，退出后 refresh token 不可再次使用。
+- 用户可以更新个人资料和修改密码。
 - JWT 可以访问受保护接口。
 - 用户可以创建 TEAM Space。
 - TEAM Space 创建者自动成为 OWNER。
@@ -798,12 +895,12 @@ Phase 1 验收：
 
 ```text
 1. 创建 Spring Boot 项目
-2. 添加 Maven 依赖
+2. 添加 Maven 依赖和 Flyway/Liquibase
 3. 添加 application.yml
 4. 实现 ApiResponse / ErrorCode / BusinessException / GlobalExceptionHandler
 5. 实现 User 实体和 UserRepository
 6. 实现 Space / SpaceMember 实体和 Repository
-7. 实现 JwtService / JwtAuthenticationFilter / SecurityConfig
+7. 实现 JwtService / RefreshTokenService / JwtAuthenticationFilter / SecurityConfig
 8. 实现 AuthService
 9. 实现 AuthController
 10. 实现 CurrentUserProvider
@@ -850,3 +947,5 @@ SpacePermissionService
 - 用户身份稳定。
 - Space 归属稳定。
 - 权限判断入口稳定。
+
+

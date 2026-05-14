@@ -37,7 +37,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String token = authHeader.substring(7);
         try {
-            Claims claims = jwtService.parseToken(token);
+            Claims claims = jwtService.parseAccessToken(token);
             Long userId = Long.valueOf(claims.getSubject());
             String username = claims.get("username", String.class);
 
@@ -49,7 +49,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 return;
             }
 
-            CurrentUser currentUser = new CurrentUser(userId, username);
+            CurrentUser currentUser = new CurrentUser(userId, username, user.getSystemRole());
             UsernamePasswordAuthenticationToken authenticationToken =
                     new UsernamePasswordAuthenticationToken(currentUser, null, Collections.emptyList());
             SecurityContextHolder.getContext().setAuthentication(authenticationToken);

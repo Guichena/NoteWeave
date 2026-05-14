@@ -1,9 +1,7 @@
-package com.noteweave.space.model;
+package com.noteweave.user.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -19,39 +17,37 @@ import org.hibernate.annotations.UpdateTimestamp;
 @Setter
 @Entity
 @Table(
-        name = "space_member",
+        name = "user_session",
         uniqueConstraints = {
-                @UniqueConstraint(name = "uk_space_member_space_user", columnNames = {"space_id", "user_id"})
+                @UniqueConstraint(name = "uk_user_session_refresh_token_hash", columnNames = "refresh_token_hash")
         }
 )
-public class SpaceMember {
+public class UserSession {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "space_id", nullable = false)
-    private Long spaceId;
-
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 32)
-    private SpaceRole role;
+    @Column(name = "refresh_token_hash", nullable = false, length = 255)
+    private String refreshTokenHash;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 32)
-    private SpaceMemberStatus status = SpaceMemberStatus.ACTIVE;
+    @Column(name = "device_info", length = 255)
+    private String deviceInfo;
 
-    @Column(name = "joined_at")
-    private LocalDateTime joinedAt;
+    @Column(name = "ip_address", length = 64)
+    private String ipAddress;
 
-    @Column(name = "removed_at")
-    private LocalDateTime removedAt;
+    @Column(name = "user_agent", length = 512)
+    private String userAgent;
 
-    @Column(name = "removed_by")
-    private Long removedBy;
+    @Column(name = "expires_at", nullable = false)
+    private LocalDateTime expiresAt;
+
+    @Column(name = "revoked_at")
+    private LocalDateTime revokedAt;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

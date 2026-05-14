@@ -1,4 +1,4 @@
-# Phase 9: 增强检索、向量召回与 Weighted RRF
+﻿# Phase 9: 增强检索、向量召回与 Weighted RRF
 
 本文档用于指导 NoteWeave 第九阶段编码实现。
 
@@ -36,7 +36,9 @@ D:\java-projects\PaiSmart-main\src\main\java\com\yizhaoqi\smartpai\service\Retri
 
 - 接入 EmbeddingClient。
 - 为 DocumentChunk 生成 embedding。
+- 通过 `EMBEDDING_BACKFILL` Task 为历史 Chunk 回填 embedding。
 - ES mapping 增加 dense_vector 字段。
+- Embedding 模型、维度和 ES 索引版本绑定，维度变化必须创建新索引版本或 alias。
 - 实现 Retriever 接口。
 - 实现 Bm25Retriever。
 - 实现 VectorRetriever。
@@ -44,6 +46,7 @@ D:\java-projects\PaiSmart-main\src\main\java\com\yizhaoqi\smartpai\service\Retri
 - 实现 Weighted RRF。
 - EvidencePostProcessor 支持去重、相邻 Chunk 合并、同文档限流、上下文长度控制。
 - TeamChatService 可配置使用 hybrid retrieval。
+- RRF 融合过程写入 RetrievalTrace，供 Phase 14 评测与排障。
 
 ---
 
@@ -255,6 +258,7 @@ GET /api/v1/team/knowledge-bases/{knowledgeBaseId}/search?keyword=部署&mode=HY
 ## 11. 验收清单
 
 - DocumentChunk 可以写入 embedding。
+- 历史 DocumentChunk 可以通过 `EMBEDDING_BACKFILL` 回填 embedding。
 - BM25 Retriever 可用。
 - VectorRetriever 可用。
 - Hybrid retrieval 可用。
@@ -263,6 +267,7 @@ GET /api/v1/team/knowledge-bases/{knowledgeBaseId}/search?keyword=部署&mode=HY
 - TeamChatService 可使用 HYBRID 模式。
 - 向量失败时可降级 BM25。
 - 权限 filter 始终存在。
+- embedding 维度变化不会破坏既有 BM25 索引。
 
 ---
 
@@ -275,4 +280,6 @@ GET /api/v1/team/knowledge-bases/{knowledgeBaseId}/search?keyword=部署&mode=HY
 - 不要绕过权限 filter。
 - 向量失败必须可降级。
 - 所有 API 必须使用 `/api/v1`。
+
+
 

@@ -36,9 +36,22 @@ public class User {
     @Column(name = "display_name", length = 64)
     private String displayName;
 
+    @Column(name = "avatar_url", length = 255)
+    private String avatarUrl;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "system_role", nullable = false, length = 32)
+    private UserSystemRole systemRole = UserSystemRole.USER;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private UserStatus status = UserStatus.ACTIVE;
+
+    @Column(name = "last_login_at")
+    private LocalDateTime lastLoginAt;
+
+    @Column(name = "disabled_at")
+    private LocalDateTime disabledAt;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

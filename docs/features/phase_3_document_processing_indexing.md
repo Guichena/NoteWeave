@@ -1,4 +1,4 @@
-# Phase 3: 文档解析、Chunk 切片与 Elasticsearch 索引
+﻿# Phase 3: 文档解析、Chunk 切片与 Elasticsearch 索引
 
 本文档用于指导 NoteWeave 第三阶段编码实现。
 
@@ -45,7 +45,7 @@ D:\java-projects\PaiSmart-main\src\main\java\com\yizhaoqi\smartpai\config\EsInde
 第三阶段完成后，系统应具备：
 
 - Kafka Consumer 能真实处理 `DOCUMENT_PROCESS` 消息。
-- 能从 MinIO 读取 `merged/{fileMd5}` 文件。
+- 能通过 Document 的 FileObject 引用从 MinIO 读取原始文件。
 - 能解析 PDF / Markdown / TXT 基础文本。
 - 能将文本切成稳定 Chunk。
 - 能把 Chunk 保存到 MySQL `document_chunk`。
@@ -240,6 +240,18 @@ document.chunk_count = 实际 Chunk 数量
 document.token_count = 粗略 token 数
 ```
 
+新增索引版本字段：
+
+```text
+document.activeIndexVersion = 当前可检索版本号
+```
+
+说明：
+
+- 每次重新处理文档都创建新的 `indexVersion`。
+- 只有新版本 MySQL Chunk 与 ES 文档都写入成功后，才切换 `activeIndexVersion`。
+- 失败时保留旧版本，避免重复消息或重建失败破坏既有检索能力。
+
 ### 8.2 DocumentChunk
 
 表：`document_chunk`
@@ -252,10 +264,13 @@ document.token_count = 粗略 token 数
 spaceId
 knowledgeBaseId
 documentId
+indexVersion
 chunkIndex
 content
 contentHash
 tokenCount
+pageNo
+sectionTitle
 sourceStart
 sourceEnd
 esDocId
@@ -266,8 +281,10 @@ updatedAt
 必须保证：
 
 ```text
-UNIQUE(document_id, chunk_index)
+UNIQUE(document_id, index_version, chunk_index)
 ```
+
+禁止使用 `UNIQUE(document_id, chunk_index)`，否则重建新索引版本时会覆盖旧版本 Chunk。
 
 ### 8.3 Task
 
@@ -299,7 +316,7 @@ noteweave_document_chunk
 文档 ID：
 
 ```text
-chunk:{documentId}:{chunkIndex}
+chunk:{documentId}:{indexVersion}:{chunkIndex}
 ```
 
 字段：
@@ -309,6 +326,7 @@ chunk:{documentId}:{chunkIndex}
   "spaceId": 1,
   "knowledgeBaseId": 10,
   "documentId": 100,
+  "indexVersion": 2,
   "chunkId": 1000,
   "chunkIndex": 0,
   "title": "设计文档",
@@ -329,6 +347,7 @@ Mapping 建议：
       "spaceId": { "type": "long" },
       "knowledgeBaseId": { "type": "long" },
       "documentId": { "type": "long" },
+      "indexVersion": { "type": "integer" },
       "chunkId": { "type": "long" },
       "chunkIndex": { "type": "integer" },
       "title": {
@@ -488,6 +507,7 @@ void deleteByDocumentId(Long documentId);
 
 ```java
 List<DocumentChunk> replaceChunks(Document document, List<ChunkCandidate> candidates);
+boolean existsByDocumentIdAndIndexVersion(Long documentId, Integer indexVersion);
 List<DocumentChunk> listByDocument(Long documentId);
 ```
 
@@ -495,10 +515,16 @@ List<DocumentChunk> listByDocument(Long documentId);
 
 ```text
 处理开始前：
-  删除 document_id 下旧 ES 文档
-  删除 document_id 下旧 document_chunk
+  创建新的 indexVersion
+  新 Chunk 和 ES 文档写入新版本
+  写入前按 documentId + indexVersion + chunkIndex 做存在性检查
 
-再重新写入新的 Chunk
+处理成功后：
+  将 Document.activeIndexVersion 切换到新版本
+  异步清理旧版本 Chunk 和 ES 文档
+
+处理失败时：
+  保留旧 activeIndexVersion，不破坏既有检索能力
 ```
 
 ### 10.5 DocumentProcessingService
@@ -520,25 +546,27 @@ void process(DocumentProcessMessage message);
   ↓
 读取 Document
   ↓
-检查 Document 是否 DELETED / INDEXED
+如果 Task 已 SUCCESS 且 Document.activeIndexVersion 对应 Chunk 已存在，重复消息直接 ack
+  ↓
+检查 Document 是否 DELETED
   ↓
 Task 标记 RUNNING
   ↓
 Document 标记 PROCESSING
   ↓
-从 MinIO 读取 objectKey
+从 FileObject.objectKey 读取原始对象
   ↓
 DocumentParserService 解析
   ↓
 ChunkService 切片
   ↓
-删除旧 Chunk 和旧 ES 文档
-  ↓
-保存 DocumentChunk
+保存新 indexVersion 的 DocumentChunk
   ↓
 写入 Elasticsearch
   ↓
-更新 Document = INDEXED
+确认新版本 Chunk 与 ES 文档写入完成
+  ↓
+更新 Document = INDEXED，并幂等切换 activeIndexVersion
   ↓
 Task 标记 SUCCESS
 ```
@@ -576,6 +604,8 @@ public void consume(DocumentProcessMessage message)
 - Consumer 不直接写业务细节。
 - 业务处理全部委托给 `DocumentProcessingService`。
 - 重复消息必须幂等。
+- Kafka 消息的业务幂等键为 `taskId`，数据幂等键为 `documentId + indexVersion`。
+- 发现同一 `documentId + indexVersion` 已存在完整 Chunk 时直接跳过，不重复创建 Chunk 或覆盖 ES 文档。
 
 ---
 
@@ -790,4 +820,6 @@ Phase 3 验收：
 - ES 查询必须带权限过滤字段。
 - Kafka Consumer 必须幂等。
 - 失败必须回写 Document 和 Task 状态。
+
+
 

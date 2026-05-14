@@ -1,4 +1,4 @@
-# Phase 11: 个人 Wiki-based Generation
+﻿# Phase 11: 个人 Wiki-based Generation
 
 本文档用于指导 NoteWeave 第十一阶段编码实现。
 
@@ -338,4 +338,6 @@ PERSONAL_GENERATION_FAILED
 - 必须复用 Task / Artifact。
 - 所有 API 必须使用 `/api/v1`。
 - 所有个人资源必须 owner-only。
+
+
 

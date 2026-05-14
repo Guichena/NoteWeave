@@ -1,4 +1,4 @@
-# 工作台会话执行与记忆底座
+﻿# 工作台会话执行与记忆底座
 
 本文档描述 NoteWeave 的工作台会话执行底座，包括 WebSocket、正式会话、临时草稿、流式生成、中断停止、上下文恢复和分层记忆。
 
@@ -116,7 +116,7 @@ message_seq
 role
 content
 message_type
-citation_ids
+message_citation 关联
 artifact_id
 created_at
 ```
@@ -510,12 +510,14 @@ UserMemory
 ### HTTP
 
 ```http
-POST /api/chat/ws-ticket
-POST /api/spaces/{spaceId}/chat-sessions
-GET  /api/spaces/{spaceId}/chat-sessions
-GET  /api/chat-sessions/{sessionId}
-GET  /api/chat-sessions/{sessionId}/messages
-POST /api/chat-sessions/{sessionId}/archive
+POST /api/v1/chat/ws-ticket
+POST /api/v1/chat/sessions
+GET  /api/v1/spaces/{spaceId}/chat-sessions
+GET  /api/v1/chat/sessions/{sessionId}
+GET  /api/v1/chat/sessions/{sessionId}/messages
+POST /api/v1/chat/sessions/{sessionId}/archive
+POST /api/v1/chat/sessions/{sessionId}/convert-to-formal
+POST /api/v1/chat/sessions/{sessionId}/discard-draft
 ```
 
 ### WebSocket
@@ -538,4 +540,6 @@ WebSocket /ws/chat/{ticket}
 - 临时草稿不写长期记忆。
 - 正式会话完成后能形成摘要。
 - 当前轮上下文不是全量历史消息，而是近期消息、摘要、记忆和检索证据的组合。
+
+
 

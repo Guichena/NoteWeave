@@ -1,4 +1,4 @@
-# Phase 13: MethodologyCard 方法论卡片
+﻿# Phase 13: MethodologyCard 方法论卡片
 
 本文档用于指导 NoteWeave 第十三阶段编码实现。
 
@@ -8,7 +8,7 @@
 Phase 13: Preset MethodologyCard / Methodology Matching / Generation Structure / Quality Checklist
 ```
 
-第十三阶段目标是为个人生成能力增加方法论层，让报告、学习指南、对比分析、方案表达训练等输出可以按稳定框架组织，而不是只依赖临时 Prompt。
+第十三阶段目标是在 Phase 10.5 已提供预置模板和 Matcher 的基础上，补齐 MethodologyCard 的用户自定义、编辑、归档、高级匹配和版本管理能力，让报告、学习指南、对比分析、方案表达训练等输出可以按稳定框架组织，而不是只依赖临时 Prompt。
 
 ---
 
@@ -25,11 +25,11 @@ docs/features/database_api_blueprint.md
 ## 2. 阶段目标
 
 - 支持 MethodologyCard 表。
-- 内置一批预置 MethodologyCard。
-- 生成任务可按 taskType 匹配 MethodologyCard。
-- Prompt 构造时引用 MethodologyCard 的 workflow / outputStructure / qualityChecklist。
+- 复用 Phase 10.5 已内置的预置 MethodologyCard。
+- 复用 Phase 10.5 已提供的 MethodologyMatcher 和 Prompt 注入能力。
 - 用户可以查看 MethodologyCard。
 - 用户可以手动创建或编辑个人 MethodologyCard。
+- MethodologyCard 支持 status、version、createdBy、cardScope。
 - 后续可基于 Source 自动抽取 MethodologyCard。
 
 ---
@@ -61,6 +61,10 @@ requiredConceptsJson
 outputStructureJson
 qualityChecklistJson
 cardSource
+cardScope
+status
+version
+createdBy
 createdAt
 updatedAt
 ```
@@ -200,4 +204,6 @@ DELETE /api/v1/personal/methodology-cards/{cardId}
 - 不要改变 Phase 11 Artifact 机制。
 - 所有 API 必须使用 `/api/v1`。
 - 个人 MethodologyCard 必须 owner-only。
+
+
 
