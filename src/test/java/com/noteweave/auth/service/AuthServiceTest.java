@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -13,11 +14,7 @@ import com.noteweave.auth.dto.RegisterRequest;
 import com.noteweave.common.error.BusinessException;
 import com.noteweave.common.error.ErrorCode;
 import com.noteweave.common.security.JwtService;
-import com.noteweave.space.model.Space;
-import com.noteweave.space.model.SpaceMember;
-import com.noteweave.space.model.SpaceRole;
-import com.noteweave.space.repository.SpaceMemberRepository;
-import com.noteweave.space.repository.SpaceRepository;
+import com.noteweave.space.service.SpaceService;
 import com.noteweave.user.model.User;
 import com.noteweave.user.model.UserSession;
 import com.noteweave.user.model.UserStatus;
@@ -25,7 +22,6 @@ import com.noteweave.user.repository.UserSessionRepository;
 import com.noteweave.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -37,9 +33,7 @@ class AuthServiceTest {
     @Mock
     private UserRepository userRepository;
     @Mock
-    private SpaceRepository spaceRepository;
-    @Mock
-    private SpaceMemberRepository spaceMemberRepository;
+    private SpaceService spaceService;
     @Mock
     private UserSessionRepository userSessionRepository;
     @Mock
@@ -51,7 +45,7 @@ class AuthServiceTest {
     private AuthService authService;
 
     @Test
-    void register_ShouldCreateUserAndPersonalSpaceAndOwnerMember() {
+    void register_ShouldCreateUserAndPersonalSpace() {
         RegisterRequest request = new RegisterRequest();
         request.setUsername("alice");
         request.setEmail("alice@example.com");
@@ -66,11 +60,6 @@ class AuthServiceTest {
             saved.setId(1L);
             return saved;
         });
-        when(spaceRepository.save(any(Space.class))).thenAnswer(invocation -> {
-            Space saved = invocation.getArgument(0);
-            saved.setId(10L);
-            return saved;
-        });
         when(jwtService.generateAccessToken(any(User.class))).thenReturn("jwt-token");
         when(jwtService.getAccessTokenExpirationSeconds()).thenReturn(900L);
         when(jwtService.getRefreshTokenExpirationSeconds()).thenReturn(1209600L);
@@ -81,13 +70,7 @@ class AuthServiceTest {
         assertThat(response.getAccessToken()).isEqualTo("jwt-token");
         assertThat(response.getRefreshToken()).isNotBlank();
         assertThat(response.getUser().getUsername()).isEqualTo("alice");
-
-        ArgumentCaptor<SpaceMember> memberCaptor = ArgumentCaptor.forClass(SpaceMember.class);
-        verify(spaceMemberRepository).save(memberCaptor.capture());
-        SpaceMember member = memberCaptor.getValue();
-        assertThat(member.getUserId()).isEqualTo(1L);
-        assertThat(member.getSpaceId()).isEqualTo(10L);
-        assertThat(member.getRole()).isEqualTo(SpaceRole.OWNER);
+        verify(spaceService).createPersonalSpace(1L);
         verify(userSessionRepository).save(any(UserSession.class));
     }
 
@@ -103,6 +86,7 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.register(request))
                 .isInstanceOf(BusinessException.class)
                 .matches(ex -> ((BusinessException) ex).getErrorCode() == ErrorCode.USER_ALREADY_EXISTS);
+        verify(spaceService, never()).createPersonalSpace(any());
     }
 
     @Test

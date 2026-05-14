@@ -1,18 +1,21 @@
 package com.noteweave.space.controller;
 
 import com.noteweave.common.api.ApiResponse;
+import com.noteweave.common.api.PageResponse;
 import com.noteweave.common.security.CurrentUserProvider;
 import com.noteweave.space.dto.AddMemberRequest;
 import com.noteweave.space.dto.CreateSpaceRequest;
+import com.noteweave.space.dto.MemberListQuery;
 import com.noteweave.space.dto.MemberResponse;
+import com.noteweave.space.dto.SpaceListQuery;
 import com.noteweave.space.dto.SpaceResponse;
 import com.noteweave.space.dto.UpdateMemberRoleRequest;
 import com.noteweave.space.service.SpaceService;
 import jakarta.validation.Valid;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -35,9 +38,9 @@ public class SpaceController {
     }
 
     @GetMapping
-    public ApiResponse<List<SpaceResponse>> listSpaces() {
+    public ApiResponse<PageResponse<SpaceResponse>> listSpaces(@Valid @ModelAttribute SpaceListQuery query) {
         Long userId = currentUserProvider.getCurrentUserId();
-        return ApiResponse.success(spaceService.listMySpaces(userId));
+        return ApiResponse.success(spaceService.listMySpaces(userId, query));
     }
 
     @GetMapping("/{spaceId}")
@@ -53,9 +56,12 @@ public class SpaceController {
     }
 
     @GetMapping("/{spaceId}/members")
-    public ApiResponse<List<MemberResponse>> listMembers(@PathVariable Long spaceId) {
+    public ApiResponse<PageResponse<MemberResponse>> listMembers(
+            @PathVariable Long spaceId,
+            @Valid @ModelAttribute MemberListQuery query
+    ) {
         Long userId = currentUserProvider.getCurrentUserId();
-        return ApiResponse.success(spaceService.listMembers(userId, spaceId));
+        return ApiResponse.success(spaceService.listMembers(userId, spaceId, query));
     }
 
     @PutMapping("/{spaceId}/members/{memberId}/role")

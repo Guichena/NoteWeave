@@ -70,6 +70,51 @@ class SpaceControllerTest {
                 .andExpect(jsonPath("$.code").value("SPACE_ACCESS_DENIED"));
     }
 
+    @Test
+    void listSpacesAndMembers_ShouldReturnPageResponse() throws Exception {
+        String ownerName = "owner_page_" + System.nanoTime();
+        String memberName = "member_page_" + System.nanoTime();
+
+        String ownerToken = registerAndGetToken(ownerName);
+        registerAndGetToken(memberName);
+
+        Long spaceId = createTeamSpace(ownerToken, "page_team_" + System.nanoTime());
+
+        Map<String, Object> addMemberPayload = new HashMap<>();
+        addMemberPayload.put("email", memberName + "@example.com");
+        addMemberPayload.put("role", "EDITOR");
+        mockMvc.perform(post("/api/v1/spaces/{spaceId}/members", spaceId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(addMemberPayload)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        mockMvc.perform(get("/api/v1/spaces")
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .param("page", "1")
+                        .param("pageSize", "20")
+                        .param("sort", "createdAt,desc"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.items").isArray())
+                .andExpect(jsonPath("$.data.page").value(1))
+                .andExpect(jsonPath("$.data.pageSize").value(20))
+                .andExpect(jsonPath("$.data.sort").value("createdAt,desc"));
+
+        mockMvc.perform(get("/api/v1/spaces/{spaceId}/members", spaceId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .param("page", "1")
+                        .param("pageSize", "20")
+                        .param("sort", "createdAt,asc"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.items").isArray())
+                .andExpect(jsonPath("$.data.page").value(1))
+                .andExpect(jsonPath("$.data.pageSize").value(20))
+                .andExpect(jsonPath("$.data.sort").value("createdAt,asc"));
+    }
+
     private Long createTeamSpace(String token, String spaceName) throws Exception {
         Map<String, Object> payload = new HashMap<>();
         payload.put("name", spaceName);

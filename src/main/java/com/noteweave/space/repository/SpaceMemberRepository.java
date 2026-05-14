@@ -4,6 +4,8 @@ import com.noteweave.space.model.SpaceMember;
 import com.noteweave.space.model.SpaceMemberStatus;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface SpaceMemberRepository extends JpaRepository<SpaceMember, Long> {
@@ -13,6 +15,8 @@ public interface SpaceMemberRepository extends JpaRepository<SpaceMember, Long> 
     List<SpaceMember> findByUserIdAndStatus(Long userId, SpaceMemberStatus status);
 
     List<SpaceMember> findBySpaceIdAndStatus(Long spaceId, SpaceMemberStatus status);
+
+    Page<SpaceMember> findBySpaceIdAndStatus(Long spaceId, SpaceMemberStatus status, Pageable pageable);
 
     boolean existsBySpaceIdAndUserIdAndStatus(Long spaceId, Long userId, SpaceMemberStatus status);
 

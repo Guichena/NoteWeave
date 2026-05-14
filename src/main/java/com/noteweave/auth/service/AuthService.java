@@ -9,14 +9,7 @@ import com.noteweave.auth.dto.RegisterRequest;
 import com.noteweave.common.error.BusinessException;
 import com.noteweave.common.error.ErrorCode;
 import com.noteweave.common.security.JwtService;
-import com.noteweave.space.model.Space;
-import com.noteweave.space.model.SpaceMember;
-import com.noteweave.space.model.SpaceMemberStatus;
-import com.noteweave.space.model.SpaceRole;
-import com.noteweave.space.model.SpaceStatus;
-import com.noteweave.space.model.SpaceType;
-import com.noteweave.space.repository.SpaceMemberRepository;
-import com.noteweave.space.repository.SpaceRepository;
+import com.noteweave.space.service.SpaceService;
 import com.noteweave.user.model.User;
 import com.noteweave.user.model.UserSession;
 import com.noteweave.user.model.UserStatus;
@@ -44,8 +37,7 @@ public class AuthService {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final UserRepository userRepository;
-    private final SpaceRepository spaceRepository;
-    private final SpaceMemberRepository spaceMemberRepository;
+    private final SpaceService spaceService;
     private final UserSessionRepository userSessionRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
@@ -68,21 +60,7 @@ public class AuthService {
         user.setStatus(UserStatus.ACTIVE);
         user = userRepository.save(user);
 
-        Space personalSpace = new Space();
-        personalSpace.setName(user.getUsername() + "'s Personal Space");
-        personalSpace.setType(SpaceType.PERSONAL);
-        personalSpace.setOwnerId(user.getId());
-        personalSpace.setDescription("Personal workspace");
-        personalSpace.setStatus(SpaceStatus.ACTIVE);
-        personalSpace = spaceRepository.save(personalSpace);
-
-        SpaceMember ownerMember = new SpaceMember();
-        ownerMember.setSpaceId(personalSpace.getId());
-        ownerMember.setUserId(user.getId());
-        ownerMember.setRole(SpaceRole.OWNER);
-        ownerMember.setStatus(SpaceMemberStatus.ACTIVE);
-        ownerMember.setJoinedAt(LocalDateTime.now());
-        spaceMemberRepository.save(ownerMember);
+        spaceService.createPersonalSpace(user.getId());
 
         return issueTokens(user, null, null, null);
     }
