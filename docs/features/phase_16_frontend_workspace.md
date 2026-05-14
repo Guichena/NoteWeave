@@ -510,6 +510,21 @@ src/api/admin.ts
 - 401 统一跳转登录或刷新 token。
 - API 错误统一转成可展示错误对象。
 - 长任务统一轮询 `task` 或订阅 WebSocket 状态。
+- 列表接口统一读取 `ApiResponse<PageResponse<T>>`。
+- 每个页面上线前必须完成 API 对齐检查，不允许只接 mock 数据。
+
+API 对齐矩阵：
+
+| 页面 | 必须对齐的 API |
+|---|---|
+| Workspace / Space | auth、users、spaces、members |
+| Team Knowledge | knowledgeBases、documentUploads、documents、tasks |
+| Team Chat | chat session、WebSocket ticket、citation、feedback |
+| Team Wiki | wiki draft、publish、versions、publish artifact to wiki |
+| Personal Research | researchProjects、sources、articleCards、conceptCards、methodologyCards |
+| Studio / Artifact | studio tasks、artifacts、artifact versions、artifact sources |
+| Memory | sessionSummary、spaceMemory、userMemory、memoryItems |
+| Admin | users、spaces、tasks、cleanup、health、LLMCallLog、RetrievalTrace、AuditLog |
 
 ---
 
@@ -579,6 +594,7 @@ artifact generating
 - 用户能预览和编辑 Artifact。
 - 管理员能查看任务、健康状态、Eval Run 和日志。
 - 前端所有业务接口使用 `/api/v1`。
+- Workspace/Team/Personal/Chat/Studio/Artifact/Wiki/Memory/Admin 页面至少各有一条真实 API 联调用例。
 
 ---
 

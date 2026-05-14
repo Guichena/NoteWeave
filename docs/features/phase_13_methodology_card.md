@@ -77,6 +77,20 @@ USER_CREATED
 AI_EXTRACTED
 ```
 
+status：
+
+```text
+ACTIVE
+ARCHIVED
+DEPRECATED
+```
+
+version 规则：
+
+- 创建时 `version = 1`。
+- 每次用户编辑 workflow / outputStructure / qualityChecklist 时 `version + 1`。
+- 归档只改 status，不删除历史卡片，已生成 Artifact 继续引用旧版本。
+
 ---
 
 ## 5. 预置模板
@@ -136,6 +150,12 @@ MethodologyCardResponse update(Long userId, Long cardId, UpdateMethodologyCardRe
 void archive(Long userId, Long cardId);
 ```
 
+编辑要求：
+
+- `PRESET` 不能被普通用户直接修改；用户需要先复制为 `USER_CREATED`。
+- update 必须校验 owner-only，并记录新 version。
+- archive 后不再被 MethodologyMatcher 命中，但历史生成记录仍可回溯。
+
 ### MethodologyMatcher
 
 ```java
@@ -191,6 +211,8 @@ DELETE /api/v1/personal/methodology-cards/{cardId}
 - 系统能初始化预置 MethodologyCard。
 - 用户能查看预置 MethodologyCard。
 - 用户能创建个人 MethodologyCard。
+- 用户能编辑个人 MethodologyCard 并看到 version 递增。
+- 用户能归档 MethodologyCard，归档后不再参与匹配。
 - 生成报告时能匹配 Research Report Methodology。
 - 生成对比分析时能匹配 Comparison Methodology。
 - Prompt 中包含 outputStructure 和 qualityChecklist。

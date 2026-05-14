@@ -77,7 +77,7 @@ importanceScore
 confidenceScore
 stale
 pin
-expiredAt
+expiresAt
 ```
 
 ### SpaceMemory
@@ -116,6 +116,7 @@ sourceType
 sourceId
 importanceScore
 confidenceScore
+pin
 expiresAt
 deletedAt
 createdAt
@@ -210,6 +211,23 @@ void updatePreferences(MemoryWriteContext context);
 Map<String, Object> getPromptProfile(Long userId);
 ```
 
+### MemoryItemService
+
+```java
+MemoryItem createOrUpdate(MemoryWriteContext context);
+void pin(Long userId, Long memoryItemId);
+void unpin(Long userId, Long memoryItemId);
+void expireDueItems(Instant now);
+List<MemoryItem> retrieveActive(Long userId, Long spaceId, MemoryQuery query);
+```
+
+字段校验：
+
+- `importanceScore`、`confidenceScore` 范围为 `0.0 ~ 1.0`。
+- `pin = true` 的 MemoryItem 不因 TTL 自动过期，只能用户手动取消 pin 或删除。
+- `expiresAt` 早于当前时间时不得作为 active memory 注入 Prompt。
+- 低于置信阈值的写回只能作为候选，不覆盖已有稳定偏好。
+
 ### MemoryWritebackStrategy
 
 ```java
@@ -222,6 +240,7 @@ MemoryWriteDecision decide(ChatSession session, ChatMessage userMessage, ChatMes
 - 很短的寒暄不写回。
 - 包含明确偏好、项目目标、长期主题时写回。
 - 低置信度内容不覆盖已有稳定偏好。
+- 过期 Memory 不参与写回合并，除非用户重新确认。
 
 ---
 

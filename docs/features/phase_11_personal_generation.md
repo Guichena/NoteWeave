@@ -106,6 +106,7 @@ Source Raw Text
 - ConceptCard 提供跨资料概念融合。
 - Source Raw Text 只在需要证据引用时回溯。
 - 不全量塞入所有 Source 原文。
+- 生成 Artifact 时必须写入 `ArtifactSource`，记录参与生成的 ArticleCard、ConceptCard 和 Source。
 
 ---
 
@@ -194,9 +195,24 @@ Source Raw Text quote
 
 ```java
 ArtifactDraft generate(ResearchGenerationContext context, GenerationParams params);
+void saveArtifactSources(Long artifactId, ResearchGenerationContext context, List<PersonalEvidenceItem> evidence);
 ```
 
 不同 artifactType 可有不同实现。
+
+ArtifactSource 写入规则：
+
+```text
+ARTICLE_CARD: 被选入上下文的 ArticleCard
+CONCEPT_CARD: 被选入上下文的 ConceptCard
+SOURCE: 被证据回溯引用的 Source
+ARTIFACT: 当本次生成基于已有 Artifact 时记录
+```
+
+要求：
+
+- `ArtifactSource` 与 `ArtifactCitation` 都要在同一生成事务或同一任务完成步骤内写入。
+- 证据不足导致无法写入任何 Source 时，Artifact 状态不得标记 READY，应返回生成失败或证据不足错误。
 
 ---
 

@@ -227,6 +227,8 @@ RAG_EVAL_RUN
 - 重试时创建新 attempt 或记录 retryCount。
 - 不直接覆盖原始错误信息。
 - 对于文件处理任务，必须先确认 MinIO 原始对象仍存在。
+- 对于 WIKI_INDEX / DOCUMENT_INDEX 类任务，必须确认目标资源仍处于可索引状态。
+- RUNNING 任务不能直接 retry，只能先 request cancel，待 Worker 在安全点停止后再按状态判断。
 
 ### ResourceCleanupService
 
@@ -252,6 +254,9 @@ Elasticsearch 中无数据库引用的 chunk 索引
 - execute 必须写 AuditLog。
 - 删除前要生成清理明细。
 - 大规模清理使用异步 task。
+- execute 按 `OpsCleanupItem` 逐项执行，每项记录 SUCCESS / FAILED / SKIPPED。
+- 单项失败不应中断整个清理任务，但必须汇总失败原因。
+- 清理 MinIO / Redis / ES / DB 时必须再次校验引用，避免 scan 和 execute 之间状态变化造成误删。
 
 ### SystemHealthService
 
@@ -355,6 +360,12 @@ finishedAt
 - PENDING 可以直接取消。
 - RUNNING 只能设置 cancelRequested，由 Worker 在安全点停止。
 - 已完成任务不能取消。
+
+Worker 安全点：
+
+- 解析前、切片前、embedding 前、索引前、Artifact 保存前都要检查 `cancelRequested`。
+- 检测到取消后标记 `CANCELLED`，并写入 TaskAttempt 结束状态。
+- 已经提交的外部副作用需要由 ResourceCleanupService 后续扫描补偿。
 
 ---
 

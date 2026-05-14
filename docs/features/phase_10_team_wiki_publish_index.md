@@ -130,7 +130,16 @@ void archive(Long userId, Long pageId);
 ```java
 void index(WikiPage page);
 void remove(Long wikiPageId);
+void executeIndexTask(Long taskId);
+void retryFailedIndexTask(Long taskId);
 ```
+
+要求：
+
+- 发布 Wiki 后只创建 `WIKI_INDEX` Task，不在发布事务内同步写 ES。
+- Task payload 必须包含 `wikiPageId`、`publishedVersionId`、`spaceId` 和幂等键。
+- ES 文档 ID 使用 `wiki:{wikiPageId}:{publishedVersionId}`，重复消费同一 Task 必须覆盖同一文档而不是新增重复文档。
+- 索引失败时标记 `WIKI_INDEX_FAILED`，保留 WikiPage 已发布状态，但在页面上展示“未入索引/可重试”。
 
 ### WikiRetriever
 
@@ -162,8 +171,28 @@ wiki_page.published_version_id = version.id
   ↓
 创建 WIKI_INDEX Task 异步写入 ES wiki index
   ↓
+Worker 写入成功后标记 Task SUCCESS
+  ↓
 如果来源是 Artifact，artifact.status 可更新 PUBLISHED_TO_WIKI
 ```
+
+失败处理：
+
+```text
+WIKI_INDEX Task 执行失败
+  ↓
+记录 errorMessage / retryCount
+  ↓
+未超过 maxRetry 则重新入队
+  ↓
+超过后标记 FAILED，并保留 WikiPage.indexStatus = FAILED
+```
+
+重试要求：
+
+- 只能重试 FAILED / TIMEOUT 的 `WIKI_INDEX` Task。
+- 重试前确认 WikiPage 仍为 PUBLISHED，且 publishedVersionId 未变化。
+- 如果 publishedVersionId 已变化，应创建新 Task，不复用旧 Task。
 
 ---
 
