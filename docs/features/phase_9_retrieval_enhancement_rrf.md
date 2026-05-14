@@ -155,6 +155,28 @@ EmbeddingClient 批量生成向量
 - 本阶段可允许 BM25 索引成功，向量状态失败。
 - 不应导致文档完全不可检索。
 
+### VectorIndexerService
+
+职责：
+
+- 管理 embedding 模型、维度和 ES 索引版本的绑定关系。
+- 维度变化时创建新的向量索引版本或 alias。
+- 回填失败时允许检索降级到 BM25，不阻断文档基础可检索性。
+
+方法：
+
+```java
+VectorIndexVersion ensureVersion(String model, int dimension);
+void switchAliasWhenReady(VectorIndexVersion version);
+void markBackfillFailed(Long documentId, String reason);
+```
+
+规则：
+
+- 不同 `dimension` 的向量不能写入同一个 dense_vector index。
+- 新模型或新维度上线时先创建新 index version，回填完成后再切 alias。
+- alias 切换失败不影响当前 active BM25 / 旧向量检索。
+
 ---
 
 ## 7. VectorRetriever

@@ -123,6 +123,8 @@ definition
 explanation
 useCasesJson
 commonMisunderstandingsJson
+sourceIdsJson
+evidenceQuotesJson
 confidence
 cardStatus
 createdAt
@@ -134,6 +136,15 @@ updatedAt
 ```text
 research_project_id + normalized_name
 ```
+
+证据要求：
+
+```text
+sourceIdsJson 至少包含贡献该 Concept 的 Source ID
+evidenceQuotesJson 中每条 quote 必须绑定 sourceId / articleCardId
+```
+
+ConceptCard 可以融合多篇资料，但不能丢失定义、用法或误区的来源。合并已有 ConceptCard 时追加证据，不覆盖旧 evidence。
 
 ### ConceptAlias
 
@@ -173,9 +184,9 @@ LLM 抽取 Candidate Concepts
   ↓
 查找已有 ConceptCard
   ↓
-存在则合并补充
+高置信度存在则合并补充
   ↓
-不存在则创建 ConceptCard
+低置信度或不存在则创建 ConceptCard
   ↓
 保存 ConceptAlias
   ↓
@@ -211,6 +222,7 @@ ArticleCard JSON：
   "evidenceQuotes": [
     {
       "quote": "原文片段",
+      "sourceId": 1001,
       "reason": "为什么重要"
     }
   ]
@@ -228,7 +240,10 @@ Concept JSON：
       "definition": "定义",
       "explanation": "解释",
       "useCases": ["场景1"],
-      "evidence": "原文证据",
+      "evidence": {
+        "sourceId": 1001,
+        "quote": "原文证据"
+      },
       "confidence": 0.85
     }
   ]
@@ -271,6 +286,7 @@ List<CandidateConcept> extract(Source source, ArticleCard articleCard);
 ```java
 ConceptCard createOrMerge(Long projectId, CandidateConcept candidate);
 String normalizeName(String name);
+MergeDecision decideMerge(Long projectId, CandidateConcept candidate);
 ```
 
 归一化规则 MVP：
@@ -283,16 +299,34 @@ lowercase
 常见别名匹配
 ```
 
+合并规则：
+
+```text
+normalizedName 完全相同：直接合并
+embedding 相似度 >= 0.88 且 LLM 判断 SAME：合并
+embedding 相似度 0.78 ~ 0.88：标记 REVIEW 或创建新卡片
+embedding 相似度 < 0.78：创建新卡片
+```
+
+合并校验：
+
+- 每次合并后必须写入或更新 `ArticleConceptRelation`。
+- 合并不得删除原有 ConceptAlias。
+- 合并后的 ConceptCard 必须保留所有 `sourceId` 与 evidence quote。
+
 ### EvidenceBacktraceService
 
 ```java
 boolean quoteExistsInSource(Source source, String quote);
+void validateArticleEvidence(ArticleCard articleCard);
+void validateConceptEvidence(ConceptCard conceptCard);
 ```
 
 MVP：
 
 - 简单字符串包含校验。
-- 不存在时仍可保存，但标记低 confidence 或写 warning。
+- 不存在时仍可保存，但必须标记低 confidence 或写 warning。
+- ArticleCard / ConceptCard 返回给生成链路前必须能回溯到 Source 原文。
 
 ---
 

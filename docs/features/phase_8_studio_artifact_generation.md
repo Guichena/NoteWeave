@@ -123,6 +123,7 @@ PUBLISHED_TO_WIKI
 ```text
 artifactId
 versionNo
+taskId
 title
 content
 changeNote
@@ -130,7 +131,11 @@ createdBy
 createdAt
 ```
 
-说明：编辑、重新生成和发布 Wiki 都必须绑定具体 ArtifactVersion。
+说明：
+
+- 编辑、重新生成和发布 Wiki 都必须绑定具体 ArtifactVersion。
+- 由任务生成的版本必须写入 `taskId`，手工编辑版本也要保留 `createdBy` 和 `changeNote`。
+- 同一 Artifact 在多会话中被引用或继续生成时，只能新增 ArtifactVersion，不覆盖历史版本。
 
 ### ArtifactSource
 
@@ -200,6 +205,12 @@ WIKI_DRAFT_GENERATION
 ### SkillExecutionLog
 
 记录每个 Skill 的输入、输出、模型、耗时和错误。
+
+要求：
+
+- 必须绑定 `taskId`。
+- 如果某个 Skill 产出或修改 ArtifactVersion，记录 `artifactId` 和 `artifactVersionId`。
+- 失败 Skill 的 errorMessage 不覆盖 ArtifactVersion 历史内容。
 
 ---
 
