@@ -478,6 +478,8 @@ ChatRuntimeServiceTest
 - 正式会话流式生成完成后落库。
 - stop 后不再推送 delta。
 - resume 能返回 Redis 中的 partialContent。
+- started / delta / completed / stopped / failed 事件均写入 Redis stream。
+- DRAFT TTL 到期后状态变为 DRAFT_EXPIRED，不能再 convert。
 - DRAFT 会话不写长期记忆。
 
 ---

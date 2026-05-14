@@ -127,6 +127,7 @@ sourceType
 url
 objectKey
 rawTextObjectKey
+parsedTextObjectKey
 contentHash
 importStatus
 compileStatus
@@ -202,6 +203,7 @@ SourceResponse triggerImport(Long userId, Long sourceId);
 - 创建 Source。
 - 创建 `SOURCE_IMPORT` Task。
 - `SOURCE_IMPORT` 必须复用 DocumentParser 或等价解析服务，产出 `rawTextObjectKey` 或 `parsedTextObjectKey`。
+- 未成功写入 raw/parsed text object 前不得把 `importStatus` 标记为 READY。
 
 URL Source：
 
@@ -235,6 +237,12 @@ URL:
 TEXT:
   已有 rawTextObjectKey，标记 READY
 ```
+
+状态更新要求：
+
+- READY 的必要条件是 `rawTextObjectKey` 或 `parsedTextObjectKey` 至少一个存在并可读取。
+- 解析失败必须写 `errorMessage` 并标记 FAILED，不允许留下 READY 但无正文对象的 Source。
+- 重试 SOURCE_IMPORT 时优先复用已有 raw text object，避免重复抓取或重复写对象。
 
 ---
 
