@@ -1,0 +1,852 @@
+# Phase 0/1: 工程骨架、认证、用户、空间与权限
+
+本文档用于指导 NoteWeave 第一阶段编码实现。
+
+范围：
+
+```text
+Phase 0: Spring Boot 工程骨架
+Phase 1: Auth / User / Space / SpaceMember / SpacePermissionService
+```
+
+第一阶段目标不是实现 RAG，而是把所有后续资源的归属、认证和权限边界打牢。
+
+---
+
+## 1. 阶段目标
+
+第一阶段完成后，系统应具备：
+
+- Spring Boot 后端工程可启动。
+- MySQL 可连接。
+- Redis 可连接。
+- 用户可以注册。
+- 用户可以登录并获得 JWT。
+- 用户注册后自动创建个人 Space。
+- 用户可以创建团队 Space。
+- OWNER 可以管理团队成员。
+- Space 权限判断有统一入口。
+- 非成员不能访问团队 Space。
+
+---
+
+## 2. 技术栈定稿
+
+参考 `PaiSmart-main`，第一阶段采用以下技术栈：
+
+```text
+Java 17
+Spring Boot 3.x
+Spring Web
+Spring Security
+Spring Data JPA
+Spring Data Redis
+MySQL
+JWT
+Lombok
+Validation
+Maven
+```
+
+暂不接入：
+
+```text
+Kafka
+MinIO
+Elasticsearch
+WebSocket
+LLM
+Embedding
+```
+
+但工程结构要预留这些模块。
+
+---
+
+## 3. Maven 依赖建议
+
+第一阶段需要：
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-web</artifactId>
+</dependency>
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-security</artifactId>
+</dependency>
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-data-jpa</artifactId>
+</dependency>
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-data-redis</artifactId>
+</dependency>
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-validation</artifactId>
+</dependency>
+<dependency>
+    <groupId>com.mysql</groupId>
+    <artifactId>mysql-connector-j</artifactId>
+    <scope>runtime</scope>
+</dependency>
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-api</artifactId>
+    <version>0.11.5</version>
+</dependency>
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-impl</artifactId>
+    <version>0.11.5</version>
+    <scope>runtime</scope>
+</dependency>
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-jackson</artifactId>
+    <version>0.11.5</version>
+    <scope>runtime</scope>
+</dependency>
+<dependency>
+    <groupId>org.projectlombok</groupId>
+    <artifactId>lombok</artifactId>
+    <optional>true</optional>
+</dependency>
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-test</artifactId>
+    <scope>test</scope>
+</dependency>
+<dependency>
+    <groupId>org.springframework.security</groupId>
+    <artifactId>spring-security-test</artifactId>
+    <scope>test</scope>
+</dependency>
+<dependency>
+    <groupId>com.h2database</groupId>
+    <artifactId>h2</artifactId>
+    <scope>test</scope>
+</dependency>
+```
+
+---
+
+## 4. 推荐包结构
+
+```text
+com.noteweave
+  ├── NoteWeaveApplication
+  ├── common
+  │     ├── api
+  │     ├── error
+  │     ├── security
+  │     └── time
+  ├── auth
+  │     ├── controller
+  │     ├── dto
+  │     └── service
+  ├── user
+  │     ├── controller
+  │     ├── dto
+  │     ├── model
+  │     ├── repository
+  │     └── service
+  ├── space
+  │     ├── controller
+  │     ├── dto
+  │     ├── model
+  │     ├── repository
+  │     └── service
+  └── permission
+        └── service
+```
+
+预留但第一阶段不实现：
+
+```text
+team
+personal
+chat
+task
+storage
+search
+llm
+embedding
+artifact
+```
+
+---
+
+## 5. 统一响应与错误
+
+### 5.1 ApiResponse
+
+所有接口返回统一结构：
+
+```json
+{
+  "success": true,
+  "code": "OK",
+  "message": "success",
+  "data": {}
+}
+```
+
+建议类：
+
+```text
+common.api.ApiResponse<T>
+```
+
+字段：
+
+```text
+success
+code
+message
+data
+timestamp
+```
+
+### 5.2 错误码
+
+第一阶段至少定义：
+
+```text
+OK
+BAD_REQUEST
+UNAUTHORIZED
+FORBIDDEN
+NOT_FOUND
+CONFLICT
+VALIDATION_FAILED
+INTERNAL_ERROR
+
+USER_ALREADY_EXISTS
+INVALID_CREDENTIALS
+SPACE_NOT_FOUND
+SPACE_ACCESS_DENIED
+MEMBER_NOT_FOUND
+OWNER_CANNOT_BE_REMOVED
+```
+
+### 5.3 全局异常处理
+
+建议类：
+
+```text
+common.error.BusinessException
+common.error.ErrorCode
+common.error.GlobalExceptionHandler
+```
+
+处理：
+
+- 参数校验异常。
+- 认证异常。
+- 权限异常。
+- 业务异常。
+- 未预期异常。
+
+---
+
+## 6. 安全设计
+
+### 6.1 JWT
+
+JWT Claims：
+
+```text
+sub = userId
+username
+iat
+exp
+```
+
+建议配置：
+
+```yaml
+jwt:
+  secret-key: ${JWT_SECRET_KEY:change-me-in-dev}
+  expiration-seconds: ${JWT_EXPIRATION_SECONDS:86400}
+```
+
+### 6.2 SecurityConfig
+
+放行接口：
+
+```text
+POST /api/v1/auth/register
+POST /api/v1/auth/login
+GET  /actuator/health
+```
+
+其他接口需要认证。
+
+### 6.3 当前用户获取
+
+建议提供：
+
+```text
+common.security.CurrentUser
+common.security.CurrentUserProvider
+```
+
+业务层不要直接解析 JWT。
+
+---
+
+## 7. 数据模型
+
+### 7.1 User
+
+表名：
+
+```text
+users
+```
+
+字段：
+
+```text
+id BIGINT PK AUTO_INCREMENT
+username VARCHAR(64) NOT NULL UNIQUE
+email VARCHAR(128) UNIQUE
+password_hash VARCHAR(255) NOT NULL
+display_name VARCHAR(64)
+status VARCHAR(32) NOT NULL
+created_at DATETIME NOT NULL
+updated_at DATETIME NOT NULL
+```
+
+枚举：
+
+```text
+ACTIVE
+DISABLED
+```
+
+说明：
+
+- 密码必须使用 BCrypt。
+- 登录标识第一阶段使用 `usernameOrEmail`，支持 username 或 email。
+- email 建议必填，便于成员邀请和添加。
+
+### 7.2 Space
+
+表名：
+
+```text
+space
+```
+
+字段：
+
+```text
+id BIGINT PK AUTO_INCREMENT
+name VARCHAR(128) NOT NULL
+type VARCHAR(32) NOT NULL
+owner_id BIGINT NOT NULL
+description VARCHAR(500)
+status VARCHAR(32) NOT NULL
+created_at DATETIME NOT NULL
+updated_at DATETIME NOT NULL
+```
+
+枚举：
+
+```text
+type: PERSONAL, TEAM
+status: ACTIVE, ARCHIVED
+```
+
+约束：
+
+- 每个用户只能有一个 PERSONAL Space。
+- TEAM Space 由用户主动创建。
+
+### 7.3 SpaceMember
+
+表名：
+
+```text
+space_member
+```
+
+字段：
+
+```text
+id BIGINT PK AUTO_INCREMENT
+space_id BIGINT NOT NULL
+user_id BIGINT NOT NULL
+role VARCHAR(32) NOT NULL
+status VARCHAR(32) NOT NULL
+created_at DATETIME NOT NULL
+updated_at DATETIME NOT NULL
+```
+
+枚举：
+
+```text
+role: OWNER, EDITOR, VIEWER
+status: ACTIVE, REMOVED
+```
+
+约束：
+
+```text
+UNIQUE(space_id, user_id)
+```
+
+说明：
+
+- Space OWNER 也必须有 SpaceMember 记录。
+- PERSONAL Space 的 owner 是唯一成员，角色为 OWNER。
+
+---
+
+## 8. JPA 实体清单
+
+```text
+user.model.User
+space.model.Space
+space.model.SpaceMember
+```
+
+通用字段建议直接写在实体内，第一阶段不强制抽象 BaseEntity，避免过早抽象。
+
+时间字段：
+
+- `createdAt`
+- `updatedAt`
+
+可以使用：
+
+```text
+@CreationTimestamp
+@UpdateTimestamp
+```
+
+---
+
+## 9. Repository 清单
+
+### UserRepository
+
+```java
+Optional<User> findByUsername(String username);
+Optional<User> findByEmail(String email);
+boolean existsByUsername(String username);
+boolean existsByEmail(String email);
+```
+
+### SpaceRepository
+
+```java
+Optional<Space> findByIdAndStatus(Long id, SpaceStatus status);
+List<Space> findByOwnerIdAndType(Long ownerId, SpaceType type);
+boolean existsByOwnerIdAndType(Long ownerId, SpaceType type);
+```
+
+### SpaceMemberRepository
+
+```java
+Optional<SpaceMember> findBySpaceIdAndUserIdAndStatus(Long spaceId, Long userId, MemberStatus status);
+List<SpaceMember> findByUserIdAndStatus(Long userId, MemberStatus status);
+List<SpaceMember> findBySpaceIdAndStatus(Long spaceId, MemberStatus status);
+boolean existsBySpaceIdAndUserIdAndStatus(Long spaceId, Long userId, MemberStatus status);
+```
+
+---
+
+## 10. Service 设计
+
+### 10.1 AuthService
+
+职责：
+
+- 注册。
+- 登录。
+- 生成 JWT。
+
+方法：
+
+```java
+AuthResponse register(RegisterRequest request);
+AuthResponse login(LoginRequest request);
+```
+
+注册流程：
+
+```text
+校验 username 唯一
+  ↓
+校验 email 唯一
+  ↓
+BCrypt 加密密码
+  ↓
+创建 User
+  ↓
+创建 PERSONAL Space
+  ↓
+创建 SpaceMember OWNER
+  ↓
+生成 JWT
+  ↓
+返回用户信息和 token
+```
+
+注册必须使用事务。
+
+### 10.2 UserService
+
+职责：
+
+- 查询当前用户。
+- 查询用户基础信息。
+
+方法：
+
+```java
+UserProfileResponse getMe(Long userId);
+User getRequiredUser(Long userId);
+```
+
+### 10.3 SpaceService
+
+职责：
+
+- 创建团队 Space。
+- 查询当前用户可见 Space。
+- 查询 Space 详情。
+- 管理成员。
+
+方法：
+
+```java
+SpaceResponse createTeamSpace(Long userId, CreateSpaceRequest request);
+List<SpaceResponse> listMySpaces(Long userId);
+SpaceResponse getSpace(Long userId, Long spaceId);
+MemberResponse addMember(Long operatorId, Long spaceId, AddMemberRequest request);
+MemberResponse updateMemberRole(Long operatorId, Long spaceId, Long memberId, UpdateMemberRoleRequest request);
+void removeMember(Long operatorId, Long spaceId, Long memberId);
+```
+
+### 10.4 SpacePermissionService
+
+职责：
+
+- 统一判断 Space 权限。
+- 后续所有团队侧服务都依赖它。
+
+方法：
+
+```java
+boolean canViewSpace(Long userId, Long spaceId);
+boolean canManageSpace(Long userId, Long spaceId);
+boolean canUploadDocument(Long userId, Long spaceId);
+boolean canEditWiki(Long userId, Long spaceId);
+boolean canAskQuestion(Long userId, Long spaceId);
+
+void requireViewSpace(Long userId, Long spaceId);
+void requireManageSpace(Long userId, Long spaceId);
+void requireUploadDocument(Long userId, Long spaceId);
+void requireAskQuestion(Long userId, Long spaceId);
+```
+
+权限矩阵：
+
+| Action | OWNER | EDITOR | VIEWER |
+|---|---:|---:|---:|
+| View Space | Y | Y | Y |
+| Manage Space | Y | N | N |
+| Upload Document | Y | Y | N |
+| Edit Wiki | Y | Y | N |
+| Ask Question | Y | Y | Y |
+
+PERSONAL Space：
+
+- 只有 owner 可以访问。
+- owner 拥有全部权限。
+
+TEAM Space：
+
+- 只有 ACTIVE SpaceMember 可以访问。
+
+---
+
+## 11. Controller 与 API
+
+### 11.1 AuthController
+
+```http
+POST /api/v1/auth/register
+POST /api/v1/auth/login
+```
+
+RegisterRequest：
+
+```json
+{
+  "username": "alice",
+  "email": "alice@example.com",
+  "password": "Password123!",
+  "displayName": "Alice"
+}
+```
+
+LoginRequest：
+
+```json
+{
+  "usernameOrEmail": "alice",
+  "password": "Password123!"
+}
+```
+
+AuthResponse：
+
+```json
+{
+  "token": "jwt",
+  "tokenType": "Bearer",
+  "expiresIn": 86400,
+  "user": {
+    "id": 1,
+    "username": "alice",
+    "displayName": "Alice"
+  }
+}
+```
+
+### 11.2 UserController
+
+```http
+GET /api/v1/users/me
+```
+
+### 11.3 SpaceController
+
+```http
+POST /api/v1/spaces
+GET  /api/v1/spaces
+GET  /api/v1/spaces/{spaceId}
+POST /api/v1/spaces/{spaceId}/members
+GET  /api/v1/spaces/{spaceId}/members
+PUT  /api/v1/spaces/{spaceId}/members/{memberId}/role
+DELETE /api/v1/spaces/{spaceId}/members/{memberId}
+```
+
+CreateSpaceRequest：
+
+```json
+{
+  "name": "团队知识库",
+  "description": "项目资料和方案沉淀"
+}
+```
+
+说明：
+
+- `POST /api/v1/spaces` 第一阶段只创建 TEAM Space。
+- PERSONAL Space 只在注册时自动创建。
+
+AddMemberRequest：
+
+```json
+{
+  "email": "bob@example.com",
+  "role": "EDITOR"
+}
+```
+
+UpdateMemberRoleRequest：
+
+```json
+{
+  "role": "VIEWER"
+}
+```
+
+---
+
+## 12. 配置文件建议
+
+`application.yml`：
+
+```yaml
+server:
+  port: ${SERVER_PORT:8081}
+
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/noteweave?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+jwt:
+  secret-key: ${JWT_SECRET_KEY:change-me-in-dev}
+  expiration-seconds: ${JWT_EXPIRATION_SECONDS:86400}
+
+logging:
+  level:
+    org.springframework.security: INFO
+    com.noteweave: INFO
+```
+
+开发阶段可以先用 `ddl-auto: update`，后续进入稳定实现后改 Flyway / Liquibase。
+
+---
+
+## 13. 第一阶段测试建议
+
+### 13.1 单元测试
+
+```text
+AuthServiceTest
+SpacePermissionServiceTest
+SpaceServiceTest
+```
+
+重点覆盖：
+
+- 注册创建用户。
+- 注册自动创建 PERSONAL Space。
+- 重复 username 失败。
+- 登录密码错误失败。
+- OWNER 权限。
+- EDITOR 权限。
+- VIEWER 权限。
+- 非成员无权限。
+
+### 13.2 接口测试
+
+```text
+AuthControllerTest
+SpaceControllerTest
+```
+
+重点覆盖：
+
+- 未登录访问 `/api/v1/spaces` 返回 401。
+- 登录后可以访问 `/api/v1/users/me`。
+- OWNER 可以添加成员。
+- VIEWER 不能添加成员。
+
+---
+
+## 14. 验收清单
+
+Phase 0 验收：
+
+- `mvn test` 可以执行。
+- 应用可以启动。
+- `/actuator/health` 或简单健康检查接口可访问。
+- MySQL 连接正常。
+- Redis 连接正常。
+- 全局异常返回统一结构。
+
+Phase 1 验收：
+
+- 用户可以注册。
+- 注册后自动创建 PERSONAL Space。
+- 注册后自动创建 PERSONAL SpaceMember OWNER。
+- 用户可以登录并获得 JWT。
+- JWT 可以访问受保护接口。
+- 用户可以创建 TEAM Space。
+- TEAM Space 创建者自动成为 OWNER。
+- OWNER 可以添加 EDITOR / VIEWER。
+- OWNER 可以调整成员角色。
+- OWNER 可以移除成员。
+- 非 OWNER 不能管理成员。
+- 非成员不能查看 TEAM Space。
+- `SpacePermissionService` 权限矩阵测试通过。
+
+---
+
+## 15. 第一阶段不做的事
+
+- 不做文件上传。
+- 不做 Kafka。
+- 不做 MinIO。
+- 不做 Elasticsearch。
+- 不做 RAG。
+- 不做 WebSocket。
+- 不做个人 ResearchProject。
+- 不做 Artifact。
+- 不做复杂组织、多租户和细粒度文档权限。
+
+这些能力从 Phase 2 开始接入。
+
+---
+
+## 16. 实现顺序建议
+
+```text
+1. 创建 Spring Boot 项目
+2. 添加 Maven 依赖
+3. 添加 application.yml
+4. 实现 ApiResponse / ErrorCode / BusinessException / GlobalExceptionHandler
+5. 实现 User 实体和 UserRepository
+6. 实现 Space / SpaceMember 实体和 Repository
+7. 实现 JwtService / JwtAuthenticationFilter / SecurityConfig
+8. 实现 AuthService
+9. 实现 AuthController
+10. 实现 CurrentUserProvider
+11. 实现 UserController
+12. 实现 SpacePermissionService
+13. 实现 SpaceService
+14. 实现 SpaceController
+15. 补单元测试和接口测试
+```
+
+---
+
+## 17. 后续衔接点
+
+Phase 2 文件上传会依赖：
+
+```text
+SpacePermissionService.canUploadDocument
+Space.id
+User.id
+```
+
+Phase 4 团队 RAG 会依赖：
+
+```text
+SpacePermissionService.canAskQuestion
+SpaceMember
+ChatSession.space_id
+Document.space_id
+DocumentChunk.space_id
+```
+
+Phase 5 WebSocket 会话底座会依赖：
+
+```text
+JWT
+CurrentUserProvider
+ChatSession
+SpacePermissionService
+```
+
+因此第一阶段必须保证：
+
+- 用户身份稳定。
+- Space 归属稳定。
+- 权限判断入口稳定。
