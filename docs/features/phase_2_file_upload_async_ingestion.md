@@ -218,9 +218,19 @@ noteweave:
   upload:
     chunk-size: ${NOTEWEAVE_UPLOAD_CHUNK_SIZE:5242880}
     bitmap-ttl-hours: ${NOTEWEAVE_UPLOAD_BITMAP_TTL_HOURS:24}
+    cleanup:
+      enabled: ${NOTEWEAVE_UPLOAD_CLEANUP_ENABLED:true}
+      fixed-delay-ms: ${NOTEWEAVE_UPLOAD_CLEANUP_FIXED_DELAY_MS:600000}
   kafka:
     topics:
+      task: ${NOTEWEAVE_KAFKA_TOPIC_TASK:noteweave.task}
       document-process: ${NOTEWEAVE_KAFKA_TOPIC_DOCUMENT:noteweave.document}
+    consumer-groups:
+      task: ${NOTEWEAVE_KAFKA_GROUP_TASK:noteweave-task-worker}
+  task:
+    dispatcher:
+      enabled: ${NOTEWEAVE_TASK_DISPATCHER_ENABLED:true}
+      fixed-delay-ms: ${NOTEWEAVE_TASK_DISPATCHER_FIXED_DELAY_MS:5000}
 ```
 
 说明：
@@ -707,6 +717,8 @@ FileObject.refCount + 1
   ↓
 清理分片对象
   ↓
+清理 upload_chunk 临时行
+  ↓
 清理 Redis Bitmap
   ↓
 创建 Task(DOCUMENT_PROCESS) 和 TaskOutbox
@@ -733,6 +745,8 @@ FileObject.refCount + 1
 标记 CANCELLED，写 cancelledAt
   ↓
 删除当前 dev/test 前缀下 uploads/{uploadId}/chunks/ 的分片对象
+  ↓
+清理 upload_chunk 临时行
   ↓
 清理 Redis Bitmap
 ```
@@ -783,6 +797,7 @@ void cleanupUpload(Long uploadId);
 
 - `DocumentUpload.expiresAt < now` 且状态为 `INIT / UPLOADING / FAILED` 时标记 `CANCELLED` 或 `EXPIRED`。
 - 清理只删除分片临时对象，不删除已经合并并被 `FileObject` 引用的正式对象。
+- 清理成功后删除对应 `upload_chunk` 临时行，避免 DB 残留已失效分片引用。
 - 清理失败要记录 errorMessage，等待下次任务重试。
 
 ### 10.7 DocumentProcessProducer
@@ -856,6 +871,11 @@ Topic：
 ```text
 noteweave.document
 ```
+
+要求：
+
+- Kafka key 固定为 `taskId`。
+- payload body 也必须包含 `taskId`，便于 Phase 3 Consumer 做日志、幂等和审计。
 
 ---
 

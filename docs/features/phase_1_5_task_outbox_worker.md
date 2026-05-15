@@ -42,7 +42,7 @@ Phase 1.5 完成后，系统应具备：
 - 使用统一 `task` 表承载所有异步任务。
 - 使用 `task_attempt` 记录每次执行尝试。
 - 使用 `task_event` 记录状态迁移和可观察事件。
-- 使用 `task_outbox` 保证数据库提交与队列投递最终一致。
+- 使用 `task_outbox` 保证数据库提交与 Kafka 投递最终一致。
 - 支持任务创建幂等。
 - 支持任务查询、取消、失败重试。
 - Worker 执行前后都按 DB 状态做幂等检查。
@@ -177,6 +177,15 @@ OUTBOX_SEND_FAILED
 
 Outbox 只记录待投递事实，不承载业务执行结果。业务执行结果必须回写 `task / task_attempt / task_event`。
 
+当前实现约定：
+
+- 后台异步任务消息队列统一使用 Kafka。
+- `task_outbox` 是事务外盒和补偿投递表，不是 Worker 消费队列。
+- Dispatcher 只负责把已提交的 outbox 记录投递到 Kafka，并记录 `SENT / FAILED`。
+- `TaskOutboxDispatchScheduler` 定期触发 dispatcher，补偿 `PENDING / FAILED` outbox 记录；测试环境可关闭调度器并手动调用 dispatcher。
+- Worker/Consumer 收到 Kafka 消息后只信任 `taskId`，必须回查 DB task 状态后再执行。
+- Redis Stream 只用于 Phase 5 Chat runtime 的流式状态和断线恢复，不能用于通用后台任务。
+
 ---
 
 ## 6. 状态机
@@ -299,6 +308,9 @@ TaskAttemptService
 TaskEventService
 TaskOutboxService
 TaskDispatcher
+TaskOutboxDispatchScheduler
+TaskKafkaPublisher
+TaskKafkaConsumer
 TaskWorkerRegistry
 TaskWorker
 TaskCancellationChecker
@@ -320,10 +332,19 @@ TaskCancellationChecker
 职责：
 
 - 扫描 `task_outbox.status = PENDING`。
-- 投递 Kafka / queue 消息。
+- 投递 Kafka 消息。
 - 投递成功后标记 `SENT`。
 - 投递失败后增加 `retryCount` 和 `nextRetryAt`。
 - 使用 `idempotencyKey` 防止重复投递造成重复执行。
+
+### TaskKafkaConsumer
+
+职责：
+
+- 从 `noteweave.task` 消费通用任务消息。
+- 收到消息后只使用 `taskId` 回查 DB。
+- 只让 `PENDING` 任务进入 Worker 执行。
+- 将执行过程写回 `task / task_attempt / task_event`。
 
 ### TaskWorker
 
@@ -392,7 +413,7 @@ sort
 
 ---
 
-## 11. Kafka / Queue 消息
+## 11. Kafka 消息
 
 推荐消息结构：
 
@@ -421,6 +442,8 @@ Consumer 规则：
 - 如果 Task 已是 `SUCCESS / CANCELLED`，直接 ack。
 - 如果 Task 是 `RUNNING`，按幂等规则跳过或记录重复消费。
 - 只有 `PENDING` 可以进入执行。
+- Kafka ack 只代表消息处理完成或按幂等规则跳过，不代表业务结果必须成功。
+- 不引入 RabbitMQ、Redis Stream 或内存队列作为并行后台任务通道。
 
 ---
 

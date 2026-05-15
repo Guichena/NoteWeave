@@ -22,8 +22,16 @@ spring:
       password: ${REDIS_PASSWORD:}
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-  elasticsearch:
-    uris: ${ES_URIS:http://localhost:9200}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.headers: false
+        spring.json.trusted.packages: "*"
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
 
 noteweave:
   storage:
@@ -37,6 +45,22 @@ noteweave:
       local-test-root: ${NOTEWEAVE_TEST_ROOT:target/noteweave-test}
       dev-object-prefix: ${NOTEWEAVE_DEV_OBJECT_PREFIX:dev}
       test-object-prefix: ${NOTEWEAVE_TEST_OBJECT_PREFIX:test}
+      test-run-id: ${NOTEWEAVE_TEST_RUN_ID:}
+  upload:
+    bitmap-ttl-hours: ${NOTEWEAVE_UPLOAD_BITMAP_TTL_HOURS:24}
+    cleanup:
+      enabled: ${NOTEWEAVE_UPLOAD_CLEANUP_ENABLED:true}
+      fixed-delay-ms: ${NOTEWEAVE_UPLOAD_CLEANUP_FIXED_DELAY_MS:600000}
+  kafka:
+    topics:
+      task: ${NOTEWEAVE_KAFKA_TOPIC_TASK:noteweave.task}
+      document-process: ${NOTEWEAVE_KAFKA_TOPIC_DOCUMENT:noteweave.document}
+    consumer-groups:
+      task: ${NOTEWEAVE_KAFKA_GROUP_TASK:noteweave-task-worker}
+  task:
+    dispatcher:
+      enabled: ${NOTEWEAVE_TASK_DISPATCHER_ENABLED:true}
+      fixed-delay-ms: ${NOTEWEAVE_TASK_DISPATCHER_FIXED_DELAY_MS:5000}
 
 jwt:
   secret-key: ${JWT_SECRET_KEY:change-me-in-dev-change-me-in-dev}

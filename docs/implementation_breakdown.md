@@ -12,6 +12,7 @@
 - 所有编程阶段采用测试驱动开发：先写失败测试，再写最小实现，最后运行当前阶段测试和必要回归测试。
 - 所有中间件通过 Docker Compose 或 Testcontainers 提供；Phase 引入新中间件时必须同步本地 Docker、测试容器、测试 bucket/topic/index/path 契约。
 - 先稳定异步任务，再接 AI 能力：上传、解析、索引、Source 编译、Artifact 生成、Wiki 入索引、评测都必须走统一 Task/Worker 模型。
+- 当前后台异步任务消息队列统一使用 Kafka；`task_outbox` 只做 DB 事务外盒和补偿投递，Redis Stream 只服务 Phase 5 Chat runtime，不作为通用任务队列。
 - 先跑通团队 RAG 最小闭环，再扩展个人研究、Studio、Wiki 和 Memory。
 - 团队侧与个人侧分治：团队以 `Space -> KnowledgeBase -> Document -> DocumentChunk` 为主线，个人以 `Space -> ResearchProject -> Source -> ArticleCard/ConceptCard/MethodologyCard` 为源资料编译主线，并通过用户确认后的 `Artifact -> SynthesisCard` 形成产物沉淀闭环。
 - Artifact 与 Wiki 严格分离：阶段性产物保存在 Artifact；只有人工确认的长期稳定内容才能发布为团队 WikiPage 或沉淀为个人 Wiki Card。
@@ -190,9 +191,10 @@ CLEANUP_RESOURCE
 - `task.idempotency_key` 唯一约束。
 - `task_attempt` 记录每次执行、错误、耗时、worker、开始/结束时间。
 - `task_event` 记录状态迁移，便于前端和 Admin 查看。
-- `task_outbox` 或等价机制保证 DB 提交与 Kafka/队列投递最终一致。
+- `task_outbox` 保证 DB 提交与 Kafka 投递最终一致；它不是业务队列，发送成功后只代表消息已进入 Kafka。
 - RUNNING 任务支持 `cancel_requested`，Worker 在安全点停止。
-- Kafka message key 使用 `taskId` 或稳定幂等键；Consumer 处理前查 DB 状态。
+- Kafka message key 使用 `taskId` 或稳定幂等键；Consumer/Worker 处理前只信任 `taskId` 并回查 DB 状态。
+- 不允许在后续 Phase 用 Redis Stream、RabbitMQ 或内存队列另起一套后台任务执行链路；如需替换 Kafka，必须先更新 `CONTRACT.md`、`DOCKER_MIDDLEWARE.md` 和相关 phase 文档。
 
 ### 4.5 文件对象与上传
 
@@ -357,7 +359,7 @@ GET  /api/v1/tasks/{taskId}/events
 5. MinIO 分片 key 使用 `uploads/{uploadId}/chunks/{chunkIndex}` 后缀，并按 Docker 中间件契约增加 dev/test 前缀。
 6. merge 后创建 Document、FileObject 引用、Task、Outbox。
 7. 上传过期清理基础任务。
-8. Kafka/队列投递幂等。
+8. Kafka 投递幂等。
 
 关键 API：
 

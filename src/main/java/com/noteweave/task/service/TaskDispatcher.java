@@ -21,7 +21,7 @@ public class TaskDispatcher {
 
     private final TaskOutboxRepository taskOutboxRepository;
     private final TaskEventService taskEventService;
-    private final TaskMessagePublisher taskMessagePublisher;
+    private final TaskOutboxRoutingPublisher taskOutboxRoutingPublisher;
     private final ObjectMapper objectMapper;
 
     public int dispatchPendingMessages() {
@@ -53,7 +53,7 @@ public class TaskDispatcher {
                     null,
                     null
             );
-            taskMessagePublisher.publish(objectMapper.readValue(outbox.getPayloadJson(), TaskOutboxMessage.class));
+            taskOutboxRoutingPublisher.publish(objectMapper.readValue(outbox.getPayloadJson(), TaskOutboxMessage.class));
             outbox.setStatus(TaskOutboxStatus.SENT);
             outbox.setSentAt(LocalDateTime.now());
             outbox.setNextRetryAt(null);

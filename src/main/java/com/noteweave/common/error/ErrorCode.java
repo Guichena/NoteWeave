@@ -23,7 +23,18 @@ public enum ErrorCode {
     TASK_ACCESS_DENIED(HttpStatus.FORBIDDEN, "task access denied"),
     TASK_INVALID_STATUS(HttpStatus.BAD_REQUEST, "task status is invalid"),
     TASK_RETRY_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "task retry is not allowed"),
-    TASK_WORKER_NOT_FOUND(HttpStatus.BAD_REQUEST, "task worker not found");
+    TASK_WORKER_NOT_FOUND(HttpStatus.BAD_REQUEST, "task worker not found"),
+
+    KNOWLEDGE_BASE_NOT_FOUND(HttpStatus.NOT_FOUND, "knowledge base not found"),
+    DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "document not found"),
+    UPLOAD_NOT_FOUND(HttpStatus.NOT_FOUND, "upload not found"),
+    UPLOAD_ACCESS_DENIED(HttpStatus.FORBIDDEN, "upload access denied"),
+    UPLOAD_INVALID_CHUNK(HttpStatus.BAD_REQUEST, "upload invalid chunk"),
+    UPLOAD_CHUNK_INCOMPLETE(HttpStatus.BAD_REQUEST, "upload chunk incomplete"),
+    UPLOAD_MERGE_FAILED(HttpStatus.BAD_REQUEST, "upload merge failed"),
+    STORAGE_OBJECT_NOT_FOUND(HttpStatus.NOT_FOUND, "storage object not found"),
+    STORAGE_OPERATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "storage operation failed"),
+    KAFKA_DISPATCH_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "kafka dispatch failed");
 
     private final HttpStatus httpStatus;
     private final String defaultMessage;

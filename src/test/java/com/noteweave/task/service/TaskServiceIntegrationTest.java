@@ -3,6 +3,7 @@ package com.noteweave.task.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 
@@ -27,8 +28,6 @@ import com.noteweave.user.model.UserSystemRole;
 import com.noteweave.user.repository.UserRepository;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -57,11 +56,11 @@ class TaskServiceIntegrationTest extends ContainerizedIntegrationTest {
     private TaskOutboxRepository taskOutboxRepository;
 
     @SpyBean
-    private LocalTaskMessagePublisher localTaskMessagePublisher;
+    private TaskKafkaPublisher taskKafkaPublisher;
 
     @AfterEach
     void tearDown() {
-        reset(localTaskMessagePublisher);
+        reset(taskKafkaPublisher);
     }
 
     @Test
@@ -99,6 +98,7 @@ class TaskServiceIntegrationTest extends ContainerizedIntegrationTest {
         TaskResponse createdTask = createNoopTask(actor, successInput(), "success-v1");
 
         int dispatched = taskDispatcher.dispatchPendingMessages();
+        waitForTaskStatus(createdTask.getId(), TaskStatus.SUCCESS);
 
         TaskResponse task = taskService.getTask(actor.currentUser(), createdTask.getId());
         List<TaskAttempt> attempts = taskService.getAttempts(createdTask.getId());
@@ -121,6 +121,7 @@ class TaskServiceIntegrationTest extends ContainerizedIntegrationTest {
         TaskResponse createdTask = createNoopTask(actor, input, "retry-v1");
 
         taskDispatcher.dispatchPendingMessages();
+        waitForTaskStatus(createdTask.getId(), TaskStatus.FAILED);
         TaskResponse failedTask = taskService.getTask(actor.currentUser(), createdTask.getId());
         assertThat(failedTask.getTaskStatus()).isEqualTo(TaskStatus.FAILED);
 
@@ -129,6 +130,7 @@ class TaskServiceIntegrationTest extends ContainerizedIntegrationTest {
         assertThat(retriedTask.getRetryCount()).isEqualTo(1);
 
         taskDispatcher.dispatchPendingMessages();
+        waitForTaskStatus(createdTask.getId(), TaskStatus.FAILED);
         List<TaskAttempt> attempts = taskService.getAttempts(createdTask.getId());
         TaskResponse retriedFailedTask = taskService.getTask(actor.currentUser(), createdTask.getId());
 
@@ -146,6 +148,7 @@ class TaskServiceIntegrationTest extends ContainerizedIntegrationTest {
         TaskResponse createdTask = createNoopTask(actor, input, "timeout-v1");
 
         taskDispatcher.dispatchPendingMessages();
+        waitForTaskStatus(createdTask.getId(), TaskStatus.TIMEOUT);
 
         TaskResponse timedOutTask = taskService.getTask(actor.currentUser(), createdTask.getId());
         assertThat(timedOutTask.getTaskStatus()).isEqualTo(TaskStatus.TIMEOUT);
@@ -170,11 +173,11 @@ class TaskServiceIntegrationTest extends ContainerizedIntegrationTest {
         input.setStepSleepMillis(50L);
         TaskResponse createdTask = createNoopTask(actor, input, "cancel-running-v1");
 
-        CompletableFuture<Void> future = CompletableFuture.runAsync(taskDispatcher::dispatchPendingMessages);
+        taskDispatcher.dispatchPendingMessages();
         waitForTaskStatus(createdTask.getId(), TaskStatus.RUNNING);
 
         taskService.cancelTask(actor.currentUser(), createdTask.getId());
-        future.get(5, TimeUnit.SECONDS);
+        waitForTaskStatus(createdTask.getId(), TaskStatus.CANCELLED);
 
         TaskResponse cancelledTask = taskService.getTask(actor.currentUser(), createdTask.getId());
         List<TaskAttempt> attempts = taskService.getAttempts(createdTask.getId());
@@ -201,6 +204,7 @@ class TaskServiceIntegrationTest extends ContainerizedIntegrationTest {
                 .build());
 
         taskDispatcher.dispatchPendingMessages();
+        waitForTaskStatus(createdTask.getId(), TaskStatus.FAILED);
 
         assertThatThrownBy(() -> taskService.retryTask(actor.currentUser(), createdTask.getId()))
                 .isInstanceOf(BusinessException.class)
@@ -212,18 +216,19 @@ class TaskServiceIntegrationTest extends ContainerizedIntegrationTest {
         TestActor actor = createTeamActor("task_dispatch_failure_" + System.nanoTime());
         TaskResponse createdTask = createNoopTask(actor, successInput(), "dispatch-failure-v1");
 
-        doThrow(new IllegalStateException("publisher boom")).when(localTaskMessagePublisher).publish(any());
+        doThrow(new IllegalStateException("publisher boom")).when(taskKafkaPublisher).publish(anyString(), any());
         taskDispatcher.dispatchPendingMessages();
 
         TaskOutbox failedOutbox = taskOutboxRepository.findByTaskIdOrderByCreatedAtAsc(createdTask.getId()).get(0);
         assertThat(failedOutbox.getStatus()).isEqualTo(TaskOutboxStatus.FAILED);
         assertThat(failedOutbox.getNextRetryAt()).isNotNull();
 
-        reset(localTaskMessagePublisher);
+        reset(taskKafkaPublisher);
         failedOutbox.setNextRetryAt(LocalDateTime.now().minusSeconds(1));
         taskOutboxRepository.save(failedOutbox);
 
         taskDispatcher.dispatchPendingMessages();
+        waitForTaskStatus(createdTask.getId(), TaskStatus.SUCCESS);
 
         TaskOutbox sentOutbox = taskOutboxRepository.findByTaskIdOrderByCreatedAtAsc(createdTask.getId()).get(0);
         TaskResponse completedTask = taskService.getTask(actor.currentUser(), createdTask.getId());
@@ -250,16 +255,25 @@ class TaskServiceIntegrationTest extends ContainerizedIntegrationTest {
         return input;
     }
 
-    private void waitForTaskStatus(Long taskId, TaskStatus expectedStatus) throws InterruptedException {
+    private void waitForTaskStatus(Long taskId, TaskStatus expectedStatus) {
         long deadline = System.currentTimeMillis() + 5_000L;
         while (System.currentTimeMillis() < deadline) {
             TaskStatus currentStatus = taskService.getRequiredTask(taskId).getTaskStatus();
             if (currentStatus == expectedStatus) {
                 return;
             }
-            Thread.sleep(25L);
+            sleepBriefly();
         }
         throw new AssertionError("Timed out waiting for task status " + expectedStatus);
+    }
+
+    private void sleepBriefly() {
+        try {
+            Thread.sleep(25L);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Interrupted while waiting for task status", ex);
+        }
     }
 
     private TestActor createTeamActor(String username) {

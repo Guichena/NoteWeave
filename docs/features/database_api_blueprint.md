@@ -1,6 +1,6 @@
 # 数据库与 API 蓝图
 
-本文档从 `note_weave_功能说明与架构文档 (1).md` 的数据库和接口章节抽取而来，并按当前 NoteWeave 工程拆分做了收口修正。
+本文档从历史全量架构草稿中抽取数据库和接口章节，并按当前 NoteWeave 工程拆分做了收口修正。编码时以本文档、`docs/CONTRACT.md` 和 `docs/implementation_breakdown.md` 为准；不要回到历史草稿中的旧 `/api/...`、`generation_task/index_task`、`generated_artifact` 或 Quiz 主线口径。
 
 关键修正：
 
@@ -54,7 +54,8 @@ chat_session.session_kind: FORMAL / DRAFT
 chat_session.runtime_status: IDLE / RUNNING / STOPPED / FAILED
 
 artifact.status: GENERATING / READY / FAILED / ARCHIVED / PUBLISHED_TO_WIKI / DISTILLED_TO_PERSONAL_WIKI
-artifact.artifact_type: REPORT / STUDY_GUIDE / READING_NOTES / BRIEFING / FAQ / COMPARISON / WIKI_DRAFT / ONBOARDING_GUIDE / TECHNICAL_SUMMARY / INCIDENT_REVIEW_DRAFT / PRESENTATION_OUTLINE / TIMELINE / WORK_PREP / MIND_MAP_OUTLINE
+artifact.artifact_type global enum: REPORT / STUDY_GUIDE / READING_NOTES / BRIEFING / FAQ / COMPARISON / WIKI_DRAFT / ONBOARDING_GUIDE / TECHNICAL_SUMMARY / INCIDENT_REVIEW_DRAFT / PRESENTATION_OUTLINE / TIMELINE / WORK_PREP / MIND_MAP_OUTLINE
+phase implementation subset: each Phase only implements the artifact types explicitly listed in its phase document; Phase 8 MVP is REPORT / STUDY_GUIDE / BRIEFING / FAQ / COMPARISON / WIKI_DRAFT
 personal artifact distillation: Artifact -> SynthesisCard by default; Concept/Methodology updates require user-confirmed merge proposal
 ```
 
@@ -1363,6 +1364,8 @@ GET  /api/v1/tasks/{taskId}/skill-logs
 
 ### 3.12 Artifact
 
+Base Artifact APIs are introduced with Phase 8:
+
 ```http
 GET  /api/v1/spaces/{spaceId}/artifacts
 GET  /api/v1/chat/sessions/{sessionId}/artifacts
@@ -1370,7 +1373,12 @@ GET  /api/v1/artifacts/{artifactId}
 PUT  /api/v1/artifacts/{artifactId}
 POST /api/v1/artifacts/{artifactId}/regenerate
 POST /api/v1/artifacts/{artifactId}/generate
-GET  /api/v1/artifacts/{artifactId}/export
+GET  /api/v1/artifacts/{artifactId}/export?format=markdown
+```
+
+Personal Artifact distillation APIs are Phase 11.5 only. Do not expose or implement them in Phase 8 or Phase 11:
+
+```http
 POST /api/v1/artifacts/{artifactId}/distill-to-personal-wiki
 GET  /api/v1/artifacts/{artifactId}/card-relations
 GET  /api/v1/personal/research-projects/{projectId}/synthesis-cards

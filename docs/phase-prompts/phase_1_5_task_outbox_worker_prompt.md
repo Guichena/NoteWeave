@@ -89,6 +89,8 @@ Quiz
 - `FAILED / TIMEOUT` 可按 `max_retry_count` 重试。
 - `RUNNING` 取消只设置 `cancel_requested`，Worker 在安全点停止。
 - Outbox 投递必须可补偿。
+- 后台异步任务消息队列统一使用 Kafka；`task_outbox` 是事务外盒，不是 Worker 消费队列。
+- 不得引入 Redis Stream、RabbitMQ 或内存队列作为通用任务通道；Redis Stream 只属于 Phase 5 Chat runtime。
 - Consumer/Worker 处理前必须查 DB 状态，保证幂等。
 
 ## API
@@ -113,4 +115,3 @@ Outbox 如何补偿
 取消/重试/超时如何处理
 测试命令和结果已记录到 docs/PROJECT_STATUS.md
 ```
-

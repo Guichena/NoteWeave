@@ -7,7 +7,7 @@ NoteWeave 是一个面向团队与个人的 AI 知识工作台后端项目。
 
 ## 项目定位
 
-基于《`docs/note_weave_功能说明与架构文档.md`》的设计，NoteWeave 采用以下产品方向：
+基于产品总览和当前实现契约，NoteWeave 采用以下产品方向。编码时以 `docs/PROJECT_STATUS.md`、`docs/CONTRACT.md`、`docs/implementation_breakdown.md` 和 `docs/features/database_api_blueprint.md` 为准；全量架构说明只作为产品背景。
 
 - 团队侧：文档沉淀、可追溯问答、Wiki 沉淀。
 - 个人侧：Research 工作台、资料编译、结构化知识卡片、生成产物。
@@ -24,7 +24,7 @@ NoteWeave 是一个面向团队与个人的 AI 知识工作台后端项目。
 
 ---
 
-## 当前实现状态（Phase 0/1 + Phase 1.5）
+## 当前实现状态（Phase 0/1 + Phase 1.5 + Phase 2）
 
 当前仓库已完成：
 
@@ -70,7 +70,14 @@ NoteWeave 是一个面向团队与个人的 AI 知识工作台后端项目。
   - `GET /api/v1/tasks/{taskId}/events`
   - `POST /api/v1/tasks/{taskId}/cancel`
   - `POST /api/v1/tasks/{taskId}/retry`
-  - `NOOP_TEST` worker、取消、超时、重试、Outbox 补偿
+  - `NOOP_TEST` worker、Kafka 投递、取消、超时、重试、Outbox 自动补偿
+- Phase 2 文件上传与异步摄取：
+  - KnowledgeBase 创建、查询、更新、归档
+  - DocumentUpload / UploadChunk 分片上传、断点续传、状态查询、merge、cancel、过期清理
+  - MinIO 正式对象与临时分片对象管理
+  - FileObject 按 Space 复用与 refCount 记录
+  - Document 元数据、软删除、reindex 任务创建
+  - `DOCUMENT_PROCESS` TaskOutbox 投递到 Kafka `noteweave.document`
 - OpenAPI 文档导出：
   - `GET /v3/api-docs`
   - `GET /swagger-ui.html`
@@ -81,11 +88,10 @@ NoteWeave 是一个面向团队与个人的 AI 知识工作台后端项目。
 
 ## 暂未实现（按规划延后）
 
-以下能力会在后续阶段接入，当前不在 Phase 0/1 范围内：
+以下能力会在后续阶段接入，当前不在 Phase 0/1、Phase 1.5、Phase 2 范围内：
 
-- 文件上传与分片续传
-- Kafka / MinIO
 - Elasticsearch
+- 文档解析、Chunk 切片、Embedding 与索引
 - 团队 RAG 问答
 - WebSocket 会话执行底座
 - 个人 ResearchProject
@@ -162,8 +168,14 @@ docker compose up -d
 - `MINIO_ENDPOINT`
 - `MINIO_BUCKET`
 - `MINIO_TEST_BUCKET`
-- `ES_URIS`
 - `KAFKA_BOOTSTRAP_SERVERS`
+- `NOTEWEAVE_KAFKA_TOPIC_TASK`
+- `NOTEWEAVE_KAFKA_TOPIC_DOCUMENT`
+- `NOTEWEAVE_KAFKA_GROUP_TASK`
+- `NOTEWEAVE_TASK_DISPATCHER_ENABLED`
+- `NOTEWEAVE_TASK_DISPATCHER_FIXED_DELAY_MS`
+- `NOTEWEAVE_UPLOAD_CLEANUP_ENABLED`
+- `NOTEWEAVE_UPLOAD_CLEANUP_FIXED_DELAY_MS`
 - `JWT_SECRET_KEY`
 - `JWT_ACCESS_TOKEN_EXPIRATION_SECONDS`
 - `JWT_REFRESH_TOKEN_EXPIRATION_SECONDS`
@@ -206,23 +218,27 @@ mvn test
 - `SpaceControllerTest`
 - `TaskControllerTest`
 - `TaskServiceIntegrationTest`
+- `Phase2UploadFlowIntegrationTest`
+- `StoragePropertiesValidatorTest`
 
 ---
 
 ## 文档索引
 
+- 当前状态与开工顺序：[`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md)
+- 最小实现契约：[`docs/CONTRACT.md`](docs/CONTRACT.md)
 - 总体实现拆解：[`docs/implementation_breakdown.md`](docs/implementation_breakdown.md)
+- 数据库与 API 蓝图：[`docs/features/database_api_blueprint.md`](docs/features/database_api_blueprint.md)
 - Docker 中间件契约：[`docs/DOCKER_MIDDLEWARE.md`](docs/DOCKER_MIDDLEWARE.md)
-- 全量架构说明：[`docs/note_weave_功能说明与架构文档.md`](docs/note_weave_功能说明与架构文档.md)
 - 功能分阶段文档入口：[`docs/features/README.md`](docs/features/README.md)
 - 第一阶段详细说明：[`docs/features/phase_0_1_bootstrap_auth_space.md`](docs/features/phase_0_1_bootstrap_auth_space.md)
-- 数据库与 API 蓝图：[`docs/features/database_api_blueprint.md`](docs/features/database_api_blueprint.md)
+- 产品背景说明：[`docs/note_weave_功能说明与架构文档.md`](docs/note_weave_功能说明与架构文档.md)
 
 ---
 
 ## 路线图（简版）
 
-- Phase 2-3：KnowledgeBase、上传链路、异步解析与索引
+- Phase 3：文档解析、Chunk、异步索引
 - Phase 4-5：团队 RAG、WebSocket 会话运行态与记忆
 - Phase 6-8：个人研究工作台、Wiki Compiler、Studio Artifact
 - Phase 9+：混合检索增强、Wiki 发布、可观测性与运维能力

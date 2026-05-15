@@ -217,3 +217,18 @@ docs/DOCKER_MIDDLEWARE.md
 
 阶段不能假设“以后再补 Docker”。如果当前阶段用到了中间件，就必须在当前阶段把 Docker、本地配置和测试配置一起补齐。
 
+---
+
+## 9. Phase 2 runtime/testing note (2026-05-15)
+
+Current integration test baseline now includes:
+
+```text
+MySQLContainer
+Redis GenericContainer
+MinIO container
+KafkaContainer
+```
+
+Elasticsearch Testcontainer remains deferred to later phases and is not required by Phase 2 tests.
+

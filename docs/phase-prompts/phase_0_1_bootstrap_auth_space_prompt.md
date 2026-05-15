@@ -47,7 +47,7 @@ docs/features/database_api_blueprint.md
 docs/features/phase_0_1_bootstrap_auth_space.md
 ```
 
-如果文档冲突，以 `CONTRACT.md`、`implementation_breakdown.md`、`database_api_blueprint.md`、当前 phase 文档的顺序为准。
+如果文档冲突，以 `PROJECT_STATUS.md`、`CONTRACT.md`、`DOCKER_MIDDLEWARE.md`、`implementation_breakdown.md`、`database_api_blueprint.md`、当前 phase 文档的顺序为准。
 
 ## 目标
 
@@ -103,4 +103,3 @@ Quiz
 测试命令和结果已记录到 docs/PROJECT_STATUS.md
 还剩哪些非阻塞风险
 ```
-

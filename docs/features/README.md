@@ -6,6 +6,8 @@
 
 最终实现契约优先看 `docs/CONTRACT.md`；如果旧说明文档和契约冲突，以 `CONTRACT.md`、`implementation_breakdown.md` 和 `database_api_blueprint.md` 为准。
 
+历史草稿和审查记录只作为背景，不作为实现权威。尤其不要从旧说明或审查记录中恢复旧 `/api/...`、`generation_task/index_task`、`generated_artifact` 或 Quiz 主线能力。
+
 中间件、本地 Docker Compose、Testcontainers、测试 bucket/topic/index/path 规则看 `docs/DOCKER_MIDDLEWARE.md`。
 
 每个阶段给 AI 编码代理使用的启动提示词在 `docs/phase-prompts/`，执行某个 Phase 时优先复制对应 prompt。

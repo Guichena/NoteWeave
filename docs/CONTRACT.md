@@ -181,6 +181,20 @@ task_event
 task_outbox
 ```
 
+异步投递边界：
+
+```text
+DB transaction -> task/task_outbox -> Kafka -> Worker -> task/task_attempt/task_event
+```
+
+规则：
+
+- Kafka 是当前实现唯一的后台异步任务消息队列。
+- `task_outbox` 是事务外盒和补偿投递表，不是业务执行队列。
+- Worker/Consumer 收到 Kafka 消息后只信任 `taskId`，必须回查 DB task 状态和 payload。
+- Redis Stream 只允许用于 Phase 5 Chat runtime 的流式状态、断线恢复和短期上下文，不承载上传、解析、索引、生成、评测等后台任务。
+- RabbitMQ、Redis Stream 任务队列或内存队列都属于历史或备选口径，不进入当前实现，除非后续契约显式修订。
+
 规则：
 
 - `idempotency_key` 必须稳定且唯一。
@@ -220,7 +234,7 @@ Artifact -> Concept merge proposal -> 用户确认合并
 Artifact -> Methodology proposal -> 用户确认写入
 ```
 
-当前 Artifact 类型：
+全局允许 Artifact 类型：
 
 ```text
 REPORT
@@ -238,6 +252,12 @@ TIMELINE
 WORK_PREP
 MIND_MAP_OUTLINE
 ```
+
+说明：
+
+- 全局枚举不等于每个 Phase 都必须实现。
+- Phase 8 MVP 只实现 `REPORT / STUDY_GUIDE / BRIEFING / FAQ / COMPARISON / WIKI_DRAFT`。
+- 其他 Artifact 类型只有在对应 Phase 文档明确列入目标和验收时才实现。
 
 Quiz、测验、答题、评分、题库、错题复习暂缓，不进入当前 DDL、API、前端路由和验收。
 

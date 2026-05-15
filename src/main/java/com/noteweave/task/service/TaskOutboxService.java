@@ -29,6 +29,7 @@ public class TaskOutboxService {
                 .targetType(task.getTargetType())
                 .targetId(task.getTargetId())
                 .idempotencyKey(task.getIdempotencyKey())
+                .inputJson(task.getInputJson())
                 .createdAt(task.getCreatedAt() == null ? null : task.getCreatedAt().toString())
                 .build()));
         return taskOutboxRepository.save(outbox);

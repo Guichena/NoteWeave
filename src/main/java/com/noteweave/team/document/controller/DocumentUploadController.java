@@ -1,0 +1,72 @@
+package com.noteweave.team.document.controller;
+
+import com.noteweave.common.api.ApiResponse;
+import com.noteweave.common.security.CurrentUserProvider;
+import com.noteweave.team.document.dto.InitUploadRequest;
+import com.noteweave.team.document.dto.InitUploadResponse;
+import com.noteweave.team.document.dto.MergeUploadResponse;
+import com.noteweave.team.document.dto.UploadChunkResponse;
+import com.noteweave.team.document.dto.UploadStatusResponse;
+import com.noteweave.team.document.service.DocumentUploadService;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.multipart.MultipartFile;
+
+@RestController
+@RequestMapping("/api/v1/team")
+@RequiredArgsConstructor
+public class DocumentUploadController {
+
+    private final DocumentUploadService documentUploadService;
+    private final CurrentUserProvider currentUserProvider;
+
+    @PostMapping("/knowledge-bases/{knowledgeBaseId}/documents/uploads/init")
+    public ApiResponse<InitUploadResponse> initUpload(
+            @PathVariable Long knowledgeBaseId,
+            @Valid @RequestBody InitUploadRequest request
+    ) {
+        return ApiResponse.success(documentUploadService.initUpload(
+                currentUserProvider.getCurrentUserId(),
+                knowledgeBaseId,
+                request
+        ));
+    }
+
+    @PostMapping("/document-uploads/{uploadId}/chunks")
+    public ApiResponse<UploadChunkResponse> uploadChunk(
+            @PathVariable Long uploadId,
+            @RequestParam Integer chunkIndex,
+            @RequestPart("file") MultipartFile file
+    ) {
+        return ApiResponse.success(documentUploadService.uploadChunk(
+                currentUserProvider.getCurrentUserId(),
+                uploadId,
+                chunkIndex,
+                file
+        ));
+    }
+
+    @GetMapping("/document-uploads/{uploadId}/status")
+    public ApiResponse<UploadStatusResponse> getStatus(@PathVariable Long uploadId) {
+        return ApiResponse.success(documentUploadService.getStatus(currentUserProvider.getCurrentUserId(), uploadId));
+    }
+
+    @PostMapping("/document-uploads/{uploadId}/merge")
+    public ApiResponse<MergeUploadResponse> merge(@PathVariable Long uploadId) {
+        return ApiResponse.success(documentUploadService.merge(currentUserProvider.getCurrentUserId(), uploadId));
+    }
+
+    @PostMapping("/document-uploads/{uploadId}/cancel")
+    public ApiResponse<Void> cancel(@PathVariable Long uploadId) {
+        documentUploadService.cancelUpload(currentUserProvider.getCurrentUserId(), uploadId);
+        return ApiResponse.success(null);
+    }
+}

@@ -11,15 +11,15 @@
 当前状态：
 
 ```text
-文档契约、Docker 中间件契约和 Phase 阶段边界已复查对齐；Phase 0/1 和 Phase 1.5 已通过回归测试，可以进入 Phase 2。
+文档契约、Docker 中间件契约和 Phase 阶段边界已复查对齐；Phase 0/1、Phase 1.5 和 Phase 2 已通过回归测试，可以进入 Phase 3。
 ```
 
-本轮已完成的是架构文档、数据库/API 蓝图、阶段提示词、执行契约、Docker 中间件契约和阶段边界复查整理。当前代码已包含 Auth/User/Space/Permission 与 Task/Outbox/Worker 基础设施，并已通过现有测试验证。
+当前代码已包含 Auth/User/Space/Permission、Task/Outbox/Kafka Worker 基础设施，以及 Phase 2 的 KnowledgeBase、MinIO 分片上传、断点续传、merge、Document、DOCUMENT_PROCESS TaskOutbox 投递和过期清理，并已通过现有测试验证。
 
 下一步：
 
 ```text
-进入 Phase 2: 文件上传与异步摄取。
+进入 Phase 3: 文档解析、Chunk 切片与索引。
 ```
 
 ---
@@ -114,7 +114,7 @@ Quiz / 答题 / 评分 / 题库暂缓
 | 文档契约整理 | DONE | 契约、蓝图、Docker 中间件契约、Phase prompt 已整理 |
 | Phase 0/1 | DONE | 工程骨架、认证、用户、空间、权限代码已完成，并通过回归测试 |
 | Phase 1.5 | DONE | Task / Outbox / Worker 代码已完成，并通过回归测试 |
-| Phase 2 | PENDING | 文件上传与异步摄取 |
+| Phase 2 | DONE | 文件上传与异步摄取，MinIO / Kafka / TaskOutbox 链路已完成并通过回归测试 |
 | Phase 3 | PENDING | 文档解析、Chunk、索引 |
 | Phase 4 | PENDING | 团队 RAG Chat 与 Citation |
 | Phase 5 | PENDING | WebSocket Chat Runtime |
@@ -239,5 +239,104 @@ mvn test 通过：Tests run: 30, Failures: 0, Errors: 0, Skipped: 0
 
 下一阶段：
 ```text
-Phase 2: 文件上传与异步摄取
+Phase 3: 文档解析、Chunk 切片与索引
+```
+
+## 9. Phase 2 Progress (2026-05-15)
+
+Status:
+
+```text
+DONE
+```
+
+Implemented in this update:
+
+```text
+1) KnowledgeBase DELETE uses archive/soft-delete semantics only.
+2) Document DELETE uses soft-delete semantics only.
+3) merge is idempotent: replay existing documentId/taskId/status/objectKey for repeated merge on same uploadId.
+4) refCount hard rule: increment only after Document is created and bound to FileObject; no decrement in Phase 2 soft-delete.
+5) DOCUMENT_PROCESS is routed to Kafka document topic; NOOP_TEST and generic tasks route through Kafka task topic and TaskKafkaConsumer.
+6) content_hash is computed server-side as SHA-256 during merge.
+7) upload chunks are persisted to MinIO with dev/test prefix conventions.
+```
+
+Phase 2 related tests added/updated:
+
+```text
+Phase2UploadFlowIntegrationTest
+- viewerShouldNotInitUpload
+- deleteKnowledgeBaseShouldArchiveInsteadOfPhysicalDelete
+- mergeShouldBeIdempotentAndNotCreateDuplicateDocumentTaskOrOutbox
+- initUploadShouldInstantReuseFileObjectWithinSameSpaceButCreateNewDocumentAndTask
+- initUploadShouldNotInstantReuseFileAcrossDifferentSpace
+- uploadChunkAndMergeShouldPersistAndCleanupMinioObjects
+- cancelUploadShouldCleanupChunkObjectsAndBitmapOnly
+- deleteDocumentShouldBeSoftDeleteAndMustNotDecreaseRefCount
+- cleanupExpiredUploadShouldDeleteOnlyTempChunksAndBitmap
+```
+
+Test commands and results:
+
+```text
+1) mvn "-Dtest=Phase2UploadFlowIntegrationTest#uploadChunkAndMergeShouldPersistAndCleanupMinioObjects,Phase2UploadFlowIntegrationTest#cancelUploadShouldCleanupChunkObjectsAndBitmapOnly" test
+   - initial run failed as expected (chunk persistence gap), then passed after implementation.
+
+2) mvn "-Dtest=Phase2UploadFlowIntegrationTest,TaskServiceIntegrationTest,TaskControllerTest,SpaceControllerTest,StoragePropertiesValidatorTest" test
+   - passed: Tests run: 25, Failures: 0, Errors: 0, Skipped: 0
+
+3) mvn test
+   - passed: Tests run: 42, Failures: 0, Errors: 0, Skipped: 0
+
+4) docker compose config --quiet
+   - passed
+```
+
+Notes:
+
+```text
+- Phase 2 keeps Elasticsearch out of runtime/testing dependencies.
+- Kafka dispatch failures keep outbox retryable and do not roll back business transaction.
+- Physical reclamation of merged FileObject and refCount decrement are deferred to later cleanup phases.
+- Temporary upload chunk objects, Redis bitmap state, and upload_chunk rows are cleaned after merge/cancel/expiration.
+- UploadCleanupScheduler periodically scans and cleans expired uploads outside tests.
+```
+
+Next:
+
+```text
+Proceed to Phase 3 document parsing and indexing.
+```
+
+## 10. Phase 2 Final Regression (2026-05-15)
+
+Test command:
+
+```text
+mvn "-Dtest=Phase2UploadFlowIntegrationTest,TaskServiceIntegrationTest,TaskControllerTest,SpaceControllerTest,StoragePropertiesValidatorTest" test
+mvn test
+docker compose config --quiet
+```
+
+Result:
+
+```text
+BUILD SUCCESS
+Targeted tests run: 25, Failures: 0, Errors: 0, Skipped: 0
+Full tests run: 42, Failures: 0, Errors: 0, Skipped: 0
+Docker Compose config validation passed
+```
+
+Notes:
+
+```text
+Fixed test baseline Kafka producer serializer in src/test/resources/application.yml so DOCUMENT_PROCESS outbox dispatch is SENT in Phase 2 tests.
+DOCUMENT_PROCESS remains Kafka-only dispatch path.
+NOOP_TEST and future generic task types use task_outbox -> Kafka noteweave.task -> TaskKafkaConsumer -> task/task_attempt/task_event.
+TaskOutboxDispatchScheduler periodically compensates pending/failed outbox records outside tests.
+DocumentProcess Kafka payload includes taskId in both Kafka key and payload body.
+Upload status for MERGED/PROCESSING/INDEXED reports 100% progress after bitmap cleanup.
+Prod/staging profiles reject default MinIO credentials.
+Expired upload cleanup has a scheduler and remains disabled in tests for deterministic manual verification.
 ```
