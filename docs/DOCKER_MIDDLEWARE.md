@@ -100,14 +100,18 @@ KAFKA_BOOTSTRAP_SERVERS=localhost:9092
 ```text
 MySQLContainer
 Redis GenericContainer
+MinIO container
+KafkaContainer
+ElasticsearchContainer
 ```
 
-后续阶段按需增加：
+当前测试基线按需使用以下资源：
 
 ```text
-MinIO container
-ElasticsearchContainer
-KafkaContainer
+noteweave-test bucket
+test.noteweave.task.{testRunId}
+test.noteweave.document.{testRunId}
+noteweave-test-{testRunId}-document-chunk
 ```
 
 测试不得依赖 `docker compose up -d` 已经执行。测试应自行启动所需 Testcontainers，并通过 `DynamicPropertySource` 注入连接信息。
@@ -141,9 +145,9 @@ noteweave-test
 MinIO 测试对象 key 必须带 `test/` 前缀：
 
 ```text
-test/uploads/{testRunId}/chunks/{uploadId}/{chunkIndex}
-test/objects/{contentHash}
-test/parsed-text/{sourceType}/{sourceId}/{version}.txt
+test/{testRunId}/uploads/{uploadId}/chunks/{chunkIndex}
+test/{testRunId}/objects/{contentHash}
+test/{testRunId}/parsed-text/document/{documentId}/{indexVersion}.txt
 test/citations/{citationId}/snapshot.txt
 test/artifacts/{artifactId}/exports/{fileName}
 ```
@@ -202,6 +206,8 @@ noteweave-test-{testRunId}-
 
 测试结束后必须清理测试索引。
 
+当前集成测试使用 Testcontainers 隔离 Elasticsearch 容器，容器销毁即清理对应测试索引；若在共享 ES 上运行测试，必须显式删除 `noteweave-test-{testRunId}-*`。
+
 ---
 
 ## 8. Phase 要求
@@ -230,5 +236,43 @@ MinIO container
 KafkaContainer
 ```
 
-Elasticsearch Testcontainer remains deferred to later phases and is not required by Phase 2 tests.
+Elasticsearch Testcontainer remained deferred in Phase 2 and was not required by Phase 2 tests.
+
+---
+
+## 10. Phase 3 runtime/testing note (2026-05-15)
+
+Phase 3 integration tests now use the full containerized middleware baseline:
+
+```text
+MySQLContainer
+Redis GenericContainer
+MinIO container
+KafkaContainer
+ElasticsearchContainer
+```
+
+Elasticsearch:
+
+```text
+Local index prefix: noteweave-dev-
+Test index prefix: noteweave-test-{testRunId}-
+Phase 3 document chunk index suffix: document-chunk
+Full test index name example: noteweave-test-{testRunId}-document-chunk
+```
+
+MinIO parsed text objects:
+
+```text
+dev/parsed-text/document/{documentId}/{indexVersion}.txt
+test/{testRunId}/parsed-text/document/{documentId}/{indexVersion}.txt
+```
+
+Kafka:
+
+```text
+DOCUMENT_PROCESS uses noteweave.document locally.
+Integration tests use test.noteweave.document.{testRunId}.
+The consumer payload is treated as taskId-only; worker execution loads task/document state from MySQL.
+```
 

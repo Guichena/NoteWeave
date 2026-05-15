@@ -5,6 +5,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.testcontainers.elasticsearch.ElasticsearchContainer;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.MySQLContainer;
@@ -21,6 +22,8 @@ public abstract class ContainerizedIntegrationTest {
     private static final DockerImageName KAFKA_IMAGE =
             DockerImageName.parse("apache/kafka-native:3.8.0").asCompatibleSubstituteFor("apache/kafka");
     private static final DockerImageName MINIO_IMAGE = DockerImageName.parse("minio/minio:RELEASE.2025-04-22T22-12-26Z");
+    private static final DockerImageName ELASTICSEARCH_IMAGE =
+            DockerImageName.parse("elasticsearch:8.10.4").asCompatibleSubstituteFor("docker.elastic.co/elasticsearch/elasticsearch");
     private static final String TEST_JWT_SECRET = "test-secret-key-test-secret-key-test-secret-key";
 
     private static final MySQLContainer<?> MYSQL_CONTAINER = new MySQLContainer<>(MYSQL_IMAGE)
@@ -37,13 +40,19 @@ public abstract class ContainerizedIntegrationTest {
             .withUserName("noteweave")
             .withPassword("noteweave-minio-secret");
 
+    private static final ElasticsearchContainer ELASTICSEARCH_CONTAINER = new ElasticsearchContainer(ELASTICSEARCH_IMAGE)
+            .withEnv("xpack.security.enabled", "false")
+            .withEnv("xpack.security.http.ssl.enabled", "false")
+            .withEnv("ES_JAVA_OPTS", "-Xms256m -Xmx256m");
+
     private static final String TEST_RUN_ID = "tc-" + System.currentTimeMillis();
     private static final String TASK_TOPIC = "test.noteweave.task." + TEST_RUN_ID;
     private static final String TASK_CONSUMER_GROUP = "test-noteweave-task-worker-" + TEST_RUN_ID;
     private static final String DOCUMENT_TOPIC = "test.noteweave.document." + TEST_RUN_ID;
+    private static final String DOCUMENT_CONSUMER_GROUP = "test-noteweave-document-worker-" + TEST_RUN_ID;
 
     static {
-        Startables.deepStart(MYSQL_CONTAINER, REDIS_CONTAINER, KAFKA_CONTAINER, MINIO_CONTAINER).join();
+        Startables.deepStart(MYSQL_CONTAINER, REDIS_CONTAINER, KAFKA_CONTAINER, MINIO_CONTAINER, ELASTICSEARCH_CONTAINER).join();
         ensureKafkaTopic();
     }
 
@@ -59,6 +68,7 @@ public abstract class ContainerizedIntegrationTest {
         registry.add("noteweave.kafka.topics.task", () -> TASK_TOPIC);
         registry.add("noteweave.kafka.consumer-groups.task", () -> TASK_CONSUMER_GROUP);
         registry.add("noteweave.kafka.topics.document-process", () -> DOCUMENT_TOPIC);
+        registry.add("noteweave.kafka.consumer-groups.document-process", () -> DOCUMENT_CONSUMER_GROUP);
         registry.add("noteweave.storage.minio.endpoint", MINIO_CONTAINER::getS3URL);
         registry.add("noteweave.storage.minio.access-key", MINIO_CONTAINER::getUserName);
         registry.add("noteweave.storage.minio.secret-key", MINIO_CONTAINER::getPassword);
@@ -68,6 +78,8 @@ public abstract class ContainerizedIntegrationTest {
         registry.add("noteweave.storage.paths.dev-object-prefix", () -> "dev");
         registry.add("noteweave.storage.paths.test-object-prefix", () -> "test");
         registry.add("noteweave.storage.paths.test-run-id", () -> TEST_RUN_ID);
+        registry.add("noteweave.elasticsearch.uris", ELASTICSEARCH_CONTAINER::getHttpHostAddress);
+        registry.add("noteweave.elasticsearch.index-prefix", () -> "noteweave-test-" + TEST_RUN_ID + "-");
         registry.add("jwt.secret-key", () -> TEST_JWT_SECRET);
     }
 

@@ -11,15 +11,15 @@
 当前状态：
 
 ```text
-文档契约、Docker 中间件契约和 Phase 阶段边界已复查对齐；Phase 0/1、Phase 1.5 和 Phase 2 已通过回归测试，可以进入 Phase 3。
+Phase 0/1、Phase 1.5、Phase 2 和 Phase 3 已完成并通过当前阶段测试与必要回归测试；可以进入 Phase 4。
 ```
 
-当前代码已包含 Auth/User/Space/Permission、Task/Outbox/Kafka Worker 基础设施，以及 Phase 2 的 KnowledgeBase、MinIO 分片上传、断点续传、merge、Document、DOCUMENT_PROCESS TaskOutbox 投递和过期清理，并已通过现有测试验证。
+当前代码已包含 Auth/User/Space/Permission、Task/Outbox/Kafka Worker 基础设施、Phase 2 文件上传链路，以及 Phase 3 的 DOCUMENT_PROCESS Worker、文档解析、parsed text 保存、Chunk 切片、indexVersion / activeIndexVersion、Elasticsearch BM25 索引和 Search Debug。
 
 下一步：
 
 ```text
-进入 Phase 3: 文档解析、Chunk 切片与索引。
+进入 Phase 4: 团队 RAG Chat 与 Citation。
 ```
 
 ---
@@ -115,7 +115,7 @@ Quiz / 答题 / 评分 / 题库暂缓
 | Phase 0/1 | DONE | 工程骨架、认证、用户、空间、权限代码已完成，并通过回归测试 |
 | Phase 1.5 | DONE | Task / Outbox / Worker 代码已完成，并通过回归测试 |
 | Phase 2 | DONE | 文件上传与异步摄取，MinIO / Kafka / TaskOutbox 链路已完成并通过回归测试 |
-| Phase 3 | PENDING | 文档解析、Chunk、索引 |
+| Phase 3 | DONE | 文档解析、Chunk、ES BM25 索引、版本切换与幂等处理已完成并通过测试 |
 | Phase 4 | PENDING | 团队 RAG Chat 与 Citation |
 | Phase 5 | PENDING | WebSocket Chat Runtime |
 | Phase 6 | PENDING | 个人 ResearchProject / Source |
@@ -339,4 +339,92 @@ DocumentProcess Kafka payload includes taskId in both Kafka key and payload body
 Upload status for MERGED/PROCESSING/INDEXED reports 100% progress after bitmap cleanup.
 Prod/staging profiles reject default MinIO credentials.
 Expired upload cleanup has a scheduler and remains disabled in tests for deterministic manual verification.
+```
+
+## 11. Phase 3 Document Processing / Chunk / Indexing (2026-05-15)
+
+Status:
+
+```text
+DONE
+```
+
+Implemented in this update:
+
+```text
+1) DOCUMENT_PROCESS Worker only consumes taskId from Kafka, then loads task/document state from DB before execution.
+2) DocumentParser supports .txt, .md/.markdown and .pdf; unsupported extensions such as .docx are rejected at upload init, including fake text/plain DOCX uploads.
+3) Parsed text is saved to MinIO as test/{testRunId}/parsed-text/document/{documentId}/{indexVersion}.txt or dev/parsed-text/document/{documentId}/{indexVersion}.txt.
+4) document_chunk was added with unique constraint (document_id, index_version, chunk_index), chunk metadata and ES document id.
+5) indexVersion creates a new immutable chunk/index generation; active_index_version switches only after parse, chunk persistence and ES indexing all succeed.
+6) Repeated task consumption is idempotent: SUCCESS tasks with active chunks are skipped, and chunk creation reuses an existing documentId/indexVersion set.
+7) Reindex tasks use DOCUMENT_PROCESS:{documentId}:REINDEX:{nextIndexVersion}; failed reindex keeps the old active version searchable.
+8) Search Debug uses ES BM25 with spaceId, knowledgeBaseId and lifecycleStatus filters, then rechecks MySQL document status, deletion and activeIndexVersion.
+9) Document delete removes matching ES docs and archived KB paths do not return indexed chunks.
+10) Processing failures update Document / Task / TaskAttempt and rethrow to Kafka so broker retry / DLT policy can take over.
+11) PDF parser tests verify real PDF text extraction and pageCount metadata; Markdown chunks preserve sectionTitle metadata.
+```
+
+New migration:
+
+```text
+src/main/resources/db/migration/V4__phase_3_document_processing_indexing.sql
+```
+
+New APIs:
+
+```text
+GET /api/v1/team/documents/{documentId}/chunks
+POST /api/v1/team/documents/{documentId}/reindex
+GET /api/v1/team/knowledge-bases/{knowledgeBaseId}/search?keyword=...
+```
+
+TDD record:
+
+```text
+1) Wrote DocumentParserServiceTest, ChunkServiceTest and Phase3DocumentProcessingIntegrationTest before implementation.
+2) Initial red run failed on missing Phase 3 production classes.
+3) Added extra red tests for octet-stream parsing, DOCX upload rejection, reindex version switch and failed reindex preserving old active version.
+4) Implemented minimal parser/chunk/index/worker/reindex behavior and reran tests to green.
+```
+
+Test commands and results:
+
+```text
+1) mvn "-Dtest=DocumentParserServiceTest,Phase3DocumentProcessingIntegrationTest" test
+   - initial red after adding stricter tests: parser octet-stream and DOCX upload rejection failed as expected.
+
+2) mvn "-Dtest=Phase3DocumentProcessingIntegrationTest#failedReindexShouldKeepOldActiveVersionSearchable" test
+   - initial red showed failed reindex changed Document status to FAILED; passed after preserving old active version.
+
+3) mvn "-Dtest=DocumentParserServiceTest,ChunkServiceTest,Phase3DocumentProcessingIntegrationTest" test
+   - initial red after risk-closure tests: failure rethrow, PDF pageCount metadata and Markdown sectionTitle assertions failed as expected.
+   - passed after implementation: Tests run: 13, Failures: 0, Errors: 0, Skipped: 0
+
+4) mvn "-Dtest=Phase2UploadFlowIntegrationTest,TaskServiceIntegrationTest,TaskControllerTest,SpaceControllerTest,StoragePropertiesValidatorTest" test
+   - passed: Tests run: 25, Failures: 0, Errors: 0, Skipped: 0
+
+5) docker compose config --quiet
+   - passed
+
+6) git diff --check
+   - passed; only CRLF line-ending warnings were printed
+
+7) mvn test
+   - passed: Tests run: 55, Failures: 0, Errors: 0, Skipped: 0
+```
+
+Notes:
+
+```text
+- Phase 3 intentionally does not implement RAG Chat, LLM answers, Citation, embeddings/vector recall, personal Source, Artifact or Quiz.
+- Elasticsearch is accessed through a small HTTP service for BM25 indexing/querying; Testcontainers provides Elasticsearch for integration tests.
+- Test temporary path remains target/noteweave-test/{phase}/ by contract; MinIO object keys are under test/{testRunId}/...
+- Phase 4 retrievers must keep the same spaceId / knowledgeBaseId / lifecycleStatus ES filters and MySQL active document/version recheck when building RAG retrieval.
+```
+
+Next:
+
+```text
+Proceed to Phase 4 team RAG Chat and Citation.
 ```

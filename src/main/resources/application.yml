@@ -57,10 +57,21 @@ noteweave:
       document-process: ${NOTEWEAVE_KAFKA_TOPIC_DOCUMENT:noteweave.document}
     consumer-groups:
       task: ${NOTEWEAVE_KAFKA_GROUP_TASK:noteweave-task-worker}
+      document-process: ${NOTEWEAVE_KAFKA_GROUP_DOCUMENT:noteweave-document-process-worker}
   task:
     dispatcher:
       enabled: ${NOTEWEAVE_TASK_DISPATCHER_ENABLED:true}
       fixed-delay-ms: ${NOTEWEAVE_TASK_DISPATCHER_FIXED_DELAY_MS:5000}
+  document:
+    parsing:
+      chunk-size: ${DOCUMENT_CHUNK_SIZE:800}
+      chunk-overlap: ${DOCUMENT_CHUNK_OVERLAP:120}
+      max-text-length: ${DOCUMENT_MAX_TEXT_LENGTH:2000000}
+  elasticsearch:
+    uris: ${ES_URIS:http://localhost:9200}
+    username: ${ELASTICSEARCH_USERNAME:}
+    password: ${ELASTICSEARCH_PASSWORD:}
+    index-prefix: ${NOTEWEAVE_ES_INDEX_PREFIX:noteweave-dev-}
 
 jwt:
   secret-key: ${JWT_SECRET_KEY:change-me-in-dev-change-me-in-dev}

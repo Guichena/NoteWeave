@@ -3,6 +3,7 @@ package com.noteweave.team.document.service;
 import com.noteweave.common.error.BusinessException;
 import com.noteweave.common.error.ErrorCode;
 import com.noteweave.permission.service.ResourceAccessService;
+import com.noteweave.search.service.SearchIndexService;
 import com.noteweave.storage.config.StorageProperties;
 import com.noteweave.storage.service.FileStorageService;
 import com.noteweave.task.dto.TaskResponse;
@@ -10,6 +11,7 @@ import com.noteweave.task.model.TaskType;
 import com.noteweave.task.service.TaskCreateCommand;
 import com.noteweave.task.service.TaskService;
 import com.noteweave.team.document.dto.DocumentProcessTaskPayload;
+import com.noteweave.team.document.dto.DocumentChunkResponse;
 import com.noteweave.team.document.dto.DocumentResponse;
 import com.noteweave.team.document.dto.InitUploadRequest;
 import com.noteweave.team.document.dto.InitUploadResponse;
@@ -56,6 +58,12 @@ public class DocumentUploadService {
     private static final String DOCUMENT_SOURCE_TYPE = "FILE_UPLOAD";
     private static final Set<DocumentUploadStatus> INSTANT_REUSABLE_UPLOAD_STATUSES =
             Set.of(DocumentUploadStatus.MERGED, DocumentUploadStatus.PROCESSING);
+    private static final Set<String> SUPPORTED_CONTENT_TYPES = Set.of(
+            "text/plain",
+            "text/markdown",
+            "text/x-markdown",
+            "application/pdf"
+    );
 
     private final KnowledgeBaseService knowledgeBaseService;
     private final DocumentUploadRepository documentUploadRepository;
@@ -67,6 +75,8 @@ public class DocumentUploadService {
     private final FileStorageService fileStorageService;
     private final StorageProperties storageProperties;
     private final TaskService taskService;
+    private final DocumentChunkService documentChunkService;
+    private final SearchIndexService searchIndexService;
 
     @Value("${noteweave.upload.bitmap-ttl-hours:24}")
     private long bitmapTtlHours;
@@ -318,6 +328,14 @@ public class DocumentUploadService {
         return toDocumentResponse(document);
     }
 
+    @Transactional(readOnly = true)
+    public List<DocumentChunkResponse> listDocumentChunks(Long userId, Long documentId) {
+        Document document = documentRepository.findByIdAndDeletedAtIsNullAndStatusNot(documentId, DocumentStatus.DELETED)
+                .orElseThrow(() -> new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND));
+        resourceAccessService.requireViewSpace(userId, document.getSpaceId());
+        return documentChunkService.listActiveChunks(document);
+    }
+
     @Transactional
     public void deleteDocument(Long userId, Long documentId) {
         Document document = documentRepository.findByIdForUpdate(documentId)
@@ -330,6 +348,7 @@ public class DocumentUploadService {
         document.setDeletedAt(LocalDateTime.now());
         document.setDeletedBy(userId);
         documentRepository.save(document);
+        searchIndexService.deleteByDocumentId(documentId);
         // Phase 2 hard constraint: soft delete must not decrement refCount.
     }
 
@@ -338,18 +357,28 @@ public class DocumentUploadService {
         Document document = documentRepository.findByIdAndDeletedAtIsNullAndStatusNot(documentId, DocumentStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND));
         resourceAccessService.requireUploadDocument(userId, document.getSpaceId());
+        FileObject fileObject = fileObjectRepository.findById(document.getFileObjectId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.STORAGE_OBJECT_NOT_FOUND));
+        String fileName = document.getOriginalFilename() == null || document.getOriginalFilename().isBlank()
+                ? document.getTitle()
+                : document.getOriginalFilename();
+        String contentType = normalizeContentType(fileObject.getContentType());
+        int nextIndexVersion = Math.max(document.getActiveIndexVersion(), 0) + 1;
         return taskService.createTask(TaskCreateCommand.builder()
                 .userId(userId)
                 .spaceId(document.getSpaceId())
                 .taskType(TaskType.DOCUMENT_PROCESS)
                 .targetType(DOCUMENT_TARGET_TYPE)
                 .targetId(document.getId())
-                .idempotencyKey("DOCUMENT_PROCESS:" + document.getId() + ":REINDEX")
+                .idempotencyKey("DOCUMENT_PROCESS:" + document.getId() + ":REINDEX:" + nextIndexVersion)
                 .input(Map.of(
                         "documentId", document.getId(),
                         "spaceId", document.getSpaceId(),
                         "knowledgeBaseId", document.getKnowledgeBaseId(),
                         "objectKey", document.getObjectKey(),
+                        "fileName", fileName,
+                        "contentType", contentType,
+                        "indexVersion", nextIndexVersion,
                         "reindex", true
                 ))
                 .build());
@@ -398,6 +427,7 @@ public class DocumentUploadService {
         if (request.getTotalSize() > expected) {
             throw new BusinessException(ErrorCode.UPLOAD_INVALID_CHUNK, "totalSize exceeds chunkSize*totalChunks");
         }
+        validateSupportedType(request.getFileName(), request.getContentType());
     }
 
     private void validateChunk(DocumentUpload upload, Integer chunkIndex, MultipartFile file) {
@@ -448,6 +478,52 @@ public class DocumentUploadService {
             return "application/octet-stream";
         }
         return value.trim();
+    }
+
+    private void validateSupportedType(String fileName, String contentType) {
+        String resolved = resolveSupportedContentType(fileName, contentType);
+        if (resolved == null) {
+            throw new BusinessException(ErrorCode.UNSUPPORTED_DOCUMENT_TYPE, "Unsupported document type");
+        }
+    }
+
+    private String resolveSupportedContentType(String fileName, String contentType) {
+        String extensionType = contentTypeFromFileName(fileName);
+        String suppliedType = normalizedSuppliedContentType(contentType);
+        if (suppliedType == null || "application/octet-stream".equals(suppliedType)) {
+            return extensionType;
+        }
+        if (extensionType == null) {
+            return null;
+        }
+        if (SUPPORTED_CONTENT_TYPES.contains(suppliedType)) {
+            return suppliedType;
+        }
+        return null;
+    }
+
+    private String normalizedSuppliedContentType(String contentType) {
+        if (contentType == null || contentType.isBlank()) {
+            return null;
+        }
+        return contentType.split(";")[0].trim().toLowerCase();
+    }
+
+    private String contentTypeFromFileName(String fileName) {
+        if (fileName == null || fileName.isBlank()) {
+            return null;
+        }
+        String lower = fileName.trim().toLowerCase();
+        if (lower.endsWith(".txt")) {
+            return "text/plain";
+        }
+        if (lower.endsWith(".md") || lower.endsWith(".markdown")) {
+            return "text/markdown";
+        }
+        if (lower.endsWith(".pdf")) {
+            return "application/pdf";
+        }
+        return null;
     }
 
     private String buildChunkObjectKey(Long uploadId, int chunkIndex) {
@@ -655,6 +731,13 @@ public class DocumentUploadService {
                 .objectKey(document.getObjectKey())
                 .originalFilename(document.getOriginalFilename())
                 .contentHash(document.getContentHash())
+                .activeIndexVersion(document.getActiveIndexVersion())
+                .parsedTextObjectKey(document.getParsedTextObjectKey())
+                .parseStatus(document.getParseStatus())
+                .indexStatus(document.getIndexStatus())
+                .tokenCount(document.getTokenCount())
+                .chunkCount(document.getChunkCount())
+                .errorMessage(document.getErrorMessage())
                 .status(document.getStatus())
                 .createdBy(document.getCreatedBy())
                 .createdAt(document.getCreatedAt())

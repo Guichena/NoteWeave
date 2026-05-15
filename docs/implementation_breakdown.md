@@ -816,7 +816,7 @@ WebSocket /ws/chat/{ticket}
 
 ## 10. 当前编码入口
 
-当前结论：Phase 0/1 与 Phase 1.5 已完成并通过回归测试，下一阶段从 Phase 2 开始。
+当前结论：Phase 0/1、Phase 1.5、Phase 2 与 Phase 3 已完成并通过回归测试，下一阶段从 Phase 4 开始。
 
 开始任何阶段前先读取：
 
@@ -833,5 +833,5 @@ docs/features/{current_phase}.md
 当前下一步：
 
 ```text
-Phase 2: KnowledgeBase、文件对象、分片上传与异步任务投递
+Phase 4: 团队 RAG Chat 与 Citation
 ```

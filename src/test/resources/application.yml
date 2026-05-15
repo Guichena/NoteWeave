@@ -44,7 +44,16 @@ noteweave:
       document-process: test.noteweave.document.local
     consumer-groups:
       task: test-noteweave-task-worker-local
+      document-process: test-noteweave-document-worker-local
   task:
     dispatcher:
       enabled: false
       fixed-delay-ms: 5000
+  document:
+    parsing:
+      chunk-size: 80
+      chunk-overlap: 20
+      max-text-length: 2000000
+  elasticsearch:
+    uris: http://localhost:9200
+    index-prefix: noteweave-test-local-

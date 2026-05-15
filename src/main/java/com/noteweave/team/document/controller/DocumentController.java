@@ -3,6 +3,7 @@ package com.noteweave.team.document.controller;
 import com.noteweave.common.api.ApiResponse;
 import com.noteweave.common.security.CurrentUserProvider;
 import com.noteweave.task.dto.TaskResponse;
+import com.noteweave.team.document.dto.DocumentChunkResponse;
 import com.noteweave.team.document.dto.DocumentResponse;
 import com.noteweave.team.document.service.DocumentUploadService;
 import java.util.List;
@@ -30,6 +31,11 @@ public class DocumentController {
     @GetMapping("/documents/{documentId}")
     public ApiResponse<DocumentResponse> get(@PathVariable Long documentId) {
         return ApiResponse.success(documentUploadService.getDocument(currentUserProvider.getCurrentUserId(), documentId));
+    }
+
+    @GetMapping("/documents/{documentId}/chunks")
+    public ApiResponse<List<DocumentChunkResponse>> chunks(@PathVariable Long documentId) {
+        return ApiResponse.success(documentUploadService.listDocumentChunks(currentUserProvider.getCurrentUserId(), documentId));
     }
 
     @DeleteMapping("/documents/{documentId}")

@@ -24,7 +24,7 @@ NoteWeave 是一个面向团队与个人的 AI 知识工作台后端项目。
 
 ---
 
-## 当前实现状态（Phase 0/1 + Phase 1.5 + Phase 2）
+## 当前实现状态（Phase 0/1 + Phase 1.5 + Phase 2 + Phase 3）
 
 当前仓库已完成：
 
@@ -78,6 +78,14 @@ NoteWeave 是一个面向团队与个人的 AI 知识工作台后端项目。
   - FileObject 按 Space 复用与 refCount 记录
   - Document 元数据、软删除、reindex 任务创建
   - `DOCUMENT_PROCESS` TaskOutbox 投递到 Kafka `noteweave.document`
+- Phase 3 文档处理与索引：
+  - `DOCUMENT_PROCESS` Worker 只消费 `taskId`，执行前回查 DB 状态
+  - TXT / Markdown / PDF 解析，DOCX 等不支持类型在上传初始化阶段拒绝
+  - parsed text 保存到 MinIO
+  - `document_chunk`、`indexVersion`、`activeIndexVersion`
+  - Elasticsearch BM25 索引与 Search Debug
+  - 重复消费幂等、失败落库并交给 Kafka 重试、reindex 失败保留旧 active version
+  - 文档删除或 KnowledgeBase 归档后不可被 Search Debug 召回
 - OpenAPI 文档导出：
   - `GET /v3/api-docs`
   - `GET /swagger-ui.html`
@@ -88,11 +96,11 @@ NoteWeave 是一个面向团队与个人的 AI 知识工作台后端项目。
 
 ## 暂未实现（按规划延后）
 
-以下能力会在后续阶段接入，当前不在 Phase 0/1、Phase 1.5、Phase 2 范围内：
+以下能力会在后续阶段接入，当前不在 Phase 0/1、Phase 1.5、Phase 2、Phase 3 范围内：
 
-- Elasticsearch
-- 文档解析、Chunk 切片、Embedding 与索引
 - 团队 RAG 问答
+- LLM 回答生成、Citation 与 Evidence 持久化
+- Embedding 向量召回与混合检索
 - WebSocket 会话执行底座
 - 个人 ResearchProject
 - Artifact / Studio
@@ -108,10 +116,13 @@ NoteWeave 是一个面向团队与个人的 AI 知识工作台后端项目。
 - Spring Data JPA
 - Spring Data Redis
 - MySQL
+- MinIO
+- Elasticsearch
+- Kafka
 - JWT（jjwt）
 - Lombok
 - Maven
-- Test: JUnit 5, Spring Test, H2
+- Test: JUnit 5, Spring Test, Testcontainers
 
 ---
 
@@ -219,6 +230,9 @@ mvn test
 - `TaskControllerTest`
 - `TaskServiceIntegrationTest`
 - `Phase2UploadFlowIntegrationTest`
+- `DocumentParserServiceTest`
+- `ChunkServiceTest`
+- `Phase3DocumentProcessingIntegrationTest`
 - `StoragePropertiesValidatorTest`
 
 ---
@@ -238,7 +252,6 @@ mvn test
 
 ## 路线图（简版）
 
-- Phase 3：文档解析、Chunk、异步索引
 - Phase 4-5：团队 RAG、WebSocket 会话运行态与记忆
 - Phase 6-8：个人研究工作台、Wiki Compiler、Studio Artifact
 - Phase 9+：混合检索增强、Wiki 发布、可观测性与运维能力

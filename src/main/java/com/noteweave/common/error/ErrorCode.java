@@ -34,7 +34,15 @@ public enum ErrorCode {
     UPLOAD_MERGE_FAILED(HttpStatus.BAD_REQUEST, "upload merge failed"),
     STORAGE_OBJECT_NOT_FOUND(HttpStatus.NOT_FOUND, "storage object not found"),
     STORAGE_OPERATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "storage operation failed"),
-    KAFKA_DISPATCH_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "kafka dispatch failed");
+    KAFKA_DISPATCH_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "kafka dispatch failed"),
+
+    DOCUMENT_PARSE_FAILED(HttpStatus.BAD_REQUEST, "document parse failed"),
+    DOCUMENT_EMPTY_TEXT(HttpStatus.BAD_REQUEST, "document text is empty"),
+    DOCUMENT_CHUNK_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "document chunk failed"),
+    DOCUMENT_INDEX_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "document index failed"),
+    ES_INDEX_NOT_AVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "elasticsearch index is not available"),
+    ES_QUERY_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "elasticsearch query failed"),
+    UNSUPPORTED_DOCUMENT_TYPE(HttpStatus.BAD_REQUEST, "unsupported document type");
 
     private final HttpStatus httpStatus;
     private final String defaultMessage;

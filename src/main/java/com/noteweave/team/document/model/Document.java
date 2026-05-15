@@ -48,6 +48,12 @@ public class Document {
     @Column(name = "content_hash", nullable = false, length = 64, columnDefinition = "CHAR(64)")
     private String contentHash;
 
+    @Column(name = "active_index_version", nullable = false)
+    private int activeIndexVersion;
+
+    @Column(name = "parsed_text_object_key", length = 512)
+    private String parsedTextObjectKey;
+
     @Column(name = "parse_status", nullable = false, length = 32)
     private String parseStatus = "PENDING";
 

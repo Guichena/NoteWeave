@@ -17,6 +17,13 @@ public class DocumentResponse {
     private String objectKey;
     private String originalFilename;
     private String contentHash;
+    private Integer activeIndexVersion;
+    private String parsedTextObjectKey;
+    private String parseStatus;
+    private String indexStatus;
+    private Integer tokenCount;
+    private Integer chunkCount;
+    private String errorMessage;
     private DocumentStatus status;
     private Long createdBy;
     private LocalDateTime createdAt;
