@@ -387,6 +387,8 @@ FORMAL + PERSONAL_RESEARCH_CHAT:
 
 ## 7. 生成执行流程
 
+说明：本流程中的 Redis stream 只保存 Chat runtime 的 partial content、stream state 和恢复信息，不替代通用 Task/Outbox/Worker。所有耗时后台任务仍按 `docs/CONTRACT.md` 使用统一 `task` 和 Outbox/Kafka 投递。
+
 ```text
 WebSocket 收到 chat.message
   ↓

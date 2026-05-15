@@ -178,6 +178,8 @@ DISCARDED
 
 ## 7. Redis 运行态
 
+说明：本节 Redis stream 只用于 Chat runtime 的流式状态、断线恢复和短期上下文，不作为通用异步任务队列。上传、解析、索引、生成、评测等长任务仍统一走 `task / task_attempt / task_event / task_outbox` 和对应 Kafka/Worker 链路。
+
 Runtime：
 
 ```text

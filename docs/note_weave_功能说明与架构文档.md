@@ -1,6 +1,6 @@
 # NoteWeave 功能说明与架构文档
 
-> 实现契约说明：本文保留产品定位与总体架构。编码时以 `docs/CONTRACT.md`、`docs/implementation_breakdown.md` 和 `docs/features/database_api_blueprint.md` 为准；旧 `/api/...`、`generation_task/index_task`、Quiz 当前实现等早期口径均已被统一契约覆盖。
+> 实现契约说明：本文保留产品定位与总体架构。编码时以 `docs/CONTRACT.md`、`docs/implementation_breakdown.md` 和 `docs/features/database_api_blueprint.md` 为准；旧 `/api/...`、`generation_task/index_task`、Quiz 当前实现、RabbitMQ/Redis Stream 通用任务队列等早期口径均已被统一契约覆盖。当前后台异步任务消息队列统一使用 Kafka；`task_outbox` 是事务外盒和补偿投递表；Redis Stream 只用于 Phase 5 Chat runtime 的流式状态和断线恢复。
 
 ## 1. 项目定位
 
@@ -786,16 +786,18 @@ MVP 阶段不做复杂团队 Memory，避免权限和一致性问题。
 - Methodology Card 生成
 - Wiki Index 更新
 
-推荐技术方案：
+当前实现技术方案：
 
 ```text
-Kafka / RabbitMQ / Redis Stream + Worker
+task / task_attempt / task_event / task_outbox + Kafka + Worker
 ```
 
-MVP 可先使用：
+说明：
 
 ```text
-Redis Stream + 异步线程池
+task_outbox 只负责 DB 事务外盒和补偿投递。
+Kafka 是后台异步任务消息队列。
+Redis Stream 只用于 Chat runtime 的流式状态和断线恢复。
 ```
 
 ---
@@ -862,7 +864,7 @@ MyBatis-Plus / JPA
 MySQL
 Redis
 Elasticsearch
-Kafka / RabbitMQ / Redis Stream
+Kafka
 对象存储 MinIO / OSS
 LLM API
 Embedding Model
@@ -2142,9 +2144,11 @@ TIMEOUT
   ↓
 后端创建 task 记录
   ↓
-写入消息队列
+同事务写入 task_outbox
   ↓
-Worker 消费任务
+Dispatcher 投递 Kafka
+  ↓
+Worker 消费 Kafka 并回查 task
   ↓
 加载 Agent Plan
   ↓
@@ -2160,7 +2164,7 @@ Worker 消费任务
 MVP 推荐实现：
 
 ```text
-MySQL task 表 + Redis Stream + Worker + 前端轮询
+MySQL task/task_attempt/task_event/task_outbox + Kafka + Worker + 前端轮询
 ```
 
 ---
@@ -2813,33 +2817,26 @@ Studio Button
   ↓
 弹窗配置参数
   ↓
-创建 GenerationTask
+创建 ARTIFACT_GENERATE task
   ↓
-根据 task_type 选择固定 Plan
+根据 artifactType 和场景选择固定 Plan
   ↓
 Plan 顺序调用多个 Skill
   ↓
 保存 Artifact
 ```
 
-示例：生成测验
+测验相关 Plan 暂缓：
 
 ```text
-QuizGenerationTask
-  ↓
-LoadResearchContextSkill
-  ↓
-SelectConceptSkill
-  ↓
-GenerateDeferredQuizSkill
-  ↓
-SaveArtifactSkill
+Quiz / 测验 / 答题 / 评分 / 题库属于 Future Backlog。
+当前实现不创建 QuizGenerationTask，不实现 GenerateDeferredQuizSkill。
 ```
 
 示例：生成研究报告
 
 ```text
-ReportGenerationTask
+ARTIFACT_GENERATE task
   ↓
 LoadResearchContextSkill
   ↓
@@ -2889,8 +2886,8 @@ CANCELLED
 
 ```text
 MySQL task / task_attempt / task_event / task_outbox 表
-Redis Stream 作为任务队列
-Worker 消费任务
+Kafka 作为后台任务消息队列
+Worker 消费 Kafka 后回查 task
 前端轮询任务状态
 ```
 
@@ -2899,9 +2896,11 @@ Worker 消费任务
 ```text
 创建任务记录 PENDING
   ↓
-写入 Redis Stream
+同事务写入 task_outbox
   ↓
-Worker 获取任务
+Dispatcher 投递 Kafka
+  ↓
+Worker 消费 Kafka 并回查 task
   ↓
 更新 RUNNING
   ↓
@@ -2951,7 +2950,7 @@ Artifact = 阶段性任务产物层
 
 默认规则：
 
-- Report、Quiz、StudyGuide、Briefing、Comparison 默认是 Artifact，不进入 Wiki。
+- Report、StudyGuide、Briefing、Comparison 默认是 Artifact，不进入 Wiki；Quiz 属于 Future Backlog，不进入当前 Artifact 类型、DDL、API 或前端入口。
 - 团队侧 WikiDraft、FAQ、OnboardingGuide、TechnicalSummary 可以选择发布为 WikiPage。
 - 团队侧 Artifact 发布为 WikiPage 需要人工确认，发布后生成 WikiPageVersion，并进入团队 RAG 索引。
 - 个人侧 Artifact 默认不进入个人 Wiki；用户确认后可沉淀为 SynthesisCard，或以 merge proposal 更新 ConceptCard / MethodologyCard。

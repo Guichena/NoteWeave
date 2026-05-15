@@ -34,6 +34,59 @@ Kafka
 - 当前 Phase 新增中间件、bucket、topic、index 或测试路径时，必须同步更新 `docs/DOCKER_MIDDLEWARE.md`。
 - 测试临时路径统一使用 `target/noteweave-test/{phase}/`，不能写用户机器绝对路径。
 
+## Subagent 分工模板
+
+本节描述 AI 编码代理执行本 Phase 时允许使用的 subagent 协作方式。`subagent` 只表示编码执行分工，不是 NoteWeave 产品运行态 Agent/Skill 设计。
+
+通用规则：
+
+- 主代理是本 Phase 的 owner，负责最终集成、测试、文档更新和交付结论。
+- subagent 必须先按本文档的“必读文档”顺序读取上下文，再开始自己的子任务。
+- 每个 subagent 必须有明确 ownership，限定可修改的模块、文件或测试范围。
+- 不允许多个 subagent 同时修改同一文件或同一模块；需要交叉修改时由主代理统一合并。
+- 不允许 subagent 扩大当前 Phase 范围，遇到范围外问题只记录为遗留风险。
+- 所有实现仍必须遵守 TDD：先写失败测试，再写最小实现，再重构和回归。
+- subagent 产出必须由主代理 review 后合入，主代理不能直接信任未验证结果。
+
+推荐分工：
+
+```text
+lead-agent:
+- 读取全部必读文档，拆分任务，维护 Phase 边界和视觉/交互一致性。
+- 负责最终集成、运行前端验证、更新 PROJECT_STATUS。
+
+test-agent:
+- 先写核心路由、API client、权限错误、WebSocket 恢复和端到端薄片测试。
+- 覆盖登录、Space、上传、Chat、Studio、Wiki、Memory、Admin 主流程。
+
+app-shell-agent:
+- 负责全局布局、导航、认证态、Space 切换和错误页。
+- 不实现业务页面深层逻辑。
+
+api-client-agent:
+- 负责 `/api/v1` client、统一分页、错误处理、token refresh。
+- 不暴露 Quiz 路由或入口。
+
+team-workspace-agent:
+- 负责团队 KnowledgeBase、上传、文档列表、Team RAG Chat、Citation drawer。
+- 保持权限和处理状态展示清晰。
+
+personal-workspace-agent:
+- 负责 ResearchProject、Source、ArticleCard / ConceptCard / SynthesisCard 页面。
+- 个人数据 owner-only。
+
+studio-artifact-agent:
+- 负责 Studio、Artifact Viewer、编辑、导出、重新生成、沉淀/发布入口展示。
+- Artifact 默认不自动进入 Wiki。
+
+wiki-memory-admin-agent:
+- 负责 Wiki、Memory、Task Center、Admin 基础页整合。
+- 不实现商业化或复杂协同编辑。
+
+visual-review-agent:
+- 只做 review，不直接改代码。
+- 重点检查桌面/移动端可用性、状态反馈、空态、错误态和交互一致性。
+```
 ## 必读文档
 
 按顺序读取：

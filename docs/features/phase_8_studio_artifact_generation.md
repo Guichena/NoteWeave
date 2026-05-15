@@ -58,7 +58,7 @@ docs/implementation_breakdown.md
 
 ## 4. 支持的 Artifact 类型
 
-MVP 支持：
+Phase 8 MVP 只实现以下 Artifact 类型：
 
 ```text
 REPORT
@@ -81,6 +81,7 @@ READING_NOTES
 说明：
 
 - `WIKI_DRAFT` 可以作为 Artifact 类型保留，但发布到 Wiki 放到 Phase 10。
+- `docs/CONTRACT.md` 和 `database_api_blueprint.md` 中的 Artifact 全局枚举是长期允许范围，不代表 Phase 8 必须全部实现。
 
 ---
 

@@ -213,22 +213,26 @@ TaskResponse markFailed(Long operatorId, Long taskId, String reason);
 可重试任务类型：
 
 ```text
-DOCUMENT_PARSE
-DOCUMENT_INDEX
+DOCUMENT_PROCESS
+DOCUMENT_REINDEX
 SOURCE_IMPORT
-STUDIO_GENERATION
-PERSONAL_GENERATION
+SOURCE_COMPILE
+ARTIFACT_GENERATE
+WIKI_INDEX
+EMBEDDING_BACKFILL
 RAG_EVAL_RUN
+CLEANUP_RESOURCE
 ```
 
 重试规则：
 
-- 只允许 FAILED、CANCELLED、TIMEOUT 状态重试。
+- 只允许 `FAILED / TIMEOUT` 状态重试。
+- `CANCELLED` 不直接 retry；如果业务需要重新执行，必须由对应业务入口创建新的幂等任务。
 - 重试时创建新 attempt 或记录 retryCount。
 - 不直接覆盖原始错误信息。
 - 对于文件处理任务，必须先确认 MinIO 原始对象仍存在。
-- 对于 WIKI_INDEX / DOCUMENT_INDEX 类任务，必须确认目标资源仍处于可索引状态。
-- RUNNING 任务不能直接 retry，只能先 request cancel，待 Worker 在安全点停止后再按状态判断。
+- 对于 `WIKI_INDEX / DOCUMENT_PROCESS / DOCUMENT_REINDEX` 类任务，必须确认目标资源仍处于可索引状态。
+- RUNNING 任务不能直接 retry，只能先 request cancel；被取消后仍不能直接 retry，需业务重新发起或等失败/超时后按规则重试。
 
 ### ResourceCleanupService
 

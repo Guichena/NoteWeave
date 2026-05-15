@@ -33,6 +33,8 @@ docs/features/database_api_blueprint.md
 
 所有中间件必须通过 Docker Compose 或 Testcontainers 提供。如果当前阶段用到新的中间件、测试 bucket、topic、index 或本地临时路径，必须同步更新 `docs/DOCKER_MIDDLEWARE.md`。
 
+后台异步任务消息队列统一使用 Kafka。`task_outbox` 只做 DB 事务外盒和补偿投递；Redis Stream 只允许用于 Phase 5 Chat runtime 的流式状态、断线恢复和短期上下文，不得作为上传、解析、索引、生成、评测等通用后台任务队列。
+
 不要把以下文档作为实现权威：
 
 ```text
@@ -41,7 +43,7 @@ docs/features/noteweave_full_arch_review.md
 docs/architecture_review_issues_and_recommendations.md
 ```
 
-这些只作为背景或历史审查记录。
+这些只作为背景或历史审查记录。若其中出现旧 `/api/...`、`generation_task/index_task`、`generated_artifact`、Quiz 当前实现或完全自主 Agent 口径，均以当前 Phase prompt 和权威契约为准。
 
 ## 阶段提示词
 

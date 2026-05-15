@@ -34,6 +34,51 @@ Kafka
 - 当前 Phase 新增中间件、bucket、topic、index 或测试路径时，必须同步更新 `docs/DOCKER_MIDDLEWARE.md`。
 - 测试临时路径统一使用 `target/noteweave-test/{phase}/`，不能写用户机器绝对路径。
 
+## Subagent 分工模板
+
+本节描述 AI 编码代理执行本 Phase 时允许使用的 subagent 协作方式。`subagent` 只表示编码执行分工，不是 NoteWeave 产品运行态 Agent/Skill 设计。
+
+通用规则：
+
+- 主代理是本 Phase 的 owner，负责最终集成、测试、文档更新和交付结论。
+- subagent 必须先按本文档的“必读文档”顺序读取上下文，再开始自己的子任务。
+- 每个 subagent 必须有明确 ownership，限定可修改的模块、文件或测试范围。
+- 不允许多个 subagent 同时修改同一文件或同一模块；需要交叉修改时由主代理统一合并。
+- 不允许 subagent 扩大当前 Phase 范围，遇到范围外问题只记录为遗留风险。
+- 所有实现仍必须遵守 TDD：先写失败测试，再写最小实现，再重构和回归。
+- subagent 产出必须由主代理 review 后合入，主代理不能直接信任未验证结果。
+
+推荐分工：
+
+```text
+lead-agent:
+- 读取全部必读文档，拆分任务，维护 Phase 边界。
+- 负责最终集成、运行回归测试、更新 PROJECT_STATUS。
+
+test-agent:
+- 先写 Document processing / Chunk / ES 索引相关失败测试。
+- 覆盖重复消费、失败状态、权限过滤、删除/归档不可召回。
+
+parser-agent:
+- 负责 DocumentParser、parsed text 保存、文件类型支持边界。
+- 不修改 ES 索引和 Worker 状态机。
+
+chunk-agent:
+- 负责 DocumentChunk、chunk metadata、indexVersion 数据模型和幂等约束。
+- 不修改 LLM、Citation 或 RAG Chat。
+
+index-agent:
+- 负责 Elasticsearch BM25 index、activeIndexVersion 切换、Search Debug。
+- 保证查询始终带 space / knowledgeBase / status filter。
+
+worker-agent:
+- 负责 DOCUMENT_PROCESS Worker 与 TaskAttempt / Document 状态回写。
+- 只消费 taskId，执行前查 DB task 状态。
+
+review-agent:
+- 只做 review，不直接改代码。
+- 重点检查幂等、权限、版本切换、失败回滚和测试缺口。
+```
 ## 必读文档
 
 按顺序读取：

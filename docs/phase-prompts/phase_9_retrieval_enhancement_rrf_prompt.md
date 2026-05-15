@@ -34,6 +34,55 @@ Kafka
 - 当前 Phase 新增中间件、bucket、topic、index 或测试路径时，必须同步更新 `docs/DOCKER_MIDDLEWARE.md`。
 - 测试临时路径统一使用 `target/noteweave-test/{phase}/`，不能写用户机器绝对路径。
 
+## Subagent 分工模板
+
+本节描述 AI 编码代理执行本 Phase 时允许使用的 subagent 协作方式。`subagent` 只表示编码执行分工，不是 NoteWeave 产品运行态 Agent/Skill 设计。
+
+通用规则：
+
+- 主代理是本 Phase 的 owner，负责最终集成、测试、文档更新和交付结论。
+- subagent 必须先按本文档的“必读文档”顺序读取上下文，再开始自己的子任务。
+- 每个 subagent 必须有明确 ownership，限定可修改的模块、文件或测试范围。
+- 不允许多个 subagent 同时修改同一文件或同一模块；需要交叉修改时由主代理统一合并。
+- 不允许 subagent 扩大当前 Phase 范围，遇到范围外问题只记录为遗留风险。
+- 所有实现仍必须遵守 TDD：先写失败测试，再写最小实现，再重构和回归。
+- subagent 产出必须由主代理 review 后合入，主代理不能直接信任未验证结果。
+
+推荐分工：
+
+```text
+lead-agent:
+- 读取全部必读文档，拆分任务，维护 Phase 边界。
+- 负责最终集成、运行回归测试、更新 PROJECT_STATUS。
+
+test-agent:
+- 先写 Embedding backfill、VectorRetriever、Weighted RRF、降级路径测试。
+- 覆盖权限 filter 始终存在、向量失败降级 BM25。
+
+embedding-agent:
+- 负责 EmbeddingClient、模型配置、EMBEDDING_BACKFILL Task。
+- 不修改团队 Wiki 发布逻辑。
+
+vector-index-agent:
+- 负责 ES vector mapping、alias、维度版本绑定、VectorIndexerService。
+- 保证历史 Chunk 可 backfill。
+
+retriever-agent:
+- 负责 BM25Retriever、VectorRetriever、WikiRetriever 抽象统一。
+- 所有检索实现必须保留权限过滤。
+
+rrf-agent:
+- 负责 Weighted RRF、EvidencePostProcessor 增强、同文档限流。
+- 不改变 Phase 4 的 Citation 契约。
+
+trace-agent:
+- 负责 RRF trace 写入 RetrievalTrace 的最小集成。
+- 不实现 Phase 14 完整评测平台。
+
+review-agent:
+- 只做 review，不直接改代码。
+- 重点检查降级路径、权限 filter、向量维度迁移和 trace 可解释性。
+```
 ## 必读文档
 
 按顺序读取：
