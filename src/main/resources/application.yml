@@ -3,9 +3,9 @@ server:
 
 spring:
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3306/noteweave?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:}
+    url: ${DB_URL:jdbc:mysql://localhost:3307/noteweave?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+    username: ${DB_USERNAME:noteweave}
+    password: ${DB_PASSWORD:noteweave}
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     open-in-view: false
@@ -18,8 +18,25 @@ spring:
   data:
     redis:
       host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
+      port: ${REDIS_PORT:6380}
       password: ${REDIS_PASSWORD:}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+  elasticsearch:
+    uris: ${ES_URIS:http://localhost:9200}
+
+noteweave:
+  storage:
+    minio:
+      endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+      access-key: ${MINIO_ACCESS_KEY:noteweave}
+      secret-key: ${MINIO_SECRET_KEY:noteweave-minio-secret}
+      bucket: ${MINIO_BUCKET:noteweave-dev}
+      test-bucket: ${MINIO_TEST_BUCKET:noteweave-test}
+    paths:
+      local-test-root: ${NOTEWEAVE_TEST_ROOT:target/noteweave-test}
+      dev-object-prefix: ${NOTEWEAVE_DEV_OBJECT_PREFIX:dev}
+      test-object-prefix: ${NOTEWEAVE_TEST_OBJECT_PREFIX:test}
 
 jwt:
   secret-key: ${JWT_SECRET_KEY:change-me-in-dev-change-me-in-dev}
@@ -33,6 +50,8 @@ management:
         include: health,info
 
 logging:
+  pattern:
+    level: "%5p [requestId:%X{requestId:-N/A}]"
   level:
     org.springframework.security: INFO
     com.noteweave: INFO

@@ -9,7 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.noteweave.common.error.BusinessException;
 import com.noteweave.common.error.ErrorCode;
-import com.noteweave.permission.service.SpacePermissionService;
+import com.noteweave.permission.service.ResourceAccessService;
 import com.noteweave.space.model.Space;
 import com.noteweave.space.model.SpaceMember;
 import com.noteweave.space.model.SpaceMemberStatus;
@@ -38,13 +38,13 @@ class SpaceServiceTest {
     @Mock
     private UserRepository userRepository;
     @Mock
-    private SpacePermissionService spacePermissionService;
+    private ResourceAccessService resourceAccessService;
 
     private SpaceService spaceService;
 
     @BeforeEach
     void setUp() {
-        spaceService = new SpaceService(spaceRepository, spaceMemberRepository, userRepository, spacePermissionService);
+        spaceService = new SpaceService(spaceRepository, spaceMemberRepository, userRepository, resourceAccessService);
     }
 
     @Test

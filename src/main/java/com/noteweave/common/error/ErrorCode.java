@@ -17,7 +17,13 @@ public enum ErrorCode {
     SPACE_NOT_FOUND(HttpStatus.NOT_FOUND, "space not found"),
     SPACE_ACCESS_DENIED(HttpStatus.FORBIDDEN, "space access denied"),
     MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "member not found"),
-    OWNER_CANNOT_BE_REMOVED(HttpStatus.BAD_REQUEST, "owner cannot be removed");
+    OWNER_CANNOT_BE_REMOVED(HttpStatus.BAD_REQUEST, "owner cannot be removed"),
+
+    TASK_NOT_FOUND(HttpStatus.NOT_FOUND, "task not found"),
+    TASK_ACCESS_DENIED(HttpStatus.FORBIDDEN, "task access denied"),
+    TASK_INVALID_STATUS(HttpStatus.BAD_REQUEST, "task status is invalid"),
+    TASK_RETRY_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "task retry is not allowed"),
+    TASK_WORKER_NOT_FOUND(HttpStatus.BAD_REQUEST, "task worker not found");
 
     private final HttpStatus httpStatus;
     private final String defaultMessage;

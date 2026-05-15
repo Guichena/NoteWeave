@@ -24,7 +24,7 @@ NoteWeave 是一个面向团队与个人的 AI 知识工作台后端项目。
 
 ---
 
-## 当前实现状态（Phase 0/1）
+## 当前实现状态（Phase 0/1 + Phase 1.5）
 
 当前仓库已完成：
 
@@ -36,10 +36,16 @@ NoteWeave 是一个面向团队与个人的 AI 知识工作台后端项目。
   - `space_member`
 - Spring Security + JWT 认证。
 - `CurrentUserProvider`（业务层不直接解析 JWT）。
+- `ResourceAccessService` 统一资源访问入口（当前覆盖 Space / Task）。
 - 用户认证接口：
   - `POST /api/v1/auth/register`
   - `POST /api/v1/auth/login`
+  - `POST /api/v1/auth/refresh`
+  - `POST /api/v1/auth/logout`
+  - `POST /api/v1/auth/logout-all`
   - `GET /api/v1/users/me`
+  - `PUT /api/v1/users/me`
+  - `PUT /api/v1/users/me/password`
 - 空间与成员接口：
   - `POST /api/v1/spaces`
   - `GET /api/v1/spaces`
@@ -57,6 +63,19 @@ NoteWeave 是一个面向团队与个人的 AI 知识工作台后端项目。
   - 非成员不可访问 TEAM Space
   - PERSONAL Space 仅 owner 可访问
   - `canUploadDocument` 对 VIEWER 返回 `false`（为后续阶段预留）
+- Task/Worker 基础设施：
+  - `task / task_attempt / task_event / task_outbox`
+  - `GET /api/v1/tasks`
+  - `GET /api/v1/tasks/{taskId}`
+  - `GET /api/v1/tasks/{taskId}/events`
+  - `POST /api/v1/tasks/{taskId}/cancel`
+  - `POST /api/v1/tasks/{taskId}/retry`
+  - `NOOP_TEST` worker、取消、超时、重试、Outbox 补偿
+- OpenAPI 文档导出：
+  - `GET /v3/api-docs`
+  - `GET /swagger-ui.html`
+- 本地依赖编排：
+  - 根目录 `docker-compose.yml` 提供 MySQL / Redis / MinIO / Elasticsearch / Kafka
 
 ---
 
@@ -96,10 +115,41 @@ NoteWeave 是一个面向团队与个人的 AI 知识工作台后端项目。
 
 - JDK 17+
 - Maven 3.9+
-- MySQL 8+
-- Redis 6+
+- Docker Desktop 或兼容 Docker Compose 的容器运行时
 
-### 2) 配置项（可用环境变量覆盖）
+### 2) 用 Docker 启动中间件
+
+```bash
+docker compose up -d
+```
+
+默认会启动：
+
+- MySQL 8
+- Redis 7.2
+- MinIO
+- Elasticsearch 8
+- Kafka
+
+默认宿主机端口：
+
+- MySQL: `3307`
+- Redis: `6380`
+- MinIO API: `9000`
+- MinIO Console: `9001`
+- Elasticsearch: `9200`
+- Kafka: `9092`
+
+如果本机端口有冲突，可以覆盖：
+
+- `MYSQL_PORT`
+- `REDIS_PORT`
+- `MINIO_PORT`
+- `MINIO_CONSOLE_PORT`
+- `ES_PORT`
+- `KAFKA_PORT`
+
+### 3) 配置项（可用环境变量覆盖）
 
 默认配置在 `src/main/resources/application.yml`：
 
@@ -109,11 +159,17 @@ NoteWeave 是一个面向团队与个人的 AI 知识工作台后端项目。
 - `REDIS_HOST`
 - `REDIS_PORT`
 - `REDIS_PASSWORD`
+- `MINIO_ENDPOINT`
+- `MINIO_BUCKET`
+- `MINIO_TEST_BUCKET`
+- `ES_URIS`
+- `KAFKA_BOOTSTRAP_SERVERS`
 - `JWT_SECRET_KEY`
-- `JWT_EXPIRATION_SECONDS`
+- `JWT_ACCESS_TOKEN_EXPIRATION_SECONDS`
+- `JWT_REFRESH_TOKEN_EXPIRATION_SECONDS`
 - `SERVER_PORT`
 
-### 3) 启动
+### 4) 本地直接启动
 
 ```bash
 mvn spring-boot:run
@@ -125,6 +181,13 @@ mvn spring-boot:run
 GET /actuator/health
 ```
 
+OpenAPI / Swagger：
+
+```text
+GET /v3/api-docs
+GET /swagger-ui.html
+```
+
 ---
 
 ## 测试
@@ -133,18 +196,23 @@ GET /actuator/health
 mvn test
 ```
 
+集成测试使用 Testcontainers 启动所需中间件，不依赖本机已安装服务，也不要求提前执行 `docker compose up -d`。
+
 当前已包含：
 
 - `AuthServiceTest`
 - `SpacePermissionServiceTest`
 - `AuthControllerTest`
 - `SpaceControllerTest`
+- `TaskControllerTest`
+- `TaskServiceIntegrationTest`
 
 ---
 
 ## 文档索引
 
 - 总体实现拆解：[`docs/implementation_breakdown.md`](docs/implementation_breakdown.md)
+- Docker 中间件契约：[`docs/DOCKER_MIDDLEWARE.md`](docs/DOCKER_MIDDLEWARE.md)
 - 全量架构说明：[`docs/note_weave_功能说明与架构文档.md`](docs/note_weave_功能说明与架构文档.md)
 - 功能分阶段文档入口：[`docs/features/README.md`](docs/features/README.md)
 - 第一阶段详细说明：[`docs/features/phase_0_1_bootstrap_auth_space.md`](docs/features/phase_0_1_bootstrap_auth_space.md)

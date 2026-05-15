@@ -1,0 +1,16 @@
+package com.noteweave.task.model;
+
+public enum TaskEventType {
+    TASK_CREATED,
+    TASK_DISPATCHED,
+    TASK_STARTED,
+    TASK_PROGRESS,
+    TASK_CANCEL_REQUESTED,
+    TASK_CANCELLED,
+    TASK_SUCCEEDED,
+    TASK_FAILED,
+    TASK_TIMED_OUT,
+    TASK_RETRY_CREATED,
+    OUTBOX_SENT,
+    OUTBOX_SEND_FAILED
+}

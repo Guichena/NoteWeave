@@ -804,6 +804,11 @@ logging:
 
 本阶段必须启用 Flyway 或 Liquibase 管理迁移；`ddl-auto=update` 只能作为本地临时实验配置，不进入提交默认配置。
 
+生产配置校验：
+
+- `prod` / `staging` profile 不允许使用 `JWT_SECRET_KEY` 默认值。
+- 推荐增加 `JwtPropertiesValidator` 或启动期检查，发现默认值、空值、长度不足时直接拒绝启动。
+
 ---
 
 ## 13. 第一阶段测试建议

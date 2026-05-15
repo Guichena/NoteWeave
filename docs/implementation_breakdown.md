@@ -9,10 +9,12 @@
 ## 1. 执行原则
 
 - 先统一契约，再写代码：数据库表、API 路径、状态枚举、错误码、分页格式和权限边界必须先收敛。
+- 所有编程阶段采用测试驱动开发：先写失败测试，再写最小实现，最后运行当前阶段测试和必要回归测试。
+- 所有中间件通过 Docker Compose 或 Testcontainers 提供；Phase 引入新中间件时必须同步本地 Docker、测试容器、测试 bucket/topic/index/path 契约。
 - 先稳定异步任务，再接 AI 能力：上传、解析、索引、Source 编译、Artifact 生成、Wiki 入索引、评测都必须走统一 Task/Worker 模型。
 - 先跑通团队 RAG 最小闭环，再扩展个人研究、Studio、Wiki 和 Memory。
-- 团队侧与个人侧分治：团队以 `Space -> KnowledgeBase -> Document -> DocumentChunk` 为主线，个人以 `Space -> ResearchProject -> Source -> ArticleCard/ConceptCard` 为主线。
-- Artifact 与 Wiki 严格分离：阶段性产物保存在 Artifact；只有人工确认的长期稳定内容才能发布为 Wiki。
+- 团队侧与个人侧分治：团队以 `Space -> KnowledgeBase -> Document -> DocumentChunk` 为主线，个人以 `Space -> ResearchProject -> Source -> ArticleCard/ConceptCard/MethodologyCard` 为源资料编译主线，并通过用户确认后的 `Artifact -> SynthesisCard` 形成产物沉淀闭环。
+- Artifact 与 Wiki 严格分离：阶段性产物保存在 Artifact；只有人工确认的长期稳定内容才能发布为团队 WikiPage 或沉淀为个人 Wiki Card。
 - 所有业务 API 统一使用 `/api/v1`；旧的 `/api/...` 示例视为待修正文档，不再作为实现依据。
 - 所有列表 API 默认支持分页、筛选和排序；统一响应、统一错误码和统一认证头是 Phase 0/1 的交付物。
 - 当前阶段暂缓 Quiz/测验/答题/评分/题库、外部资料自动发现、商业化计费、复杂企业审批流、复杂多人实时协同编辑。
@@ -25,6 +27,8 @@
 
 | 契约 | 权威来源 | 要求 |
 |---|---|---|
+| 最终实现契约 | `docs/CONTRACT.md` | API 前缀、统一响应、Task 类型、Artifact/Wiki 边界、权限和暂缓范围。 |
+| Docker 中间件 | `docs/DOCKER_MIDDLEWARE.md` | 本地 Docker Compose、Testcontainers、测试路径、bucket、topic、index 前缀。 |
 | 阶段顺序 | `implementation_breakdown.md` | 本文档为唯一执行顺序。 |
 | 表结构与 API | `database_api_blueprint.md` | 必须同步所有阶段用到的表、索引、枚举和 `/api/v1` API。 |
 | 功能细节 | `docs/features/phase_*.md` | 按本文档的阶段顺序修正后再编码。 |
@@ -88,6 +92,8 @@ ConceptAlias
 ConceptRelation
 ArticleConceptRelation
 MethodologyCard
+SynthesisCard
+ArtifactCardRelation
 ```
 
 约定：
@@ -310,6 +316,8 @@ DELETE /api/v1/spaces/{spaceId}/members/{memberId}
 ### Phase 1.5: Task / Outbox / Worker 基础设施
 
 目标：在任何长任务接入前先稳定异步模型。
+
+专题文档：`docs/features/phase_1_5_task_outbox_worker.md`
 
 必须完成：
 
@@ -584,7 +592,7 @@ WebSocket /ws/chat/{ticket}
 
 ### Phase 11: 个人 Wiki-based Generation
 
-目标：基于 ResearchProject、ArticleCard、ConceptCard、MethodologyCard 生成 Artifact。
+目标：基于 ResearchProject、ArticleCard、ConceptCard、SynthesisCard、MethodologyCard 生成 Artifact。
 
 必须完成：
 
@@ -599,7 +607,27 @@ WebSocket /ws/chat/{ticket}
 
 - 不全量塞入 Source 原文，只按需回溯证据。
 - 生成结果保存为 ArtifactVersion。
+- 生成结果默认不进入个人 Wiki。
 - 其他用户不能访问个人生成结果。
+
+### Phase 11.5: 个人 Artifact 沉淀回 Wiki
+
+目标：让用户确认有长期价值的个人 Artifact 能沉淀为个人 Wiki Card，但避免自动污染 ConceptCard。
+
+必须完成：
+
+1. SynthesisCard。
+2. ArtifactCardRelation。
+3. PersonalArtifactDistillationService。
+4. `Artifact -> SynthesisCard` 确认流程。
+5. ArtifactViewer 中的“沉淀到个人 Wiki”入口。
+
+验收：
+
+- Report / StudyGuide / ReadingNotes 等 Artifact 默认仍只作为 Artifact 保存。
+- 用户确认后才创建 SynthesisCard。
+- MVP 不直接合并已有 ConceptCard；Concept / Methodology merge proposal 留增强阶段。
+- SynthesisCard 能回溯 sourceArtifactId、artifactVersionId 和证据。
 
 ### Phase 12: 长期 Memory 深化
 

@@ -24,6 +24,7 @@ import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -44,18 +45,21 @@ public class AuthService {
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
-        if (userRepository.existsByUsername(request.getUsername())) {
+        String normalizedUsername = normalizeRequired(request.getUsername());
+        String normalizedEmail = normalizeEmail(request.getEmail());
+
+        if (userRepository.existsByUsername(normalizedUsername)) {
             throw new BusinessException(ErrorCode.USER_ALREADY_EXISTS, "Username already exists");
         }
-        if (userRepository.existsByEmail(request.getEmail())) {
+        if (userRepository.existsByEmail(normalizedEmail)) {
             throw new BusinessException(ErrorCode.USER_ALREADY_EXISTS, "Email already exists");
         }
 
         User user = new User();
-        user.setUsername(request.getUsername().trim());
-        user.setEmail(request.getEmail().trim().toLowerCase());
+        user.setUsername(normalizedUsername);
+        user.setEmail(normalizedEmail);
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
-        user.setDisplayName(request.getDisplayName());
+        user.setDisplayName(normalizeOptional(request.getDisplayName()));
         user.setSystemRole(UserSystemRole.USER);
         user.setStatus(UserStatus.ACTIVE);
         user = userRepository.save(user);
@@ -67,9 +71,9 @@ public class AuthService {
 
     @Transactional
     public AuthResponse login(LoginRequest request) {
-        String usernameOrEmail = request.getUsernameOrEmail().trim();
+        String usernameOrEmail = normalizeRequired(request.getUsernameOrEmail());
         User user = userRepository.findByUsername(usernameOrEmail)
-                .or(() -> userRepository.findByEmail(usernameOrEmail.toLowerCase()))
+                .or(() -> userRepository.findByEmail(usernameOrEmail.toLowerCase(Locale.ROOT)))
                 .filter(u -> u.getStatus() == UserStatus.ACTIVE)
                 .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_CREDENTIALS));
 
@@ -84,7 +88,8 @@ public class AuthService {
 
     @Transactional
     public AuthResponse refresh(RefreshTokenRequest request) {
-        UserSession session = userSessionRepository.findByRefreshTokenHashAndRevokedAtIsNull(hashRefreshToken(request.getRefreshToken()))
+        UserSession session = userSessionRepository.findByRefreshTokenHashAndRevokedAtIsNull(
+                        hashRefreshToken(normalizeRequired(request.getRefreshToken())))
                 .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_CREDENTIALS, "Invalid refresh token"));
 
         LocalDateTime now = LocalDateTime.now();
@@ -105,7 +110,7 @@ public class AuthService {
 
     @Transactional
     public void logout(Long userId, LogoutRequest request) {
-        String tokenHash = hashRefreshToken(request.getRefreshToken());
+        String tokenHash = hashRefreshToken(normalizeRequired(request.getRefreshToken()));
         Optional<UserSession> session = userSessionRepository.findByUserIdAndRefreshTokenHashAndRevokedAtIsNull(userId, tokenHash);
         if (session.isPresent()) {
             UserSession userSession = session.get();
@@ -165,5 +170,21 @@ public class AuthService {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is not available", e);
         }
+    }
+
+    private String normalizeRequired(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private String normalizeEmail(String value) {
+        return normalizeRequired(value).toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeOptional(String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 }

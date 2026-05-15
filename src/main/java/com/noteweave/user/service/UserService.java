@@ -26,8 +26,8 @@ public class UserService {
     @Transactional
     public UserProfileResponse updateMe(Long userId, UpdateUserProfileRequest request) {
         User user = getRequiredUser(userId);
-        user.setDisplayName(request.getDisplayName());
-        user.setAvatarUrl(request.getAvatarUrl());
+        user.setDisplayName(normalizeOptional(request.getDisplayName()));
+        user.setAvatarUrl(normalizeOptional(request.getAvatarUrl()));
         return toProfileResponse(userRepository.save(user));
     }
 
@@ -58,5 +58,13 @@ public class UserService {
                 .lastLoginAt(user.getLastLoginAt())
                 .disabledAt(user.getDisabledAt())
                 .build();
+    }
+
+    private String normalizeOptional(String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 }

@@ -3,7 +3,7 @@ package com.noteweave.space.service;
 import com.noteweave.common.api.PageResponse;
 import com.noteweave.common.error.BusinessException;
 import com.noteweave.common.error.ErrorCode;
-import com.noteweave.permission.service.SpacePermissionService;
+import com.noteweave.permission.service.ResourceAccessService;
 import com.noteweave.space.dto.AddMemberRequest;
 import com.noteweave.space.dto.CreateSpaceRequest;
 import com.noteweave.space.dto.MemberListQuery;
@@ -48,7 +48,7 @@ public class SpaceService {
     private final SpaceRepository spaceRepository;
     private final SpaceMemberRepository spaceMemberRepository;
     private final UserRepository userRepository;
-    private final SpacePermissionService spacePermissionService;
+    private final ResourceAccessService resourceAccessService;
 
     @Transactional
     public Space createPersonalSpace(Long userId) {
@@ -78,8 +78,8 @@ public class SpaceService {
     @Transactional
     public SpaceResponse createTeamSpace(Long userId, CreateSpaceRequest request) {
         Space space = new Space();
-        space.setName(request.getName().trim());
-        space.setDescription(request.getDescription());
+        space.setName(normalizeRequired(request.getName()));
+        space.setDescription(normalizeOptional(request.getDescription()));
         space.setType(SpaceType.TEAM);
         space.setOwnerId(userId);
         space.setStatus(SpaceStatus.ACTIVE);
@@ -126,18 +126,18 @@ public class SpaceService {
     }
 
     public SpaceResponse getSpace(Long userId, Long spaceId) {
-        spacePermissionService.requireViewSpace(userId, spaceId);
+        resourceAccessService.requireViewSpace(userId, spaceId);
         Space space = getRequiredSpace(spaceId);
         return toSpaceResponse(space);
     }
 
     @Transactional
     public MemberResponse addMember(Long operatorId, Long spaceId, AddMemberRequest request) {
-        spacePermissionService.requireManageSpace(operatorId, spaceId);
+        resourceAccessService.requireManageSpace(operatorId, spaceId);
         Space space = getRequiredSpace(spaceId);
         requireTeamSpace(space);
 
-        User targetUser = userRepository.findByEmail(request.getEmail().trim().toLowerCase())
+        User targetUser = userRepository.findByEmail(normalizeEmail(request.getEmail()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.MEMBER_NOT_FOUND, "User with email not found"));
 
         SpaceMember member = spaceMemberRepository.findBySpaceIdAndUserId(spaceId, targetUser.getId())
@@ -162,7 +162,7 @@ public class SpaceService {
     }
 
     public PageResponse<MemberResponse> listMembers(Long operatorId, Long spaceId, MemberListQuery query) {
-        spacePermissionService.requireViewSpace(operatorId, spaceId);
+        resourceAccessService.requireViewSpace(operatorId, spaceId);
         Pageable pageable = buildPageable(
                 query.getPage(),
                 query.getPageSize(),
@@ -197,7 +197,7 @@ public class SpaceService {
 
     @Transactional
     public MemberResponse updateMemberRole(Long operatorId, Long spaceId, Long memberId, UpdateMemberRoleRequest request) {
-        spacePermissionService.requireManageSpace(operatorId, spaceId);
+        resourceAccessService.requireManageSpace(operatorId, spaceId);
         Space space = getRequiredSpace(spaceId);
         requireTeamSpace(space);
 
@@ -217,7 +217,7 @@ public class SpaceService {
 
     @Transactional
     public void removeMember(Long operatorId, Long spaceId, Long memberId) {
-        spacePermissionService.requireManageSpace(operatorId, spaceId);
+        resourceAccessService.requireManageSpace(operatorId, spaceId);
         Space space = getRequiredSpace(spaceId);
         requireTeamSpace(space);
 
@@ -333,5 +333,21 @@ public class SpaceService {
                 .createdAt(member.getCreatedAt())
                 .updatedAt(member.getUpdatedAt())
                 .build();
+    }
+
+    private String normalizeRequired(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private String normalizeOptional(String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim();
+        return normalized.isEmpty() ? null : normalized;
+    }
+
+    private String normalizeEmail(String value) {
+        return normalizeRequired(value).toLowerCase(java.util.Locale.ROOT);
     }
 }

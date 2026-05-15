@@ -2,11 +2,13 @@ package com.noteweave.space.controller;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.noteweave.support.ContainerizedIntegrationTest;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -19,7 +21,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class SpaceControllerTest {
+class SpaceControllerTest extends ContainerizedIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -31,8 +33,10 @@ class SpaceControllerTest {
     void unauthenticatedRequest_ShouldReturn401() throws Exception {
         mockMvc.perform(get("/api/v1/spaces"))
                 .andExpect(status().isUnauthorized())
+                .andExpect(header().exists("X-Request-Id"))
                 .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.requestId").exists());
     }
 
     @Test

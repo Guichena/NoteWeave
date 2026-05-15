@@ -14,6 +14,7 @@ public class ApiResponse<T> {
     private final String message;
     private final T data;
     private final Instant timestamp;
+    private final String requestId;
 
     public static <T> ApiResponse<T> success(T data) {
         return ApiResponse.<T>builder()
@@ -22,6 +23,7 @@ public class ApiResponse<T> {
                 .message("success")
                 .data(data)
                 .timestamp(Instant.now())
+                .requestId(RequestIdHolder.get())
                 .build();
     }
 
@@ -32,6 +34,7 @@ public class ApiResponse<T> {
                 .message(message)
                 .data(null)
                 .timestamp(Instant.now())
+                .requestId(RequestIdHolder.get())
                 .build();
     }
 }

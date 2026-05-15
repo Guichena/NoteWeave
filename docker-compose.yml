@@ -1,0 +1,139 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: noteweave-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-noteweave}
+      MYSQL_USER: ${MYSQL_USER:-noteweave}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-noteweave}
+    ports:
+      - "${MYSQL_PORT:-3307}:3306"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - noteweave_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-root}"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  redis:
+    image: redis:7.2
+    container_name: noteweave-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - noteweave_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: noteweave-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-noteweave}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-noteweave-minio-secret}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - noteweave_minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    container_name: noteweave-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-noteweave}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-noteweave-minio-secret}
+      MINIO_BUCKET: ${MINIO_BUCKET:-noteweave-dev}
+      MINIO_TEST_BUCKET: ${MINIO_TEST_BUCKET:-noteweave-test}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        mc alias set noteweave http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing "noteweave/$$MINIO_BUCKET"
+        mc mb --ignore-existing "noteweave/$$MINIO_TEST_BUCKET"
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    container_name: noteweave-elasticsearch
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      xpack.security.http.ssl.enabled: "false"
+      ES_JAVA_OPTS: ${ES_JAVA_OPTS:--Xms512m -Xmx512m}
+    ports:
+      - "${ES_PORT:-9200}:9200"
+    volumes:
+      - noteweave_es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  kafka:
+    image: bitnami/kafka:3.7
+    container_name: noteweave-kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_CFG_NODE_ID: 1
+      KAFKA_CFG_PROCESS_ROLES: broker,controller
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:${KAFKA_PORT:-9092}
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    ports:
+      - "${KAFKA_PORT:-9092}:9094"
+    volumes:
+      - noteweave_kafka_data:/bitnami/kafka
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server 127.0.0.1:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  kafka-init:
+    image: bitnami/kafka:3.7
+    container_name: noteweave-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic noteweave.task --partitions 3 --replication-factor 1
+        /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic noteweave.document --partitions 3 --replication-factor 1
+        /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic noteweave.index --partitions 3 --replication-factor 1
+
+volumes:
+  noteweave_mysql_data:
+  noteweave_redis_data:
+  noteweave_minio_data:
+  noteweave_es_data:
+  noteweave_kafka_data:

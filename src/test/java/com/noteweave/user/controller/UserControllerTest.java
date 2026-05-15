@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.noteweave.support.ContainerizedIntegrationTest;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -19,7 +20,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class UserControllerTest {
+class UserControllerTest extends ContainerizedIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;

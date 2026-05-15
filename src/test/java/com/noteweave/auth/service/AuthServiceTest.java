@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.noteweave.auth.dto.AuthResponse;
 import com.noteweave.auth.dto.LoginRequest;
+import com.noteweave.auth.dto.RefreshTokenRequest;
 import com.noteweave.auth.dto.RegisterRequest;
 import com.noteweave.common.error.BusinessException;
 import com.noteweave.common.error.ErrorCode;
@@ -20,6 +21,8 @@ import com.noteweave.user.model.UserSession;
 import com.noteweave.user.model.UserStatus;
 import com.noteweave.user.repository.UserSessionRepository;
 import com.noteweave.user.repository.UserRepository;
+import java.time.LocalDateTime;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -47,10 +50,10 @@ class AuthServiceTest {
     @Test
     void register_ShouldCreateUserAndPersonalSpace() {
         RegisterRequest request = new RegisterRequest();
-        request.setUsername("alice");
-        request.setEmail("alice@example.com");
+        request.setUsername(" alice ");
+        request.setEmail("ALICE@example.com");
         request.setPassword("Password123!");
-        request.setDisplayName("Alice");
+        request.setDisplayName(" Alice ");
 
         when(userRepository.existsByUsername("alice")).thenReturn(false);
         when(userRepository.existsByEmail("alice@example.com")).thenReturn(false);
@@ -72,6 +75,8 @@ class AuthServiceTest {
         assertThat(response.getUser().getUsername()).isEqualTo("alice");
         verify(spaceService).createPersonalSpace(1L);
         verify(userSessionRepository).save(any(UserSession.class));
+        verify(userRepository).existsByUsername("alice");
+        verify(userRepository).existsByEmail("alice@example.com");
     }
 
     @Test
@@ -108,5 +113,33 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(BusinessException.class)
                 .matches(ex -> ((BusinessException) ex).getErrorCode() == ErrorCode.INVALID_CREDENTIALS);
+    }
+
+    @Test
+    void refresh_ShouldTrimRefreshTokenBeforeLookup() {
+        RefreshTokenRequest request = new RefreshTokenRequest();
+        request.setRefreshToken(" test-refresh-token ");
+
+        UserSession session = new UserSession();
+        session.setUserId(1L);
+        session.setExpiresAt(LocalDateTime.now().plusDays(1));
+
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("alice");
+        user.setEmail("alice@example.com");
+        user.setStatus(UserStatus.ACTIVE);
+
+        when(userSessionRepository.findByRefreshTokenHashAndRevokedAtIsNull(any())).thenReturn(Optional.of(session));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(jwtService.generateAccessToken(any(User.class))).thenReturn("jwt-token");
+        when(jwtService.getAccessTokenExpirationSeconds()).thenReturn(900L);
+        when(jwtService.getRefreshTokenExpirationSeconds()).thenReturn(1209600L);
+        when(userSessionRepository.save(any(UserSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        AuthResponse response = authService.refresh(request);
+
+        assertThat(response.getAccessToken()).isEqualTo("jwt-token");
+        verify(userSessionRepository).findByRefreshTokenHashAndRevokedAtIsNull(any());
     }
 }

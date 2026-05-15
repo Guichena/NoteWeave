@@ -1,0 +1,14 @@
+package com.noteweave.task.model;
+
+public enum TaskType {
+    DOCUMENT_PROCESS,
+    DOCUMENT_REINDEX,
+    SOURCE_IMPORT,
+    SOURCE_COMPILE,
+    ARTIFACT_GENERATE,
+    EMBEDDING_BACKFILL,
+    WIKI_INDEX,
+    RAG_EVAL_RUN,
+    CLEANUP_RESOURCE,
+    NOOP_TEST
+}

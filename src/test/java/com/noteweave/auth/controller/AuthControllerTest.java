@@ -2,11 +2,13 @@ package com.noteweave.auth.controller;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.noteweave.support.ContainerizedIntegrationTest;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -19,7 +21,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class AuthControllerTest {
+class AuthControllerTest extends ContainerizedIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -36,9 +38,43 @@ class AuthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.code").value("OK"))
+                .andExpect(jsonPath("$.requestId").exists())
                 .andExpect(jsonPath("$.data.id").isNumber())
                 .andExpect(jsonPath("$.data.username").exists())
                 .andExpect(jsonPath("$.data.email").exists());
+    }
+
+    @Test
+    void register_ShouldEchoRequestIdAndRejectNormalizedDuplicateEmail() throws Exception {
+        String baseName = "dup_email_" + System.nanoTime();
+
+        Map<String, Object> initialPayload = new HashMap<>();
+        initialPayload.put("username", baseName);
+        initialPayload.put("email", baseName + "@example.com");
+        initialPayload.put("password", "Password123!");
+        initialPayload.put("displayName", "Initial User");
+
+        mockMvc.perform(post("/api/v1/auth/register")
+                        .header("X-Request-Id", "custom-request-id")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(initialPayload)))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Request-Id", "custom-request-id"))
+                .andExpect(jsonPath("$.requestId").value("custom-request-id"));
+
+        Map<String, Object> duplicatePayload = new HashMap<>();
+        duplicatePayload.put("username", baseName + "_other");
+        duplicatePayload.put("email", (baseName + "@example.com").toUpperCase());
+        duplicatePayload.put("password", "Password123!");
+        duplicatePayload.put("displayName", "Duplicate User");
+
+        mockMvc.perform(post("/api/v1/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(duplicatePayload)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("USER_ALREADY_EXISTS"))
+                .andExpect(jsonPath("$.requestId").exists());
     }
 
     @Test
@@ -55,6 +91,7 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.accessToken").exists())
                 .andExpect(jsonPath("$.data.refreshToken").exists())
+                .andExpect(jsonPath("$.requestId").exists())
                 .andReturn();
 
         JsonNode refreshRoot = objectMapper.readTree(refreshResult.getResponse().getContentAsString());
