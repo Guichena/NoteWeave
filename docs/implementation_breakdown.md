@@ -196,7 +196,7 @@ CLEANUP_RESOURCE
 
 ### 4.5 文件对象与上传
 
-- 分片对象 key 使用 `chunks/{uploadId}/{chunkIndex}`，不要只用 `fileMd5/chunkIndex`。
+- 分片对象 key 的业务后缀使用 `uploads/{uploadId}/chunks/{chunkIndex}`，实际 MinIO key 必须按 `docs/DOCKER_MIDDLEWARE.md` 增加 dev/test 前缀，不要只用 `fileMd5/chunkIndex`。
 - 合并后对象进入 `FileObject`，由 `content_hash/object_key/ref_count/size/content_type` 管理复用。
 - 秒传只能复用对象内容，不能复用权限；不同 Space 必须有独立 Document 元数据。
 - 上传必须支持 cancel、expiresAt、过期清理和失败补偿。
@@ -354,7 +354,7 @@ GET  /api/v1/tasks/{taskId}/events
 2. `FileObject` 与对象引用计数。
 3. DocumentUpload 初始化、分片上传、状态查询、merge、cancel。
 4. Redis Bitmap key 使用 `upload:{uploadId}` 或等价唯一 key。
-5. MinIO 分片 key 使用 `chunks/{uploadId}/{chunkIndex}`。
+5. MinIO 分片 key 使用 `uploads/{uploadId}/chunks/{chunkIndex}` 后缀，并按 Docker 中间件契约增加 dev/test 前缀。
 6. merge 后创建 Document、FileObject 引用、Task、Outbox。
 7. 上传过期清理基础任务。
 8. Kafka/队列投递幂等。
@@ -766,19 +766,21 @@ WebSocket /ws/chat/{ticket}
 12. ArtifactVersion + Studio Task + Skill Plan
 13. Embedding backfill + VectorRetriever + Weighted RRF
 14. Team Wiki Draft/Publish/Index/Search
-15. Methodology preset + Personal Generation
-16. Memory deepen
-17. Methodology full management
-18. RAG Eval + Observability admin
-19. Admin/Ops full console
-20. Frontend final integration
+15. Methodology preset + Matcher
+16. Personal Generation
+17. Personal Artifact distillation to SynthesisCard
+18. Memory deepen
+19. Methodology full management
+20. RAG Eval + Observability admin
+21. Admin/Ops full console
+22. Frontend final integration
 ```
 
 ---
 
-## 8. 第一批建议修改的文档
+## 8. 已完成的 P0 文档修正
 
-进入编码前建议按优先级修正：
+以下是历史审查中要求先修正的文档项。当前以 `docs/PROJECT_STATUS.md` 为准，这些 P0 口径已经收口到 `CONTRACT / DOCKER_MIDDLEWARE / database_api_blueprint / phase prompts` 中；后续编码不应再回到旧口径。
 
 | 优先级 | 文档 | 必须修正 |
 |---|---|---|
@@ -810,16 +812,24 @@ WebSocket /ws/chat/{ticket}
 
 ---
 
-## 10. 是否可以开始编码
+## 10. 当前编码入口
 
-当前结论：需要先小修文档，然后可以开始 Phase 0/1 编码。
+当前结论：Phase 0/1 与 Phase 1.5 已完成并通过回归测试，下一阶段从 Phase 2 开始。
 
-开始编码前的最小修正文档清单：
+开始任何阶段前先读取：
 
-1. `database_api_blueprint.md`
-2. `phase_0_1_bootstrap_auth_space.md`
-3. `phase_2_file_upload_async_ingestion.md`
-4. `file_upload_async_pipeline.md`
-5. `docs/features/README.md`
+```text
+docs/PROJECT_STATUS.md
+docs/CONTRACT.md
+docs/DOCKER_MIDDLEWARE.md
+docs/implementation_breakdown.md
+docs/features/database_api_blueprint.md
+docs/phase-prompts/{current_phase}_prompt.md
+docs/features/{current_phase}.md
+```
 
-只要这些文档完成 P0 修正，就可以进入 Phase 0/1；不要在旧计划状态下让 AI 从 Phase 0/1 连续执行到 Phase 16。
+当前下一步：
+
+```text
+Phase 2: KnowledgeBase、文件对象、分片上传与异步任务投递
+```

@@ -236,7 +236,7 @@ sessionType
 sessionKind
 title
 scopeType
-scopeIdsJson
+scopeIdsSnapshotJson
 scope 表：chat_session_scope
 summary
 status
@@ -309,6 +309,7 @@ startOffset
 endOffset
 quoteHash
 snapshotObjectKey
+sourceVersion
 createdAt
 updatedAt
 ```

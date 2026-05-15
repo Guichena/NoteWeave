@@ -31,6 +31,7 @@ docs/features/database_api_blueprint.md
 - 用户可以手动创建或编辑个人 MethodologyCard。
 - MethodologyCard 支持 status、version、createdBy、cardScope。
 - 后续可基于 Source 自动抽取 MethodologyCard。
+- 后续可基于用户确认后的 Artifact / SynthesisCard 生成 MethodologyCard proposal。
 
 ---
 
@@ -155,6 +156,7 @@ void archive(Long userId, Long cardId);
 - `PRESET` 不能被普通用户直接修改；用户需要先复制为 `USER_CREATED`。
 - update 必须校验 owner-only，并记录新 version。
 - archive 后不再被 MethodologyMatcher 命中，但历史生成记录仍可回溯。
+- 从 Artifact 沉淀出来的方法论必须先生成 proposal，用户确认后才创建或更新 MethodologyCard。
 
 ### MethodologyMatcher
 

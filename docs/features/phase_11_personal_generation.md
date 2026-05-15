@@ -8,7 +8,7 @@
 Phase 11: Personal Generation / Research Report / Study Guide / Comparison / Work Prep / Artifact
 ```
 
-第十一阶段目标是基于个人 ResearchProject 中的 Source、ArticleCard、ConceptCard，生成可复用 Artifact，包括研究报告、学习指南、对比分析和方案表达训练。
+第十一阶段目标是基于个人 ResearchProject 中的 Source、ArticleCard、ConceptCard、SynthesisCard 和 MethodologyCard，生成可复用 Artifact，包括研究报告、学习指南、对比分析和方案表达训练。
 
 本阶段复用 Phase 8 的 `Task / Skill / Artifact` 机制，不做 Quiz 答题评分，不做外部资料发现，不做 MethodologyCard 自动抽取。
 
@@ -34,11 +34,12 @@ docs/features/database_api_blueprint.md
 - 支持 Study Guide。
 - 支持 Comparison。
 - 支持 Work Prep。
-- 生成时优先使用 ArticleCard / ConceptCard。
+- 生成时优先使用 ArticleCard / ConceptCard；如果项目中已存在 SynthesisCard，也可作为稳定二次知识上下文，并结合 MethodologyCard 组织输出。
 - 必要时回溯 Source Raw Text。
 - 生成结果保存为 Artifact。
 - Artifact 与 ArticleCard / ConceptCard / Source 建立来源关系。
 - Artifact 与 Citation 建立关系。
+- Artifact 默认不写入个人 Wiki；用户确认后的沉淀流程放到 Phase 11.5。
 - 所有个人生成资源 owner-only。
 
 ---
@@ -50,6 +51,9 @@ docs/features/database_api_blueprint.md
 - 不做网页搜索。
 - 不做 MethodologyCard 自动抽取。
 - 不做团队 Wiki 发布。
+- 不做生成完成后自动写入个人 Wiki。
+- 不做 Artifact -> SynthesisCard 沉淀。
+- MVP 不直接把 Artifact 合并进已有 ConceptCard。
 - 不做复杂 Agent 自主规划。
 
 ---
@@ -95,6 +99,8 @@ ArticleCard
   ↓
 ConceptCard
   ↓
+SynthesisCard
+  ↓
 ArticleConceptRelation
   ↓
 Source Raw Text
@@ -104,9 +110,11 @@ Source Raw Text
 
 - ArticleCard 提供文章级摘要和要点。
 - ConceptCard 提供跨资料概念融合。
+- SynthesisCard 如已存在，可提供用户确认后的二次知识总结。
 - Source Raw Text 只在需要证据引用时回溯。
 - 不全量塞入所有 Source 原文。
 - 生成 Artifact 时必须写入 `ArtifactSource`，记录参与生成的 ArticleCard、ConceptCard 和 Source。
+- 生成 Artifact 后不自动创建 ArticleCard / ConceptCard / MethodologyCard / SynthesisCard。
 
 ---
 
@@ -174,6 +182,8 @@ ResearchGenerationContext load(Long userId, Long researchProjectId, GenerationSc
 - 加载 ResearchProject。
 - 加载 ArticleCard。
 - 加载 ConceptCard。
+- 加载 SynthesisCard。
+- 加载匹配到的 MethodologyCard。
 - 加载必要 Source 元数据。
 - 校验 owner-only。
 
@@ -205,6 +215,7 @@ ArtifactSource 写入规则：
 ```text
 ARTICLE_CARD: 被选入上下文的 ArticleCard
 CONCEPT_CARD: 被选入上下文的 ConceptCard
+SYNTHESIS_CARD: 被选入上下文的 SynthesisCard
 SOURCE: 被证据回溯引用的 Source
 ARTIFACT: 当本次生成基于已有 Artifact 时记录
 ```
@@ -213,6 +224,16 @@ ARTIFACT: 当本次生成基于已有 Artifact 时记录
 
 - `ArtifactSource` 与 `ArtifactCitation` 都要在同一生成事务或同一任务完成步骤内写入。
 - 证据不足导致无法写入任何 Source 时，Artifact 状态不得标记 READY，应返回生成失败或证据不足错误。
+
+### Phase 11.5 兼容边界
+
+本阶段只生成 Artifact，不创建 SynthesisCard，不写 `artifact_card_relation`，也不提供 `distill-to-personal-wiki` API。
+
+要求：
+
+- 如果项目中已经存在 SynthesisCard，可作为生成上下文读取。
+- 新生成 Artifact 必须保存 ArtifactVersion、ArtifactSource 和 ArtifactCitation，供 Phase 11.5 的沉淀流程使用。
+- 任何 Concept / Methodology 更新都必须留到用户确认后的 proposal 阶段。
 
 ---
 
@@ -231,10 +252,11 @@ GET  /api/v1/studio/tasks/{taskId}
 {
   "spaceId": 1,
   "researchProjectId": 100,
-  "taskType": "REPORT_GENERATION",
+  "taskType": "ARTIFACT_GENERATE",
   "sourceScopeType": "RESEARCH_PROJECT",
   "sourceIds": [100],
   "params": {
+    "artifactType": "REPORT",
     "topic": "RAG 技术调研报告",
     "length": "MEDIUM",
     "style": "STRUCTURED",
@@ -249,10 +271,11 @@ Work Prep 请求：
 {
   "spaceId": 1,
   "researchProjectId": 100,
-  "taskType": "WORK_PREP_GENERATION",
+  "taskType": "ARTIFACT_GENERATE",
   "sourceScopeType": "RESEARCH_PROJECT",
   "sourceIds": [100],
   "params": {
+    "artifactType": "WORK_PREP",
     "scenario": "技术面试",
     "targetRole": "Java 后端开发",
     "focus": ["RAG", "Kafka", "Redis"]
@@ -341,6 +364,8 @@ PERSONAL_GENERATION_FAILED
 - 可生成 WORK_PREP Artifact。
 - Artifact 与 ResearchProject 关联。
 - Artifact 与来源 Card / Source 关联。
+- Artifact 不会自动进入个人 Wiki。
+- 本阶段不会创建 SynthesisCard，也不会写 ArtifactCardRelation。
 - 其他用户不能访问生成结果。
 
 ---
@@ -351,6 +376,7 @@ PERSONAL_GENERATION_FAILED
 - 不要实现外部资料搜索。
 - 不要实现 MethodologyCard 自动抽取。
 - 不要实现团队 Wiki 发布。
+- 不要实现个人 Artifact 沉淀到个人 Wiki。
 - 必须复用 Task / Artifact。
 - 所有 API 必须使用 `/api/v1`。
 - 所有个人资源必须 owner-only。

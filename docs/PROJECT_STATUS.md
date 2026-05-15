@@ -11,15 +11,15 @@
 当前状态：
 
 ```text
-文档契约已对齐完成；仓库中已存在 Phase 0/1 和 Phase 1.5 代码，需要先完成验证，再进入 Phase 2。
+文档契约、Docker 中间件契约和 Phase 阶段边界已复查对齐；Phase 0/1 和 Phase 1.5 已通过回归测试，可以进入 Phase 2。
 ```
 
-本轮已完成的是架构文档、数据库/API 蓝图、阶段提示词、执行契约和 Docker 中间件契约整理。当前代码已包含 Auth/User/Space/Permission 与 Task/Outbox/Worker 基础设施，但阶段状态仍需以测试验证结果为准。
+本轮已完成的是架构文档、数据库/API 蓝图、阶段提示词、执行契约、Docker 中间件契约和阶段边界复查整理。当前代码已包含 Auth/User/Space/Permission 与 Task/Outbox/Worker 基础设施，并已通过现有测试验证。
 
 下一步：
 
 ```text
-先验证 Phase 0/1 + Phase 1.5；验证通过后进入 Phase 2: 文件上传与异步摄取。
+进入 Phase 2: 文件上传与异步摄取。
 ```
 
 ---
@@ -76,10 +76,15 @@ docs/architecture_review_issues_and_recommendations.md
 
 ```text
 docs/CONTRACT.md
+docs/DOCKER_MIDDLEWARE.md
 docs/implementation_breakdown.md
 docs/features/database_api_blueprint.md
 docs/features/phase_1_5_task_outbox_worker.md
+docs/features/phase_10_5_methodology_preset_matcher.md
+docs/features/phase_11_5_personal_artifact_distillation.md
 docs/phase-prompts/*
+docker-compose.yml
+.env.example
 ```
 
 关键契约已定：
@@ -107,8 +112,8 @@ Quiz / 答题 / 评分 / 题库暂缓
 | 阶段 | 状态 | 说明 |
 |---|---|---|
 | 文档契约整理 | DONE | 契约、蓝图、Docker 中间件契约、Phase prompt 已整理 |
-| Phase 0/1 | IN_PROGRESS | 已有工程骨架、认证、用户、空间、权限代码；需完成测试验证后标记 DONE |
-| Phase 1.5 | IN_PROGRESS | 已有 Task / Outbox / Worker 代码；需完成测试验证后标记 DONE |
+| Phase 0/1 | DONE | 工程骨架、认证、用户、空间、权限代码已完成，并通过回归测试 |
+| Phase 1.5 | DONE | Task / Outbox / Worker 代码已完成，并通过回归测试 |
 | Phase 2 | PENDING | 文件上传与异步摄取 |
 | Phase 3 | PENDING | 文档解析、Chunk、索引 |
 | Phase 4 | PENDING | 团队 RAG Chat 与 Citation |
@@ -184,3 +189,55 @@ IN_PROGRESS
 ```
 
 阶段状态不能只因为代码写完就标为 `DONE`；必须完成验证后才能标为 `DONE`。
+
+---
+
+## 8. 最近验证记录
+
+完成阶段：
+```text
+文档契约整理
+Docker 中间件契约整理
+Phase 阶段边界冲突复查
+Phase 0/1 验证
+Phase 1.5 验证
+```
+
+完成日期：
+```text
+2026-05-15
+```
+
+主要改动：
+```text
+补齐 Docker Compose 中间件：MySQL / Redis / MinIO / Elasticsearch / Kafka
+补齐 .env.example
+补齐 docs/DOCKER_MIDDLEWARE.md
+同步 application.yml 与 test application.yml 的容器化中间件配置
+阶段提示词与执行契约增加 TDD 和 Docker/Testcontainers 要求
+补齐 Phase 10.5 和 Phase 11.5 feature 文档
+收口 Phase 8 / Phase 11 / Phase 11.5 的 Artifact -> Wiki 边界
+统一 Studio 生成任务为 ARTIFACT_GENERATE + params.artifactType
+统一 Phase 2 上传对象 key 与 Docker dev/test 前缀契约
+```
+
+测试命令：
+```text
+docker compose config --quiet
+git diff --check
+Markdown code fence balance check
+mvn test
+```
+
+测试结果：
+```text
+docker compose config 校验通过
+git diff --check 通过，仅有 CRLF 换行提示
+Markdown code fence balance check 通过
+mvn test 通过：Tests run: 30, Failures: 0, Errors: 0, Skipped: 0
+```
+
+下一阶段：
+```text
+Phase 2: 文件上传与异步摄取
+```

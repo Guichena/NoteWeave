@@ -40,6 +40,7 @@ docs/implementation_breakdown.md
 - Artifact 可导出 Markdown。
 - Artifact 可重新生成。
 - Artifact 默认不进入 Wiki。
+- 团队侧 Artifact 发布 WikiPage 放到 Phase 10；个人侧 Artifact 沉淀为个人 Wiki Card 放到 Phase 11.5。本阶段只保证 Artifact、版本、来源和引用足够可追踪。
 
 ---
 
@@ -47,6 +48,7 @@ docs/implementation_breakdown.md
 
 - 不做复杂自主 Agent 规划。
 - 不做 Team Wiki 发布。
+- 不做个人 Artifact 沉淀到个人 Wiki。
 - 不做 Wiki 审核流。
 - 不做 Quiz、测验、答题记录、评分和题库。
 - 不做 PPT / DOCX / PDF 高级导出。
@@ -73,6 +75,7 @@ WIKI_DRAFT
 INTERVIEW_PREP
 ONBOARDING_GUIDE
 TECHNICAL_SUMMARY
+READING_NOTES
 ```
 
 说明：
@@ -114,7 +117,10 @@ READY
 FAILED
 ARCHIVED
 PUBLISHED_TO_WIKI
+DISTILLED_TO_PERSONAL_WIKI
 ```
+
+Phase 8 只需要实现 `GENERATING / READY / FAILED / ARCHIVED` 流转；`PUBLISHED_TO_WIKI` 由 Phase 10 使用，`DISTILLED_TO_PERSONAL_WIKI` 由 Phase 11.5 使用。
 
 ### ArtifactVersion
 
@@ -133,7 +139,7 @@ createdAt
 
 说明：
 
-- 编辑、重新生成和发布 Wiki 都必须绑定具体 ArtifactVersion。
+- 编辑、重新生成，以及后续团队发布 WikiPage / 个人沉淀 Wiki Card，都必须绑定具体 ArtifactVersion。
 - 由任务生成的版本必须写入 `taskId`，手工编辑版本也要保留 `createdBy` 和 `changeNote`。
 - 同一 Artifact 在多会话中被引用或继续生成时，只能新增 ArtifactVersion，不覆盖历史版本。
 
@@ -155,9 +161,36 @@ DOCUMENT_CHUNK
 SOURCE
 ARTICLE_CARD
 CONCEPT_CARD
+SYNTHESIS_CARD
 CHAT_MESSAGE
 ARTIFACT
 ```
+
+说明：
+
+- 本阶段只写 Artifact 的来源关系，不实现团队发布 Wiki 或个人沉淀 Wiki。
+- 团队侧发布 Wiki 时后续使用 `Artifact -> WikiPage` 关系。
+- 个人侧沉淀 Wiki 时后续默认使用 `Artifact -> SynthesisCard` 关系；ConceptCard / MethodologyCard 只作为后续 merge proposal 的来源关系。
+- 个人侧默认只允许用户确认后沉淀，不允许生成完成后自动写入个人 Wiki。
+
+### ArtifactCardRelation（Phase 11.5）
+
+表：`artifact_card_relation`
+
+```text
+artifactId
+artifactVersionId
+cardType        // ARTICLE / CONCEPT / METHODOLOGY / SYNTHESIS
+cardId
+relationType   // GENERATED_FROM / SUMMARIZED_INTO / EVIDENCE_FOR / MERGE_PROPOSAL_SOURCE
+```
+
+用途：
+
+- 本阶段不创建、不写入、不提供查询入口。
+- Phase 11.5 用于记录个人 Artifact 沉淀为个人 Wiki Card 的来源关系。
+- 支持查看“这张卡片来自哪份 Artifact”。
+- 支持后续 Concept / Methodology merge proposal 回溯。
 
 ### ArtifactCitation
 
@@ -191,16 +224,13 @@ GENERATED_NEXT
 
 复用通用 `task`。
 
-本阶段任务类型：
+本阶段任务类型统一使用：
 
 ```text
-REPORT_GENERATION
-STUDY_GUIDE_GENERATION
-BRIEFING_GENERATION
-FAQ_GENERATION
-COMPARISON_GENERATION
-WIKI_DRAFT_GENERATION
+ARTIFACT_GENERATE
 ```
+
+具体生成计划由 `params.artifactType` 选择，例如 `REPORT / STUDY_GUIDE / BRIEFING / FAQ / COMPARISON / WIKI_DRAFT`。不得新增 `REPORT_GENERATION` 等并行 Task 类型。
 
 ### SkillExecutionLog
 
@@ -306,6 +336,11 @@ ExportArtifactResponse export(Long userId, Long artifactId, String format);
 CreateStudioTaskResponse regenerate(Long userId, Long artifactId, RegenerateArtifactRequest request);
 ```
 
+个人沉淀要求放到 Phase 11.5：
+
+- Phase 8 不暴露 `distillToPersonalWiki`。
+- Phase 8 只保证 ArtifactVersion、ArtifactSource 和 ArtifactCitation 可支撑后续沉淀。
+
 ---
 
 ## 8. API 设计
@@ -325,12 +360,13 @@ CreateStudioTaskRequest：
 {
   "spaceId": 1,
   "researchProjectId": 100,
-  "taskType": "REPORT_GENERATION",
+  "taskType": "ARTIFACT_GENERATE",
   "sourceScopeType": "RESEARCH_PROJECT",
   "sourceIds": [100],
   "createdFromSessionId": null,
   "createdFromMessageId": null,
   "params": {
+    "artifactType": "REPORT",
     "topic": "RAG 技术调研报告",
     "length": "MEDIUM",
     "includeCitations": true
@@ -418,6 +454,7 @@ SkillExecutionLogTest
 - Artifact 可以 Markdown 导出。
 - Artifact 可以重新生成。
 - Artifact 默认不进入 Wiki。
+- 本阶段不提供团队发布 Wiki 或个人沉淀 Wiki 能力。
 - SkillExecutionLog 有记录。
 
 ---
@@ -426,6 +463,7 @@ SkillExecutionLogTest
 
 - 不要实现复杂 Agent 自主规划。
 - 不要发布 Wiki。
+- 不要实现个人 Artifact 沉淀到个人 Wiki。
 - 不要实现 Quiz、测验、答题、评分、题库。
 - 不要实现高级导出格式。
 - 不要把 Artifact 存在 ChatMessage JSON 字段里。

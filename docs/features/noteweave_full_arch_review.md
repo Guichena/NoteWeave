@@ -36,7 +36,7 @@
 
 | 编号 | 问题 | 影响 | 建议 | 修改方案 |
 |---|---|---|---|---|
-| P3-1 | ES indexVersion / activeIndexVersion 未明确 | 重复 Kafka 消息可能覆盖旧索引 | document.chunk 增加 indexVersion，activeIndexVersion 幂等写入 | 已创建文档 `phase_3_index_version_fix.md`，在 ChunkService 中检查存在性再写入【6a05cb83460c8191995f9582e89eda24】 | 
+| P3-1 | ES indexVersion / activeIndexVersion 未明确 | 重复 Kafka 消息可能覆盖旧索引 | document.chunk 增加 indexVersion，activeIndexVersion 幂等写入 | 同步更新 `phase_3_document_processing_indexing.md` 与 `database_api_blueprint.md`：ChunkService 按 documentId + indexVersion + chunkIndex 检查存在性再写入 |
 | P3-2 | 重复 Kafka 消息处理不安全 | 可能重复创建 Chunk | Worker 幂等检查 documentId + indexVersion | Worker 消费消息前先查询已存在 Chunk，跳过已处理 | 
 
 ---
@@ -104,7 +104,8 @@
 
 | 编号 | 问题 | 影响 | 建议 | 修改方案 |
 |---|---|---|---|---|
-| P11-1 | Artifact 来源回溯不完整 | 生成结果不可溯源 | PersonalGenerationService 回溯 ArticleCard/ConceptCard/Source | 在 ArtifactSource 表中记录来源ID | 
+| P11-1 | Artifact 来源回溯不完整 | 生成结果不可溯源 | PersonalGenerationService 回溯 ArticleCard/ConceptCard/Source | 在 ArtifactSource 表中记录来源ID |
+| P11-2 | 个人 Artifact 若自动进入 Wiki 会污染长期索引 | 报告、测验、临时总结等阶段性产物可能造成知识重复和概念膨胀 | 个人侧默认 Artifact-only，用户确认后才沉淀为个人 Wiki Card | 增加 SynthesisCard 与 ArtifactCardRelation；MVP 只支持 Artifact -> SynthesisCard，Concept/Methodology 合并走 proposal |
 
 ---
 

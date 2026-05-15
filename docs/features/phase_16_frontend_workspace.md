@@ -35,7 +35,7 @@ docs/features/database_api_blueprint.md
 
 - 提供登录、注册、当前用户信息和空间切换界面。
 - 提供团队知识库上传、处理状态、文档列表和检索问答界面。
-- 提供个人 ResearchProject、Source、ArticleCard、ConceptCard、个人生成界面。
+- 提供个人 ResearchProject、Source、ArticleCard、ConceptCard、SynthesisCard、个人生成界面。
 - 提供工作台 Chat + Studio + Artifact 的核心交互。
 - 支持 WebSocket 流式输出、中断停止、会话切换、草稿会话恢复。
 - 支持 Citation 展示和证据定位。
@@ -393,6 +393,8 @@ Markdown 预览
 导出 Markdown
 导出 HTML 或 PDF 的预留入口
 关联 Citation 查看
+沉淀到个人 Wiki
+查看关联 Wiki Card
 ```
 
 接口：
@@ -402,8 +404,21 @@ GET  /api/v1/studio/skills
 POST /api/v1/studio/tasks
 GET  /api/v1/artifacts/{artifactId}
 PUT  /api/v1/artifacts/{artifactId}
+POST /api/v1/artifacts/{artifactId}/distill-to-personal-wiki
+GET  /api/v1/artifacts/{artifactId}/card-relations
 GET  /api/v1/artifacts/{artifactId}/export?format=markdown
 ```
+
+个人 Artifact 沉淀弹窗：
+
+```text
+选择沉淀方式：Synthesis / Concept / Methodology
+预览提炼结果
+查看引用证据
+确认写入
+```
+
+MVP 只开放 Synthesis；Concept / Methodology 先作为禁用选项或隐藏，等 merge proposal 能力完成后再上线。
 
 ---
 
@@ -432,6 +447,7 @@ GET  /api/v1/artifacts/{artifactId}/export?format=markdown
 查看 UserMemory
 编辑 UserMemory
 查看 SessionSummary
+查看 SynthesisCard
 ```
 
 要求：
@@ -439,6 +455,7 @@ GET  /api/v1/artifacts/{artifactId}/export?format=markdown
 - Memory 编辑需要明确保存动作。
 - 用户能看到哪些内容会影响后续回答。
 - DRAFT 会话不展示写入长期 Memory 的提示。
+- 个人 Artifact 不自动写入 Wiki，只有用户点击并确认后才展示新增 SynthesisCard。
 
 ---
 
@@ -521,8 +538,8 @@ API 对齐矩阵：
 | Team Knowledge | knowledgeBases、documentUploads、documents、tasks |
 | Team Chat | chat session、WebSocket ticket、citation、feedback |
 | Team Wiki | wiki draft、publish、versions、publish artifact to wiki |
-| Personal Research | researchProjects、sources、articleCards、conceptCards、methodologyCards |
-| Studio / Artifact | studio tasks、artifacts、artifact versions、artifact sources |
+| Personal Research | researchProjects、sources、articleCards、conceptCards、methodologyCards、synthesisCards |
+| Studio / Artifact | studio tasks、artifacts、artifact versions、artifact sources、artifact card relations、personal wiki distillation |
 | Memory | sessionSummary、spaceMemory、userMemory、memoryItems |
 | Admin | users、spaces、tasks、cleanup、health、LLMCallLog、RetrievalTrace、AuditLog |
 
@@ -590,6 +607,7 @@ artifact generating
 - 团队 Chat 支持流式输出、停止、Citation 查看。
 - 用户能创建个人 ResearchProject 并导入 Source。
 - 用户能查看 ArticleCard / ConceptCard。
+- 用户能查看 SynthesisCard。
 - 用户能从 Studio 或个人生成入口创建 Artifact。
 - 用户能预览和编辑 Artifact。
 - 管理员能查看任务、健康状态、Eval Run 和日志。

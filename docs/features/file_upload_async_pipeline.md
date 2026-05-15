@@ -24,7 +24,7 @@ D:\java-projects\PaiSmart-main\src\main\java\com\yizhaoqi\smartpai\config\MinioC
 - MinIO 存储分片和 FileObject 管理的合并文件。
 - MD5 作为内容级标识。
 - 合并成功后投递 Kafka。
-- Consumer 负责解析和向量化。
+- Phase 3 Consumer 负责解析、Chunk 和索引。
 - Consumer 处理前检查文件生命周期。
 
 ---
@@ -88,6 +88,7 @@ PROCESSING
 INDEXED
 FAILED
 CANCELLED
+EXPIRED
 DELETED
 ```
 
@@ -213,7 +214,7 @@ DEL upload:{uploadId}
 分片：
 
 ```text
-chunks/{uploadId}/{chunkIndex}
+uploads/{uploadId}/chunks/{chunkIndex}
 ```
 
 合并文件：
@@ -224,6 +225,7 @@ objects/{contentHash}
 
 说明：
 
+- 上面是业务 key 后缀；实际 MinIO key 必须按 `docs/DOCKER_MIDDLEWARE.md` 增加 `dev/` 或 `test/` 前缀，测试对象还要带 `testRunId`。
 - 使用内容 hash 作为 FileObject 身份；对象复用必须通过 FileObject 引用计数管理，不能作为权限依据。
 - 原始文件永远作为 Raw Source 保留。
 
@@ -234,13 +236,7 @@ objects/{contentHash}
 Topic：
 
 ```text
-document-process-topic
-```
-
-DLT：
-
-```text
-document-process-dlt
+noteweave.document
 ```
 
 Consumer Group：
@@ -314,7 +310,7 @@ POST uploads/{uploadId}/chunks
   ↓
 计算 chunkMd5
   ↓
-上传 chunks/{uploadId}/{chunkIndex} 到 MinIO
+上传带 dev/test 前缀的 uploads/{uploadId}/chunks/{chunkIndex} 到 MinIO
   ↓
 写 UploadChunk
   ↓
@@ -334,7 +330,7 @@ POST uploads/{uploadId}/merge
   ↓
 检查 MinIO 分片存在
   ↓
-ComposeObject 合并为 objects/{contentHash}
+ComposeObject 合并为带 dev/test 前缀的 objects/{contentHash}
   ↓
 创建或复用同 Space 的 FileObject，并 ref_count + 1
   ↓
@@ -454,10 +450,7 @@ GET  /api/v1/team/documents/{documentId}/chunks
 - 已上传分片不会重复上传。
 - 同内容文件可以秒传或复用已有 MinIO 对象。
 - 合并成功后可以投递 Kafka。
-- Consumer 可以解析文档并写入 Chunk。
-- Chunk 可以写入 Elasticsearch。
-- 失败时能看到 Task 和 Document 的错误状态。
-- 重复 Kafka 消息不会重复创建 Chunk。
-- 删除中的文档不会继续索引。
+- Phase 2 验收只要求 TaskOutbox dispatcher 能投递 `noteweave.document`，业务 Task 保持 `PENDING`。
+- Phase 3 验收再要求 Consumer 可以解析文档并写入 Chunk、写入 Elasticsearch、处理失败状态和重复 Kafka 消息。
 
 

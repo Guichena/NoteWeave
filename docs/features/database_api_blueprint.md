@@ -11,6 +11,7 @@
 - 文档上传补充 `document_upload`、`upload_chunk`，支持分片上传、断点续传、MinIO 和 Kafka 异步处理。
 - `chat_session` 补充 `session_kind`、`runtime_status`、`latest_context_snapshot_json`，支撑 WebSocket 流式、中断和恢复。
 - 补充 `session_summary`、`space_memory`、`user_memory`，支撑分层记忆。
+- Quiz、测验、答题、评分和题库暂缓，不进入当前 DDL 和当前 API。
 - API 统一使用 `/api/v1` 前缀。
 
 ---
@@ -31,6 +32,8 @@ updated_at DATETIME NOT NULL
 
 JSON 字段只用于低频配置、快照和参数，不用于高频核心关联。
 
+核心资源表必须支持软删除。当前 MVP 至少在 `knowledge_base / document / research_project / source / artifact / wiki_page` 中保留 `deleted_at / deleted_by`；删除行为默认写软删除字段，不做物理删除。
+
 ### 1.2 核心枚举
 
 ```text
@@ -38,16 +41,21 @@ space.type: PERSONAL / TEAM
 space.status: ACTIVE / ARCHIVED
 space_member.role: OWNER / EDITOR / VIEWER
 space_member.status: ACTIVE / REMOVED
+users.system_role: USER / ADMIN
 
 document_upload.status: INIT / UPLOADING / MERGED / PROCESSING / INDEXED / FAILED / CANCELLED / DELETED
 document.status: PENDING_PROCESS / PROCESSING / INDEXED / FAILED / DELETED
-task.status: PENDING / RUNNING / SUCCESS / FAILED / CANCELLED
+task.status: PENDING / RUNNING / SUCCESS / FAILED / CANCELLED / TIMEOUT
+task.task_type: DOCUMENT_PROCESS / DOCUMENT_REINDEX / SOURCE_IMPORT / SOURCE_COMPILE / ARTIFACT_GENERATE / EMBEDDING_BACKFILL / WIKI_INDEX / RAG_EVAL_RUN / CLEANUP_RESOURCE
+task_outbox.status: PENDING / SENT / FAILED
 
 chat_session.session_type: TEAM_CHAT / PERSONAL_RESEARCH_CHAT / ARTIFACT_CHAT
 chat_session.session_kind: FORMAL / DRAFT
 chat_session.runtime_status: IDLE / RUNNING / STOPPED / FAILED
 
-artifact.status: GENERATING / READY / FAILED / ARCHIVED / PUBLISHED_TO_WIKI
+artifact.status: GENERATING / READY / FAILED / ARCHIVED / PUBLISHED_TO_WIKI / DISTILLED_TO_PERSONAL_WIKI
+artifact.artifact_type: REPORT / STUDY_GUIDE / READING_NOTES / BRIEFING / FAQ / COMPARISON / WIKI_DRAFT / ONBOARDING_GUIDE / TECHNICAL_SUMMARY / INCIDENT_REVIEW_DRAFT / PRESENTATION_OUTLINE / TIMELINE / WORK_PREP / MIND_MAP_OUTLINE
+personal artifact distillation: Artifact -> SynthesisCard by default; Concept/Methodology updates require user-confirmed merge proposal
 ```
 
 ---
@@ -66,12 +74,36 @@ CREATE TABLE users (
     password_hash VARCHAR(255) NOT NULL,
     display_name VARCHAR(64),
     avatar_url VARCHAR(255),
+    system_role VARCHAR(32) NOT NULL DEFAULT 'USER',
     status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     UNIQUE KEY uk_users_username (username),
     UNIQUE KEY uk_users_email (email),
+    INDEX idx_users_system_role (system_role),
     INDEX idx_users_status (status)
+);
+```
+
+#### user_session
+
+用于 refresh token、logout、logout-all 和多端会话撤销。Refresh token 只保存 hash，不保存明文。
+
+```sql
+CREATE TABLE user_session (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    refresh_token_hash CHAR(64) NOT NULL,
+    device_info VARCHAR(255),
+    ip_address VARCHAR(64),
+    status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
+    expires_at DATETIME NOT NULL,
+    revoked_at DATETIME,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    UNIQUE KEY uk_refresh_hash (refresh_token_hash),
+    INDEX idx_session_user_status (user_id, status),
+    INDEX idx_session_expires (expires_at)
 );
 ```
 
@@ -126,6 +158,8 @@ CREATE TABLE knowledge_base (
     description VARCHAR(512),
     status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
     created_by BIGINT NOT NULL,
+    deleted_at DATETIME,
+    deleted_by BIGINT,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     INDEX idx_kb_space (space_id),
@@ -226,6 +260,8 @@ CREATE TABLE document (
     chunk_count INT DEFAULT 0,
     error_message TEXT,
     created_by BIGINT NOT NULL,
+    deleted_at DATETIME,
+    deleted_by BIGINT,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     INDEX idx_doc_kb (knowledge_base_id),
@@ -280,6 +316,8 @@ CREATE TABLE wiki_page (
     published_version_id BIGINT,
     created_by BIGINT NOT NULL,
     updated_by BIGINT,
+    deleted_at DATETIME,
+    deleted_by BIGINT,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     INDEX idx_wiki_space (space_id),
@@ -322,6 +360,8 @@ CREATE TABLE research_project (
     research_goal VARCHAR(1024),
     compile_status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
     status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
+    deleted_at DATETIME,
+    deleted_by BIGINT,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     INDEX idx_project_space (space_id),
@@ -339,15 +379,17 @@ CREATE TABLE source (
     research_project_id BIGINT,
     title VARCHAR(255) NOT NULL,
     source_type VARCHAR(32) NOT NULL,
-        url VARCHAR(1024),
-        object_key VARCHAR(512),
-        raw_text_object_key VARCHAR(512),
-        parsed_text_object_key VARCHAR(512),
-        content_hash CHAR(64),
+    url VARCHAR(1024),
+    object_key VARCHAR(512),
+    raw_text_object_key VARCHAR(512),
+    parsed_text_object_key VARCHAR(512),
+    content_hash CHAR(64),
     import_status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
     compile_status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
     token_count INT DEFAULT 0,
     created_by BIGINT NOT NULL,
+    deleted_at DATETIME,
+    deleted_by BIGINT,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     INDEX idx_source_project (research_project_id),
@@ -356,6 +398,8 @@ CREATE TABLE source (
     INDEX idx_source_hash (content_hash)
 );
 ```
+
+约束：`import_status = READY` 时，`raw_text_object_key` 或 `parsed_text_object_key` 必须至少一个非空；应用层必须校验，数据库版本允许时可增加 CHECK。
 
 #### article_card
 
@@ -389,12 +433,11 @@ CREATE TABLE concept_card (
     name VARCHAR(255) NOT NULL,
     normalized_name VARCHAR(255) NOT NULL,
     definition TEXT,
-        explanation LONGTEXT,
-        use_cases_json JSON,
-        common_misunderstandings_json JSON,
-        source_ids_json JSON,
-        evidence_quotes_json JSON,
-        confidence DECIMAL(5,4) DEFAULT 0.0000,
+    explanation LONGTEXT,
+    use_cases_json JSON,
+    common_misunderstandings_json JSON,
+    evidence_quotes_json JSON,
+    confidence DECIMAL(5,4) DEFAULT 0.0000,
     card_status VARCHAR(32) NOT NULL DEFAULT 'READY',
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
@@ -403,6 +446,8 @@ CREATE TABLE concept_card (
     INDEX idx_concept_space (space_id)
 );
 ```
+
+ConceptCard 的来源关系不保存为来源 ID JSON 字段；从 `article_concept_relation` 中按 `article_card_id / concept_card_id / source_id` 追溯。
 
 #### concept_alias
 
@@ -454,6 +499,86 @@ CREATE TABLE article_concept_relation (
 );
 ```
 
+#### synthesis_card
+
+从用户确认过的个人 Artifact 中沉淀出来的二次知识卡片。MVP 先用它承接 `Artifact -> Personal Wiki`，避免直接污染已有 ConceptCard。
+
+```sql
+CREATE TABLE synthesis_card (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    space_id BIGINT NOT NULL,
+    research_project_id BIGINT NOT NULL,
+    source_artifact_id BIGINT NOT NULL,
+    source_artifact_version_id BIGINT,
+    title VARCHAR(255) NOT NULL,
+    summary TEXT,
+    insights_json JSON,
+    evidence_quotes_json JSON,
+    card_status VARCHAR(32) NOT NULL DEFAULT 'READY',
+    created_by BIGINT NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    INDEX idx_synthesis_project (research_project_id),
+    INDEX idx_synthesis_artifact (source_artifact_id),
+    INDEX idx_synthesis_space (space_id)
+);
+```
+
+#### synthesis_concept_relation
+
+```sql
+CREATE TABLE synthesis_concept_relation (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    synthesis_card_id BIGINT NOT NULL,
+    concept_card_id BIGINT NOT NULL,
+    relation_type VARCHAR(32) NOT NULL DEFAULT 'RELATED',
+    evidence TEXT,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    UNIQUE KEY uk_synthesis_concept (synthesis_card_id, concept_card_id, relation_type),
+    INDEX idx_scr_synthesis (synthesis_card_id),
+    INDEX idx_scr_concept (concept_card_id)
+);
+```
+
+#### artifact_card_relation
+
+记录 Artifact 与个人 Wiki Card 的沉淀关系。
+
+```sql
+CREATE TABLE artifact_card_relation (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    artifact_id BIGINT NOT NULL,
+    artifact_version_id BIGINT,
+    card_type VARCHAR(32) NOT NULL,
+    card_id BIGINT NOT NULL,
+    relation_type VARCHAR(32) NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    UNIQUE KEY uk_artifact_card_relation (artifact_id, card_type, card_id, relation_type),
+    INDEX idx_acr_artifact (artifact_id),
+    INDEX idx_acr_card (card_type, card_id)
+);
+```
+
+`card_type`：
+
+```text
+ARTICLE
+CONCEPT
+METHODOLOGY
+SYNTHESIS
+```
+
+`relation_type`：
+
+```text
+GENERATED_FROM
+SUMMARIZED_INTO
+EVIDENCE_FOR
+MERGE_PROPOSAL_SOURCE
+```
+
 #### methodology_card
 
 ```sql
@@ -493,7 +618,7 @@ CREATE TABLE chat_session (
     session_kind VARCHAR(32) NOT NULL DEFAULT 'FORMAL',
     title VARCHAR(255) NOT NULL,
     scope_type VARCHAR(32) NOT NULL,
-    scope_ids_json JSON,
+    scope_ids_snapshot_json JSON,
     summary TEXT,
     status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
     runtime_status VARCHAR(32) NOT NULL DEFAULT 'IDLE',
@@ -505,6 +630,22 @@ CREATE TABLE chat_session (
     INDEX idx_chat_space_type (space_id, session_type),
     INDEX idx_chat_status (status),
     INDEX idx_chat_runtime_status (runtime_status)
+);
+```
+
+`scope_ids_snapshot_json` 只保存创建时的范围快照，结构化查询、权限审计和索引追踪使用 `chat_session_scope`。
+
+#### chat_session_scope
+
+```sql
+CREATE TABLE chat_session_scope (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    session_id BIGINT NOT NULL,
+    scope_type VARCHAR(32) NOT NULL,
+    scope_id BIGINT NOT NULL,
+    created_at DATETIME NOT NULL,
+    UNIQUE KEY uk_session_scope (session_id, scope_type, scope_id),
+    INDEX idx_scope_ref (scope_type, scope_id)
 );
 ```
 
@@ -613,6 +754,8 @@ CREATE TABLE artifact (
     content LONGTEXT,
     source_scope_type VARCHAR(32),
     status VARCHAR(32) NOT NULL DEFAULT 'GENERATING',
+    deleted_at DATETIME,
+    deleted_by BIGINT,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     INDEX idx_artifact_space (space_id),
@@ -686,10 +829,10 @@ CREATE TABLE task (
     task_status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
     idempotency_key VARCHAR(255),
     input_json JSON,
-        output_json JSON,
-        error_message TEXT,
-        cancel_requested TINYINT NOT NULL DEFAULT 0,
-        retry_count INT NOT NULL DEFAULT 0,
+    output_json JSON,
+    error_message TEXT,
+    cancel_requested TINYINT NOT NULL DEFAULT 0,
+    retry_count INT NOT NULL DEFAULT 0,
     max_retry_count INT NOT NULL DEFAULT 3,
     result_ref_type VARCHAR(64),
     result_ref_id BIGINT,
@@ -724,6 +867,25 @@ CREATE TABLE task_attempt (
     UNIQUE KEY uk_task_attempt_no (task_id, attempt_no),
     INDEX idx_attempt_task (task_id),
     INDEX idx_attempt_status (status)
+);
+```
+
+#### task_event
+
+```sql
+CREATE TABLE task_event (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    task_id BIGINT NOT NULL,
+    event_type VARCHAR(64) NOT NULL,
+    from_status VARCHAR(32),
+    to_status VARCHAR(32),
+    message VARCHAR(512),
+    payload_json JSON,
+    created_by BIGINT,
+    created_at DATETIME NOT NULL,
+    INDEX idx_task_event_task (task_id),
+    INDEX idx_task_event_type (event_type),
+    INDEX idx_task_event_created (created_at)
 );
 ```
 
@@ -788,16 +950,25 @@ CREATE TABLE citation (
     source_type VARCHAR(32) NOT NULL,
     source_id BIGINT NOT NULL,
     chunk_id BIGINT,
+    page_no INT,
+    start_offset INT,
+    end_offset INT,
     title VARCHAR(255),
     quote_text TEXT,
+    quote_hash CHAR(64),
     location_info VARCHAR(255),
+    snapshot_object_key VARCHAR(512),
+    source_version VARCHAR(64),
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     INDEX idx_citation_space (space_id),
     INDEX idx_citation_source (source_type, source_id),
-    INDEX idx_citation_chunk (chunk_id)
+    INDEX idx_citation_chunk (chunk_id),
+    INDEX idx_citation_quote_hash (quote_hash)
 );
 ```
+
+Citation 必须是可追溯证据快照：`quote_text / quote_hash / snapshot_object_key / source_version` 用于避免 Source 或 Chunk 重处理后引用漂移；权限校验必须从 `space_id + source_type + source_id` 回到资源所属空间。
 
 #### message_citation
 
@@ -827,65 +998,74 @@ CREATE TABLE artifact_citation (
 );
 ```
 
+#### article_card_citation
+
+```sql
+CREATE TABLE article_card_citation (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    article_card_id BIGINT NOT NULL,
+    citation_id BIGINT NOT NULL,
+    relation_type VARCHAR(32) NOT NULL DEFAULT 'EVIDENCE',
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    UNIQUE KEY uk_article_card_citation (article_card_id, citation_id, relation_type),
+    INDEX idx_acc_citation (citation_id)
+);
+```
+
+#### concept_card_citation
+
+```sql
+CREATE TABLE concept_card_citation (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    concept_card_id BIGINT NOT NULL,
+    citation_id BIGINT NOT NULL,
+    relation_type VARCHAR(32) NOT NULL DEFAULT 'EVIDENCE',
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    UNIQUE KEY uk_concept_card_citation (concept_card_id, citation_id, relation_type),
+    INDEX idx_ccc_citation (citation_id)
+);
+```
+
+#### synthesis_card_citation
+
+```sql
+CREATE TABLE synthesis_card_citation (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    synthesis_card_id BIGINT NOT NULL,
+    citation_id BIGINT NOT NULL,
+    relation_type VARCHAR(32) NOT NULL DEFAULT 'EVIDENCE',
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    UNIQUE KEY uk_synthesis_card_citation (synthesis_card_id, citation_id, relation_type),
+    INDEX idx_scc_citation (citation_id)
+);
+```
+
+#### wiki_page_citation
+
+```sql
+CREATE TABLE wiki_page_citation (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    wiki_page_id BIGINT NOT NULL,
+    wiki_page_version_id BIGINT,
+    citation_id BIGINT NOT NULL,
+    relation_type VARCHAR(32) NOT NULL DEFAULT 'EVIDENCE',
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    UNIQUE KEY uk_wiki_page_citation (wiki_page_id, wiki_page_version_id, citation_id, relation_type),
+    INDEX idx_wpc_citation (citation_id)
+);
+```
+
+`article_card.evidence_quotes_json`、`concept_card.evidence_quotes_json`、`synthesis_card.evidence_quotes_json` 只作为展示缓存；正式证据关系必须写入对应 Card Citation 关联表。
+
 ---
 
-### 2.8 Quiz 扩展
+### 2.8 Future Backlog: Quiz
 
-#### quiz
-
-```sql
-CREATE TABLE quiz (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    artifact_id BIGINT NOT NULL,
-    user_id BIGINT NOT NULL,
-    space_id BIGINT NOT NULL,
-    title VARCHAR(255) NOT NULL,
-    difficulty VARCHAR(32),
-    question_count INT DEFAULT 0,
-    created_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL,
-    INDEX idx_quiz_artifact (artifact_id),
-    INDEX idx_quiz_space (space_id)
-);
-```
-
-#### quiz_question
-
-```sql
-CREATE TABLE quiz_question (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    quiz_id BIGINT NOT NULL,
-    question_type VARCHAR(32) NOT NULL,
-    question_text TEXT NOT NULL,
-    options_json JSON,
-    answer_json JSON,
-    explanation TEXT,
-    concept_card_id BIGINT,
-    difficulty VARCHAR(32),
-    created_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL,
-    INDEX idx_question_quiz (quiz_id),
-    INDEX idx_question_concept (concept_card_id)
-);
-```
-
-#### quiz_answer_record
-
-```sql
-CREATE TABLE quiz_answer_record (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    quiz_id BIGINT NOT NULL,
-    question_id BIGINT NOT NULL,
-    user_id BIGINT NOT NULL,
-    user_answer_json JSON,
-    is_correct TINYINT,
-    answered_at DATETIME NOT NULL,
-    created_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL,
-    INDEX idx_answer_quiz_user (quiz_id, user_id),
-    INDEX idx_answer_question (question_id)
-);
-```
+Quiz、测验、答题、评分、题库和错题复习暂缓。当前主线迁移脚本不创建 `quiz / quiz_question / quiz_answer_record`，当前 API 不暴露 Quiz 入口。后续恢复时必须作为独立 Future Backlog 重新评审。
 
 ---
 
@@ -948,7 +1128,12 @@ PageResponse<T>
 ```http
 POST /api/v1/auth/register
 POST /api/v1/auth/login
+POST /api/v1/auth/refresh
+POST /api/v1/auth/logout
+POST /api/v1/auth/logout-all
 GET  /api/v1/users/me
+PUT  /api/v1/users/me
+PUT  /api/v1/users/me/password
 ```
 
 注册请求：
@@ -972,6 +1157,8 @@ GET  /api/v1/users/me
 ```
 
 说明：注册成功后自动创建 PERSONAL Space，并写入 `space_member` OWNER。
+
+Refresh token 只返回给客户端，服务端只保存 hash 到 `user_session`；logout 撤销当前 refresh token，logout-all 撤销当前用户所有 active session。
 
 ---
 
@@ -1029,6 +1216,7 @@ POST /api/v1/team/knowledge-bases/{knowledgeBaseId}/documents/uploads/init
 POST /api/v1/team/document-uploads/{uploadId}/chunks
 GET  /api/v1/team/document-uploads/{uploadId}/status
 POST /api/v1/team/document-uploads/{uploadId}/merge
+POST /api/v1/team/document-uploads/{uploadId}/cancel
 GET  /api/v1/team/knowledge-bases/{knowledgeBaseId}/documents
 GET  /api/v1/team/documents/{documentId}
 GET  /api/v1/team/documents/{documentId}/chunks
@@ -1147,6 +1335,9 @@ POST /api/v1/studio/tasks/{taskId}/cancel
 POST /api/v1/studio/tasks/{taskId}/retry
 GET  /api/v1/tasks
 GET  /api/v1/tasks/{taskId}
+GET  /api/v1/tasks/{taskId}/events
+POST /api/v1/tasks/{taskId}/cancel
+POST /api/v1/tasks/{taskId}/retry
 GET  /api/v1/tasks/{taskId}/skill-logs
 ```
 
@@ -1156,10 +1347,11 @@ GET  /api/v1/tasks/{taskId}/skill-logs
 {
   "spaceId": 1,
   "researchProjectId": 100,
-  "taskType": "REPORT_GENERATION",
+  "taskType": "ARTIFACT_GENERATE",
   "sourceScopeType": "RESEARCH_PROJECT",
   "sourceIds": [100],
   "params": {
+    "artifactType": "REPORT",
     "topic": "RAG 技术调研报告",
     "length": "MEDIUM",
     "includeCitations": true
@@ -1179,17 +1371,17 @@ PUT  /api/v1/artifacts/{artifactId}
 POST /api/v1/artifacts/{artifactId}/regenerate
 POST /api/v1/artifacts/{artifactId}/generate
 GET  /api/v1/artifacts/{artifactId}/export
+POST /api/v1/artifacts/{artifactId}/distill-to-personal-wiki
+GET  /api/v1/artifacts/{artifactId}/card-relations
+GET  /api/v1/personal/research-projects/{projectId}/synthesis-cards
+GET  /api/v1/personal/synthesis-cards/{cardId}
 ```
 
 ---
 
-### 3.13 Quiz
+### 3.13 Future Backlog: Quiz
 
-```http
-GET  /api/v1/quizzes/{quizId}
-POST /api/v1/quizzes/{quizId}/answers
-GET  /api/v1/quizzes/{quizId}/answer-records
-```
+当前 MVP 不提供 Quiz API。`/api/v1/quizzes/**` 不进入当前 OpenAPI、前端路由和验收范围。
 
 ---
 
@@ -1223,16 +1415,22 @@ ResearchProject、Source、Card、Artifact 默认仅 owner 可访问。
 
 ## 5. 执行优先级
 
-第一阶段只实现：
+Phase 0/1 已完成或应保持的基础范围：
 
 ```text
 users
+user_session
 space
 space_member
 
 POST /api/v1/auth/register
 POST /api/v1/auth/login
+POST /api/v1/auth/refresh
+POST /api/v1/auth/logout
+POST /api/v1/auth/logout-all
 GET  /api/v1/users/me
+PUT  /api/v1/users/me
+PUT  /api/v1/users/me/password
 POST /api/v1/spaces
 GET  /api/v1/spaces
 GET  /api/v1/spaces/{spaceId}

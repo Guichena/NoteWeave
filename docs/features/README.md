@@ -4,14 +4,20 @@
 
 主文档只保留产品定位和总体架构，功能实现细节沉淀到这里，后续编码时按专题逐个落地。
 
-执行顺序以 `docs/implementation_breakdown.md` 的修正版为准。该计划在原 Phase 0/1 到 Phase 16 之外，明确增加了 `Phase 1.5: Task / Outbox / Worker 基础设施` 和 `Phase 10.5: MethodologyCard 预置模板与匹配器` 两个前置切片；这些切片用于修正跨阶段依赖，不单独建立 feature 文档时，应分别落入 Task/上传相关文档与 MethodologyCard 文档中维护。
+最终实现契约优先看 `docs/CONTRACT.md`；如果旧说明文档和契约冲突，以 `CONTRACT.md`、`implementation_breakdown.md` 和 `database_api_blueprint.md` 为准。
+
+中间件、本地 Docker Compose、Testcontainers、测试 bucket/topic/index/path 规则看 `docs/DOCKER_MIDDLEWARE.md`。
+
+每个阶段给 AI 编码代理使用的启动提示词在 `docs/phase-prompts/`，执行某个 Phase 时优先复制对应 prompt。
+
+执行顺序以 `docs/implementation_breakdown.md` 的修正版为准。该计划在原 Phase 0/1 到 Phase 16 之外，明确增加了 `Phase 1.5: Task / Outbox / Worker 基础设施`、`Phase 10.5: MethodologyCard 预置模板与匹配器` 和 `Phase 11.5: 个人 Artifact 沉淀回个人 Wiki`。
 
 ## 文档列表
 
 | 文档 | 说明 |
 |---|---|
 | [Phase 0/1: 工程骨架、认证、用户、空间与权限](./phase_0_1_bootstrap_auth_space.md) | Spring Boot 初始化、JWT、User、Space、SpaceMember、SpacePermissionService |
-| Phase 1.5: Task / Outbox / Worker 基础设施 | 统一 Task 状态机、TaskAttempt、TaskEvent、TaskOutbox、Worker 幂等、取消、重试；详见 `docs/implementation_breakdown.md`，后续应同步到 Task/上传相关文档 |
+| [Phase 1.5: Task / Outbox / Worker 基础设施](./phase_1_5_task_outbox_worker.md) | 统一 Task 状态机、TaskAttempt、TaskEvent、TaskOutbox、Worker 幂等、取消、重试 |
 | [Phase 2: KnowledgeBase、文件存储、分片上传与异步任务投递](./phase_2_file_upload_async_ingestion.md) | MinIO、Kafka、KnowledgeBase、DocumentUpload、UploadChunk、Document、Task |
 | [Phase 3: 文档解析、Chunk 切片与 Elasticsearch 索引](./phase_3_document_processing_indexing.md) | Kafka Consumer、DocumentParser、ChunkService、DocumentChunk、ES BM25 索引 |
 | [Phase 4: 团队基础 RAG 问答与 Citation 回溯](./phase_4_team_rag_chat_citation.md) | Team Chat、BM25 检索、Evidence Context、LLM 生成、Citation |
@@ -21,8 +27,9 @@
 | [Phase 8: Studio 与 Artifact 生成系统](./phase_8_studio_artifact_generation.md) | Studio Button、固定 Plan、Skill、Task、Artifact、导出 |
 | [Phase 9: 增强检索、向量召回与 Weighted RRF](./phase_9_retrieval_enhancement_rrf.md) | Embedding、VectorRetriever、Weighted RRF、Evidence 增强 |
 | [Phase 10: 团队 Wiki Draft、发布与入索引](./phase_10_team_wiki_publish_index.md) | Wiki 草稿、发布、版本、ES 入索引、WikiRetriever |
-| Phase 10.5: MethodologyCard 预置模板与匹配器 | 在个人生成前提供预置方法论模板、Matcher 和 Prompt 注入；详见 `docs/implementation_breakdown.md`，完整管理能力仍归 Phase 13 |
+| [Phase 10.5: MethodologyCard 预置模板与匹配器](./phase_10_5_methodology_preset_matcher.md) | 在个人生成前提供预置方法论模板、Matcher 和 Prompt 注入；完整管理能力仍归 Phase 13 |
 | [Phase 11: 个人 Wiki-based Generation](./phase_11_personal_generation.md) | 个人研究报告、学习指南、对比分析、方案表达训练、Artifact |
+| [Phase 11.5: 个人 Artifact 沉淀回 Wiki](./phase_11_5_personal_artifact_distillation.md) | Artifact 经用户确认后沉淀为 SynthesisCard，增强阶段再支持 Concept / Methodology merge proposal |
 | [Phase 12: 长期 Memory 深化](./phase_12_long_term_memory.md) | SessionSummary、SpaceMemory、UserMemory、上下文按需加载、记忆写回 |
 | [Phase 13: MethodologyCard 方法论卡片](./phase_13_methodology_card.md) | 预置方法论模板、任务匹配、输出结构、质量检查清单 |
 | [Phase 14: 评测与可观测性](./phase_14_evaluation_observability.md) | LLM 调用日志、检索 Trace、RAG Eval、Citation 质量、用户反馈 |

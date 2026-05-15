@@ -10,7 +10,7 @@ Phase 7: Source Compile / ArticleCard / Candidate Concept / ConceptCard / Articl
 
 第七阶段目标是把个人 ResearchProject 中的 Source 编译成结构化卡片，形成个人 Wiki Compiler 的 MVP。
 
-本阶段只做 ArticleCard 和 ConceptCard，不做 MethodologyCard 自动生成，不做个人问答，不做 Artifact。
+本阶段只做 ArticleCard 和 ConceptCard，不做 MethodologyCard 自动生成，不做个人问答，不做 Artifact，也不做 Artifact 沉淀回个人 Wiki。
 
 ---
 
@@ -77,6 +77,7 @@ ConceptMergeService
 EvidenceBacktraceService
 ArticleCard
 ConceptCard
+SynthesisCard
 ConceptAlias
 ConceptRelation
 ArticleConceptRelation
@@ -107,6 +108,8 @@ createdAt
 updatedAt
 ```
 
+`evidenceQuotesJson` 只作为展示缓存；正式证据必须写入 `article_card_citation`。
+
 ### ConceptCard
 
 表：`concept_card`
@@ -123,7 +126,6 @@ definition
 explanation
 useCasesJson
 commonMisunderstandingsJson
-sourceIdsJson
 evidenceQuotesJson
 confidence
 cardStatus
@@ -140,11 +142,12 @@ research_project_id + normalized_name
 证据要求：
 
 ```text
-sourceIdsJson 至少包含贡献该 Concept 的 Source ID
+贡献该 Concept 的 Source ID 通过 ArticleConceptRelation.sourceId 追溯
 evidenceQuotesJson 中每条 quote 必须绑定 sourceId / articleCardId
+正式证据关系必须写入 concept_card_citation
 ```
 
-ConceptCard 可以融合多篇资料，但不能丢失定义、用法或误区的来源。合并已有 ConceptCard 时追加证据，不覆盖旧 evidence。
+ConceptCard 可以融合多篇资料，但不能丢失定义、用法或误区的来源。合并已有 ConceptCard 时追加证据，不覆盖旧 evidence。`evidenceQuotesJson` 只作为展示缓存，不作为唯一证据来源。
 
 ### ConceptAlias
 
@@ -154,11 +157,61 @@ alias
 normalizedAlias
 ```
 
+### SynthesisCard
+
+表：`synthesis_card`
+
+说明：SynthesisCard 属于个人 Wiki Card，但不是本阶段从 Source 编译产生；它由后续个人 Artifact 经用户确认后沉淀得到。本阶段只预留模型边界。
+
+字段：
+
+```text
+id
+spaceId
+researchProjectId
+sourceArtifactId
+sourceArtifactVersionId
+title
+summary
+insightsJson
+evidenceQuotesJson
+cardStatus
+createdBy
+createdAt
+updatedAt
+```
+
+MVP 规则：
+
+- Source 编译不创建 SynthesisCard。
+- Artifact 沉淀到个人 Wiki 时优先创建 SynthesisCard。
+- 后续增强再支持从 SynthesisCard 生成 Concept merge proposal。
+
+### SynthesisConceptRelation
+
+```text
+synthesisCardId
+conceptCardId
+relationType
+evidence
+```
+
+### Card Citation Relation
+
+```text
+article_card_citation
+concept_card_citation
+synthesis_card_citation
+```
+
+Card Citation 关联表是正式证据来源；`evidenceQuotesJson` 只能缓存少量展示片段。
+
 ### ArticleConceptRelation
 
 ```text
 articleCardId
 conceptCardId
+sourceId
 evidence
 relevanceScore
 ```

@@ -77,8 +77,8 @@ rag:
   retrieval:
     mode: ${RAG_RETRIEVAL_MODE:HYBRID}
     bm25-weight: ${RAG_BM25_WEIGHT:1.0}
-    vector-weight: ${RAG_VECTOR_WEIGHT:1.2}
-    wiki-weight: ${RAG_WIKI_WEIGHT:1.5}
+    vector-weight: ${RAG_VECTOR_WEIGHT:1.0}
+    wiki-weight: ${RAG_WIKI_WEIGHT:1.3}
     rrf-k: ${RAG_RRF_K:60}
     top-k: ${RAG_RETRIEVAL_TOP_K:10}
 ```
@@ -224,8 +224,8 @@ chunkId
 
 ```text
 BM25 = 1.0
-Vector = 1.2
-Wiki = 1.5
+Vector = 1.0
+Wiki = 1.3
 ```
 
 ---

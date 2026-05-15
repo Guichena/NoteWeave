@@ -20,6 +20,7 @@ Phase 2: MinIO FileStorage / TaskOutbox Dispatch / KnowledgeBase / FileObject / 
 
 ```text
 docs/features/phase_0_1_bootstrap_auth_space.md
+docs/features/phase_1_5_task_outbox_worker.md
 docs/features/file_upload_async_pipeline.md
 docs/features/database_api_blueprint.md
 docs/implementation_breakdown.md
@@ -49,7 +50,7 @@ D:\java-projects\PaiSmart-main\src\main\java\com\yizhaoqi\smartpai\config\MinioC
 - Redis Bitmap 记录分片上传状态。
 - 上传状态可查询。
 - 已上传分片可跳过，实现断点续传。
-- 所有分片上传完成后可以合并为 `FileObject` 管理的对象，例如 `objects/{contentHash}`。
+- 所有分片上传完成后可以合并为 `FileObject` 管理的对象，例如带 dev/test 前缀的 `objects/{contentHash}`。
 - 合并成功后创建 Document 元数据。
 - 合并成功后创建 Task 和 TaskOutbox。
 - Outbox dispatcher 投递 Kafka `DOCUMENT_PROCESS` 消息，发送失败可补偿。
@@ -70,7 +71,7 @@ D:\java-projects\PaiSmart-main\src\main\java\com\yizhaoqi\smartpai\config\MinioC
 - 不做 Artifact。
 - 不做复杂文档级权限。
 
-Kafka Consumer 本阶段只需要能接收消息，并把 Task / Document 状态更新为可观察状态。真实解析放到 Phase 3。
+本阶段只验证 TaskOutbox dispatcher 能把 `DOCUMENT_PROCESS` 消息投递到 Kafka；不实现业务 Consumer，不把 Task 标记为成功。真实 Consumer、解析、Chunk 和索引放到 Phase 3。
 
 ---
 
@@ -177,8 +178,7 @@ com.noteweave.task
 com.noteweave.kafka
   ├── config
   ├── message
-  ├── producer
-  └── consumer
+  └── producer
 ```
 
 ---
@@ -203,35 +203,32 @@ spring:
       retries: 3
       properties:
         enable.idempotence: true
-    consumer:
-      group-id: noteweave-document-processing-group
-      auto-offset-reset: earliest
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
-      properties:
-        spring.json.trusted.packages: "com.noteweave.kafka.message"
-
-minio:
-  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
-  access-key: ${MINIO_ACCESS_KEY:minioadmin}
-  secret-key: ${MINIO_SECRET_KEY:minioadmin}
-  bucket-name: ${MINIO_BUCKET_NAME:noteweave}
-  public-url: ${MINIO_PUBLIC_URL:http://localhost:9000}
-
 noteweave:
+  storage:
+    minio:
+      endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+      access-key: ${MINIO_ACCESS_KEY:noteweave}
+      secret-key: ${MINIO_SECRET_KEY:noteweave-minio-secret}
+      bucket: ${MINIO_BUCKET:noteweave-dev}
+      test-bucket: ${MINIO_TEST_BUCKET:noteweave-test}
+    paths:
+      local-test-root: ${NOTEWEAVE_TEST_ROOT:target/noteweave-test}
+      dev-object-prefix: ${NOTEWEAVE_DEV_OBJECT_PREFIX:dev}
+      test-object-prefix: ${NOTEWEAVE_TEST_OBJECT_PREFIX:test}
   upload:
     chunk-size: ${NOTEWEAVE_UPLOAD_CHUNK_SIZE:5242880}
     bitmap-ttl-hours: ${NOTEWEAVE_UPLOAD_BITMAP_TTL_HOURS:24}
   kafka:
     topics:
-      document-process: document-process-topic
-      document-process-dlt: document-process-dlt
+      document-process: ${NOTEWEAVE_KAFKA_TOPIC_DOCUMENT:noteweave.document}
 ```
 
 说明：
 
 - 前端可以自行决定分片大小，但后端需要校验 `chunkSize` 合理。
 - MVP 可固定推荐 5MB 分片。
+- 本地开发连接根目录 `docker-compose.yml` 中的 MinIO / Kafka。
+- 集成测试必须使用 Testcontainers 启动 MinIO / Kafka，并使用 `noteweave-test` bucket、`test/` 对象前缀和测试 topic。
 
 ---
 
@@ -603,9 +600,11 @@ String getPresignedUrl(String objectKey);
 MinIO object key：
 
 ```text
-chunks/{uploadId}/{chunkIndex}
+uploads/{uploadId}/chunks/{chunkIndex}
 objects/{contentHash}
 ```
+
+说明：上面是业务 key 后缀；实际 MinIO key 必须按 `docs/DOCKER_MIDDLEWARE.md` 增加 `dev/` 或 `test/` 前缀，测试对象还要带 `testRunId`。
 
 ### 10.3 UploadBitmapService
 
@@ -678,7 +677,7 @@ void cancelUpload(Long userId, Long uploadId);
   ↓
 计算 chunkMd5
   ↓
-上传 chunks/{uploadId}/{chunkIndex} 到 MinIO
+上传带 dev/test 前缀的 uploads/{uploadId}/chunks/{chunkIndex} 到 MinIO
   ↓
 保存 UploadChunk
   ↓
@@ -698,7 +697,7 @@ SETBIT
   ↓
 检查 MinIO 分片存在
   ↓
-ComposeObject 合并到 objects/{contentHash} 并写入 FileObject
+ComposeObject 合并到带 dev/test 前缀的 objects/{contentHash} 并写入 FileObject
   ↓
 创建 Document
   ↓
@@ -733,7 +732,7 @@ FileObject.refCount + 1
   ↓
 标记 CANCELLED，写 cancelledAt
   ↓
-删除 chunks/{uploadId}/ 下分片对象
+删除当前 dev/test 前缀下 uploads/{uploadId}/chunks/ 的分片对象
   ↓
 清理 Redis Bitmap
 ```
@@ -829,7 +828,7 @@ Task 保持 PENDING，等待 Phase 3 Worker 真实处理
 
 - Dispatcher 只处理已提交事务中的 PENDING Outbox 记录。
 - Kafka 发送失败不回滚业务数据，只更新 Outbox retryCount / nextRetryAt。
-- 同一个 Outbox 多次投递时，Consumer 必须依赖 `taskId` 和业务幂等键去重。
+- 同一个 Outbox 多次投递时，后续 Phase 3 Consumer 必须依赖 `taskId` 和业务幂等键去重。
 
 ---
 
@@ -855,13 +854,7 @@ public record DocumentProcessMessage(
 Topic：
 
 ```text
-document-process-topic
-```
-
-DLT：
-
-```text
-document-process-dlt
+noteweave.document
 ```
 
 ---
@@ -1063,7 +1056,7 @@ TaskServiceTest
 
 ### 15.2 集成测试
 
-如果本地没有 MinIO / Kafka，可先使用 mock 或 Testcontainers 后续补。
+集成测试必须使用 Testcontainers 启动 MinIO / Kafka，不能依赖本机已启动服务，也不能把本阶段需要的容器化能力留到后续补。
 
 最小接口测试：
 
@@ -1096,11 +1089,12 @@ Phase 2 验收：
 - 可以查询上传进度。
 - 分片不完整时 merge 失败。
 - 分片完整时 merge 成功。
-- merge 成功后 MinIO 中存在 FileObject 指向的 `objects/{contentHash}`。
+- merge 成功后 MinIO 中存在 FileObject 指向的带 dev/test 前缀 `objects/{contentHash}`。
 - merge 成功后创建 Document。
 - merge 成功后创建 Task。
-- merge 成功后发送 Kafka 消息。
-- Kafka Consumer 能接收到消息并更新 Task。
+- merge 成功后创建 TaskOutbox。
+- TaskOutbox dispatcher 能发送 Kafka `noteweave.document` 消息并将 Outbox 标记为 `SENT`。
+- 业务 Task 保持 `PENDING`，等待 Phase 3 Worker 真实处理。
 - 非成员访问上传链路返回 403。
 
 ---
@@ -1111,7 +1105,7 @@ Phase 2 验收：
 1. 添加 Maven 依赖
 2. 添加 MinIO 配置和 MinioClient Bean
 3. 添加 Kafka 配置和 topic 常量
-4. 实现 Task 实体、Repository、Service、Controller
+4. 复用 Phase 1.5 的 Task / TaskOutbox / Task API，不重复实现任务底座
 5. 实现 KnowledgeBase 实体、Repository、Service、Controller
 6. 实现 Document / DocumentUpload / UploadChunk 实体和 Repository
 7. 实现 FileStorageService

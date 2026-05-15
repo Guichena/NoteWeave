@@ -71,7 +71,7 @@ space_id
 session_type
 session_kind
 scope_type
-scope_ids
+scope_ids_snapshot
 title
 status
 runtime_status
@@ -106,6 +106,8 @@ RUNNING
 STOPPED
 FAILED
 ```
+
+结构化范围使用 `chat_session_scope(session_id, scope_type, scope_id)` 保存；`scope_ids_snapshot` 只用于恢复创建时的 UI 范围。
 
 ### 3.2 ChatMessage
 
@@ -152,7 +154,7 @@ stale
 pin
 created_at
 updated_at
-expired_at
+expires_at
 ```
 
 ### 3.4 SpaceMemory

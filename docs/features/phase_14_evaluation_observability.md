@@ -464,7 +464,7 @@ GET  /api/v1/admin/rag-eval-runs/{runId}/results
 | Team Chat / RAG | Y | Y | 记录召回、RRF、最终 evidence |
 | WebSocket Chat Runtime | Y | Y | 断线恢复不重复写 trace |
 | Studio Artifact Generation | Y | 按需 | 生成前读取资料时记录来源选择 |
-| Personal Generation | Y | Y | ArticleCard / ConceptCard / Source 选择都要可追踪 |
+| Personal Generation | Y | Y | ArticleCard / ConceptCard / SynthesisCard / MethodologyCard / Source 选择都要可追踪 |
 | Memory Writeback | Y | N | 记录写回判定和模型调用 |
 
 ---
