@@ -57,3 +57,23 @@ noteweave:
   elasticsearch:
     uris: http://localhost:9200
     index-prefix: noteweave-test-local-
+  rag:
+    retrieval:
+      top-k: 8
+      per-document-limit: 3
+      context-max-chars: 12000
+      max-merged-chars: 2400
+    prompt:
+      no-result-text: 暂无相关信息
+  llm:
+    stub:
+      enabled: true
+      provider: stub
+      model: noteweave-stub-chat
+    api:
+      base-url: http://localhost:18080/v1
+      api-key:
+      model: deepseek-chat
+      temperature: 0.3
+      max-tokens: 2000
+      timeout-seconds: 60

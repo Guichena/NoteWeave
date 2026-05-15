@@ -72,6 +72,26 @@ noteweave:
     username: ${ELASTICSEARCH_USERNAME:}
     password: ${ELASTICSEARCH_PASSWORD:}
     index-prefix: ${NOTEWEAVE_ES_INDEX_PREFIX:noteweave-dev-}
+  rag:
+    retrieval:
+      top-k: ${RAG_RETRIEVAL_TOP_K:8}
+      per-document-limit: ${RAG_PER_DOCUMENT_LIMIT:3}
+      context-max-chars: ${RAG_CONTEXT_MAX_CHARS:12000}
+      max-merged-chars: ${RAG_MAX_MERGED_CHARS:2400}
+    prompt:
+      no-result-text: ${RAG_NO_RESULT_TEXT:暂无相关信息}
+  llm:
+    stub:
+      enabled: ${NOTEWEAVE_LLM_STUB_ENABLED:false}
+      provider: ${NOTEWEAVE_LLM_STUB_PROVIDER:stub}
+      model: ${NOTEWEAVE_LLM_STUB_MODEL:noteweave-stub-chat}
+    api:
+      base-url: ${LLM_API_BASE_URL:https://api.deepseek.com/v1}
+      api-key: ${LLM_API_KEY:}
+      model: ${LLM_API_MODEL:deepseek-chat}
+      temperature: ${LLM_TEMPERATURE:0.3}
+      max-tokens: ${LLM_MAX_TOKENS:2000}
+      timeout-seconds: ${LLM_TIMEOUT_SECONDS:60}
 
 jwt:
   secret-key: ${JWT_SECRET_KEY:change-me-in-dev-change-me-in-dev}

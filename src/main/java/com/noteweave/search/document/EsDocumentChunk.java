@@ -11,7 +11,9 @@ public class EsDocumentChunk {
     private Long spaceId;
     private Long knowledgeBaseId;
     private Long documentId;
+    private String documentStatus;
     private Integer indexVersion;
+    private Integer activeIndexVersion;
     private Long chunkId;
     private Integer chunkIndex;
     private String title;

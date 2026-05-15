@@ -42,7 +42,17 @@ public enum ErrorCode {
     DOCUMENT_INDEX_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "document index failed"),
     ES_INDEX_NOT_AVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "elasticsearch index is not available"),
     ES_QUERY_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "elasticsearch query failed"),
-    UNSUPPORTED_DOCUMENT_TYPE(HttpStatus.BAD_REQUEST, "unsupported document type");
+    UNSUPPORTED_DOCUMENT_TYPE(HttpStatus.BAD_REQUEST, "unsupported document type"),
+
+    CHAT_SESSION_NOT_FOUND(HttpStatus.NOT_FOUND, "chat session not found"),
+    CHAT_SESSION_ACCESS_DENIED(HttpStatus.FORBIDDEN, "chat session access denied"),
+    CHAT_SESSION_TYPE_UNSUPPORTED(HttpStatus.BAD_REQUEST, "chat session type unsupported"),
+    CHAT_MESSAGE_EMPTY(HttpStatus.BAD_REQUEST, "chat message is empty"),
+    RAG_RETRIEVAL_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "rag retrieval failed"),
+    RAG_NO_EVIDENCE(HttpStatus.BAD_REQUEST, "rag evidence is empty"),
+    LLM_CONFIG_MISSING(HttpStatus.BAD_REQUEST, "llm config missing"),
+    LLM_CALL_FAILED(HttpStatus.BAD_GATEWAY, "llm call failed"),
+    CITATION_SAVE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "citation save failed");
 
     private final HttpStatus httpStatus;
     private final String defaultMessage;

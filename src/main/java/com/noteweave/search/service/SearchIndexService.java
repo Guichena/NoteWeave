@@ -17,6 +17,7 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -58,7 +59,9 @@ public class SearchIndexService {
                           "spaceId": {"type": "long"},
                           "knowledgeBaseId": {"type": "long"},
                           "documentId": {"type": "long"},
+                          "documentStatus": {"type": "keyword"},
                           "indexVersion": {"type": "integer"},
+                          "activeIndexVersion": {"type": "integer"},
                           "chunkId": {"type": "long"},
                           "chunkIndex": {"type": "integer"},
                           "title": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
@@ -100,7 +103,9 @@ public class SearchIndexService {
             body.put("spaceId", chunk.getSpaceId());
             body.put("knowledgeBaseId", chunk.getKnowledgeBaseId());
             body.put("documentId", chunk.getDocumentId());
+            body.put("documentStatus", chunk.getDocumentStatus());
             body.put("indexVersion", chunk.getIndexVersion());
+            body.put("activeIndexVersion", chunk.getActiveIndexVersion());
             body.put("chunkId", chunk.getChunkId());
             body.put("chunkIndex", chunk.getChunkIndex());
             body.put("title", chunk.getTitle());
@@ -122,8 +127,15 @@ public class SearchIndexService {
         }
     }
 
-    public List<Long> searchChunkIds(Long spaceId, Long knowledgeBaseId, String keyword, int limit) {
+    public List<SearchChunkHit> searchChunkHits(Long spaceId, List<Long> knowledgeBaseIds, String keyword, int limit) {
+        if (spaceId == null || knowledgeBaseIds == null || knowledgeBaseIds.isEmpty() || keyword == null || keyword.isBlank()) {
+            return List.of();
+        }
         ensureDocumentChunkIndex();
+        String knowledgeBaseTerms = knowledgeBaseIds.stream()
+                .distinct()
+                .map(String::valueOf)
+                .collect(Collectors.joining(","));
         String query = """
                 {
                   "size": %d,
@@ -134,31 +146,88 @@ public class SearchIndexService {
                       ],
                       "filter": [
                         {"term": {"spaceId": %d}},
-                        {"term": {"knowledgeBaseId": %d}},
-                        {"term": {"lifecycleStatus": "ACTIVE"}}
+                        {"terms": {"knowledgeBaseId": [%s]}},
+                        {"term": {"lifecycleStatus": "ACTIVE"}},
+                        {"term": {"documentStatus": "INDEXED"}},
+                        {
+                          "script": {
+                            "script": {
+                              "lang": "painless",
+                              "source": "doc['indexVersion'].size() != 0 && doc['activeIndexVersion'].size() != 0 && doc['indexVersion'].value == doc['activeIndexVersion'].value"
+                            }
+                          }
+                        }
                       ]
                     }
                   }
                 }
-                """.formatted(Math.max(1, Math.min(limit, 50)), quote(keyword), spaceId, knowledgeBaseId);
+                """.formatted(Math.max(1, Math.min(limit, 50)), quote(keyword.trim()), spaceId, knowledgeBaseTerms);
         try {
             HttpResponse<String> response = send("POST", "/" + indexName + "/_search", query);
             if (response.statusCode() >= 300) {
                 throw new BusinessException(ErrorCode.ES_QUERY_FAILED, "failed to query ES");
             }
             JsonNode hits = objectMapper.readTree(response.body()).path("hits").path("hits");
-            List<Long> chunkIds = new ArrayList<>();
+            List<SearchChunkHit> chunkHits = new ArrayList<>();
             for (JsonNode hit : hits) {
-                long chunkId = hit.path("_source").path("chunkId").asLong(0);
+                JsonNode source = hit.path("_source");
+                long chunkId = source.path("chunkId").asLong(0);
                 if (chunkId > 0) {
-                    chunkIds.add(chunkId);
+                    chunkHits.add(new SearchChunkHit(
+                            chunkId,
+                            longOrNull(source, "documentId"),
+                            longOrNull(source, "knowledgeBaseId"),
+                            longOrNull(source, "spaceId"),
+                            intOrNull(source, "indexVersion"),
+                            intOrNull(source, "chunkIndex"),
+                            hit.path("_score").isNumber() ? hit.path("_score").asDouble() : null
+                    ));
                 }
             }
-            return chunkIds;
+            return chunkHits;
         } catch (BusinessException ex) {
             throw ex;
         } catch (Exception ex) {
             throw new BusinessException(ErrorCode.ES_QUERY_FAILED, "failed to query ES: " + ex.getMessage());
+        }
+    }
+
+    public List<Long> searchChunkIds(Long spaceId, Long knowledgeBaseId, String keyword, int limit) {
+        return searchChunkHits(spaceId, List.of(knowledgeBaseId), keyword, limit).stream()
+                .map(SearchChunkHit::chunkId)
+                .toList();
+    }
+
+    public void synchronizeDocumentChunkState(Long documentId, String documentStatus, int activeIndexVersion, String lifecycleStatus) {
+        if (documentId == null) {
+            return;
+        }
+        ensureDocumentChunkIndex();
+        String query = """
+                {
+                  "script": {
+                    "source": "ctx._source.documentStatus = params.documentStatus; ctx._source.activeIndexVersion = params.activeIndexVersion; ctx._source.lifecycleStatus = params.lifecycleStatus;",
+                    "lang": "painless",
+                    "params": {
+                      "documentStatus": %s,
+                      "activeIndexVersion": %d,
+                      "lifecycleStatus": %s
+                    }
+                  },
+                  "query": {
+                    "term": {"documentId": %d}
+                  }
+                }
+                """.formatted(quote(documentStatus), activeIndexVersion, quote(lifecycleStatus), documentId);
+        try {
+            HttpResponse<String> response = send("POST", "/" + indexName + "/_update_by_query?refresh=true&conflicts=proceed", query);
+            if (response.statusCode() >= 300) {
+                throw new BusinessException(ErrorCode.DOCUMENT_INDEX_FAILED, "failed to synchronize indexed document state");
+            }
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorCode.DOCUMENT_INDEX_FAILED, "failed to synchronize indexed document state");
         }
     }
 
@@ -234,5 +303,18 @@ public class SearchIndexService {
         } catch (Exception ex) {
             return "\"\"";
         }
+    }
+
+    private Long longOrNull(JsonNode node, String field) {
+        long value = node.path(field).asLong(0);
+        return value > 0 ? value : null;
+    }
+
+    private Integer intOrNull(JsonNode node, String field) {
+        JsonNode value = node.path(field);
+        if (!value.isNumber()) {
+            return null;
+        }
+        return value.asInt();
     }
 }

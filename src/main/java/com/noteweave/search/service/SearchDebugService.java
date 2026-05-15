@@ -36,13 +36,16 @@ public class SearchDebugService {
         if (keyword == null || keyword.isBlank()) {
             return SearchDebugResponse.builder().items(List.of()).build();
         }
-        List<Long> chunkIds = searchIndexService.searchChunkIds(kb.getSpaceId(), kb.getId(), keyword.trim(), 20);
+        List<SearchChunkHit> chunkHits = searchIndexService.searchChunkHits(kb.getSpaceId(), List.of(kb.getId()), keyword.trim(), 20);
+        List<Long> chunkIds = chunkHits.stream().map(SearchChunkHit::chunkId).toList();
         List<DocumentChunk> chunks = documentChunkService.findByIdsInOrder(chunkIds);
         Map<Long, Document> documents = documentRepository.findAllById(
                         chunks.stream().map(DocumentChunk::getDocumentId).distinct().toList()
                 )
                 .stream()
                 .collect(Collectors.toMap(Document::getId, Function.identity()));
+        Map<Long, SearchChunkHit> hitsByChunkId = chunkHits.stream()
+                .collect(Collectors.toMap(SearchChunkHit::chunkId, Function.identity(), (left, right) -> left));
 
         List<SearchHitResponse> items = chunks.stream()
                 .filter(chunk -> {
@@ -56,13 +59,14 @@ public class SearchDebugService {
                 })
                 .map(chunk -> {
                     Document document = documents.get(chunk.getDocumentId());
+                    SearchChunkHit hit = hitsByChunkId.get(chunk.getId());
                     return SearchHitResponse.builder()
                             .chunkId(chunk.getId())
                             .documentId(chunk.getDocumentId())
                             .documentTitle(document.getTitle())
                             .chunkIndex(chunk.getChunkIndex())
                             .content(chunk.getContent())
-                            .score(1.0)
+                            .score(hit == null ? 1.0d : hit.score())
                             .build();
                 })
                 .toList();

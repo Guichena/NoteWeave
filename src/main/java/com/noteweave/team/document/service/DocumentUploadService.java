@@ -348,6 +348,7 @@ public class DocumentUploadService {
         document.setDeletedAt(LocalDateTime.now());
         document.setDeletedBy(userId);
         documentRepository.save(document);
+        searchIndexService.synchronizeDocumentChunkState(documentId, document.getStatus().name(), document.getActiveIndexVersion(), "DELETED");
         searchIndexService.deleteByDocumentId(documentId);
         // Phase 2 hard constraint: soft delete must not decrement refCount.
     }

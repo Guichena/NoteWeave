@@ -14,6 +14,10 @@ public interface KnowledgeBaseRepository extends JpaRepository<KnowledgeBase, Lo
 
     List<KnowledgeBase> findBySpaceIdAndStatusOrderByCreatedAtDesc(Long spaceId, KnowledgeBaseStatus status);
 
+    List<KnowledgeBase> findBySpaceIdAndStatus(Long spaceId, KnowledgeBaseStatus status);
+
+    List<KnowledgeBase> findBySpaceIdAndStatusAndIdIn(Long spaceId, KnowledgeBaseStatus status, List<Long> ids);
+
     Optional<KnowledgeBase> findByIdAndStatus(Long id, KnowledgeBaseStatus status);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

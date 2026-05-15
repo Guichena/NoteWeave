@@ -163,6 +163,7 @@ public class DocumentProcessingService {
             document.setTokenCount(tokenCount);
             document.setErrorMessage(null);
             documentRepository.save(document);
+            searchIndexService.synchronizeDocumentChunkState(documentId, document.getStatus().name(), document.getActiveIndexVersion(), "ACTIVE");
 
             TaskStatus fromStatus = task.getTaskStatus();
             task.setTaskStatus(TaskStatus.SUCCESS);
@@ -213,6 +214,7 @@ public class DocumentProcessingService {
                     }
                     document.setErrorMessage(message);
                     documentRepository.save(document);
+                    searchIndexService.synchronizeDocumentChunkState(document.getId(), document.getStatus().name(), document.getActiveIndexVersion(), "ACTIVE");
                 }
             });
 
@@ -243,7 +245,9 @@ public class DocumentProcessingService {
                 .spaceId(chunk.getSpaceId())
                 .knowledgeBaseId(chunk.getKnowledgeBaseId())
                 .documentId(chunk.getDocumentId())
+                .documentStatus(document.getStatus().name())
                 .indexVersion(chunk.getIndexVersion())
+                .activeIndexVersion(chunk.getIndexVersion())
                 .chunkId(chunk.getId())
                 .chunkIndex(chunk.getChunkIndex())
                 .title(document.getTitle())
