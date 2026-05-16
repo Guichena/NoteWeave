@@ -32,6 +32,7 @@ import org.springframework.test.web.servlet.MvcResult;
         "noteweave.llm.stub.enabled=false",
         "noteweave.llm.api.api-key="
 })
+@org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
 class Phase4TeamRagLlmFailureIntegrationTest extends ContainerizedIntegrationTest {
 
     @Autowired

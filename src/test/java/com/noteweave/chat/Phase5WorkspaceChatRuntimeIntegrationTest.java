@@ -50,6 +50,7 @@ import org.springframework.test.web.servlet.MvcResult;
         "noteweave.chat.runtime.delta-chunk-size=12",
         "noteweave.chat.runtime.delta-delay-ms=80"
 })
+@org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
 class Phase5WorkspaceChatRuntimeIntegrationTest extends ContainerizedIntegrationTest {
 
     @Autowired

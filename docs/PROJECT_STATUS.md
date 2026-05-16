@@ -882,6 +882,9 @@ Test commands and results:
 
 8) mvn "-Dtest=Phase6PersonalResearchSourceIntegrationTest,Phase7PersonalWikiCompilerIntegrationTest" test
    - passed: Tests run: 18, Failures: 0, Errors: 0, Skipped: 0
+
+9) mvn test
+   - passed: Tests run: 99, Failures: 0, Errors: 0, Skipped: 0
 ```
 
 Notes:
@@ -892,6 +895,7 @@ Notes:
 - Personal card citations use citation.sourceType = SOURCE and dedupe by (spaceId, sourceType, sourceId, quoteHash).
 - Card list/detail and manual concept operations are owner-only through the current user's PERSONAL space, and archived parent projects now hide direct article/concept detail/update paths.
 - Failed SOURCE_COMPILE now rolls back partial ArticleCard / citation writes before persisting FAILED state, and manual/auto concept merge preserves prior useCases, misunderstandings and evidence caches instead of overwriting them.
+- Full-suite regression initially exposed shared Kafka consumer-group contention across cached Spring test contexts; all ContainerizedIntegrationTest-based Spring integration classes now close their context after each class so async workers do not steal each other's messages during `mvn test`.
 - Phase 7 does not create SynthesisCard and does not implement Artifact distillation, personal generation, methodology extraction or quiz workflows.
 ```
 
