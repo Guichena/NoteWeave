@@ -8,8 +8,10 @@ import com.noteweave.task.model.Task;
 import com.noteweave.task.model.TaskAttempt;
 import com.noteweave.task.model.TaskEventType;
 import com.noteweave.task.model.TaskStatus;
+import com.noteweave.task.model.TaskType;
 import com.noteweave.task.repository.TaskAttemptRepository;
 import com.noteweave.task.repository.TaskRepository;
+import com.noteweave.artifact.service.ArtifactPersistenceService;
 import com.noteweave.task.worker.TaskExecutionCancelledException;
 import com.noteweave.task.worker.TaskExecutionContext;
 import com.noteweave.task.worker.TaskExecutionTimeoutException;
@@ -31,6 +33,7 @@ public class TaskExecutionCoordinator {
     private final TaskCancellationChecker taskCancellationChecker;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
+    private final ArtifactPersistenceService artifactPersistenceService;
 
     public void consume(TaskOutboxMessage message) {
         ClaimedTask claimedTask = claimTask(message.getTaskId());
@@ -146,6 +149,9 @@ public class TaskExecutionCoordinator {
                     null,
                     null
             );
+            if (task.getTaskType() == TaskType.ARTIFACT_GENERATE && task.getTargetId() != null) {
+                artifactPersistenceService.reconcileAfterUnsuccessfulTask(task.getTargetId());
+            }
         });
     }
 
@@ -175,6 +181,9 @@ public class TaskExecutionCoordinator {
                     null,
                     null
             );
+            if (task.getTaskType() == TaskType.ARTIFACT_GENERATE && task.getTargetId() != null) {
+                artifactPersistenceService.reconcileAfterUnsuccessfulTask(task.getTargetId());
+            }
         });
     }
 
@@ -204,6 +213,9 @@ public class TaskExecutionCoordinator {
                     null,
                     null
             );
+            if (task.getTaskType() == TaskType.ARTIFACT_GENERATE && task.getTargetId() != null) {
+                artifactPersistenceService.reconcileAfterUnsuccessfulTask(task.getTargetId());
+            }
         });
     }
 

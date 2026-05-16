@@ -11,7 +11,7 @@
 当前状态：
 
 ```text
-Phase 0/1、Phase 1.5、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6 和 Phase 7 已完成并通过当前阶段测试与必要回归测试；可以进入 Phase 8。
+Phase 0/1、Phase 1.5、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6、Phase 7 和 Phase 8 已完成并通过当前阶段测试与必要回归测试。
 ```
 
 当前代码已包含 Auth/User/Space/Permission、Task/Outbox/Kafka Worker 基础设施、Phase 2 文件上传链路、Phase 3 的 DOCUMENT_PROCESS Worker、文档解析、parsed text 保存、Chunk 切片、indexVersion / activeIndexVersion、Elasticsearch BM25 索引和 Search Debug、Phase 6 的个人 ResearchProject / Source、TEXT/FILE/URL 导入、SOURCE_IMPORT Worker、个人 raw/parsed text 对象保存、owner-only 查询与重试/去重链路，以及 Phase 7 的 SOURCE_COMPILE、ArticleCard / ConceptCard / ConceptAlias / ConceptRelation / ArticleConceptRelation、个人 Card Citation、Card 搜索详情与 Evidence 回溯链路。
@@ -19,7 +19,7 @@ Phase 0/1、Phase 1.5、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6 和 Phas
 下一步：
 
 ```text
-进入 Phase 8: Studio / Artifact。
+Phase 8: Studio / Artifact 已完成。
 ```
 
 ---
@@ -120,7 +120,7 @@ Quiz / 答题 / 评分 / 题库暂缓
 | Phase 5 | DONE | WebSocket Chat Runtime |
 | Phase 6 | DONE | 个人 ResearchProject / Source、SOURCE_IMPORT、个人导入入口已完成并通过测试 |
 | Phase 7 | DONE | 个人 Wiki Compiler、SOURCE_COMPILE、ArticleCard / ConceptCard / Citation / Evidence 回溯已完成并通过测试 |
-| Phase 8 | PENDING | Studio / Artifact |
+| Phase 8 | DONE | Studio / Artifact |
 | Phase 9 | PENDING | 检索增强 / RRF |
 | Phase 10 | PENDING | 团队 Wiki 发布入索引 |
 | Phase 10.5 | PENDING | Methodology 预置模板与 Matcher |
@@ -903,4 +903,125 @@ Next:
 
 ```text
 Proceed to Phase 8 Studio / Artifact.
+```
+
+## 16. Phase 8 Studio / Artifact (2026-05-16)
+
+Status:
+
+```text
+DONE
+```
+
+Implemented in this update:
+
+```text
+1) Added V9 migration with artifact, artifact_version, artifact_source, artifact_citation, session_artifact and skill_execution_log.
+2) Added Studio task APIs and service flow for ARTIFACT_GENERATE creation, query, cancel and retry, reusing the generic task/outbox/Kafka worker chain.
+3) Added artifact APIs for space/session listing, detail, manual update, archive, regenerate/generate and markdown export.
+4) Implemented a fixed Plan executor with a constrained skill registry and Phase 8 supported artifact types:
+   REPORT, STUDY_GUIDE, BRIEFING, FAQ, COMPARISON, WIKI_DRAFT.
+5) Implemented artifact generation for RESEARCH_PROJECT and CHAT_MESSAGE source scopes without introducing team Wiki publish, personal Wiki distillation or autonomous agent planning.
+6) Enforced artifact history semantics so initial generation, manual edit and regenerate always append artifact_version rows instead of overwriting prior content.
+7) Added formal artifact evidence relations through artifact_source and artifact_citation; artifacts default remain outside Wiki and no generated_artifact table/model was introduced.
+8) Added redacted skill execution logging bound to taskId/artifactId/artifactVersionId plus GET /api/v1/tasks/{taskId}/skill-logs.
+9) Added markdown export object persistence under dev/test artifact export prefixes and archive soft-delete semantics for artifacts.
+10) Fixed Phase 8 worker persistence by extracting transaction-bound save/fail logic into ArtifactPersistenceService so pessimistic-lock writes run inside real Spring-managed transactions.
+11) Hardened artifact task terminal-state reconciliation, task idempotency fallback, duplicate placeholder cleanup and artifact list query/search filters.
+```
+
+New migration:
+
+```text
+src/main/resources/db/migration/V9__phase_8_studio_artifact_generation.sql
+```
+
+New tables:
+
+```text
+artifact
+artifact_version
+artifact_source
+artifact_citation
+session_artifact
+skill_execution_log
+```
+
+New APIs:
+
+```text
+POST /api/v1/studio/tasks
+GET /api/v1/studio/tasks/{taskId}
+POST /api/v1/studio/tasks/{taskId}/cancel
+POST /api/v1/studio/tasks/{taskId}/retry
+GET /api/v1/spaces/{spaceId}/artifacts
+GET /api/v1/chat/sessions/{sessionId}/artifacts
+GET /api/v1/artifacts/{artifactId}
+PUT /api/v1/artifacts/{artifactId}
+DELETE /api/v1/artifacts/{artifactId}
+POST /api/v1/artifacts/{artifactId}/regenerate
+POST /api/v1/artifacts/{artifactId}/generate
+GET /api/v1/artifacts/{artifactId}/export?format=markdown
+GET /api/v1/tasks/{taskId}/skill-logs
+```
+
+Generation and versioning rules:
+
+```text
+- Supported Phase 8 artifact types are currently limited to REPORT / STUDY_GUIDE / BRIEFING / FAQ / COMPARISON / WIKI_DRAFT.
+- Artifact records are placeholders while generation is pending; successful generation writes the latest title/content back to artifact and appends a new artifact_version row.
+- Manual edit appends artifact_version with changeNote defaulting to "manual update".
+- Regenerate appends artifact_version with changeNote "artifact regeneration" and does not overwrite prior manual history.
+- Artifact formal citations must go through artifact_citation, not embedded generated JSON.
+- Skill logs store redacted input/output summaries only; they do not persist full sensitive prompt context or private raw source text.
+```
+
+TDD record:
+
+```text
+1) Wrote Phase8StudioArtifactIntegrationTest before implementation to cover studio task creation, artifact export, redacted skill logs, permission denial, version history append, chat-session FAQ generation and archive semantics.
+2) Initial red run with mvn "-Dtest=Phase8StudioArtifactIntegrationTest" test failed as expected because Phase 8 Studio/Artifact endpoints and persistence flow did not exist yet.
+3) Implemented the minimal migration, models, repositories, services, controllers and worker path to satisfy the new suite.
+4) A later red run exposed a real worker failure: "Query requires transaction be in progress, but no transaction is known to be in progress" during artifact generation persistence.
+5) Fixed the transaction boundary by moving lock-based save/fail persistence into ArtifactPersistenceService, then re-ran the failing test to green.
+6) Re-ran the full Phase 8 suite and required Phase 7 / Phase 4 / task regressions to green.
+```
+
+Test commands and results:
+
+```text
+1) mvn "-Dtest=Phase8StudioArtifactIntegrationTest" test
+   - initial red failed as expected before Phase 8 production code existed.
+
+2) mvn "-Dtest=Phase8StudioArtifactIntegrationTest#studioTaskShouldGenerateProjectArtifactExportAndRedactedSkillLogs" test
+   - passed after fixing the transaction-bound artifact persistence path: Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+
+3) mvn "-Dtest=Phase8StudioArtifactIntegrationTest" test
+   - passed: Tests run: 3, Failures: 0, Errors: 0, Skipped: 0
+
+4) mvn "-Dtest=Phase7PersonalWikiCompilerIntegrationTest,Phase4TeamRagIntegrationTest,TaskServiceIntegrationTest,TaskControllerTest,TaskAdminVisibilityIntegrationTest" test
+   - passed: Tests run: 25, Failures: 0, Errors: 0, Skipped: 0
+
+5) mvn "-Dtest=StudioTaskServiceTest" test
+   - passed: Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+
+6) mvn "-Dtest=Phase8StudioArtifactIntegrationTest#cancelPendingArtifactTaskShouldReconcilePlaceholderToFailed,Phase8StudioArtifactIntegrationTest#artifactListShouldSupportQueryFiltersAndKeywordSearch,Phase8StudioArtifactIntegrationTest#regenerateFailureShouldKeepLatestSuccessfulArtifactReady" test
+   - passed: Tests run: 3, Failures: 0, Errors: 0, Skipped: 0
+```
+
+Notes:
+
+```text
+- Artifact defaults remain outside Wiki in Phase 8.
+- Phase 8 does not implement team Wiki publish, personal artifact distillation to Wiki, quiz/assessment flows or autonomous agent planning.
+- RESEARCH_PROJECT generation uses Phase 7 article/concept cards plus their citation backtrace data; CHAT_MESSAGE generation uses existing Phase 4 message citations.
+- Markdown export is the only implemented artifact export format in Phase 8; advanced PDF/DOCX/PPT export remains out of scope.
+- `GET /api/v1/spaces/{spaceId}/artifacts` supports `artifactType`, `status`, `sourceScopeType`, `researchProjectId` and `keyword` filters.
+- Pending cancel, timeout and failure reconcile artifact placeholders back to `READY` when a prior version exists, otherwise to `FAILED`.
+```
+
+Next:
+
+```text
+Proceed to Phase 9 retrieval enhancement / RRF.
 ```

@@ -402,3 +402,30 @@ Phase 7 testing/runtime notes:
 - No new bucket/topic/index bootstrap is required in docker-compose.yml for this phase.
 ```
 
+---
+
+## 15. Phase 8 runtime/testing note (2026-05-16)
+
+Phase 8 does not introduce new middleware containers. Runtime and integration tests continue to use the same containerized baseline:
+
+```text
+MySQLContainer
+Redis GenericContainer
+MinIO container
+KafkaContainer
+ElasticsearchContainer
+```
+
+Phase 8 testing/runtime notes:
+
+```text
+- ARTIFACT_GENERATE reuses the generic task/outbox/Kafka worker chain. Local topic remains noteweave.task and integration tests remain on test.noteweave.task.{testRunId}.
+- Phase 8 does not add a new MinIO bucket, Kafka topic or Elasticsearch index prefix/suffix.
+- Artifact markdown exports are persisted to:
+  test/{testRunId}/artifacts/{artifactId}/exports/{fileName}
+  dev/artifacts/{artifactId}/exports/{fileName}
+- Artifact relations and version history are stored in MySQL tables artifact, artifact_version, artifact_source, artifact_citation, session_artifact and skill_execution_log.
+- Integration tests mock LlmClient and explicitly call taskDispatcher.dispatchPendingMessages() before waiting for ARTIFACT_GENERATE task completion.
+- Any temporary local test path introduced by Phase 8 must stay under target/noteweave-test/phase-8/.
+```
+

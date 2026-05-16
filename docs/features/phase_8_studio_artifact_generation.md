@@ -255,9 +255,12 @@ ARTIFACT_GENERATE
 LoadGenerationContextSkill
 SelectEvidenceSkill
 GenerateReportSkill
-CitationBacktraceSkill
 SaveArtifactSkill
 ```
+
+说明：
+
+- Phase 8 里的 citation/backtrace 结果直接落到 `artifact_citation` 和 `artifact_source`，不作为独立 Skill 暴露。
 
 ### Study Guide Plan
 
@@ -387,6 +390,8 @@ POST /api/v1/artifacts/{artifactId}/regenerate
 POST /api/v1/artifacts/{artifactId}/generate
 GET  /api/v1/artifacts/{artifactId}/export?format=markdown
 ```
+
+`GET /api/v1/spaces/{spaceId}/artifacts` 支持 `artifactType`、`status`、`sourceScopeType`、`researchProjectId`、`keyword` 查询参数。
 
 ---
 

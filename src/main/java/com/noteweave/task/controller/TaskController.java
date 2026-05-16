@@ -4,6 +4,8 @@ import com.noteweave.common.api.ApiResponse;
 import com.noteweave.common.api.PageResponse;
 import com.noteweave.common.security.CurrentUser;
 import com.noteweave.common.security.CurrentUserProvider;
+import com.noteweave.artifact.skill.dto.SkillExecutionLogResponse;
+import com.noteweave.artifact.skill.service.SkillExecutionLogService;
 import com.noteweave.task.dto.TaskEventQuery;
 import com.noteweave.task.dto.TaskEventResponse;
 import com.noteweave.task.dto.TaskQuery;
@@ -24,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class TaskController {
 
     private final TaskService taskService;
+    private final SkillExecutionLogService skillExecutionLogService;
     private final CurrentUserProvider currentUserProvider;
 
     @GetMapping
@@ -45,6 +48,12 @@ public class TaskController {
     ) {
         CurrentUser currentUser = currentUserProvider.getCurrentUser();
         return ApiResponse.success(taskService.getTaskEvents(currentUser, taskId, query));
+    }
+
+    @GetMapping("/{taskId}/skill-logs")
+    public ApiResponse<java.util.List<SkillExecutionLogResponse>> getSkillLogs(@PathVariable Long taskId) {
+        CurrentUser currentUser = currentUserProvider.getCurrentUser();
+        return ApiResponse.success(skillExecutionLogService.listByTask(currentUser, taskId));
     }
 
     @PostMapping("/{taskId}/cancel")

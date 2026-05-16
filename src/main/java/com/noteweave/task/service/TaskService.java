@@ -7,6 +7,7 @@ import com.noteweave.common.api.PageResponse;
 import com.noteweave.common.error.BusinessException;
 import com.noteweave.common.error.ErrorCode;
 import com.noteweave.common.security.CurrentUser;
+import com.noteweave.artifact.service.ArtifactPersistenceService;
 import com.noteweave.permission.service.ResourceAccessService;
 import com.noteweave.space.model.SpaceMember;
 import com.noteweave.space.model.SpaceMemberStatus;
@@ -36,6 +37,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -54,6 +56,7 @@ public class TaskService {
     private final TaskOutboxService taskOutboxService;
     private final ResourceAccessService resourceAccessService;
     private final SpaceMemberRepository spaceMemberRepository;
+    private final ArtifactPersistenceService artifactPersistenceService;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -74,7 +77,14 @@ public class TaskService {
         task.setIdempotencyKey(command.getIdempotencyKey());
         task.setInputJson(writeJson(command.getInput()));
         task.setMaxRetryCount(Math.max(command.getMaxRetryCount(), 0));
-        task = taskRepository.save(task);
+
+        try {
+            task = taskRepository.saveAndFlush(task);
+        } catch (DataIntegrityViolationException ex) {
+            Task racedExisting = taskRepository.findByIdempotencyKey(command.getIdempotencyKey())
+                    .orElseThrow(() -> ex);
+            return toTaskResponse(racedExisting, false);
+        }
 
         taskEventService.appendEvent(
                 task.getId(),
@@ -137,6 +147,7 @@ public class TaskService {
         resourceAccessService.requireOperateTask(currentUser, task);
 
         if (task.getTaskStatus() == TaskStatus.PENDING) {
+            Long targetId = task.getTargetId();
             task.setTaskStatus(TaskStatus.CANCELLED);
             task.setFinishedAt(java.time.LocalDateTime.now());
             task.setCancelRequested(false);
@@ -151,6 +162,9 @@ public class TaskService {
                     null,
                     currentUser.userId()
             );
+            if (task.getTaskType() == com.noteweave.task.model.TaskType.ARTIFACT_GENERATE && targetId != null) {
+                artifactPersistenceService.reconcileAfterUnsuccessfulTask(targetId);
+            }
             return;
         }
 

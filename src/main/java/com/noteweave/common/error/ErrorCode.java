@@ -72,7 +72,14 @@ public enum ErrorCode {
     CHAT_RUNTIME_NOT_FOUND(HttpStatus.NOT_FOUND, "chat runtime not found"),
     CHAT_RUNTIME_ALREADY_RUNNING(HttpStatus.CONFLICT, "chat runtime already running"),
     CHAT_RUNTIME_STOP_FAILED(HttpStatus.BAD_REQUEST, "chat runtime stop failed"),
-    CHAT_STREAM_FAILED(HttpStatus.BAD_GATEWAY, "chat stream failed");
+    CHAT_STREAM_FAILED(HttpStatus.BAD_GATEWAY, "chat stream failed"),
+    ARTIFACT_NOT_FOUND(HttpStatus.NOT_FOUND, "artifact not found"),
+    ARTIFACT_ACCESS_DENIED(HttpStatus.FORBIDDEN, "artifact access denied"),
+    ARTIFACT_TYPE_UNSUPPORTED(HttpStatus.BAD_REQUEST, "artifact type unsupported"),
+    ARTIFACT_EXPORT_UNSUPPORTED(HttpStatus.BAD_REQUEST, "artifact export unsupported"),
+    STUDIO_TASK_TYPE_UNSUPPORTED(HttpStatus.BAD_REQUEST, "studio task type unsupported"),
+    SKILL_EXECUTION_FAILED(HttpStatus.BAD_REQUEST, "skill execution failed"),
+    PLAN_EXECUTION_FAILED(HttpStatus.BAD_REQUEST, "plan execution failed");
 
     private final HttpStatus httpStatus;
     private final String defaultMessage;
