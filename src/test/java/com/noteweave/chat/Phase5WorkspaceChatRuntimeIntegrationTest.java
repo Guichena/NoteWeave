@@ -157,6 +157,43 @@ class Phase5WorkspaceChatRuntimeIntegrationTest extends ContainerizedIntegration
     }
 
     @Test
+    void stopShouldRestoreStoppedStatusAfterReconnect() throws Exception {
+        String ownerToken = registerAndGetToken("phase5_stop_restore_owner_" + System.nanoTime());
+        Long spaceId = createTeamSpace(ownerToken, "phase5-stop-restore-space-" + System.nanoTime());
+        Long kbId = createKnowledgeBase(ownerToken, spaceId, "phase5-stop-restore-kb-" + System.nanoTime());
+        uploadAndProcess(ownerToken, spaceId, kbId, "stop-restore.txt", "text/plain",
+                longEvidenceText("Rollback rehearsal remains mandatory before production deployment."));
+        Long sessionId = createChatSession(ownerToken, spaceId, "stop restore ws", "FORMAL", "KNOWLEDGE_BASE", new long[]{kbId});
+
+        TestListener firstListener = new TestListener(objectMapper);
+        openSocket = connect(firstListener, ownerToken);
+        awaitEvent(firstListener.events(), "chat.connected");
+        openSocket.sendText(chatMessageEvent(sessionId, spaceId, "FORMAL", "KNOWLEDGE_BASE", new long[]{kbId},
+                "Explain the rollback requirement."), true).join();
+
+        awaitEvent(firstListener.events(), "chat.started");
+        WsEvent firstDelta = awaitEvent(firstListener.events(), "chat.delta");
+        openSocket.sendText("""
+                {"event":"chat.stop","requestId":"stop-restore-request","streamId":"%s","sessionId":%d,"ack":%d,"payload":{}}
+                """.formatted(firstDelta.streamId(), sessionId, firstDelta.seq()), true).join();
+        WsEvent stopped = awaitEvent(firstListener.events(), "chat.stopped");
+
+        openSocket.sendClose(WebSocket.NORMAL_CLOSURE, "reconnect").join();
+        openSocket = null;
+
+        TestListener secondListener = new TestListener(objectMapper);
+        openSocket = connect(secondListener, ownerToken);
+        awaitEvent(secondListener.events(), "chat.connected");
+        openSocket.sendText("""
+                {"event":"chat.resume","requestId":"stop-restore-resume","sessionId":%d,"ack":%d,"payload":{}}
+                """.formatted(sessionId, stopped.seq()), true).join();
+
+        WsEvent restored = awaitEvent(secondListener.events(), "chat.restored");
+        assertThat(restored.payload().path("runtimeStatus").asText()).isEqualTo("STOPPED");
+        assertThat(restored.payload().path("partialContent").asText()).isNotBlank();
+    }
+
+    @Test
     void resumeShouldReplayBufferedEventsAfterReconnect() throws Exception {
         String ownerToken = registerAndGetToken("phase5_resume_owner_" + System.nanoTime());
         Long spaceId = createTeamSpace(ownerToken, "phase5-resume-space-" + System.nanoTime());
@@ -221,6 +258,62 @@ class Phase5WorkspaceChatRuntimeIntegrationTest extends ContainerizedIntegration
 
         mockMvc.perform(post("/api/v1/chat/sessions/{sessionId}/convert-to-formal", expiredSessionId)
                         .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("CHAT_DRAFT_INVALID_STATE"));
+    }
+
+    @Test
+    void draftSessionShouldKeepAssistantOutputEphemeralAndRejectExpiredWrites() throws Exception {
+        String ownerToken = registerAndGetToken("phase5_draft_runtime_owner_" + System.nanoTime());
+        Long spaceId = createTeamSpace(ownerToken, "phase5-draft-runtime-space-" + System.nanoTime());
+        Long kbId = createKnowledgeBase(ownerToken, spaceId, "phase5-draft-runtime-kb-" + System.nanoTime());
+        uploadAndProcess(ownerToken, spaceId, kbId, "draft-runtime.txt", "text/plain",
+                longEvidenceText("Rollback rehearsal stays mandatory before production deployment."));
+        Long sessionId = createChatSession(ownerToken, spaceId, "draft runtime ws", "DRAFT", "KNOWLEDGE_BASE", new long[]{kbId});
+
+        TestListener listener = new TestListener(objectMapper);
+        openSocket = connect(listener, ownerToken);
+        awaitEvent(listener.events(), "chat.connected");
+
+        openSocket.sendText(chatMessageEvent(sessionId, spaceId, "DRAFT", "KNOWLEDGE_BASE", new long[]{kbId},
+                "What is the rollback requirement?"), true).join();
+
+        WsEvent completed = awaitEvent(listener.events(), "chat.completed");
+        assertThat(completed.payload().path("persisted").asBoolean()).isFalse();
+        assertThat(completed.payload().path("assistantMessageId").isNull()).isTrue();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from chat_message where session_id = ?", Integer.class, sessionId))
+                .isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from chat_message where session_id = ? and role = 'ASSISTANT'",
+                Integer.class,
+                sessionId)).isEqualTo(0);
+
+        jdbcTemplate.update("update chat_session set last_active_at = ? where id = ?",
+                java.sql.Timestamp.from(Instant.now().minus(Duration.ofHours(3))), sessionId);
+        chatRuntimeStateStore.expireDrafts(Instant.now());
+
+        openSocket.sendText(chatMessageEvent(sessionId, spaceId, "DRAFT", "KNOWLEDGE_BASE", new long[]{kbId},
+                "Can I keep asking this expired draft?"), true).join();
+
+        WsEvent failed = awaitEvent(listener.events(), "chat.failed");
+        assertThat(failed.error().path("code").asText()).isEqualTo("CHAT_DRAFT_INVALID_STATE");
+        assertThat(jdbcTemplate.queryForObject("select count(*) from chat_message where session_id = ?", Integer.class, sessionId))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void httpAskShouldRejectDraftSessions() throws Exception {
+        String ownerToken = registerAndGetToken("phase5_http_draft_owner_" + System.nanoTime());
+        Long spaceId = createTeamSpace(ownerToken, "phase5-http-draft-space-" + System.nanoTime());
+        Long kbId = createKnowledgeBase(ownerToken, spaceId, "phase5-http-draft-kb-" + System.nanoTime());
+        Long sessionId = createChatSession(ownerToken, spaceId, "draft http", "DRAFT", "KNOWLEDGE_BASE", new long[]{kbId});
+
+        mockMvc.perform(post("/api/v1/chat/sessions/{sessionId}/messages", sessionId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":"Should draft HTTP ask be allowed?"}
+                                """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("CHAT_DRAFT_INVALID_STATE"));
     }
@@ -439,7 +532,7 @@ class Phase5WorkspaceChatRuntimeIntegrationTest extends ContainerizedIntegration
     private record IndexedDocument(Long documentId, Long taskId) {
     }
 
-    private record WsEvent(String event, String streamId, long seq, JsonNode payload) {
+    private record WsEvent(String event, String streamId, long seq, JsonNode payload, JsonNode error) {
     }
 
     private static final class TestListener implements WebSocket.Listener {
@@ -471,7 +564,8 @@ class Phase5WorkspaceChatRuntimeIntegrationTest extends ContainerizedIntegration
                             json.path("event").asText(),
                             json.path("streamId").isMissingNode() ? null : json.path("streamId").asText(null),
                             json.path("seq").asLong(),
-                            json.path("payload")));
+                            json.path("payload"),
+                            json.path("error")));
                 } catch (Exception ex) {
                     throw new RuntimeException(ex);
                 } finally {

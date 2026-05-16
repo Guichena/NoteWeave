@@ -8,6 +8,7 @@ import com.noteweave.chat.model.ChatMessageRole;
 import com.noteweave.chat.model.ChatMessageStatus;
 import com.noteweave.chat.model.ChatMessageType;
 import com.noteweave.chat.model.ChatSession;
+import com.noteweave.chat.model.ChatSessionKind;
 import com.noteweave.chat.model.RetrievalTrace;
 import com.noteweave.chat.repository.ChatMessageRepository;
 import com.noteweave.chat.repository.RetrievalTraceRepository;
@@ -66,6 +67,9 @@ public class TeamChatService {
         ChatSession session = chatSessionService.getRequiredActiveSession(sessionId);
         if (session.getSessionType() != com.noteweave.chat.model.ChatSessionType.TEAM_CHAT) {
             throw new BusinessException(ErrorCode.CHAT_SESSION_TYPE_UNSUPPORTED);
+        }
+        if (session.getSessionKind() != ChatSessionKind.FORMAL) {
+            throw new BusinessException(ErrorCode.CHAT_DRAFT_INVALID_STATE, "Draft sessions must use the websocket runtime");
         }
         resourceAccessService.requireAskQuestion(userId, session.getSpaceId());
 

@@ -166,6 +166,33 @@ class Phase4TeamRagIntegrationTest extends ContainerizedIntegrationTest {
     }
 
     @Test
+    void shouldRetrieveChunkWhenOnlyDocumentTitleMatchesQuery() throws Exception {
+        String ownerToken = registerAndGetToken("phase4_title_owner_" + System.nanoTime());
+
+        Long spaceId = createTeamSpace(ownerToken, "phase4-title-space-" + System.nanoTime());
+        Long kbId = createKnowledgeBase(ownerToken, spaceId, "phase4-title-kb-" + System.nanoTime());
+        IndexedDocument indexedDocument = uploadAndProcess(
+                ownerToken,
+                spaceId,
+                kbId,
+                "phoenix-runbook.txt",
+                "text/plain",
+                "Rehearse rollback steps before every production deployment.".getBytes(StandardCharsets.UTF_8)
+        );
+        Long sessionId = createChatSession(ownerToken, spaceId, "title-search", "KNOWLEDGE_BASE", new long[]{kbId});
+
+        mockMvc.perform(post("/api/v1/chat/sessions/{sessionId}/messages", sessionId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":"phoenix runbook"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.answer").isNotEmpty())
+                .andExpect(jsonPath("$.data.citations[0].sourceId").value(indexedDocument.documentId()));
+    }
+
+    @Test
     void nonMemberShouldNotCreateSessionOrReadMessageCitations() throws Exception {
         String ownerToken = registerAndGetToken("phase4_owner_denied_" + System.nanoTime());
         String outsiderToken = registerAndGetToken("phase4_outsider_" + System.nanoTime());

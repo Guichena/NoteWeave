@@ -142,7 +142,12 @@ public class SearchIndexService {
                   "query": {
                     "bool": {
                       "must": [
-                        {"match": {"content": %s}}
+                        {
+                          "multi_match": {
+                            "query": %s,
+                            "fields": ["title^2", "content"]
+                          }
+                        }
                       ],
                       "filter": [
                         {"term": {"spaceId": %d}},

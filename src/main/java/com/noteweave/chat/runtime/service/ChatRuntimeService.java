@@ -2,6 +2,7 @@ package com.noteweave.chat.runtime.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.noteweave.chat.model.ChatDraftStatus;
 import com.noteweave.chat.model.ChatMessage;
 import com.noteweave.chat.model.ChatMessageRole;
 import com.noteweave.chat.model.ChatMessageStatus;
@@ -9,6 +10,7 @@ import com.noteweave.chat.model.ChatMessageType;
 import com.noteweave.chat.model.ChatRuntimeStatus;
 import com.noteweave.chat.model.ChatSession;
 import com.noteweave.chat.model.ChatSessionKind;
+import com.noteweave.chat.model.ChatSessionStatus;
 import com.noteweave.chat.model.ChatSessionType;
 import com.noteweave.chat.repository.ChatMessageRepository;
 import com.noteweave.chat.repository.ChatSessionRepository;
@@ -36,10 +38,8 @@ import com.noteweave.team.rag.prompt.PromptMessages;
 import com.noteweave.team.rag.prompt.TeamRagPromptBuilder;
 import com.noteweave.team.rag.retriever.Bm25Retriever;
 import com.noteweave.team.rag.retriever.TeamRetrievalQuery;
-import jakarta.annotation.Nullable;
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -56,6 +56,8 @@ import org.springframework.web.socket.WebSocketSession;
 @Service
 @RequiredArgsConstructor
 public class ChatRuntimeService {
+
+    private static final String NO_RESULT_SUFFIX = "。当前资料不足，无法给出可靠引用。";
 
     private final ChatSessionRepository chatSessionRepository;
     private final ChatMessageRepository chatMessageRepository;
@@ -98,7 +100,7 @@ public class ChatRuntimeService {
     }
 
     public void resume(Long userId, WebSocketSession socketSession, ClientEventEnvelope event) {
-        ChatSession session = getRequiredSession(event.getSessionId());
+        ChatSession session = getRequiredActiveSession(event.getSessionId());
         resourceAccessService.requireViewSpace(userId, session.getSpaceId());
         List<ServerEventEnvelope> replay = chatRuntimeStateStore.readEventsAfter(session.getId(), event.getAck() == null ? 0L : event.getAck());
         for (ServerEventEnvelope envelope : replay) {
@@ -121,17 +123,27 @@ public class ChatRuntimeService {
     }
 
     public void stopExecution(Long userId, WebSocketSession socketSession, ClientEventEnvelope event) {
-        ChatSession session = getRequiredSession(event.getSessionId());
+        ChatSession session = getRequiredActiveSession(event.getSessionId());
         resourceAccessService.requireAskQuestion(userId, session.getSpaceId());
         ActiveExecution execution = activeExecutionRegistry.get(session.getId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_RUNTIME_NOT_FOUND));
         execution.stop();
         updateSessionRuntimeStatus(session.getId(), ChatRuntimeStatus.STOPPED);
+        chatRuntimeStateStore.writeRuntimeState(session.getId(), RuntimeState.builder()
+                .sessionId(session.getId())
+                .userId(userId)
+                .spaceId(session.getSpaceId())
+                .sessionKind(session.getSessionKind())
+                .runtimeStatus(ChatRuntimeStatus.STOPPED)
+                .requestId(event.getRequestId())
+                .streamId(execution.getStreamId())
+                .build());
         chatRuntimeStateStore.writeStreamState(session.getId(), StreamState.builder()
                 .streamId(execution.getStreamId())
                 .status(ChatRuntimeStatus.STOPPED)
                 .partialContent(readPartialContent(session.getId()))
                 .build());
+        emitSessionStateUpdated(socketSession, session, event.getRequestId(), execution.getStreamId(), ChatRuntimeStatus.STOPPED);
         ServerEventEnvelope stopped = chatRuntimeStateStore.appendEvent(session.getId(), ServerEventEnvelope.builder()
                 .event("chat.stopped")
                 .requestId(event.getRequestId())
@@ -144,58 +156,69 @@ public class ChatRuntimeService {
     }
 
     public void processChatMessage(Long userId, WebSocketSession socketSession, ClientEventEnvelope event) {
-        JsonNode payload = event.getPayload();
         Long sessionId = event.getSessionId();
-        ChatSession session = getRequiredSession(sessionId);
-        resourceAccessService.requireAskQuestion(userId, session.getSpaceId());
-        if (session.getSessionType() != ChatSessionType.TEAM_CHAT) {
-            throw new BusinessException(ErrorCode.CHAT_SESSION_TYPE_UNSUPPORTED);
-        }
-        if (activeExecutionRegistry.get(sessionId).isPresent()) {
-            throw new BusinessException(ErrorCode.CHAT_RUNTIME_ALREADY_RUNNING);
-        }
-
-        String streamId = event.getStreamId() == null || event.getStreamId().isBlank() ? UUID.randomUUID().toString() : event.getStreamId();
-        String requestId = event.getRequestId() == null || event.getRequestId().isBlank() ? RequestIdHolder.get() : event.getRequestId();
-        String content = payload.path("content").asText("").trim();
-        if (content.isBlank()) {
-            throw new BusinessException(ErrorCode.CHAT_MESSAGE_EMPTY);
-        }
-
-        if (RequestIdHolder.get() == null) {
-            RequestIdHolder.set(requestId);
-        }
+        String streamId = event.getStreamId() == null || event.getStreamId().isBlank()
+                ? UUID.randomUUID().toString()
+                : event.getStreamId();
+        String requestId = event.getRequestId() == null || event.getRequestId().isBlank()
+                ? RequestIdHolder.get()
+                : event.getRequestId();
         ActiveExecution execution = new ActiveExecution(streamId, requestId);
-        activeExecutionRegistry.register(sessionId, execution);
-
-        Long userMessageId = persistUserMessage(sessionId, content, requestId);
-        updateSessionForRun(sessionId, streamId, requestId);
-        chatRuntimeStateStore.writeRuntimeState(sessionId, RuntimeState.builder()
-                .sessionId(sessionId)
-                .userId(userId)
-                .spaceId(session.getSpaceId())
-                .sessionKind(session.getSessionKind())
-                .runtimeStatus(ChatRuntimeStatus.RUNNING)
-                .requestId(requestId)
-                .streamId(streamId)
-                .lastAckSeq(0L)
-                .build());
-        chatRuntimeStateStore.writeShortTermContext(sessionId, ShortTermContext.builder()
-                .recentMessages(List.of("USER: " + content))
-                .evidenceTitles(List.of())
-                .build());
-
-        ServerEventEnvelope started = chatRuntimeStateStore.appendEvent(sessionId, ServerEventEnvelope.builder()
-                .event("chat.started")
-                .requestId(requestId)
-                .streamId(streamId)
-                .sessionId(sessionId)
-                .messageId(userMessageId)
-                .payload(objectNode(Map.of("runtimeStatus", ChatRuntimeStatus.RUNNING.name())))
-                .build());
-        send(socketSession, started);
+        boolean executionRegistered = false;
+        boolean runtimeStarted = false;
+        ChatSession session = null;
 
         try {
+            JsonNode payload = event.getPayload();
+            session = getRequiredActiveSession(sessionId);
+            resourceAccessService.requireAskQuestion(userId, session.getSpaceId());
+            if (session.getSessionType() != ChatSessionType.TEAM_CHAT) {
+                throw new BusinessException(ErrorCode.CHAT_SESSION_TYPE_UNSUPPORTED);
+            }
+            ensureWritableSession(session);
+
+            String content = payload.path("content").asText("").trim();
+            if (content.isBlank()) {
+                throw new BusinessException(ErrorCode.CHAT_MESSAGE_EMPTY);
+            }
+
+            if (RequestIdHolder.get() == null) {
+                RequestIdHolder.set(requestId);
+            }
+            if (!activeExecutionRegistry.registerIfAbsent(sessionId, execution)) {
+                throw new BusinessException(ErrorCode.CHAT_RUNTIME_ALREADY_RUNNING);
+            }
+            executionRegistered = true;
+
+            Long userMessageId = persistUserMessage(sessionId, content, requestId);
+            updateSessionForRun(sessionId, streamId, requestId);
+            runtimeStarted = true;
+            chatRuntimeStateStore.writeRuntimeState(sessionId, RuntimeState.builder()
+                    .sessionId(sessionId)
+                    .userId(userId)
+                    .spaceId(session.getSpaceId())
+                    .sessionKind(session.getSessionKind())
+                    .runtimeStatus(ChatRuntimeStatus.RUNNING)
+                    .requestId(requestId)
+                    .streamId(streamId)
+                    .lastAckSeq(0L)
+                    .build());
+            chatRuntimeStateStore.writeShortTermContext(sessionId, ShortTermContext.builder()
+                    .recentMessages(List.of("USER: " + content))
+                    .evidenceTitles(List.of())
+                    .build());
+            emitSessionStateUpdated(socketSession, session, requestId, streamId, ChatRuntimeStatus.RUNNING);
+
+            ServerEventEnvelope started = chatRuntimeStateStore.appendEvent(sessionId, ServerEventEnvelope.builder()
+                    .event("chat.started")
+                    .requestId(requestId)
+                    .streamId(streamId)
+                    .sessionId(sessionId)
+                    .messageId(userMessageId)
+                    .payload(objectNode(Map.of("runtimeStatus", ChatRuntimeStatus.RUNNING.name())))
+                    .build());
+            send(socketSession, started);
+
             List<EvidenceItem> evidenceItems = loadEvidence(userId, session, content);
             List<String> evidenceTitles = evidenceItems.stream().map(EvidenceItem::documentTitle).distinct().toList();
             chatRuntimeStateStore.writeShortTermContext(sessionId, ShortTermContext.builder()
@@ -210,10 +233,15 @@ public class ChatRuntimeService {
                 return;
             }
 
-            Long assistantMessageId = persistAssistantMessage(sessionId, answer, requestId, evidenceItems);
-            List<CitationResponse> citations = evidenceItems.isEmpty()
-                    ? List.of()
-                    : citationService.listByMessage(userId, assistantMessageId, session.getSpaceId());
+            Long assistantMessageId = null;
+            List<CitationResponse> citations = List.of();
+            if (session.getSessionKind() == ChatSessionKind.FORMAL) {
+                assistantMessageId = persistAssistantMessage(sessionId, answer, requestId, evidenceItems);
+                citations = evidenceItems.isEmpty()
+                        ? List.of()
+                        : citationService.listByMessage(userId, assistantMessageId, session.getSpaceId());
+            }
+
             updateSessionRuntimeStatus(sessionId, ChatRuntimeStatus.IDLE);
             chatRuntimeStateStore.writeRuntimeState(sessionId, RuntimeState.builder()
                     .sessionId(sessionId)
@@ -230,36 +258,67 @@ public class ChatRuntimeService {
                     .status(ChatRuntimeStatus.IDLE)
                     .partialContent(answer)
                     .build());
+            emitSessionStateUpdated(socketSession, session, requestId, streamId, ChatRuntimeStatus.IDLE);
+
+            Map<String, Object> completedPayload = new LinkedHashMap<>();
+            completedPayload.put("answer", answer);
+            completedPayload.put("citations", citations);
+            completedPayload.put("persisted", session.getSessionKind() == ChatSessionKind.FORMAL);
+            completedPayload.put("assistantMessageId", assistantMessageId);
+
             ServerEventEnvelope completed = chatRuntimeStateStore.appendEvent(sessionId, ServerEventEnvelope.builder()
                     .event("chat.completed")
                     .requestId(requestId)
                     .streamId(streamId)
                     .sessionId(sessionId)
                     .messageId(assistantMessageId)
-                    .payload(objectNode(Map.of(
-                            "assistantMessageId", assistantMessageId,
-                            "answer", answer,
-                            "citations", citations
-                    )))
+                    .payload(objectNode(completedPayload))
                     .build());
             send(socketSession, completed);
         } catch (Exception ex) {
             log.warn("Chat runtime failed", ex);
-            updateSessionRuntimeStatus(sessionId, ChatRuntimeStatus.FAILED);
-            ServerEventEnvelope failed = chatRuntimeStateStore.appendEvent(sessionId, ServerEventEnvelope.builder()
+            if (runtimeStarted && session != null) {
+                updateSessionRuntimeStatus(sessionId, ChatRuntimeStatus.FAILED);
+                chatRuntimeStateStore.writeRuntimeState(sessionId, RuntimeState.builder()
+                        .sessionId(sessionId)
+                        .userId(userId)
+                        .spaceId(session.getSpaceId())
+                        .sessionKind(session.getSessionKind())
+                        .runtimeStatus(ChatRuntimeStatus.FAILED)
+                        .requestId(requestId)
+                        .streamId(streamId)
+                        .build());
+                chatRuntimeStateStore.writeStreamState(sessionId, StreamState.builder()
+                        .streamId(streamId)
+                        .status(ChatRuntimeStatus.FAILED)
+                        .partialContent(readPartialContent(sessionId))
+                        .build());
+                emitSessionStateUpdated(socketSession, session, requestId, streamId, ChatRuntimeStatus.FAILED);
+            }
+
+            ServerEventEnvelope failed = ServerEventEnvelope.builder()
                     .event("chat.failed")
                     .requestId(requestId)
                     .streamId(streamId)
                     .sessionId(sessionId)
                     .error(ServerEventEnvelope.ErrorPayload.builder()
-                            .code(ex instanceof BusinessException be ? be.getErrorCode().name() : ErrorCode.CHAT_STREAM_FAILED.name())
+                            .code(ex instanceof BusinessException businessException
+                                    ? businessException.getErrorCode().name()
+                                    : ErrorCode.CHAT_STREAM_FAILED.name())
                             .message(ex.getMessage())
                             .build())
-                    .build());
+                    .build();
+            if (runtimeStarted || session != null) {
+                failed = chatRuntimeStateStore.appendEvent(sessionId, failed);
+            }
             send(socketSession, failed);
-            throw ex instanceof RuntimeException runtimeException ? runtimeException : new BusinessException(ErrorCode.CHAT_STREAM_FAILED);
+            // The failure has already been materialized into runtime state and websocket events.
+            // Re-throwing from the executor only creates uncaught worker noise.
+            return;
         } finally {
-            activeExecutionRegistry.remove(sessionId);
+            if (executionRegistered) {
+                activeExecutionRegistry.remove(sessionId);
+            }
             RequestIdHolder.clear();
         }
     }
@@ -322,7 +381,7 @@ public class ChatRuntimeService {
 
     private String buildAnswer(Long sessionId, String question, List<EvidenceItem> evidenceItems) {
         if (evidenceItems.isEmpty()) {
-            return ragProperties.prompt().noResultText() + "。当前资料不足，无法给出可靠引用。";
+            return ragProperties.prompt().noResultText() + NO_RESULT_SUFFIX;
         }
         PromptMessages prompt = teamRagPromptBuilder.build(question, evidenceItems, recentMessages(sessionId));
         LlmResponse response = llmClient.chat(
@@ -346,7 +405,7 @@ public class ChatRuntimeService {
             ChatMessage message = createMessage(sessionId, ChatMessageRole.ASSISTANT, content, requestId, ChatMessageStatus.COMPLETED);
             ChatMessage saved = chatMessageRepository.save(message);
             if (!evidenceItems.isEmpty()) {
-                citationService.saveForAssistantMessage(saved.getId(), getRequiredSession(sessionId).getSpaceId(), evidenceItems);
+                citationService.saveForAssistantMessage(saved.getId(), getRequiredActiveSession(sessionId).getSpaceId(), evidenceItems);
             }
             return saved.getId();
         });
@@ -391,9 +450,37 @@ public class ChatRuntimeService {
         });
     }
 
-    private ChatSession getRequiredSession(Long sessionId) {
-        return chatSessionRepository.findById(sessionId)
+    private ChatSession getRequiredActiveSession(Long sessionId) {
+        return chatSessionRepository.findByIdAndStatus(sessionId, ChatSessionStatus.ACTIVE)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_SESSION_NOT_FOUND));
+    }
+
+    private void ensureWritableSession(ChatSession session) {
+        if (session.getSessionKind() == ChatSessionKind.DRAFT
+                && session.getDraftStatus() != ChatDraftStatus.DRAFT_ACTIVE) {
+            throw new BusinessException(ErrorCode.CHAT_DRAFT_INVALID_STATE);
+        }
+    }
+
+    private void emitSessionStateUpdated(
+            WebSocketSession socketSession,
+            ChatSession session,
+            String requestId,
+            String streamId,
+            ChatRuntimeStatus runtimeStatus
+    ) {
+        ServerEventEnvelope envelope = chatRuntimeStateStore.appendEvent(session.getId(), ServerEventEnvelope.builder()
+                .event("session.state.updated")
+                .requestId(requestId)
+                .streamId(streamId)
+                .sessionId(session.getId())
+                .payload(objectNode(Map.of(
+                        "runtimeStatus", runtimeStatus.name(),
+                        "sessionKind", session.getSessionKind().name(),
+                        "draftStatus", session.getDraftStatus() == null ? "" : session.getDraftStatus().name()
+                )))
+                .build());
+        send(socketSession, envelope);
     }
 
     private List<Long> resolveKnowledgeBaseScopeIds(ChatSession session) {

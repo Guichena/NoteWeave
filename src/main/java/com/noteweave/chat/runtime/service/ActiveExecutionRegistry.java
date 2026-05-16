@@ -10,8 +10,8 @@ public class ActiveExecutionRegistry {
 
     private final ConcurrentMap<Long, ActiveExecution> executions = new ConcurrentHashMap<>();
 
-    public void register(Long sessionId, ActiveExecution execution) {
-        executions.put(sessionId, execution);
+    public boolean registerIfAbsent(Long sessionId, ActiveExecution execution) {
+        return executions.putIfAbsent(sessionId, execution) == null;
     }
 
     public Optional<ActiveExecution> get(Long sessionId) {

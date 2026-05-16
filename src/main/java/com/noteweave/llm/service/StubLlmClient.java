@@ -16,6 +16,8 @@ import org.springframework.stereotype.Service;
 @ConditionalOnProperty(prefix = "noteweave.llm.stub", name = "enabled", havingValue = "true")
 public class StubLlmClient implements LlmClient {
 
+    private static final String FALLBACK = "暂无相关信息。当前资料不足，无法给出可靠结论。";
+
     private final LlmProperties llmProperties;
 
     public StubLlmClient(LlmProperties llmProperties) {
@@ -44,13 +46,13 @@ public class StubLlmClient implements LlmClient {
     private String extractAnswer(String prompt) {
         int firstEvidence = prompt.indexOf("[来源#1]");
         if (firstEvidence < 0) {
-            return "暂无相关信息。当前资料不足，无法给出可靠结论。";
+            return FALLBACK;
         }
         int contentStart = prompt.indexOf("内容：", firstEvidence);
         if (contentStart < 0) {
-            return "暂无相关信息。当前资料不足，无法给出可靠结论。";
+            return FALLBACK;
         }
-        String excerpt = prompt.substring(contentStart + 3).trim();
+        String excerpt = prompt.substring(contentStart + "内容：".length()).trim();
         int nextSection = excerpt.indexOf("\n\n");
         if (nextSection > 0) {
             excerpt = excerpt.substring(0, nextSection).trim();

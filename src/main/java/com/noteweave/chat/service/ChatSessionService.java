@@ -20,6 +20,7 @@ import com.noteweave.common.error.ErrorCode;
 import com.noteweave.permission.service.ResourceAccessService;
 import com.noteweave.team.kb.model.KnowledgeBaseStatus;
 import com.noteweave.team.kb.repository.KnowledgeBaseRepository;
+import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -62,6 +63,7 @@ public class ChatSessionService {
         session.setStatus(ChatSessionStatus.ACTIVE);
         session.setRuntimeStatus(ChatRuntimeStatus.IDLE);
         session.setDraftStatus(request.getSessionKind() == ChatSessionKind.DRAFT ? ChatDraftStatus.DRAFT_ACTIVE : null);
+        session.setLastActiveAt(LocalDateTime.now());
         session = chatSessionRepository.save(session);
 
         for (Long scopeId : request.getScopeIds()) {

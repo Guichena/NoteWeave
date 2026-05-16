@@ -10,7 +10,7 @@ import com.noteweave.chat.runtime.protocol.ServerEventEnvelope;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -106,11 +106,16 @@ public class ChatRuntimeStateStore {
 
     @Transactional
     public void expireDrafts(Instant now) {
-        LocalDateTime threshold = LocalDateTime.now().minus(TTL);
+        LocalDateTime threshold = LocalDateTime.ofInstant(now, ZoneId.systemDefault()).minus(TTL);
         List<ChatSession> sessions = chatSessionRepository.findAll().stream()
                 .filter(session -> session.getSessionKind() == ChatSessionKind.DRAFT)
                 .filter(session -> session.getDraftStatus() == ChatDraftStatus.DRAFT_ACTIVE)
-                .filter(session -> session.getLastActiveAt() != null && session.getLastActiveAt().isBefore(threshold))
+                .filter(session -> {
+                    LocalDateTime lastTouchedAt = session.getLastActiveAt() != null
+                            ? session.getLastActiveAt()
+                            : session.getCreatedAt();
+                    return lastTouchedAt != null && lastTouchedAt.isBefore(threshold);
+                })
                 .toList();
         for (ChatSession session : sessions) {
             session.setDraftStatus(ChatDraftStatus.DRAFT_EXPIRED);

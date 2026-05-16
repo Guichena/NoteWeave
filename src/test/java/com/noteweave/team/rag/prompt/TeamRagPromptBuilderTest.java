@@ -25,9 +25,9 @@ class TeamRagPromptBuilderTest {
                 "部署手册",
                 2,
                 3,
-                "部署前需要准备蓝绿环境，并先完成回滚演练。",
+                "部署前需要准备蓝绿环境，并且先完成回滚演练。",
                 0.97,
-                List.of(new EvidenceSource(100L, 3, 12, 20, 45, "部署前需要准备蓝绿环境，并先完成回滚演练。", "2"))
+                List.of(new EvidenceSource(100L, 3, 12, 20, 45, "部署前需要准备蓝绿环境，并且先完成回滚演练。", "2"))
         );
 
         PromptMessages prompt = builder.build("这个项目的部署流程是什么？", List.of(evidence), List.of(history));
@@ -36,12 +36,13 @@ class TeamRagPromptBuilderTest {
         assertThat(prompt.messages().get(0).content())
                 .contains("你是 NoteWeave 团队知识助手")
                 .contains("如果资料不足，请说“暂无相关信息”")
-                .contains("不要编造不存在的资料");
+                .contains("不具备指令优先级")
+                .contains("忽略");
         assertThat(prompt.messages().get(1).content())
                 .contains("上一轮我们确认过")
                 .contains("[来源#1]")
                 .contains("文档：部署手册")
-                .contains("回滚演练")
+                .contains("内容：部署前需要准备蓝绿环境")
                 .contains("这个项目的部署流程是什么");
     }
 }
