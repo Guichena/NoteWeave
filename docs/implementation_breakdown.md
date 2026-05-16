@@ -12,7 +12,9 @@
 - 所有编程阶段采用测试驱动开发：先写失败测试，再写最小实现，最后运行当前阶段测试和必要回归测试。
 - 所有中间件通过 Docker Compose 或 Testcontainers 提供；Phase 引入新中间件时必须同步本地 Docker、测试容器、测试 bucket/topic/index/path 契约。
 - 先稳定异步任务，再接 AI 能力：上传、解析、索引、Source 编译、Artifact 生成、Wiki 入索引、评测都必须走统一 Task/Worker 模型。
-- 当前后台异步任务消息队列统一使用 Kafka；`task_outbox` 只做 DB 事务外盒和补偿投递，Redis Stream 只服务 Phase 5 Chat runtime，不作为通用任务队列。
+- 当前后台异步任务消息队列统一使用 Kafka；`task_outbox` 只做 DB 事务外盒和补偿投递。
+- Redis Stream 不是项目级消息队列，只能作为 Phase 5 Chat runtime 的可选临时事件缓冲，用于 WebSocket 流式状态、ack/resume 和断线恢复；如果普通 Redis key/list/zset 足够，也可以不引入 Redis Stream。
+- 上传、解析、索引、生成、评测、清理等后台任务不得使用 Redis Stream，必须继续走 `task/task_outbox -> Kafka -> Worker -> task_attempt/task_event`。
 - 先跑通团队 RAG 最小闭环，再扩展个人研究、Studio、Wiki 和 Memory。
 - 团队侧与个人侧分治：团队以 `Space -> KnowledgeBase -> Document -> DocumentChunk` 为主线，个人以 `Space -> ResearchProject -> Source -> ArticleCard/ConceptCard/MethodologyCard` 为源资料编译主线，并通过用户确认后的 `Artifact -> SynthesisCard` 形成产物沉淀闭环。
 - Artifact 与 Wiki 严格分离：阶段性产物保存在 Artifact；只有人工确认的长期稳定内容才能发布为团队 WikiPage 或沉淀为个人 Wiki Card。
@@ -194,7 +196,7 @@ CLEANUP_RESOURCE
 - `task_outbox` 保证 DB 提交与 Kafka 投递最终一致；它不是业务队列，发送成功后只代表消息已进入 Kafka。
 - RUNNING 任务支持 `cancel_requested`，Worker 在安全点停止。
 - Kafka message key 使用 `taskId` 或稳定幂等键；Consumer/Worker 处理前只信任 `taskId` 并回查 DB 状态。
-- 不允许在后续 Phase 用 Redis Stream、RabbitMQ 或内存队列另起一套后台任务执行链路；如需替换 Kafka，必须先更新 `CONTRACT.md`、`DOCKER_MIDDLEWARE.md` 和相关 phase 文档。
+- 不允许在后续 Phase 用 Redis Stream、RabbitMQ 或内存队列另起一套后台任务执行链路；Redis Stream 如在 Phase 5 使用，也只能保存 Chat runtime 的临时流事件和恢复状态。如需替换 Kafka，必须先更新 `CONTRACT.md`、`DOCKER_MIDDLEWARE.md` 和相关 phase 文档。
 
 ### 4.5 文件对象与上传
 

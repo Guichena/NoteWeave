@@ -5,6 +5,7 @@ import com.noteweave.chat.dto.TeamAskRequest;
 import com.noteweave.chat.dto.TeamAskResponse;
 import com.noteweave.chat.model.ChatMessage;
 import com.noteweave.chat.model.ChatMessageRole;
+import com.noteweave.chat.model.ChatMessageStatus;
 import com.noteweave.chat.model.ChatMessageType;
 import com.noteweave.chat.model.ChatSession;
 import com.noteweave.chat.model.RetrievalTrace;
@@ -194,6 +195,7 @@ public class TeamChatService {
         message.setRole(role);
         message.setContent(content);
         message.setMessageType(ChatMessageType.TEXT);
+        message.setStatus(ChatMessageStatus.COMPLETED);
         message.setRequestId(RequestIdHolder.get());
         message.setTokenUsageJson(tokenUsageJson);
         message.setErrorCode(errorCode);

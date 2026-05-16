@@ -60,6 +60,16 @@ public class ChatController {
         return ApiResponse.success(teamChatService.ask(currentUserProvider.getCurrentUserId(), sessionId, request));
     }
 
+    @PostMapping("/chat/sessions/{sessionId}/convert-to-formal")
+    public ApiResponse<ChatSessionResponse> convertToFormal(@PathVariable Long sessionId) {
+        return ApiResponse.success(chatSessionService.convertDraftToFormal(currentUserProvider.getCurrentUserId(), sessionId));
+    }
+
+    @PostMapping("/chat/sessions/{sessionId}/discard-draft")
+    public ApiResponse<ChatSessionResponse> discardDraft(@PathVariable Long sessionId) {
+        return ApiResponse.success(chatSessionService.discardDraft(currentUserProvider.getCurrentUserId(), sessionId));
+    }
+
     @GetMapping("/chat/messages/{messageId}/citations")
     public ApiResponse<List<CitationResponse>> listCitations(@PathVariable Long messageId) {
         Long userId = currentUserProvider.getCurrentUserId();

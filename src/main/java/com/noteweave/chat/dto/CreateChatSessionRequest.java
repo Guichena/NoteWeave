@@ -1,6 +1,7 @@
 package com.noteweave.chat.dto;
 
 import com.noteweave.chat.model.ChatScopeType;
+import com.noteweave.chat.model.ChatSessionKind;
 import com.noteweave.chat.model.ChatSessionType;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -17,6 +18,9 @@ public class CreateChatSessionRequest {
 
     @NotNull
     private ChatSessionType sessionType;
+
+    @NotNull
+    private ChatSessionKind sessionKind = ChatSessionKind.FORMAL;
 
     @NotNull
     private ChatScopeType scopeType;

@@ -192,7 +192,10 @@ DB transaction -> task/task_outbox -> Kafka -> Worker -> task/task_attempt/task_
 - Kafka 是当前实现唯一的后台异步任务消息队列。
 - `task_outbox` 是事务外盒和补偿投递表，不是业务执行队列。
 - Worker/Consumer 收到 Kafka 消息后只信任 `taskId`，必须回查 DB task 状态和 payload。
-- Redis Stream 只允许用于 Phase 5 Chat runtime 的流式状态、断线恢复和短期上下文，不承载上传、解析、索引、生成、评测等后台任务。
+- Redis 可用于缓存、bitmap、短期运行态、分布式锁或限流；Redis Stream 不是项目级消息队列。
+- Redis Stream 只允许作为 Phase 5 Chat runtime 的可选临时事件缓冲，用于 WebSocket 流式状态、ack/resume、断线恢复和短期上下文。
+- Phase 5 如果能用普通 Redis key/list/zset 满足运行态恢复，可以不引入 Redis Stream；不得为了复制 Kafka 能力而引入 Redis Stream。
+- Redis Stream 不承载上传、解析、索引、生成、评测、清理等后台任务。
 - RabbitMQ、Redis Stream 任务队列或内存队列都属于历史或备选口径，不进入当前实现，除非后续契约显式修订。
 
 规则：

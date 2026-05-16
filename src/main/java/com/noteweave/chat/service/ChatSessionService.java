@@ -5,6 +5,7 @@ import com.noteweave.chat.dto.ChatMessageResponse;
 import com.noteweave.chat.dto.ChatSessionResponse;
 import com.noteweave.chat.dto.CreateChatSessionRequest;
 import com.noteweave.chat.model.ChatRuntimeStatus;
+import com.noteweave.chat.model.ChatDraftStatus;
 import com.noteweave.chat.model.ChatMessage;
 import com.noteweave.chat.model.ChatSession;
 import com.noteweave.chat.model.ChatSessionKind;
@@ -54,12 +55,13 @@ public class ChatSessionService {
         session.setUserId(userId);
         session.setSpaceId(request.getSpaceId());
         session.setSessionType(ChatSessionType.TEAM_CHAT);
-        session.setSessionKind(ChatSessionKind.FORMAL);
+        session.setSessionKind(request.getSessionKind());
         session.setTitle(request.getTitle().trim());
         session.setScopeType(request.getScopeType());
         session.setScopeIdsSnapshotJson(writeJson(request.getScopeIds()));
         session.setStatus(ChatSessionStatus.ACTIVE);
         session.setRuntimeStatus(ChatRuntimeStatus.IDLE);
+        session.setDraftStatus(request.getSessionKind() == ChatSessionKind.DRAFT ? ChatDraftStatus.DRAFT_ACTIVE : null);
         session = chatSessionRepository.save(session);
 
         for (Long scopeId : request.getScopeIds()) {
@@ -99,6 +101,7 @@ public class ChatSessionService {
                         .role(message.getRole())
                         .content(message.getContent())
                         .messageType(message.getMessageType())
+                        .status(message.getStatus())
                         .artifactId(message.getArtifactId())
                         .requestId(message.getRequestId())
                         .errorCode(message.getErrorCode())
@@ -129,6 +132,35 @@ public class ChatSessionService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_SESSION_NOT_FOUND));
     }
 
+    @Transactional
+    public ChatSessionResponse convertDraftToFormal(Long userId, Long sessionId) {
+        ChatSession session = chatSessionRepository.findByIdForUpdate(sessionId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_SESSION_NOT_FOUND));
+        resourceAccessService.requireViewSpace(userId, session.getSpaceId());
+        if (session.getSessionKind() != ChatSessionKind.DRAFT || session.getDraftStatus() != ChatDraftStatus.DRAFT_ACTIVE) {
+            throw new BusinessException(ErrorCode.CHAT_DRAFT_INVALID_STATE);
+        }
+        session.setSessionKind(ChatSessionKind.FORMAL);
+        session.setDraftStatus(ChatDraftStatus.CONVERTED);
+        session.setRuntimeStatus(ChatRuntimeStatus.IDLE);
+        session.setLastActiveAt(java.time.LocalDateTime.now());
+        return toResponse(chatSessionRepository.save(session), listScopeIds(session.getId()));
+    }
+
+    @Transactional
+    public ChatSessionResponse discardDraft(Long userId, Long sessionId) {
+        ChatSession session = chatSessionRepository.findByIdForUpdate(sessionId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_SESSION_NOT_FOUND));
+        resourceAccessService.requireViewSpace(userId, session.getSpaceId());
+        if (session.getSessionKind() != ChatSessionKind.DRAFT || session.getDraftStatus() != ChatDraftStatus.DRAFT_ACTIVE) {
+            throw new BusinessException(ErrorCode.CHAT_DRAFT_INVALID_STATE);
+        }
+        session.setDraftStatus(ChatDraftStatus.DISCARDED);
+        session.setRuntimeStatus(ChatRuntimeStatus.IDLE);
+        session.setLastActiveAt(java.time.LocalDateTime.now());
+        return toResponse(chatSessionRepository.save(session), listScopeIds(session.getId()));
+    }
+
     @Transactional(readOnly = true)
     public List<Long> listScopeIds(Long sessionId) {
         return chatSessionScopeRepository.findBySessionIdOrderByIdAsc(sessionId).stream()
@@ -149,6 +181,7 @@ public class ChatSessionService {
                 .summary(session.getSummary())
                 .status(session.getStatus())
                 .runtimeStatus(session.getRuntimeStatus().name())
+                .draftStatus(session.getDraftStatus())
                 .lastActiveAt(session.getLastActiveAt())
                 .createdAt(session.getCreatedAt())
                 .updatedAt(session.getUpdatedAt())

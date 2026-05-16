@@ -47,6 +47,10 @@ public class ChatMessage {
     @Column(name = "message_type", nullable = false, length = 32)
     private ChatMessageType messageType = ChatMessageType.TEXT;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 32)
+    private ChatMessageStatus status = ChatMessageStatus.CREATED;
+
     @Column(name = "artifact_id")
     private Long artifactId;
 

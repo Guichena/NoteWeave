@@ -387,7 +387,7 @@ FORMAL + PERSONAL_RESEARCH_CHAT:
 
 ## 7. 生成执行流程
 
-说明：本流程中的 Redis stream 只保存 Chat runtime 的 partial content、stream state 和恢复信息，不替代通用 Task/Outbox/Worker。所有耗时后台任务仍按 `docs/CONTRACT.md` 使用统一 `task` 和 Outbox/Kafka 投递。
+说明：本流程中的 Redis runtime event buffer 只保存 Chat runtime 的 partial content、stream state 和恢复信息，不替代通用 Task/Outbox/Worker。Redis Stream 是可选实现细节；如果使用，也只服务 WebSocket ack/resume 和断线恢复。所有耗时后台任务仍按 `docs/CONTRACT.md` 使用统一 `task` 和 Outbox/Kafka 投递。
 
 ```text
 WebSocket 收到 chat.message
@@ -416,7 +416,7 @@ ContextReadRouter 决策
   ↓
 LLM 流式生成
   ↓
-持续写 Redis stream partialContent
+持续写 Redis runtime partialContent / event buffer
   ↓
 WebSocket 推送 chat.delta
   ↓
@@ -446,7 +446,7 @@ WebSocket 收到 chat.stop
   ↓
 保留 partialContent
   ↓
-写 Redis stream status = stopped
+写 Redis runtime / event buffer status = stopped
   ↓
 写 ChatSession runtime_status = STOPPED
   ↓
@@ -471,7 +471,7 @@ WebSocket 重连
   ↓
 读取 chat:{sessionId}:runtime
   ↓
-读取 chat:{sessionId}:stream
+读取 chat:{sessionId}:stream 或等价 Redis event buffer
   ↓
 返回当前 runtimeStatus 和 partialContent
 ```

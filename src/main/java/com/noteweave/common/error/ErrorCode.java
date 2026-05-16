@@ -47,12 +47,19 @@ public enum ErrorCode {
     CHAT_SESSION_NOT_FOUND(HttpStatus.NOT_FOUND, "chat session not found"),
     CHAT_SESSION_ACCESS_DENIED(HttpStatus.FORBIDDEN, "chat session access denied"),
     CHAT_SESSION_TYPE_UNSUPPORTED(HttpStatus.BAD_REQUEST, "chat session type unsupported"),
+    CHAT_DRAFT_INVALID_STATE(HttpStatus.BAD_REQUEST, "chat draft state is invalid"),
     CHAT_MESSAGE_EMPTY(HttpStatus.BAD_REQUEST, "chat message is empty"),
     RAG_RETRIEVAL_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "rag retrieval failed"),
     RAG_NO_EVIDENCE(HttpStatus.BAD_REQUEST, "rag evidence is empty"),
     LLM_CONFIG_MISSING(HttpStatus.BAD_REQUEST, "llm config missing"),
     LLM_CALL_FAILED(HttpStatus.BAD_GATEWAY, "llm call failed"),
-    CITATION_SAVE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "citation save failed");
+    CITATION_SAVE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "citation save failed"),
+    WS_TICKET_INVALID(HttpStatus.UNAUTHORIZED, "websocket ticket is invalid"),
+    WS_TICKET_EXPIRED(HttpStatus.UNAUTHORIZED, "websocket ticket is expired"),
+    CHAT_RUNTIME_NOT_FOUND(HttpStatus.NOT_FOUND, "chat runtime not found"),
+    CHAT_RUNTIME_ALREADY_RUNNING(HttpStatus.CONFLICT, "chat runtime already running"),
+    CHAT_RUNTIME_STOP_FAILED(HttpStatus.BAD_REQUEST, "chat runtime stop failed"),
+    CHAT_STREAM_FAILED(HttpStatus.BAD_GATEWAY, "chat stream failed");
 
     private final HttpStatus httpStatus;
     private final String defaultMessage;

@@ -1,6 +1,7 @@
 package com.noteweave.chat.dto;
 
 import com.noteweave.chat.model.ChatScopeType;
+import com.noteweave.chat.model.ChatDraftStatus;
 import com.noteweave.chat.model.ChatSessionKind;
 import com.noteweave.chat.model.ChatSessionStatus;
 import com.noteweave.chat.model.ChatSessionType;
@@ -23,6 +24,7 @@ public class ChatSessionResponse {
     private String summary;
     private ChatSessionStatus status;
     private String runtimeStatus;
+    private ChatDraftStatus draftStatus;
     private LocalDateTime lastActiveAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

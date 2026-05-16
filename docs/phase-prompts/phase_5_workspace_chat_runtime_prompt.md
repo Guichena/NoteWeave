@@ -107,6 +107,7 @@ DRAFT 会话
 停止/中断
 刷新恢复
 Redis runtime state
+Redis runtime event buffer（Redis Stream 可选）
 chat_session.runtime_status
 ```
 
@@ -127,6 +128,8 @@ Quiz
 - HTTP Chat 和 WebSocket Chat 的消息、Citation、权限口径一致。
 - DRAFT 生命周期必须明确：active、expired、converted、discarded。
 - Redis 只保存运行态，不替代 MySQL 长期数据。
+- Kafka 仍是唯一后台异步任务消息队列；Redis Stream 如使用，只能作为 Phase 5 WebSocket runtime 的临时事件缓冲和 ack/resume 恢复机制。
+- 不得用 Redis Stream 承载上传、解析、索引、生成、评测、清理等后台任务；如果普通 Redis key/list/zset 足够，可不引入 Redis Stream。
 - 事件必须可恢复、可 ack，避免刷新丢消息。
 
 ## 交付要求
@@ -139,4 +142,3 @@ DRAFT 生命周期
 中断/恢复如何处理
 测试命令和结果已记录到 docs/PROJECT_STATUS.md
 ```
-

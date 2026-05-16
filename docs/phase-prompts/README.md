@@ -33,7 +33,7 @@ docs/features/database_api_blueprint.md
 
 所有中间件必须通过 Docker Compose 或 Testcontainers 提供。如果当前阶段用到新的中间件、测试 bucket、topic、index 或本地临时路径，必须同步更新 `docs/DOCKER_MIDDLEWARE.md`。
 
-后台异步任务消息队列统一使用 Kafka。`task_outbox` 只做 DB 事务外盒和补偿投递；Redis Stream 只允许用于 Phase 5 Chat runtime 的流式状态、断线恢复和短期上下文，不得作为上传、解析、索引、生成、评测等通用后台任务队列。
+后台异步任务消息队列统一使用 Kafka。`task_outbox` 只做 DB 事务外盒和补偿投递；Redis Stream 不是项目级消息队列，只能作为 Phase 5 Chat runtime 的可选临时事件缓冲，用于 WebSocket 流式状态、ack/resume、断线恢复和短期上下文。上传、解析、索引、生成、评测、清理等后台任务不得使用 Redis Stream；如果普通 Redis key/list/zset 足够，Phase 5 也可以不引入 Redis Stream。
 
 不要把以下文档作为实现权威：
 

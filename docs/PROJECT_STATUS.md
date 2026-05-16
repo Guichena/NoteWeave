@@ -2,7 +2,7 @@
 
 本文档用于给后续 AI 编码代理快速判断当前做到哪里。每次开始新阶段前先读本文档；每完成一个阶段后必须更新本文档。
 
-更新时间：2026-05-15
+更新时间：2026-05-16
 
 ---
 
@@ -11,7 +11,7 @@
 当前状态：
 
 ```text
-Phase 0/1、Phase 1.5、Phase 2 和 Phase 3 已完成并通过当前阶段测试与必要回归测试；可以进入 Phase 4。
+Phase 0/1、Phase 1.5、Phase 2、Phase 3、Phase 4 和 Phase 5 已完成并通过当前阶段测试与必要回归测试；可以进入 Phase 6。
 ```
 
 当前代码已包含 Auth/User/Space/Permission、Task/Outbox/Kafka Worker 基础设施、Phase 2 文件上传链路，以及 Phase 3 的 DOCUMENT_PROCESS Worker、文档解析、parsed text 保存、Chunk 切片、indexVersion / activeIndexVersion、Elasticsearch BM25 索引和 Search Debug。
@@ -19,7 +19,7 @@ Phase 0/1、Phase 1.5、Phase 2 和 Phase 3 已完成并通过当前阶段测试
 下一步：
 
 ```text
-进入 Phase 4: 团队 RAG Chat 与 Citation。
+进入 Phase 6: Personal ResearchProject / Source。
 ```
 
 ---
@@ -116,8 +116,8 @@ Quiz / 答题 / 评分 / 题库暂缓
 | Phase 1.5 | DONE | Task / Outbox / Worker 代码已完成，并通过回归测试 |
 | Phase 2 | DONE | 文件上传与异步摄取，MinIO / Kafka / TaskOutbox 链路已完成并通过回归测试 |
 | Phase 3 | DONE | 文档解析、Chunk、ES BM25 索引、版本切换与幂等处理已完成并通过测试 |
-| Phase 4 | PENDING | 团队 RAG Chat 与 Citation |
-| Phase 5 | PENDING | WebSocket Chat Runtime |
+| Phase 4 | DONE | 团队 RAG Chat、Citation、最小 RetrievalTrace / LLMCallLog / AnswerFeedback 已完成并通过测试 |
+| Phase 5 | DONE | WebSocket Chat Runtime |
 | Phase 6 | PENDING | 个人 ResearchProject / Source |
 | Phase 7 | PENDING | 个人 Wiki Compiler |
 | Phase 8 | PENDING | Studio / Artifact |
@@ -307,6 +307,238 @@ Next:
 
 ```text
 Proceed to Phase 3 document parsing and indexing.
+```
+
+## 12. Phase 4 Team RAG Chat / Citation (2026-05-15)
+
+Status:
+
+```text
+DONE
+```
+
+Implemented in this update:
+
+```text
+1) Added TEAM_CHAT session/message persistence with chat_session, chat_session_scope and chat_message.
+2) Implemented ChatSessionService and ChatController endpoints for creating sessions, listing sessions, reading session detail and reading message history.
+3) Implemented TeamChatService RAG flow: requireAskQuestion -> save USER message -> resolve session scope -> BM25 retrieve -> evidence post-process -> no-evidence fallback or LLM answer -> save ASSISTANT message -> save citations -> return answer/citations.
+4) Implemented BM25 retrieval with Elasticsearch filters on spaceId and scoped knowledgeBaseIds, plus MySQL recheck on document lifecycle and activeIndexVersion.
+5) Implemented EvidencePostProcessor with dedupe, adjacent chunk merge, per-document limiting, score ordering and context truncation.
+6) Implemented TeamRagPromptBuilder with grounded-answer rules, citation numbering and prompt-injection-resistant evidence formatting.
+7) Added LLM client abstraction, configurable OpenAI-compatible WebClient client and test StubLlmClient; missing API key without stub now fails with LLM_CONFIG_MISSING.
+8) Added citation and message_citation persistence; citations store pageNo/startOffset/endOffset/quoteHash/snapshotObjectKey/sourceVersion and are not embedded into message JSON.
+9) Citation query path performs second permission check before returning message citations.
+10) Added minimal retrieval_trace, llm_call_log and answer_feedback persistence plus feedback submit API.
+```
+
+New migration:
+
+```text
+src/main/resources/db/migration/V5__phase_4_team_rag_chat_citation.sql
+```
+
+New APIs:
+
+```text
+POST /api/v1/chat/sessions
+GET /api/v1/spaces/{spaceId}/chat-sessions
+GET /api/v1/chat/sessions/{sessionId}
+GET /api/v1/chat/sessions/{sessionId}/messages
+POST /api/v1/chat/sessions/{sessionId}/messages
+GET /api/v1/chat/messages/{messageId}/citations
+POST /api/v1/chat/messages/{messageId}/feedback
+```
+
+RAG request flow:
+
+```text
+requireAskQuestion(spaceId)
+-> save USER chat_message
+-> resolve session scope to visible knowledgeBaseIds
+-> BM25 retrieve from Elasticsearch with spaceId/knowledgeBaseId filters
+-> MySQL recheck document status and activeIndexVersion
+-> EvidencePostProcessor merge/dedupe/limit/truncate
+-> if empty: return explicit "暂无相关信息" fallback and empty citations
+-> else TeamRagPromptBuilder builds grounded prompt
+-> LLMClient or StubLLMClient generates answer
+-> save ASSISTANT chat_message
+-> CitationService saves citation + message_citation + snapshot object
+-> return answer and citations
+```
+
+Permission filter points:
+
+```text
+1) Create/list/read session: requireViewSpace
+2) Ask question: requireAskQuestion
+3) Retrieval prefilter: Elasticsearch query filters by spaceId and scoped knowledgeBaseIds
+4) Retrieval post-check: MySQL validates document status != deleted and activeIndexVersion matches chunk indexVersion
+5) Citation return: requireViewSpace on session space, then requireViewSpace again on each citation.spaceId before returning
+```
+
+Citation save and query:
+
+```text
+- Citation records are stored in citation.
+- Assistant message associations are stored in message_citation.
+- Citation fields persisted: pageNo, startOffset, endOffset, quoteHash, snapshotObjectKey, sourceVersion.
+- Snapshot object keys use dev/citations/{citationId}/snapshot.txt in local dev, and test/{testRunId}/citations/{citationId}/snapshot.txt in tests.
+- Message JSON does not carry citation ids.
+- Query API resolves citations through message_citation and rechecks permissions before returning.
+```
+
+TDD record:
+
+```text
+1) Wrote EvidencePostProcessorTest, TeamRagPromptBuilderTest and Phase4TeamRagIntegrationTest before implementation.
+2) Initial red run failed because Phase 4 production classes did not exist yet, matching the expected TDD failure.
+3) Implemented minimal chat/RAG/citation/LLM/observability code to satisfy the new tests.
+4) Added boundary handling for no-evidence fallback, cross-space isolation, permission-protected citation lookup and missing LLM config fallback.
+5) Re-ran current-phase tests and regression tests to green.
+```
+
+Test commands and results:
+
+```text
+1) mvn "-Dtest=EvidencePostProcessorTest,TeamRagPromptBuilderTest,Phase4TeamRagIntegrationTest" test
+   - initial red failed as expected because Phase 4 production classes were not implemented yet.
+
+2) mvn "-Dtest=EvidencePostProcessorTest,TeamRagPromptBuilderTest" test
+   - passed
+
+3) mvn "-Dtest=Phase4TeamRagIntegrationTest" test
+   - passed
+
+4) mvn "-Dtest=Phase4TeamRagIntegrationTest,Phase3DocumentProcessingIntegrationTest,Phase2UploadFlowIntegrationTest,TaskServiceIntegrationTest,TaskControllerTest,SpaceControllerTest,StoragePropertiesValidatorTest" test
+   - passed: Tests run: 33, Failures: 0, Errors: 0, Skipped: 0
+
+5) docker compose config --quiet
+   - passed
+
+6) git diff --check
+   - passed; only CRLF line-ending warnings were printed
+
+7) mvn test
+   - passed: Tests run: 61, Failures: 0, Errors: 0, Skipped: 0
+```
+
+Notes:
+
+```text
+- Phase 4 intentionally does not implement WebSocket streaming, DRAFT session resume, vector recall, Wiki retriever, personal Wiki, Artifact generation or Quiz.
+- Test environment uses StubLLMClient and does not depend on an external LLM provider.
+- No-evidence answers must be explicit and return no fabricated citations.
+- Citation pageNo currently defaults to 1 when chunk page metadata is absent, to keep citation responses structurally complete.
+```
+
+Next:
+
+```text
+Proceed to Phase 5 WebSocket Chat Runtime.
+```
+
+## 13. Phase 5 Workspace Chat Runtime (2026-05-16)
+
+Status:
+
+```text
+DONE
+```
+
+Implemented in this update:
+
+```text
+1) Added WebSocket runtime baseline: POST /api/v1/chat/ws-ticket and WebSocket /ws/chat/{ticket} with one-time Redis ticket consumption.
+2) Extended chat_session with draft_status and chat_message with status, plus V6 migration for Phase 5 runtime fields.
+3) Added FORMAL / DRAFT session creation support, convert-to-formal and discard-draft APIs, and DRAFT lifecycle states DRAFT_ACTIVE / DRAFT_EXPIRED / CONVERTED / DISCARDED.
+4) Added Redis-backed runtime state store for runtime / short_term / stream / events with seq/ack/resume support and 2-hour TTL.
+5) Implemented runtime event envelope and event flow: chat.connected / chat.started / chat.delta / chat.completed / chat.stopped / chat.failed / chat.restored.
+6) Implemented ActiveExecutionRegistry and stop flow so stop requests halt further delta emission and preserve partialContent in Redis runtime state.
+7) Implemented refresh recovery via chat.resume: replay Redis-buffered events after ack and return restored runtimeStatus / partialContent.
+8) Reused Phase 4 retrieval, prompt, LLM and citation stack for WebSocket runtime so HTTP chat and WS chat keep the same permission, evidence and citation semantics.
+9) Kept DRAFT out of long-term memory writeback scope; ContextReadRouter for Phase 5 only enables recent history and retrieval evidence.
+10) Added real WebSocket integration coverage against RANDOM_PORT plus Redis/Testcontainers runtime verification.
+```
+
+New migration:
+
+```text
+src/main/resources/db/migration/V6__phase_5_workspace_chat_runtime.sql
+```
+
+New APIs:
+
+```text
+POST /api/v1/chat/ws-ticket
+POST /api/v1/chat/sessions/{sessionId}/convert-to-formal
+POST /api/v1/chat/sessions/{sessionId}/discard-draft
+WebSocket /ws/chat/{ticket}
+```
+
+WS runtime flow:
+
+```text
+POST /api/v1/chat/ws-ticket
+-> Redis one-time ticket (60s TTL)
+-> WebSocket handshake /ws/chat/{ticket}
+-> chat.connected
+-> client chat.message
+-> save USER message
+-> runtime_status = RUNNING
+-> retrieve evidence + build prompt + generate answer
+-> append chat.started / chat.delta* / chat.completed to Redis event buffer
+-> FORMAL session saves ASSISTANT message + citations
+-> runtime_status = IDLE
+```
+
+Stop / resume / draft rules:
+
+```text
+- stop: chat.stop marks ActiveExecution stopRequested, stops further delta, keeps partialContent in Redis, sets chat_session.runtime_status = STOPPED and emits chat.stopped.
+- resume: chat.resume replays Redis events after ack and emits chat.restored with runtimeStatus + partialContent.
+- draft expire: expireDrafts marks DRAFT_ACTIVE -> DRAFT_EXPIRED after TTL.
+- convert: only DRAFT_ACTIVE can convert to FORMAL and becomes draft_status = CONVERTED.
+- discard: only DRAFT_ACTIVE can discard and becomes draft_status = DISCARDED.
+- DRAFT does not write long-term memory in this phase.
+```
+
+TDD record:
+
+```text
+1) Wrote WebSocketTicketServiceTest, ChatRuntimeStateStoreTest, ContextReadRouterTest and Phase5WorkspaceChatRuntimeIntegrationTest before implementation.
+2) Initial red run failed as expected on missing Phase 5 runtime classes, missing draft/message status fields and missing WebSocket APIs.
+3) Implemented minimal migration, Redis runtime store, ws-ticket flow, WebSocket handler and runtime service to satisfy the new tests.
+4) Added boundary handling for async stop, resume replay after ack, one-time ticket consumption and draft expiration/convert/discard state checks.
+5) Re-ran Phase 5 targeted tests and Phase 4/3/2 regression tests to green.
+```
+
+Test commands and results:
+
+```text
+1) mvn "-Dtest=WebSocketTicketServiceTest,ChatRuntimeStateStoreTest,ContextReadRouterTest,Phase5WorkspaceChatRuntimeIntegrationTest" test
+   - initial red failed as expected because Phase 5 runtime classes and fields did not exist yet.
+
+2) mvn "-Dtest=Phase5WorkspaceChatRuntimeIntegrationTest" test
+   - passed
+
+3) mvn "-Dtest=WebSocketTicketServiceTest,ChatRuntimeStateStoreTest,ContextReadRouterTest,Phase5WorkspaceChatRuntimeIntegrationTest,Phase4TeamRagIntegrationTest,Phase4TeamRagLlmFailureIntegrationTest,Phase3DocumentProcessingIntegrationTest,Phase2UploadFlowIntegrationTest,TaskServiceIntegrationTest,TaskControllerTest,SpaceControllerTest,StoragePropertiesValidatorTest" test
+   - passed: Tests run: 43, Failures: 0, Errors: 0, Skipped: 0
+```
+
+Notes:
+
+```text
+- Phase 5 runtime events are buffered in Redis only for temporary seq/ack/resume recovery; Kafka remains the only background async task queue.
+- WebSocket runtime reuses the Phase 4 retrieval and citation path, so WS and HTTP chat stay aligned on permissions and evidence semantics.
+- Current stop semantics intentionally preserve partialContent in Redis without saving a partial assistant message row.
+- Long-term memory writeback remains deferred to Phase 12.
+```
+
+Next:
+
+```text
+Proceed to Phase 6 personal ResearchProject and Source import.
 ```
 
 ## 10. Phase 2 Final Regression (2026-05-15)

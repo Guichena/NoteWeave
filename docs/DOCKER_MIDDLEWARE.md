@@ -114,6 +114,8 @@ test.noteweave.document.{testRunId}
 noteweave-test-{testRunId}-document-chunk
 ```
 
+Redis 用于缓存、bitmap、短期运行态、分布式锁或限流。Redis Stream 不是独立中间件契约，也不是后台任务消息队列；如 Phase 5 采用 Redis Stream，只是在既有 Redis 容器内保存 WebSocket runtime event buffer，用于 ack/resume 和断线恢复。
+
 测试不得依赖 `docker compose up -d` 已经执行。测试应自行启动所需 Testcontainers，并通过 `DynamicPropertySource` 注入连接信息。
 
 ---
@@ -148,7 +150,7 @@ MinIO 测试对象 key 必须带 `test/` 前缀：
 test/{testRunId}/uploads/{uploadId}/chunks/{chunkIndex}
 test/{testRunId}/objects/{contentHash}
 test/{testRunId}/parsed-text/document/{documentId}/{indexVersion}.txt
-test/citations/{citationId}/snapshot.txt
+test/{testRunId}/citations/{citationId}/snapshot.txt
 test/artifacts/{artifactId}/exports/{fileName}
 ```
 
@@ -274,5 +276,60 @@ Kafka:
 DOCUMENT_PROCESS uses noteweave.document locally.
 Integration tests use test.noteweave.document.{testRunId}.
 The consumer payload is treated as taskId-only; worker execution loads task/document state from MySQL.
+```
+
+---
+
+## 11. Phase 4 runtime/testing note (2026-05-15)
+
+Phase 4 does not introduce new middleware. Runtime and integration tests continue to use the same containerized baseline:
+
+```text
+MySQLContainer
+Redis GenericContainer
+MinIO container
+KafkaContainer
+ElasticsearchContainer
+```
+
+Phase 4 testing/runtime notes:
+
+```text
+- Team RAG retrieval depends on Elasticsearch document chunk index created in Phase 3.
+- Citation snapshot objects are now persisted to:
+  test/{testRunId}/citations/{citationId}/snapshot.txt
+  dev/citations/{citationId}/snapshot.txt
+- Integration tests use StubLLMClient; they do not call any external LLM provider and do not require a real API key.
+- No new Kafka topics were added in Phase 4.
+- No new Elasticsearch index prefix or suffix contract was added beyond the existing Phase 3 document chunk baseline.
+```
+
+---
+
+## 12. Phase 5 runtime/testing note (2026-05-16)
+
+Phase 5 does not introduce new middleware containers. Runtime and integration tests continue to use the same containerized baseline:
+
+```text
+MySQLContainer
+Redis GenericContainer
+MinIO container
+KafkaContainer
+ElasticsearchContainer
+```
+
+Phase 5 testing/runtime notes:
+
+```text
+- WebSocket runtime state is stored in the existing Redis container only; no new standalone middleware was added.
+- Runtime Redis keys follow:
+  chat:{sessionId}:runtime
+  chat:{sessionId}:short_term
+  chat:{sessionId}:stream
+  chat:{sessionId}:events
+- Runtime/event buffer TTL is 2 hours; ws-ticket TTL is 60 seconds.
+- Redis event buffering is temporary runtime state for seq/ack/resume only; Kafka remains the only background async task queue.
+- Integration tests use RANDOM_PORT + real WebSocket handshake against /ws/chat/{ticket}; they still rely on Testcontainers rather than docker compose.
+- Phase 5 did not add new Kafka topics, MinIO buckets or Elasticsearch index prefixes beyond the existing Phase 3/4 contracts.
 ```
 

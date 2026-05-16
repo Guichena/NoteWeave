@@ -59,6 +59,10 @@ public class ChatSession {
     @Column(name = "runtime_status", nullable = false, length = 32)
     private ChatRuntimeStatus runtimeStatus = ChatRuntimeStatus.IDLE;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "draft_status", length = 32)
+    private ChatDraftStatus draftStatus;
+
     @Column(name = "latest_context_snapshot_json", columnDefinition = "TEXT")
     private String latestContextSnapshotJson;
 

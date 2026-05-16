@@ -171,14 +171,14 @@ DISCARDED
 草稿消息是否落库：
 
 - 用户输入可以落库，便于刷新恢复。
-- Assistant 部分输出默认只写 Redis stream state。
+- Assistant 部分输出默认只写 Redis runtime state；如采用 Redis Stream，它只作为临时 event buffer。
 - 如果用户确认保存，可以后续转正式会话，当前阶段可不做。
 
 ---
 
 ## 7. Redis 运行态
 
-说明：本节 Redis stream 只用于 Chat runtime 的流式状态、断线恢复和短期上下文，不作为通用异步任务队列。上传、解析、索引、生成、评测等长任务仍统一走 `task / task_attempt / task_event / task_outbox` 和对应 Kafka/Worker 链路。
+说明：本节 Redis 只用于 Chat runtime 的流式状态、断线恢复和短期上下文，不作为通用异步任务队列。Redis Stream 是可选实现细节；如果使用，它只保存 WebSocket 事件缓冲、ack/resume 和 partial content，不承载后台任务。上传、解析、索引、生成、评测、清理等长任务仍统一走 `task / task_attempt / task_event / task_outbox` 和对应 Kafka/Worker 链路。
 
 Runtime：
 
@@ -219,9 +219,9 @@ Stream 内容示例：
 
 要求：
 
-- `chat.started`、`chat.delta`、`chat.completed`、`chat.stopped`、`chat.failed`、`session.state.updated` 都要写入 Redis stream。
-- stream event 必须带 `seq`，刷新重连时按 `seq` 恢复，不依赖内存状态。
-- Runtime、Short Term、Stream TTL 必须一致延长，避免只恢复到部分状态。
+- `chat.started`、`chat.delta`、`chat.completed`、`chat.stopped`、`chat.failed`、`session.state.updated` 都要写入可恢复的 Redis runtime event buffer；可用 Redis Stream，也可用满足顺序和恢复要求的普通 Redis 数据结构。
+- runtime event 必须带 `seq`，刷新重连时按 `seq` 恢复，不依赖内存状态。
+- Runtime、Short Term、Stream/Event buffer TTL 必须一致延长，避免只恢复到部分状态。
 
 ---
 
@@ -479,8 +479,8 @@ ChatRuntimeServiceTest
 - 未认证 WebSocket 连接失败。
 - 正式会话流式生成完成后落库。
 - stop 后不再推送 delta。
-- resume 能返回 Redis 中的 partialContent。
-- started / delta / completed / stopped / failed 事件均写入 Redis stream。
+- resume 能返回 Redis runtime state 中的 partialContent。
+- started / delta / completed / stopped / failed 事件均写入可恢复 Redis event buffer；Redis Stream 只是可选实现，不是后台任务队列。
 - DRAFT TTL 到期后状态变为 DRAFT_EXPIRED，不能再 convert。
 - DRAFT 会话不写长期记忆。
 
