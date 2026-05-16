@@ -1,90 +1,41 @@
-﻿# Phase 6: 个人 ResearchProject 与 Source 导入
+# Phase 6: 个人 ResearchProject 与 Source 导入
 
-本文档用于指导 NoteWeave 第六阶段编码实现。
-
-范围：
-
-```text
-Phase 6: Personal ResearchProject / Source Upload / URL Source / Source Parse Task
-```
-
-第六阶段目标是建立个人研究工作台入口，让用户可以围绕主题创建 ResearchProject，并向项目中添加文件、URL 或文本 Source。
-
-本阶段不生成 ArticleCard / ConceptCard，不做个人问答，不做 Artifact。
+本文档描述 Phase 6 的权威实现口径。Phase 6 的目标是建立个人研究资料入口，让用户在自己的 PERSONAL Space 下创建 ResearchProject，并把文件、URL、文本导入为可供后续编译的 Source。
 
 ---
 
-## 1. 参考文档
+## 1. 本阶段范围
 
-```text
-docs/features/database_api_blueprint.md
-docs/features/file_upload_async_pipeline.md
-docs/implementation_breakdown.md
-```
+Phase 6 完成以下能力：
 
----
+- 个人 `ResearchProject` 的创建、列表、详情、更新、归档。
+- 个人 `Source` 的 FILE / URL / TEXT 导入。
+- `SOURCE_IMPORT` Task、失败重试、去重、重新导入。
+- `raw_text_object_key` / `parsed_text_object_key` 持久化。
+- owner-only 的 Source 列表、详情、删除、重新导入。
 
-## 2. 阶段目标
+本阶段不做：
 
-完成后系统应具备：
-
-- 用户可以创建个人 ResearchProject。
-- 用户可以查看、更新、删除自己的 ResearchProject。
-- 用户可以上传个人 Source 文件。
-- 用户可以添加 URL Source。
-- 用户可以添加纯文本 Source。
-- Source 保留 Raw Source。
-- Source 创建后可创建 `SOURCE_IMPORT` Task。
-- Source import 状态可查询。
-- 所有个人资源只允许 owner 访问。
+- ArticleCard / ConceptCard / MethodologyCard。
+- 个人问答、个人生成、个人 Artifact。
+- 外部资料自动发现。
+- Quiz / 题库 / 评分。
 
 ---
 
-## 3. 本阶段不做的事
+## 2. 关键边界
 
-- 不做 ArticleCard。
-- 不做 ConceptCard。
-- 不做 MethodologyCard。
-- 不做个人问答。
-- 不做个人 Artifact。
-- 不做外部论文搜索。
-- 不做复杂网页抓取，只做 URL 元数据记录或简单抓取占位。
-
----
-
-## 4. 包结构
-
-```text
-com.noteweave.personal.project
-  ├── controller
-  ├── dto
-  ├── model
-  ├── repository
-  └── service
-
-com.noteweave.personal.source
-  ├── controller
-  ├── dto
-  ├── model
-  ├── repository
-  └── service
-```
-
-建议类：
-
-```text
-ResearchProject
-ResearchProjectService
-ResearchProjectController
-Source
-SourceService
-SourceController
-SourceImportService
-```
+- `ResearchProject` 只能属于当前用户的 ACTIVE `PERSONAL` Space。
+- 个人资源不能只按 id 查询，必须在 `space_id + owner` 语义下访问。
+- `SourceType` 在 Phase 6 固定为 `FILE | URL | TEXT`。
+- FILE 复用 `DocumentParserService`，MVP 只支持 `.txt`、`.md`、`.markdown`、`.pdf`。
+- `importStatus = READY` 的 Source 必须至少有一个可读取的 `raw_text_object_key` 或 `parsed_text_object_key`。
+- 原始文件 `object_key` 不能单独让 Source 进入 READY。
+- 父 `ResearchProject` 已归档或软删后，`GET /personal/sources/{id}`、`POST /personal/sources/{id}/import` 等接口都应视为不可操作；后台 import worker 也应直接跳过。
 
 ---
 
-## 5. 数据模型
+## 3. 数据模型
 
 ### ResearchProject
 
@@ -101,6 +52,8 @@ description
 researchGoal
 compileStatus
 status
+deletedAt
+deletedBy
 createdAt
 updatedAt
 ```
@@ -132,121 +85,112 @@ contentHash
 importStatus
 compileStatus
 tokenCount
+errorMessage
 createdBy
+deletedAt
+deletedBy
 createdAt
 updatedAt
 ```
 
-SourceType：
+状态：
 
 ```text
-FILE
-URL
-TEXT
-MARKDOWN
-PDF
-```
-
-ImportStatus：
-
-```text
-PENDING
-IMPORTING
-READY
-FAILED
-```
-
-CompileStatus：
-
-```text
-PENDING
-COMPILING
-READY
-FAILED
+importStatus = PENDING / IMPORTING / READY / FAILED
+compileStatus = PENDING / COMPILING / READY / FAILED
 ```
 
 ---
 
-## 6. Service 设计
+## 4. 导入与状态流转
 
-### ResearchProjectService
+### TEXT
 
-```java
-ResearchProjectResponse create(Long userId, CreateResearchProjectRequest request);
-List<ResearchProjectResponse> listMine(Long userId);
-ResearchProjectResponse get(Long userId, Long projectId);
-ResearchProjectResponse update(Long userId, Long projectId, UpdateResearchProjectRequest request);
-void archive(Long userId, Long projectId);
-```
+- 创建时直接写入 `raw_text_object_key`。
+- 当场计算 `content_hash`。
+- 不创建 `SOURCE_IMPORT` task。
+- 文本对象可读后直接标记 `READY`。
 
-规则：
+### FILE
 
-- 只能访问自己的 PERSONAL Space 下项目。
-- 创建项目时绑定当前用户 PERSONAL Space。
+- 上传请求直接把原始文件写入 MinIO，保留 `object_key`。
+- 创建 `SOURCE_IMPORT` task。
+- worker 复用 `DocumentParserService` 解析正文。
+- 成功写出 `parsed_text_object_key` 且对象可读后，才允许标记 `READY`。
 
-### SourceService
+### URL
 
-```java
-SourceResponse uploadFile(Long userId, Long projectId, MultipartFile file, UploadSourceRequest request);
-SourceResponse addUrl(Long userId, Long projectId, AddUrlSourceRequest request);
-SourceResponse addText(Long userId, Long projectId, AddTextSourceRequest request);
-List<SourceResponse> list(Long userId, Long projectId);
-SourceResponse get(Long userId, Long sourceId);
-void delete(Long userId, Long sourceId);
-SourceResponse triggerImport(Long userId, Long sourceId);
-```
+- 创建时先规范化 URL，并做同项目下同 URL 预去重。
+- 创建 `SOURCE_IMPORT` task。
+- worker 通过安全 URL 抓取层拉取内容，再交给 Tika/文本逻辑抽取正文。
+- 非 2xx、空正文、抽取失败、超时、跳转越界、响应体超限都标记 `FAILED`，绝不标记 `READY`。
 
-文件 Source：
+### SOURCE_IMPORT
 
-- 写入 MinIO。
-- 保存 objectKey。
-- 创建 Source。
-- 创建 `SOURCE_IMPORT` Task。
-- `SOURCE_IMPORT` 必须复用 DocumentParser 或等价解析服务，产出 `rawTextObjectKey` 或 `parsedTextObjectKey`。
-- 未成功写入 raw/parsed text object 前不得把 `importStatus` 标记为 READY。
-
-URL Source：
-
-- 保存 URL。
-- 创建 `SOURCE_IMPORT` Task。
-- `SOURCE_IMPORT` 必须抓取正文并保存 raw/parsed text；抓取失败时进入 FAILED 或 RETRYABLE，不得标记 READY。
-
-Text Source：
-
-- 将文本保存为 Raw Source object。
-- 创建 Source。
-- 可直接标记 importStatus = READY。
-- 计算 contentHash，用于项目内去重。
-
-### SourceImportService
-
-本阶段最小实现：
+- 复用现有通用 `task / task_attempt / task_event / task_outbox / Kafka` 链路。
+- 不新增专用 topic，不改 `DOCUMENT_PROCESS` 现有专用链路。
+- payload 至少包含：
 
 ```text
-FILE:
-  读取 MinIO 原始对象
-  使用解析服务提取文本
-  写 rawTextObjectKey / parsedTextObjectKey
-  标记 READY
-
-URL:
-  抓取 URL 正文
-  写 rawTextObjectKey / parsedTextObjectKey
-  成功标记 READY，失败标记 FAILED / RETRYABLE
-
-TEXT:
-  已有 rawTextObjectKey，标记 READY
+sourceId
+researchProjectId
+spaceId
+sourceType
+objectKey
+url
+title
 ```
 
-状态更新要求：
-
-- READY 的必要条件是 `rawTextObjectKey` 或 `parsedTextObjectKey` 至少一个存在并可读取。
-- 解析失败必须写 `errorMessage` 并标记 FAILED，不允许留下 READY 但无正文对象的 Source。
-- 重试 SOURCE_IMPORT 时优先复用已有 raw text object，避免重复抓取或重复写对象。
+- 重新导入语义是“发起一次新的业务导入尝试”：
+  - 若已有 `PENDING / RUNNING` 的 `SOURCE_IMPORT`，直接返回已有 `taskId`。
+  - 否则新建 task，`idempotencyKey = SOURCE_IMPORT:{sourceId}:attempt:{n}`。
+- 对已经 `READY` 的 FILE / URL Source 执行重新导入时，必须创建 fresh attempt：
+  - FILE 必须重新读取原始 `object_key` 并重新解析，不得把旧 `parsed_text_object_key` 当作新的业务导入结果。
+  - URL 必须重新抓取正文并写入新的 `raw_text_object_key`，不得把旧正文缓存当作重新导入成功。
+- 重新导入开始前必须把 `source.compileStatus` 与父 `research_project.compileStatus` 统一回退为 `PENDING`，等待后续 Phase 7 重新编译。
+- 这与通用 `/tasks/{taskId}/retry` 不同；后者是同一 task 的 generic retry。
 
 ---
 
-## 7. API 设计
+## 5. URL 安全抓取要求
+
+Phase 6 的 URL 导入必须通过安全抓取层，而不是直接把用户 URL 丢给 `HttpClient`。
+
+必须具备：
+
+- 仅允许 `http` / `https`。
+- 禁止 `localhost`、`127.0.0.1`、内网地址、链路本地地址、loopback、site-local、unique-local。
+- 每次重定向都重新做 host / IP 校验。
+- 显式限制最大重定向次数。
+- 显式限制连接超时、请求/读取超时。
+- 显式限制最大响应体大小。
+
+---
+
+## 6. 去重规则
+
+- FILE / TEXT：在项目锁内按 `content_hash` 去重；若同项目已有未删除 Source，同内容直接返回已有 Source。
+- URL：创建时先按规范化 URL 预去重。
+- URL 内容级去重：在 worker 内、持有项目锁时按 `content_hash` canonicalize；若命中已有 canonical Source，则把当前临时 Source 软删，并把 task `resultRefType/Id` 指向 canonical Source。
+
+---
+
+## 7. 对象 key 规则
+
+```text
+{prefix}/source-files/{contentHash}/{fileName}
+{prefix}/raw-text/source/{sourceId}/{attempt}.txt
+{prefix}/parsed-text/source/{sourceId}/{attempt}.txt
+```
+
+其中：
+
+- `{prefix}` 在本地开发为 `dev`
+- `{prefix}` 在测试为 `test/{testRunId}`
+
+---
+
+## 8. API
 
 ### ResearchProject
 
@@ -256,16 +200,6 @@ GET    /api/v1/personal/research-projects
 GET    /api/v1/personal/research-projects/{projectId}
 PUT    /api/v1/personal/research-projects/{projectId}
 DELETE /api/v1/personal/research-projects/{projectId}
-```
-
-CreateResearchProjectRequest：
-
-```json
-{
-  "title": "RAG 技术调研",
-  "description": "围绕 RAG 架构整理资料",
-  "researchGoal": "形成学习指南和研究报告"
-}
 ```
 
 ### Source
@@ -280,71 +214,20 @@ POST   /api/v1/personal/sources/{sourceId}/import
 DELETE /api/v1/personal/sources/{sourceId}
 ```
 
-AddUrlSourceRequest：
-
-```json
-{
-  "url": "https://example.com/article",
-  "title": "文章标题"
-}
-```
-
-AddTextSourceRequest：
-
-```json
-{
-  "title": "手动笔记",
-  "content": "这里是原始文本..."
-}
-```
+`SourceResponse` 需要包含最近活跃或最近一次 `SOURCE_IMPORT` 的 `taskId`，供前端继续查询 `/api/v1/tasks/{taskId}`。
 
 ---
 
-## 8. 权限要求
+## 9. 测试要求
 
-- ResearchProject 只能由 owner 访问。
-- Source 只能由 owner 访问。
-- 不允许团队 Space 访问个人 Source。
-- 所有接口从当前用户解析 PERSONAL Space。
-
----
-
-## 9. 错误码补充
+- 本阶段必须先写失败测试，再实现最小代码。
+- 集成测试继续使用 `ContainerizedIntegrationTest` 提供 MySQL / Redis / MinIO / Kafka / Elasticsearch Testcontainers。
+- 测试 profile 下 dispatcher scheduler 是关闭的，因此异步 task 需要显式调用 `taskDispatcher.dispatchPendingMessages()` 再等待状态流转。
+- URL 相关集成测试不依赖外网；建议通过 mock 抓取器或等价方式隔离真实网络。
+- 需要覆盖 READY 状态下 URL / FILE 重新导入会创建新的导入 attempt，而不是静默复用旧正文对象。
+- 需要覆盖重新导入会把 `source.compileStatus` 与 `research_project.compileStatus` 一并失效化回 `PENDING`。
+- 测试临时路径必须使用：
 
 ```text
-RESEARCH_PROJECT_NOT_FOUND
-RESEARCH_PROJECT_ACCESS_DENIED
-SOURCE_NOT_FOUND
-SOURCE_ACCESS_DENIED
-SOURCE_IMPORT_FAILED
-SOURCE_TYPE_UNSUPPORTED
+target/noteweave-test/phase6/
 ```
-
----
-
-## 10. 验收清单
-
-- 用户可以创建 ResearchProject。
-- 用户只能看到自己的 ResearchProject。
-- 用户可以上传文件 Source。
-- 用户可以添加 URL Source。
-- 用户可以添加 Text Source。
-- Source 可以查询。
-- Source 可以删除。
-- Source 创建后可生成 SOURCE_IMPORT Task。
-- 其他用户不能访问该项目或 Source。
-
----
-
-## 11. 给 AI 执行第六阶段的边界提醒
-
-- 不要生成 ArticleCard。
-- 不要生成 ConceptCard。
-- 不要实现个人问答。
-- 不要实现 Artifact。
-- 不要做复杂网页搜索。
-- 所有 API 必须使用 `/api/v1`。
-- 个人资源必须严格 owner-only。
-
-
-

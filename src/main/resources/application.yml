@@ -67,6 +67,13 @@ noteweave:
       chunk-size: ${DOCUMENT_CHUNK_SIZE:800}
       chunk-overlap: ${DOCUMENT_CHUNK_OVERLAP:120}
       max-text-length: ${DOCUMENT_MAX_TEXT_LENGTH:2000000}
+  personal:
+    source:
+      url-fetch:
+        connect-timeout-seconds: ${NOTEWEAVE_SOURCE_URL_CONNECT_TIMEOUT_SECONDS:5}
+        read-timeout-seconds: ${NOTEWEAVE_SOURCE_URL_READ_TIMEOUT_SECONDS:10}
+        max-redirects: ${NOTEWEAVE_SOURCE_URL_MAX_REDIRECTS:3}
+        max-response-bytes: ${NOTEWEAVE_SOURCE_URL_MAX_RESPONSE_BYTES:1048576}
   elasticsearch:
     uris: ${ES_URIS:http://localhost:9200}
     username: ${ELASTICSEARCH_USERNAME:}

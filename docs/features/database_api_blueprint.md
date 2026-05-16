@@ -377,7 +377,7 @@ CREATE TABLE research_project (
 CREATE TABLE source (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     space_id BIGINT NOT NULL,
-    research_project_id BIGINT,
+    research_project_id BIGINT NOT NULL,
     title VARCHAR(255) NOT NULL,
     source_type VARCHAR(32) NOT NULL,
     url VARCHAR(1024),
@@ -388,6 +388,7 @@ CREATE TABLE source (
     import_status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
     compile_status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
     token_count INT DEFAULT 0,
+    error_message TEXT,
     created_by BIGINT NOT NULL,
     deleted_at DATETIME,
     deleted_by BIGINT,
@@ -1120,7 +1121,7 @@ ApiResponse<T>
 PageResponse<T>
 ```
 
-所有列表接口返回 `ApiResponse<PageResponse<T>>`，分页参数统一为 `page`、`pageSize`、`sort`，筛选参数进入 Query DTO。
+任务列表接口返回 `ApiResponse<PageResponse<T>>`；当前已实现的个人 Source / Card 列表接口返回 `ApiResponse<List<T>>`。分页参数 `page`、`pageSize`、`sort` 仅在实现了分页查询的接口上生效，筛选参数进入对应 Query DTO。
 
 ---
 
@@ -1305,8 +1306,10 @@ DELETE /api/v1/personal/research-projects/{projectId}
 ```http
 POST   /api/v1/personal/research-projects/{projectId}/sources/upload
 POST   /api/v1/personal/research-projects/{projectId}/sources/url
+POST   /api/v1/personal/research-projects/{projectId}/sources/text
 GET    /api/v1/personal/research-projects/{projectId}/sources
 GET    /api/v1/personal/sources/{sourceId}
+POST   /api/v1/personal/sources/{sourceId}/import
 POST   /api/v1/personal/sources/{sourceId}/compile
 DELETE /api/v1/personal/sources/{sourceId}
 ```
@@ -1322,7 +1325,6 @@ GET  /api/v1/personal/research-projects/{projectId}/concept-cards
 GET  /api/v1/personal/concept-cards/{cardId}
 PUT  /api/v1/personal/concept-cards/{cardId}
 POST /api/v1/personal/concept-cards/merge
-GET  /api/v1/personal/research-projects/{projectId}/methodology-cards
 ```
 
 ---

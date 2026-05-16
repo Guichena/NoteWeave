@@ -135,6 +135,7 @@ target/noteweave-test/{phase}/
 ```text
 target/noteweave-test/phase-2/uploads/
 target/noteweave-test/phase-3/parsed-text/
+target/noteweave-test/phase6/source-import/
 target/noteweave-test/phase-8/artifacts/
 ```
 
@@ -149,6 +150,9 @@ MinIO 测试对象 key 必须带 `test/` 前缀：
 ```text
 test/{testRunId}/uploads/{uploadId}/chunks/{chunkIndex}
 test/{testRunId}/objects/{contentHash}
+test/{testRunId}/source-files/{contentHash}/{fileName}
+test/{testRunId}/raw-text/source/{sourceId}/{attempt}.txt
+test/{testRunId}/parsed-text/source/{sourceId}/{attempt}.txt
 test/{testRunId}/parsed-text/document/{documentId}/{indexVersion}.txt
 test/{testRunId}/citations/{citationId}/snapshot.txt
 test/artifacts/{artifactId}/exports/{fileName}
@@ -165,6 +169,9 @@ noteweave-dev
 ```text
 dev/uploads/{uploadId}/chunks/{chunkIndex}
 dev/objects/{contentHash}
+dev/source-files/{contentHash}/{fileName}
+dev/raw-text/source/{sourceId}/{attempt}.txt
+dev/parsed-text/source/{sourceId}/{attempt}.txt
 dev/parsed-text/{sourceType}/{sourceId}/{version}.txt
 dev/citations/{citationId}/snapshot.txt
 dev/artifacts/{artifactId}/exports/{fileName}
@@ -331,5 +338,67 @@ Phase 5 testing/runtime notes:
 - Redis event buffering is temporary runtime state for seq/ack/resume only; Kafka remains the only background async task queue.
 - Integration tests use RANDOM_PORT + real WebSocket handshake against /ws/chat/{ticket}; they still rely on Testcontainers rather than docker compose.
 - Phase 5 did not add new Kafka topics, MinIO buckets or Elasticsearch index prefixes beyond the existing Phase 3/4 contracts.
+```
+
+---
+
+## 13. Phase 6 runtime/testing note (2026-05-16)
+
+Phase 6 does not introduce new middleware containers. Runtime and integration tests continue to use the same containerized baseline:
+
+```text
+MySQLContainer
+Redis GenericContainer
+MinIO container
+KafkaContainer
+ElasticsearchContainer
+```
+
+Phase 6 testing/runtime notes:
+
+```text
+- SOURCE_IMPORT reuses the generic task/outbox/Kafka worker chain. Local topic remains noteweave.task and integration tests remain on test.noteweave.task.{testRunId}.
+- Personal source objects are persisted to:
+  test/{testRunId}/source-files/{contentHash}/{fileName}
+  test/{testRunId}/raw-text/source/{sourceId}/{attempt}.txt
+  test/{testRunId}/parsed-text/source/{sourceId}/{attempt}.txt
+  dev/source-files/{contentHash}/{fileName}
+  dev/raw-text/source/{sourceId}/{attempt}.txt
+  dev/parsed-text/source/{sourceId}/{attempt}.txt
+- Phase 6 temporary test files, if needed, must stay under target/noteweave-test/phase6/.
+- Test profile disables the task dispatcher scheduler, so Phase 6 async integration tests explicitly call taskDispatcher.dispatchPendingMessages() before waiting for task/source status changes.
+- URL import integration tests do not depend on external internet; they isolate fetch behavior with a mocked UrlContentFetcher, while SafeUrlContentFetcherTest covers SSRF, redirect and response-size limits.
+- Phase 6 did not add a new MinIO bucket, Kafka topic or Elasticsearch index prefix beyond the existing project-wide contract.
+```
+
+---
+
+## 14. Phase 7 runtime/testing note (2026-05-16)
+
+Phase 7 does not introduce new middleware containers. Runtime and integration tests continue to use the same containerized baseline:
+
+```text
+MySQLContainer
+Redis GenericContainer
+MinIO container
+KafkaContainer
+ElasticsearchContainer
+```
+
+Phase 7 testing/runtime notes:
+
+```text
+- SOURCE_COMPILE reuses the generic task/outbox/Kafka worker chain. Local topic remains noteweave.task and integration tests remain on test.noteweave.task.{testRunId}.
+- Phase 7 does not add a new MinIO bucket, Kafka topic or Elasticsearch index prefix/suffix.
+- Personal card evidence continues to use existing citation snapshot storage:
+  test/{testRunId}/citations/{citationId}/snapshot.txt
+  dev/citations/{citationId}/snapshot.txt
+- Phase 7 compile reads personal source text from the existing Source object contracts introduced in Phase 6:
+  test/{testRunId}/raw-text/source/{sourceId}/{attempt}.txt
+  test/{testRunId}/parsed-text/source/{sourceId}/{attempt}.txt
+  dev/raw-text/source/{sourceId}/{attempt}.txt
+  dev/parsed-text/source/{sourceId}/{attempt}.txt
+- Phase 7 integration tests still rely on Testcontainers and mocked/stubbed LLM behavior; they do not require a real external LLM provider.
+- No new bucket/topic/index bootstrap is required in docker-compose.yml for this phase.
 ```
 

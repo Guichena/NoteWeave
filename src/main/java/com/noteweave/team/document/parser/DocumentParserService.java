@@ -62,6 +62,18 @@ public class DocumentParserService {
         }
     }
 
+    public boolean supports(String fileName, String contentType) {
+        String extensionType = contentTypeFromFileName(fileName);
+        String suppliedType = normalizedSuppliedContentType(contentType);
+        if (suppliedType == null || "application/octet-stream".equals(suppliedType)) {
+            return extensionType != null;
+        }
+        if (extensionType == null) {
+            return false;
+        }
+        return DIRECT_TEXT_TYPES.contains(suppliedType) || TIKA_TYPES.contains(suppliedType);
+    }
+
     private String normalizeContentType(String fileName, String contentType) {
         String extensionType = contentTypeFromFileName(fileName);
         String suppliedType = normalizedSuppliedContentType(contentType);

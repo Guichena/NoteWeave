@@ -11,15 +11,15 @@
 当前状态：
 
 ```text
-Phase 0/1、Phase 1.5、Phase 2、Phase 3、Phase 4 和 Phase 5 已完成并通过当前阶段测试与必要回归测试；可以进入 Phase 6。
+Phase 0/1、Phase 1.5、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6 和 Phase 7 已完成并通过当前阶段测试与必要回归测试；可以进入 Phase 8。
 ```
 
-当前代码已包含 Auth/User/Space/Permission、Task/Outbox/Kafka Worker 基础设施、Phase 2 文件上传链路，以及 Phase 3 的 DOCUMENT_PROCESS Worker、文档解析、parsed text 保存、Chunk 切片、indexVersion / activeIndexVersion、Elasticsearch BM25 索引和 Search Debug。
+当前代码已包含 Auth/User/Space/Permission、Task/Outbox/Kafka Worker 基础设施、Phase 2 文件上传链路、Phase 3 的 DOCUMENT_PROCESS Worker、文档解析、parsed text 保存、Chunk 切片、indexVersion / activeIndexVersion、Elasticsearch BM25 索引和 Search Debug、Phase 6 的个人 ResearchProject / Source、TEXT/FILE/URL 导入、SOURCE_IMPORT Worker、个人 raw/parsed text 对象保存、owner-only 查询与重试/去重链路，以及 Phase 7 的 SOURCE_COMPILE、ArticleCard / ConceptCard / ConceptAlias / ConceptRelation / ArticleConceptRelation、个人 Card Citation、Card 搜索详情与 Evidence 回溯链路。
 
 下一步：
 
 ```text
-进入 Phase 6: Personal ResearchProject / Source。
+进入 Phase 8: Studio / Artifact。
 ```
 
 ---
@@ -118,8 +118,8 @@ Quiz / 答题 / 评分 / 题库暂缓
 | Phase 3 | DONE | 文档解析、Chunk、ES BM25 索引、版本切换与幂等处理已完成并通过测试 |
 | Phase 4 | DONE | 团队 RAG Chat、Citation、最小 RetrievalTrace / LLMCallLog / AnswerFeedback 已完成并通过测试 |
 | Phase 5 | DONE | WebSocket Chat Runtime |
-| Phase 6 | PENDING | 个人 ResearchProject / Source |
-| Phase 7 | PENDING | 个人 Wiki Compiler |
+| Phase 6 | DONE | 个人 ResearchProject / Source、SOURCE_IMPORT、个人导入入口已完成并通过测试 |
+| Phase 7 | DONE | 个人 Wiki Compiler、SOURCE_COMPILE、ArticleCard / ConceptCard / Citation / Evidence 回溯已完成并通过测试 |
 | Phase 8 | PENDING | Studio / Artifact |
 | Phase 9 | PENDING | 检索增强 / RRF |
 | Phase 10 | PENDING | 团队 Wiki 发布入索引 |
@@ -659,4 +659,244 @@ Next:
 
 ```text
 Proceed to Phase 4 team RAG Chat and Citation.
+```
+
+## 14. Phase 6 Personal ResearchProject / Source Import (2026-05-16)
+
+Status:
+
+```text
+DONE
+```
+
+Implemented in this update:
+
+```text
+1) Added personal/common, personal/project and personal/source domains so ResearchProject and Source are always resolved inside the current user's ACTIVE PERSONAL space.
+2) Added V7 migration with research_project and source tables, including soft delete fields, import/compile status, error_message and source object key fields.
+3) Added owner-only personal APIs for ResearchProject CRUD, Source FILE/URL/TEXT import, source list/detail/delete and explicit re-import.
+4) TEXT sources now write raw_text_object_key immediately, compute content_hash and become READY without creating a task.
+5) FILE sources now store the original object in MinIO, create SOURCE_IMPORT tasks, reuse DocumentParserService and only accept .txt/.md/.markdown/.pdf in the MVP path.
+6) URL sources now normalize URL, validate through a safe fetch layer, create SOURCE_IMPORT tasks, and fail on non-2xx, empty body, extraction failure, unsafe redirect, timeout or oversized response without ever marking READY.
+7) The safe URL fetch layer now enforces http/https only, blocks localhost / loopback / private / link-local targets, re-validates every redirect hop, limits redirect count and caps response body size.
+8) Re-import now reuses an existing PENDING/RUNNING SOURCE_IMPORT task when present; otherwise it creates SOURCE_IMPORT:{sourceId}:attempt:{n}. This is a new business import attempt, distinct from generic /tasks/{taskId}/retry.
+9) Dedup now follows the Phase 6 contract: FILE/TEXT dedup at create time by content_hash; URL pre-dedups by normalized URL and content-level canonicalizes in the worker under project lock, soft-deleting the duplicate source and pointing task resultRef to the canonical source.
+10) Project archive now performs archive + soft delete semantics and also soft-deletes child sources; hidden/archived parent projects make source detail and re-import unavailable, and SOURCE_IMPORT skips inactive parents or deleted sources.
+```
+
+New migration:
+
+```text
+src/main/resources/db/migration/V7__phase_6_personal_research_source.sql
+```
+
+New tables:
+
+```text
+research_project
+source
+```
+
+New APIs:
+
+```text
+POST /api/v1/personal/research-projects
+GET /api/v1/personal/research-projects
+GET /api/v1/personal/research-projects/{projectId}
+PUT /api/v1/personal/research-projects/{projectId}
+DELETE /api/v1/personal/research-projects/{projectId}
+POST /api/v1/personal/research-projects/{projectId}/sources/upload
+POST /api/v1/personal/research-projects/{projectId}/sources/url
+POST /api/v1/personal/research-projects/{projectId}/sources/text
+GET /api/v1/personal/research-projects/{projectId}/sources
+GET /api/v1/personal/sources/{sourceId}
+POST /api/v1/personal/sources/{sourceId}/import
+DELETE /api/v1/personal/sources/{sourceId}
+```
+
+TDD record:
+
+```text
+1) Wrote Phase6PersonalResearchSourceIntegrationTest before implementation.
+2) Initial red run failed as expected because the /api/v1/personal research-project/source endpoints and Phase 6 import flow did not exist yet.
+3) Added SafeUrlContentFetcherTest plus new Phase 6 red cases for unsafe URL rejection, unsupported file types and archived-parent skip behavior; the first run failed as expected because the safe URL fetch layer and new boundaries did not exist yet.
+4) Implemented the migration, personal-space lookup, owner-only CRUD, source storage support, SOURCE_IMPORT worker and re-import semantics to satisfy the initial Phase 6 suite.
+5) Added boundary handling for READY text constraints, safe URL fetching, URL failure state persistence, project-locked URL canonicalization, archived project write blocking, deleted/inactive parent skip behavior, and re-import driven compile-status invalidation.
+6) Re-ran the Phase 6 suite and required regressions to green.
+```
+
+Test commands and results:
+
+```text
+1) mvn "-Dtest=Phase6PersonalResearchSourceIntegrationTest" test
+   - initial red failed as expected because Phase 6 personal endpoints/domain were missing.
+
+2) mvn "-Dtest=Phase6PersonalResearchSourceIntegrationTest" test
+   - passed: Tests run: 9, Failures: 0, Errors: 0, Skipped: 0
+
+3) mvn "-Dtest=Phase6PersonalResearchSourceIntegrationTest,SafeUrlContentFetcherTest" test
+   - initial red failed as expected because UrlContentFetcher / FetchedUrlContent / UrlFetchTransportResponse and the safe URL boundary were not implemented yet.
+
+4) mvn "-Dtest=SafeUrlContentFetcherTest,Phase6PersonalResearchSourceIntegrationTest" test
+   - passed: Tests run: 13, Failures: 0, Errors: 0, Skipped: 0
+
+5) mvn "-Dtest=SafeUrlContentFetcherTest,Phase6PersonalResearchSourceIntegrationTest,TaskServiceIntegrationTest,TaskControllerTest,SpaceServiceTest,DocumentParserServiceTest,Phase3DocumentProcessingIntegrationTest" test
+   - passed: Tests run: 36, Failures: 0, Errors: 0, Skipped: 0
+
+6) mvn "-Dtest=Phase6PersonalResearchSourceIntegrationTest,Phase7PersonalWikiCompilerIntegrationTest" test
+   - passed: Tests run: 18, Failures: 0, Errors: 0, Skipped: 0
+```
+
+Notes:
+
+```text
+- READY 的充分必要条件仍然是 raw_text_object_key 或 parsed_text_object_key 至少一个非空且对象可读；原始文件 object_key 不能单独让 Source 进入 READY。
+- SOURCE_IMPORT 复用现有 task / outbox / Kafka worker 链路，不新增专用 topic；DOCUMENT_PROCESS 现有专用链路未改动。
+- URL 集成测试使用 mock UrlContentFetcher，不依赖外网；新增 SafeUrlContentFetcherTest 专门覆盖 SSRF / redirect / size-limit 安全边界。
+- 测试 profile 下 dispatcher scheduler 关闭，因此 Phase 6 异步流转测试统一通过 taskDispatcher.dispatchPendingMessages() 显式驱动。
+- READY URL re-import now performs a true fresh fetch, writes a new raw-text attempt object, and resets source/project compile status back to PENDING before any recompile.
+- compile_status 在 Phase 6 仅保留字段与默认值 PENDING，未实现 SOURCE_COMPILE。
+```
+
+Next:
+
+```text
+Proceed to Phase 7 personal Wiki Compiler.
+```
+
+## 15. Phase 7 Personal Wiki Compiler / Cards (2026-05-16)
+
+Status:
+
+```text
+DONE
+```
+
+Implemented in this update:
+
+```text
+1) Added V8 migration with article_card, concept_card, concept_alias, concept_relation, article_concept_relation, article_card_citation and concept_card_citation.
+2) Added owner-only personal card APIs for article/concept list/detail, concept manual update and concept manual merge.
+3) Implemented SOURCE_COMPILE create endpoint and reused the generic task/outbox/Kafka worker chain for asynchronous compile execution.
+4) WikiCompilerService now loads Source parsed/raw text, requests strict LLM JSON, parses ArticleCard + Concept output, and writes diagnostic failure state back to Source and Task when compile fails.
+5) ArticleCard persistence is idempotent per source, saves summary/key points/tags/evidenceQuotesJson display cache, and writes formal evidence relations through article_card_citation.
+6) Concept merge is limited to the same research_project_id, matches by normalized name or alias only, keeps old evidence/citations/article links on merge, and creates a new ConceptCard when confidence is low or no in-project match exists.
+7) Added EvidenceBacktraceService so article/concept evidence is verified against Source text; backtrace offsets/sourceVersion are returned, while missing quotes reduce concept confidence instead of silently fabricating evidence.
+8) Added personal card citation query service on top of the shared citation table with SOURCE sourceType and relation tables as the formal evidence source.
+9) Added project/source compile status updates so successful SOURCE_COMPILE sets Source.compileStatus = READY and recomputes ResearchProject.compileStatus, while failures persist diagnosable errorMessage values.
+10) Source compile explicitly does not create SynthesisCard, Artifact outputs, Methodology cards or Quiz content in this phase.
+```
+
+New migration:
+
+```text
+src/main/resources/db/migration/V8__phase_7_personal_wiki_compiler_cards.sql
+```
+
+New tables:
+
+```text
+article_card
+concept_card
+concept_alias
+concept_relation
+article_concept_relation
+article_card_citation
+concept_card_citation
+```
+
+New APIs:
+
+```text
+POST /api/v1/personal/sources/{sourceId}/compile
+GET /api/v1/personal/research-projects/{projectId}/article-cards
+GET /api/v1/personal/article-cards/{cardId}
+GET /api/v1/personal/research-projects/{projectId}/concept-cards
+GET /api/v1/personal/concept-cards/{cardId}
+PUT /api/v1/personal/concept-cards/{cardId}
+POST /api/v1/personal/concept-cards/merge
+```
+
+Compile flow:
+
+```text
+POST /api/v1/personal/sources/{sourceId}/compile
+-> verify owner-only personal source access and READY readable text
+-> create Task(type=SOURCE_COMPILE) and mark source/project compile status as compiling
+-> generic task outbox dispatch to Kafka noteweave.task / test.noteweave.task.{testRunId}
+-> SourceCompileTaskWorker loads Source text (parsed first, raw fallback)
+-> WikiCompilerService requests strict ArticleCard JSON and Concept JSON from LLM
+-> parse JSON, save/update ArticleCard, create/merge ConceptCard, save aliases/relations/article links
+-> write citation + article_card_citation / concept_card_citation as formal evidence
+-> backtrace evidence against source text and return offsets/sourceVersion in card payloads
+-> success: Source.compileStatus=READY, Task=SUCCESS, recompute ResearchProject.compileStatus
+-> failure: Source.compileStatus=FAILED, Task=FAILED, persist error_message for diagnostics
+```
+
+Concept merge and evidence rules:
+
+```text
+- Auto-merge only runs inside the same research_project_id.
+- Merge match is based on normalized name or normalized alias; cross-project concepts stay isolated.
+- Low-confidence or unmatched concepts create new ConceptCard records instead of overwriting existing ones.
+- Manual merge is also limited to one research project and returns CONCEPT_MERGE_INVALID for cross-project requests.
+- Merging keeps prior concept_card_citation rows, article_concept_relation rows and aliases; evidence is appended/moved, not discarded.
+- evidenceQuotesJson remains a display cache only. Formal evidence is the citation table plus article_card_citation / concept_card_citation relation tables.
+```
+
+TDD record:
+
+```text
+1) Wrote Phase7PersonalWikiCompilerIntegrationTest before implementation to cover compile success, readable text precondition, invalid LLM JSON failure and in-project concept dedup/isolation.
+2) Initial red run failed as expected because SOURCE_COMPILE endpoints, personal card models/APIs and compile worker flow did not exist yet.
+3) Implemented the minimal migration, task worker, compiler service, card persistence, concept merge, citation persistence and evidence backtrace path to satisfy the new suite.
+4) Added follow-up red coverage for concept related article title resolution plus manual concept update/merge behavior, then fixed the implementation and re-ran to green.
+5) Added regression coverage for compile rollback atomicity, archived-parent direct card access, manual merge field/evidence preservation, retry-time source readiness revalidation, and cross-class Kafka/mock test isolation.
+6) Re-ran Phase 7 targeted tests and required Phase 6 / Phase 4 / document-task regressions to green.
+```
+
+Test commands and results:
+
+```text
+1) mvn "-Dtest=Phase7PersonalWikiCompilerIntegrationTest" test
+   - initial red failed as expected before Phase 7 production code existed.
+
+2) mvn "-Dtest=Phase7PersonalWikiCompilerIntegrationTest#compileShouldCreateArticleConceptCardsAndBacktraceableCitations" test
+   - red after adding related article title assertion: expected Vector retrieval notes but got Article 1.
+   - passed after wiring ConceptCard related article titles to real ArticleCard titles.
+
+3) mvn "-Dtest=Phase7PersonalWikiCompilerIntegrationTest#manualConceptUpdateAndMergeShouldPreserveEvidenceAndRejectCrossProjectMerge" test
+   - passed.
+
+4) mvn "-Dtest=Phase7PersonalWikiCompilerIntegrationTest" test
+   - passed: Tests run: 9, Failures: 0, Errors: 0, Skipped: 0
+
+5) mvn "-Dtest=Phase6PersonalResearchSourceIntegrationTest" test
+   - passed: Tests run: 9, Failures: 0, Errors: 0, Skipped: 0
+
+6) mvn "-Dtest=Phase4TeamRagIntegrationTest" test
+   - passed: Tests run: 5, Failures: 0, Errors: 0, Skipped: 0
+
+7) mvn "-Dtest=TaskServiceIntegrationTest,TaskControllerTest,SpaceControllerTest,DocumentParserServiceTest,Phase3DocumentProcessingIntegrationTest,StoragePropertiesValidatorTest" test
+   - passed: Tests run: 26, Failures: 0, Errors: 0, Skipped: 0
+
+8) mvn "-Dtest=Phase6PersonalResearchSourceIntegrationTest,Phase7PersonalWikiCompilerIntegrationTest" test
+   - passed: Tests run: 18, Failures: 0, Errors: 0, Skipped: 0
+```
+
+Notes:
+
+```text
+- SOURCE_COMPILE reuses the existing generic task/outbox/Kafka worker path; Phase 7 does not introduce a new dedicated Kafka topic.
+- Evidence backtrace prefers Source.parsedTextObjectKey and falls back to rawTextObjectKey when needed.
+- Personal card citations use citation.sourceType = SOURCE and dedupe by (spaceId, sourceType, sourceId, quoteHash).
+- Card list/detail and manual concept operations are owner-only through the current user's PERSONAL space, and archived parent projects now hide direct article/concept detail/update paths.
+- Failed SOURCE_COMPILE now rolls back partial ArticleCard / citation writes before persisting FAILED state, and manual/auto concept merge preserves prior useCases, misunderstandings and evidence caches instead of overwriting them.
+- Phase 7 does not create SynthesisCard and does not implement Artifact distillation, personal generation, methodology extraction or quiz workflows.
+```
+
+Next:
+
+```text
+Proceed to Phase 8 Studio / Artifact.
 ```

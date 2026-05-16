@@ -448,6 +448,10 @@ EvidenceBacktraceServiceTest
 - 同项目内同名 Concept 不重复创建。
 - ArticleConceptRelation 正确建立。
 - 其他用户不能访问卡片。
+- 归档父项目后 direct ArticleCard / ConceptCard 详情与更新不可再访问。
+- LLM 第二阶段失败时不能留下半成品 ArticleCard / Citation / Concept 数据。
+- `/api/v1/tasks/{taskId}/retry` 重新执行 SOURCE_COMPILE 时必须重新校验 Source READY 与可读文本前提。
+- 自动合并与手动合并都不能覆盖或丢失既有 useCases / commonMisunderstandings / evidence。
 
 ---
 
