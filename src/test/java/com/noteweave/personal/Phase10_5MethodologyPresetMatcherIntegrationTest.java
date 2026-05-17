@@ -66,19 +66,19 @@ class Phase10_5MethodologyPresetMatcherIntegrationTest extends ContainerizedInte
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from methodology_card where card_source = 'PRESET' and status = 'ACTIVE'",
                 Integer.class
-        )).isEqualTo(5);
+        )).isEqualTo(8);
 
         methodologySeedService.seedPresetCards();
 
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from methodology_card where card_source = 'PRESET' and status = 'ACTIVE'",
                 Integer.class
-        )).isEqualTo(5);
+        )).isEqualTo(8);
 
         MvcResult result = mockMvc.perform(get("/api/v1/personal/research-projects/{projectId}/methodology-cards", projectId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.length()").value(5))
+                .andExpect(jsonPath("$.data.length()").value(8))
                 .andReturn();
 
         String body = result.getResponse().getContentAsString();
@@ -87,6 +87,9 @@ class Phase10_5MethodologyPresetMatcherIntegrationTest extends ContainerizedInte
                 .contains("Study Guide Methodology")
                 .contains("Comparison Analysis Methodology")
                 .contains("Work Prep STAR Methodology")
+                .contains("Technical Proposal Methodology")
+                .contains("Postmortem Methodology")
+                .contains("FAQ Methodology")
                 .contains("General Structured Writing Methodology")
                 .contains("\"problemType\":\"REPORT\"")
                 .contains("\"cardSource\":\"PRESET\"");

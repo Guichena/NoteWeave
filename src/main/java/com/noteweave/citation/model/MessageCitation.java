@@ -34,6 +34,9 @@ public class MessageCitation {
     @Column(name = "citation_id", nullable = false)
     private Long citationId;
 
+    @Column(name = "retrieval_trace_id")
+    private Long retrievalTraceId;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

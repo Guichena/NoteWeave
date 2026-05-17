@@ -56,11 +56,18 @@ public class MethodologyCard {
     private MethodologyCardSource cardSource = MethodologyCardSource.PRESET;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "card_scope", nullable = false, length = 32)
+    private MethodologyCardScope cardScope = MethodologyCardScope.SYSTEM;
+
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private MethodologyCardStatus status = MethodologyCardStatus.ACTIVE;
 
     @Column(nullable = false)
     private Integer version = 1;
+
+    @Column(name = "created_by")
+    private Long createdBy;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

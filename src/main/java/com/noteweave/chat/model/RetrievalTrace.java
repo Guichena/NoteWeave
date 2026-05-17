@@ -27,14 +27,23 @@ public class RetrievalTrace {
     @Column(name = "space_id", nullable = false)
     private Long spaceId;
 
-    @Column(name = "session_id", nullable = false)
+    @Column(name = "session_id")
     private Long sessionId;
 
-    @Column(name = "message_id", nullable = false)
+    @Column(name = "message_id")
     private Long messageId;
+
+    @Column(name = "task_id")
+    private Long taskId;
+
+    @Column(length = 64)
+    private String scene;
 
     @Column(name = "query_text", nullable = false, columnDefinition = "TEXT")
     private String queryText;
+
+    @Column(name = "retriever_type", length = 64)
+    private String retrieverType;
 
     @Column(name = "top_k", nullable = false)
     private Integer topK;

@@ -48,7 +48,7 @@ class MethodologyMatcherTest {
     void shouldPreferExactProblemTypeOverGenericPreset() {
         given(researchProjectService.getRequiredActiveProject(11L, 101L)).willReturn(project(101L));
         given(personalSpaceService.getRequiredPersonalSpace(11L)).willReturn(personalSpace(201L));
-        given(methodologyCardRepository.findByResearchProjectIdAndStatusOrderByUpdatedAtDesc(101L, MethodologyCardStatus.ACTIVE))
+        given(methodologyCardRepository.findByResearchProjectIdAndSpaceIdAndStatusOrderByUpdatedAtDesc(101L, 201L, MethodologyCardStatus.ACTIVE))
                 .willReturn(List.of());
         given(methodologyCardRepository.findBySpaceIdAndResearchProjectIdIsNullAndStatusOrderByUpdatedAtDesc(201L, MethodologyCardStatus.ACTIVE))
                 .willReturn(List.of());
@@ -71,7 +71,7 @@ class MethodologyMatcherTest {
     void shouldUseSceneSignalToBreakTiesWithinSameProblemType() {
         given(researchProjectService.getRequiredActiveProject(12L, 102L)).willReturn(project(102L));
         given(personalSpaceService.getRequiredPersonalSpace(12L)).willReturn(personalSpace(202L));
-        given(methodologyCardRepository.findByResearchProjectIdAndStatusOrderByUpdatedAtDesc(102L, MethodologyCardStatus.ACTIVE))
+        given(methodologyCardRepository.findByResearchProjectIdAndSpaceIdAndStatusOrderByUpdatedAtDesc(102L, 202L, MethodologyCardStatus.ACTIVE))
                 .willReturn(List.of());
         given(methodologyCardRepository.findBySpaceIdAndResearchProjectIdIsNullAndStatusOrderByUpdatedAtDesc(202L, MethodologyCardStatus.ACTIVE))
                 .willReturn(List.of());
@@ -99,7 +99,7 @@ class MethodologyMatcherTest {
     void shouldFallbackToGeneralPresetWhenNoSpecificProblemTypeExists() {
         given(researchProjectService.getRequiredActiveProject(13L, 103L)).willReturn(project(103L));
         given(personalSpaceService.getRequiredPersonalSpace(13L)).willReturn(personalSpace(203L));
-        given(methodologyCardRepository.findByResearchProjectIdAndStatusOrderByUpdatedAtDesc(103L, MethodologyCardStatus.ACTIVE))
+        given(methodologyCardRepository.findByResearchProjectIdAndSpaceIdAndStatusOrderByUpdatedAtDesc(103L, 203L, MethodologyCardStatus.ACTIVE))
                 .willReturn(List.of());
         given(methodologyCardRepository.findBySpaceIdAndResearchProjectIdIsNullAndStatusOrderByUpdatedAtDesc(203L, MethodologyCardStatus.ACTIVE))
                 .willReturn(List.of());
@@ -121,7 +121,7 @@ class MethodologyMatcherTest {
     void shouldReturnEmptyWhenNoMethodologyCandidatesExist() {
         given(researchProjectService.getRequiredActiveProject(14L, 104L)).willReturn(project(104L));
         given(personalSpaceService.getRequiredPersonalSpace(14L)).willReturn(personalSpace(204L));
-        given(methodologyCardRepository.findByResearchProjectIdAndStatusOrderByUpdatedAtDesc(104L, MethodologyCardStatus.ACTIVE))
+        given(methodologyCardRepository.findByResearchProjectIdAndSpaceIdAndStatusOrderByUpdatedAtDesc(104L, 204L, MethodologyCardStatus.ACTIVE))
                 .willReturn(List.of());
         given(methodologyCardRepository.findBySpaceIdAndResearchProjectIdIsNullAndStatusOrderByUpdatedAtDesc(204L, MethodologyCardStatus.ACTIVE))
                 .willReturn(List.of());

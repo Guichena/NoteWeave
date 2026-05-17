@@ -27,17 +27,29 @@ public class LlmCallLog {
     @Column(name = "space_id", nullable = false)
     private Long spaceId;
 
-    @Column(name = "session_id", nullable = false)
+    @Column(name = "session_id")
     private Long sessionId;
 
     @Column(name = "message_id")
     private Long messageId;
+
+    @Column(name = "task_id")
+    private Long taskId;
+
+    @Column(name = "artifact_id")
+    private Long artifactId;
+
+    @Column(length = 64)
+    private String scene;
 
     @Column(nullable = false, length = 64)
     private String provider;
 
     @Column(nullable = false, length = 128)
     private String model;
+
+    @Column(name = "prompt_version_id")
+    private Long promptVersionId;
 
     @Column(name = "prompt_hash", nullable = false, length = 64, columnDefinition = "CHAR(64)")
     private String promptHash;
@@ -48,6 +60,9 @@ public class LlmCallLog {
     @Column(name = "output_tokens", nullable = false)
     private Integer outputTokens;
 
+    @Column(name = "total_tokens", nullable = false)
+    private Integer totalTokens;
+
     @Column(name = "latency_ms", nullable = false)
     private Long latencyMs;
 
@@ -56,6 +71,9 @@ public class LlmCallLog {
 
     @Column(name = "error_code", length = 64)
     private String errorCode;
+
+    @Column(name = "error_message", columnDefinition = "TEXT")
+    private String errorMessage;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

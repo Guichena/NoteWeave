@@ -84,4 +84,9 @@ public class ChatController {
     ) {
         return ApiResponse.success(answerFeedbackService.submit(currentUserProvider.getCurrentUserId(), messageId, request));
     }
+
+    @GetMapping("/chat/messages/{messageId}/feedback")
+    public ApiResponse<AnswerFeedbackResponse> getFeedback(@PathVariable Long messageId) {
+        return ApiResponse.success(answerFeedbackService.get(currentUserProvider.getCurrentUserId(), messageId));
+    }
 }

@@ -6,10 +6,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.error.BusinessException;
 import com.noteweave.common.error.ErrorCode;
+import com.noteweave.llm.dto.LlmCallContext;
 import com.noteweave.llm.dto.LlmMessage;
 import com.noteweave.llm.dto.LlmOptions;
 import com.noteweave.llm.dto.LlmResponse;
-import com.noteweave.llm.service.LlmClient;
+import com.noteweave.llm.service.ObservedLlmGateway;
 import com.noteweave.personal.card.dto.RelatedConceptResponse;
 import com.noteweave.personal.card.model.ArticleCard;
 import com.noteweave.personal.card.model.ConceptCard;
@@ -66,7 +67,7 @@ public class WikiCompilerService {
     private final ResearchProjectRepository researchProjectRepository;
     private final TaskService taskService;
     private final TaskRepository taskRepository;
-    private final LlmClient llmClient;
+    private final ObservedLlmGateway observedLlmGateway;
     private final ObjectMapper objectMapper;
     private final WikiCompilerPromptBuilder promptBuilder;
     private final EvidenceBacktraceService evidenceBacktraceService;
@@ -164,12 +165,12 @@ public class WikiCompilerService {
                 EvidenceBacktraceService.SourceTextSnapshot textSnapshot = evidenceBacktraceService.loadReadableText(source);
                 String text = textSnapshot.text();
 
-                ArticleCardDraft articleDraft = requestArticleDraft(source, text);
+                ArticleCardDraft articleDraft = requestArticleDraft(task, source, text);
                 List<Map<String, Object>> articleEvidenceCache = buildEvidenceCache(source, articleDraft.evidenceQuotes());
                 ArticleCard articleCard = articleCardService.createOrUpdateFromSource(project, source.getId(), articleDraft, articleEvidenceCache);
                 personalCardCitationService.replaceArticleCitations(articleCard, source, articleDraft.evidenceQuotes());
 
-                ConceptExtractionDraft extractionDraft = requestConceptDraft(source, articleCard, text);
+                ConceptExtractionDraft extractionDraft = requestConceptDraft(task, source, articleCard, text);
                 Map<String, ConceptCard> conceptsByNormalizedName = new LinkedHashMap<>();
                 int createdConceptCount = 0;
                 int mergedConceptCount = 0;
@@ -215,10 +216,19 @@ public class WikiCompilerService {
         }
     }
 
-    private ArticleCardDraft requestArticleDraft(Source source, String text) {
+    private ArticleCardDraft requestArticleDraft(Task task, Source source, String text) {
         String prompt = promptBuilder.buildArticlePrompt(source, text);
         for (int attempt = 0; attempt < 2; attempt++) {
-            LlmResponse response = llmClient.chat(List.of(new LlmMessage("user", prompt)), LlmOptions.builder().temperature(0.2d).maxTokens(2000).build());
+            LlmResponse response = observedLlmGateway.chat(
+                    LlmCallContext.builder()
+                            .userId(task.getUserId())
+                            .spaceId(task.getSpaceId())
+                            .taskId(task.getId())
+                            .scene("SOURCE_COMPILE")
+                            .messages(List.of(new LlmMessage("user", prompt)))
+                            .build(),
+                    LlmOptions.builder().temperature(0.2d).maxTokens(2000).build()
+            ).response();
             try {
                 JsonNode root = objectMapper.readTree(response.content());
                 return new ArticleCardDraft(
@@ -237,10 +247,19 @@ public class WikiCompilerService {
         throw new BusinessException(ErrorCode.LLM_JSON_PARSE_FAILED, "Failed to parse article card json");
     }
 
-    private ConceptExtractionDraft requestConceptDraft(Source source, ArticleCard articleCard, String text) {
+    private ConceptExtractionDraft requestConceptDraft(Task task, Source source, ArticleCard articleCard, String text) {
         String prompt = promptBuilder.buildConceptPrompt(source, articleCard, text);
         for (int attempt = 0; attempt < 2; attempt++) {
-            LlmResponse response = llmClient.chat(List.of(new LlmMessage("user", prompt)), LlmOptions.builder().temperature(0.2d).maxTokens(2000).build());
+            LlmResponse response = observedLlmGateway.chat(
+                    LlmCallContext.builder()
+                            .userId(task.getUserId())
+                            .spaceId(task.getSpaceId())
+                            .taskId(task.getId())
+                            .scene("SOURCE_COMPILE")
+                            .messages(List.of(new LlmMessage("user", prompt)))
+                            .build(),
+                    LlmOptions.builder().temperature(0.2d).maxTokens(2000).build()
+            ).response();
             try {
                 JsonNode root = objectMapper.readTree(response.content());
                 List<ConceptDraft> concepts = new ArrayList<>();

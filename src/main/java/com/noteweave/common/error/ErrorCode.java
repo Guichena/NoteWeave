@@ -40,6 +40,8 @@ public enum ErrorCode {
     CONCEPT_MERGE_INVALID(HttpStatus.BAD_REQUEST, "concept merge invalid"),
     PERSONAL_GENERATION_FAILED(HttpStatus.BAD_REQUEST, "personal generation failed"),
     RESEARCH_CONTEXT_EMPTY(HttpStatus.BAD_REQUEST, "research context is empty"),
+    METHODOLOGY_CARD_NOT_FOUND(HttpStatus.NOT_FOUND, "methodology card not found"),
+    METHODOLOGY_CARD_ACCESS_DENIED(HttpStatus.FORBIDDEN, "methodology card access denied"),
     LLM_JSON_PARSE_FAILED(HttpStatus.BAD_REQUEST, "llm json parse failed"),
     EVIDENCE_BACKTRACE_FAILED(HttpStatus.BAD_REQUEST, "evidence backtrace failed"),
     UPLOAD_NOT_FOUND(HttpStatus.NOT_FOUND, "upload not found"),

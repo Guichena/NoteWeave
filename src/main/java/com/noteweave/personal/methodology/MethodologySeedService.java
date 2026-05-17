@@ -2,6 +2,7 @@ package com.noteweave.personal.methodology;
 
 import com.noteweave.personal.methodology.model.MethodologyCard;
 import com.noteweave.personal.methodology.model.MethodologyCardSource;
+import com.noteweave.personal.methodology.model.MethodologyCardScope;
 import com.noteweave.personal.methodology.model.MethodologyCardStatus;
 import com.noteweave.personal.methodology.repository.MethodologyCardRepository;
 import java.util.List;
@@ -144,6 +145,82 @@ public class MethodologySeedService {
                         )
                 ),
                 new PresetDefinition(
+                        "Technical Proposal Methodology",
+                        "technical proposal",
+                        "TECHNICAL_SUMMARY",
+                        List.of(
+                                "Clarify the target problem, constraints, and success criteria",
+                                "Describe the proposed approach and the alternatives considered",
+                                "Explain architecture, implementation path, and rollout considerations",
+                                "Call out risks, mitigations, and open decisions",
+                                "End with a recommendation and concrete next actions"
+                        ),
+                        List.of(
+                                "Problem Statement",
+                                "Goals and Constraints",
+                                "Proposed Approach",
+                                "Alternatives",
+                                "Implementation Plan",
+                                "Risks and Mitigations",
+                                "Recommendation"
+                        ),
+                        List.of(
+                                "The proposal states explicit constraints and assumptions",
+                                "Alternatives and trade-offs are evaluated fairly",
+                                "The implementation path is actionable rather than abstract"
+                        )
+                ),
+                new PresetDefinition(
+                        "Postmortem Methodology",
+                        "incident review",
+                        "INCIDENT_REVIEW_DRAFT",
+                        List.of(
+                                "Summarize the incident impact and timeline",
+                                "Separate facts, contributing factors, and root causes",
+                                "Describe response actions and recovery steps",
+                                "Identify what worked, what failed, and why",
+                                "Close with follow-up actions and owners"
+                        ),
+                        List.of(
+                                "Incident Summary",
+                                "Impact",
+                                "Timeline",
+                                "Root Cause Analysis",
+                                "Response Review",
+                                "Lessons Learned",
+                                "Action Items"
+                        ),
+                        List.of(
+                                "The timeline is concrete and chronological",
+                                "Root causes are distinguished from symptoms",
+                                "Action items are specific and ownership-ready"
+                        )
+                ),
+                new PresetDefinition(
+                        "FAQ Methodology",
+                        "frequently asked questions",
+                        "FAQ",
+                        List.of(
+                                "List the core questions the audience is likely to ask first",
+                                "Answer each question directly before adding supporting detail",
+                                "Keep terminology consistent across all answers",
+                                "Call out caveats, limits, and follow-up links where needed",
+                                "Review the FAQ for gaps and duplicated answers"
+                        ),
+                        List.of(
+                                "Overview",
+                                "Frequently Asked Questions",
+                                "Short Answers",
+                                "Details and Caveats",
+                                "Further Reading"
+                        ),
+                        List.of(
+                                "Each answer starts with a direct response",
+                                "Questions reflect realistic user concerns",
+                                "Caveats and edge cases are explicit"
+                        )
+                ),
+                new PresetDefinition(
                         "General Structured Writing Methodology",
                         "general research synthesis",
                         "GENERAL",
@@ -182,8 +259,10 @@ public class MethodologySeedService {
         card.setOutputStructureJson(jsonMapper.writeList(preset.outputStructure()));
         card.setQualityChecklistJson(jsonMapper.writeList(preset.qualityChecklist()));
         card.setCardSource(MethodologyCardSource.PRESET);
+        card.setCardScope(MethodologyCardScope.SYSTEM);
         card.setStatus(MethodologyCardStatus.ACTIVE);
         card.setVersion(1);
+        card.setCreatedBy(null);
         return card;
     }
 

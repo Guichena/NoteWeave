@@ -7,20 +7,24 @@ import com.noteweave.artifact.model.ArtifactStatus;
 import com.noteweave.artifact.model.ArtifactType;
 import com.noteweave.artifact.repository.ArtifactRepository;
 import com.noteweave.artifact.skill.service.SkillExecutionLogService;
+import com.noteweave.chat.dto.RetrievalTraceCreateRequest;
+import com.noteweave.chat.dto.RetrievalTraceItemCreateRequest;
 import com.noteweave.chat.model.ChatMessage;
 import com.noteweave.chat.model.ChatMessageRole;
 import com.noteweave.chat.model.ChatSession;
 import com.noteweave.chat.repository.ChatMessageRepository;
 import com.noteweave.chat.service.ChatSessionService;
+import com.noteweave.chat.service.RetrievalTraceService;
 import com.noteweave.citation.model.Citation;
 import com.noteweave.citation.repository.CitationRepository;
 import com.noteweave.citation.repository.MessageCitationRepository;
 import com.noteweave.common.error.BusinessException;
 import com.noteweave.common.error.ErrorCode;
+import com.noteweave.llm.dto.LlmCallContext;
 import com.noteweave.llm.dto.LlmMessage;
 import com.noteweave.llm.dto.LlmOptions;
 import com.noteweave.llm.dto.LlmResponse;
-import com.noteweave.llm.service.LlmClient;
+import com.noteweave.llm.service.ObservedLlmGateway;
 import com.noteweave.personal.card.model.ArticleCard;
 import com.noteweave.personal.card.model.ConceptCard;
 import com.noteweave.personal.card.model.SynthesisCard;
@@ -29,6 +33,9 @@ import com.noteweave.personal.generation.service.PersonalGenerationService;
 import com.noteweave.personal.methodology.MethodologyPromptSectionBuilder;
 import com.noteweave.personal.methodology.model.MethodologyCard;
 import com.noteweave.personal.project.model.ResearchProject;
+import com.noteweave.prompt.model.PromptVersion;
+import com.noteweave.prompt.service.PromptTemplateRenderer;
+import com.noteweave.prompt.service.PromptVersionService;
 import com.noteweave.studio.service.ArtifactGenerateTaskInput;
 import com.noteweave.task.worker.TaskExecutionContext;
 import java.time.Duration;
@@ -51,11 +58,14 @@ public class ArtifactPlanExecutor {
     private final MessageCitationRepository messageCitationRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final ChatSessionService chatSessionService;
-    private final LlmClient llmClient;
+    private final ObservedLlmGateway observedLlmGateway;
     private final SkillExecutionLogService skillExecutionLogService;
     private final ArtifactPersistenceService artifactPersistenceService;
     private final MethodologyPromptSectionBuilder methodologyPromptSectionBuilder;
     private final PersonalGenerationService personalGenerationService;
+    private final RetrievalTraceService retrievalTraceService;
+    private final PromptVersionService promptVersionService;
+    private final PromptTemplateRenderer promptTemplateRenderer;
 
     public ArtifactExecutionResult execute(TaskExecutionContext taskContext) {
         ArtifactGenerateTaskInput input = taskContext.readInput(ArtifactGenerateTaskInput.class);
@@ -287,8 +297,28 @@ public class ArtifactPlanExecutor {
     }
 
     private SkillOutcome generateArtifact(GenerationState state, String skillName, String instruction) {
-        String prompt = buildPrompt(state, instruction);
-        LlmResponse response = llmClient.chat(List.of(new LlmMessage("user", prompt)), LlmOptions.builder().temperature(0.2d).maxTokens(2200).build());
+        String scene = state.input.getResearchProjectId() != null ? "PERSONAL_ARTIFACT_GENERATE" : "ARTIFACT_GENERATE";
+        PromptVersion activePrompt = promptVersionService.findActiveEntity(scene).orElse(null);
+        String promptPrefix = activePrompt == null
+                ? null
+                : promptTemplateRenderer.render(activePrompt.getContent(), Map.of("instruction", instruction));
+        ensureRetrievalTrace(state, scene, skillName);
+        String prompt = buildPrompt(state, instruction, promptPrefix);
+        ObservedLlmGateway.ObservedLlmResult observed = observedLlmGateway.chat(
+                LlmCallContext.builder()
+                        .userId(state.userId)
+                        .spaceId(state.artifact.getSpaceId())
+                        .sessionId(state.session == null ? null : state.session.getId())
+                        .messageId(state.focusMessage == null ? null : state.focusMessage.getId())
+                        .taskId(state.taskId)
+                        .artifactId(state.artifact.getId())
+                        .scene(scene)
+                        .promptVersionId(activePrompt == null ? null : activePrompt.getId())
+                        .messages(List.of(new LlmMessage("user", prompt)))
+                        .build(),
+                LlmOptions.builder().temperature(0.2d).maxTokens(2200).build()
+        );
+        LlmResponse response = observed.response();
         state.generatedTitle = resolveTitle(state, response.content());
         state.generatedContent = normalizeGeneratedContent(state.generatedTitle, response.content());
         return new SkillOutcome(
@@ -334,8 +364,11 @@ public class ArtifactPlanExecutor {
         );
     }
 
-    private String buildPrompt(GenerationState state, String instruction) {
+    private String buildPrompt(GenerationState state, String instruction, String promptPrefix) {
         StringBuilder prompt = new StringBuilder();
+        if (promptPrefix != null && !promptPrefix.isBlank()) {
+            prompt.append(promptPrefix).append("\n");
+        }
         prompt.append("你是 NoteWeave Studio 产物生成器。\n");
         prompt.append(instruction).append("\n");
         prompt.append("如果资料不足，请明确指出不足，不要编造。\n");
@@ -441,6 +474,60 @@ public class ArtifactPlanExecutor {
         return message.length() > 1000 ? message.substring(0, 1000) : message;
     }
 
+    private void ensureRetrievalTrace(GenerationState state, String scene, String skillName) {
+        if (state.retrievalTraceId != null) {
+            return;
+        }
+        Long traceId = retrievalTraceService.createTrace(RetrievalTraceCreateRequest.builder()
+                .userId(state.userId)
+                .spaceId(state.artifact.getSpaceId())
+                .sessionId(state.session == null ? null : state.session.getId())
+                .messageId(state.focusMessage == null ? null : state.focusMessage.getId())
+                .taskId(state.taskId)
+                .scene(scene)
+                .queryText(topic(state) == null ? skillName : topic(state))
+                .retrieverType("ARTIFACT_CONTEXT")
+                .topK(Math.max(state.citations.size(), state.sourceRefs.size()))
+                .latencyMs(1L)
+                .retrievedChunkCount(state.citations.size())
+                .traceJson("{\"skill\":\"" + skillName + "\"}")
+                .build());
+        retrievalTraceService.addItems(traceId, buildTraceItems(state));
+        state.retrievalTraceId = traceId;
+    }
+
+    private List<RetrievalTraceItemCreateRequest> buildTraceItems(GenerationState state) {
+        List<RetrievalTraceItemCreateRequest> items = new ArrayList<>();
+        int rank = 1;
+        for (Citation citation : state.citations) {
+            items.add(RetrievalTraceItemCreateRequest.builder()
+                    .sourceType(citation.getSourceType())
+                    .sourceId(citation.getSourceId())
+                    .documentId("DOCUMENT".equalsIgnoreCase(citation.getSourceType()) ? citation.getSourceId() : null)
+                    .chunkId(citation.getChunkId())
+                    .wikiPageId("WIKI_PAGE".equalsIgnoreCase(citation.getSourceType()) ? citation.getSourceId() : null)
+                    .score(1.0d / rank)
+                    .rank(rank++)
+                    .selectedAsEvidence(true)
+                    .metadataJson(null)
+                    .build());
+        }
+        for (SourceRef sourceRef : state.sourceRefs) {
+            items.add(RetrievalTraceItemCreateRequest.builder()
+                    .sourceType(sourceRef.sourceType().name())
+                    .sourceId(sourceRef.sourceId())
+                    .documentId(null)
+                    .chunkId(null)
+                    .wikiPageId(null)
+                    .score(0.1d)
+                    .rank(rank++)
+                    .selectedAsEvidence(true)
+                    .metadataJson(null)
+                    .build());
+        }
+        return items;
+    }
+
     public record ArtifactExecutionResult(Long artifactVersionId, Map<String, Object> output) {
     }
 
@@ -477,6 +564,7 @@ public class ArtifactPlanExecutor {
         private String generatedContent;
         private final List<SourceRef> sourceRefs = new ArrayList<>();
         private Long artifactVersionId;
+        private Long retrievalTraceId;
 
         private GenerationState(Long taskId, Long userId, ArtifactGenerateTaskInput input, Artifact artifact) {
             this.taskId = taskId;

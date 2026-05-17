@@ -5,6 +5,7 @@ import com.noteweave.common.error.ErrorCode;
 import com.noteweave.common.security.CurrentUser;
 import com.noteweave.task.model.Task;
 import com.noteweave.user.model.UserSystemRole;
+import com.noteweave.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Service;
 public class ResourceAccessService {
 
     private final SpacePermissionService spacePermissionService;
+    private final UserRepository userRepository;
 
     public boolean canViewSpace(Long userId, Long spaceId) {
         return spacePermissionService.canViewSpace(userId, spaceId);
@@ -78,5 +80,24 @@ public class ResourceAccessService {
         if (!canUploadDocument(currentUser.userId(), task.getSpaceId())) {
             throw new BusinessException(ErrorCode.TASK_ACCESS_DENIED, "No permission to operate this task");
         }
+    }
+
+    public boolean isAdmin(Long userId) {
+        return userRepository.findById(userId)
+                .map(user -> user.getSystemRole() == UserSystemRole.ADMIN)
+                .orElse(false);
+    }
+
+    public void requireAdmin(Long userId) {
+        if (!isAdmin(userId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "Admin permission required");
+        }
+    }
+
+    public void requireAdminOrManageSpace(Long userId, Long spaceId) {
+        if (isAdmin(userId)) {
+            return;
+        }
+        requireManageSpace(userId, spaceId);
     }
 }

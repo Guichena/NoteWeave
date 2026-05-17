@@ -28,8 +28,9 @@ public class MethodologyMatcher {
         Long personalSpaceId = personalSpaceService.getRequiredPersonalSpace(userId).getId();
 
         Optional<MethodologyCard> projectMatch = bestMatch(
-                methodologyCardRepository.findByResearchProjectIdAndStatusOrderByUpdatedAtDesc(
+                methodologyCardRepository.findByResearchProjectIdAndSpaceIdAndStatusOrderByUpdatedAtDesc(
                         researchProjectId,
+                        personalSpaceId,
                         MethodologyCardStatus.ACTIVE
                 ),
                 artifactType,

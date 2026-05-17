@@ -2,6 +2,8 @@ package com.noteweave.chat.runtime.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.noteweave.chat.dto.RetrievalTraceCreateRequest;
+import com.noteweave.chat.dto.RetrievalTraceItemCreateRequest;
 import com.noteweave.chat.model.ChatDraftStatus;
 import com.noteweave.chat.model.ChatMessage;
 import com.noteweave.chat.model.ChatMessageRole;
@@ -23,14 +25,18 @@ import com.noteweave.citation.service.CitationService;
 import com.noteweave.common.api.RequestIdHolder;
 import com.noteweave.common.error.BusinessException;
 import com.noteweave.common.error.ErrorCode;
+import com.noteweave.llm.dto.LlmCallContext;
 import com.noteweave.llm.dto.LlmMessage;
 import com.noteweave.llm.dto.LlmOptions;
 import com.noteweave.llm.dto.LlmResponse;
-import com.noteweave.llm.service.LlmClient;
+import com.noteweave.llm.service.ObservedLlmGateway;
 import com.noteweave.memory.service.MemoryContextService;
 import com.noteweave.memory.service.MemoryWritebackService;
 import com.noteweave.memory.service.PromptMemoryContext;
 import com.noteweave.permission.service.ResourceAccessService;
+import com.noteweave.prompt.model.PromptVersion;
+import com.noteweave.prompt.service.PromptTemplateRenderer;
+import com.noteweave.prompt.service.PromptVersionService;
 import com.noteweave.team.kb.model.KnowledgeBaseStatus;
 import com.noteweave.team.kb.repository.KnowledgeBaseRepository;
 import com.noteweave.team.rag.config.RagProperties;
@@ -42,6 +48,8 @@ import com.noteweave.team.rag.prompt.TeamRagPromptBuilder;
 import com.noteweave.team.rag.retriever.HybridRetriever;
 import com.noteweave.team.rag.retriever.RetrievalHit;
 import com.noteweave.team.rag.retriever.TeamRetrievalQuery;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -71,8 +79,9 @@ public class ChatRuntimeService {
     private final HybridRetriever hybridRetriever;
     private final EvidencePostProcessor evidencePostProcessor;
     private final TeamRagPromptBuilder teamRagPromptBuilder;
-    private final LlmClient llmClient;
+    private final ObservedLlmGateway observedLlmGateway;
     private final CitationService citationService;
+    private final com.noteweave.chat.service.RetrievalTraceService retrievalTraceService;
     private final ActiveExecutionRegistry activeExecutionRegistry;
     private final ChatRuntimeStateStore chatRuntimeStateStore;
     private final ContextReadRouter contextReadRouter;
@@ -83,6 +92,8 @@ public class ChatRuntimeService {
     private final ChatRuntimeProperties chatRuntimeProperties;
     private final PlatformTransactionManager transactionManager;
     private final Executor applicationTaskExecutor;
+    private final PromptVersionService promptVersionService;
+    private final PromptTemplateRenderer promptTemplateRenderer;
 
     public void onConnect(Long userId, WebSocketSession session) {
         send(session, ServerEventEnvelope.builder()
@@ -227,14 +238,16 @@ public class ChatRuntimeService {
                     .build());
             send(socketSession, started);
 
-            List<EvidenceItem> evidenceItems = loadEvidence(userId, session, content, readPlan);
+            LoadedEvidence loadedEvidence = loadEvidence(userId, session, userMessage.getId(), content, readPlan);
+            List<EvidenceItem> evidenceItems = loadedEvidence.evidenceItems();
             List<String> evidenceTitles = evidenceItems.stream().map(EvidenceItem::documentTitle).distinct().toList();
             chatRuntimeStateStore.writeShortTermContext(sessionId, ShortTermContext.builder()
                     .recentMessages(List.of("USER: " + content))
                     .evidenceTitles(evidenceTitles)
                     .build());
 
-            String answer = buildAnswer(sessionId, content, evidenceItems, readPlan, memoryContext);
+            AnswerBuildResult answerBuildResult = buildAnswer(userId, session, userMessage.getId(), content, evidenceItems, readPlan, memoryContext);
+            String answer = answerBuildResult.answer();
             streamAnswer(sessionId, socketSession, execution, requestId, streamId, answer);
 
             if (execution.getStopRequested().get()) {
@@ -247,7 +260,12 @@ public class ChatRuntimeService {
                 assistantMessage = persistAssistantMessage(sessionId, answer, requestId);
                 citations = evidenceItems.isEmpty()
                         ? List.of()
-                        : citationService.saveForAssistantMessage(assistantMessage.getId(), session.getSpaceId(), evidenceItems);
+                        : citationService.saveForAssistantMessage(
+                                assistantMessage.getId(),
+                                session.getSpaceId(),
+                                evidenceItems,
+                                loadedEvidence.retrievalTraceId()
+                        );
                 memoryWritebackService.writeAfterRound(session, userMessage, assistantMessage, citations);
             }
 
@@ -366,10 +384,11 @@ public class ChatRuntimeService {
         }
     }
 
-    private List<EvidenceItem> loadEvidence(Long userId, ChatSession session, String question, ContextReadPlan readPlan) {
+    private LoadedEvidence loadEvidence(Long userId, ChatSession session, Long messageId, String question, ContextReadPlan readPlan) {
         if (!readPlan.readRetrievalEvidence()) {
-            return List.of();
+            return new LoadedEvidence(List.of(), null);
         }
+        Instant retrievalStart = Instant.now();
         HybridRetriever.HybridRetrievalResult retrieval = hybridRetriever.retrieve(
                 new TeamRetrievalQuery(
                         userId,
@@ -381,7 +400,7 @@ public class ChatRuntimeService {
                 ),
                 ragProperties.retrieval().mode()
         );
-        return evidencePostProcessor.process(
+        List<EvidenceItem> evidenceItems = evidencePostProcessor.process(
                 retrieval.fusedHits().stream()
                         .map(this::toRetrievedChunk)
                         .toList(),
@@ -394,6 +413,27 @@ public class ChatRuntimeService {
                         .minScore(ragProperties.retrieval().minScore())
                         .build()
         );
+        long latencyMs = Math.max(1L, Duration.between(retrievalStart, Instant.now()).toMillis());
+        Long traceId = retrievalTraceService.createTrace(RetrievalTraceCreateRequest.builder()
+                .userId(userId)
+                .spaceId(session.getSpaceId())
+                .sessionId(session.getId())
+                .messageId(messageId)
+                .scene("WORKSPACE_CHAT")
+                .queryText(question)
+                .retrieverType("HYBRID")
+                .topK(ragProperties.retrieval().topK())
+                .latencyMs(latencyMs)
+                .retrievedChunkCount(retrieval.fusedHits().size())
+                .retrievalMode(retrieval.retrievalMode().name())
+                .bm25Count(retrieval.bm25Count())
+                .vectorCount(retrieval.vectorCount())
+                .fusionCount(retrieval.fusionCount())
+                .fallbackUsed(retrieval.fallbackUsed())
+                .traceJson(retrieval.traceJson())
+                .build());
+        retrievalTraceService.addItems(traceId, buildTraceItems(retrieval.fusedHits(), evidenceItems));
+        return new LoadedEvidence(evidenceItems, traceId);
     }
 
     private com.noteweave.team.rag.retriever.RetrievedChunk toRetrievedChunk(RetrievalHit hit) {
@@ -427,27 +467,69 @@ public class ChatRuntimeService {
         return Long.parseLong(String.valueOf(value));
     }
 
-    private String buildAnswer(
-            Long sessionId,
+    private List<RetrievalTraceItemCreateRequest> buildTraceItems(List<RetrievalHit> hits, List<EvidenceItem> evidenceItems) {
+        return java.util.stream.IntStream.range(0, hits.size())
+                .mapToObj(index -> {
+                    RetrievalHit hit = hits.get(index);
+                    boolean selected = evidenceItems.stream()
+                            .anyMatch(item -> item.sources().stream().anyMatch(source -> source.chunkId().equals(hit.chunkId())));
+                    return RetrievalTraceItemCreateRequest.builder()
+                            .sourceType(hit.metadata() == null ? "DOCUMENT_CHUNK" : String.valueOf(hit.metadata().getOrDefault("sourceType", "DOCUMENT_CHUNK")))
+                            .sourceId(hit.metadata() == null ? hit.documentId() : longValue(hit.metadata().get("sourceId")))
+                            .documentId(hit.documentId())
+                            .chunkId(hit.chunkId())
+                            .wikiPageId(null)
+                            .score(hit.score())
+                            .rank(index + 1)
+                            .selectedAsEvidence(selected)
+                            .metadataJson(stringify(hit.metadata()))
+                            .build();
+                })
+                .toList();
+    }
+
+    private String renderPrompt(PromptVersion promptVersion, Map<String, Object> variables) {
+        if (promptVersion == null) {
+            return null;
+        }
+        return promptTemplateRenderer.render(promptVersion.getContent(), variables);
+    }
+
+    private AnswerBuildResult buildAnswer(
+            Long userId,
+            ChatSession session,
+            Long messageId,
             String question,
             List<EvidenceItem> evidenceItems,
             ContextReadPlan readPlan,
             PromptMemoryContext memoryContext
     ) {
         if (evidenceItems.isEmpty()) {
-            return ragProperties.prompt().noResultText() + NO_RESULT_SUFFIX;
+            return new AnswerBuildResult(ragProperties.prompt().noResultText() + NO_RESULT_SUFFIX, null);
         }
+        PromptVersion activePrompt = promptVersionService.findActiveEntity("WORKSPACE_CHAT").orElse(null);
+        String systemPrompt = renderPrompt(activePrompt, Map.of("noResultText", ragProperties.prompt().noResultText()));
         PromptMessages prompt = teamRagPromptBuilder.build(
                 question,
                 evidenceItems,
-                readPlan.readRecentHistory() ? recentMessages(sessionId) : List.of(),
-                memoryContext
+                readPlan.readRecentHistory() ? recentMessages(session.getId()) : List.of(),
+                memoryContext,
+                systemPrompt
         );
-        LlmResponse response = llmClient.chat(
-                prompt.messages().stream().map(message -> new LlmMessage(message.role(), message.content())).toList(),
+        ObservedLlmGateway.ObservedLlmResult observed = observedLlmGateway.chat(
+                LlmCallContext.builder()
+                        .userId(userId)
+                        .spaceId(session.getSpaceId())
+                        .sessionId(session.getId())
+                        .messageId(messageId)
+                        .scene("WORKSPACE_CHAT")
+                        .promptVersionId(activePrompt == null ? null : activePrompt.getId())
+                        .messages(prompt.messages().stream().map(message -> new LlmMessage(message.role(), message.content())).toList())
+                        .build(),
                 LlmOptions.builder().temperature(0.3d).maxTokens(2000).build()
         );
-        return response.content();
+        LlmResponse response = observed.response();
+        return new AnswerBuildResult(response.content(), observed.logId());
     }
 
     private ChatMessage persistUserMessage(Long sessionId, String content, String requestId) {
@@ -601,5 +683,11 @@ public class ChatRuntimeService {
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    private record LoadedEvidence(List<EvidenceItem> evidenceItems, Long retrievalTraceId) {
+    }
+
+    private record AnswerBuildResult(String answer, Long llmCallLogId) {
     }
 }

@@ -15,6 +15,7 @@ import com.noteweave.team.rag.evidence.EvidenceSource;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.LinkedHashMap;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HexFormat;
@@ -35,53 +36,83 @@ public class CitationService {
 
     @Transactional
     public List<CitationResponse> saveForAssistantMessage(Long assistantMessageId, Long spaceId, List<EvidenceItem> evidenceItems) {
+        return saveForAssistantMessage(assistantMessageId, spaceId, evidenceItems, null);
+    }
+
+    @Transactional
+    public List<CitationResponse> saveForAssistantMessage(
+            Long assistantMessageId,
+            Long spaceId,
+            List<EvidenceItem> evidenceItems,
+            Long retrievalTraceId
+    ) {
         try {
-            List<CitationResponse> responses = new ArrayList<>();
+            LinkedHashMap<Long, CitationResponse> responsesByCitationId = new LinkedHashMap<>();
+            LinkedHashMap<Long, MessageCitation> relationsByCitationId = new LinkedHashMap<>();
+            LinkedHashMap<String, Citation> citationsByNaturalKey = new LinkedHashMap<>();
             for (EvidenceItem item : evidenceItems) {
                 for (EvidenceSource source : item.sources()) {
                     Long sourceId = item.sourceId() == null ? item.documentId() : item.sourceId();
                     String sourceType = item.sourceType() == null || item.sourceType().isBlank() ? "DOCUMENT" : item.sourceType();
-                    Citation citation = citationRepository.findBySpaceIdAndSourceTypeAndSourceIdAndChunkId(
-                                    spaceId,
-                                    sourceType,
-                                    sourceId,
-                                    source.chunkId()
-                            )
-                            .orElseGet(Citation::new);
-                    citation.setSpaceId(spaceId);
-                    citation.setSourceType(sourceType);
-                    citation.setSourceId(sourceId);
-                    citation.setChunkId(source.chunkId());
-                    citation.setPageNo(source.pageNo() == null ? 1 : source.pageNo());
-                    citation.setStartOffset(source.startOffset());
-                    citation.setEndOffset(source.endOffset());
-                    citation.setTitle(item.documentTitle());
-                    citation.setQuoteText(source.quoteText());
-                    citation.setQuoteHash(sha256(source.quoteText()));
-                    citation.setLocationInfo("chunk " + source.chunkIndex());
-                    citation.setSourceVersion(source.sourceVersion());
-                    Citation saved = citationRepository.save(citation);
-                    String snapshotObjectKey = storeSnapshot(saved.getId(), source.quoteText());
-                    if (!snapshotObjectKey.equals(saved.getSnapshotObjectKey())) {
-                        saved.setSnapshotObjectKey(snapshotObjectKey);
-                        saved = citationRepository.save(saved);
+                    String naturalKey = citationNaturalKey(spaceId, sourceType, sourceId, source.chunkId());
+                    Citation saved = citationsByNaturalKey.get(naturalKey);
+                    if (saved == null) {
+                        Citation citation = citationRepository.findBySpaceIdAndSourceTypeAndSourceIdAndChunkId(
+                                        spaceId,
+                                        sourceType,
+                                        sourceId,
+                                        source.chunkId()
+                                )
+                                .orElseGet(Citation::new);
+                        citation.setSpaceId(spaceId);
+                        citation.setSourceType(sourceType);
+                        citation.setSourceId(sourceId);
+                        citation.setChunkId(source.chunkId());
+                        citation.setPageNo(source.pageNo() == null ? 1 : source.pageNo());
+                        citation.setStartOffset(source.startOffset());
+                        citation.setEndOffset(source.endOffset());
+                        citation.setTitle(item.documentTitle());
+                        citation.setQuoteText(source.quoteText());
+                        citation.setQuoteHash(sha256(source.quoteText()));
+                        citation.setLocationInfo("chunk " + source.chunkIndex());
+                        citation.setSourceVersion(source.sourceVersion());
+                        saved = citationRepository.save(citation);
+                        String snapshotObjectKey = storeSnapshot(saved.getId(), source.quoteText());
+                        if (!snapshotObjectKey.equals(saved.getSnapshotObjectKey())) {
+                            saved.setSnapshotObjectKey(snapshotObjectKey);
+                            saved = citationRepository.save(saved);
+                        }
+                        citationsByNaturalKey.put(naturalKey, saved);
                     }
 
-                    if (messageCitationRepository.findByMessageIdAndCitationId(assistantMessageId, saved.getId()).isEmpty()) {
-                        MessageCitation relation = new MessageCitation();
-                        relation.setMessageId(assistantMessageId);
-                        relation.setCitationId(saved.getId());
+                    MessageCitation relation = relationsByCitationId.computeIfAbsent(saved.getId(), citationId ->
+                            messageCitationRepository.findByMessageIdAndCitationId(assistantMessageId, citationId)
+                                    .orElseGet(MessageCitation::new)
+                    );
+                    relation.setMessageId(assistantMessageId);
+                    relation.setCitationId(saved.getId());
+                    if (relation.getRetrievalTraceId() == null && retrievalTraceId != null) {
+                        relation.setRetrievalTraceId(retrievalTraceId);
+                    }
+                    if (!responsesByCitationId.containsKey(saved.getId())) {
                         messageCitationRepository.save(relation);
                     }
-                    responses.add(toResponse(saved, assistantMessageId));
+                    responsesByCitationId.putIfAbsent(saved.getId(), toResponse(saved, assistantMessageId));
                 }
             }
-            return responses;
+            return new ArrayList<>(responsesByCitationId.values());
         } catch (BusinessException ex) {
             throw ex;
         } catch (Exception ex) {
             throw new BusinessException(ErrorCode.CITATION_SAVE_FAILED, "Failed to save citations");
         }
+    }
+
+    private String citationNaturalKey(Long spaceId, String sourceType, Long sourceId, Long chunkId) {
+        return String.valueOf(spaceId) + "|"
+                + String.valueOf(sourceType) + "|"
+                + String.valueOf(sourceId) + "|"
+                + String.valueOf(chunkId);
     }
 
     @Transactional(readOnly = true)
