@@ -5,9 +5,11 @@ import com.noteweave.common.security.CurrentUserProvider;
 import com.noteweave.personal.card.dto.ArticleCardResponse;
 import com.noteweave.personal.card.dto.ConceptCardResponse;
 import com.noteweave.personal.card.dto.MergeConceptCardsRequest;
+import com.noteweave.personal.card.dto.SynthesisCardResponse;
 import com.noteweave.personal.card.dto.UpdateConceptCardRequest;
 import com.noteweave.personal.card.service.ArticleCardService;
 import com.noteweave.personal.card.service.ConceptCardService;
+import com.noteweave.personal.card.service.SynthesisCardService;
 import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +29,7 @@ public class PersonalCardController {
 
     private final ArticleCardService articleCardService;
     private final ConceptCardService conceptCardService;
+    private final SynthesisCardService synthesisCardService;
     private final CurrentUserProvider currentUserProvider;
 
     @GetMapping("/research-projects/{projectId}/article-cards")
@@ -53,6 +56,16 @@ public class PersonalCardController {
     @GetMapping("/concept-cards/{cardId}")
     public ApiResponse<ConceptCardResponse> getConceptCard(@PathVariable Long cardId) {
         return ApiResponse.success(conceptCardService.get(currentUserProvider.getCurrentUserId(), cardId));
+    }
+
+    @GetMapping("/research-projects/{projectId}/synthesis-cards")
+    public ApiResponse<List<SynthesisCardResponse>> listSynthesisCards(@PathVariable Long projectId) {
+        return ApiResponse.success(synthesisCardService.list(currentUserProvider.getCurrentUserId(), projectId));
+    }
+
+    @GetMapping("/synthesis-cards/{cardId}")
+    public ApiResponse<SynthesisCardResponse> getSynthesisCard(@PathVariable Long cardId) {
+        return ApiResponse.success(synthesisCardService.get(currentUserProvider.getCurrentUserId(), cardId));
     }
 
     @PutMapping("/concept-cards/{cardId}")

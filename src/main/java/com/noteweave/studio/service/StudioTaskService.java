@@ -305,9 +305,11 @@ public class StudioTaskService {
             if (!EnumSet.of(
                     ArtifactType.REPORT,
                     ArtifactType.STUDY_GUIDE,
+                    ArtifactType.READING_NOTES,
                     ArtifactType.BRIEFING,
                     ArtifactType.FAQ,
                     ArtifactType.COMPARISON,
+                    ArtifactType.WORK_PREP,
                     ArtifactType.WIKI_DRAFT
             ).contains(artifactType)) {
                 throw new BusinessException(ErrorCode.ARTIFACT_TYPE_UNSUPPORTED);

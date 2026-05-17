@@ -12,6 +12,8 @@ import com.noteweave.chat.model.ChatSessionKind;
 import com.noteweave.chat.model.RetrievalTrace;
 import com.noteweave.chat.repository.ChatMessageRepository;
 import com.noteweave.chat.repository.RetrievalTraceRepository;
+import com.noteweave.chat.runtime.service.ContextReadPlan;
+import com.noteweave.chat.runtime.service.ContextReadRouter;
 import com.noteweave.citation.dto.CitationResponse;
 import com.noteweave.citation.service.CitationService;
 import com.noteweave.common.api.RequestIdHolder;
@@ -23,6 +25,9 @@ import com.noteweave.llm.dto.LlmResponse;
 import com.noteweave.llm.model.LlmCallLog;
 import com.noteweave.llm.repository.LlmCallLogRepository;
 import com.noteweave.llm.service.LlmClient;
+import com.noteweave.memory.service.MemoryContextService;
+import com.noteweave.memory.service.MemoryWritebackService;
+import com.noteweave.memory.service.PromptMemoryContext;
 import com.noteweave.permission.service.ResourceAccessService;
 import com.noteweave.team.kb.model.KnowledgeBaseStatus;
 import com.noteweave.team.kb.repository.KnowledgeBaseRepository;
@@ -34,7 +39,6 @@ import com.noteweave.team.rag.prompt.PromptMessages;
 import com.noteweave.team.rag.prompt.TeamRagPromptBuilder;
 import com.noteweave.team.rag.retriever.HybridRetriever;
 import com.noteweave.team.rag.retriever.RetrievalHit;
-import com.noteweave.team.rag.retriever.RetrievalMode;
 import com.noteweave.team.rag.retriever.TeamRetrievalQuery;
 import java.security.MessageDigest;
 import java.time.Duration;
@@ -64,6 +68,9 @@ public class TeamChatService {
     private final KnowledgeBaseRepository knowledgeBaseRepository;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
+    private final ContextReadRouter contextReadRouter;
+    private final MemoryContextService memoryContextService;
+    private final MemoryWritebackService memoryWritebackService;
 
     public TeamAskResponse ask(Long userId, Long sessionId, TeamAskRequest request) {
         ChatSession session = chatSessionService.getRequiredActiveSession(sessionId);
@@ -77,6 +84,7 @@ public class TeamChatService {
 
         String question = request.getContent().trim();
         ChatMessage userMessage = persistMessage(sessionId, ChatMessageRole.USER, question, null, null);
+        ContextReadPlan readPlan = contextReadRouter.resolve(session.getSessionKind(), session.getSessionType());
 
         Instant retrievalStart = Instant.now();
         HybridRetriever.HybridRetrievalResult retrieval = hybridRetriever.retrieve(new TeamRetrievalQuery(
@@ -104,18 +112,21 @@ public class TeamChatService {
         persistRetrievalTrace(userId, session, userMessage.getId(), question, retrievalLatency, evidenceItems.size(), retrieval);
 
         if (evidenceItems.isEmpty()) {
-            return persistAssistantOutcome(
+            AssistantOutcome outcome = persistAssistantOutcome(
                     userId,
                     session,
-                    userMessage.getId(),
-                    ragProperties.prompt().noResultText() + "。当前资料不足，无法给出可靠引用。",
+                    userMessage,
+                    ragProperties.prompt().noResultText() + "。Current evidence is insufficient for a grounded citation.",
                     writeJson(Map.of("retrievalEmpty", true)),
                     List.of(),
                     new LlmLogPayload("none", "no-llm", question, 0, 0, 1L, true, null)
             );
+            memoryWritebackService.writeAfterRound(session, userMessage, outcome.assistantMessage(), outcome.response().getCitations());
+            return outcome.response();
         }
 
-        PromptMessages prompt = teamRagPromptBuilder.build(question, evidenceItems, recentMessages(sessionId));
+        PromptMemoryContext memoryContext = memoryContextService.load(userId, session, readPlan);
+        PromptMessages prompt = teamRagPromptBuilder.build(question, evidenceItems, recentMessages(sessionId), memoryContext);
         String promptForHash = prompt.messages().size() > 1 ? prompt.messages().get(1).content() : question;
         Instant llmStart = Instant.now();
         try {
@@ -127,10 +138,10 @@ public class TeamChatService {
                             .build()
             );
             long llmLatency = Math.max(1L, Duration.between(llmStart, Instant.now()).toMillis());
-            return persistAssistantOutcome(
+            AssistantOutcome outcome = persistAssistantOutcome(
                     userId,
                     session,
-                    userMessage.getId(),
+                    userMessage,
                     llmResponse.content(),
                     writeJson(Map.of(
                             "provider", llmResponse.provider(),
@@ -150,6 +161,8 @@ public class TeamChatService {
                             null
                     )
             );
+            memoryWritebackService.writeAfterRound(session, userMessage, outcome.assistantMessage(), outcome.response().getCitations());
+            return outcome.response();
         } catch (BusinessException ex) {
             long llmLatency = Math.max(1L, Duration.between(llmStart, Instant.now()).toMillis());
             persistLlmCallLog(
@@ -287,10 +300,10 @@ public class TeamChatService {
         return indexVersion == null ? "unknown" : String.valueOf(indexVersion);
     }
 
-    private TeamAskResponse persistAssistantOutcome(
+    private AssistantOutcome persistAssistantOutcome(
             Long userId,
             ChatSession session,
-            Long userMessageId,
+            ChatMessage userMessage,
             String answer,
             String tokenUsageJson,
             List<EvidenceItem> evidenceItems,
@@ -304,12 +317,13 @@ public class TeamChatService {
                     ? List.of()
                     : citationService.saveForAssistantMessage(assistantMessage.getId(), session.getSpaceId(), evidenceItems);
             saveLlmCallLog(userId, session, assistantMessage.getId(), llmLogPayload);
-            return TeamAskResponse.builder()
-                    .userMessageId(userMessageId)
+            TeamAskResponse response = TeamAskResponse.builder()
+                    .userMessageId(userMessage.getId())
                     .assistantMessageId(assistantMessage.getId())
                     .answer(answer)
                     .citations(citations)
                     .build();
+            return new AssistantOutcome(response, assistantMessage);
         });
     }
 
@@ -349,6 +363,9 @@ public class TeamChatService {
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to hash prompt", ex);
         }
+    }
+
+    private record AssistantOutcome(TeamAskResponse response, ChatMessage assistantMessage) {
     }
 
     private record LlmLogPayload(

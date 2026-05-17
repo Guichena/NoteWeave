@@ -11,14 +11,21 @@ public class ContextReadRouter {
         if (sessionKind == ChatSessionKind.DRAFT) {
             return ContextReadPlan.builder()
                     .readRecentHistory(true)
+                    .readSessionSummary(false)
+                    .readSpaceMemory(false)
+                    .readUserMemory(false)
                     .readRetrievalEvidence(true)
                     .readLongTermMemory(false)
                     .build();
         }
         return ContextReadPlan.builder()
                 .readRecentHistory(true)
-                .readRetrievalEvidence(sessionType == ChatSessionType.TEAM_CHAT)
-                .readLongTermMemory(false)
+                .readSessionSummary(true)
+                .readSpaceMemory(true)
+                .readUserMemory(true)
+                .readRetrievalEvidence(sessionType == ChatSessionType.TEAM_CHAT
+                        || sessionType == ChatSessionType.PERSONAL_RESEARCH_CHAT)
+                .readLongTermMemory(true)
                 .build();
     }
 }

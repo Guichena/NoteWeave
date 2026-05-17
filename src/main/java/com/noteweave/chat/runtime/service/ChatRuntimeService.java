@@ -27,6 +27,9 @@ import com.noteweave.llm.dto.LlmMessage;
 import com.noteweave.llm.dto.LlmOptions;
 import com.noteweave.llm.dto.LlmResponse;
 import com.noteweave.llm.service.LlmClient;
+import com.noteweave.memory.service.MemoryContextService;
+import com.noteweave.memory.service.MemoryWritebackService;
+import com.noteweave.memory.service.PromptMemoryContext;
 import com.noteweave.permission.service.ResourceAccessService;
 import com.noteweave.team.kb.model.KnowledgeBaseStatus;
 import com.noteweave.team.kb.repository.KnowledgeBaseRepository;
@@ -58,7 +61,7 @@ import org.springframework.web.socket.WebSocketSession;
 @RequiredArgsConstructor
 public class ChatRuntimeService {
 
-    private static final String NO_RESULT_SUFFIX = "。当前资料不足，无法给出可靠引用。";
+    private static final String NO_RESULT_SUFFIX = "。Current evidence is insufficient for a grounded citation.";
 
     private final ChatSessionRepository chatSessionRepository;
     private final ChatMessageRepository chatMessageRepository;
@@ -73,6 +76,8 @@ public class ChatRuntimeService {
     private final ActiveExecutionRegistry activeExecutionRegistry;
     private final ChatRuntimeStateStore chatRuntimeStateStore;
     private final ContextReadRouter contextReadRouter;
+    private final MemoryContextService memoryContextService;
+    private final MemoryWritebackService memoryWritebackService;
     private final ObjectMapper objectMapper;
     private final RagProperties ragProperties;
     private final ChatRuntimeProperties chatRuntimeProperties;
@@ -182,6 +187,8 @@ public class ChatRuntimeService {
             if (content.isBlank()) {
                 throw new BusinessException(ErrorCode.CHAT_MESSAGE_EMPTY);
             }
+            ContextReadPlan readPlan = contextReadRouter.resolve(session.getSessionKind(), session.getSessionType());
+            PromptMemoryContext memoryContext = memoryContextService.load(userId, session, readPlan);
 
             if (RequestIdHolder.get() == null) {
                 RequestIdHolder.set(requestId);
@@ -191,7 +198,7 @@ public class ChatRuntimeService {
             }
             executionRegistered = true;
 
-            Long userMessageId = persistUserMessage(sessionId, content, requestId);
+            ChatMessage userMessage = persistUserMessage(sessionId, content, requestId);
             updateSessionForRun(sessionId, streamId, requestId);
             runtimeStarted = true;
             chatRuntimeStateStore.writeRuntimeState(sessionId, RuntimeState.builder()
@@ -215,32 +222,33 @@ public class ChatRuntimeService {
                     .requestId(requestId)
                     .streamId(streamId)
                     .sessionId(sessionId)
-                    .messageId(userMessageId)
+                    .messageId(userMessage.getId())
                     .payload(objectNode(Map.of("runtimeStatus", ChatRuntimeStatus.RUNNING.name())))
                     .build());
             send(socketSession, started);
 
-            List<EvidenceItem> evidenceItems = loadEvidence(userId, session, content);
+            List<EvidenceItem> evidenceItems = loadEvidence(userId, session, content, readPlan);
             List<String> evidenceTitles = evidenceItems.stream().map(EvidenceItem::documentTitle).distinct().toList();
             chatRuntimeStateStore.writeShortTermContext(sessionId, ShortTermContext.builder()
                     .recentMessages(List.of("USER: " + content))
                     .evidenceTitles(evidenceTitles)
                     .build());
 
-            String answer = buildAnswer(sessionId, content, evidenceItems);
+            String answer = buildAnswer(sessionId, content, evidenceItems, readPlan, memoryContext);
             streamAnswer(sessionId, socketSession, execution, requestId, streamId, answer);
 
             if (execution.getStopRequested().get()) {
                 return;
             }
 
-            Long assistantMessageId = null;
+            ChatMessage assistantMessage = null;
             List<CitationResponse> citations = List.of();
             if (session.getSessionKind() == ChatSessionKind.FORMAL) {
-                assistantMessageId = persistAssistantMessage(sessionId, answer, requestId, evidenceItems);
+                assistantMessage = persistAssistantMessage(sessionId, answer, requestId);
                 citations = evidenceItems.isEmpty()
                         ? List.of()
-                        : citationService.listByMessage(userId, assistantMessageId, session.getSpaceId());
+                        : citationService.saveForAssistantMessage(assistantMessage.getId(), session.getSpaceId(), evidenceItems);
+                memoryWritebackService.writeAfterRound(session, userMessage, assistantMessage, citations);
             }
 
             updateSessionRuntimeStatus(sessionId, ChatRuntimeStatus.IDLE);
@@ -265,14 +273,14 @@ public class ChatRuntimeService {
             completedPayload.put("answer", answer);
             completedPayload.put("citations", citations);
             completedPayload.put("persisted", session.getSessionKind() == ChatSessionKind.FORMAL);
-            completedPayload.put("assistantMessageId", assistantMessageId);
+            completedPayload.put("assistantMessageId", assistantMessage == null ? null : assistantMessage.getId());
 
             ServerEventEnvelope completed = chatRuntimeStateStore.appendEvent(sessionId, ServerEventEnvelope.builder()
                     .event("chat.completed")
                     .requestId(requestId)
                     .streamId(streamId)
                     .sessionId(sessionId)
-                    .messageId(assistantMessageId)
+                    .messageId(assistantMessage == null ? null : assistantMessage.getId())
                     .payload(objectNode(completedPayload))
                     .build());
             send(socketSession, completed);
@@ -313,8 +321,6 @@ public class ChatRuntimeService {
                 failed = chatRuntimeStateStore.appendEvent(sessionId, failed);
             }
             send(socketSession, failed);
-            // The failure has already been materialized into runtime state and websocket events.
-            // Re-throwing from the executor only creates uncaught worker noise.
             return;
         } finally {
             if (executionRegistered) {
@@ -360,8 +366,10 @@ public class ChatRuntimeService {
         }
     }
 
-    private List<EvidenceItem> loadEvidence(Long userId, ChatSession session, String question) {
-        contextReadRouter.resolve(session.getSessionKind(), session.getSessionType());
+    private List<EvidenceItem> loadEvidence(Long userId, ChatSession session, String question, ContextReadPlan readPlan) {
+        if (!readPlan.readRetrievalEvidence()) {
+            return List.of();
+        }
         HybridRetriever.HybridRetrievalResult retrieval = hybridRetriever.retrieve(
                 new TeamRetrievalQuery(
                         userId,
@@ -419,11 +427,22 @@ public class ChatRuntimeService {
         return Long.parseLong(String.valueOf(value));
     }
 
-    private String buildAnswer(Long sessionId, String question, List<EvidenceItem> evidenceItems) {
+    private String buildAnswer(
+            Long sessionId,
+            String question,
+            List<EvidenceItem> evidenceItems,
+            ContextReadPlan readPlan,
+            PromptMemoryContext memoryContext
+    ) {
         if (evidenceItems.isEmpty()) {
             return ragProperties.prompt().noResultText() + NO_RESULT_SUFFIX;
         }
-        PromptMessages prompt = teamRagPromptBuilder.build(question, evidenceItems, recentMessages(sessionId));
+        PromptMessages prompt = teamRagPromptBuilder.build(
+                question,
+                evidenceItems,
+                readPlan.readRecentHistory() ? recentMessages(sessionId) : List.of(),
+                memoryContext
+        );
         LlmResponse response = llmClient.chat(
                 prompt.messages().stream().map(message -> new LlmMessage(message.role(), message.content())).toList(),
                 LlmOptions.builder().temperature(0.3d).maxTokens(2000).build()
@@ -431,23 +450,19 @@ public class ChatRuntimeService {
         return response.content();
     }
 
-    private Long persistUserMessage(Long sessionId, String content, String requestId) {
+    private ChatMessage persistUserMessage(Long sessionId, String content, String requestId) {
         TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
         return transactionTemplate.execute(status -> {
             ChatMessage message = createMessage(sessionId, ChatMessageRole.USER, content, requestId, ChatMessageStatus.COMPLETED);
-            return chatMessageRepository.save(message).getId();
+            return chatMessageRepository.save(message);
         });
     }
 
-    private Long persistAssistantMessage(Long sessionId, String content, String requestId, List<EvidenceItem> evidenceItems) {
+    private ChatMessage persistAssistantMessage(Long sessionId, String content, String requestId) {
         TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
         return transactionTemplate.execute(status -> {
             ChatMessage message = createMessage(sessionId, ChatMessageRole.ASSISTANT, content, requestId, ChatMessageStatus.COMPLETED);
-            ChatMessage saved = chatMessageRepository.save(message);
-            if (!evidenceItems.isEmpty()) {
-                citationService.saveForAssistantMessage(saved.getId(), getRequiredActiveSession(sessionId).getSpaceId(), evidenceItems);
-            }
-            return saved.getId();
+            return chatMessageRepository.save(message);
         });
     }
 

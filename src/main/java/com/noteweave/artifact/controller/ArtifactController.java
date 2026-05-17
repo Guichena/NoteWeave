@@ -2,12 +2,16 @@ package com.noteweave.artifact.controller;
 
 import com.noteweave.artifact.dto.ArtifactResponse;
 import com.noteweave.artifact.dto.ArtifactQuery;
+import com.noteweave.artifact.dto.ArtifactCardRelationResponse;
+import com.noteweave.artifact.dto.DistillArtifactRequest;
+import com.noteweave.artifact.dto.DistillArtifactResponse;
 import com.noteweave.artifact.dto.ExportArtifactResponse;
 import com.noteweave.artifact.dto.RegenerateArtifactRequest;
 import com.noteweave.artifact.dto.UpdateArtifactRequest;
 import com.noteweave.artifact.service.ArtifactService;
 import com.noteweave.common.api.ApiResponse;
 import com.noteweave.common.security.CurrentUserProvider;
+import com.noteweave.personal.distillation.service.PersonalArtifactDistillationService;
 import com.noteweave.studio.dto.CreateStudioTaskResponse;
 import com.noteweave.studio.service.StudioTaskService;
 import jakarta.validation.Valid;
@@ -30,6 +34,7 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 public class ArtifactController {
 
     private final ArtifactService artifactService;
+    private final PersonalArtifactDistillationService personalArtifactDistillationService;
     private final StudioTaskService studioTaskService;
     private final CurrentUserProvider currentUserProvider;
 
@@ -78,5 +83,25 @@ public class ArtifactController {
     @GetMapping("/artifacts/{artifactId}/export")
     public ApiResponse<ExportArtifactResponse> export(@PathVariable Long artifactId, @RequestParam("format") String format) {
         return ApiResponse.success(artifactService.export(currentUserProvider.getCurrentUser().userId(), artifactId, format));
+    }
+
+    @PostMapping("/artifacts/{artifactId}/distill-to-personal-wiki")
+    public ApiResponse<DistillArtifactResponse> distillToPersonalWiki(
+            @PathVariable Long artifactId,
+            @Valid @RequestBody DistillArtifactRequest request
+    ) {
+        return ApiResponse.success(personalArtifactDistillationService.distill(
+                currentUserProvider.getCurrentUser().userId(),
+                artifactId,
+                request
+        ));
+    }
+
+    @GetMapping("/artifacts/{artifactId}/card-relations")
+    public ApiResponse<List<ArtifactCardRelationResponse>> listCardRelations(@PathVariable Long artifactId) {
+        return ApiResponse.success(personalArtifactDistillationService.listCardRelations(
+                currentUserProvider.getCurrentUser().userId(),
+                artifactId
+        ));
     }
 }

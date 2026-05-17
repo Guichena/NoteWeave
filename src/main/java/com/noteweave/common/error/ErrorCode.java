@@ -38,6 +38,8 @@ public enum ErrorCode {
     ARTICLE_CARD_NOT_FOUND(HttpStatus.NOT_FOUND, "article card not found"),
     CONCEPT_CARD_NOT_FOUND(HttpStatus.NOT_FOUND, "concept card not found"),
     CONCEPT_MERGE_INVALID(HttpStatus.BAD_REQUEST, "concept merge invalid"),
+    PERSONAL_GENERATION_FAILED(HttpStatus.BAD_REQUEST, "personal generation failed"),
+    RESEARCH_CONTEXT_EMPTY(HttpStatus.BAD_REQUEST, "research context is empty"),
     LLM_JSON_PARSE_FAILED(HttpStatus.BAD_REQUEST, "llm json parse failed"),
     EVIDENCE_BACKTRACE_FAILED(HttpStatus.BAD_REQUEST, "evidence backtrace failed"),
     UPLOAD_NOT_FOUND(HttpStatus.NOT_FOUND, "upload not found"),
@@ -78,6 +80,10 @@ public enum ErrorCode {
     ARTIFACT_TYPE_UNSUPPORTED(HttpStatus.BAD_REQUEST, "artifact type unsupported"),
     ARTIFACT_EXPORT_UNSUPPORTED(HttpStatus.BAD_REQUEST, "artifact export unsupported"),
     ARTIFACT_CANNOT_PUBLISH_TO_WIKI(HttpStatus.BAD_REQUEST, "artifact cannot publish to wiki"),
+    ARTIFACT_DISTILLATION_UNSUPPORTED(HttpStatus.BAD_REQUEST, "artifact distillation unsupported"),
+    ARTIFACT_DISTILLATION_PROPOSAL_NOT_FOUND(HttpStatus.NOT_FOUND, "artifact distillation proposal not found"),
+    ARTIFACT_DISTILLATION_CONFIRMATION_REQUIRED(HttpStatus.BAD_REQUEST, "artifact distillation confirmation required"),
+    ARTIFACT_DISTILLATION_PROPOSAL_STALE(HttpStatus.BAD_REQUEST, "artifact distillation proposal is stale"),
     STUDIO_TASK_TYPE_UNSUPPORTED(HttpStatus.BAD_REQUEST, "studio task type unsupported"),
     SKILL_EXECUTION_FAILED(HttpStatus.BAD_REQUEST, "skill execution failed"),
     PLAN_EXECUTION_FAILED(HttpStatus.BAD_REQUEST, "plan execution failed"),
@@ -85,7 +91,8 @@ public enum ErrorCode {
     WIKI_ACCESS_DENIED(HttpStatus.FORBIDDEN, "wiki access denied"),
     WIKI_DRAFT_REQUIRED(HttpStatus.BAD_REQUEST, "wiki draft required"),
     WIKI_PUBLISH_FAILED(HttpStatus.BAD_REQUEST, "wiki publish failed"),
-    WIKI_INDEX_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "wiki index failed");
+    WIKI_INDEX_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "wiki index failed"),
+    SYNTHESIS_CARD_NOT_FOUND(HttpStatus.NOT_FOUND, "synthesis card not found");
 
     private final HttpStatus httpStatus;
     private final String defaultMessage;

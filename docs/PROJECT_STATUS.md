@@ -11,15 +11,15 @@
 当前状态：
 
 ```text
-Phase 0/1、Phase 1.5、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6、Phase 7、Phase 8、Phase 9、Phase 10 和 Phase 10.5 已完成并通过当前阶段测试与必要回归测试。
+Phase 0/1、Phase 1.5、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6、Phase 7、Phase 8、Phase 9、Phase 10、Phase 10.5、Phase 11 和 Phase 11.5 已完成并通过当前阶段测试与必要回归测试。
 ```
 
-当前代码已包含 Auth/User/Space/Permission、Task/Outbox/Kafka Worker 基础设施、Phase 2 文件上传链路、Phase 3 的 DOCUMENT_PROCESS Worker、文档解析、parsed text 保存、Chunk 切片、indexVersion / activeIndexVersion、Elasticsearch BM25 索引和 Search Debug、Phase 6 的个人 ResearchProject / Source、TEXT/FILE/URL 导入、SOURCE_IMPORT Worker、个人 raw/parsed text 对象保存、owner-only 查询与重试/去重链路，以及 Phase 7 的 SOURCE_COMPILE、ArticleCard / ConceptCard / ConceptAlias / ConceptRelation / ArticleConceptRelation、个人 Card Citation、Card 搜索详情与 Evidence 回溯链路、Phase 8 的 Studio / Artifact、Phase 9 的混合检索 / RRF / 向量回退、Phase 10 的团队 Wiki 草稿/发布/版本/索引/检索闭环，以及 Phase 10.5 的 Methodology preset / matcher / prompt 注入骨架。
+当前代码已包含 Auth/User/Space/Permission、Task/Outbox/Kafka Worker 基础设施、Phase 2 文件上传链路、Phase 3 的 DOCUMENT_PROCESS Worker、文档解析、parsed text 保存、Chunk 切片、indexVersion / activeIndexVersion、Elasticsearch BM25 索引和 Search Debug、Phase 6 的个人 ResearchProject / Source、TEXT/FILE/URL 导入、SOURCE_IMPORT Worker、个人 raw/parsed text 对象保存、owner-only 查询与重试/去重链路、Phase 7 的 SOURCE_COMPILE、ArticleCard / ConceptCard / ConceptAlias / ConceptRelation / ArticleConceptRelation、个人 Card Citation、Card 搜索详情与 Evidence 回溯链路、Phase 8 的 Studio / Artifact、Phase 9 的混合检索 / RRF / 向量回退、Phase 10 的团队 Wiki 草稿/发布/版本/索引/检索闭环、Phase 10.5 的 Methodology preset / matcher / prompt 注入骨架、Phase 11 的个人 Wiki-based Generation：ResearchContextService / PersonalEvidenceService / PersonalGenerationService、个人项目 REPORT / STUDY_GUIDE / COMPARISON / WORK_PREP / READING_NOTES 生成、MethodologyCard 注入、ArtifactSource / ArtifactCitation 回溯保存与证据缺失失败保护，以及 Phase 11.5 的个人 Artifact 沉淀闭环：ArtifactDistillationProposal、用户确认后创建 SynthesisCard、artifact_card_relation / synthesis_card_citation / synthesis_concept_relation 持久化、distill-to-personal-wiki API 与 owner-only 查询能力。
 
 下一步：
 
 ```text
-Phase 11: 个人 Wiki-based Generation。
+Phase 13: Full MethodologyCard Management。
 ```
 
 ---
@@ -124,9 +124,9 @@ Quiz / 答题 / 评分 / 题库暂缓
 | Phase 9 | DONE | 检索增强 / RRF |
 | Phase 10 | DONE | 团队 Wiki 发布入索引 |
 | Phase 10.5 | DONE | Methodology 预置模板与 Matcher |
-| Phase 11 | PENDING | 个人 Wiki-based Generation |
-| Phase 11.5 | PENDING | 个人 Artifact 沉淀为 SynthesisCard |
-| Phase 12 | PENDING | Long-term Memory |
+| Phase 11 | DONE | 个人 Wiki-based Generation |
+| Phase 11.5 | DONE | 个人 Artifact 沉淀为 SynthesisCard |
+| Phase 12 | DONE | Long-term Memory |
 | Phase 13 | PENDING | MethodologyCard 完整管理 |
 | Phase 14 | PENDING | Evaluation / Observability |
 | Phase 15 | PENDING | Admin / Ops |
@@ -1319,4 +1319,335 @@ Next:
 
 ```text
 Proceed to Phase 11 personal Wiki-based generation.
+```
+
+## 20. Phase 11 Personal Wiki-based Generation (2026-05-17)
+
+Status:
+
+```text
+DONE
+```
+
+Implemented in this update:
+
+```text
+1) Added PersonalGenerationService, ResearchContextService and PersonalEvidenceService for personal-project Artifact generation orchestration.
+2) Personal generation now assembles context from ResearchProject + ArticleCard + ConceptCard + matched MethodologyCard; no full raw Source dump is injected into prompts.
+3) Reused the existing ARTIFACT_GENERATE task/worker path and extended personal generation support to REPORT / STUDY_GUIDE / COMPARISON / WORK_PREP / READING_NOTES.
+4) Added fixed Work Prep and Reading Notes generation plans/skills on top of the existing ArtifactPlanExecutor flow.
+5) Personal evidence now requires traceable SOURCE-backed citations from personal cards; missing traceable evidence fails generation instead of producing a READY Artifact.
+6) ArtifactSource now persists ARTICLE_CARD / CONCEPT_CARD / SOURCE links for personal generation, while ArtifactCitation keeps the formal source citation relations.
+7) Confirmed SynthesisCard is now loaded back into personal generation as stable secondary context, and ArtifactSource persists SYNTHESIS_CARD when that context is used.
+8) Methodology matcher/prompt injection is now exercised for personal Work Prep generation, and READING_NOTES falls back to GENERAL structured writing when no exact preset exists.
+9) Personal generation remains owner-only and does not create SynthesisCard, ArtifactCardRelation or any automatic personal Wiki writeback.
+```
+
+New migration:
+
+```text
+None
+```
+
+New APIs:
+
+```text
+None
+Reuse existing POST /api/v1/studio/tasks and Artifact read/export/regenerate APIs.
+```
+
+Supported Phase 11 personal generation types:
+
+```text
+REPORT
+STUDY_GUIDE
+COMPARISON
+WORK_PREP
+READING_NOTES
+```
+
+Context assembly rules:
+
+```text
+1) Resolve and owner-check the ResearchProject.
+2) Load ArticleCard, ConceptCard and confirmed SynthesisCard from the project.
+3) Match a MethodologyCard from project -> personal space -> preset scope.
+4) Build evidence only from formal card citations that backtrace to SOURCE resources.
+5) Inject only cards + selected evidence excerpts into the prompt; do not dump full Source raw text.
+```
+
+ArtifactSource / ArtifactCitation rules:
+
+```text
+- ArtifactSource writes ARTICLE_CARD and CONCEPT_CARD for selected personal Wiki context.
+- ArtifactSource also writes SYNTHESIS_CARD when confirmed synthesis context is reused.
+- ArtifactSource also writes SOURCE for the traceable evidence-bearing source documents behind the citations.
+- ArtifactCitation writes the formal citation rows already linked to the personal cards.
+- If no SOURCE-backed citations remain, the task fails and the Artifact must not become READY.
+```
+
+TDD record:
+
+```text
+1) Wrote Phase11PersonalGenerationIntegrationTest first to cover WORK_PREP, READING_NOTES, methodology injection, SOURCE-backed ArtifactSource/Citation persistence, owner-only access and "no evidence -> fail".
+2) Initial red run failed as expected because WORK_PREP / READING_NOTES were unsupported and personal generation did not enforce traceable SOURCE evidence.
+3) Implemented the minimal personal generation services plus ArtifactPlanExecutor/StudioTaskService extensions to satisfy the new suite.
+4) Added edge handling so personal generation fails when card citations cannot resolve to SOURCE evidence, instead of silently producing an ungrounded Artifact.
+5) Audit follow-up added explicit coverage that confirmed SynthesisCard is reused as stable context and traced through ArtifactSource.
+6) Re-ran the new Phase 11 suite and required Phase 7 / Phase 8 / Phase 10.5 / Studio regressions to green.
+```
+
+Test commands and results:
+
+```text
+1) mvn "-Dtest=Phase11PersonalGenerationIntegrationTest" test
+   - initial red failed as expected because WORK_PREP / READING_NOTES were unsupported and evidence-missing generation still succeeded.
+
+2) mvn "-Dtest=Phase11PersonalGenerationIntegrationTest" test
+   - passed: Tests run: 3, Failures: 0, Errors: 0, Skipped: 0
+
+3) mvn "-Dtest=Phase7PersonalWikiCompilerIntegrationTest,Phase8StudioArtifactIntegrationTest,Phase10_5MethodologyPresetMatcherIntegrationTest,Phase11PersonalGenerationIntegrationTest,StudioTaskServiceTest" test
+   - passed: Tests run: 21, Failures: 0, Errors: 0, Skipped: 0
+
+4) docker compose config --quiet
+   - passed
+
+5) git diff --check
+   - passed; only CRLF line-ending warnings were printed
+
+6) mvn "-Dtest=Phase11PersonalGenerationIntegrationTest#personalGenerationShouldReuseConfirmedSynthesisCardsAsStableContext" test
+   - passed after audit follow-up fix for SynthesisCard context loading
+```
+
+Notes:
+
+```text
+- Phase 11 still does not create SynthesisCard or write artifact_card_relation; those remain Phase 11.5 scope.
+- Personal generation reads existing personal Wiki cards but does not auto-create or auto-merge ArticleCard / ConceptCard / MethodologyCard.
+- No new middleware container, MinIO bucket, Kafka topic, Elasticsearch index family or local test path was introduced in this phase.
+```
+
+Next:
+
+```text
+Proceed to Phase 11.5 personal Artifact distillation to SynthesisCard.
+```
+
+## 21. Phase 11.5 Personal Artifact Distillation (2026-05-17)
+
+Status:
+
+```text
+DONE
+```
+
+Implemented in this update:
+
+```text
+1) Added V13 migration for synthesis_card, artifact_card_relation, synthesis_card_citation, synthesis_concept_relation and a short-lived artifact_distillation_proposal table for explicit user confirmation.
+2) Added SynthesisCard / SynthesisConceptRelation / SynthesisCardCitation models, repositories and owner-only query services.
+3) Added POST /api/v1/artifacts/{artifactId}/distill-to-personal-wiki with a two-step proposal/confirm flow; proposal generation does not write any personal Wiki card before user confirmation.
+4) Confirmation now re-checks owner-only access, re-binds against the latest ArtifactVersion id and rejects stale proposals when the Artifact changed after preview.
+5) Confirmation creates exactly one SynthesisCard per artifact version, writes artifact_card_relation with card_type = SYNTHESIS and relation_type = SUMMARIZED_INTO, copies formal ArtifactCitation rows into synthesis_card_citation, and links existing CONCEPT_CARD artifact sources into synthesis_concept_relation without mutating ConceptCard itself.
+6) Added GET /api/v1/artifacts/{artifactId}/card-relations, GET /api/v1/personal/research-projects/{projectId}/synthesis-cards and GET /api/v1/personal/synthesis-cards/{cardId} for ArtifactViewer/personal Wiki readback.
+7) Distilled Artifact status now transitions to DISTILLED_TO_PERSONAL_WIKI after successful confirmation while keeping the original Artifact readable and version-traceable.
+```
+
+New migration:
+
+```text
+src/main/resources/db/migration/V13__phase_11_5_personal_artifact_distillation.sql
+```
+
+New APIs:
+
+```text
+POST /api/v1/artifacts/{artifactId}/distill-to-personal-wiki
+GET  /api/v1/artifacts/{artifactId}/card-relations
+GET  /api/v1/personal/research-projects/{projectId}/synthesis-cards
+GET  /api/v1/personal/synthesis-cards/{cardId}
+```
+
+Confirmation flow:
+
+```text
+1) User opens a personal Artifact and explicitly triggers distill-to-personal-wiki with cardType = SYNTHESIS and confirm = false.
+2) Server binds the current latest artifact_version.id, derives preview title/summary/insights/evidenceQuotes and stores a proposal row only.
+3) User confirms with proposalId and confirm = true.
+4) Server re-checks personal owner-only access, verifies the proposal still targets the current latest artifact_version.id and rejects stale confirmations.
+5) Server creates SynthesisCard, artifact_card_relation, synthesis_card_citation and synthesis_concept_relation, then marks the proposal CONFIRMED.
+```
+
+Artifact / Synthesis traceability rules:
+
+```text
+- SynthesisCard.sourceArtifactId and sourceArtifactVersionId always point to the confirmed Artifact + artifact_version primary key.
+- artifact_card_relation preserves the Artifact -> SynthesisCard writeback edge.
+- synthesis_card_citation copies the formal ArtifactCitation-backed citation ids; evidence is not stored only in JSON.
+- synthesis_concept_relation links existing ConceptCard context as RELATED references only; this phase does not auto-merge or overwrite ConceptCard / MethodologyCard.
+```
+
+TDD record:
+
+```text
+1) Wrote Phase11_5PersonalArtifactDistillationIntegrationTest first to cover proposal-before-confirmation, owner-only access, version binding, stale-proposal rejection, idempotent confirmation and relation/citation persistence.
+2) Initial red run failed as expected because /api/v1/artifacts/{artifactId}/distill-to-personal-wiki and related synthesis endpoints did not exist yet.
+3) Implemented the minimal migration, models, services and controllers to satisfy the new suite.
+4) Tightened edge handling around stale proposals, missing proposalId on confirmation, no-citation distillation attempts and repeat confirmation against the same artifact version.
+5) Re-ran the new Phase 11.5 suite plus required Phase 7 / Phase 8 / Phase 11 regressions to green.
+```
+
+Test commands and results:
+
+```text
+1) mvn "-Dtest=Phase11_5PersonalArtifactDistillationIntegrationTest" test
+   - initial red failed as expected because the distill-to-personal-wiki endpoints were missing.
+
+2) mvn "-Dtest=Phase11_5PersonalArtifactDistillationIntegrationTest" test
+   - passed: Tests run: 2, Failures: 0, Errors: 0, Skipped: 0
+
+3) mvn "-Dtest=Phase11_5PersonalArtifactDistillationIntegrationTest,Phase11PersonalGenerationIntegrationTest,Phase7PersonalWikiCompilerIntegrationTest,Phase8StudioArtifactIntegrationTest" test
+   - passed: Tests run: 20, Failures: 0, Errors: 0, Skipped: 0
+```
+
+Notes:
+
+```text
+- Phase 11.5 still limits personal writeback to Artifact -> SynthesisCard only.
+- This phase does not auto-create or auto-modify ConceptCard / MethodologyCard, and does not implement merge proposal enhancement or Quiz features.
+- No new middleware container, MinIO bucket, Kafka topic, Elasticsearch index family or local temporary test path was introduced in this phase.
+```
+
+Next:
+
+```text
+Proceed to Phase 13 full MethodologyCard management.
+
+## 22. Phase 12 Long-term Memory (2026-05-17)
+
+Status:
+
+```text
+DONE
+```
+
+Implemented in this update:
+
+```text
+1) Added V14 migration with session_summary, memory_item, space_memory and user_memory tables for long-term memory persistence.
+2) Added MemoryWritebackStrategy with DRAFT exclusion, short-greeting skip, sensitive-content skip and stable-preference detection.
+3) Added SessionSummaryService, MemoryItemService, SpaceMemoryService, UserMemoryService and MemoryWritebackService for formal-round writeback.
+4) Added user-space private memory APIs:
+   GET/PUT/DELETE /api/v1/spaces/{spaceId}/memory
+   GET/PUT/DELETE /api/v1/users/me/memory
+   POST /api/v1/users/me/memory/disable
+   POST /api/v1/users/me/memory/enable
+   GET /api/v1/chat/sessions/{sessionId}/summaries
+5) Extended ContextReadRouter from a single long-term-memory flag to layered session-summary / space-memory / user-memory decisions.
+6) Prompt assembly now injects relevant session summaries, workspace memory and stable user preferences on formal sessions without replaying all history.
+7) Integrated long-term memory writeback into both TeamChatService and ChatRuntimeService so HTTP ask and WebSocket runtime stay aligned.
+8) Enforced TTL / expires_at filtering, pin bypass for TTL cleanup, per-user privacy isolation on team-space memory, and global write-disable via user_memory.memory_write_enabled.
+9) Audit follow-up hardened prompt loading so expired pinned memory and expired pinned session summaries remain manageable through APIs but do not enter default prompt context.
+```
+
+New migration:
+
+```text
+src/main/resources/db/migration/V14__phase_12_long_term_memory.sql
+```
+
+New tables:
+
+```text
+session_summary
+memory_item
+space_memory
+user_memory
+```
+
+Memory model and writeback rules:
+
+```text
+- MemoryItem types currently used:
+  USER_PREFERENCE
+  SPACE_CONTEXT
+- SessionSummary is created only for FORMAL rounds when writeback is enabled.
+- DRAFT sessions never write SessionSummary, SpaceMemory or UserMemory.
+- Sensitive inputs containing password / token / secret / api-key style signals are skipped from writeback.
+- Short greeting rounds are skipped from writeback.
+- Low-confidence user preference writeback does not overwrite an existing higher-confidence preference item for the same topic.
+- Unpinned expired memory items are excluded from active context.
+- Pinned memory items survive TTL cleanup and remain visible for manual management, but expired pinned memory does not enter default prompt context.
+```
+
+Context loading rules:
+
+```text
+DRAFT:
+  recentHistory = true
+  sessionSummary = false
+  spaceMemory = false
+  userMemory = false
+  retrievalEvidence = true
+
+FORMAL TEAM_CHAT:
+  recentHistory = true
+  sessionSummary = true
+  spaceMemory = true
+  userMemory = true
+  retrievalEvidence = true
+```
+
+Privacy and scope notes:
+
+```text
+- space_memory is userId + spaceId private memory in this phase, not team-shared memory.
+- GET /api/v1/spaces/{spaceId}/memory only returns the current user's memory items under that space, even for other members of the same team space.
+- GET /api/v1/chat/sessions/{sessionId}/summaries only returns summaries owned by the current user.
+- Disabling memory writeback via /api/v1/users/me/memory/disable stops new SessionSummary / MemoryItem / SpaceMemory / UserMemory writes until re-enabled.
+```
+
+TDD record:
+
+```text
+1) Wrote ContextReadRouterTest, MemoryWritebackStrategyTest and Phase12LongTermMemoryIntegrationTest first.
+2) Initial red run failed as expected because the memory service package and expanded read-plan API did not exist yet.
+3) Implemented the minimal migration, entities, repositories, writeback services, APIs and prompt/runtime integration to satisfy the new tests.
+4) Tightened edge handling around DRAFT exclusion, disabled writeback, private space-memory isolation, TTL filtering and pin survival semantics.
+5) Audit follow-up added explicit coverage that expired pinned memory remains visible yet stays out of default prompt loading.
+6) Re-ran the new Phase 12 suite plus the touched Phase 4 / Phase 5 regressions to green.
+```
+
+Test commands and results:
+
+```text
+1) mvn "-Dtest=ContextReadRouterTest,MemoryWritebackStrategyTest,Phase12LongTermMemoryIntegrationTest" test
+   - initial red failed as expected because MemoryWritebackStrategy and the long-term memory service layer did not exist yet.
+
+2) mvn "-Dtest=ContextReadRouterTest,MemoryWritebackStrategyTest,TeamRagPromptBuilderTest" test
+   - passed: Tests run: 5, Failures: 0, Errors: 0, Skipped: 0
+
+3) mvn "-Dtest=Phase12LongTermMemoryIntegrationTest" test
+   - passed: Tests run: 3, Failures: 0, Errors: 0, Skipped: 0
+
+4) mvn "-Dtest=Phase4TeamRagIntegrationTest,Phase5WorkspaceChatRuntimeIntegrationTest,ContextReadRouterTest,MemoryWritebackStrategyTest,TeamRagPromptBuilderTest,Phase12LongTermMemoryIntegrationTest" test
+   - passed: Tests run: 20, Failures: 0, Errors: 0, Skipped: 0
+
+5) mvn "-Dtest=Phase11PersonalGenerationIntegrationTest,Phase11_5PersonalArtifactDistillationIntegrationTest,Phase12LongTermMemoryIntegrationTest,ContextReadRouterTest,TeamRagPromptBuilderTest,MemoryWritebackStrategyTest" test
+   - passed: Tests run: 15, Failures: 0, Errors: 0, Skipped: 0
+```
+
+Notes:
+
+```text
+- Phase 12 does not introduce team-shared memory, knowledge-graph memory, personalized recommendation, Quiz or external source discovery.
+- Runtime state remains in Redis per Phase 5; Phase 12 only deepens long-term MySQL-backed memory and prompt loading.
+- No new middleware container, Kafka topic, MinIO bucket, Elasticsearch index family or local temporary test path was introduced in this phase.
+```
+
+Next:
+
+```text
+Proceed to Phase 13 full MethodologyCard management.
+```
 ```

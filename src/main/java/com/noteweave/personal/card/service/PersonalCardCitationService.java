@@ -7,8 +7,10 @@ import com.noteweave.personal.card.model.ArticleCard;
 import com.noteweave.personal.card.model.ArticleCardCitation;
 import com.noteweave.personal.card.model.ConceptCard;
 import com.noteweave.personal.card.model.ConceptCardCitation;
+import com.noteweave.personal.card.model.SynthesisCardCitation;
 import com.noteweave.personal.card.repository.ArticleCardCitationRepository;
 import com.noteweave.personal.card.repository.ConceptCardCitationRepository;
+import com.noteweave.personal.card.repository.SynthesisCardCitationRepository;
 import com.noteweave.personal.compiler.dto.EvidenceQuoteDraft;
 import com.noteweave.personal.compiler.service.EvidenceBacktraceService;
 import com.noteweave.personal.source.model.Source;
@@ -31,6 +33,7 @@ public class PersonalCardCitationService {
     private final CitationRepository citationRepository;
     private final ArticleCardCitationRepository articleCardCitationRepository;
     private final ConceptCardCitationRepository conceptCardCitationRepository;
+    private final SynthesisCardCitationRepository synthesisCardCitationRepository;
     private final EvidenceBacktraceService evidenceBacktraceService;
     private final FileStorageService fileStorageService;
     private final StorageProperties storageProperties;
@@ -76,6 +79,29 @@ public class PersonalCardCitationService {
     public List<CardCitationResponse> listConceptCitations(Long conceptCardId) {
         return conceptCardCitationRepository.findByConceptCardIdOrderByIdAsc(conceptCardId).stream()
                 .map(ConceptCardCitation::getCitationId)
+                .map(citationRepository::findById)
+                .flatMap(java.util.Optional::stream)
+                .map(this::toResponse)
+                .toList();
+    }
+
+    @Transactional
+    public void mergeSynthesisCitations(Long synthesisCardId, List<Long> citationIds) {
+        for (Long citationId : citationIds) {
+            synthesisCardCitationRepository.findBySynthesisCardIdAndCitationIdAndRelationType(synthesisCardId, citationId, "EVIDENCE")
+                    .orElseGet(() -> {
+                        SynthesisCardCitation relation = new SynthesisCardCitation();
+                        relation.setSynthesisCardId(synthesisCardId);
+                        relation.setCitationId(citationId);
+                        return synthesisCardCitationRepository.save(relation);
+                    });
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public List<CardCitationResponse> listSynthesisCitations(Long synthesisCardId) {
+        return synthesisCardCitationRepository.findBySynthesisCardIdOrderByIdAsc(synthesisCardId).stream()
+                .map(SynthesisCardCitation::getCitationId)
                 .map(citationRepository::findById)
                 .flatMap(java.util.Optional::stream)
                 .map(this::toResponse)

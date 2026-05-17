@@ -22,19 +22,13 @@ import com.noteweave.llm.dto.LlmOptions;
 import com.noteweave.llm.dto.LlmResponse;
 import com.noteweave.llm.service.LlmClient;
 import com.noteweave.personal.card.model.ArticleCard;
-import com.noteweave.personal.card.model.ArticleCardCitation;
 import com.noteweave.personal.card.model.ConceptCard;
-import com.noteweave.personal.card.model.ConceptCardCitation;
-import com.noteweave.personal.card.repository.ArticleCardCitationRepository;
-import com.noteweave.personal.card.repository.ArticleCardRepository;
-import com.noteweave.personal.card.repository.ConceptCardCitationRepository;
-import com.noteweave.personal.card.repository.ConceptCardRepository;
-import com.noteweave.personal.methodology.MethodologyMatcher;
+import com.noteweave.personal.card.model.SynthesisCard;
+import com.noteweave.personal.generation.service.PersonalEvidenceItem;
+import com.noteweave.personal.generation.service.PersonalGenerationService;
 import com.noteweave.personal.methodology.MethodologyPromptSectionBuilder;
 import com.noteweave.personal.methodology.model.MethodologyCard;
 import com.noteweave.personal.project.model.ResearchProject;
-import com.noteweave.personal.project.model.ResearchProjectStatus;
-import com.noteweave.personal.project.repository.ResearchProjectRepository;
 import com.noteweave.studio.service.ArtifactGenerateTaskInput;
 import com.noteweave.task.worker.TaskExecutionContext;
 import java.time.Duration;
@@ -53,11 +47,6 @@ import org.springframework.stereotype.Service;
 public class ArtifactPlanExecutor {
 
     private final ArtifactRepository artifactRepository;
-    private final ResearchProjectRepository researchProjectRepository;
-    private final ArticleCardRepository articleCardRepository;
-    private final ConceptCardRepository conceptCardRepository;
-    private final ArticleCardCitationRepository articleCardCitationRepository;
-    private final ConceptCardCitationRepository conceptCardCitationRepository;
     private final CitationRepository citationRepository;
     private final MessageCitationRepository messageCitationRepository;
     private final ChatMessageRepository chatMessageRepository;
@@ -65,8 +54,8 @@ public class ArtifactPlanExecutor {
     private final LlmClient llmClient;
     private final SkillExecutionLogService skillExecutionLogService;
     private final ArtifactPersistenceService artifactPersistenceService;
-    private final MethodologyMatcher methodologyMatcher;
     private final MethodologyPromptSectionBuilder methodologyPromptSectionBuilder;
+    private final PersonalGenerationService personalGenerationService;
 
     public ArtifactExecutionResult execute(TaskExecutionContext taskContext) {
         ArtifactGenerateTaskInput input = taskContext.readInput(ArtifactGenerateTaskInput.class);
@@ -130,6 +119,19 @@ public class ArtifactPlanExecutor {
                     "GenerateComparisonSkill",
                     "SaveArtifactSkill"
             );
+            case WORK_PREP -> List.of(
+                    "LoadGenerationContextSkill",
+                    "SelectConceptCardSkill",
+                    "GenerateWorkPrepSkill",
+                    "SaveArtifactSkill"
+            );
+            case READING_NOTES -> List.of(
+                    "LoadGenerationContextSkill",
+                    "SelectArticleCardSkill",
+                    "SelectEvidenceSkill",
+                    "GenerateReadingNotesSkill",
+                    "SaveArtifactSkill"
+            );
             case WIKI_DRAFT -> List.of(
                     "LoadGenerationContextSkill",
                     "SelectEvidenceSkill",
@@ -154,6 +156,8 @@ public class ArtifactPlanExecutor {
                 case "GenerateBriefingSkill" -> generateArtifact(state, skillName, "生成简报，适合快速汇报。");
                 case "GenerateFaqSkill" -> generateArtifact(state, skillName, "生成 FAQ，使用问答结构。");
                 case "GenerateComparisonSkill" -> generateArtifact(state, skillName, "生成比较报告，强调差异、优缺点和适用场景。");
+                case "GenerateWorkPrepSkill" -> generateArtifact(state, skillName, personalGenerationService.instructionFor(ArtifactType.WORK_PREP));
+                case "GenerateReadingNotesSkill" -> generateArtifact(state, skillName, personalGenerationService.instructionFor(ArtifactType.READING_NOTES));
                 case "GenerateWikiDraftSkill" -> generateArtifact(state, skillName, "生成 Wiki 草稿，使用中性、可维护的知识表达。");
                 case "SaveArtifactSkill" -> saveArtifact(state);
                 default -> throw new BusinessException(ErrorCode.SKILL_EXECUTION_FAILED, "Unsupported skill: " + skillName);
@@ -199,32 +203,20 @@ public class ArtifactPlanExecutor {
         artifactRepository.save(state.artifact);
 
         if (scopeType == ArtifactScopeType.RESEARCH_PROJECT) {
-            Long projectId = state.input.getResearchProjectId() != null
-                    ? state.input.getResearchProjectId()
-                    : firstId(state.input.getSourceIds());
-            ResearchProject project = researchProjectRepository.findById(projectId)
-                    .orElseThrow(() -> new BusinessException(ErrorCode.RESEARCH_PROJECT_NOT_FOUND));
-            if (project.getDeletedAt() != null || project.getStatus() != ResearchProjectStatus.ACTIVE) {
-                throw new BusinessException(ErrorCode.PLAN_EXECUTION_FAILED, "Research project is not active");
-            }
-            state.articleCards = new ArrayList<>(articleCardRepository.findByResearchProjectIdAndSpaceIdOrderByUpdatedAtDesc(projectId, state.artifact.getSpaceId()));
-            state.conceptCards = new ArrayList<>(conceptCardRepository.findByResearchProjectIdAndSpaceIdOrderByUpdatedAtDesc(projectId, state.artifact.getSpaceId()));
-            if (state.articleCards.isEmpty() && state.conceptCards.isEmpty()) {
-                throw new BusinessException(ErrorCode.PLAN_EXECUTION_FAILED, "No compiled project cards available for artifact generation");
-            }
-            state.methodologyCard = methodologyMatcher.match(
-                    state.userId,
-                    projectId,
-                    state.input.getArtifactType(),
-                    state.input.getParams()
-            ).orElse(null);
-            state.sourceRefs.addAll(state.articleCards.stream()
-                    .map(card -> new SourceRef(ArtifactSourceType.ARTICLE_CARD, card.getId()))
+            PersonalGenerationService.PersonalGenerationPreparation preparation =
+                    personalGenerationService.prepare(state.userId, state.input);
+            ResearchProject project = preparation.context().researchProject();
+            state.articleCards = new ArrayList<>(preparation.context().articleCards());
+            state.conceptCards = new ArrayList<>(preparation.context().conceptCards());
+            state.synthesisCards = new ArrayList<>(preparation.context().synthesisCards());
+            state.methodologyCard = preparation.context().methodologyCard();
+            state.personalEvidenceItems = new ArrayList<>(preparation.evidenceItems());
+            state.sourceRefs.addAll(preparation.sourceRefs().stream()
+                    .map(ref -> new SourceRef(ref.sourceType(), ref.sourceId()))
                     .toList());
-            state.sourceRefs.addAll(state.conceptCards.stream()
-                    .map(card -> new SourceRef(ArtifactSourceType.CONCEPT_CARD, card.getId()))
+            state.citations = new ArrayList<>(state.personalEvidenceItems.stream()
+                    .map(PersonalEvidenceItem::citation)
                     .toList());
-            state.citations = new ArrayList<>(uniqueProjectCitations(state));
         } else {
             Long messageId = state.input.getCreatedFromMessageId() != null
                     ? state.input.getCreatedFromMessageId()
@@ -342,21 +334,6 @@ public class ArtifactPlanExecutor {
         );
     }
 
-    private List<Citation> uniqueProjectCitations(GenerationState state) {
-        LinkedHashMap<Long, Citation> unique = new LinkedHashMap<>();
-        for (ArticleCard articleCard : state.articleCards) {
-            for (ArticleCardCitation relation : articleCardCitationRepository.findByArticleCardIdOrderByIdAsc(articleCard.getId())) {
-                citationRepository.findById(relation.getCitationId()).ifPresent(citation -> unique.putIfAbsent(citation.getId(), citation));
-            }
-        }
-        for (ConceptCard conceptCard : state.conceptCards) {
-            for (ConceptCardCitation relation : conceptCardCitationRepository.findByConceptCardIdOrderByIdAsc(conceptCard.getId())) {
-                citationRepository.findById(relation.getCitationId()).ifPresent(citation -> unique.putIfAbsent(citation.getId(), citation));
-            }
-        }
-        return new ArrayList<>(unique.values());
-    }
-
     private String buildPrompt(GenerationState state, String instruction) {
         StringBuilder prompt = new StringBuilder();
         prompt.append("你是 NoteWeave Studio 产物生成器。\n");
@@ -381,6 +358,14 @@ public class ArtifactPlanExecutor {
             for (ConceptCard conceptCard : state.conceptCards) {
                 prompt.append("- 概念：").append(conceptCard.getName()).append("\n");
                 prompt.append("  定义：").append(conceptCard.getDefinition()).append("\n");
+            }
+            prompt.append("\n");
+        }
+        if (!state.synthesisCards.isEmpty()) {
+            prompt.append("Synthesis Cards:\n");
+            for (SynthesisCard synthesisCard : state.synthesisCards) {
+                prompt.append("- Title: ").append(synthesisCard.getTitle()).append("\n");
+                prompt.append("  Summary: ").append(synthesisCard.getSummary()).append("\n");
             }
             prompt.append("\n");
         }
@@ -481,7 +466,9 @@ public class ArtifactPlanExecutor {
         private Artifact artifact;
         private List<ArticleCard> articleCards = new ArrayList<>();
         private List<ConceptCard> conceptCards = new ArrayList<>();
+        private List<SynthesisCard> synthesisCards = new ArrayList<>();
         private List<Citation> citations = new ArrayList<>();
+        private List<PersonalEvidenceItem> personalEvidenceItems = new ArrayList<>();
         private List<ChatMessage> sessionMessages = new ArrayList<>();
         private ChatSession session;
         private ChatMessage focusMessage;

@@ -44,19 +44,19 @@ public class StubLlmClient implements LlmClient {
     }
 
     private String extractAnswer(String prompt) {
-        int firstEvidence = prompt.indexOf("[来源#1]");
+        int firstEvidence = prompt.indexOf("[SOURCE#1]");
         if (firstEvidence < 0) {
             return FALLBACK;
         }
-        int contentStart = prompt.indexOf("内容：", firstEvidence);
+        int contentStart = prompt.indexOf("Content: ", firstEvidence);
         if (contentStart < 0) {
             return FALLBACK;
         }
-        String excerpt = prompt.substring(contentStart + "内容：".length()).trim();
+        String excerpt = prompt.substring(contentStart + "Content: ".length()).trim();
         int nextSection = excerpt.indexOf("\n\n");
         if (nextSection > 0) {
             excerpt = excerpt.substring(0, nextSection).trim();
         }
-        return "根据已检索到的资料，[来源#1] 提到：" + excerpt;
+        return "Based on the retrieved evidence, [SOURCE#1] states: " + excerpt;
     }
 }

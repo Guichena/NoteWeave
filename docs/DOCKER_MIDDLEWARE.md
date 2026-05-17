@@ -514,3 +514,91 @@ Phase 10.5 testing/runtime notes:
 - No new temporary local test path was introduced; the phase continues to use the existing target/noteweave-test baseline.
 ```
 
+---
+
+## 19. Phase 11 runtime/testing note (2026-05-17)
+
+Phase 11 does not introduce new standalone middleware containers. Runtime and integration tests continue to use the same containerized baseline:
+
+```text
+MySQLContainer
+Redis GenericContainer
+MinIO container
+KafkaContainer
+ElasticsearchContainer
+```
+
+Phase 11 testing/runtime notes:
+
+```text
+- Personal Wiki-based generation continues to reuse the existing ARTIFACT_GENERATE task/outbox/Kafka worker path; no new Kafka topic was introduced. Local topic remains noteweave.task and integration tests remain on test.noteweave.task.{testRunId}.
+- Personal generation reads personal Source text and citation snapshots through the existing Phase 6/7 storage contracts:
+  test/{testRunId}/raw-text/source/{sourceId}/{attempt}.txt
+  test/{testRunId}/parsed-text/source/{sourceId}/{attempt}.txt
+  test/{testRunId}/citations/{citationId}/snapshot.txt
+  dev/raw-text/source/{sourceId}/{attempt}.txt
+  dev/parsed-text/source/{sourceId}/{attempt}.txt
+  dev/citations/{citationId}/snapshot.txt
+- Phase 11 does not add a new MinIO bucket, Elasticsearch index prefix/suffix or local temporary test path.
+- Integration tests continue to use Testcontainers for MySQL / Redis / MinIO / Elasticsearch / Kafka and mock LlmClient for deterministic personal-generation prompt assertions.
+- Personal generation failure on missing SOURCE-backed evidence is enforced in the worker path and does not require any extra middleware bootstrap beyond the existing baseline.
+```
+
+---
+
+## 20. Phase 11.5 runtime/testing note (2026-05-17)
+
+Phase 11.5 does not introduce new standalone middleware containers. Runtime and integration tests continue to use the same containerized baseline:
+
+```text
+MySQLContainer
+Redis GenericContainer
+MinIO container
+KafkaContainer
+ElasticsearchContainer
+```
+
+Phase 11.5 testing/runtime notes:
+
+```text
+- Personal Artifact distillation is a MySQL-backed confirmation/writeback flow on top of the existing Artifact + Citation + personal card tables; no new MinIO bucket, Kafka topic or Elasticsearch index was introduced.
+- Distillation continues to reuse the existing Phase 6/7/8 storage contracts for personal source text, artifact citations and citation snapshots:
+  test/{testRunId}/raw-text/source/{sourceId}/{attempt}.txt
+  test/{testRunId}/parsed-text/source/{sourceId}/{attempt}.txt
+  test/{testRunId}/citations/{citationId}/snapshot.txt
+  dev/raw-text/source/{sourceId}/{attempt}.txt
+  dev/parsed-text/source/{sourceId}/{attempt}.txt
+  dev/citations/{citationId}/snapshot.txt
+- Phase 11.5 integration tests use Testcontainers for MySQL / Redis / MinIO / Elasticsearch / Kafka and mock LlmClient for deterministic pre-distillation Artifact creation only.
+- No new local temporary test path was introduced in this phase; it continues to rely on the existing target/noteweave-test baseline and existing artifact/citation object key contracts.
+```
+
+---
+
+## 21. Phase 12 runtime/testing note (2026-05-17)
+
+Phase 12 does not introduce new standalone middleware containers. Runtime and integration tests continue to use the same containerized baseline:
+
+```text
+MySQLContainer
+Redis GenericContainer
+MinIO container
+KafkaContainer
+ElasticsearchContainer
+```
+
+Phase 12 testing/runtime notes:
+
+```text
+- Long-term memory persistence is MySQL-backed through session_summary, memory_item, space_memory and user_memory; no new Kafka topic, MinIO bucket or Elasticsearch index was introduced.
+- Formal HTTP chat and WebSocket runtime both reuse the existing Phase 4 / Phase 5 retrieval, citation and Redis runtime chain, then write long-term memory into MySQL only after the assistant round completes.
+- DRAFT sessions remain Redis/runtime-only from a long-term-memory perspective and must not write session_summary or memory_item rows.
+- space_memory remains userId + spaceId private memory in this phase; there is no new team-shared memory table or middleware bootstrap.
+- Existing local/test storage contracts remain unchanged:
+  test/{testRunId}/citations/{citationId}/snapshot.txt
+  dev/citations/{citationId}/snapshot.txt
+  target/noteweave-test/
+- Phase 12 integration tests continue to rely on Testcontainers for MySQL / Redis / MinIO / Elasticsearch / Kafka and use the existing WebSocket runtime plus stubbed LLM behavior.
+- No new local temporary test path was introduced in this phase; it continues to use the existing target/noteweave-test baseline.
+```
+
