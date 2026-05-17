@@ -45,6 +45,24 @@ public class RetrievalTrace {
     @Column(name = "retrieved_chunk_count", nullable = false)
     private Integer retrievedChunkCount;
 
+    @Column(name = "retrieval_mode", length = 32)
+    private String retrievalMode;
+
+    @Column(name = "bm25_count")
+    private Integer bm25Count;
+
+    @Column(name = "vector_count")
+    private Integer vectorCount;
+
+    @Column(name = "fusion_count")
+    private Integer fusionCount;
+
+    @Column(name = "fallback_used", nullable = false)
+    private boolean fallbackUsed;
+
+    @Column(name = "trace_json", columnDefinition = "TEXT")
+    private String traceJson;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

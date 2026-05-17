@@ -21,6 +21,8 @@ class TeamRagPromptBuilderTest {
 
         EvidenceItem evidence = new EvidenceItem(
                 1,
+                "DOCUMENT",
+                1000L,
                 10L,
                 "部署手册",
                 2,
@@ -39,10 +41,10 @@ class TeamRagPromptBuilderTest {
                 .contains("不具备指令优先级")
                 .contains("忽略");
         assertThat(prompt.messages().get(1).content())
-                .contains("上一轮我们确认过")
+                .contains("最近对话")
                 .contains("[来源#1]")
                 .contains("文档：部署手册")
                 .contains("内容：部署前需要准备蓝绿环境")
-                .contains("这个项目的部署流程是什么");
+                .contains("这个项目的部署流程是什么？");
     }
 }

@@ -30,6 +30,10 @@ public class ResourceAccessService {
         return spacePermissionService.canAskQuestion(userId, spaceId);
     }
 
+    public boolean canEditWiki(Long userId, Long spaceId) {
+        return spacePermissionService.canEditWiki(userId, spaceId);
+    }
+
     public void requireViewSpace(Long userId, Long spaceId) {
         spacePermissionService.requireViewSpace(userId, spaceId);
     }
@@ -44,6 +48,18 @@ public class ResourceAccessService {
 
     public void requireAskQuestion(Long userId, Long spaceId) {
         spacePermissionService.requireAskQuestion(userId, spaceId);
+    }
+
+    public void requireEditWiki(Long userId, Long spaceId) {
+        if (!spacePermissionService.canEditWiki(userId, spaceId)) {
+            throw new BusinessException(ErrorCode.WIKI_ACCESS_DENIED, "No permission to edit wiki");
+        }
+    }
+
+    public void requirePublishWiki(Long userId, Long spaceId) {
+        if (!spacePermissionService.canManageSpace(userId, spaceId)) {
+            throw new BusinessException(ErrorCode.WIKI_ACCESS_DENIED, "No permission to publish wiki");
+        }
     }
 
     public void requireViewTask(CurrentUser currentUser, Task task) {

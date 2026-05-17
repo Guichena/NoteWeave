@@ -4,6 +4,8 @@ import java.util.List;
 
 public record EvidenceItem(
         int citationIndex,
+        String sourceType,
+        Long sourceId,
         Long documentId,
         String documentTitle,
         Integer indexVersion,

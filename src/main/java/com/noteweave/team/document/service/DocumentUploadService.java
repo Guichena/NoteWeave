@@ -2,6 +2,7 @@ package com.noteweave.team.document.service;
 
 import com.noteweave.common.error.BusinessException;
 import com.noteweave.common.error.ErrorCode;
+import com.noteweave.embedding.config.EmbeddingProperties;
 import com.noteweave.permission.service.ResourceAccessService;
 import com.noteweave.search.service.SearchIndexService;
 import com.noteweave.storage.config.StorageProperties;
@@ -77,6 +78,7 @@ public class DocumentUploadService {
     private final TaskService taskService;
     private final DocumentChunkService documentChunkService;
     private final SearchIndexService searchIndexService;
+    private final EmbeddingProperties embeddingProperties;
 
     @Value("${noteweave.upload.bitmap-ttl-hours:24}")
     private long bitmapTtlHours;
@@ -381,6 +383,40 @@ public class DocumentUploadService {
                         "contentType", contentType,
                         "indexVersion", nextIndexVersion,
                         "reindex", true
+                ))
+                .build());
+    }
+
+    @Transactional
+    public TaskResponse backfillEmbeddings(Long userId, Long documentId) {
+        Document document = documentRepository.findByIdForUpdate(documentId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND));
+        if (document.getDeletedAt() != null || document.getStatus() == DocumentStatus.DELETED) {
+            throw new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND);
+        }
+        resourceAccessService.requireUploadDocument(userId, document.getSpaceId());
+        if (document.getStatus() != DocumentStatus.INDEXED || document.getActiveIndexVersion() <= 0) {
+            throw new BusinessException(ErrorCode.DOCUMENT_INDEX_FAILED, "document must be indexed before embedding backfill");
+        }
+
+        String model = normalizeEmbeddingModel();
+        int dimension = normalizeEmbeddingDimension();
+        return taskService.createTask(TaskCreateCommand.builder()
+                .userId(userId)
+                .spaceId(document.getSpaceId())
+                .taskType(TaskType.EMBEDDING_BACKFILL)
+                .targetType(DOCUMENT_TARGET_TYPE)
+                .targetId(document.getId())
+                .idempotencyKey("EMBEDDING_BACKFILL:" + document.getId()
+                        + ":" + document.getActiveIndexVersion()
+                        + ":" + model
+                        + ":" + dimension)
+                .input(Map.of(
+                        "documentId", document.getId(),
+                        "knowledgeBaseId", document.getKnowledgeBaseId(),
+                        "indexVersion", document.getActiveIndexVersion(),
+                        "embeddingModel", model,
+                        "embeddingDimension", dimension
                 ))
                 .build());
     }
@@ -744,5 +780,20 @@ public class DocumentUploadService {
                 .createdAt(document.getCreatedAt())
                 .updatedAt(document.getUpdatedAt())
                 .build();
+    }
+
+    private String normalizeEmbeddingModel() {
+        String configuredModel = embeddingProperties.api() == null ? null : embeddingProperties.api().model();
+        if (configuredModel == null || configuredModel.isBlank()) {
+            return "default";
+        }
+        return configuredModel.trim().replaceAll("[^a-zA-Z0-9._-]", "-");
+    }
+
+    private int normalizeEmbeddingDimension() {
+        if (embeddingProperties.api() == null) {
+            return 1;
+        }
+        return Math.max(embeddingProperties.api().dimension(), 1);
     }
 }

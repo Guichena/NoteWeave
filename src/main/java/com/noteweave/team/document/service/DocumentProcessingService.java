@@ -6,6 +6,7 @@ import com.noteweave.common.error.BusinessException;
 import com.noteweave.common.error.ErrorCode;
 import com.noteweave.search.document.EsDocumentChunk;
 import com.noteweave.search.service.SearchIndexService;
+import com.noteweave.embedding.config.EmbeddingProperties;
 import com.noteweave.storage.config.StorageProperties;
 import com.noteweave.storage.service.FileStorageService;
 import com.noteweave.task.model.Task;
@@ -30,6 +31,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -48,8 +50,10 @@ public class DocumentProcessingService {
     private final ChunkService chunkService;
     private final DocumentChunkService documentChunkService;
     private final SearchIndexService searchIndexService;
+    private final VectorIndexerService vectorIndexerService;
     private final FileStorageService fileStorageService;
     private final StorageProperties storageProperties;
+    private final EmbeddingProperties embeddingProperties;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
 
@@ -75,6 +79,7 @@ public class DocumentProcessingService {
             searchIndexService.bulkIndexChunks(chunks.stream()
                     .map(chunk -> toEsChunk(claimed.document(), chunk))
                     .toList());
+            backfillEmbeddingsIfEnabled(claimed.document(), chunks);
             markSuccess(claimed.task().getId(), claimed.document().getId(), claimed.attemptNo(), claimed.indexVersion(), parsedTextObjectKey, chunks);
         } catch (Exception ex) {
             log.warn("Document processing failed for task {} document {}", claimed.task().getId(), claimed.document().getId(), ex);
@@ -258,6 +263,17 @@ public class DocumentProcessingService {
                 .lifecycleStatus("ACTIVE")
                 .createdAt(chunk.getCreatedAt())
                 .build();
+    }
+
+    private void backfillEmbeddingsIfEnabled(Document document, List<DocumentChunk> chunks) {
+        if (!embeddingProperties.enabled() || chunks == null || chunks.isEmpty()) {
+            return;
+        }
+        try {
+            vectorIndexerService.backfillDocumentEmbeddings(document.getId(), document.getKnowledgeBaseId());
+        } catch (Exception ex) {
+            vectorIndexerService.markBackfillFailed(document.getId(), ex.getMessage());
+        }
     }
 
     private String storeParsedText(Long documentId, int indexVersion, String text) {

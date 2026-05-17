@@ -1,6 +1,7 @@
 package com.noteweave.search.document;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -18,6 +19,7 @@ public class EsDocumentChunk {
     private Integer chunkIndex;
     private String title;
     private String content;
+    private List<Float> embedding;
     private String contentHash;
     private String sourceType;
     private Long createdBy;

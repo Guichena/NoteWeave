@@ -5,6 +5,8 @@ public record RetrievedChunk(
         Long documentId,
         Long knowledgeBaseId,
         Long spaceId,
+        String sourceType,
+        Long sourceId,
         Integer indexVersion,
         Integer chunkIndex,
         String documentTitle,

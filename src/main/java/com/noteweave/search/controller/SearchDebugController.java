@@ -4,6 +4,7 @@ import com.noteweave.common.api.ApiResponse;
 import com.noteweave.common.security.CurrentUserProvider;
 import com.noteweave.search.dto.SearchDebugResponse;
 import com.noteweave.search.service.SearchDebugService;
+import com.noteweave.team.rag.retriever.RetrievalMode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,8 +23,9 @@ public class SearchDebugController {
     @GetMapping("/knowledge-bases/{knowledgeBaseId}/search")
     public ApiResponse<SearchDebugResponse> search(
             @PathVariable Long knowledgeBaseId,
-            @RequestParam String keyword
+            @RequestParam String keyword,
+            @RequestParam(required = false) RetrievalMode mode
     ) {
-        return ApiResponse.success(searchDebugService.search(currentUserProvider.getCurrentUserId(), knowledgeBaseId, keyword));
+        return ApiResponse.success(searchDebugService.search(currentUserProvider.getCurrentUserId(), knowledgeBaseId, keyword, mode));
     }
 }

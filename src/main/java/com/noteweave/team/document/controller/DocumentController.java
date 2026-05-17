@@ -48,4 +48,9 @@ public class DocumentController {
     public ApiResponse<TaskResponse> reindex(@PathVariable Long documentId) {
         return ApiResponse.success(documentUploadService.reindexDocument(currentUserProvider.getCurrentUserId(), documentId));
     }
+
+    @PostMapping("/documents/{documentId}/embedding-backfill")
+    public ApiResponse<TaskResponse> backfillEmbeddings(@PathVariable Long documentId) {
+        return ApiResponse.success(documentUploadService.backfillEmbeddings(currentUserProvider.getCurrentUserId(), documentId));
+    }
 }

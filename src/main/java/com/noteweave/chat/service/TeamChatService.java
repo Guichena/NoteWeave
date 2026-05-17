@@ -32,7 +32,9 @@ import com.noteweave.team.rag.evidence.EvidenceOptions;
 import com.noteweave.team.rag.evidence.EvidencePostProcessor;
 import com.noteweave.team.rag.prompt.PromptMessages;
 import com.noteweave.team.rag.prompt.TeamRagPromptBuilder;
-import com.noteweave.team.rag.retriever.Bm25Retriever;
+import com.noteweave.team.rag.retriever.HybridRetriever;
+import com.noteweave.team.rag.retriever.RetrievalHit;
+import com.noteweave.team.rag.retriever.RetrievalMode;
 import com.noteweave.team.rag.retriever.TeamRetrievalQuery;
 import java.security.MessageDigest;
 import java.time.Duration;
@@ -51,7 +53,7 @@ public class TeamChatService {
     private final ChatSessionService chatSessionService;
     private final ChatMessageRepository chatMessageRepository;
     private final ResourceAccessService resourceAccessService;
-    private final Bm25Retriever bm25Retriever;
+    private final HybridRetriever hybridRetriever;
     private final EvidencePostProcessor evidencePostProcessor;
     private final TeamRagPromptBuilder teamRagPromptBuilder;
     private final LlmClient llmClient;
@@ -77,24 +79,29 @@ public class TeamChatService {
         ChatMessage userMessage = persistMessage(sessionId, ChatMessageRole.USER, question, null, null);
 
         Instant retrievalStart = Instant.now();
-        List<EvidenceItem> evidenceItems = evidencePostProcessor.process(
-                bm25Retriever.retrieve(new TeamRetrievalQuery(
+        HybridRetriever.HybridRetrievalResult retrieval = hybridRetriever.retrieve(new TeamRetrievalQuery(
                         userId,
                         session.getSpaceId(),
                         resolveKnowledgeBaseScopeIds(session),
                         question,
-                        ragProperties.retrieval().topK()
-                )),
+                        ragProperties.retrieval().topK(),
+                        true
+                ), ragProperties.retrieval().mode());
+        List<EvidenceItem> evidenceItems = evidencePostProcessor.process(
+                retrieval.fusedHits().stream()
+                        .map(this::toRetrievedChunk)
+                        .toList(),
                 EvidenceOptions.builder()
                         .maxEvidencePerDocument(ragProperties.retrieval().perDocumentLimit())
                         .mergeAdjacentChunks(true)
                         .maxMergedChars(ragProperties.retrieval().maxMergedChars())
                         .finalTopK(ragProperties.retrieval().topK())
                         .maxContextChars(ragProperties.retrieval().contextMaxChars())
+                        .minScore(ragProperties.retrieval().minScore())
                         .build()
         );
         long retrievalLatency = Math.max(1L, Duration.between(retrievalStart, Instant.now()).toMillis());
-        persistRetrievalTrace(userId, session, userMessage.getId(), question, retrievalLatency, evidenceItems.size());
+        persistRetrievalTrace(userId, session, userMessage.getId(), question, retrievalLatency, evidenceItems.size(), retrieval);
 
         if (evidenceItems.isEmpty()) {
             return persistAssistantOutcome(
@@ -211,7 +218,15 @@ public class TeamChatService {
         return all.size() <= 4 ? all : all.subList(Math.max(0, all.size() - 4), all.size());
     }
 
-    private void persistRetrievalTrace(Long userId, ChatSession session, Long messageId, String queryText, long latencyMs, int count) {
+    private void persistRetrievalTrace(
+            Long userId,
+            ChatSession session,
+            Long messageId,
+            String queryText,
+            long latencyMs,
+            int count,
+            HybridRetriever.HybridRetrievalResult retrieval
+    ) {
         transactionTemplate.executeWithoutResult(status -> {
             RetrievalTrace trace = new RetrievalTrace();
             trace.setUserId(userId);
@@ -222,8 +237,54 @@ public class TeamChatService {
             trace.setTopK(ragProperties.retrieval().topK());
             trace.setLatencyMs(latencyMs);
             trace.setRetrievedChunkCount(count);
+            trace.setRetrievalMode(retrieval.retrievalMode().name());
+            trace.setBm25Count(retrieval.bm25Count());
+            trace.setVectorCount(retrieval.vectorCount());
+            trace.setFusionCount(retrieval.fusionCount());
+            trace.setFallbackUsed(retrieval.fallbackUsed());
+            trace.setTraceJson(retrieval.traceJson());
             retrievalTraceRepository.save(trace);
         });
+    }
+
+    private com.noteweave.team.rag.retriever.RetrievedChunk toRetrievedChunk(RetrievalHit hit) {
+        Integer indexVersion = hit.metadata() == null ? null : (Integer) hit.metadata().get("indexVersion");
+        String sourceVersion = resolveSourceVersion(hit.metadata(), indexVersion);
+        return new com.noteweave.team.rag.retriever.RetrievedChunk(
+                hit.chunkId(),
+                hit.documentId(),
+                hit.knowledgeBaseId(),
+                hit.spaceId(),
+                hit.metadata() == null ? "DOCUMENT" : String.valueOf(hit.metadata().getOrDefault("sourceType", "DOCUMENT")),
+                hit.metadata() == null ? hit.documentId() : longValue(hit.metadata().getOrDefault("sourceId", hit.documentId())),
+                indexVersion,
+                hit.chunkIndex(),
+                hit.documentTitle(),
+                hit.content(),
+                hit.score(),
+                1,
+                null,
+                null,
+                sourceVersion
+        );
+    }
+
+    private Long longValue(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value == null) {
+            return null;
+        }
+        return Long.parseLong(String.valueOf(value));
+    }
+
+    private String resolveSourceVersion(Map<String, Object> metadata, Integer indexVersion) {
+        if (metadata != null && metadata.containsKey("publishedVersionId")) {
+            Long publishedVersionId = longValue(metadata.get("publishedVersionId"));
+            return publishedVersionId == null ? "unknown" : String.valueOf(publishedVersionId);
+        }
+        return indexVersion == null ? "unknown" : String.valueOf(indexVersion);
     }
 
     private TeamAskResponse persistAssistantOutcome(

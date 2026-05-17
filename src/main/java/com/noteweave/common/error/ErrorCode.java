@@ -77,9 +77,15 @@ public enum ErrorCode {
     ARTIFACT_ACCESS_DENIED(HttpStatus.FORBIDDEN, "artifact access denied"),
     ARTIFACT_TYPE_UNSUPPORTED(HttpStatus.BAD_REQUEST, "artifact type unsupported"),
     ARTIFACT_EXPORT_UNSUPPORTED(HttpStatus.BAD_REQUEST, "artifact export unsupported"),
+    ARTIFACT_CANNOT_PUBLISH_TO_WIKI(HttpStatus.BAD_REQUEST, "artifact cannot publish to wiki"),
     STUDIO_TASK_TYPE_UNSUPPORTED(HttpStatus.BAD_REQUEST, "studio task type unsupported"),
     SKILL_EXECUTION_FAILED(HttpStatus.BAD_REQUEST, "skill execution failed"),
-    PLAN_EXECUTION_FAILED(HttpStatus.BAD_REQUEST, "plan execution failed");
+    PLAN_EXECUTION_FAILED(HttpStatus.BAD_REQUEST, "plan execution failed"),
+    WIKI_PAGE_NOT_FOUND(HttpStatus.NOT_FOUND, "wiki page not found"),
+    WIKI_ACCESS_DENIED(HttpStatus.FORBIDDEN, "wiki access denied"),
+    WIKI_DRAFT_REQUIRED(HttpStatus.BAD_REQUEST, "wiki draft required"),
+    WIKI_PUBLISH_FAILED(HttpStatus.BAD_REQUEST, "wiki publish failed"),
+    WIKI_INDEX_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "wiki index failed");
 
     private final HttpStatus httpStatus;
     private final String defaultMessage;

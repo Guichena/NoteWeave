@@ -6,6 +6,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -17,6 +18,7 @@ public class EvidencePostProcessor {
         }
         List<RetrievedChunk> deduplicated = deduplicate(chunks);
         List<RetrievedChunk> sorted = deduplicated.stream()
+                .filter(chunk -> chunk.score() == null || chunk.score() >= options.minScore())
                 .sorted(Comparator.comparing(RetrievedChunk::score, Comparator.nullsLast(Comparator.reverseOrder()))
                         .thenComparing(RetrievedChunk::documentId)
                         .thenComparing(RetrievedChunk::chunkIndex))
@@ -66,6 +68,8 @@ public class EvidencePostProcessor {
             RetrievedChunk head = mergedGroup.get(0);
             items.add(new EvidenceItem(
                     citationIndex++,
+                    head.sourceType(),
+                    head.sourceId(),
                     head.documentId(),
                     head.documentTitle(),
                     head.indexVersion(),
@@ -102,7 +106,8 @@ public class EvidencePostProcessor {
 
     private boolean isAdjacent(RetrievedChunk left, RetrievedChunk right) {
         return left.documentId().equals(right.documentId())
-                && left.indexVersion().equals(right.indexVersion())
+                && Objects.equals(left.indexVersion(), right.indexVersion())
+                && left.indexVersion() != null
                 && right.chunkIndex() == left.chunkIndex() + 1;
     }
 

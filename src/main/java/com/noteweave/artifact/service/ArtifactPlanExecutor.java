@@ -29,6 +29,9 @@ import com.noteweave.personal.card.repository.ArticleCardCitationRepository;
 import com.noteweave.personal.card.repository.ArticleCardRepository;
 import com.noteweave.personal.card.repository.ConceptCardCitationRepository;
 import com.noteweave.personal.card.repository.ConceptCardRepository;
+import com.noteweave.personal.methodology.MethodologyMatcher;
+import com.noteweave.personal.methodology.MethodologyPromptSectionBuilder;
+import com.noteweave.personal.methodology.model.MethodologyCard;
 import com.noteweave.personal.project.model.ResearchProject;
 import com.noteweave.personal.project.model.ResearchProjectStatus;
 import com.noteweave.personal.project.repository.ResearchProjectRepository;
@@ -62,6 +65,8 @@ public class ArtifactPlanExecutor {
     private final LlmClient llmClient;
     private final SkillExecutionLogService skillExecutionLogService;
     private final ArtifactPersistenceService artifactPersistenceService;
+    private final MethodologyMatcher methodologyMatcher;
+    private final MethodologyPromptSectionBuilder methodologyPromptSectionBuilder;
 
     public ArtifactExecutionResult execute(TaskExecutionContext taskContext) {
         ArtifactGenerateTaskInput input = taskContext.readInput(ArtifactGenerateTaskInput.class);
@@ -207,6 +212,12 @@ public class ArtifactPlanExecutor {
             if (state.articleCards.isEmpty() && state.conceptCards.isEmpty()) {
                 throw new BusinessException(ErrorCode.PLAN_EXECUTION_FAILED, "No compiled project cards available for artifact generation");
             }
+            state.methodologyCard = methodologyMatcher.match(
+                    state.userId,
+                    projectId,
+                    state.input.getArtifactType(),
+                    state.input.getParams()
+            ).orElse(null);
             state.sourceRefs.addAll(state.articleCards.stream()
                     .map(card -> new SourceRef(ArtifactSourceType.ARTICLE_CARD, card.getId()))
                     .toList());
@@ -236,13 +247,16 @@ public class ArtifactPlanExecutor {
                 throw new BusinessException(ErrorCode.PLAN_EXECUTION_FAILED, "Chat message has no citations to ground the artifact");
             }
         }
-        return SkillOutcome.simple(Map.of(
-                "redacted", true,
-                "scopeType", scopeType.name(),
-                "articleCardCount", state.articleCards.size(),
-                "conceptCardCount", state.conceptCards.size(),
-                "citationCount", state.citations.size()
-        ));
+        Map<String, Object> output = new LinkedHashMap<>();
+        output.put("redacted", true);
+        output.put("scopeType", scopeType.name());
+        output.put("articleCardCount", state.articleCards.size());
+        output.put("conceptCardCount", state.conceptCards.size());
+        output.put("citationCount", state.citations.size());
+        if (state.methodologyCard != null) {
+            output.put("methodologyName", state.methodologyCard.getName());
+        }
+        return SkillOutcome.simple(output);
     }
 
     private SkillOutcome selectEvidence(GenerationState state) {
@@ -349,6 +363,10 @@ public class ArtifactPlanExecutor {
         prompt.append(instruction).append("\n");
         prompt.append("如果资料不足，请明确指出不足，不要编造。\n");
         prompt.append("主题：").append(topic(state)).append("\n\n");
+
+        if (state.methodologyCard != null) {
+            prompt.append(methodologyPromptSectionBuilder.build(state.methodologyCard));
+        }
 
         if (!state.articleCards.isEmpty()) {
             prompt.append("Article Cards:\n");
@@ -467,6 +485,7 @@ public class ArtifactPlanExecutor {
         private List<ChatMessage> sessionMessages = new ArrayList<>();
         private ChatSession session;
         private ChatMessage focusMessage;
+        private MethodologyCard methodologyCard;
         private String generatedTitle;
         private String generatedContent;
         private final List<SourceRef> sourceRefs = new ArrayList<>();

@@ -8,6 +8,7 @@ public record EvidenceOptions(
         boolean mergeAdjacentChunks,
         int maxMergedChars,
         int finalTopK,
-        int maxContextChars
+        int maxContextChars,
+        double minScore
 ) {
 }

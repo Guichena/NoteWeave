@@ -2,7 +2,7 @@
 
 本文档用于给后续 AI 编码代理快速判断当前做到哪里。每次开始新阶段前先读本文档；每完成一个阶段后必须更新本文档。
 
-更新时间：2026-05-16
+更新时间：2026-05-17
 
 ---
 
@@ -11,15 +11,15 @@
 当前状态：
 
 ```text
-Phase 0/1、Phase 1.5、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6、Phase 7 和 Phase 8 已完成并通过当前阶段测试与必要回归测试。
+Phase 0/1、Phase 1.5、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6、Phase 7、Phase 8、Phase 9、Phase 10 和 Phase 10.5 已完成并通过当前阶段测试与必要回归测试。
 ```
 
-当前代码已包含 Auth/User/Space/Permission、Task/Outbox/Kafka Worker 基础设施、Phase 2 文件上传链路、Phase 3 的 DOCUMENT_PROCESS Worker、文档解析、parsed text 保存、Chunk 切片、indexVersion / activeIndexVersion、Elasticsearch BM25 索引和 Search Debug、Phase 6 的个人 ResearchProject / Source、TEXT/FILE/URL 导入、SOURCE_IMPORT Worker、个人 raw/parsed text 对象保存、owner-only 查询与重试/去重链路，以及 Phase 7 的 SOURCE_COMPILE、ArticleCard / ConceptCard / ConceptAlias / ConceptRelation / ArticleConceptRelation、个人 Card Citation、Card 搜索详情与 Evidence 回溯链路。
+当前代码已包含 Auth/User/Space/Permission、Task/Outbox/Kafka Worker 基础设施、Phase 2 文件上传链路、Phase 3 的 DOCUMENT_PROCESS Worker、文档解析、parsed text 保存、Chunk 切片、indexVersion / activeIndexVersion、Elasticsearch BM25 索引和 Search Debug、Phase 6 的个人 ResearchProject / Source、TEXT/FILE/URL 导入、SOURCE_IMPORT Worker、个人 raw/parsed text 对象保存、owner-only 查询与重试/去重链路，以及 Phase 7 的 SOURCE_COMPILE、ArticleCard / ConceptCard / ConceptAlias / ConceptRelation / ArticleConceptRelation、个人 Card Citation、Card 搜索详情与 Evidence 回溯链路、Phase 8 的 Studio / Artifact、Phase 9 的混合检索 / RRF / 向量回退、Phase 10 的团队 Wiki 草稿/发布/版本/索引/检索闭环，以及 Phase 10.5 的 Methodology preset / matcher / prompt 注入骨架。
 
 下一步：
 
 ```text
-Phase 8: Studio / Artifact 已完成。
+Phase 11: 个人 Wiki-based Generation。
 ```
 
 ---
@@ -121,9 +121,9 @@ Quiz / 答题 / 评分 / 题库暂缓
 | Phase 6 | DONE | 个人 ResearchProject / Source、SOURCE_IMPORT、个人导入入口已完成并通过测试 |
 | Phase 7 | DONE | 个人 Wiki Compiler、SOURCE_COMPILE、ArticleCard / ConceptCard / Citation / Evidence 回溯已完成并通过测试 |
 | Phase 8 | DONE | Studio / Artifact |
-| Phase 9 | PENDING | 检索增强 / RRF |
-| Phase 10 | PENDING | 团队 Wiki 发布入索引 |
-| Phase 10.5 | PENDING | Methodology 预置模板与 Matcher |
+| Phase 9 | DONE | 检索增强 / RRF |
+| Phase 10 | DONE | 团队 Wiki 发布入索引 |
+| Phase 10.5 | DONE | Methodology 预置模板与 Matcher |
 | Phase 11 | PENDING | 个人 Wiki-based Generation |
 | Phase 11.5 | PENDING | 个人 Artifact 沉淀为 SynthesisCard |
 | Phase 12 | PENDING | Long-term Memory |
@@ -1024,4 +1024,299 @@ Next:
 
 ```text
 Proceed to Phase 9 retrieval enhancement / RRF.
+```
+
+## 17. Phase 9 Retrieval Enhancement / RRF (2026-05-17)
+
+Status:
+
+```text
+DONE
+```
+
+Implemented in this update:
+
+```text
+1) Added V10 migration to extend retrieval_trace with retrievalMode, per-route counts, fallbackUsed and traceJson for explainable hybrid retrieval traces.
+2) Added EmbeddingProperties, EmbeddingClient stub and VectorIndexerService with vector alias/index naming based on model + dimension.
+3) Added EMBEDDING_BACKFILL worker path and backfill result contract that records BM25 fallback instead of failing the whole document retrieval baseline.
+4) Extended SearchIndexService with dense_vector mapping support, vector index ensure/switch helpers, embedding bulk indexing and kNN search entrypoints.
+5) Added RetrievalHit, RetrievalMode, RrfOptions, Retriever abstraction and WeightedReciprocalRankFusion.
+6) Added VectorRetriever and HybridRetriever so TeamChatService and SearchDebug can run HYBRID mode with BM25 fallback.
+7) Enhanced EvidencePostProcessor with low-score filtering while preserving adjacent merge, dedupe, per-document limiting and context truncation.
+8) Extended Search Debug API with mode parameter plus debug counts for bm25/vector/fusion.
+9) Wired document processing to attempt embedding backfill after BM25 indexing without breaking the Phase 3 success path when vector work fails.
+10) Kept Phase 4 citation contract unchanged while making retrieval traces explain each route and fusion result.
+11) Added POST /api/v1/team/documents/{documentId}/embedding-backfill so historical indexed documents can trigger EMBEDDING_BACKFILL through the real task/outbox/Kafka/worker chain.
+12) Hardened hybrid retrieval fallback semantics so query-embedding/vector errors degrade to BM25 (+ Wiki when available) instead of aborting TeamChat retrieval.
+13) Switched vector alias only after embeddings are written and refreshed, preventing empty alias cutover during backfill.
+```
+
+New migration:
+
+```text
+src/main/resources/db/migration/V10__phase_9_retrieval_enhancement_rrf.sql
+```
+
+Key retrieval/runtime rules:
+
+```text
+- Default RRF weights remain BM25=1.0, Vector=1.0, Wiki=1.3, rrfK=60.
+- Vector index versioning is bound to embedding model + dimension through alias/index naming.
+- Vector failures degrade to BM25-only retrieval and keep permission filters intact.
+- retrieval_trace now stores retrieval_mode, bm25_count, vector_count, fusion_count, fallback_used and trace_json.
+- Search Debug can be called with mode=HYBRID and returns retrievalMode/debug counts.
+```
+
+TDD record:
+
+```text
+1) Wrote Phase 9 tests first: WeightedReciprocalRankFusionTest, EmbeddingBackfillTaskWorkerTest, refreshed EvidencePostProcessorTest and Phase9HybridRetrievalIntegrationTest.
+2) Initial red run failed as expected because RetrievalHit, WeightedReciprocalRankFusion, VectorIndexerService and EmbeddingBackfillTaskWorker did not exist yet.
+3) Implemented the minimal retrieval/vector/RRF/trace code needed to satisfy the new tests.
+4) A later regression red run exposed hybrid-runtime metadata loss and an EvidencePostProcessor null indexVersion edge case; both were fixed with metadata-preserving RRF output and null-safe adjacent-chunk merge checks.
+5) Added graceful BM25 fallback, vector alias/index helpers and low-score evidence filtering, then re-ran the failing suite to green.
+6) Re-ran required Phase 4 / Phase 5 / Phase 3 regression tests to confirm the existing chat/runtime/document indexing flows still passed.
+```
+
+Test commands and results:
+
+```text
+1) mvn "-Dtest=EvidencePostProcessorTest,WeightedReciprocalRankFusionTest,EmbeddingBackfillTaskWorkerTest,Phase9HybridRetrievalIntegrationTest" test
+   - initial red failed as expected because core Phase 9 production types were missing.
+
+2) mvn "-Dtest=WeightedReciprocalRankFusionTest,EvidencePostProcessorTest" test
+   - red after regression coverage expansion: failed as expected because fused metadata dropped indexVersion/rawScore and EvidencePostProcessor assumed non-null indexVersion.
+
+3) mvn "-Dtest=WeightedReciprocalRankFusionTest,EvidencePostProcessorTest" test
+   - passed: Tests run: 7, Failures: 0, Errors: 0, Skipped: 0
+
+4) mvn "-Dtest=Phase5WorkspaceChatRuntimeIntegrationTest,Phase9HybridRetrievalIntegrationTest" test
+   - passed: Tests run: 9, Failures: 0, Errors: 0, Skipped: 0
+
+5) mvn "-Dtest=EvidencePostProcessorTest,WeightedReciprocalRankFusionTest,EmbeddingBackfillTaskWorkerTest,Phase9HybridRetrievalIntegrationTest" test
+   - passed: Tests run: 11, Failures: 0, Errors: 0, Skipped: 0
+
+6) mvn "-Dtest=Phase3DocumentProcessingIntegrationTest,Phase4TeamRagIntegrationTest,Phase5WorkspaceChatRuntimeIntegrationTest" test
+   - passed: Tests run: 17, Failures: 0, Errors: 0, Skipped: 0
+
+7) docker compose config --quiet
+   - passed
+
+8) mvn "-Dtest=HybridRetrieverTest,VectorIndexerServiceTest,EvidencePostProcessorTest,WeightedReciprocalRankFusionTest,EmbeddingBackfillTaskWorkerTest,Phase9HybridRetrievalIntegrationTest,Phase10TeamWikiIntegrationTest,MethodologyMatcherTest,Phase10_5MethodologyPresetMatcherIntegrationTest" test
+   - passed twice after Phase 9/10 hardening: Tests run: 24, Failures: 0, Errors: 0, Skipped: 0
+```
+
+Notes:
+
+```text
+- Phase 9 intentionally does not implement Wiki publish/index, rerank models, Artifact generation, personal Wiki flows or evaluation UI.
+- Integration tests use Testcontainers for MySQL / Redis / MinIO / Elasticsearch / Kafka and do not depend on docker compose already running.
+- Stub embeddings currently use deterministic local vectors for testing and fallback-friendly development wiring; a real provider can be swapped in later through the EmbeddingClient abstraction.
+- The current vector trace payload is intentionally minimal and aimed at Phase 14 observability expansion rather than full ranking analytics.
+```
+
+Next:
+
+```text
+Proceed to Phase 10 team Wiki publish and index.
+```
+
+## 18. Phase 10 Team Wiki Publish / Index (2026-05-17)
+
+Status:
+
+```text
+DONE
+```
+
+Implemented in this update:
+
+```text
+1) Added V11 migration with wiki_page, wiki_page_version and wiki_page_citation.
+2) Added team Wiki draft create/read/update, publish, version history and keyword search APIs, plus Artifact -> Wiki draft and ChatMessage -> Wiki draft entrypoints.
+3) Restricted publish to OWNER and made publish generate an immutable WikiPageVersion snapshot with incrementing versionNo, publishedVersionId and publishedVersionNo.
+4) Reused the generic task/outbox/Kafka worker chain for WIKI_INDEX and added a dedicated wiki-page Elasticsearch index through SearchIndexWikiSupport and WikiIndexTaskWorker.
+5) Wired only PUBLISHED + INDEXED wiki pages into team RAG via WikiRetriever and HybridRetriever, while keeping Search Debug document-focused.
+6) Added source traceability for source_artifact_id / source_message_id and publish-time writeback of message-derived citations into wiki_page_citation.
+7) Extended retrieval/citation plumbing so wiki hits persist assistant citations with sourceType = WIKI_PAGE instead of reusing DOCUMENT semantics.
+8) Archive now removes indexed wiki documents from Elasticsearch so archived pages stop appearing in wiki search and team RAG retrieval.
+9) Team chat citation persistence now carries wiki publishedVersionId into citation.sourceVersion for WIKI_PAGE evidence.
+```
+
+New migration:
+
+```text
+src/main/resources/db/migration/V11__phase_10_team_wiki_publish_index.sql
+```
+
+New tables:
+
+```text
+wiki_page
+wiki_page_version
+wiki_page_citation
+```
+
+New APIs:
+
+```text
+POST /api/v1/team/spaces/{spaceId}/wiki-pages
+GET /api/v1/team/wiki-pages/{pageId}
+PUT /api/v1/team/wiki-pages/{pageId}
+POST /api/v1/team/wiki-pages/{pageId}/publish
+GET /api/v1/team/wiki-pages/{pageId}/versions
+GET /api/v1/team/spaces/{spaceId}/wiki-pages/search
+POST /api/v1/artifacts/{artifactId}/publish-to-wiki
+POST /api/v1/team/chat-messages/{messageId}/wiki-drafts
+```
+
+Publish / index rules:
+
+```text
+- Team Artifact must be manually confirmed before it becomes a Wiki draft/page; Phase 10 does not auto-publish artifacts.
+- Every publish creates a new wiki_page_version snapshot from the current draft content and changeNote.
+- Only pages with status = PUBLISHED and index_status = INDEXED are eligible for team RAG retrieval and wiki search.
+- WIKI_INDEX failures do not roll back the draft/published wiki record and can be retried through the existing POST /api/v1/tasks/{taskId}/retry path.
+- Message-derived wiki publishes copy the underlying citation relations into wiki_page_citation; this does not bypass existing citation permission boundaries.
+```
+
+TDD record:
+
+```text
+1) Wrote Phase10TeamWikiIntegrationTest first to cover draft CRUD, permission denial, owner publish/version generation, Artifact/ChatMessage source traceability, wiki_page_citation writeback, WIKI_INDEX retry and "unindexed wiki stays out of retrieval".
+2) Initial red run failed as expected because the Phase 10 wiki endpoints and publish/index flow did not exist yet.
+3) Implemented the minimal migration, repositories, services, controllers, wiki index worker and retrieval/citation source-type plumbing needed for the new suite.
+4) A later red run exposed a test-harness gap on the post-index retrieval assertion path; the indexed wiki retrieval case now explicitly stubs the LLM answer path so the suite validates WIKI_PAGE retrieval/citation behavior rather than failing on a null mock response.
+5) Re-ran the Phase 10 suite and required Phase 4 / Phase 5 / Phase 8 / Phase 9 regressions to green.
+```
+
+Test commands and results:
+
+```text
+1) mvn "-Dtest=Phase10TeamWikiIntegrationTest" test
+   - initial red failed as expected before the wiki endpoints/publish/index flow existed.
+
+2) mvn "-Dtest=Phase10TeamWikiIntegrationTest#publishedButUnindexedWikiShouldStayOutOfChatRetrievalUntilIndexTaskSucceedsAndFailedTaskShouldBeRetryable" test
+   - passed: Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+
+3) mvn "-Dtest=Phase10TeamWikiIntegrationTest" test
+   - passed: Tests run: 3, Failures: 0, Errors: 0, Skipped: 0
+
+4) mvn "-Dtest=Phase9HybridRetrievalIntegrationTest,Phase4TeamRagIntegrationTest,Phase5WorkspaceChatRuntimeIntegrationTest,Phase8StudioArtifactIntegrationTest" test
+   - passed: Tests run: 20, Failures: 0, Errors: 0, Skipped: 0
+
+5) mvn "-Dtest=HybridRetrieverTest,VectorIndexerServiceTest,EvidencePostProcessorTest,WeightedReciprocalRankFusionTest,EmbeddingBackfillTaskWorkerTest,Phase9HybridRetrievalIntegrationTest,Phase10TeamWikiIntegrationTest,MethodologyMatcherTest,Phase10_5MethodologyPresetMatcherIntegrationTest" test
+   - passed twice after archive/index cleanup and wiki citation-version hardening: Tests run: 24, Failures: 0, Errors: 0, Skipped: 0
+```
+
+Notes:
+
+```text
+- Phase 10 does not implement approval workflow,多人实时协同编辑、个人 Artifact 沉淀或 Quiz。
+- WIKI_INDEX uses the existing task topic and Testcontainers middleware baseline; no new standalone middleware container, MinIO bucket or Kafka topic was introduced.
+- Team chat/runtime retrieval includes Wiki only after successful indexing; Search Debug intentionally keeps wiki hits excluded in this phase.
+```
+
+Next:
+
+```text
+Proceed to Phase 10.5 methodology preset matcher.
+```
+
+## 19. Phase 10.5 Methodology Preset / Matcher (2026-05-17)
+
+Status:
+
+```text
+DONE
+```
+
+Implemented in this update:
+
+```text
+1) Added V12 migration with the minimal methodology_card table required for preset templates and future Phase 11 prompt wiring.
+2) Added MethodologyCard model/repository plus PRESET/ACTIVE enums for the Phase 10.5 read-only baseline.
+3) Added MethodologySeedService with idempotent startup seeding under a reserved system preset scope (space_id = 0).
+4) Seeded five readable presets: Research Report, Study Guide, Comparison Analysis, Work Prep STAR and a General Structured Writing fallback.
+5) Added MethodologyMatcher with project -> personal space -> preset lookup order, exact problemType preference, scene signal tie-break and GENERAL fallback.
+6) Added GET /api/v1/personal/research-projects/{projectId}/methodology-cards for owner-only preset inspection and later Phase 11 reuse.
+7) Wired research-project artifact generation prompt assembly to inject matched workflow, outputStructure and qualityChecklist before the existing card/evidence context.
+8) Refreshed two pre-existing RAG unit tests whose constructor expectations had drifted from the current record contracts so the regression suite could compile and run again.
+```
+
+New migration:
+
+```text
+src/main/resources/db/migration/V12__phase_10_5_methodology_preset_matcher.sql
+```
+
+Preset methodology cards:
+
+```text
+- Research Report Methodology -> REPORT
+- Study Guide Methodology -> STUDY_GUIDE
+- Comparison Analysis Methodology -> COMPARISON
+- Work Prep STAR Methodology -> WORK_PREP
+- General Structured Writing Methodology -> GENERAL fallback
+```
+
+Matcher rules:
+
+```text
+1) Search order: research-project cards -> personal-space cards -> system PRESET cards.
+2) Prefer exact artifactType/problemType match.
+3) Use scene/scenario/topic text overlap to break ties inside the same problemType.
+4) Fall back to GENERAL when no specific preset exists.
+5) If no candidates exist at all, return empty and let prompt generation degrade gracefully.
+```
+
+Prompt injection rules:
+
+```text
+- Research-project artifact generation now resolves a matched MethodologyCard during LoadGenerationContextSkill.
+- buildPrompt injects:
+  Selected methodology
+  Workflow
+  Output structure
+  Quality checklist
+- Existing article/concept/evidence context remains unchanged after the methodology section.
+- CHAT_MESSAGE scoped artifact generation does not force methodology injection in this phase.
+```
+
+TDD record:
+
+```text
+1) Wrote MethodologyMatcherTest and Phase10_5MethodologyPresetMatcherIntegrationTest first.
+2) Initial red run failed as expected because MethodologySeedService, MethodologyMatcher, methodology_card persistence and the read-only methodology API did not exist yet.
+3) Implemented the minimal migration, preset seed service, matcher, DTO/controller path and prompt injection wiring to satisfy the new tests.
+4) Added idempotent seed handling, GENERAL fallback matching and prompt-section injection without changing Phase 13 editing/version-management scope.
+5) Re-ran the new suite plus Phase 8 artifact generation and the touched RAG unit regressions to green.
+```
+
+Test commands and results:
+
+```text
+1) mvn "-Dtest=MethodologyMatcherTest,Phase10_5MethodologyPresetMatcherIntegrationTest" test
+   - initial red failed as expected because the new methodology production classes and persistence layer did not exist yet.
+
+2) mvn "-Dtest=MethodologyMatcherTest,Phase10_5MethodologyPresetMatcherIntegrationTest" test
+   - passed: Tests run: 6, Failures: 0, Errors: 0, Skipped: 0
+
+3) mvn "-Dtest=MethodologyMatcherTest,Phase10_5MethodologyPresetMatcherIntegrationTest,Phase8StudioArtifactIntegrationTest,TeamRagPromptBuilderTest,EvidencePostProcessorTest" test
+   - passed: Tests run: 17, Failures: 0, Errors: 0, Skipped: 0
+```
+
+Notes:
+
+```text
+- Phase 10.5 does not implement user-created MethodologyCard CRUD, archive/version management, marketplace/template sharing, Artifact -> Methodology proposal or Quiz flows.
+- Presets are stored under reserved system scope space_id = 0 so they are not mistaken for any normal user's personal cards.
+- No new middleware container, MinIO bucket, Kafka topic, Elasticsearch index family or local test path was introduced in this phase.
+```
+
+Next:
+
+```text
+Proceed to Phase 11 personal Wiki-based generation.
 ```

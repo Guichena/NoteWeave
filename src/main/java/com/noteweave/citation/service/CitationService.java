@@ -39,16 +39,18 @@ public class CitationService {
             List<CitationResponse> responses = new ArrayList<>();
             for (EvidenceItem item : evidenceItems) {
                 for (EvidenceSource source : item.sources()) {
+                    Long sourceId = item.sourceId() == null ? item.documentId() : item.sourceId();
+                    String sourceType = item.sourceType() == null || item.sourceType().isBlank() ? "DOCUMENT" : item.sourceType();
                     Citation citation = citationRepository.findBySpaceIdAndSourceTypeAndSourceIdAndChunkId(
                                     spaceId,
-                                    "DOCUMENT",
-                                    item.documentId(),
+                                    sourceType,
+                                    sourceId,
                                     source.chunkId()
                             )
                             .orElseGet(Citation::new);
                     citation.setSpaceId(spaceId);
-                    citation.setSourceType("DOCUMENT");
-                    citation.setSourceId(item.documentId());
+                    citation.setSourceType(sourceType);
+                    citation.setSourceId(sourceId);
                     citation.setChunkId(source.chunkId());
                     citation.setPageNo(source.pageNo() == null ? 1 : source.pageNo());
                     citation.setStartOffset(source.startOffset());

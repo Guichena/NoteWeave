@@ -10,6 +10,10 @@ import com.noteweave.team.document.repository.DocumentRepository;
 import com.noteweave.team.document.service.DocumentChunkService;
 import com.noteweave.team.kb.model.KnowledgeBase;
 import com.noteweave.team.kb.service.KnowledgeBaseService;
+import com.noteweave.team.rag.retriever.HybridRetriever;
+import com.noteweave.team.rag.retriever.RetrievalHit;
+import com.noteweave.team.rag.retriever.RetrievalMode;
+import com.noteweave.team.rag.retriever.TeamRetrievalQuery;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -27,16 +31,39 @@ public class SearchDebugService {
     private final SearchIndexService searchIndexService;
     private final DocumentChunkService documentChunkService;
     private final DocumentRepository documentRepository;
+    private final HybridRetriever hybridRetriever;
 
     @Transactional(readOnly = true)
-    public SearchDebugResponse search(Long userId, Long knowledgeBaseId, String keyword) {
+    public SearchDebugResponse search(Long userId, Long knowledgeBaseId, String keyword, RetrievalMode mode) {
         KnowledgeBase kb = knowledgeBaseService.getRequiredActiveKb(knowledgeBaseId);
         resourceAccessService.requireViewSpace(userId, kb.getSpaceId());
 
         if (keyword == null || keyword.isBlank()) {
-            return SearchDebugResponse.builder().items(List.of()).build();
+            return SearchDebugResponse.builder()
+                    .items(List.of())
+                    .retrievalMode(mode == null ? RetrievalMode.BM25 : mode)
+                    .debug(SearchDebugResponse.SearchDebugMeta.builder()
+                            .bm25Count(0)
+                            .vectorCount(0)
+                            .fusionCount(0)
+                            .build())
+                    .build();
         }
-        List<SearchChunkHit> chunkHits = searchIndexService.searchChunkHits(kb.getSpaceId(), List.of(kb.getId()), keyword.trim(), 20);
+        HybridRetriever.HybridRetrievalResult retrieval = hybridRetriever.retrieve(
+                new TeamRetrievalQuery(userId, kb.getSpaceId(), List.of(kb.getId()), keyword.trim(), 20, false),
+                mode
+        );
+        List<SearchChunkHit> chunkHits = retrieval.fusedHits().stream()
+                .map(hit -> new SearchChunkHit(
+                        hit.chunkId(),
+                        hit.documentId(),
+                        hit.knowledgeBaseId(),
+                        hit.spaceId(),
+                        hit.metadata() == null ? null : (Integer) hit.metadata().get("indexVersion"),
+                        hit.chunkIndex(),
+                        hit.score()
+                ))
+                .toList();
         List<Long> chunkIds = chunkHits.stream().map(SearchChunkHit::chunkId).toList();
         List<DocumentChunk> chunks = documentChunkService.findByIdsInOrder(chunkIds);
         Map<Long, Document> documents = documentRepository.findAllById(
@@ -70,6 +97,14 @@ public class SearchDebugService {
                             .build();
                 })
                 .toList();
-        return SearchDebugResponse.builder().items(items).build();
+        return SearchDebugResponse.builder()
+                .items(items)
+                .retrievalMode(retrieval.retrievalMode())
+                .debug(SearchDebugResponse.SearchDebugMeta.builder()
+                        .bm25Count(retrieval.bm25Count())
+                        .vectorCount(retrieval.vectorCount())
+                        .fusionCount(retrieval.fusionCount())
+                        .build())
+                .build();
     }
 }

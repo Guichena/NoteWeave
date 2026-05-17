@@ -19,13 +19,36 @@ import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
-public class Bm25Retriever {
+public class Bm25Retriever implements Retriever {
 
     private final SearchIndexService searchIndexService;
     private final DocumentChunkService documentChunkService;
     private final DocumentRepository documentRepository;
 
-    public List<RetrievedChunk> retrieve(TeamRetrievalQuery query) {
+    @Override
+    public String name() {
+        return "BM25";
+    }
+
+    @Override
+    public List<RetrievalHit> retrieve(TeamRetrievalQuery query) {
+        return retrieveChunks(query).stream()
+                .map(chunk -> RetrievalHit.builder()
+                        .retrieverName(name())
+                        .chunkId(chunk.chunkId())
+                        .documentId(chunk.documentId())
+                        .knowledgeBaseId(chunk.knowledgeBaseId())
+                        .spaceId(chunk.spaceId())
+                        .chunkIndex(chunk.chunkIndex())
+                        .documentTitle(chunk.documentTitle())
+                        .content(chunk.content())
+                        .score(chunk.score())
+                        .metadata(Map.of("indexVersion", chunk.indexVersion()))
+                        .build())
+                .toList();
+    }
+
+    public List<RetrievedChunk> retrieveChunks(TeamRetrievalQuery query) {
         if (query == null || query.knowledgeBaseIds() == null || query.knowledgeBaseIds().isEmpty()) {
             return List.of();
         }
@@ -72,6 +95,8 @@ public class Bm25Retriever {
                         chunk.getDocumentId(),
                         chunk.getKnowledgeBaseId(),
                         chunk.getSpaceId(),
+                        "DOCUMENT",
+                        chunk.getDocumentId(),
                         chunk.getIndexVersion(),
                         chunk.getChunkIndex(),
                         document.getTitle(),

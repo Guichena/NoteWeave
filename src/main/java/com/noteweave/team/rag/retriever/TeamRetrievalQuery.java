@@ -7,6 +7,7 @@ public record TeamRetrievalQuery(
         Long spaceId,
         List<Long> knowledgeBaseIds,
         String query,
-        int topK
+        int topK,
+        boolean includeWiki
 ) {
 }

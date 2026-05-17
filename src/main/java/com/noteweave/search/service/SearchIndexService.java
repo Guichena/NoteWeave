@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.error.BusinessException;
 import com.noteweave.common.error.ErrorCode;
 import com.noteweave.search.document.EsDocumentChunk;
+import com.noteweave.team.document.model.DocumentChunk;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -14,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,11 +27,13 @@ import org.springframework.stereotype.Service;
 public class SearchIndexService {
 
     private static final String INDEX_SUFFIX = "document-chunk";
+    private static final String VECTOR_ALIAS_SUFFIX = "document-chunk-vector";
 
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
     private final String baseUri;
     private final String indexName;
+    private final String indexPrefix;
     private final String authorizationHeader;
 
     public SearchIndexService(
@@ -42,6 +46,7 @@ public class SearchIndexService {
         this.objectMapper = objectMapper;
         this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
         this.baseUri = normalizeBaseUri(uris);
+        this.indexPrefix = indexPrefix;
         this.indexName = indexPrefix + INDEX_SUFFIX;
         this.authorizationHeader = buildAuthorizationHeader(username, password);
     }
@@ -66,6 +71,12 @@ public class SearchIndexService {
                           "chunkIndex": {"type": "integer"},
                           "title": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
                           "content": {"type": "text"},
+                          "embedding": {
+                            "type": "dense_vector",
+                            "dims": 8,
+                            "index": true,
+                            "similarity": "cosine"
+                          },
                           "contentHash": {"type": "keyword"},
                           "sourceType": {"type": "keyword"},
                           "createdBy": {"type": "long"},
@@ -110,6 +121,9 @@ public class SearchIndexService {
             body.put("chunkIndex", chunk.getChunkIndex());
             body.put("title", chunk.getTitle());
             body.put("content", chunk.getContent());
+            if (chunk.getEmbedding() != null && !chunk.getEmbedding().isEmpty()) {
+                body.put("embedding", chunk.getEmbedding());
+            }
             body.put("contentHash", chunk.getContentHash());
             body.put("sourceType", chunk.getSourceType());
             body.put("createdBy", chunk.getCreatedBy());
@@ -197,6 +211,62 @@ public class SearchIndexService {
         }
     }
 
+    public List<SearchChunkHit> searchChunkHitsByVector(Long spaceId, List<Long> knowledgeBaseIds, float[] vector, int limit) {
+        if (spaceId == null || knowledgeBaseIds == null || knowledgeBaseIds.isEmpty() || vector == null || vector.length == 0) {
+            return List.of();
+        }
+        String vectorIndex = documentChunkVectorAliasName();
+        try {
+            HttpResponse<String> exists = send("HEAD", "/" + vectorIndex, null);
+            if (exists.statusCode() >= 300) {
+                return List.of();
+            }
+        } catch (Exception ex) {
+            return List.of();
+        }
+        String knowledgeBaseTerms = knowledgeBaseIds.stream()
+                .distinct()
+                .map(String::valueOf)
+                .collect(Collectors.joining(","));
+        String query = """
+                {
+                  "size": %d,
+                  "knn": {
+                    "field": "embedding",
+                    "query_vector": %s,
+                    "k": %d,
+                    "num_candidates": %d,
+                    "filter": {
+                      "bool": {
+                        "filter": [
+                          {"term": {"spaceId": %d}},
+                          {"terms": {"knowledgeBaseId": [%s]}},
+                          {"term": {"lifecycleStatus": "ACTIVE"}},
+                          {"term": {"documentStatus": "INDEXED"}}
+                        ]
+                      }
+                    }
+                  }
+                }
+                """.formatted(
+                Math.max(1, Math.min(limit, 50)),
+                vectorJson(vector),
+                Math.max(1, Math.min(limit, 50)),
+                Math.max(10, Math.min(limit * 4, 200)),
+                spaceId,
+                knowledgeBaseTerms
+        );
+        try {
+            HttpResponse<String> response = send("POST", "/" + vectorIndex + "/_search", query);
+            if (response.statusCode() >= 300) {
+                return List.of();
+            }
+            return parseChunkHits(response.body());
+        } catch (Exception ex) {
+            return List.of();
+        }
+    }
+
     public List<Long> searchChunkIds(Long spaceId, Long knowledgeBaseId, String keyword, int limit) {
         return searchChunkHits(spaceId, List.of(knowledgeBaseId), keyword, limit).stream()
                 .map(SearchChunkHit::chunkId)
@@ -256,6 +326,113 @@ public class SearchIndexService {
         return indexName;
     }
 
+    public String documentChunkVectorAliasName() {
+        return indexPrefix + VECTOR_ALIAS_SUFFIX;
+    }
+
+    public String documentChunkVectorIndexName(String model, int dimension) {
+        return indexPrefix + VECTOR_ALIAS_SUFFIX + "-" + model + "-" + dimension;
+    }
+
+    public void ensureVectorIndex(String indexName, int dimension) {
+        try {
+            HttpResponse<String> exists = send("HEAD", "/" + indexName, null);
+            if (exists.statusCode() == 200) {
+                return;
+            }
+            String mapping = """
+                    {
+                      "mappings": {
+                        "properties": {
+                          "spaceId": {"type": "long"},
+                          "knowledgeBaseId": {"type": "long"},
+                          "documentId": {"type": "long"},
+                          "documentStatus": {"type": "keyword"},
+                          "indexVersion": {"type": "integer"},
+                          "activeIndexVersion": {"type": "integer"},
+                          "chunkId": {"type": "long"},
+                          "chunkIndex": {"type": "integer"},
+                          "title": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+                          "content": {"type": "text"},
+                          "embedding": {
+                            "type": "dense_vector",
+                            "dims": %d,
+                            "index": true,
+                            "similarity": "cosine"
+                          },
+                          "contentHash": {"type": "keyword"},
+                          "sourceType": {"type": "keyword"},
+                          "createdBy": {"type": "long"},
+                          "lifecycleStatus": {"type": "keyword"},
+                          "createdAt": {"type": "date", "format": "strict_date_optional_time||epoch_millis"}
+                        }
+                      }
+                    }
+                    """.formatted(dimension);
+            HttpResponse<String> created = send("PUT", "/" + indexName, mapping);
+            if (created.statusCode() >= 300 && created.statusCode() != 400) {
+                throw new BusinessException(ErrorCode.ES_INDEX_NOT_AVAILABLE, "failed to create vector ES index");
+            }
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorCode.ES_INDEX_NOT_AVAILABLE, "failed to ensure vector ES index");
+        }
+    }
+
+    public void switchVectorAlias(String aliasName, String indexName) {
+        try {
+            String body = """
+                    {
+                      "actions": [
+                        {"remove": {"index": "*", "alias": %s, "ignore_unavailable": true}},
+                        {"add": {"index": %s, "alias": %s}}
+                      ]
+                    }
+                    """.formatted(quote(aliasName), quote(indexName), quote(aliasName));
+            send("POST", "/_aliases", body);
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorCode.ES_INDEX_NOT_AVAILABLE, "failed to switch vector alias");
+        }
+    }
+
+    public void bulkIndexChunkEmbeddings(String vectorIndexName, List<DocumentChunk> chunks, List<float[]> vectors) {
+        if (chunks == null || chunks.isEmpty() || vectors == null || vectors.isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < chunks.size() && i < vectors.size(); i++) {
+            DocumentChunk chunk = chunks.get(i);
+            float[] vector = vectors.get(i);
+            Map<String, Object> body = new HashMap<>();
+            body.put("spaceId", chunk.getSpaceId());
+            body.put("knowledgeBaseId", chunk.getKnowledgeBaseId());
+            body.put("documentId", chunk.getDocumentId());
+            body.put("documentStatus", "INDEXED");
+            body.put("indexVersion", chunk.getIndexVersion());
+            body.put("activeIndexVersion", chunk.getIndexVersion());
+            body.put("chunkId", chunk.getId());
+            body.put("chunkIndex", chunk.getChunkIndex());
+            body.put("title", "");
+            body.put("content", chunk.getContent());
+            body.put("embedding", vectorToList(vector));
+            body.put("contentHash", chunk.getContentHash());
+            body.put("sourceType", "FILE");
+            body.put("createdBy", 0L);
+            body.put("lifecycleStatus", "ACTIVE");
+            body.put("createdAt", chunk.getCreatedAt() == null ? java.time.Instant.now().toString() : chunk.getCreatedAt().toString());
+            try {
+                send("PUT", "/" + vectorIndexName + "/_doc/" + encode(chunk.getEsDocId()), objectMapper.writeValueAsString(body));
+            } catch (Exception ex) {
+                throw new BusinessException(ErrorCode.DOCUMENT_INDEX_FAILED, "failed to index chunk embedding");
+            }
+        }
+        try {
+            send("POST", "/" + vectorIndexName + "/_refresh", "");
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorCode.DOCUMENT_INDEX_FAILED, "failed to refresh vector index");
+        }
+    }
+
     private void refresh() {
         try {
             send("POST", "/" + indexName + "/_refresh", "");
@@ -308,6 +485,47 @@ public class SearchIndexService {
         } catch (Exception ex) {
             return "\"\"";
         }
+    }
+
+    private String vectorJson(float[] vector) {
+        StringBuilder builder = new StringBuilder("[");
+        for (int i = 0; i < vector.length; i++) {
+            if (i > 0) {
+                builder.append(',');
+            }
+            builder.append(vector[i]);
+        }
+        builder.append(']');
+        return builder.toString();
+    }
+
+    private List<Float> vectorToList(float[] vector) {
+        List<Float> values = new ArrayList<>(vector.length);
+        for (float value : vector) {
+            values.add(value);
+        }
+        return values;
+    }
+
+    private List<SearchChunkHit> parseChunkHits(String responseBody) throws Exception {
+        JsonNode hits = objectMapper.readTree(responseBody).path("hits").path("hits");
+        List<SearchChunkHit> chunkHits = new ArrayList<>();
+        for (JsonNode hit : hits) {
+            JsonNode source = hit.path("_source");
+            long chunkId = source.path("chunkId").asLong(0);
+            if (chunkId > 0) {
+                chunkHits.add(new SearchChunkHit(
+                        chunkId,
+                        longOrNull(source, "documentId"),
+                        longOrNull(source, "knowledgeBaseId"),
+                        longOrNull(source, "spaceId"),
+                        intOrNull(source, "indexVersion"),
+                        intOrNull(source, "chunkIndex"),
+                        hit.path("_score").isNumber() ? hit.path("_score").asDouble() : null
+                ));
+            }
+        }
+        return chunkHits;
     }
 
     private Long longOrNull(JsonNode node, String field) {

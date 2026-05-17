@@ -36,7 +36,8 @@ import com.noteweave.team.rag.evidence.EvidenceOptions;
 import com.noteweave.team.rag.evidence.EvidencePostProcessor;
 import com.noteweave.team.rag.prompt.PromptMessages;
 import com.noteweave.team.rag.prompt.TeamRagPromptBuilder;
-import com.noteweave.team.rag.retriever.Bm25Retriever;
+import com.noteweave.team.rag.retriever.HybridRetriever;
+import com.noteweave.team.rag.retriever.RetrievalHit;
 import com.noteweave.team.rag.retriever.TeamRetrievalQuery;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -64,7 +65,7 @@ public class ChatRuntimeService {
     private final ChatSessionScopeRepository chatSessionScopeRepository;
     private final ResourceAccessService resourceAccessService;
     private final KnowledgeBaseRepository knowledgeBaseRepository;
-    private final Bm25Retriever bm25Retriever;
+    private final HybridRetriever hybridRetriever;
     private final EvidencePostProcessor evidencePostProcessor;
     private final TeamRagPromptBuilder teamRagPromptBuilder;
     private final LlmClient llmClient;
@@ -361,22 +362,61 @@ public class ChatRuntimeService {
 
     private List<EvidenceItem> loadEvidence(Long userId, ChatSession session, String question) {
         contextReadRouter.resolve(session.getSessionKind(), session.getSessionType());
-        return evidencePostProcessor.process(
-                bm25Retriever.retrieve(new TeamRetrievalQuery(
+        HybridRetriever.HybridRetrievalResult retrieval = hybridRetriever.retrieve(
+                new TeamRetrievalQuery(
                         userId,
                         session.getSpaceId(),
                         resolveKnowledgeBaseScopeIds(session),
                         question,
-                        ragProperties.retrieval().topK()
-                )),
+                        ragProperties.retrieval().topK(),
+                        true
+                ),
+                ragProperties.retrieval().mode()
+        );
+        return evidencePostProcessor.process(
+                retrieval.fusedHits().stream()
+                        .map(this::toRetrievedChunk)
+                        .toList(),
                 EvidenceOptions.builder()
                         .maxEvidencePerDocument(ragProperties.retrieval().perDocumentLimit())
                         .mergeAdjacentChunks(true)
                         .maxMergedChars(ragProperties.retrieval().maxMergedChars())
                         .finalTopK(ragProperties.retrieval().topK())
                         .maxContextChars(ragProperties.retrieval().contextMaxChars())
+                        .minScore(ragProperties.retrieval().minScore())
                         .build()
         );
+    }
+
+    private com.noteweave.team.rag.retriever.RetrievedChunk toRetrievedChunk(RetrievalHit hit) {
+        Integer indexVersion = hit.metadata() == null ? null : (Integer) hit.metadata().get("indexVersion");
+        return new com.noteweave.team.rag.retriever.RetrievedChunk(
+                hit.chunkId(),
+                hit.documentId(),
+                hit.knowledgeBaseId(),
+                hit.spaceId(),
+                hit.metadata() == null ? "DOCUMENT" : String.valueOf(hit.metadata().getOrDefault("sourceType", "DOCUMENT")),
+                hit.metadata() == null ? hit.documentId() : longValue(hit.metadata().getOrDefault("sourceId", hit.documentId())),
+                indexVersion,
+                hit.chunkIndex(),
+                hit.documentTitle(),
+                hit.content(),
+                hit.score(),
+                1,
+                null,
+                null,
+                indexVersion == null ? "unknown" : String.valueOf(indexVersion)
+        );
+    }
+
+    private Long longValue(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value == null) {
+            return null;
+        }
+        return Long.parseLong(String.valueOf(value));
     }
 
     private String buildAnswer(Long sessionId, String question, List<EvidenceItem> evidenceItems) {

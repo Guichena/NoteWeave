@@ -429,3 +429,88 @@ Phase 8 testing/runtime notes:
 - Any temporary local test path introduced by Phase 8 must stay under target/noteweave-test/phase-8/.
 ```
 
+---
+
+## 16. Phase 9 runtime/testing note (2026-05-17)
+
+Phase 9 does not introduce new standalone middleware containers. Runtime and integration tests continue to use the same containerized baseline:
+
+```text
+MySQLContainer
+Redis GenericContainer
+MinIO container
+KafkaContainer
+ElasticsearchContainer
+```
+
+Phase 9 testing/runtime notes:
+
+```text
+- EMBEDDING_BACKFILL reuses the generic task/outbox/Kafka worker chain; no new Kafka topic was introduced. Local topic remains noteweave.task and integration tests remain on test.noteweave.task.{testRunId}.
+- Hybrid retrieval continues to use the Phase 3 document chunk BM25 index plus a vector alias/index family in the same Elasticsearch container.
+- Local vector alias name: noteweave-dev-document-chunk-vector
+- Local vector index name pattern: noteweave-dev-document-chunk-vector-{model}-{dimension}
+- Test vector alias name: noteweave-test-{testRunId}-document-chunk-vector
+- Test vector index name pattern: noteweave-test-{testRunId}-document-chunk-vector-{model}-{dimension}
+- Local embedding configuration accepts EMBEDDING_API_BASE_URL / EMBEDDING_API_KEY / EMBEDDING_API_MODEL and remains backward-compatible with EMBEDDING_BASE_URL / EMBEDDING_KEY / EMBEDDING_MODEL aliases.
+- Embedding dimension/model changes must create a new vector index version and switch alias only after the new version is ready; this must not break the existing BM25 index.
+- Integration tests use the stub embedding client and do not require a real external embedding provider or API key.
+- Vector failure must degrade to BM25-only retrieval without breaking permission filters or baseline document searchability.
+- No new MinIO bucket was introduced in Phase 9. Existing parsed-text and citation object contracts remain unchanged.
+- Any temporary local test path introduced by Phase 9 must stay under target/noteweave-test/phase-9/.
+```
+
+---
+
+## 17. Phase 10 runtime/testing note (2026-05-17)
+
+Phase 10 does not introduce new standalone middleware containers. Runtime and integration tests continue to use the same containerized baseline:
+
+```text
+MySQLContainer
+Redis GenericContainer
+MinIO container
+KafkaContainer
+ElasticsearchContainer
+```
+
+Phase 10 testing/runtime notes:
+
+```text
+- WIKI_INDEX reuses the generic task/outbox/Kafka worker chain; no new Kafka topic was introduced. Local topic remains noteweave.task and integration tests remain on test.noteweave.task.{testRunId}.
+- Team Wiki uses a dedicated Elasticsearch index suffix in the existing ES container:
+  local wiki index name: noteweave-dev-wiki-page
+  test wiki index name: noteweave-test-{testRunId}-wiki-page
+- Only wiki pages with status = PUBLISHED and index_status = INDEXED may appear in team wiki search or team RAG retrieval.
+- Wiki index failure must leave the draft/published MySQL state intact and remain retryable through the existing task retry flow.
+- Message-derived wiki publishes write citation relations into wiki_page_citation while continuing to use the existing citation snapshot object contract:
+  test/{testRunId}/citations/{citationId}/snapshot.txt
+  dev/citations/{citationId}/snapshot.txt
+- Phase 10 integration tests mock LlmClient where publish/index/retrieval assertions require a deterministic answer path.
+- Any temporary local test path introduced by Phase 10 must stay under target/noteweave-test/phase-10/.
+```
+
+---
+
+## 18. Phase 10.5 runtime/testing note (2026-05-17)
+
+Phase 10.5 does not introduce new standalone middleware containers. Runtime and integration tests continue to use the same containerized baseline:
+
+```text
+MySQLContainer
+Redis GenericContainer
+MinIO container
+KafkaContainer
+ElasticsearchContainer
+```
+
+Phase 10.5 testing/runtime notes:
+
+```text
+- MethodologyCard presets are stored in MySQL only; no new MinIO bucket, Kafka topic or Elasticsearch index was introduced.
+- MethodologySeedService seeds PRESET cards at startup and remains idempotent when called repeatedly in tests or local development.
+- Methodology prompt injection reuses the existing ARTIFACT_GENERATE task/outbox/Kafka worker path and does not create a new background task type.
+- Phase 10.5 integration tests continue to use Testcontainers for MySQL / Redis / MinIO / Elasticsearch / Kafka and mock LlmClient for deterministic prompt assertions.
+- No new temporary local test path was introduced; the phase continues to use the existing target/noteweave-test baseline.
+```
+
