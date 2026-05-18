@@ -94,10 +94,11 @@ class Phase4TeamRagIntegrationTest extends ContainerizedIntegrationTest {
                         .header("Authorization", "Bearer " + viewerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"rating":"HELPFUL","reason":"grounded","comment":"answer is grounded"}
+                                {"rating":"UP","reason":"HELPFUL","comment":"answer is grounded"}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.rating").value("HELPFUL"));
+                .andExpect(jsonPath("$.data.rating").value("UP"))
+                .andExpect(jsonPath("$.data.reason").value("HELPFUL"));
 
         assertThat(jdbcTemplate.queryForObject("select count(*) from chat_message where session_id = ?", Integer.class, sessionId))
                 .isEqualTo(2);

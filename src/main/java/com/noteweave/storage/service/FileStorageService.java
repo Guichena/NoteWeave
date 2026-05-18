@@ -11,9 +11,12 @@ import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
+import io.minio.Result;
+import io.minio.messages.Item;
 import io.minio.StatObjectArgs;
 import io.minio.StatObjectResponse;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -97,6 +100,36 @@ public class FileStorageService {
                     .build());
         } catch (Exception ex) {
             throw new BusinessException(ErrorCode.STORAGE_OPERATION_FAILED, "failed to remove object: " + ex.getMessage());
+        }
+    }
+
+    public boolean bucketExists(String bucket) {
+        try {
+            return minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucket).build());
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorCode.STORAGE_OPERATION_FAILED, "failed to access bucket: " + bucket);
+        }
+    }
+
+    public List<String> listObjectKeys(String bucket, String prefix) {
+        try {
+            List<String> keys = new ArrayList<>();
+            Iterable<Result<Item>> results = minioClient.listObjects(
+                    io.minio.ListObjectsArgs.builder()
+                            .bucket(bucket)
+                            .prefix(prefix)
+                            .recursive(true)
+                            .build()
+            );
+            for (Result<Item> result : results) {
+                Item item = result.get();
+                if (item != null && item.objectName() != null) {
+                    keys.add(item.objectName());
+                }
+            }
+            return keys;
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorCode.STORAGE_OPERATION_FAILED, "failed to list objects: " + ex.getMessage());
         }
     }
 

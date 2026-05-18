@@ -2,6 +2,8 @@ package com.noteweave.rageval.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.noteweave.admin.model.AuditAction;
+import com.noteweave.admin.service.AuditLogService;
 import com.noteweave.chat.dto.RetrievalTraceCreateRequest;
 import com.noteweave.chat.dto.RetrievalTraceDetailResponse;
 import com.noteweave.chat.dto.RetrievalTraceItemCreateRequest;
@@ -79,6 +81,7 @@ public class RagEvaluationService {
     private final PromptVersionService promptVersionService;
     private final RagProperties ragProperties;
     private final ObjectMapper objectMapper;
+    private final AuditLogService auditLogService;
 
     @Transactional(readOnly = true)
     public List<RagEvalCaseResponse> listCases(Long userId, Long spaceId) {
@@ -145,7 +148,9 @@ public class RagEvaluationService {
         summary.put("taskId", task.getId());
         summary.put("enabledCaseCount", cases.size());
         run.setSummaryJson(writeJson(summary));
-        return toRunResponse(ragEvalRunRepository.save(run));
+        RagEvalRunResponse response = toRunResponse(ragEvalRunRepository.save(run));
+        auditLogService.record(userId, spaceId, AuditAction.EVAL_RUN_START, TARGET_TYPE, run.getId(), null, response);
+        return response;
     }
 
     @Transactional

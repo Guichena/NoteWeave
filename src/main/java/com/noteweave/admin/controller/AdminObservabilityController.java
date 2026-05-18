@@ -57,20 +57,13 @@ public class AdminObservabilityController {
     @GetMapping("/llm-call-logs")
     public ApiResponse<PageResponse<LlmCallLogResponse>> searchLlmCallLogs(LlmCallLogQuery query) {
         Long userId = currentUserProvider.getCurrentUserId();
-        if (!resourceAccessService.isAdmin(userId)) {
-            if (query.getSpaceId() == null) {
-                throw new com.noteweave.common.error.BusinessException(
-                        com.noteweave.common.error.ErrorCode.BAD_REQUEST,
-                        "spaceId is required for non-admin log search"
-                );
-            }
-            resourceAccessService.requireManageSpace(userId, query.getSpaceId());
-        }
+        resourceAccessService.requireAdmin(userId);
         return ApiResponse.success(llmCallLogService.search(query));
     }
 
     @GetMapping("/retrieval-traces/{traceId}")
     public ApiResponse<RetrievalTraceDetailResponse> getRetrievalTrace(@PathVariable Long traceId) {
+        resourceAccessService.requireAdmin(currentUserProvider.getCurrentUserId());
         return ApiResponse.success(retrievalTraceService.get(currentUserProvider.getCurrentUserId(), traceId));
     }
 }

@@ -3,6 +3,7 @@ package com.noteweave.common.security;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -44,6 +45,19 @@ public class SecurityConfig {
                                 "/swagger-ui.html",
                                 "/swagger-ui/**",
                                 "/error"
+                        )
+                        .permitAll()
+                        .requestMatchers(HttpMethod.GET,
+                                "/",
+                                "/index.html",
+                                "/app.css",
+                                "/js/**",
+                                "/login",
+                                "/register",
+                                "/spaces",
+                                "/spaces/**",
+                                "/admin",
+                                "/admin/**"
                         )
                         .permitAll()
                         .anyRequest()

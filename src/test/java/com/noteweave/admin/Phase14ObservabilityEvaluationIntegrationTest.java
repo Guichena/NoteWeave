@@ -207,7 +207,12 @@ class Phase14ObservabilityEvaluationIntegrationTest extends ContainerizedIntegra
     }
 
     @Test
-    void spaceOwnerShouldManageEvalCasesAndRunMetricsWithoutPollutingChatHistory() throws Exception {
+    void adminShouldManageEvalCasesAndRunMetricsWithoutPollutingChatHistory() throws Exception {
+        String adminUsername = "phase14_eval_admin_" + System.nanoTime();
+        registerAndGetToken(adminUsername);
+        jdbcTemplate.update("update users set system_role = 'ADMIN' where username = ?", adminUsername);
+        String adminToken = loginAndGetToken(adminUsername, "Password123!");
+
         String ownerToken = registerAndGetToken("phase14_eval_owner_" + System.nanoTime());
         Long spaceId = createTeamSpace(ownerToken, "phase14-eval-space-" + System.nanoTime());
         Long kbId = createKnowledgeBase(ownerToken, spaceId, "phase14-eval-kb-" + System.nanoTime());
@@ -229,7 +234,7 @@ class Phase14ObservabilityEvaluationIntegrationTest extends ContainerizedIntegra
         createCasePayload.put("enabled", true);
 
         JsonNode createdCase = readJson(mockMvc.perform(post("/api/v1/admin/spaces/{spaceId}/rag-eval-cases", spaceId)
-                        .header("Authorization", "Bearer " + ownerToken)
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(createCasePayload)))
                 .andExpect(status().isOk())
@@ -246,14 +251,14 @@ class Phase14ObservabilityEvaluationIntegrationTest extends ContainerizedIntegra
         updateCasePayload.put("enabled", true);
 
         mockMvc.perform(put("/api/v1/admin/rag-eval-cases/{caseId}", caseId)
-                        .header("Authorization", "Bearer " + ownerToken)
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(updateCasePayload)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.name").value("Incident Escalation Case v2"));
 
         mockMvc.perform(get("/api/v1/admin/spaces/{spaceId}/rag-eval-cases", spaceId)
-                        .header("Authorization", "Bearer " + ownerToken))
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].id").value(caseId));
 
@@ -262,7 +267,7 @@ class Phase14ObservabilityEvaluationIntegrationTest extends ContainerizedIntegra
         ));
 
         JsonNode startRun = readJson(mockMvc.perform(post("/api/v1/admin/spaces/{spaceId}/rag-eval-runs", spaceId)
-                        .header("Authorization", "Bearer " + ownerToken)
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"name":"Phase14 Eval Run"}
@@ -277,7 +282,7 @@ class Phase14ObservabilityEvaluationIntegrationTest extends ContainerizedIntegra
         waitForTaskStatus(taskId, TaskStatus.SUCCESS);
 
         JsonNode runResponse = readJson(mockMvc.perform(get("/api/v1/admin/rag-eval-runs/{runId}", runId)
-                        .header("Authorization", "Bearer " + ownerToken))
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("SUCCESS"))
                 .andReturn());
@@ -286,7 +291,7 @@ class Phase14ObservabilityEvaluationIntegrationTest extends ContainerizedIntegra
         assertThat(summary.path("inputTokens").asInt()).isGreaterThan(0);
 
         JsonNode results = readJson(mockMvc.perform(get("/api/v1/admin/rag-eval-runs/{runId}/results", runId)
-                        .header("Authorization", "Bearer " + ownerToken))
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andReturn());
         JsonNode firstResult = results.path("data").get(0);

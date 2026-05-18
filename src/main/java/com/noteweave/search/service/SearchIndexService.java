@@ -322,6 +322,73 @@ public class SearchIndexService {
         }
     }
 
+    public JsonNode clusterHealth() {
+        try {
+            HttpResponse<String> response = send("GET", "/_cluster/health", null);
+            if (response.statusCode() >= 300) {
+                throw new BusinessException(ErrorCode.ES_INDEX_NOT_AVAILABLE, "failed to read cluster health");
+            }
+            return objectMapper.readTree(response.body());
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorCode.ES_INDEX_NOT_AVAILABLE, "failed to read cluster health");
+        }
+    }
+
+    public boolean aliasExists(String aliasName) {
+        try {
+            HttpResponse<String> response = send("HEAD", "/" + aliasName, null);
+            return response.statusCode() == 200;
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    public List<IndexedChunkDocument> listIndexedChunkDocuments(int size) {
+        ensureDocumentChunkIndex();
+        String query = """
+                {
+                  "size": %d,
+                  "_source": ["chunkId", "documentId", "sourceType"],
+                  "query": {"match_all": {}}
+                }
+                """.formatted(Math.max(1, Math.min(size, 2000)));
+        try {
+            HttpResponse<String> response = send("POST", "/" + indexName + "/_search", query);
+            if (response.statusCode() >= 300) {
+                throw new BusinessException(ErrorCode.ES_QUERY_FAILED, "failed to list ES chunks");
+            }
+            JsonNode hits = objectMapper.readTree(response.body()).path("hits").path("hits");
+            List<IndexedChunkDocument> documents = new ArrayList<>();
+            for (JsonNode hit : hits) {
+                JsonNode source = hit.path("_source");
+                documents.add(new IndexedChunkDocument(
+                        hit.path("_id").asText(),
+                        longOrNull(source, "chunkId"),
+                        longOrNull(source, "documentId"),
+                        source.path("sourceType").asText(null)
+                ));
+            }
+            return documents;
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorCode.ES_QUERY_FAILED, "failed to list ES chunks");
+        }
+    }
+
+    public void deleteChunkDocumentByEsDocId(String esDocId) {
+        deleteDocumentById(indexName, esDocId);
+        if (aliasExists(documentChunkVectorAliasName())) {
+            try {
+                deleteDocumentById(documentChunkVectorAliasName(), esDocId);
+            } catch (BusinessException ignored) {
+                // The vector alias is best-effort during orphan cleanup.
+            }
+        }
+    }
+
     public String documentChunkIndexName() {
         return indexName;
     }
@@ -539,5 +606,24 @@ public class SearchIndexService {
             return null;
         }
         return value.asInt();
+    }
+
+    private void deleteDocumentById(String indexOrAlias, String esDocId) {
+        if (esDocId == null || esDocId.isBlank()) {
+            return;
+        }
+        try {
+            HttpResponse<String> response = send("DELETE", "/" + indexOrAlias + "/_doc/" + encode(esDocId), null);
+            if (response.statusCode() >= 300 && response.statusCode() != 404) {
+                throw new BusinessException(ErrorCode.DOCUMENT_INDEX_FAILED, "failed to delete indexed chunk");
+            }
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorCode.DOCUMENT_INDEX_FAILED, "failed to delete indexed chunk");
+        }
+    }
+
+    public record IndexedChunkDocument(String esDocId, Long chunkId, Long documentId, String sourceType) {
     }
 }

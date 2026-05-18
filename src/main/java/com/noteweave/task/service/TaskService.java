@@ -47,8 +47,6 @@ public class TaskService {
 
     private static final Set<String> ALLOWED_TASK_SORT_FIELDS = Set.of("id", "createdAt", "updatedAt", "startedAt", "finishedAt");
     private static final Set<String> ALLOWED_EVENT_SORT_FIELDS = Set.of("id", "createdAt");
-    private static final String REDACTED_MESSAGE = "[REDACTED]";
-
     private final TaskRepository taskRepository;
     private final TaskAttemptRepository taskAttemptRepository;
     private final TaskEventRepository taskEventRepository;
@@ -63,7 +61,7 @@ public class TaskService {
     public TaskResponse createTask(TaskCreateCommand command) {
         Task existing = taskRepository.findByIdempotencyKey(command.getIdempotencyKey()).orElse(null);
         if (existing != null) {
-            return toTaskResponse(existing, false);
+            return toTaskResponse(existing);
         }
 
         Task task = new Task();
@@ -83,7 +81,7 @@ public class TaskService {
         } catch (DataIntegrityViolationException ex) {
             Task racedExisting = taskRepository.findByIdempotencyKey(command.getIdempotencyKey())
                     .orElseThrow(() -> ex);
-            return toTaskResponse(racedExisting, false);
+            return toTaskResponse(racedExisting);
         }
 
         taskEventService.appendEvent(
@@ -96,16 +94,15 @@ public class TaskService {
                 task.getUserId()
         );
         taskOutboxService.createTaskCreatedOutbox(task);
-        return toTaskResponse(task, false);
+        return toTaskResponse(task);
     }
 
     public PageResponse<TaskResponse> listTasks(CurrentUser currentUser, TaskQuery query) {
         Pageable pageable = buildPageable(query.getPage(), query.getPageSize(), query.getSort(), ALLOWED_TASK_SORT_FIELDS, Sort.by(Sort.Direction.DESC, "createdAt"));
         Specification<Task> specification = buildTaskSpecification(currentUser, query);
         Page<Task> page = taskRepository.findAll(specification, pageable);
-        boolean redactSensitiveFields = shouldRedactSensitiveFields(currentUser);
         List<TaskResponse> items = page.getContent().stream()
-                .map(task -> toTaskResponse(task, redactSensitiveFields))
+                .map(task -> toTaskResponse(task))
                 .toList();
         return PageResponse.<TaskResponse>builder()
                 .items(items)
@@ -121,7 +118,7 @@ public class TaskService {
     public TaskResponse getTask(CurrentUser currentUser, Long taskId) {
         Task task = getRequiredTask(taskId);
         resourceAccessService.requireViewTask(currentUser, task);
-        return toTaskResponse(task, shouldRedactSensitiveFields(currentUser));
+        return toTaskResponse(task);
     }
 
     public PageResponse<TaskEventResponse> getTaskEvents(CurrentUser currentUser, Long taskId, TaskEventQuery query) {
@@ -223,7 +220,7 @@ public class TaskService {
                 currentUser.userId()
         );
         taskOutboxService.createTaskCreatedOutbox(task);
-        return toTaskResponse(task, shouldRedactSensitiveFields(currentUser));
+        return toTaskResponse(task);
     }
 
     public Task getRequiredTask(Long taskId) {
@@ -302,7 +299,7 @@ public class TaskService {
         return order.getProperty() + "," + order.getDirection().name().toLowerCase();
     }
 
-    private TaskResponse toTaskResponse(Task task, boolean redactSensitiveFields) {
+    private TaskResponse toTaskResponse(Task task) {
         return TaskResponse.builder()
                 .id(task.getId())
                 .userId(task.getUserId())
@@ -316,9 +313,9 @@ public class TaskService {
                 .retryCount(task.getRetryCount())
                 .maxRetryCount(task.getMaxRetryCount())
                 .idempotencyKey(task.getIdempotencyKey())
-                .errorMessage(redactSensitiveFields ? redactErrorMessage(task.getErrorMessage()) : task.getErrorMessage())
-                .input(redactSensitiveFields ? redactJson(task.getInputJson()) : readJson(task.getInputJson()))
-                .output(redactSensitiveFields ? redactJson(task.getOutputJson()) : readJson(task.getOutputJson()))
+                .errorMessage(task.getErrorMessage())
+                .input(readJson(task.getInputJson()))
+                .output(readJson(task.getOutputJson()))
                 .resultRefType(task.getResultRefType())
                 .resultRefId(task.getResultRefId())
                 .startedAt(task.getStartedAt())
@@ -372,25 +369,4 @@ public class TaskService {
         return normalized.isEmpty() ? null : normalized;
     }
 
-    private boolean shouldRedactSensitiveFields(CurrentUser currentUser) {
-        return currentUser.systemRole() == UserSystemRole.ADMIN;
-    }
-
-    private String redactErrorMessage(String errorMessage) {
-        if (errorMessage == null || errorMessage.isBlank()) {
-            return null;
-        }
-        return REDACTED_MESSAGE;
-    }
-
-    private JsonNode redactedJsonNode() {
-        return objectMapper.createObjectNode().put("redacted", true);
-    }
-
-    private JsonNode redactJson(String json) {
-        if (json == null || json.isBlank()) {
-            return null;
-        }
-        return redactedJsonNode();
-    }
 }

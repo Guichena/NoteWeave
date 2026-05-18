@@ -1,5 +1,7 @@
 package com.noteweave.prompt.service;
 
+import com.noteweave.admin.model.AuditAction;
+import com.noteweave.admin.service.AuditLogService;
 import com.noteweave.common.error.BusinessException;
 import com.noteweave.common.error.ErrorCode;
 import com.noteweave.prompt.dto.CreatePromptVersionRequest;
@@ -21,6 +23,7 @@ public class PromptVersionService {
     private static final String STATUS_ARCHIVED = "ARCHIVED";
 
     private final PromptVersionRepository promptVersionRepository;
+    private final AuditLogService auditLogService;
 
     @Transactional
     public PromptVersionResponse create(Long userId, CreatePromptVersionRequest request) {
@@ -44,6 +47,7 @@ public class PromptVersionService {
     public PromptVersionResponse activate(Long userId, Long promptVersionId) {
         PromptVersion target = promptVersionRepository.findById(promptVersionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Prompt version not found"));
+        PromptVersionResponse before = toResponse(target);
         for (PromptVersion active : promptVersionRepository.findAllBySceneAndStatus(target.getScene(), STATUS_ACTIVE)) {
             if (!active.getId().equals(target.getId())) {
                 active.setStatus(STATUS_ARCHIVED);
@@ -51,7 +55,9 @@ public class PromptVersionService {
             }
         }
         target.setStatus(STATUS_ACTIVE);
-        return toResponse(promptVersionRepository.save(target));
+        PromptVersionResponse after = toResponse(promptVersionRepository.save(target));
+        auditLogService.record(userId, null, AuditAction.PROMPT_ACTIVATE, "PROMPT_VERSION", promptVersionId, before, after);
+        return after;
     }
 
     @Transactional(readOnly = true)

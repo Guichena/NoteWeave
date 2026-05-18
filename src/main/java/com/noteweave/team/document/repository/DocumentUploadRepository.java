@@ -27,4 +27,6 @@ public interface DocumentUploadRepository extends JpaRepository<DocumentUpload, 
     );
 
     List<DocumentUpload> findByExpiresAtBeforeAndStatusIn(LocalDateTime now, Collection<DocumentUploadStatus> statuses);
+
+    List<DocumentUpload> findByStatusIn(Collection<DocumentUploadStatus> statuses);
 }

@@ -19,5 +19,8 @@ public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, Lo
     boolean existsByDocumentIdAndIndexVersion(Long documentId, int indexVersion);
 
     @Modifying
+    void deleteByDocumentId(Long documentId);
+
+    @Modifying
     void deleteByDocumentIdAndIndexVersion(Long documentId, int indexVersion);
 }

@@ -38,7 +38,7 @@ class TaskAdminVisibilityIntegrationTest extends ContainerizedIntegrationTest {
     private TaskService taskService;
 
     @Test
-    void adminShouldSeeTaskButReceiveRedactedSensitiveFields() {
+    void adminShouldSeeTaskWithFailureReasonAndPayloadDetails() {
         TestActor actor = createTeamActor("task_admin_" + System.nanoTime());
 
         TaskResponse createdTask = taskService.createTask(TaskCreateCommand.builder()
@@ -60,14 +60,16 @@ class TaskAdminVisibilityIntegrationTest extends ContainerizedIntegrationTest {
         PageResponse<TaskResponse> adminPage = taskService.listTasks(adminUser, query);
 
         assertThat(adminView.getInput()).isNotNull();
-        assertThat(adminView.getInput().path("redacted").asBoolean()).isTrue();
+        assertThat(adminView.getInput().path("successMessage").asText()).isEqualTo("done");
         assertThat(adminView.getOutput()).isNull();
         assertThat(adminView.getErrorMessage()).isNull();
         assertThat(adminPage.getItems()).extracting(TaskResponse::getId).contains(createdTask.getId());
-        assertThat(adminPage.getItems()).allSatisfy(task -> {
-            assertThat(task.getInput()).isNotNull();
-            assertThat(task.getInput().path("redacted").asBoolean()).isTrue();
-        });
+        TaskResponse createdTaskFromPage = adminPage.getItems().stream()
+                .filter(task -> createdTask.getId().equals(task.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(createdTaskFromPage.getInput()).isNotNull();
+        assertThat(createdTaskFromPage.getInput().path("successMessage").asText()).isEqualTo("done");
     }
 
     private NoopTestTaskInput successInput() {

@@ -15,4 +15,8 @@ public interface FileObjectRepository extends JpaRepository<FileObject, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select f from FileObject f where f.spaceId = :spaceId and f.contentHash = :contentHash")
     Optional<FileObject> findBySpaceIdAndContentHashForUpdate(Long spaceId, String contentHash);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select f from FileObject f where f.id = :id")
+    Optional<FileObject> findByIdForUpdate(Long id);
 }

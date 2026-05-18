@@ -190,6 +190,34 @@ public class TaskExecutionCoordinator {
     protected void markCancelled(Long taskId, int attemptNo, String message) {
         transactionTemplate.executeWithoutResult(status -> {
             Task task = getTaskForUpdate(taskId);
+            if (task.getTaskStatus() == TaskStatus.FAILED) {
+                task.setCancelRequested(false);
+                if (task.getFinishedAt() == null) {
+                    task.setFinishedAt(LocalDateTime.now());
+                }
+                taskRepository.save(task);
+
+                TaskAttempt attempt = getAttempt(taskId, attemptNo);
+                attempt.setStatus(TaskStatus.FAILED);
+                attempt.setFinishedAt(task.getFinishedAt());
+                attempt.setErrorCode("ADMIN_MARK_FAILED");
+                attempt.setErrorMessage(task.getErrorMessage() == null ? message : task.getErrorMessage());
+                taskAttemptRepository.save(attempt);
+
+                taskEventService.appendEvent(
+                        taskId,
+                        TaskEventType.TASK_FAILED,
+                        TaskStatus.RUNNING,
+                        TaskStatus.FAILED,
+                        task.getErrorMessage() == null ? message : task.getErrorMessage(),
+                        java.util.Map.of("adminMarkFailed", true),
+                        null
+                );
+                if (task.getTaskType() == TaskType.ARTIFACT_GENERATE && task.getTargetId() != null) {
+                    artifactPersistenceService.reconcileAfterUnsuccessfulTask(task.getTargetId());
+                }
+                return;
+            }
             TaskStatus fromStatus = task.getTaskStatus();
             task.setTaskStatus(TaskStatus.CANCELLED);
             task.setCancelRequested(false);
