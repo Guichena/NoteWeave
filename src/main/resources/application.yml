@@ -3,7 +3,7 @@ server:
 
 spring:
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3307/noteweave?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+    url: ${DB_URL:jdbc:mysql://localhost:13307/noteweave?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
     username: ${DB_USERNAME:noteweave}
     password: ${DB_PASSWORD:noteweave}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -21,7 +21,7 @@ spring:
       port: ${REDIS_PORT:6380}
       password: ${REDIS_PASSWORD:}
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:19092}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
@@ -36,7 +36,7 @@ spring:
 noteweave:
   storage:
     minio:
-      endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+      endpoint: ${MINIO_ENDPOINT:http://localhost:19100}
       access-key: ${MINIO_ACCESS_KEY:noteweave}
       secret-key: ${MINIO_SECRET_KEY:noteweave-minio-secret}
       bucket: ${MINIO_BUCKET:noteweave-dev}
@@ -75,7 +75,7 @@ noteweave:
         max-redirects: ${NOTEWEAVE_SOURCE_URL_MAX_REDIRECTS:3}
         max-response-bytes: ${NOTEWEAVE_SOURCE_URL_MAX_RESPONSE_BYTES:1048576}
   elasticsearch:
-    uris: ${ES_URIS:http://localhost:9200}
+    uris: ${ES_URIS:http://localhost:19200}
     username: ${ELASTICSEARCH_USERNAME:}
     password: ${ELASTICSEARCH_PASSWORD:}
     index-prefix: ${NOTEWEAVE_ES_INDEX_PREFIX:noteweave-dev-}

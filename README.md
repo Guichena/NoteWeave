@@ -1,227 +1,187 @@
 # NoteWeave
 
-NoteWeave 是一个面向团队与个人的 AI 知识工作台后端项目。  
-核心目标是把“团队知识沉淀 + 个人研究生产力”统一到同一套空间模型和权限体系中，并逐步演进到可扩展的 RAG、Studio 产物生成与记忆系统。
+NoteWeave 是一个把团队知识、个人研究和成果沉淀放进同一工作台的 AI 知识工作台项目。
+
+它的目标很明确：
+
+- 团队侧可以做知识库、检索问答、团队 Wiki 和成果协作
+- 个人侧可以做研究项目、资料导入、卡片沉淀和成稿生成
+- 两侧共用同一套空间模型、权限体系、异步任务和检索底座
 
 ---
 
-## 项目定位
+## 当前状态
 
-基于产品总览和当前实现契约，NoteWeave 采用以下产品方向。编码时以 `docs/PROJECT_STATUS.md`、`docs/CONTRACT.md`、`docs/implementation_breakdown.md` 和 `docs/features/database_api_blueprint.md` 为准；全量架构说明只作为产品背景。
+当前仓库已经具备可运行、可验收的本地开发环境，并包含一套中文演示数据与测试账号。
 
-- 团队侧：文档沉淀、可追溯问答、Wiki 沉淀。
-- 个人侧：Research 工作台、资料编译、结构化知识卡片、生成产物。
-- 通用底座：统一 Space 权限、异步任务、检索与会话运行态。
+当前本地访问地址：
 
----
+- 登录页：[http://127.0.0.1:18082/login](http://127.0.0.1:18082/login)
+- Swagger：[http://127.0.0.1:18082/swagger-ui.html](http://127.0.0.1:18082/swagger-ui.html)
+- 健康检查：[http://127.0.0.1:18082/actuator/health](http://127.0.0.1:18082/actuator/health)
 
-## 核心设计原则
+测试账号：
 
-- 团队与个人分治：`Space.type = PERSONAL | TEAM`。
-- Raw Source 作为事实源：生成结果可回溯原始证据。
-- Wiki 与 Artifact 边界清晰：长期知识与临时产物分离。
-- 先打底座再扩能力：先身份、归属、权限，再文件、检索、RAG、生成。
+- `admin / NoteWeave123!`
+- `alice / NoteWeave123!`
+- `bob / NoteWeave123!`
 
----
+说明：
 
-## 当前实现状态（Phase 0/1 + Phase 1.5 + Phase 2 + Phase 3）
-
-当前仓库已完成：
-
-- Spring Boot 3.x + Java 17 + Maven 工程初始化。
-- 统一响应与错误体系：`ApiResponse` / `ErrorCode` / `BusinessException` / `GlobalExceptionHandler`。
-- 核心实体与表映射：
-  - `users`
-  - `space`
-  - `space_member`
-- Spring Security + JWT 认证。
-- `CurrentUserProvider`（业务层不直接解析 JWT）。
-- `ResourceAccessService` 统一资源访问入口（当前覆盖 Space / Task）。
-- 用户认证接口：
-  - `POST /api/v1/auth/register`
-  - `POST /api/v1/auth/login`
-  - `POST /api/v1/auth/refresh`
-  - `POST /api/v1/auth/logout`
-  - `POST /api/v1/auth/logout-all`
-  - `GET /api/v1/users/me`
-  - `PUT /api/v1/users/me`
-  - `PUT /api/v1/users/me/password`
-- 空间与成员接口：
-  - `POST /api/v1/spaces`
-  - `GET /api/v1/spaces`
-  - `GET /api/v1/spaces/{spaceId}`
-  - `POST /api/v1/spaces/{spaceId}/members`
-  - `GET /api/v1/spaces/{spaceId}/members`
-  - `PUT /api/v1/spaces/{spaceId}/members/{memberId}/role`
-  - `DELETE /api/v1/spaces/{spaceId}/members/{memberId}`
-- 注册事务保障：
-  - 创建用户
-  - 自动创建 PERSONAL Space
-  - 自动创建 OWNER SpaceMember
-- `SpacePermissionService` 权限矩阵：
-  - OWNER / EDITOR / VIEWER
-  - 非成员不可访问 TEAM Space
-  - PERSONAL Space 仅 owner 可访问
-  - `canUploadDocument` 对 VIEWER 返回 `false`（为后续阶段预留）
-- Task/Worker 基础设施：
-  - `task / task_attempt / task_event / task_outbox`
-  - `GET /api/v1/tasks`
-  - `GET /api/v1/tasks/{taskId}`
-  - `GET /api/v1/tasks/{taskId}/events`
-  - `POST /api/v1/tasks/{taskId}/cancel`
-  - `POST /api/v1/tasks/{taskId}/retry`
-  - `NOOP_TEST` worker、Kafka 投递、取消、超时、重试、Outbox 自动补偿
-- Phase 2 文件上传与异步摄取：
-  - KnowledgeBase 创建、查询、更新、归档
-  - DocumentUpload / UploadChunk 分片上传、断点续传、状态查询、merge、cancel、过期清理
-  - MinIO 正式对象与临时分片对象管理
-  - FileObject 按 Space 复用与 refCount 记录
-  - Document 元数据、软删除、reindex 任务创建
-  - `DOCUMENT_PROCESS` TaskOutbox 投递到 Kafka `noteweave.document`
-- Phase 3 文档处理与索引：
-  - `DOCUMENT_PROCESS` Worker 只消费 `taskId`，执行前回查 DB 状态
-  - TXT / Markdown / PDF 解析，DOCX 等不支持类型在上传初始化阶段拒绝
-  - parsed text 保存到 MinIO
-  - `document_chunk`、`indexVersion`、`activeIndexVersion`
-  - Elasticsearch BM25 索引与 Search Debug
-  - 重复消费幂等、失败落库并交给 Kafka 重试、reindex 失败保留旧 active version
-  - 文档删除或 KnowledgeBase 归档后不可被 Search Debug 召回
-- OpenAPI 文档导出：
-  - `GET /v3/api-docs`
-  - `GET /swagger-ui.html`
-- 本地依赖编排：
-  - 根目录 `docker-compose.yml` 提供 MySQL / Redis / MinIO / Elasticsearch / Kafka
+- `admin` 是管理员
+- `alice` 拥有个人空间，同时是团队空间编辑者
+- `bob` 是团队空间只读成员
 
 ---
 
-## 暂未实现（按规划延后）
+## 产品结构
 
-以下能力会在后续阶段接入，当前不在 Phase 0/1、Phase 1.5、Phase 2、Phase 3 范围内：
+### 团队空间
 
-- 团队 RAG 问答
-- LLM 回答生成、Citation 与 Evidence 持久化
-- Embedding 向量召回与混合检索
-- WebSocket 会话执行底座
-- 个人 ResearchProject
-- Artifact / Studio
+适合团队共享与协作，主要包含：
+
+- 团队知识库
+- 文档上传与索引
+- 团队聊天与检索问答
+- 团队 Wiki
+- 团队成果库
+- 管理后台任务、健康、评测、日志
+
+### 个人空间
+
+适合个人研究与沉淀，主要包含：
+
+- 研究项目
+- Source 导入
+- Article / Concept / Synthesis 卡片
+- Artifact 生成与编辑
+- Memory 和记忆沉淀
+
+### 通用底座
+
+- `Space.type = PERSONAL | TEAM`
+- 基于角色的访问控制
+- Kafka + Task Outbox 异步任务链路
+- MinIO 对象存储
+- Elasticsearch 检索与索引
 
 ---
 
-## 技术栈
+## 当前已实现能力
 
-- Java 17
-- Spring Boot 3.x
-- Spring Web
-- Spring Security
-- Spring Data JPA
-- Spring Data Redis
-- MySQL
-- MinIO
-- Elasticsearch
-- Kafka
-- JWT（jjwt）
-- Lombok
-- Maven
-- Test: JUnit 5, Spring Test, Testcontainers
+当前代码已覆盖以下核心能力：
+
+- Spring Boot 3.x + Java 17 + Maven 工程基础
+- Spring Security + JWT 登录认证
+- 用户、空间、成员管理
+- 团队空间与个人空间隔离
+- OWNER / EDITOR / VIEWER 权限矩阵
+- 统一错误处理与 API 响应结构
+- Task / Worker / Outbox 异步任务基础设施
+- 团队知识库创建、查询、归档
+- 分片上传、断点续传、文档元数据管理
+- 文档解析、切片、索引与搜索调试
+- 个人研究项目、资料、卡片、成果相关链路
+- 开发环境中文种子数据与验收样例
+
+当前仓库中的实现细分与阶段说明，请以这些文档为准：
+
+- [docs/PROJECT_STATUS.md](/D:/java-projects/NoteWeave/docs/PROJECT_STATUS.md)
+- [docs/CONTRACT.md](/D:/java-projects/NoteWeave/docs/CONTRACT.md)
+- [docs/implementation_breakdown.md](/D:/java-projects/NoteWeave/docs/implementation_breakdown.md)
+- [docs/features/database_api_blueprint.md](/D:/java-projects/NoteWeave/docs/features/database_api_blueprint.md)
 
 ---
 
-## 快速启动
+## 本地启动
 
-### 1) 环境准备
+### 1. 环境准备
+
+需要本地具备：
 
 - JDK 17+
 - Maven 3.9+
-- Docker Desktop 或兼容 Docker Compose 的容器运行时
+- Docker Desktop 或可用的 Docker Compose 环境
 
-### 2) 用 Docker 启动中间件
+### 2. 启动依赖服务
 
-```bash
+在项目根目录执行：
+
+```powershell
 docker compose up -d
 ```
 
-默认会启动：
+当前统一使用的宿主机端口：
 
-- MySQL 8
-- Redis 7.2
-- MinIO
-- Elasticsearch 8
-- Kafka
+- MySQL：`13307`
+- Redis：`6380`
+- MinIO API：`19100`
+- MinIO Console：`19101`
+- Elasticsearch：`19200`
+- Kafka：`19092`
 
-默认宿主机端口：
+### 3. 启动应用
 
-- MySQL: `3307`
-- Redis: `6380`
-- MinIO API: `9000`
-- MinIO Console: `9001`
-- Elasticsearch: `9200`
-- Kafka: `9092`
+方式一：Maven
 
-如果本机端口有冲突，可以覆盖：
+```powershell
+$env:SPRING_PROFILES_ACTIVE="dev"
+$env:SERVER_PORT="18082"
+mvn spring-boot:run
+```
 
-- `MYSQL_PORT`
-- `REDIS_PORT`
-- `MINIO_PORT`
-- `MINIO_CONSOLE_PORT`
-- `ES_PORT`
-- `KAFKA_PORT`
+方式二：Jar
 
-### 3) 配置项（可用环境变量覆盖）
+```powershell
+mvn -q -DskipTests package
+java -Dspring.profiles.active=dev -Dserver.port=18082 -jar target/noteweave-0.0.1-SNAPSHOT.jar
+```
 
-默认配置在 `src/main/resources/application.yml`：
+默认配置已经对齐当前端口；如需覆盖，可使用环境变量：
 
 - `DB_URL`
 - `DB_USERNAME`
 - `DB_PASSWORD`
 - `REDIS_HOST`
 - `REDIS_PORT`
-- `REDIS_PASSWORD`
 - `MINIO_ENDPOINT`
 - `MINIO_BUCKET`
 - `MINIO_TEST_BUCKET`
+- `ES_URIS`
 - `KAFKA_BOOTSTRAP_SERVERS`
-- `NOTEWEAVE_KAFKA_TOPIC_TASK`
-- `NOTEWEAVE_KAFKA_TOPIC_DOCUMENT`
-- `NOTEWEAVE_KAFKA_GROUP_TASK`
-- `NOTEWEAVE_TASK_DISPATCHER_ENABLED`
-- `NOTEWEAVE_TASK_DISPATCHER_FIXED_DELAY_MS`
-- `NOTEWEAVE_UPLOAD_CLEANUP_ENABLED`
-- `NOTEWEAVE_UPLOAD_CLEANUP_FIXED_DELAY_MS`
-- `JWT_SECRET_KEY`
-- `JWT_ACCESS_TOKEN_EXPIRATION_SECONDS`
-- `JWT_REFRESH_TOKEN_EXPIRATION_SECONDS`
 - `SERVER_PORT`
 
-### 4) 本地直接启动
+更详细的启动说明见：
 
-```bash
-mvn spring-boot:run
-```
+- [NOTEWEAVE_启动指南.md](/D:/java-projects/NoteWeave/NOTEWEAVE_启动指南.md)
 
-健康检查：
+---
 
-```text
-GET /actuator/health
-```
+## 验收与演示数据
 
-OpenAPI / Swagger：
+当前开发环境已内置一批中文演示数据，便于直接查看页面效果：
 
-```text
-GET /v3/api-docs
-GET /swagger-ui.html
-```
+- 团队空间：`产品策略协作台`
+- 团队知识库：`AI 产品研究资料库`、`发布准备台`
+- 个人研究项目：`三季度新手引导阻力研究`、`竞品表述跟踪`
+- 成果：`三季度新手引导建议简报`
+- 团队 Wiki：`研究协作原则`
+
+验收账号、角色说明、团队/个人空间差异、推荐验收路径见：
+
+- [NOTEWEAVE_验收说明.md](/D:/java-projects/NoteWeave/NOTEWEAVE_验收说明.md)
 
 ---
 
 ## 测试
 
-```bash
+运行单元测试与集成测试：
+
+```powershell
 mvn test
 ```
 
-集成测试使用 Testcontainers 启动所需中间件，不依赖本机已安装服务，也不要求提前执行 `docker compose up -d`。
-
-当前已包含：
+当前仓库已包含的代表性测试包括：
 
 - `AuthServiceTest`
 - `SpacePermissionServiceTest`
@@ -235,25 +195,43 @@ mvn test
 - `Phase3DocumentProcessingIntegrationTest`
 - `StoragePropertiesValidatorTest`
 
+浏览器 UI 冒烟回归可使用：
+
+```powershell
+cd tools/playwright-smoke
+npm install
+npm run install:browsers
+npm run smoke
+```
+
+---
+
+## 中间件契约
+
+本项目要求开发和测试都使用容器化中间件，不依赖本机散装安装服务。
+
+当前中间件包括：
+
+- MySQL
+- Redis
+- MinIO
+- Elasticsearch
+- Kafka
+
+详细约束见：
+
+- [docs/DOCKER_MIDDLEWARE.md](/D:/java-projects/NoteWeave/docs/DOCKER_MIDDLEWARE.md)
+- [.env.example](/D:/java-projects/NoteWeave/.env.example)
+
 ---
 
 ## 文档索引
 
-- 当前状态与开工顺序：[`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md)
-- 最小实现契约：[`docs/CONTRACT.md`](docs/CONTRACT.md)
-- 总体实现拆解：[`docs/implementation_breakdown.md`](docs/implementation_breakdown.md)
-- 数据库与 API 蓝图：[`docs/features/database_api_blueprint.md`](docs/features/database_api_blueprint.md)
-- Docker 中间件契约：[`docs/DOCKER_MIDDLEWARE.md`](docs/DOCKER_MIDDLEWARE.md)
-- 功能分阶段文档入口：[`docs/features/README.md`](docs/features/README.md)
-- 第一阶段详细说明：[`docs/features/phase_0_1_bootstrap_auth_space.md`](docs/features/phase_0_1_bootstrap_auth_space.md)
-- 产品背景说明：[`docs/note_weave_功能说明与架构文档.md`](docs/note_weave_功能说明与架构文档.md)
-
----
-
-## 路线图（简版）
-
-- Phase 4-5：团队 RAG、WebSocket 会话运行态与记忆
-- Phase 6-8：个人研究工作台、Wiki Compiler、Studio Artifact
-- Phase 9+：混合检索增强、Wiki 发布、可观测性与运维能力
-
-具体顺序以 `docs/implementation_breakdown.md` 为准。
+- [docs/PROJECT_STATUS.md](/D:/java-projects/NoteWeave/docs/PROJECT_STATUS.md)
+- [docs/CONTRACT.md](/D:/java-projects/NoteWeave/docs/CONTRACT.md)
+- [docs/implementation_breakdown.md](/D:/java-projects/NoteWeave/docs/implementation_breakdown.md)
+- [docs/features/README.md](/D:/java-projects/NoteWeave/docs/features/README.md)
+- [docs/features/database_api_blueprint.md](/D:/java-projects/NoteWeave/docs/features/database_api_blueprint.md)
+- [docs/note_weave_功能说明与架构文档.md](/D:/java-projects/NoteWeave/docs/note_weave_功能说明与架构文档.md)
+- [NOTEWEAVE_启动指南.md](/D:/java-projects/NoteWeave/NOTEWEAVE_启动指南.md)
+- [NOTEWEAVE_验收说明.md](/D:/java-projects/NoteWeave/NOTEWEAVE_验收说明.md)

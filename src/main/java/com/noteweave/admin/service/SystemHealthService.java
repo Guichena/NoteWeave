@@ -43,7 +43,7 @@ public class SystemHealthService {
     private final SystemHealthSnapshotRepository snapshotRepository;
     private final ObjectMapper objectMapper;
 
-    @Value("${spring.kafka.bootstrap-servers:localhost:9092}")
+    @Value("${spring.kafka.bootstrap-servers:localhost:19092}")
     private String kafkaBootstrapServers;
 
     @Value("${noteweave.kafka.topics.task:noteweave.task}")

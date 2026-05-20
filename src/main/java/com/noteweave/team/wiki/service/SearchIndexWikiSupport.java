@@ -32,7 +32,7 @@ public class SearchIndexWikiSupport {
 
     public SearchIndexWikiSupport(
             ObjectMapper objectMapper,
-            @Value("${noteweave.elasticsearch.uris:http://localhost:9200}") String uris,
+            @Value("${noteweave.elasticsearch.uris:http://localhost:19200}") String uris,
             @Value("${noteweave.elasticsearch.index-prefix:noteweave-dev-}") String indexPrefix,
             @Value("${noteweave.elasticsearch.username:}") String username,
             @Value("${noteweave.elasticsearch.password:}") String password
@@ -209,7 +209,7 @@ public class SearchIndexWikiSupport {
     }
 
     private String normalizeBaseUri(String uris) {
-        String first = (uris == null || uris.isBlank()) ? "http://localhost:9200" : uris.split(",")[0].trim();
+        String first = (uris == null || uris.isBlank()) ? "http://localhost:19200" : uris.split(",")[0].trim();
         if (!first.startsWith("http://") && !first.startsWith("https://")) {
             first = "http://" + first;
         }

@@ -194,7 +194,16 @@ public class ConceptCardService {
             return objectMapper.readValue(json, new TypeReference<List<Map<String, Object>>>() {
             });
         } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("Failed to read concept card evidence json", ex);
+            try {
+                List<String> legacyQuotes = objectMapper.readValue(json, new TypeReference<List<String>>() {
+                });
+                return legacyQuotes.stream()
+                        .filter(value -> value != null && !value.isBlank())
+                        .map(value -> Map.<String, Object>of("quoteText", value))
+                        .toList();
+            } catch (JsonProcessingException legacyEx) {
+                throw new IllegalStateException("Failed to read concept card evidence json", ex);
+            }
         }
     }
 

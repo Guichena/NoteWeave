@@ -142,25 +142,79 @@ function formatNumber(value) {
 function humanizeStatus(value) {
     const raw = String(value ?? "").toUpperCase();
     const labels = {
-        ACTIVE: "ACTIVE",
-        ARCHIVED: "ARCHIVED",
-        READY: "READY",
-        GENERATING: "GENERATING",
-        FAILED: "FAILED",
-        SUCCESS: "SUCCESS",
-        RUNNING: "RUNNING",
-        PENDING: "PENDING",
-        CANCELLED: "CANCELLED",
-        TIMEOUT: "TIMEOUT",
-        STOPPED: "STOPPED",
-        IDLE: "IDLE",
-        DRAFT_ACTIVE: "DRAFT",
-        CONVERTED: "CONVERTED",
-        DISCARDED: "DISCARDED",
-        IMPORTED: "IMPORTED",
-        COMPLETED: "COMPLETED"
+        ACTIVE: "启用",
+        ARCHIVED: "已归档",
+        READY: "就绪",
+        GENERATING: "生成中",
+        FAILED: "失败",
+        SUCCESS: "成功",
+        RUNNING: "运行中",
+        PENDING: "等待中",
+        CANCELLED: "已取消",
+        TIMEOUT: "已超时",
+        STOPPED: "已停止",
+        IDLE: "空闲",
+        DRAFT_ACTIVE: "草稿",
+        CONVERTED: "已转换",
+        DISCARDED: "已丢弃",
+        IMPORTED: "已导入",
+        COMPLETED: "已完成",
+        PUBLISHED: "已发布",
+        ENABLED: "已启用",
+        DISABLED: "已禁用",
+        HASHING: "计算校验中",
+        INIT: "初始化中",
+        UPLOADING: "上传中",
+        MERGING: "合并中",
+        PROCESSING: "处理中",
+        INDEXED: "已索引",
+        CONNECTED: "已连接",
+        CONNECTING: "连接中",
+        DISCONNECTED: "已断开"
     };
-    return labels[raw] || raw || "UNKNOWN";
+    return labels[raw] || raw || "未知";
+}
+
+function humanizeSystemRole(value) {
+    const raw = String(value ?? "").toUpperCase();
+    return {
+        ADMIN: "管理员",
+        USER: "普通用户"
+    }[raw] || raw || "未知角色";
+}
+
+function humanizeSpaceRole(value) {
+    const raw = String(value ?? "").toUpperCase();
+    return {
+        OWNER: "所有者",
+        EDITOR: "编辑者",
+        VIEWER: "查看者"
+    }[raw] || raw || "未知角色";
+}
+
+function humanizeSessionKind(value) {
+    const raw = String(value ?? "").toUpperCase();
+    return {
+        FORMAL: "正式会话",
+        DRAFT: "草稿会话"
+    }[raw] || raw || "未分类会话";
+}
+
+function humanizeScopeType(value) {
+    const raw = String(value ?? "").toUpperCase();
+    return {
+        SPACE: "当前空间",
+        KNOWLEDGE_BASE: "指定知识库"
+    }[raw] || raw || "未分类范围";
+}
+
+function humanizeMemoryType(value) {
+    const raw = String(value ?? "").toUpperCase();
+    return {
+        SPACE_CONTEXT: "空间上下文",
+        SESSION_INSIGHT: "会话洞察",
+        USER_PREFERENCE: "用户偏好"
+    }[raw] || raw || "未分类记忆";
 }
 
 function statusTone(value) {
@@ -200,6 +254,23 @@ function panel(title, body, { subtitle = "", actions = "" } = {}) {
 
 function emptyState(title, description) {
     return `<div class="empty-state"><strong>${escapeHtml(title)}</strong><div class="muted">${escapeHtml(description)}</div></div>`;
+}
+
+function renderGuideCards(items) {
+    if (!items?.length) {
+        return "";
+    }
+    return `
+        <section class="info-strip">
+            ${items.map((item) => `
+                <article class="info-card">
+                    ${item.eyebrow ? `<span>${escapeHtml(item.eyebrow)}</span>` : ""}
+                    <strong>${escapeHtml(item.title)}</strong>
+                    <p>${escapeHtml(item.description)}</p>
+                </article>
+            `).join("")}
+        </section>
+    `;
 }
 
 function renderErrorState(error) {
@@ -265,6 +336,14 @@ function resolveArtifactSpaceId(artifact = state.artifacts.detail) {
 
 function resolveArtifactSpaceIdById(artifactId) {
     return resolveArtifactSpaceId(findArtifactById(artifactId));
+}
+
+function canDistillArtifactToPersonalWiki(artifact = state.artifacts.detail) {
+    return Boolean(
+        artifact?.researchProjectId &&
+        personalSpaceId() &&
+        Number(artifact.spaceId) === Number(personalSpaceId())
+    );
 }
 
 function isPublicRoute(route) {
@@ -356,6 +435,112 @@ function routeLink(name, spaceId, extra = null) {
         default:
             return "/";
     }
+}
+
+function routeDescriptor(route = state.route) {
+    const descriptors = {
+        spaces: {
+            eyebrow: "工作区",
+            title: "空间总览",
+            detail: "在同一个工作台里切换团队空间和个人空间。"
+        },
+        "knowledge-list": {
+            eyebrow: "团队知识",
+            title: "知识库管理",
+            detail: "集中查看导入、索引和检索准备状态。"
+        },
+        "knowledge-detail": {
+            eyebrow: "团队知识",
+            title: "知识库详情",
+            detail: "查看文档状态、上传进度和检索调试信息。"
+        },
+        "team-chat": {
+            eyebrow: "聊天",
+            title: "团队检索问答",
+            detail: "基于共享空间上下文提问，并获得带依据的回答。"
+        },
+        "workbench-chat": {
+            eyebrow: "工作台",
+            title: "证据问答",
+            detail: "边看流式回答边检查引用，并沉淀有价值的对话。"
+        },
+        "workbench-studio": {
+            eyebrow: "工作室",
+            title: "成果生成",
+            detail: "结合研究上下文和空间记忆发起结构化生成任务。"
+        },
+        projects: {
+            eyebrow: "个人研究",
+            title: "项目列表",
+            detail: "查看研究项目的资料导入、编译和沉淀情况。"
+        },
+        "project-detail": {
+            eyebrow: "个人研究",
+            title: "研究概览",
+            detail: "从单个项目视角查看资料覆盖、卡片深度和成果产出。"
+        },
+        "project-sources": {
+            eyebrow: "个人研究",
+            title: "资料导入",
+            detail: "添加文件、链接和文本资料，并跟踪导入与编译状态。"
+        },
+        "project-cards": {
+            eyebrow: "个人研究",
+            title: "卡片库",
+            detail: "查看文章卡、概念卡和综合卡，并保留证据追溯能力。"
+        },
+        "project-generate": {
+            eyebrow: "个人研究",
+            title: "基于研究生成",
+            detail: "选择方法卡和上下文，生成可继续打磨的成果。"
+        },
+        artifacts: {
+            eyebrow: "成果",
+            title: "成果库",
+            detail: "浏览已生成内容，并继续编辑值得发布或沉淀的成果。"
+        },
+        "artifact-detail": {
+            eyebrow: "成果",
+            title: "阅读与编辑",
+            detail: "在舒适阅读中继续修改，并保留回到源证据的关联。"
+        },
+        wiki: {
+            eyebrow: "Wiki",
+            title: "团队知识页",
+            detail: "沉淀稳定团队知识，同时保留回到原始资料的路径。"
+        },
+        memory: {
+            eyebrow: "记忆",
+            title: "长期上下文",
+            detail: "管理会影响后续回答的用户、会话和空间层记忆。"
+        },
+        "admin-tasks": {
+            eyebrow: "管理后台",
+            title: "任务控制",
+            detail: "查看队列、失败原因和重试路径。"
+        },
+        "admin-health": {
+            eyebrow: "管理后台",
+            title: "系统健康",
+            detail: "查看组件状态、延迟和最近检查结果。"
+        },
+        "admin-evaluation": {
+            eyebrow: "管理后台",
+            title: "评测运行",
+            detail: "查看检索质量和引用覆盖率等评测记录。"
+        },
+        "admin-logs": {
+            eyebrow: "管理后台",
+            title: "运行日志",
+            detail: "集中查看 LLM 调用、审计记录和检索链路。"
+        }
+    };
+
+    return descriptors[route?.name] || {
+        eyebrow: "工作区",
+        title: "NoteWeave",
+        detail: "把团队知识、个人研究和成果沉淀放进同一个工作台。"
+    };
 }
 
 function queueToast(message, type = "info") {
@@ -469,7 +654,7 @@ async function ensureAuthBootstrap() {
         throw new Error("redirected");
     }
 
-    if (!state.user) {
+    if (!state.user?.systemRole || !state.user?.email) {
         state.user = await api.auth.me();
     }
 
@@ -597,7 +782,19 @@ async function loadArtifactsPage(spaceId) {
 async function loadArtifactDetail(spaceId, artifactId) {
     await loadArtifactsPage(spaceId);
     state.artifacts.detail = await api.artifacts.get(artifactId);
-    state.artifacts.relations = await api.artifacts.relations(artifactId);
+    if (canDistillArtifactToPersonalWiki(state.artifacts.detail)) {
+        try {
+            state.artifacts.relations = await api.artifacts.relations(artifactId);
+        } catch (error) {
+            if (error instanceof ApiError && [400, 403, 404].includes(error.status)) {
+                state.artifacts.relations = [];
+            } else {
+                throw error;
+            }
+        }
+    } else {
+        state.artifacts.relations = [];
+    }
     state.artifacts.editorDraft = {
         title: state.artifacts.detail.title || "",
         content: state.artifacts.detail.content || "",
@@ -667,7 +864,7 @@ async function loadAdminHealthPage() {
 async function loadAdminEvaluationPage() {
     const spaceId = currentRouteSpaceId();
     if (!spaceId) {
-        throw new ApiError("请先进入一个 Space。", { code: "SPACE_REQUIRED" });
+        throw new ApiError("请先进入一个空间。", { code: "SPACE_REQUIRED" });
     }
     state.admin.evalCases = await api.admin.evalCases(spaceId);
     if (state.admin.selectedEvalRunId) {
@@ -819,11 +1016,101 @@ function buildApp() {
 
 function renderPublicRoute(route) {
     const isLogin = route.name === "login";
+    const capabilityItems = isLogin ? [
+        { title: "知识整理", description: "团队知识库与个人资料统一管理。" },
+        { title: "研究协作", description: "围绕空间、对话和项目持续推进。" },
+        { title: "成果沉淀", description: "把结果整理成成果与 Wiki 页面。" }
+    ] : [
+        { title: "建立空间", description: "先创建空间，再组织研究。" },
+        { title: "导入资料", description: "上传知识、建立项目、开始提问。" },
+        { title: "继续发布", description: "结果保留下来，便于后续复用。" }
+    ];
     return `
         <div class="public-layout">
+            <section class="auth-showcase">
+                <div class="auth-brand-lockup">
+                    <div class="auth-brand-mark">NW</div>
+                <div class="auth-brand-copy">
+                    <strong>NoteWeave</strong>
+                    <span>面向知识整理与研究协作的 AI 工作台</span>
+                </div>
+            </div>
+            <div class="auth-showcase-copy">
+                <span class="context-kicker">${isLogin ? "知识整理、研究协作、成果沉淀" : "创建你的 NoteWeave 账号"}</span>
+                    <h2>${isLogin ? "NoteWeave 是一个用于知识整理、研究协作和成果沉淀的工作台。" : "注册后即可开始使用 NoteWeave 进行知识整理、研究协作和成果沉淀。"}</h2>
+                    <p>${isLogin ? "把知识库、研究项目、聊天和成果放在同一个界面里，方便整理和复用。" : "创建账号后即可建立空间、上传资料并整理结果。"}</p>
+                </div>
+                <div class="auth-capability-list">
+                    ${capabilityItems.map((item) => `
+                        <article class="auth-capability-item">
+                            <span></span>
+                            <div class="auth-capability-copy">
+                                <strong>${escapeHtml(item.title)}</strong>
+                                <p>${escapeHtml(item.description)}</p>
+                            </div>
+                        </article>
+                    `).join("")}
+                </div>
+                <div class="auth-visual">
+                    <div class="auth-visual-window">
+                        <div class="auth-visual-topbar">
+                            <strong>NoteWeave 工作台</strong>
+                            <div class="auth-visual-dots"><span></span><span></span><span></span></div>
+                        </div>
+                        <div class="auth-visual-layout">
+                            <aside class="auth-visual-sidebar">
+                                <span class="active">空间</span>
+                                <span>知识库</span>
+                                <span>研究</span>
+                                <span>成果</span>
+                            </aside>
+                            <div class="auth-visual-content">
+                                <div class="auth-visual-hero">
+                                    <strong>${isLogin ? "Q3 入门研究" : "创建你的第一个工作空间"}</strong>
+                                    <p>${isLogin ? "知识、聊天和成果保持在同一条工作链路里。" : "创建空间、导入资料，并持续整理可编辑成果。"}</p>
+                                </div>
+                                <div class="auth-visual-grid">
+                                    <div class="auth-visual-card primary">
+                                        <strong>团队知识库</strong>
+                                        <span>12 份文档已建立索引</span>
+                                    </div>
+                                    <div class="auth-visual-card">
+                                        <strong>个人研究</strong>
+                                        <span>3 个进行中的项目</span>
+                                    </div>
+                                    <div class="auth-visual-card">
+                                        <strong>工作台聊天</strong>
+                                        <span>回答带引用依据</span>
+                                    </div>
+                                    <div class="auth-visual-card accent">
+                                        <strong>成果输出</strong>
+                                        <span>可继续编辑与发布</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="auth-float-card top">
+                        <strong>知识库</strong>
+                        <span>政策手册已同步</span>
+                    </div>
+                    <div class="auth-float-card bottom">
+                        <strong>成果草稿</strong>
+                        <span>已可进入审阅</span>
+                    </div>
+                </div>
+            </section>
             <section class="auth-card">
-                <h1>${isLogin ? "进入 Workspace" : "创建账号"}</h1>
-                <p class="subtitle">${isLogin ? "首屏直接进入工作台，不绕营销页。登录后即可切换 Space、上传知识库和启动 Chat。" : "注册后会直接拿到访问令牌，并可以马上进入你的工作台。"} </p>
+                <div class="auth-card-brand">
+                    <div class="auth-brand-mark small">NW</div>
+                    <div class="auth-card-brand-copy">
+                        <strong>NoteWeave</strong>
+                        <span>${isLogin ? "登录后直接进入研究工作台" : "创建账号后直接进入你的 NoteWeave 工作台"}</span>
+                    </div>
+                </div>
+                <span class="context-kicker">${isLogin ? "欢迎回到 NoteWeave" : "创建新的 NoteWeave 账号"}</span>
+                <h1>${isLogin ? "登录 NoteWeave" : "注册并进入 NoteWeave"}</h1>
+                <p class="subtitle">${isLogin ? "登录后直接进入工作台。" : "注册后直接开始创建空间、导入资料和沉淀成果。"} </p>
                 <form id="${isLogin ? "login-form" : "register-form"}" class="inline-form" style="margin-top:18px;">
                     ${isLogin ? `
                         <div class="field">
@@ -859,6 +1146,10 @@ function renderPublicRoute(route) {
                         <button class="ghost-button" type="button" data-nav="${isLogin ? "/register" : "/login"}">${isLogin ? "去注册" : "去登录"}</button>
                     </div>
                 </form>
+                <div class="auth-form-note">
+                    <strong>${isLogin ? "第一次进入 NoteWeave 先看哪里？" : "注册完成后推荐怎么开始？"}</strong>
+                    <p>${isLogin ? "先从空间页进入对应空间，再切到知识库、聊天或个人研究。" : "建议先创建一个空间，再上传资料和建立项目。"}</p>
+                </div>
             </section>
         </div>
     `;
@@ -868,61 +1159,80 @@ function renderSidebar(route) {
     const spaceId = currentRouteSpaceId();
     const personalNavSpaceId = personalSpaceId();
     const adminVisible = state.user?.systemRole === "ADMIN";
-    const navItem = (label, target, active) => `<a class="nav-link ${active ? "active" : ""}" href="${target}" data-nav="${target}"><span>${label}</span></a>`;
+    const navItem = (label, target, active) => `<a class="nav-link ${active ? "active" : ""}" href="${target}" data-nav="${target}"><span class="nav-link-text">${label}</span></a>`;
 
     return `
         <aside class="sidebar">
             <div class="brand">
+                <span class="brand-badge">知识、研究与成稿一体化工作台</span>
                 <strong>NoteWeave</strong>
-                <span>Workspace UI / Team Knowledge / Personal Research</span>
+                <span>把团队知识、个人研究和可持续沉淀的成果放进同一个清晰工作区。</span>
             </div>
             <div class="nav-group">
-                <div class="nav-label">Workspace</div>
-                ${navItem("Spaces", "/spaces", route.name === "spaces")}
-                ${spaceId ? navItem("Team Knowledge", routeLink("knowledge", spaceId), route.name.startsWith("knowledge")) : ""}
-                ${personalNavSpaceId ? navItem("Personal Research", routeLink("projects", personalNavSpaceId), route.name.startsWith("project") || route.name === "projects") : ""}
-                ${spaceId ? navItem("Chat", routeLink("chat", spaceId), route.name === "team-chat" || route.name === "workbench-chat") : ""}
-                ${spaceId ? navItem("Studio", routeLink("studio", spaceId), route.name === "workbench-studio") : ""}
-                ${spaceId ? navItem("Artifacts", routeLink("artifacts", spaceId), route.name === "artifacts" || route.name === "artifact-detail") : ""}
-                ${spaceId ? navItem("Wiki", routeLink("wiki", spaceId), route.name === "wiki") : ""}
-                ${spaceId ? navItem("Memory", routeLink("memory", spaceId), route.name === "memory") : ""}
+                <div class="nav-label">工作区</div>
+                ${navItem("空间", "/spaces", route.name === "spaces")}
+                ${spaceId ? navItem("团队知识", routeLink("knowledge", spaceId), route.name.startsWith("knowledge")) : ""}
+                ${personalNavSpaceId ? navItem("个人研究", routeLink("projects", personalNavSpaceId), route.name.startsWith("project") || route.name === "projects") : ""}
+                ${spaceId ? navItem("聊天", routeLink("chat", spaceId), route.name === "team-chat" || route.name === "workbench-chat") : ""}
+                ${spaceId ? navItem("工作室", routeLink("studio", spaceId), route.name === "workbench-studio") : ""}
+                ${spaceId ? navItem("成果", routeLink("artifacts", spaceId), route.name === "artifacts" || route.name === "artifact-detail") : ""}
+                ${spaceId ? navItem("知识沉淀", routeLink("wiki", spaceId), route.name === "wiki") : ""}
+                ${spaceId ? navItem("记忆", routeLink("memory", spaceId), route.name === "memory") : ""}
             </div>
             ${adminVisible ? `
                 <div class="nav-group">
-                    <div class="nav-label">Admin</div>
-                    ${navItem("Tasks", "/admin/tasks", route.name === "admin-tasks")}
-                    ${navItem("Health", "/admin/health", route.name === "admin-health")}
-                    ${navItem("Evaluation", "/admin/evaluation", route.name === "admin-evaluation")}
-                    ${navItem("Logs", "/admin/logs", route.name === "admin-logs")}
+                    <div class="nav-label">管理后台</div>
+                    ${navItem("任务", "/admin/tasks", route.name === "admin-tasks")}
+                    ${navItem("健康", "/admin/health", route.name === "admin-health")}
+                    ${navItem("评测", "/admin/evaluation", route.name === "admin-evaluation")}
+                    ${navItem("日志", "/admin/logs", route.name === "admin-logs")}
                 </div>
             ` : ""}
+            <div class="sidebar-footer">
+                <div class="sidebar-footer-row">
+                    <strong>${escapeHtml(state.user?.displayName || state.user?.username || "工作台用户")}</strong>
+                    ${state.user?.systemRole ? tag(humanizeSystemRole(state.user.systemRole)) : ""}
+                </div>
+                <p class="sidebar-note">让回答可追溯、状态可见、下一步操作始终靠近你。</p>
+            </div>
         </aside>
     `;
 }
 
 function renderTopbar() {
     const space = currentSpace();
+    const descriptor = routeDescriptor(state.route);
     return `
         <div class="topbar">
             <div class="topbar-left">
-                <div class="workspace-status">
-                    <span class="status-dot ${escapeHtml(state.websocket.status)} ${state.websocket.status === "connected" ? "connected" : ""}"></span>
-                    <span>WebSocket ${escapeHtml(state.websocket.status)}</span>
+                <div class="topbar-context">
+                    <span class="context-kicker">${escapeHtml(descriptor.eyebrow)}</span>
+                    <strong>${escapeHtml(descriptor.title)}</strong>
+                    <span>${escapeHtml(descriptor.detail)}</span>
                 </div>
-                ${space ? `<div class="workspace-status"><strong>${escapeHtml(space.name)}</strong></div>` : ""}
+                <div class="topbar-meta">
+                    <div class="workspace-status">
+                        <span class="status-dot ${escapeHtml(state.websocket.status)} ${state.websocket.status === "connected" ? "connected" : ""}"></span>
+                        <span>实时连接 ${escapeHtml(humanizeStatus(state.websocket.status))}</span>
+                    </div>
+                    ${space ? `<div class="workspace-status workspace-status-strong"><span class="status-caption">当前空间</span><strong>${escapeHtml(space.name)}</strong></div>` : ""}
+                </div>
             </div>
             <div class="topbar-right">
-                <label class="field" style="min-width:220px;">
-                    <span class="muted">Current Space</span>
+                <label class="field topbar-field">
+                    <span class="muted">切换空间</span>
                     <select id="space-switcher">
-                        <option value="">选择 Space</option>
+                        <option value="">选择空间</option>
                         ${state.spaces.map((spaceItem) => `
                             <option value="${spaceItem.id}" ${Number(spaceItem.id) === Number(currentRouteSpaceId()) ? "selected" : ""}>${escapeHtml(spaceItem.name)}</option>
                         `).join("")}
                     </select>
                 </label>
-                <div class="workspace-status">
-                    <span>${escapeHtml(state.user?.displayName || state.user?.username || "User")}</span>
+                <div class="user-chip">
+                    <div class="user-chip-copy">
+                        <strong>${escapeHtml(state.user?.displayName || state.user?.username || "用户")}</strong>
+                        <span>${escapeHtml(state.user?.email || humanizeSystemRole(state.user?.systemRole) || "空间成员")}</span>
+                    </div>
                     <button class="ghost-button" type="button" data-action="logout">退出</button>
                 </div>
             </div>
@@ -932,12 +1242,13 @@ function renderTopbar() {
 
 function renderDrawer() {
     if (!state.ui.drawer) {
-        return `<aside class="drawer"><div class="drawer-header"><div><h2>Details</h2><p class="panel-subtitle">选择 Citation、Trace 或 Artifact 关联后会显示在这里。</p></div></div><div class="drawer-body">${emptyState("右侧抽屉待命中", "点击消息引用、卡片证据或日志追踪即可查看详情。")}</div></aside>`;
+        return `<aside class="drawer drawer-empty" aria-hidden="true"><div class="drawer-header"><div><span class="context-kicker">上下文抽屉</span><h2>详情面板</h2><p class="panel-subtitle">选择引用、追踪或成果关联后，会在这里显示细节。</p></div></div><div class="drawer-body">${emptyState("右侧抽屉待命中", "点击消息引用、卡片证据或日志追踪即可查看详情。")}</div></aside>`;
     }
     return `
         <aside class="drawer">
             <div class="drawer-header">
                 <div>
+                    <span class="context-kicker">上下文</span>
                     <h2>${escapeHtml(state.ui.drawer.title)}</h2>
                 </div>
                 <button class="ghost-button" type="button" data-action="close-drawer">关闭</button>
@@ -1006,19 +1317,34 @@ function renderPageContent(route) {
 
 function renderSpacesPage() {
     const members = (state.spaceMembers || {})[state.ui.selectedSpacePreviewId] || [];
+    const spaces = state.spaces || [];
+    const teamSpaces = spaces.filter((space) => String(space.type || "").toUpperCase() === "TEAM");
+    const personalSpaces = spaces.filter((space) => String(space.type || "").toUpperCase() === "PERSONAL");
     return `
         <div class="page-header">
             <div>
-                <h1>Space 选择与切换</h1>
-                <p class="subtitle">查看你已加入的 Space，创建新 Space，并快速进入实际工作区。</p>
+                <div class="context-kicker">工作区</div>
+                <h1>空间选择与切换</h1>
+                <p class="subtitle">查看你已加入的空间，创建新空间，并快速进入实际工作区。</p>
             </div>
         </div>
+        ${renderGuideCards([
+            { eyebrow: "Boundary", title: "团队与个人空间分层使用", description: "团队空间适合共享知识和协作入口，个人空间更适合私有研究和持续沉淀。" },
+            { eyebrow: "Preview", title: "先看成员再进入", description: "进入前先确认所有者和角色，能减少跨空间误操作和权限疑惑。" },
+            { eyebrow: "Naming", title: "名称和描述直接定义协作边界", description: "一句话说清这个空间存什么资料、谁维护、用来解决什么问题。" }
+        ])}
+        <div class="metric-row">
+            <div class="metric"><strong>${formatNumber(spaces.length)}</strong><span>已加入空间</span></div>
+            <div class="metric"><strong>${formatNumber(teamSpaces.length)}</strong><span>团队空间</span></div>
+            <div class="metric"><strong>${formatNumber(personalSpaces.length)}</strong><span>个人空间</span></div>
+            <div class="metric"><strong>${formatNumber(members.length)}</strong><span>预览成员</span></div>
+        </div>
         <div class="content-grid cols-2">
-            ${panel("已加入的 Space", `
+            ${panel("已加入的空间", `
                 <div class="table-wrap">
                     <table>
                         <thead>
-                        <tr><th>Name</th><th>Status</th><th>Owner</th><th>Actions</th></tr>
+                        <tr><th>名称</th><th>状态</th><th>所有者</th><th>操作</th></tr>
                         </thead>
                         <tbody>
                         ${state.spaces.map((space) => `
@@ -1033,22 +1359,22 @@ function renderSpacesPage() {
                                     </div>
                                 </td>
                             </tr>
-                        `).join("") || `<tr><td colspan="4">${emptyState("暂无 Space", "先创建一个团队空间。")}</td></tr>`}
+                        `).join("") || `<tr><td colspan="4">${emptyState("暂无空间", "先创建一个团队空间。")}</td></tr>`}
                         </tbody>
                     </table>
                 </div>
             `)}
-            ${panel("创建 Space / 成员预览", `
+            ${panel("创建空间 / 成员预览", `
                 <form id="create-space-form" class="inline-form">
                     <div class="field">
-                        <label>Space 名称</label>
+                        <label>空间名称</label>
                         <input name="name" required maxlength="128" placeholder="例如：Platform Research">
                     </div>
                     <div class="field">
                         <label>描述</label>
-                        <textarea name="description" placeholder="记录这个 Space 的协作范围。"></textarea>
+                        <textarea name="description" placeholder="记录这个空间的协作范围。"></textarea>
                     </div>
-                    <button class="button" type="submit">创建 Space</button>
+                    <button class="button" type="submit">创建空间</button>
                 </form>
                 <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">
                 ${state.ui.selectedSpacePreviewId ? `
@@ -1058,32 +1384,48 @@ function renderSpacesPage() {
                             <div class="list-item">
                                 <div class="list-item-header">
                                     <strong>${escapeHtml(member.displayName || member.username)}</strong>
-                                    ${badge(member.role, member.role)}
+                                    ${badge(member.role, humanizeSpaceRole(member.role))}
                                 </div>
                                 <div class="muted">${escapeHtml(member.email || "无邮箱")}</div>
                             </div>
-                        `).join("") || emptyState("还没有成员列表", "这个 Space 暂时没有可显示成员。")}
+                        `).join("") || emptyState("还没有成员列表", "这个空间暂时没有可显示成员。")}
                     </div>
-                ` : emptyState("先选一个 Space", "点击左侧表格里的“成员”来查看角色和成员状态。")}
+                ` : emptyState("先选一个空间", "点击左侧表格里的“成员”来查看角色和成员状态。")}
             `)}
         </div>
     `;
 }
 
 function renderKnowledgeListPage() {
+    const knowledgeBases = state.knowledge.list || [];
+    const allDocuments = knowledgeBases.flatMap((kb) => state.knowledge.documentsByKb[kb.id] || []);
+    const indexedCount = allDocuments.filter((document) => String(document.indexStatus || "").toUpperCase().includes("INDEX")).length;
+    const failedCount = allDocuments.filter((document) => String(document.status || document.indexStatus || document.parseStatus || "").toUpperCase().includes("FAIL")).length;
     return `
         <div class="page-header">
             <div>
-                <h1>Team Knowledge</h1>
+                <div class="context-kicker">团队知识</div>
+                <h1>团队知识</h1>
                 <p class="subtitle">知识库列表直接连接真实 API，能查看文档数、处理状态，并进入详情页上传与检索。</p>
             </div>
         </div>
+        ${renderGuideCards([
+            { eyebrow: "Scope", title: "按主题拆知识库", description: "把文档按团队主题或业务域拆开，比把所有资料塞进一个库里更容易维护。" },
+            { eyebrow: "Status", title: "先看处理状态再检索", description: "Indexed、Processing 和 Failed 一眼分清，能更快定位问题出在导入还是检索。" },
+            { eyebrow: "Naming", title: "把知识库名写成内容域", description: "比起临时文件夹名称，明确的主题名更适合长期被团队反复引用。" }
+        ])}
+        <div class="metric-row knowledge-metrics">
+            <div class="metric"><strong>${formatNumber(knowledgeBases.length)}</strong><span>知识库数量</span></div>
+            <div class="metric"><strong>${formatNumber(allDocuments.length)}</strong><span>文档总数</span></div>
+            <div class="metric"><strong>${formatNumber(indexedCount)}</strong><span>已索引</span></div>
+            <div class="metric"><strong>${formatNumber(failedCount)}</strong><span>待处理</span></div>
+        </div>
         <div class="content-grid cols-2">
-            ${panel("Knowledge Base 列表", `
+            ${panel("知识库列表", `
                 <div class="table-wrap">
                     <table>
                         <thead>
-                        <tr><th>Name</th><th>Status</th><th>Documents</th><th>Latest Processing</th><th></th></tr>
+                        <tr><th>名称</th><th>状态</th><th>文档数</th><th>最新处理状态</th><th></th></tr>
                         </thead>
                         <tbody>
                         ${state.knowledge.list.map((kb) => {
@@ -1104,7 +1446,7 @@ function renderKnowledgeListPage() {
                     </table>
                 </div>
             `)}
-            ${panel("创建 Knowledge Base", `
+            ${panel("创建知识库", `
                 <form id="create-kb-form" class="inline-form">
                     <div class="field">
                         <label>名称</label>
@@ -1126,22 +1468,40 @@ function renderKnowledgeDetailPage(knowledgeBaseId) {
     const documents = state.knowledge.documentsByKb[knowledgeBaseId] || [];
     const searchResult = state.knowledge.searchResults[knowledgeBaseId];
     const uploadJob = state.knowledge.uploadJobsByKb[knowledgeBaseId];
+    const indexedDocuments = documents.filter((document) => String(document.indexStatus || "").toUpperCase().includes("INDEX"));
+    const failedDocuments = documents.filter((document) => String(document.status || document.indexStatus || document.parseStatus || "").toUpperCase().includes("FAIL"));
+    const processingDocuments = documents.filter((document) => {
+        const raw = String(document.status || document.indexStatus || document.parseStatus || "").toUpperCase();
+        return raw && !raw.includes("FAIL") && !raw.includes("INDEX") && raw !== "READY" && raw !== "SUCCESS";
+    });
     return `
         <div class="page-header">
             <div>
-                <h1>${escapeHtml(kb?.name || "Knowledge Base")}</h1>
+                <div class="context-kicker">知识库详情</div>
+                <h1>${escapeHtml(kb?.name || "知识库")}</h1>
                 <p class="subtitle">上传支持 MD5 计算、分片、暂停/继续、异步任务状态展示和检索测试。</p>
             </div>
             <div class="page-actions">
                 <button class="ghost-button" type="button" data-nav="${routeLink("knowledge", currentRouteSpaceId())}">返回列表</button>
             </div>
         </div>
+        ${renderGuideCards([
+            { eyebrow: "Upload", title: "上传不中断浏览", description: "文档处理与搜索测试可以并行进行，不必等所有任务完成再继续工作。" },
+            { eyebrow: "Search", title: "用真实关键词压测召回", description: "先拿团队常问的问题测试检索，比只看上传成功更能判断知识库是否可用。" },
+            { eyebrow: "Repair", title: "失败项优先看 parse 和 index", description: "先判断错误发生在解析还是索引阶段，再决定重传、暂停或继续。" }
+        ])}
+        <div class="metric-row knowledge-metrics">
+            <div class="metric"><strong>${formatNumber(documents.length)}</strong><span>文档总数</span></div>
+            <div class="metric"><strong>${formatNumber(indexedDocuments.length)}</strong><span>已索引</span></div>
+            <div class="metric"><strong>${formatNumber(processingDocuments.length)}</strong><span>处理中</span></div>
+            <div class="metric"><strong>${formatNumber(failedDocuments.length)}</strong><span>失败</span></div>
+        </div>
         <div class="content-grid cols-2">
             ${panel("文档列表", `
                 <div class="table-wrap">
                     <table>
                         <thead>
-                        <tr><th>Title</th><th>Status</th><th>Parse / Index</th><th>Chunks</th><th>Error</th></tr>
+                        <tr><th>标题</th><th>状态</th><th>解析 / 索引</th><th>分片数</th><th>错误</th></tr>
                         </thead>
                         <tbody>
                         ${documents.map((document) => `
@@ -1166,13 +1526,14 @@ function renderKnowledgeDetailPage(knowledgeBaseId) {
                     <button class="button" type="submit">开始上传</button>
                 </form>
                 ${uploadJob ? `
-                    <div class="list-item" style="margin-top:14px;">
+                    <div class="list-item upload-status-card" style="margin-top:14px;">
                         <div class="list-item-header">
                             <strong>${escapeHtml(uploadJob.fileName)}</strong>
                             ${badge(uploadJob.stage || uploadJob.status || "RUNNING", uploadJob.stage || uploadJob.status || "RUNNING")}
                         </div>
                         <div class="muted">MD5: <span class="mono">${escapeHtml(uploadJob.fileMd5 || "计算中")}</span></div>
                         <div class="muted">Progress: ${uploadJob.progress ? uploadJob.progress.toFixed(1) : "0.0"}%</div>
+                        <div class="progress-bar" aria-hidden="true"><span class="progress-bar-fill" style="width:${Math.max(0, Math.min(100, uploadJob.progress || 0))}%"></span></div>
                         ${uploadJob.task ? `<div class="muted">Task ${uploadJob.task.id}: ${escapeHtml(uploadJob.task.taskStatus)}</div>` : ""}
                         ${uploadJob.error ? `<div class="error-state" style="margin-top:10px;">${escapeHtml(uploadJob.error)}</div>` : ""}
                         <div class="page-actions" style="margin-top:12px;">
@@ -1190,9 +1551,9 @@ function renderKnowledgeDetailPage(knowledgeBaseId) {
                     <button class="button" type="submit">检索测试</button>
                 </form>
                 ${searchResult ? `
-                    <div class="list-stack" style="margin-top:14px;">
+                    <div class="list-stack search-result-stack" style="margin-top:14px;">
                         ${(searchResult.items || []).map((item) => `
-                            <div class="list-item">
+                            <div class="list-item search-result-item">
                                 <div class="list-item-header">
                                     <strong>${escapeHtml(item.documentTitle || `Chunk ${item.chunkId}`)}</strong>
                                     ${tag(`score ${item.score?.toFixed?.(3) ?? item.score ?? "—"}`)}
@@ -1202,7 +1563,7 @@ function renderKnowledgeDetailPage(knowledgeBaseId) {
                         `).join("") || emptyState("没有命中", "换一个关键词试试。")}
                     </div>
                 ` : ""}
-            `)}
+            `, { subtitle: "上传任务不会阻塞文档浏览，检索结果直接展示命中的 chunk 片段。" })}
         </div>
     `;
 }
@@ -1225,43 +1586,50 @@ function renderChatPage() {
     return `
         <div class="page-header">
             <div>
-                <h1>Workbench Chat</h1>
-                <p class="subtitle">左侧会话、中间消息流、右侧 Citation / Context / Artifact 抽屉。支持流式、中断、草稿会话恢复。</p>
+                <div class="context-kicker">工作台</div>
+                <h1>工作台聊天</h1>
+                <p class="subtitle">左侧会话、中间消息流、右侧引用 / 上下文 / 成果抽屉。支持流式回答、中断和草稿会话恢复。</p>
             </div>
         </div>
+        ${renderGuideCards([
+            { eyebrow: "Prompting", title: "把问题写成明确任务", description: "说明你是要判断、比较、总结还是生成结果，响应通常会更稳。" },
+            { eyebrow: "Session", title: "正式会话与草稿会话分开", description: "草稿适合试探和摸索，正式会话更适合留下后续要复用的结论链。" },
+            { eyebrow: "Evidence", title: "答案最好回到引用", description: "抽屉和引用按钮让你能快速验证回答到底基于哪些上下文。" }
+        ])}
         <div class="chat-layout">
             <section class="session-list">
                 <div class="drawer-header">
                     <div>
+                        <span class="context-kicker">会话</span>
                         <h2>会话</h2>
                         <p class="panel-subtitle">正式会话和草稿都会保留。</p>
                     </div>
                 </div>
                 <div class="session-items">
-                    <form id="create-session-form" class="inline-form">
+                    <form id="create-session-form" class="inline-form session-create-form">
                         <div class="field">
                             <label>会话标题</label>
-                            <input name="title" placeholder="例如：RAG grounding check" required>
+                                <input name="title" placeholder="例如：新用户激活证据核对" required>
                         </div>
                         <div class="field-grid cols-2">
                             <div class="field">
                                 <label>类型</label>
                                 <select name="sessionKind">
-                                    <option value="FORMAL">FORMAL</option>
-                                    <option value="DRAFT">DRAFT</option>
+                                    <option value="FORMAL">正式会话</option>
+                                    <option value="DRAFT">草稿会话</option>
                                 </select>
                             </div>
                             <div class="field">
                                 <label>范围</label>
                                 <select name="scopeType">
-                                    <option value="SPACE">SPACE</option>
-                                    <option value="KNOWLEDGE_BASE">KNOWLEDGE_BASE</option>
+                                    <option value="SPACE">当前空间</option>
+                                    <option value="KNOWLEDGE_BASE">指定知识库</option>
                                 </select>
                             </div>
                         </div>
                         <div class="field">
                             <label>知识库 IDs（逗号分隔，可空）</label>
-                            <input name="scopeIds" placeholder="留空则使用当前 Space">
+                            <input name="scopeIds" placeholder="留空则使用当前空间">
                         </div>
                         <button class="button" type="submit">创建会话</button>
                     </form>
@@ -1272,7 +1640,7 @@ function renderChatPage() {
                                     <strong>${escapeHtml(item.title)}</strong>
                                     ${badge(item.runtimeStatus || item.status, item.runtimeStatus || item.status)}
                                 </div>
-                                <div class="muted">${escapeHtml(item.sessionKind)} / ${escapeHtml(item.scopeType)}</div>
+                                <div class="muted">${escapeHtml(humanizeSessionKind(item.sessionKind))} / ${escapeHtml(humanizeScopeType(item.scopeType))}</div>
                                 <div class="muted">${formatDate(item.updatedAt || item.lastActiveAt)}</div>
                             </button>
                         `).join("") || emptyState("还没有会话", "创建一个正式会话或草稿会话开始提问。")}
@@ -1285,7 +1653,7 @@ function renderChatPage() {
                 </div>
                 <div class="chat-input">
                     ${session ? `
-                        <div class="page-actions" style="margin-bottom:10px;">
+                        <div class="page-actions chat-toolbar">
                             ${session.sessionKind === "DRAFT" ? `<button class="ghost-button" type="button" data-action="convert-draft" data-session-id="${session.id}">转正式会话</button><button class="danger-button" type="button" data-action="discard-draft" data-session-id="${session.id}">丢弃草稿</button>` : ""}
                             ${localState?.assistantMessage?.status === "RUNNING" ? `<button class="danger-button" type="button" data-action="stop-chat" data-session-id="${session.id}">停止生成</button>` : ""}
                             <button class="ghost-button" type="button" data-action="reconnect-chat">重连 WebSocket</button>
@@ -1303,8 +1671,9 @@ function renderChatPage() {
             <section class="context-panel">
                 <div class="drawer-header">
                     <div>
-                        <h2>Citation / Artifacts</h2>
-                        <p class="panel-subtitle">点击消息里的 Citation 可在右侧全局抽屉看证据定位。</p>
+                        <span class="context-kicker">上下文</span>
+                        <h2>引用 / 成果</h2>
+                        <p class="panel-subtitle">点击消息里的引用，可在右侧全局抽屉查看证据定位。</p>
                     </div>
                 </div>
                 <div class="context-body">
@@ -1318,10 +1687,10 @@ function renderChatPage() {
                                     </div>
                                     <div class="muted">${escapeHtml(artifact.artifactType)}</div>
                                     <div class="page-actions" style="margin-top:10px;">
-                                        <button class="ghost-button" type="button" data-action="open-artifact" data-artifact-id="${artifact.id}" data-space-id="${artifact.spaceId || currentRouteSpaceId()}">打开 Artifact</button>
+                                        <button class="ghost-button" type="button" data-action="open-artifact" data-artifact-id="${artifact.id}" data-space-id="${artifact.spaceId || currentRouteSpaceId()}">打开成果</button>
                                     </div>
                                 </div>
-                            `).join("") || emptyState("暂无 Artifact", "聊天生成的 Artifact 会显示在这里。")}
+                            `).join("") || emptyState("暂无成果", "聊天生成的成果会显示在这里。")}
                         </div>
                     ` : emptyState("暂无上下文", "先选择一个会话。")}
                 </div>
@@ -1337,7 +1706,7 @@ function renderChatMessage(message) {
     if (citations?.length) {
         citations.forEach((citation, index) => {
             const key = registerCitation(citation);
-            actions.push(`<button class="citation-chip" type="button" data-action="open-citation" data-citation-key="${key}">Citation ${index + 1}</button>`);
+            actions.push(`<button class="citation-chip" type="button" data-action="open-citation" data-citation-key="${key}">引用 ${index + 1}</button>`);
         });
     }
     if (message.id && roleClass === "assistant") {
@@ -1361,19 +1730,36 @@ function renderChatMessage(message) {
 }
 
 function renderProjectsPage() {
+    const projects = state.personal.projects || [];
+    const counts = Object.values(state.personal.projectCounts || {});
+    const totalSources = counts.reduce((sum, item) => sum + Number(item.sourceCount || 0), 0);
+    const totalCards = counts.reduce((sum, item) => sum + Number(item.cardCount || 0), 0);
+    const totalArtifacts = counts.reduce((sum, item) => sum + Number(item.artifactCount || 0), 0);
     return `
         <div class="page-header">
             <div>
-                <h1>Personal Research Projects</h1>
-                <p class="subtitle">项目列表、创建入口，以及 Source / Card / Artifact 数量概览。</p>
+                <div class="context-kicker">个人研究</div>
+                <h1>个人研究项目</h1>
+                <p class="subtitle">项目列表、创建入口，以及资料、卡片和成果数量概览。</p>
             </div>
+        </div>
+        ${renderGuideCards([
+            { eyebrow: "Question", title: "一个项目对应一个研究问题", description: "先把研究目标写清楚，后续的资料、卡片和成果才会更聚焦。" },
+            { eyebrow: "Flow", title: "先导资料，再编译卡片", description: "资料是原料层，卡片是结构化理解层，成果是输出层。" },
+            { eyebrow: "Reuse", title: "把成果当成可复用资产", description: "项目结束后真正有价值的是可以被继续改写、发布和引用的成果。" }
+        ])}
+        <div class="metric-row">
+            <div class="metric"><strong>${formatNumber(projects.length)}</strong><span>项目数</span></div>
+            <div class="metric"><strong>${formatNumber(totalSources)}</strong><span>资料数</span></div>
+            <div class="metric"><strong>${formatNumber(totalCards)}</strong><span>卡片数</span></div>
+            <div class="metric"><strong>${formatNumber(totalArtifacts)}</strong><span>成果数</span></div>
         </div>
         <div class="content-grid cols-2">
             ${panel("项目列表", `
                 <div class="table-wrap">
                     <table>
                         <thead>
-                        <tr><th>Title</th><th>Status</th><th>Compile</th><th>Counts</th><th></th></tr>
+                        <tr><th>标题</th><th>状态</th><th>编译</th><th>统计</th><th></th></tr>
                         </thead>
                         <tbody>
                         ${state.personal.projects.map((project) => {
@@ -1383,20 +1769,20 @@ function renderProjectsPage() {
                                     <td><strong>${escapeHtml(project.title)}</strong><div class="muted">${escapeHtml(project.researchGoal || project.description || "无目标说明")}</div></td>
                                     <td>${badge(project.status)}</td>
                                     <td>${badge(project.compileStatus || "PENDING", project.compileStatus || "PENDING")}</td>
-                                    <td>${formatNumber(counts.sourceCount)} Sources / ${formatNumber(counts.cardCount)} Cards / ${formatNumber(counts.artifactCount)} Artifacts</td>
+                                    <td>${formatNumber(counts.sourceCount)} 份资料 / ${formatNumber(counts.cardCount)} 张卡片 / ${formatNumber(counts.artifactCount)} 个成果</td>
                                     <td><button class="button" type="button" data-action="open-project" data-project-id="${project.id}" data-space-id="${project.spaceId || personalSpaceId() || ""}">进入</button></td>
                                 </tr>
                             `;
-                        }).join("") || `<tr><td colspan="5">${emptyState("暂无项目", "创建一个研究项目开始导入 Source。")}</td></tr>`}
+                        }).join("") || `<tr><td colspan="5">${emptyState("暂无项目", "创建一个研究项目开始导入资料。")}</td></tr>`}
                         </tbody>
                     </table>
                 </div>
             `)}
-            ${panel("创建 ResearchProject", `
+            ${panel("创建研究项目", `
                 <form id="create-project-form" class="inline-form">
                     <div class="field">
                         <label>标题</label>
-                        <input name="title" required maxlength="255" placeholder="例如：OpenTelemetry rollout">
+                        <input name="title" required maxlength="255" placeholder="例如：新用户激活流程复盘">
                     </div>
                     <div class="field">
                         <label>描述</label>
@@ -1425,6 +1811,23 @@ function renderProjectDetailPage(route) {
     const artifacts = state.artifacts.list.filter((artifact) => Number(artifact.researchProjectId) === Number(projectId));
     const tab = route.name.replace("project-", "") || "detail";
     const tabLink = (label, suffix, active) => `<a class="tab-link ${active ? "active" : ""}" href="/spaces/${projectSpaceId}/personal/projects/${projectId}${suffix}" data-nav="/spaces/${projectSpaceId}/personal/projects/${projectId}${suffix}">${label}</a>`;
+    const projectGuideItems = route.name === "project-sources" ? [
+        { eyebrow: "Import", title: "文件、URL 与文本共用同一研究入口", description: "入口统一后，后续的编译、卡片生成和失败重试都会更好追踪。" },
+        { eyebrow: "Compile", title: "先看导入状态，再决定是否编译", description: "资料状态会告诉你应该重试、继续还是触发知识编译。" },
+        { eyebrow: "Repair", title: "失败项要立刻回收处理", description: "比起堆积异常资料，及时修复更能保持项目链路干净。" }
+    ] : route.name === "project-cards" ? [
+        { eyebrow: "Article", title: "ArticleCard 负责摘要原始材料", description: "它是资料进入结构化理解层的第一步，帮助你缩短回看成本。" },
+        { eyebrow: "Concept", title: "ConceptCard 负责抽象稳定概念", description: "概念层越清晰，后续跨来源综合和检索复用就越稳定。" },
+        { eyebrow: "Synthesis", title: "SynthesisCard 负责形成可复用结论", description: "它更接近长期沉淀，而不是一次性的聊天输出。" }
+    ] : route.name === "project-generate" ? [
+        { eyebrow: "Method", title: "生成前先确认方法卡", description: "方法卡决定了你是做总结、综述、提案还是其他更具体的成果形式。" },
+        { eyebrow: "Output", title: "成果是可继续编辑的输出面", description: "生成不是结束，后面还可以导出、发布 Wiki 或继续蒸馏。" },
+        { eyebrow: "Scope", title: "保持研究目标与生成范围一致", description: "题目越窄，生成出的结构和引用越容易保持可靠。" }
+    ] : [
+        { eyebrow: "Goal", title: "先确认研究问题是否清晰", description: "项目概览最适合回看你到底要解决什么问题，以及现在进展到哪一步。" },
+        { eyebrow: "Recent", title: "最近资料与成果放在一起回看", description: "这样能更快判断研究是在扩展证据，还是已经该开始收束输出。" },
+        { eyebrow: "Methodology", title: "方法卡决定后续产出质量", description: "保持方法和研究目标一致，会让成果更像成品而不是草稿。" }
+    ];
 
     let body = "";
     if (route.name === "project-sources") {
@@ -1436,14 +1839,14 @@ function renderProjectDetailPage(route) {
     } else {
         body = `
             <div class="metric-row">
-                <div class="metric"><strong>${formatNumber(sources.length)}</strong><span>Sources</span></div>
-                <div class="metric"><strong>${formatNumber(articles.length + concepts.length + synthesisCards.length)}</strong><span>Cards</span></div>
-                <div class="metric"><strong>${formatNumber(artifacts.length)}</strong><span>Artifacts</span></div>
-                <div class="metric"><strong>${formatNumber(methodologyCards.length)}</strong><span>Methodology</span></div>
+                <div class="metric"><strong>${formatNumber(sources.length)}</strong><span>资料数</span></div>
+                <div class="metric"><strong>${formatNumber(articles.length + concepts.length + synthesisCards.length)}</strong><span>卡片数</span></div>
+                <div class="metric"><strong>${formatNumber(artifacts.length)}</strong><span>成果数</span></div>
+                <div class="metric"><strong>${formatNumber(methodologyCards.length)}</strong><span>方法卡</span></div>
             </div>
             <div class="content-grid cols-2" style="margin-top:16px;">
-                ${panel("最近 Sources", sources.slice(0, 4).map((source) => `<div class="list-item"><strong>${escapeHtml(source.title)}</strong><div class="muted">${badge(source.importStatus, source.importStatus)} ${badge(source.compileStatus, source.compileStatus)}</div></div>`).join("") || emptyState("暂无 Source", "到 Sources 标签导入文件、URL 或文本。"))}
-                ${panel("最近 Artifacts", artifacts.slice(0, 4).map((artifact) => `<div class="list-item"><strong>${escapeHtml(artifact.title)}</strong><div class="muted">${escapeHtml(artifact.artifactType)} / ${badge(artifact.status)}</div></div>`).join("") || emptyState("暂无 Artifact", "到 Generate 标签发起生成。"))}
+                ${panel("最近资料", sources.slice(0, 4).map((source) => `<div class="list-item"><strong>${escapeHtml(source.title)}</strong><div class="muted">${badge(source.importStatus, source.importStatus)} ${badge(source.compileStatus, source.compileStatus)}</div></div>`).join("") || emptyState("暂无资料", "到资料标签导入文件、URL 或文本。"))}
+                ${panel("最近成果", artifacts.slice(0, 4).map((artifact) => `<div class="list-item"><strong>${escapeHtml(artifact.title)}</strong><div class="muted">${escapeHtml(artifact.artifactType)} / ${badge(artifact.status)}</div></div>`).join("") || emptyState("暂无成果", "到生成标签发起生成。"))}
             </div>
         `;
     }
@@ -1451,7 +1854,8 @@ function renderProjectDetailPage(route) {
     return `
         <div class="page-header">
             <div>
-                <h1>${escapeHtml(project?.title || "Research Project")}</h1>
+                <div class="context-kicker">研究项目</div>
+                <h1>${escapeHtml(project?.title || "研究项目")}</h1>
                 <p class="subtitle">${escapeHtml(project?.researchGoal || project?.description || "项目概览")}</p>
             </div>
             <div class="page-actions">
@@ -1459,11 +1863,12 @@ function renderProjectDetailPage(route) {
             </div>
         </div>
         <div class="tab-bar">
-            ${tabLink("Overview", "", route.name === "project-detail")}
-            ${tabLink("Sources", "/sources", route.name === "project-sources")}
-            ${tabLink("Cards", "/cards", route.name === "project-cards")}
-            ${tabLink("Generate", "/generate", route.name === "project-generate")}
+            ${tabLink("概览", "", route.name === "project-detail")}
+            ${tabLink("资料", "/sources", route.name === "project-sources")}
+            ${tabLink("卡片", "/cards", route.name === "project-cards")}
+            ${tabLink("生成", "/generate", route.name === "project-generate")}
         </div>
+        ${renderGuideCards(projectGuideItems)}
         ${body}
     `;
 }
@@ -1471,26 +1876,26 @@ function renderProjectDetailPage(route) {
 function renderProjectSources(projectId, sources) {
     return `
         <div class="content-grid cols-2">
-            ${panel("导入 Sources", `
+            ${panel("导入资料", `
                 <form id="source-file-form" data-project-id="${projectId}" class="inline-form">
                     <div class="field"><label>上传文件</label><input type="file" name="file" required></div>
                     <div class="field"><label>自定义标题</label><input name="title"></div>
-                    <button class="button" type="submit">上传文件 Source</button>
+                    <button class="button" type="submit">上传文件资料</button>
                 </form>
                 <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">
                 <form id="source-url-form" data-project-id="${projectId}" class="inline-form">
                     <div class="field"><label>URL</label><input name="url" required></div>
                     <div class="field"><label>标题</label><input name="title"></div>
-                    <button class="button" type="submit">添加 URL Source</button>
+                    <button class="button" type="submit">添加网址资料</button>
                 </form>
                 <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">
                 <form id="source-text-form" data-project-id="${projectId}" class="inline-form">
                     <div class="field"><label>标题</label><input name="title" required></div>
                     <div class="field"><label>内容</label><textarea name="content" required></textarea></div>
-                    <button class="button" type="submit">添加文本 Source</button>
+                    <button class="button" type="submit">添加文本资料</button>
                 </form>
-            `)}
-            ${panel("Source 列表", `
+            `, { subtitle: "同一个项目支持文件、URL 和纯文本三种入口，导入后再进入编译链路。" })}
+            ${panel("资料列表", `
                 <div class="list-stack">
                     ${sources.map((source) => `
                         <div class="list-item">
@@ -1498,15 +1903,15 @@ function renderProjectSources(projectId, sources) {
                                 <strong>${escapeHtml(source.title)}</strong>
                                 <div class="page-actions">${badge(source.importStatus, source.importStatus)}${badge(source.compileStatus, source.compileStatus)}</div>
                             </div>
-                            <div class="muted">${escapeHtml(source.sourceType)} / task ${formatNumber(source.taskId)}</div>
+                            <div class="muted">${escapeHtml(source.sourceType)} / 任务 ${formatNumber(source.taskId)}</div>
                             <div class="page-actions" style="margin-top:10px;">
                                 <button class="ghost-button" type="button" data-action="source-import" data-source-id="${source.id}">重新导入</button>
-                                <button class="ghost-button" type="button" data-action="source-compile" data-source-id="${source.id}">触发 Wiki Compiler</button>
+                                <button class="ghost-button" type="button" data-action="source-compile" data-source-id="${source.id}">触发知识编译</button>
                             </div>
                         </div>
-                    `).join("") || emptyState("暂无 Source", "先导入一份文件、URL 或粘贴文本。")}
+                    `).join("") || emptyState("暂无资料", "先导入一份文件、URL 或粘贴文本。")}
                 </div>
-            `)}
+            `, { subtitle: "优先看导入状态和编译状态，失败项要能立刻重试。" })}
         </div>
     `;
 }
@@ -1514,7 +1919,7 @@ function renderProjectSources(projectId, sources) {
 function renderProjectCards(articles, concepts, synthesisCards) {
     return `
         <div class="content-grid cols-3">
-            ${panel("ArticleCard", articles.map((card) => `
+            ${panel("文章卡", articles.map((card) => `
                 <div class="list-item">
                     <div class="list-item-header"><strong>${escapeHtml(card.title)}</strong></div>
                     <div class="muted">${escapeHtml(card.summary || "无摘要")}</div>
@@ -1523,18 +1928,18 @@ function renderProjectCards(articles, concepts, synthesisCards) {
                         return `<button class="citation-chip" type="button" data-action="open-citation" data-citation-key="${key}">证据 ${index + 1}</button>`;
                     }).join("")}
                 </div>
-            `).join("") || emptyState("暂无 ArticleCard", "Source 完成导入后，这里会显示文章卡片。"))}
-            ${panel("ConceptCard", concepts.map((card) => `
+            `).join("") || emptyState("暂无文章卡", "资料完成导入后，这里会显示文章卡片。"), { subtitle: "文章卡承担对原始资料的结构化摘要，是后续概念融合的入口。" })}
+            ${panel("概念卡", concepts.map((card) => `
                 <div class="list-item">
-                    <div class="list-item-header"><strong>${escapeHtml(card.name)}</strong>${tag(`conf ${card.confidence}`)}</div>
+                    <div class="list-item-header"><strong>${escapeHtml(card.name)}</strong>${tag(`置信度 ${card.confidence}`)}</div>
                     <div class="muted">${escapeHtml(card.definition || card.explanation || "无定义")}</div>
                     ${(card.citations || []).slice(0, 2).map((citation, index) => {
                         const key = registerCitation(citation);
                         return `<button class="citation-chip" type="button" data-action="open-citation" data-citation-key="${key}">证据 ${index + 1}</button>`;
                     }).join("")}
                 </div>
-            `).join("") || emptyState("暂无 ConceptCard", "编译完成后会展示概念卡片。"))}
-            ${panel("SynthesisCard", synthesisCards.map((card) => `
+            `).join("") || emptyState("暂无概念卡", "编译完成后会展示概念卡片。"), { subtitle: "概念卡更强调跨资料融合与长期复用。" })}
+            ${panel("综合卡", synthesisCards.map((card) => `
                 <div class="list-item">
                     <div class="list-item-header"><strong>${escapeHtml(card.title)}</strong>${badge(card.cardStatus, card.cardStatus)}</div>
                     <div class="muted">${escapeHtml(card.summary || "无摘要")}</div>
@@ -1543,7 +1948,7 @@ function renderProjectCards(articles, concepts, synthesisCards) {
                         return `<button class="citation-chip" type="button" data-action="open-citation" data-citation-key="${key}">证据 ${index + 1}</button>`;
                     }).join("")}
                 </div>
-            `).join("") || emptyState("暂无 SynthesisCard", "Artifact 蒸馏或生成完成后会沉淀在这里。"))}
+            `).join("") || emptyState("暂无综合卡", "成果蒸馏或生成完成后会沉淀在这里。"), { subtitle: "综合卡是已经确认过价值的沉淀结果，应该比普通卡更稳定。" })}
         </div>
     `;
 }
@@ -1552,17 +1957,17 @@ function renderProjectGenerate(spaceId, projectId, methodologyCards, artifacts) 
     const skills = state.studio.skills;
     return `
         <div class="content-grid cols-2">
-            ${panel("生成 Artifact", `
+            ${panel("生成成果", `
                 <form id="project-generate-form" data-space-id="${spaceId}" data-project-id="${projectId}" class="inline-form">
                     <div class="field-grid cols-2">
                         <div class="field">
-                            <label>Studio Skill</label>
+                            <label>工作室技能</label>
                             <select name="skillId" required>
                                 ${skills.map((skill) => `<option value="${escapeHtml(skill.id)}">${escapeHtml(skill.name)}</option>`).join("")}
                             </select>
                         </div>
                         <div class="field">
-                            <label>MethodologyCard</label>
+                            <label>方法卡</label>
                             <select name="methodologyCardId">
                                 <option value="">不指定</option>
                                 ${methodologyCards.map((card) => `<option value="${card.id}">${escapeHtml(card.name)}</option>`).join("")}
@@ -1570,10 +1975,10 @@ function renderProjectGenerate(spaceId, projectId, methodologyCards, artifacts) 
                         </div>
                     </div>
                     <div class="field">
-                        <label>Topic</label>
-                        <input name="topic" required placeholder="例如：RAG citation grounding report">
+                        <label>主题</label>
+                        <input name="topic" required placeholder="例如：新用户激活方案建议稿">
                     </div>
-                    <button class="button" type="submit">创建 Artifact</button>
+                    <button class="button" type="submit">创建成果</button>
                 </form>
                 ${state.studio.lastTask ? `
                     <div class="list-item" style="margin-top:14px;">
@@ -1581,75 +1986,83 @@ function renderProjectGenerate(spaceId, projectId, methodologyCards, artifacts) 
                             <strong>最近生成任务</strong>
                             ${badge(state.studio.lastTask.taskStatus)}
                         </div>
-                        <div class="muted">Artifact ${formatNumber(state.studio.lastTask.artifactId)} / Task ${formatNumber(state.studio.lastTask.taskId)}</div>
+                        <div class="muted">成果 ${formatNumber(state.studio.lastTask.artifactId)} / 任务 ${formatNumber(state.studio.lastTask.taskId)}</div>
                     </div>
                 ` : ""}
-            `)}
-            ${panel("Artifacts 与 Methodology", `
-                <h3>Methodology Cards</h3>
+            `, { subtitle: "先确定输出目标，再决定是否套用方法卡，不要把生成表单做成复杂配置台。" })}
+            ${panel("成果与方法卡", `
+                <h3>方法卡</h3>
                 <div class="list-stack">
                     ${methodologyCards.map((card) => `
                         <div class="list-item">
                             <div class="list-item-header"><strong>${escapeHtml(card.name)}</strong>${badge(card.status)}</div>
                             <div class="muted">${escapeHtml(card.problemType || card.scene || "未设置场景")}</div>
                         </div>
-                    `).join("") || emptyState("暂无 MethodologyCard", "当前项目还没有方法论卡片。")}
+                    `).join("") || emptyState("暂无方法卡", "当前项目还没有方法论卡片。")}
                 </div>
                 <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">
-                <h3>Artifacts</h3>
+                <h3>成果</h3>
                 <div class="list-stack">
                     ${artifacts.map((artifact) => `
                         <div class="list-item">
                             <div class="list-item-header"><strong>${escapeHtml(artifact.title)}</strong>${badge(artifact.status)}</div>
                             <div class="page-actions" style="margin-top:10px;"><button class="ghost-button" type="button" data-action="open-artifact" data-artifact-id="${artifact.id}" data-space-id="${artifact.spaceId || spaceId}">打开</button></div>
                         </div>
-                    `).join("") || emptyState("暂无 Artifact", "生成任务完成后会出现在这里。")}
+                    `).join("") || emptyState("暂无成果", "生成任务完成后会出现在这里。")}
                 </div>
-            `)}
+            `, { subtitle: "左边负责发起，右边负责判断当前项目是否已经有足够的方法和产物积累。" })}
         </div>
     `;
 }
 
 function renderStudioPage() {
+    const lastTaskStatus = state.studio.lastTask?.taskStatus || "IDLE";
     return `
         <div class="page-header">
             <div>
-                <h1>Studio</h1>
-                <p class="subtitle">选择 Skill、填写参数、选择上下文范围，并查看最近 Artifact 生成结果。</p>
+                <div class="context-kicker">工作室</div>
+                <h1>工作室</h1>
+                <p class="subtitle">选择技能、填写参数、选择上下文范围，并查看最近成果生成结果。</p>
             </div>
+        </div>
+        <div class="metric-row">
+            <div class="metric"><strong>${formatNumber(state.studio.skills.length)}</strong><span>技能数</span></div>
+            <div class="metric"><strong>${formatNumber(state.personal.projects.length)}</strong><span>项目数</span></div>
+            <div class="metric"><strong>${formatNumber(state.artifacts.list.length)}</strong><span>可见成果</span></div>
+            <div class="metric"><strong>${escapeHtml(humanizeStatus(lastTaskStatus))}</strong><span>最近任务</span></div>
         </div>
         <div class="content-grid cols-2">
             ${panel("启动生成任务", `
                 <form id="studio-task-form" class="inline-form" data-space-id="${currentRouteSpaceId()}">
                     <div class="field-grid cols-2">
                         <div class="field">
-                            <label>Skill</label>
+                            <label>技能</label>
                             <select name="skillId" required>
                                 ${state.studio.skills.map((skill) => `<option value="${skill.id}">${escapeHtml(skill.name)}</option>`).join("")}
                             </select>
                         </div>
                         <div class="field">
-                            <label>ResearchProject</label>
+                            <label>研究项目</label>
                             <select name="projectId" required>
                                 ${state.personal.projects.map((project) => `<option value="${project.id}">${escapeHtml(project.title)}</option>`).join("")}
                             </select>
                         </div>
                     </div>
                     <div class="field">
-                        <label>Topic</label>
-                        <input name="topic" required placeholder="例如：Study Guide for retrieval debugging">
+                        <label>主题</label>
+                        <input name="topic" required placeholder="例如：检索调试说明稿">
                     </div>
-                    <button class="button" type="submit">启动 Studio Task</button>
+                    <button class="button" type="submit">启动工作室任务</button>
                 </form>
-                ${state.studio.lastTask ? `<div class="list-item" style="margin-top:14px;"><div class="list-item-header"><strong>最近任务</strong>${badge(state.studio.lastTask.taskStatus)}</div><div class="muted">Artifact ${formatNumber(state.studio.lastTask.artifactId)}</div></div>` : ""}
-            `)}
-            ${panel("技能与 Artifact", `
+                ${state.studio.lastTask ? `<div class="list-item" style="margin-top:14px;"><div class="list-item-header"><strong>最近任务</strong>${badge(state.studio.lastTask.taskStatus)}</div><div class="muted">成果 ${formatNumber(state.studio.lastTask.artifactId)}</div></div>` : ""}
+            `, { subtitle: "工作室更像任务编排入口，不是一次性提示词表单。" })}
+            ${panel("技能与成果", `
                 <div class="list-stack">
                     ${state.studio.skills.map((skill) => `
                         <div class="list-item">
                             <div class="list-item-header"><strong>${escapeHtml(skill.name)}</strong>${tag(skill.artifactType)}</div>
                             <div class="muted">${escapeHtml(skill.description)}</div>
-                            <div class="muted">Hint: ${escapeHtml(skill.topicHint)}</div>
+                            <div class="muted">主题提示：${escapeHtml(skill.topicHint)}</div>
                         </div>
                     `).join("")}
                 </div>
@@ -1658,55 +2071,91 @@ function renderStudioPage() {
                     ${state.artifacts.list.slice(0, 6).map((artifact) => `
                         <div class="list-item">
                             <div class="list-item-header"><strong>${escapeHtml(artifact.title)}</strong>${badge(artifact.status)}</div>
-                            <div class="page-actions" style="margin-top:10px;"><button class="ghost-button" type="button" data-action="open-artifact" data-artifact-id="${artifact.id}" data-space-id="${artifact.spaceId || currentRouteSpaceId()}">打开 Artifact</button></div>
+                            <div class="page-actions" style="margin-top:10px;"><button class="ghost-button" type="button" data-action="open-artifact" data-artifact-id="${artifact.id}" data-space-id="${artifact.spaceId || currentRouteSpaceId()}">打开成果</button></div>
                         </div>
-                    `).join("") || emptyState("暂无 Artifact", "生成后的内容会显示在这里。")}
+                    `).join("") || emptyState("暂无成果", "生成后的内容会显示在这里。")}
                 </div>
-            `)}
+            `, { subtitle: "右侧更像当前工作区的技能目录和最近成果架。" })}
         </div>
     `;
 }
 
 function renderArtifactsPage() {
+    const artifacts = state.artifacts.list || [];
+    const publishedCount = artifacts.filter((artifact) => ["READY", "SUCCESS", "PUBLISHED", "ACTIVE"].includes(String(artifact.status || "").toUpperCase())).length;
+    const projectCount = new Set(artifacts.map((artifact) => artifact.researchProjectId).filter(Boolean)).size;
+    const typeCount = new Set(artifacts.map((artifact) => artifact.artifactType).filter(Boolean)).size;
     return `
         <div class="page-header">
             <div>
-                <h1>Artifacts</h1>
-                <p class="subtitle">预览、筛选和进入 Artifact 详情页。详情页支持编辑、导出、蒸馏与发布 Wiki。</p>
+                <div class="context-kicker">成果</div>
+                <h1>成果</h1>
+                <p class="subtitle">预览、筛选和进入成果详情页。详情页支持编辑、导出、蒸馏与发布 Wiki。</p>
             </div>
         </div>
-        ${panel("Artifact 列表", `
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                    <tr><th>Title</th><th>Type</th><th>Status</th><th>Project</th><th></th></tr>
-                    </thead>
-                    <tbody>
-                    ${state.artifacts.list.map((artifact) => `
-                        <tr>
-                            <td><strong>${escapeHtml(artifact.title)}</strong></td>
-                            <td>${escapeHtml(artifact.artifactType)}</td>
-                            <td>${badge(artifact.status)}</td>
-                            <td>${formatNumber(artifact.researchProjectId)}</td>
-                            <td><button class="button" type="button" data-action="open-artifact" data-artifact-id="${artifact.id}" data-space-id="${artifact.spaceId || currentRouteSpaceId()}">打开</button></td>
-                        </tr>
-                    `).join("") || `<tr><td colspan="5">${emptyState("暂无 Artifact", "从 Studio 或个人 Generate 入口创建一个。")}</td></tr>`}
-                    </tbody>
-                </table>
-            </div>
-        `)}
+        ${renderGuideCards([
+            { eyebrow: "书架", title: "把成果当成可回访书架", description: "成果更适合被继续阅读、改写和引用，而不是看完即走的任务输出。" },
+            { eyebrow: "类型", title: "不同成果类型可以并行存在", description: "同一个研究项目可以沉淀出综述、摘要、提案等多种不同的可交付物。" },
+            { eyebrow: "复用", title: "优先打开可复用内容", description: "除了关注最新生成，也要保留那些已经适合继续发布或二次加工的结果。" }
+        ])}
+        <div class="metric-row">
+            <div class="metric"><strong>${formatNumber(artifacts.length)}</strong><span>成果总数</span></div>
+            <div class="metric"><strong>${formatNumber(publishedCount)}</strong><span>可发布成果</span></div>
+            <div class="metric"><strong>${formatNumber(projectCount)}</strong><span>关联项目数</span></div>
+            <div class="metric"><strong>${formatNumber(typeCount)}</strong><span>成果类型数</span></div>
+        </div>
+        <div class="content-grid cols-2" style="margin-top:16px;">
+            ${panel("成果列表", `
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                        <tr><th>标题</th><th>类型</th><th>状态</th><th>项目</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                        ${artifacts.map((artifact) => `
+                            <tr>
+                                <td><strong>${escapeHtml(artifact.title)}</strong><div class="muted">${escapeHtml(artifact.summary || artifact.description || "可继续编辑、导出或沉淀的工作成果。")}</div></td>
+                                <td>${escapeHtml(artifact.artifactType)}</td>
+                                <td>${badge(artifact.status)}</td>
+                                <td>${formatNumber(artifact.researchProjectId)}</td>
+                                <td><button class="button" type="button" data-action="open-artifact" data-artifact-id="${artifact.id}" data-space-id="${artifact.spaceId || currentRouteSpaceId()}">打开</button></td>
+                            </tr>
+                        `).join("") || `<tr><td colspan="5">${emptyState("暂无成果", "从工作室或个人生成入口创建一个。")}</td></tr>`}
+                        </tbody>
+                    </table>
+                </div>
+            `)}
+            ${panel("最近阅读区", `
+                <div class="list-stack">
+                    ${artifacts.slice(0, 5).map((artifact) => `
+                        <div class="list-item artifact-library-item">
+                            <div class="list-item-header">
+                                <strong>${escapeHtml(artifact.title)}</strong>
+                                ${badge(artifact.status)}
+                            </div>
+                            <div class="muted">${escapeHtml(artifact.artifactType)} / 项目 ${formatNumber(artifact.researchProjectId)}</div>
+                            <div class="page-actions" style="margin-top:10px;">
+                                <button class="ghost-button" type="button" data-action="open-artifact" data-artifact-id="${artifact.id}" data-space-id="${artifact.spaceId || currentRouteSpaceId()}">继续阅读</button>
+                            </div>
+                        </div>
+                    `).join("") || emptyState("阅读面待填充", "当成果开始积累后，这里会更像你的成果书架。")}
+                </div>
+            `, { subtitle: "让成果更像可回访的阅读对象，而不是一次性的任务输出。" })}
+        </div>
     `;
 }
 
 function renderArtifactDetailPage() {
     const artifact = state.artifacts.detail;
     const artifactSpaceId = resolveArtifactSpaceId(artifact);
+    const canDistill = canDistillArtifactToPersonalWiki(artifact);
     const draft = state.artifacts.editorDraft || { title: "", content: "", changeNote: "" };
     return `
         <div class="page-header">
             <div>
-                <h1>${escapeHtml(artifact?.title || "Artifact Viewer")}</h1>
-                <p class="subtitle">Markdown 预览、基础编辑、导出、Citation 查看、沉淀到个人 Wiki、发布到团队 Wiki。</p>
+                <div class="context-kicker">成果</div>
+                <h1>${escapeHtml(artifact?.title || "成果查看器")}</h1>
+                <p class="subtitle">支持 Markdown 预览、基础编辑、导出、引用查看、沉淀到个人 Wiki，以及发布到团队 Wiki。</p>
             </div>
             <div class="page-actions">
                 <button class="ghost-button" type="button" data-nav="${routeLink("artifacts", artifactSpaceId)}">返回列表</button>
@@ -1714,7 +2163,18 @@ function renderArtifactDetailPage() {
                 <button class="ghost-button" type="button" data-action="regenerate-artifact" data-artifact-id="${artifact.id}">重新生成</button>
             </div>
         </div>
-        <div class="content-grid cols-2">
+        ${renderGuideCards([
+            { eyebrow: "Edit", title: "左侧负责改稿，右侧负责读稿", description: "先稳定标题和结构，再处理正文内容，整体会更接近可发布成品。" },
+            { eyebrow: "Trace", title: "引用与关系保证可追溯性", description: "引用和卡片关联让这份成果不只是好看，也更容易被复核。" },
+            { eyebrow: "Distill", title: "个人成果可以继续蒸馏", description: "如果当前成果属于个人研究空间，还可以继续沉淀进更长期的 Wiki 卡片。" }
+        ])}
+        <div class="metric-row">
+            <div class="metric"><strong>${escapeHtml(artifact?.artifactType || "—")}</strong><span>成果类型</span></div>
+            <div class="metric"><strong>${escapeHtml(humanizeStatus(artifact?.status || "—"))}</strong><span>状态</span></div>
+            <div class="metric"><strong>${formatNumber(artifact?.researchProjectId)}</strong><span>研究项目</span></div>
+            <div class="metric"><strong>${formatDate(artifact?.updatedAt || artifact?.createdAt)}</strong><span>最近更新</span></div>
+        </div>
+        <div class="content-grid cols-2 artifact-detail-grid" style="margin-top:16px;">
             ${panel("编辑器", `
                 <form id="artifact-edit-form" data-artifact-id="${artifact.id}" class="inline-form">
                     <div class="field">
@@ -1729,48 +2189,61 @@ function renderArtifactDetailPage() {
                         <label>变更说明</label>
                         <input name="changeNote" value="${escapeHtml(draft.changeNote || "")}">
                     </div>
-                    <button class="button" type="submit">保存 Artifact</button>
+                    <button class="button" type="submit">保存成果</button>
                 </form>
             `)}
             ${panel("预览与沉淀", `
-                ${renderMarkdown(draft.content)}
-                <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">
-                <form id="distill-artifact-form" data-artifact-id="${artifact.id}" class="inline-form">
-                    <div class="field">
-                        <label>沉淀方式</label>
-                        <select name="cardType">
-                            <option value="SYNTHESIS">Synthesis</option>
-                        </select>
+                <div class="artifact-meta-row">
+                    ${tag(artifact?.artifactType || "成果")}
+                    ${badge(artifact?.status)}
+                    ${artifact?.scopeType ? tag(artifact.scopeType) : ""}
+                </div>
+                <div class="artifact-reading-surface">${renderMarkdown(draft.content)}</div>
+                ${canDistill ? `
+                    <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">
+                    <form id="distill-artifact-form" data-artifact-id="${artifact.id}" class="inline-form">
+                        <div class="field">
+                            <label>沉淀方式</label>
+                            <select name="cardType">
+                                <option value="SYNTHESIS">综合卡</option>
+                            </select>
+                        </div>
+                        <button class="button" type="submit">预览提炼结果</button>
+                    </form>
+                ` : `
+                    <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">
+                    <div class="empty-state">
+                        <strong>该成果不支持个人蒸馏</strong>
+                        <div class="muted">只有个人研究空间中的成果才会显示综合卡蒸馏入口。</div>
                     </div>
-                    <button class="button" type="submit">预览提炼结果</button>
-                </form>
+                `}
                 <form id="publish-artifact-wiki-form" data-artifact-id="${artifact.id}" class="inline-form" style="margin-top:14px;">
                     <input type="hidden" name="spaceId" value="${artifactSpaceId}">
                     <div class="field">
                         <label>Wiki 页面标题</label>
                         <input name="title" value="${escapeHtml(artifact.title)}" required>
                     </div>
-                    <button class="ghost-button" type="submit">发布到 Team Wiki</button>
+                    <button class="ghost-button" type="submit">发布到团队 Wiki</button>
                 </form>
             `)}
         </div>
-        <div class="content-grid cols-2" style="margin-top:16px;">
-            ${panel("Citation", `
+        <div class="content-grid cols-2 artifact-secondary-grid" style="margin-top:16px;">
+            ${panel("引用", `
                 <div class="list-stack">
                     ${(artifact.citations || []).map((citation, index) => {
                         const key = registerCitation(citation);
-                        return `<button class="list-item" type="button" data-action="open-citation" data-citation-key="${key}"><strong>Citation ${index + 1}</strong><div class="muted">${escapeHtml(citation.title || citation.locationInfo || "")}</div></button>`;
-                    }).join("") || emptyState("暂无 Citation", "这个 Artifact 目前没有引用记录。")}
+                        return `<button class="list-item" type="button" data-action="open-citation" data-citation-key="${key}"><strong>引用 ${index + 1}</strong><div class="muted">${escapeHtml(citation.title || citation.locationInfo || "")}</div></button>`;
+                    }).join("") || emptyState("暂无引用", "这个成果目前没有引用记录。")}
                 </div>
             `)}
-            ${panel("Card Relations", `
+            ${panel("卡片关联", `
                 <div class="list-stack">
-                    ${state.artifacts.relations.map((relation) => `
+                    ${canDistill ? state.artifacts.relations.map((relation) => `
                         <div class="list-item">
                             <div class="list-item-header"><strong>${escapeHtml(relation.cardTitle || relation.cardType)}</strong>${tag(relation.relationType)}</div>
                             <div class="muted">${escapeHtml(relation.cardType)} / ID ${formatNumber(relation.cardId)}</div>
                         </div>
-                    `).join("") || emptyState("暂无关联卡片", "蒸馏后这里会展示关联的 Wiki Card。")}
+                    `).join("") || emptyState("暂无关联卡片", "蒸馏后这里会展示关联的 Wiki 卡片。") : emptyState("当前无需展示关联卡片", "团队空间成果不会关联个人综合卡。")}
                 </div>
             `)}
         </div>
@@ -1779,12 +2252,25 @@ function renderArtifactDetailPage() {
 
 function renderWikiPage() {
     const page = state.wiki.pageDetail;
+    const pages = state.wiki.pages || [];
     return `
         <div class="page-header">
             <div>
-                <h1>Team Wiki</h1>
+                <div class="context-kicker">Wiki</div>
+                <h1>团队 Wiki</h1>
                 <p class="subtitle">查看 Wiki 列表、创建草稿、编辑、发布、查看版本，并支持搜索。</p>
             </div>
+        </div>
+        ${renderGuideCards([
+            { eyebrow: "Draft", title: "先把草稿写顺，再决定是否发布", description: "Wiki 更适合沉淀稳定知识，而不是直接复制临时讨论结果。" },
+            { eyebrow: "Version", title: "版本历史保留演进轨迹", description: "这让团队可以看见结论是如何收敛出来的，而不只是最终页面。" },
+            { eyebrow: "Search", title: "搜索更适合找沉淀，不是找聊天", description: "命名和段落结构越清楚，后续检索命中和复用就越自然。" }
+        ])}
+        <div class="metric-row">
+            <div class="metric"><strong>${formatNumber(pages.length)}</strong><span>页面数</span></div>
+            <div class="metric"><strong>${formatNumber(state.wiki.versions.length)}</strong><span>版本数</span></div>
+            <div class="metric"><strong>${formatNumber(state.wiki.searchResult?.items?.length || 0)}</strong><span>搜索命中</span></div>
+            <div class="metric"><strong>${page ? "编辑中" : "空闲"}</strong><span>编辑器状态</span></div>
         </div>
         <div class="content-grid cols-2">
             ${panel("Wiki 页面列表", `
@@ -1797,12 +2283,12 @@ function renderWikiPage() {
                     ${state.wiki.pages.map((wikiPage) => `
                         <button class="list-item" type="button" data-action="select-wiki-page" data-page-id="${wikiPage.id}">
                             <div class="list-item-header"><strong>${escapeHtml(wikiPage.title)}</strong>${badge(wikiPage.status)}</div>
-                            <div class="muted">Version ${formatNumber(wikiPage.publishedVersionNo)}</div>
+                            <div class="muted">版本 ${formatNumber(wikiPage.publishedVersionNo)}</div>
                         </button>
                     `).join("") || emptyState("暂无 Wiki 页面", "先创建一个草稿页。")}
                 </div>
-            `)}
-            ${panel(page ? "编辑 Wiki Draft" : "创建 Wiki Draft", page ? `
+            `, { subtitle: "把这里当作团队沉淀区，而不是普通文档堆。" })}
+            ${panel(page ? "编辑 Wiki 草稿" : "创建 Wiki 草稿", page ? `
                 <form id="wiki-edit-form" data-page-id="${page.id}" class="inline-form">
                     <div class="field"><label>标题</label><input name="title" value="${escapeHtml(page.title)}" required></div>
                     <div class="field"><label>内容</label><textarea class="editor-textarea" name="content" required>${escapeHtml(page.content || "")}</textarea></div>
@@ -1817,7 +2303,7 @@ function renderWikiPage() {
                     <div class="field"><label>内容</label><textarea class="editor-textarea" name="content" required></textarea></div>
                     <button class="button" type="submit">创建草稿</button>
                 </form>
-            `)}
+            `, { subtitle: page ? "先把草稿写清楚，再决定是否发布进团队知识层。" : "新建时保持轻量，内容稳定后再发布为正式 Wiki。" })}
         </div>
         <div style="margin-top:16px;">
             ${panel("版本历史", `
@@ -1837,66 +2323,80 @@ function renderWikiPage() {
 function renderMemoryPage() {
     const synthesisProjectId = state.personal.selectedSynthesisProjectId;
     const synthesisCards = synthesisProjectId ? (state.personal.synthesisCardsByProject[synthesisProjectId] || []) : [];
+    const spaceMemoryItems = state.memory.spaceMemory?.items || [];
+    const userMemoryItems = state.memory.userMemory?.items || [];
     return `
         <div class="page-header">
             <div>
-                <h1>Memory</h1>
-                <p class="subtitle">明确哪些 Space / User / Session 内容会影响后续回答，保存动作明确，不对 DRAFT 会话做长期写入暗示。</p>
+                <div class="context-kicker">记忆</div>
+                <h1>记忆</h1>
+                <p class="subtitle">明确哪些空间 / 用户 / 会话内容会影响后续回答，保存动作明确，不对草稿会话做长期写入暗示。</p>
             </div>
         </div>
+        ${renderGuideCards([
+            { eyebrow: "空间", title: "空间记忆影响团队级回答", description: "适合记录稳定上下文、术语和长期有效的协作事实，不适合临时结论。" },
+            { eyebrow: "用户", title: "用户记忆记录个人偏好", description: "例如表达方式、长期关注点和工作习惯，而不是一次性的执行噪音。" },
+            { eyebrow: "边界", title: "草稿会话不应直接变成长记忆", description: "把探索和沉淀分开，能减少后续回答被短期波动误导的风险。" }
+        ])}
+        <div class="metric-row">
+            <div class="metric"><strong>${formatNumber(spaceMemoryItems.length)}</strong><span>空间记忆</span></div>
+            <div class="metric"><strong>${formatNumber(userMemoryItems.length)}</strong><span>用户记忆</span></div>
+            <div class="metric"><strong>${formatNumber(state.memory.sessionSummaries.length)}</strong><span>会话摘要</span></div>
+            <div class="metric"><strong>${formatNumber(synthesisCards.length)}</strong><span>综合卡</span></div>
+        </div>
         <div class="content-grid cols-2">
-            ${panel("Space Memory", `
+            ${panel("空间记忆", `
                 <div class="list-item">
-                    <div class="list-item-header"><strong>Summary</strong>${state.memory.spaceMemory ? badge(state.memory.spaceMemory.writeEnabled ? "ENABLED" : "DISABLED", state.memory.spaceMemory.writeEnabled ? "WRITE ON" : "WRITE OFF") : ""}</div>
-                    <div class="muted">${escapeHtml(state.memory.spaceMemory?.summary || "暂无 Summary")}</div>
+                    <div class="list-item-header"><strong>摘要</strong>${state.memory.spaceMemory ? badge(state.memory.spaceMemory.writeEnabled ? "ENABLED" : "DISABLED", state.memory.spaceMemory.writeEnabled ? "写入开启" : "写入关闭") : ""}</div>
+                    <div class="muted">${escapeHtml(state.memory.spaceMemory?.summary || "暂无摘要")}</div>
                 </div>
                 <form id="space-memory-form" class="inline-form" data-space-id="${currentRouteSpaceId()}">
                     <div class="field-grid cols-2">
-                        <div class="field"><label>Topic</label><input name="topic" required></div>
-                        <div class="field"><label>MemoryType</label><select name="memoryType"><option value="SPACE_CONTEXT">SPACE_CONTEXT</option><option value="SESSION_INSIGHT">SESSION_INSIGHT</option></select></div>
+                        <div class="field"><label>主题</label><input name="topic" required></div>
+                        <div class="field"><label>记忆类型</label><select name="memoryType"><option value="SPACE_CONTEXT">空间上下文</option><option value="SESSION_INSIGHT">会话洞察</option></select></div>
                     </div>
-                    <div class="field"><label>Summary</label><textarea name="summary" required></textarea></div>
-                    <button class="button" type="submit">保存 Space Memory</button>
+                    <div class="field"><label>摘要</label><textarea name="summary" required></textarea></div>
+                    <button class="button" type="submit">保存空间记忆</button>
                 </form>
                 <div class="list-stack" style="margin-top:14px;">
                     ${(state.memory.spaceMemory?.items || []).map((item) => `
                         <div class="list-item">
-                            <div class="list-item-header"><strong>${escapeHtml(item.topic)}</strong>${badge(item.memoryType, item.memoryType)}</div>
+                            <div class="list-item-header"><strong>${escapeHtml(item.topic)}</strong>${badge(item.memoryType, humanizeMemoryType(item.memoryType))}</div>
                             <div class="muted">${escapeHtml(item.summary)}</div>
                             <button class="danger-button" type="button" data-action="delete-space-memory-item" data-item-id="${item.id}">删除</button>
                         </div>
-                    `).join("") || emptyState("暂无 Space Memory", "保存后这里会显示影响团队回答的长期记忆。")}
+                    `).join("") || emptyState("暂无空间记忆", "保存后这里会显示影响团队回答的长期记忆。")}
                 </div>
-            `)}
-            ${panel("User Memory", `
+            `, { subtitle: "团队层记忆应该尽量稳定、清楚，并且明确影响哪些后续回答。" })}
+            ${panel("用户记忆", `
                 <div class="page-actions">
                     <button class="ghost-button" type="button" data-action="${state.memory.userMemory?.writeEnabled ? "disable-user-memory" : "enable-user-memory"}">${state.memory.userMemory?.writeEnabled ? "关闭写入" : "开启写入"}</button>
                 </div>
                 <div class="list-item" style="margin-top:10px;">
-                    <div class="list-item-header"><strong>Summary</strong>${state.memory.userMemory ? badge(state.memory.userMemory.writeEnabled ? "ENABLED" : "DISABLED", state.memory.userMemory.writeEnabled ? "WRITE ON" : "WRITE OFF") : ""}</div>
-                    <div class="muted">${escapeHtml(state.memory.userMemory?.summary || "暂无 Summary")}</div>
+                    <div class="list-item-header"><strong>摘要</strong>${state.memory.userMemory ? badge(state.memory.userMemory.writeEnabled ? "ENABLED" : "DISABLED", state.memory.userMemory.writeEnabled ? "写入开启" : "写入关闭") : ""}</div>
+                    <div class="muted">${escapeHtml(state.memory.userMemory?.summary || "暂无摘要")}</div>
                 </div>
                 <form id="user-memory-form" class="inline-form" style="margin-top:14px;">
                     <div class="field-grid cols-2">
-                        <div class="field"><label>Topic</label><input name="topic" required></div>
-                        <div class="field"><label>MemoryType</label><select name="memoryType"><option value="USER_PREFERENCE">USER_PREFERENCE</option><option value="SESSION_INSIGHT">SESSION_INSIGHT</option></select></div>
+                        <div class="field"><label>主题</label><input name="topic" required></div>
+                        <div class="field"><label>记忆类型</label><select name="memoryType"><option value="USER_PREFERENCE">用户偏好</option><option value="SESSION_INSIGHT">会话洞察</option></select></div>
                     </div>
-                    <div class="field"><label>Summary</label><textarea name="summary" required></textarea></div>
-                    <button class="button" type="submit">保存 User Memory</button>
+                    <div class="field"><label>摘要</label><textarea name="summary" required></textarea></div>
+                    <button class="button" type="submit">保存用户记忆</button>
                 </form>
                 <div class="list-stack" style="margin-top:14px;">
                     ${(state.memory.userMemory?.items || []).map((item) => `
                         <div class="list-item">
-                            <div class="list-item-header"><strong>${escapeHtml(item.topic)}</strong>${badge(item.memoryType, item.memoryType)}</div>
+                            <div class="list-item-header"><strong>${escapeHtml(item.topic)}</strong>${badge(item.memoryType, humanizeMemoryType(item.memoryType))}</div>
                             <div class="muted">${escapeHtml(item.summary)}</div>
                             <button class="danger-button" type="button" data-action="delete-user-memory-item" data-item-id="${item.id}">删除</button>
                         </div>
-                    `).join("") || emptyState("暂无 User Memory", "个人偏好与长期记忆会显示在这里。")}
+                    `).join("") || emptyState("暂无用户记忆", "个人偏好与长期记忆会显示在这里。")}
                 </div>
-            `)}
+            `, { subtitle: "用户层记忆更适合偏好、习惯和长期关注点，不适合灌入临时噪音。" })}
         </div>
         <div class="content-grid cols-2" style="margin-top:16px;">
-            ${panel("Session Summary", `
+            ${panel("会话摘要", `
                 <div class="field">
                     <label>选择会话</label>
                     <select id="memory-session-selector">
@@ -1906,13 +2406,13 @@ function renderMemoryPage() {
                 <div class="list-stack" style="margin-top:14px;">
                     ${state.memory.sessionSummaries.map((summary) => `
                         <div class="list-item">
-                            <div class="list-item-header"><strong>${escapeHtml(summary.topic)}</strong>${tag(`importance ${summary.importanceScore}`)}</div>
+                            <div class="list-item-header"><strong>${escapeHtml(summary.topic)}</strong>${tag(`重要度 ${summary.importanceScore}`)}</div>
                             <div class="muted">${escapeHtml(summary.summary)}</div>
                         </div>
-                    `).join("") || emptyState("暂无 Session Summary", "当前会话还没有生成会话摘要。")}
+                    `).join("") || emptyState("暂无会话摘要", "当前会话还没有生成会话摘要。")}
                 </div>
-            `)}
-            ${panel("SynthesisCard", `
+            `, { subtitle: "这里帮助用户看见哪些会话记忆可能会被写回长期上下文。" })}
+            ${panel("综合卡", `
                 <div class="field">
                     <label>选择项目</label>
                     <select id="synthesis-project-selector">
@@ -1925,9 +2425,9 @@ function renderMemoryPage() {
                             <div class="list-item-header"><strong>${escapeHtml(card.title)}</strong>${badge(card.cardStatus, card.cardStatus)}</div>
                             <div class="muted">${escapeHtml(card.summary || "无摘要")}</div>
                         </div>
-                    `).join("") || emptyState("暂无 SynthesisCard", "Artifact 蒸馏后这里会同步显示。")}
+                    `).join("") || emptyState("暂无综合卡", "成果蒸馏后这里会同步显示。")}
                 </div>
-            `)}
+            `, { subtitle: "综合卡是长期知识沉淀，不应该和临时聊天结果混淆。" })}
         </div>
     `;
 }
@@ -1937,10 +2437,16 @@ function renderAdminTasksPage() {
     return `
         <div class="page-header">
             <div>
-                <h1>Admin Tasks</h1>
+                <div class="context-kicker">管理后台</div>
+                <h1>任务中心</h1>
                 <p class="subtitle">任务列表、状态筛选、失败原因、重试与取消入口。</p>
             </div>
         </div>
+        ${renderGuideCards([
+            { eyebrow: "Filter", title: "先筛状态，再追失败原因", description: "把正在运行、失败和已完成的任务分开看，排查效率会更高。" },
+            { eyebrow: "Inspect", title: "重试前先检查输入输出", description: "很多任务问题不是执行器本身，而是进入任务时的数据已经不对。" },
+            { eyebrow: "Trace", title: "抽屉里的事件历史最有价值", description: "它能把一次失败究竟发生在哪个阶段串得更完整。" }
+        ])}
         ${renderDashboardMetrics()}
         <div style="margin-top:16px;">
             ${panel("任务列表", `
@@ -1959,7 +2465,7 @@ function renderAdminTasksPage() {
                 <div class="table-wrap">
                     <table>
                         <thead>
-                        <tr><th>ID</th><th>Type</th><th>Status</th><th>Target</th><th>Error</th><th>Actions</th></tr>
+                        <tr><th>ID</th><th>类型</th><th>状态</th><th>目标</th><th>错误</th><th>操作</th></tr>
                         </thead>
                         <tbody>
                         ${tasks.map((task) => `
@@ -1995,13 +2501,13 @@ function renderAdminTaskDetailDrawer() {
     return `
         <div class="list-stack">
             <div class="list-item">
-                <div class="list-item-header"><strong>Task ${formatNumber(task.id)}</strong>${badge(task.taskStatus)}</div>
-                <div class="muted">Type: ${escapeHtml(task.taskType)}</div>
-                <div class="muted">Target: ${escapeHtml(task.targetType || "—")} / ${formatNumber(task.targetId)}</div>
-                <div class="muted">Retry: ${formatNumber(task.retryCount)} / ${formatNumber(task.maxRetryCount)}</div>
-                <div class="muted">Started: ${formatDate(task.startedAt)}</div>
-                <div class="muted">Finished: ${formatDate(task.finishedAt)}</div>
-                <div class="muted">Error: ${escapeHtml(task.errorMessage || "—")}</div>
+                <div class="list-item-header"><strong>任务 ${formatNumber(task.id)}</strong>${badge(task.taskStatus)}</div>
+                <div class="muted">类型：${escapeHtml(task.taskType)}</div>
+                <div class="muted">目标：${escapeHtml(task.targetType || "—")} / ${formatNumber(task.targetId)}</div>
+                <div class="muted">重试次数：${formatNumber(task.retryCount)} / ${formatNumber(task.maxRetryCount)}</div>
+                <div class="muted">开始时间：${formatDate(task.startedAt)}</div>
+                <div class="muted">结束时间：${formatDate(task.finishedAt)}</div>
+                <div class="muted">错误信息：${escapeHtml(task.errorMessage || "—")}</div>
             </div>
             ${panel("输入", renderJson(task.input))}
             ${panel("输出", renderJson(task.output))}
@@ -2011,7 +2517,7 @@ function renderAdminTaskDetailDrawer() {
                         <div class="list-item">
                             <div class="list-item-header"><strong>${escapeHtml(item.eventType)}</strong><span class="muted">${formatDate(item.createdAt)}</span></div>
                             <div class="muted">${escapeHtml(item.message || "—")}</div>
-                            <div class="muted">Status: ${escapeHtml(item.fromStatus || "—")} -> ${escapeHtml(item.toStatus || "—")}</div>
+                            <div class="muted">状态：${escapeHtml(item.fromStatus || "—")} -> ${escapeHtml(item.toStatus || "—")}</div>
                             ${item.payload ? renderJson(item.payload) : ""}
                         </div>
                     `).join("") || emptyState("暂无事件", "这个任务还没有可展示的事件记录。")}
@@ -2028,10 +2534,10 @@ function renderDashboardMetrics() {
     }
     return `
         <div class="metric-row">
-            <div class="metric"><strong>${formatNumber(dashboard.userCount)}</strong><span>Users</span></div>
-            <div class="metric"><strong>${formatNumber(dashboard.spaceCount)}</strong><span>Spaces</span></div>
-            <div class="metric"><strong>${formatNumber(dashboard.taskCount)}</strong><span>Tasks</span></div>
-            <div class="metric"><strong>${formatNumber(dashboard.failedTaskCount)}</strong><span>Failed Tasks</span></div>
+            <div class="metric"><strong>${formatNumber(dashboard.userCount)}</strong><span>用户数</span></div>
+            <div class="metric"><strong>${formatNumber(dashboard.spaceCount)}</strong><span>空间数</span></div>
+            <div class="metric"><strong>${formatNumber(dashboard.taskCount)}</strong><span>任务数</span></div>
+            <div class="metric"><strong>${formatNumber(dashboard.failedTaskCount)}</strong><span>失败任务</span></div>
         </div>
     `;
 }
@@ -2041,19 +2547,25 @@ function renderAdminHealthPage() {
     return `
         <div class="page-header">
             <div>
-                <h1>Admin Health</h1>
+                <div class="context-kicker">管理后台</div>
+                <h1>系统健康</h1>
                 <p class="subtitle">组件健康状态、最近检查时间、延迟和错误详情。</p>
             </div>
             <div class="page-actions">
                 <button class="ghost-button" type="button" data-action="refresh-page">手动刷新</button>
             </div>
         </div>
+        ${renderGuideCards([
+            { eyebrow: "概览", title: "健康页更适合看系统面", description: "它回答的是当前哪些组件不稳，而不是某一次具体业务为什么失败。" },
+            { eyebrow: "延迟", title: "延迟和时间戳要一起判断", description: "一次慢响应未必说明组件异常，连续慢和最近检查时间更值得关注。" },
+            { eyebrow: "刷新", title: "刷新后再判断是否持续异常", description: "这样可以避免把短暂抖动误判成持续性故障。" }
+        ])}
         ${renderDashboardMetrics()}
         <div style="margin-top:16px;">
             ${panel("系统健康", `
                 <div class="table-wrap">
                     <table>
-                        <thead><tr><th>Component</th><th>Status</th><th>Latency</th><th>Checked At</th><th>Detail</th></tr></thead>
+                        <thead><tr><th>组件</th><th>状态</th><th>延迟</th><th>检查时间</th><th>详情</th></tr></thead>
                         <tbody>
                         ${components.map((component) => `
                             <tr>
@@ -2076,47 +2588,59 @@ function renderAdminEvaluationPage() {
     return `
         <div class="page-header">
             <div>
-                <h1>Admin Evaluation</h1>
-                <p class="subtitle">RagEvalCase 列表、创建入口、启动 Eval Run，并查看 recall@k / MRR / citationCoverage。</p>
+                <div class="context-kicker">管理后台</div>
+                <h1>评测中心</h1>
+                <p class="subtitle">查看评测案例、发起评测运行，并查看召回率、MRR 和引用覆盖率。</p>
             </div>
         </div>
+        ${renderGuideCards([
+            { eyebrow: "案例", title: "案例必须带着明确预期", description: "一个好案例至少要说清问题、期望回答和它是否仍然有效。" },
+            { eyebrow: "指标", title: "不要只看单一分数", description: "召回率、MRR 和引用覆盖率一起看，才能判断问题出在检索还是回答。" },
+            { eyebrow: "实验", title: "运行名称最好对应实验假设", description: "这样回看评测结果时，才知道这一轮到底验证了什么改变。" }
+        ])}
+        <div class="metric-row">
+            <div class="metric"><strong>${formatNumber(state.admin.evalCases.length)}</strong><span>评测案例</span></div>
+            <div class="metric"><strong>${formatNumber(state.admin.evalResults.length)}</strong><span>评测结果</span></div>
+            <div class="metric"><strong>${state.admin.evalRun ? escapeHtml(humanizeStatus(state.admin.evalRun.status || "RUNNING")) : "空闲"}</strong><span>运行状态</span></div>
+            <div class="metric"><strong>${formatNumber(currentRouteSpaceId())}</strong><span>空间范围</span></div>
+        </div>
         <div class="content-grid cols-2">
-            ${panel("Eval Cases", `
+            ${panel("评测案例", `
                 <form id="eval-case-form" data-space-id="${currentRouteSpaceId()}" class="inline-form">
-                    <div class="field"><label>Name</label><input name="name" required></div>
-                    <div class="field"><label>Query</label><textarea name="queryText" required></textarea></div>
-                    <div class="field"><label>Expected Answer</label><textarea name="expectedAnswer"></textarea></div>
-                    <button class="button" type="submit">创建 Eval Case</button>
+                    <div class="field"><label>名称</label><input name="name" required></div>
+                    <div class="field"><label>问题</label><textarea name="queryText" required></textarea></div>
+                    <div class="field"><label>期望答案</label><textarea name="expectedAnswer"></textarea></div>
+                    <button class="button" type="submit">创建评测案例</button>
                 </form>
                 <div class="list-stack" style="margin-top:14px;">
                     ${state.admin.evalCases.map((item) => `
                         <div class="list-item">
-                            <div class="list-item-header"><strong>${escapeHtml(item.name)}</strong>${badge(item.enabled ? "ENABLED" : "DISABLED", item.enabled ? "ENABLED" : "DISABLED")}</div>
+                            <div class="list-item-header"><strong>${escapeHtml(item.name)}</strong>${badge(item.enabled ? "ENABLED" : "DISABLED", item.enabled ? "已启用" : "已停用")}</div>
                             <div class="muted">${escapeHtml(item.queryText)}</div>
                         </div>
-                    `).join("") || emptyState("暂无 Eval Case", "创建一个案例后再启动 Eval Run。")}
+                    `).join("") || emptyState("暂无评测案例", "创建一个案例后再启动评测运行。")}
                 </div>
-            `)}
-            ${panel("Eval Run", `
+            `, { subtitle: "每个案例都应该能清楚表达问题、期望回答和是否仍然有效。" })}
+            ${panel("评测运行", `
                 <form id="eval-run-form" data-space-id="${currentRouteSpaceId()}" class="inline-form">
-                    <div class="field"><label>Run Name</label><input name="name" required></div>
-                    <button class="button" type="submit">启动 Eval Run</button>
+                    <div class="field"><label>运行名称</label><input name="name" required></div>
+                    <button class="button" type="submit">启动评测运行</button>
                 </form>
                 ${state.admin.evalRun ? `
                     <div class="list-item" style="margin-top:14px;">
                         <div class="list-item-header"><strong>${escapeHtml(state.admin.evalRun.name)}</strong>${badge(state.admin.evalRun.status)}</div>
-                        <div class="muted">${escapeHtml(state.admin.evalRun.summaryJson || "暂无 summaryJson")}</div>
+                        <div class="muted">${escapeHtml(state.admin.evalRun.summaryJson || "暂无摘要")}</div>
                     </div>
                 ` : ""}
                 <div class="list-stack" style="margin-top:14px;">
                     ${state.admin.evalResults.map((result) => `
                         <div class="list-item">
-                            <div class="list-item-header"><strong>Case ${formatNumber(result.caseId)}</strong>${tag(`latency ${formatNumber(result.latencyMs)}ms`)}</div>
-                            <div class="muted">recall@k ${result.recallAtK} / MRR ${result.mrr} / citationCoverage ${result.citationCoverage}</div>
+                            <div class="list-item-header"><strong>案例 ${formatNumber(result.caseId)}</strong>${tag(`延迟 ${formatNumber(result.latencyMs)}ms`)}</div>
+                            <div class="muted">召回率 ${result.recallAtK} / MRR ${result.mrr} / 引用覆盖率 ${result.citationCoverage}</div>
                         </div>
-                    `).join("") || emptyState("暂无 Eval Result", "启动一次 Eval Run 后，这里会展示结果。")}
+                    `).join("") || emptyState("暂无评测结果", "启动一次评测运行后，这里会展示结果。")}
                 </div>
-            `)}
+            `, { subtitle: "结果页要让人一眼分清质量、延迟和引用覆盖率，而不是只看一个总分。" })}
         </div>
     `;
 }
@@ -2127,15 +2651,27 @@ function renderAdminLogsPage() {
     return `
         <div class="page-header">
             <div>
-                <h1>Admin Logs</h1>
-                <p class="subtitle">LLMCallLog 查询、AuditLog 查询，以及 RetrievalTrace 按 traceId 查看。</p>
+                <div class="context-kicker">管理后台</div>
+                <h1>运行日志</h1>
+                <p class="subtitle">集中查看模型调用日志、审计日志，以及按链路 ID 查询检索过程。</p>
             </div>
         </div>
+        ${renderGuideCards([
+            { eyebrow: "模型", title: "模型日志看调用成本和结果", description: "这里更适合回答模型调了多少、是否成功、消耗了多少 tokens。" },
+            { eyebrow: "审计", title: "审计日志看操作路径", description: "它帮助你理解是谁在什么时候对哪个目标做了什么动作。" },
+            { eyebrow: "链路", title: "检索链路用来串起全过程", description: "当回答质量异常时，链路信息能帮助你定位问题在检索、重排还是生成。" }
+        ])}
+        <div class="metric-row">
+            <div class="metric"><strong>${formatNumber(llmLogs.length)}</strong><span>模型日志</span></div>
+            <div class="metric"><strong>${formatNumber(auditLogs.length)}</strong><span>审计日志</span></div>
+            <div class="metric"><strong>${state.admin.retrievalTrace ? "已加载" : "空闲"}</strong><span>链路查看器</span></div>
+            <div class="metric"><strong>${formatNumber(state.user?.id)}</strong><span>操作人</span></div>
+        </div>
         <div class="content-grid cols-2">
-            ${panel("LLM Call Logs", `
+            ${panel("模型调用日志", `
                 <div class="table-wrap">
                     <table>
-                        <thead><tr><th>ID</th><th>Scene</th><th>Model</th><th>Tokens</th><th>Status</th><th>Time</th></tr></thead>
+                        <thead><tr><th>ID</th><th>场景</th><th>模型</th><th>Tokens</th><th>状态</th><th>时间</th></tr></thead>
                         <tbody>
                         ${llmLogs.map((log) => `
                             <tr>
@@ -2143,22 +2679,22 @@ function renderAdminLogsPage() {
                                 <td>${escapeHtml(log.scene)}</td>
                                 <td>${escapeHtml(log.model)}</td>
                                 <td>${formatNumber(log.totalTokens)}</td>
-                                <td>${badge(log.success ? "SUCCESS" : "FAILED", log.success ? "SUCCESS" : "FAILED")}</td>
+                                <td>${badge(log.success ? "SUCCESS" : "FAILED", log.success ? "成功" : "失败")}</td>
                                 <td>${formatDate(log.createdAt)}</td>
                             </tr>
-                        `).join("") || `<tr><td colspan="6">${emptyState("暂无 LLM 日志", "当前条件没有日志记录。")}</td></tr>`}
+                        `).join("") || `<tr><td colspan="6">${emptyState("暂无模型日志", "当前条件没有日志记录。")}</td></tr>`}
                         </tbody>
                     </table>
                 </div>
                 <form id="retrieval-trace-form" class="inline-form" style="margin-top:14px;">
-                    <div class="field"><label>Retrieval Trace ID</label><input name="traceId" required></div>
-                    <button class="ghost-button" type="submit">查看 Trace</button>
+                    <div class="field"><label>检索链路 ID</label><input name="traceId" required></div>
+                    <button class="ghost-button" type="submit">查看链路</button>
                 </form>
-            `)}
-            ${panel("Audit Logs", `
+            `, { subtitle: "把这块当作模型调用和检索诊断入口，而不是纯日志堆。" })}
+            ${panel("审计日志", `
                 <div class="table-wrap">
                     <table>
-                        <thead><tr><th>ID</th><th>Action</th><th>Target</th><th>Operator</th><th>Created</th></tr></thead>
+                        <thead><tr><th>ID</th><th>动作</th><th>目标</th><th>操作人</th><th>创建时间</th></tr></thead>
                         <tbody>
                         ${auditLogs.map((log) => `
                             <tr>
@@ -2168,12 +2704,12 @@ function renderAdminLogsPage() {
                                 <td>${formatNumber(log.operatorId)}</td>
                                 <td>${formatDate(log.createdAt)}</td>
                             </tr>
-                        `).join("") || `<tr><td colspan="5">${emptyState("暂无 AuditLog", "当前条件没有审计记录。")}</td></tr>`}
+                        `).join("") || `<tr><td colspan="5">${emptyState("暂无审计日志", "当前条件没有审计记录。")}</td></tr>`}
                         </tbody>
                     </table>
                 </div>
-                ${state.admin.retrievalTrace ? `<div class="list-item" style="margin-top:14px;"><div class="list-item-header"><strong>Retrieval Trace</strong></div>${renderJson(state.admin.retrievalTrace)}</div>` : ""}
-            `)}
+                ${state.admin.retrievalTrace ? `<div class="list-item" style="margin-top:14px;"><div class="list-item-header"><strong>检索链路</strong></div>${renderJson(state.admin.retrievalTrace)}</div>` : ""}
+            `, { subtitle: "审计信息和 Trace 放在一起，更容易串起一次完整的系统行为路径。" })}
         </div>
     `;
 }
@@ -2213,14 +2749,14 @@ async function handleLogout() {
 async function handleCreateSpace(form) {
     const payload = Object.fromEntries(new FormData(form).entries());
     await api.spaces.create(payload);
-    queueToast("Space 已创建。", "success");
+    queueToast("空间已创建。", "success");
     await renderRoute();
 }
 
 async function handleCreateKnowledgeBase(form) {
     const payload = Object.fromEntries(new FormData(form).entries());
     await api.knowledge.create(currentRouteSpaceId(), payload);
-    queueToast("Knowledge Base 已创建。", "success");
+    queueToast("知识库已创建。", "success");
     await renderRoute();
 }
 
@@ -2372,7 +2908,7 @@ async function handleCreateSession(form) {
         .filter(Boolean)
         .map(Number);
     if (values.scopeType === "KNOWLEDGE_BASE" && !scopeIds.length) {
-        throw new ApiError("Knowledge Base 会话必须填写至少一个知识库 ID。", { code: "KNOWLEDGE_BASE_SCOPE_REQUIRED" });
+        throw new ApiError("指定知识库会话必须填写至少一个知识库 ID。", { code: "KNOWLEDGE_BASE_SCOPE_REQUIRED" });
     }
     const payload = {
         spaceId: currentRouteSpaceId(),
@@ -2657,7 +3193,7 @@ async function handleAdminTaskFilter(form) {
 async function handleCreateProject(form) {
     const payload = Object.fromEntries(new FormData(form).entries());
     await api.personal.createProject(payload);
-    queueToast("ResearchProject 已创建。", "success");
+    queueToast("研究项目已创建。", "success");
     await renderRoute();
 }
 
@@ -2668,21 +3204,21 @@ async function handleSourceFile(form) {
         return;
     }
     await api.personal.uploadSource(projectId, file, form.elements.title.value);
-    queueToast("文件 Source 已提交导入。", "success");
+    queueToast("文件资料已提交导入。", "success");
     await renderRoute();
 }
 
 async function handleSourceUrl(form) {
     const projectId = Number(form.dataset.projectId);
     await api.personal.addUrlSource(projectId, Object.fromEntries(new FormData(form).entries()));
-    queueToast("URL Source 已创建。", "success");
+    queueToast("网址资料已创建。", "success");
     await renderRoute();
 }
 
 async function handleSourceText(form) {
     const projectId = Number(form.dataset.projectId);
     await api.personal.addTextSource(projectId, Object.fromEntries(new FormData(form).entries()));
-    queueToast("文本 Source 已创建。", "success");
+    queueToast("文本资料已创建。", "success");
     await renderRoute();
 }
 
@@ -2693,7 +3229,7 @@ function findSkill(skillId) {
 async function createArtifactTask(spaceId, projectId, skillId, topic, methodologyCardId = null) {
     const skill = findSkill(skillId);
     if (!skill) {
-        throw new ApiError("未找到对应的 Studio Skill。", { code: "STUDIO_SKILL_NOT_FOUND" });
+        throw new ApiError("未找到对应的工作室技能。", { code: "STUDIO_SKILL_NOT_FOUND" });
     }
     const task = await api.studio.createTask({
         spaceId,
@@ -2714,7 +3250,7 @@ async function createArtifactTask(spaceId, projectId, skillId, topic, methodolog
             paint();
         });
     }
-    queueToast("Artifact 生成任务已启动。", "success");
+    queueToast("成果生成任务已启动。", "success");
 }
 
 async function handleProjectGenerate(form) {
@@ -2737,7 +3273,7 @@ async function handleArtifactSave(form) {
     const artifactId = Number(form.dataset.artifactId);
     const payload = Object.fromEntries(new FormData(form).entries());
     await api.artifacts.update(artifactId, payload);
-    queueToast("Artifact 已保存。", "success");
+    queueToast("成果已保存。", "success");
     await renderRoute();
 }
 
@@ -2756,7 +3292,7 @@ async function handleArtifactRegenerate(artifactId) {
             paint();
         });
     }
-    queueToast("Artifact 重新生成任务已启动。", "success");
+    queueToast("成果重新生成任务已启动。", "success");
     await renderRoute();
 }
 
@@ -2768,10 +3304,10 @@ async function handleDistillArtifact(form) {
         confirm: false
     });
     state.artifacts.distillPreview = preview;
-    setDrawer("Distill Preview", `
+    setDrawer("沉淀预览", `
         <div class="list-stack">
-            <div class="list-item"><strong>${escapeHtml(preview.title || "Synthesis Preview")}</strong><div class="muted">${escapeHtml(preview.summary || "")}</div></div>
-            ${preview.insights?.length ? `<div class="list-item"><strong>Insights</strong><ul>${preview.insights.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
+            <div class="list-item"><strong>${escapeHtml(preview.title || "综合卡预览")}</strong><div class="muted">${escapeHtml(preview.summary || "")}</div></div>
+            ${preview.insights?.length ? `<div class="list-item"><strong>要点</strong><ul>${preview.insights.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
             <button class="button" type="button" data-action="confirm-distill" data-artifact-id="${artifactId}" data-card-type="${escapeHtml(payload.cardType)}" data-proposal-id="${preview.proposalId || ""}">确认写入</button>
         </div>
     `);
@@ -2783,10 +3319,10 @@ async function confirmDistillArtifact(artifactId, cardType, proposalId) {
         proposalId,
         confirm: true
     });
-    queueToast("Artifact 已沉淀到个人 Wiki。", "success");
-    setDrawer("Distill Result", `
+    queueToast("成果已沉淀到个人 Wiki。", "success");
+    setDrawer("沉淀结果", `
         <div class="list-item">
-            <div class="list-item-header"><strong>${escapeHtml(result.title || "Synthesis Card")}</strong>${badge(result.confirmed ? "SUCCESS" : "PENDING", result.confirmed ? "CONFIRMED" : "PREVIEW")}</div>
+            <div class="list-item-header"><strong>${escapeHtml(result.title || "综合卡")}</strong>${badge(result.confirmed ? "SUCCESS" : "PENDING", result.confirmed ? "已确认" : "预览中")}</div>
             <div class="muted">${escapeHtml(result.summary || "")}</div>
         </div>
     `);
@@ -2801,7 +3337,7 @@ async function handlePublishArtifactToWiki(form) {
         spaceId: artifactSpaceId,
         title: values.title
     });
-    queueToast("Artifact 已发布为 Wiki 草稿。", "success");
+    queueToast("成果已发布为 Wiki 草稿。", "success");
     navigate(routeLink("wiki", artifactSpaceId));
 }
 
@@ -2835,7 +3371,7 @@ async function saveSpaceMemory(form) {
     const payload = Object.fromEntries(new FormData(form).entries());
     payload.pin = false;
     await api.memory.upsertSpace(Number(form.dataset.spaceId), payload);
-    queueToast("Space Memory 已保存。", "success");
+    queueToast("空间记忆已保存。", "success");
     await renderRoute();
 }
 
@@ -2843,7 +3379,7 @@ async function saveUserMemory(form) {
     const payload = Object.fromEntries(new FormData(form).entries());
     payload.pin = false;
     await api.memory.upsertUser(payload);
-    queueToast("User Memory 已保存。", "success");
+    queueToast("用户记忆已保存。", "success");
     await renderRoute();
 }
 
@@ -2851,7 +3387,7 @@ async function handleEvalCase(form) {
     const payload = Object.fromEntries(new FormData(form).entries());
     payload.enabled = true;
     await api.admin.createEvalCase(Number(form.dataset.spaceId), payload);
-    queueToast("Eval Case 已创建。", "success");
+    queueToast("评测案例已创建。", "success");
     await renderRoute();
 }
 
@@ -2859,7 +3395,7 @@ async function handleEvalRun(form) {
     const payload = Object.fromEntries(new FormData(form).entries());
     const run = await api.admin.startEvalRun(Number(form.dataset.spaceId), payload);
     state.admin.selectedEvalRunId = run.id;
-    queueToast("Eval Run 已启动。", "success");
+    queueToast("评测运行已启动。", "success");
     await renderRoute();
 }
 
@@ -2871,7 +3407,7 @@ async function handleRetrievalTrace(form) {
 
 async function showHealthDetail(component) {
     const detail = await api.admin.healthComponent(component);
-    setDrawer(`Health: ${component}`, renderJson(detail));
+    setDrawer(`健康详情：${component}`, renderJson(detail));
 }
 
 function openCitation(citationKey) {
@@ -2879,17 +3415,17 @@ function openCitation(citationKey) {
     if (!citation) {
         return;
     }
-    setDrawer("Citation Evidence", `
+    setDrawer("引用证据", `
         <div class="list-stack">
             <div class="list-item">
-                <div class="list-item-header"><strong>${escapeHtml(citation.title || citation.sourceType || "Citation")}</strong>${citation.pageNo ? tag(`p.${citation.pageNo}`) : ""}</div>
+                <div class="list-item-header"><strong>${escapeHtml(citation.title || citation.sourceType || "引用")}</strong>${citation.pageNo ? tag(`第 ${citation.pageNo} 页`) : ""}</div>
                 <div class="muted">${escapeHtml(citation.locationInfo || "无位置描述")}</div>
             </div>
             <div class="list-item">
-                <strong>Quote</strong>
+                <strong>引文</strong>
                 <div class="muted">${escapeHtml(citation.quoteText || "")}</div>
             </div>
-            ${citation.startOffset !== undefined ? `<div class="list-item"><strong>Offset</strong><div class="muted">${formatNumber(citation.startOffset)} - ${formatNumber(citation.endOffset)}</div></div>` : ""}
+            ${citation.startOffset !== undefined ? `<div class="list-item"><strong>偏移量</strong><div class="muted">${formatNumber(citation.startOffset)} - ${formatNumber(citation.endOffset)}</div></div>` : ""}
         </div>
     `);
 }
@@ -2980,12 +3516,12 @@ document.addEventListener("click", async (event) => {
                 break;
             case "source-import":
                 await api.personal.triggerImport(Number(target.dataset.sourceId));
-                queueToast("Source 重新导入任务已触发。", "success");
+                queueToast("资料重新导入任务已触发。", "success");
                 await renderRoute();
                 break;
             case "source-compile":
                 await api.personal.compileSource(Number(target.dataset.sourceId));
-                queueToast("Wiki Compiler 已触发。", "success");
+                queueToast("知识编译任务已触发。", "success");
                 await renderRoute();
                 break;
             case "open-artifact":
@@ -3014,22 +3550,22 @@ document.addEventListener("click", async (event) => {
                 break;
             case "delete-space-memory-item":
                 await api.memory.deleteSpaceItem(currentRouteSpaceId(), Number(target.dataset.itemId));
-                queueToast("Space Memory 已删除。", "success");
+                queueToast("空间记忆已删除。", "success");
                 await renderRoute();
                 break;
             case "delete-user-memory-item":
                 await api.memory.deleteUserItem(Number(target.dataset.itemId));
-                queueToast("User Memory 已删除。", "success");
+                queueToast("用户记忆已删除。", "success");
                 await renderRoute();
                 break;
             case "disable-user-memory":
                 await api.memory.disableWriteback();
-                queueToast("User Memory 写入已关闭。", "success");
+                queueToast("用户记忆写入已关闭。", "success");
                 await renderRoute();
                 break;
             case "enable-user-memory":
                 await api.memory.enableWriteback();
-                queueToast("User Memory 写入已开启。", "success");
+                queueToast("用户记忆写入已开启。", "success");
                 await renderRoute();
                 break;
             case "admin-retry-task":

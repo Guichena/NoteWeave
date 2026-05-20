@@ -1,0 +1,4 @@
+interface:
+  display_name: "NoteWeave Interview Review"
+  short_description: "Deep interview prep and big-tech mock for NoteWeave"
+  default_prompt: "Use $noteweave-interview-review to help me review the NoteWeave project with deep, architecture-focused interview answers and mock interview drills."

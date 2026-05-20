@@ -62,6 +62,7 @@ public class TeamWikiService {
     private final ResourceAccessService resourceAccessService;
     private final TaskService taskService;
     private final ObjectProvider<WikiIndexService> wikiIndexServiceProvider;
+    private final WikiGraphSyncService wikiGraphSyncService;
 
     @Transactional
     public WikiPageResponse createDraft(Long userId, Long spaceId, CreateWikiDraftRequest request) {
@@ -75,7 +76,9 @@ public class TeamWikiService {
         page.setIndexStatus(WikiIndexStatus.PENDING);
         page.setCreatedBy(userId);
         page.setUpdatedBy(userId);
-        return toResponse(wikiPageRepository.save(page));
+        WikiPage saved = wikiPageRepository.save(page);
+        rebuildGraph(spaceId);
+        return toResponse(saved);
     }
 
     @Transactional
@@ -101,7 +104,9 @@ public class TeamWikiService {
         page.setIndexStatus(WikiIndexStatus.PENDING);
         page.setCreatedBy(userId);
         page.setUpdatedBy(userId);
-        return toResponse(wikiPageRepository.save(page));
+        WikiPage saved = wikiPageRepository.save(page);
+        rebuildGraph(request.getSpaceId());
+        return toResponse(saved);
     }
 
     @Transactional
@@ -119,7 +124,9 @@ public class TeamWikiService {
         page.setIndexStatus(WikiIndexStatus.PENDING);
         page.setCreatedBy(userId);
         page.setUpdatedBy(userId);
-        return toResponse(wikiPageRepository.save(page));
+        WikiPage saved = wikiPageRepository.save(page);
+        rebuildGraph(spaceId);
+        return toResponse(saved);
     }
 
     @Transactional(readOnly = true)
@@ -142,7 +149,9 @@ public class TeamWikiService {
         page.setTitle(normalizeRequired(request.getTitle()));
         page.setContent(normalizeRequired(request.getContent()));
         page.setUpdatedBy(userId);
-        return toResponse(wikiPageRepository.save(page));
+        WikiPage saved = wikiPageRepository.save(page);
+        rebuildGraph(saved.getSpaceId());
+        return toResponse(saved);
     }
 
     @Transactional
@@ -196,6 +205,7 @@ public class TeamWikiService {
         if (task.getId() == null) {
             throw new BusinessException(ErrorCode.WIKI_PUBLISH_FAILED, "failed to create wiki index task");
         }
+        rebuildGraph(page.getSpaceId());
         return toResponse(page);
     }
 
@@ -212,6 +222,7 @@ public class TeamWikiService {
         page.setDeletedBy(userId);
         page.setUpdatedBy(userId);
         wikiPageRepository.save(page);
+        rebuildGraph(page.getSpaceId());
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             Long wikiPageId = page.getId();
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -381,6 +392,10 @@ public class TeamWikiService {
 
     private String buildWikiIndexIdempotencyKey(Long pageId, Long versionId) {
         return "WIKI_INDEX:" + pageId + ":" + versionId;
+    }
+
+    private void rebuildGraph(Long spaceId) {
+        wikiGraphSyncService.rebuildSpaceGraph(spaceId);
     }
 
     private String normalizeRequired(String value) {

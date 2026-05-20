@@ -56,12 +56,12 @@ docker compose down -v
 
 | 服务 | 容器名 | 宿主机端口 | 容器端口 |
 |---|---|---:|---:|
-| MySQL | `noteweave-mysql` | `3307` | `3306` |
+| MySQL | `noteweave-mysql` | `13307` | `3306` |
 | Redis | `noteweave-redis` | `6380` | `6379` |
-| MinIO API | `noteweave-minio` | `9000` | `9000` |
-| MinIO Console | `noteweave-minio` | `9001` | `9001` |
-| Elasticsearch | `noteweave-elasticsearch` | `9200` | `9200` |
-| Kafka | `noteweave-kafka` | `9092` | `9094` |
+| MinIO API | `noteweave-minio` | `19100` | `9000` |
+| MinIO Console | `noteweave-minio` | `19101` | `9001` |
+| Elasticsearch | `noteweave-elasticsearch` | `19200` | `9200` |
+| Kafka | `noteweave-kafka` | `19092` | `9094` |
 
 默认环境变量见：
 
@@ -76,15 +76,15 @@ docker compose down -v
 Spring dev profile 默认应能连接 Docker Compose：
 
 ```text
-DB_URL=jdbc:mysql://localhost:3307/noteweave?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+DB_URL=jdbc:mysql://localhost:13307/noteweave?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
 DB_USERNAME=noteweave
 DB_PASSWORD=noteweave
 REDIS_HOST=localhost
 REDIS_PORT=6380
-MINIO_ENDPOINT=http://localhost:9000
+MINIO_ENDPOINT=http://localhost:19100
 MINIO_BUCKET=noteweave-dev
-ES_URIS=http://localhost:9200
-KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+ES_URIS=http://localhost:19200
+KAFKA_BOOTSTRAP_SERVERS=localhost:19092
 ```
 
 非 dev profile 不能使用弱默认密钥或默认密码启动。

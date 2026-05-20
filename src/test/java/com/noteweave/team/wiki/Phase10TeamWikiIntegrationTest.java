@@ -378,6 +378,85 @@ class Phase10TeamWikiIntegrationTest extends ContainerizedIntegrationTest {
     }
 
     @Test
+    void wikiGraphShouldBuildResolvedAndMissingLinksAndSupportSubgraphTraversal() throws Exception {
+        String ownerToken = registerAndGetToken("phase10_graph_owner_" + System.nanoTime());
+        String viewerName = "phase10_graph_viewer_" + System.nanoTime();
+        String viewerToken = registerAndGetToken(viewerName);
+
+        Long spaceId = createTeamSpace(ownerToken, "phase10-graph-team-" + System.nanoTime());
+        addMember(ownerToken, spaceId, viewerName + "@example.com", "VIEWER");
+
+        Long deployPageId = createWikiDraftAndPublish(ownerToken, spaceId, "Deploy Flow", """
+                Deploy depends on [[Rollback Playbook]] and [[Release Checklist]].
+                """);
+        Long rollbackPageId = createWikiDraftAndPublish(ownerToken, spaceId, "Rollback Playbook", """
+                Rollback points back to [[Deploy Flow]].
+                """);
+        Long checklistPageId = createWikiDraftAndPublish(ownerToken, spaceId, "Release Checklist", """
+                Checklist links to [[Deploy Flow]].
+                """);
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from wiki_page_link where source_page_id = ? and target_page_id = ? and relation_status = 'RESOLVED' and mention_count = 1",
+                Integer.class,
+                deployPageId,
+                rollbackPageId
+        )).isEqualTo(1);
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from wiki_page_link where source_page_id = ? and target_title = ? and relation_status = 'RESOLVED'",
+                Integer.class,
+                deployPageId,
+                "Release Checklist"
+        )).isEqualTo(1);
+
+        mockMvc.perform(get("/api/v1/team/spaces/{spaceId}/wiki-graph", spaceId)
+                        .header("Authorization", "Bearer " + viewerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.nodeCount").value(3))
+                .andExpect(jsonPath("$.data.edgeCount").value(4))
+                .andExpect(jsonPath("$.data.nodes[?(@.title=='Deploy Flow')]").exists());
+
+        JsonNode missingDraft = readJson(mockMvc.perform(post("/api/v1/team/spaces/{spaceId}/wiki-pages", spaceId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Missing Link Draft",
+                                  "content": "This page references [[Ghost Note]]."
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andReturn());
+        Long missingDraftId = missingDraft.path("data").path("id").asLong();
+
+        mockMvc.perform(get("/api/v1/team/wiki-pages/{pageId}/graph", missingDraftId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .param("depth", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rootPageId").value(missingDraftId))
+                .andExpect(jsonPath("$.data.nodeCount").value(1))
+                .andExpect(jsonPath("$.data.edgeCount").value(0))
+                .andExpect(jsonPath("$.data.unresolvedLinks[0].targetTitle").value("Ghost Note"))
+                .andExpect(jsonPath("$.data.unresolvedLinks[0].relationStatus").value("MISSING"));
+
+        mockMvc.perform(get("/api/v1/team/wiki-pages/{pageId}/graph", deployPageId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .param("depth", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rootPageId").value(deployPageId))
+                .andExpect(jsonPath("$.data.depth").value(1))
+                .andExpect(jsonPath("$.data.nodeCount").value(3))
+                .andExpect(jsonPath("$.data.edgeCount").value(4));
+
+        mockMvc.perform(get("/api/v1/team/wiki-pages/{pageId}/graph", deployPageId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .param("depth", "5"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+    }
+
+    @Test
     void archivedWikiShouldBeRemovedFromSearchAndChatRetrieval() throws Exception {
         String ownerToken = registerAndGetToken("phase10_archive_owner_" + System.nanoTime());
 
@@ -495,6 +574,31 @@ class Phase10TeamWikiIntegrationTest extends ContainerizedIntegrationTest {
 
     private JsonNode readJson(MvcResult result) throws Exception {
         return objectMapper.readTree(result.getResponse().getContentAsString());
+    }
+
+    private Long createWikiDraftAndPublish(String token, Long spaceId, String title, String content) throws Exception {
+        JsonNode created = readJson(mockMvc.perform(post("/api/v1/team/spaces/{spaceId}/wiki-pages", spaceId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "title", title,
+                                "content", content
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn());
+        Long pageId = created.path("data").path("id").asLong();
+
+        readJson(mockMvc.perform(post("/api/v1/team/wiki-pages/{pageId}/publish", pageId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "changeNote": "graph test publish"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andReturn());
+        return pageId;
     }
 
     private Long askQuestion(String token, Long sessionId, String question) throws Exception {

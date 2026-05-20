@@ -1,0 +1,12 @@
+{
+  "name": "noteweave-playwright-smoke",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "install:browsers": "playwright install chromium",
+    "smoke": "node smoke.js"
+  },
+  "dependencies": {
+    "playwright": "1.60.0"
+  }
+}

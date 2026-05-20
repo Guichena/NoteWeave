@@ -5,12 +5,14 @@ import com.noteweave.common.security.CurrentUserProvider;
 import com.noteweave.team.wiki.dto.CreateWikiDraftFromMessageRequest;
 import com.noteweave.team.wiki.dto.CreateWikiDraftRequest;
 import com.noteweave.team.wiki.dto.PublishArtifactToWikiRequest;
+import com.noteweave.team.wiki.dto.WikiGraphResponse;
 import com.noteweave.team.wiki.dto.PublishWikiPageRequest;
 import com.noteweave.team.wiki.dto.UpdateWikiPageRequest;
 import com.noteweave.team.wiki.dto.WikiPageResponse;
 import com.noteweave.team.wiki.dto.WikiPageVersionResponse;
 import com.noteweave.team.wiki.dto.WikiSearchResponse;
 import com.noteweave.team.wiki.service.TeamWikiService;
+import com.noteweave.team.wiki.service.WikiGraphService;
 import com.noteweave.team.wiki.service.WikiSearchService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -32,6 +34,7 @@ public class TeamWikiController {
 
     private final TeamWikiService teamWikiService;
     private final WikiSearchService wikiSearchService;
+    private final WikiGraphService wikiGraphService;
     private final CurrentUserProvider currentUserProvider;
 
     @PostMapping("/team/spaces/{spaceId}/wiki-pages")
@@ -101,5 +104,18 @@ public class TeamWikiController {
             @RequestParam String keyword
     ) {
         return ApiResponse.success(wikiSearchService.search(currentUserProvider.getCurrentUserId(), spaceId, keyword));
+    }
+
+    @GetMapping("/team/spaces/{spaceId}/wiki-graph")
+    public ApiResponse<WikiGraphResponse> graph(@PathVariable Long spaceId) {
+        return ApiResponse.success(wikiGraphService.getSpaceGraph(currentUserProvider.getCurrentUserId(), spaceId));
+    }
+
+    @GetMapping("/team/wiki-pages/{pageId}/graph")
+    public ApiResponse<WikiGraphResponse> pageGraph(
+            @PathVariable Long pageId,
+            @RequestParam(defaultValue = "1") int depth
+    ) {
+        return ApiResponse.success(wikiGraphService.getPageSubgraph(currentUserProvider.getCurrentUserId(), pageId, depth));
     }
 }
