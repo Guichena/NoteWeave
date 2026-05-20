@@ -19,6 +19,7 @@ public class WikiPageResponse {
     private Long publishedVersionId;
     private Integer publishedVersionNo;
     private WikiIndexStatus indexStatus;
+    private WikiPageRelationSummaryResponse relationSummary;
     private Long createdBy;
     private Long updatedBy;
     private LocalDateTime createdAt;

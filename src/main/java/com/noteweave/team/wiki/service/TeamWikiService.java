@@ -24,6 +24,7 @@ import com.noteweave.team.wiki.dto.PublishArtifactToWikiRequest;
 import com.noteweave.team.wiki.dto.PublishWikiPageRequest;
 import com.noteweave.team.wiki.dto.UpdateWikiPageRequest;
 import com.noteweave.team.wiki.dto.WikiPageResponse;
+import com.noteweave.team.wiki.dto.WikiPageRelationSummaryResponse;
 import com.noteweave.team.wiki.dto.WikiPageVersionResponse;
 import com.noteweave.team.wiki.model.WikiIndexStatus;
 import com.noteweave.team.wiki.model.WikiPage;
@@ -63,6 +64,7 @@ public class TeamWikiService {
     private final TaskService taskService;
     private final ObjectProvider<WikiIndexService> wikiIndexServiceProvider;
     private final WikiGraphSyncService wikiGraphSyncService;
+    private final WikiRelationService wikiRelationService;
 
     @Transactional
     public WikiPageResponse createDraft(Long userId, Long spaceId, CreateWikiDraftRequest request) {
@@ -132,15 +134,25 @@ public class TeamWikiService {
     @Transactional(readOnly = true)
     public List<WikiPageResponse> list(Long userId, Long spaceId) {
         resourceAccessService.requireViewSpace(userId, spaceId);
-        return wikiPageRepository.findBySpaceIdAndDeletedAtIsNullOrderByUpdatedAtDesc(spaceId).stream()
-                .map(this::toResponse)
+        List<WikiPage> pages = wikiPageRepository.findBySpaceIdAndDeletedAtIsNullOrderByUpdatedAtDesc(spaceId);
+        Map<Long, WikiPageRelationSummaryResponse> summaries = wikiRelationService.summarizePagesForSpace(
+                userId,
+                spaceId,
+                pages.stream().map(WikiPage::getId).collect(java.util.stream.Collectors.toSet())
+        );
+        return pages.stream()
+                .map(page -> toResponse(page, summaries.get(page.getId())))
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public WikiPageResponse get(Long userId, Long pageId) {
         WikiPage page = getRequiredReadablePage(userId, pageId);
-        return toResponse(page);
+        return toResponse(page, wikiRelationService.summarizePagesForSpace(
+                userId,
+                page.getSpaceId(),
+                java.util.Set.of(page.getId())
+        ).get(page.getId()));
     }
 
     @Transactional
@@ -311,6 +323,10 @@ public class TeamWikiService {
     }
 
     private WikiPageResponse toResponse(WikiPage page) {
+        return toResponse(page, null);
+    }
+
+    private WikiPageResponse toResponse(WikiPage page, WikiPageRelationSummaryResponse relationSummary) {
         Integer publishedVersionNo = null;
         if (page.getPublishedVersionId() != null) {
             publishedVersionNo = wikiPageVersionRepository.findById(page.getPublishedVersionId())
@@ -328,6 +344,7 @@ public class TeamWikiService {
                 .publishedVersionId(page.getPublishedVersionId())
                 .publishedVersionNo(publishedVersionNo)
                 .indexStatus(page.getIndexStatus())
+                .relationSummary(relationSummary)
                 .createdBy(page.getCreatedBy())
                 .updatedBy(page.getUpdatedBy())
                 .createdAt(page.getCreatedAt())

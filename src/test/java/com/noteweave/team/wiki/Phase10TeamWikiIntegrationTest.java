@@ -417,6 +417,25 @@ class Phase10TeamWikiIntegrationTest extends ContainerizedIntegrationTest {
                 .andExpect(jsonPath("$.data.edgeCount").value(4))
                 .andExpect(jsonPath("$.data.nodes[?(@.title=='Deploy Flow')]").exists());
 
+        mockMvc.perform(get("/api/v1/team/spaces/{spaceId}/wiki-pages", spaceId)
+                        .header("Authorization", "Bearer " + viewerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.id==%d)].relationSummary.outgoingResolvedCount".formatted(deployPageId)).value(org.hamcrest.Matchers.hasItem(2)))
+                .andExpect(jsonPath("$.data[?(@.id==%d)].relationSummary.incomingResolvedCount".formatted(deployPageId)).value(org.hamcrest.Matchers.hasItem(2)))
+                .andExpect(jsonPath("$.data[?(@.id==%d)].relationSummary.neighborCount".formatted(deployPageId)).value(org.hamcrest.Matchers.hasItem(2)));
+
+        mockMvc.perform(get("/api/v1/team/wiki-pages/{pageId}/relations", deployPageId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.pageId").value(deployPageId))
+                .andExpect(jsonPath("$.data.summary.outgoingResolvedCount").value(2))
+                .andExpect(jsonPath("$.data.summary.incomingResolvedCount").value(2))
+                .andExpect(jsonPath("$.data.outgoingLinks[0].title").value("Release Checklist"))
+                .andExpect(jsonPath("$.data.outgoingLinks[1].title").value("Rollback Playbook"))
+                .andExpect(jsonPath("$.data.incomingLinks[0].title").value("Release Checklist"))
+                .andExpect(jsonPath("$.data.incomingLinks[1].title").value("Rollback Playbook"))
+                .andExpect(jsonPath("$.data.neighborPages[0].bidirectional").value(true));
+
         JsonNode missingDraft = readJson(mockMvc.perform(post("/api/v1/team/spaces/{spaceId}/wiki-pages", spaceId)
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -440,6 +459,14 @@ class Phase10TeamWikiIntegrationTest extends ContainerizedIntegrationTest {
                 .andExpect(jsonPath("$.data.unresolvedLinks[0].targetTitle").value("Ghost Note"))
                 .andExpect(jsonPath("$.data.unresolvedLinks[0].relationStatus").value("MISSING"));
 
+        mockMvc.perform(get("/api/v1/team/wiki-pages/{pageId}/relations", missingDraftId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.summary.outgoingResolvedCount").value(0))
+                .andExpect(jsonPath("$.data.summary.unresolvedOutgoingCount").value(1))
+                .andExpect(jsonPath("$.data.unresolvedLinks[0].targetTitle").value("Ghost Note"))
+                .andExpect(jsonPath("$.data.unresolvedLinks[0].candidatePages").isEmpty());
+
         mockMvc.perform(get("/api/v1/team/wiki-pages/{pageId}/graph", deployPageId)
                         .header("Authorization", "Bearer " + ownerToken)
                         .param("depth", "1"))
@@ -448,6 +475,56 @@ class Phase10TeamWikiIntegrationTest extends ContainerizedIntegrationTest {
                 .andExpect(jsonPath("$.data.depth").value(1))
                 .andExpect(jsonPath("$.data.nodeCount").value(3))
                 .andExpect(jsonPath("$.data.edgeCount").value(4));
+
+        mockMvc.perform(get("/api/v1/spaces/{spaceId}/knowledge-graph", spaceId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.nodes[?(@.type=='WIKI_PAGE')]").exists())
+                .andExpect(jsonPath("$.data.edges[?(@.type=='WIKI_LINK')]").exists());
+
+        mockMvc.perform(get("/api/v1/spaces/{spaceId}/knowledge-graph", spaceId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .queryParam("nodeTypes", "WIKI_PAGE")
+                        .queryParam("edgeTypes", "WIKI_LINK")
+                        .queryParam("onlyPublished", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.nodes[*].type").value(org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is("WIKI_PAGE"))))
+                .andExpect(jsonPath("$.data.edges[*].type").value(org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is("WIKI_LINK"))));
+
+        mockMvc.perform(get("/api/v1/spaces/{spaceId}/knowledge-graph", spaceId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .queryParam("nodeTypes", "ARTICLE_CARD", "CONCEPT_CARD", "SYNTHESIS_CARD"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.nodes").isArray());
+
+        mockMvc.perform(get("/api/v1/team/wiki-pages/{pageId}/knowledge-graph", deployPageId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rootNodeId").value("WIKI_PAGE:" + deployPageId))
+                .andExpect(jsonPath("$.data.nodes[0].root").value(true));
+
+        mockMvc.perform(get("/api/v1/spaces/{spaceId}/knowledge-graph/nodes/{nodeId}", spaceId, "WIKI_PAGE:" + deployPageId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value("WIKI_PAGE:" + deployPageId))
+                .andExpect(jsonPath("$.data.type").value("WIKI_PAGE"))
+                .andExpect(jsonPath("$.data.adjacentEdges").isArray());
+
+        mockMvc.perform(get("/api/v1/spaces/{spaceId}/knowledge-graph/neighborhood/{nodeId}", spaceId, "WIKI_PAGE:" + deployPageId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .queryParam("depth", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rootNodeId").value("WIKI_PAGE:" + deployPageId))
+                .andExpect(jsonPath("$.data.nodes[0].root").value(true));
+
+        mockMvc.perform(get("/api/v1/spaces/{spaceId}/knowledge-graph/path", spaceId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .queryParam("sourceNodeId", "WIKI_PAGE:" + rollbackPageId)
+                        .queryParam("targetNodeId", "WIKI_PAGE:" + checklistPageId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sourceNodeId").value("WIKI_PAGE:" + rollbackPageId))
+                .andExpect(jsonPath("$.data.targetNodeId").value("WIKI_PAGE:" + checklistPageId))
+                .andExpect(jsonPath("$.data.length").value(org.hamcrest.Matchers.greaterThanOrEqualTo(1)));
 
         mockMvc.perform(get("/api/v1/team/wiki-pages/{pageId}/graph", deployPageId)
                         .header("Authorization", "Bearer " + ownerToken)

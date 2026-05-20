@@ -9,10 +9,12 @@ import com.noteweave.team.wiki.dto.WikiGraphResponse;
 import com.noteweave.team.wiki.dto.PublishWikiPageRequest;
 import com.noteweave.team.wiki.dto.UpdateWikiPageRequest;
 import com.noteweave.team.wiki.dto.WikiPageResponse;
+import com.noteweave.team.wiki.dto.WikiPageRelationsResponse;
 import com.noteweave.team.wiki.dto.WikiPageVersionResponse;
 import com.noteweave.team.wiki.dto.WikiSearchResponse;
 import com.noteweave.team.wiki.service.TeamWikiService;
 import com.noteweave.team.wiki.service.WikiGraphService;
+import com.noteweave.team.wiki.service.WikiRelationService;
 import com.noteweave.team.wiki.service.WikiSearchService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -35,6 +37,7 @@ public class TeamWikiController {
     private final TeamWikiService teamWikiService;
     private final WikiSearchService wikiSearchService;
     private final WikiGraphService wikiGraphService;
+    private final WikiRelationService wikiRelationService;
     private final CurrentUserProvider currentUserProvider;
 
     @PostMapping("/team/spaces/{spaceId}/wiki-pages")
@@ -80,6 +83,11 @@ public class TeamWikiController {
     @GetMapping("/team/wiki-pages/{pageId}/versions")
     public ApiResponse<List<WikiPageVersionResponse>> versions(@PathVariable Long pageId) {
         return ApiResponse.success(teamWikiService.listVersions(currentUserProvider.getCurrentUserId(), pageId));
+    }
+
+    @GetMapping("/team/wiki-pages/{pageId}/relations")
+    public ApiResponse<WikiPageRelationsResponse> relations(@PathVariable Long pageId) {
+        return ApiResponse.success(wikiRelationService.getPageRelations(currentUserProvider.getCurrentUserId(), pageId));
     }
 
     @PostMapping("/team/chat-messages/{messageId}/wiki-drafts")
