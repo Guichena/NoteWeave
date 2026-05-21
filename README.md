@@ -1,201 +1,243 @@
 # NoteWeave
 
-NoteWeave 是一个把团队知识、个人研究和成果沉淀放进同一工作台的 AI 知识工作台项目。
+[![Java](https://img.shields.io/badge/Java-17-blue.svg)](https://openjdk.org/projects/jdk/17/)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.x-brightgreen.svg)](https://spring.io/projects/spring-boot)
+[![Frontend](https://img.shields.io/badge/Frontend-Static%20HTML%20%2B%20ESM-orange.svg)](src/main/resources/static)
+[![Middleware](https://img.shields.io/badge/Middleware-Docker%20Compose-lightgrey.svg)](docker-compose.yml)
 
-它的目标很明确：
+NoteWeave 是一个面向团队知识协作与个人研究沉淀的 AI 知识工作台。它把团队知识库、RAG 问答、Wiki、个人研究资料、卡片化知识、Artifact 生成和长期记忆放进同一套 Space / Permission / Task / Evidence 底座里。
 
-- 团队侧可以做知识库、检索问答、团队 Wiki 和成果协作
-- 个人侧可以做研究项目、资料导入、卡片沉淀和成稿生成
-- 两侧共用同一套空间模型、权限体系、异步任务和检索底座
+简单说：NoteWeave 想解决的是“知识从资料进入系统、被检索引用、生成成果，再沉淀为长期知识”的完整闭环。
 
----
+## Highlights
 
-## 当前状态
+- 统一工作台：基于 `Global Rail / Context Rail / Main Canvas / Inspector` 的静态前端工作台，覆盖 Chat、Wiki、Graph、Artifact、Memory 和 Admin。
+- 团队知识闭环：知识库上传、断点续传、文档解析、Chunk 索引、RAG 问答、Citation 证据回溯、团队 Wiki 发布。
+- 个人研究闭环：ResearchProject、Source 导入、Article / Concept / Synthesis Card、方法论匹配、Artifact 生成与沉淀。
+- 可追踪 Evidence：Message、Artifact、Card、Wiki 都通过 citation 关系表保留来源、chunk、页码、offset、snapshot。
+- 可靠异步任务：统一 `task / task_attempt / task_event / task_outbox`，通过 Kafka Worker 执行上传、解析、索引、生成、评测和清理任务。
+- 流式 Chat Runtime：WebSocket ticket、`chat.delta`、`chat.completed`、stop、resume、DRAFT 生命周期和短期运行态恢复。
+- 运维与评测：Admin 任务、健康检查、RAG Eval、LLM 调用日志、RetrievalTrace、AuditLog。
+- 本地可验收：Docker Compose 一键启动 MySQL、Redis、MinIO、Elasticsearch、Kafka，并内置中文演示数据。
 
-当前仓库已经具备可运行、可验收的本地开发环境，并包含一套中文演示数据与测试账号。
+## What You Can Build With It
 
-当前本地访问地址：
+| 场景 | 能力 |
+|---|---|
+| 团队知识问答 | 上传资料到团队知识库，解析入索引后用 Chat 提问，并在 Inspector 查看引用证据。 |
+| 团队 Wiki 沉淀 | 将稳定结论发布为 WikiPage，保留版本、关系、图谱节点与搜索索引。 |
+| 个人研究整理 | 为研究项目导入文件、URL 或文本，编译为 ArticleCard / ConceptCard。 |
+| 成果生成 | 基于团队或个人上下文生成 Report、Study Guide、Comparison、Work Prep 等 Artifact。 |
+| 证据审计 | 从回答、成果、卡片追溯到 Citation、DocumentChunk、Source 或 ArtifactVersion。 |
+| 工作台运营 | 查看任务状态、失败原因、健康组件、检索 Trace、LLM 日志和评测结果。 |
 
-- 登录页：[http://127.0.0.1:18082/login](http://127.0.0.1:18082/login)
-- Swagger：[http://127.0.0.1:18082/swagger-ui.html](http://127.0.0.1:18082/swagger-ui.html)
-- 健康检查：[http://127.0.0.1:18082/actuator/health](http://127.0.0.1:18082/actuator/health)
+## Architecture
 
-测试账号：
+```mermaid
+flowchart LR
+    User["User / Browser"] --> Frontend["Static Workbench\nHTML + CSS + native ESM JS"]
+    Frontend --> API["Spring Boot API\n/api/v1"]
+    Frontend --> WS["WebSocket Runtime\n/ws/chat/{ticket}"]
 
-- `admin / NoteWeave123!`
-- `alice / NoteWeave123!`
-- `bob / NoteWeave123!`
+    API --> Auth["Auth / User / Space / Permission"]
+    API --> Team["Team Knowledge\nKB / Document / Wiki"]
+    API --> Personal["Personal Research\nSource / Cards / Synthesis"]
+    API --> Artifact["Studio / Artifact"]
+    API --> Admin["Admin / Eval / Observability"]
 
-说明：
+    Team --> ES["Elasticsearch\nBM25 / Vector Index"]
+    Personal --> MinIO["MinIO\nRaw / Parsed / Snapshots"]
+    Artifact --> MinIO
+    API --> MySQL["MySQL\nBusiness State"]
+    WS --> Redis["Redis\nRuntime State / Tickets"]
 
-- `admin` 是管理员
-- `alice` 拥有个人空间，同时是团队空间编辑者
-- `bob` 是团队空间只读成员
+    API --> Outbox["Task Outbox"]
+    Outbox --> Kafka["Kafka Topics"]
+    Kafka --> Worker["Task Workers"]
+    Worker --> MySQL
+    Worker --> MinIO
+    Worker --> ES
+```
 
----
+## Product Model
 
-## 产品结构
+NoteWeave 的核心抽象是 `Space`。
 
-### 团队空间
+- `PERSONAL Space`：个人研究、Source、Card、Artifact、UserMemory。
+- `TEAM Space`：团队知识库、团队 Chat、团队 Wiki、团队 Artifact、SpaceMemory。
+- `SpaceMember.role`：`OWNER / EDITOR / VIEWER`，控制团队空间内资源访问。
+- `users.system_role`：`USER / ADMIN`，只用于系统后台权限，不和团队 OWNER 混用。
 
-适合团队共享与协作，主要包含：
+核心知识流：
 
-- 团队知识库
-- 文档上传与索引
-- 团队聊天与检索问答
-- 团队 Wiki
-- 团队成果库
-- 管理后台任务、健康、评测、日志
+```text
+Team Document -> DocumentChunk -> Retrieval -> Citation -> Chat Answer
+Chat / Artifact -> Wiki Draft -> WikiPageVersion -> WIKI_INDEX -> Team Graph
 
-### 个人空间
+Personal Source -> ArticleCard / ConceptCard -> Artifact Generation
+Artifact -> user confirmation -> SynthesisCard -> Personal Knowledge
+```
 
-适合个人研究与沉淀，主要包含：
+## Feature Map
 
-- 研究项目
-- Source 导入
-- Article / Concept / Synthesis 卡片
-- Artifact 生成与编辑
-- Memory 和记忆沉淀
+### Workbench Frontend
 
-### 通用底座
+- 静态前端：`src/main/resources/static/index.html`
+- 样式入口：`src/main/resources/static/app.css`
+- 应用逻辑：`src/main/resources/static/js/app.js`
+- API client：`src/main/resources/static/js/api.js`
+- 不依赖 React / Vue / TypeScript / bundler。
 
-- `Space.type = PERSONAL | TEAM`
-- 基于角色的访问控制
-- Kafka + Task Outbox 异步任务链路
-- MinIO 对象存储
-- Elasticsearch 检索与索引
+当前工作台结构：
 
----
+```text
+[Global Rail] [Context Rail] [Main Canvas] [Inspector]
+```
 
-## 当前已实现能力
+已接入的主要路由：
 
-当前代码已覆盖以下核心能力：
+```text
+/login
+/register
+/spaces
+/spaces/:spaceId/workbench/chat
+/spaces/:spaceId/wiki
+/spaces/:spaceId/graph
+/spaces/:spaceId/artifacts
+/spaces/:spaceId/memory
+/admin/tasks
+/admin/health
+/admin/evaluation
+/admin/logs
+```
 
-- Spring Boot 3.x + Java 17 + Maven 工程基础
-- Spring Security + JWT 登录认证
-- 用户、空间、成员管理
-- 团队空间与个人空间隔离
-- OWNER / EDITOR / VIEWER 权限矩阵
-- 统一错误处理与 API 响应结构
-- Task / Worker / Outbox 异步任务基础设施
-- 团队知识库创建、查询、归档
-- 分片上传、断点续传、文档元数据管理
-- 文档解析、切片、索引与搜索调试
-- 个人研究项目、资料、卡片、成果相关链路
-- 开发环境中文种子数据与验收样例
+### Backend Capabilities
 
-当前仓库中的实现细分与阶段说明，请以这些文档为准：
+- Auth：注册、登录、刷新 token、退出、当前用户。
+- Space：团队空间、个人空间、成员与权限。
+- Upload：分片上传、断点续传、秒传、取消、过期清理。
+- Document：解析、切片、索引、搜索调试。
+- RAG Chat：HTTP 问答、WebSocket 流式问答、停止、恢复、反馈。
+- Citation：回答证据、Artifact 证据、Card 证据、Wiki 证据。
+- Personal Research：项目、Source、ArticleCard、ConceptCard、SynthesisCard。
+- Studio / Artifact：任务生成、版本、编辑、导出、沉淀到个人 Wiki。
+- Wiki：草稿、发布、版本、搜索、关系、知识图谱。
+- Memory：会话摘要、用户记忆、空间记忆、写入开关。
+- Admin：任务、健康、清理、RAG Eval、Trace、LLM 日志、审计。
 
-- [docs/PROJECT_STATUS.md](/D:/java-projects/NoteWeave/docs/PROJECT_STATUS.md)
-- [docs/CONTRACT.md](/D:/java-projects/NoteWeave/docs/CONTRACT.md)
-- [docs/implementation_breakdown.md](/D:/java-projects/NoteWeave/docs/implementation_breakdown.md)
-- [docs/features/database_api_blueprint.md](/D:/java-projects/NoteWeave/docs/features/database_api_blueprint.md)
+## Tech Stack
 
----
+| Layer | Technology |
+|---|---|
+| Backend | Java 17, Spring Boot 3.3, Spring MVC, WebFlux, WebSocket |
+| Security | Spring Security, JWT, refresh token session |
+| Persistence | MySQL 8.4, Spring Data JPA, Flyway |
+| Search | Elasticsearch 8.x |
+| Object Storage | MinIO |
+| Async Runtime | Kafka, Task Outbox, Worker |
+| Runtime Cache | Redis |
+| Parsing | Apache Tika |
+| API Docs | springdoc-openapi |
+| Frontend | Static HTML, native CSS, native ESM JavaScript |
+| Tests | JUnit 5, Spring Boot Test, Testcontainers, Playwright smoke |
 
-## 本地启动
+## Quick Start
 
-### 1. 环境准备
-
-需要本地具备：
+### Prerequisites
 
 - JDK 17+
 - Maven 3.9+
-- Docker Desktop 或可用的 Docker Compose 环境
+- Docker Desktop or Docker Compose
+- Node.js 18+ if you want to run browser smoke tests
 
-### 2. 启动依赖服务
-
-在项目根目录执行：
+### 1. Start Middleware
 
 ```powershell
 docker compose up -d
 ```
 
-当前统一使用的宿主机端口：
+Default local ports:
 
-- MySQL：`13307`
-- Redis：`6380`
-- MinIO API：`19100`
-- MinIO Console：`19101`
-- Elasticsearch：`19200`
-- Kafka：`19092`
+| Service | Port |
+|---|---:|
+| MySQL | `13307` |
+| Redis | `6380` |
+| MinIO API | `19100` |
+| MinIO Console | `19101` |
+| Elasticsearch | `19200` |
+| Kafka | `19092` |
 
-### 3. 启动应用
-
-方式一：Maven
+### 2. Start NoteWeave
 
 ```powershell
 $env:SPRING_PROFILES_ACTIVE="dev"
 $env:SERVER_PORT="18082"
+$env:NOTEWEAVE_LLM_STUB_ENABLED="true"
+$env:EMBEDDING_STUB_ENABLED="true"
+$env:EMBEDDING_ENABLED="false"
 mvn spring-boot:run
 ```
 
-方式二：Jar
+Open:
 
-```powershell
-mvn -q -DskipTests package
-java -Dspring.profiles.active=dev -Dserver.port=18082 -jar target/noteweave-0.0.1-SNAPSHOT.jar
+- App: [http://127.0.0.1:18082/login](http://127.0.0.1:18082/login)
+- Swagger UI: [http://127.0.0.1:18082/swagger-ui.html](http://127.0.0.1:18082/swagger-ui.html)
+- Health: [http://127.0.0.1:18082/actuator/health](http://127.0.0.1:18082/actuator/health)
+
+### 3. Login With Demo Accounts
+
+| Account | Password | Role |
+|---|---|---|
+| `admin` | `NoteWeave123!` | System admin, team owner |
+| `alice` | `NoteWeave123!` | Personal owner, team editor |
+| `bob` | `NoteWeave123!` | Team viewer |
+
+Seeded demo data includes:
+
+- Team space: `产品策略协作台`
+- Team wiki: `研究协作原则`
+- Team knowledge bases: `AI 产品研究资料库`, `发布准备台`
+- Personal projects: `三季度新手引导阻力研究`, `竞品表述跟踪`
+- Artifact: `三季度新手引导建议简报`
+
+## Configuration
+
+Most local defaults are already aligned with `docker-compose.yml`. Override with environment variables when needed:
+
+```text
+SERVER_PORT
+DB_URL
+DB_USERNAME
+DB_PASSWORD
+REDIS_HOST
+REDIS_PORT
+MINIO_ENDPOINT
+MINIO_BUCKET
+MINIO_TEST_BUCKET
+ES_URIS
+KAFKA_BOOTSTRAP_SERVERS
+NOTEWEAVE_LLM_STUB_ENABLED
+EMBEDDING_STUB_ENABLED
+EMBEDDING_ENABLED
 ```
 
-默认配置已经对齐当前端口；如需覆盖，可使用环境变量：
+External model providers are optional in local development. Use stub mode when you only need to validate product flows.
 
-- `DB_URL`
-- `DB_USERNAME`
-- `DB_PASSWORD`
-- `REDIS_HOST`
-- `REDIS_PORT`
-- `MINIO_ENDPOINT`
-- `MINIO_BUCKET`
-- `MINIO_TEST_BUCKET`
-- `ES_URIS`
-- `KAFKA_BOOTSTRAP_SERVERS`
-- `SERVER_PORT`
+## Testing
 
-更详细的启动说明见：
-
-- [NOTEWEAVE_启动指南.md](/D:/java-projects/NoteWeave/NOTEWEAVE_启动指南.md)
-
----
-
-## 验收与演示数据
-
-当前开发环境已内置一批中文演示数据，便于直接查看页面效果：
-
-- 团队空间：`产品策略协作台`
-- 团队知识库：`AI 产品研究资料库`、`发布准备台`
-- 个人研究项目：`三季度新手引导阻力研究`、`竞品表述跟踪`
-- 成果：`三季度新手引导建议简报`
-- 团队 Wiki：`研究协作原则`
-
-验收账号、角色说明、团队/个人空间差异、推荐验收路径见：
-
-- [NOTEWEAVE_验收说明.md](/D:/java-projects/NoteWeave/NOTEWEAVE_验收说明.md)
-
----
-
-## 测试
-
-运行单元测试与集成测试：
+Run backend tests:
 
 ```powershell
 mvn test
 ```
 
-当前仓库已包含的代表性测试包括：
+Compile without tests:
 
-- `AuthServiceTest`
-- `SpacePermissionServiceTest`
-- `AuthControllerTest`
-- `SpaceControllerTest`
-- `TaskControllerTest`
-- `TaskServiceIntegrationTest`
-- `Phase2UploadFlowIntegrationTest`
-- `DocumentParserServiceTest`
-- `ChunkServiceTest`
-- `Phase3DocumentProcessingIntegrationTest`
-- `StoragePropertiesValidatorTest`
+```powershell
+mvn -DskipTests compile
+```
 
-浏览器 UI 冒烟回归可使用：
+Run browser smoke tests:
 
 ```powershell
 cd tools/playwright-smoke
@@ -204,34 +246,101 @@ npm run install:browsers
 npm run smoke
 ```
 
----
+Useful manual acceptance path:
 
-## 中间件契约
+1. Login as `admin`.
+2. Enter `产品策略协作台`.
+3. Open Chat Workbench and send a WebSocket message.
+4. Switch sessions from Context Rail.
+5. Open Wiki and inspect relations / graph card.
+6. Open `/spaces/47/graph` and click a graph node.
+7. Use a seeded citation session to verify Citation Inspector.
 
-本项目要求开发和测试都使用容器化中间件，不依赖本机散装安装服务。
+## Repository Layout
 
-当前中间件包括：
+```text
+.
+├── docs/                         # Contracts, phase docs, UI/UX plans
+├── src/main/java/com/noteweave   # Spring Boot application
+├── src/main/resources/db         # Flyway migrations
+├── src/main/resources/static     # Static HTML/CSS/ESM frontend
+├── src/test                      # Unit and integration tests
+├── tools/playwright-smoke        # Browser smoke runner
+├── docker-compose.yml            # Local middleware stack
+└── pom.xml                       # Maven build
+```
 
-- MySQL
-- Redis
-- MinIO
-- Elasticsearch
-- Kafka
+Important backend packages:
 
-详细约束见：
+```text
+auth / user / space / permission
+task / storage / team / chat / citation
+artifact / personal / memory / graph / admin
+```
 
-- [docs/DOCKER_MIDDLEWARE.md](/D:/java-projects/NoteWeave/docs/DOCKER_MIDDLEWARE.md)
-- [.env.example](/D:/java-projects/NoteWeave/.env.example)
+## API Surface
 
----
+All business APIs use:
 
-## 文档索引
+```text
+/api/v1
+```
 
-- [docs/PROJECT_STATUS.md](/D:/java-projects/NoteWeave/docs/PROJECT_STATUS.md)
-- [docs/CONTRACT.md](/D:/java-projects/NoteWeave/docs/CONTRACT.md)
-- [docs/implementation_breakdown.md](/D:/java-projects/NoteWeave/docs/implementation_breakdown.md)
-- [docs/features/README.md](/D:/java-projects/NoteWeave/docs/features/README.md)
-- [docs/features/database_api_blueprint.md](/D:/java-projects/NoteWeave/docs/features/database_api_blueprint.md)
-- [docs/note_weave_功能说明与架构文档.md](/D:/java-projects/NoteWeave/docs/note_weave_功能说明与架构文档.md)
-- [NOTEWEAVE_启动指南.md](/D:/java-projects/NoteWeave/NOTEWEAVE_启动指南.md)
-- [NOTEWEAVE_验收说明.md](/D:/java-projects/NoteWeave/NOTEWEAVE_验收说明.md)
+Representative endpoints:
+
+```http
+POST /api/v1/auth/login
+GET  /api/v1/spaces
+GET  /api/v1/spaces/{spaceId}/chat-sessions
+POST /api/v1/chat/ws-ticket
+GET  /api/v1/chat/messages/{messageId}/citations
+GET  /api/v1/team/spaces/{spaceId}/wiki-pages
+GET  /api/v1/team/wiki-pages/{pageId}/relations
+GET  /api/v1/spaces/{spaceId}/knowledge-graph
+GET  /api/v1/spaces/{spaceId}/knowledge-graph/nodes/{nodeId}
+GET  /api/v1/admin/health
+```
+
+WebSocket:
+
+```text
+/ws/chat/{ticket}
+```
+
+Runtime events:
+
+```text
+chat.connected
+chat.started
+chat.delta
+chat.completed
+chat.stopped
+chat.failed
+chat.restored
+session.state.updated
+```
+
+## Development Principles
+
+- Contract first: API prefix, response shape, task model, permission model and evidence model are defined before implementation.
+- TDD by phase: write failing tests, implement the smallest slice, then refactor.
+- Docker-only middleware: local development uses Docker Compose, integration tests use Testcontainers.
+- Evidence is relational: citations are stored in relation tables, not only JSON payloads.
+- Artifact and Wiki are separate: generated output becomes long-term knowledge only after explicit user confirmation.
+- Frontend stays lightweight: static HTML, CSS and native ESM JavaScript until the project contract changes.
+
+## Documentation
+
+- [Project status](docs/PROJECT_STATUS.md)
+- [Implementation contract](docs/CONTRACT.md)
+- [Docker middleware contract](docs/DOCKER_MIDDLEWARE.md)
+- [Implementation breakdown](docs/implementation_breakdown.md)
+- [Database and API blueprint](docs/features/database_api_blueprint.md)
+- [Frontend workspace phase](docs/features/phase_16_frontend_workspace.md)
+- [Workbench refactor plan](docs/uiux/NOTEWEAVE_WORKBENCH_FRONTEND_REFACTOR_PLAN.md)
+- [Startup guide](NOTEWEAVE_启动指南.md)
+- [Acceptance guide](NOTEWEAVE_验收说明.md)
+
+## Status
+
+This repository is an active product prototype / engineering workbench. Core backend phases, the static frontend workbench shell, Chat Workbench, Wiki Workbench and Graph Inspector are implemented and locally verifiable. Some advanced roadmap items remain intentionally deferred, including Quiz, external source auto-discovery, complex real-time co-editing and commercial billing.
