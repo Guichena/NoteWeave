@@ -66,7 +66,22 @@ const state = {
         selectedPageId: null,
         pageDetail: null,
         versions: [],
+        relations: null,
+        pageGraph: null,
         searchResult: null
+    },
+    graph: {
+        spaceGraph: null,
+        selectedNodeId: null,
+        nodeDetail: null,
+        neighborhood: null,
+        path: null,
+        filters: {
+            nodeTypes: "",
+            edgeTypes: "",
+            onlyPublished: false,
+            onlyIndexed: false
+        }
     },
     memory: {
         spaceMemory: null,
@@ -370,6 +385,7 @@ function parseRoute(pathname) {
         { name: "artifacts", regex: /^\/spaces\/(\d+)\/artifacts$/ },
         { name: "artifact-detail", regex: /^\/spaces\/(\d+)\/artifacts\/(\d+)$/ },
         { name: "wiki", regex: /^\/spaces\/(\d+)\/wiki$/ },
+        { name: "graph", regex: /^\/spaces\/(\d+)\/graph$/ },
         { name: "memory", regex: /^\/spaces\/(\d+)\/memory$/ },
         { name: "admin-tasks", regex: /^\/admin\/tasks$/ },
         { name: "admin-health", regex: /^\/admin\/health$/ },
@@ -426,6 +442,8 @@ function routeLink(name, spaceId, extra = null) {
             return `/spaces/${spaceId}/personal/projects`;
         case "wiki":
             return `/spaces/${spaceId}/wiki`;
+        case "graph":
+            return `/spaces/${spaceId}/graph`;
         case "memory":
             return `/spaces/${spaceId}/memory`;
         case "artifact-detail":
@@ -509,6 +527,11 @@ function routeDescriptor(route = state.route) {
             title: "团队知识页",
             detail: "沉淀稳定团队知识，同时保留回到原始资料的路径。"
         },
+        graph: {
+            eyebrow: "Graph",
+            title: "知识图谱",
+            detail: "从统一知识图谱查看 Wiki、文档、成果与引用之间的关系。"
+        },
         memory: {
             eyebrow: "记忆",
             title: "长期上下文",
@@ -588,7 +611,15 @@ function clearPrivateState() {
     };
     state.studio = { skills: [], lastTask: null };
     state.artifacts = { list: [], detail: null, relations: [], editorDraft: null, distillPreview: null };
-    state.wiki = { pages: [], selectedPageId: null, pageDetail: null, versions: [], searchResult: null };
+    state.wiki = { pages: [], selectedPageId: null, pageDetail: null, versions: [], relations: null, pageGraph: null, searchResult: null };
+    state.graph = {
+        spaceGraph: null,
+        selectedNodeId: null,
+        nodeDetail: null,
+        neighborhood: null,
+        path: null,
+        filters: { nodeTypes: "", edgeTypes: "", onlyPublished: false, onlyIndexed: false }
+    };
     state.memory = { spaceMemory: null, userMemory: null, sessionSummaries: [], selectedSessionId: null };
     state.admin = {
         dashboard: null,
@@ -812,11 +843,77 @@ async function loadWikiPage(spaceId) {
         state.wiki.selectedPageId = Number(state.wiki.pages[0].id);
     }
     if (state.wiki.selectedPageId) {
-        state.wiki.pageDetail = await api.wiki.get(state.wiki.selectedPageId);
-        state.wiki.versions = await api.wiki.versions(state.wiki.selectedPageId);
+        const [detail, versions, relations, pageGraph] = await Promise.all([
+            api.wiki.get(state.wiki.selectedPageId),
+            api.wiki.versions(state.wiki.selectedPageId),
+            api.wiki.relations(state.wiki.selectedPageId),
+            api.wiki.knowledgeGraph(state.wiki.selectedPageId, { depth: 1 })
+        ]);
+        state.wiki.pageDetail = detail;
+        state.wiki.versions = versions;
+        state.wiki.relations = relations;
+        state.wiki.pageGraph = pageGraph;
     } else {
         state.wiki.pageDetail = null;
         state.wiki.versions = [];
+        state.wiki.relations = null;
+        state.wiki.pageGraph = null;
+    }
+}
+
+function graphQueryParams() {
+    const filters = state.graph.filters || {};
+    return {
+        nodeTypes: filters.nodeTypes || undefined,
+        edgeTypes: filters.edgeTypes || undefined,
+        onlyPublished: filters.onlyPublished || undefined,
+        onlyIndexed: filters.onlyIndexed || undefined
+    };
+}
+
+function normalizeGraphNode(node = {}) {
+    const id = node.id ?? node.nodeId ?? node.refId ?? "";
+    return {
+        ...node,
+        id: String(id),
+        type: String(node.type || node.nodeType || "NODE"),
+        title: node.title || node.name || String(id || "Graph node"),
+        status: node.status || node.indexStatus || ""
+    };
+}
+
+function normalizeGraphEdge(edge = {}) {
+    return {
+        ...edge,
+        sourceId: String(edge.sourceId ?? edge.sourceNodeId ?? edge.fromNodeId ?? ""),
+        targetId: String(edge.targetId ?? edge.targetNodeId ?? edge.toNodeId ?? ""),
+        type: String(edge.type || edge.edgeType || "RELATION")
+    };
+}
+
+function normalizeGraphResponse(graph) {
+    if (!graph) {
+        return { nodes: [], edges: [], nodeCount: 0, edgeCount: 0, rootNodeId: "" };
+    }
+    const nodes = (graph.nodes || []).map(normalizeGraphNode);
+    const edges = (graph.edges || []).map(normalizeGraphEdge);
+    return {
+        ...graph,
+        nodes,
+        edges,
+        nodeCount: graph.nodeCount ?? nodes.length,
+        edgeCount: graph.edgeCount ?? edges.length,
+        rootNodeId: graph.rootNodeId ? String(graph.rootNodeId) : ""
+    };
+}
+
+async function loadGraphPage(spaceId) {
+    setCurrentSpace(spaceId);
+    state.graph.spaceGraph = normalizeGraphResponse(await api.graph.space(spaceId, graphQueryParams()));
+    if (state.graph.selectedNodeId && !((state.graph.spaceGraph?.nodes || []).some((node) => node.id === state.graph.selectedNodeId))) {
+        state.graph.selectedNodeId = null;
+        state.graph.nodeDetail = null;
+        state.graph.neighborhood = null;
     }
 }
 
@@ -936,6 +1033,9 @@ async function bootstrapRoute(route) {
         case "wiki":
             await loadWikiPage(route.spaceId);
             break;
+        case "graph":
+            await loadGraphPage(route.spaceId);
+            break;
         case "memory":
             await loadMemoryPage(route.spaceId);
             break;
@@ -998,17 +1098,20 @@ function buildApp() {
     if (isPublicRoute(route)) {
         return `${renderPublicRoute(route)}${renderToasts()}`;
     }
+    const mode = routeMode(route);
+    const inspectorOpen = Boolean(state.ui.drawer);
 
     return `
-        <div class="app-shell">
-            ${renderSidebar(route)}
-            <main class="main-panel">
+        <div class="workbench-shell workbench-mode-${mode} ${inspectorOpen ? "inspector-open" : "inspector-collapsed"}">
+            ${renderGlobalRail(route)}
+            ${renderContextRail(route)}
+            <main class="main-canvas">
                 ${renderTopbar()}
-                <div class="page-body">
+                <div class="main-canvas-body ${mode === "chat" ? "main-canvas-body-chat" : ""}">
                     ${renderPageContent(route)}
                 </div>
             </main>
-            ${renderDrawer()}
+            ${renderInspector()}
         </div>
         ${renderToasts()}
     `;
@@ -1199,6 +1302,273 @@ function renderSidebar(route) {
     `;
 }
 
+function routeMode(route = state.route) {
+    if (route?.name === "team-chat" || route?.name === "workbench-chat") {
+        return "chat";
+    }
+    if (route?.name === "wiki") {
+        return "wiki";
+    }
+    if (route?.name === "graph") {
+        return "graph";
+    }
+    if (route?.name === "artifact-detail" || route?.name === "artifacts") {
+        return "artifacts";
+    }
+    if (route?.name?.startsWith("admin")) {
+        return "admin";
+    }
+    if (route?.name?.startsWith("project")) {
+        return "personal";
+    }
+    if (route?.name?.startsWith("knowledge")) {
+        return "knowledge";
+    }
+    return "workspace";
+}
+
+function renderGlobalRail(route) {
+    const spaceId = currentRouteSpaceId();
+    const personalNavSpaceId = personalSpaceId();
+    const adminVisible = state.user?.systemRole === "ADMIN";
+    const item = ({ label, glyph, target, active }) => target ? `
+        <a class="global-rail-item ${active ? "active" : ""}" href="${target}" data-nav="${target}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">
+            <span>${escapeHtml(glyph)}</span>
+        </a>
+    ` : "";
+
+    return `
+        <aside class="global-rail" aria-label="Global Rail">
+            <button class="global-rail-brand" type="button" data-nav="${spaceId ? routeLink("chat", spaceId) : "/spaces"}" title="NoteWeave">NW</button>
+            <nav class="global-rail-nav">
+                ${item({ label: "Space Home", glyph: "S", target: "/spaces", active: route.name === "spaces" })}
+                ${item({ label: "Team Knowledge", glyph: "K", target: spaceId ? routeLink("knowledge", spaceId) : "", active: route.name.startsWith("knowledge") })}
+                ${item({ label: "Personal Research", glyph: "P", target: personalNavSpaceId ? routeLink("projects", personalNavSpaceId) : "", active: route.name.startsWith("project") || route.name === "projects" })}
+                ${item({ label: "Chat Workbench", glyph: "C", target: spaceId ? routeLink("chat", spaceId) : "", active: routeMode(route) === "chat" })}
+                ${item({ label: "Wiki", glyph: "W", target: spaceId ? routeLink("wiki", spaceId) : "", active: route.name === "wiki" })}
+                ${item({ label: "Graph", glyph: "G", target: spaceId ? routeLink("graph", spaceId) : "", active: route.name === "graph" })}
+                ${item({ label: "Artifacts", glyph: "A", target: spaceId ? routeLink("artifacts", spaceId) : "", active: route.name === "artifacts" || route.name === "artifact-detail" })}
+                ${item({ label: "Memory", glyph: "M", target: spaceId ? routeLink("memory", spaceId) : "", active: route.name === "memory" })}
+            </nav>
+            ${adminVisible ? `
+                <nav class="global-rail-nav global-rail-admin">
+                    ${item({ label: "Admin Tasks", glyph: "T", target: "/admin/tasks", active: route.name === "admin-tasks" })}
+                    ${item({ label: "Admin Health", glyph: "H", target: "/admin/health", active: route.name === "admin-health" })}
+                    ${item({ label: "Admin Evaluation", glyph: "E", target: "/admin/evaluation", active: route.name === "admin-evaluation" })}
+                    ${item({ label: "Admin Logs", glyph: "L", target: "/admin/logs", active: route.name === "admin-logs" })}
+                </nav>
+            ` : ""}
+        </aside>
+    `;
+}
+
+function renderContextRail(route) {
+    return `
+        <aside class="context-rail" aria-label="Context Rail">
+            ${renderContextRailContent(route)}
+        </aside>
+    `;
+}
+
+function renderContextRailContent(route) {
+    if (route.name === "team-chat" || route.name === "workbench-chat") {
+        return renderChatContextRail();
+    }
+    if (route.name === "wiki") {
+        return renderWikiContextRail();
+    }
+    if (route.name === "graph") {
+        return renderGraphContextRail();
+    }
+    return renderDefaultContextRail(route);
+}
+
+function renderChatContextRail() {
+    const session = activeSession();
+    const sessionId = session?.id;
+    const artifacts = sessionId ? (state.chat.artifactsBySession[sessionId] || []) : [];
+
+    return `
+        <div class="context-rail-header">
+            <span class="context-kicker">Context Rail</span>
+            <h2>Chat Workbench</h2>
+            <p>多会话、草稿、相关成果都留在左侧，Main Canvas 专注消息流。</p>
+        </div>
+        <div class="context-rail-section">
+            <div class="context-rail-section-title">
+                <span>会话</span>
+                ${tag(`${formatNumber(state.chat.sessions.length)} 个`)}
+            </div>
+            <form id="create-session-form" class="inline-form context-create-form">
+                <div class="field">
+                    <label>会话标题</label>
+                    <input name="title" placeholder="例如：新用户激活证据核对" required>
+                </div>
+                <div class="field-grid cols-2">
+                    <div class="field">
+                        <label>类型</label>
+                        <select name="sessionKind">
+                            <option value="FORMAL">正式</option>
+                            <option value="DRAFT">草稿</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>范围</label>
+                        <select name="scopeType">
+                            <option value="SPACE">空间</option>
+                            <option value="KNOWLEDGE_BASE">知识库</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="field">
+                    <label>知识库 IDs</label>
+                    <input name="scopeIds" placeholder="指定知识库时填写，逗号分隔">
+                </div>
+                <button class="button context-action-button" type="submit">新建会话</button>
+            </form>
+            <div class="context-list session-tree">
+                ${state.chat.sessions.map((item) => `
+                    <button class="context-list-item session-item ${Number(item.id) === Number(sessionId) ? "active" : ""}" type="button" data-action="select-session" data-session-id="${item.id}">
+                        <span class="context-list-title">${escapeHtml(item.title)}</span>
+                        <span class="context-list-meta">${escapeHtml(humanizeSessionKind(item.sessionKind))} / ${escapeHtml(humanizeScopeType(item.scopeType))}</span>
+                        <span class="context-list-meta">${formatDate(item.updatedAt || item.lastActiveAt)}</span>
+                        ${badge(item.runtimeStatus || item.status, item.runtimeStatus || item.status)}
+                    </button>
+                `).join("") || emptyState("还没有会话", "创建一个正式会话或草稿会话开始提问。")}
+            </div>
+        </div>
+        <div class="context-rail-section">
+            <div class="context-rail-section-title">
+                <span>当前会话相关成果</span>
+                ${tag(`${formatNumber(artifacts.length)} 个`)}
+            </div>
+            <div class="context-list">
+                ${artifacts.map((artifact) => `
+                    <article class="context-list-item">
+                        <span class="context-list-title">${escapeHtml(artifact.title)}</span>
+                        <span class="context-list-meta">${escapeHtml(artifact.artifactType)} / ${escapeHtml(humanizeStatus(artifact.status))}</span>
+                        <button class="ghost-button" type="button" data-action="open-artifact" data-artifact-id="${artifact.id}" data-space-id="${artifact.spaceId || currentRouteSpaceId()}">打开成果</button>
+                    </article>
+                `).join("") || emptyState("暂无成果", "聊天生成或关联的成果会在这里出现。")}
+            </div>
+        </div>
+    `;
+}
+
+function renderWikiContextRail() {
+    const pageId = state.wiki.selectedPageId;
+    return `
+        <div class="context-rail-header">
+            <span class="context-kicker">Context Rail</span>
+            <h2>Wiki Tree</h2>
+            <p>页面树、搜索与最近沉淀对象留在左侧；阅读与编辑交给 Main Canvas。</p>
+        </div>
+        <div class="context-rail-section">
+            <div class="context-rail-section-title">
+                <span>页面搜索</span>
+                ${tag(`${formatNumber(state.wiki.pages.length)} 页`)}
+            </div>
+            <form id="wiki-search-form" class="inline-form context-create-form">
+                <div class="field"><label>搜索 Wiki</label><input name="keyword" placeholder="输入关键词搜索 Wiki"></div>
+                <button class="ghost-button context-action-button" type="submit">搜索</button>
+            </form>
+            ${state.wiki.searchResult ? `
+                <div class="context-list">
+                    ${(state.wiki.searchResult.items || []).map((item) => `
+                        <button class="context-list-item" type="button" data-action="select-wiki-page" data-page-id="${item.pageId || item.id}">
+                            <span class="context-list-title">${escapeHtml(item.title)}</span>
+                            <span class="context-list-meta">${escapeHtml(item.contentSnippet || "搜索命中")}</span>
+                        </button>
+                    `).join("") || emptyState("无搜索结果", "换个词试试。")}
+                </div>
+            ` : ""}
+        </div>
+        <div class="context-rail-section">
+            <div class="context-rail-section-title"><span>页面树</span></div>
+            <div class="context-list wiki-tree">
+                ${state.wiki.pages.map((wikiPage) => `
+                    <button class="context-list-item ${Number(wikiPage.id) === Number(pageId) ? "active" : ""}" type="button" data-action="select-wiki-page" data-page-id="${wikiPage.id}">
+                        <span class="context-list-title">${escapeHtml(wikiPage.title)}</span>
+                        <span class="context-list-meta">${escapeHtml(humanizeStatus(wikiPage.status))} / v${formatNumber(wikiPage.publishedVersionNo)}</span>
+                    </button>
+                `).join("") || emptyState("暂无 Wiki 页面", "先在主画布创建一个草稿页。")}
+            </div>
+        </div>
+    `;
+}
+
+function renderGraphContextRail() {
+    const graph = state.graph.spaceGraph;
+    const nodes = graph?.nodes || [];
+    const selectedNodeId = state.graph.selectedNodeId;
+    return `
+        <div class="context-rail-header">
+            <span class="context-kicker">Context Rail</span>
+            <h2>Graph Filters</h2>
+            <p>筛选图谱节点、定位当前节点，并把节点详情交给 Inspector。</p>
+        </div>
+        <div class="context-rail-section">
+            <div class="context-rail-section-title"><span>筛选</span></div>
+            <form id="graph-filter-form" class="inline-form context-create-form">
+                <div class="field"><label>节点类型</label><input name="nodeTypes" value="${escapeHtml(state.graph.filters.nodeTypes)}" placeholder="WIKI_PAGE,DOCUMENT"></div>
+                <div class="field"><label>边类型</label><input name="edgeTypes" value="${escapeHtml(state.graph.filters.edgeTypes)}" placeholder="LINKS_TO,CITES"></div>
+                <label class="checkbox-line"><input type="checkbox" name="onlyPublished" ${state.graph.filters.onlyPublished ? "checked" : ""}> 仅发布</label>
+                <label class="checkbox-line"><input type="checkbox" name="onlyIndexed" ${state.graph.filters.onlyIndexed ? "checked" : ""}> 仅已索引</label>
+                <button class="ghost-button context-action-button" type="submit">应用筛选</button>
+            </form>
+        </div>
+        <div class="context-rail-section">
+            <div class="context-rail-section-title">
+                <span>节点集合</span>
+                ${tag(`${formatNumber(nodes.length)} 个`)}
+            </div>
+            <div class="context-list graph-node-list">
+                ${nodes.slice(0, 80).map((node) => `
+                    <button class="context-list-item ${node.id === selectedNodeId ? "active" : ""}" type="button" data-action="select-graph-node" data-node-id="${escapeHtml(node.id)}">
+                        <span class="context-list-title">${escapeHtml(node.title || node.id)}</span>
+                        <span class="context-list-meta">${escapeHtml(node.type || "NODE")} / ${escapeHtml(node.status || node.indexStatus || "ACTIVE")}</span>
+                    </button>
+                `).join("") || emptyState("暂无节点", "当前筛选条件下没有图谱节点。")}
+            </div>
+        </div>
+    `;
+}
+
+function renderDefaultContextRail(route) {
+    const descriptor = routeDescriptor(route);
+    const space = currentSpace();
+    return `
+        <div class="context-rail-header">
+            <span class="context-kicker">Context Rail</span>
+            <h2>${escapeHtml(descriptor.eyebrow)}</h2>
+            <p>${escapeHtml(space?.name || "选择空间后开始工作。")}</p>
+        </div>
+        <div class="context-rail-section">
+            <div class="context-rail-section-title"><span>当前模式</span></div>
+            <article class="context-summary-card">
+                <strong>${escapeHtml(descriptor.title)}</strong>
+                <p>${escapeHtml(descriptor.detail)}</p>
+            </article>
+        </div>
+        <div class="context-rail-section">
+            <div class="context-rail-section-title"><span>快速入口</span></div>
+            <div class="context-list">
+                ${renderContextQuickLink("空间", "/spaces", route.name === "spaces")}
+                ${currentRouteSpaceId() ? renderContextQuickLink("团队知识", routeLink("knowledge", currentRouteSpaceId()), route.name.startsWith("knowledge")) : ""}
+                ${currentRouteSpaceId() ? renderContextQuickLink("聊天", routeLink("chat", currentRouteSpaceId()), routeMode(route) === "chat") : ""}
+                ${currentRouteSpaceId() ? renderContextQuickLink("Wiki", routeLink("wiki", currentRouteSpaceId()), route.name === "wiki") : ""}
+                ${currentRouteSpaceId() ? renderContextQuickLink("Graph", routeLink("graph", currentRouteSpaceId()), route.name === "graph") : ""}
+                ${currentRouteSpaceId() ? renderContextQuickLink("成果", routeLink("artifacts", currentRouteSpaceId()), route.name === "artifacts" || route.name === "artifact-detail") : ""}
+                ${currentRouteSpaceId() ? renderContextQuickLink("记忆", routeLink("memory", currentRouteSpaceId()), route.name === "memory") : ""}
+            </div>
+        </div>
+    `;
+}
+
+function renderContextQuickLink(label, target, active) {
+    return `<a class="context-list-item ${active ? "active" : ""}" href="${target}" data-nav="${target}"><span class="context-list-title">${escapeHtml(label)}</span></a>`;
+}
+
 function renderTopbar() {
     const space = currentSpace();
     const descriptor = routeDescriptor(state.route);
@@ -1240,22 +1610,26 @@ function renderTopbar() {
     `;
 }
 
-function renderDrawer() {
+function renderInspector() {
     if (!state.ui.drawer) {
-        return `<aside class="drawer drawer-empty" aria-hidden="true"><div class="drawer-header"><div><span class="context-kicker">上下文抽屉</span><h2>详情面板</h2><p class="panel-subtitle">选择引用、追踪或成果关联后，会在这里显示细节。</p></div></div><div class="drawer-body">${emptyState("右侧抽屉待命中", "点击消息引用、卡片证据或日志追踪即可查看详情。")}</div></aside>`;
+        return `<aside class="inspector inspector-empty" aria-label="Inspector"><div class="inspector-header"><div><span class="context-kicker">Inspector</span><h2>详情面板</h2><p class="panel-subtitle">选择 Citation、证据、成果或追踪后，会在这里显示解释型内容。</p></div></div><div class="inspector-body">${emptyState("Inspector 待命中", "点击消息引用、卡片证据或日志追踪即可查看详情。")}</div></aside>`;
     }
     return `
-        <aside class="drawer">
-            <div class="drawer-header">
+        <aside class="inspector" aria-label="Inspector">
+            <div class="inspector-header">
                 <div>
-                    <span class="context-kicker">上下文</span>
+                    <span class="context-kicker">Inspector</span>
                     <h2>${escapeHtml(state.ui.drawer.title)}</h2>
                 </div>
-                <button class="ghost-button" type="button" data-action="close-drawer">关闭</button>
+                <button class="ghost-button" type="button" data-action="close-drawer">收起</button>
             </div>
-            <div class="drawer-body">${state.ui.drawer.html}</div>
+            <div class="inspector-body">${state.ui.drawer.html}</div>
         </aside>
     `;
+}
+
+function renderDrawer() {
+    return renderInspector();
 }
 
 function renderToasts() {
@@ -1298,6 +1672,8 @@ function renderPageContent(route) {
             return renderArtifactDetailPage();
         case "wiki":
             return renderWikiPage();
+        case "graph":
+            return renderGraphPage();
         case "memory":
             return renderMemoryPage();
         case "admin-home":
@@ -1584,115 +1960,33 @@ function renderChatPage() {
         ensureLocalDraft(sessionId);
     }
     return `
-        <div class="page-header">
-            <div>
-                <div class="context-kicker">工作台</div>
-                <h1>工作台聊天</h1>
-                <p class="subtitle">左侧会话、中间消息流、右侧引用 / 上下文 / 成果抽屉。支持流式回答、中断和草稿会话恢复。</p>
-            </div>
-        </div>
-        ${renderGuideCards([
-            { eyebrow: "Prompting", title: "把问题写成明确任务", description: "说明你是要判断、比较、总结还是生成结果，响应通常会更稳。" },
-            { eyebrow: "Session", title: "正式会话与草稿会话分开", description: "草稿适合试探和摸索，正式会话更适合留下后续要复用的结论链。" },
-            { eyebrow: "Evidence", title: "答案最好回到引用", description: "抽屉和引用按钮让你能快速验证回答到底基于哪些上下文。" }
-        ])}
-        <div class="chat-layout">
-            <section class="session-list">
-                <div class="drawer-header">
+        <div class="chat-workbench">
+            <section class="chat-main-canvas">
+                <div class="chat-canvas-header">
                     <div>
-                        <span class="context-kicker">会话</span>
-                        <h2>会话</h2>
-                        <p class="panel-subtitle">正式会话和草稿都会保留。</p>
+                        <span class="context-kicker">Main Canvas</span>
+                        <h1>${escapeHtml(session?.title || "工作台聊天")}</h1>
+                        <p class="subtitle">${session ? `${humanizeSessionKind(session.sessionKind)} / ${humanizeScopeType(session.scopeType)} / ${humanizeStatus(session.runtimeStatus || session.status)}` : "从左侧 Context Rail 选择或创建会话。"}</p>
+                    </div>
+                    <div class="page-actions chat-toolbar">
+                        ${session?.sessionKind === "DRAFT" ? `<button class="ghost-button" type="button" data-action="convert-draft" data-session-id="${session.id}">转正式会话</button><button class="danger-button" type="button" data-action="discard-draft" data-session-id="${session.id}">丢弃草稿</button>` : ""}
+                        ${localState?.assistantMessage?.status === "RUNNING" ? `<button class="danger-button" type="button" data-action="stop-chat" data-session-id="${session.id}">停止生成</button>` : ""}
+                        <button class="ghost-button" type="button" data-action="reconnect-chat">重连 WebSocket</button>
                     </div>
                 </div>
-                <div class="session-items">
-                    <form id="create-session-form" class="inline-form session-create-form">
-                        <div class="field">
-                            <label>会话标题</label>
-                                <input name="title" placeholder="例如：新用户激活证据核对" required>
-                        </div>
-                        <div class="field-grid cols-2">
-                            <div class="field">
-                                <label>类型</label>
-                                <select name="sessionKind">
-                                    <option value="FORMAL">正式会话</option>
-                                    <option value="DRAFT">草稿会话</option>
-                                </select>
-                            </div>
-                            <div class="field">
-                                <label>范围</label>
-                                <select name="scopeType">
-                                    <option value="SPACE">当前空间</option>
-                                    <option value="KNOWLEDGE_BASE">指定知识库</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="field">
-                            <label>知识库 IDs（逗号分隔，可空）</label>
-                            <input name="scopeIds" placeholder="留空则使用当前空间">
-                        </div>
-                        <button class="button" type="submit">创建会话</button>
-                    </form>
-                    <div style="margin-top:16px;">
-                        ${state.chat.sessions.map((item) => `
-                            <button class="session-item ${Number(item.id) === Number(sessionId) ? "active" : ""}" type="button" data-action="select-session" data-session-id="${item.id}">
-                                <div class="list-item-header">
-                                    <strong>${escapeHtml(item.title)}</strong>
-                                    ${badge(item.runtimeStatus || item.status, item.runtimeStatus || item.status)}
-                                </div>
-                                <div class="muted">${escapeHtml(humanizeSessionKind(item.sessionKind))} / ${escapeHtml(humanizeScopeType(item.scopeType))}</div>
-                                <div class="muted">${formatDate(item.updatedAt || item.lastActiveAt)}</div>
-                            </button>
-                        `).join("") || emptyState("还没有会话", "创建一个正式会话或草稿会话开始提问。")}
-                    </div>
-                </div>
-            </section>
-            <section class="chat-stream">
                 <div class="message-list">
                     ${session ? messages.map((message) => renderChatMessage(message)).join("") || emptyState("暂无消息", "发送第一条问题来触发 WebSocket 流式响应。") : emptyState("请选择会话", "左侧选一个会话，或者先创建新会话。")}
                 </div>
-                <div class="chat-input">
+                <div class="chat-composer">
                     ${session ? `
-                        <div class="page-actions chat-toolbar">
-                            ${session.sessionKind === "DRAFT" ? `<button class="ghost-button" type="button" data-action="convert-draft" data-session-id="${session.id}">转正式会话</button><button class="danger-button" type="button" data-action="discard-draft" data-session-id="${session.id}">丢弃草稿</button>` : ""}
-                            ${localState?.assistantMessage?.status === "RUNNING" ? `<button class="danger-button" type="button" data-action="stop-chat" data-session-id="${session.id}">停止生成</button>` : ""}
-                            <button class="ghost-button" type="button" data-action="reconnect-chat">重连 WebSocket</button>
-                        </div>
                         <form id="chat-message-form">
                             <div class="field">
-                                <label>提问内容</label>
+                                <label>Composer</label>
                                 <textarea name="content" data-chat-draft="${session.id}" placeholder="可以直接针对团队知识库提问。">${escapeHtml(state.chat.draftsBySession[session.id] || "")}</textarea>
                             </div>
                             <button class="button" type="submit">发送</button>
                         </form>
                     ` : emptyState("没有活动会话", "创建会话后输入区会显示在这里。")}
-                </div>
-            </section>
-            <section class="context-panel">
-                <div class="drawer-header">
-                    <div>
-                        <span class="context-kicker">上下文</span>
-                        <h2>引用 / 成果</h2>
-                        <p class="panel-subtitle">点击消息里的引用，可在右侧全局抽屉查看证据定位。</p>
-                    </div>
-                </div>
-                <div class="context-body">
-                    ${sessionId ? `
-                        <div class="list-stack">
-                            ${(state.chat.artifactsBySession[sessionId] || []).map((artifact) => `
-                                <div class="list-item">
-                                    <div class="list-item-header">
-                                        <strong>${escapeHtml(artifact.title)}</strong>
-                                        ${badge(artifact.status)}
-                                    </div>
-                                    <div class="muted">${escapeHtml(artifact.artifactType)}</div>
-                                    <div class="page-actions" style="margin-top:10px;">
-                                        <button class="ghost-button" type="button" data-action="open-artifact" data-artifact-id="${artifact.id}" data-space-id="${artifact.spaceId || currentRouteSpaceId()}">打开成果</button>
-                                    </div>
-                                </div>
-                            `).join("") || emptyState("暂无成果", "聊天生成的成果会显示在这里。")}
-                        </div>
-                    ` : emptyState("暂无上下文", "先选择一个会话。")}
                 </div>
             </section>
         </div>
@@ -2253,69 +2547,231 @@ function renderArtifactDetailPage() {
 function renderWikiPage() {
     const page = state.wiki.pageDetail;
     const pages = state.wiki.pages || [];
+    const relations = state.wiki.relations;
+    const graph = state.wiki.pageGraph;
     return `
-        <div class="page-header">
-            <div>
-                <div class="context-kicker">Wiki</div>
-                <h1>团队 Wiki</h1>
-                <p class="subtitle">查看 Wiki 列表、创建草稿、编辑、发布、查看版本，并支持搜索。</p>
-            </div>
-        </div>
-        ${renderGuideCards([
-            { eyebrow: "Draft", title: "先把草稿写顺，再决定是否发布", description: "Wiki 更适合沉淀稳定知识，而不是直接复制临时讨论结果。" },
-            { eyebrow: "Version", title: "版本历史保留演进轨迹", description: "这让团队可以看见结论是如何收敛出来的，而不只是最终页面。" },
-            { eyebrow: "Search", title: "搜索更适合找沉淀，不是找聊天", description: "命名和段落结构越清楚，后续检索命中和复用就越自然。" }
-        ])}
-        <div class="metric-row">
-            <div class="metric"><strong>${formatNumber(pages.length)}</strong><span>页面数</span></div>
-            <div class="metric"><strong>${formatNumber(state.wiki.versions.length)}</strong><span>版本数</span></div>
-            <div class="metric"><strong>${formatNumber(state.wiki.searchResult?.items?.length || 0)}</strong><span>搜索命中</span></div>
-            <div class="metric"><strong>${page ? "编辑中" : "空闲"}</strong><span>编辑器状态</span></div>
-        </div>
-        <div class="content-grid cols-2">
-            ${panel("Wiki 页面列表", `
-                <form id="wiki-search-form" class="inline-form">
-                    <div class="field"><label>搜索</label><input name="keyword" placeholder="输入关键词搜索 Wiki"></div>
-                    <button class="ghost-button" type="submit">搜索</button>
-                </form>
-                ${state.wiki.searchResult ? `<div class="list-stack" style="margin-top:14px;">${(state.wiki.searchResult.items || []).map((item) => `<div class="list-item"><strong>${escapeHtml(item.title)}</strong><div class="muted">${escapeHtml(item.contentSnippet || "")}</div></div>`).join("") || emptyState("无搜索结果", "换个词试试。")}</div><hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">` : ""}
-                <div class="list-stack">
-                    ${state.wiki.pages.map((wikiPage) => `
-                        <button class="list-item" type="button" data-action="select-wiki-page" data-page-id="${wikiPage.id}">
-                            <div class="list-item-header"><strong>${escapeHtml(wikiPage.title)}</strong>${badge(wikiPage.status)}</div>
-                            <div class="muted">版本 ${formatNumber(wikiPage.publishedVersionNo)}</div>
-                        </button>
-                    `).join("") || emptyState("暂无 Wiki 页面", "先创建一个草稿页。")}
-                </div>
-            `, { subtitle: "把这里当作团队沉淀区，而不是普通文档堆。" })}
-            ${panel(page ? "编辑 Wiki 草稿" : "创建 Wiki 草稿", page ? `
-                <form id="wiki-edit-form" data-page-id="${page.id}" class="inline-form">
-                    <div class="field"><label>标题</label><input name="title" value="${escapeHtml(page.title)}" required></div>
-                    <div class="field"><label>内容</label><textarea class="editor-textarea" name="content" required>${escapeHtml(page.content || "")}</textarea></div>
-                    <div class="page-actions">
-                        <button class="button" type="submit">保存草稿</button>
-                        <button class="ghost-button" type="button" data-action="publish-wiki-page" data-page-id="${page.id}">发布 Wiki</button>
+        <div class="wiki-workbench">
+            <section class="wiki-reader">
+                <div class="wiki-reader-header">
+                    <div>
+                        <span class="context-kicker">Main Canvas</span>
+                        <h1>${escapeHtml(page?.title || "团队 Wiki")}</h1>
+                        <p class="subtitle">${page ? `${humanizeStatus(page.status)} / ${formatNumber(pages.length)} 个页面 / ${formatNumber(state.wiki.versions.length)} 个版本` : "左侧选择页面，或在下方创建新的 Wiki 草稿。"}</p>
                     </div>
-                </form>
-            ` : `
-                <form id="wiki-create-form" data-space-id="${currentRouteSpaceId()}" class="inline-form">
-                    <div class="field"><label>标题</label><input name="title" required></div>
-                    <div class="field"><label>内容</label><textarea class="editor-textarea" name="content" required></textarea></div>
-                    <button class="button" type="submit">创建草稿</button>
-                </form>
-            `, { subtitle: page ? "先把草稿写清楚，再决定是否发布进团队知识层。" : "新建时保持轻量，内容稳定后再发布为正式 Wiki。" })}
+                    <div class="page-actions">
+                        ${page ? `<button class="ghost-button" type="button" data-action="open-wiki-inspector">关系与版本</button>` : ""}
+                        ${page ? `<button class="ghost-button" type="button" data-action="open-wiki-graph-card">图谱概览</button>` : ""}
+                        ${page ? `<button class="button" type="button" data-action="publish-wiki-page" data-page-id="${page.id}">发布 Wiki</button>` : ""}
+                    </div>
+                </div>
+                ${page ? `
+                    <div class="wiki-reading-surface">
+                        <div class="artifact-meta-row">
+                            ${badge(page.status)}
+                            ${tag(`版本 ${formatNumber(page.publishedVersionNo || state.wiki.versions[0]?.versionNo)}`)}
+                            ${relations?.summary ? tag(`邻居 ${formatNumber(relations.summary.neighborCount)}`) : ""}
+                            ${graph ? tag(`节点 ${formatNumber(graph.nodeCount)} / 边 ${formatNumber(graph.edgeCount)}`) : ""}
+                        </div>
+                        ${renderMarkdown(page.content || "")}
+                    </div>
+                    <div class="wiki-editor-card">
+                        <span class="context-kicker">Editor</span>
+                        <form id="wiki-edit-form" data-page-id="${page.id}" class="inline-form">
+                            <div class="field"><label>标题</label><input name="title" value="${escapeHtml(page.title)}" required></div>
+                            <div class="field"><label>内容</label><textarea class="editor-textarea" name="content" required>${escapeHtml(page.content || "")}</textarea></div>
+                            <button class="button" type="submit">保存草稿</button>
+                        </form>
+                    </div>
+                ` : `
+                    <div class="wiki-editor-card">
+                        <span class="context-kicker">Create Draft</span>
+                        <form id="wiki-create-form" data-space-id="${currentRouteSpaceId()}" class="inline-form">
+                            <div class="field"><label>标题</label><input name="title" required></div>
+                            <div class="field"><label>内容</label><textarea class="editor-textarea" name="content" required></textarea></div>
+                            <button class="button" type="submit">创建草稿</button>
+                        </form>
+                    </div>
+                `}
+            </section>
         </div>
-        <div style="margin-top:16px;">
+    `;
+}
+
+function renderWikiInspectorContent() {
+    const relations = state.wiki.relations;
+    const versions = state.wiki.versions || [];
+    if (!state.wiki.pageDetail) {
+        return emptyState("暂无 Wiki 页面", "选择 Wiki 页面后会展示关系与版本。");
+    }
+    return `
+        <div class="list-stack">
+            ${renderWikiRelationsCard(relations)}
             ${panel("版本历史", `
                 <div class="list-stack">
-                    ${state.wiki.versions.map((version) => `
+                    ${versions.map((version) => `
                         <div class="list-item">
                             <div class="list-item-header"><strong>v${formatNumber(version.versionNo)}</strong><span class="muted">${formatDate(version.createdAt)}</span></div>
                             <div class="muted">${escapeHtml(version.title)}</div>
+                            ${version.changeNote ? `<div class="muted">${escapeHtml(version.changeNote)}</div>` : ""}
                         </div>
                     `).join("") || emptyState("暂无版本", "发布后会开始生成版本记录。")}
                 </div>
             `)}
+        </div>
+    `;
+}
+
+function renderWikiRelationsCard(relations) {
+    const summary = relations?.summary || {};
+    return panel("页面关系", `
+        <div class="metric-row compact-metrics">
+            <div class="metric"><strong>${formatNumber(summary.outgoingResolvedCount)}</strong><span>出链</span></div>
+            <div class="metric"><strong>${formatNumber(summary.incomingResolvedCount)}</strong><span>入链</span></div>
+            <div class="metric"><strong>${formatNumber(summary.unresolvedOutgoingCount)}</strong><span>未解析</span></div>
+            <div class="metric"><strong>${formatNumber(summary.neighborCount)}</strong><span>邻居</span></div>
+        </div>
+        <div class="list-stack" style="margin-top:14px;">
+            ${renderRelationList("出链", relations?.outgoingLinks)}
+            ${renderRelationList("入链", relations?.incomingLinks)}
+            ${renderRelationList("邻居页", relations?.neighborPages)}
+            ${renderUnresolvedLinks(relations?.unresolvedLinks)}
+        </div>
+    `);
+}
+
+function renderRelationList(title, items = []) {
+    return `
+        <div class="list-item">
+            <div class="list-item-header"><strong>${escapeHtml(title)}</strong>${tag(`${formatNumber(items.length)} 项`)}</div>
+            ${(items || []).slice(0, 8).map((item) => `
+                <button class="subtle-row-button" type="button" data-action="select-wiki-page" data-page-id="${item.pageId}">
+                    ${escapeHtml(item.title || `Page ${item.pageId}`)}
+                    <span>${formatNumber(item.mentionCount || item.outgoingMentionCount || item.incomingMentionCount)} 次</span>
+                </button>
+            `).join("") || `<div class="muted">暂无${escapeHtml(title)}。</div>`}
+        </div>
+    `;
+}
+
+function renderUnresolvedLinks(items = []) {
+    return `
+        <div class="list-item">
+            <div class="list-item-header"><strong>未解析链接</strong>${tag(`${formatNumber(items.length)} 项`)}</div>
+            ${(items || []).slice(0, 8).map((item) => `
+                <div class="muted">${escapeHtml(item.targetTitle)} / ${escapeHtml(item.relationStatus || "UNRESOLVED")} / ${formatNumber(item.mentionCount)} 次</div>
+            `).join("") || `<div class="muted">暂无未解析链接。</div>`}
+        </div>
+    `;
+}
+
+function renderWikiGraphCard() {
+    const graph = state.wiki.pageGraph;
+    if (!graph) {
+        return emptyState("暂无图谱概览", "当前页面还没有可展示的图谱数据。");
+    }
+    return `
+        <div class="list-stack">
+            <div class="metric-row compact-metrics">
+                <div class="metric"><strong>${formatNumber(graph.nodeCount)}</strong><span>节点</span></div>
+                <div class="metric"><strong>${formatNumber(graph.edgeCount)}</strong><span>关系</span></div>
+                <div class="metric"><strong>${escapeHtml(graph.rootNodeId || "—")}</strong><span>根节点</span></div>
+            </div>
+            <div class="list-stack">
+                ${(graph.nodes || []).slice(0, 8).map((node) => `
+                    <button class="list-item" type="button" data-action="open-graph-from-node" data-node-id="${escapeHtml(node.id)}">
+                        <div class="list-item-header"><strong>${escapeHtml(node.title || node.id)}</strong>${tag(node.type || "NODE")}</div>
+                        <div class="muted">${escapeHtml(node.subtitle || node.status || "")}</div>
+                    </button>
+                `).join("") || emptyState("暂无节点", "该页面局部图谱暂时没有节点。")}
+            </div>
+            <button class="button" type="button" data-nav="${routeLink("graph", currentRouteSpaceId())}">进入完整 Graph</button>
+        </div>
+    `;
+}
+
+function renderGraphPage() {
+    const graph = state.graph.spaceGraph;
+    const nodes = graph?.nodes || [];
+    const edges = graph?.edges || [];
+    const selected = nodes.find((node) => node.id === state.graph.selectedNodeId);
+    return `
+        <div class="graph-workbench">
+            <section class="graph-canvas">
+                <div class="graph-canvas-header">
+                    <div>
+                        <span class="context-kicker">Main Canvas</span>
+                        <h1>知识图谱</h1>
+                        <p class="subtitle">空间级统一知识图谱，数据来自 <code>/api/v1/spaces/{spaceId}/knowledge-graph</code>。</p>
+                    </div>
+                    <div class="page-actions">
+                        <button class="ghost-button" type="button" data-action="refresh-page">刷新图谱</button>
+                        ${selected ? `<button class="button" type="button" data-action="open-graph-node-inspector" data-node-id="${escapeHtml(selected.id)}">查看节点详情</button>` : ""}
+                    </div>
+                </div>
+                <div class="graph-metrics">
+                    <div class="metric"><strong>${formatNumber(graph?.nodeCount ?? nodes.length)}</strong><span>节点</span></div>
+                    <div class="metric"><strong>${formatNumber(graph?.edgeCount ?? edges.length)}</strong><span>关系</span></div>
+                    <div class="metric"><strong>${escapeHtml(graph?.rootNodeId || "—")}</strong><span>根节点</span></div>
+                    <div class="metric"><strong>${selected ? escapeHtml(selected.title || selected.id) : "未选择"}</strong><span>当前节点</span></div>
+                </div>
+                <div class="graph-board">
+                    <div class="graph-node-cloud">
+                        ${nodes.map((node, index) => `
+                            <button class="graph-node graph-node-${String(node.type || "node").toLowerCase()} ${node.root ? "root" : ""} ${node.id === state.graph.selectedNodeId ? "active" : ""}"
+                                type="button"
+                                data-action="select-graph-node"
+                                data-node-id="${escapeHtml(node.id)}"
+                                style="--node-x:${(index * 37) % 92}%;--node-y:${(index * 53) % 86}%;">
+                                <span>${escapeHtml(node.title || node.id)}</span>
+                                <small>${escapeHtml(node.type || "NODE")}</small>
+                            </button>
+                        `).join("") || emptyState("暂无图谱节点", "当前空间还没有可展示的知识图谱数据。")}
+                    </div>
+                    <div class="graph-edge-list">
+                        <span class="context-kicker">Edges</span>
+                        ${(edges || []).slice(0, 24).map((edge) => `
+                            <div class="graph-edge-row">
+                                <strong>${escapeHtml(edge.label || edge.type || "关系")}</strong>
+                                <span>${escapeHtml(edge.sourceId)} -> ${escapeHtml(edge.targetId)}</span>
+                            </div>
+                        `).join("") || `<div class="muted">暂无关系边。</div>`}
+                    </div>
+                </div>
+            </section>
+        </div>
+    `;
+}
+
+function renderGraphNodeInspector() {
+    const detail = state.graph.nodeDetail;
+    const neighborhood = state.graph.neighborhood;
+    if (!detail) {
+        return emptyState("暂无节点详情", "选择图谱节点后会加载详情。");
+    }
+    return `
+        <div class="list-stack">
+            <div class="list-item">
+                <div class="list-item-header"><strong>${escapeHtml(detail.title || detail.id)}</strong>${tag(detail.type || "NODE")}</div>
+                <div class="muted">${escapeHtml(detail.subtitle || "")}</div>
+                <div class="muted">状态：${escapeHtml(detail.status || "—")} / Ref ${formatNumber(detail.refId)}</div>
+            </div>
+            ${detail.attributes ? panel("属性", renderJson(detail.attributes)) : ""}
+            ${panel("相邻关系", `
+                <div class="list-stack">
+                    ${(detail.adjacentEdges || []).map((edge) => `
+                        <div class="list-item">
+                            <div class="list-item-header"><strong>${escapeHtml(edge.label || edge.type || "关系")}</strong>${tag(`权重 ${formatNumber(edge.weight)}`)}</div>
+                            <div class="muted">${escapeHtml(edge.sourceId)} -> ${escapeHtml(edge.targetId)}</div>
+                        </div>
+                    `).join("") || emptyState("暂无相邻关系", "该节点暂时没有相邻边。")}
+                </div>
+            `)}
+            ${neighborhood ? panel("邻域概览", `
+                <div class="metric-row compact-metrics">
+                    <div class="metric"><strong>${formatNumber(neighborhood.nodeCount)}</strong><span>节点</span></div>
+                    <div class="metric"><strong>${formatNumber(neighborhood.edgeCount)}</strong><span>关系</span></div>
+                </div>
+            `) : ""}
         </div>
     `;
 }
@@ -3367,6 +3823,51 @@ async function handleWikiSearch(form) {
     paint();
 }
 
+function openWikiInspector() {
+    setDrawer("Wiki 关系与版本", renderWikiInspectorContent());
+}
+
+function openWikiGraphCard() {
+    setDrawer("Wiki 图谱概览", renderWikiGraphCard());
+}
+
+async function handleGraphFilter(form) {
+    const values = Object.fromEntries(new FormData(form).entries());
+    state.graph.filters = {
+        nodeTypes: String(values.nodeTypes || "").trim(),
+        edgeTypes: String(values.edgeTypes || "").trim(),
+        onlyPublished: Boolean(values.onlyPublished),
+        onlyIndexed: Boolean(values.onlyIndexed)
+    };
+    state.graph.selectedNodeId = null;
+    state.graph.nodeDetail = null;
+    state.graph.neighborhood = null;
+    await loadGraphPage(currentRouteSpaceId());
+    paint();
+}
+
+async function selectGraphNode(nodeId) {
+    state.graph.selectedNodeId = nodeId;
+    const spaceId = currentRouteSpaceId();
+    const [detail, neighborhood] = await Promise.all([
+        api.graph.node(spaceId, nodeId, graphQueryParams()),
+        api.graph.neighborhood(spaceId, nodeId, { ...graphQueryParams(), depth: 1 })
+    ]);
+    state.graph.nodeDetail = {
+        ...normalizeGraphNode(detail),
+        attributes: detail?.attributes,
+        adjacentEdges: (detail?.adjacentEdges || []).map(normalizeGraphEdge)
+    };
+    state.graph.neighborhood = normalizeGraphResponse(neighborhood);
+    setDrawer("Graph 节点详情", renderGraphNodeInspector());
+    paint();
+}
+
+async function openGraphFromNode(nodeId) {
+    state.graph.selectedNodeId = nodeId;
+    navigate(routeLink("graph", currentRouteSpaceId()));
+}
+
 async function saveSpaceMemory(form) {
     const payload = Object.fromEntries(new FormData(form).entries());
     payload.pin = false;
@@ -3491,6 +3992,21 @@ document.addEventListener("click", async (event) => {
             case "load-message-citations":
                 state.chat.citationsByMessage[Number(target.dataset.messageId)] = await api.chat.citations(Number(target.dataset.messageId));
                 paint();
+                break;
+            case "open-wiki-inspector":
+                openWikiInspector();
+                break;
+            case "open-wiki-graph-card":
+                openWikiGraphCard();
+                break;
+            case "select-graph-node":
+                await selectGraphNode(target.dataset.nodeId);
+                break;
+            case "open-graph-node-inspector":
+                await selectGraphNode(target.dataset.nodeId);
+                break;
+            case "open-graph-from-node":
+                await openGraphFromNode(target.dataset.nodeId);
                 break;
             case "convert-draft":
                 await api.chat.convertDraft(Number(target.dataset.sessionId));
@@ -3663,6 +4179,9 @@ document.addEventListener("submit", async (event) => {
                 break;
             case "wiki-search-form":
                 await handleWikiSearch(form);
+                break;
+            case "graph-filter-form":
+                await handleGraphFilter(form);
                 break;
             case "space-memory-form":
                 await saveSpaceMemory(form);

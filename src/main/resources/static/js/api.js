@@ -245,8 +245,17 @@ export const api = {
         update: (pageId, payload) => request(`/team/wiki-pages/${pageId}`, { method: "PUT", body: payload }),
         publish: (pageId, payload = {}) => request(`/team/wiki-pages/${pageId}/publish`, { method: "POST", body: payload }),
         versions: (pageId) => request(`/team/wiki-pages/${pageId}/versions`),
+        relations: (pageId) => request(`/team/wiki-pages/${pageId}/relations`),
+        knowledgeGraph: (pageId, query) => request(`/team/wiki-pages/${pageId}/knowledge-graph`, { query }),
         search: (spaceId, keyword) => request(`/team/spaces/${spaceId}/wiki-pages/search`, { query: { keyword } }),
         publishArtifact: (artifactId, payload) => request(`/artifacts/${artifactId}/publish-to-wiki`, { method: "POST", body: payload })
+    },
+    graph: {
+        space: (spaceId, query) => request(`/spaces/${spaceId}/knowledge-graph`, { query }),
+        page: (pageId, query) => request(`/team/wiki-pages/${pageId}/knowledge-graph`, { query }),
+        node: (spaceId, nodeId, query) => request(`/spaces/${spaceId}/knowledge-graph/nodes/${encodeURIComponent(nodeId)}`, { query }),
+        neighborhood: (spaceId, nodeId, query) => request(`/spaces/${spaceId}/knowledge-graph/neighborhood/${encodeURIComponent(nodeId)}`, { query }),
+        path: (spaceId, query) => request(`/spaces/${spaceId}/knowledge-graph/path`, { query })
     },
     memory: {
         space: (spaceId) => request(`/spaces/${spaceId}/memory`),

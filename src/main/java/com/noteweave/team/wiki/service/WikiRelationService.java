@@ -1,6 +1,8 @@
 package com.noteweave.team.wiki.service;
 
 import com.noteweave.permission.service.ResourceAccessService;
+import com.noteweave.common.error.BusinessException;
+import com.noteweave.common.error.ErrorCode;
 import com.noteweave.team.wiki.dto.WikiPageAmbiguousCandidateResponse;
 import com.noteweave.team.wiki.dto.WikiPageNeighborResponse;
 import com.noteweave.team.wiki.dto.WikiPageRelationLinkResponse;
@@ -29,7 +31,6 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class WikiRelationService {
 
-    private final TeamWikiService teamWikiService;
     private final WikiPageRepository wikiPageRepository;
     private final WikiPageLinkRepository wikiPageLinkRepository;
     private final WikiLinkParser wikiLinkParser;
@@ -37,7 +38,7 @@ public class WikiRelationService {
 
     @Transactional(readOnly = true)
     public WikiPageRelationsResponse getPageRelations(Long userId, Long pageId) {
-        WikiPage page = teamWikiService.getRequiredReadablePage(userId, pageId);
+        WikiPage page = getRequiredReadablePage(userId, pageId);
         Long spaceId = page.getSpaceId();
         List<WikiPage> pages = wikiPageRepository.findBySpaceIdAndDeletedAtIsNullOrderByUpdatedAtDesc(spaceId);
         List<WikiPageLink> outgoing = wikiPageLinkRepository.findBySourcePageIdOrderByIdAsc(pageId);
@@ -209,5 +210,14 @@ public class WikiRelationService {
         java.util.LinkedHashSet<Long> merged = new java.util.LinkedHashSet<>(left);
         merged.addAll(right);
         return merged;
+    }
+
+    private WikiPage getRequiredReadablePage(Long userId, Long pageId) {
+        WikiPage page = wikiPageRepository.findByIdAndDeletedAtIsNull(pageId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WIKI_PAGE_NOT_FOUND));
+        if (!resourceAccessService.canViewSpace(userId, page.getSpaceId())) {
+            throw new BusinessException(ErrorCode.WIKI_ACCESS_DENIED, "No permission to view wiki");
+        }
+        return page;
     }
 }

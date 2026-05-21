@@ -21,6 +21,7 @@ public class FrontendController {
             "/spaces/{spaceId}/artifacts",
             "/spaces/{spaceId}/artifacts/{artifactId}",
             "/spaces/{spaceId}/wiki",
+            "/spaces/{spaceId}/graph",
             "/spaces/{spaceId}/memory",
             "/admin",
             "/admin/{section}"

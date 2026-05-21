@@ -68,3 +68,4 @@ docs/architecture_review_issues_and_recommendations.md
 | Phase 14 | [phase_14_evaluation_observability_prompt.md](./phase_14_evaluation_observability_prompt.md) |
 | Phase 15 | [phase_15_admin_ops_prompt.md](./phase_15_admin_ops_prompt.md) |
 | Phase 16 | [phase_16_frontend_workspace_prompt.md](./phase_16_frontend_workspace_prompt.md) |
+| 专项：Workbench 前端重构执行 | [workbench_frontend_refactor_execution_prompt.md](./workbench_frontend_refactor_execution_prompt.md) |
