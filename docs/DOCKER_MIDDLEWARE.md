@@ -40,6 +40,15 @@ Testcontainers
 docker compose up -d
 ```
 
+说明：
+
+```text
+- docker-compose.yml 现在同时包含中间件和 noteweave-app。
+- 如果你想一键启动整套环境，可以直接执行 docker compose up -d --build。
+- 如果你只想启动中间件给本地 IDE 调试使用，可以执行：
+  docker compose up -d mysql redis minio minio-init elasticsearch kafka kafka-init
+```
+
 停止：
 
 ```bash

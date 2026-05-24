@@ -150,10 +150,13 @@ Artifact -> user confirmation -> SynthesisCard -> Personal Knowledge
 - Docker Desktop or Docker Compose
 - Node.js 18+ if you want to run browser smoke tests
 
-### 1. Start Middleware
+If you use the full Docker path below, you do not need JDK or Maven installed locally.
+
+### 1. Start The Full Stack With Docker
 
 ```powershell
-docker compose up -d
+Copy-Item .env.example .env
+docker compose up -d --build
 ```
 
 Default local ports:
@@ -166,8 +169,22 @@ Default local ports:
 | MinIO Console | `19101` |
 | Elasticsearch | `19200` |
 | Kafka | `19092` |
+| NoteWeave App | `18082` |
 
-### 2. Start NoteWeave
+Open:
+
+- App: [http://127.0.0.1:18082/login](http://127.0.0.1:18082/login)
+- Swagger UI: [http://127.0.0.1:18082/swagger-ui.html](http://127.0.0.1:18082/swagger-ui.html)
+- Health: [http://127.0.0.1:18082/actuator/health](http://127.0.0.1:18082/actuator/health)
+
+### 2. Start Middleware Only For Local Development
+
+```powershell
+Copy-Item .env.example .env
+docker compose up -d mysql redis minio minio-init elasticsearch kafka kafka-init
+```
+
+### 3. Start NoteWeave Locally
 
 ```powershell
 $env:SPRING_PROFILES_ACTIVE="dev"
@@ -175,7 +192,7 @@ $env:SERVER_PORT="18082"
 $env:NOTEWEAVE_LLM_STUB_ENABLED="true"
 $env:EMBEDDING_STUB_ENABLED="true"
 $env:EMBEDDING_ENABLED="false"
-mvn spring-boot:run
+.\mvnw.cmd spring-boot:run
 ```
 
 Open:
@@ -184,7 +201,7 @@ Open:
 - Swagger UI: [http://127.0.0.1:18082/swagger-ui.html](http://127.0.0.1:18082/swagger-ui.html)
 - Health: [http://127.0.0.1:18082/actuator/health](http://127.0.0.1:18082/actuator/health)
 
-### 3. Login With Demo Accounts
+### 4. Login With Demo Accounts
 
 | Account | Password | Role |
 |---|---|---|
@@ -220,6 +237,12 @@ NOTEWEAVE_LLM_STUB_ENABLED
 EMBEDDING_STUB_ENABLED
 EMBEDDING_ENABLED
 ```
+
+Helpful local setup files:
+
+- Copy `.env.example` to `.env` for Docker and local runtime defaults.
+- Copy `.env.embedding.example` to `.env.embedding` when you want a separate embedding provider config file.
+- Use `.\mvnw.cmd` on Windows or `./mvnw` on macOS/Linux if Maven is not installed globally.
 
 External model providers are optional in local development. Use stub mode when you only need to validate product flows.
 

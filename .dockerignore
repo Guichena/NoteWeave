@@ -1,0 +1,8 @@
+.git
+.idea
+.codex
+target
+test-results
+tmp
+tools/playwright-smoke/node_modules
+tools/playwright-smoke/last-run.json
