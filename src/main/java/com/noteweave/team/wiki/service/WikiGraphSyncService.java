@@ -25,6 +25,7 @@ public class WikiGraphSyncService {
     public void rebuildSpaceGraph(Long spaceId) {
         List<WikiPage> pages = wikiPageRepository.findBySpaceIdAndDeletedAtIsNullOrderByUpdatedAtDesc(spaceId);
         wikiPageLinkRepository.deleteBySpaceId(spaceId);
+        wikiPageLinkRepository.flush();
         if (pages.isEmpty()) {
             return;
         }

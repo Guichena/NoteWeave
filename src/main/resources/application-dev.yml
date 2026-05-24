@@ -3,6 +3,11 @@ spring:
     activate:
       on-profile: dev
 
+noteweave:
+  llm:
+    stub:
+      enabled: ${NOTEWEAVE_LLM_STUB_ENABLED:true}
+
 logging:
   level:
     org.springframework.security: INFO
