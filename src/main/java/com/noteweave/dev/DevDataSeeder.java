@@ -160,20 +160,22 @@ public class DevDataSeeder {
     @Transactional
     public void seed() {
         if (userRepository.findByUsername("admin").isEmpty()) {
-            return;
+            // Seed a clean dev database instead of bailing out when demo users are absent.
         }
         if (spaceRepository.findFirstByOwnerIdAndTypeAndStatusOrderByIdAsc(
                 userRepository.findByUsername("alice").map(User::getId).orElse(-1L),
                 SpaceType.PERSONAL,
                 SpaceStatus.ACTIVE
         ).isEmpty()) {
-            return;
+            // Backfill missing dev spaces and relationships on partially initialized databases.
         }
         User admin = upsertUser("admin", "admin@noteweave.dev", "管理员", UserSystemRole.ADMIN);
         User alice = upsertUser("alice", "alice@noteweave.dev", "艾丽丝", UserSystemRole.USER);
         User bob = upsertUser("bob", "bob@noteweave.dev", "鲍勃", UserSystemRole.USER);
 
+        ensurePersonalSpace(admin);
         Space alicePersonal = ensurePersonalSpace(alice);
+        ensurePersonalSpace(bob);
         Space teamSpace = ensureTeamSpace(admin, "产品策略协作台", "用于产品研究、检索验证与成果评审的跨职能协作空间。");
         ensureTeamMember(teamSpace, admin, SpaceRole.OWNER);
         ensureTeamMember(teamSpace, alice, SpaceRole.EDITOR);

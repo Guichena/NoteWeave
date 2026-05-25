@@ -922,19 +922,38 @@ async function loadMemoryPage(spaceId) {
     state.memory.spaceMemory = await api.memory.space(spaceId);
     state.memory.userMemory = await api.memory.user();
     state.chat.sessions = await api.chat.listSessions(spaceId);
-    state.personal.projects = await api.personal.listProjects();
     if (!state.memory.selectedSessionId && state.chat.sessions[0]) {
         state.memory.selectedSessionId = Number(state.chat.sessions[0].id);
     }
     if (state.memory.selectedSessionId) {
         state.memory.sessionSummaries = await api.memory.sessionSummaries(state.memory.selectedSessionId);
     }
-    if (!state.personal.selectedSynthesisProjectId && state.personal.projects[0]) {
-        state.personal.selectedSynthesisProjectId = Number(state.personal.projects[0].id);
+    await loadMemoryPersonalContext();
+}
+
+async function loadMemoryPersonalContext() {
+    try {
+        state.personal.projects = await api.personal.listProjects();
+    } catch (error) {
+        if (!(error instanceof ApiError) || (error.status !== 403 && error.status !== 404)) {
+            throw error;
+        }
+        state.personal.projects = [];
     }
-    if (state.personal.selectedSynthesisProjectId) {
-        state.personal.synthesisCardsByProject[state.personal.selectedSynthesisProjectId] = await api.personal.synthesisCards(state.personal.selectedSynthesisProjectId);
+
+    const availableProjectIds = new Set(state.personal.projects.map((project) => Number(project.id)));
+    if (!availableProjectIds.has(Number(state.personal.selectedSynthesisProjectId))) {
+        state.personal.selectedSynthesisProjectId = state.personal.projects[0]
+            ? Number(state.personal.projects[0].id)
+            : null;
     }
+
+    if (!state.personal.selectedSynthesisProjectId) {
+        return;
+    }
+
+    state.personal.synthesisCardsByProject[state.personal.selectedSynthesisProjectId] =
+        await api.personal.synthesisCards(state.personal.selectedSynthesisProjectId);
 }
 
 async function loadAdminTasksPage() {
