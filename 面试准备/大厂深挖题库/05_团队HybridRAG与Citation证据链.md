@@ -1,5 +1,9 @@
 # 文件：05_团队HybridRAG与Citation证据链.md
 
+## 0. 本篇定位
+
+这篇负责团队侧 Hybrid RAG、Citation 和证据链的深挖。它适合回答 BM25、向量召回、Wiki recall、RRF、EvidencePostProcessor、无证据兜底、Citation 关系化建模，以及坏回答如何排查等问题。
+
 ## 1. 本主题面试官想考什么
 
 这个主题是 NoteWeave 最容易被深挖的 AI 工程主线。面试官会重点看你是否理解 RAG 的召回、融合、证据处理、prompt 构造、无证据兜底、Citation 持久化、Trace 排障，以及为什么这不是简单“拼几个 retriever”。
@@ -206,3 +210,8 @@ RAG 主题要突出 evidence-first：权限约束下召回，多路融合，证�
 ## 8. 3 到 5 分钟深答模板
 
 团队 RAG 我会按 evidence-first 链路讲。用户提问后，系统先校验 TEAM_CHAT FORMAL session 和提问权限，然后保存用户消息，解析 session scope 得到可见知识库。检索层使用 HybridRetriever，BM25 是基础召回，hybrid 模式下再跑向量召回和 Wiki recall；向量失败会 fallback，不让生成链路整体失败。多路召回后用 weighted RRF 做排名融合，因为不同检索器的原始分数不可比。融合结果进入 EvidencePostProcessor，做 chunk 去重、低分过滤、相邻 chunk 合并、同文档限流和上下文长度控制。然后保存 RetrievalTrace，便于之后排查召回质量。如果 evidence 为空，直接返回无证据兜底；如果有 evidence，再用 TeamRagPromptBuilder 构造带证据编号和引用规则的 grounded prompt 调 LLM。最终 assistant message 和 Citation 会持久化，Citation 不是 JSON 展示字段，而是正式关系，查询时还要二次权限校验。这样一条回答既有生成结果，也能反查到召回过程和具体证据。
+
+## 9. 边界和不能说满的地方
+
+- 可以坚定讲：Hybrid RAG、EvidencePostProcessor、Citation、RetrievalTrace、无证据兜底和 RAG Eval。
+- 不要讲成：Citation 等于答案绝对正确；GraphRAG 已是当前主链路；query rewrite、复杂 rerank 和开放 Agent 都已经在主流程落地。

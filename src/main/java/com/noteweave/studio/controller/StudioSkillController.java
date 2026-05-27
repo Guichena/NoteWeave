@@ -19,6 +19,9 @@ public class StudioSkillController {
                         .name("Study Guide")
                         .artifactType("STUDY_GUIDE")
                         .sourceScopeType("RESEARCH_PROJECT")
+                        .entryType("artifact_skill")
+                        .mcpToolName(null)
+                        .argSchemaHint(null)
                         .description("Turn a project corpus into a structured study guide with sections, examples, and review points.")
                         .topicHint("Exam prep, onboarding, or a learning track")
                         .build(),
@@ -27,6 +30,9 @@ public class StudioSkillController {
                         .name("Research Report")
                         .artifactType("REPORT")
                         .sourceScopeType("RESEARCH_PROJECT")
+                        .entryType("artifact_skill")
+                        .mcpToolName(null)
+                        .argSchemaHint(null)
                         .description("Produce a report-style artifact with findings, trade-offs, and evidence-backed recommendations.")
                         .topicHint("Decision memo or research report title")
                         .build(),
@@ -35,6 +41,9 @@ public class StudioSkillController {
                         .name("Comparison Analysis")
                         .artifactType("COMPARISON")
                         .sourceScopeType("RESEARCH_PROJECT")
+                        .entryType("artifact_skill")
+                        .mcpToolName(null)
+                        .argSchemaHint(null)
                         .description("Compare options, approaches, or sources and highlight meaningful differences and risks.")
                         .topicHint("Products, tools, methods, or proposals to compare")
                         .build(),
@@ -43,6 +52,9 @@ public class StudioSkillController {
                         .name("Work Prep")
                         .artifactType("WORK_PREP")
                         .sourceScopeType("RESEARCH_PROJECT")
+                        .entryType("artifact_skill")
+                        .mcpToolName(null)
+                        .argSchemaHint(null)
                         .description("Prepare a concise execution brief with context, action items, open questions, and next steps.")
                         .topicHint("Sprint kickoff, customer meeting, or implementation prep")
                         .build(),
@@ -51,8 +63,22 @@ public class StudioSkillController {
                         .name("Reading Notes")
                         .artifactType("READING_NOTES")
                         .sourceScopeType("RESEARCH_PROJECT")
+                        .entryType("artifact_skill")
+                        .mcpToolName(null)
+                        .argSchemaHint(null)
                         .description("Summarize source material into digestible notes with key points and follow-up questions.")
                         .topicHint("Paper, article set, or topic notes")
+                        .build(),
+                StudioSkillResponse.builder()
+                        .id("bilibili-notes")
+                        .name("Bilibili Notes")
+                        .artifactType("READING_NOTES")
+                        .sourceScopeType("RESEARCH_PROJECT")
+                        .entryType("mcp_tool")
+                        .mcpToolName("bilibili")
+                        .argSchemaHint("params.mcpToolName=bilibili; params.mcpArgs.url=<bilibili-link>")
+                        .description("Call the remote Bilibili MCP service to pull metadata and CC subtitles from a bilibili.com or b23.tv link, then generate notes.")
+                        .topicHint("Enter a Bilibili link, optionally override topic")
                         .build()
         ));
     }

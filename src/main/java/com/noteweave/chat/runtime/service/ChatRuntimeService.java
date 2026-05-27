@@ -37,6 +37,7 @@ import com.noteweave.permission.service.ResourceAccessService;
 import com.noteweave.prompt.model.PromptVersion;
 import com.noteweave.prompt.service.PromptTemplateRenderer;
 import com.noteweave.prompt.service.PromptVersionService;
+import com.noteweave.studio.service.StudioMcpChatTriggerService;
 import com.noteweave.team.kb.model.KnowledgeBaseStatus;
 import com.noteweave.team.kb.repository.KnowledgeBaseRepository;
 import com.noteweave.team.rag.config.RagProperties;
@@ -94,6 +95,7 @@ public class ChatRuntimeService {
     private final Executor applicationTaskExecutor;
     private final PromptVersionService promptVersionService;
     private final PromptTemplateRenderer promptTemplateRenderer;
+    private final StudioMcpChatTriggerService studioMcpChatTriggerService;
 
     public void onConnect(Long userId, WebSocketSession session) {
         send(session, ServerEventEnvelope.builder()
@@ -237,6 +239,52 @@ public class ChatRuntimeService {
                     .payload(objectNode(Map.of("runtimeStatus", ChatRuntimeStatus.RUNNING.name())))
                     .build());
             send(socketSession, started);
+
+            var toolTrigger = studioMcpChatTriggerService.maybeTrigger(userId, session, userMessage.getId(), content);
+            if (toolTrigger.isPresent()) {
+                StudioMcpChatTriggerService.ToolTriggerResult trigger = toolTrigger.get();
+                ChatMessage assistantMessage = null;
+                if (session.getSessionKind() == ChatSessionKind.FORMAL) {
+                    assistantMessage = persistAssistantMessage(sessionId, trigger.answer(), requestId, trigger.task().artifactId());
+                    memoryWritebackService.writeAfterRound(session, userMessage, assistantMessage, List.of());
+                }
+                updateSessionRuntimeStatus(sessionId, ChatRuntimeStatus.IDLE);
+                chatRuntimeStateStore.writeRuntimeState(sessionId, RuntimeState.builder()
+                        .sessionId(sessionId)
+                        .userId(userId)
+                        .spaceId(session.getSpaceId())
+                        .sessionKind(session.getSessionKind())
+                        .runtimeStatus(ChatRuntimeStatus.IDLE)
+                        .requestId(requestId)
+                        .streamId(streamId)
+                        .lastAckSeq(0L)
+                        .build());
+                chatRuntimeStateStore.writeStreamState(sessionId, StreamState.builder()
+                        .streamId(streamId)
+                        .status(ChatRuntimeStatus.IDLE)
+                        .partialContent(trigger.answer())
+                        .build());
+                emitSessionStateUpdated(socketSession, session, requestId, streamId, ChatRuntimeStatus.IDLE);
+
+                Map<String, Object> completedPayload = new LinkedHashMap<>();
+                completedPayload.put("answer", trigger.answer());
+                completedPayload.put("citations", List.of());
+                completedPayload.put("persisted", session.getSessionKind() == ChatSessionKind.FORMAL);
+                completedPayload.put("assistantMessageId", assistantMessage == null ? null : assistantMessage.getId());
+                completedPayload.put("artifactId", trigger.task().artifactId());
+                completedPayload.put("taskId", trigger.task().taskId());
+                completedPayload.put("toolName", trigger.toolName());
+                ServerEventEnvelope completed = chatRuntimeStateStore.appendEvent(sessionId, ServerEventEnvelope.builder()
+                        .event("chat.completed")
+                        .requestId(requestId)
+                        .streamId(streamId)
+                        .sessionId(sessionId)
+                        .messageId(assistantMessage == null ? null : assistantMessage.getId())
+                        .payload(objectNode(completedPayload))
+                        .build());
+                send(socketSession, completed);
+                return;
+            }
 
             LoadedEvidence loadedEvidence = loadEvidence(userId, session, userMessage.getId(), content, readPlan);
             List<EvidenceItem> evidenceItems = loadedEvidence.evidenceItems();
@@ -544,6 +592,15 @@ public class ChatRuntimeService {
         TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
         return transactionTemplate.execute(status -> {
             ChatMessage message = createMessage(sessionId, ChatMessageRole.ASSISTANT, content, requestId, ChatMessageStatus.COMPLETED);
+            return chatMessageRepository.save(message);
+        });
+    }
+
+    private ChatMessage persistAssistantMessage(Long sessionId, String content, String requestId, Long artifactId) {
+        TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
+        return transactionTemplate.execute(status -> {
+            ChatMessage message = createMessage(sessionId, ChatMessageRole.ASSISTANT, content, requestId, ChatMessageStatus.COMPLETED);
+            message.setArtifactId(artifactId);
             return chatMessageRepository.save(message);
         });
     }

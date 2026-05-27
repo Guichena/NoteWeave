@@ -1,5 +1,9 @@
 # 文件：07_Artifact_Skill_Agent边界.md
 
+## 0. 本篇定位
+
+这篇负责 Artifact、Skill、Methodology、Agent 风险词和长期知识沉淀边界的主题深答。它适合回答为什么生成产物不直接进入 Wiki、Skill 到底是什么、MCP / Bibtex / GraphRAG 怎么稳妥表达。
+
 ## 1. 本主题覆盖的通用问题
 
 - Agent 项目里你具体做了什么？
@@ -129,13 +133,13 @@ LLM 输出可能有错误或不稳定。Artifact 是生成成果，Wiki/Card 是
 
 ### 5.3 MCP / Bibtex / GraphRAG 怎么回答
 
-- MCP：未来可接到 Skill/tool 层或 Source import 层，不是当前主链路。
+- MCP：当前没有做完整开放式 MCP 平台，但已经把 B 站解析能力拆成远程 MCP tool service，接到了 Studio 产物入口和对话显式触发链路；更广义的 Tool/Skill 协议化接入仍是可继续扩展的方向。
 - Bibtex：未来可作为 Source importer，解析论文元数据和 PDF 链接，不是当前端到端实现。
 - GraphRAG：当前主链路是 Hybrid RAG，有 Wiki/Concept relation 和图谱展示，但不是完整 GraphRAG 主链路。
 
 ## 6. 可直接复述的深答
 
-我不会把 NoteWeave 当前实现说成完整开放 Agent 平台。更准确地说，它是受控的 AI 生成工作流。比如生成 Artifact 时，系统会根据 ArtifactType 选择固定 plan，先 LoadGenerationContext，再 SelectEvidence 或 SelectCards，然后 GenerateReport、GenerateWorkPrep 这类生成 skill，最后 SaveArtifact。每一步都有 SkillExecutionLog、进度、耗时、token、失败信息和取消点。个人生成还会匹配 MethodologyCard，把 workflow、输出结构和质量检查注入 prompt。生成结果保存为 ArtifactVersion，不会自动进入长期知识；团队要发布 Wiki，个人要 proposal/confirm 后才生成 SynthesisCard。MCP、Bibtex、GraphRAG 都可以作为后续扩展，但当前主链路不应该夸大成已经实现完整 Agent 或 GraphRAG。
+我不会把 NoteWeave 当前实现说成完整开放 Agent 平台。更准确地说，它是受控的 AI 生成工作流。比如生成 Artifact 时，系统会根据 ArtifactType 选择固定 plan，先 LoadGenerationContext，再 SelectEvidence 或 SelectCards，然后 GenerateReport、GenerateWorkPrep 这类生成 skill，最后 SaveArtifact。每一步都有 SkillExecutionLog、进度、耗时、token、失败信息和取消点。个人生成还会匹配 MethodologyCard，把 workflow、输出结构和质量检查注入 prompt。生成结果保存为 ArtifactVersion，不会自动进入长期知识；团队要发布 Wiki，个人要 proposal/confirm 后才生成 SynthesisCard。MCP 这块也不是只停留在未来规划，当前已经把 B 站解析能力拆成远程 MCP tool service，并接到产物入口和对话触发链路；但这仍然不等于已经实现完整开放 Agent 或完整 MCP 平台。Bibtex、GraphRAG 则继续保留为扩展方向。
 
 ## 7. 追问兜底
 

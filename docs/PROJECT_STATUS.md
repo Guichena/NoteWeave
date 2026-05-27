@@ -2,7 +2,7 @@
 
 本文档用于给后续 AI 编码代理快速判断当前做到哪里。每次开始新阶段前先读本文档；每完成一个阶段后必须更新本文档。
 
-更新时间：2026-05-17
+更新时间：2026-05-27
 
 ---
 
@@ -11,7 +11,7 @@
 当前状态：
 
 ```text
-Phase 0/1、Phase 1.5、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6、Phase 7、Phase 8、Phase 9、Phase 10、Phase 10.5、Phase 11 和 Phase 11.5 已完成并通过当前阶段测试与必要回归测试。
+Phase 0/1、Phase 1.5、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6、Phase 7、Phase 8、Phase 9、Phase 10、Phase 10.5、Phase 11、Phase 11.5、Phase 12、Phase 13、Phase 14 和 Phase 15 已完成并通过当前阶段测试与必要回归测试。
 ```
 
 当前代码已包含 Auth/User/Space/Permission、Task/Outbox/Kafka Worker 基础设施、Phase 2 文件上传链路、Phase 3 的 DOCUMENT_PROCESS Worker、文档解析、parsed text 保存、Chunk 切片、indexVersion / activeIndexVersion、Elasticsearch BM25 索引和 Search Debug、Phase 6 的个人 ResearchProject / Source、TEXT/FILE/URL 导入、SOURCE_IMPORT Worker、个人 raw/parsed text 对象保存、owner-only 查询与重试/去重链路、Phase 7 的 SOURCE_COMPILE、ArticleCard / ConceptCard / ConceptAlias / ConceptRelation / ArticleConceptRelation、个人 Card Citation、Card 搜索详情与 Evidence 回溯链路、Phase 8 的 Studio / Artifact、Phase 9 的混合检索 / RRF / 向量回退、Phase 10 的团队 Wiki 草稿/发布/版本/索引/检索闭环、Phase 10.5 的 Methodology preset / matcher / prompt 注入骨架、Phase 11 的个人 Wiki-based Generation：ResearchContextService / PersonalEvidenceService / PersonalGenerationService、个人项目 REPORT / STUDY_GUIDE / COMPARISON / WORK_PREP / READING_NOTES 生成、MethodologyCard 注入、ArtifactSource / ArtifactCitation 回溯保存与证据缺失失败保护，以及 Phase 11.5 的个人 Artifact 沉淀闭环：ArtifactDistillationProposal、用户确认后创建 SynthesisCard、artifact_card_relation / synthesis_card_citation / synthesis_concept_relation 持久化、distill-to-personal-wiki API 与 owner-only 查询能力。
@@ -19,7 +19,7 @@ Phase 0/1、Phase 1.5、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6、Phase 
 下一步：
 
 ```text
-Phase 13: Full MethodologyCard Management。
+Phase 16: Frontend Workspace。
 ```
 
 ---
@@ -127,9 +127,9 @@ Quiz / 答题 / 评分 / 题库暂缓
 | Phase 11 | DONE | 个人 Wiki-based Generation |
 | Phase 11.5 | DONE | 个人 Artifact 沉淀为 SynthesisCard |
 | Phase 12 | DONE | Long-term Memory |
-| Phase 13 | PENDING | MethodologyCard 完整管理 |
-| Phase 14 | PENDING | Evaluation / Observability |
-| Phase 15 | PENDING | Admin / Ops |
+| Phase 13 | DONE | MethodologyCard 完整管理 |
+| Phase 14 | DONE | Evaluation / Observability |
+| Phase 15 | DONE | Admin / Ops |
 | Phase 16 | PENDING | Frontend Workspace |
 
 ---
@@ -1648,6 +1648,211 @@ Notes:
 Next:
 
 ```text
-Proceed to Phase 13 full MethodologyCard management.
+Proceed to Phase 16 frontend workspace.
 ```
+
+## 23. Phase 13 Full MethodologyCard Management (2026-05-27)
+
+Status:
+
+```text
+DONE
+```
+
+Implemented in this repository state:
+
+```text
+1) Added V15 migration to extend methodology_card from Phase 10.5 preset-only baseline to full Phase 13 CRUD/versioning shape.
+2) Added MethodologyCardSource / Scope / Status rich model support for PRESET, USER_CREATED, SYSTEM, SPACE, PROJECT, ACTIVE and ARCHIVED flows.
+3) Added owner-only MethodologyCardService CRUD with project-vs-space scope resolution, duplicate-name guardrails, archive semantics and version increments on structure edits.
+4) Added GET / POST / PUT / DELETE methodology APIs under /api/v1/personal for project-scoped listing and card lifecycle management.
+5) Preset cards remain readable but immutable; archived user cards stay queryable by id/history but stop participating in matcher selection.
+6) Research-project generation keeps prompt injection through MethodologyMatcher + MethodologyPromptSectionBuilder, and archived custom cards now correctly fall back to presets.
+```
+
+New migration:
+
+```text
+src/main/resources/db/migration/V15__phase_13_methodology_card.sql
+```
+
+New APIs:
+
+```text
+GET  /api/v1/personal/research-projects/{projectId}/methodology-cards
+GET  /api/v1/personal/methodology-cards/{cardId}
+POST /api/v1/personal/research-projects/{projectId}/methodology-cards
+PUT  /api/v1/personal/methodology-cards/{cardId}
+DELETE /api/v1/personal/methodology-cards/{cardId}
+```
+
+Acceptance notes:
+
+```text
+- User-created MethodologyCard supports PROJECT and SPACE scope.
+- workflow / outputStructure / qualityChecklist edits increment version; archive does not.
+- Preset cards cannot be modified directly.
+- Archived cards are excluded from future matching, while historical reads remain available.
+```
+
+TDD record:
+
+```text
+1) Phase13MethodologyCardIntegrationTest covers CRUD, owner-only access, versioning, archive behavior and prompt fallback after archive.
+2) MethodologyMatcherTest keeps exact problemType preference, scene tie-break and GENERAL fallback under regression coverage.
+3) The verified repository state now matches the Phase 13 document scope instead of the earlier Phase 10.5 preset-only subset.
+```
+
+Test commands and results:
+
+```text
+1) mvn "-Dtest=MethodologyMatcherTest,Phase13MethodologyCardIntegrationTest" test
+   - passed: Tests run: 6, Failures: 0, Errors: 0, Skipped: 0
+
+2) mvn "-Dtest=MethodologyMatcherTest,Phase13MethodologyCardIntegrationTest,Phase14ObservabilityEvaluationIntegrationTest,Phase15AdminOpsIntegrationTest" test
+   - passed: Tests run: 9, Failures: 0, Errors: 0, Skipped: 0
+```
+
+Notes:
+
+```text
+- Phase 13 still does not implement AI-extracted methodology proposals, marketplace sharing or automatic Artifact -> Methodology writeback.
+- Preset cards continue to live under reserved system scope space_id = 0.
+```
+
+Next:
+
+```text
+Proceed to Phase 14 evaluation / observability.
+```
+
+## 24. Phase 14 Evaluation / Observability (2026-05-27)
+
+Status:
+
+```text
+DONE
+```
+
+Implemented in this repository state:
+
+```text
+1) Added V16 migration for prompt_version, llm_call_log, retrieval_trace, retrieval_trace_item, rag_eval_case, rag_eval_run and rag_eval_result persistence.
+2) Added admin prompt-version CRUD/activation flow with single ACTIVE version per scene and business-side promptVersionId linkage.
+3) Extended LLM call logging and retrieval trace capture across chat, artifact generation and eval paths with token, latency, promptHash and evidence traceability.
+4) Added answer feedback read/write APIs and validation coverage for rating/reason payloads.
+5) Added admin RAG Eval case maintenance plus async Eval Run execution with isolated task flow, metrics aggregation and no chat-session pollution.
+6) Added admin retrieval-trace and LLM log inspection endpoints so prompts, evidence and results can be backtraced from operations UI.
+```
+
+New migration:
+
+```text
+src/main/resources/db/migration/V16__phase_14_observability_eval.sql
+```
+
+New admin capabilities:
+
+```text
+- Prompt version management and activation
+- LLM call log search
+- Retrieval trace detail inspection
+- Answer feedback persistence
+- RAG Eval case CRUD and Eval Run execution/results
+```
+
+TDD record:
+
+```text
+1) Phase14ObservabilityEvaluationIntegrationTest exercises prompt activation, chat log/trace capture, feedback validation, eval-case maintenance and isolated eval-run metrics.
+2) The suite verifies both observability query paths and the "no formal chat history pollution" invariant for RAG_EVAL execution.
+```
+
+Test commands and results:
+
+```text
+1) mvn "-Dtest=Phase14ObservabilityEvaluationIntegrationTest" test
+   - passed: Tests run: 2, Failures: 0, Errors: 0, Skipped: 0
+
+2) mvn "-Dtest=MethodologyMatcherTest,Phase13MethodologyCardIntegrationTest,Phase14ObservabilityEvaluationIntegrationTest,Phase15AdminOpsIntegrationTest" test
+   - passed: Tests run: 9, Failures: 0, Errors: 0, Skipped: 0
+```
+
+Notes:
+
+```text
+- Phase 14 stops at operational observability and small-scale golden-case evaluation; it does not introduce online experiments, BI dashboards or model fine-tuning.
+- Eval execution remains task-isolated and does not write normal chat sessions, chat messages or long-term memory.
+```
+
+Next:
+
+```text
+Proceed to Phase 15 admin / ops.
+```
+
+## 25. Phase 15 Admin / Ops (2026-05-27)
+
+Status:
+
+```text
+DONE
+```
+
+Implemented in this repository state:
+
+```text
+1) Added V17 migration for audit_log, ops_cleanup_job, ops_cleanup_item and system_health_snapshot.
+2) Added admin user, space and task management with system-role authorization, disable/enable, task cancel/retry and audit persistence.
+3) Added cleanup scan + execute flows for expired uploads and resource residue, including per-item status tracking and audit-log writeback.
+4) Added dashboard summary, health checks and component detail endpoints for MySQL, Redis, MinIO, Kafka, Elasticsearch and LLM provider visibility.
+5) Added admin-side storage support and cleanup validation so object existence is rechecked before destructive cleanup operations.
+```
+
+New migration:
+
+```text
+src/main/resources/db/migration/V17__phase_15_admin_ops.sql
+```
+
+New admin capabilities:
+
+```text
+- User search / disable / enable
+- Space search / detail
+- Task list / detail / cancel / retry / mark-failed support
+- Cleanup scan / execute / job inspection
+- Dashboard summary
+- Health inspection
+- Audit log search
+```
+
+TDD record:
+
+```text
+1) Phase15AdminOpsIntegrationTest verifies admin-only access, user disable/enable login behavior, task cancel/retry, expired-upload cleanup, dashboard/health visibility and audit-log writeback.
+2) The verified repository state satisfies the Phase 15 minimum operating console instead of leaving Admin / Ops as documentation-only scope.
+```
+
+Test commands and results:
+
+```text
+1) mvn "-Dtest=Phase15AdminOpsIntegrationTest" test
+   - passed: Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+
+2) mvn "-Dtest=MethodologyMatcherTest,Phase13MethodologyCardIntegrationTest,Phase14ObservabilityEvaluationIntegrationTest,Phase15AdminOpsIntegrationTest" test
+   - passed: Tests run: 9, Failures: 0, Errors: 0, Skipped: 0
+```
+
+Notes:
+
+```text
+- Phase 15 does not introduce billing, enterprise approval workflows or external operations platforms.
+- Cleanup remains scan-first; execute operates through recorded cleanup items rather than blind direct deletion.
+```
+
+Next:
+
+```text
+Proceed to Phase 16 frontend workspace.
 ```

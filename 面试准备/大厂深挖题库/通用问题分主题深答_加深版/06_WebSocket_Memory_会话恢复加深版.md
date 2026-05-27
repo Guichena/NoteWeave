@@ -1,273 +1,140 @@
 # 文件：06_WebSocket_Memory_会话恢复加深版.md
 
-## 1. 这个主题要回答什么
+## 0. 本篇定位
 
-这个主题覆盖：
+这篇是 `06_Memory_WebSocket_会话恢复.md` 的加深版，只补 ack/resume 语义、运行态与长期事实的边界、Memory 污染控制和上下文读取策略。
 
-- HTTP 能问答，为什么还要 WebSocket？
-- WebSocket 怎么实现流式输出？
-- stop/resume 怎么做？
-- 短期记忆、长期记忆、summary 怎么设计？
-- 长期记忆什么时候写入？
-- 哪些内容不能写入？
-- Redis 和 MySQL 在记忆系统里怎么分工？
+因此这里不再重复保存标准版里的 WebSocket 与 Memory 主答。普通版 `06` 负责把 runtime、stop/resume、writeback/read plan 讲顺；这篇只负责继续深挖时的增量理解。
 
-## 2. 面向初学者：WebSocket 是什么
+## 1. 这篇只补哪些深度
 
-HTTP 是请求-响应模式：
+普通版 `06` 已经覆盖：
 
-```text
-客户端发请求 -> 服务端返回响应
-```
+- 为什么要 WebSocket。
+- stop、resume、partialContent 的主链路。
+- DRAFT 不写长期 Memory。
+- recent history / summary / space memory / user memory 的读取分层。
 
-WebSocket 是长连接双向通信：
+这篇额外补的是：
 
-```text
-客户端 <-> 服务端
-```
+- ack 到底解决了什么恢复问题。
+- 为什么 runtime 恢复不是“强一致消息系统”。
+- Memory 写回为什么更像筛选和蒸馏，而不是全量存档。
+- 为什么上下文工程的核心不是“塞得越多越好”。
 
-服务端可以主动推消息给客户端。AI 流式输出很适合 WebSocket，因为模型生成过程是逐步产生内容的。
+## 2. ack / resume 真正解决的是什么
 
-## 3. 为什么 NoteWeave 要 WebSocket
-
-普通 HTTP 问答只能做到：
-
-- 用户提问。
-- 服务端处理完。
-- 一次性返回完整答案。
-
-但 AI 工作台需要：
-
-- `chat.delta` 流式输出。
-- 用户中途 stop。
-- 页面刷新后 resume。
-- 保存 partialContent。
-- DRAFT 临时探索。
-- 服务端知道 runtimeStatus。
-
-所以 NoteWeave 做了 WebSocket Runtime。
-
-## 4. WebSocket 完整链路
-
-### 4.1 ticket 建连
+页面刷新或短暂断线后，系统最怕的问题不是“要不要重连”，而是：
 
 ```text
-POST /api/v1/chat/ws-ticket
--> Redis 写 ticket
--> ticket TTL
--> WebSocket /ws/chat/{ticket}
--> 服务端消费 ticket
--> chat.connected
+客户端到底已经收到哪里了
 ```
 
-为什么用 ticket：
+没有 ack，服务端只能：
 
-- 不把长期 JWT 放在 URL。
-- ticket 一次性消费。
-- TTL 自动过期。
+- 全量重发最近事件，造成重复展示；
+- 或者直接放弃恢复，用户只能看到截断答案。
 
-### 4.2 发送消息
-
-客户端发送：
-
-```json
-{
-  "event": "chat.message",
-  "requestId": "...",
-  "streamId": "...",
-  "sessionId": 1,
-  "ack": 0,
-  "payload": {
-    "content": "..."
-  }
-}
-```
-
-服务端处理：
+有 ack 之后，恢复语义就会清晰很多：
 
 ```text
-校验 session
--> requireAskQuestion
--> ActiveExecutionRegistry 防并发
--> 保存 USER message
--> RuntimeState = RUNNING
--> chat.started
--> 检索证据
--> 构造 prompt
--> 生成 answer
--> 分段发送 chat.delta
+客户端告诉服务端“我已收到第 N 条事件”
+-> 服务端只重放 N 之后的 buffer
 ```
 
-### 4.3 stop
+这比“重新生成一遍”或“盲目全量重放”都稳。
 
-```text
-client chat.stop
--> 找 ActiveExecution
--> execution.stop()
--> runtimeStatus STOPPED
--> 保存 partialContent
--> chat.stopped
-```
+## 3. 为什么 runtime 恢复不是强一致消息系统
 
-stop 不是前端不显示，而是后端停止继续推送。
+这点很重要，因为很多人一讲 ack 就容易讲飘。
 
-### 4.4 resume
+当前恢复的是：
 
-```text
-client chat.resume(ack=12)
--> Redis readEventsAfter(12)
--> replay events
--> read snapshot
--> chat.restored(runtimeStatus, partialContent)
-```
-
-ack 的作用是告诉服务端：客户端已经收到哪条事件。服务端只重放后面的事件。
-
-## 5. 八股知识点：WebSocket 和 SSE 区别
-
-SSE 是 Server-Sent Events，服务端向客户端单向推送。
-
-WebSocket 是双向通信。
-
-SSE 优点：
-
-- 简单。
-- 基于 HTTP。
-- 适合服务端单向推流。
-
-WebSocket 优点：
-
-- 双向。
-- 适合 stop、resume、ack、状态同步。
-- 更适合复杂实时交互。
-
-NoteWeave 需要客户端发 stop/resume，所以 WebSocket 更合适。
-
-## 6. Memory 设计：短期和长期
-
-### 6.1 短期运行态
-
-存在 Redis：
-
-- RuntimeState。
-- StreamState。
-- ShortTermContext。
-- Event buffer。
+- 近期 delta 事件。
 - partialContent。
+- 当前 runtimeStatus。
 
-它解决“当前这轮生成到哪里了”。
+它不是：
 
-### 6.2 长期记忆
+- 永久消息日志。
+- 跨很长时间的完整回放系统。
+- 任意时刻都绝对不丢事件的金融级消息链路。
 
-存在 MySQL：
+也就是说，Redis 里的 event buffer 更像短期恢复窗口，而不是正式事实源。正式答案、正式 Citation、正式 Memory 还是要看 MySQL。
 
-- session_summary。
-- memory_item。
-- space_memory。
-- user_memory。
+## 4. 为什么长期 Memory 不能按“全量留档”做
 
-它解决“后续对话需要记住哪些稳定信息”。
+如果把每轮对话、每句偏好、每个试探问题都直接写入长期 Memory，短期看似“记得更多”，长期一定会脏。
 
-### 6.3 Summary 是什么
+它会带来：
 
-Summary 是会话摘要。它不是完整聊天记录，而是把历史压缩成较短内容，减少 token。
+- token 膨胀。
+- 低价值信息越积越多。
+- 探索态内容污染正式结论。
+- 用户隐私和敏感信息风险上升。
+- 历史错误被反复强化。
 
-为什么需要 summary：
+所以 MemoryWriteback 的真正定位不是“存历史”，而是“挑稳定、长期有价值、可复用的信息写回”。
 
-- 聊天历史太长。
-- 直接塞历史会超 token。
-- 历史里有噪声。
-- 摘要能保留主线。
+## 5. 为什么 DRAFT 不写长期 Memory 是个关键边界
 
-## 7. MemoryWriteback 策略
+DRAFT 的本质是探索、试问、临时组织思路。它常常具有这些特征：
 
-不是所有内容都能写 memory。
+- 用户自己都还没想好。
+- 问法噪声大。
+- 可能只是测试系统。
+- 内容未必想长期保留。
 
-NoteWeave 会跳过：
+如果 DRAFT 也大量进入长期 Memory，后面 FORMAL 会话反而会被探索态噪声带偏。
 
-- DRAFT。
-- 空轮次。
-- 短问候。
-- password/token/secret/api-key/email 等敏感信息。
+所以 `DRAFT 不写长期 Memory` 不是一个小规则，而是防污染的一级边界。
 
-可能写入：
+## 6. 上下文工程真正考的不是“塞多少”，而是“读什么”
 
-- 稳定偏好。
-- 有意义的正式对话摘要。
-- 当前空间相关背景。
-
-为什么 DRAFT 不写？因为 DRAFT 是探索态，用户可能随便试问，不代表稳定意图。
-
-## 8. 八股知识点：上下文工程
-
-大模型上下文不是越多越好。
-
-过多上下文会导致：
-
-- token 成本高。
-- 模型注意力分散。
-- 噪声增加。
-- 隐私风险上升。
-- 错误历史被强化。
-
-所以 NoteWeave 用 `ContextReadRouter` 决定读哪些上下文：
+很多候选人谈上下文工程时只会说：
 
 ```text
-DRAFT:
-recentHistory + retrievalEvidence
-
-FORMAL:
-recentHistory + sessionSummary + spaceMemory + userMemory + retrievalEvidence
+把历史聊天记录拼进 prompt
 ```
 
-## 9. 底层原理补充：WebSocket、ack 和恢复语义
+这不够。更成熟的口径是：
 
-### 9.1 WebSocket 握手
+- recent history 解决最近轮次连贯性。
+- session summary 解决长会话主线压缩。
+- space memory 解决跨会话空间背景。
+- user memory 解决稳定偏好或长期个人偏好。
+- retrieval evidence 解决当前问题的事实支撑。
 
-WebSocket 最开始是 HTTP 请求，通过 Upgrade 头把协议升级成长连接。连接建立后，客户端和服务端可以双向发送 frame。
+所以 `ContextReadRouter` 的核心价值是“控制读什么”，而不是把所有东西都塞进去。
 
-为什么要 ticket？因为 WebSocket URL 可能出现在日志或浏览器记录里，不适合长期携带 JWT。一次性 ticket 更安全。
+## 7. 隐私和共享边界怎么讲
 
-### 9.2 ack 是什么
+记忆系统一旦被追问，面试官通常也在看你有没有隐私意识。
 
-ack 是 acknowledgement，确认。客户端告诉服务端“我已经收到第几条事件”。
+当前更稳的说法是：
 
-没有 ack 时，页面刷新后服务端不知道客户端收到哪里了，只能全量重发或放弃恢复。有 ack 后可以：
+- user memory 是个人私有长期上下文。
+- space memory 当前阶段也不是团队成员共享的“全员人格记忆”，而是更受控的 user + space 上下文。
+- 敏感信息、低价值内容、探索态内容不应轻易写回长期 Memory。
+
+这样回答会比抽象讲“我们有记忆功能”更成熟。
+
+## 8. 边界、不能说满和扩展方向
+
+- 这篇只补恢复语义和 Memory 污染控制，不再重复标准版主链路。
+- 当前可以坚定讲：WebSocket 双向 runtime、ack/resume、DRAFT/FORMAL 边界、分层 Memory 读取。
+- 当前不要讲成：恢复链路是永久消息系统；长期 Memory 保存所有历史；space memory 已是团队共享智能体记忆。
+- 扩展方向可以讲：后续可继续完善 summary、Memory TTL、用户管理、bad case 清洗和读取策略评估。
+
+## 9. 继续追问怎么接
+
+如果面试官继续往下压，这一题最稳的承接顺序是：
 
 ```text
-readEventsAfter(ack)
+先讲 ack 解决恢复窗口问题
+-> 再讲 runtime 不是正式事实源
+-> 再讲 DRAFT/FORMAL 和 Memory 污染控制
+-> 最后讲上下文读取策略而不是全量拼历史
 ```
 
-只重放缺失事件。
-
-### 9.3 恢复语义不是强一致
-
-WebSocket resume 恢复的是近期 runtime 事件，不是永久消息日志。如果 Redis 过期或丢失，系统可以退化为读取 MySQL 已完成消息，但无法恢复未完成 partialContent。这就是短期运行态和长期事实的边界。
-
-### 9.4 Memory 写入像数据清洗
-
-长期记忆不是“保存所有信息”，更像对会话进行过滤、摘要和归类。写入前要判断价值和风险：
-
-- 是否稳定。
-- 是否敏感。
-- 是否只是寒暄。
-- 是否属于用户偏好。
-- 是否属于空间上下文。
-
-## 10. 可直接复述的深答
-
-NoteWeave 的 WebSocket Runtime 不只是为了流式显示，而是为了管理一次 AI 生成的完整运行态。客户端先通过 HTTP 拿一次性 ticket，再建立 WebSocket 连接。用户发送 chat.message 后，服务端会校验权限，用 ActiveExecutionRegistry 防止同一 session 并发生成，然后把 RuntimeState 写 Redis，发送 chat.started。生成过程中服务端持续推 chat.delta，并把事件和 partialContent 存到 Redis。用户 stop 时，服务端设置 stopRequested，更新 STOPPED 状态并保存 partialContent；页面刷新后，客户端带 ack 调 chat.resume，服务端重放 ack 之后的事件并返回 chat.restored。长期记忆则和 runtime 分开，存在 MySQL。FORMAL 会话完成后才可能写 session summary、space memory 和 user memory；DRAFT、短问候、敏感内容都不会写。这样既支持实时交互，也能控制长期记忆污染。
-
-## 11. 面试官可能追问
-
-### 11.1 Redis 丢了怎么办
-
-丢的是运行态和 partialContent，正式 message、citation、memory 已在 MySQL 的不会丢。
-
-### 11.2 Memory 会不会越写越脏
-
-会有风险，所以要有写入过滤、TTL、用户管理、pin、置信度和读取计划。
-
-### 11.3 为什么不把所有历史都塞给模型
-
-成本高、噪声大、隐私风险高，而且模型可能被历史错误误导。
+这样回答既有实时系统味道，也能守住 AI 记忆边界。

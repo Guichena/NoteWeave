@@ -1,32 +1,245 @@
-## 知识库与增强 RAG 主链路
+﻿# NoteWeave RAG 专项题
 
-1. Q: 这个项目里的文档入库链路是什么？
-   A: 可以按“上传 -> 解析 -> 切分 -> 向量化 -> 建索引”这条链讲。前端先做分片上传，后端把原始文件写入对象存储并记录状态；分片合并后投递异步任务；解析服务用 Tika 这类组件做文本抽取和清洗；再按结构和语义切 chunk，调用 embedding 服务生成向量；最后把文本块、向量和元数据写入 Elasticsearch。这样链路更完整，也更符合真实知识库系统的落地方式。
+## 0. 本篇定位
 
-2. Q: 这个项目里的查询和对话链路是什么？
-   A: 用户发起问题后，系统先读 Redis 里的短期会话状态；然后做 query 理解、主题继承、query rewrite 和必要的问题拆解；检索侧先走缓存，再走混合检索和重排；如果证据不足，就补检索或澄清追问；最后把证据、会话状态和用户问题一起交给模型流式生成答案。回合结束后，再把会话摘要、检索反馈和必要日志落到持久层。
+这篇用于准备 RAG 专项面试。重点不是背“RAG 是检索增强生成”，而是把 RAG 的通用原理落到 NoteWeave 的已验收链路：权限、文档治理、混合检索、证据后处理、Citation、Trace、Eval 和无证据兜底。
 
-3. Q: 为什么这个项目里用 Elasticsearch 做混合检索，而不是只上纯向量库或直接用 MySQL？
-   A: 因为企业知识库问题通常既有语义相似，也有术语、专有名词、过滤条件和权限约束。如果只做纯向量检索，容易漏掉关键词强约束；如果直接靠 MySQL，又很难把全文检索和向量召回一起做好。Elasticsearch 的优势就在于能把关键词检索、向量检索、过滤条件和排序整到同一条链路里，所以更适合这种“语义召回 + 精确过滤 + 权限控制”并存的场景。
+## 1. 这个主题在 NoteWeave 里解决什么问题
 
-4. Q: 为什么把这个项目定义成“实用型增强 RAG”，而不是重型 Agent？
-   A: 因为这个项目的主目标始终是知识库问答质量和可用性，不是为了做一个特别重的多 Agent 系统。项目里当然会有 query planner、工具调用、会话记忆这些 Agent 味道的能力，但主线仍然是检索增强、证据治理、多轮状态管理和反馈闭环。更合适的落点是：系统有一定智能编排能力，但核心价值还是稳定把问题答准、答全、答得可控。
+团队知识问答的难点从来不只是“能不能把文档搜出来”，而是下面这些条件要同时成立：
 
-## 多轮会话与智能客服
+- 召回范围不能越权。
+- 关键词和语义都要兼顾。
+- 文档更新后旧索引不能污染结果。
+- 给模型的证据要可控，不是 top-k 直接拼。
+- 回答要能回到 source、chunk、version 和 trace。
+- 坏回答出现后要能定位是数据、检索、证据还是生成出了问题。
 
-1. Q: 智能客服能力在这个项目里是怎么落下来的？
-   A: 更愿意把它定义成“增强 RAG 的问答系统”，而不是一句“接了个大模型”。入口先做问题理解和必要改写，再通过 RAG 从知识库拿证据；如果问题需要外部动作或结构化查询，就走 Function Calling 调工具；最后把检索证据、工具结果和用户问题一起组织给模型生成答案。这里真正落到项目里的重点，不是框架名，而是检索质量、上下文治理和工具边界。
+## 2. 本主题面试官想考什么
 
-2. Q: 这个项目里为什么要把多轮状态分层管理，而不是把历史原样塞给模型？
-   A: 因为多轮对话既要连贯，也要控成本和控噪声。如果把所有历史原样塞给模型，token 很快失控，旧上下文还会把当前问题带偏。所以最近几轮放 Redis 这类短期状态层，保证当前轮连贯；更长历史做摘要归档到 MySQL 或文档存储；真正跨会话还要保留用户偏好、历史主题和反馈记录。这个设计落到项目里，本质上是在平衡回答连贯性、成本和可治理性。
+RAG 专项通常会考六件事：
 
-3. Q: 在这个项目里，query rewrite 和 query planner 为什么重要？
-   A: 因为真实用户提问经常很口语化、省略主语，甚至会带多轮指代。如果不先判断当前问题到底是独立提问、上下文追问还是复杂问题拆解，后面的检索很容易跑偏。planner 负责决定“该怎么搜”，rewrite 负责把问题改写成更适合检索系统处理的表达。
+1. 你是否知道朴素 RAG 的问题。
+2. 你是否理解 BM25、向量、Wiki recall、RRF、证据后处理各自职责。
+3. 你是否能讲清权限和元数据过滤为什么必须前置。
+4. 你是否能把 Citation、Trace、Eval 讲成工程闭环。
+5. 你是否能说明无证据时为什么不能让模型自由发挥。
+6. 你是否不会把 GraphRAG、MCP、Agent、生产指标说过头。
 
-## 缓存一致性与反馈闭环
+## 3. 核心链路
 
-1. Q: 为什么这个知识库项目也要认真处理缓存一致性？
-   A: 因为问答系统不是只查一次文档就结束了。热门问题、热门文档和热门检索结果通常会被缓存，但文档又会更新、下线或改权限。如果缓存不治理，就容易出现“文档已经变了，系统还在按旧证据回答”。所以缓存一定要和文档版本、更新时间、权限信息绑定，必要时还要做失效和重建。
+NoteWeave 团队 RAG 主链路可以按下面顺序讲：
 
-2. Q: 这个项目里的反馈闭环为什么不能只停在日志层？
-   A: 因为日志只能记录发生过什么，不能自动变成后续优化资产。用户反馈、人工修正、低分回答、转人工记录，这些都不该只停在日志里，而应该反向沉到 badcase、评测集、query rewrite 规则和知识库清洗流程里。这个闭环对项目真正有价值的地方，在于能持续把线上问题变成后续优化输入。
+```text
+上传分片
+-> merge 到对象存储
+-> DOCUMENT_PROCESS 异步解析
+-> parsed text / chunk / ES 索引 / activeIndexVersion
+-> chat session scope 与权限校验
+-> BM25 + 向量召回 + Wiki recall
+-> Weighted RRF 融合
+-> EvidencePostProcessor 证据治理
+-> TeamRagPromptBuilder 构造 grounded prompt
+-> LLM 回答
+-> Citation / RetrievalTrace / LLMCallLog 落库
+-> WebSocket runtime 与 Memory 写回策略
+```
+
+## 4. 问答与讲解
+
+### Q1：NoteWeave 里的文档入库链路是什么？
+
+#### 面试官为什么问
+
+RAG 质量先取决于数据入检索层之前是否被治理。面试官想看你是否只知道 query 阶段，还是理解 ingestion 阶段。
+
+#### 回答思路
+
+按上传、解析、切分、索引、版本切换、检索可用讲。
+
+#### 结合 NoteWeave 怎么答
+
+团队文档不是“上传即入向量库”，而是经过分片上传、对象存储、异步解析、parsed text 保存、DocumentChunk、ES BM25/向量索引和 activeIndexVersion 切换。
+
+#### 技术原理 / 链路设计讲解
+
+先治理再入索引，可以避免重复文档、脏文本、错误元数据和半成品索引进入问答链路。active version 能避免重建失败破坏当前可用索引。
+
+#### 实现兜底锚点
+
+- `DocumentUploadService`
+- `DocumentProcessingService`
+- `ChunkService`
+- `VectorIndexerService`
+- `Phase2UploadFlowIntegrationTest`
+- `Phase3DocumentProcessingIntegrationTest`
+
+#### 可直接复述的面试回答
+
+> NoteWeave 的文档入库不是上传后直接塞向量库，而是一条治理链路。前端先分片上传，后端合并到对象存储并创建 `FileObject` 和 `Document`；之后创建 `DOCUMENT_PROCESS` 任务，经 Outbox/Kafka 交给 Worker；Worker 解析文本、保存 parsed text、切 `DocumentChunk`，再写入 Elasticsearch 的 BM25 和向量索引。索引侧有版本概念，只有新版本完整构建成功后才切 active version，避免重建失败影响旧索引。这样做的核心是把 RAG 的数据质量问题前置处理，而不是等问答阶段再补救。
+
+#### 常见坑
+
+- 不要说所有文档类型和 OCR 都已经完整支持。
+- 不要忽略权限和状态过滤。
+
+### Q2：NoteWeave 的查询和对话链路是什么？
+
+#### 面试官为什么问
+
+这是 RAG 主链路题。面试官想听到权限、召回、融合、证据、生成、引用和观测。
+
+#### 回答思路
+
+按权限校验 -> session scope -> 混合召回 -> RRF -> EvidencePostProcessor -> PromptBuilder -> LLM -> Citation/Trace -> runtime 讲。
+
+#### 结合 NoteWeave 怎么答
+
+团队侧 HTTP 和 WebSocket 都复用 RAG 证据链；WebSocket 多了 runtime state、stop/resume 和流式事件。
+
+#### 技术原理 / 链路设计讲解
+
+RAG 的关键不是“把检索结果给模型”，而是控制哪些结果能进候选集、哪些证据能进上下文、答案如何回溯、问题如何排查。
+
+#### 实现兜底锚点
+
+- `TeamChatService`
+- `HybridRetriever`
+- `EvidencePostProcessor`
+- `TeamRagPromptBuilder`
+- `CitationService`
+- `ChatRuntimeService`
+
+#### 可直接复述的面试回答
+
+> 用户提问后，NoteWeave 先做身份和空间权限校验，再根据 chat session scope 限定知识库范围。检索层走 BM25、向量召回和 Wiki recall，通过 Weighted RRF 融合排序，再经过 EvidencePostProcessor 做去重、相邻 chunk 合并、低分过滤和同文档限流。证据足够时，PromptBuilder 按 grounded-answer 规则构造 prompt；证据不足时明确兜底，不让模型编造。回答生成后保存 assistant message、Citation、RetrievalTrace 和 LLMCallLog。WebSocket 场景下还会通过 Redis runtime state 处理流式 delta、stop、resume 和 partial content。这个链路的价值是让回答可控、可追踪、可排障。
+
+#### 常见坑
+
+- 不要把 query rewrite、reranker、复杂 planner 说成当前主链路全部已做满。
+- 不要说模型可以无证据自由发挥。
+
+### Q3：为什么用 Elasticsearch 做混合检索，而不是只用纯向量库或 MySQL？
+
+#### 面试官为什么问
+
+这是检索选型题。面试官想看你是否理解企业知识场景里语义、关键词、过滤和权限的组合需求。
+
+#### 回答思路
+
+讲纯向量、MySQL、ES 的边界，再回到 NoteWeave 的检索需求。
+
+#### 结合 NoteWeave 怎么答
+
+NoteWeave 需要 `spaceId`、`knowledgeBaseId`、`status`、`activeIndexVersion` 等过滤，也需要 BM25、向量和 Wiki recall 融合。
+
+#### 技术原理 / 链路设计讲解
+
+向量适合语义，BM25 适合精确词项，ES 适合把全文检索、过滤条件、排序和向量能力放在一个检索中枢。MySQL 更适合业务状态，不适合承担复杂全文和向量召回。
+
+#### 实现兜底锚点
+
+- `HybridRetriever`
+- `SearchDebugService`
+- `Phase9HybridRetrievalIntegrationTest`
+
+#### 可直接复述的面试回答
+
+> 我选择 Elasticsearch 作为检索中枢，是因为 NoteWeave 的团队知识问答不是只有语义相似，还需要精确术语、文档状态、空间权限、知识库范围和索引版本过滤。纯向量库在语义召回上有优势，但面对专有名词、编号、强过滤和权限时不够自然；MySQL 适合业务状态和事务，不适合做复杂全文和向量检索。ES 能把 BM25、过滤条件、排序和向量能力放在同一条检索链路里，更适合这种“语义 + 关键词 + 权限 + 版本”的企业知识场景。
+
+#### 常见坑
+
+- 不要说 ES 是唯一选择。
+- 不要把向量检索贬成没价值，它适合语义近似。
+
+### Q4：为什么把 NoteWeave 定义成实用型增强 RAG，而不是重型 Agent？
+
+#### 面试官为什么问
+
+这是 Agent 风险词题。面试官想看你是否会过度包装。
+
+#### 回答思路
+
+先讲主目标是知识问答可信和可治理，再讲受控 workflow 和未来 agentic 扩展。
+
+#### 结合 NoteWeave 怎么答
+
+当前主线是 RAG、证据链、Artifact、Methodology、Memory 和 Admin/Ops；Skill 更像可控生成流水线，不是完整开放 Agent 平台。
+
+#### 技术原理 / 链路设计讲解
+
+知识库系统最重要的是可控上下文、证据和权限。如果一开始做开放 Agent，会增加不确定性，反而让检索和证据治理变弱。
+
+#### 实现兜底锚点
+
+- `ArtifactPlanExecutor`
+- `SkillExecutionLog`
+- `MethodologyMatcher`
+- `PersonalGenerationService`
+
+#### 可直接复述的面试回答
+
+> 我更愿意把 NoteWeave 定义成实用型增强 RAG 和知识工作台，而不是重型 Agent。因为当前核心目标是稳定地把团队和个人知识检索出来、生成可引用回答、沉淀成长期知识，并能排查问题。项目里确实有 Methodology、Skill pipeline、Artifact plan 这些编排能力，但它更像受控生成流水线，不是完整开放的自主 Agent 平台。这样设计是为了优先保证权限、证据和可控性。后续如果要引入更强 agentic 能力，我会把它放在 source discovery、retrieval planning、output revision 这些边界清晰的位置，而不是让 Agent 直接绕过证据链自由行动。
+
+#### 常见坑
+
+- 不要说当前已经是完整多 Agent 系统。
+- 不要把 MCP 夸大成完整开放平台主链路；更准确的说法是当前已经落了远程 B 站 tool service 这个样例。
+
+### Q5：RAG 效果怎么评估？
+
+#### 面试官为什么问
+
+这是指标和诚实边界题。
+
+#### 回答思路
+
+先说当前不编造生产数字，再讲已有观测面和会评估的指标。
+
+#### 结合 NoteWeave 怎么答
+
+NoteWeave 有 RetrievalTrace、LLMCallLog、AnswerFeedback、RagEvalRun、PromptVersion 和 Admin Observability，可用于构建评测闭环。
+
+#### 技术原理 / 链路设计讲解
+
+RAG 评估要拆成检索层、生成层和端到端层。不能只看回答流畅度，也不能只看 citation coverage。
+
+#### 实现兜底锚点
+
+- `RetrievalTrace`
+- `LLMCallLog`
+- `RagEvalRun`
+- `AdminObservabilityController`
+- `Phase14ObservabilityEvaluationIntegrationTest`
+
+#### 可直接复述的面试回答
+
+> RAG 评估我会拆成三层。检索层看 recall@k、MRR、命中证据是否排在前面；生成层看答案是否使用了正确证据、是否幻觉、是否覆盖问题；端到端层看 citation coverage、无证据兜底率、延迟、错误率和用户反馈。NoteWeave 当前不会编造生产准确率，但已经有 RetrievalTrace、LLMCallLog、AnswerFeedback、RagEvalRun 和 PromptVersion 这些观测与评测基础。如果要给指标，我会先构造评测集和压测环境，再用这些 trace 和 eval run 计算，而不是凭感觉说一个数字。
+
+#### 常见坑
+
+- 不要编造“准确率 92%”。
+- 不要只看用户主观评价。
+
+## 5. 3 分钟总答版
+
+如果面试官说“你把 RAG 这块完整讲一下”，可以用下面这段：
+
+> NoteWeave 的团队 RAG 不是上传文档后做一次向量 top-k 就结束，而是一条带治理、权限和证据闭环的链路。文档先经过分片上传、合并、异步解析、chunk、ES BM25 和向量索引，以及 activeIndexVersion 切换，所以数据进入检索层之前已经被治理过。查询时系统先做身份和空间权限校验，再根据 session scope 限定知识库范围，之后走 BM25、向量召回和 Wiki recall，用 Weighted RRF 做融合，再由 EvidencePostProcessor 做去重、相邻 chunk 合并、低分过滤和同文档限流。真正给模型的不是粗糙的 top-k，而是治理后的 evidence pack。生成后还会保存 Citation、RetrievalTrace 和 LLMCallLog，方便从答案一路反查到检索、证据和模型调用。这个设计的核心不是让模型答得更像，而是让答案更可控、可追踪、可排障。当前可以坚定讲 Hybrid RAG、Citation、Trace 和 Eval 闭环；MCP 这块也不能再笼统讲成“完全没做”，因为已经有远程 B 站 tool service 落地，但不会把它夸大成完整开放平台或主检索链路能力。
+
+## 6. 连续追问速查
+
+- 为什么 BM25 现在仍然重要：
+  因为术语、编号、专有名词和强精确匹配场景里，BM25 仍然是关键召回信号。
+- 为什么权限过滤最好前置：
+  因为后置过滤会污染候选集，小 k 场景下更容易把本该命中的结果挤掉。
+- 为什么 Citation 和 RetrievalTrace 要分开：
+  Citation 解决“回答引用了什么证据”，Trace 解决“系统为什么会得到这批候选和排序结果”。
+- 无证据时为什么要拒答或兜底：
+  因为知识系统的可信度比覆盖率更重要，不能为了表面回答率让模型自由编造。
+
+## 7. 边界和不能说满的地方
+
+- 可以坚定主讲：Hybrid RAG、权限过滤、Citation、RetrievalTrace、Eval、无证据兜底、activeIndexVersion。
+- 可以作为优化方向讲：更复杂的 query rewrite、reranker、多阶段 planner、更丰富的评测集。
+- 只能作为扩展方向讲：GraphRAG 主链路、完整开放式 MCP 平台主链路、完整开放 Agent、真实线上准确率和生产 QPS/P99。

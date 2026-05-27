@@ -37,12 +37,13 @@ import com.noteweave.prompt.model.PromptVersion;
 import com.noteweave.prompt.service.PromptTemplateRenderer;
 import com.noteweave.prompt.service.PromptVersionService;
 import com.noteweave.studio.service.ArtifactGenerateTaskInput;
+import com.noteweave.studio.service.StudioMcpTool;
+import com.noteweave.studio.service.StudioMcpToolRegistry;
 import com.noteweave.task.worker.TaskExecutionContext;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -66,6 +67,7 @@ public class ArtifactPlanExecutor {
     private final RetrievalTraceService retrievalTraceService;
     private final PromptVersionService promptVersionService;
     private final PromptTemplateRenderer promptTemplateRenderer;
+    private final StudioMcpToolRegistry studioMcpToolRegistry;
 
     public ArtifactExecutionResult execute(TaskExecutionContext taskContext) {
         ArtifactGenerateTaskInput input = taskContext.readInput(ArtifactGenerateTaskInput.class);
@@ -79,7 +81,7 @@ public class ArtifactPlanExecutor {
 
         GenerationState state = new GenerationState(taskContext.task().getId(), taskContext.task().getUserId(), input, artifact);
         try {
-            for (String skillName : planFor(input.getArtifactType())) {
+            for (String skillName : planFor(input)) {
                 taskContext.ensureNotCancelled();
                 taskContext.publishProgress(skillName, Map.of("skill", skillName));
                 runSkill(skillName, state);
@@ -96,60 +98,51 @@ public class ArtifactPlanExecutor {
         }
     }
 
-    private List<String> planFor(ArtifactType artifactType) {
-        return switch (artifactType) {
-            case REPORT -> List.of(
-                    "LoadGenerationContextSkill",
-                    "SelectEvidenceSkill",
-                    "GenerateReportSkill",
-                    "SaveArtifactSkill"
-            );
-            case STUDY_GUIDE -> List.of(
-                    "LoadGenerationContextSkill",
-                    "SelectArticleCardSkill",
-                    "SelectConceptCardSkill",
-                    "GenerateStudyGuideSkill",
-                    "SaveArtifactSkill"
-            );
-            case BRIEFING -> List.of(
-                    "LoadGenerationContextSkill",
-                    "SelectEvidenceSkill",
-                    "GenerateBriefingSkill",
-                    "SaveArtifactSkill"
-            );
-            case FAQ -> List.of(
-                    "LoadGenerationContextSkill",
-                    "SelectEvidenceSkill",
-                    "GenerateFaqSkill",
-                    "SaveArtifactSkill"
-            );
-            case COMPARISON -> List.of(
-                    "LoadGenerationContextSkill",
-                    "SelectEvidenceSkill",
-                    "GenerateComparisonSkill",
-                    "SaveArtifactSkill"
-            );
-            case WORK_PREP -> List.of(
-                    "LoadGenerationContextSkill",
-                    "SelectConceptCardSkill",
-                    "GenerateWorkPrepSkill",
-                    "SaveArtifactSkill"
-            );
-            case READING_NOTES -> List.of(
-                    "LoadGenerationContextSkill",
-                    "SelectArticleCardSkill",
-                    "SelectEvidenceSkill",
-                    "GenerateReadingNotesSkill",
-                    "SaveArtifactSkill"
-            );
-            case WIKI_DRAFT -> List.of(
-                    "LoadGenerationContextSkill",
-                    "SelectEvidenceSkill",
-                    "GenerateWikiDraftSkill",
-                    "SaveArtifactSkill"
-            );
+    private List<String> planFor(ArtifactGenerateTaskInput input) {
+        List<String> plan = new ArrayList<>();
+        plan.add("LoadGenerationContextSkill");
+        if (studioMcpToolRegistry.resolve(input.getParams()).isPresent()) {
+            plan.add("LoadMcpToolContextSkill");
+        }
+        switch (input.getArtifactType()) {
+            case REPORT -> {
+                plan.add("SelectEvidenceSkill");
+                plan.add("GenerateReportSkill");
+            }
+            case STUDY_GUIDE -> {
+                plan.add("SelectArticleCardSkill");
+                plan.add("SelectConceptCardSkill");
+                plan.add("GenerateStudyGuideSkill");
+            }
+            case BRIEFING -> {
+                plan.add("SelectEvidenceSkill");
+                plan.add("GenerateBriefingSkill");
+            }
+            case FAQ -> {
+                plan.add("SelectEvidenceSkill");
+                plan.add("GenerateFaqSkill");
+            }
+            case COMPARISON -> {
+                plan.add("SelectEvidenceSkill");
+                plan.add("GenerateComparisonSkill");
+            }
+            case WORK_PREP -> {
+                plan.add("SelectConceptCardSkill");
+                plan.add("GenerateWorkPrepSkill");
+            }
+            case READING_NOTES -> {
+                plan.add("SelectArticleCardSkill");
+                plan.add("SelectEvidenceSkill");
+                plan.add("GenerateReadingNotesSkill");
+            }
+            case WIKI_DRAFT -> {
+                plan.add("SelectEvidenceSkill");
+                plan.add("GenerateWikiDraftSkill");
+            }
             default -> throw new BusinessException(ErrorCode.ARTIFACT_TYPE_UNSUPPORTED);
-        };
+        }
+        plan.add("SaveArtifactSkill");
+        return List.copyOf(plan);
     }
 
     private void runSkill(String skillName, GenerationState state) {
@@ -158,6 +151,7 @@ public class ArtifactPlanExecutor {
         try {
             SkillOutcome outcome = switch (skillName) {
                 case "LoadGenerationContextSkill" -> loadGenerationContext(state);
+                case "LoadMcpToolContextSkill" -> loadMcpToolContext(state);
                 case "SelectEvidenceSkill" -> selectEvidence(state);
                 case "SelectArticleCardSkill" -> selectArticleCards(state);
                 case "SelectConceptCardSkill" -> selectConceptCards(state);
@@ -245,7 +239,7 @@ public class ArtifactPlanExecutor {
                     .flatMap(java.util.Optional::stream)
                     .toList();
             state.sourceRefs.add(new SourceRef(ArtifactSourceType.CHAT_MESSAGE, message.getId()));
-            if (state.citations.isEmpty()) {
+            if (state.citations.isEmpty() && studioMcpToolRegistry.resolve(state.input.getParams()).isEmpty()) {
                 throw new BusinessException(ErrorCode.PLAN_EXECUTION_FAILED, "Chat message has no citations to ground the artifact");
             }
         }
@@ -259,6 +253,21 @@ public class ArtifactPlanExecutor {
             output.put("methodologyName", state.methodologyCard.getName());
         }
         return SkillOutcome.simple(output);
+    }
+
+    private SkillOutcome loadMcpToolContext(GenerationState state) {
+        StudioMcpToolRegistry.McpInvocationSpec spec = studioMcpToolRegistry.resolve(state.input.getParams())
+                .orElseThrow(() -> new BusinessException(ErrorCode.PLAN_EXECUTION_FAILED, "MCP tool config is missing"));
+        StudioMcpTool tool = studioMcpToolRegistry.getRequired(spec.toolName());
+        StudioMcpTool.ToolResult result = tool.invoke(spec.args());
+        state.mcpToolResult = result;
+        return SkillOutcome.simple(Map.of(
+                "redacted", true,
+                "toolName", result.toolName(),
+                "displayName", result.displayName(),
+                "title", result.title(),
+                "output", result.output()
+        ));
     }
 
     private SkillOutcome selectEvidence(GenerationState state) {
@@ -402,6 +411,10 @@ public class ArtifactPlanExecutor {
             }
             prompt.append("\n");
         }
+        if (state.mcpToolResult != null) {
+            prompt.append("MCP Tool Context (").append(state.mcpToolResult.toolName()).append("):\n");
+            prompt.append(state.mcpToolResult.promptContext()).append("\n\n");
+        }
         if (state.focusMessage != null) {
             prompt.append("Chat Context:\n");
             for (ChatMessage message : state.sessionMessages) {
@@ -422,14 +435,19 @@ public class ArtifactPlanExecutor {
     }
 
     private Map<String, Object> redactedInputSummary(String skillName, GenerationState state) {
-        return Map.of(
-                "redacted", true,
-                "skillName", skillName,
-                "artifactType", state.input.getArtifactType().name(),
-                "sourceScopeType", state.input.getSourceScopeType(),
-                "sourceCount", state.input.getSourceIds() == null ? 0 : state.input.getSourceIds().size(),
-                "citationCount", state.citations == null ? 0 : state.citations.size()
-        );
+        var resolved = studioMcpToolRegistry.resolve(state.input.getParams());
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("redacted", true);
+        summary.put("skillName", skillName);
+        summary.put("artifactType", state.input.getArtifactType().name());
+        summary.put("sourceScopeType", state.input.getSourceScopeType());
+        summary.put("sourceCount", state.input.getSourceIds() == null ? 0 : state.input.getSourceIds().size());
+        summary.put("citationCount", state.citations == null ? 0 : state.citations.size());
+        summary.put("hasMcpTool", resolved.isPresent());
+        if (resolved.isPresent()) {
+            summary.put("mcpToolName", resolved.get().toolName());
+        }
+        return summary;
     }
 
     private String resolveTitle(GenerationState state, String content) {
@@ -455,6 +473,9 @@ public class ArtifactPlanExecutor {
         Object topic = state.input.getParams() == null ? null : state.input.getParams().get("topic");
         if (topic != null && !topic.toString().isBlank()) {
             return topic.toString().trim();
+        }
+        if (state.mcpToolResult != null && state.mcpToolResult.title() != null && !state.mcpToolResult.title().isBlank()) {
+            return state.mcpToolResult.title();
         }
         return state.artifact.getTitle();
     }
@@ -565,6 +586,7 @@ public class ArtifactPlanExecutor {
         private final List<SourceRef> sourceRefs = new ArrayList<>();
         private Long artifactVersionId;
         private Long retrievalTraceId;
+        private StudioMcpTool.ToolResult mcpToolResult;
 
         private GenerationState(Long taskId, Long userId, ArtifactGenerateTaskInput input, Artifact artifact) {
             this.taskId = taskId;

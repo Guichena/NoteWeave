@@ -1,5 +1,9 @@
 # 文件：06_Memory_WebSocket_会话恢复.md
 
+## 0. 本篇定位
+
+这篇负责 WebSocket Runtime、会话恢复和长期记忆的主题深答。它适合回答为什么 HTTP 不够、stop/resume 如何做、Redis 和 MySQL 如何分工，以及长期记忆写回和读取为什么要分层。
+
 ## 1. 本主题覆盖的通用问题
 
 - 记忆系统怎么设计？

@@ -10,6 +10,7 @@ import com.noteweave.personal.methodology.MethodologyMatcher;
 import com.noteweave.personal.methodology.model.MethodologyCard;
 import com.noteweave.personal.project.model.ResearchProject;
 import com.noteweave.personal.project.service.ResearchProjectService;
+import com.noteweave.studio.service.StudioMcpToolRegistry;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,7 @@ public class ResearchContextService {
     private final ConceptCardRepository conceptCardRepository;
     private final SynthesisCardRepository synthesisCardRepository;
     private final MethodologyMatcher methodologyMatcher;
+    private final StudioMcpToolRegistry studioMcpToolRegistry;
 
     public ResearchGenerationContext load(Long userId, Long researchProjectId, ArtifactType artifactType, Map<String, Object> params) {
         ResearchProject project = researchProjectService.getRequiredActiveProject(userId, researchProjectId);
@@ -34,9 +36,15 @@ public class ResearchContextService {
         List<com.noteweave.personal.card.model.SynthesisCard> synthesisCards =
                 synthesisCardRepository.findByResearchProjectIdAndSpaceIdOrderByUpdatedAtDesc(project.getId(), project.getSpaceId());
         if (articleCards.isEmpty() && conceptCards.isEmpty() && synthesisCards.isEmpty()) {
-            throw new BusinessException(ErrorCode.RESEARCH_CONTEXT_EMPTY, "No compiled personal wiki cards available for generation");
+            if (!hasMcpTool(params)) {
+                throw new BusinessException(ErrorCode.RESEARCH_CONTEXT_EMPTY, "No compiled personal wiki cards available for generation");
+            }
         }
         MethodologyCard methodologyCard = methodologyMatcher.match(userId, project.getId(), artifactType, params).orElse(null);
         return new ResearchGenerationContext(project, articleCards, conceptCards, synthesisCards, methodologyCard);
+    }
+
+    private boolean hasMcpTool(Map<String, Object> params) {
+        return studioMcpToolRegistry.hasConfiguredTool(params);
     }
 }

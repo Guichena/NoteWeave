@@ -55,6 +55,87 @@ function pageItems(response) {
   return response?.json?.data?.items || response?.json?.data?.content || response?.json?.data || [];
 }
 
+async function poll(page, producer, { timeoutMs = 30000, intervalMs = 1000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = null;
+  while (Date.now() < deadline) {
+    try {
+      const result = await producer();
+      if (result) {
+        return result;
+      }
+      lastError = null;
+    } catch (error) {
+      lastError = error;
+    }
+    await page.waitForTimeout(intervalMs);
+  }
+  if (lastError) {
+    throw lastError;
+  }
+  return null;
+}
+
+async function waitForKnowledgeBase(page, spaceId, name) {
+  return poll(page, async () => {
+    const response = await api(page, "GET", `/team/spaces/${spaceId}/knowledge-bases`);
+    return pageItems(response).find((item) => item.name === name) || null;
+  }, { timeoutMs: 15000, intervalMs: 800 });
+}
+
+async function waitForIndexedDocument(page, kbId, fileName, run) {
+  return poll(page, async () => {
+    const response = await api(page, "GET", `/team/knowledge-bases/${kbId}/documents`);
+    const document = pageItems(response).find((item) => item.originalFilename === fileName || item.title === fileName);
+    if (!document) {
+      return null;
+    }
+    const raw = `${document.status || ""} ${document.parseStatus || ""} ${document.indexStatus || ""}`.toUpperCase();
+    if (raw.includes("FAIL")) {
+      issue(run, "document_failed", `${fileName} entered failure state: ${raw}`);
+      return document;
+    }
+    if (raw.includes("INDEX") || raw.includes("READY") || raw.includes("SUCCESS")) {
+      return document;
+    }
+    return null;
+  }, { timeoutMs: 45000, intervalMs: 1500 });
+}
+
+async function waitForProject(page, title) {
+  return poll(page, async () => {
+    const response = await api(page, "GET", "/personal/research-projects");
+    return pageItems(response).find((item) => item.title === title) || null;
+  }, { timeoutMs: 15000, intervalMs: 800 });
+}
+
+async function waitForProjectSource(page, projectId, title) {
+  return poll(page, async () => {
+    const response = await api(page, "GET", `/personal/research-projects/${projectId}/sources`);
+    return pageItems(response).find((item) => item.title === title) || null;
+  }, { timeoutMs: 15000, intervalMs: 800 });
+}
+
+async function waitForProjectCards(page, projectId, run) {
+  try {
+    return await poll(page, async () => {
+      const [articles, concepts] = await Promise.all([
+        api(page, "GET", `/personal/research-projects/${projectId}/article-cards`),
+        api(page, "GET", `/personal/research-projects/${projectId}/concept-cards`)
+      ]);
+      const articleItems = pageItems(articles);
+      const conceptItems = pageItems(concepts);
+      if (articleItems.length || conceptItems.length) {
+        return { articleItems, conceptItems };
+      }
+      return null;
+    }, { timeoutMs: 30000, intervalMs: 1500 });
+  } catch (error) {
+    issue(run, "project_cards_timeout", error.message);
+    return null;
+  }
+}
+
 async function currentWorkspace(page) {
   const spaces = await api(page, "GET", "/spaces?page=1&pageSize=100");
   const items = pageItems(spaces);
@@ -222,6 +303,9 @@ async function waitForChatCompletion(page, run) {
 async function adminFlow(page, run) {
   const { teamSpace } = await currentWorkspace(page);
   const spaceId = teamSpace.id;
+  const kbName = `Smoke KB ${Date.now()}`;
+  const uploadKeyword = `smoke-upload-keyword-${Date.now()}`;
+  const uploadFileName = `smoke-upload-${Date.now()}.md`;
   await snapshot(page, run, "post-login");
 
   await clickGlobalNav(page, "/spaces", "spaces-nav", run);
@@ -232,10 +316,43 @@ async function adminFlow(page, run) {
 
   await clickGlobalNav(page, `/spaces/${spaceId}/team/knowledge-bases`, "team-knowledge-nav", run);
   await snapshot(page, run, "knowledge-list");
-  await clickIfVisible(page, '[data-action="open-kb"]', "open-kb", run);
+  await fillIfExists(page, '#create-kb-form input[name="name"]', kbName, "create-kb-name", run);
+  await fillIfExists(page, '#create-kb-form textarea[name="description"]', "Playwright smoke knowledge base", "create-kb-description", run);
+  await clickIfVisible(page, '#create-kb-form button[type="submit"]', "create-kb-submit", run);
+  const smokeKb = await waitForKnowledgeBase(page, spaceId, kbName);
+  if (!smokeKb) {
+    issue(run, "missing_smoke_kb", kbName);
+    return;
+  }
+  const openKbButton = page.locator(`[data-action="open-kb"][data-kb-id="${smokeKb.id}"]`).first();
+  if (await openKbButton.count()) {
+    await openKbButton.click();
+    await waitForAppIdle(page);
+    run.steps.push("clicked:open-smoke-kb");
+  } else {
+    await page.goto(`${BASE_URL}/spaces/${spaceId}/team/knowledge-bases/${smokeKb.id}`, { waitUntil: "domcontentloaded" });
+    await waitForAppIdle(page);
+    run.steps.push("goto:open-smoke-kb");
+  }
   await snapshot(page, run, "knowledge-detail");
-  await fillIfExists(page, '#kb-search-form input[name="keyword"]', "policy", "kb-search-keyword", run);
+  await page.locator('#upload-document-form input[name="file"]').setInputFiles({
+    name: uploadFileName,
+    mimeType: "text/markdown",
+    buffer: Buffer.from(`# Smoke Upload\n\n${uploadKeyword}\n\nThis document validates team knowledge upload.\n`, "utf8")
+  });
+  run.steps.push(`attached:${uploadFileName}`);
+  await clickIfVisible(page, '#upload-document-form button[type="submit"]', "upload-document-submit", run);
+  const indexedDocument = await waitForIndexedDocument(page, smokeKb.id, uploadFileName, run);
+  if (!indexedDocument) {
+    issue(run, "document_index_timeout", uploadFileName);
+  } else {
+    run.steps.push(`indexed-document:${indexedDocument.id}`);
+  }
+  await fillIfExists(page, '#kb-search-form input[name="keyword"]', uploadKeyword, "kb-search-keyword", run);
   await clickIfVisible(page, '#kb-search-form button[type="submit"]', "kb-search-submit", run);
+  if (await page.locator(".search-result-item").count() === 0) {
+    issue(run, "knowledge_search_empty", uploadKeyword);
+  }
   await snapshot(page, run, "knowledge-search");
 
   const session = await ensureSmokeChatSession(page, spaceId);
@@ -314,19 +431,47 @@ async function adminFlow(page, run) {
 async function aliceFlow(page, run) {
   const { personalSpace } = await currentWorkspace(page);
   const personalSpaceId = personalSpace.id;
+  const projectTitle = `Smoke Project ${Date.now()}`;
+  const sourceTitle = `Smoke Source ${Date.now()}`;
+  const sourceBody = `This is a browser smoke text source for ${projectTitle}.`;
   await snapshot(page, run, "post-login");
 
   await clickGlobalNav(page, `/spaces/${personalSpaceId}/personal/projects`, "personal-research-nav", run);
   await snapshot(page, run, "projects");
-  await clickIfVisible(page, '[data-action="open-project"]', "open-project", run);
+  await fillIfExists(page, '#create-project-form input[name="title"]', projectTitle, "create-project-title", run);
+  await fillIfExists(page, '#create-project-form textarea[name="description"]', "Playwright smoke personal research project", "create-project-description", run);
+  await fillIfExists(page, '#create-project-form textarea[name="researchGoal"]', "Validate source import, card compile and generation entry.", "create-project-goal", run);
+  await clickIfVisible(page, '#create-project-form button[type="submit"]', "create-project-submit", run);
+  const smokeProject = await waitForProject(page, projectTitle);
+  if (!smokeProject) {
+    issue(run, "missing_smoke_project", projectTitle);
+    return;
+  }
+  const openProjectButton = page.locator(`[data-action="open-project"][data-project-id="${smokeProject.id}"]`).first();
+  if (await openProjectButton.count()) {
+    await openProjectButton.click();
+    await waitForAppIdle(page);
+    run.steps.push("clicked:open-smoke-project");
+  } else {
+    await page.goto(`${BASE_URL}/spaces/${personalSpaceId}/personal/projects/${smokeProject.id}`, { waitUntil: "domcontentloaded" });
+    await waitForAppIdle(page);
+    run.steps.push("goto:open-smoke-project");
+  }
   await snapshot(page, run, "project-detail");
 
   await clickIfVisible(page, '.tab-link:has-text("Sources"), .tab-link:has-text("资料")', "project-sources-tab", run);
   await snapshot(page, run, "project-sources");
-  await fillIfExists(page, '#source-text-form input[name="title"]', "Smoke Source", "text-source-title", run);
+  await fillIfExists(page, '#source-text-form input[name="title"]', sourceTitle, "text-source-title", run);
   await fillIfExists(page, '#source-text-form textarea[name="content"]', "这是浏览器实测写入的一条文本资料源。", "text-source-content", run);
   await clickIfVisible(page, '#source-text-form button[type="submit"]', "project-add-text-source-submit", run);
+  const smokeSource = await waitForProjectSource(page, smokeProject.id, sourceTitle);
+  if (!smokeSource) {
+    issue(run, "missing_smoke_source", sourceTitle);
+    return;
+  }
   await snapshot(page, run, "project-sources-added");
+  await clickIfVisible(page, `[data-action="source-compile"][data-source-id="${smokeSource.id}"]`, "project-source-compile", run);
+  await waitForProjectCards(page, smokeProject.id, run);
 
   await clickIfVisible(page, '.tab-link:has-text("Cards"), .tab-link:has-text("卡片")', "project-cards-tab", run);
   await snapshot(page, run, "project-cards");

@@ -1,5 +1,9 @@
 # 文件：07_个人研究Source到Wiki编译.md
 
+## 0. 本篇定位
+
+这篇负责个人研究链路的深挖。它适合回答 Source 如何导入、为什么要编译成 ArticleCard / ConceptCard、Evidence backtrace 为什么必要、Artifact 为什么不等于长期知识，以及个人研究如何从资料整理走到结构化沉淀。
+
 ## 1. 本主题面试官想考什么
 
 这个主题考察个人知识管理链路：Source 导入、URL 安全、可读文本保证、LLM 结构化抽取、证据回溯、概念合并、Card 搜索和 owner-only 权限。它能体现 NoteWeave 不只是团队 RAG，还有个人研究沉淀闭环。

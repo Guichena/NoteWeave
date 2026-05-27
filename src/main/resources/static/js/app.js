@@ -5,6 +5,31 @@ import { renderMarkdown } from "./markdown.js";
 const root = document.getElementById("app");
 const CHUNK_SIZE = 1024 * 1024;
 const FINAL_TASK_STATUSES = new Set(["SUCCESS", "FAILED", "CANCELLED", "TIMEOUT"]);
+const FORM_MODAL_TITLES = {
+    "create-space-form": "创建空间",
+    "create-session-form": "新建会话",
+    "create-kb-form": "创建知识库",
+    "upload-document-form": "上传文档",
+    "kb-search-form": "检索测试",
+    "create-project-form": "创建研究项目",
+    "source-file-form": "上传资料",
+    "source-url-form": "添加链接资料",
+    "source-text-form": "添加文本资料",
+    "project-generate-form": "生成成果",
+    "studio-task-form": "启动生成任务",
+    "artifact-edit-form": "编辑成果",
+    "distill-artifact-form": "沉淀到个人 Wiki",
+    "publish-artifact-wiki-form": "发布到团队 Wiki",
+    "wiki-edit-form": "编辑 Wiki",
+    "wiki-create-form": "创建 Wiki 草稿",
+    "space-memory-form": "写入空间记忆",
+    "user-memory-form": "写入用户记忆",
+    "admin-task-filter-form": "筛选任务",
+    "eval-case-form": "创建评测案例",
+    "eval-run-form": "启动评测运行",
+    "retrieval-trace-form": "查看检索追踪"
+};
+const INLINE_FORM_MODAL_EXCLUDES = new Set(["login-form", "register-form", "chat-message-form"]);
 
 const state = {
     route: null,
@@ -118,6 +143,7 @@ const state = {
 };
 
 let navigationVersion = 0;
+let lastRenderedLocation = `${window.location.pathname}${window.location.search}`;
 let toastCounter = 0;
 const taskPollers = new Map();
 
@@ -424,6 +450,16 @@ function navigate(path, replace = false) {
         window.history.pushState({}, "", path);
     }
     renderRoute();
+}
+
+function resetRouteScroll() {
+    window.scrollTo({ top: 0, left: 0 });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    root.querySelectorAll(".main-canvas, .main-canvas-body, .page-body").forEach((element) => {
+        element.scrollTop = 0;
+        element.scrollLeft = 0;
+    });
 }
 
 function routeLink(name, spaceId, extra = null) {
@@ -1081,14 +1117,90 @@ function paint() {
     }
     state.registry.citations = {};
     root.innerHTML = buildApp();
+    enhanceInlineForms();
+    enhanceResponsiveTables();
+}
+
+function enhanceInlineForms() {
+    root.querySelectorAll("form.inline-form").forEach((form) => {
+        if (!(form instanceof HTMLFormElement) || !form.id) {
+            return;
+        }
+        if (INLINE_FORM_MODAL_EXCLUDES.has(form.id) || form.closest(".modal-dialog")) {
+            return;
+        }
+        const title = FORM_MODAL_TITLES[form.id] || "打开操作";
+        const entry = document.createElement("div");
+        entry.className = "form-modal-entry";
+        entry.innerHTML = `
+            <div class="form-modal-entry-copy">
+                <strong>${escapeHtml(title)}</strong>
+                <span>${escapeHtml(form.dataset.modalHint || "弹窗表单")}</span>
+            </div>
+            <button class="button" type="button" data-action="open-inline-form" data-form-id="${escapeHtml(form.id)}" aria-label="${escapeHtml(title)}">打开</button>
+        `;
+        form.hidden = true;
+        form.setAttribute("aria-hidden", "true");
+        form.before(entry);
+    });
+}
+
+function enhanceResponsiveTables() {
+    root.querySelectorAll(".table-wrap table").forEach((table) => {
+        const headers = Array.from(table.querySelectorAll("thead th"))
+            .map((header) => header.textContent.trim());
+        table.querySelectorAll("tbody tr").forEach((row) => {
+            Array.from(row.children).forEach((cell, index) => {
+                if (cell instanceof HTMLTableCellElement && headers[index]) {
+                    cell.dataset.label = headers[index];
+                }
+            });
+        });
+    });
+}
+
+function cloneFormForModal(form) {
+    const clone = form.cloneNode(true);
+    clone.hidden = false;
+    clone.removeAttribute("hidden");
+    clone.removeAttribute("aria-hidden");
+    clone.classList.add("modal-inline-form");
+    return clone.outerHTML;
+}
+
+function openInlineFormModal(trigger) {
+    const formId = trigger?.dataset?.formId;
+    if (!formId) {
+        return;
+    }
+    const entry = trigger.closest(".form-modal-entry");
+    const form = entry?.nextElementSibling instanceof HTMLFormElement
+        ? entry.nextElementSibling
+        : Array.from(root.querySelectorAll("form.inline-form")).find((item) => item.id === formId && !item.closest(".modal-dialog"));
+    if (!(form instanceof HTMLFormElement)) {
+        return;
+    }
+    const title = FORM_MODAL_TITLES[form.id] || "打开操作";
+    state.ui.drawer = {
+        title,
+        html: `<div class="modal-form-shell">${cloneFormForModal(form)}</div>`,
+        source: "inline-form"
+    };
+    paint();
 }
 
 async function renderRoute() {
     const version = ++navigationVersion;
+    const nextLocation = `${window.location.pathname}${window.location.search}`;
+    const shouldResetScroll = nextLocation !== lastRenderedLocation;
+    lastRenderedLocation = nextLocation;
     state.route = parseRoute(window.location.pathname);
     state.ui.pageError = null;
     state.ui.isPageLoading = true;
     paint();
+    if (shouldResetScroll) {
+        resetRouteScroll();
+    }
 
     try {
         await bootstrapRoute(state.route);
@@ -1098,6 +1210,9 @@ async function renderRoute() {
         state.ui.isPageLoading = false;
         state.ui.pageError = null;
         paint();
+        if (shouldResetScroll) {
+            resetRouteScroll();
+        }
         if (state.route.name === "team-chat" || state.route.name === "workbench-chat") {
             await ensureChatSocket();
             resumeActiveSession();
@@ -1109,6 +1224,9 @@ async function renderRoute() {
         state.ui.isPageLoading = false;
         state.ui.pageError = error;
         paint();
+        if (shouldResetScroll) {
+            resetRouteScroll();
+        }
     }
 }
 
@@ -1130,8 +1248,8 @@ function buildApp() {
                     ${renderPageContent(route)}
                 </div>
             </main>
-            ${renderInspector()}
         </div>
+        ${renderModalInspector()}
         ${renderToasts()}
     `;
 }
@@ -1649,6 +1767,27 @@ function renderInspector() {
 
 function renderDrawer() {
     return renderInspector();
+}
+
+function renderModalInspector() {
+    if (!state.ui.drawer) {
+        return "";
+    }
+    return `
+        <div class="modal-layer" role="presentation">
+            <button class="modal-backdrop" type="button" data-action="close-drawer" aria-label="关闭弹窗"></button>
+            <aside class="inspector modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+                <div class="inspector-header">
+                    <div>
+                        <span class="context-kicker">Preview</span>
+                        <h2 id="modal-title">${escapeHtml(state.ui.drawer.title)}</h2>
+                    </div>
+                    <button class="ghost-button modal-close-button" type="button" data-action="close-drawer" aria-label="关闭弹窗">关闭</button>
+                </div>
+                <div class="inspector-body">${state.ui.drawer.html}</div>
+            </aside>
+        </div>
+    `;
 }
 
 function renderToasts() {
@@ -3701,7 +3840,77 @@ function findSkill(skillId) {
     return state.studio.skills.find((skill) => skill.id === skillId) || null;
 }
 
-async function createArtifactTask(spaceId, projectId, skillId, topic, methodologyCardId = null) {
+function isMcpSkill(skill) {
+    return Boolean(skill?.mcpToolName);
+}
+
+function buildArtifactTaskParams(skill, topic, methodologyCardId = null, mcpUrl = "") {
+    const params = {
+        artifactType: skill.artifactType,
+        topic,
+        methodologyCardId: methodologyCardId || null
+    };
+    if (isMcpSkill(skill)) {
+        params.mcpToolName = skill.mcpToolName;
+        params.mcpArgs = { url: String(mcpUrl || "").trim() };
+    }
+    return params;
+}
+
+function renderSkillFormFields(skill) {
+    if (!isMcpSkill(skill)) {
+        return "";
+    }
+    return `
+        <div class="field">
+            <label>Bilibili 链接</label>
+            <input name="mcpUrl" type="url" required placeholder="https://www.bilibili.com/video/BV...">
+            <div class="muted">显式 MCP 工具：${escapeHtml(skill.mcpToolName)}，参数为 url</div>
+        </div>
+    `;
+}
+
+function renderSkillSummary(skill) {
+    const entryTag = skill.entryType === "mcp_tool"
+        ? tag(`MCP:${skill.mcpToolName || "tool"}`)
+        : tag(skill.artifactType);
+    const schemaHint = skill.argSchemaHint
+        ? `<div class="muted">参数：${escapeHtml(skill.argSchemaHint)}</div>`
+        : "";
+    return `
+        <div class="list-item">
+            <div class="list-item-header"><strong>${escapeHtml(skill.name)}</strong>${entryTag}</div>
+            <div class="muted">${escapeHtml(skill.description)}</div>
+            <div class="muted">主题提示：${escapeHtml(skill.topicHint)}</div>
+            ${schemaHint}
+        </div>
+    `;
+}
+
+function syncSkillFields(selectElement) {
+    if (!(selectElement instanceof HTMLSelectElement)) {
+        return;
+    }
+    const form = selectElement.form;
+    if (!(form instanceof HTMLFormElement)) {
+        return;
+    }
+    const skill = findSkill(selectElement.value);
+    const mcpUrlField = form.querySelector('input[name="mcpUrl"]');
+    if (mcpUrlField instanceof HTMLInputElement) {
+        const visible = isMcpSkill(skill);
+        const container = mcpUrlField.closest(".field");
+        if (container) {
+            container.hidden = !visible;
+        }
+        mcpUrlField.required = visible;
+        if (!visible) {
+            mcpUrlField.value = "";
+        }
+    }
+}
+
+async function createArtifactTask(spaceId, projectId, skillId, topic, methodologyCardId = null, mcpUrl = "") {
     const skill = findSkill(skillId);
     if (!skill) {
         throw new ApiError("未找到对应的工作室技能。", { code: "STUDIO_SKILL_NOT_FOUND" });
@@ -3712,11 +3921,7 @@ async function createArtifactTask(spaceId, projectId, skillId, topic, methodolog
         taskType: "ARTIFACT_GENERATE",
         sourceScopeType: skill.sourceScopeType,
         sourceIds: [projectId],
-        params: {
-            artifactType: skill.artifactType,
-            topic,
-            methodologyCardId: methodologyCardId || null
-        }
+        params: buildArtifactTaskParams(skill, topic, methodologyCardId, mcpUrl)
     });
     state.studio.lastTask = task;
     if (task.taskId) {
@@ -3732,7 +3937,7 @@ async function handleProjectGenerate(form) {
     const values = Object.fromEntries(new FormData(form).entries());
     const projectId = Number(form.dataset.projectId);
     const spaceId = Number(form.dataset.spaceId) || resolveProjectSpaceIdById(projectId);
-    await createArtifactTask(spaceId, projectId, values.skillId, values.topic, values.methodologyCardId || null);
+    await createArtifactTask(spaceId, projectId, values.skillId, values.topic, values.methodologyCardId || null, values.mcpUrl || "");
     await renderRoute();
 }
 
@@ -3740,7 +3945,7 @@ async function handleStudioTask(form) {
     const values = Object.fromEntries(new FormData(form).entries());
     const projectId = Number(values.projectId);
     const spaceId = resolveProjectSpaceIdById(projectId) || Number(form.dataset.spaceId);
-    await createArtifactTask(spaceId, projectId, values.skillId, values.topic);
+    await createArtifactTask(spaceId, projectId, values.skillId, values.topic, null, values.mcpUrl || "");
     await renderRoute();
 }
 
@@ -3974,6 +4179,9 @@ document.addEventListener("click", async (event) => {
             case "close-drawer":
                 closeDrawer();
                 break;
+            case "open-inline-form":
+                openInlineFormModal(target);
+                break;
             case "preview-space":
                 state.ui.selectedSpacePreviewId = Number(target.dataset.spaceId);
                 await loadSpaceSelectionPage();
@@ -4137,6 +4345,7 @@ document.addEventListener("submit", async (event) => {
         return;
     }
     event.preventDefault();
+    const submittedFromModal = Boolean(form.closest(".modal-dialog"));
     try {
         switch (form.id) {
             case "login-form":
@@ -4223,6 +4432,10 @@ document.addEventListener("submit", async (event) => {
             default:
                 break;
         }
+        if (submittedFromModal && state.ui.drawer?.source === "inline-form") {
+            state.ui.drawer = null;
+            paint();
+        }
     } catch (error) {
         queueToast(error.message || "提交失败。", "error");
     }
@@ -4241,10 +4454,13 @@ document.addEventListener("input", (event) => {
 
 document.addEventListener("change", async (event) => {
     const target = event.target;
-    if (!(target instanceof HTMLSelectElement)) {
-        return;
-    }
     try {
+        if (target instanceof HTMLSelectElement && target.name === "skillId") {
+            syncSkillFields(target);
+        }
+        if (!(target instanceof HTMLSelectElement)) {
+            return;
+        }
         if (target.id === "space-switcher") {
             const spaceId = Number(target.value);
             if (spaceId) {
@@ -4281,3 +4497,4 @@ window.addEventListener("noteweave:auth-cleared", () => {
 });
 
 renderRoute();
+

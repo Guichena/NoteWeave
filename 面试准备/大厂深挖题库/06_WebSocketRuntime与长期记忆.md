@@ -1,5 +1,9 @@
 # 文件：06_WebSocketRuntime与长期记忆.md
 
+## 0. 本篇定位
+
+这篇负责 WebSocket Runtime 和长期记忆的深挖。它适合回答为什么 HTTP 不够、stop/resume/partial content 如何设计、Redis 和 MySQL 的职责怎么分工、DRAFT / FORMAL 为什么要区分，以及长期记忆如何分层写回和读取。
+
 ## 1. 本主题面试官想考什么
 
 这个主题考察实时交互、运行态管理、断线恢复、停止控制、会话生命周期和长期记忆污染控制。NoteWeave 的亮点在于把 WebSocket Runtime 和长期 Memory 明确分层：Redis 管临时运行态，MySQL 管长期记忆，DRAFT 不写长期记忆。

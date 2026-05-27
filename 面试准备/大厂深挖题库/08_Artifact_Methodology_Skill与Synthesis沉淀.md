@@ -1,5 +1,9 @@
 # 文件：08_Artifact_Methodology_Skill与Synthesis沉淀.md
 
+## 0. 本篇定位
+
+这篇负责 Artifact、Methodology、Skill 和 Synthesis 沉淀边界的深挖。它适合回答生成产物为什么要版本化、MethodologyCard 解决什么问题、Skill 为什么是受控流水线而不是开放 Agent，以及为什么长期知识沉淀必须保留确认边界。
+
 ## 1. 本主题面试官想考什么
 
 这个主题考察你对 AI 生成成果生命周期的设计：Artifact 为什么独立于 ChatMessage，为什么要版本化，Methodology 如何影响 prompt，Skill 在项目里到底是什么，为什么个人 Artifact 要用户确认后才沉淀为 SynthesisCard。

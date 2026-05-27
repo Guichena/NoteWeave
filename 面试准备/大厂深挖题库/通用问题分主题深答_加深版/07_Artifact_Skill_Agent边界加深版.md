@@ -1,290 +1,161 @@
 # 文件：07_Artifact_Skill_Agent边界加深版.md
 
-## 1. 这个主题要回答什么
+## 0. 本篇定位
 
-这个主题覆盖：
+这篇是 `07_Artifact_Skill_Agent边界.md` 的加深版，只补 workflow 与 Agent 的本质差异、Methodology 为什么是治理层、Artifact 生命周期治理，以及开放 Agent 未来需要补的控制面。
 
-- Artifact 是什么？
-- Skill 是什么？
-- MethodologyCard 是什么？
-- 这是 Agent 吗？
-- 有没有 ReAct、MCP、GraphRAG、LangChain？
-- 为什么生成结果不直接进 Wiki？
+因此这里不再重复保存标准版里的 Artifact / Skill 主答。普通版 `07` 负责把当前事实和风险词边界讲顺；这篇负责在面试官继续追问“你们到底算不算 Agent”时，把边界说得更稳。
 
-## 2. 面向初学者：Artifact 是什么
+## 1. 这篇只补哪些深度
 
-Artifact 可以理解为“AI 生成的正式成果”。
+普通版 `07` 已经覆盖：
 
-比如：
+- Artifact 生成主链路。
+- Skill 是受控工作流步骤，不是开放插件系统。
+- MethodologyCard 提供 workflow、结构和质量检查。
+- MCP / Bibtex / GraphRAG 的当前边界。
 
-- 报告。
-- 学习指南。
-- 对比分析。
-- 工作准备材料。
-- Wiki 草稿。
+这篇额外补的是：
 
-它和 ChatMessage 不同：
+- Workflow、Tool、Agent 到底差在哪。
+- 为什么当前阶段更适合受控 pipeline，而不是开放式自主规划。
+- Artifact 为什么一定要和长期知识之间隔一层治理。
+- 如果未来做开放 Agent，需要补哪些治理能力。
 
-- ChatMessage 是对话记录。
-- Artifact 是成果，有版本、来源、引用、导出、编辑和沉淀。
+## 2. Workflow、Tool、Agent 不是一回事
 
-## 3. Artifact 完整链路
+### 2.1 Workflow 更强调“系统先定义步骤”
+
+也就是：
 
 ```text
-用户创建生成任务
--> 创建 Artifact
--> 创建 ARTIFACT_GENERATE Task
--> Worker 执行 ArtifactPlanExecutor
--> LoadGenerationContextSkill
--> SelectEvidence / SelectCards
--> GenerateXxxSkill
--> SaveArtifactSkill
--> ArtifactVersion
--> ArtifactSource
--> ArtifactCitation
+先加载上下文
+-> 再选证据
+-> 再生成内容
+-> 再保存版本
 ```
 
-Artifact 的关键点：
+它的核心优点是：
 
-- 不覆盖旧版本。
-- 保留来源。
-- 保留 citation。
-- 可以重新生成。
-- 可以沉淀为 Wiki/Card，但必须确认。
+- 可预测。
+- 可测试。
+- 可取消。
+- 可审计。
 
-## 4. Skill 是什么
+### 2.2 Tool 更强调“某个能力的调用接口”
 
-NoteWeave 里的 Skill 不是开放插件，也不是完整 Agent 工具调用。
+Tool 或 Skill 的本质是一个带输入输出契约的能力单元。它可以被 workflow 调用，也可以在未来被更开放的 agent 调用。
 
-它更像“受控工作流步骤”：
+### 2.3 Agent 更强调“模型自主决定下一步”
+
+一旦进入 Agent 叙事，系统就要允许模型做更多事情：
+
+- 规划步骤。
+- 选择工具。
+- 看工具结果再决定后续动作。
+- 直到达到目标或终止。
+
+所以 Agent 的难点从来不只是“会不会调工具”，而是“怎么把自主性关进治理笼子里”。
+
+## 3. 为什么当前项目更适合受控 pipeline
+
+NoteWeave 当前更强调：
+
+- 证据优先。
+- 过程可追溯。
+- 生成结果可版本化。
+- 失败可定位。
+- 权限和预算可控。
+
+这些诉求天然更适合固定 plan + Skill 执行，而不是让模型自由游走。
+
+换句话说，当前阶段更在乎：
 
 ```text
-LoadGenerationContextSkill
-SelectEvidenceSkill
-SelectArticleCardSkill
-SelectConceptCardSkill
-GenerateReportSkill
-SaveArtifactSkill
+稳
+-> 可控
+-> 可观测
+-> 可沉淀
 ```
 
-每个 Skill 有明确职责：
+而不是“模型自主性越强越好”。
 
-- 输入是什么。
-- 输出是什么。
-- 失败怎么记录。
-- 是否可取消。
-- 耗时和 token 怎么记录。
+## 4. Methodology 为什么不是普通 Prompt 模板
 
-## 5. MethodologyCard 是什么
+如果把 MethodologyCard 只理解成 prompt 模板，会低估它的治理价值。
 
-MethodologyCard 是生成方法论。它告诉模型：
+它更像一层“生成策略配置”：
 
-- 生成步骤 workflow。
-- 输出结构 outputStructure。
-- 质量检查 qualityChecklist。
+- workflow 怎么组织。
+- 输出结构怎么约束。
+- 质量检查怎么显式化。
+- 不同项目 / space / preset 如何复用和覆盖。
 
-例如 WORK_PREP 类型可以用 STAR 结构；REPORT 可以用背景、发现、结论、建议结构。
+这意味着它不是把 prompt 写死在代码里，而是把生成结构显式化、可管理化、可演进化。
 
-为什么不写死 prompt？
+这类设计在面试里很加分，因为它说明你不是只会“调词”，而是会把 AI 生成行为收成系统可治理对象。
 
-- 不同项目需要不同方法论。
-- 用户可能自定义。
-- 预设模板要复用。
-- 后续要版本管理和治理。
+## 5. 为什么 Artifact 和长期知识之间必须隔一层
 
-匹配顺序：
+Artifact 是成果，长期知识是被确认过、希望反复复用的稳定内容。这两者不隔开，风险很大：
+
+- 生成时的幻觉会直接污染知识库。
+- 暂时结构化不好的内容也会进入长期沉淀。
+- 用户还没确认的草稿会被系统误当事实。
+
+所以中间必须要有：
+
+- proposal / preview。
+- confirm / publish。
+- artifactVersion 绑定。
+- citation 复制或重建。
+- stale version 校验。
+
+这才说明你真的理解“生成”与“沉淀”不是一回事。
+
+## 6. 如果未来要做开放 Agent，需要补什么
+
+这是面试里特别容易被带偏的点。更稳的回答不是“以后接 MCP 就行”，而是明确说要补控制面：
+
+- tool schema 与参数校验。
+- tool permission 与可见性边界。
+- sandbox / side-effect 控制。
+- max steps / max tokens / timeout / budget。
+- tool call log / observation log。
+- 失败状态、回滚和人工接管。
+- eval 和 bad case 回归。
+
+这时再说 MCP、开放工具或多 Agent，才不会显得浮。
+
+## 7. 风险词怎么讲才不显得虚
+
+### 7.1 被问“这是 Agent 吗”
+
+稳的说法是：当前更准确地讲是受控 workflow / Skill pipeline。它已经具备部分 agent-like 元素，比如多步生成和上下文选择，但还不是完整开放 Agent 平台。
+
+### 7.2 被问“为什么不用 LangChain / LangGraph / Spring AI”
+
+不要急着站队框架。更稳的是：
+
+- 当前核心难点在业务边界、引用关系、任务状态、治理和沉淀，不在于是不是用了某个 orchestration 框架。
+- 框架可以辅助，但不应该替代系统边界本身。
+
+## 8. 边界、不能说满和扩展方向
+
+- 这篇只补 workflow 与 Agent 的本质差异和治理控制面，不再重复标准版主链路。
+- 当前可以坚定讲：ArtifactVersion、SkillExecutionLog、Methodology、proposal/confirm、受控 workflow。
+- 当前不要讲成：完整开放 Agent、完整开放式 MCP 平台主链路、ReAct 主链路、GraphRAG 主链路已经落地。更准确的说法是 MCP 已有远程 B 站 tool service 这个受控落地样例。
+- 扩展方向可以讲：未来在工具 schema、权限、预算和评测补齐后，再逐步开放更自主的工具调用。
+
+## 9. 继续追问怎么接
+
+如果面试官继续往下压，这一题最稳的承接顺序是：
 
 ```text
-project-level
--> personal-space-level
--> preset-level
--> GENERAL fallback
+先讲 Workflow / Tool / Agent 的区别
+-> 再讲为什么当前更适合受控 pipeline
+-> 再讲 Methodology 和 Artifact 沉淀治理
+-> 最后讲未来开放 Agent 需要补的控制面
 ```
 
-## 6. 八股知识点：Workflow、Agent、ReAct 的区别
-
-### 6.1 Workflow
-
-Workflow 是固定流程。步骤由系统设计者提前定义。
-
-优点：
-
-- 可控。
-- 易测试。
-- 易排障。
-- 成本可预测。
-
-缺点：
-
-- 灵活性较弱。
-
-NoteWeave 当前主要是 workflow。
-
-### 6.2 Agent
-
-Agent 通常指模型能根据目标自主规划步骤、选择工具、观察结果、继续行动。
-
-典型能力：
-
-- planning。
-- tool calling。
-- memory。
-- reflection。
-- multi-step execution。
-
-风险：
-
-- 不稳定。
-- 成本不可控。
-- 工具误调用。
-- 循环不停止。
-- 安全边界复杂。
-
-### 6.3 ReAct
-
-ReAct 是 Reasoning + Acting。模型交替进行思考和行动：
-
-```text
-Thought -> Action -> Observation -> Thought -> Action ...
-```
-
-适合开放工具调用，但需要严格控制。
-
-NoteWeave 当前没有把 ReAct 作为主链路。
-
-## 7. 为什么当前不做完整 Agent
-
-因为 NoteWeave 是知识工作台，核心诉求是可信和可审计。
-
-完整 Agent 需要补：
-
-- tool schema。
-- tool permission。
-- sandbox。
-- budget。
-- max steps。
-- loop detection。
-- tool call log。
-- fallback。
-- eval。
-
-当前阶段用固定 Skill pipeline 更稳。
-
-## 8. MCP / Bibtex / GraphRAG 怎么回答
-
-### 8.1 MCP
-
-当前不是主链路。未来可以接在：
-
-- Source import。
-- Skill tool layer。
-- Admin tool integration。
-
-需要补权限、审计、超时、沙箱。
-
-### 8.2 Bibtex
-
-当前不是端到端能力。未来可以作为 Source importer：
-
-```text
-Bibtex metadata
--> Source
--> PDF / URL
--> Source compile
--> ArticleCard / ConceptCard
-```
-
-### 8.3 GraphRAG
-
-当前主链路是 Hybrid RAG。项目有 Wiki relation、ConceptRelation、Graph Inspector，但不能说完整 GraphRAG 主链路。
-
-## 9. 为什么 Artifact 不直接进 Wiki
-
-生成结果可能：
-
-- 有幻觉。
-- 结构不稳定。
-- citation 不完整。
-- 用户还没确认。
-
-所以：
-
-```text
-Artifact != Wiki
-Artifact != Card
-```
-
-个人侧必须 proposal/confirm 后才创建 SynthesisCard；团队侧必须人工发布 Wiki。
-
-## 10. 底层原理补充：工作流编排和 Agent 安全
-
-### 10.1 工作流编排本质是什么
-
-工作流编排就是把一个复杂任务拆成多个可控步骤，每一步有明确输入输出。
-
-NoteWeave 的 Artifact 生成就是：
-
-```text
-加载上下文 -> 选择证据 -> 生成内容 -> 保存版本
-```
-
-好处是每一步都能记录日志、检查取消、定位失败。
-
-### 10.2 Agent 为什么更难控
-
-Agent 让模型自己决定下一步。它的难点是：
-
-- 模型可能选错工具。
-- 参数可能填错。
-- 工具结果可能被误解。
-- 循环可能停不下来。
-- 成本不可控。
-- 权限风险更高。
-
-所以面试时说 Agent 要同时说安全边界，否则容易被认为只会追概念。
-
-### 10.3 Tool Schema 为什么重要
-
-开放工具调用时，必须定义工具的输入输出 schema，例如：
-
-```json
-{
-  "tool": "search_source",
-  "params": {
-    "projectId": "number",
-    "query": "string"
-  }
-}
-```
-
-没有 schema，模型输出就很难校验，也难以安全执行。
-
-### 10.4 预算和终止条件
-
-Agent 必须限制：
-
-- max steps。
-- max tokens。
-- max tool calls。
-- timeout。
-- cost budget。
-
-否则一次任务可能无限循环或成本失控。
-
-## 11. 可直接复述的深答
-
-NoteWeave 里的 Artifact 是 AI 生成成果，不是普通聊天消息。它有 ArtifactVersion、ArtifactSource 和 ArtifactCitation，可以编辑、导出、重新生成，也可以在用户确认后沉淀。生成过程不是开放式 Agent，而是受控 Skill pipeline。比如报告生成会先 LoadGenerationContext，再 SelectEvidence，再 GenerateReport，最后 SaveArtifact，每一步都有日志、耗时、token、状态和取消点。MethodologyCard 则提供生成方法论，比如 workflow、输出结构和质量检查，不直接写死在 prompt 里，而是按 project、space、preset 匹配。当前项目不应该夸成完整 Agent、ReAct 或 MCP 主链路；它更强调可控、可审计和可追踪。未来如果要做开放 Agent，需要补工具 schema、权限、沙箱、预算、循环终止和 eval。
-
-## 12. 面试官可能追问
-
-### 12.1 固定 workflow 会不会不够智能
-
-在知识系统里，稳定性和可追踪比自由度更重要。当前选择 workflow 是工程取舍。
-
-### 12.2 未来怎么升级 Agent
-
-从受控工具开始，逐步加入 tool schema、权限、预算、max steps、tool log 和 eval。
-
-### 12.3 为什么不直接用 LangChain
-
-框架不是核心。NoteWeave 的核心是业务模型、证据、权限和沉淀边界。框架可以接，但不能替代领域设计。
+这样你给出的不是“概念热闹”，而是清晰的演进边界。

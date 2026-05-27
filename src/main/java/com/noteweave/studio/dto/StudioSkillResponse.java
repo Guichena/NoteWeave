@@ -8,6 +8,9 @@ public record StudioSkillResponse(
         String name,
         String artifactType,
         String sourceScopeType,
+        String entryType,
+        String mcpToolName,
+        String argSchemaHint,
         String description,
         String topicHint
 ) {

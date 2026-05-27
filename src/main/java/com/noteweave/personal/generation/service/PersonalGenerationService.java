@@ -3,6 +3,7 @@ package com.noteweave.personal.generation.service;
 import com.noteweave.artifact.model.ArtifactSourceType;
 import com.noteweave.artifact.model.ArtifactType;
 import com.noteweave.studio.service.ArtifactGenerateTaskInput;
+import com.noteweave.studio.service.StudioMcpToolRegistry;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -14,11 +15,14 @@ public class PersonalGenerationService {
 
     private final ResearchContextService researchContextService;
     private final PersonalEvidenceService personalEvidenceService;
+    private final StudioMcpToolRegistry studioMcpToolRegistry;
 
     public PersonalGenerationPreparation prepare(Long userId, ArtifactGenerateTaskInput input) {
         Long projectId = input.getResearchProjectId() != null ? input.getResearchProjectId() : firstId(input.getSourceIds());
         ResearchGenerationContext context = researchContextService.load(userId, projectId, input.getArtifactType(), input.getParams());
-        List<PersonalEvidenceItem> evidenceItems = personalEvidenceService.buildEvidence(context);
+        List<PersonalEvidenceItem> evidenceItems = hasMcpTool(input) && context.articleCards().isEmpty() && context.conceptCards().isEmpty()
+                ? List.of()
+                : personalEvidenceService.buildEvidence(context);
 
         List<SourceRef> sourceRefs = new ArrayList<>();
         context.articleCards().forEach(card -> sourceRefs.add(new SourceRef(ArtifactSourceType.ARTICLE_CARD, card.getId())));
@@ -30,6 +34,10 @@ public class PersonalGenerationService {
                 .map(source -> new SourceRef(ArtifactSourceType.SOURCE, source.getId()))
                 .forEach(sourceRefs::add);
         return new PersonalGenerationPreparation(context, evidenceItems, sourceRefs);
+    }
+
+    private boolean hasMcpTool(ArtifactGenerateTaskInput input) {
+        return studioMcpToolRegistry.hasConfiguredTool(input.getParams());
     }
 
     public String instructionFor(ArtifactType artifactType) {

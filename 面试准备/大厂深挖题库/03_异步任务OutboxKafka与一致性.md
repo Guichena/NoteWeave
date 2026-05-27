@@ -1,5 +1,9 @@
 # 文件：03_异步任务OutboxKafka与一致性.md
 
+## 0. 本篇定位
+
+这篇负责统一异步任务、Outbox、Kafka 和最终一致性的深挖。它适合回答为什么要统一后台任务、为什么不用事务里直接发消息、重复消费怎么幂等、任务取消怎么设计，以及一致性和补偿链路怎么讲。
+
 ## 1. 本主题面试官想考什么
 
 这个主题考察分布式系统基本功：长任务抽象、事务消息、最终一致性、幂等、重试、取消、失败恢复和可观测。NoteWeave 的统一异步骨架是很强的面试亮点，因为它把上传解析、Source 编译、Artifact 生成、Wiki 索引、Eval、清理任务收敛到一套模型。
@@ -207,3 +211,8 @@ RUNNING 任务我不会直接强杀，而是设置 `cancel_requested`。原因�
 ## 8. 3 到 5 分钟深答模板
 
 以文档解析任务为例，用户 merge 上传后，业务事务里会先创建 Document 和 FileObject 绑定，再创建 `DOCUMENT_PROCESS` Task，同时写 TaskEvent 和 TaskOutbox。这里不直接发 Kafka，因为 DB 和 Kafka 不是同一个事务资源，如果直接发会出现 DB 回滚但消息已发送，或者 DB 提交但消息发送失败。Outbox 提交后，dispatcher 异步投递 Kafka，失败就通过 outbox 状态和 nextRetryAt 补偿。Worker 收到消息后只把它当通知，会回查 Task 表并通过状态 claim 任务，只有 PENDING 才能转 RUNNING。执行过程中会创建 TaskAttempt，写 TASK_STARTED，真正解析、切片、索引时还会在安全点检查 cancelRequested。成功后更新业务对象和 Task SUCCESS；失败后写 attempt error、task error 和业务失败状态。如果同一消息重复消费，由于 task 已经不是 PENDING，就会跳过。这套模型保证了长任务的创建、投递、执行、重试、取消和审计都能统一处理。
+
+## 9. 边界和不能说满的地方
+
+- 可以坚定讲：统一任务模型、Outbox、补偿投递、消费侧幂等和安全点取消。
+- 不要讲成：这是强一致事务消息；Outbox 能消灭重复；Kafka 成功即业务完成；当前已经有完整生产级死信治理和积压数据。

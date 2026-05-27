@@ -93,3 +93,9 @@ noteweave:
       temperature: 0.3
       max-tokens: 2000
       timeout-seconds: 60
+  studio:
+    mcp:
+      bilibili:
+        remote-enabled: false
+        remote-base-url: http://localhost:18083
+        timeout-seconds: 20

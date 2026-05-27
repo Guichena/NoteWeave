@@ -31,6 +31,7 @@ import com.noteweave.permission.service.ResourceAccessService;
 import com.noteweave.prompt.model.PromptVersion;
 import com.noteweave.prompt.service.PromptTemplateRenderer;
 import com.noteweave.prompt.service.PromptVersionService;
+import com.noteweave.studio.service.StudioMcpChatTriggerService;
 import com.noteweave.team.kb.model.KnowledgeBaseStatus;
 import com.noteweave.team.kb.repository.KnowledgeBaseRepository;
 import com.noteweave.team.rag.config.RagProperties;
@@ -72,6 +73,7 @@ public class TeamChatService {
     private final MemoryWritebackService memoryWritebackService;
     private final PromptVersionService promptVersionService;
     private final PromptTemplateRenderer promptTemplateRenderer;
+    private final StudioMcpChatTriggerService studioMcpChatTriggerService;
 
     public TeamAskResponse ask(Long userId, Long sessionId, TeamAskRequest request) {
         ChatSession session = chatSessionService.getRequiredActiveSession(sessionId);
@@ -85,6 +87,27 @@ public class TeamChatService {
 
         String question = request.getContent().trim();
         ChatMessage userMessage = persistMessage(sessionId, ChatMessageRole.USER, question, null, null);
+        var toolTrigger = studioMcpChatTriggerService.maybeTrigger(userId, session, userMessage.getId(), question);
+        if (toolTrigger.isPresent()) {
+            StudioMcpChatTriggerService.ToolTriggerResult trigger = toolTrigger.get();
+            AssistantOutcome outcome = persistAssistantOutcome(
+                    session,
+                    userMessage,
+                    null,
+                    trigger.answer(),
+                    writeJson(Map.of(
+                            "mcpTool", trigger.toolName(),
+                            "taskId", trigger.task().taskId(),
+                            "artifactId", trigger.task().artifactId()
+                    )),
+                    List.of(),
+                    trigger.task().artifactId(),
+                    trigger.task().taskId(),
+                    trigger.toolName()
+            );
+            memoryWritebackService.writeAfterRound(session, userMessage, outcome.assistantMessage(), outcome.response().getCitations());
+            return outcome.response();
+        }
         ContextReadPlan readPlan = contextReadRouter.resolve(session.getSessionKind(), session.getSessionType());
 
         Instant retrievalStart = Instant.now();
@@ -120,7 +143,10 @@ public class TeamChatService {
                     retrievalTraceId,
                     ragProperties.prompt().noResultText() + "銆侰urrent evidence is insufficient for a grounded citation.",
                     writeJson(Map.of("retrievalEmpty", true)),
-                    List.of()
+                    List.of(),
+                    null,
+                    null,
+                    null
             );
             memoryWritebackService.writeAfterRound(session, userMessage, outcome.assistantMessage(), outcome.response().getCitations());
             return outcome.response();
@@ -154,7 +180,10 @@ public class TeamChatService {
                         "inputTokens", llmResponse.inputTokens(),
                         "outputTokens", llmResponse.outputTokens()
                 )),
-                evidenceItems
+                evidenceItems,
+                null,
+                null,
+                null
         );
         memoryWritebackService.writeAfterRound(session, userMessage, outcome.assistantMessage(), outcome.response().getCitations());
         return outcome.response();
@@ -284,11 +313,14 @@ public class TeamChatService {
             Long retrievalTraceId,
             String answer,
             String tokenUsageJson,
-            List<EvidenceItem> evidenceItems
+            List<EvidenceItem> evidenceItems,
+            Long artifactId,
+            Long taskId,
+            String toolName
     ) {
         return transactionTemplate.execute(status -> {
             ChatMessage assistantMessage = chatMessageRepository.save(
-                    createMessage(session.getId(), ChatMessageRole.ASSISTANT, answer, tokenUsageJson, null)
+                    createMessage(session.getId(), ChatMessageRole.ASSISTANT, answer, tokenUsageJson, null, artifactId)
             );
             List<CitationResponse> citations = evidenceItems.isEmpty()
                     ? List.of()
@@ -297,10 +329,19 @@ public class TeamChatService {
                     .userMessageId(userMessage.getId())
                     .assistantMessageId(assistantMessage.getId())
                     .answer(answer)
+                    .artifactId(artifactId)
+                    .taskId(taskId)
+                    .toolName(toolName)
                     .citations(citations)
                     .build();
             return new AssistantOutcome(response, assistantMessage);
         });
+    }
+
+    private ChatMessage createMessage(Long sessionId, ChatMessageRole role, String content, String tokenUsageJson, String errorCode, Long artifactId) {
+        ChatMessage message = createMessage(sessionId, role, content, tokenUsageJson, errorCode);
+        message.setArtifactId(artifactId);
+        return message;
     }
 
     private List<RetrievalTraceItemCreateRequest> buildTraceItems(List<RetrievalHit> hits, List<EvidenceItem> evidenceItems) {

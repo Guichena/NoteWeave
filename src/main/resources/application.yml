@@ -115,6 +115,12 @@ noteweave:
       temperature: ${LLM_TEMPERATURE:0.3}
       max-tokens: ${LLM_MAX_TOKENS:2000}
       timeout-seconds: ${LLM_TIMEOUT_SECONDS:60}
+  studio:
+    mcp:
+      bilibili:
+        remote-enabled: ${NOTEWEAVE_STUDIO_MCP_BILIBILI_REMOTE_ENABLED:true}
+        remote-base-url: ${NOTEWEAVE_STUDIO_MCP_BILIBILI_REMOTE_BASE_URL:http://localhost:18083}
+        timeout-seconds: ${NOTEWEAVE_STUDIO_MCP_BILIBILI_TIMEOUT_SECONDS:20}
 
 jwt:
   secret-key: ${JWT_SECRET_KEY:change-me-in-dev-change-me-in-dev}

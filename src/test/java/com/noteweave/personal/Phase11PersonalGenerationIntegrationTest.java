@@ -16,9 +16,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.llm.dto.LlmMessage;
 import com.noteweave.llm.dto.LlmResponse;
 import com.noteweave.llm.service.LlmClient;
+import com.noteweave.personal.source.fetch.FetchedUrlContent;
+import com.noteweave.personal.source.fetch.UrlContentFetcher;
 import com.noteweave.support.ContainerizedIntegrationTest;
 import com.noteweave.task.model.TaskStatus;
 import com.noteweave.task.service.TaskDispatcher;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +56,9 @@ class Phase11PersonalGenerationIntegrationTest extends ContainerizedIntegrationT
 
     @MockBean
     private LlmClient llmClient;
+
+    @MockBean
+    private UrlContentFetcher urlContentFetcher;
 
     @Test
     void workPrepGenerationShouldUseMethodologyKeepCardsStableAndPersistTraceableSources() throws Exception {
@@ -352,6 +358,98 @@ class Phase11PersonalGenerationIntegrationTest extends ContainerizedIntegrationT
     }
 
     @Test
+    void personalGenerationShouldSupportBilibiliMcpToolAsArtifactContext() throws Exception {
+        String ownerToken = registerAndGetToken("phase11_bili_owner_" + System.nanoTime());
+        JsonNode project = createProjectResponse(ownerToken, "Bilibili project", "phase11", "notes");
+        Long projectId = project.path("data").path("id").asLong();
+        Long spaceId = project.path("data").path("spaceId").asLong();
+
+        String videoUrl = "https://www.bilibili.com/video/BV1abc123xyz/";
+        String subtitleApiUrl = "https://api.bilibili.com/x/player/v2?bvid=BV1abc123xyz&cid=987654321";
+        String subtitleJsonUrl = "https://i0.hdslb.com/bfs/subtitle/test.json";
+
+        given(urlContentFetcher.fetch(videoUrl)).willReturn(fetchedJson(bilibiliHtml()));
+        given(urlContentFetcher.fetch(subtitleApiUrl)).willReturn(fetchedJson("""
+                {
+                  "code": 0,
+                  "data": {
+                    "subtitle": {
+                      "subtitles": [
+                        {
+                          "lan": "zh-CN",
+                          "lan_doc": "中文",
+                          "subtitle_url": "%s"
+                        }
+                      ]
+                    }
+                  }
+                }
+                """.formatted(subtitleJsonUrl)));
+        given(urlContentFetcher.fetch(subtitleJsonUrl)).willReturn(fetchedJson("""
+                {
+                  "body": [
+                    { "from": 0.2, "content": "这一节介绍 Skill 和受控编排。" },
+                    { "from": 8.4, "content": "重点是把产物生成做成固定 plan，而不是完全自主 agent。" }
+                  ]
+                }
+                """));
+
+        clearInvocations(llmClient);
+        given(llmClient.chat(anyList(), any()))
+                .willReturn(llmResponse("""
+                        # Bilibili Skill Notes
+
+                        ## Core Summary
+                        The workflow uses a fixed plan and grounded tool context.
+                        """));
+
+        JsonNode studioTask = createStudioTask(ownerToken, """
+                {
+                  "spaceId": %d,
+                  "researchProjectId": %d,
+                  "taskType": "ARTIFACT_GENERATE",
+                  "sourceScopeType": "RESEARCH_PROJECT",
+                  "sourceIds": [%d],
+                  "params": {
+                    "artifactType": "READING_NOTES",
+                    "mcpToolName": "bilibili",
+                    "mcpArgs": {
+                      "url": "%s"
+                    }
+                  }
+                }
+                """.formatted(spaceId, projectId, projectId, videoUrl));
+
+        Long artifactId = studioTask.path("data").path("artifactId").asLong();
+        Long taskId = studioTask.path("data").path("taskId").asLong();
+        taskDispatcher.dispatchPendingMessages();
+        waitForTaskStatus(taskId, TaskStatus.SUCCESS);
+
+        mockMvc.perform(get("/api/v1/artifacts/{artifactId}", artifactId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.artifactType").value("READING_NOTES"))
+                .andExpect(jsonPath("$.data.status").value("READY"))
+                .andExpect(jsonPath("$.data.title").value("Bilibili Skill Notes"));
+
+        mockMvc.perform(get("/api/v1/tasks/{taskId}/skill-logs", taskId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[1].skillName").value("LoadMcpToolContextSkill"));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<LlmMessage>> promptCaptor = ArgumentCaptor.forClass((Class) List.class);
+        verify(llmClient).chat(promptCaptor.capture(), any());
+        String prompt = promptCaptor.getValue().get(0).content();
+        assertThat(prompt)
+                .contains("MCP Tool Context (bilibili)")
+                .contains("Bilibili MCP Tool Result")
+                .contains("Skill-based Studio 与知识沉淀")
+                .contains("这一节介绍 Skill 和受控编排。")
+                .contains("Ignore danmaku");
+    }
+
+    @Test
     void personalGenerationShouldFailWhenTraceableEvidenceIsMissingAndOutsiderCannotStartTask() throws Exception {
         String ownerToken = registerAndGetToken("phase11_fail_owner_" + System.nanoTime());
         String outsiderToken = registerAndGetToken("phase11_fail_outsider_" + System.nanoTime());
@@ -525,6 +623,36 @@ class Phase11PersonalGenerationIntegrationTest extends ContainerizedIntegrationT
                 .outputTokens(48)
                 .latencyMs(1L)
                 .build();
+    }
+
+    private FetchedUrlContent fetchedJson(String body) {
+        return new FetchedUrlContent(body.getBytes(StandardCharsets.UTF_8), "application/json; charset=utf-8");
+    }
+
+    private String bilibiliHtml() {
+        return """
+                <html>
+                <head><title>Skill-based Studio 与知识沉淀</title></head>
+                <body>
+                <script>
+                window.__INITIAL_STATE__={
+                  "videoData":{
+                    "title":"Skill-based Studio 与知识沉淀",
+                    "desc":"介绍如何把报告、FAQ 和学习指南抽象为固定 Skill。",
+                    "bvid":"BV1abc123xyz",
+                    "cid":987654321,
+                    "pubdate":1716800000,
+                    "owner":{"name":"NoteWeave Lab"},
+                    "pages":[
+                      {"cid":987654321,"part":"Part 1. Studio 总览"},
+                      {"cid":987654322,"part":"Part 2. 知识沉淀闭环"}
+                    ]
+                  }
+                };
+                </script>
+                </body>
+                </html>
+                """;
     }
 
     private String articleJson(Long sourceId) {
