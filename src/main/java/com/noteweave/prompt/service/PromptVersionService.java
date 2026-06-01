@@ -70,8 +70,7 @@ public class PromptVersionService {
     public List<PromptVersionResponse> list(String scene) {
         String normalizedScene = scene == null ? null : scene.trim().toUpperCase();
         if (normalizedScene == null || normalizedScene.isBlank()) {
-            return promptVersionRepository.findAll().stream()
-                    .sorted((left, right) -> right.getCreatedAt().compareTo(left.getCreatedAt()))
+            return promptVersionRepository.findAllByOrderByCreatedAtDesc().stream()
                     .map(this::toResponse)
                     .toList();
         }

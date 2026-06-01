@@ -11,6 +11,8 @@ public interface PromptVersionRepository extends JpaRepository<PromptVersion, Lo
 
     List<PromptVersion> findBySceneOrderByVersionDesc(String scene);
 
+    List<PromptVersion> findAllByOrderByCreatedAtDesc();
+
     List<PromptVersion> findAllBySceneAndStatus(String scene, String status);
 
     Optional<PromptVersion> findTopBySceneOrderByVersionDesc(String scene);

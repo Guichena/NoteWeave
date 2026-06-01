@@ -1,0 +1,22 @@
+{
+  "suite": "agentic_rag_tracer",
+  "lane": "team",
+  "scenario": "multi_hop_retrieval",
+  "id_fields": ["case_id", "id", "question_id"],
+  "query_fields": ["question", "query", "task"],
+  "answer_fields": ["answer", "gold_answer", "expected_answer"],
+  "category_fields": ["hop_count", "domain", "category"],
+  "source_id_fields": ["expected_doc_ids", "gold_doc_ids", "hop_doc_ids", "evidence_ids"],
+  "source_type_fields": ["domain", "source_type"],
+  "answer_fact_fields": ["answer_facts", "facts"],
+  "conversation_fields": ["steps", "reasoning_trace", "hops"],
+  "static_tags": {
+    "benchmark_family": "agentic_rag_trace",
+    "requires_hop_level_scoring": true
+  },
+  "sample": {
+    "ratio": 0.05,
+    "max_cases": 65,
+    "stratify_by": ["hop_count", "domain"]
+  }
+}

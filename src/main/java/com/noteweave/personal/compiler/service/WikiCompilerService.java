@@ -43,6 +43,7 @@ import com.noteweave.task.model.TaskType;
 import com.noteweave.task.repository.TaskRepository;
 import com.noteweave.task.service.TaskCreateCommand;
 import com.noteweave.task.service.TaskService;
+import com.noteweave.team.wiki.service.AutoWikiMaintenanceService;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -77,6 +78,7 @@ public class WikiCompilerService {
     private final ConceptCardRepository conceptCardRepository;
     private final ConceptRelationRepository conceptRelationRepository;
     private final ResearchProjectCompileStatusService researchProjectCompileStatusService;
+    private final AutoWikiMaintenanceService autoWikiMaintenanceService;
     private final PlatformTransactionManager transactionManager;
 
     @Transactional
@@ -166,7 +168,7 @@ public class WikiCompilerService {
                 String text = textSnapshot.text();
 
                 ArticleCardDraft articleDraft = requestArticleDraft(task, source, text);
-                List<Map<String, Object>> articleEvidenceCache = buildEvidenceCache(source, articleDraft.evidenceQuotes());
+                List<Map<String, Object>> articleEvidenceCache = buildEvidenceCache(source, text, articleDraft.evidenceQuotes());
                 ArticleCard articleCard = articleCardService.createOrUpdateFromSource(project, source.getId(), articleDraft, articleEvidenceCache);
                 personalCardCitationService.replaceArticleCitations(articleCard, source, articleDraft.evidenceQuotes());
 
@@ -208,6 +210,7 @@ public class WikiCompilerService {
                 output.put("conceptCount", conceptsByNormalizedName.size());
                 output.put("createdConceptCount", createdConceptCount);
                 output.put("mergedConceptCount", mergedConceptCount);
+                autoWikiMaintenanceService.syncPersonalSourceWiki(task.getUserId(), project, source, articleCard, output);
                 return success(articleCard.getId(), output);
             });
         } catch (Exception ex) {
@@ -230,13 +233,18 @@ public class WikiCompilerService {
                     LlmOptions.builder().temperature(0.2d).maxTokens(2000).build()
             ).response();
             try {
-                JsonNode root = objectMapper.readTree(response.content());
+                JsonNode root = readJsonObject(response.content());
                 return new ArticleCardDraft(
                         textOrDefault(root, "title", source.getTitle()),
                         textOrDefault(root, "summary", ""),
                         readStringArray(root.path("keyPoints")),
                         readStringArray(root.path("tags")),
-                        readEvidenceQuotes(root.path("evidenceQuotes"))
+                        normalizeEvidenceQuotes(
+                                readEvidenceQuotes(root.path("evidenceQuotes")),
+                                source,
+                                text,
+                                "Primary evidence for the article card."
+                        )
                 );
             } catch (Exception ex) {
                 if (attempt == 1) {
@@ -261,7 +269,7 @@ public class WikiCompilerService {
                     LlmOptions.builder().temperature(0.2d).maxTokens(2000).build()
             ).response();
             try {
-                JsonNode root = objectMapper.readTree(response.content());
+                JsonNode root = readJsonObject(response.content());
                 List<ConceptDraft> concepts = new ArrayList<>();
                 for (JsonNode node : iterable(root.path("concepts"))) {
                     JsonNode evidence = node.path("evidence");
@@ -272,11 +280,16 @@ public class WikiCompilerService {
                             textOrDefault(node, "explanation", ""),
                             readStringArray(node.path("useCases")),
                             readStringArray(node.path("commonMisunderstandings")),
-                            new EvidenceQuoteDraft(
-                                    textOrDefault(evidence, "quote", ""),
-                                    longOrDefault(evidence, "sourceId", source.getId()),
-                                    "Concept evidence",
-                                    Map.of()
+                            normalizeEvidenceQuote(
+                                    new EvidenceQuoteDraft(
+                                            textOrDefault(evidence, "quote", ""),
+                                            longOrDefault(evidence, "sourceId", source.getId()),
+                                            "Concept evidence",
+                                            Map.of()
+                                    ),
+                                    source,
+                                    text,
+                                    "Concept evidence"
                             ),
                             node.path("confidence").asDouble(0.0d)
                     ));
@@ -385,9 +398,15 @@ public class WikiCompilerService {
         });
     }
 
-    private List<Map<String, Object>> buildEvidenceCache(Source source, List<EvidenceQuoteDraft> evidenceQuotes) {
+    private List<Map<String, Object>> buildEvidenceCache(Source source, String text, List<EvidenceQuoteDraft> evidenceQuotes) {
         List<Map<String, Object>> cache = new ArrayList<>();
-        for (EvidenceQuoteDraft evidenceQuote : evidenceQuotes) {
+        for (EvidenceQuoteDraft rawEvidenceQuote : evidenceQuotes) {
+            EvidenceQuoteDraft evidenceQuote = normalizeEvidenceQuote(
+                    rawEvidenceQuote,
+                    source,
+                    text,
+                    "Primary evidence for the article card."
+            );
             EvidenceBacktraceService.EvidenceBacktrace backtrace = evidenceBacktraceService.backtrace(source, evidenceQuote.quote());
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("quote", evidenceQuote.quote());
@@ -400,6 +419,49 @@ public class WikiCompilerService {
             cache.add(item);
         }
         return cache;
+    }
+
+    private List<EvidenceQuoteDraft> normalizeEvidenceQuotes(
+            List<EvidenceQuoteDraft> evidenceQuotes,
+            Source source,
+            String text,
+            String defaultReason
+    ) {
+        if (evidenceQuotes == null || evidenceQuotes.isEmpty()) {
+            return List.of(normalizeEvidenceQuote(null, source, text, defaultReason));
+        }
+        return evidenceQuotes.stream()
+                .map(evidenceQuote -> normalizeEvidenceQuote(evidenceQuote, source, text, defaultReason))
+                .toList();
+    }
+
+    private EvidenceQuoteDraft normalizeEvidenceQuote(EvidenceQuoteDraft evidenceQuote, Source source, String text, String defaultReason) {
+        String quote = normalizeOptional(evidenceQuote == null ? null : evidenceQuote.quote());
+        if (quote == null) {
+            quote = fallbackEvidenceQuote(text);
+        }
+        Long sourceId = evidenceQuote == null || evidenceQuote.sourceId() == null ? source.getId() : evidenceQuote.sourceId();
+        String reason = normalizeOptional(evidenceQuote == null ? null : evidenceQuote.reason());
+        return new EvidenceQuoteDraft(
+                quote,
+                sourceId,
+                reason == null ? defaultReason : reason,
+                evidenceQuote == null || evidenceQuote.extras() == null ? Map.of() : evidenceQuote.extras()
+        );
+    }
+
+    private String fallbackEvidenceQuote(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        String normalizedText = text.replace('\r', '\n');
+        for (String line : normalizedText.split("\\n+")) {
+            String normalizedLine = line.trim().replaceAll("\\s+", " ");
+            if (!normalizedLine.isBlank()) {
+                return clip(normalizedLine, 240);
+            }
+        }
+        return "";
     }
 
     private List<Map<String, Object>> readEvidenceCache(String json) {
@@ -445,6 +507,34 @@ public class WikiCompilerService {
         List<JsonNode> items = new ArrayList<>();
         node.elements().forEachRemaining(items::add);
         return items;
+    }
+
+    private JsonNode readJsonObject(String content) throws JsonProcessingException {
+        JsonNode root = objectMapper.readTree(extractJsonObject(content));
+        if (root == null || !root.isObject()) {
+            throw new BusinessException(ErrorCode.LLM_JSON_PARSE_FAILED, "LLM response root must be a JSON object");
+        }
+        return root;
+    }
+
+    private String extractJsonObject(String content) {
+        if (content == null) {
+            return "";
+        }
+        String candidate = content.trim();
+        if (candidate.startsWith("```")) {
+            int firstLineBreak = candidate.indexOf('\n');
+            int lastFence = candidate.lastIndexOf("```");
+            if (firstLineBreak >= 0 && lastFence > firstLineBreak) {
+                candidate = candidate.substring(firstLineBreak + 1, lastFence).trim();
+            }
+        }
+        int objectStart = candidate.indexOf('{');
+        int objectEnd = candidate.lastIndexOf('}');
+        if (objectStart >= 0 && objectEnd > objectStart) {
+            return candidate.substring(objectStart, objectEnd + 1);
+        }
+        return candidate;
     }
 
     private String textOrDefault(JsonNode node, String field, String defaultValue) {
@@ -502,6 +592,17 @@ public class WikiCompilerService {
         }
         String normalized = value.trim();
         return normalized.isEmpty() ? null : normalized;
+    }
+
+    private String clip(String value, int maxLength) {
+        if (value == null) {
+            return "";
+        }
+        String normalized = value.trim();
+        if (normalized.length() <= maxLength) {
+            return normalized;
+        }
+        return normalized.substring(0, maxLength).trim();
     }
 
     private boolean isBlank(String value) {

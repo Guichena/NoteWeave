@@ -128,6 +128,84 @@ class Phase11_6ChatMcpIntegrationTest extends ContainerizedIntegrationTest {
     }
 
     @Test
+    void httpChatShouldTriggerPersonalArtifactGenerationFromCommand() throws Exception {
+        String ownerToken = registerAndGetToken("phase11_6_artifact_" + System.nanoTime());
+        Long personalSpaceId = myPersonalSpaceId(ownerToken);
+        Long projectId = createProject(ownerToken, "Command project", "chat artifact", "generate from chat");
+        Long sourceId = addTextSource(ownerToken, projectId, "Command source", "RAG combines retrieval and generation.")
+                .path("data").path("id").asLong();
+
+        given(llmClient.chat(anyList(), any()))
+                .willReturn(llmResponse("""
+                        {
+                          "title": "Command source",
+                          "summary": "Command source summary.",
+                          "keyPoints": ["RAG combines retrieval and generation"],
+                          "tags": ["RAG"],
+                          "evidenceQuotes": [{"quote":"RAG combines retrieval and generation.","sourceId":%d,"reason":"source"}]
+                        }
+                        """.formatted(sourceId)))
+                .willReturn(llmResponse("""
+                        {
+                          "concepts": [
+                            {
+                              "name": "RAG",
+                              "aliases": ["Retrieval-Augmented Generation"],
+                              "definition": "A retrieval plus generation pattern.",
+                              "explanation": "RAG fetches context before generation.",
+                              "useCases": ["Grounded assistants"],
+                              "commonMisunderstandings": ["It removes retrieval quality work"],
+                              "evidence": {"sourceId": %d, "quote": "RAG combines retrieval and generation."},
+                              "confidence": 0.94
+                            }
+                          ],
+                          "relations": []
+                        }
+                        """.formatted(sourceId)));
+        Long compileTaskId = compileSource(ownerToken, sourceId).path("data").path("taskId").asLong();
+        taskDispatcher.dispatchPendingMessages();
+        waitForTaskStatus(compileTaskId, TaskStatus.SUCCESS);
+
+        Long sessionId = createChatSession(ownerToken, personalSpaceId, "artifact command", "SPACE", new long[]{personalSpaceId});
+        given(llmClient.chat(anyList(), any()))
+                .willReturn(llmResponse("""
+                        # Chat Command Report
+
+                        Generated from personal research context.
+                        """));
+
+        MvcResult askResult = mockMvc.perform(post("/api/v1/chat/sessions/{sessionId}/messages", sessionId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":"/成果 Chat_Command_Report type=研究报告 project=%d"}
+                                """.formatted(projectId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.toolName").value("artifact"))
+                .andExpect(jsonPath("$.data.artifactId").isNumber())
+                .andExpect(jsonPath("$.data.taskId").isNumber())
+                .andReturn();
+
+        JsonNode data = objectMapper.readTree(askResult.getResponse().getContentAsString()).path("data");
+        Long artifactId = data.path("artifactId").asLong();
+        Long taskId = data.path("taskId").asLong();
+
+        taskDispatcher.dispatchPendingMessages();
+        waitForTaskStatus(taskId, TaskStatus.SUCCESS);
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select research_project_id from artifact where id = ?",
+                Long.class,
+                artifactId
+        )).isEqualTo(projectId);
+        assertThat(jdbcTemplate.queryForObject(
+                "select artifact_id from chat_message where id = ?",
+                Long.class,
+                data.path("assistantMessageId").asLong()
+        )).isEqualTo(artifactId);
+    }
+
+    @Test
     void websocketChatShouldTriggerBilibiliMcpArtifactTool() throws Exception {
         String ownerToken = registerAndGetToken("phase11_6_ws_" + System.nanoTime());
         Long spaceId = createTeamSpace(ownerToken, "phase11-6-ws-space-" + System.nanoTime());
@@ -226,6 +304,51 @@ class Phase11_6ChatMcpIntegrationTest extends ContainerizedIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString()).path("data").path("id").asLong();
+    }
+
+    private Long myPersonalSpaceId(String token) throws Exception {
+        MvcResult result = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/v1/spaces")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode data = objectMapper.readTree(result.getResponse().getContentAsString()).path("data");
+        JsonNode items = data.has("items") ? data.path("items") : data;
+        for (JsonNode item : items) {
+            if ("PERSONAL".equals(item.path("type").asText())) {
+                return item.path("id").asLong();
+            }
+        }
+        throw new AssertionError("Personal space not found");
+    }
+
+    private Long createProject(String token, String title, String description, String goal) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/v1/personal/research-projects")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"%s","description":"%s","researchGoal":"%s"}
+                                """.formatted(title, description, goal)))
+                .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString()).path("data").path("id").asLong();
+    }
+
+    private JsonNode addTextSource(String token, Long projectId, String title, String content) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/v1/personal/research-projects/{projectId}/sources/text", projectId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("title", title, "content", content))))
+                .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString());
+    }
+
+    private JsonNode compileSource(String token, Long sourceId) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/v1/personal/sources/{sourceId}/compile", sourceId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString());
     }
 
     private Long createKnowledgeBase(String token, Long spaceId, String name) throws Exception {

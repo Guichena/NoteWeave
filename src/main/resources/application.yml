@@ -86,8 +86,8 @@ noteweave:
     api:
       base-url: ${EMBEDDING_API_BASE_URL:${EMBEDDING_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}}
       api-key: ${EMBEDDING_API_KEY:${EMBEDDING_KEY:}}
-      model: ${EMBEDDING_API_MODEL:${EMBEDDING_MODEL:text-embedding-v4}}
-      dimension: ${EMBEDDING_DIMENSION:8}
+      model: ${EMBEDDING_API_MODEL:${EMBEDDING_MODEL:jina-embeddings-v5-text-nano}}
+      dimension: ${EMBEDDING_DIMENSION:768}
       batch-size: ${EMBEDDING_BATCH_SIZE:10}
   rag:
     retrieval:
@@ -109,9 +109,9 @@ noteweave:
       provider: ${NOTEWEAVE_LLM_STUB_PROVIDER:stub}
       model: ${NOTEWEAVE_LLM_STUB_MODEL:noteweave-stub-chat}
     api:
-      base-url: ${LLM_API_BASE_URL:https://api.deepseek.com/v1}
+      base-url: ${LLM_API_BASE_URL:https://generativelanguage.googleapis.com/v1beta/openai}
       api-key: ${LLM_API_KEY:}
-      model: ${LLM_API_MODEL:deepseek-chat}
+      model: ${LLM_API_MODEL:gemini-2.5-flash-lite}
       temperature: ${LLM_TEMPERATURE:0.3}
       max-tokens: ${LLM_MAX_TOKENS:2000}
       timeout-seconds: ${LLM_TIMEOUT_SECONDS:60}

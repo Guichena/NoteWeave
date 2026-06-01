@@ -1,0 +1,36 @@
+{
+  "suite": "enterprise_rag_bench",
+  "snapshot_date": "2026-05-27",
+  "source": "https://github.com/onyx-dot-app/EnterpriseRAG-Bench",
+  "downloaded_files": [
+    {
+      "name": "questions.jsonl",
+      "size_bytes": 764927
+    },
+    {
+      "name": "extra_questions.jsonl",
+      "size_bytes": 57726
+    },
+    {
+      "name": "README.md",
+      "size_bytes": 8302
+    },
+    {
+      "name": "methodology.md",
+      "size_bytes": 42590
+    },
+    {
+      "name": "quickstart.md",
+      "size_bytes": 16942
+    },
+    {
+      "name": "LICENSE",
+      "size_bytes": 1072
+    }
+  ],
+  "notes": [
+    "Only public metadata and question files were downloaded.",
+    "No 500k-document archive was fetched in this step.",
+    "Use the question files to build a small local slice first."
+  ]
+}

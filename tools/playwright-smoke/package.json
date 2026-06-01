@@ -4,7 +4,8 @@
   "type": "commonjs",
   "scripts": {
     "install:browsers": "playwright install chromium",
-    "smoke": "node smoke.js"
+    "smoke": "node smoke.js",
+    "visual-audit": "node visual-audit.js"
   },
   "dependencies": {
     "playwright": "1.60.0"

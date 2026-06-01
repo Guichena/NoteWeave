@@ -1,0 +1,22 @@
+{
+  "suite": "parsebench",
+  "lane": "team",
+  "scenario": "document_ingestion",
+  "id_fields": ["page_id", "document_id", "id"],
+  "query_fields": ["instruction", "question", "task", "capability"],
+  "answer_fields": ["expected_parse", "ground_truth", "reference", "answer"],
+  "category_fields": ["capability_dimension", "domain", "document_type"],
+  "source_id_fields": ["document_id", "file_id", "page_id"],
+  "source_type_fields": ["document_type", "domain"],
+  "answer_fact_fields": ["checks", "rubric", "facts"],
+  "conversation_fields": [],
+  "static_tags": {
+    "benchmark_family": "document_parsing",
+    "metric_focus": "parse_quality"
+  },
+  "sample": {
+    "ratio": 0.025,
+    "max_cases": 50,
+    "stratify_by": ["capability_dimension", "domain"]
+  }
+}

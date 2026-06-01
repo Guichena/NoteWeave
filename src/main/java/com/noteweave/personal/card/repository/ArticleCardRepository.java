@@ -12,4 +12,6 @@ public interface ArticleCardRepository extends JpaRepository<ArticleCard, Long> 
     Optional<ArticleCard> findByIdAndSpaceId(Long id, Long spaceId);
 
     List<ArticleCard> findByResearchProjectIdAndSpaceIdOrderByUpdatedAtDesc(Long researchProjectId, Long spaceId);
+
+    List<ArticleCard> findBySpaceIdOrderByUpdatedAtDesc(Long spaceId);
 }

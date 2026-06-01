@@ -196,9 +196,9 @@ llm.service.ConfigurableLLMClient
 ```yaml
 llm:
   api:
-    base-url: ${LLM_API_BASE_URL:https://api.deepseek.com/v1}
+    base-url: ${LLM_API_BASE_URL:https://generativelanguage.googleapis.com/v1beta/openai}
     api-key: ${LLM_API_KEY:}
-    model: ${LLM_API_MODEL:deepseek-chat}
+    model: ${LLM_API_MODEL:gemini-2.5-flash-lite}
     temperature: ${LLM_TEMPERATURE:0.3}
     max-tokens: ${LLM_MAX_TOKENS:2000}
     timeout-seconds: ${LLM_TIMEOUT_SECONDS:60}

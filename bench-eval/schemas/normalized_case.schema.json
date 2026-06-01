@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NoteWeave normalized benchmark case",
+  "type": "object",
+  "required": ["case_id", "suite", "lane", "scenario", "query", "tags"],
+  "properties": {
+    "case_id": {
+      "type": "string"
+    },
+    "suite": {
+      "type": "string"
+    },
+    "lane": {
+      "type": "string",
+      "enum": ["team", "personal"]
+    },
+    "scenario": {
+      "type": "string"
+    },
+    "category": {
+      "type": ["string", "null"]
+    },
+    "conversation": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["role", "content"],
+        "properties": {
+          "role": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "query": {
+      "type": "string"
+    },
+    "expected_answer": {
+      "type": ["string", "null"]
+    },
+    "expected_sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "external_doc_id": {
+            "type": ["string", "null"]
+          },
+          "source_type": {
+            "type": ["string", "null"]
+          },
+          "document_id": {
+            "type": ["integer", "null"]
+          },
+          "chunk_id": {
+            "type": ["integer", "null"]
+          },
+          "wiki_page_id": {
+            "type": ["integer", "null"]
+          },
+          "citation_id": {
+            "type": ["string", "null"]
+          }
+        }
+      }
+    },
+    "answer_facts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tags": {
+      "type": "object"
+    },
+    "raw": {
+      "type": "object"
+    }
+  }
+}

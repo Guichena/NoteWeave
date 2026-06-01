@@ -1,0 +1,22 @@
+{
+  "suite": "enterprise_rag_bench",
+  "lane": "team",
+  "scenario": "team_knowledge_rag",
+  "id_fields": ["question_id", "id", "qid"],
+  "query_fields": ["question", "query", "query_text"],
+  "answer_fields": ["gold_answer", "answer", "expected_answer", "reference_answer"],
+  "category_fields": ["question_type", "category", "question_category"],
+  "source_id_fields": ["expected_doc_ids", "document_ids", "gold_document_ids", "expected_document_ids"],
+  "source_type_fields": ["source_types", "source_type", "source"],
+  "answer_fact_fields": ["answer_facts", "facts"],
+  "conversation_fields": [],
+  "static_tags": {
+    "benchmark_family": "enterprise_rag",
+    "requires_doc_id_map": true
+  },
+  "sample": {
+    "ratio": 0.1,
+    "max_cases": 50,
+    "stratify_by": ["question_type", "source_types"]
+  }
+}

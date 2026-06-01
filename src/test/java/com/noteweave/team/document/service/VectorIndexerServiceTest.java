@@ -47,7 +47,7 @@ class VectorIndexerServiceTest {
                 new EmbeddingProperties(
                         true,
                         new EmbeddingProperties.Stub(true),
-                        new EmbeddingProperties.Api("http://localhost", "test", "text-embedding-3-small", 8, 16)
+                        new EmbeddingProperties.Api("http://localhost", "test", "jina-embeddings-v5-text-nano", 768, 16)
                 )
         );
     }
@@ -70,22 +70,24 @@ class VectorIndexerServiceTest {
         chunk.setContent("chunk body");
         chunk.setContentHash("hash");
         chunk.setEsDocId("doc-11-3-0");
-        float[] vector = new float[]{0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 0.8f};
+        float[] vector = new float[768];
+        vector[0] = 0.1f;
+        vector[1] = 0.2f;
 
         when(documentRepository.findById(11L)).thenReturn(java.util.Optional.of(document));
         when(documentChunkRepository.findByDocumentIdAndIndexVersionOrderByChunkIndexAsc(11L, 3)).thenReturn(List.of(chunk));
         when(searchIndexService.documentChunkVectorAliasName()).thenReturn("noteweave-dev-document-chunk-vector");
-        when(searchIndexService.documentChunkVectorIndexName("text-embedding-3-small", 8))
-                .thenReturn("noteweave-dev-document-chunk-vector-text-embedding-3-small-8");
+        when(searchIndexService.documentChunkVectorIndexName("jina-embeddings-v5-text-nano", 768))
+                .thenReturn("noteweave-dev-document-chunk-vector-jina-embeddings-v5-text-nano-768");
         when(embeddingClient.embedTexts(List.of("chunk body"))).thenReturn(List.of(vector));
 
         int backfilled = vectorIndexerService.backfillDocumentEmbeddings(11L, 22L);
 
         assertThat(backfilled).isEqualTo(1);
         InOrder inOrder = inOrder(searchIndexService, embeddingClient);
-        inOrder.verify(searchIndexService).ensureVectorIndex("noteweave-dev-document-chunk-vector-text-embedding-3-small-8", 8);
+        inOrder.verify(searchIndexService).ensureVectorIndex("noteweave-dev-document-chunk-vector-jina-embeddings-v5-text-nano-768", 768);
         inOrder.verify(embeddingClient).embedTexts(List.of("chunk body"));
-        inOrder.verify(searchIndexService).bulkIndexChunkEmbeddings("noteweave-dev-document-chunk-vector-text-embedding-3-small-8", List.of(chunk), List.of(vector));
-        inOrder.verify(searchIndexService).switchVectorAlias("noteweave-dev-document-chunk-vector", "noteweave-dev-document-chunk-vector-text-embedding-3-small-8");
+        inOrder.verify(searchIndexService).bulkIndexChunkEmbeddings("noteweave-dev-document-chunk-vector-jina-embeddings-v5-text-nano-768", List.of(chunk), List.of(vector));
+        inOrder.verify(searchIndexService).switchVectorAlias("noteweave-dev-document-chunk-vector", "noteweave-dev-document-chunk-vector-jina-embeddings-v5-text-nano-768");
     }
 }

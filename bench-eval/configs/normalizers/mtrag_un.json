@@ -1,0 +1,22 @@
+{
+  "suite": "mtrag_un",
+  "lane": "team",
+  "scenario": "workspace_chat_runtime",
+  "id_fields": ["task_id", "conversation_id", "id", "qid"],
+  "query_fields": ["question", "query", "current_turn", "turn.question", "turn.query"],
+  "answer_fields": ["answer", "gold_answer", "reference_answer", "expected_answer"],
+  "category_fields": ["answerability", "challenge_type", "category", "domain"],
+  "source_id_fields": ["expected_doc_ids", "gold_passage_ids", "relevant_passage_ids", "passage_ids"],
+  "source_type_fields": ["domain", "source_type"],
+  "answer_fact_fields": ["answer_facts", "facts"],
+  "conversation_fields": ["conversation", "history", "turns", "messages"],
+  "static_tags": {
+    "benchmark_family": "multi_turn_rag",
+    "preserve_turns": true
+  },
+  "sample": {
+    "ratio": 0.05,
+    "max_cases": 40,
+    "stratify_by": ["domain", "answerability", "challenge_type"]
+  }
+}

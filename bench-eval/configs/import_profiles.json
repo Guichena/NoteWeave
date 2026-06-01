@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "profiles": [
+    {
+      "id": "r0_team_seed",
+      "lane": "team",
+      "case_file": "bench-eval/data/r0.team_seed.noteweave_cases.jsonl",
+      "target_api": "POST /api/v1/admin/spaces/{spaceId}/rag-eval-cases",
+      "run_after_import": false,
+      "notes": "Local seed only."
+    },
+    {
+      "id": "r1_enterprise_core",
+      "lane": "team",
+      "case_file": "bench-eval/data/r1.enterprise_rag_bench.team.noteweave_cases.jsonl",
+      "target_api": "POST /api/v1/admin/spaces/{spaceId}/rag-eval-cases",
+      "run_after_import": false,
+      "notes": "Core EnterpriseRAG-Bench 50-case sample. Expected sources require doc-id map after corpus ingestion."
+    },
+    {
+      "id": "r1_enterprise_metadata",
+      "lane": "team",
+      "case_file": "bench-eval/data/r1.enterprise_rag_bench_metadata.team.noteweave_cases.jsonl",
+      "target_api": "POST /api/v1/admin/spaces/{spaceId}/rag-eval-cases",
+      "run_after_import": false,
+      "notes": "Metadata-dependent questions. Keep separate from official core retrieval slice."
+    },
+    {
+      "id": "r4_personal_seed",
+      "lane": "personal",
+      "case_file": "bench-eval/data/r0.personal_seed.manifest.jsonl",
+      "target_api": "manual workflow manifest",
+      "run_after_import": false,
+      "notes": "Personal workflow manifest, not imported into rag_eval_case."
+    }
+  ]
+}

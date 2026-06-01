@@ -1,6 +1,7 @@
 package com.noteweave.chat.repository;
 
 import com.noteweave.chat.model.ChatMessage;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -12,6 +13,14 @@ import jakarta.persistence.LockModeType;
 public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> {
 
     List<ChatMessage> findBySessionIdOrderByMessageSeqAsc(Long sessionId);
+
+    @Query("""
+            select m from ChatMessage m, ChatSession s
+            where m.sessionId = s.id
+              and s.spaceId = :spaceId
+              and m.id in :ids
+            """)
+    List<ChatMessage> findByIdInAndSessionSpaceId(Collection<Long> ids, Long spaceId);
 
     Optional<ChatMessage> findTopBySessionIdOrderByMessageSeqDesc(Long sessionId);
 

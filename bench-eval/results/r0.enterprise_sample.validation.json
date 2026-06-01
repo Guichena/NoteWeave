@@ -1,0 +1,13 @@
+{
+  "errors": [],
+  "files": [
+    {
+      "invalid_rows": 0,
+      "path": "bench-eval\\data\\r0.enterprise_sample.normalized.jsonl",
+      "rows": 3
+    }
+  ],
+  "invalid_rows": 0,
+  "total_rows": 3,
+  "valid_rows": 3
+}

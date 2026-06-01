@@ -1,6 +1,8 @@
 package com.noteweave.graph.service;
 
 import com.noteweave.artifact.model.Artifact;
+import com.noteweave.artifact.model.ArtifactCardRelation;
+import com.noteweave.artifact.model.ArtifactCitation;
 import com.noteweave.artifact.model.ArtifactSource;
 import com.noteweave.artifact.model.ArtifactSourceType;
 import com.noteweave.artifact.model.SessionArtifact;
@@ -48,6 +50,8 @@ import com.noteweave.personal.card.repository.SynthesisConceptRelationRepository
 import com.noteweave.personal.methodology.model.MethodologyCard;
 import com.noteweave.personal.methodology.model.MethodologyCardStatus;
 import com.noteweave.personal.methodology.repository.MethodologyCardRepository;
+import com.noteweave.personal.source.model.Source;
+import com.noteweave.personal.source.repository.SourceRepository;
 import com.noteweave.team.document.model.Document;
 import com.noteweave.team.document.model.DocumentStatus;
 import com.noteweave.team.document.repository.DocumentRepository;
@@ -70,6 +74,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -99,6 +104,7 @@ public class KnowledgeGraphService {
     private final ConceptCardRepository conceptCardRepository;
     private final SynthesisCardRepository synthesisCardRepository;
     private final MethodologyCardRepository methodologyCardRepository;
+    private final SourceRepository sourceRepository;
     private final ArticleConceptRelationRepository articleConceptRelationRepository;
     private final ConceptRelationRepository conceptRelationRepository;
     private final SynthesisConceptRelationRepository synthesisConceptRelationRepository;
@@ -199,25 +205,60 @@ public class KnowledgeGraphService {
         List<WikiPage> wikiPages = wikiPageRepository.findBySpaceIdAndDeletedAtIsNullOrderByUpdatedAtDesc(spaceId);
         List<WikiPageLink> wikiLinks = wikiPageLinkRepository.findBySpaceIdOrderBySourcePageIdAscIdAsc(spaceId);
         List<Artifact> artifacts = artifactRepository.findBySpaceIdAndDeletedAtIsNullOrderByUpdatedAtDesc(spaceId);
+        List<Long> artifactIds = idsOf(artifacts);
+        List<ArtifactSource> artifactSources = loadForParentIds(artifactIds, artifactSourceRepository::findByArtifactIdInOrderByArtifactIdAscIdAsc);
+        Map<Long, List<ArtifactSource>> artifactSourcesByArtifactId = groupByParent(artifactSources, ArtifactSource::getArtifactId);
         List<Document> documents = loadDocumentsForSpace(spaceId);
-        List<ChatMessage> chatMessages = loadChatMessagesForSpace(wikiPages, artifacts);
-        List<ArticleCard> articleCards = articleCardRepository.findAll().stream()
-                .filter(card -> Objects.equals(card.getSpaceId(), spaceId))
-                .toList();
-        List<ConceptCard> conceptCards = conceptCardRepository.findAll().stream()
-                .filter(card -> Objects.equals(card.getSpaceId(), spaceId))
-                .toList();
-        List<SynthesisCard> synthesisCards = synthesisCardRepository.findAll().stream()
-                .filter(card -> Objects.equals(card.getSpaceId(), spaceId))
-                .toList();
-        List<MethodologyCard> methodologyCards = methodologyCardRepository.findAll().stream()
-                .filter(card -> Objects.equals(card.getSpaceId(), spaceId))
-                .filter(card -> card.getStatus() == MethodologyCardStatus.ACTIVE)
-                .toList();
+        List<ChatMessage> chatMessages = loadChatMessagesForSpace(spaceId, wikiPages, artifacts, artifactSourcesByArtifactId);
+        List<ArticleCard> articleCards = articleCardRepository.findBySpaceIdOrderByUpdatedAtDesc(spaceId);
+        List<ConceptCard> conceptCards = conceptCardRepository.findBySpaceIdOrderByUpdatedAtDesc(spaceId);
+        List<SynthesisCard> synthesisCards = synthesisCardRepository.findBySpaceIdOrderByUpdatedAtDesc(spaceId);
+        List<MethodologyCard> methodologyCards = methodologyCardRepository.findBySpaceIdAndStatusOrderByUpdatedAtDesc(spaceId, MethodologyCardStatus.ACTIVE);
+        List<Source> sources = sourceRepository.findBySpaceIdAndDeletedAtIsNullOrderByCreatedAtDesc(spaceId);
+
+        List<Long> wikiPageIds = idsOf(wikiPages);
+        List<Long> messageIds = idsOf(chatMessages);
+        List<Long> articleCardIds = idsOf(articleCards);
+        List<Long> conceptCardIds = idsOf(conceptCards);
+        List<Long> synthesisCardIds = idsOf(synthesisCards);
+
+        List<ArtifactCitation> artifactCitations = loadForParentIds(artifactIds, artifactCitationRepository::findByArtifactIdInOrderByArtifactIdAscIdAsc);
+        List<WikiPageCitation> wikiPageCitations = loadForParentIds(wikiPageIds, wikiPageCitationRepository::findByWikiPageIdInOrderByWikiPageIdAscIdAsc);
+        List<MessageCitation> messageCitations = loadForParentIds(messageIds, messageCitationRepository::findByMessageIdInOrderByMessageIdAscIdAsc);
+        List<SessionArtifact> sessionArtifacts = loadForParentIds(collectCreatedSessionIds(artifacts), sessionArtifactRepository::findBySessionIdInOrderBySessionIdAscIdAsc);
+        List<ArticleConceptRelation> articleConceptRelations = loadForParentIds(articleCardIds, articleConceptRelationRepository::findByArticleCardIdInOrderByArticleCardIdAscIdAsc);
+        List<ArticleCardCitation> articleCardCitations = loadForParentIds(articleCardIds, articleCardCitationRepository::findByArticleCardIdInOrderByArticleCardIdAscIdAsc);
+        List<ConceptRelation> conceptRelations = loadForParentIds(conceptCardIds, conceptRelationRepository::findBySourceConceptIdInOrderBySourceConceptIdAscIdAsc);
+        List<ConceptCardCitation> conceptCardCitations = loadForParentIds(conceptCardIds, conceptCardCitationRepository::findByConceptCardIdInOrderByConceptCardIdAscIdAsc);
+        List<SynthesisConceptRelation> synthesisConceptRelations = loadForParentIds(synthesisCardIds, synthesisConceptRelationRepository::findBySynthesisCardIdInOrderBySynthesisCardIdAscIdAsc);
+        List<SynthesisCardCitation> synthesisCardCitations = loadForParentIds(synthesisCardIds, synthesisCardCitationRepository::findBySynthesisCardIdInOrderBySynthesisCardIdAscIdAsc);
+        List<ArtifactCardRelation> artifactCardRelations = loadForParentIds(artifactIds, artifactCardRelationRepository::findByArtifactIdInOrderByArtifactIdAscIdAsc);
+
+        Map<Long, List<ArtifactCitation>> artifactCitationsByArtifactId = groupByParent(artifactCitations, ArtifactCitation::getArtifactId);
+        Map<Long, List<WikiPageCitation>> wikiPageCitationsByWikiPageId = groupByParent(wikiPageCitations, WikiPageCitation::getWikiPageId);
+        Map<Long, List<MessageCitation>> messageCitationsByMessageId = groupByParent(messageCitations, MessageCitation::getMessageId);
+        Map<Long, List<SessionArtifact>> sessionArtifactsBySessionId = groupByParent(sessionArtifacts, SessionArtifact::getSessionId);
+        Map<Long, List<ArticleConceptRelation>> articleConceptRelationsByArticleId = groupByParent(articleConceptRelations, ArticleConceptRelation::getArticleCardId);
+        Map<Long, List<ArticleCardCitation>> articleCardCitationsByArticleId = groupByParent(articleCardCitations, ArticleCardCitation::getArticleCardId);
+        Map<Long, List<ConceptRelation>> conceptRelationsBySourceConceptId = groupByParent(conceptRelations, ConceptRelation::getSourceConceptId);
+        Map<Long, List<ConceptCardCitation>> conceptCardCitationsByConceptId = groupByParent(conceptCardCitations, ConceptCardCitation::getConceptCardId);
+        Map<Long, List<SynthesisConceptRelation>> synthesisConceptRelationsBySynthesisId = groupByParent(synthesisConceptRelations, SynthesisConceptRelation::getSynthesisCardId);
+        Map<Long, List<SynthesisCardCitation>> synthesisCardCitationsBySynthesisId = groupByParent(synthesisCardCitations, SynthesisCardCitation::getSynthesisCardId);
+        Map<Long, List<ArtifactCardRelation>> artifactCardRelationsByArtifactId = groupByParent(artifactCardRelations, ArtifactCardRelation::getArtifactId);
+
+        Set<Long> citationIds = new LinkedHashSet<>();
+        collectCitationIds(citationIds, artifactCitations, ArtifactCitation::getCitationId);
+        collectCitationIds(citationIds, wikiPageCitations, WikiPageCitation::getCitationId);
+        collectCitationIds(citationIds, messageCitations, MessageCitation::getCitationId);
+        collectCitationIds(citationIds, articleCardCitations, ArticleCardCitation::getCitationId);
+        collectCitationIds(citationIds, conceptCardCitations, ConceptCardCitation::getCitationId);
+        collectCitationIds(citationIds, synthesisCardCitations, SynthesisCardCitation::getCitationId);
+        Map<Long, Citation> citationById = loadCitationsById(citationIds);
 
         Map<Long, Artifact> artifactById = indexById(artifacts);
         Map<Long, Document> documentById = indexById(documents);
         Map<Long, ChatMessage> messageById = indexById(chatMessages);
+        Map<Long, Source> sourceById = indexById(sources);
 
         LinkedHashMap<String, KnowledgeGraphNodeResponse> nodes = new LinkedHashMap<>();
         List<KnowledgeGraphEdgeResponse> edges = new ArrayList<>();
@@ -257,6 +298,19 @@ public class KnowledgeGraphService {
                     "Document",
                     String.valueOf(document.getStatus()),
                     String.valueOf(document.getStatus()),
+                    false
+            ));
+        }
+
+        for (Source source : sources) {
+            nodes.put(nodeId(KnowledgeGraphNodeType.SOURCE, source.getId()), node(
+                    KnowledgeGraphNodeType.SOURCE,
+                    source.getId(),
+                    spaceId,
+                    source.getTitle(),
+                    String.valueOf(source.getSourceType()),
+                    String.valueOf(source.getCompileStatus()),
+                    String.valueOf(source.getImportStatus()),
                     false
             ));
         }
@@ -345,6 +399,16 @@ public class KnowledgeGraphService {
                         nodeId(KnowledgeGraphNodeType.CHAT_MESSAGE, page.getSourceMessageId()),
                         KnowledgeGraphEdgeType.WIKI_SOURCE_MESSAGE, "published-from-message", 1));
             }
+            if (page.getSourceDocumentId() != null && documentById.containsKey(page.getSourceDocumentId())) {
+                edges.add(edge(nodeId(KnowledgeGraphNodeType.WIKI_PAGE, page.getId()),
+                        nodeId(KnowledgeGraphNodeType.DOCUMENT, page.getSourceDocumentId()),
+                        KnowledgeGraphEdgeType.WIKI_SOURCE_DOCUMENT, "auto-maintained-from-document", 1));
+            }
+            if (page.getSourcePersonalSourceId() != null && sourceById.containsKey(page.getSourcePersonalSourceId())) {
+                edges.add(edge(nodeId(KnowledgeGraphNodeType.WIKI_PAGE, page.getId()),
+                        nodeId(KnowledgeGraphNodeType.SOURCE, page.getSourcePersonalSourceId()),
+                        KnowledgeGraphEdgeType.WIKI_SOURCE_PERSONAL_SOURCE, "auto-maintained-from-source", 1));
+            }
         }
 
         for (Artifact artifact : artifacts) {
@@ -354,50 +418,72 @@ public class KnowledgeGraphService {
                         KnowledgeGraphEdgeType.CHAT_GENERATES_ARTIFACT, "generates", 1));
             }
 
-            for (ArtifactSource source : artifactSourceRepository.findByArtifactIdOrderByIdAsc(artifact.getId())) {
+            for (ArtifactSource source : artifactSourcesByArtifactId.getOrDefault(artifact.getId(), List.of())) {
                 KnowledgeGraphEdgeResponse mapped = mapArtifactSourceEdge(artifact.getId(), source, documentById, messageById, artifactById);
                 if (mapped != null) {
                     edges.add(mapped);
                 }
             }
 
-            artifactCitationRepository.findByArtifactIdOrderByIdAsc(artifact.getId()).forEach(artifactCitation ->
-                    citationRepository.findById(artifactCitation.getCitationId()).ifPresent(citation -> maybeAddDocumentEdge(
+            artifactCitationsByArtifactId.getOrDefault(artifact.getId(), List.of()).forEach(artifactCitation -> {
+                Citation citation = citationById.get(artifactCitation.getCitationId());
+                if (citation != null) {
+                    maybeAddCitationEdge(
                             edges,
                             nodeId(KnowledgeGraphNodeType.ARTIFACT, artifact.getId()),
                             citation,
                             documentById,
+                            sourceById,
                             KnowledgeGraphEdgeType.ARTIFACT_CITES_DOCUMENT,
-                            "cites-document"
-                    )));
+                            "cites-document",
+                            KnowledgeGraphEdgeType.ARTIFACT_CITES_SOURCE,
+                            "cites-source"
+                    );
+                }
+            });
         }
 
         for (WikiPage page : wikiPages) {
             if (page.getPublishedVersionId() == null) {
                 continue;
             }
-            for (WikiPageCitation relation : wikiPageCitationRepository.findByWikiPageIdAndWikiPageVersionIdOrderByIdAsc(page.getId(), page.getPublishedVersionId())) {
-                citationRepository.findById(relation.getCitationId()).ifPresent(citation -> maybeAddDocumentEdge(
-                        edges,
-                        nodeId(KnowledgeGraphNodeType.WIKI_PAGE, page.getId()),
-                        citation,
-                        documentById,
-                        KnowledgeGraphEdgeType.WIKI_CITES_DOCUMENT,
-                        "wiki-cites-document"
-                ));
+            for (WikiPageCitation relation : wikiPageCitationsByWikiPageId.getOrDefault(page.getId(), List.of())) {
+                if (!Objects.equals(relation.getWikiPageVersionId(), page.getPublishedVersionId())) {
+                    continue;
+                }
+                Citation citation = citationById.get(relation.getCitationId());
+                if (citation != null) {
+                    maybeAddCitationEdge(
+                            edges,
+                            nodeId(KnowledgeGraphNodeType.WIKI_PAGE, page.getId()),
+                            citation,
+                            documentById,
+                            sourceById,
+                            KnowledgeGraphEdgeType.WIKI_CITES_DOCUMENT,
+                            "wiki-cites-document",
+                            KnowledgeGraphEdgeType.WIKI_CITES_SOURCE,
+                            "wiki-cites-source"
+                    );
+                }
             }
         }
 
         for (ChatMessage message : chatMessages) {
-            for (MessageCitation relation : messageCitationRepository.findByMessageId(message.getId())) {
-                citationRepository.findById(relation.getCitationId()).ifPresent(citation -> maybeAddDocumentEdge(
-                        edges,
-                        nodeId(KnowledgeGraphNodeType.CHAT_MESSAGE, message.getId()),
-                        citation,
-                        documentById,
-                        KnowledgeGraphEdgeType.CHAT_CITES_DOCUMENT,
-                        "chat-cites-document"
-                ));
+            for (MessageCitation relation : messageCitationsByMessageId.getOrDefault(message.getId(), List.of())) {
+                Citation citation = citationById.get(relation.getCitationId());
+                if (citation != null) {
+                    maybeAddCitationEdge(
+                            edges,
+                            nodeId(KnowledgeGraphNodeType.CHAT_MESSAGE, message.getId()),
+                            citation,
+                            documentById,
+                            sourceById,
+                            KnowledgeGraphEdgeType.CHAT_CITES_DOCUMENT,
+                            "chat-cites-document",
+                            KnowledgeGraphEdgeType.CHAT_CITES_SOURCE,
+                            "chat-cites-source"
+                    );
+                }
             }
         }
 
@@ -405,7 +491,10 @@ public class KnowledgeGraphService {
             if (artifact.getCreatedFromSessionId() == null || artifact.getCreatedFromMessageId() == null) {
                 continue;
             }
-            for (SessionArtifact relation : sessionArtifactRepository.findBySessionIdOrderByIdAsc(artifact.getCreatedFromSessionId())) {
+            if (!messageById.containsKey(artifact.getCreatedFromMessageId())) {
+                continue;
+            }
+            for (SessionArtifact relation : sessionArtifactsBySessionId.getOrDefault(artifact.getCreatedFromSessionId(), List.of())) {
                 if (Objects.equals(relation.getArtifactId(), artifact.getId())) {
                     edges.add(edge(nodeId(KnowledgeGraphNodeType.CHAT_MESSAGE, artifact.getCreatedFromMessageId()),
                             nodeId(KnowledgeGraphNodeType.ARTIFACT, relation.getArtifactId()),
@@ -417,7 +506,7 @@ public class KnowledgeGraphService {
         }
 
         for (ArticleCard card : articleCards) {
-            for (ArticleConceptRelation relation : articleConceptRelationRepository.findByArticleCardIdOrderByIdAsc(card.getId())) {
+            for (ArticleConceptRelation relation : articleConceptRelationsByArticleId.getOrDefault(card.getId(), List.of())) {
                 if (nodes.containsKey(nodeId(KnowledgeGraphNodeType.CONCEPT_CARD, relation.getConceptCardId()))) {
                     edges.add(edge(
                             nodeId(KnowledgeGraphNodeType.ARTICLE_CARD, card.getId()),
@@ -428,20 +517,26 @@ public class KnowledgeGraphService {
                     ));
                 }
             }
-            for (ArticleCardCitation citationRelation : articleCardCitationRepository.findByArticleCardIdOrderByIdAsc(card.getId())) {
-                citationRepository.findById(citationRelation.getCitationId()).ifPresent(citation -> maybeAddDocumentEdge(
-                        edges,
-                        nodeId(KnowledgeGraphNodeType.ARTICLE_CARD, card.getId()),
-                        citation,
-                        documentById,
-                        KnowledgeGraphEdgeType.ARTICLE_CITES_DOCUMENT,
-                        "article-cites-document"
-                ));
+            for (ArticleCardCitation citationRelation : articleCardCitationsByArticleId.getOrDefault(card.getId(), List.of())) {
+                Citation citation = citationById.get(citationRelation.getCitationId());
+                if (citation != null) {
+                    maybeAddCitationEdge(
+                            edges,
+                            nodeId(KnowledgeGraphNodeType.ARTICLE_CARD, card.getId()),
+                            citation,
+                            documentById,
+                            sourceById,
+                            KnowledgeGraphEdgeType.ARTICLE_CITES_DOCUMENT,
+                            "article-cites-document",
+                            KnowledgeGraphEdgeType.ARTICLE_CITES_SOURCE,
+                            "article-cites-source"
+                    );
+                }
             }
         }
 
         for (ConceptCard card : conceptCards) {
-            for (ConceptRelation relation : conceptRelationRepository.findByResearchProjectId(card.getResearchProjectId())) {
+            for (ConceptRelation relation : conceptRelationsBySourceConceptId.getOrDefault(card.getId(), List.of())) {
                 if (Objects.equals(relation.getSourceConceptId(), card.getId())
                         && nodes.containsKey(nodeId(KnowledgeGraphNodeType.CONCEPT_CARD, relation.getTargetConceptId()))) {
                     edges.add(edge(
@@ -453,15 +548,21 @@ public class KnowledgeGraphService {
                     ));
                 }
             }
-            for (ConceptCardCitation citationRelation : conceptCardCitationRepository.findByConceptCardIdOrderByIdAsc(card.getId())) {
-                citationRepository.findById(citationRelation.getCitationId()).ifPresent(citation -> maybeAddDocumentEdge(
-                        edges,
-                        nodeId(KnowledgeGraphNodeType.CONCEPT_CARD, card.getId()),
-                        citation,
-                        documentById,
-                        KnowledgeGraphEdgeType.CONCEPT_CITES_DOCUMENT,
-                        "concept-cites-document"
-                ));
+            for (ConceptCardCitation citationRelation : conceptCardCitationsByConceptId.getOrDefault(card.getId(), List.of())) {
+                Citation citation = citationById.get(citationRelation.getCitationId());
+                if (citation != null) {
+                    maybeAddCitationEdge(
+                            edges,
+                            nodeId(KnowledgeGraphNodeType.CONCEPT_CARD, card.getId()),
+                            citation,
+                            documentById,
+                            sourceById,
+                            KnowledgeGraphEdgeType.CONCEPT_CITES_DOCUMENT,
+                            "concept-cites-document",
+                            KnowledgeGraphEdgeType.CONCEPT_CITES_SOURCE,
+                            "concept-cites-source"
+                    );
+                }
             }
         }
 
@@ -475,7 +576,7 @@ public class KnowledgeGraphService {
                         1
                 ));
             }
-            for (SynthesisConceptRelation relation : synthesisConceptRelationRepository.findBySynthesisCardIdOrderByIdAsc(card.getId())) {
+            for (SynthesisConceptRelation relation : synthesisConceptRelationsBySynthesisId.getOrDefault(card.getId(), List.of())) {
                 if (nodes.containsKey(nodeId(KnowledgeGraphNodeType.CONCEPT_CARD, relation.getConceptCardId()))) {
                     edges.add(edge(
                             nodeId(KnowledgeGraphNodeType.SYNTHESIS_CARD, card.getId()),
@@ -486,20 +587,26 @@ public class KnowledgeGraphService {
                     ));
                 }
             }
-            for (SynthesisCardCitation citationRelation : synthesisCardCitationRepository.findBySynthesisCardIdOrderByIdAsc(card.getId())) {
-                citationRepository.findById(citationRelation.getCitationId()).ifPresent(citation -> maybeAddDocumentEdge(
-                        edges,
-                        nodeId(KnowledgeGraphNodeType.SYNTHESIS_CARD, card.getId()),
-                        citation,
-                        documentById,
-                        KnowledgeGraphEdgeType.SYNTHESIS_CITES_DOCUMENT,
-                        "synthesis-cites-document"
-                ));
+            for (SynthesisCardCitation citationRelation : synthesisCardCitationsBySynthesisId.getOrDefault(card.getId(), List.of())) {
+                Citation citation = citationById.get(citationRelation.getCitationId());
+                if (citation != null) {
+                    maybeAddCitationEdge(
+                            edges,
+                            nodeId(KnowledgeGraphNodeType.SYNTHESIS_CARD, card.getId()),
+                            citation,
+                            documentById,
+                            sourceById,
+                            KnowledgeGraphEdgeType.SYNTHESIS_CITES_DOCUMENT,
+                            "synthesis-cites-document",
+                            KnowledgeGraphEdgeType.SYNTHESIS_CITES_SOURCE,
+                            "synthesis-cites-source"
+                    );
+                }
             }
         }
 
         for (Artifact artifact : artifacts) {
-            for (var relation : artifactCardRelationRepository.findByArtifactIdOrderByIdAsc(artifact.getId())) {
+            for (ArtifactCardRelation relation : artifactCardRelationsByArtifactId.getOrDefault(artifact.getId(), List.of())) {
                 KnowledgeGraphNodeType targetType = switch (relation.getCardType()) {
                     case CONCEPT -> KnowledgeGraphNodeType.CONCEPT_CARD;
                     case METHODOLOGY -> KnowledgeGraphNodeType.METHODOLOGY_CARD;
@@ -704,16 +811,23 @@ public class KnowledgeGraphService {
         return attributes;
     }
 
-    private void maybeAddDocumentEdge(
+    private void maybeAddCitationEdge(
             List<KnowledgeGraphEdgeResponse> edges,
             String sourceNodeId,
             Citation citation,
             Map<Long, Document> documentById,
-            KnowledgeGraphEdgeType edgeType,
-            String label
+            Map<Long, Source> sourceById,
+            KnowledgeGraphEdgeType documentEdgeType,
+            String documentLabel,
+            KnowledgeGraphEdgeType sourceEdgeType,
+            String sourceLabel
     ) {
         if ("DOCUMENT".equalsIgnoreCase(citation.getSourceType()) && documentById.containsKey(citation.getSourceId())) {
-            edges.add(edge(sourceNodeId, nodeId(KnowledgeGraphNodeType.DOCUMENT, citation.getSourceId()), edgeType, label, 1));
+            edges.add(edge(sourceNodeId, nodeId(KnowledgeGraphNodeType.DOCUMENT, citation.getSourceId()), documentEdgeType, documentLabel, 1));
+            return;
+        }
+        if ("SOURCE".equalsIgnoreCase(citation.getSourceType()) && sourceById.containsKey(citation.getSourceId())) {
+            edges.add(edge(sourceNodeId, nodeId(KnowledgeGraphNodeType.SOURCE, citation.getSourceId()), sourceEdgeType, sourceLabel, 1));
         }
     }
 
@@ -741,19 +855,15 @@ public class KnowledgeGraphService {
     }
 
     private List<Document> loadDocumentsForSpace(Long spaceId) {
-        List<Document> documents = new ArrayList<>();
-        for (Document document : documentRepository.findAll()) {
-            if (Objects.equals(document.getSpaceId(), spaceId)
-                    && document.getDeletedAt() == null
-                    && document.getStatus() != DocumentStatus.DELETED) {
-                documents.add(document);
-            }
-        }
-        documents.sort(Comparator.comparing(Document::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())));
-        return documents;
+        return documentRepository.findBySpaceIdAndDeletedAtIsNullAndStatusNotOrderByCreatedAtDesc(spaceId, DocumentStatus.DELETED);
     }
 
-    private List<ChatMessage> loadChatMessagesForSpace(List<WikiPage> wikiPages, List<Artifact> artifacts) {
+    private List<ChatMessage> loadChatMessagesForSpace(
+            Long spaceId,
+            List<WikiPage> wikiPages,
+            List<Artifact> artifacts,
+            Map<Long, List<ArtifactSource>> artifactSourcesByArtifactId
+    ) {
         Set<Long> messageIds = new LinkedHashSet<>();
         for (WikiPage page : wikiPages) {
             if (page.getSourceMessageId() != null) {
@@ -764,16 +874,74 @@ public class KnowledgeGraphService {
             if (artifact.getCreatedFromMessageId() != null) {
                 messageIds.add(artifact.getCreatedFromMessageId());
             }
-            for (ArtifactSource source : artifactSourceRepository.findByArtifactIdOrderByIdAsc(artifact.getId())) {
+            for (ArtifactSource source : artifactSourcesByArtifactId.getOrDefault(artifact.getId(), List.of())) {
                 if (source.getSourceType() == ArtifactSourceType.CHAT_MESSAGE) {
                     messageIds.add(source.getSourceId());
                 }
             }
         }
 
-        List<ChatMessage> messages = new ArrayList<>(chatMessageRepository.findAllById(messageIds));
+        List<ChatMessage> messages = new ArrayList<>(loadForParentIds(
+                messageIds,
+                ids -> chatMessageRepository.findByIdInAndSessionSpaceId(ids, spaceId)
+        ));
         messages.sort(Comparator.comparing(ChatMessage::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())));
         return messages;
+    }
+
+    private Set<Long> collectCreatedSessionIds(List<Artifact> artifacts) {
+        Set<Long> sessionIds = new LinkedHashSet<>();
+        for (Artifact artifact : artifacts) {
+            if (artifact.getCreatedFromSessionId() != null && artifact.getCreatedFromMessageId() != null) {
+                sessionIds.add(artifact.getCreatedFromSessionId());
+            }
+        }
+        return sessionIds;
+    }
+
+    private <T> List<T> loadForParentIds(Collection<Long> parentIds, Function<Collection<Long>, List<T>> loader) {
+        if (parentIds.isEmpty()) {
+            return List.of();
+        }
+        return loader.apply(parentIds);
+    }
+
+    private <T> Map<Long, List<T>> groupByParent(Collection<T> items, Function<T, Long> parentIdExtractor) {
+        Map<Long, List<T>> result = new LinkedHashMap<>();
+        for (T item : items) {
+            Long parentId = parentIdExtractor.apply(item);
+            if (parentId != null) {
+                result.computeIfAbsent(parentId, ignored -> new ArrayList<>()).add(item);
+            }
+        }
+        return result;
+    }
+
+    private <T> void collectCitationIds(Set<Long> citationIds, Collection<T> relations, Function<T, Long> citationIdExtractor) {
+        for (T relation : relations) {
+            Long citationId = citationIdExtractor.apply(relation);
+            if (citationId != null) {
+                citationIds.add(citationId);
+            }
+        }
+    }
+
+    private Map<Long, Citation> loadCitationsById(Collection<Long> citationIds) {
+        if (citationIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, Citation> result = new LinkedHashMap<>();
+        for (Citation citation : citationRepository.findAllById(citationIds)) {
+            result.put(citation.getId(), citation);
+        }
+        return result;
+    }
+
+    private <T> List<Long> idsOf(Collection<T> items) {
+        return items.stream()
+                .map(this::extractId)
+                .filter(Objects::nonNull)
+                .toList();
     }
 
     private KnowledgeGraphEdgeResponse mapArtifactSourceEdge(
@@ -855,6 +1023,9 @@ public class KnowledgeGraphService {
         }
         if (value instanceof MethodologyCard methodologyCard) {
             return methodologyCard.getId();
+        }
+        if (value instanceof Source source) {
+            return source.getId();
         }
         return null;
     }

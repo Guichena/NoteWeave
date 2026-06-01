@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.BDDMockito.given;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -123,6 +124,42 @@ class Phase7PersonalWikiCompilerIntegrationTest extends ContainerizedIntegration
                 Integer.class,
                 ragConceptId
         )).isEqualTo(1);
+        Long autoWikiPageId = jdbcTemplate.queryForObject(
+                "select id from wiki_page where source_personal_source_id = ? and auto_maintained = true",
+                Long.class,
+                sourceId
+        );
+        assertThat(autoWikiPageId).isNotNull();
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from wiki_page where id = ?",
+                String.class,
+                autoWikiPageId
+        )).isEqualTo("PUBLISHED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from wiki_page_citation where wiki_page_id = ?",
+                Integer.class,
+                autoWikiPageId
+        )).isGreaterThanOrEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from task where task_type = 'WIKI_INDEX' and target_id = ?",
+                Integer.class,
+                autoWikiPageId
+        )).isGreaterThanOrEqualTo(1);
+        Long spaceId = jdbcTemplate.queryForObject(
+                "select space_id from research_project where id = ?",
+                Long.class,
+                projectId
+        );
+
+        mockMvc.perform(get("/api/v1/spaces/{spaceId}/knowledge-graph", spaceId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.nodes[?(@.id=='SOURCE:%d')]".formatted(sourceId)).exists())
+                .andExpect(jsonPath("$.data.nodes[?(@.id=='WIKI_PAGE:%d')]".formatted(autoWikiPageId)).exists())
+                .andExpect(jsonPath("$.data.edges[?(@.type=='WIKI_SOURCE_PERSONAL_SOURCE')]").exists())
+                .andExpect(jsonPath("$.data.edges[?(@.type=='WIKI_CITES_SOURCE')]").exists())
+                .andExpect(jsonPath("$.data.edges[?(@.type=='ARTICLE_CITES_SOURCE')]").exists())
+                .andExpect(jsonPath("$.data.edges[?(@.type=='CONCEPT_CITES_SOURCE')]").exists());
 
         mockMvc.perform(get("/api/v1/personal/research-projects/{projectId}/article-cards", projectId)
                         .queryParam("keyword", "vector")
@@ -159,6 +196,108 @@ class Phase7PersonalWikiCompilerIntegrationTest extends ContainerizedIntegration
                 .andExpect(jsonPath("$.data.citations[0].sourceId").value(sourceId))
                 .andExpect(jsonPath("$.data.relations[0].relationType").value("USES"))
                 .andExpect(jsonPath("$.data.relatedArticles[0].title").value("Vector retrieval notes"));
+    }
+
+    @Test
+    void deletingSourceShouldArchiveAutoMaintainedWikiPage() throws Exception {
+        String ownerToken = registerAndGetToken("phase7_auto_delete_" + System.nanoTime());
+        Long projectId = createProject(ownerToken, "Auto Wiki delete project", null, null);
+        Long sourceId = addTextSource(
+                ownerToken,
+                projectId,
+                "Auto source",
+                "Personal auto wiki pages should leave active views when the source is deleted."
+        ).path("data").path("id").asLong();
+
+        given(llmClient.chat(anyList(), any()))
+                .willReturn(llmResponse(singleArticleJson(sourceId, "Auto source", "Auto summary", "Personal auto wiki pages should leave active views when the source is deleted.")))
+                .willReturn(llmResponse(singleConceptJson(sourceId, "Auto Wiki Source", "Auto Source", "Personal auto wiki pages should leave active views when the source is deleted.")));
+
+        Long taskId = compileSource(ownerToken, sourceId).path("data").path("taskId").asLong();
+        taskDispatcher.dispatchPendingMessages();
+        waitForTaskStatus(taskId, TaskStatus.SUCCESS);
+        waitForSourceCompileStatus(sourceId, "READY");
+
+        Long autoWikiPageId = jdbcTemplate.queryForObject(
+                "select id from wiki_page where source_personal_source_id = ? and auto_maintained = true",
+                Long.class,
+                sourceId
+        );
+
+        mockMvc.perform(delete("/api/v1/personal/sources/{sourceId}", sourceId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk());
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from wiki_page where id = ?",
+                String.class,
+                autoWikiPageId
+        )).isEqualTo("ARCHIVED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select deleted_at is not null from wiki_page where id = ?",
+                Boolean.class,
+                autoWikiPageId
+        )).isTrue();
+    }
+
+    @Test
+    void compileShouldAcceptFencedOrPrefixedJsonFromLlm() throws Exception {
+        String ownerToken = registerAndGetToken("phase7_fenced_json_" + System.nanoTime());
+        Long projectId = createProject(ownerToken, "Fenced json project", null, null);
+        Long sourceId = addTextSource(ownerToken, projectId, "Fenced source", "Gemini can wrap JSON in a code fence.")
+                .path("data")
+                .path("id")
+                .asLong();
+
+        given(llmClient.chat(anyList(), any()))
+                .willReturn(llmResponse("```json\n" + singleArticleJson(sourceId, "Fenced source", "Fenced summary", "Gemini can wrap JSON in a code fence.") + "\n```"))
+                .willReturn(llmResponse("Here is the JSON:\n" + singleConceptJson(sourceId, "Fenced Concept", "Fenced Alias", "Gemini can wrap JSON in a code fence.")));
+
+        Long taskId = compileSource(ownerToken, sourceId).path("data").path("taskId").asLong();
+        taskDispatcher.dispatchPendingMessages();
+
+        waitForTaskStatus(taskId, TaskStatus.SUCCESS);
+        waitForSourceCompileStatus(sourceId, "READY");
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from concept_card where research_project_id = ? and normalized_name = 'fenced concept'",
+                Integer.class,
+                projectId
+        )).isEqualTo(1);
+    }
+
+    @Test
+    void compileShouldFallbackToSourceQuoteWhenLlmEvidenceQuoteIsBlank() throws Exception {
+        String ownerToken = registerAndGetToken("phase7_blank_quote_" + System.nanoTime());
+        Long projectId = createProject(ownerToken, "Blank quote project", null, null);
+        Long sourceId = addTextSource(
+                ownerToken,
+                projectId,
+                "Fallback source",
+                """
+                Fallback quote should be copied from source text.
+                The compiler should not fail the whole source when the model omits an evidence quote.
+                """
+        ).path("data").path("id").asLong();
+
+        given(llmClient.chat(anyList(), any()))
+                .willReturn(llmResponse(singleArticleJson(sourceId, "Fallback source", "Fallback summary", "")))
+                .willReturn(llmResponse(singleConceptJson(sourceId, "Fallback Concept", "Fallback Alias", "")));
+
+        Long taskId = compileSource(ownerToken, sourceId).path("data").path("taskId").asLong();
+        taskDispatcher.dispatchPendingMessages();
+
+        waitForTaskStatus(taskId, TaskStatus.SUCCESS);
+        waitForSourceCompileStatus(sourceId, "READY");
+        assertThat(jdbcTemplate.queryForObject(
+                "select evidence_quotes_json from article_card where source_id = ?",
+                String.class,
+                sourceId
+        )).contains("Fallback quote should be copied from source text.");
+        assertThat(jdbcTemplate.queryForObject(
+                "select evidence_quotes_json from concept_card where research_project_id = ? and normalized_name = 'fallback concept'",
+                String.class,
+                projectId
+        )).contains("Fallback quote should be copied from source text.");
     }
 
     @Test

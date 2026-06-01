@@ -1,0 +1,15 @@
+{
+  "default": {
+    "base_url": "http://localhost:8080",
+    "space_id": 1,
+    "auth_token_env": "NOTEWEAVE_TOKEN",
+    "notes": "Copy this file to api_targets.local.json and set the real space_id/token env only when ready to run."
+  },
+  "team_enterprise_r1": {
+    "base_url": "http://localhost:8080",
+    "space_id": 1,
+    "auth_token_env": "NOTEWEAVE_TOKEN",
+    "case_file": "bench-eval/data/r1.enterprise_rag_bench.team.noteweave_cases.jsonl",
+    "run_name": "R1 EnterpriseRAG-Bench Team Slice"
+  }
+}

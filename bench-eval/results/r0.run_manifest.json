@@ -1,0 +1,131 @@
+{
+  "benchmarks": [
+    {
+      "id": "seed_cases",
+      "lane": [
+        "team",
+        "personal"
+      ],
+      "priority": "LOCAL",
+      "source_urls": {},
+      "title": "Local NoteWeave seed cases"
+    }
+  ],
+  "expected_inputs": {
+    "normalized_cases": "bench-eval/data/r0.*.normalized.jsonl",
+    "personal_manifest": "bench-eval/data/r0.*.personal_manifest.jsonl",
+    "team_cases": "bench-eval/data/r0.*.noteweave_cases.jsonl"
+  },
+  "expected_outputs": {
+    "responses": "bench-eval/results/r0.*.responses.jsonl",
+    "scores": "bench-eval/results/r0.*.scores.jsonl",
+    "summary": "bench-eval/results/r0.*.summary.json"
+  },
+  "generated_from": {
+    "baselines": "D:\\java-projects\\NoteWeave\\bench-eval\\configs\\baselines.json",
+    "metrics": "D:\\java-projects\\NoteWeave\\bench-eval\\configs\\metrics.json",
+    "registry": "D:\\java-projects\\NoteWeave\\bench-eval\\benchmarks\\registry.json",
+    "rounds": "D:\\java-projects\\NoteWeave\\bench-eval\\configs\\run_rounds.json",
+    "sampling": "D:\\java-projects\\NoteWeave\\bench-eval\\configs\\sampling.default.json"
+  },
+  "metrics_catalog": {
+    "personal": {
+      "artifact": [
+        "artifact_groundedness",
+        "answer_fact_coverage",
+        "answer_completeness",
+        "format_following",
+        "synthesis_precision"
+      ],
+      "operations": [
+        "latency_ms",
+        "input_tokens",
+        "output_tokens",
+        "total_tokens",
+        "error_rate",
+        "trace_completeness"
+      ],
+      "research": [
+        "source_recall",
+        "citation_recall",
+        "citation_precision",
+        "research_completeness",
+        "target_source_accuracy"
+      ]
+    },
+    "team": {
+      "generation": [
+        "answer_fact_coverage",
+        "groundedness_score",
+        "citation_coverage",
+        "citation_precision",
+        "answer_completeness",
+        "format_following"
+      ],
+      "ingestion": [
+        "parse_pass_rate",
+        "table_structure_accuracy",
+        "chart_data_accuracy",
+        "format_semantics_accuracy",
+        "visual_grounding_accuracy"
+      ],
+      "multi_turn": [
+        "context_carryover_accuracy",
+        "query_rewrite_success",
+        "stale_context_resistance",
+        "answerability_classification",
+        "turn_level_retrieval_recall"
+      ],
+      "operations": [
+        "latency_ms",
+        "input_tokens",
+        "output_tokens",
+        "total_tokens",
+        "error_rate",
+        "trace_completeness"
+      ],
+      "retrieval": [
+        "recall_at_k",
+        "mrr",
+        "source_type_recall",
+        "selected_evidence_rate",
+        "evidence_sufficiency",
+        "conflict_resolution_accuracy",
+        "no_answer_accuracy"
+      ]
+    },
+    "version": 1
+  },
+  "notes": [
+    "This is a plan artifact only.",
+    "Do not execute benchmark runs from this manifest until the sample and variant are confirmed.",
+    "Team and personal lanes must be reported separately."
+  ],
+  "round": {
+    "id": "R0",
+    "lanes": [
+      "team",
+      "personal"
+    ],
+    "name": "Schema and Code Smoke",
+    "outputs": [
+      "normalized_jsonl",
+      "team_rag_eval_request_jsonl",
+      "personal_execution_manifest_jsonl",
+      "validation_report"
+    ],
+    "primary_metrics": [
+      "schema_validity"
+    ],
+    "run_now": false,
+    "status": "planned",
+    "suites": [
+      "seed_cases",
+      "enterprise_rag_bench_sample"
+    ],
+    "variants": []
+  },
+  "run_now": false,
+  "sampling_seed": 20260527,
+  "variants": []
+}

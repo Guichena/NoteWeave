@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "rounds": [
+    {
+      "id": "R0",
+      "name": "Schema and Code Smoke",
+      "status": "planned",
+      "run_now": false,
+      "lanes": ["team", "personal"],
+      "suites": ["seed_cases", "enterprise_rag_bench_sample"],
+      "variants": [],
+      "primary_metrics": ["schema_validity"],
+      "outputs": [
+        "normalized_jsonl",
+        "team_rag_eval_request_jsonl",
+        "personal_execution_manifest_jsonl",
+        "validation_report"
+      ]
+    },
+    {
+      "id": "R1",
+      "name": "Team Mini Slice",
+      "status": "planned",
+      "run_now": false,
+      "lanes": ["team"],
+      "suites": ["enterprise_rag_bench"],
+      "sample": {"ratio": 0.1, "max_cases": 50},
+      "variants": ["bm25_only", "vector_only", "hybrid_rrf", "hybrid_rrf_with_wiki"],
+      "primary_metrics": ["recall_at_k", "mrr", "citation_precision"],
+      "outputs": ["responses_jsonl", "scores_jsonl", "summary_json", "failure_buckets_json"]
+    },
+    {
+      "id": "R2",
+      "name": "Team Multi-Turn Slice",
+      "status": "planned",
+      "run_now": false,
+      "lanes": ["team"],
+      "suites": ["mtrag_un"],
+      "sample": {"ratio": 0.05, "max_cases": 40},
+      "variants": ["last_turn_only", "conversation_concat", "context_rewrite", "context_rewrite_with_trace"],
+      "primary_metrics": ["answerability_classification", "context_carryover_accuracy", "turn_level_retrieval_recall"],
+      "outputs": ["per_turn_trace_jsonl", "conversation_scores_jsonl", "summary_json"]
+    },
+    {
+      "id": "R3",
+      "name": "Ingestion and Parser Slice",
+      "status": "planned",
+      "run_now": false,
+      "lanes": ["team", "personal"],
+      "suites": ["parsebench"],
+      "sample": {"ratio": 0.025, "max_cases": 50},
+      "variants": ["current_parser", "current_parser_with_layout_metadata"],
+      "primary_metrics": ["parse_pass_rate", "table_structure_accuracy", "chart_data_accuracy"],
+      "outputs": ["parser_scores_jsonl", "failed_page_manifest_json", "downstream_blockers_json"]
+    },
+    {
+      "id": "R4",
+      "name": "Personal Research Slice",
+      "status": "planned",
+      "run_now": false,
+      "lanes": ["personal"],
+      "suites": ["autoresearchbench", "citerag"],
+      "sample": {"ratio": 0.05, "max_cases": 20},
+      "variants": [
+        "personal_sources_only",
+        "personal_cards_only",
+        "personal_cards_plus_synthesis",
+        "artifact_no_methodology",
+        "artifact_with_methodology"
+      ],
+      "primary_metrics": ["source_recall", "citation_recall", "artifact_groundedness"],
+      "outputs": ["personal_manifest_jsonl", "artifact_scores_jsonl", "citation_scores_jsonl", "summary_json"]
+    },
+    {
+      "id": "R5",
+      "name": "Marketing Candidate Run",
+      "status": "planned",
+      "run_now": false,
+      "lanes": ["team", "personal"],
+      "suites": ["enterprise_rag_bench", "mtrag_un", "parsebench", "autoresearchbench", "citerag"],
+      "variants": ["best_current_noteweave", "strongest_internal_baseline"],
+      "primary_metrics": ["suite_primary_metric", "trace_completeness", "error_rate"],
+      "outputs": ["marketing_candidate_summary_json", "filled_marketing_result_template_md"]
+    }
+  ]
+}

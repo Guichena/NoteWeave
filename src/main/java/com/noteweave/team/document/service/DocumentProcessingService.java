@@ -25,6 +25,7 @@ import com.noteweave.team.document.model.DocumentStatus;
 import com.noteweave.team.document.parser.DocumentParserService;
 import com.noteweave.team.document.parser.ParseResult;
 import com.noteweave.team.document.repository.DocumentRepository;
+import com.noteweave.team.wiki.service.AutoWikiMaintenanceService;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -54,6 +55,7 @@ public class DocumentProcessingService {
     private final FileStorageService fileStorageService;
     private final StorageProperties storageProperties;
     private final EmbeddingProperties embeddingProperties;
+    private final AutoWikiMaintenanceService autoWikiMaintenanceService;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
 
@@ -81,6 +83,7 @@ public class DocumentProcessingService {
                     .toList());
             backfillEmbeddingsIfEnabled(claimed.document(), chunks);
             markSuccess(claimed.task().getId(), claimed.document().getId(), claimed.attemptNo(), claimed.indexVersion(), parsedTextObjectKey, chunks);
+            syncAutoWiki(claimed.task().getUserId(), claimed.document().getId(), parseResult.text(), chunks);
         } catch (Exception ex) {
             log.warn("Document processing failed for task {} document {}", claimed.task().getId(), claimed.document().getId(), ex);
             markFailed(claimed.task().getId(), claimed.document().getId(), claimed.attemptNo(), ex);
@@ -88,6 +91,18 @@ public class DocumentProcessingService {
                 throw runtimeException;
             }
             throw new IllegalStateException("Document processing failed", ex);
+        }
+    }
+
+    private void syncAutoWiki(Long userId, Long documentId, String parsedText, List<DocumentChunk> chunks) {
+        try {
+            Document document = documentRepository.findByIdAndDeletedAtIsNullAndStatusNot(documentId, DocumentStatus.DELETED)
+                    .orElse(null);
+            if (document != null) {
+                autoWikiMaintenanceService.syncDocumentWiki(userId, document, parsedText, chunks);
+            }
+        } catch (Exception ex) {
+            log.warn("Auto wiki maintenance failed for document {}", documentId, ex);
         }
     }
 

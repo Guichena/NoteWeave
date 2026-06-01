@@ -24,6 +24,7 @@ import com.noteweave.task.repository.TaskRepository;
 import com.noteweave.task.service.TaskCreateCommand;
 import com.noteweave.task.service.TaskService;
 import com.noteweave.team.document.parser.DocumentParserService;
+import com.noteweave.team.wiki.service.AutoWikiMaintenanceService;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
@@ -51,6 +52,7 @@ public class SourceService {
     private final DocumentParserService documentParserService;
     private final UrlContentFetcher urlContentFetcher;
     private final ResearchProjectCompileStatusService researchProjectCompileStatusService;
+    private final AutoWikiMaintenanceService autoWikiMaintenanceService;
 
     @Transactional
     public SourceResponse uploadFile(Long userId, Long projectId, MultipartFile file, UploadSourceRequest request) {
@@ -173,6 +175,7 @@ public class SourceService {
         source.setDeletedAt(LocalDateTime.now());
         source.setDeletedBy(userId);
         sourceRepository.save(source);
+        autoWikiMaintenanceService.archivePersonalSourceWiki(userId, source);
         researchProjectCompileStatusService.refresh(source.getResearchProjectId());
     }
 

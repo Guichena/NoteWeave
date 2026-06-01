@@ -71,6 +71,7 @@ public class StudioTaskService {
             return CreateStudioTaskResponse.builder()
                     .taskId(existing.getId())
                     .artifactId(existingArtifact == null ? existing.getTargetId() : existingArtifact.getId())
+                    .artifactSpaceId(existingArtifact == null ? existing.getSpaceId() : existingArtifact.getSpaceId())
                     .taskStatus(existing.getTaskStatus())
                     .artifactStatus(existingArtifact == null ? ArtifactStatus.GENERATING : existingArtifact.getStatus())
                     .build();
@@ -110,6 +111,7 @@ public class StudioTaskService {
             return CreateStudioTaskResponse.builder()
                     .taskId(task.getId())
                     .artifactId(existingArtifact.getId())
+                    .artifactSpaceId(existingArtifact.getSpaceId())
                     .taskStatus(task.getTaskStatus())
                     .artifactStatus(existingArtifact.getStatus())
                     .build();
@@ -121,6 +123,7 @@ public class StudioTaskService {
         return CreateStudioTaskResponse.builder()
                 .taskId(task.getId())
                 .artifactId(artifact.getId())
+                .artifactSpaceId(artifact.getSpaceId())
                 .taskStatus(task.getTaskStatus())
                 .artifactStatus(artifact.getStatus())
                 .build();
@@ -142,6 +145,7 @@ public class StudioTaskService {
             return CreateStudioTaskResponse.builder()
                     .taskId(activeTask.getId())
                     .artifactId(artifact.getId())
+                    .artifactSpaceId(artifact.getSpaceId())
                     .taskStatus(activeTask.getTaskStatus())
                     .artifactStatus(artifact.getStatus())
                     .build();
@@ -177,6 +181,7 @@ public class StudioTaskService {
         return CreateStudioTaskResponse.builder()
                 .taskId(task.getId())
                 .artifactId(artifact.getId())
+                .artifactSpaceId(artifact.getSpaceId())
                 .taskStatus(task.getTaskStatus())
                 .artifactStatus(artifact.getStatus())
                 .build();

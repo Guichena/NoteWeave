@@ -17,6 +17,8 @@ const FORM_MODAL_TITLES = {
     "source-text-form": "添加文本资料",
     "project-generate-form": "生成成果",
     "studio-task-form": "启动生成任务",
+    "chat-artifact-form": "通过对话生成成果",
+    "graph-filter-form": "筛选图谱",
     "artifact-edit-form": "编辑成果",
     "distill-artifact-form": "沉淀到个人 Wiki",
     "publish-artifact-wiki-form": "发布到团队 Wiki",
@@ -29,7 +31,16 @@ const FORM_MODAL_TITLES = {
     "eval-run-form": "启动评测运行",
     "retrieval-trace-form": "查看检索追踪"
 };
-const INLINE_FORM_MODAL_EXCLUDES = new Set(["login-form", "register-form", "chat-message-form"]);
+const INLINE_FORM_MODAL_EXCLUDES = new Set([
+    "login-form",
+    "register-form",
+    "chat-message-form",
+    "kb-search-form",
+    "wiki-search-form",
+    "graph-filter-form",
+    "admin-task-filter-form",
+    "retrieval-trace-form"
+]);
 
 const state = {
     route: null,
@@ -45,7 +56,8 @@ const state = {
         pageError: null,
         drawer: null,
         toasts: [],
-        selectedSpacePreviewId: null
+        selectedSpacePreviewId: null,
+        contextRailCollapsed: false
     },
     knowledge: {
         list: [],
@@ -93,6 +105,7 @@ const state = {
         versions: [],
         relations: null,
         pageGraph: null,
+        spaceGraph: null,
         searchResult: null
     },
     graph: {
@@ -195,10 +208,13 @@ function humanizeStatus(value) {
         TIMEOUT: "已超时",
         STOPPED: "已停止",
         IDLE: "空闲",
+        DRAFT: "草稿",
         DRAFT_ACTIVE: "草稿",
         CONVERTED: "已转换",
         DISCARDED: "已丢弃",
+        IMPORTING: "导入中",
         IMPORTED: "已导入",
+        COMPILING: "编译中",
         COMPLETED: "已完成",
         PUBLISHED: "已发布",
         ENABLED: "已启用",
@@ -211,7 +227,8 @@ function humanizeStatus(value) {
         INDEXED: "已索引",
         CONNECTED: "已连接",
         CONNECTING: "连接中",
-        DISCONNECTED: "已断开"
+        DISCONNECTED: "已断开",
+        UNKNOWN: "未知"
     };
     return labels[raw] || raw || "未知";
 }
@@ -256,6 +273,152 @@ function humanizeMemoryType(value) {
         SESSION_INSIGHT: "会话洞察",
         USER_PREFERENCE: "用户偏好"
     }[raw] || raw || "未分类记忆";
+}
+
+function humanizeArtifactType(value) {
+    const raw = String(value ?? "").toUpperCase();
+    return {
+        REPORT: "研究报告",
+        STUDY_GUIDE: "学习指南",
+        READING_NOTES: "阅读笔记",
+        BRIEFING: "简报",
+        FAQ: "问答",
+        COMPARISON: "对比分析",
+        WORK_PREP: "工作准备",
+        WIKI_DRAFT: "Wiki 草稿"
+    }[raw] || raw || "成果";
+}
+
+function humanizeGraphNodeType(value) {
+    const raw = String(value ?? "").trim();
+    const key = raw.toUpperCase().replace(/[-\s]+/g, "_");
+    const labels = {
+        WIKI_PAGE: "Wiki 页面",
+        DOCUMENT: "文档",
+        SOURCE: "资料源",
+        ARTIFACT: "成果",
+        CONCEPT_CARD: "概念卡",
+        SYNTHESIS_CARD: "综合卡",
+        METHODOLOGY_CARD: "方法卡",
+        NOTE: "笔记",
+        MEMORY: "记忆",
+        NODE: "节点",
+        ROOT: "入口节点"
+    };
+    return labels[key] || raw || "节点";
+}
+
+function humanizeGraphEdgeType(value) {
+    const raw = String(value ?? "").trim();
+    const key = raw.toUpperCase().replace(/[-\s]+/g, "_");
+    const labels = {
+        LINKS_TO: "关联",
+        LINK: "关联",
+        CITES: "引用",
+        CITED_BY: "被引用",
+        GENERATES: "生成",
+        GENERATED_FROM: "由资料生成",
+        SOURCE: "来源",
+        SOURCE_TO_WIKI: "资料生成 Wiki",
+        WIKI_LINK: "Wiki 关联",
+        WIKI_CITES_DOCUMENT: "Wiki 引用文档",
+        AUTO_MAINTAINED_FROM_DOCUMENT: "文档自动维护",
+        AUTO_MAINTAINED_FROM_SOURCE: "资料自动维护",
+        AUTO_MAINTAINED: "自动维护",
+        PUBLISHED_FROM_ARTIFACT: "由成果发布",
+        PUBLISHED_FROM_WIKI: "由 Wiki 发布",
+        RELATED_TO: "相关",
+        DERIVES_FROM: "派生自",
+        CONTAINS: "包含",
+        BELONGS_TO: "属于",
+        RELATION: "关系"
+    };
+    return labels[key] || raw.replace(/[_-]+/g, " ") || "关系";
+}
+
+function humanizeSourceType(value) {
+    const raw = String(value ?? "").trim();
+    const key = raw.toUpperCase().replace(/[-\s]+/g, "_");
+    const labels = {
+        FILE: "文件",
+        URL: "链接",
+        TEXT: "文本",
+        DOCUMENT: "文档",
+        WIKI_PAGE: "Wiki 页面",
+        CHAT_MESSAGE: "对话消息",
+        ARTIFACT: "成果",
+        MANUAL: "手动创建",
+        SOURCE: "资料源"
+    };
+    return labels[key] || raw || "资料";
+}
+
+function humanizeTaskType(value) {
+    const raw = String(value ?? "").trim();
+    const key = raw.toUpperCase().replace(/[-\s]+/g, "_");
+    const labels = {
+        DOCUMENT_PARSE: "文档解析",
+        DOCUMENT_INDEX: "文档索引",
+        KNOWLEDGE_IMPORT: "知识导入",
+        SOURCE_IMPORT: "资料导入",
+        SOURCE_COMPILE: "资料编译",
+        ARTIFACT_GENERATE: "成果生成",
+        WIKI_GENERATE: "Wiki 生成",
+        WIKI_MAINTAIN: "Wiki 维护",
+        EMBEDDING: "向量化",
+        EVALUATION: "评测",
+        CHAT: "对话"
+    };
+    return labels[key] || raw.replace(/[_-]+/g, " ") || "任务";
+}
+
+function humanizeTargetType(value) {
+    const raw = String(value ?? "").trim();
+    const key = raw.toUpperCase().replace(/[-\s]+/g, "_");
+    const labels = {
+        SPACE: "空间",
+        KNOWLEDGE_BASE: "知识库",
+        DOCUMENT: "文档",
+        SOURCE: "资料源",
+        PROJECT: "项目",
+        ARTIFACT: "成果",
+        WIKI_PAGE: "Wiki 页面",
+        SESSION: "会话"
+    };
+    return labels[key] || raw.replace(/[_-]+/g, " ") || "目标";
+}
+
+function normalizeGraphFilterTypes(value, kind) {
+    const nodeLabels = {
+        "wiki": "WIKI_PAGE",
+        "wiki页面": "WIKI_PAGE",
+        "页面": "WIKI_PAGE",
+        "文档": "DOCUMENT",
+        "资料": "SOURCE",
+        "资料源": "SOURCE",
+        "成果": "ARTIFACT",
+        "概念卡": "CONCEPT_CARD",
+        "综合卡": "SYNTHESIS_CARD",
+        "方法卡": "METHODOLOGY_CARD"
+    };
+    const edgeLabels = {
+        "关联": "LINKS_TO",
+        "引用": "CITES",
+        "生成": "GENERATES",
+        "来源": "SOURCE",
+        "资料生成wiki": "SOURCE_TO_WIKI",
+        "自动维护": "AUTO_MAINTAINED_FROM_DOCUMENT"
+    };
+    const labels = kind === "edge" ? edgeLabels : nodeLabels;
+    return String(value || "")
+        .split(/[,，、\s]+/)
+        .map((token) => {
+            const trimmed = token.trim();
+            const normalized = trimmed.toLowerCase().replace(/\s+/g, "");
+            return labels[normalized] || trimmed;
+        })
+        .filter(Boolean)
+        .join(",");
 }
 
 function statusTone(value) {
@@ -317,7 +480,7 @@ function renderGuideCards(items) {
 function renderErrorState(error) {
     const message = error instanceof ApiError ? error.message : "页面加载失败。";
     const code = error instanceof ApiError ? error.code : "UNKNOWN";
-    return `<div class="error-state"><strong>${escapeHtml(message)}</strong><div class="muted">错误码：${escapeHtml(code)}</div></div>`;
+    return `<div class="error-state" role="alert" aria-live="assertive"><strong>${escapeHtml(message)}</strong><div class="muted">错误码：${escapeHtml(code)}</div></div>`;
 }
 
 function renderJson(value) {
@@ -379,12 +542,33 @@ function resolveArtifactSpaceIdById(artifactId) {
     return resolveArtifactSpaceId(findArtifactById(artifactId));
 }
 
-function canDistillArtifactToPersonalWiki(artifact = state.artifacts.detail) {
+async function openArtifactById(artifactId, preferredSpaceId = null) {
+    const normalizedArtifactId = Number(artifactId);
+    let spaceId = Number(preferredSpaceId) || resolveArtifactSpaceIdById(normalizedArtifactId);
+    if (!spaceId) {
+        const artifact = await api.artifacts.get(normalizedArtifactId);
+        if (artifact) {
+            state.artifacts.detail = artifact;
+            spaceId = resolveArtifactSpaceId(artifact);
+        }
+    }
+    navigate(routeLink("artifact-detail", spaceId || currentRouteSpaceId(), normalizedArtifactId));
+}
+
+function isPersonalResearchArtifact(artifact = state.artifacts.detail) {
     return Boolean(
         artifact?.researchProjectId &&
         personalSpaceId() &&
         Number(artifact.spaceId) === Number(personalSpaceId())
     );
+}
+
+function hasTraceableArtifactCitations(artifact = state.artifacts.detail) {
+    return Array.isArray(artifact?.citations) && artifact.citations.length > 0;
+}
+
+function canDistillArtifactToPersonalWiki(artifact = state.artifacts.detail) {
+    return isPersonalResearchArtifact(artifact) && hasTraceableArtifactCitations(artifact);
 }
 
 function isPublicRoute(route) {
@@ -444,6 +628,7 @@ function parseRoute(pathname) {
 }
 
 function navigate(path, replace = false) {
+    state.ui.drawer = null;
     if (replace) {
         window.history.replaceState({}, "", path);
     } else {
@@ -564,7 +749,7 @@ function routeDescriptor(route = state.route) {
             detail: "沉淀稳定团队知识，同时保留回到原始资料的路径。"
         },
         graph: {
-            eyebrow: "Graph",
+            eyebrow: "图谱",
             title: "知识图谱",
             detail: "从统一知识图谱查看 Wiki、文档、成果与引用之间的关系。"
         },
@@ -647,7 +832,7 @@ function clearPrivateState() {
     };
     state.studio = { skills: [], lastTask: null };
     state.artifacts = { list: [], detail: null, relations: [], editorDraft: null, distillPreview: null };
-    state.wiki = { pages: [], selectedPageId: null, pageDetail: null, versions: [], relations: null, pageGraph: null, searchResult: null };
+    state.wiki = { pages: [], selectedPageId: null, pageDetail: null, versions: [], relations: null, pageGraph: null, spaceGraph: null, searchResult: null };
     state.graph = {
         spaceGraph: null,
         selectedNodeId: null,
@@ -692,6 +877,14 @@ function activeSession() {
     return state.chat.sessions.find((session) => Number(session.id) === Number(state.chat.activeSessionId)) || null;
 }
 
+function isChatRoute(route = state.route) {
+    return route?.name === "team-chat" || route?.name === "workbench-chat";
+}
+
+function isTransientFetchError(error) {
+    return error?.name === "TypeError" && /Failed to fetch|NetworkError|Load failed/i.test(error.message || "");
+}
+
 function setDrawer(title, html) {
     state.ui.drawer = { title, html };
     paint();
@@ -707,10 +900,93 @@ function closeDrawer() {
     paint();
 }
 
+function closeInlineFormDrawer() {
+    if (state.ui.drawer?.source === "inline-form") {
+        state.ui.drawer = null;
+    }
+}
+
 function ensureLocalDraft(sessionId) {
     if (!state.chat.draftsBySession[sessionId]) {
         state.chat.draftsBySession[sessionId] = "";
     }
+}
+
+function artifactCreationSkills() {
+    return (state.studio.skills || []).filter((skill) => skill.entryType !== "mcp_tool");
+}
+
+async function ensureArtifactActionCatalog() {
+    const [skillsResult, projectsResult] = await Promise.allSettled([
+        state.studio.skills?.length ? Promise.resolve(state.studio.skills) : api.studio.listSkills(),
+        state.personal.projects?.length ? Promise.resolve(state.personal.projects) : api.personal.listProjects()
+    ]);
+    if (skillsResult.status === "fulfilled") {
+        state.studio.skills = skillsResult.value || [];
+    }
+    if (projectsResult.status === "fulfilled") {
+        state.personal.projects = projectsResult.value || [];
+    }
+}
+
+function renderChatArtifactDialogHtml(session) {
+    const skills = artifactCreationSkills();
+    const projects = state.personal.projects || [];
+    if (!skills.length || !projects.length) {
+        return `
+            <div class="list-stack">
+                ${emptyState(
+                    !projects.length ? "还没有个人研究项目" : "还没有可用成果技能",
+                    !projects.length ? "先到个人研究创建项目，再从聊天里发起成果生成。" : "当前工作室没有可用于个人成果的技能。"
+                )}
+            </div>
+        `;
+    }
+    return `
+        <div class="chat-artifact-dialog">
+            <div class="chat-artifact-note">
+                <span>对话执行</span>
+                <strong>提交后会向当前会话发送一条 /成果 指令，由聊天工作流创建成果任务并返回可打开的成果。</strong>
+                <em>${escapeHtml(session?.title || "当前会话")}</em>
+            </div>
+            <form id="chat-artifact-form" class="inline-form modal-inline-form">
+                <div class="field-grid cols-2">
+                    <div class="field">
+                        <label>成果技能</label>
+                        <select name="skillId" required>
+                            ${skills.map((skill) => `<option value="${escapeHtml(skill.id)}">${escapeHtml(skill.name)} · ${escapeHtml(humanizeArtifactType(skill.artifactType))}</option>`).join("")}
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>研究项目</label>
+                        <select name="projectId" required>
+                            ${projects.map((project) => `<option value="${project.id}">${escapeHtml(project.title)}</option>`).join("")}
+                        </select>
+                    </div>
+                </div>
+                <div class="field">
+                    <label>生成主题</label>
+                    <input name="topic" required placeholder="例如：基于检索链路生成一份问题定位报告">
+                </div>
+                <button class="button" type="submit">交给当前会话生成</button>
+            </form>
+        </div>
+    `;
+}
+
+async function openChatArtifactDialog() {
+    const session = activeSession();
+    if (!session) {
+        queueToast("请先选择一个会话。", "error");
+        return;
+    }
+    await ensureArtifactActionCatalog();
+    state.ui.drawer = {
+        title: "通过对话生成成果",
+        source: "inline-form",
+        html: renderChatArtifactDialogHtml(session)
+    };
+    paint();
 }
 
 async function ensureAuthBootstrap() {
@@ -795,7 +1071,11 @@ async function loadChatSessionData(sessionId) {
                 state.chat.citationsByMessage[message.id] = await api.chat.citations(message.id);
             })
     );
-    state.chat.artifactsBySession[sessionId] = await api.artifacts.listBySession(sessionId);
+    try {
+        state.chat.artifactsBySession[sessionId] = await api.artifacts.listBySession(sessionId);
+    } catch (error) {
+        state.chat.artifactsBySession[sessionId] = state.chat.artifactsBySession[sessionId] || [];
+    }
 }
 
 async function loadProjectsPage(spaceId) {
@@ -871,7 +1151,12 @@ async function loadArtifactDetail(spaceId, artifactId) {
 
 async function loadWikiPage(spaceId) {
     setCurrentSpace(spaceId);
-    state.wiki.pages = await api.wiki.list(spaceId);
+    const [pages, spaceGraph] = await Promise.all([
+        api.wiki.list(spaceId),
+        api.wiki.spaceGraph(spaceId)
+    ]);
+    state.wiki.pages = pages;
+    state.wiki.spaceGraph = spaceGraph;
     if (state.wiki.selectedPageId && !state.wiki.pages.some((page) => Number(page.id) === Number(state.wiki.selectedPageId))) {
         state.wiki.selectedPageId = null;
     }
@@ -883,7 +1168,7 @@ async function loadWikiPage(spaceId) {
             api.wiki.get(state.wiki.selectedPageId),
             api.wiki.versions(state.wiki.selectedPageId),
             api.wiki.relations(state.wiki.selectedPageId),
-            api.wiki.knowledgeGraph(state.wiki.selectedPageId, { depth: 1 })
+            api.wiki.pageGraph(state.wiki.selectedPageId, { depth: 1 })
         ]);
         state.wiki.pageDetail = detail;
         state.wiki.versions = versions;
@@ -1129,7 +1414,8 @@ function enhanceInlineForms() {
         if (INLINE_FORM_MODAL_EXCLUDES.has(form.id) || form.closest(".modal-dialog")) {
             return;
         }
-        const title = FORM_MODAL_TITLES[form.id] || "打开操作";
+        const formId = form.id;
+        const title = FORM_MODAL_TITLES[formId] || "打开操作";
         const entry = document.createElement("div");
         entry.className = "form-modal-entry";
         entry.innerHTML = `
@@ -1137,10 +1423,12 @@ function enhanceInlineForms() {
                 <strong>${escapeHtml(title)}</strong>
                 <span>${escapeHtml(form.dataset.modalHint || "弹窗表单")}</span>
             </div>
-            <button class="button" type="button" data-action="open-inline-form" data-form-id="${escapeHtml(form.id)}" aria-label="${escapeHtml(title)}">打开</button>
+            <button class="button" type="button" data-action="open-inline-form" data-form-id="${escapeHtml(formId)}" aria-label="${escapeHtml(title)}">打开</button>
         `;
         form.hidden = true;
         form.setAttribute("aria-hidden", "true");
+        form.dataset.originalId = formId;
+        form.removeAttribute("id");
         form.before(entry);
     });
 }
@@ -1161,6 +1449,11 @@ function enhanceResponsiveTables() {
 
 function cloneFormForModal(form) {
     const clone = form.cloneNode(true);
+    const formId = form.dataset.originalId || form.id;
+    if (formId) {
+        clone.id = formId;
+        delete clone.dataset.originalId;
+    }
     clone.hidden = false;
     clone.removeAttribute("hidden");
     clone.removeAttribute("aria-hidden");
@@ -1176,11 +1469,12 @@ function openInlineFormModal(trigger) {
     const entry = trigger.closest(".form-modal-entry");
     const form = entry?.nextElementSibling instanceof HTMLFormElement
         ? entry.nextElementSibling
-        : Array.from(root.querySelectorAll("form.inline-form")).find((item) => item.id === formId && !item.closest(".modal-dialog"));
+        : Array.from(root.querySelectorAll("form.inline-form")).find((item) =>
+            (item.id === formId || item.dataset.originalId === formId) && !item.closest(".modal-dialog"));
     if (!(form instanceof HTMLFormElement)) {
         return;
     }
-    const title = FORM_MODAL_TITLES[form.id] || "打开操作";
+    const title = FORM_MODAL_TITLES[form.dataset.originalId || form.id] || "打开操作";
     state.ui.drawer = {
         title,
         html: `<div class="modal-form-shell">${cloneFormForModal(form)}</div>`,
@@ -1197,6 +1491,9 @@ async function renderRoute() {
     state.route = parseRoute(window.location.pathname);
     state.ui.pageError = null;
     state.ui.isPageLoading = true;
+    if (!isChatRoute(state.route)) {
+        closeSocket();
+    }
     paint();
     if (shouldResetScroll) {
         resetRouteScroll();
@@ -1213,7 +1510,7 @@ async function renderRoute() {
         if (shouldResetScroll) {
             resetRouteScroll();
         }
-        if (state.route.name === "team-chat" || state.route.name === "workbench-chat") {
+        if (isChatRoute(state.route)) {
             await ensureChatSocket();
             resumeActiveSession();
         }
@@ -1237,9 +1534,10 @@ function buildApp() {
     }
     const mode = routeMode(route);
     const inspectorOpen = Boolean(state.ui.drawer);
+    const contextCollapsed = state.ui.contextRailCollapsed;
 
     return `
-        <div class="workbench-shell workbench-mode-${mode} ${inspectorOpen ? "inspector-open" : "inspector-collapsed"}">
+        <div class="workbench-shell workbench-mode-${mode} ${inspectorOpen ? "inspector-open" : "inspector-collapsed"} ${contextCollapsed ? "context-rail-collapsed" : ""}">
             ${renderGlobalRail(route)}
             ${renderContextRail(route)}
             <main class="main-canvas">
@@ -1443,6 +1741,9 @@ function routeMode(route = state.route) {
     if (route?.name === "team-chat" || route?.name === "workbench-chat") {
         return "chat";
     }
+    if (route?.name === "workbench-studio") {
+        return "studio";
+    }
     if (route?.name === "wiki") {
         return "wiki";
     }
@@ -1451,6 +1752,9 @@ function routeMode(route = state.route) {
     }
     if (route?.name === "artifact-detail" || route?.name === "artifacts") {
         return "artifacts";
+    }
+    if (route?.name === "memory") {
+        return "memory";
     }
     if (route?.name?.startsWith("admin")) {
         return "admin";
@@ -1464,35 +1768,61 @@ function routeMode(route = state.route) {
     return "workspace";
 }
 
+const NAV_ICONS = {
+    sidebar: `<rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16"></path>`,
+    collapse: `<path d="m15 18-6-6 6-6"></path>`,
+    expand: `<path d="m9 18 6-6-6-6"></path>`,
+    spaces: `<path d="M3 10.5 12 4l9 6.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1V10.5Z"></path>`,
+    knowledge: `<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15Z"></path>`,
+    research: `<circle cx="11" cy="8" r="4"></circle><path d="M4 22a7 7 0 0 1 14 0"></path><path d="m18.5 14.5 3 3"></path><circle cx="17" cy="13" r="2.5"></circle>`,
+    chat: `<path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v8Z"></path>`,
+    wiki: `<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><path d="M14 2v6h6"></path><path d="M8 13h8"></path><path d="M8 17h6"></path>`,
+    graph: `<circle cx="6" cy="6" r="3"></circle><circle cx="18" cy="6" r="3"></circle><circle cx="12" cy="18" r="3"></circle><path d="m8.5 8.5 2.2 6"></path><path d="m15.5 8.5-2.2 6"></path><path d="M9 6h6"></path>`,
+    artifacts: `<path d="m12 2 9 5-9 5-9-5 9-5Z"></path><path d="m3 12 9 5 9-5"></path><path d="m3 17 9 5 9-5"></path>`,
+    memory: `<path d="M12 5a3 3 0 0 0-5.2-2 3 3 0 0 0-1.7 5A3 3 0 0 0 5 14a3 3 0 0 0 3 5h4"></path><path d="M12 5a3 3 0 0 1 5.2-2 3 3 0 0 1 1.7 5A3 3 0 0 1 19 14a3 3 0 0 1-3 5h-4"></path><path d="M12 5v14"></path>`,
+    tasks: `<path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>`,
+    health: `<path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>`,
+    evaluation: `<circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="3"></circle>`,
+    logs: `<path d="M8 6h13"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M3 6h.01"></path><path d="M3 12h.01"></path><path d="M3 18h.01"></path>`
+};
+
+function navIcon(name, fallback) {
+    const icon = NAV_ICONS[name];
+    if (!icon) {
+        return `<span class="global-rail-letter">${escapeHtml(fallback || "")}</span>`;
+    }
+    return `<svg class="global-rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${icon}</svg>`;
+}
+
 function renderGlobalRail(route) {
     const spaceId = currentRouteSpaceId();
     const personalNavSpaceId = personalSpaceId();
     const adminVisible = state.user?.systemRole === "ADMIN";
-    const item = ({ label, glyph, target, active }) => target ? `
+    const item = ({ label, glyph, icon, target, active }) => target ? `
         <a class="global-rail-item ${active ? "active" : ""}" href="${target}" data-nav="${target}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">
-            <span>${escapeHtml(glyph)}</span>
+            ${navIcon(icon, glyph)}
         </a>
     ` : "";
 
     return `
-        <aside class="global-rail" aria-label="Global Rail">
+        <aside class="global-rail" aria-label="全局导航">
             <button class="global-rail-brand" type="button" data-nav="${spaceId ? routeLink("chat", spaceId) : "/spaces"}" title="NoteWeave">NW</button>
             <nav class="global-rail-nav">
-                ${item({ label: "Space Home", glyph: "S", target: "/spaces", active: route.name === "spaces" })}
-                ${item({ label: "Team Knowledge", glyph: "K", target: spaceId ? routeLink("knowledge", spaceId) : "", active: route.name.startsWith("knowledge") })}
-                ${item({ label: "Personal Research", glyph: "P", target: personalNavSpaceId ? routeLink("projects", personalNavSpaceId) : "", active: route.name.startsWith("project") || route.name === "projects" })}
-                ${item({ label: "Chat Workbench", glyph: "C", target: spaceId ? routeLink("chat", spaceId) : "", active: routeMode(route) === "chat" })}
-                ${item({ label: "Wiki", glyph: "W", target: spaceId ? routeLink("wiki", spaceId) : "", active: route.name === "wiki" })}
-                ${item({ label: "Graph", glyph: "G", target: spaceId ? routeLink("graph", spaceId) : "", active: route.name === "graph" })}
-                ${item({ label: "Artifacts", glyph: "A", target: spaceId ? routeLink("artifacts", spaceId) : "", active: route.name === "artifacts" || route.name === "artifact-detail" })}
-                ${item({ label: "Memory", glyph: "M", target: spaceId ? routeLink("memory", spaceId) : "", active: route.name === "memory" })}
+                ${item({ label: "空间首页", icon: "spaces", glyph: "S", target: "/spaces", active: route.name === "spaces" })}
+                ${item({ label: "团队知识", icon: "knowledge", glyph: "K", target: spaceId ? routeLink("knowledge", spaceId) : "", active: route.name.startsWith("knowledge") })}
+                ${item({ label: "个人研究", icon: "research", glyph: "P", target: personalNavSpaceId ? routeLink("projects", personalNavSpaceId) : "", active: route.name.startsWith("project") || route.name === "projects" })}
+                ${item({ label: "对话工作台", icon: "chat", glyph: "C", target: spaceId ? routeLink("chat", spaceId) : "", active: routeMode(route) === "chat" })}
+                ${item({ label: "Wiki", icon: "wiki", glyph: "W", target: spaceId ? routeLink("wiki", spaceId) : "", active: route.name === "wiki" })}
+                ${item({ label: "知识图谱", icon: "graph", glyph: "G", target: spaceId ? routeLink("graph", spaceId) : "", active: route.name === "graph" })}
+                ${item({ label: "成果", icon: "artifacts", glyph: "A", target: spaceId ? routeLink("artifacts", spaceId) : "", active: route.name === "artifacts" || route.name === "artifact-detail" })}
+                ${item({ label: "记忆", icon: "memory", glyph: "M", target: spaceId ? routeLink("memory", spaceId) : "", active: route.name === "memory" })}
             </nav>
             ${adminVisible ? `
                 <nav class="global-rail-nav global-rail-admin">
-                    ${item({ label: "Admin Tasks", glyph: "T", target: "/admin/tasks", active: route.name === "admin-tasks" })}
-                    ${item({ label: "Admin Health", glyph: "H", target: "/admin/health", active: route.name === "admin-health" })}
-                    ${item({ label: "Admin Evaluation", glyph: "E", target: "/admin/evaluation", active: route.name === "admin-evaluation" })}
-                    ${item({ label: "Admin Logs", glyph: "L", target: "/admin/logs", active: route.name === "admin-logs" })}
+                    ${item({ label: "任务管理", icon: "tasks", glyph: "T", target: "/admin/tasks", active: route.name === "admin-tasks" })}
+                    ${item({ label: "系统健康", icon: "health", glyph: "H", target: "/admin/health", active: route.name === "admin-health" })}
+                    ${item({ label: "评测中心", icon: "evaluation", glyph: "E", target: "/admin/evaluation", active: route.name === "admin-evaluation" })}
+                    ${item({ label: "系统日志", icon: "logs", glyph: "L", target: "/admin/logs", active: route.name === "admin-logs" })}
                 </nav>
             ` : ""}
         </aside>
@@ -1500,9 +1830,19 @@ function renderGlobalRail(route) {
 }
 
 function renderContextRail(route) {
+    const descriptor = routeDescriptor(route);
+    const collapsed = state.ui.contextRailCollapsed;
     return `
-        <aside class="context-rail" aria-label="Context Rail">
-            ${renderContextRailContent(route)}
+        <aside class="context-rail" aria-label="上下文侧边栏">
+            <div class="context-rail-shellbar">
+                <button class="context-rail-toggle" type="button" data-action="toggle-context-rail" aria-expanded="${collapsed ? "false" : "true"}" aria-label="${collapsed ? "展开侧边栏" : "收起侧边栏"}" title="${collapsed ? "展开侧边栏" : "收起侧边栏"}">
+                    ${navIcon(collapsed ? "expand" : "collapse", collapsed ? ">" : "<")}
+                </button>
+                <span class="context-rail-mini-title">${escapeHtml(descriptor.eyebrow)}</span>
+            </div>
+            <div class="context-rail-content">
+                ${renderContextRailContent(route)}
+            </div>
         </aside>
     `;
 }
@@ -1527,9 +1867,9 @@ function renderChatContextRail() {
 
     return `
         <div class="context-rail-header">
-            <span class="context-kicker">Context Rail</span>
-            <h2>Chat Workbench</h2>
-            <p>多会话、草稿、相关成果都留在左侧，Main Canvas 专注消息流。</p>
+            <span class="context-kicker">侧栏</span>
+            <h2>会话</h2>
+            <p>聊天记录与关联成果。</p>
         </div>
         <div class="context-rail-section">
             <div class="context-rail-section-title">
@@ -1583,7 +1923,7 @@ function renderChatContextRail() {
                 ${artifacts.map((artifact) => `
                     <article class="context-list-item">
                         <span class="context-list-title">${escapeHtml(artifact.title)}</span>
-                        <span class="context-list-meta">${escapeHtml(artifact.artifactType)} / ${escapeHtml(humanizeStatus(artifact.status))}</span>
+                        <span class="context-list-meta">${escapeHtml(humanizeArtifactType(artifact.artifactType))} / ${escapeHtml(humanizeStatus(artifact.status))}</span>
                         <button class="ghost-button" type="button" data-action="open-artifact" data-artifact-id="${artifact.id}" data-space-id="${artifact.spaceId || currentRouteSpaceId()}">打开成果</button>
                     </article>
                 `).join("") || emptyState("暂无成果", "聊天生成或关联的成果会在这里出现。")}
@@ -1596,9 +1936,9 @@ function renderWikiContextRail() {
     const pageId = state.wiki.selectedPageId;
     return `
         <div class="context-rail-header">
-            <span class="context-kicker">Context Rail</span>
-            <h2>Wiki Tree</h2>
-            <p>页面树、搜索与最近沉淀对象留在左侧；阅读与编辑交给 Main Canvas。</p>
+            <span class="context-kicker">侧栏</span>
+            <h2>Wiki</h2>
+            <p>页面树与搜索。</p>
         </div>
         <div class="context-rail-section">
             <div class="context-rail-section-title">
@@ -1640,15 +1980,15 @@ function renderGraphContextRail() {
     const selectedNodeId = state.graph.selectedNodeId;
     return `
         <div class="context-rail-header">
-            <span class="context-kicker">Context Rail</span>
-            <h2>Graph Filters</h2>
-            <p>筛选图谱节点、定位当前节点，并把节点详情交给 Inspector。</p>
+            <span class="context-kicker">侧栏</span>
+            <h2>图谱</h2>
+            <p>筛选和定位节点。</p>
         </div>
         <div class="context-rail-section">
             <div class="context-rail-section-title"><span>筛选</span></div>
             <form id="graph-filter-form" class="inline-form context-create-form">
-                <div class="field"><label>节点类型</label><input name="nodeTypes" value="${escapeHtml(state.graph.filters.nodeTypes)}" placeholder="WIKI_PAGE,DOCUMENT"></div>
-                <div class="field"><label>边类型</label><input name="edgeTypes" value="${escapeHtml(state.graph.filters.edgeTypes)}" placeholder="LINKS_TO,CITES"></div>
+                <div class="field"><label>节点类型</label><input name="nodeTypes" value="${escapeHtml(state.graph.filters.nodeTypes)}" placeholder="Wiki 页面,文档"></div>
+                <div class="field"><label>边类型</label><input name="edgeTypes" value="${escapeHtml(state.graph.filters.edgeTypes)}" placeholder="关联,引用"></div>
                 <label class="checkbox-line"><input type="checkbox" name="onlyPublished" ${state.graph.filters.onlyPublished ? "checked" : ""}> 仅发布</label>
                 <label class="checkbox-line"><input type="checkbox" name="onlyIndexed" ${state.graph.filters.onlyIndexed ? "checked" : ""}> 仅已索引</label>
                 <button class="ghost-button context-action-button" type="submit">应用筛选</button>
@@ -1661,9 +2001,9 @@ function renderGraphContextRail() {
             </div>
             <div class="context-list graph-node-list">
                 ${nodes.slice(0, 80).map((node) => `
-                    <button class="context-list-item ${node.id === selectedNodeId ? "active" : ""}" type="button" data-action="select-graph-node" data-node-id="${escapeHtml(node.id)}">
+                    <button class="context-list-item ${node.id === selectedNodeId ? "active" : ""}" type="button" data-action="select-graph-node" data-node-id="${escapeHtml(node.id)}" title="${escapeHtml(node.title || node.id)}">
                         <span class="context-list-title">${escapeHtml(node.title || node.id)}</span>
-                        <span class="context-list-meta">${escapeHtml(node.type || "NODE")} / ${escapeHtml(node.status || node.indexStatus || "ACTIVE")}</span>
+                        <span class="context-list-meta">${escapeHtml(humanizeGraphNodeType(node.type || "NODE"))} / ${escapeHtml(humanizeStatus(node.status || node.indexStatus || "ACTIVE"))}</span>
                     </button>
                 `).join("") || emptyState("暂无节点", "当前筛选条件下没有图谱节点。")}
             </div>
@@ -1676,7 +2016,7 @@ function renderDefaultContextRail(route) {
     const space = currentSpace();
     return `
         <div class="context-rail-header">
-            <span class="context-kicker">Context Rail</span>
+            <span class="context-kicker">侧栏</span>
             <h2>${escapeHtml(descriptor.eyebrow)}</h2>
             <p>${escapeHtml(space?.name || "选择空间后开始工作。")}</p>
         </div>
@@ -1694,7 +2034,7 @@ function renderDefaultContextRail(route) {
                 ${currentRouteSpaceId() ? renderContextQuickLink("团队知识", routeLink("knowledge", currentRouteSpaceId()), route.name.startsWith("knowledge")) : ""}
                 ${currentRouteSpaceId() ? renderContextQuickLink("聊天", routeLink("chat", currentRouteSpaceId()), routeMode(route) === "chat") : ""}
                 ${currentRouteSpaceId() ? renderContextQuickLink("Wiki", routeLink("wiki", currentRouteSpaceId()), route.name === "wiki") : ""}
-                ${currentRouteSpaceId() ? renderContextQuickLink("Graph", routeLink("graph", currentRouteSpaceId()), route.name === "graph") : ""}
+                ${currentRouteSpaceId() ? renderContextQuickLink("图谱", routeLink("graph", currentRouteSpaceId()), route.name === "graph") : ""}
                 ${currentRouteSpaceId() ? renderContextQuickLink("成果", routeLink("artifacts", currentRouteSpaceId()), route.name === "artifacts" || route.name === "artifact-detail") : ""}
                 ${currentRouteSpaceId() ? renderContextQuickLink("记忆", routeLink("memory", currentRouteSpaceId()), route.name === "memory") : ""}
             </div>
@@ -1707,25 +2047,41 @@ function renderContextQuickLink(label, target, active) {
 }
 
 function renderTopbar() {
-    const space = currentSpace();
     const descriptor = routeDescriptor(state.route);
+    const collapsed = state.ui.contextRailCollapsed;
+    const isChatRoute = routeMode(state.route) === "chat";
+    const session = isChatRoute ? activeSession() : null;
+    const localState = session?.id ? state.chat.localsBySession[session.id] : null;
+    const topbarTitle = isChatRoute && session ? session.title : descriptor.title;
+    const topbarEyebrow = isChatRoute
+        ? (session ? `${humanizeSessionKind(session.sessionKind)} / ${humanizeScopeType(session.scopeType)}` : descriptor.eyebrow)
+        : descriptor.eyebrow;
+    const chatActions = isChatRoute ? `
+        <div class="topbar-chat-actions">
+            ${session?.sessionKind === "DRAFT" ? `<button class="ghost-button" type="button" data-action="convert-draft" data-session-id="${session.id}">转正式</button><button class="danger-button" type="button" data-action="discard-draft" data-session-id="${session.id}">丢弃</button>` : ""}
+            ${localState?.assistantMessage?.status === "RUNNING" ? `<button class="danger-button" type="button" data-action="stop-chat" data-session-id="${session.id}">停止</button>` : ""}
+            <button class="ghost-button" type="button" data-action="reconnect-chat">重连</button>
+        </div>
+    ` : "";
     return `
         <div class="topbar">
             <div class="topbar-left">
+                    <button class="topbar-icon-button" type="button" data-action="toggle-context-rail" aria-expanded="${collapsed ? "false" : "true"}" aria-label="${collapsed ? "展开侧边栏" : "收起侧边栏"}" title="${collapsed ? "展开侧边栏" : "收起侧边栏"}">
+                    ${navIcon("sidebar", "S")}
+                </button>
                 <div class="topbar-context">
-                    <span class="context-kicker">${escapeHtml(descriptor.eyebrow)}</span>
-                    <strong>${escapeHtml(descriptor.title)}</strong>
-                    <span>${escapeHtml(descriptor.detail)}</span>
+                    <span class="context-kicker">${escapeHtml(topbarEyebrow)}</span>
+                    <strong>${escapeHtml(topbarTitle)}</strong>
                 </div>
                 <div class="topbar-meta">
                     <div class="workspace-status">
                         <span class="status-dot ${escapeHtml(state.websocket.status)} ${state.websocket.status === "connected" ? "connected" : ""}"></span>
                         <span>实时连接 ${escapeHtml(humanizeStatus(state.websocket.status))}</span>
                     </div>
-                    ${space ? `<div class="workspace-status workspace-status-strong"><span class="status-caption">当前空间</span><strong>${escapeHtml(space.name)}</strong></div>` : ""}
                 </div>
             </div>
             <div class="topbar-right">
+                ${chatActions}
                 <label class="field topbar-field">
                     <span class="muted">切换空间</span>
                     <select id="space-switcher">
@@ -1749,13 +2105,13 @@ function renderTopbar() {
 
 function renderInspector() {
     if (!state.ui.drawer) {
-        return `<aside class="inspector inspector-empty" aria-label="Inspector"><div class="inspector-header"><div><span class="context-kicker">Inspector</span><h2>详情面板</h2><p class="panel-subtitle">选择 Citation、证据、成果或追踪后，会在这里显示解释型内容。</p></div></div><div class="inspector-body">${emptyState("Inspector 待命中", "点击消息引用、卡片证据或日志追踪即可查看详情。")}</div></aside>`;
+        return `<aside class="inspector inspector-empty" aria-label="详情面板"><div class="inspector-header"><div><span class="context-kicker">详情</span><h2>详情面板</h2><p class="panel-subtitle">选择引用、证据、成果或追踪后，会在这里显示解释型内容。</p></div></div><div class="inspector-body">${emptyState("详情面板待命中", "点击消息引用、卡片证据或日志追踪即可查看详情。")}</div></aside>`;
     }
     return `
-        <aside class="inspector" aria-label="Inspector">
+        <aside class="inspector" aria-label="详情面板">
             <div class="inspector-header">
                 <div>
-                    <span class="context-kicker">Inspector</span>
+                    <span class="context-kicker">详情</span>
                     <h2>${escapeHtml(state.ui.drawer.title)}</h2>
                 </div>
                 <button class="ghost-button" type="button" data-action="close-drawer">收起</button>
@@ -1773,13 +2129,14 @@ function renderModalInspector() {
     if (!state.ui.drawer) {
         return "";
     }
+    const modalKicker = state.ui.drawer.source === "inline-form" ? "操作面板" : "详情预览";
     return `
         <div class="modal-layer" role="presentation">
             <button class="modal-backdrop" type="button" data-action="close-drawer" aria-label="关闭弹窗"></button>
             <aside class="inspector modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-title">
                 <div class="inspector-header">
                     <div>
-                        <span class="context-kicker">Preview</span>
+                        <span class="context-kicker">${modalKicker}</span>
                         <h2 id="modal-title">${escapeHtml(state.ui.drawer.title)}</h2>
                     </div>
                     <button class="ghost-button modal-close-button" type="button" data-action="close-drawer" aria-label="关闭弹窗">关闭</button>
@@ -1792,8 +2149,8 @@ function renderModalInspector() {
 
 function renderToasts() {
     return `
-        <div class="toast-stack">
-            ${state.ui.toasts.map((toast) => `<div class="toast ${toast.type}">${escapeHtml(toast.message)}</div>`).join("")}
+        <div class="toast-stack" aria-live="polite" aria-atomic="true">
+            ${state.ui.toasts.map((toast) => `<div class="toast ${toast.type}" role="${toast.type === "error" ? "alert" : "status"}">${escapeHtml(toast.message)}</div>`).join("")}
         </div>
     `;
 }
@@ -1829,7 +2186,7 @@ function renderPageContent(route) {
         case "artifact-detail":
             return renderArtifactDetailPage();
         case "wiki":
-            return renderWikiPage();
+            return renderWikiPageV2();
         case "graph":
             return renderGraphPage();
         case "memory":
@@ -1965,7 +2322,7 @@ function renderKnowledgeListPage() {
                         ${state.knowledge.list.map((kb) => {
                             const docs = state.knowledge.documentsByKb[kb.id] || [];
                             const latest = docs[0];
-                            const latestStatus = latest ? `${latest.parseStatus || "—"} / ${latest.indexStatus || "—"}` : "暂无文档";
+                            const latestStatus = latest ? `${humanizeStatus(latest.parseStatus || "UNKNOWN")} / ${humanizeStatus(latest.indexStatus || "UNKNOWN")}` : "暂无文档";
                             return `
                                 <tr>
                                     <td><strong>${escapeHtml(kb.name)}</strong><div class="muted">${escapeHtml(kb.description || "无描述")}</div></td>
@@ -2002,7 +2359,10 @@ function renderKnowledgeDetailPage(knowledgeBaseId) {
     const documents = state.knowledge.documentsByKb[knowledgeBaseId] || [];
     const searchResult = state.knowledge.searchResults[knowledgeBaseId];
     const uploadJob = state.knowledge.uploadJobsByKb[knowledgeBaseId];
-    const indexedDocuments = documents.filter((document) => String(document.indexStatus || "").toUpperCase().includes("INDEX"));
+    const indexedDocuments = documents.filter((document) => {
+        const raw = String(document.indexStatus || document.status || document.parseStatus || "").toUpperCase();
+        return raw.includes("INDEX") || raw === "READY" || raw === "SUCCESS";
+    });
     const failedDocuments = documents.filter((document) => String(document.status || document.indexStatus || document.parseStatus || "").toUpperCase().includes("FAIL"));
     const processingDocuments = documents.filter((document) => {
         const raw = String(document.status || document.indexStatus || document.parseStatus || "").toUpperCase();
@@ -2020,9 +2380,9 @@ function renderKnowledgeDetailPage(knowledgeBaseId) {
             </div>
         </div>
         ${renderGuideCards([
-            { eyebrow: "Upload", title: "上传不中断浏览", description: "文档处理与搜索测试可以并行进行，不必等所有任务完成再继续工作。" },
-            { eyebrow: "Search", title: "用真实关键词压测召回", description: "先拿团队常问的问题测试检索，比只看上传成功更能判断知识库是否可用。" },
-            { eyebrow: "Repair", title: "失败项优先看 parse 和 index", description: "先判断错误发生在解析还是索引阶段，再决定重传、暂停或继续。" }
+            { eyebrow: "上传", title: "上传不中断浏览", description: "文档处理与搜索测试可以并行进行，不必等所有任务完成再继续工作。" },
+            { eyebrow: "检索", title: "用真实关键词压测召回", description: "先拿团队常问的问题测试检索，比只看上传成功更能判断知识库是否可用。" },
+            { eyebrow: "修复", title: "失败项优先看解析和索引", description: "先判断错误发生在解析还是索引阶段，再决定重传、暂停或继续。" }
         ])}
         <div class="metric-row knowledge-metrics">
             <div class="metric"><strong>${formatNumber(documents.length)}</strong><span>文档总数</span></div>
@@ -2042,7 +2402,7 @@ function renderKnowledgeDetailPage(knowledgeBaseId) {
                             <tr>
                                 <td><strong>${escapeHtml(document.title || document.originalFilename || `Document ${document.id}`)}</strong><div class="muted">${escapeHtml(document.originalFilename || "")}</div></td>
                                 <td>${badge(document.status)}</td>
-                                <td>${escapeHtml(`${document.parseStatus || "—"} / ${document.indexStatus || "—"}`)}</td>
+                                <td>${escapeHtml(`${humanizeStatus(document.parseStatus || "UNKNOWN")} / ${humanizeStatus(document.indexStatus || "UNKNOWN")}`)}</td>
                                 <td>${formatNumber(document.chunkCount)}</td>
                                 <td>${escapeHtml(document.errorMessage || "—")}</td>
                             </tr>
@@ -2063,12 +2423,12 @@ function renderKnowledgeDetailPage(knowledgeBaseId) {
                     <div class="list-item upload-status-card" style="margin-top:14px;">
                         <div class="list-item-header">
                             <strong>${escapeHtml(uploadJob.fileName)}</strong>
-                            ${badge(uploadJob.stage || uploadJob.status || "RUNNING", uploadJob.stage || uploadJob.status || "RUNNING")}
+                            ${badge(uploadJob.stage || uploadJob.status || "RUNNING")}
                         </div>
                         <div class="muted">MD5: <span class="mono">${escapeHtml(uploadJob.fileMd5 || "计算中")}</span></div>
-                        <div class="muted">Progress: ${uploadJob.progress ? uploadJob.progress.toFixed(1) : "0.0"}%</div>
+                        <div class="muted">进度：${uploadJob.progress ? uploadJob.progress.toFixed(1) : "0.0"}%</div>
                         <div class="progress-bar" aria-hidden="true"><span class="progress-bar-fill" style="width:${Math.max(0, Math.min(100, uploadJob.progress || 0))}%"></span></div>
-                        ${uploadJob.task ? `<div class="muted">Task ${uploadJob.task.id}: ${escapeHtml(uploadJob.task.taskStatus)}</div>` : ""}
+                        ${uploadJob.task ? `<div class="muted">任务 ${uploadJob.task.id}: ${escapeHtml(humanizeStatus(uploadJob.task.taskStatus))}</div>` : ""}
                         ${uploadJob.error ? `<div class="error-state" style="margin-top:10px;">${escapeHtml(uploadJob.error)}</div>` : ""}
                         <div class="page-actions" style="margin-top:12px;">
                             ${uploadJob.paused ? `<button class="ghost-button" type="button" data-action="resume-upload" data-kb-id="${knowledgeBaseId}">继续</button>` : `<button class="ghost-button" type="button" data-action="pause-upload" data-kb-id="${knowledgeBaseId}">暂停</button>`}
@@ -2122,9 +2482,9 @@ function renderChatPage() {
             <section class="chat-main-canvas">
                 <div class="chat-canvas-header">
                     <div>
-                        <span class="context-kicker">Main Canvas</span>
+                        <span class="context-kicker">主画布</span>
                         <h1>${escapeHtml(session?.title || "工作台聊天")}</h1>
-                        <p class="subtitle">${session ? `${humanizeSessionKind(session.sessionKind)} / ${humanizeScopeType(session.scopeType)} / ${humanizeStatus(session.runtimeStatus || session.status)}` : "从左侧 Context Rail 选择或创建会话。"}</p>
+                        <p class="subtitle">${session ? `${humanizeSessionKind(session.sessionKind)} / ${humanizeScopeType(session.scopeType)} / ${humanizeStatus(session.runtimeStatus || session.status)}` : "从左侧侧栏选择或创建会话。"}</p>
                     </div>
                     <div class="page-actions chat-toolbar">
                         ${session?.sessionKind === "DRAFT" ? `<button class="ghost-button" type="button" data-action="convert-draft" data-session-id="${session.id}">转正式会话</button><button class="danger-button" type="button" data-action="discard-draft" data-session-id="${session.id}">丢弃草稿</button>` : ""}
@@ -2137,10 +2497,18 @@ function renderChatPage() {
                 </div>
                 <div class="chat-composer">
                     ${session ? `
+                        <div class="composer-command-strip">
+                            <span class="composer-command-label">生成</span>
+                            <button class="composer-command-chip primary" type="button" data-action="open-chat-artifact-dialog">成果对话框</button>
+                            <button class="composer-command-chip" type="button" data-action="insert-chat-command" data-command="/成果 生成研究报告 type=REPORT ">研究报告</button>
+                            <button class="composer-command-chip" type="button" data-action="insert-chat-command" data-command="/artifact 整理学习指南 type=STUDY_GUIDE ">学习指南</button>
+                            <button class="composer-command-chip" type="button" data-action="insert-chat-command" data-command="/artifact 生成对比分析 type=COMPARISON ">对比分析</button>
+                            <button class="composer-command-chip subtle" type="button" data-action="insert-chat-command" data-command=" project=">项目参数</button>
+                        </div>
                         <form id="chat-message-form">
                             <div class="field">
-                                <label>Composer</label>
-                                <textarea name="content" data-chat-draft="${session.id}" placeholder="可以直接针对团队知识库提问。">${escapeHtml(state.chat.draftsBySession[session.id] || "")}</textarea>
+                                <label>输入</label>
+                                <textarea name="content" data-chat-draft="${session.id}" placeholder="可以提问，也可以输入 /成果 生成研究报告 type=REPORT project=项目ID">${escapeHtml(state.chat.draftsBySession[session.id] || "")}</textarea>
                             </div>
                             <button class="button" type="submit">发送</button>
                         </form>
@@ -2162,6 +2530,10 @@ function renderChatMessage(message) {
         });
     }
     if (message.id && roleClass === "assistant") {
+        if (message.artifactId) {
+            const artifactSpaceId = Number(message.artifactSpaceId) || "";
+            actions.push(`<button class="button message-artifact-button" type="button" data-action="open-artifact" data-artifact-id="${message.artifactId}" data-space-id="${artifactSpaceId}">打开成果</button>`);
+        }
         if (!citations?.length) {
             actions.push(`<button class="ghost-button" type="button" data-action="load-message-citations" data-message-id="${message.id}">查看引用</button>`);
         }
@@ -2176,6 +2548,7 @@ function renderChatMessage(message) {
                 ${badge(message.status || message.runtimeStatus || "ACTIVE", message.status || message.runtimeStatus || "ACTIVE")}
             </div>
             <div>${renderMarkdown(message.content || "")}</div>
+            ${message.artifactId ? `<div class="message-artifact-meta">成果 #${formatNumber(message.artifactId)} 正在生成或已可查看</div>` : ""}
             ${actions.length ? `<div class="message-actions">${actions.join("")}</div>` : ""}
         </article>
     `;
@@ -2266,7 +2639,7 @@ function renderProjectDetailPage(route) {
     const projectGuideItems = route.name === "project-sources" ? [
         { eyebrow: "Import", title: "文件、URL 与文本共用同一研究入口", description: "入口统一后，后续的编译、卡片生成和失败重试都会更好追踪。" },
         { eyebrow: "Compile", title: "先看导入状态，再决定是否编译", description: "资料状态会告诉你应该重试、继续还是触发知识编译。" },
-        { eyebrow: "Repair", title: "失败项要立刻回收处理", description: "比起堆积异常资料，及时修复更能保持项目链路干净。" }
+        { eyebrow: "修复", title: "失败项要立刻回收处理", description: "比起堆积异常资料，及时修复更能保持项目链路干净。" }
     ] : route.name === "project-cards" ? [
         { eyebrow: "Article", title: "ArticleCard 负责摘要原始材料", description: "它是资料进入结构化理解层的第一步，帮助你缩短回看成本。" },
         { eyebrow: "Concept", title: "ConceptCard 负责抽象稳定概念", description: "概念层越清晰，后续跨来源综合和检索复用就越稳定。" },
@@ -2298,7 +2671,7 @@ function renderProjectDetailPage(route) {
             </div>
             <div class="content-grid cols-2" style="margin-top:16px;">
                 ${panel("最近资料", sources.slice(0, 4).map((source) => `<div class="list-item"><strong>${escapeHtml(source.title)}</strong><div class="muted">${badge(source.importStatus, source.importStatus)} ${badge(source.compileStatus, source.compileStatus)}</div></div>`).join("") || emptyState("暂无资料", "到资料标签导入文件、URL 或文本。"))}
-                ${panel("最近成果", artifacts.slice(0, 4).map((artifact) => `<div class="list-item"><strong>${escapeHtml(artifact.title)}</strong><div class="muted">${escapeHtml(artifact.artifactType)} / ${badge(artifact.status)}</div></div>`).join("") || emptyState("暂无成果", "到生成标签发起生成。"))}
+                ${panel("最近成果", artifacts.slice(0, 4).map((artifact) => `<div class="list-item"><strong>${escapeHtml(artifact.title)}</strong><div class="muted">${escapeHtml(humanizeArtifactType(artifact.artifactType))} / ${badge(artifact.status)}</div></div>`).join("") || emptyState("暂无成果", "到生成标签发起生成。"))}
             </div>
         `;
     }
@@ -2349,19 +2722,28 @@ function renderProjectSources(projectId, sources) {
             `, { subtitle: "同一个项目支持文件、URL 和纯文本三种入口，导入后再进入编译链路。" })}
             ${panel("资料列表", `
                 <div class="list-stack">
-                    ${sources.map((source) => `
-                        <div class="list-item">
+                    ${sources.map((source) => {
+                        const importStatus = String(source.importStatus || "").toUpperCase();
+                        const compileStatus = String(source.compileStatus || "").toUpperCase();
+                        const importBusy = ["PENDING", "IMPORTING", "RUNNING"].includes(importStatus);
+                        const compileBusy = ["COMPILING", "RUNNING"].includes(compileStatus);
+                        const compileBlocked = importStatus !== "READY" || compileBusy;
+                        const compileLabel = importStatus !== "READY" ? "等待导入完成" : compileBusy ? "编译中" : compileStatus === "READY" ? "重新编译" : "触发知识编译";
+                        return `
+                        <div class="list-item source-list-item ${compileStatus === "FAILED" || importStatus === "FAILED" ? "source-list-item-failed" : ""}">
                             <div class="list-item-header">
-                                <strong>${escapeHtml(source.title)}</strong>
-                                <div class="page-actions">${badge(source.importStatus, source.importStatus)}${badge(source.compileStatus, source.compileStatus)}</div>
+                                <strong title="${escapeHtml(source.title)}">${escapeHtml(source.title)}</strong>
+                                <div class="page-actions source-status-strip">${badge(source.importStatus)}${badge(source.compileStatus)}</div>
                             </div>
-                            <div class="muted">${escapeHtml(source.sourceType)} / 任务 ${formatNumber(source.taskId)}</div>
+                            <div class="muted">${escapeHtml(humanizeSourceType(source.sourceType))} / 任务 ${formatNumber(source.taskId)}</div>
+                            ${source.errorMessage ? `<div class="source-error-note"><strong>错误原因</strong><span>${escapeHtml(source.errorMessage)}</span></div>` : ""}
                             <div class="page-actions" style="margin-top:10px;">
-                                <button class="ghost-button" type="button" data-action="source-import" data-source-id="${source.id}">重新导入</button>
-                                <button class="ghost-button" type="button" data-action="source-compile" data-source-id="${source.id}">触发知识编译</button>
+                                <button class="ghost-button" type="button" data-action="source-import" data-source-id="${source.id}" ${importBusy ? "disabled" : ""}>重新导入</button>
+                                <button class="ghost-button" type="button" data-action="source-compile" data-source-id="${source.id}" ${compileBlocked ? "disabled" : ""}>${compileLabel}</button>
                             </div>
                         </div>
-                    `).join("") || emptyState("暂无资料", "先导入一份文件、URL 或粘贴文本。")}
+                    `;
+                    }).join("") || emptyState("暂无资料", "先导入一份文件、URL 或粘贴文本。")}
                 </div>
             `, { subtitle: "优先看导入状态和编译状态，失败项要能立刻重试。" })}
         </div>
@@ -2473,24 +2855,24 @@ function renderStudioPage() {
         <div class="page-header">
             <div>
                 <div class="context-kicker">工作室</div>
-                <h1>工作室</h1>
-                <p class="subtitle">选择技能、填写参数、选择上下文范围，并查看最近成果生成结果。</p>
+                <h1>成果工作室</h1>
+                <p class="subtitle">把个人研究项目交给固定技能，生成报告、指南、对比分析和可继续沉淀的成果。</p>
             </div>
         </div>
         <div class="metric-row">
-            <div class="metric"><strong>${formatNumber(state.studio.skills.length)}</strong><span>技能数</span></div>
-            <div class="metric"><strong>${formatNumber(state.personal.projects.length)}</strong><span>项目数</span></div>
-            <div class="metric"><strong>${formatNumber(state.artifacts.list.length)}</strong><span>可见成果</span></div>
+            <div class="metric"><strong>${formatNumber(state.studio.skills.length)}</strong><span>技能</span></div>
+            <div class="metric"><strong>${formatNumber(state.personal.projects.length)}</strong><span>研究项目</span></div>
+            <div class="metric"><strong>${formatNumber(state.artifacts.list.length)}</strong><span>成果</span></div>
             <div class="metric"><strong>${escapeHtml(humanizeStatus(lastTaskStatus))}</strong><span>最近任务</span></div>
         </div>
         <div class="content-grid cols-2">
-            ${panel("启动生成任务", `
-                <form id="studio-task-form" class="inline-form" data-space-id="${currentRouteSpaceId()}">
+            ${panel("创建成果任务", `
+                <form id="studio-task-form" class="inline-form" data-space-id="${currentRouteSpaceId()}" data-modal-hint="选择技能、项目和主题后执行">
                     <div class="field-grid cols-2">
                         <div class="field">
-                            <label>技能</label>
+                            <label>成果技能</label>
                             <select name="skillId" required>
-                                ${state.studio.skills.map((skill) => `<option value="${skill.id}">${escapeHtml(skill.name)}</option>`).join("")}
+                                ${state.studio.skills.map((skill) => `<option value="${skill.id}">${escapeHtml(skill.name)} · ${escapeHtml(humanizeArtifactType(skill.artifactType))}</option>`).join("")}
                             </select>
                         </div>
                         <div class="field">
@@ -2504,19 +2886,13 @@ function renderStudioPage() {
                         <label>主题</label>
                         <input name="topic" required placeholder="例如：检索调试说明稿">
                     </div>
-                    <button class="button" type="submit">启动工作室任务</button>
+                    <button class="button" type="submit">启动生成</button>
                 </form>
                 ${state.studio.lastTask ? `<div class="list-item" style="margin-top:14px;"><div class="list-item-header"><strong>最近任务</strong>${badge(state.studio.lastTask.taskStatus)}</div><div class="muted">成果 ${formatNumber(state.studio.lastTask.artifactId)}</div></div>` : ""}
-            `, { subtitle: "工作室更像任务编排入口，不是一次性提示词表单。" })}
-            ${panel("技能与成果", `
-                <div class="list-stack">
-                    ${state.studio.skills.map((skill) => `
-                        <div class="list-item">
-                            <div class="list-item-header"><strong>${escapeHtml(skill.name)}</strong>${tag(skill.artifactType)}</div>
-                            <div class="muted">${escapeHtml(skill.description)}</div>
-                            <div class="muted">主题提示：${escapeHtml(skill.topicHint)}</div>
-                        </div>
-                    `).join("")}
+            `, { subtitle: "适合一次性编排；需要在对话中执行时，用聊天页的成果对话框。" })}
+            ${panel("技能与最近成果", `
+                <div class="studio-skill-grid">
+                    ${state.studio.skills.map(renderSkillSummary).join("") || emptyState("暂无技能", "工作室技能加载后会显示在这里。")}
                 </div>
                 <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">
                 <div class="list-stack">
@@ -2527,7 +2903,7 @@ function renderStudioPage() {
                         </div>
                     `).join("") || emptyState("暂无成果", "生成后的内容会显示在这里。")}
                 </div>
-            `, { subtitle: "右侧更像当前工作区的技能目录和最近成果架。" })}
+            `, { subtitle: "固定技能覆盖学习、报告、对比、工作准备和外部资料整理。" })}
         </div>
     `;
 }
@@ -2567,7 +2943,7 @@ function renderArtifactsPage() {
                         ${artifacts.map((artifact) => `
                             <tr>
                                 <td><strong>${escapeHtml(artifact.title)}</strong><div class="muted">${escapeHtml(artifact.summary || artifact.description || "可继续编辑、导出或沉淀的工作成果。")}</div></td>
-                                <td>${escapeHtml(artifact.artifactType)}</td>
+                                <td>${escapeHtml(humanizeArtifactType(artifact.artifactType))}</td>
                                 <td>${badge(artifact.status)}</td>
                                 <td>${formatNumber(artifact.researchProjectId)}</td>
                                 <td><button class="button" type="button" data-action="open-artifact" data-artifact-id="${artifact.id}" data-space-id="${artifact.spaceId || currentRouteSpaceId()}">打开</button></td>
@@ -2585,7 +2961,7 @@ function renderArtifactsPage() {
                                 <strong>${escapeHtml(artifact.title)}</strong>
                                 ${badge(artifact.status)}
                             </div>
-                            <div class="muted">${escapeHtml(artifact.artifactType)} / 项目 ${formatNumber(artifact.researchProjectId)}</div>
+                            <div class="muted">${escapeHtml(humanizeArtifactType(artifact.artifactType))} / 项目 ${formatNumber(artifact.researchProjectId)}</div>
                             <div class="page-actions" style="margin-top:10px;">
                                 <button class="ghost-button" type="button" data-action="open-artifact" data-artifact-id="${artifact.id}" data-space-id="${artifact.spaceId || currentRouteSpaceId()}">继续阅读</button>
                             </div>
@@ -2600,6 +2976,8 @@ function renderArtifactsPage() {
 function renderArtifactDetailPage() {
     const artifact = state.artifacts.detail;
     const artifactSpaceId = resolveArtifactSpaceId(artifact);
+    const isPersonalArtifact = isPersonalResearchArtifact(artifact);
+    const hasTraceableCitations = hasTraceableArtifactCitations(artifact);
     const canDistill = canDistillArtifactToPersonalWiki(artifact);
     const draft = state.artifacts.editorDraft || { title: "", content: "", changeNote: "" };
     return `
@@ -2617,11 +2995,11 @@ function renderArtifactDetailPage() {
         </div>
         ${renderGuideCards([
             { eyebrow: "Edit", title: "左侧负责改稿，右侧负责读稿", description: "先稳定标题和结构，再处理正文内容，整体会更接近可发布成品。" },
-            { eyebrow: "Trace", title: "引用与关系保证可追溯性", description: "引用和卡片关联让这份成果不只是好看，也更容易被复核。" },
+            { eyebrow: "追踪", title: "引用与关系保证可追溯性", description: "引用和卡片关联让这份成果不只是好看，也更容易被复核。" },
             { eyebrow: "Distill", title: "个人成果可以继续蒸馏", description: "如果当前成果属于个人研究空间，还可以继续沉淀进更长期的 Wiki 卡片。" }
         ])}
         <div class="metric-row">
-            <div class="metric"><strong>${escapeHtml(artifact?.artifactType || "—")}</strong><span>成果类型</span></div>
+            <div class="metric"><strong>${escapeHtml(humanizeArtifactType(artifact?.artifactType || "—"))}</strong><span>成果类型</span></div>
             <div class="metric"><strong>${escapeHtml(humanizeStatus(artifact?.status || "—"))}</strong><span>状态</span></div>
             <div class="metric"><strong>${formatNumber(artifact?.researchProjectId)}</strong><span>研究项目</span></div>
             <div class="metric"><strong>${formatDate(artifact?.updatedAt || artifact?.createdAt)}</strong><span>最近更新</span></div>
@@ -2646,9 +3024,9 @@ function renderArtifactDetailPage() {
             `)}
             ${panel("预览与沉淀", `
                 <div class="artifact-meta-row">
-                    ${tag(artifact?.artifactType || "成果")}
+                    ${tag(humanizeArtifactType(artifact?.artifactType || "成果"))}
                     ${badge(artifact?.status)}
-                    ${artifact?.scopeType ? tag(artifact.scopeType) : ""}
+                    ${artifact?.scopeType ? tag(humanizeScopeType(artifact.scopeType)) : ""}
                 </div>
                 <div class="artifact-reading-surface">${renderMarkdown(draft.content)}</div>
                 ${canDistill ? `
@@ -2665,8 +3043,8 @@ function renderArtifactDetailPage() {
                 ` : `
                     <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">
                     <div class="empty-state">
-                        <strong>该成果不支持个人蒸馏</strong>
-                        <div class="muted">只有个人研究空间中的成果才会显示综合卡蒸馏入口。</div>
+                        <strong>${isPersonalArtifact ? "需要可追溯引用后才能沉淀" : "该成果不支持个人蒸馏"}</strong>
+                        <div class="muted">${isPersonalArtifact && !hasTraceableCitations ? "沉淀到个人 Wiki 会保留证据链；当前成果没有引用记录，请先从带引用的资料或卡片生成成果。" : "只有个人研究空间中的成果才会显示综合卡蒸馏入口。"}</div>
                     </div>
                 `}
                 <form id="publish-artifact-wiki-form" data-artifact-id="${artifact.id}" class="inline-form" style="margin-top:14px;">
@@ -2707,16 +3085,18 @@ function renderWikiPage() {
     const pages = state.wiki.pages || [];
     const relations = state.wiki.relations;
     const graph = state.wiki.pageGraph;
+    const spaceGraph = state.wiki.spaceGraph;
     return `
         <div class="wiki-workbench">
             <section class="wiki-reader">
                 <div class="wiki-reader-header">
                     <div>
-                        <span class="context-kicker">Main Canvas</span>
+                        <span class="context-kicker">主画布</span>
                         <h1>${escapeHtml(page?.title || "团队 Wiki")}</h1>
                         <p class="subtitle">${page ? `${humanizeStatus(page.status)} / ${formatNumber(pages.length)} 个页面 / ${formatNumber(state.wiki.versions.length)} 个版本` : "左侧选择页面，或在下方创建新的 Wiki 草稿。"}</p>
                     </div>
                     <div class="page-actions">
+                        <button class="ghost-button" type="button" data-action="open-wiki-create-form">创建草稿</button>
                         ${page ? `<button class="ghost-button" type="button" data-action="open-wiki-inspector">关系与版本</button>` : ""}
                         ${page ? `<button class="ghost-button" type="button" data-action="open-wiki-graph-card">图谱概览</button>` : ""}
                         ${page ? `<button class="button" type="button" data-action="publish-wiki-page" data-page-id="${page.id}">发布 Wiki</button>` : ""}
@@ -2751,6 +3131,7 @@ function renderWikiPage() {
                     </div>
                 `}
             </section>
+            ${renderWikiInsightColumn(page, relations, graph, spaceGraph)}
         </div>
     `;
 }
@@ -2837,12 +3218,590 @@ function renderWikiGraphCard() {
             <div class="list-stack">
                 ${(graph.nodes || []).slice(0, 8).map((node) => `
                     <button class="list-item" type="button" data-action="open-graph-from-node" data-node-id="${escapeHtml(node.id)}">
-                        <div class="list-item-header"><strong>${escapeHtml(node.title || node.id)}</strong>${tag(node.type || "NODE")}</div>
-                        <div class="muted">${escapeHtml(node.subtitle || node.status || "")}</div>
+                        <div class="list-item-header"><strong>${escapeHtml(node.title || node.id)}</strong>${tag(humanizeGraphNodeType(node.type || "NODE"))}</div>
+                        <div class="muted">${escapeHtml(node.subtitle || humanizeStatus(node.status || "UNKNOWN"))}</div>
                     </button>
                 `).join("") || emptyState("暂无节点", "该页面局部图谱暂时没有节点。")}
             </div>
-            <button class="button" type="button" data-nav="${routeLink("graph", currentRouteSpaceId())}">进入完整 Graph</button>
+            <button class="button" type="button" data-nav="${routeLink("graph", currentRouteSpaceId())}">进入完整图谱</button>
+        </div>
+    `;
+}
+
+function renderWikiPageV2() {
+    const page = state.wiki.pageDetail;
+    const pages = state.wiki.pages || [];
+    const relations = state.wiki.relations;
+    const pageGraph = state.wiki.pageGraph;
+    const spaceGraph = state.wiki.spaceGraph;
+    const activeNode = findWikiGraphNode(spaceGraph, page?.id) || findWikiGraphNode(pageGraph, page?.id);
+    const versionNo = page?.publishedVersionNo || state.wiki.versions[0]?.versionNo;
+    const isDraft = String(page?.status || "").toUpperCase() === "DRAFT";
+    const isAutoMaintained = Boolean(page?.autoMaintained);
+    return `
+        <div class="wiki-workbench wiki-workbench-v2">
+            <section class="wiki-reader wiki-reader-v2">
+                <div class="wiki-topbar">
+                    <div class="wiki-title-block">
+                        <span class="context-kicker">Team Wiki</span>
+                        <h1>${escapeHtml(page?.title || "团队 Wiki")}</h1>
+                        <div class="wiki-title-meta">
+                            ${page ? badge(page.status) : tag("未选择页面")}
+                            ${isAutoMaintained ? tag("自动维护") : ""}
+                            ${page?.indexStatus ? tag(`索引 ${humanizeStatus(page.indexStatus)}`) : ""}
+                            ${versionNo ? tag(`v${formatNumber(versionNo)}`) : ""}
+                            ${tag(`${formatNumber(pages.length)} 页`)}
+                        </div>
+                    </div>
+                    <div class="page-actions compact-actions">
+                        <button class="ghost-button" type="button" data-action="open-wiki-create-form">新建</button>
+                        ${page ? `<button class="ghost-button" type="button" data-action="open-wiki-inspector">关系</button>` : ""}
+                        ${page ? `<button class="ghost-button" type="button" data-action="open-wiki-graph-card">局部图</button>` : ""}
+                        ${page && isDraft ? `<button class="button" type="button" data-action="publish-wiki-page" data-page-id="${page.id}">发布</button>` : ""}
+                    </div>
+                </div>
+
+                ${page ? `
+                    <div class="wiki-page-grid">
+                        <article class="wiki-reading-surface wiki-reading-surface-v2">
+                            <div class="wiki-page-status-line">
+                                ${tag(`出链 ${formatNumber(activeNode?.outgoingResolvedCount ?? relations?.summary?.outgoingResolvedCount ?? 0)}`)}
+                                ${tag(`反链 ${formatNumber(activeNode?.incomingResolvedCount ?? relations?.summary?.incomingResolvedCount ?? 0)}`)}
+                                ${tag(`证据 ${formatNumber(activeNode?.evidenceCitationCount ?? 0)}`)}
+                                ${(activeNode?.unresolvedOutgoingCount || relations?.summary?.unresolvedOutgoingCount) ? tag(`待修复 ${formatNumber(activeNode?.unresolvedOutgoingCount ?? relations?.summary?.unresolvedOutgoingCount)}`) : ""}
+                            </div>
+                            ${renderMarkdown(page.content || "")}
+                        </article>
+                        ${renderWikiMaintenancePanel(page, isDraft, isAutoMaintained)}
+                    </div>
+                ` : `
+                    <div class="wiki-editor-card wiki-editor-card-v2">
+                        <span class="context-kicker">Create Draft</span>
+                        <form id="wiki-create-form" data-space-id="${currentRouteSpaceId()}" class="inline-form">
+                            <div class="field"><label>标题</label><input name="title" required></div>
+                            <div class="field"><label>内容</label><textarea class="editor-textarea" name="content" required></textarea></div>
+                            <button class="button" type="submit">创建草稿</button>
+                        </form>
+                    </div>
+                `}
+            </section>
+            ${renderWikiInsightColumn(page, relations, pageGraph, spaceGraph)}
+        </div>
+    `;
+}
+
+function renderWikiMaintenancePanel(page, isDraft, isAutoMaintained) {
+    if (isDraft) {
+        return `
+            <div class="wiki-editor-card wiki-editor-card-v2">
+                <div class="wiki-editor-heading">
+                    <span class="context-kicker">Editor</span>
+                    <span class="muted">草稿内容直接参与页面链接解析</span>
+                </div>
+                <form id="wiki-edit-form" data-page-id="${page.id}" class="inline-form">
+                    <div class="field"><label>标题</label><input name="title" value="${escapeHtml(page.title)}" required></div>
+                    <div class="field"><label>内容</label><textarea class="editor-textarea" name="content" required>${escapeHtml(page.content || "")}</textarea></div>
+                    <button class="button" type="submit">保存草稿</button>
+                </form>
+            </div>
+        `;
+    }
+    const sourceRows = [
+        ["维护方式", isAutoMaintained ? "自动维护" : "已发布手动页"],
+        ["来源文档", page.sourceDocumentId ? `Document #${page.sourceDocumentId}` : "—"],
+        ["个人资料", page.sourcePersonalSourceId ? `Source #${page.sourcePersonalSourceId}` : "—"],
+        ["来源成果", page.sourceArtifactId ? `Artifact #${page.sourceArtifactId}` : "—"],
+        ["来源消息", page.sourceMessageId ? `Message #${page.sourceMessageId}` : "—"]
+    ];
+    return `
+        <div class="wiki-editor-card wiki-editor-card-v2 wiki-maintenance-card">
+            <div class="wiki-editor-heading">
+                <span class="context-kicker">${isAutoMaintained ? "Auto Wiki" : "Published"}</span>
+                <span class="muted">${isAutoMaintained ? "来源更新后自动刷新页面、引用和图谱" : "发布页保持只读，避免直接破坏已索引版本"}</span>
+            </div>
+            <div class="wiki-chain-list">
+                ${sourceRows.map(([label, value]) => `
+                    <div class="wiki-chain-row">
+                        <span>${escapeHtml(label)}</span>
+                        <strong>${escapeHtml(value)}</strong>
+                    </div>
+                `).join("")}
+            </div>
+            <div class="source-error-note source-info-note">
+                <strong>${isAutoMaintained ? "自动维护说明" : "修改方式"}</strong>
+                <span>${isAutoMaintained ? "上传文档重建索引或重新编译个人资料时，系统会写入新版本并重建引用与图谱。" : "需要调整内容时，请从来源成果或消息创建新草稿后再发布。"}</span>
+            </div>
+        </div>
+    `;
+}
+
+function renderWikiInsightColumn(page, relations, pageGraph, spaceGraph) {
+    const summary = spaceGraph?.summary || {};
+    const activeNode = findWikiGraphNode(spaceGraph, page?.id) || findWikiGraphNode(pageGraph, page?.id);
+    return `
+        <aside class="wiki-insight-column">
+            <section class="wiki-insight-panel">
+                <div class="wiki-panel-title">
+                    <strong>图谱状态</strong>
+                    <span>${formatNumber(summary.resolvedEdgeCount ?? spaceGraph?.edgeCount ?? 0)} 条链接</span>
+                </div>
+                <div class="wiki-metric-grid">
+                    <div><strong>${formatNumber(summary.totalPageCount ?? spaceGraph?.nodeCount ?? 0)}</strong><span>页面</span></div>
+                    <div><strong>${formatNumber(summary.evidenceBackedPageCount ?? 0)}</strong><span>有证据</span></div>
+                    <div><strong>${formatNumber(summary.orphanPageCount ?? 0)}</strong><span>孤立</span></div>
+                    <div><strong>${formatNumber(summary.unresolvedLinkCount ?? 0)}</strong><span>待修复</span></div>
+                </div>
+                ${renderWikiGraphCanvas(spaceGraph, page?.id)}
+            </section>
+
+            ${page ? `
+                <section class="wiki-insight-panel">
+                    <div class="wiki-panel-title">
+                        <strong>引用状态</strong>
+                        <span>${wikiEvidenceLabel(activeNode)}</span>
+                    </div>
+                    <div class="wiki-chain-list">
+                        <div class="wiki-chain-row">
+                            <span>来源</span>
+                            <strong>${escapeHtml(wikiSourceLabel(activeNode, page))}</strong>
+                        </div>
+                        <div class="wiki-chain-row">
+                            <span>证据引用</span>
+                            <strong>${formatNumber(activeNode?.evidenceCitationCount ?? 0)}</strong>
+                        </div>
+                        <div class="wiki-chain-row">
+                            <span>页面状态</span>
+                            <strong>${escapeHtml(humanizeStatus(page.status))} / ${escapeHtml(humanizeStatus(page.indexStatus))}</strong>
+                        </div>
+                    </div>
+                    ${renderWikiGraphHealthRows(activeNode)}
+                </section>
+
+                <section class="wiki-insight-panel">
+                    <div class="wiki-panel-title">
+                        <strong>反链与出链</strong>
+                        <span>${formatNumber(relations?.summary?.neighborCount ?? activeNode?.neighborCount ?? 0)} 个邻居</span>
+                    </div>
+                    ${renderWikiCompactRelationGroup("出链", relations?.outgoingLinks, "out")}
+                    ${renderWikiCompactRelationGroup("反链", relations?.incomingLinks, "in")}
+                    ${renderWikiCompactRelationGroup("邻居", relations?.neighborPages, "neighbor")}
+                    ${renderWikiUnresolvedCompact(relations?.unresolvedLinks)}
+                </section>
+            ` : `
+                <section class="wiki-insight-panel">
+                    ${emptyState("选择页面后查看链路", "这里会显示反链、出链、缺失链接和证据覆盖。")}
+                </section>
+            `}
+        </aside>
+    `;
+}
+
+function renderWikiGraphCanvas(graph, activePageId) {
+    const nodes = [...(graph?.nodes || [])]
+        .sort((left, right) => (right.linkCount || 0) - (left.linkCount || 0) || String(left.title || "").localeCompare(String(right.title || "")))
+        .slice(0, 28);
+    const edges = graph?.edges || [];
+    if (!nodes.length) {
+        return `<div class="wiki-mini-graph empty">${escapeHtml("暂无图谱数据")}</div>`;
+    }
+    return `
+        <div class="wiki-mini-graph" style="--edge-count:${Math.min(edges.length, 18)};">
+            ${nodes.map((node, index) => renderWikiGraphNodePill(node, index, Number(node.id) === Number(activePageId))).join("")}
+        </div>
+    `;
+}
+
+function renderWikiGraphNodePill(node, index, active) {
+    const size = Math.min(1.28, 0.82 + ((node.linkCount || 0) * 0.08));
+    return `
+        <button class="wiki-graph-pill ${active ? "active" : ""} ${node.orphan ? "orphan" : ""}"
+            type="button"
+            data-action="select-wiki-page"
+            data-page-id="${node.id}"
+            style="--i:${index};--s:${size};">
+            <span>${escapeHtml(node.title || `Page ${node.id}`)}</span>
+        </button>
+    `;
+}
+
+function renderWikiCompactRelationGroup(title, items = [], tone = "") {
+    const rows = (items || []).slice(0, 6);
+    return `
+        <div class="wiki-relation-block ${tone}">
+            <div class="wiki-relation-heading"><strong>${escapeHtml(title)}</strong><span>${formatNumber((items || []).length)}</span></div>
+            ${rows.map((item) => `
+                <button class="wiki-relation-row" type="button" data-action="select-wiki-page" data-page-id="${item.pageId}">
+                    <span>${escapeHtml(item.title || `Page ${item.pageId}`)}</span>
+                    <em>${formatNumber(item.mentionCount || item.outgoingMentionCount || item.incomingMentionCount || 0)}</em>
+                </button>
+            `).join("") || `<div class="wiki-relation-empty">暂无${escapeHtml(title)}</div>`}
+        </div>
+    `;
+}
+
+function renderWikiUnresolvedCompact(items = []) {
+    const rows = (items || []).slice(0, 6);
+    return `
+        <div class="wiki-relation-block unresolved">
+            <div class="wiki-relation-heading"><strong>未解析</strong><span>${formatNumber((items || []).length)}</span></div>
+            ${rows.map((item) => `
+                <div class="wiki-relation-row unresolved">
+                    <span>${escapeHtml(item.targetTitle)}</span>
+                    <em>${escapeHtml(item.relationStatus || "MISSING")} · ${formatNumber(item.mentionCount || 0)}</em>
+                </div>
+            `).join("") || `<div class="wiki-relation-empty">暂无未解析链接</div>`}
+        </div>
+    `;
+}
+
+function renderWikiGraphHealthRows(node) {
+    const rows = [];
+    if (node?.orphan) {
+        rows.push(["孤立页", "没有反链，建议从目录页或相关页面建立入口"]);
+    }
+    if (node?.leaf) {
+        rows.push(["叶子页", "没有出链，适合补充后续阅读或相关主题"]);
+    }
+    if ((node?.unresolvedOutgoingCount || 0) > 0) {
+        rows.push(["缺失链接", `${formatNumber(node.unresolvedOutgoingCount)} 个 [[页面]] 还没有解析`]);
+    }
+    if ((node?.evidenceCitationCount || 0) === 0) {
+        rows.push(["证据不足", "当前发布版本没有文档级引用"]);
+    }
+    if (!rows.length) {
+        rows.push(["链路健康", "页面、反链和证据状态完整"]);
+    }
+    return `<div class="wiki-health-list">${rows.map(([title, body]) => `<div><strong>${escapeHtml(title)}</strong><span>${escapeHtml(body)}</span></div>`).join("")}</div>`;
+}
+
+function findWikiGraphNode(graph, pageId) {
+    if (!pageId) {
+        return null;
+    }
+    return (graph?.nodes || []).find((node) => Number(node.id) === Number(pageId)) || null;
+}
+
+function wikiSourceLabel(node, page) {
+    const sourceType = node?.sourceType || (page?.sourceArtifactId ? "ARTIFACT" : page?.sourceMessageId ? "CHAT_MESSAGE" : "MANUAL");
+    if (sourceType === "ARTIFACT") {
+        return `Artifact #${node?.sourceId || page?.sourceArtifactId || ""}`;
+    }
+    if (sourceType === "CHAT_MESSAGE") {
+        return `对话消息 #${node?.sourceId || page?.sourceMessageId || ""}`;
+    }
+    return "手动草稿";
+}
+
+function wikiEvidenceLabel(node) {
+    const count = node?.evidenceCitationCount || 0;
+    return count > 0 ? `${formatNumber(count)} 条证据` : "未绑定证据";
+}
+
+function graphNodeLayerX(node, edgeType = "") {
+    const type = String(node?.type || "").toUpperCase();
+    const relationType = String(edgeType || "").toUpperCase();
+    if (type.includes("DOCUMENT") || type.includes("SOURCE") || type.includes("KNOWLEDGE")) {
+        return 20;
+    }
+    if (relationType.includes("CITES") && (type.includes("WIKI") || type.includes("ARTIFACT") || type.includes("CHAT"))) {
+        return 54;
+    }
+    if (type.includes("WIKI") || type.includes("CONCEPT")) {
+        return 42;
+    }
+    if (type.includes("CHAT") || type.includes("MESSAGE") || type.includes("SESSION")) {
+        return 58;
+    }
+    if (type.includes("ARTIFACT") || type.includes("PROJECT")) {
+        return 78;
+    }
+    return 50;
+}
+
+function collectGraphConnectedNodeIds(edges = []) {
+    const ids = new Set();
+    (edges || []).forEach((edge) => {
+        if (edge?.sourceId !== undefined && edge?.sourceId !== null) {
+            ids.add(String(edge.sourceId));
+        }
+        if (edge?.targetId !== undefined && edge?.targetId !== null) {
+            ids.add(String(edge.targetId));
+        }
+    });
+    return ids;
+}
+
+function addGraphLayoutVote(votes, id, x, y) {
+    if (!id) {
+        return;
+    }
+    const key = String(id);
+    const current = votes.get(key) || { x: 0, y: 0, count: 0 };
+    current.x += x;
+    current.y += y;
+    current.count += 1;
+    votes.set(key, current);
+}
+
+function spreadGraphLayoutRows(nodes, layout, preferredVotes, minY = 18, rowGap = 12) {
+    const lanes = new Map();
+    nodes.forEach((node, index) => {
+        const vote = preferredVotes.get(String(node.id));
+        const preferredX = vote ? vote.x / vote.count : graphNodeLayerX(node);
+        const lane = String(Math.round(preferredX / 10) * 10);
+        const entries = lanes.get(lane) || [];
+        entries.push({ node, preferredX, vote, index });
+        lanes.set(lane, entries);
+    });
+
+    let maxRows = 1;
+    lanes.forEach((entries) => {
+        maxRows = Math.max(maxRows, entries.length);
+        const laneGap = entries.length > 1 ? Math.min(rowGap, (78 - minY) / (entries.length - 1)) : 0;
+        entries.forEach(({ node, preferredX, vote, index }, row) => {
+            const stagger = row % 2 === 0 ? 0 : 3.5;
+            layout.set(String(node.id), {
+                x: clampGraphPoint(preferredX + stagger, 12, 88),
+                y: clampGraphPoint((vote ? Math.max(minY, vote.y / vote.count) : minY) + row * laneGap + (index % 3) * 0.8, 12, 82)
+            });
+        });
+    });
+    return maxRows;
+}
+
+const GRAPH_CANVAS_NODE_LIMIT = 64;
+const GRAPH_CANVAS_EDGE_LIMIT = 120;
+
+function buildGraphCanvasNodes(nodes = [], edges = [], selectedNodeId) {
+    const allNodes = nodes || [];
+    const byId = new Map(allNodes.map((node) => [String(node.id), node]));
+    const selectedId = selectedNodeId === undefined || selectedNodeId === null ? "" : String(selectedNodeId);
+    const selectedEdgeIds = new Set();
+    const ids = [];
+    const add = (id) => {
+        const key = String(id);
+        if (byId.has(key) && !ids.includes(key) && ids.length < GRAPH_CANVAS_NODE_LIMIT) {
+            ids.push(key);
+        }
+    };
+
+    allNodes.filter((node) => node.root).forEach((node) => add(node.id));
+    if (selectedId) {
+        add(selectedId);
+        (edges || []).forEach((edge) => {
+            if (String(edge.sourceId) === selectedId || String(edge.targetId) === selectedId) {
+                selectedEdgeIds.add(String(edge.sourceId));
+                selectedEdgeIds.add(String(edge.targetId));
+            }
+        });
+        selectedEdgeIds.forEach(add);
+    }
+
+    (edges || []).forEach((edge) => {
+        add(edge.sourceId);
+        add(edge.targetId);
+    });
+    allNodes.forEach((node) => add(node.id));
+    return ids.map((id) => byId.get(id)).filter(Boolean);
+}
+
+function buildGraphNodeLayout(nodes = [], edges = []) {
+    const visibleNodes = nodes || [];
+    const layout = new Map();
+    const nodeById = new Map(visibleNodes.map((node) => [String(node.id), node]));
+    const visibleEdges = (edges || []).filter((edge) => nodeById.has(String(edge.sourceId)) && nodeById.has(String(edge.targetId)));
+    const connectedIds = collectGraphConnectedNodeIds(visibleEdges);
+    const roots = visibleNodes.filter((node) => node.root);
+    const connectedNodes = visibleNodes.filter((node) => connectedIds.has(String(node.id)) && !node.root);
+    const orphanNodes = visibleNodes.filter((node) => !connectedIds.has(String(node.id)) && !node.root);
+    const preferredVotes = new Map();
+
+    if (visibleNodes.length > 28) {
+        const columns = 3;
+        const rows = Math.max(1, Math.ceil(visibleNodes.length / columns));
+        const xStep = columns > 1 ? 64 / (columns - 1) : 0;
+        const yStep = rows > 1 ? 80 / (rows - 1) : 0;
+        visibleNodes.forEach((node, index) => {
+            const col = index % columns;
+            const row = Math.floor(index / columns);
+            layout.set(String(node.id), {
+                x: clampGraphPoint(columns === 1 ? 50 : 18 + col * xStep, 16, 84),
+                y: clampGraphPoint(10 + row * yStep, 10, 90)
+            });
+        });
+        layout.rowCount = Math.max(rows, 3);
+        layout.connectedIds = connectedIds;
+        return layout;
+    }
+
+    visibleEdges.forEach((edge, index) => {
+        const source = nodeById.get(String(edge.sourceId));
+        const target = nodeById.get(String(edge.targetId));
+        if (!source || !target) {
+            return;
+        }
+        const type = String(edge.type || edge.label || "").toUpperCase();
+        const rowY = 20 + (index % 4) * 12;
+        let sourceX = graphNodeLayerX(source, type);
+        let targetX = graphNodeLayerX(target, type);
+        if (type.includes("LINK") && Math.abs(sourceX - targetX) < 18) {
+            sourceX = 36;
+            targetX = 64;
+        }
+        if (type.includes("GENERATES") || type.includes("SOURCE")) {
+            sourceX = Math.min(sourceX, 46);
+            targetX = Math.max(targetX, 70);
+        }
+        if (type.includes("CITES")) {
+            sourceX = Math.max(sourceX, 50);
+            targetX = Math.min(targetX, 26);
+        }
+        if (Math.abs(sourceX - targetX) < 16) {
+            sourceX = 36;
+            targetX = 64;
+        }
+        addGraphLayoutVote(preferredVotes, source.id, sourceX, rowY);
+        addGraphLayoutVote(preferredVotes, target.id, targetX, rowY + (index % 2 === 0 ? 0 : 6));
+    });
+
+    roots.forEach((node, index) => {
+        layout.set(String(node.id), { x: 50, y: clampGraphPoint(16 + index * 11, 12, 36) });
+    });
+
+    const connectedRowCount = spreadGraphLayoutRows(connectedNodes, layout, preferredVotes, roots.length ? 26 : 18, 12);
+
+    const relationRows = Math.max(0, ...Array.from(layout.values()).map((point) => point.y));
+    const orphanStartY = connectedNodes.length || roots.length ? Math.min(58, Math.max(46, relationRows + 8)) : 22;
+    const orphanColumns = orphanNodes.length > 16 ? 5 : orphanNodes.length > 9 ? 4 : orphanNodes.length > 4 ? 3 : Math.max(1, orphanNodes.length);
+    const orphanRows = Math.max(1, Math.ceil(orphanNodes.length / Math.max(orphanColumns, 1)));
+    const orphanXStep = orphanColumns > 1 ? 76 / (orphanColumns - 1) : 0;
+    const orphanYStep = orphanRows > 1 ? Math.min(12, (88 - orphanStartY) / (orphanRows - 1)) : 0;
+    orphanNodes.forEach((node, index) => {
+        const col = index % orphanColumns;
+        const row = Math.floor(index / orphanColumns);
+        layout.set(String(node.id), {
+            x: clampGraphPoint(orphanColumns === 1 ? 50 : 12 + col * orphanXStep, 10, 90),
+            y: clampGraphPoint(orphanStartY + row * orphanYStep, 12, 90)
+        });
+    });
+
+    layout.rowCount = Math.max(orphanRows + (connectedNodes.length || roots.length ? 2 : 0), connectedRowCount, Math.ceil(Math.max(connectedNodes.length, roots.length, 1) / 4), 3);
+    layout.connectedIds = connectedIds;
+    return layout;
+}
+
+function clampGraphPoint(value, min = 9, max = 91) {
+    return Math.max(min, Math.min(max, Math.round(value * 10) / 10));
+}
+
+function formatSvgNumber(value) {
+    return Number(value).toFixed(2).replace(/\.?0+$/, "");
+}
+
+function graphEdgeTone(edge) {
+    const type = String(edge.type || edge.label || "").toUpperCase();
+    if (type.includes("CITES")) {
+        return "evidence";
+    }
+    if (type.includes("SOURCE") || type.includes("GENERATES")) {
+        return "source";
+    }
+    if (type.includes("WIKI") || type.includes("LINK")) {
+        return "wiki";
+    }
+    return "default";
+}
+
+function graphEdgeLabel(edge) {
+    const raw = humanizeGraphEdgeType(edge.label || edge.type || "RELATION").trim();
+    return raw.length > 24 ? `${raw.slice(0, 21)}...` : raw;
+}
+
+function buildGraphEdgeGeometry(source, target, index) {
+    const dx = target.x - source.x;
+    const dy = target.y - source.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance < 0.5) {
+        const x = clampGraphPoint(source.x + 8);
+        const y = clampGraphPoint(source.y - 8, 12, 88);
+        return {
+            path: `M ${formatSvgNumber(source.x + 4)} ${formatSvgNumber(source.y)} C ${formatSvgNumber(x)} ${formatSvgNumber(y - 5)}, ${formatSvgNumber(x + 5)} ${formatSvgNumber(y + 5)}, ${formatSvgNumber(source.x)} ${formatSvgNumber(source.y + 4)}`,
+            labelX: x,
+            labelY: y
+        };
+    }
+    const ux = dx / distance;
+    const uy = dy / distance;
+    const nx = -uy;
+    const ny = ux;
+    const horizontalWeight = Math.abs(ux);
+    const endpointOffset = Math.min(10.5, Math.max(5.5, 5.6 + horizontalWeight * 4.4));
+    const startX = source.x + ux * endpointOffset;
+    const startY = source.y + uy * endpointOffset;
+    const endX = target.x - ux * endpointOffset;
+    const endY = target.y - uy * endpointOffset;
+    const bendDirection = index % 2 === 0 ? 1 : -1;
+    const bend = Math.min(7, Math.max(2, distance * 0.08)) * bendDirection * (1 + (index % 3) * 0.1);
+    const controlX = clampGraphPoint((startX + endX) / 2 + nx * bend, 8, 92);
+    const controlY = clampGraphPoint((startY + endY) / 2 + ny * bend, 11, 89);
+    const innerDx = endX - startX;
+    const innerDy = endY - startY;
+    const pull = 0.42;
+    const c1X = clampGraphPoint(startX + innerDx * pull + nx * bend * 0.38, 8, 92);
+    const c1Y = clampGraphPoint(startY + innerDy * pull + ny * bend * 0.38, 10, 90);
+    const c2X = clampGraphPoint(endX - innerDx * pull + nx * bend * 0.38, 8, 92);
+    const c2Y = clampGraphPoint(endY - innerDy * pull + ny * bend * 0.38, 10, 90);
+    return {
+        path: `M ${formatSvgNumber(startX)} ${formatSvgNumber(startY)} C ${formatSvgNumber(c1X)} ${formatSvgNumber(c1Y)}, ${formatSvgNumber(c2X)} ${formatSvgNumber(c2Y)}, ${formatSvgNumber(endX)} ${formatSvgNumber(endY)}`,
+        labelX: controlX,
+        labelY: controlY
+    };
+}
+
+function renderGraphEdgeSvg(edges = [], layout, selectedNodeId) {
+    const visibleEdges = (edges || [])
+        .filter((edge) => layout.has(String(edge.sourceId)) && layout.has(String(edge.targetId)))
+        .slice(0, 80);
+    if (!visibleEdges.length) {
+        return "";
+    }
+    const edgeModels = visibleEdges
+        .map((edge, index) => ({ edge, index, geometry: buildGraphEdgeGeometry(layout.get(String(edge.sourceId)), layout.get(String(edge.targetId)), index) }));
+    const labeledEdges = edgeModels
+        .filter(({ edge }) => selectedNodeId && (String(edge.sourceId) === String(selectedNodeId) || String(edge.targetId) === String(selectedNodeId)))
+        .slice(0, 6);
+    const fallbackLabels = visibleEdges.length <= 5 ? edgeModels.slice(0, Math.min(3, visibleEdges.length)) : [];
+    const labels = labeledEdges.length ? labeledEdges : fallbackLabels;
+    return `
+        <svg class="graph-edge-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            <defs>
+                <marker id="graph-arrow-default" markerWidth="7" markerHeight="7" refX="6.3" refY="3.5" orient="auto" markerUnits="strokeWidth">
+                    <path d="M1,1 L6.5,3.5 L1,6 Z" fill="#64748b"></path>
+                </marker>
+                <marker id="graph-arrow-wiki" markerWidth="7" markerHeight="7" refX="6.3" refY="3.5" orient="auto" markerUnits="strokeWidth">
+                    <path d="M1,1 L6.5,3.5 L1,6 Z" fill="#2563eb"></path>
+                </marker>
+                <marker id="graph-arrow-evidence" markerWidth="7" markerHeight="7" refX="6.3" refY="3.5" orient="auto" markerUnits="strokeWidth">
+                    <path d="M1,1 L6.5,3.5 L1,6 Z" fill="#059669"></path>
+                </marker>
+                <marker id="graph-arrow-source" markerWidth="7" markerHeight="7" refX="6.3" refY="3.5" orient="auto" markerUnits="strokeWidth">
+                    <path d="M1,1 L6.5,3.5 L1,6 Z" fill="#d97706"></path>
+                </marker>
+            </defs>
+            ${edgeModels.map(({ edge, geometry }) => {
+                const active = selectedNodeId && (String(edge.sourceId) === String(selectedNodeId) || String(edge.targetId) === String(selectedNodeId));
+                const tone = graphEdgeTone(edge);
+                return `
+                    <path class="graph-edge-halo ${tone} ${active ? "active" : ""}" d="${geometry.path}"></path>
+                    <path class="graph-edge-path ${tone} ${active ? "active" : ""}" d="${geometry.path}" marker-end="url(#graph-arrow-${tone})"><title>${escapeHtml(humanizeGraphEdgeType(edge.label || edge.type || "RELATION"))}</title></path>
+                `;
+            }).join("")}
+        </svg>
+        <div class="graph-edge-label-layer" aria-hidden="true">
+            ${labels.map(({ edge, geometry }) => {
+                const tone = graphEdgeTone(edge);
+                return `<span class="graph-edge-label ${tone}" style="left:${formatSvgNumber(geometry.labelX)}%;top:${formatSvgNumber(geometry.labelY)}%;">${escapeHtml(graphEdgeLabel(edge))}</span>`;
+            }).join("")}
         </div>
     `;
 }
@@ -2851,15 +3810,27 @@ function renderGraphPage() {
     const graph = state.graph.spaceGraph;
     const nodes = graph?.nodes || [];
     const edges = graph?.edges || [];
-    const selected = nodes.find((node) => node.id === state.graph.selectedNodeId);
+    const selected = nodes.find((node) => String(node.id) === String(state.graph.selectedNodeId));
+    const canvasNodes = buildGraphCanvasNodes(nodes, edges, state.graph.selectedNodeId);
+    const canvasNodeIds = new Set(canvasNodes.map((node) => String(node.id)));
+    const canvasEdges = (edges || [])
+        .filter((edge) => canvasNodeIds.has(String(edge.sourceId)) && canvasNodeIds.has(String(edge.targetId)))
+        .slice(0, GRAPH_CANVAS_EDGE_LIMIT);
+    const graphLayout = buildGraphNodeLayout(canvasNodes, canvasEdges);
+    const nodeTitles = new Map(nodes.map((node) => [String(node.id), node.title || node.id]));
+    const nodeLabel = (nodeId) => nodeTitles.get(String(nodeId)) || nodeId;
+    const graphCanvasHeight = Math.max(440, 180 + (graphLayout.rowCount || 3) * 72);
+    const canvasSummary = nodes.length > canvasNodes.length
+        ? `画布显示 ${formatNumber(canvasNodes.length)} / ${formatNumber(nodes.length)} 个重点节点`
+        : "画布显示全部节点";
     return `
         <div class="graph-workbench">
             <section class="graph-canvas">
                 <div class="graph-canvas-header">
                     <div>
-                        <span class="context-kicker">Main Canvas</span>
+                        <span class="context-kicker">主画布</span>
                         <h1>知识图谱</h1>
-                        <p class="subtitle">空间级统一知识图谱，数据来自 <code>/api/v1/spaces/{spaceId}/knowledge-graph</code>。</p>
+                        <p class="subtitle">把 Wiki、文档、引用与成果放在同一张关系图里，优先定位证据链、孤立页和缺失链接。</p>
                     </div>
                     <div class="page-actions">
                         <button class="ghost-button" type="button" data-action="refresh-page">刷新图谱</button>
@@ -2869,28 +3840,30 @@ function renderGraphPage() {
                 <div class="graph-metrics">
                     <div class="metric"><strong>${formatNumber(graph?.nodeCount ?? nodes.length)}</strong><span>节点</span></div>
                     <div class="metric"><strong>${formatNumber(graph?.edgeCount ?? edges.length)}</strong><span>关系</span></div>
-                    <div class="metric"><strong>${escapeHtml(graph?.rootNodeId || "—")}</strong><span>根节点</span></div>
+                    <div class="metric"><strong>${escapeHtml(graph?.rootNodeId ? nodeLabel(graph.rootNodeId) : "—")}</strong><span>入口节点</span></div>
                     <div class="metric"><strong>${selected ? escapeHtml(selected.title || selected.id) : "未选择"}</strong><span>当前节点</span></div>
                 </div>
                 <div class="graph-board">
-                    <div class="graph-node-cloud">
-                        ${nodes.map((node, index) => `
-                            <button class="graph-node graph-node-${String(node.type || "node").toLowerCase()} ${node.root ? "root" : ""} ${node.id === state.graph.selectedNodeId ? "active" : ""}"
+                    <div class="graph-node-cloud" style="--graph-row-count:${graphLayout.rowCount || 3};--graph-canvas-height:${graphCanvasHeight}px;">
+                        ${renderGraphEdgeSvg(canvasEdges, graphLayout, state.graph.selectedNodeId)}
+                        ${canvasNodes.map((node, index) => `
+                            <button class="graph-node graph-node-${String(node.type || "node").toLowerCase()} ${graphLayout.connectedIds?.has(String(node.id)) ? "graph-node-connected" : "graph-node-orphan"} ${node.root ? "root" : ""} ${String(node.id) === String(state.graph.selectedNodeId) ? "active" : ""}"
                                 type="button"
                                 data-action="select-graph-node"
                                 data-node-id="${escapeHtml(node.id)}"
-                                style="--node-x:${(index * 37) % 92}%;--node-y:${(index * 53) % 86}%;">
+                                title="${escapeHtml(node.title || node.id)}"
+                                style="--node-x:${(graphLayout.get(String(node.id)) || { x: (index * 37) % 92 }).x}%;--node-y:${(graphLayout.get(String(node.id)) || { y: (index * 53) % 86 }).y}%;">
                                 <span>${escapeHtml(node.title || node.id)}</span>
-                                <small>${escapeHtml(node.type || "NODE")}</small>
+                                <small>${escapeHtml(humanizeGraphNodeType(node.type || "NODE"))}</small>
                             </button>
                         `).join("") || emptyState("暂无图谱节点", "当前空间还没有可展示的知识图谱数据。")}
                     </div>
-                    <div class="graph-edge-list">
-                        <span class="context-kicker">Edges</span>
-                        ${(edges || []).slice(0, 24).map((edge) => `
+                    <div class="graph-edge-list" aria-label="${escapeHtml(canvasSummary)}">
+                        <span class="context-kicker">关系边</span>
+                        ${canvasEdges.slice(0, 24).map((edge) => `
                             <div class="graph-edge-row">
-                                <strong>${escapeHtml(edge.label || edge.type || "关系")}</strong>
-                                <span>${escapeHtml(edge.sourceId)} -> ${escapeHtml(edge.targetId)}</span>
+                                <strong>${escapeHtml(humanizeGraphEdgeType(edge.label || edge.type || "RELATION"))}</strong>
+                                <span>${escapeHtml(nodeLabel(edge.sourceId))} → ${escapeHtml(nodeLabel(edge.targetId))}</span>
                             </div>
                         `).join("") || `<div class="muted">暂无关系边。</div>`}
                     </div>
@@ -2909,17 +3882,17 @@ function renderGraphNodeInspector() {
     return `
         <div class="list-stack">
             <div class="list-item">
-                <div class="list-item-header"><strong>${escapeHtml(detail.title || detail.id)}</strong>${tag(detail.type || "NODE")}</div>
+                <div class="list-item-header"><strong>${escapeHtml(detail.title || detail.id)}</strong>${tag(humanizeGraphNodeType(detail.type || "NODE"))}</div>
                 <div class="muted">${escapeHtml(detail.subtitle || "")}</div>
-                <div class="muted">状态：${escapeHtml(detail.status || "—")} / Ref ${formatNumber(detail.refId)}</div>
+                <div class="muted">状态：${escapeHtml(humanizeStatus(detail.status || "UNKNOWN"))} / 引用 ${formatNumber(detail.refId)}</div>
             </div>
             ${detail.attributes ? panel("属性", renderJson(detail.attributes)) : ""}
             ${panel("相邻关系", `
                 <div class="list-stack">
                     ${(detail.adjacentEdges || []).map((edge) => `
                         <div class="list-item">
-                            <div class="list-item-header"><strong>${escapeHtml(edge.label || edge.type || "关系")}</strong>${tag(`权重 ${formatNumber(edge.weight)}`)}</div>
-                            <div class="muted">${escapeHtml(edge.sourceId)} -> ${escapeHtml(edge.targetId)}</div>
+                            <div class="list-item-header"><strong>${escapeHtml(humanizeGraphEdgeType(edge.label || edge.type || "RELATION"))}</strong>${tag(`权重 ${formatNumber(edge.weight)}`)}</div>
+                            <div class="muted">${escapeHtml(edge.sourceId)} → ${escapeHtml(edge.targetId)}</div>
                         </div>
                     `).join("") || emptyState("暂无相邻关系", "该节点暂时没有相邻边。")}
                 </div>
@@ -3057,9 +4030,9 @@ function renderAdminTasksPage() {
             </div>
         </div>
         ${renderGuideCards([
-            { eyebrow: "Filter", title: "先筛状态，再追失败原因", description: "把正在运行、失败和已完成的任务分开看，排查效率会更高。" },
-            { eyebrow: "Inspect", title: "重试前先检查输入输出", description: "很多任务问题不是执行器本身，而是进入任务时的数据已经不对。" },
-            { eyebrow: "Trace", title: "抽屉里的事件历史最有价值", description: "它能把一次失败究竟发生在哪个阶段串得更完整。" }
+            { eyebrow: "筛选", title: "先筛状态，再追失败原因", description: "把正在运行、失败和已完成的任务分开看，排查效率会更高。" },
+            { eyebrow: "检查", title: "重试前先检查输入输出", description: "很多任务问题不是执行器本身，而是进入任务时的数据已经不对。" },
+            { eyebrow: "追踪", title: "抽屉里的事件历史最有价值", description: "它能把一次失败究竟发生在哪个阶段串得更完整。" }
         ])}
         ${renderDashboardMetrics()}
         <div style="margin-top:16px;">
@@ -3070,7 +4043,7 @@ function renderAdminTasksPage() {
                         <select name="taskStatus">
                             <option value="">全部状态</option>
                             ${["PENDING", "RUNNING", "SUCCESS", "FAILED", "CANCELLED", "TIMEOUT"].map((status) => `
-                                <option value="${status}" ${state.admin.taskFilters.taskStatus === status ? "selected" : ""}>${status}</option>
+                                <option value="${status}" ${state.admin.taskFilters.taskStatus === status ? "selected" : ""}>${humanizeStatus(status)}</option>
                             `).join("")}
                         </select>
                     </div>
@@ -3085,9 +4058,9 @@ function renderAdminTasksPage() {
                         ${tasks.map((task) => `
                             <tr>
                                 <td class="mono">${formatNumber(task.id)}</td>
-                                <td>${escapeHtml(task.taskType)}</td>
+                                <td>${escapeHtml(humanizeTaskType(task.taskType))}</td>
                                 <td>${badge(task.taskStatus)}</td>
-                                <td>${escapeHtml(task.targetType || "—")} / ${formatNumber(task.targetId)}</td>
+                                <td>${escapeHtml(humanizeTargetType(task.targetType || "UNKNOWN"))} / ${formatNumber(task.targetId)}</td>
                                 <td>${escapeHtml(task.errorMessage || "—")}</td>
                                 <td>
                                     <div class="page-actions">
@@ -3116,8 +4089,8 @@ function renderAdminTaskDetailDrawer() {
         <div class="list-stack">
             <div class="list-item">
                 <div class="list-item-header"><strong>任务 ${formatNumber(task.id)}</strong>${badge(task.taskStatus)}</div>
-                <div class="muted">类型：${escapeHtml(task.taskType)}</div>
-                <div class="muted">目标：${escapeHtml(task.targetType || "—")} / ${formatNumber(task.targetId)}</div>
+                <div class="muted">类型：${escapeHtml(humanizeTaskType(task.taskType))}</div>
+                <div class="muted">目标：${escapeHtml(humanizeTargetType(task.targetType || "UNKNOWN"))} / ${formatNumber(task.targetId)}</div>
                 <div class="muted">重试次数：${formatNumber(task.retryCount)} / ${formatNumber(task.maxRetryCount)}</div>
                 <div class="muted">开始时间：${formatDate(task.startedAt)}</div>
                 <div class="muted">结束时间：${formatDate(task.finishedAt)}</div>
@@ -3314,7 +4287,7 @@ function renderAdminLogsPage() {
                             <tr>
                                 <td class="mono">${formatNumber(log.id)}</td>
                                 <td>${escapeHtml(log.action)}</td>
-                                <td>${escapeHtml(log.targetType)} / ${formatNumber(log.targetId)}</td>
+                                <td>${escapeHtml(humanizeTargetType(log.targetType || "UNKNOWN"))} / ${formatNumber(log.targetId)}</td>
                                 <td>${formatNumber(log.operatorId)}</td>
                                 <td>${formatDate(log.createdAt)}</td>
                             </tr>
@@ -3323,7 +4296,7 @@ function renderAdminLogsPage() {
                     </table>
                 </div>
                 ${state.admin.retrievalTrace ? `<div class="list-item" style="margin-top:14px;"><div class="list-item-header"><strong>检索链路</strong></div>${renderJson(state.admin.retrievalTrace)}</div>` : ""}
-            `, { subtitle: "审计信息和 Trace 放在一起，更容易串起一次完整的系统行为路径。" })}
+            `, { subtitle: "审计信息和追踪链路放在一起，更容易串起一次完整的系统行为路径。" })}
         </div>
     `;
 }
@@ -3418,10 +4391,14 @@ async function handleDocumentUpload(form) {
         job.status = merge.status;
         job.documentId = merge.documentId;
         if (merge.taskId) {
-            startTaskPolling(merge.taskId, (task) => {
+            startTaskPolling(merge.taskId, async (task) => {
                 job.task = task;
                 if (FINAL_TASK_STATUSES.has(task.taskStatus)) {
                     job.stage = task.taskStatus;
+                    if (state.route?.name === "knowledge-detail" && Number(state.route.knowledgeBaseId) === Number(kbId)) {
+                        state.knowledge.detail = await api.knowledge.get(kbId);
+                        state.knowledge.documentsByKb[kbId] = await api.knowledge.documents(kbId);
+                    }
                 }
                 paint();
             });
@@ -3567,7 +4544,9 @@ async function ensureChatSocket() {
                     const envelope = JSON.parse(event.data);
                     await handleSocketEvent(envelope);
                 } catch (error) {
-                    console.error(error);
+                    if (!isTransientFetchError(error) || isChatRoute()) {
+                        console.error(error);
+                    }
                 }
             });
             socket.addEventListener("close", () => {
@@ -3575,7 +4554,7 @@ async function ensureChatSocket() {
                 state.websocket.status = "disconnected";
                 state.websocket.connectPromise = null;
                 paint();
-                if (!state.websocket.manualClose && (state.route?.name === "team-chat" || state.route?.name === "workbench-chat")) {
+                if (!state.websocket.manualClose && isChatRoute()) {
                     scheduleSocketReconnect();
                 }
             });
@@ -3669,8 +4648,13 @@ async function handleSocketEvent(envelope) {
         if (state.chat.localsBySession[sessionId]?.assistantMessage) {
             state.chat.localsBySession[sessionId].assistantMessage.status = "SUCCESS";
             state.chat.localsBySession[sessionId].assistantMessage.content = payload.answer || state.chat.localsBySession[sessionId].assistantMessage.content;
+            state.chat.localsBySession[sessionId].assistantMessage.id = payload.assistantMessageId || envelope.messageId || state.chat.localsBySession[sessionId].assistantMessage.id;
+            state.chat.localsBySession[sessionId].assistantMessage.artifactId = payload.artifactId || state.chat.localsBySession[sessionId].assistantMessage.artifactId;
+            state.chat.localsBySession[sessionId].assistantMessage.artifactSpaceId = payload.artifactSpaceId || state.chat.localsBySession[sessionId].assistantMessage.artifactSpaceId;
         }
-        await loadChatSessionData(sessionId);
+        if (isChatRoute() && Number(state.chat.activeSessionId) === sessionId) {
+            await loadChatSessionData(sessionId);
+        }
         delete state.chat.localsBySession[sessionId];
         paint();
         return;
@@ -3722,13 +4706,13 @@ async function handleSocketEvent(envelope) {
     }
 }
 
-async function handleSendChatMessage(form) {
+async function sendChatContent(content) {
     const session = activeSession();
     if (!session) {
         throw new ApiError("请先选择一个会话。", { code: "CHAT_SESSION_REQUIRED" });
     }
-    const content = String(new FormData(form).get("content") || "").trim();
-    if (!content) {
+    const trimmedContent = String(content || "").trim();
+    if (!trimmedContent) {
         return;
     }
     await ensureChatSocket();
@@ -3737,7 +4721,7 @@ async function handleSendChatMessage(form) {
     state.chat.localsBySession[session.id] = {
         requestId,
         streamId,
-        userMessage: { role: "USER", content, status: "SUCCESS" },
+        userMessage: { role: "USER", content: trimmedContent, status: "SUCCESS" },
         assistantMessage: { role: "ASSISTANT", content: "", status: "RUNNING" }
     };
     state.chat.draftsBySession[session.id] = "";
@@ -3747,8 +4731,16 @@ async function handleSendChatMessage(form) {
         requestId,
         streamId,
         sessionId: session.id,
-        payload: { content }
+        payload: { content: trimmedContent }
     }));
+}
+
+async function handleSendChatMessage(form) {
+    const content = String(new FormData(form).get("content") || "").trim();
+    if (!content) {
+        return;
+    }
+    await sendChatContent(content);
 }
 
 function stopChat(sessionId) {
@@ -3764,6 +4756,26 @@ function stopChat(sessionId) {
     }));
 }
 
+function insertChatCommand(command) {
+    const session = activeSession();
+    if (!session || !command) {
+        return;
+    }
+    ensureLocalDraft(session.id);
+    const current = state.chat.draftsBySession[session.id] || "";
+    state.chat.draftsBySession[session.id] = current.trim()
+        ? `${current.trim()} ${command}`.trim()
+        : command;
+    paint();
+    requestAnimationFrame(() => {
+        const input = document.querySelector(`textarea[data-chat-draft="${session.id}"]`);
+        if (input instanceof HTMLTextAreaElement) {
+            input.focus();
+            input.selectionStart = input.selectionEnd = input.value.length;
+        }
+    });
+}
+
 async function startTaskPolling(taskId, onUpdate) {
     if (taskPollers.has(taskId)) {
         return;
@@ -3771,7 +4783,7 @@ async function startTaskPolling(taskId, onUpdate) {
     const poll = async () => {
         try {
             const task = await api.tasks.get(taskId);
-            onUpdate(task);
+            await onUpdate(task);
             if (!FINAL_TASK_STATUSES.has(task.taskStatus)) {
                 taskPollers.set(taskId, window.setTimeout(poll, 2500));
             } else {
@@ -3793,7 +4805,7 @@ async function loadAdminTaskDetail(taskId) {
     state.admin.taskDetail = task;
     state.admin.taskEvents = events;
     state.ui.drawer = {
-        title: `Task ${formatNumber(task.id)}`,
+        title: `任务 ${formatNumber(task.id)}`,
         html: renderAdminTaskDetailDrawer()
     };
 }
@@ -3819,6 +4831,7 @@ async function handleSourceFile(form) {
     }
     await api.personal.uploadSource(projectId, file, form.elements.title.value);
     queueToast("文件资料已提交导入。", "success");
+    closeInlineFormDrawer();
     await renderRoute();
 }
 
@@ -3826,6 +4839,7 @@ async function handleSourceUrl(form) {
     const projectId = Number(form.dataset.projectId);
     await api.personal.addUrlSource(projectId, Object.fromEntries(new FormData(form).entries()));
     queueToast("网址资料已创建。", "success");
+    closeInlineFormDrawer();
     await renderRoute();
 }
 
@@ -3833,6 +4847,7 @@ async function handleSourceText(form) {
     const projectId = Number(form.dataset.projectId);
     await api.personal.addTextSource(projectId, Object.fromEntries(new FormData(form).entries()));
     queueToast("文本资料已创建。", "success");
+    closeInlineFormDrawer();
     await renderRoute();
 }
 
@@ -3872,18 +4887,17 @@ function renderSkillFormFields(skill) {
 
 function renderSkillSummary(skill) {
     const entryTag = skill.entryType === "mcp_tool"
-        ? tag(`MCP:${skill.mcpToolName || "tool"}`)
-        : tag(skill.artifactType);
-    const schemaHint = skill.argSchemaHint
-        ? `<div class="muted">参数：${escapeHtml(skill.argSchemaHint)}</div>`
-        : "";
+        ? tag("外部工具")
+        : tag(humanizeArtifactType(skill.artifactType));
+    const hint = skill.entryType === "mcp_tool"
+        ? "需要链接输入"
+        : skill.topicHint;
     return `
-        <div class="list-item">
-            <div class="list-item-header"><strong>${escapeHtml(skill.name)}</strong>${entryTag}</div>
-            <div class="muted">${escapeHtml(skill.description)}</div>
-            <div class="muted">主题提示：${escapeHtml(skill.topicHint)}</div>
-            ${schemaHint}
-        </div>
+        <article class="skill-card">
+            <div class="skill-card-header"><strong>${escapeHtml(skill.name)}</strong>${entryTag}</div>
+            <p>${escapeHtml(skill.description)}</p>
+            <span>${escapeHtml(hint || "输入主题后即可执行")}</span>
+        </article>
     `;
 }
 
@@ -4021,6 +5035,32 @@ async function handlePublishArtifactToWiki(form) {
     navigate(routeLink("wiki", artifactSpaceId));
 }
 
+function buildChatArtifactCommand(values) {
+    const topic = String(values.topic || "").trim();
+    const skill = findSkill(values.skillId);
+    const artifactType = skill?.artifactType || String(values.artifactType || "READING_NOTES").trim();
+    const projectId = Number(values.projectId);
+    return `/成果 ${topic} type=${artifactType} project=${projectId}`;
+}
+
+async function handleChatArtifactForm(form) {
+    const values = Object.fromEntries(new FormData(form).entries());
+    const topic = String(values.topic || "").trim();
+    const skill = findSkill(values.skillId);
+    const projectId = Number(values.projectId);
+    if (!skill) {
+        throw new ApiError("请选择成果技能。", { code: "CHAT_ARTIFACT_SKILL_REQUIRED" });
+    }
+    if (!projectId) {
+        throw new ApiError("请选择研究项目。", { code: "CHAT_ARTIFACT_PROJECT_REQUIRED" });
+    }
+    if (!topic) {
+        throw new ApiError("请输入生成主题。", { code: "CHAT_ARTIFACT_TOPIC_REQUIRED" });
+    }
+    await sendChatContent(buildChatArtifactCommand(values));
+    queueToast("已通过当前会话发起成果生成。", "success");
+}
+
 async function handleWikiCreate(form) {
     const payload = Object.fromEntries(new FormData(form).entries());
     await api.wiki.create(Number(form.dataset.spaceId), payload);
@@ -4055,11 +5095,28 @@ function openWikiGraphCard() {
     setDrawer("Wiki 图谱概览", renderWikiGraphCard());
 }
 
+function openWikiCreateForm() {
+    state.ui.drawer = {
+        title: "创建 Wiki 草稿",
+        source: "inline-form",
+        html: `
+            <div class="modal-form-shell">
+                <form id="wiki-create-form" data-space-id="${currentRouteSpaceId()}" class="inline-form modal-inline-form">
+                    <div class="field"><label>标题</label><input name="title" required></div>
+                    <div class="field"><label>内容</label><textarea class="editor-textarea" name="content" required></textarea></div>
+                    <button class="button" type="submit">创建草稿</button>
+                </form>
+            </div>
+        `
+    };
+    paint();
+}
+
 async function handleGraphFilter(form) {
     const values = Object.fromEntries(new FormData(form).entries());
     state.graph.filters = {
-        nodeTypes: String(values.nodeTypes || "").trim(),
-        edgeTypes: String(values.edgeTypes || "").trim(),
+        nodeTypes: normalizeGraphFilterTypes(values.nodeTypes, "node"),
+        edgeTypes: normalizeGraphFilterTypes(values.edgeTypes, "edge"),
         onlyPublished: Boolean(values.onlyPublished),
         onlyIndexed: Boolean(values.onlyIndexed)
     };
@@ -4083,7 +5140,7 @@ async function selectGraphNode(nodeId) {
         adjacentEdges: (detail?.adjacentEdges || []).map(normalizeGraphEdge)
     };
     state.graph.neighborhood = normalizeGraphResponse(neighborhood);
-    setDrawer("Graph 节点详情", renderGraphNodeInspector());
+    setDrawer("图谱节点详情", renderGraphNodeInspector());
     paint();
 }
 
@@ -4143,7 +5200,7 @@ function openCitation(citationKey) {
     setDrawer("引用证据", `
         <div class="list-stack">
             <div class="list-item">
-                <div class="list-item-header"><strong>${escapeHtml(citation.title || citation.sourceType || "引用")}</strong>${citation.pageNo ? tag(`第 ${citation.pageNo} 页`) : ""}</div>
+                <div class="list-item-header"><strong>${escapeHtml(citation.title || humanizeSourceType(citation.sourceType) || "引用")}</strong>${citation.pageNo ? tag(`第 ${citation.pageNo} 页`) : ""}</div>
                 <div class="muted">${escapeHtml(citation.locationInfo || "无位置描述")}</div>
             </div>
             <div class="list-item">
@@ -4173,6 +5230,10 @@ document.addEventListener("click", async (event) => {
             return;
         }
         switch (action) {
+            case "toggle-context-rail":
+                state.ui.contextRailCollapsed = !state.ui.contextRailCollapsed;
+                paint();
+                break;
             case "logout":
                 await handleLogout();
                 break;
@@ -4204,6 +5265,12 @@ document.addEventListener("click", async (event) => {
                 await ensureChatSocket();
                 resumeActiveSession();
                 break;
+            case "insert-chat-command":
+                insertChatCommand(target.dataset.command || "");
+                break;
+            case "open-chat-artifact-dialog":
+                await openChatArtifactDialog();
+                break;
             case "stop-chat":
                 stopChat(Number(target.dataset.sessionId));
                 break;
@@ -4225,6 +5292,9 @@ document.addEventListener("click", async (event) => {
                 break;
             case "open-wiki-graph-card":
                 openWikiGraphCard();
+                break;
+            case "open-wiki-create-form":
+                openWikiCreateForm();
                 break;
             case "select-graph-node":
                 await selectGraphNode(target.dataset.nodeId);
@@ -4268,7 +5338,7 @@ document.addEventListener("click", async (event) => {
                 await renderRoute();
                 break;
             case "open-artifact":
-                navigate(routeLink("artifact-detail", Number(target.dataset.spaceId) || resolveArtifactSpaceIdById(Number(target.dataset.artifactId)), Number(target.dataset.artifactId)));
+                await openArtifactById(Number(target.dataset.artifactId), Number(target.dataset.spaceId));
                 break;
             case "export-artifact":
                 await handleArtifactExport(Number(target.dataset.artifactId));
@@ -4390,6 +5460,9 @@ document.addEventListener("submit", async (event) => {
             case "studio-task-form":
                 await handleStudioTask(form);
                 break;
+            case "chat-artifact-form":
+                await handleChatArtifactForm(form);
+                break;
             case "artifact-edit-form":
                 await handleArtifactSave(form);
                 break;
@@ -4432,7 +5505,7 @@ document.addEventListener("submit", async (event) => {
             default:
                 break;
         }
-        if (submittedFromModal && state.ui.drawer?.source === "inline-form") {
+        if ((submittedFromModal || state.ui.drawer?.source === "inline-form") && state.ui.drawer?.source === "inline-form") {
             state.ui.drawer = null;
             paint();
         }

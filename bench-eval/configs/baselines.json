@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "internal_baselines": [
+    {
+      "id": "bm25_only",
+      "lane": "team",
+      "description": "Lexical retrieval only.",
+      "compare_against": ["hybrid_rrf", "hybrid_rrf_with_wiki"]
+    },
+    {
+      "id": "vector_only",
+      "lane": "team",
+      "description": "Embedding retrieval only.",
+      "compare_against": ["hybrid_rrf", "hybrid_rrf_with_wiki"]
+    },
+    {
+      "id": "hybrid_rrf",
+      "lane": "team",
+      "description": "BM25 plus vector retrieval with weighted reciprocal rank fusion.",
+      "compare_against": ["bm25_only", "vector_only"]
+    },
+    {
+      "id": "hybrid_rrf_no_wiki",
+      "lane": "team",
+      "description": "Hybrid retrieval with wiki recall disabled.",
+      "compare_against": ["hybrid_rrf_with_wiki"]
+    },
+    {
+      "id": "hybrid_rrf_with_wiki",
+      "lane": "team",
+      "description": "Hybrid retrieval with published wiki recall enabled.",
+      "compare_against": ["hybrid_rrf_no_wiki"]
+    },
+    {
+      "id": "personal_sources_only",
+      "lane": "personal",
+      "description": "Generate from imported sources without compiled cards.",
+      "compare_against": ["personal_cards_only", "personal_cards_plus_synthesis"]
+    },
+    {
+      "id": "personal_cards_only",
+      "lane": "personal",
+      "description": "Generate from ArticleCard and ConceptCard context.",
+      "compare_against": ["personal_sources_only", "personal_cards_plus_synthesis"]
+    },
+    {
+      "id": "personal_cards_plus_synthesis",
+      "lane": "personal",
+      "description": "Generate from compiled cards plus SynthesisCard memory.",
+      "compare_against": ["personal_cards_only"]
+    },
+    {
+      "id": "artifact_no_methodology",
+      "lane": "personal",
+      "description": "Generate artifact without MethodologyCard preset.",
+      "compare_against": ["artifact_with_methodology"]
+    },
+    {
+      "id": "artifact_with_methodology",
+      "lane": "personal",
+      "description": "Generate artifact with MethodologyCard preset.",
+      "compare_against": ["artifact_no_methodology"]
+    }
+  ],
+  "external_comparisons": [
+    {
+      "id": "enterprise_rag_bench_public",
+      "suite": "enterprise_rag_bench",
+      "comparison_type": "official_harness_or_leaderboard",
+      "claim_limit": "Use for orientation unless we run the official harness with identical settings."
+    },
+    {
+      "id": "mtrageval_semeval_2026",
+      "suite": "mtrag_un",
+      "comparison_type": "shared_task_submissions",
+      "claim_limit": "Compare retrieval/generation/end-to-end subtasks separately."
+    },
+    {
+      "id": "parsebench_published_parsers",
+      "suite": "parsebench",
+      "comparison_type": "published_parser_baselines",
+      "claim_limit": "Only compare parser metrics, not full NoteWeave RAG."
+    },
+    {
+      "id": "autoresearchbench_reported_agents",
+      "suite": "autoresearchbench",
+      "comparison_type": "paper_reported_agent_baselines",
+      "claim_limit": "Only compare if task environment and access rules match."
+    },
+    {
+      "id": "citerag_paper_baselines",
+      "suite": "citerag",
+      "comparison_type": "paper_retriever_generator_baselines",
+      "claim_limit": "Citation prediction only; not general RAG quality."
+    }
+  ]
+}

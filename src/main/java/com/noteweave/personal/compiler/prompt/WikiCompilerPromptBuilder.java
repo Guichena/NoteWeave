@@ -7,8 +7,18 @@ import org.springframework.stereotype.Component;
 @Component
 public class WikiCompilerPromptBuilder {
 
+    private static final String JSON_OUTPUT_CONTRACT = """
+            Output contract:
+            - Return exactly one valid JSON object.
+            - Start with { and end with }.
+            - Do not wrap the JSON in Markdown fences.
+            - Do not output true, false, null, or an array as the root value.
+            - Every evidence quote must be non-empty and copied verbatim from the provided source text.
+
+            """;
+
     public String buildArticlePrompt(Source source, String text) {
-        return """
+        return JSON_OUTPUT_CONTRACT + """
                 你是 NoteWeave 的个人 Wiki 编译器。
                 请严格输出 JSON，不要输出 Markdown，不要输出解释文字。
 
@@ -28,7 +38,7 @@ public class WikiCompilerPromptBuilder {
     }
 
     public String buildConceptPrompt(Source source, ArticleCard articleCard, String text) {
-        return """
+        return JSON_OUTPUT_CONTRACT + """
                 你是 NoteWeave 的概念抽取器。
                 请严格输出 JSON，不要输出 Markdown，不要输出解释文字。
 

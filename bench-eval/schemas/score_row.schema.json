@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NoteWeave benchmark score row",
+  "type": "object",
+  "required": ["case_id", "suite", "lane", "scenario"],
+  "properties": {
+    "case_id": {"type": "string"},
+    "suite": {"type": "string"},
+    "lane": {"type": "string"},
+    "scenario": {"type": "string"},
+    "category": {"type": ["string", "null"]},
+    "variant": {"type": ["string", "null"]},
+    "answer_overlap": {"type": ["number", "null"]},
+    "source_recall": {"type": ["number", "null"]},
+    "citation_precision": {"type": ["number", "null"]},
+    "groundedness_score": {"type": ["number", "null"]},
+    "latency_ms": {"type": ["number", "null"]},
+    "error": {"type": ["string", "null"]}
+  }
+}

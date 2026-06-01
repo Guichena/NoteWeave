@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NoteWeave benchmark API import result",
+  "type": "object",
+  "required": ["profile", "dry_run", "case_count", "items"],
+  "properties": {
+    "profile": {"type": "string"},
+    "dry_run": {"type": "boolean"},
+    "case_count": {"type": "integer"},
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "status"],
+        "properties": {
+          "name": {"type": "string"},
+          "status": {"type": "string"},
+          "response_id": {"type": ["integer", "string", "null"]},
+          "error": {"type": ["string", "null"]}
+        }
+      }
+    }
+  }
+}

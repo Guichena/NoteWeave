@@ -69,8 +69,8 @@ embedding:
   api:
     base-url: ${EMBEDDING_API_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
     api-key: ${EMBEDDING_API_KEY:}
-    model: ${EMBEDDING_API_MODEL:text-embedding-v4}
-    dimension: ${EMBEDDING_DIMENSION:2048}
+    model: ${EMBEDDING_API_MODEL:jina-embeddings-v5-text-nano}
+    dimension: ${EMBEDDING_DIMENSION:768}
     batch-size: ${EMBEDDING_BATCH_SIZE:10}
 
 rag:

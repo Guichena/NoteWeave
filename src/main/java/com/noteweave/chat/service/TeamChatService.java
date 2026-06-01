@@ -98,10 +98,12 @@ public class TeamChatService {
                     writeJson(Map.of(
                             "mcpTool", trigger.toolName(),
                             "taskId", trigger.task().taskId(),
-                            "artifactId", trigger.task().artifactId()
+                            "artifactId", trigger.task().artifactId(),
+                            "artifactSpaceId", trigger.task().artifactSpaceId()
                     )),
                     List.of(),
                     trigger.task().artifactId(),
+                    trigger.task().artifactSpaceId(),
                     trigger.task().taskId(),
                     trigger.toolName()
             );
@@ -141,9 +143,10 @@ public class TeamChatService {
                     session,
                     userMessage,
                     retrievalTraceId,
-                    ragProperties.prompt().noResultText() + "銆侰urrent evidence is insufficient for a grounded citation.",
+                    ragProperties.prompt().noResultText() + "。当前证据不足，无法给出可靠引用。",
                     writeJson(Map.of("retrievalEmpty", true)),
                     List.of(),
+                    null,
                     null,
                     null,
                     null
@@ -181,6 +184,7 @@ public class TeamChatService {
                         "outputTokens", llmResponse.outputTokens()
                 )),
                 evidenceItems,
+                null,
                 null,
                 null,
                 null
@@ -315,6 +319,7 @@ public class TeamChatService {
             String tokenUsageJson,
             List<EvidenceItem> evidenceItems,
             Long artifactId,
+            Long artifactSpaceId,
             Long taskId,
             String toolName
     ) {
@@ -330,6 +335,7 @@ public class TeamChatService {
                     .assistantMessageId(assistantMessage.getId())
                     .answer(answer)
                     .artifactId(artifactId)
+                    .artifactSpaceId(artifactSpaceId)
                     .taskId(taskId)
                     .toolName(toolName)
                     .citations(citations)

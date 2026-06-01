@@ -1,6 +1,7 @@
 package com.noteweave.citation.repository;
 
 import com.noteweave.citation.model.MessageCitation;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -8,6 +9,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface MessageCitationRepository extends JpaRepository<MessageCitation, Long> {
 
     List<MessageCitation> findByMessageId(Long messageId);
+
+    List<MessageCitation> findByMessageIdInOrderByMessageIdAscIdAsc(Collection<Long> messageIds);
 
     Optional<MessageCitation> findByMessageIdAndCitationId(Long messageId, Long citationId);
 }

@@ -1,0 +1,22 @@
+{
+  "suite": "autoresearchbench",
+  "lane": "personal",
+  "scenario": "personal_research_source",
+  "id_fields": ["task_id", "id", "query_id"],
+  "query_fields": ["query", "question", "research_question", "task"],
+  "answer_fields": ["expected_answer", "gold_answer", "reference_answer", "target"],
+  "category_fields": ["task_type", "field", "domain"],
+  "source_id_fields": ["gold_source_ids", "target_paper_ids", "expected_paper_ids", "paper_ids"],
+  "source_type_fields": ["field", "domain"],
+  "answer_fact_fields": ["answer_facts", "required_findings", "facts"],
+  "conversation_fields": [],
+  "static_tags": {
+    "benchmark_family": "research_agent",
+    "artifact_type": "research_memo"
+  },
+  "sample": {
+    "ratio": 0.05,
+    "max_cases": 20,
+    "stratify_by": ["task_type", "field"]
+  }
+}

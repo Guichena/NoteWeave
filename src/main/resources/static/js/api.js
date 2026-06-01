@@ -246,6 +246,8 @@ export const api = {
         publish: (pageId, payload = {}) => request(`/team/wiki-pages/${pageId}/publish`, { method: "POST", body: payload }),
         versions: (pageId) => request(`/team/wiki-pages/${pageId}/versions`),
         relations: (pageId) => request(`/team/wiki-pages/${pageId}/relations`),
+        spaceGraph: (spaceId) => request(`/team/spaces/${spaceId}/wiki-graph`),
+        pageGraph: (pageId, query) => request(`/team/wiki-pages/${pageId}/graph`, { query }),
         knowledgeGraph: (pageId, query) => request(`/team/wiki-pages/${pageId}/knowledge-graph`, { query }),
         search: (spaceId, keyword) => request(`/team/spaces/${spaceId}/wiki-pages/search`, { query: { keyword } }),
         publishArtifact: (artifactId, payload) => request(`/artifacts/${artifactId}/publish-to-wiki`, { method: "POST", body: payload })

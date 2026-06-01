@@ -1,6 +1,8 @@
 package com.noteweave.chat.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.noteweave.artifact.model.Artifact;
+import com.noteweave.artifact.repository.ArtifactRepository;
 import com.noteweave.chat.dto.ChatMessageResponse;
 import com.noteweave.chat.dto.ChatSessionResponse;
 import com.noteweave.chat.dto.CreateChatSessionRequest;
@@ -22,6 +24,10 @@ import com.noteweave.team.kb.model.KnowledgeBaseStatus;
 import com.noteweave.team.kb.repository.KnowledgeBaseRepository;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +41,7 @@ public class ChatSessionService {
     private final ChatMessageRepository chatMessageRepository;
     private final ResourceAccessService resourceAccessService;
     private final KnowledgeBaseRepository knowledgeBaseRepository;
+    private final ArtifactRepository artifactRepository;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -95,7 +102,9 @@ public class ChatSessionService {
     public List<ChatMessageResponse> listMessages(Long userId, Long sessionId) {
         ChatSession session = getRequiredActiveSession(sessionId);
         resourceAccessService.requireViewSpace(userId, session.getSpaceId());
-        return chatMessageRepository.findBySessionIdOrderByMessageSeqAsc(sessionId).stream()
+        List<ChatMessage> messages = chatMessageRepository.findBySessionIdOrderByMessageSeqAsc(sessionId);
+        Map<Long, Long> artifactSpaceIds = loadArtifactSpaceIds(messages);
+        return messages.stream()
                 .map(message -> ChatMessageResponse.builder()
                         .id(message.getId())
                         .sessionId(message.getSessionId())
@@ -105,12 +114,29 @@ public class ChatSessionService {
                         .messageType(message.getMessageType())
                         .status(message.getStatus())
                         .artifactId(message.getArtifactId())
+                        .artifactSpaceId(resolveArtifactSpaceId(message, artifactSpaceIds))
                         .requestId(message.getRequestId())
                         .errorCode(message.getErrorCode())
                         .createdAt(message.getCreatedAt())
                         .updatedAt(message.getUpdatedAt())
                         .build())
                 .toList();
+    }
+
+    private Long resolveArtifactSpaceId(ChatMessage message, Map<Long, Long> artifactSpaceIds) {
+        return message.getArtifactId() == null ? null : artifactSpaceIds.get(message.getArtifactId());
+    }
+
+    private Map<Long, Long> loadArtifactSpaceIds(List<ChatMessage> messages) {
+        Set<Long> artifactIds = messages.stream()
+                .map(ChatMessage::getArtifactId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (artifactIds.isEmpty()) {
+            return Map.of();
+        }
+        return artifactRepository.findAllById(artifactIds).stream()
+                .collect(Collectors.toMap(Artifact::getId, Artifact::getSpaceId, (left, right) -> left));
     }
 
     @Transactional(readOnly = true)

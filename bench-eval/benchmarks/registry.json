@@ -1,0 +1,201 @@
+{
+  "snapshot_date": "2026-05-27",
+  "benchmarks": [
+    {
+      "id": "enterprise_rag_bench",
+      "title": "EnterpriseRAG-Bench: A RAG Benchmark for Company Internal Knowledge",
+      "year": 2026,
+      "priority": "P0",
+      "lane": ["team"],
+      "noteweave_scenarios": [
+        "team_knowledge_rag",
+        "hybrid_retrieval",
+        "citation_trace",
+        "no_answer",
+        "wiki_retrieval"
+      ],
+      "fit_score": 5,
+      "source_total_cases": 500,
+      "corpus_scale": "about 500k synthetic enterprise documents across 9 source types",
+      "source_urls": {
+        "paper": "https://arxiv.org/abs/2605.05253",
+        "github": "https://github.com/onyx-dot-app/EnterpriseRAG-Bench",
+        "huggingface": "https://huggingface.co/datasets/onyx-dot-app/EnterpriseRAG-Bench",
+        "project": "https://onyx.app/enterpriserag-bench"
+      },
+      "recommended_sample": {
+        "ratio": 0.1,
+        "max_cases": 50,
+        "stratify_by": ["question_type", "source_types"],
+        "keep_failure_classes": true
+      },
+      "download": {
+        "status": "recorded",
+        "target_dir": "bench-eval/downloads/enterprise_rag_bench",
+        "notes": "Download questions first; ingest only gold documents plus distractors for the first slice."
+      }
+    },
+    {
+      "id": "mtrag_un",
+      "title": "MTRAG-UN: A Benchmark for Open Challenges in Multi-Turn RAG Conversations",
+      "year": 2026,
+      "priority": "P0",
+      "lane": ["team"],
+      "noteweave_scenarios": [
+        "workspace_chat_runtime",
+        "multi_turn_retrieval",
+        "query_rewrite",
+        "answerability",
+        "retrieval_trace"
+      ],
+      "fit_score": 5,
+      "source_total_cases": 666,
+      "corpus_scale": "666 tasks and over 2800 conversation turns across 6 domains",
+      "source_urls": {
+        "paper": "https://arxiv.org/abs/2602.23184",
+        "task": "https://ibm.github.io/mt-rag-benchmark/MTRAGEval/"
+      },
+      "recommended_sample": {
+        "ratio": 0.05,
+        "max_cases": 40,
+        "stratify_by": ["domain", "answerability", "multi_turn_type"],
+        "keep_failure_classes": true
+      },
+      "download": {
+        "status": "recorded",
+        "target_dir": "bench-eval/downloads/mtrag_un",
+        "notes": "Keep conversation history and per-turn labels intact."
+      }
+    },
+    {
+      "id": "parsebench",
+      "title": "ParseBench: A Document Parsing Benchmark for AI Agents",
+      "year": 2026,
+      "priority": "P1",
+      "lane": ["team", "personal"],
+      "noteweave_scenarios": [
+        "document_ingestion",
+        "pdf_parsing",
+        "table_preservation",
+        "chart_grounding",
+        "source_import"
+      ],
+      "fit_score": 4,
+      "source_total_cases": 2000,
+      "corpus_scale": "about 2000 human-verified enterprise document pages",
+      "source_urls": {
+        "paper": "https://arxiv.org/abs/2604.08538",
+        "github": "https://github.com/run-llama/ParseBench",
+        "huggingface": "https://huggingface.co/datasets/llamaindex/ParseBench",
+        "project": "https://www.parsebench.ai/"
+      },
+      "recommended_sample": {
+        "ratio": 0.025,
+        "max_cases": 50,
+        "stratify_by": ["capability_dimension", "domain"],
+        "keep_failure_classes": true
+      },
+      "download": {
+        "status": "recorded",
+        "target_dir": "bench-eval/downloads/parsebench",
+        "notes": "Use before RAG scoring to isolate parser failures from retrieval failures."
+      }
+    },
+    {
+      "id": "autoresearchbench",
+      "title": "AutoResearchBench: Benchmarking AI Agents on Complex Scientific Literature Discovery",
+      "year": 2026,
+      "priority": "P1",
+      "lane": ["personal"],
+      "noteweave_scenarios": [
+        "personal_research_source",
+        "literature_discovery",
+        "artifact_generation",
+        "synthesis_card",
+        "citation_trace"
+      ],
+      "fit_score": 4,
+      "source_total_cases": null,
+      "corpus_scale": "Deep Research and Wide Research scientific literature discovery tasks",
+      "source_urls": {
+        "paper": "https://arxiv.org/abs/2604.25256",
+        "github": "https://github.com/CherYou/AutoResearchBench",
+        "project": "https://cheryou.github.io/autoresearchbench.github.io/",
+        "huggingface": "https://huggingface.co/datasets/Lk123/AutoResearchBench"
+      },
+      "recommended_sample": {
+        "ratio": 0.05,
+        "max_cases": 20,
+        "stratify_by": ["task_type", "field"],
+        "keep_failure_classes": true
+      },
+      "download": {
+        "status": "recorded",
+        "target_dir": "bench-eval/downloads/autoresearchbench",
+        "notes": "Some dataset access paths may require Hugging Face token/decryption steps; record license before use."
+      }
+    },
+    {
+      "id": "citerag",
+      "title": "What Should I Cite? A RAG Benchmark for Academic Citation Prediction",
+      "year": 2026,
+      "priority": "P1",
+      "lane": ["personal"],
+      "noteweave_scenarios": [
+        "personal_research",
+        "citation_prediction",
+        "artifact_citation_quality",
+        "source_recommendation"
+      ],
+      "fit_score": 4,
+      "source_total_cases": 15808,
+      "corpus_scale": "7267 Task 1 cases, 8541 Task 2 cases, and 554k paper corpus",
+      "source_urls": {
+        "paper": "https://arxiv.org/abs/2601.14949",
+        "doi": "https://doi.org/10.1145/3774904.3792075"
+      },
+      "recommended_sample": {
+        "ratio": 0.01,
+        "max_cases": 200,
+        "stratify_by": ["task", "field"],
+        "keep_failure_classes": false
+      },
+      "download": {
+        "status": "recorded",
+        "target_dir": "bench-eval/downloads/citerag",
+        "notes": "Use for citation recommendation quality, not generic team RAG."
+      }
+    },
+    {
+      "id": "agentic_rag_tracer",
+      "title": "AgenticRAGTracer: A Hop-Aware Benchmark for Diagnosing Multi-Step Retrieval Reasoning in Agentic RAG",
+      "year": 2026,
+      "priority": "P2",
+      "lane": ["team", "personal"],
+      "noteweave_scenarios": [
+        "multi_hop_retrieval",
+        "agentic_retrieval_trace",
+        "intermediate_evidence_validation"
+      ],
+      "fit_score": 3,
+      "source_total_cases": 1305,
+      "corpus_scale": "1305 hop-aware examples with retrieval reasoning traces",
+      "source_urls": {
+        "paper": "https://arxiv.org/abs/2602.19127",
+        "github": "https://github.com/YqjMartin/AgenticRAGTracer",
+        "huggingface": "https://huggingface.co/datasets/YqjMartin/AgenticRAGTracer"
+      },
+      "recommended_sample": {
+        "ratio": 0.05,
+        "max_cases": 65,
+        "stratify_by": ["hop_count", "domain"],
+        "keep_failure_classes": true
+      },
+      "download": {
+        "status": "recorded",
+        "target_dir": "bench-eval/downloads/agentic_rag_tracer",
+        "notes": "Use after NoteWeave stores expected intermediate hops in result metadata."
+      }
+    }
+  ]
+}

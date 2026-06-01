@@ -191,6 +191,22 @@ class Phase10TeamWikiIntegrationTest extends ContainerizedIntegrationTest {
                 "text/plain",
                 "Rollback rehearsal must finish before any production deployment.".getBytes(StandardCharsets.UTF_8)
         );
+        Long autoWikiPageId = jdbcTemplate.queryForObject(
+                "select id from wiki_page where source_document_id = ? and auto_maintained = true",
+                Long.class,
+                indexedDocument.documentId()
+        );
+        assertThat(autoWikiPageId).isNotNull();
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from wiki_page where id = ?",
+                String.class,
+                autoWikiPageId
+        )).isEqualTo("PUBLISHED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from wiki_page_citation where wiki_page_id = ?",
+                Integer.class,
+                autoWikiPageId
+        )).isGreaterThanOrEqualTo(1);
 
         givenStubAnswer("Rollback rehearsal must finish before any production deployment.");
         Long sessionId = createChatSession(viewerToken, spaceId, "wiki-draft session", "KNOWLEDGE_BASE", new long[]{kbId});
@@ -279,6 +295,132 @@ class Phase10TeamWikiIntegrationTest extends ContainerizedIntegrationTest {
                 messageDraftId,
                 indexedDocument.documentId()
         )).isGreaterThanOrEqualTo(1);
+
+        mockMvc.perform(get("/api/v1/team/spaces/{spaceId}/wiki-graph", spaceId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.summary.totalPageCount").value(3))
+                .andExpect(jsonPath("$.data.summary.sourceBackedPageCount").value(3))
+                .andExpect(jsonPath("$.data.summary.evidenceBackedPageCount").value(org.hamcrest.Matchers.greaterThanOrEqualTo(2)))
+                .andExpect(jsonPath("$.data.nodes[?(@.id==%d)].sourceType".formatted(messageDraftId)).value(org.hamcrest.Matchers.hasItem("CHAT_MESSAGE")))
+                .andExpect(jsonPath("$.data.nodes[?(@.id==%d)].evidenceCitationCount".formatted(messageDraftId)).value(org.hamcrest.Matchers.hasItem(org.hamcrest.Matchers.greaterThanOrEqualTo(1))));
+
+        mockMvc.perform(get("/api/v1/spaces/{spaceId}/knowledge-graph/path", spaceId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .queryParam("sourceNodeId", "WIKI_PAGE:" + messageDraftId)
+                        .queryParam("targetNodeId", "DOCUMENT:" + indexedDocument.documentId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sourceNodeId").value("WIKI_PAGE:" + messageDraftId))
+                .andExpect(jsonPath("$.data.targetNodeId").value("DOCUMENT:" + indexedDocument.documentId()))
+                .andExpect(jsonPath("$.data.edges[?(@.type=='WIKI_CITES_DOCUMENT')]").exists());
+
+        mockMvc.perform(get("/api/v1/spaces/{spaceId}/knowledge-graph/path", spaceId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .queryParam("sourceNodeId", "WIKI_PAGE:" + autoWikiPageId)
+                        .queryParam("targetNodeId", "DOCUMENT:" + indexedDocument.documentId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.edges[?(@.type=='WIKI_SOURCE_DOCUMENT')]").exists());
+
+        mockMvc.perform(get("/api/v1/spaces/{spaceId}/knowledge-graph", spaceId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.edges[?(@.type=='WIKI_SOURCE_MESSAGE')]").exists())
+                .andExpect(jsonPath("$.data.edges[?(@.type=='CHAT_CITES_DOCUMENT')]").exists())
+                .andExpect(jsonPath("$.data.edges[?(@.type=='CHAT_GENERATES_ARTIFACT')]").exists())
+                .andExpect(jsonPath("$.data.edges[?(@.type=='WIKI_SOURCE_ARTIFACT')]").exists());
+    }
+
+    @Test
+    void knowledgeGraphShouldIgnoreCrossSpaceChatReferencesEvenIfCorruptedIdsLeakIntoRecords() throws Exception {
+        String ownerName = "phase10_graph_isolation_owner_" + System.nanoTime();
+        String ownerToken = registerAndGetToken(ownerName);
+        Long ownerId = jdbcTemplate.queryForObject("select id from users where username = ?", Long.class, ownerName);
+
+        Long spaceId = createTeamSpace(ownerToken, "phase10-graph-isolation-team-" + System.nanoTime());
+        Long kbId = createKnowledgeBase(ownerToken, spaceId, "phase10-graph-isolation-kb-" + System.nanoTime());
+
+        Long foreignSpaceId = createTeamSpace(ownerToken, "phase10-graph-isolation-foreign-team-" + System.nanoTime());
+        Long foreignKbId = createKnowledgeBase(ownerToken, foreignSpaceId, "phase10-graph-isolation-foreign-kb-" + System.nanoTime());
+
+        givenStubAnswer("Rollback rehearsal must finish before any production deployment.");
+        Long localSessionId = createChatSession(ownerToken, spaceId, "graph isolation local session", "KNOWLEDGE_BASE", new long[]{kbId});
+        Long localMessageId = askQuestion(ownerToken, localSessionId, "What must finish before deployment?");
+
+        Long foreignSessionId = createChatSession(ownerToken, foreignSpaceId, "graph isolation foreign session", "KNOWLEDGE_BASE", new long[]{foreignKbId});
+        Long foreignMessageId = askQuestion(ownerToken, foreignSessionId, "What must finish before deployment?");
+
+        Long artifactId = insertArtifact(ownerId, spaceId, localSessionId, localMessageId, "Graph Isolation Artifact");
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from artifact_source where artifact_id = ? and source_type = 'CHAT_MESSAGE'",
+                Integer.class,
+                artifactId
+        )).isGreaterThan(0);
+
+        JsonNode draft = readJson(mockMvc.perform(post("/api/v1/team/spaces/{spaceId}/wiki-pages", spaceId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Graph Isolation Wiki",
+                                  "content": "This draft should never expose foreign chat ids."
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andReturn());
+        Long wikiPageId = draft.path("data").path("id").asLong();
+
+        jdbcTemplate.update("update artifact set created_from_message_id = ? where id = ?", foreignMessageId, artifactId);
+        jdbcTemplate.update("update artifact_source set source_id = ? where artifact_id = ? and source_type = 'CHAT_MESSAGE'", foreignMessageId, artifactId);
+        jdbcTemplate.update("update wiki_page set source_message_id = ? where id = ?", foreignMessageId, wikiPageId);
+
+        JsonNode graph = readJson(mockMvc.perform(get("/api/v1/spaces/{spaceId}/knowledge-graph", spaceId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andReturn());
+
+        String foreignNodeId = "CHAT_MESSAGE:" + foreignMessageId;
+        for (JsonNode node : graph.path("data").path("nodes")) {
+            assertThat(node.path("id").asText()).isNotEqualTo(foreignNodeId);
+        }
+        for (JsonNode edge : graph.path("data").path("edges")) {
+            assertThat(edge.path("sourceId").asText()).isNotEqualTo(foreignNodeId);
+            assertThat(edge.path("targetId").asText()).isNotEqualTo(foreignNodeId);
+        }
+    }
+
+    @Test
+    void deletingDocumentShouldArchiveAutoMaintainedWikiPage() throws Exception {
+        String ownerToken = registerAndGetToken("phase10_auto_delete_owner_" + System.nanoTime());
+        Long spaceId = createTeamSpace(ownerToken, "phase10-auto-delete-team-" + System.nanoTime());
+        Long kbId = createKnowledgeBase(ownerToken, spaceId, "phase10-auto-delete-kb-" + System.nanoTime());
+        IndexedDocument indexedDocument = uploadAndProcess(
+                ownerToken,
+                spaceId,
+                kbId,
+                "auto-wiki-delete.txt",
+                "text/plain",
+                "Automatic wiki pages should disappear from active views when source documents are deleted.".getBytes(StandardCharsets.UTF_8)
+        );
+        Long autoWikiPageId = jdbcTemplate.queryForObject(
+                "select id from wiki_page where source_document_id = ? and auto_maintained = true",
+                Long.class,
+                indexedDocument.documentId()
+        );
+
+        mockMvc.perform(delete("/api/v1/team/documents/{documentId}", indexedDocument.documentId())
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk());
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from wiki_page where id = ?",
+                String.class,
+                autoWikiPageId
+        )).isEqualTo("ARCHIVED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select deleted_at is not null from wiki_page where id = ?",
+                Boolean.class,
+                autoWikiPageId
+        )).isTrue();
     }
 
     @Test
@@ -415,6 +557,13 @@ class Phase10TeamWikiIntegrationTest extends ContainerizedIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.nodeCount").value(3))
                 .andExpect(jsonPath("$.data.edgeCount").value(4))
+                .andExpect(jsonPath("$.data.summary.totalPageCount").value(3))
+                .andExpect(jsonPath("$.data.summary.resolvedEdgeCount").value(4))
+                .andExpect(jsonPath("$.data.summary.unresolvedLinkCount").value(0))
+                .andExpect(jsonPath("$.data.summary.orphanPageCount").value(0))
+                .andExpect(jsonPath("$.data.nodes[?(@.title=='Deploy Flow')].outgoingResolvedCount").value(org.hamcrest.Matchers.hasItem(2)))
+                .andExpect(jsonPath("$.data.nodes[?(@.title=='Deploy Flow')].incomingResolvedCount").value(org.hamcrest.Matchers.hasItem(2)))
+                .andExpect(jsonPath("$.data.nodes[?(@.title=='Deploy Flow')].linkCount").value(org.hamcrest.Matchers.hasItem(4)))
                 .andExpect(jsonPath("$.data.nodes[?(@.title=='Deploy Flow')]").exists());
 
         mockMvc.perform(get("/api/v1/team/spaces/{spaceId}/wiki-pages", spaceId)
@@ -456,6 +605,9 @@ class Phase10TeamWikiIntegrationTest extends ContainerizedIntegrationTest {
                 .andExpect(jsonPath("$.data.rootPageId").value(missingDraftId))
                 .andExpect(jsonPath("$.data.nodeCount").value(1))
                 .andExpect(jsonPath("$.data.edgeCount").value(0))
+                .andExpect(jsonPath("$.data.summary.totalPageCount").value(4))
+                .andExpect(jsonPath("$.data.summary.missingLinkCount").value(1))
+                .andExpect(jsonPath("$.data.nodes[0].unresolvedOutgoingCount").value(1))
                 .andExpect(jsonPath("$.data.unresolvedLinks[0].targetTitle").value("Ghost Note"))
                 .andExpect(jsonPath("$.data.unresolvedLinks[0].relationStatus").value("MISSING"));
 
@@ -647,6 +799,30 @@ class Phase10TeamWikiIntegrationTest extends ContainerizedIntegrationTest {
                                 """.formatted(spaceId, messageId, sessionId, messageId, topic)))
                 .andExpect(status().isOk())
                 .andReturn());
+    }
+
+    private Long insertArtifact(Long ownerId, Long spaceId, Long sessionId, Long messageId, String title) {
+        String artifactType = "FAQ";
+        jdbcTemplate.update("""
+                insert into artifact (
+                    user_id,
+                    space_id,
+                    created_from_session_id,
+                    created_from_message_id,
+                    artifact_type,
+                    title,
+                    source_scope_type,
+                    status,
+                    created_at,
+                    updated_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, now(), now())
+                """, ownerId, spaceId, sessionId, messageId, artifactType, title, "CHAT_MESSAGE", "READY");
+        Long artifactId = jdbcTemplate.queryForObject("select id from artifact where space_id = ? and title = ? order by id desc limit 1", Long.class, spaceId, title);
+        jdbcTemplate.update("""
+                insert into artifact_source (artifact_id, source_type, source_id, created_at, updated_at)
+                values (?, ?, ?, now(), now())
+                """, artifactId, "CHAT_MESSAGE", messageId);
+        return artifactId;
     }
 
     private JsonNode readJson(MvcResult result) throws Exception {

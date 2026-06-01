@@ -15,6 +15,8 @@ public interface SourceRepository extends JpaRepository<Source, Long> {
 
     List<Source> findByResearchProjectIdAndDeletedAtIsNullOrderByCreatedAtDesc(Long researchProjectId);
 
+    List<Source> findBySpaceIdAndDeletedAtIsNullOrderByCreatedAtDesc(Long spaceId);
+
     Optional<Source> findByIdAndSpaceIdAndDeletedAtIsNull(Long id, Long spaceId);
 
     boolean existsByIdAndDeletedAtIsNull(Long id);

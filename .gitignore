@@ -8,3 +8,6 @@ target/
 !.env.embedding.example
 test-results/
 tmp/
+tools/playwright-smoke/*-last-run.json
+__pycache__/
+*.pyc

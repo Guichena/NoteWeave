@@ -16,6 +16,10 @@ public class WikiPageResponse {
     private WikiPageStatus status;
     private Long sourceArtifactId;
     private Long sourceMessageId;
+    private Long sourceDocumentId;
+    private Long sourcePersonalSourceId;
+    private boolean autoMaintained;
+    private String sourceFingerprint;
     private Long publishedVersionId;
     private Integer publishedVersionNo;
     private WikiIndexStatus indexStatus;

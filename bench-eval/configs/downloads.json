@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "snapshot_date": "2026-05-27",
+  "downloads": [
+    {
+      "suite": "enterprise_rag_bench",
+      "priority": "P0",
+      "target_dir": "bench-eval/downloads/enterprise_rag_bench",
+      "sources": [
+        "https://arxiv.org/abs/2605.05253",
+        "https://github.com/onyx-dot-app/EnterpriseRAG-Bench",
+        "https://huggingface.co/datasets/onyx-dot-app/EnterpriseRAG-Bench",
+        "https://onyx.app/enterpriserag-bench"
+      ],
+      "first_files_to_fetch": ["questions", "gold documents", "metadata/source type map"],
+      "license_check_required": true,
+      "notes": "Start with questions and gold documents. Do not ingest the full synthetic enterprise corpus until R1 proves signal."
+    },
+    {
+      "suite": "mtrag_un",
+      "priority": "P0",
+      "target_dir": "bench-eval/downloads/mtrag_un",
+      "sources": [
+        "https://arxiv.org/abs/2602.23184",
+        "https://ibm.github.io/mt-rag-benchmark/MTRAGEval/"
+      ],
+      "first_files_to_fetch": ["conversation tasks", "passages", "answerability labels"],
+      "license_check_required": true,
+      "notes": "Preserve every turn and label; multi-turn structure is the point of the benchmark."
+    },
+    {
+      "suite": "parsebench",
+      "priority": "P1",
+      "target_dir": "bench-eval/downloads/parsebench",
+      "sources": [
+        "https://arxiv.org/abs/2604.08538",
+        "https://github.com/run-llama/ParseBench",
+        "https://huggingface.co/datasets/llamaindex/ParseBench",
+        "https://www.parsebench.ai/"
+      ],
+      "first_files_to_fetch": ["small page subset", "ground-truth parsed outputs", "capability labels"],
+      "license_check_required": true,
+      "notes": "Use as upstream parser gate before blaming retrieval."
+    },
+    {
+      "suite": "autoresearchbench",
+      "priority": "P1",
+      "target_dir": "bench-eval/downloads/autoresearchbench",
+      "sources": [
+        "https://arxiv.org/abs/2604.25256",
+        "https://github.com/CherYou/AutoResearchBench",
+        "https://cheryou.github.io/autoresearchbench.github.io/",
+        "https://huggingface.co/datasets/Lk123/AutoResearchBench"
+      ],
+      "first_files_to_fetch": ["Deep Research tasks", "Wide Research tasks", "gold sources if available"],
+      "license_check_required": true,
+      "notes": "Some data paths may require token or dataset-specific access steps."
+    },
+    {
+      "suite": "citerag",
+      "priority": "P1",
+      "target_dir": "bench-eval/downloads/citerag",
+      "sources": [
+        "https://arxiv.org/abs/2601.14949",
+        "https://doi.org/10.1145/3774904.3792075"
+      ],
+      "first_files_to_fetch": ["Task 1 citation list cases", "Task 2 citation position cases", "paper metadata subset"],
+      "license_check_required": true,
+      "notes": "Use for citation recommendation, not as a generic answer-quality test."
+    },
+    {
+      "suite": "agentic_rag_tracer",
+      "priority": "P2",
+      "target_dir": "bench-eval/downloads/agentic_rag_tracer",
+      "sources": [
+        "https://arxiv.org/abs/2602.19127",
+        "https://github.com/YqjMartin/AgenticRAGTracer",
+        "https://huggingface.co/datasets/YqjMartin/AgenticRAGTracer"
+      ],
+      "first_files_to_fetch": ["hop-aware cases", "intermediate evidence labels"],
+      "license_check_required": true,
+      "notes": "Use after R1/R2 because it requires richer trace interpretation."
+    }
+  ]
+}

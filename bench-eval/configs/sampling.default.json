@@ -1,0 +1,72 @@
+{
+  "seed": 20260527,
+  "global_rules": {
+    "separate_lanes": true,
+    "preserve_failure_classes": true,
+    "max_local_dev_cases_per_suite": 50,
+    "small_smoke_cases_per_suite": 5
+  },
+  "lanes": {
+    "team": {
+      "target_outputs": [
+        "rag_eval_case_jsonl",
+        "retrieval_expected_sources_jsonl",
+        "ingestion_quality_jsonl"
+      ],
+      "metrics": [
+        "recall_at_k",
+        "mrr",
+        "citation_coverage",
+        "no_answer_accuracy",
+        "latency_ms",
+        "parse_pass_rate"
+      ]
+    },
+    "personal": {
+      "target_outputs": [
+        "personal_research_case_jsonl",
+        "artifact_eval_jsonl",
+        "citation_prediction_jsonl"
+      ],
+      "metrics": [
+        "source_recall",
+        "citation_recall",
+        "artifact_groundedness",
+        "answer_completeness",
+        "synthesis_precision"
+      ]
+    }
+  },
+  "suite_overrides": {
+    "enterprise_rag_bench": {
+      "ratio": 0.1,
+      "max_cases": 50,
+      "stratify_by": ["question_type", "source_types"]
+    },
+    "mtrag_un": {
+      "ratio": 0.05,
+      "max_cases": 40,
+      "stratify_by": ["domain", "answerability", "multi_turn_type"]
+    },
+    "parsebench": {
+      "ratio": 0.025,
+      "max_cases": 50,
+      "stratify_by": ["capability_dimension", "domain"]
+    },
+    "autoresearchbench": {
+      "ratio": 0.05,
+      "max_cases": 20,
+      "stratify_by": ["task_type", "field"]
+    },
+    "citerag": {
+      "ratio": 0.01,
+      "max_cases": 200,
+      "stratify_by": ["task", "field"]
+    },
+    "agentic_rag_tracer": {
+      "ratio": 0.05,
+      "max_cases": 65,
+      "stratify_by": ["hop_count", "domain"]
+    }
+  }
+}

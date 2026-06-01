@@ -8,6 +8,7 @@ import lombok.Builder;
 public record CreateStudioTaskResponse(
         Long taskId,
         Long artifactId,
+        Long artifactSpaceId,
         TaskStatus taskStatus,
         ArtifactStatus artifactStatus
 ) {

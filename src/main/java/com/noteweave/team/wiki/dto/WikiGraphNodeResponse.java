@@ -14,4 +14,15 @@ public class WikiGraphNodeResponse {
     private WikiPageStatus status;
     private WikiIndexStatus indexStatus;
     private boolean root;
+    private Integer outgoingResolvedCount;
+    private Integer incomingResolvedCount;
+    private Integer unresolvedOutgoingCount;
+    private Integer neighborCount;
+    private Integer evidenceCitationCount;
+    private Integer linkCount;
+    private boolean orphan;
+    private boolean leaf;
+    private String sourceType;
+    private Long sourceId;
+    private boolean autoMaintained;
 }

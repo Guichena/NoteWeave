@@ -1,0 +1,250 @@
+{
+  "benchmarks": [
+    {
+      "corpus_scale": "Deep Research and Wide Research scientific literature discovery tasks",
+      "download": {
+        "notes": "Some dataset access paths may require Hugging Face token/decryption steps; record license before use.",
+        "status": "recorded",
+        "target_dir": "bench-eval/downloads/autoresearchbench"
+      },
+      "fit_score": 4,
+      "id": "autoresearchbench",
+      "lane": [
+        "personal"
+      ],
+      "noteweave_scenarios": [
+        "personal_research_source",
+        "literature_discovery",
+        "artifact_generation",
+        "synthesis_card",
+        "citation_trace"
+      ],
+      "priority": "P1",
+      "recommended_sample": {
+        "keep_failure_classes": true,
+        "max_cases": 20,
+        "ratio": 0.05,
+        "stratify_by": [
+          "task_type",
+          "field"
+        ]
+      },
+      "source_total_cases": null,
+      "source_urls": {
+        "github": "https://github.com/CherYou/AutoResearchBench",
+        "huggingface": "https://huggingface.co/datasets/Lk123/AutoResearchBench",
+        "paper": "https://arxiv.org/abs/2604.25256",
+        "project": "https://cheryou.github.io/autoresearchbench.github.io/"
+      },
+      "title": "AutoResearchBench: Benchmarking AI Agents on Complex Scientific Literature Discovery",
+      "year": 2026
+    },
+    {
+      "corpus_scale": "7267 Task 1 cases, 8541 Task 2 cases, and 554k paper corpus",
+      "download": {
+        "notes": "Use for citation recommendation quality, not generic team RAG.",
+        "status": "recorded",
+        "target_dir": "bench-eval/downloads/citerag"
+      },
+      "fit_score": 4,
+      "id": "citerag",
+      "lane": [
+        "personal"
+      ],
+      "noteweave_scenarios": [
+        "personal_research",
+        "citation_prediction",
+        "artifact_citation_quality",
+        "source_recommendation"
+      ],
+      "priority": "P1",
+      "recommended_sample": {
+        "keep_failure_classes": false,
+        "max_cases": 200,
+        "ratio": 0.01,
+        "stratify_by": [
+          "task",
+          "field"
+        ]
+      },
+      "source_total_cases": 15808,
+      "source_urls": {
+        "doi": "https://doi.org/10.1145/3774904.3792075",
+        "paper": "https://arxiv.org/abs/2601.14949"
+      },
+      "title": "What Should I Cite? A RAG Benchmark for Academic Citation Prediction",
+      "year": 2026
+    }
+  ],
+  "expected_inputs": {
+    "normalized_cases": "bench-eval/data/r4.*.normalized.jsonl",
+    "personal_manifest": "bench-eval/data/r4.*.personal_manifest.jsonl",
+    "team_cases": "bench-eval/data/r4.*.noteweave_cases.jsonl"
+  },
+  "expected_outputs": {
+    "responses": "bench-eval/results/r4.*.responses.jsonl",
+    "scores": "bench-eval/results/r4.*.scores.jsonl",
+    "summary": "bench-eval/results/r4.*.summary.json"
+  },
+  "generated_from": {
+    "baselines": "D:\\java-projects\\NoteWeave\\bench-eval\\configs\\baselines.json",
+    "metrics": "D:\\java-projects\\NoteWeave\\bench-eval\\configs\\metrics.json",
+    "registry": "D:\\java-projects\\NoteWeave\\bench-eval\\benchmarks\\registry.json",
+    "rounds": "D:\\java-projects\\NoteWeave\\bench-eval\\configs\\run_rounds.json",
+    "sampling": "D:\\java-projects\\NoteWeave\\bench-eval\\configs\\sampling.default.json"
+  },
+  "metrics_catalog": {
+    "personal": {
+      "artifact": [
+        "artifact_groundedness",
+        "answer_fact_coverage",
+        "answer_completeness",
+        "format_following",
+        "synthesis_precision"
+      ],
+      "operations": [
+        "latency_ms",
+        "input_tokens",
+        "output_tokens",
+        "total_tokens",
+        "error_rate",
+        "trace_completeness"
+      ],
+      "research": [
+        "source_recall",
+        "citation_recall",
+        "citation_precision",
+        "research_completeness",
+        "target_source_accuracy"
+      ]
+    },
+    "team": {
+      "generation": [
+        "answer_fact_coverage",
+        "groundedness_score",
+        "citation_coverage",
+        "citation_precision",
+        "answer_completeness",
+        "format_following"
+      ],
+      "ingestion": [
+        "parse_pass_rate",
+        "table_structure_accuracy",
+        "chart_data_accuracy",
+        "format_semantics_accuracy",
+        "visual_grounding_accuracy"
+      ],
+      "multi_turn": [
+        "context_carryover_accuracy",
+        "query_rewrite_success",
+        "stale_context_resistance",
+        "answerability_classification",
+        "turn_level_retrieval_recall"
+      ],
+      "operations": [
+        "latency_ms",
+        "input_tokens",
+        "output_tokens",
+        "total_tokens",
+        "error_rate",
+        "trace_completeness"
+      ],
+      "retrieval": [
+        "recall_at_k",
+        "mrr",
+        "source_type_recall",
+        "selected_evidence_rate",
+        "evidence_sufficiency",
+        "conflict_resolution_accuracy",
+        "no_answer_accuracy"
+      ]
+    },
+    "version": 1
+  },
+  "notes": [
+    "This is a plan artifact only.",
+    "Do not execute benchmark runs from this manifest until the sample and variant are confirmed.",
+    "Team and personal lanes must be reported separately."
+  ],
+  "round": {
+    "id": "R4",
+    "lanes": [
+      "personal"
+    ],
+    "name": "Personal Research Slice",
+    "outputs": [
+      "personal_manifest_jsonl",
+      "artifact_scores_jsonl",
+      "citation_scores_jsonl",
+      "summary_json"
+    ],
+    "primary_metrics": [
+      "source_recall",
+      "citation_recall",
+      "artifact_groundedness"
+    ],
+    "run_now": false,
+    "sample": {
+      "max_cases": 20,
+      "ratio": 0.05
+    },
+    "status": "planned",
+    "suites": [
+      "autoresearchbench",
+      "citerag"
+    ],
+    "variants": [
+      "personal_sources_only",
+      "personal_cards_only",
+      "personal_cards_plus_synthesis",
+      "artifact_no_methodology",
+      "artifact_with_methodology"
+    ]
+  },
+  "run_now": false,
+  "sampling_seed": 20260527,
+  "variants": [
+    {
+      "compare_against": [
+        "personal_cards_only",
+        "personal_cards_plus_synthesis"
+      ],
+      "description": "Generate from imported sources without compiled cards.",
+      "id": "personal_sources_only",
+      "lane": "personal"
+    },
+    {
+      "compare_against": [
+        "personal_sources_only",
+        "personal_cards_plus_synthesis"
+      ],
+      "description": "Generate from ArticleCard and ConceptCard context.",
+      "id": "personal_cards_only",
+      "lane": "personal"
+    },
+    {
+      "compare_against": [
+        "personal_cards_only"
+      ],
+      "description": "Generate from compiled cards plus SynthesisCard memory.",
+      "id": "personal_cards_plus_synthesis",
+      "lane": "personal"
+    },
+    {
+      "compare_against": [
+        "artifact_with_methodology"
+      ],
+      "description": "Generate artifact without MethodologyCard preset.",
+      "id": "artifact_no_methodology",
+      "lane": "personal"
+    },
+    {
+      "compare_against": [
+        "artifact_no_methodology"
+      ],
+      "description": "Generate artifact with MethodologyCard preset.",
+      "id": "artifact_with_methodology",
+      "lane": "personal"
+    }
+  ]
+}

@@ -23,6 +23,8 @@ public interface MethodologyCardRepository extends JpaRepository<MethodologyCard
             MethodologyCardStatus status
     );
 
+    List<MethodologyCard> findBySpaceIdAndStatusOrderByUpdatedAtDesc(Long spaceId, MethodologyCardStatus status);
+
     List<MethodologyCard> findByCardSourceAndStatusOrderByUpdatedAtDesc(
             MethodologyCardSource cardSource,
             MethodologyCardStatus status

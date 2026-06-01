@@ -43,6 +43,18 @@ public class WikiPage {
     @Column(name = "source_message_id")
     private Long sourceMessageId;
 
+    @Column(name = "source_document_id")
+    private Long sourceDocumentId;
+
+    @Column(name = "source_personal_source_id")
+    private Long sourcePersonalSourceId;
+
+    @Column(name = "auto_maintained", nullable = false)
+    private boolean autoMaintained;
+
+    @Column(name = "source_fingerprint", length = 128)
+    private String sourceFingerprint;
+
     @Column(name = "published_version_id")
     private Long publishedVersionId;
 

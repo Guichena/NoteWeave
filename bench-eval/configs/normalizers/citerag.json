@@ -1,0 +1,22 @@
+{
+  "suite": "citerag",
+  "lane": "personal",
+  "scenario": "artifact_citation_quality",
+  "id_fields": ["instance_id", "id", "case_id"],
+  "query_fields": ["context", "citation_context", "query", "input_text"],
+  "answer_fields": ["target_citation_text", "gold_answer", "reference_answer", "answer"],
+  "category_fields": ["task", "field", "domain"],
+  "source_id_fields": ["gold_citation_ids", "target_paper_ids", "citation_ids", "paper_ids"],
+  "source_type_fields": ["field", "task"],
+  "answer_fact_fields": ["answer_facts", "facts"],
+  "conversation_fields": [],
+  "static_tags": {
+    "benchmark_family": "citation_prediction",
+    "artifact_type": "citation_recommendation"
+  },
+  "sample": {
+    "ratio": 0.01,
+    "max_cases": 200,
+    "stratify_by": ["task", "field"]
+  }
+}

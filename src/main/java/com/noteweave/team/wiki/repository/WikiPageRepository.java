@@ -18,7 +18,19 @@ public interface WikiPageRepository extends JpaRepository<WikiPage, Long> {
 
     Optional<WikiPage> findByIdAndDeletedAtIsNull(Long id);
 
+    Optional<WikiPage> findBySpaceIdAndSourceDocumentIdAndAutoMaintainedTrueAndDeletedAtIsNull(Long spaceId, Long sourceDocumentId);
+
+    Optional<WikiPage> findBySpaceIdAndSourcePersonalSourceIdAndAutoMaintainedTrueAndDeletedAtIsNull(Long spaceId, Long sourcePersonalSourceId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from WikiPage p where p.id = :id")
     Optional<WikiPage> findByIdForUpdate(Long id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from WikiPage p where p.spaceId = :spaceId and p.sourceDocumentId = :sourceDocumentId and p.autoMaintained = true and p.deletedAt is null")
+    Optional<WikiPage> findAutoDocumentPageForUpdate(Long spaceId, Long sourceDocumentId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from WikiPage p where p.spaceId = :spaceId and p.sourcePersonalSourceId = :sourcePersonalSourceId and p.autoMaintained = true and p.deletedAt is null")
+    Optional<WikiPage> findAutoPersonalSourcePageForUpdate(Long spaceId, Long sourcePersonalSourceId);
 }

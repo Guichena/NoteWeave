@@ -12,5 +12,7 @@ public interface CitationRepository extends JpaRepository<Citation, Long> {
 
     Optional<Citation> findBySpaceIdAndSourceTypeAndSourceIdAndChunkId(Long spaceId, String sourceType, Long sourceId, Long chunkId);
 
+    List<Citation> findBySpaceIdAndSourceTypeAndSourceIdOrderByIdAsc(Long spaceId, String sourceType, Long sourceId);
+
     Optional<Citation> findBySpaceIdAndSourceTypeAndSourceIdAndQuoteHash(Long spaceId, String sourceType, Long sourceId, String quoteHash);
 }

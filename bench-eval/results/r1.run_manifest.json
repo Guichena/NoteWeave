@@ -1,0 +1,205 @@
+{
+  "benchmarks": [
+    {
+      "corpus_scale": "about 500k synthetic enterprise documents across 9 source types",
+      "download": {
+        "notes": "Download questions first; ingest only gold documents plus distractors for the first slice.",
+        "status": "recorded",
+        "target_dir": "bench-eval/downloads/enterprise_rag_bench"
+      },
+      "fit_score": 5,
+      "id": "enterprise_rag_bench",
+      "lane": [
+        "team"
+      ],
+      "noteweave_scenarios": [
+        "team_knowledge_rag",
+        "hybrid_retrieval",
+        "citation_trace",
+        "no_answer",
+        "wiki_retrieval"
+      ],
+      "priority": "P0",
+      "recommended_sample": {
+        "keep_failure_classes": true,
+        "max_cases": 50,
+        "ratio": 0.1,
+        "stratify_by": [
+          "question_type",
+          "source_types"
+        ]
+      },
+      "source_total_cases": 500,
+      "source_urls": {
+        "github": "https://github.com/onyx-dot-app/EnterpriseRAG-Bench",
+        "huggingface": "https://huggingface.co/datasets/onyx-dot-app/EnterpriseRAG-Bench",
+        "paper": "https://arxiv.org/abs/2605.05253",
+        "project": "https://onyx.app/enterpriserag-bench"
+      },
+      "title": "EnterpriseRAG-Bench: A RAG Benchmark for Company Internal Knowledge",
+      "year": 2026
+    }
+  ],
+  "expected_inputs": {
+    "normalized_cases": "bench-eval/data/r1.*.normalized.jsonl",
+    "personal_manifest": "bench-eval/data/r1.*.personal_manifest.jsonl",
+    "team_cases": "bench-eval/data/r1.*.noteweave_cases.jsonl"
+  },
+  "expected_outputs": {
+    "responses": "bench-eval/results/r1.*.responses.jsonl",
+    "scores": "bench-eval/results/r1.*.scores.jsonl",
+    "summary": "bench-eval/results/r1.*.summary.json"
+  },
+  "generated_from": {
+    "baselines": "D:\\java-projects\\NoteWeave\\bench-eval\\configs\\baselines.json",
+    "metrics": "D:\\java-projects\\NoteWeave\\bench-eval\\configs\\metrics.json",
+    "registry": "D:\\java-projects\\NoteWeave\\bench-eval\\benchmarks\\registry.json",
+    "rounds": "D:\\java-projects\\NoteWeave\\bench-eval\\configs\\run_rounds.json",
+    "sampling": "D:\\java-projects\\NoteWeave\\bench-eval\\configs\\sampling.default.json"
+  },
+  "metrics_catalog": {
+    "personal": {
+      "artifact": [
+        "artifact_groundedness",
+        "answer_fact_coverage",
+        "answer_completeness",
+        "format_following",
+        "synthesis_precision"
+      ],
+      "operations": [
+        "latency_ms",
+        "input_tokens",
+        "output_tokens",
+        "total_tokens",
+        "error_rate",
+        "trace_completeness"
+      ],
+      "research": [
+        "source_recall",
+        "citation_recall",
+        "citation_precision",
+        "research_completeness",
+        "target_source_accuracy"
+      ]
+    },
+    "team": {
+      "generation": [
+        "answer_fact_coverage",
+        "groundedness_score",
+        "citation_coverage",
+        "citation_precision",
+        "answer_completeness",
+        "format_following"
+      ],
+      "ingestion": [
+        "parse_pass_rate",
+        "table_structure_accuracy",
+        "chart_data_accuracy",
+        "format_semantics_accuracy",
+        "visual_grounding_accuracy"
+      ],
+      "multi_turn": [
+        "context_carryover_accuracy",
+        "query_rewrite_success",
+        "stale_context_resistance",
+        "answerability_classification",
+        "turn_level_retrieval_recall"
+      ],
+      "operations": [
+        "latency_ms",
+        "input_tokens",
+        "output_tokens",
+        "total_tokens",
+        "error_rate",
+        "trace_completeness"
+      ],
+      "retrieval": [
+        "recall_at_k",
+        "mrr",
+        "source_type_recall",
+        "selected_evidence_rate",
+        "evidence_sufficiency",
+        "conflict_resolution_accuracy",
+        "no_answer_accuracy"
+      ]
+    },
+    "version": 1
+  },
+  "notes": [
+    "This is a plan artifact only.",
+    "Do not execute benchmark runs from this manifest until the sample and variant are confirmed.",
+    "Team and personal lanes must be reported separately."
+  ],
+  "round": {
+    "id": "R1",
+    "lanes": [
+      "team"
+    ],
+    "name": "Team Mini Slice",
+    "outputs": [
+      "responses_jsonl",
+      "scores_jsonl",
+      "summary_json",
+      "failure_buckets_json"
+    ],
+    "primary_metrics": [
+      "recall_at_k",
+      "mrr",
+      "citation_precision"
+    ],
+    "run_now": false,
+    "sample": {
+      "max_cases": 50,
+      "ratio": 0.1
+    },
+    "status": "planned",
+    "suites": [
+      "enterprise_rag_bench"
+    ],
+    "variants": [
+      "bm25_only",
+      "vector_only",
+      "hybrid_rrf",
+      "hybrid_rrf_with_wiki"
+    ]
+  },
+  "run_now": false,
+  "sampling_seed": 20260527,
+  "variants": [
+    {
+      "compare_against": [
+        "hybrid_rrf",
+        "hybrid_rrf_with_wiki"
+      ],
+      "description": "Lexical retrieval only.",
+      "id": "bm25_only",
+      "lane": "team"
+    },
+    {
+      "compare_against": [
+        "hybrid_rrf",
+        "hybrid_rrf_with_wiki"
+      ],
+      "description": "Embedding retrieval only.",
+      "id": "vector_only",
+      "lane": "team"
+    },
+    {
+      "compare_against": [
+        "bm25_only",
+        "vector_only"
+      ],
+      "description": "BM25 plus vector retrieval with weighted reciprocal rank fusion.",
+      "id": "hybrid_rrf",
+      "lane": "team"
+    },
+    {
+      "compare_against": [
+        "hybrid_rrf_no_wiki"
+      ],
+      "description": "Hybrid retrieval with published wiki recall enabled.",
+      "id": "hybrid_rrf_with_wiki",
+      "lane": "team"
+    }
+  ]
+}

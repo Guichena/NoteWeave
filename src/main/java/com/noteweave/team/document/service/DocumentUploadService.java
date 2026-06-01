@@ -32,6 +32,7 @@ import com.noteweave.team.document.repository.FileObjectRepository;
 import com.noteweave.team.document.repository.UploadChunkRepository;
 import com.noteweave.team.kb.model.KnowledgeBase;
 import com.noteweave.team.kb.service.KnowledgeBaseService;
+import com.noteweave.team.wiki.service.AutoWikiMaintenanceService;
 import java.io.InputStream;
 import java.io.SequenceInputStream;
 import java.security.MessageDigest;
@@ -79,6 +80,7 @@ public class DocumentUploadService {
     private final DocumentChunkService documentChunkService;
     private final SearchIndexService searchIndexService;
     private final EmbeddingProperties embeddingProperties;
+    private final AutoWikiMaintenanceService autoWikiMaintenanceService;
 
     @Value("${noteweave.upload.bitmap-ttl-hours:24}")
     private long bitmapTtlHours;
@@ -352,6 +354,7 @@ public class DocumentUploadService {
         documentRepository.save(document);
         searchIndexService.synchronizeDocumentChunkState(documentId, document.getStatus().name(), document.getActiveIndexVersion(), "DELETED");
         searchIndexService.deleteByDocumentId(documentId);
+        autoWikiMaintenanceService.archiveDocumentWiki(userId, document);
         // Phase 2 hard constraint: soft delete must not decrement refCount.
     }
 

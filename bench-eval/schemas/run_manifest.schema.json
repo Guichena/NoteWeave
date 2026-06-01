@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NoteWeave benchmark run manifest",
+  "type": "object",
+  "required": ["round", "run_now", "benchmarks", "variants", "expected_inputs", "expected_outputs"],
+  "properties": {
+    "round": {"type": "object"},
+    "run_now": {"type": "boolean"},
+    "benchmarks": {"type": "array"},
+    "variants": {"type": "array"},
+    "expected_inputs": {"type": "object"},
+    "expected_outputs": {"type": "object"},
+    "notes": {"type": "array", "items": {"type": "string"}}
+  }
+}

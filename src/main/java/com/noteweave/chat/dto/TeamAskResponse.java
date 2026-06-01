@@ -12,6 +12,7 @@ public class TeamAskResponse {
     private Long assistantMessageId;
     private String answer;
     private Long artifactId;
+    private Long artifactSpaceId;
     private Long taskId;
     private String toolName;
     private List<CitationResponse> citations;

@@ -12,6 +12,7 @@ public class WikiGraphResponse {
     private Integer depth;
     private Integer nodeCount;
     private Integer edgeCount;
+    private WikiGraphSummaryResponse summary;
     private List<WikiGraphNodeResponse> nodes;
     private List<WikiGraphEdgeResponse> edges;
     private List<WikiGraphUnresolvedLinkResponse> unresolvedLinks;

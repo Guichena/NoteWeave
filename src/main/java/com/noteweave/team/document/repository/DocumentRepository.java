@@ -14,6 +14,8 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
 
     List<Document> findByKnowledgeBaseIdAndDeletedAtIsNullAndStatusNotOrderByCreatedAtDesc(Long knowledgeBaseId, DocumentStatus status);
 
+    List<Document> findBySpaceIdAndDeletedAtIsNullAndStatusNotOrderByCreatedAtDesc(Long spaceId, DocumentStatus status);
+
     Optional<Document> findByIdAndDeletedAtIsNullAndStatusNot(Long id, DocumentStatus status);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

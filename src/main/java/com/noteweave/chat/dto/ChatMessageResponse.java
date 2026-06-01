@@ -18,6 +18,7 @@ public class ChatMessageResponse {
     private ChatMessageType messageType;
     private ChatMessageStatus status;
     private Long artifactId;
+    private Long artifactSpaceId;
     private String requestId;
     private String errorCode;
     private LocalDateTime createdAt;

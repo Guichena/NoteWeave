@@ -75,6 +75,7 @@ public class TeamWikiService {
         page.setContent(normalizeRequired(request.getContent()));
         page.setStatus(WikiPageStatus.DRAFT);
         page.setSourceArtifactId(request.getSourceArtifactId());
+        page.setAutoMaintained(false);
         page.setIndexStatus(WikiIndexStatus.PENDING);
         page.setCreatedBy(userId);
         page.setUpdatedBy(userId);
@@ -103,6 +104,7 @@ public class TeamWikiService {
         page.setContent(normalizeRequired(artifactVersion.getContent()));
         page.setStatus(WikiPageStatus.DRAFT);
         page.setSourceArtifactId(artifact.getId());
+        page.setAutoMaintained(false);
         page.setIndexStatus(WikiIndexStatus.PENDING);
         page.setCreatedBy(userId);
         page.setUpdatedBy(userId);
@@ -123,6 +125,7 @@ public class TeamWikiService {
         page.setContent(normalizeRequired(message.getContent()));
         page.setStatus(WikiPageStatus.DRAFT);
         page.setSourceMessageId(messageId);
+        page.setAutoMaintained(false);
         page.setIndexStatus(WikiIndexStatus.PENDING);
         page.setCreatedBy(userId);
         page.setUpdatedBy(userId);
@@ -341,6 +344,10 @@ public class TeamWikiService {
                 .status(page.getStatus())
                 .sourceArtifactId(page.getSourceArtifactId())
                 .sourceMessageId(page.getSourceMessageId())
+                .sourceDocumentId(page.getSourceDocumentId())
+                .sourcePersonalSourceId(page.getSourcePersonalSourceId())
+                .autoMaintained(page.isAutoMaintained())
+                .sourceFingerprint(page.getSourceFingerprint())
                 .publishedVersionId(page.getPublishedVersionId())
                 .publishedVersionNo(publishedVersionNo)
                 .indexStatus(page.getIndexStatus())

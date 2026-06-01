@@ -10,4 +10,6 @@ public interface SynthesisCardRepository extends JpaRepository<SynthesisCard, Lo
     Optional<SynthesisCard> findByIdAndSpaceId(Long id, Long spaceId);
 
     List<SynthesisCard> findByResearchProjectIdAndSpaceIdOrderByUpdatedAtDesc(Long researchProjectId, Long spaceId);
+
+    List<SynthesisCard> findBySpaceIdOrderByUpdatedAtDesc(Long spaceId);
 }

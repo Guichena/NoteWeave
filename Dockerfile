@@ -21,11 +21,11 @@ RUN printf '%s\n' \
     > /tmp/maven-settings.xml
 
 RUN sed -i 's/\r$//' mvnw && chmod +x mvnw
-RUN ./mvnw -s /tmp/maven-settings.xml -q -DskipTests dependency:go-offline
+RUN mvn -s /tmp/maven-settings.xml -q -DskipTests dependency:go-offline
 
 COPY src/ src/
 
-RUN ./mvnw -s /tmp/maven-settings.xml -q -DskipTests package
+RUN mvn -s /tmp/maven-settings.xml -q -DskipTests package
 
 FROM eclipse-temurin:17-jre-jammy
 

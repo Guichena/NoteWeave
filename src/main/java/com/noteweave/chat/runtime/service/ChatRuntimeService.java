@@ -70,7 +70,7 @@ import org.springframework.web.socket.WebSocketSession;
 @RequiredArgsConstructor
 public class ChatRuntimeService {
 
-    private static final String NO_RESULT_SUFFIX = "。Current evidence is insufficient for a grounded citation.";
+    private static final String NO_RESULT_SUFFIX = "。当前证据不足，无法给出可靠引用。";
 
     private final ChatSessionRepository chatSessionRepository;
     private final ChatMessageRepository chatMessageRepository;
@@ -272,6 +272,7 @@ public class ChatRuntimeService {
                 completedPayload.put("persisted", session.getSessionKind() == ChatSessionKind.FORMAL);
                 completedPayload.put("assistantMessageId", assistantMessage == null ? null : assistantMessage.getId());
                 completedPayload.put("artifactId", trigger.task().artifactId());
+                completedPayload.put("artifactSpaceId", trigger.task().artifactSpaceId());
                 completedPayload.put("taskId", trigger.task().taskId());
                 completedPayload.put("toolName", trigger.toolName());
                 ServerEventEnvelope completed = chatRuntimeStateStore.appendEvent(sessionId, ServerEventEnvelope.builder()

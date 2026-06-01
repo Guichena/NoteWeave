@@ -1,0 +1,18 @@
+{
+  "errors": [],
+  "files": [
+    {
+      "invalid_rows": 0,
+      "path": "bench-eval\\data\\r1.enterprise_rag_bench.team.normalized.jsonl",
+      "rows": 50
+    },
+    {
+      "invalid_rows": 0,
+      "path": "bench-eval\\data\\r1.enterprise_rag_bench_metadata.team.normalized.jsonl",
+      "rows": 15
+    }
+  ],
+  "invalid_rows": 0,
+  "total_rows": 65,
+  "valid_rows": 65
+}

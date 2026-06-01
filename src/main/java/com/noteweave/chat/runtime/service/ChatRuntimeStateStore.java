@@ -107,16 +107,11 @@ public class ChatRuntimeStateStore {
     @Transactional
     public void expireDrafts(Instant now) {
         LocalDateTime threshold = LocalDateTime.ofInstant(now, ZoneId.systemDefault()).minus(TTL);
-        List<ChatSession> sessions = chatSessionRepository.findAll().stream()
-                .filter(session -> session.getSessionKind() == ChatSessionKind.DRAFT)
-                .filter(session -> session.getDraftStatus() == ChatDraftStatus.DRAFT_ACTIVE)
-                .filter(session -> {
-                    LocalDateTime lastTouchedAt = session.getLastActiveAt() != null
-                            ? session.getLastActiveAt()
-                            : session.getCreatedAt();
-                    return lastTouchedAt != null && lastTouchedAt.isBefore(threshold);
-                })
-                .toList();
+        List<ChatSession> sessions = chatSessionRepository.findExpiredDrafts(
+                ChatSessionKind.DRAFT,
+                ChatDraftStatus.DRAFT_ACTIVE,
+                threshold
+        );
         for (ChatSession session : sessions) {
             session.setDraftStatus(ChatDraftStatus.DRAFT_EXPIRED);
             chatSessionRepository.save(session);
