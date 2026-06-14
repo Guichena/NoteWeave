@@ -30,13 +30,13 @@ Default answer depth is the deep-answer version:
 ## Truth Rules
 
 1. Prefer actual code and tests over planning docs when they disagree.
-2. If `docs/PROJECT_STATUS.md` lags behind the code, say that explicitly.
+2. If `docs/PROJECT_STATUS.md` lags behind the code, say that explicitly and prefer code/test/migration evidence.
 3. Separate three layers in every answer:
    - `已实现`
    - `设计目标`
    - `后续可扩展`
 4. Never invent numbers such as QPS, token/day, online scale, or latency benchmarks if the repo does not provide them.
-5. Do not claim NoteWeave has unrelated capabilities such as microservice拆分, 分库分表, 秒杀链路, 本地二级缓存, RL training, GraphRAG mainline, or multi-agent orchestration unless the current repo really implements them.
+5. Do not claim NoteWeave has unrelated capabilities such as microservice拆分, 分库分表, 秒杀链路, 本地二级缓存, RL training, full GraphRAG mainline, or fully autonomous multi-agent orchestration unless the current repo really implements them.
 
 ## Resume Guardrails
 
@@ -65,7 +65,8 @@ Recommended handling:
 - `Hybrid RAG`, `长期记忆`, `Artifact/Wiki`, `Methodology`, `Observability/Admin/Ops`: safe to present as implemented and still improvable
 - `Skill`: present as a plan-based generation pipeline plus skill logging, not as a fully open-ended agent platform
 - `Redis runtime state`: present as Redis-backed WebSocket runtime state, resume control, and session execution coordination; do not expand it into a fake main async queue story
-- `MCP`, `Bibtex`: only present as future-ready or easy extension points unless stronger repo evidence is added
+- `MCP`: present as a controlled tool-extension path. The repo already has Studio Bilibili MCP support, but it should not be described as a universal open MCP platform.
+- `Bibtex`: only present as future-ready or easy extension unless stronger repo evidence is added
 
 ## Recommended Modes
 
@@ -125,6 +126,7 @@ Default to a big-tech interviewer style unless the user asks otherwise:
 - WebSocket runtime with `DRAFT` vs `FORMAL`
 - personal research pipeline from `Source` to cards to artifacts to synthesis
 - long-term memory writeback boundaries
+- wiki graph and auto-maintenance loop
 - observability, eval, and admin/ops support
 
 ## Coaching Rules

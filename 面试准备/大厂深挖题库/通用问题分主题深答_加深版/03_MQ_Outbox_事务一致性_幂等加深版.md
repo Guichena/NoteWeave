@@ -1,168 +1,145 @@
-# 文件：03_MQ_Outbox_事务一致性_幂等加深版.md
+# MQ、Outbox、事务一致性、幂等加深版
 
-## 0. 本篇定位
+> 本文件为 2026-06-01 重构版，依据当前代码、测试和 Flyway 迁移整理。不要再按旧阶段计划或旧题库口径背。
 
-这篇是 `03_异步任务_MQ_Outbox_幂等一致性.md` 的加深版，只补事务窗口、至少一次语义、状态机 claim、取消安全点和积压排查这些深层问题。
+## 0. 通用问题如何转成项目深答
+先把通用八股问题落到 NoteWeave 的真实模块，再回答场景、方案、收益、权衡、故障和指标。下面是本主题的项目化深答。
 
-因此这里不再重复保存标准版里的异步链路主答。普通版 `03` 负责把 Task、Outbox、Kafka、Worker 的主流程讲顺；这篇负责在面试官继续追问时，把一致性和幂等讲得更扎实。
+## 1. 本篇定位
+上传、解析、索引、Source 编译、Artifact 生成、Eval、清理都是耗时任务，直接同步处理会超时，分散写后台任务又会失控。
 
-## 1. 这篇只补哪些深度
+## 2. 面试先说版
+我会把这条链路讲成 NoteWeave 的工程地基。系统里很多动作都不是瞬时完成的，比如文档解析入索引、Source 编译、Artifact 生成、RAG Eval 和资源清理。我的设计是业务接口不直接把任务塞给某个临时线程，而是创建统一 Task，并在同一个事务里写 task_outbox。事务提交后由 outbox 调度器投递 Kafka，消费者拿到消息后只信 taskId，再回查数据库判断状态和幂等。Worker 执行时记录 TaskAttempt 和 TaskEvent，失败可以重试，运行中可以通过 cancel_requested 在安全点停止。这个方案牺牲了一点链路长度，但换来的是最终一致、可恢复和可观测。
 
-普通版 `03` 已经覆盖：
+## 3. 当前真实口径
+NoteWeave 统一用 Task、TaskAttempt、TaskEvent、TaskOutbox、Kafka、Worker 来承载后台任务。
 
-- 为什么要异步。
-- Outbox 解决什么问题。
-- 请求幂等和消费幂等怎么做。
-- cancelRequested 为什么是协作式取消。
+### 已实现
+- TaskType 包含 DOCUMENT_PROCESS、DOCUMENT_REINDEX、SOURCE_IMPORT、SOURCE_COMPILE、ARTIFACT_GENERATE、EMBEDDING_BACKFILL、WIKI_INDEX、RAG_EVAL_RUN、CLEANUP_RESOURCE。
+- TaskController 提供任务查询、事件查询、skill logs、cancel、retry。
+- TaskOutboxService、TaskOutboxDispatchScheduler、TaskKafkaPublisher、TaskKafkaConsumer 形成 outbox 到 Kafka 的投递链路。
+- TaskExecutionCoordinator 统一协调 Worker 执行状态。
 
-这篇额外补的是：
+### 设计目标
+- 业务事务先写 Task 和 Outbox；Outbox 调度器投递 Kafka；Consumer 只信 taskId 并回查 DB；Worker 通过 TaskExecutionCoordinator 记录 attempt、event、状态和取消。
+- 它把幂等、重试、取消、审计、前端进度和 Admin 运维统一了，避免每个模块发明一套后台执行逻辑。
 
-- 为什么 DB 与 MQ 之间天然存在失败窗口。
-- Outbox 为什么仍然要接受重复发送。
-- Worker 为什么只能按“至少一次”语义设计，而不是幻想 exactly-once。
-- Kafka 堆积、重复消费、任务卡死时该怎么分析。
+### 后续可扩展
+- 消息投递成功但 Worker 执行失败怎么办？
+- 重试是复用原 Task 还是创建新 Task？
+- Admin mark-failed 和业务失败有什么区别？
 
-## 2. 事务消息问题的本质是什么
+## 4. 代码和测试锚点
+- src/main/java/com/noteweave/task/model/TaskType.java
+- src/main/java/com/noteweave/task/service/TaskService.java
+- src/main/java/com/noteweave/task/service/TaskOutboxService.java
+- src/main/java/com/noteweave/task/service/TaskExecutionCoordinator.java
+- src/test/java/com/noteweave/task/service/TaskServiceIntegrationTest.java
 
-只要一个业务动作同时涉及：
+## 5. 必会问题与答题骨架
 
-```text
-写数据库
--> 发消息
-```
+### Q1: 为什么不直接在业务事务里发 Kafka？
 
-就一定存在两个天然失败窗口。
+回答时按四步走：
+1. 先说场景：上传、解析、索引、Source 编译、Artifact 生成、Eval、清理都是耗时任务，直接同步处理会超时，分散写后台任务又会失控。
+2. 再说方案：业务事务先写 Task 和 Outbox；Outbox 调度器投递 Kafka；Consumer 只信 taskId 并回查 DB；Worker 通过 TaskExecutionCoordinator 记录 attempt、event、状态和取消。
+3. 再说收益：它把幂等、重试、取消、审计、前端进度和 Admin 运维统一了，避免每个模块发明一套后台执行逻辑。
+4. 最后落到真实代码锚点，不要停在概念。
 
-### 2.1 窗口一：DB 成功，MQ 失败
+可直接复述：
 
-结果是业务状态存在，但后续动作没人执行。
+> 我会把这条链路讲成 NoteWeave 的工程地基。系统里很多动作都不是瞬时完成的，比如文档解析入索引、Source 编译、Artifact 生成、RAG Eval 和资源清理。我的设计是业务接口不直接把任务塞给某个临时线程，而是创建统一 Task，并在同一个事务里写 task_outbox。事务提交后由 outbox 调度器投递 Kafka，消费者拿到消息后只信 taskId，再回查数据库判断状态和幂等。Worker 执行时记录 TaskAttempt 和 TaskEvent，失败可以重试，运行中可以通过 cancel_requested 在安全点停止。这个方案牺牲了一点链路长度，但换来的是最终一致、可恢复和可观测。
 
-### 2.2 窗口二：MQ 成功，DB 失败
+常见追问：
+- 消息投递成功但 Worker 执行失败怎么办？
+- 重试是复用原 Task 还是创建新 Task？
+- Admin mark-failed 和业务失败有什么区别？
 
-结果是消费者拿到消息，但查不到或查到半成品业务状态。
+### Q2: Outbox 解决的核心一致性问题是什么？
 
-这两个窗口不是 Kafka 或某个框架“用得不熟”的问题，而是跨系统动作本身的结构性难题。Outbox 的价值就是把这个难题从“同时成功”改成“先把本地事实落稳，再异步补发消息”。
+回答时按四步走：
+1. 先说场景：上传、解析、索引、Source 编译、Artifact 生成、Eval、清理都是耗时任务，直接同步处理会超时，分散写后台任务又会失控。
+2. 再说方案：业务事务先写 Task 和 Outbox；Outbox 调度器投递 Kafka；Consumer 只信 taskId 并回查 DB；Worker 通过 TaskExecutionCoordinator 记录 attempt、event、状态和取消。
+3. 再说收益：它把幂等、重试、取消、审计、前端进度和 Admin 运维统一了，避免每个模块发明一套后台执行逻辑。
+4. 最后落到真实代码锚点，不要停在概念。
 
-## 3. 为什么 Outbox 仍然要接受重复
+可直接复述：
 
-Outbox 解决的是“别把任务丢了”，不是“从此绝不重复”。
+> 我会把这条链路讲成 NoteWeave 的工程地基。系统里很多动作都不是瞬时完成的，比如文档解析入索引、Source 编译、Artifact 生成、RAG Eval 和资源清理。我的设计是业务接口不直接把任务塞给某个临时线程，而是创建统一 Task，并在同一个事务里写 task_outbox。事务提交后由 outbox 调度器投递 Kafka，消费者拿到消息后只信 taskId，再回查数据库判断状态和幂等。Worker 执行时记录 TaskAttempt 和 TaskEvent，失败可以重试，运行中可以通过 cancel_requested 在安全点停止。这个方案牺牲了一点链路长度，但换来的是最终一致、可恢复和可观测。
 
-最常见的重复窗口有：
+常见追问：
+- 消息投递成功但 Worker 执行失败怎么办？
+- 重试是复用原 Task 还是创建新 Task？
+- Admin mark-failed 和业务失败有什么区别？
 
-- Kafka 已经发送成功，但 `SENT` 标记没写回。
-- dispatcher 重试再次发送。
-- broker / consumer re-balance 导致重复投递。
-- consumer 执行成功但 offset 未及时提交。
+### Q3: Worker 重复消费如何保证幂等？
 
-所以更成熟的口径不是“我们避免了重复”，而是：
+回答时按四步走：
+1. 先说场景：上传、解析、索引、Source 编译、Artifact 生成、Eval、清理都是耗时任务，直接同步处理会超时，分散写后台任务又会失控。
+2. 再说方案：业务事务先写 Task 和 Outbox；Outbox 调度器投递 Kafka；Consumer 只信 taskId 并回查 DB；Worker 通过 TaskExecutionCoordinator 记录 attempt、event、状态和取消。
+3. 再说收益：它把幂等、重试、取消、审计、前端进度和 Admin 运维统一了，避免每个模块发明一套后台执行逻辑。
+4. 最后落到真实代码锚点，不要停在概念。
 
-```text
-发送层接受至少一次
--> 消费层靠状态机和业务约束实现幂等
-```
+可直接复述：
 
-## 4. 幂等为什么一定要分层做
+> 我会把这条链路讲成 NoteWeave 的工程地基。系统里很多动作都不是瞬时完成的，比如文档解析入索引、Source 编译、Artifact 生成、RAG Eval 和资源清理。我的设计是业务接口不直接把任务塞给某个临时线程，而是创建统一 Task，并在同一个事务里写 task_outbox。事务提交后由 outbox 调度器投递 Kafka，消费者拿到消息后只信 taskId，再回查数据库判断状态和幂等。Worker 执行时记录 TaskAttempt 和 TaskEvent，失败可以重试，运行中可以通过 cancel_requested 在安全点停止。这个方案牺牲了一点链路长度，但换来的是最终一致、可恢复和可观测。
 
-### 4.1 请求幂等只是第一层
+常见追问：
+- 消息投递成功但 Worker 执行失败怎么办？
+- 重试是复用原 Task 还是创建新 Task？
+- Admin mark-failed 和业务失败有什么区别？
 
-`idempotencyKey` 只解决“别重复创建 Task”。它解决不了：
+### Q4: 任务取消为什么用 cancel_requested 而不是强杀？
 
-- 同一 task 被多次发送。
-- 同一消息被多次消费。
-- 业务副作用执行到一半又重试。
+回答时按四步走：
+1. 先说场景：上传、解析、索引、Source 编译、Artifact 生成、Eval、清理都是耗时任务，直接同步处理会超时，分散写后台任务又会失控。
+2. 再说方案：业务事务先写 Task 和 Outbox；Outbox 调度器投递 Kafka；Consumer 只信 taskId 并回查 DB；Worker 通过 TaskExecutionCoordinator 记录 attempt、event、状态和取消。
+3. 再说收益：它把幂等、重试、取消、审计、前端进度和 Admin 运维统一了，避免每个模块发明一套后台执行逻辑。
+4. 最后落到真实代码锚点，不要停在概念。
 
-### 4.2 状态机 claim 是第二层
+可直接复述：
 
-Worker 正确的动作不是“收到消息就干”，而是：
+> 我会把这条链路讲成 NoteWeave 的工程地基。系统里很多动作都不是瞬时完成的，比如文档解析入索引、Source 编译、Artifact 生成、RAG Eval 和资源清理。我的设计是业务接口不直接把任务塞给某个临时线程，而是创建统一 Task，并在同一个事务里写 task_outbox。事务提交后由 outbox 调度器投递 Kafka，消费者拿到消息后只信 taskId，再回查数据库判断状态和幂等。Worker 执行时记录 TaskAttempt 和 TaskEvent，失败可以重试，运行中可以通过 cancel_requested 在安全点停止。这个方案牺牲了一点链路长度，但换来的是最终一致、可恢复和可观测。
 
-```text
-只信 taskId
--> 回查 DB
--> 只有 PENDING 才 claim 成 RUNNING
--> 其他状态直接跳过或审计
-```
+常见追问：
+- 消息投递成功但 Worker 执行失败怎么办？
+- 重试是复用原 Task 还是创建新 Task？
+- Admin mark-failed 和业务失败有什么区别？
 
-这一步是消费幂等的核心。
+### Q5: 如果 Kafka 短暂不可用，业务接口应该怎么表现？
 
-### 4.3 业务对象自身还要有第三层幂等
+回答时按四步走：
+1. 先说场景：上传、解析、索引、Source 编译、Artifact 生成、Eval、清理都是耗时任务，直接同步处理会超时，分散写后台任务又会失控。
+2. 再说方案：业务事务先写 Task 和 Outbox；Outbox 调度器投递 Kafka；Consumer 只信 taskId 并回查 DB；Worker 通过 TaskExecutionCoordinator 记录 attempt、event、状态和取消。
+3. 再说收益：它把幂等、重试、取消、审计、前端进度和 Admin 运维统一了，避免每个模块发明一套后台执行逻辑。
+4. 最后落到真实代码锚点，不要停在概念。
 
-即便 Task 不重复执行，也要防止业务副作用重复落地，例如：
+可直接复述：
 
-- 文档索引切换只认新的 activeIndexVersion。
-- Artifact 生成只新增新的 ArtifactVersion，而不是覆盖旧版本。
-- Distill 要校验 artifactVersion 是否 stale。
+> 我会把这条链路讲成 NoteWeave 的工程地基。系统里很多动作都不是瞬时完成的，比如文档解析入索引、Source 编译、Artifact 生成、RAG Eval 和资源清理。我的设计是业务接口不直接把任务塞给某个临时线程，而是创建统一 Task，并在同一个事务里写 task_outbox。事务提交后由 outbox 调度器投递 Kafka，消费者拿到消息后只信 taskId，再回查数据库判断状态和幂等。Worker 执行时记录 TaskAttempt 和 TaskEvent，失败可以重试，运行中可以通过 cancel_requested 在安全点停止。这个方案牺牲了一点链路长度，但换来的是最终一致、可恢复和可观测。
 
-所以幂等不能只停留在 MQ 层。
+常见追问：
+- 消息投递成功但 Worker 执行失败怎么办？
+- 重试是复用原 Task 还是创建新 Task？
+- Admin mark-failed 和业务失败有什么区别？
 
-## 5. 最终一致性怎么讲才不空
+## 6. 大厂深挖追问路径
+1. 先问你做了什么。
+2. 再问为什么这样设计，不用更简单方案。
+3. 再问失败、重试、越权、删除、断线、重建索引时会发生什么。
+4. 最后问如何量化效果和下一步演进。
 
-最终一致性不是一句“后面会收敛”就结束，而是要说清楚靠什么收敛：
+把答案往下压一层：
+- 业务层：上传、解析、索引、Source 编译、Artifact 生成、Eval、清理都是耗时任务，直接同步处理会超时，分散写后台任务又会失控。
+- 架构层：业务事务先写 Task 和 Outbox；Outbox 调度器投递 Kafka；Consumer 只信 taskId 并回查 DB；Worker 通过 TaskExecutionCoordinator 记录 attempt、event、状态和取消。
+- 数据层：引用 MySQL、Redis、MinIO、ES、Kafka 或 Citation/Trace 的真实职责。
+- 测试层：能说出对应 IntegrationTest 或 ServiceTest。
+- 边界层：明确哪些是后续扩展，不冒充已落地。
 
-- Outbox 确保任务不会因为消息发送失败而彻底丢失。
-- Task 状态机确保重复消息不会重复执行业务。
-- TaskAttempt / TaskEvent 确保每次执行痕迹可追踪。
-- 业务版本号、状态号或唯一键确保副作用不会失控。
+## 7. 不能说满的地方
+- 不要说 Outbox 保证强一致，它保证的是 DB 事实和消息投递的最终一致。
+- 不要把 Redis Stream 说成后台任务主队列。
+- 不要说取消可以任意打断正在执行的外部 IO，只能在安全点停止。
 
-面试官如果追问“有没有短暂不一致”，应该直接承认有，而且这是设计接受的现实：
-
-- Document 可能已创建但还没被索引。
-- Artifact task 可能已创建但结果还没生成。
-- Cleanup 可能稍后才把临时对象回收。
-
-关键不是没有中间态，而是中间态可见、可追、可补偿。
-
-## 6. 取消、安全点和卡死问题
-
-### 6.1 为什么不强杀线程
-
-长任务会碰 MySQL、MinIO、ES、LLM 等多个外部系统。强杀线程很容易把系统停在半写入状态，之后更难收拾。
-
-所以 `cancelRequested` 的真正含义是：
-
-```text
-任务被请求停止
--> Worker 在安全点检查
--> 先收尾或停在可收敛位置
--> 再把状态转到 CANCELLED / STOPPED
-```
-
-### 6.2 安全点一般放在哪些地方
-
-- 大步骤切换前。
-- 外部调用返回后。
-- 持久化完成后。
-- 可恢复中间态已落稳后。
-
-这说明取消不是“随时打断”，而是“在不破坏一致性的前提下停止”。
-
-## 7. Kafka 堆积和任务卡住时怎么排
-
-不要一上来就说“加消费者”。更稳的排法是：
-
-1. 先看是哪一类 task 在积压。
-2. 再看 Worker 是否卡在某个外部依赖。
-3. 看 TaskAttempt latency、error 和 timeout 分布。
-4. 看下游是 ES、MinIO、LLM 还是 DB 成了瓶颈。
-5. 判断是需要扩 worker，还是需要分 task type、限流、降级或补索引策略。
-
-这样回答会比泛泛说“削峰填谷、水平扩展”扎实得多。
-
-## 8. 边界、不能说满和扩展方向
-
-- 这篇只补 Outbox 失败窗口、幂等分层和积压排查，不再重复标准版主流程。
-- 当前可以坚定讲：Task 是事实源、Kafka 按至少一次语义处理、Worker 回查 DB、取消是协作式。
-- 当前不要讲成：项目已经有 exactly-once；Outbox 天然不重复；已有真实生产积压治理指标。
-- 扩展方向可以讲：如果任务类型继续增多，可以进一步做任务分组、隔离 worker pool、优先级和 dead-letter/人工补偿治理。
-
-## 9. 继续追问怎么接
-
-如果面试官继续往下压，这一题最稳的承接顺序是：
-
-```text
-先讲两个失败窗口
--> 再讲 Outbox 为什么仍接受重复
--> 再讲幂等分为请求、状态机、业务副作用三层
--> 最后讲取消安全点和积压排查
-```
-
-这样你讲的是“一致性工程”，不是只背 MQ 名词。
+## 8. 零基础记忆法
+记住一句话：先讲“为什么需要这个模块”，再讲“请求从哪里来、状态落在哪里、失败怎么恢复、证据怎么追踪、权限怎么兜底”。按这个顺序答，大多数追问都能接住。

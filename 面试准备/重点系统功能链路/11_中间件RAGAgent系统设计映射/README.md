@@ -1,277 +1,104 @@
-# 11 中间件 RAG Agent 系统设计映射
+# 中间件 RAG Agent 系统设计映射
+
+> 本文件为 2026-06-01 重构版，依据当前代码、测试和 Flyway 迁移整理。不要再按旧阶段计划或旧题库口径背。
 
 ## 0. 本篇定位
-
-这份不是代码说明，而是面试时把 NoteWeave 自然映射到“中间件八股、RAG 系统设计、Agent / Workflow trade-off”的话术库。
-
-原本独立维护的“高频八股速答稿”已经并回这篇，不再单独保留速查稿。
-
-面试时不要说：
-
-```text
-我用了某某类、某某方法。
-```
-
-要说：
-
-```text
-这个系统问题是什么。
-我为什么选这个中间件或架构。
-它解决了什么一致性、可靠性、性能、可观测问题。
-它的 trade-off 是什么。
-如果规模更大，下一步怎么演进。
-```
-
-## 1. 中间件职责怎么讲
-
-### MySQL：业务事实源
-
-**面试口径：**
-
-MySQL 在这个项目里不是简单存数据，而是业务事实源。用户、空间权限、任务状态、文档元数据、Citation、Artifact、Memory、Eval 这些最终事实都落 MySQL。
-
-我会重点讲三个点：第一是事务边界，比如创建业务资源和写 outbox 在本地事务里完成；第二是状态机，比如 Task、Document、Artifact 都有明确状态，不靠日志猜；第三是唯一约束和软删除，比如文件对象按 space 隔离，文档删除不立即物理删，避免引用和索引还没收敛时误删。
-
-**能对应的八股：**
-
-- 事务 ACID
-- 本地事务边界
-- 唯一索引做幂等兜底
-- 软删除和数据可恢复
-- MySQL 不适合承担全文检索
-
-### Kafka：后台任务流和削峰
-
-**面试口径：**
-
-Kafka 在这里承担的是后台任务流，不是业务事实源。文档解析、索引、生成、评测、清理这些任务都可能耗时，所以用户请求只创建任务并返回，后面由 Kafka 推动 Worker 异步执行。
-
-我没有用本地线程池，是因为本地线程池在进程重启、多实例扩容、失败恢复上都比较弱；也没有把 Redis 当主队列，因为 Redis 更适合短期状态。Kafka 更适合承接可重放、可消费、可水平扩展的任务流。
-
-**能对应的八股：**
-
-- MQ 异步解耦
-- 削峰填谷
-- at-least-once 与消费幂等
-- 消息投递和业务 DB 的最终一致
-- 消费堆积时如何排查
-
-### Redis：短期运行态
-
-**面试口径：**
-
-Redis 在这个项目里主要做短期状态，而不是主业务事实源。比如 WebSocket ticket、流式输出的 seq/ack/resume、partialContent、stop 标记，以及上传分片 bitmap。
-
-这个取舍比较重要：Redis 速度快、适合 TTL 和运行态恢复，但不适合承载需要长期审计的业务事实。所以正式的任务、消息、引用、Artifact、Memory 都落 MySQL。
-
-**能对应的八股：**
-
-- Redis 适合缓存/短期状态
-- TTL 过期
-- bitmap 记录分片状态
-- Redis 异常时如何降级
-- 为什么 Redis 不是最终事实源
-
-### MinIO：对象存储
-
-**面试口径：**
-
-MinIO 承担的是对象存储。原始文件、解析文本、证据快照这类大对象不适合放 MySQL，放对象存储更合适。
-
-这里的设计点是：文件内容可以复用，但权限不能复用。所以对象复用要按 space 隔离，避免两个空间上传相同 hash 文件后发生权限污染。删除也不直接物理删，而是通过软删除和 cleanup 流程逐步回收。
-
-**能对应的八股：**
-
-- 大对象不进数据库
-- 对象存储与元数据分离
-- 文件秒传 / hash 复用
-- 引用计数和延迟清理
-- 权限隔离不能靠 hash
-
-### Elasticsearch：检索引擎
-
-**面试口径：**
-
-Elasticsearch 负责团队知识检索。它既能做 BM25 关键词检索，也能承载向量检索，还能配合 spaceId、knowledgeBaseId、status 等过滤条件。
-
-MySQL 负责事实，ES 负责召回。ES 召回后还要回查 MySQL，确认文档没删除、知识库没归档、indexVersion 是当前版本。这是为了避免索引滞后或脏数据导致越权和错误召回。
-
-**能对应的八股：**
-
-- 倒排索引
-- BM25
-- 向量检索
-- ES 与 MySQL 数据一致性
-- 索引版本切换
-- 检索召回后权限二次校验
-
-## 2. RAG 系统设计怎么讲
-
-### 为什么 Hybrid RAG？
-
-**面试口径：**
-
-我没有只用向量检索，因为企业知识库里很多查询是专有名词、版本号、术语、错误码，BM25 反而更稳定；但只用 BM25 又处理不好语义相似问题。所以我采用 Hybrid RAG，让 BM25、向量召回、Wiki recall 各自解决不同召回问题。
-
-融合时不能简单拼接，因为不同召回器分数不可比，所以用 RRF 这种基于排名的融合思路。后面再做证据去重、相邻 chunk 合并、同文档限流和上下文截断，控制 Prompt 质量。
-
-**trade-off：**
-
-- 只用向量：实现简单，但精确匹配弱。
-- 只用 BM25：关键词强，但语义泛化弱。
-- Hybrid：链路复杂，但召回更稳、可解释性更好。
-
-### 如何处理幻觉？
-
-**面试口径：**
-
-我不会把防幻觉只理解成 Prompt 写一句“不要编造”。我会从系统链路上做约束：检索前有权限和范围过滤，检索后有证据后处理，Prompt 里要求基于证据回答，无证据时明确兜底，回答后保存 Citation 和 Trace，最后用 Eval case 做召回和引用覆盖验证。
-
-**能对应的设计点：**
-
-- grounding
-- citation
-- no-answer / no-evidence fallback
-- prompt injection 防护
-- RAG Eval
-
-### chunk 怎么设计？
-
-**面试口径：**
-
-chunk 粒度是 RAG 里很关键的 trade-off。太小会丢上下文，太大又浪费 token、召回不精准。NoteWeave 的做法是解析后保存 chunk，同时保留页码、offset、contentHash、indexVersion 等元信息。检索后如果相邻 chunk 都相关，可以在 evidence post-processing 阶段合并，既保留上下文，又不让索引粒度过粗。
-
-**能对应的设计点：**
-
-- chunk size trade-off
-- overlap / adjacent merge
-- token budget
-- citation offset
-- indexVersion 防止引用漂移
-
-### RAG 效果怎么评估？
-
-**面试口径：**
-
-我不会直接编一个线上准确率。当前更合理的是用评测集和日志去验证。比如维护 RagEvalCase，跑 EvalRun，观察 recall@k、MRR、citationCoverage、latency。坏 case 再结合 RetrievalTrace 和 LLMCallLog 反查，是召回问题、证据选择问题、Prompt 问题还是模型问题。
-
-**能对应的指标：**
-
-- recall@k
-- MRR
-- citationCoverage
-- latency
-- no-evidence rate
-- feedback 统计
-
-## 3. Agent / Workflow 怎么讲
-
-### 为什么不说完整 Agent？
-
-**面试口径：**
-
-我不会把这个项目说成完整开放 Agent 平台。当前更准确的说法是：它实现了一个可控的 Skill Pipeline 或 Workflow。
-
-原因是开放式 Agent 的自由度高，但也带来路径不可控、成本不可控、失败难复现、结果难评测的问题。NoteWeave 这里的目标是稳定地产出研究报告、学习指南、对比分析这类 Artifact，所以更适合用固定步骤：加载上下文、选择证据、套用方法论、生成草稿、保存版本、记录日志。
-
-**trade-off：**
-
-- 开放 Agent：灵活，但不可控。
-- 固定 Workflow：灵活性弱，但稳定、可观测、可评测。
-- 当前选择：先 Workflow，后续再扩展工具调用和更复杂规划。
-
-### MethodologyCard 怎么讲？
-
-**面试口径：**
-
-MethodologyCard 本质上是把生成方法论结构化。比如生成报告、学习指南、竞品对比、面试 STAR 回答，它们需要的结构和质量检查不同。如果都写死在 Prompt 里，后续扩展很难；如果完全交给用户自由 Prompt，又不可控。
-
-所以我把 workflow、outputStructure、qualityChecklist 抽成 MethodologyCard，在生成时按场景匹配。这相当于在 LLM 外面加了一层可维护的方法论约束。
-
-### Artifact 为什么不自动写入知识库？
-
-**面试口径：**
-
-因为 LLM 生成结果不等于长期知识。Artifact 可能是草稿，可能有错误，可能只是一次任务的临时产物。如果自动写入 Wiki 或个人知识库，会污染长期知识。
-
-所以我把 Artifact 作为版本化产物，团队侧需要发布成 Wiki，个人侧需要确认后沉淀成 SynthesisCard。这个设计牺牲一点自动化，但换来长期知识质量。
-
-## 4. System Design 追问怎么接
-
-### 如果数据量变大怎么办？
-
-**回答方向：**
-
-我会先拆瓶颈：上传和解析瓶颈在对象存储、解析 Worker 和 Kafka 堆积；检索瓶颈在 ES 索引、查询过滤和召回 topK；生成瓶颈在 LLM latency 和 token 成本；Admin/Eval 瓶颈在日志和评测任务数量。
-
-可演进方向包括：Worker 水平扩容、Kafka topic 按任务类型拆分、ES index alias 和冷热分层、Embedding backfill 分批限速、RAG Eval 离线化、LLM 调用限流和降级。
-
-### 如果 Kafka 堆积怎么办？
-
-**回答方向：**
-
-先看是哪类任务堆积：文档解析、Embedding、Artifact 生成、Eval、Cleanup 的处理瓶颈不一样。不能盲目扩消费者，如果瓶颈在 ES 或 LLM，扩 Worker 只会放大下游压力。更稳的是按任务类型拆队列、限速、增加 Worker、失败任务隔离，并通过 Admin 看 task status 和 attempt 错误分布。
-
-### 如果 ES 和 MySQL 不一致怎么办？
-
-**回答方向：**
-
-ES 是召回系统，不是事实源。召回后必须回查 MySQL 做权限、状态和 activeIndexVersion 校验。重建索引时也不要先删旧索引，而是写新 indexVersion，成功后再切 active。这样即使 ES 有滞后，也不会直接把脏数据暴露给用户。
-
-### 如果用户反馈回答不准怎么办？
-
-**回答方向：**
-
-我会按 RAG 链路排查：先看 RetrievalTrace，确认有没有召回正确证据；再看 evidence post-processing 是否过滤掉了关键片段；再看 PromptVersion 和 LLMCallLog；最后把这个 case 加到 Eval 里，后续用 recall@k、MRR、citationCoverage 观察优化是否有效。
-
-### 如果要做多 Agent，怎么演进？
-
-**回答方向：**
-
-我不会直接从当前系统跳到完全开放多 Agent。更稳的是从现有 Skill Pipeline 演进：先把工具能力标准化，再引入受控 planner，限定工具权限、预算、最大步数和可观察日志。长期可以做 researcher、writer、reviewer 这种角色分工，但前提是每个 Agent 的输入、输出、证据和失败状态都可追踪。
-
-## 5. 高频八股最短口径
-
-### MQ / Outbox
-
-- `MQ 的作用`：异步、削峰、解耦、重试；在 NoteWeave 里主要承接文档解析、Source 编译、Artifact 生成、Eval 和 Cleanup 这类长任务。
-- `Outbox 解决什么`：解决业务 DB 提交和消息发送之间的不一致；Task 和 TaskOutbox 同事务落库，dispatcher 后续补发。
-- `为什么还会重复`：Kafka 重复投递、发送成功但标记 SENT 失败、offset 未提交都可能导致重复，所以消费侧必须按至少一次语义做幂等。
-
-### Redis / Runtime
-
-- `Redis 为什么快`：内存读写、事件循环、高效数据结构和 IO 多路复用。
-- `在项目里存什么`：上传 bitmap、WebSocket ticket、runtime state、partialContent、event buffer。
-- `为什么不当主事实源`：Redis 适合短期运行态，不适合长期审计型业务事实；正式 Task、Message、Citation、Artifact、Memory 都落 MySQL。
-
-### Elasticsearch / RAG
-
-- `倒排索引`：从词到文档列表，适合全文检索。
-- `BM25`：适合关键词、术语、编号和精确匹配。
-- `向量检索`：适合语义相近召回。
-- `为什么 Hybrid RAG`：BM25、向量和 Wiki recall 各补不同误差。
-- `为什么 RRF`：不同召回器分数不可比，基于排名融合更稳。
-
-### WebSocket / Memory
-
-- `为什么不用 HTTP 或 SSE`：NoteWeave 需要 stop、resume、ack 和双向控制，WebSocket 更合适。
-- `ack 的作用`：客户端告诉服务端已经收到哪条事件，resume 时只重放未确认部分。
-- `为什么不把历史全塞 prompt`：token 成本高、噪声大、隐私风险高、旧错误会反复污染后续生成。
-
-### Workflow / Agent
-
-- `Workflow 和 Agent 区别`：Workflow 是系统预先定义步骤，Agent 是模型自主规划和工具调用。
-- `当前为什么主讲 Workflow`：当前更重视可控、可审计、可评测和可回滚，不把开放式自主性讲成已落地事实。
-- `MCP 怎么答`：当前没有做完整开放平台，但已经把 B 站解析能力拆成远程 MCP tool service，并接到 Studio 产物入口和对话触发；更广义的多工具协议化接入仍然可以继续沿 Tool / Skill 或 Source import 层扩展。
-
-### 指标 / 效果
-
-- `QPS / P95 / P99`：分别是每秒请求数、95% / 99% 请求的响应时间上界。
-- `没有生产指标怎么答`：不编造，讲现有观测面、Eval case 和压测方案。
-- `citation coverage 高是不是就正确`：不是，只能说明答案有引用覆盖，还要看引用是否真正支撑 claim。
-
-## 6. 最稳的收口
-
-如果最后要收束，可以这样说：
-
-> 我这个项目不是为了把大模型能力包装得很玄，而是把 AI 知识应用拆成几个经典系统问题：权限隔离、异步任务最终一致、对象存储、混合检索、证据追踪、生成工作流、长期记忆和可观测运维。我的设计取舍是尽量让模型能力可控、让生成结果可追溯、让失败能定位，而不是只追求一次回答看起来很智能。
+这篇把常见八股题映射回 NoteWeave 的真实链路。目标不是背“Redis 有哪些数据结构”，而是能解释每个中间件为什么放在这个位置、为什么不承担别人的职责、坏了以后系统怎么降级或恢复。
+
+## 1. 面试先说版
+NoteWeave 的中间件职责划分比较清晰：MySQL 是业务事实源，保存用户、空间、任务、文档、卡片、Artifact、Citation、Memory、Eval 和 Admin 状态；Redis 是短期运行态，主要承接 WebSocket ticket、流式 partial content、stop/resume、上传 runtime；MinIO 保存上传对象、解析文本、citation snapshot 和 Artifact 相关对象；Elasticsearch 做 BM25、向量和 Wiki 检索索引，但不做权限事实源；Kafka 承担后台任务事件，和 TaskOutbox 一起实现最终一致；LLM、Skill、MCP 工具只在受控编排里使用，不能绕过权限、任务和证据链路。
+
+## 2. 当前真实口径
+每个中间件都有边界：MySQL 管事实，Redis 管短期状态，MinIO 管对象，ES 管可重建索引，Kafka 管异步投递，LLM/MCP 管生成上下文。面试时越能讲清“不让它做什么”，越像真实做过系统。
+
+### 已实现
+- `docker-compose.yml` 提供 MySQL、Redis、MinIO、Elasticsearch、Kafka。
+- `Task + TaskAttempt + TaskEvent + TaskOutbox + Kafka + Worker` 是主异步骨架。
+- Redis 参与 chat runtime、WebSocket ticket、stop/resume 和 upload runtime state。
+- ES 承担 document chunk、wiki page、hybrid retrieval 等检索能力。
+- Studio MCP 已有 Bilibili 工具扩展：本地和远程两种实现，聊天可通过 `/mcp bilibili <url>` 显式触发。
+
+### 不能说满
+- Redis 不是主任务队列。
+- ES 不是业务事实源，也不能代替 MySQL 做权限判断。
+- Kafka 不保证业务天然幂等，幂等要靠 Task 状态和 idempotencyKey。
+- MCP 不是完整开放式平台，当前是受控 Bilibili 工具扩展。
+- 当前 Skill 不是完全自主多 Agent 编排。
+
+## 3. 代码和测试锚点
+- `docker-compose.yml`
+- `src/main/resources/application.yml`
+- `src/main/java/com/noteweave/task/service/TaskOutboxService.java`
+- `src/main/java/com/noteweave/task/service/TaskKafkaPublisher.java`
+- `src/main/java/com/noteweave/chat/runtime/service/ChatRuntimeService.java`
+- `src/main/java/com/noteweave/team/rag/retriever/HybridRetriever.java`
+- `src/main/java/com/noteweave/team/rag/retriever/WeightedReciprocalRankFusion.java`
+- `src/main/java/com/noteweave/team/wiki/service/WikiRetriever.java`
+- `src/main/java/com/noteweave/studio/service/StudioMcpToolRegistry.java`
+- `src/main/java/com/noteweave/studio/service/RemoteBilibiliMcpToolService.java`
+- `src/test/java/com/noteweave/chat/Phase11_6ChatMcpIntegrationTest.java`
+- `src/test/java/com/noteweave/studio/service/RemoteBilibiliMcpToolServiceTest.java`
+
+## 4. 必会问题与深答
+
+### Q1: 每个中间件在项目里分别承担什么职责？
+我会按“事实、短期状态、对象、索引、消息”来讲。MySQL 保存不可丢的业务事实，比如 Space 权限、Document 元数据、Task 状态、ArtifactVersion、Citation、Memory 和 Eval 结果。Redis 保存可以重建或过期的运行态，比如 WebSocket ticket、partialContent、stop 标记和上传进度。MinIO 保存大对象，比如原始文件、解析文本、citation snapshot。ES 保存可重建索引，用于 BM25、向量和 Wiki recall。Kafka 保存异步任务投递事件，Worker 最终仍然回查 MySQL 的 Task 决定怎么执行。
+
+追问接法：
+- “为什么这样分”：不可丢事实进 MySQL，可过期状态进 Redis，大文件进 MinIO，可重建检索结构进 ES，异步执行通知进 Kafka。
+- “哪个是系统事实源”：MySQL。ES、Redis、Kafka 都不能替代它做权限和最终状态判断。
+
+### Q2: 为什么 Redis 不做主任务队列？
+Redis 在 NoteWeave 里更适合放短期运行态，而不是承接主任务事实。原因是任务需要状态流转、attempt、event、失败原因、取消、重试、Admin 介入和审计，这些都要和业务实体建立稳定关系。当前项目把 Task、TaskAttempt、TaskEvent 和 TaskOutbox 放在 MySQL，Redis 只负责 WebSocket runtime、stop/resume、ticket、上传临时状态这类“丢了可以从正式数据恢复体验”的内容。面试时可以说：Redis 不是不能做队列，而是这个项目更需要可审计、可恢复、可管理的任务模型。
+
+追问接法：
+- “Redis 挂了怎么办”：运行中流式状态可能丢失，但正式 ChatMessage、Task、ArtifactVersion 在 MySQL，用户至少能看到已完成结果或失败状态。
+- “为什么不用 Redis Stream”：可以作为后续队列实现候选，但仍然要保留 DB Task 事实源和幂等控制。
+
+### Q3: 为什么 ES 不能代替 MySQL？
+ES 的价值是检索，不是事务事实。RAG 查询时 ES 能高效召回 chunk、wiki page 和语义相关内容，但权限、文档删除状态、activeIndexVersion、citation 关系和用户空间边界不能只信 ES。当前链路需要在检索前限定 Space 和 KnowledgeBase 范围，检索后还要通过 DB 状态或资源访问服务做二次校验。这样即使 ES 有旧索引、延迟刷新或部分索引失败，也不会让用户越权看到不该看的内容。
+
+追问接法：
+- “ES 索引和 DB 不一致怎么办”：以 DB 为准，索引可以重建；删除和重建索引要通过状态字段、version 和任务失败兜底。
+- “为什么不用 MySQL LIKE”：关键词和语义召回能力不够，且无法承担向量相似度和多路融合。
+
+### Q4: Kafka 和 Outbox 各自解决什么问题？
+Kafka 解决异步投递和削峰，Outbox 解决业务事务和消息发送之间的一致性。如果业务接口直接改 DB 后发 Kafka，发消息失败会导致任务没人执行；如果先发 Kafka 再提交 DB，Worker 可能读不到业务状态。NoteWeave 的做法是在同一个事务里写 Task 和 TaskOutbox，事务提交后由 outbox 调度器投递 Kafka。Consumer 收到消息后只信 taskId，再回查 DB 判断状态、幂等和取消。这样可以接受最终一致，但不会把“消息发出”和“业务事实已提交”混在一起。
+
+追问接法：
+- “Kafka 重复投递怎么办”：Worker 必须幂等，靠 Task 状态、attempt 和业务目标状态决定是否执行副作用。
+- “Kafka 挂了接口怎么办”：业务可以先返回任务已创建，Outbox 保留待投递记录，恢复后继续发送。
+
+### Q5: RAG 为什么要和中间件边界一起讲？
+因为 NoteWeave 的 RAG 不是单纯调用模型，而是一条跨 MySQL、ES、MinIO、LLM、Citation 的证据链。MySQL 决定用户能查哪些 Space/KnowledgeBase；ES 做 BM25、向量和 Wiki recall；MinIO 可能保存 citation snapshot 或解析文本；LLM 只在 evidence-first prompt 下生成；Citation 和 RetrievalTrace 再把回答和证据落回 MySQL。面试时把 RAG 和中间件边界一起讲，可以说明你理解“召回、权限、证据、追溯、运营”是一体的。
+
+追问接法：
+- “向量召回失败怎么办”：可以降级到 BM25/Wiki recall，并在 trace 里记录召回源和失败原因。
+- “模型胡说怎么办”：先看证据是否召回，后看 prompt 是否约束，最后看 citation 和用户反馈进入 eval。
+
+### Q6: Skill 和 Agent 的边界怎么讲？
+Skill 是受控流水线步骤，Agent 是更开放的自主规划和工具调用。当前项目已经有 `ArtifactPlanExecutor`、SkillExecutionLog、MethodologyCard、MCP tool context，这些可以被讲成 Agent 化能力的地基；但实际执行仍然是按 artifact type 选择固定步骤，工具也通过 registry 显式注册，不能任意访问系统资源。面试时最稳的说法是：我做的是可观察、可审计、可回放的生成工作流，后续可以演进为更强的 Agent planner，但当前不夸成完全自主多 Agent。
+
+追问接法：
+- “为什么不直接让模型决定工具”：工具调用涉及权限、成本、外部网络和数据写入，必须先受控注册、参数校验和结果审计。
+- “怎么演进”：增加 planner、tool policy、sandbox、预算控制、人工确认和 eval 回归，而不是直接放开执行。
+
+### Q7: Bilibili MCP 为什么要做成本地/远程两种工具？
+Bilibili 解析依赖外部网络、视频页面、字幕接口和容错逻辑，放成远程服务可以隔离主系统失败面，也便于独立部署和升级。当前配置里 `remote-enabled=true` 时主系统通过 `RemoteBilibiliMcpToolService` 调用 `/api/v1/mcp/bilibili/invoke`；关闭远程时可走 `LocalBilibiliMcpToolService`。无论本地还是远程，返回的都是结构化 promptContext，后续仍进入 Artifact 的受控生成链路，而不是让外部工具直接写数据库。
+
+追问接法：
+- “远程服务超时怎么办”：工具调用失败应让本次 Artifact task 失败或给出明确错误，不应该静默编造视频内容。
+- “这是不是 MCP 平台”：不是。它证明了受控工具扩展路径，但当前只有 Bilibili 这类明确注册的工具。
+
+### Q8: 如果某个中间件挂了，怎么讲降级？
+按职责降级。MySQL 挂了，业务事实不可用，核心链路应该失败并报警；Redis 挂了，WebSocket 恢复体验和运行中 partial 状态受影响，但已落库消息和任务仍可查；MinIO 挂了，上传、解析文本和 snapshot 读取失败，需要任务重试；ES 挂了，RAG 检索降级或失败，不能让模型无证据自由发挥；Kafka 挂了，Outbox 先积压，恢复后补投递；LLM 或 MCP 挂了，生成任务失败，保留 TaskEvent 和错误原因供 Admin 排查。
+
+## 5. 大厂深挖追问路径
+1. 先让你列中间件职责。
+2. 再问为什么不用 Redis/ES/MySQL/Kafka 互相替代。
+3. 再问一致性、幂等、失败恢复和权限越权。
+4. 然后把问题压到 RAG：证据从哪来，为什么可信，错了怎么查。
+5. 最后抓 Agent/MCP，看你是否能讲清受控工具扩展和未完成边界。
+
+## 6. 一句话记忆
+MySQL 管事实，Redis 管短期运行态，MinIO 管对象，ES 管可重建索引，Kafka 管异步投递，LLM/MCP 管受控生成上下文；任何一个组件都不能越界替代权限、证据和任务事实源。

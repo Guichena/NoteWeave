@@ -1,260 +1,226 @@
-# 文件：11_通用问题按NoteWeave深答.md
+# 通用问题按 NoteWeave 深答
 
-## 0. 本篇定位
+> 本文件为 2026-06-01 题组版，依据当前代码、测试和 Flyway 迁移整理。这里不按模块单独加深，而是把大厂常见通用题合并成相似问题题组，再映射回 NoteWeave 的真实链路。
 
-这篇现在只承担一个角色：`通用问题统一转答总册`。
+## 0. 使用方式
 
-它解决的不是“某个主题怎么完整深答”，而是：
+通用八股题不要脱离项目背。每次回答都按这个顺序：
 
-- 面试官的问题本身不完全属于 NoteWeave，怎么先转成当前项目能诚实承接的问法。
-- 面试官抛的是通用八股、开放题、风险题，怎么快速落到 NoteWeave 的真实链路。
-- 回答里怎么同时保住项目真实性、技术深度和边界。
+1. 先判断面试官问的是哪类问题：边界、一致性、表结构、中间件、证据、沉淀、工具、运营、验证、扩展。
+2. 再把相似问题放在一组回答，避免“问上传就只讲上传，问 RAG 就只讲 RAG”。
+3. 最后落到 NoteWeave 的代码事实：Task/Outbox/Kafka、Hybrid RAG、Citation/Trace、Artifact/Synthesis、MCP/Skill、Admin/Ops。
 
-去重后的分工是：
+## 1. 架构边界类：为什么这样分层，怎么避免做成 Demo？
 
-- `01-项目主述题.md`：项目开场主文档。
-- `02-模块深问题.md`：模块级技术主文档。
-- `09-重点系统功能QA深入版.md`：系统设计总串讲主文档。
-- `通用问题分主题深答/*`：每个主题的标准深答主文档。
-- `通用问题分主题深答_加深版/*`：在标准深答基础上补原理、极端场景、压测、trade-off。
-- `重点系统功能链路/11_中间件RAGAgent系统设计映射/README.md`：中间件、RAG、Agent 和高频八股的主映射文档。
+这一组常见问法：
+- 你这个项目的业务边界是什么？
+- 为什么不是一个普通 RAG 问答 Demo？
+- 为什么要同时做 TEAM 和 PERSONAL？
+- 系统角色、空间角色、资源权限为什么要拆开？
 
-所以这篇不再重复保存每个主题的长答案，只保留最有价值的“转答动作”和“统一口径”。
+2 分钟回答：
 
-## 1. 使用方式
+> 我会把 NoteWeave 讲成一个 AI 知识工作台，而不是单纯聊天页面。它的核心闭环是：资料进入系统，经过权限约束和异步处理变成可检索知识；用户问答时先检索可见证据，再生成带 Citation 的回答；生成出的 Artifact、Wiki、SynthesisCard、Memory 又要区分临时内容和长期知识。这个闭环里最先要定的是边界，所以项目把 Space 做成一级容器，并区分 TEAM 和 PERSONAL。TEAM 侧更偏团队知识库、RAG Chat、Wiki、Graph、Admin/Ops；PERSONAL 侧更偏 ResearchProject、Source、ArticleCard、ConceptCard、SynthesisCard、Artifact、Methodology。系统角色 users.system_role 负责 USER/ADMIN 这类全局管理能力，SpaceMember.role 负责 OWNER/EDITOR/VIEWER 这类空间协作能力。这样 Citation、Trace、Artifact、Memory、Admin 查询都能回到同一套边界，避免 AI 链路二次读取时串数据。
 
-如果面试官的问题有下面这些特点，就先用这篇：
+追问怎么接：
+- 如果问“Controller 校验后 Service 还要不要校验”，答 Service 层仍要做关键资源边界，因为后台任务、Admin、WebSocket、异步 Worker 不一定都从同一个 Controller 入口进来。
+- 如果问“Admin 能不能看所有私有数据”，答 Admin 是运维管理角色，不应该天然绕过个人私有 Memory 和团队空间边界，敏感读取要有审计和最小权限。
+- 如果问“为什么 PERSONAL 和 TEAM 不共用一套模型”，答它们生命周期不同：个人研究强调 Source、卡片和 Synthesis，团队知识强调 KnowledgeBase、Document、Wiki、协作权限和公开可追溯。
 
-- 问法很通用，不像专门针对 NoteWeave。
-- 问的是“为什么这样设计”“如果换成别的场景怎么办”“你怎么证明不是 demo”。
-- 问的是 Redis、MQ、RAG、Agent、Memory、指标、分库分表、AI Coding 这种容易跑偏的话题。
-- 你一时不知道该落到哪条链路上。
+不能说：
+- 不要把团队 OWNER 说成系统 ADMIN。
+- 不要说权限只靠前端隐藏按钮。
+- 不要说 Admin 可以无边界绕过所有数据。
 
-统一动作是：
+## 2. 一致性类：长任务、MQ、Outbox、重试怎么讲？
 
-```text
-先把问题转成 NoteWeave 的真实业务问题
--> 再落到一个主链路或主模块
--> 再补设计取舍、失败处理和边界
-```
+这一组常见问法：
+- 为什么不在事务里直接发 Kafka？
+- Outbox 解决什么一致性问题？
+- Worker 重复消费如何保证幂等？
+- 任务取消、重试、失败恢复怎么设计？
+- 上传解析、Wiki 入索引、RAG Eval、cleanup 为什么都能统一讲？
 
-## 2. 通用问题最常见的 10 种接法
+2 分钟回答：
 
-| 面试官常见问法 | 第一反应怎么接 | 优先落到哪里 | 不能说满的点 |
-|---|---|---|---|
-| 介绍一下你的项目 | 先讲 AI 知识工作台闭环，不要先报技术栈 | `01-项目主述题.md` / `09-重点系统功能QA深入版.md` | 不编生产指标 |
-| 你具体做了什么 | 讲三条 ownership 主线，不说“全是我做的” | 统一异步、evidence-first RAG、知识沉淀边界 | 不夸大个人贡献 |
-| 为什么这么设计 | 先讲业务风险，再讲架构方案 | `02-模块深问题.md` / 分主题 `02` | 不空喊“为了性能/为了安全” |
-| 为什么要异步 / 用 MQ | 先讲长任务，再讲 Outbox 和最终一致 | 分主题 `03` | 不说强一致、不说绝不重复 |
-| Redis 在项目里干嘛 | 先讲短期运行态，再讲边界 | 分主题 `04` / `06` | 不说主任务队列、主事实源 |
-| RAG / 幻觉怎么治理 | 先讲 evidence-first，不先讲模型名字 | 分主题 `05` | 不说 Citation=正确率 |
-| Agent / Skill / MCP 怎么讲 | 先讲当前是受控 workflow | 分主题 `07` | 不说完整开放 Agent 已落地 |
-| 没有生产指标怎么办 | 先承认没有，再讲验证方案 | 分主题 `08` | 不编 QPS/P99/token/day |
-| 挑一个复杂接口讲 | 优先选文档上传 merge 或团队 RAG 问答 | 分主题 `09` | 不只讲接口字段 |
-| 你怎么和产品/业务沟通 | 先讲业务目标，再讲技术约束 | 分主题 `09` | 不只讲“我解释了原理” |
+> NoteWeave 里很多能力都是长任务：文件上传后的解析和索引、个人 Source 编译、Artifact 生成、Wiki 入索引、RAG Eval、资源清理。如果每条链路都自己同步处理或自己发消息，前端会超时，失败恢复也会分散。所以项目把后台执行抽成 Task、TaskAttempt、TaskEvent、TaskOutbox、Kafka、Worker。业务事务里先写业务事实、Task 和 Outbox；之后由 Outbox 调度器把消息投到 Kafka；Consumer 收到后不信消息里的复杂状态，只拿 taskId 回查 DB；Worker 通过 TaskExecutionCoordinator 记录 attempt、event、状态流转和 cancel_requested。这个设计不是强一致承诺，而是让数据库事实和消息投递最终一致，同时让重试、取消、审计和 Admin 介入都走统一入口。
 
-## 3. 万能转答模板
+追问怎么接：
+- 如果问“消息投递成功但 Worker 失败”，答 Task 保持失败或可重试状态，TaskEvent 记录失败原因，AdminTaskService 可以按规则重试或标记失败。
+- 如果问“重复消费怎么办”，答 Consumer 以 taskId 回查当前状态，Worker 只在可执行状态推进，具体业务写入要用状态、唯一约束、版本或覆盖式索引保证幂等。
+- 如果问“取消为什么不是强杀”，答 cancel_requested 是协作式取消，Worker 在安全点检查后停止，不能承诺打断已经发出的外部 IO 或 LLM 请求。
 
-### 3.1 项目整体类
+不能说：
+- 不要说 Outbox 提供分布式强一致。
+- 不要说 Redis 是后台任务主队列。
+- 不要说所有失败都能自动恢复。
 
-`适用问题：`
+## 3. 数据模型和中间件类：表怎么拆，组件怎么落位？
 
-- 请介绍一下你的项目。
-- 这个项目解决什么问题？
-- 为什么不是普通 demo？
+这一组常见问法：
+- 你项目里核心表结构怎么设计？
+- 为什么不用一张大 JSON 表保存所有 AI 结果？
+- MySQL、Redis、MinIO、ES、Kafka 各自承担什么？
+- 如果 ES、Kafka、Redis、MinIO 任一组件出问题，系统怎么回到一致状态？
 
-`最稳转答：`
+2 分钟回答：
 
-我会先把 NoteWeave 定义成一个 AI 知识工作台，而不是一次性问答 demo。它解决的是知识从资料进入系统、被解析检索、被引用生成、再沉淀为长期知识的闭环问题。团队侧是 KnowledgeBase、Document、Hybrid RAG、Citation、Wiki；个人侧是 Source、Card、Artifact、Synthesis。底层再用双空间权限、统一异步任务、WebSocket Runtime、Memory、Eval 和 Admin/Ops 把这条链路做成可治理系统。
+> 我会按数据生命周期讲表结构。身份和权限用 users、space、space_member；长任务用 task、task_attempt、task_event、task_outbox；团队资料用 knowledge_base、document_upload、file_object、document、document_chunk；可信问答用 chat_message、citation、message_citation、retrieval_trace、retrieval_trace_item、llm_call_log、answer_feedback；生成沉淀用 artifact、artifact_version、wiki_page、wiki_page_version、synthesis_card、memory_item；评测和运维用 prompt_version、rag_eval_case/run/result、audit_log、ops_cleanup_job、system_health_snapshot。中间件也按形态分工：MySQL 是事实源，Redis 是短期运行态和 bitmap，MinIO 是大对象，ES 是检索读模型，Kafka 是异步任务通道。跨组件失败时，最终都要回 Task、Outbox、Trace、Citation、cleanup 和 Admin/Ops 对齐。
 
-`继续追问时要补：`
+追问怎么接：
+- 如果问“为什么很少显式 foreign key”，答当前由服务层边界、唯一索引、状态机和集成测试约束关系，后续可对核心强关系逐步补 FK，但 FK 不能替代权限判断。
+- 如果问“哪些索引最关键”，答空间过滤、任务积压、文档版本、Trace 排障、Eval/Ops 时间序列这些访问路径。
+- 如果问“ES 里有旧 chunk 怎么办”，答 ES 是读模型，MySQL 的 status、activeIndexVersion、权限和 Citation 读取校验才是事实。
 
-- 双空间为什么是一级边界。
-- 为什么要统一任务底座。
-- 为什么回答之后还要有 Citation、Trace 和沉淀层。
+不能说：
+- 不要说已经做了分库分表或读写分离。
+- 不要说 ES/Redis/Kafka 能替代 MySQL 事实源。
+- 不要说 object_key、ES doc、Kafka message 自身就是权限凭证。
 
-### 3.2 Ownership / 亮点类
+## 4. 外部输入类：文件、URL、Bilibili MCP、Prompt 怎么安全进入系统？
 
-`适用问题：`
+这一组常见问法：
+- 上传到可检索经历哪些阶段？
+- URL Source 要防哪些风险？
+- `/mcp bilibili <url>` 是怎么进入 Chat 或 Artifact 的？
+- 用户 prompt 和外部工具结果会不会污染长期知识？
 
-- 你具体做了什么？
-- 项目亮点和难点是什么？
+2 分钟回答：
 
-`最稳转答：`
+> 我会把外部输入统一讲成“受控进入系统”。文件上传不是上传完就能 RAG，而是 init、分片、MinIO 存储、merge、Document/FileObject 落库、DOCUMENT_PROCESS Task、解析、chunk、写 ES、更新 activeIndexVersion。URL Source 进入个人研究链路时，要先经过安全抓取和可读文本校验，READY 不等于随便信任网页。Bilibili MCP 是新增的受控工具入口，不是开放式工具市场：StudioMcpToolRegistry 负责解析和注册工具，LocalBilibiliMcpToolService 或 RemoteBilibiliMcpToolService 调 BilibiliMcpCoreService 得到结构化上下文。Chat 里可以通过 `/mcp bilibili <url>` 触发，ArtifactPlanExecutor 在识别到工具参数后加入 LoadMcpToolContextSkill，并通过 SkillExecutionLog 和 RetrievalTrace 留下执行过程。无论是文件、URL、MCP 还是 prompt，最后都要经过权限、任务、证据和人工确认边界，不能直接写进 Wiki 或长期 Memory。
 
-我不会说“所有功能都是我做的”，而会收成三条 ownership 主线。第一条是统一异步任务底座，把上传解析、Source 编译、Artifact 生成、Eval 和 cleanup 收口到 `Task + Outbox + Kafka + Worker`。第二条是团队 RAG 的 evidence-first 链路，从权限过滤、混合检索、RRF 融合到 Citation 和 RetrievalTrace 持久化。第三条是 Artifact 到长期知识的沉淀边界，保证生成内容不会自动污染 Wiki 或个人知识库。
+追问怎么接：
+- 如果问“秒传能不能跨 Space 复用”，答 FileObject 可以从对象层考虑复用，但权限和 Document 归属必须按 Space 隔离，不能因为 hash 一样就泄露存在性或内容。
+- 如果问“URL Source 会不会引入 SSRF”，答 SafeUrlContentFetcher 不只是下载网页，它限制 http/https、禁止 userInfo，解析 DNS 后拦截 localhost、.local、内网、链路本地、多播等地址，并限制重定向次数和响应大小。
+- 如果问“远程 Bilibili MCP 失败怎么办”，答工具调用失败会反映到计划执行失败或降级提示，不能让失败工具结果伪装成可靠证据。
+- 如果问“Prompt injection 怎么处理”，答文档内容和工具结果只作为 evidence/context，PromptBuilder 要明确约束模型基于证据回答，权限和业务判断不能交给模型。
 
-`继续追问时要补：`
+不能说：
+- 不要说上传成功就代表已可检索。
+- 不要说 MCP 是当前所有工具调用的主协议。
+- 不要说外部工具结果会自动进入 Wiki/Memory。
 
-- 这三条为什么比“做了多少页面”更有技术含量。
-- 如果只能讲一个亮点，优先讲哪一个。
+## 5. 证据可信类：RAG、Citation、Trace、防幻觉怎么答？
 
-### 3.3 架构设计 / 为什么不用简单方案
+这一组常见问法：
+- Hybrid RAG 具体做了什么？
+- BM25、向量、Wiki recall 各解决什么问题？
+- Weighted RRF 为什么比简单拼接稳？
+- 没有证据时为什么要兜底？
+- 用户说回答错了，怎么排查？
 
-`适用问题：`
+2 分钟回答：
 
-- 为什么这么设计？
-- 为什么不直接做简单一点？
-- 为什么现在不拆微服务？
+> NoteWeave 的 RAG 重点不是“把问题发给模型”，而是 evidence-first。团队问答先基于用户可见范围做召回，HybridRetriever 组合 BM25、向量和 Wiki recall；WeightedReciprocalRankFusion 把不同召回源按排名融合，避免某一路分数尺度支配全部结果；EvidencePostProcessor 做去重、相邻 chunk 合并、数量限制和截断；TeamRagPromptBuilder 再把证据和约束组织进 prompt。生成后 CitationService 把引用持久化，RetrievalTrace 记录召回、融合、后处理和 prompt 相关信息。这样坏答案不是只能看日志猜，而是能沿着 query、retrieval hits、evidence items、prompt version、LLM call、citation 一层层排查。
 
-`最稳转答：`
+追问怎么接：
+- 如果问“向量召回失败怎么办”，答可以保留 BM25/Wiki recall 的有限检索结果，并在回答中明确证据不足；不能编造向量结果。
+- 如果问“Citation 不准确先看哪里”，答先看 Citation 指向的 resource/chunk，再看 RetrievalTrace 中该 evidence 是否进入 prompt，最后看模型是否引用错位。
+- 如果问“RAG Eval 怎么验证”，答通过 eval case/run/result 记录 recallAtK、MRR、citationCoverage 等离线评测指标，支撑迭代，但不等于线上生产准确率。
+- 如果问“这些算法怎么测”，答 RRF、EvidencePostProcessor、PromptBuilder 适合单测，团队 RAG 主链路再用集成测试验证权限、召回、trace、citation 是否一起落地。
 
-我一般先把问题还原成业务风险。NoteWeave 里最难的不是把模型接起来，而是同时处理权限、一致性、证据追踪、运行态和长期知识边界。所以我会优先做模块化单体，把权限、任务、Citation、Artifact、Memory 这些强关系放在一个演进成本更低的边界里；同时通过 Task/Kafka、检索边界和 LLM gateway 预留后续拆分空间。
+不能说：
+- 不要把 Hybrid RAG 说成完整 GraphRAG。
+- 不要说 Citation 只靠模型输出编号。
+- 不要编造 recall@k、准确率或线上 A/B 结果。
 
-`继续追问时要补：`
+## 6. 临时到长期类：Chat、Artifact、Wiki、Synthesis、Memory 怎么分层？
 
-- 如果以后拆分，优先拆 Worker、检索和 LLM gateway。
-- 为什么权限域不是第一批拆分对象。
+这一组常见问法：
+- Artifact 为什么不是 ChatMessage 的一个字段？
+- Wiki 和 Artifact 为什么分开？
+- SynthesisCard 为什么要用户确认？
+- DRAFT/FORMAL 和长期记忆有什么关系？
+- AutoWikiMaintenance 会不会替代人工确认？
 
-### 3.4 MQ / Outbox / 幂等一致性
+2 分钟回答：
 
-`适用问题：`
+> NoteWeave 把临时探索和长期知识分开，这是面试里很重要的设计点。ChatMessage 是对话事实，DRAFT 更偏临时探索，FORMAL 才可能触发受控记忆写回。Artifact 是版本化产物，适合保存报告、学习指南、FAQ、技术总结、Wiki 草稿等阶段性输出；ArtifactVersion、ArtifactSource、ArtifactCitation 让它可迭代、可追溯。团队 Wiki 是人工确认后的长期团队知识，有 WikiPage、WikiPageVersion、WikiIndex、WikiGraph；个人 SynthesisCard 是用户确认后的个人长期沉淀，PersonalArtifactDistillationService 先生成 proposal，再 confirm 绑定 artifactVersionId 写入。MemoryWritebackStrategy 会过滤 DRAFT、短问候和敏感内容。AutoWikiMaintenance 和 WikiGraph 可以辅助发现链接、孤立页、维护建议，但不能替代人工确认。
 
-- 为什么要用 MQ？
-- 为什么要 Outbox？
-- 幂等怎么做？
+追问怎么接：
+- 如果问“为什么 Artifact 不自动进入 Wiki”，答生成结果可能只是草稿或阶段性推理，直接进入 Wiki 会污染团队长期知识。
+- 如果问“proposal 为什么绑定 artifactVersionId”，答要保证用户确认的是某个确定版本，避免生成内容变更后沉淀对象不一致。
+- 如果问“Memory 丢了怎么办”，答 Redis runtime state 丢失影响运行态恢复，正式 ChatMessage 和长期 Memory 以 MySQL 事实为准；同时不能把 Redis 说成业务事实源。
 
-`最稳转答：`
+不能说：
+- 不要说 Artifact 自动进入 Wiki、ConceptCard 或 Memory。
+- 不要说 DRAFT 会写长期记忆。
+- 不要说 AutoWikiMaintenance 已经是复杂审批流。
 
-NoteWeave 里文档解析、Source 编译、Artifact 生成、RAG Eval、Cleanup 都是长任务，不适合同步 HTTP 里做完。我的做法是先在 MySQL 里落 Task 和 Outbox，再由 Kafka 推动 Worker 执行。这里不用大事务强行包住 MySQL、Kafka、MinIO、ES 和 LLM，而是接受中间态，通过 Outbox 补偿、Task 状态机和消费侧幂等把结果收敛起来。
+## 7. 工具和 Agent 边界类：MCP、Skill、ArtifactPlanExecutor 怎么讲？
 
-`继续追问时要补：`
+这一组常见问法：
+- Skill 在项目里是什么，不是什么？
+- MCP 是怎么接进来的？
+- ArtifactPlanExecutor 和 Agent 有什么区别？
+- SkillExecutionLog 的价值是什么？
 
-- Outbox 会重复，所以 Worker 必须回查 Task 状态。
-- `cancel_requested` 是安全点取消，不是强杀线程。
-- Kafka 堆积时先看任务类型和下游瓶颈，不盲目加消费者。
+2 分钟回答：
 
-### 3.5 Redis / 缓存 / 运行态
+> 当前项目里 Skill 更像受控生成步骤，而不是开放式自主 Agent。ArtifactPlanExecutor 会根据输入构造有限步骤，比如加载个人研究上下文、加载 MCP 工具上下文、生成 Artifact、写 Citation 和 Trace；如果输入里配置了 Bilibili MCP，就通过 StudioMcpToolRegistry 解析工具参数，调用本地或远程 Bilibili MCP 服务，把结构化上下文作为生成素材。每一步可以通过 SkillExecutionLog 记录 skillName、输入、输出、状态、耗时和 promptVersion，方便以后排查为什么生成结果不对。这个设计的好处是可控、可追踪、能落库；边界是它还不是完整 Agent marketplace，也不是模型自主选择任意工具的多 Agent 编排。
 
-`适用问题：`
+追问怎么接：
+- 如果问“未来要变成 Agent 怎么演进”，答先抽象工具权限、工具 schema、执行沙箱、审计、重试和成本控制，再开放更复杂的 planning。
+- 如果问“MCP 失败会不会影响主流程”，答工具上下文失败应在对应 Task/SkillExecutionLog 中体现，生成可以失败或给明确降级提示，不能吞掉错误后编造内容。
+- 如果问“Skill 和 MethodologyCard 区别”，答 Skill 是执行步骤，MethodologyCard 是输出方法论和 prompt 结构约束。
 
-- Redis 在项目里做什么？
-- 为什么 Redis 不做主任务队列？
-- 你们有没有本地缓存？
+不能说：
+- 不要说当前已经有完整多 Agent 编排。
+- 不要说 MCP 是通用开放平台。
+- 不要把 SkillExecutionLog 说成模型训练数据闭环。
 
-`最稳转答：`
+## 8. 可观测和运营类：坏答案、失败任务、资源残留怎么查？
 
-Redis 在 NoteWeave 里主要承接短期状态，而不是业务事实源。典型场景是上传分片 bitmap、WebSocket ticket、runtime state、partial content、event buffer 和 stop/resume 控制。正式消息、Citation、Task、Memory 还是落 MySQL，后台长任务走 Kafka。这样 Redis 丢了会影响运行态体验，但不该破坏正式业务事实。
+这一组常见问法：
+- 一次坏答案怎么定位？
+- PromptVersion 有什么意义？
+- RAG Eval 怎么和正式 ChatSession 隔离？
+- cleanup scan 和 execute 为什么拆开？
+- health 为什么按组件拆？
+- 你怎么证明这些链路真的经过测试，而不是只靠手工点页面？
 
-`继续追问时要补：`
+2 分钟回答：
 
-- Redis 为什么适合 TTL、高频读写和恢复窗口。
-- 当前没有把本地缓存做成主链路，不要硬编二级缓存故事。
+> AI 应用要能面试到工程深度，就不能只讲“能回答”，还要讲坏答案怎么查、链路怎么验证。NoteWeave 里 PromptVersion 管不同场景 prompt 的版本，LLMCallLog 记录模型调用，RetrievalTrace 记录检索和证据，AnswerFeedback 记录用户反馈。RAG Eval 通过 case/run/result 做离线评测，走 RAG_EVAL_RUN Task，不污染正式 ChatSession。Admin/Ops 侧有 task 管理、cleanup、health、dashboard、audit。cleanup 先 scan 再 execute，是为了先给出候选残留和风险，再人工确认执行，降低误删；health 按 MySQL、Redis、MinIO、Kafka、ES、LLM 拆，是为了排障时快速定位是事实源、运行态、对象存储、消息、检索还是模型层出了问题。测试上，纯算法用单测，跨组件用 MockMvc + ContainerizedIntegrationTest，异步链路用 Task/TaskAttempt/TaskEvent/TaskOutbox 断言状态，RAG 用 Trace/Citation/Eval 做回归。
 
-### 3.6 RAG / 模型 / 幻觉治理
+追问怎么接：
+- 如果问“用户说引用不准先查什么”，答先查 RetrievalTrace 和 Citation，再查对应 resource/chunk 是否仍可见。
+- 如果问“任务重试一直失败怎么办”，答看 TaskEvent 和业务错误，必要时 Admin 标记失败或重新触发，不要无限重试。
+- 如果问“没有生产指标怎么说”，答诚实说当前有日志、trace、eval、task event 可支撑度量方案，但没有真实线上 QPS/P99/准确率。
+- 如果问“集成测试覆盖什么”，答它覆盖 MySQL/Redis/Kafka/MinIO/ES 协作和接口状态，不等于线上压测。
 
-`适用问题：`
+不能说：
+- 不要说 Eval 等同线上 A/B。
+- 不要让普通用户访问全局运维日志。
+- 不要编造生产效果数据。
+- 不要把本地集成测试包装成真实生产稳定性数据。
 
-- 用的什么模型？
-- 幻觉怎么处理？
-- 为什么 Hybrid RAG？
+## 9. 扩展和压测类：性能瓶颈、降级、未来演进怎么答？
 
-`最稳转答：`
+这一组常见问法：
+- 并发上来先优化哪里？
+- Kafka 堆积、ES 挂、LLM 慢分别怎么办？
+- 单体项目怎么演进？
+- 哪些数据结构或索引会影响性能？
 
-我不会先从模型名字答起，而是先讲 evidence-first 链路。用户提问后先做权限和 session scope 限制，再走 BM25、向量和 Wiki recall，多路结果用 weighted RRF 融合，之后做 evidence post-process，最后把治理后的 evidence 交给 Prompt。回答完成后还会保存 Citation、RetrievalTrace 和 LLMCallLog，所以回答是否可信、问题出在哪里都可以反查。
+2 分钟回答：
 
-`继续追问时要补：`
+> 我会先把瓶颈按链路拆开，而不是直接说分库分表。上传处理可能卡在 MinIO、解析 CPU、chunk 写库和 ES 写入；RAG 可能卡在向量召回、融合后处理、LLM latency；Artifact 可能卡在外部工具、LLM 和持久化；WebSocket 可能卡在连接数和 runtime state；Admin/Eval 可能卡在批量任务。当前项目是单体，但边界已经比较清楚：文档处理 Worker、RAG 检索生成、Artifact 生成、RAG Eval/Ops 都可以按 Task 和服务边界拆出去。降级时要讲具体组件：ES 不可用时问答只能提示检索不可用或使用有限上下文，Kafka 堆积看 Outbox 和 Task 积压，LLM 慢要做超时、重试、排队和成本控制，MinIO 异常会影响原文和文件下载。
 
-- BM25、向量、Wiki recall 各自解决什么。
-- 无证据兜底比“什么都答”更重要。
-- citation coverage 高不等于答案一定正确。
+追问怎么接：
+- 如果问“为什么不一开始微服务”，答当前阶段先用清晰模块边界和统一任务骨架降低复杂度，等瓶颈明确后再按链路拆服务。
+- 如果问“怎么压测”，答按上传处理、RAG 查询、WebSocket 流式、Artifact 生成、Admin Eval 分场景测，而不是只测一个 HTTP QPS。
+- 如果问“Redis 能不能缓存全部知识”，答 Redis 适合短期运行态和票据，不适合做业务事实源或全文/向量检索主存储。
 
-### 3.7 Memory / Agent / Skill 边界
+不能说：
+- 不要说项目已经完成微服务拆分。
+- 不要说已有真实 P99、QPS、token/day。
+- 不要用分布式术语覆盖当前代码没有的能力。
 
-`适用问题：`
+## 10. 一句话总收束
 
-- 长期记忆怎么做？
-- 这是 Agent 吗？
-- MCP、GraphRAG、Bibtex 怎么回答？
+遇到通用题时，把它收束成这句话：
 
-`最稳转答：`
+> NoteWeave 的设计重点是把 AI 生成放进一个可控知识系统：先做权限和数据归属，再用 Task/Outbox/Kafka 承接长任务，用 Hybrid RAG/Citation/Trace 保证证据可查，用 Artifact/Wiki/Synthesis/Memory 区分临时结果和长期知识，再用 PromptVersion、LLMCallLog、RAG Eval、Admin/Ops 让效果和故障能被运营。
 
-Memory 和 Agent 都要先讲边界。Memory 不是聊天记录全量复制，而是最近消息、session summary、space memory、user memory 的分层读取和策略写回，DRAFT、敏感信息和低价值内容不会直接进长期记忆。Agent 这块当前更准确的说法是受控 Skill Pipeline 或 Workflow，不是完整开放式 Agent 平台。MCP 也不能再笼统讲成“完全没做”，因为当前已经把 B 站解析能力拆成远程 MCP tool service，并接到产物入口和对话显式触发；但完整开放平台仍然不是当前主链路。Bibtex、GraphRAG 继续按扩展方向回答。
-
-`继续追问时要补：`
-
-- DRAFT 为什么不写长期 Memory。
-- MethodologyCard 为什么比把结构全写死在 Prompt 里更稳。
-- 开放 Agent 的难点是权限、预算、日志、回滚和评测。
-
-### 3.8 指标 / 压测 / 效果
-
-`适用问题：`
-
-- 效果提升了多少？
-- QPS、P95、P99 是多少？
-- token/day 怎么看？
-
-`最稳转答：`
-
-当前没有真实线上 QPS、P99、token/day 或准确率，我不会编造。更稳的回答是讲指标口径和验证方案：任务链路看成功率、失败率、重试率和耗时；RAG 看 recall@k、MRR、citationCoverage、no-evidence rate；模型调用看 latency、token、错误类型；运行态看 stop/resume 和断线恢复；再通过 RagEvalRun、Trace、Log 和压测逐层验证。
-
-`继续追问时要补：`
-
-- 为什么“没有线上数据”不等于“没有工程验证”。
-- citation coverage 不等于 correctness。
-
-### 3.9 复杂接口 / 排障 / 沟通
-
-`适用问题：`
-
-- 挑一个复杂接口讲。
-- 一条坏回答怎么排查？
-- 复杂技术怎么讲给业务方？
-
-`最稳转答：`
-
-复杂接口优先讲文档上传 merge 或团队 RAG 问答。前者能讲上传分片、对象存储、异步解析、索引版本和权限边界；后者能讲权限过滤、混合检索、证据治理、Citation 和 Trace。排障时不要只说“去看日志”，而要按 `ChatMessage -> RetrievalTrace -> Citation -> LLMCallLog -> Eval` 或 `Task -> Attempt -> Event -> 下游组件健康` 这样顺着链路查。给业务沟通时，先讲业务风险和收益，再解释为什么需要这些技术约束。
-
-`继续追问时要补：`
-
-- 为什么最复杂的不是接口参数，而是状态、一致性和边界一起成立。
-- Citation、TaskOutbox、Memory 这些词如何翻译成业务能理解的话。
-
-### 3.10 AI Coding / 个人表达
-
-`适用问题：`
-
-- 你怎么用 AI Coding？
-- AI 生成代码不符合预期怎么办？
-
-`最稳转答：`
-
-我会把 AI Coding 用在代码阅读、方案对比、测试补全和文档整理上，但涉及权限、一致性、异常语义和安全边界的代码一定自己 review。AI 输出不符合预期时，我不会让它无限大改，而是缩小上下文、给明确接口契约和错误日志、要求它做小步 patch，再看 diff、跑测试、核对链路。
-
-`继续追问时要补：`
-
-- 为什么 AI 提高的是研发效率，不是替代验证。
-- 这套使用方式和 NoteWeave 自己对 AI 输出的治理逻辑是一致的。
-
-## 4. 风险题统一收口
-
-### 被问到生产指标
-
-当前没有真实线上 QPS、P99、token/day、线上准确率，我不会编造。能讲的是已有 Trace、LLMLog、RagEvalRun、SystemHealth、AuditLog 和压测入口，后续会按任务层、检索层、生成层和端到端层做验证。
-
-### 被问到分库分表 / 微服务
-
-当前没有分库分表，也不是微服务主链路。更合理的回答是：现在是模块化单体，后续如果任务执行、检索或日志表规模先成为瓶颈，会优先做归档、分区、冷热分层，再判断是否拆服务或分库。
-
-### 被问到完整 Agent / Multi-Agent
-
-当前不能讲成完整开放 Agent 平台。更准确的说法是：已经有受控 Skill Pipeline、Artifact 生成、MethodologyCard 和证据治理；多 Agent 可以作为后续演进方向，但前提是工具权限、预算、日志、失败状态和评测都能被治理。
-
-### 被问到 MCP / Bibtex
-
-Bibtex 当前不是主链路，可以说成未来接入点；MCP 则要更准确一些：当前没有做完整开放平台，但已经把 B 站解析拆成远程 MCP tool service，并接在 Tool/Skill 编排前的产物入口和对话显式触发链路上。不要把它包装成广义多工具自治生态即可。
-
-### 被问到 GraphRAG
-
-当前不能讲成主检索链路。现在能坚定讲的是 Wiki 页面关系、图谱展示和 Wiki recall；完整多跳 GraphRAG 推理属于后续扩展。
-
-## 5. 最推荐背诵的万能深答
-
-如果面试官抛出一个很通用、甚至有点跨项目的问题，我最稳的接法是：先把它转成 NoteWeave 的真实系统问题。比如问 Redis，我不只讲 Redis 快，而会讲它在 NoteWeave 里负责上传进度和 WebSocket 运行态，不是主任务队列；问 MQ，我不只讲削峰解耦，而会讲文档解析、Artifact 生成和 Eval 这些长任务为什么要走 `Task + Outbox + Kafka + Worker`；问 RAG，我不只讲模型和向量，而会讲权限过滤、Hybrid recall、证据治理、Citation 和 Trace。这样回答的核心不是把八股背出来，而是让通用问题真正落回项目的业务闭环、系统边界和失败处理。
-
-## 6. 边界和不能说满的地方
-
-- 这篇只负责通用问题转答，不再重复保存每个主题的完整深答。
-- 当前可以坚定讲：双空间、统一异步任务、上传解析索引、Hybrid RAG、Citation、Runtime、个人研究链路、Artifact/Synthesis、Memory、Eval、Admin/Ops。
-- 当前不要讲成已落地：真实生产指标、完整开放式 MCP 平台主链路、Bibtex 端到端、完整开放 Agent、GraphRAG 主检索链路、微服务拆分、分库分表。
+这句话能接住大多数追问，后面再按题组展开即可。

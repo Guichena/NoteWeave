@@ -1,84 +1,142 @@
-# 10 可靠性一致性排障追问
+# 可靠性一致性排障追问
+
+> 本文件为 2026-06-01 重构版，依据当前代码、测试和 Flyway 迁移整理。不要再按旧阶段计划或旧题库口径背。
 
 ## 0. 本篇定位
+大厂追问通常从“为什么这样设计”转到“失败时怎么办”。
 
-这部分不是单独业务链路，而是面试官最容易横向追问的系统能力：一致性、幂等、降级、依赖异常、排障和边界。
+## 1. 面试先说版
+可靠性我会按五个故障域讲。第一是任务一致性，业务事实先落 MySQL，Outbox 再投 Kafka，Worker 回查 Task 状态执行，失败写 attempt 和 event。第二是索引一致性，文档 reindex 用版本切换，避免新索引失败破坏旧可用结果。第三是证据一致性，Citation 和 RetrievalTrace 能定位 bad answer 是召回问题、证据截断问题还是 LLM 生成问题。第四是运行态恢复，WebSocket partial 和事件状态放 Redis，最终消息仍落 MySQL。第五是清理和运维，cleanup 先 scan 生成 item，再 execute 并写 audit，避免盲删。
 
-## 面试先说版
+## 2. 当前真实口径
+NoteWeave 的可靠性主轴是权限不串、任务可恢复、索引可回滚、证据可追溯、运行态可恢复、清理可审计。
 
-如果面试官连续追问可靠性，我会先给一个总原则：NoteWeave 不追求把 MySQL、Kafka、MinIO、Elasticsearch、LLM Provider 放进一个强事务，而是把每个组件的职责拆清楚，用最终一致、幂等、状态机、索引版本和可观测来收敛失败。
+### 已实现
+- TaskAttempt/TaskEvent/AdminTaskService 提供失败和重试可见性。
+- Document reindex、embedding backfill、Wiki index、RAG eval、cleanup 均走 TaskType。
+- RetrievalTrace、LLMCallLog、AnswerFeedback、AuditLog 可辅助定位。
+- ResourceCleanupService、OpsCleanupJob、OpsCleanupItem 支持 scan-first 清理。
 
-MySQL 是业务事实源，Kafka 是后台任务推进，Redis 是短期运行态，MinIO 是对象存储，ES 是召回索引，LLM Provider 是生成能力，不是事实源。每个组件失败时，系统要么保留可重试状态，要么返回无证据或失败兜底，不能让模型编造，也不能把短期状态当成正式事实。
+### 设计目标
+- 用统一 Task 状态机处理重试和取消，用 indexVersion/activeIndexVersion 处理索引切换，用 Citation/Trace 处理证据排查，用 Redis runtime 和 MySQL 最终消息处理断线恢复，用 scan-first cleanup 降低误删风险。
+- 回答压力题时不靠泛泛而谈，可以按链路定位到 DB、Kafka、ES、Redis、MinIO、LLM 每一层。
 
-这段回答能自然带出：分布式事务取舍、Outbox、消费幂等、ES/MySQL 最终一致、Redis 降级、对象存储清理、RAG 排障和 Admin/Ops 可观测。
+### 后续可扩展
+- 你会先看日志、DB、还是 trace？
+- 哪些地方是最终一致，不是强一致？
+- 如果要扩展到更大规模，先拆哪条边界？
 
-## Q1：异步链路里如何保证一致性？
+## 3. 代码和测试锚点
+- src/main/java/com/noteweave/admin/service/AdminTaskService.java
+- src/main/java/com/noteweave/admin/service/ResourceCleanupService.java
+- src/main/java/com/noteweave/team/document/service/DocumentProcessingService.java
+- src/main/java/com/noteweave/chat/service/RetrievalTraceService.java
+- src/test/java/com/noteweave/admin/Phase15AdminOpsIntegrationTest.java
 
-**答：**
+## 4. 必会问题与答题骨架
 
-NoteWeave 不追求跨 MySQL、Kafka、MinIO、Elasticsearch、LLM 的强事务，而是通过本地事实表、Outbox、幂等和补偿实现最终一致。
+### Q1: 如果 Kafka 堆积怎么办？
 
-业务状态先落 MySQL，比如 Document、Source、Artifact、Task。需要异步执行时，同事务写 TaskOutbox。Kafka 投递只是推进执行，Worker 拿到消息后必须回查 DB 状态。执行结果再写回 TaskAttempt、TaskEvent 和业务状态。
+回答时按四步走：
+1. 先说场景：大厂追问通常从“为什么这样设计”转到“失败时怎么办”。
+2. 再说方案：用统一 Task 状态机处理重试和取消，用 indexVersion/activeIndexVersion 处理索引切换，用 Citation/Trace 处理证据排查，用 Redis runtime 和 MySQL 最终消息处理断线恢复，用 scan-first cleanup 降低误删风险。
+3. 再说收益：回答压力题时不靠泛泛而谈，可以按链路定位到 DB、Kafka、ES、Redis、MinIO、LLM 每一层。
+4. 最后落到真实代码锚点，不要停在概念。
 
-对于 ES 这类外部索引，用 activeIndexVersion 和后置 MySQL 校验降低不一致风险。对于 MinIO 对象，用 FileObject、refCount、soft delete 和 cleanup scan/execute 管理生命周期。
+可直接复述：
 
-## Q2：幂等怎么做？
+> 可靠性我会按五个故障域讲。第一是任务一致性，业务事实先落 MySQL，Outbox 再投 Kafka，Worker 回查 Task 状态执行，失败写 attempt 和 event。第二是索引一致性，文档 reindex 用版本切换，避免新索引失败破坏旧可用结果。第三是证据一致性，Citation 和 RetrievalTrace 能定位 bad answer 是召回问题、证据截断问题还是 LLM 生成问题。第四是运行态恢复，WebSocket partial 和事件状态放 Redis，最终消息仍落 MySQL。第五是清理和运维，cleanup 先 scan 生成 item，再 execute 并写 audit，避免盲删。
 
-**答：**
+常见追问：
+- 你会先看日志、DB、还是 trace？
+- 哪些地方是最终一致，不是强一致？
+- 如果要扩展到更大规模，先拆哪条边界？
 
-幂等要按链路分层。
+### Q2: 如果 ES 和 MySQL 状态不一致怎么办？
 
-入口幂等主要靠 task `idempotency_key`、上传 uploadId、FileObject 的 `spaceId + contentHash` 唯一约束、Card 的项目内唯一约束等，避免重复创建同一业务任务或资源。
+回答时按四步走：
+1. 先说场景：大厂追问通常从“为什么这样设计”转到“失败时怎么办”。
+2. 再说方案：用统一 Task 状态机处理重试和取消，用 indexVersion/activeIndexVersion 处理索引切换，用 Citation/Trace 处理证据排查，用 Redis runtime 和 MySQL 最终消息处理断线恢复，用 scan-first cleanup 降低误删风险。
+3. 再说收益：回答压力题时不靠泛泛而谈，可以按链路定位到 DB、Kafka、ES、Redis、MinIO、LLM 每一层。
+4. 最后落到真实代码锚点，不要停在概念。
 
-消费幂等主要靠 Worker 回查 Task 状态、TaskAttempt 记录和业务表唯一约束。比如重复消费 DOCUMENT_PROCESS 不应该重复创建 active chunk；重复确认 Artifact distillation 不能重复生成多个 SynthesisCard。
+可直接复述：
 
-补偿幂等主要靠状态条件和 Admin 操作记录。retry、cancel、mark failed、cleanup execute 都要基于当前状态推进，并写 AuditLog。
+> 可靠性我会按五个故障域讲。第一是任务一致性，业务事实先落 MySQL，Outbox 再投 Kafka，Worker 回查 Task 状态执行，失败写 attempt 和 event。第二是索引一致性，文档 reindex 用版本切换，避免新索引失败破坏旧可用结果。第三是证据一致性，Citation 和 RetrievalTrace 能定位 bad answer 是召回问题、证据截断问题还是 LLM 生成问题。第四是运行态恢复，WebSocket partial 和事件状态放 Redis，最终消息仍落 MySQL。第五是清理和运维，cleanup 先 scan 生成 item，再 execute 并写 audit，避免盲删。
 
-## Q3：中间件异常怎么降级？
+常见追问：
+- 你会先看日志、DB、还是 trace？
+- 哪些地方是最终一致，不是强一致？
+- 如果要扩展到更大规模，先拆哪条边界？
 
-**答：**
+### Q3: 如果 WebSocket 中途断开怎么办？
 
-要按依赖分开讲。
+回答时按四步走：
+1. 先说场景：大厂追问通常从“为什么这样设计”转到“失败时怎么办”。
+2. 再说方案：用统一 Task 状态机处理重试和取消，用 indexVersion/activeIndexVersion 处理索引切换，用 Citation/Trace 处理证据排查，用 Redis runtime 和 MySQL 最终消息处理断线恢复，用 scan-first cleanup 降低误删风险。
+3. 再说收益：回答压力题时不靠泛泛而谈，可以按链路定位到 DB、Kafka、ES、Redis、MinIO、LLM 每一层。
+4. 最后落到真实代码锚点，不要停在概念。
 
-MySQL 异常时，业务事实无法可靠读写，核心 API 应该失败并暴露健康状态。Redis 异常会影响 WebSocket ticket、runtime state、resume 和短期状态，但不应该丢失已落库的正式消息和任务。MinIO 异常会影响上传、解析和 citation snapshot，任务应失败并可重试。Elasticsearch 异常会影响检索和索引，RAG 可以返回无证据兜底或失败提示，不能编造。Kafka 异常会影响后台任务推进，outbox 可以保留待投递。LLM Provider 异常会影响生成，任务或回答应记录失败，不能吞掉错误。
+可直接复述：
 
-## Q4：如何定位“用户看不到某条资料”的问题？
+> 可靠性我会按五个故障域讲。第一是任务一致性，业务事实先落 MySQL，Outbox 再投 Kafka，Worker 回查 Task 状态执行，失败写 attempt 和 event。第二是索引一致性，文档 reindex 用版本切换，避免新索引失败破坏旧可用结果。第三是证据一致性，Citation 和 RetrievalTrace 能定位 bad answer 是召回问题、证据截断问题还是 LLM 生成问题。第四是运行态恢复，WebSocket partial 和事件状态放 Redis，最终消息仍落 MySQL。第五是清理和运维，cleanup 先 scan 生成 item，再 execute 并写 audit，避免盲删。
 
-**答：**
+常见追问：
+- 你会先看日志、DB、还是 trace？
+- 哪些地方是最终一致，不是强一致？
+- 如果要扩展到更大规模，先拆哪条边界？
 
-按资源链路排查。
+### Q4: 如果 MinIO 有残留对象怎么清？
 
-第一看用户是否属于对应 Space，角色是否允许查看。第二看 KnowledgeBase 是否 ACTIVE，Document 是否未删除、是否 INDEXED。第三看 DocumentChunk 是否存在，activeIndexVersion 是否匹配。第四看 ES 里是否有对应索引文档，spaceId/knowledgeBaseId/status filter 是否正确。第五看 RAG session scope 是否包含该 KB。第六看 RetrievalTrace 是否召回过该 chunk，如果没有召回，再看 query、BM25/向量/wiki recall、RRF 和 EvidencePostProcessor 的过滤。
+回答时按四步走：
+1. 先说场景：大厂追问通常从“为什么这样设计”转到“失败时怎么办”。
+2. 再说方案：用统一 Task 状态机处理重试和取消，用 indexVersion/activeIndexVersion 处理索引切换，用 Citation/Trace 处理证据排查，用 Redis runtime 和 MySQL 最终消息处理断线恢复，用 scan-first cleanup 降低误删风险。
+3. 再说收益：回答压力题时不靠泛泛而谈，可以按链路定位到 DB、Kafka、ES、Redis、MinIO、LLM 每一层。
+4. 最后落到真实代码锚点，不要停在概念。
 
-## Q5：如何回答“你这个项目是不是过度设计”？
+可直接复述：
 
-**答：**
+> 可靠性我会按五个故障域讲。第一是任务一致性，业务事实先落 MySQL，Outbox 再投 Kafka，Worker 回查 Task 状态执行，失败写 attempt 和 event。第二是索引一致性，文档 reindex 用版本切换，避免新索引失败破坏旧可用结果。第三是证据一致性，Citation 和 RetrievalTrace 能定位 bad answer 是召回问题、证据截断问题还是 LLM 生成问题。第四是运行态恢复，WebSocket partial 和事件状态放 Redis，最终消息仍落 MySQL。第五是清理和运维，cleanup 先 scan 生成 item，再 execute 并写 audit，避免盲删。
 
-我会说它不是为了堆技术，而是因为 AI 知识工作台的风险点天然比较多。
+常见追问：
+- 你会先看日志、DB、还是 trace？
+- 哪些地方是最终一致，不是强一致？
+- 如果要扩展到更大规模，先拆哪条边界？
 
-如果只是个人玩具，可以上传文件、向量检索、问模型就结束。但 NoteWeave 的目标是团队和个人两类空间共存，要处理权限、异步任务、证据引用、运行态恢复、生成成果版本、长期记忆污染、RAG 评测和运维排障。这些问题如果一开始完全不设计，后面会很难补。
+### Q5: 如果用户看不到资料，怎么排查？
 
-同时项目也不是所有地方都上重方案。比如 Redis 只承载 runtime state，不当主任务队列；DRAFT 不写长期 Memory；个人 Artifact 不自动改 ConceptCard；清理先 scan 再 execute；Bibtex 仍然只是扩展方向，而 MCP 这块已经先落了一个远程 B 站 tool service，但没有扩成完整开放平台。
+回答时按四步走：
+1. 先说场景：大厂追问通常从“为什么这样设计”转到“失败时怎么办”。
+2. 再说方案：用统一 Task 状态机处理重试和取消，用 indexVersion/activeIndexVersion 处理索引切换，用 Citation/Trace 处理证据排查，用 Redis runtime 和 MySQL 最终消息处理断线恢复，用 scan-first cleanup 降低误删风险。
+3. 再说收益：回答压力题时不靠泛泛而谈，可以按链路定位到 DB、Kafka、ES、Redis、MinIO、LLM 每一层。
+4. 最后落到真实代码锚点，不要停在概念。
 
-## Q6：哪些高级技术点不能硬说成已经做了？
+可直接复述：
 
-**答：**
+> 可靠性我会按五个故障域讲。第一是任务一致性，业务事实先落 MySQL，Outbox 再投 Kafka，Worker 回查 Task 状态执行，失败写 attempt 和 event。第二是索引一致性，文档 reindex 用版本切换，避免新索引失败破坏旧可用结果。第三是证据一致性，Citation 和 RetrievalTrace 能定位 bad answer 是召回问题、证据截断问题还是 LLM 生成问题。第四是运行态恢复，WebSocket partial 和事件状态放 Redis，最终消息仍落 MySQL。第五是清理和运维，cleanup 先 scan 生成 item，再 execute 并写 audit，避免盲删。
 
-不能说：
+常见追问：
+- 你会先看日志、DB、还是 trace？
+- 哪些地方是最终一致，不是强一致？
+- 如果要扩展到更大规模，先拆哪条边界？
 
-- 真实生产 QPS、P99、token/day 或线上准确率。
-- 完整开放式 MCP 平台已经做完，或者 MCP 已成为所有主链路强依赖。
-- Bibtex 已端到端落地。
-- 完整开放 Agent 平台。
-- GraphRAG 是当前主检索链路。
-- 微服务拆分、注册中心、配置中心、分库分表。
-- Redis 是主后台任务队列。
+## 5. 大厂深挖追问路径
+1. 先问你做了什么。
+2. 再问为什么这样设计，不用更简单方案。
+3. 再问失败、重试、越权、删除、断线、重建索引时会发生什么。
+4. 最后问如何量化效果和下一步演进。
 
-可以说：
+把答案往下压一层：
+- 业务层：大厂追问通常从“为什么这样设计”转到“失败时怎么办”。
+- 架构层：用统一 Task 状态机处理重试和取消，用 indexVersion/activeIndexVersion 处理索引切换，用 Citation/Trace 处理证据排查，用 Redis runtime 和 MySQL 最终消息处理断线恢复，用 scan-first cleanup 降低误删风险。
+- 数据层：引用 MySQL、Redis、MinIO、ES、Kafka 或 Citation/Trace 的真实职责。
+- 测试层：能说出对应 IntegrationTest 或 ServiceTest。
+- 边界层：明确哪些是后续扩展，不冒充已落地。
 
-- 当前已经有权限隔离、异步任务、Hybrid RAG、Citation、Trace、Eval、Admin/Ops 的工程化基础。
-- Bibtex、完整 Agent、GraphRAG、多模型治理可以作为后续扩展方向；MCP 则要更准确地说成“已有远程 B 站 tool service 落地，但不是完整开放平台”。
+## 6. 不能说满的地方
+- 不要说所有失败都能自动恢复。
+- 不要说系统已经有真实压测数据。
+- 不要把当前单体项目包装成微服务已落地。
 
-## 3 到 5 分钟压力答模板
-
-> 如果面试官从可靠性、一致性和排障角度连续追问，我会先把总原则说清楚：NoteWeave 不追求跨 MySQL、Kafka、MinIO、Elasticsearch、LLM 的强事务，而是通过本地业务事实、Outbox、消费侧幂等、索引版本和可观测链路做最终一致。任务执行靠 Task 状态机、TaskAttempt、TaskEvent 和 Admin 操作收敛；检索链路靠 activeIndexVersion、Citation、RetrievalTrace 和 MySQL 状态复核降低脏数据风险；运行态靠 Redis 承载短期状态，而正式事实仍回到 MySQL。也就是说，这个项目的可靠性不是某一个中间件单点兜住的，而是通过边界清晰的职责划分、统一状态模型和排障入口把失败收敛起来。当前我会坚定讲这些工程化基础，也会明确说 MCP 已经先落了一个远程 B 站 tool service，但不会把它夸大成完整开放平台、真实生产 SLA 或完整多 Agent 已落地。
+## 7. 零基础记忆法
+记住一句话：先讲“为什么需要这个模块”，再讲“请求从哪里来、状态落在哪里、失败怎么恢复、证据怎么追踪、权限怎么兜底”。按这个顺序答，大多数追问都能接住。

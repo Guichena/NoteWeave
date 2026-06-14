@@ -37,7 +37,9 @@ Expand in this order:
    - upload -> parse -> chunk -> index -> chat -> citation -> wiki
 4. Personal flow
    - source -> compile -> cards -> artifact -> synthesis
-5. Reliability and operations
+5. Wiki and graph flow
+   - draft -> publish -> version -> index -> relation graph -> auto maintenance
+6. Reliability and operations
    - memory boundaries, eval, observability, admin health/cleanup/audit
 
 ## 3. Recommended Review Order
@@ -69,7 +71,14 @@ Expand in this order:
 - methodology-guided generation
 - artifact distillation into synthesis
 
-### Layer E: Operability
+### Layer E: Wiki, Graph, Tool Extension
+
+- wiki draft, publish, version, index
+- wiki relations and knowledge graph
+- auto-maintenance boundary
+- Studio Skill and Bilibili MCP as controlled tool extension
+
+### Layer F: Operability
 
 - memory writeback rules
 - prompt versioning
@@ -109,6 +118,12 @@ Expand in this order:
 - 方案: keep Artifact as versioned working output; only publish/distill after confirmation
 - 收益: keeps the knowledge base cleaner and easier to trust
 
+### Story 6: Why MCP should be stated carefully
+
+- 场景: Studio benefits from external tools, but a generic open tool platform is risky to overclaim
+- 方案: current repo has controlled Bilibili MCP tool support and artifact workflow integration
+- 收益: shows extension design while staying truthful about current boundaries
+
 ## 5. How to Answer When Metrics Are Missing
 
 Use this template:
@@ -138,6 +153,8 @@ Use this template:
 - Why does personal distillation require confirmation?
 - How do you keep memory useful without writing too much?
 - How do you debug a bad answer end to end?
+- How does the Bilibili MCP tool fit into Studio without becoming a full agent platform?
+- What is the boundary between Wiki graph and full GraphRAG?
 
 ## 7. Answer Depth Rule
 

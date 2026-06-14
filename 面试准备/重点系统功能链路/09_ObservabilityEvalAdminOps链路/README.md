@@ -1,101 +1,150 @@
-﻿# 09 Observability Eval Admin Ops 链路
+# 可观测 Eval Admin Ops
+
+> 本文件为 2026-06-01 重构版，依据当前代码、测试和 Flyway 迁移整理。不要再按旧阶段计划或旧题库口径背。
 
 ## 0. 本篇定位
+AI 系统面试最能拉开差距的是坏答案怎么查、效果怎么评、失败任务怎么恢复、资源残留怎么清。
 
-这条链路回答：AI 系统出错时如何定位，如何做评测、健康检查、资源清理和审计。
+## 1. 面试先说版
+可观测和运维我会讲成 NoteWeave 的成熟度。一次坏答案出来后，管理员不应该只看用户反馈，而是能沿着 PromptVersion、LLMCallLog、RetrievalTrace、Citation 和 AnswerFeedback 去反查：当时用的 prompt 版本是什么，召回了哪些 chunk，证据是否被截断，LLM 调用是否失败。RAG Eval 通过 rag_eval_case、run、result 和 RAG_EVAL_RUN 任务跑隔离评测，不污染正式会话和 Memory。Admin/Ops 还覆盖用户禁用、空间查询、任务取消重试、cleanup scan/execute、组件健康、audit log。面试里重点不是说已有生产指标，而是说这些埋点和管理入口让后续指标验证有地方落。
 
-核心链路：
+## 2. 当前真实口径
+NoteWeave 已经有 PromptVersion、LLMCallLog、RetrievalTrace、AnswerFeedback、RagEval、Admin Task、cleanup、health、audit 等运营面能力。
 
-```text
-PromptVersion
--> LLMCallLog
--> RetrievalTrace
--> AnswerFeedback
--> RagEvalCase / RagEvalRun / RagEvalResult
--> Admin task / health / cleanup / audit
-```
+### 已实现
+- AdminObservabilityController 提供 prompt versions、LLM logs、retrieval traces。
+- AdminRagEvalController 提供 eval cases、eval runs、results。
+- AdminManagementController 提供用户、空间、任务、事件、retry/cancel/mark-failed。
+- AdminOpsController 提供 cleanup scan/execute/jobs、health、dashboard、audit logs。
+- Phase14ObservabilityEvaluationIntegrationTest 和 Phase15AdminOpsIntegrationTest 覆盖核心场景。
+- ContainerizedIntegrationTest 能把 MySQL、Redis、Kafka、MinIO、Elasticsearch 一起接入集成测试，验证 Admin/Ops 不只是 Controller 层返回成功。
 
-## 面试先说版
+### 设计目标
+- AdminObservabilityController 管 prompt/log/trace，AdminRagEvalController 管 eval case/run/result，AdminManagementController 管用户、空间和任务，AdminOpsController 管 cleanup、health、dashboard、audit。
+- 它能把 AI 应用从功能演示推进到可排障、可验收、可管理的工程系统。
 
-这条链路我会从“AI 系统出错怎么定位”讲。传统系统很多错误是接口失败、异常日志或数据不一致，但 AI 系统更常见的问题是回答看起来很完整，其实证据不对、召回漏了、Prompt 版本不合适，或者模型输出漂了。
+### 后续可扩展
+- 如果用户说引用不准，先看 trace 还是 citation？
+- 如果任务重试一直失败，Admin 怎么介入？
+- 如果没有生产指标，怎么诚实说明效果？
 
-所以 NoteWeave 把可观测拆成几层：PromptVersion 管提示词版本，LLMCallLog 管模型调用，RetrievalTrace 管检索过程，Citation 管证据关系，AnswerFeedback 管用户反馈，RAG Eval 管离线 case 和指标。Admin/Ops 再负责任务查询、组件健康、cleanup 和审计。
+## 3. 代码和测试锚点
+- src/main/java/com/noteweave/admin/controller/AdminObservabilityController.java
+- src/main/java/com/noteweave/admin/controller/AdminRagEvalController.java
+- src/main/java/com/noteweave/admin/controller/AdminManagementController.java
+- src/main/java/com/noteweave/admin/controller/AdminOpsController.java
+- src/main/java/com/noteweave/rageval/service/RagEvaluationService.java
+- src/test/java/com/noteweave/support/ContainerizedIntegrationTest.java
+- src/test/java/com/noteweave/admin/Phase14ObservabilityEvaluationIntegrationTest.java
+- src/test/java/com/noteweave/admin/Phase15AdminOpsIntegrationTest.java
 
-面试时我会强调：可观测不是“多打日志”，而是能把坏回答归因到召回、证据选择、Prompt、模型、权限或数据本身。能带出的八股包括 trace-driven debugging、RAG Eval 指标、健康检查、资源清理 scan/execute、审计日志和线上问题闭环。
+## 4. 必会问题与答题骨架
 
-## Q1：为什么 AI 项目还要做 Observability 和 Eval？
+### Q1: 一次坏答案如何排查？
 
-**答：**
+回答时按四步走：
+1. 先说场景：AI 系统面试最能拉开差距的是坏答案怎么查、效果怎么评、失败任务怎么恢复、资源残留怎么清。
+2. 再说方案：AdminObservabilityController 管 prompt/log/trace，AdminRagEvalController 管 eval case/run/result，AdminManagementController 管用户、空间和任务，AdminOpsController 管 cleanup、health、dashboard、audit。
+3. 再说收益：它能把 AI 应用从功能演示推进到可排障、可验收、可管理的工程系统。
+4. 最后落到真实代码锚点，不要停在概念。
 
-因为 AI 系统的失败不一定是接口报错，更多时候是回答不准、证据不对、召回缺失、Prompt 版本不合适、模型输出不稳定。如果没有可观测能力，很难定位问题。
+可直接复述：
 
-NoteWeave 的 Observability 包括 PromptVersion、LLMCallLog、RetrievalTrace、AnswerFeedback 和 RAG Eval。PromptVersion 让 Prompt 变更可管理；LLMCallLog 记录模型、token、latency、promptHash、success 等；RetrievalTrace 记录召回和证据选择；AnswerFeedback 收集用户反馈；RAG Eval 用 case 跑 recall@k、MRR、citationCoverage、latency 等指标。
+> 可观测和运维我会讲成 NoteWeave 的成熟度。一次坏答案出来后，管理员不应该只看用户反馈，而是能沿着 PromptVersion、LLMCallLog、RetrievalTrace、Citation 和 AnswerFeedback 去反查：当时用的 prompt 版本是什么，召回了哪些 chunk，证据是否被截断，LLM 调用是否失败。RAG Eval 通过 rag_eval_case、run、result 和 RAG_EVAL_RUN 任务跑隔离评测，不污染正式会话和 Memory。Admin/Ops 还覆盖用户禁用、空间查询、任务取消重试、cleanup scan/execute、组件健康、audit log。验证上要把单测、MockMvc 集成测试、ContainerizedIntegrationTest、RAG Eval 回归一起讲清楚：它们证明链路状态、跨组件协作和离线质量回归，但不等于生产压测。面试里重点不是说已有生产指标，而是说这些埋点、测试和管理入口让后续指标验证有地方落。
 
-## Q2：线上出现一条坏回答，怎么排查？
+常见追问：
+- 如果用户说引用不准，先看 trace 还是 citation？
+- 如果任务重试一直失败，Admin 怎么介入？
+- 如果没有生产指标，怎么诚实说明效果？
+- 如果集成测试已经跑通，为什么还不能说已有生产级 QPS/P99？
 
-**答：**
+### Q2: PromptVersion 为什么重要？
 
-第一，看 ChatMessage 和 AnswerFeedback，确认用户问题、回答内容和反馈原因。第二，看 RetrievalTrace，确认实际检索了哪些 chunk、分数、是否 selectedAsEvidence、是否命中正确文档。第三，看 Citation，确认回答引用是否真实存在、是否越权、是否引用旧版本。第四，看 LLMCallLog，确认 PromptVersion、模型、token、latency、是否调用成功。第五，如果是系统性问题，可以用 RagEvalCase 复现并跑 Eval。
+回答时按四步走：
+1. 先说场景：AI 系统面试最能拉开差距的是坏答案怎么查、效果怎么评、失败任务怎么恢复、资源残留怎么清。
+2. 再说方案：AdminObservabilityController 管 prompt/log/trace，AdminRagEvalController 管 eval case/run/result，AdminManagementController 管用户、空间和任务，AdminOpsController 管 cleanup、health、dashboard、audit。
+3. 再说收益：它能把 AI 应用从功能演示推进到可排障、可验收、可管理的工程系统。
+4. 最后落到真实代码锚点，不要停在概念。
 
-这样可以把坏回答拆成召回问题、证据后处理问题、Prompt 问题、模型输出问题、权限问题或数据本身问题。
+可直接复述：
 
-## Q3：Eval 会不会污染正式聊天历史？
+> 可观测和运维我会讲成 NoteWeave 的成熟度。一次坏答案出来后，管理员不应该只看用户反馈，而是能沿着 PromptVersion、LLMCallLog、RetrievalTrace、Citation 和 AnswerFeedback 去反查：当时用的 prompt 版本是什么，召回了哪些 chunk，证据是否被截断，LLM 调用是否失败。RAG Eval 通过 rag_eval_case、run、result 和 RAG_EVAL_RUN 任务跑隔离评测，不污染正式会话和 Memory。Admin/Ops 还覆盖用户禁用、空间查询、任务取消重试、cleanup scan/execute、组件健康、audit log。验证上我会分层讲：单测覆盖纯逻辑，MockMvc + ContainerizedIntegrationTest 覆盖 MySQL、Redis、Kafka、MinIO、ES 协作，RAG Eval 覆盖离线质量回归。面试里重点不是说已有生产指标，而是说这些埋点、测试和管理入口让后续指标验证有地方落。
 
-**答：**
+常见追问：
+- 如果用户说引用不准，先看 trace 还是 citation？
+- 如果任务重试一直失败，Admin 怎么介入？
+- 如果没有生产指标，怎么诚实说明效果？
 
-不会。RAG Eval 走独立 task 和 scene，记录自己的 trace 和 llm log，不写正式 chat_session、chat_message 或 long-term memory。
+### Q3: Eval run 为什么不能污染正式 ChatSession？
 
-被追问实现时可以补充：Eval run 会产生自己的 trace 和 llm log，但不会创建正式聊天会话和消息。
+回答时按四步走：
+1. 先说场景：AI 系统面试最能拉开差距的是坏答案怎么查、效果怎么评、失败任务怎么恢复、资源残留怎么清。
+2. 再说方案：AdminObservabilityController 管 prompt/log/trace，AdminRagEvalController 管 eval case/run/result，AdminManagementController 管用户、空间和任务，AdminOpsController 管 cleanup、health、dashboard、audit。
+3. 再说收益：它能把 AI 应用从功能演示推进到可排障、可验收、可管理的工程系统。
+4. 最后落到真实代码锚点，不要停在概念。
 
-## Q4：Admin / Ops 做了哪些系统能力？
+可直接复述：
 
-**答：**
+> 可观测和运维我会讲成 NoteWeave 的成熟度。一次坏答案出来后，管理员不应该只看用户反馈，而是能沿着 PromptVersion、LLMCallLog、RetrievalTrace、Citation 和 AnswerFeedback 去反查：当时用的 prompt 版本是什么，召回了哪些 chunk，证据是否被截断，LLM 调用是否失败。RAG Eval 通过 rag_eval_case、run、result 和 RAG_EVAL_RUN 任务跑隔离评测，不污染正式会话和 Memory。Admin/Ops 还覆盖用户禁用、空间查询、任务取消重试、cleanup scan/execute、组件健康、audit log。验证上我会分层讲：单测覆盖纯逻辑，MockMvc + ContainerizedIntegrationTest 覆盖 MySQL、Redis、Kafka、MinIO、ES 协作，RAG Eval 覆盖离线质量回归。面试里重点不是说已有生产指标，而是说这些埋点、测试和管理入口让后续指标验证有地方落。
 
-Admin / Ops 主要解决系统上线后的管理、排障和资源治理。
+常见追问：
+- 如果用户说引用不准，先看 trace 还是 citation？
+- 如果任务重试一直失败，Admin 怎么介入？
+- 如果没有生产指标，怎么诚实说明效果？
 
-AdminManagement 能查询用户、空间、任务和任务事件，支持用户 disable/enable、任务 retry/cancel/mark failed、空间管理等。AdminOps 支持 cleanup scan/execute、cleanup job 查询、系统健康检查、dashboard summary、audit logs。SystemHealth 会拆分 MySQL、Redis、MinIO、Kafka、Elasticsearch、LLM Provider 等组件，帮助定位依赖问题。
+### Q4: cleanup scan 和 execute 为什么拆开？
 
-## Q5：清理任务为什么要先 scan 再 execute？
+回答时按四步走：
+1. 先说场景：AI 系统面试最能拉开差距的是坏答案怎么查、效果怎么评、失败任务怎么恢复、资源残留怎么清。
+2. 再说方案：AdminObservabilityController 管 prompt/log/trace，AdminRagEvalController 管 eval case/run/result，AdminManagementController 管用户、空间和任务，AdminOpsController 管 cleanup、health、dashboard、audit。
+3. 再说收益：它能把 AI 应用从功能演示推进到可排障、可验收、可管理的工程系统。
+4. 最后落到真实代码锚点，不要停在概念。
 
-**答：**
+可直接复述：
 
-因为资源清理有误删风险。比如上传残留分片、过期 upload、对象存储文件都可能被任务或文档引用。先 scan 能让系统记录候选项和原因，再 execute 执行实际清理，并写 AuditLog。
+> 可观测和运维我会讲成 NoteWeave 的成熟度。一次坏答案出来后，管理员不应该只看用户反馈，而是能沿着 PromptVersion、LLMCallLog、RetrievalTrace、Citation 和 AnswerFeedback 去反查：当时用的 prompt 版本是什么，召回了哪些 chunk，证据是否被截断，LLM 调用是否失败。RAG Eval 通过 rag_eval_case、run、result 和 RAG_EVAL_RUN 任务跑隔离评测，不污染正式会话和 Memory。Admin/Ops 还覆盖用户禁用、空间查询、任务取消重试、cleanup scan/execute、组件健康、audit log。验证上我会分层讲：单测覆盖纯逻辑，MockMvc + ContainerizedIntegrationTest 覆盖 MySQL、Redis、Kafka、MinIO、ES 协作，RAG Eval 覆盖离线质量回归。面试里重点不是说已有生产指标，而是说这些埋点、测试和管理入口让后续指标验证有地方落。
 
-这比直接删除安全，也更容易审计和回溯。
+常见追问：
+- 如果用户说引用不准，先看 trace 还是 citation？
+- 如果任务重试一直失败，Admin 怎么介入？
+- 如果没有生产指标，怎么诚实说明效果？
 
-## 指标口径
+### Q5: health 为什么要按 MySQL/Redis/MinIO/Kafka/ES/LLM 拆？
 
-不要编线上数字。可以讲已经有指标采集和验证入口：
+回答时按四步走：
+1. 先说场景：AI 系统面试最能拉开差距的是坏答案怎么查、效果怎么评、失败任务怎么恢复、资源残留怎么清。
+2. 再说方案：AdminObservabilityController 管 prompt/log/trace，AdminRagEvalController 管 eval case/run/result，AdminManagementController 管用户、空间和任务，AdminOpsController 管 cleanup、health、dashboard、audit。
+3. 再说收益：它能把 AI 应用从功能演示推进到可排障、可验收、可管理的工程系统。
+4. 最后落到真实代码锚点，不要停在概念。
 
-- 任务指标：成功率、失败率、重试率、平均耗时、卡在 PENDING/RUNNING 的数量。
-- 检索指标：recall@k、MRR、citationCoverage、无证据率。
-- LLM 指标：latency、token、失败率、模型错误类型。
-- 运行态指标：stop/resume 成功率、断线恢复率。
-- 运维指标：组件健康、cleanup 数量、审计事件。
+可直接复述：
 
-## 实现兜底锚点
+> 可观测和运维我会讲成 NoteWeave 的成熟度。一次坏答案出来后，管理员不应该只看用户反馈，而是能沿着 PromptVersion、LLMCallLog、RetrievalTrace、Citation 和 AnswerFeedback 去反查：当时用的 prompt 版本是什么，召回了哪些 chunk，证据是否被截断，LLM 调用是否失败。RAG Eval 通过 rag_eval_case、run、result 和 RAG_EVAL_RUN 任务跑隔离评测，不污染正式会话和 Memory。Admin/Ops 还覆盖用户禁用、空间查询、任务取消重试、cleanup scan/execute、组件健康、audit log。验证上我会分层讲：单测覆盖纯逻辑，MockMvc + ContainerizedIntegrationTest 覆盖 MySQL、Redis、Kafka、MinIO、ES 协作，RAG Eval 覆盖离线质量回归。面试里重点不是说已有生产指标，而是说这些埋点、测试和管理入口让后续指标验证有地方落。
 
-- `AdminObservabilityController`
-- `AdminRagEvalController`
-- `AdminManagementController`
-- `AdminOpsController`
-- `SystemHealthService`
-- `ResourceCleanupService`
-- `AuditLogService`
-- `Phase14ObservabilityEvaluationIntegrationTest`
-- `Phase15AdminOpsIntegrationTest`
+常见追问：
+- 如果用户说引用不准，先看 trace 还是 citation？
+- 如果任务重试一直失败，Admin 怎么介入？
+- 如果没有生产指标，怎么诚实说明效果？
 
-## 3 到 5 分钟深答模板
+## 5. 大厂深挖追问路径
+1. 先问你做了什么。
+2. 再问为什么这样设计，不用更简单方案。
+3. 再问失败、重试、越权、删除、断线、重建索引时会发生什么。
+4. 最后问如何量化效果和下一步演进。
 
-> AI 系统真正难排查的地方，不一定是接口报错，而是回答不准、证据不对、召回缺失、Prompt 版本变化或模型输出不稳定。所以 NoteWeave 单独补了一条 Observability / Eval / Admin / Ops 链路。PromptVersion 负责管理提示词变更，LLMCallLog 记录模型调用，RetrievalTrace 记录召回与证据选择，AnswerFeedback 收集用户反馈，RagEvalCase / Run / Result 用来做离线评测，Admin / Ops 再把任务查询、组件健康、cleanup scan/execute 和 AuditLog 串起来。这样一条坏回答出现后，可以从消息和反馈一路追到检索、Citation、Prompt、模型调用和评测结果，而不是只说“模型不稳定”。这也是为什么我认为可观测和评测不是附加功能，而是 AI 系统可治理的前提。
+把答案往下压一层：
+- 业务层：AI 系统面试最能拉开差距的是坏答案怎么查、效果怎么评、失败任务怎么恢复、资源残留怎么清。
+- 架构层：AdminObservabilityController 管 prompt/log/trace，AdminRagEvalController 管 eval case/run/result，AdminManagementController 管用户、空间和任务，AdminOpsController 管 cleanup、health、dashboard、audit。
+- 数据层：引用 MySQL、Redis、MinIO、ES、Kafka 或 Citation/Trace 的真实职责。
+- 测试层：能说出对应 IntegrationTest 或 ServiceTest。
+- 验证层：说明单元测试、集成测试、RAG Eval、Admin trace 分别证明什么，也说明它们不能替代线上压测。
+- 边界层：明确哪些是后续扩展，不冒充已落地。
 
-## 常见追问继续怎么接
+## 6. 不能说满的地方
+- 不要编造生产准确率。
+- 不要说 Eval 等价于线上 A/B。
+- 不要让普通用户访问全局运维日志。
+- 不要把本地/容器化集成测试说成真实线上稳定性数据。
 
-- 如果继续追问“先做功能还是先做观测”，可以答：最小功能能跑通后，要尽快补观测，否则后面回答质量问题根本解释不清。
-- 如果继续追问“没有线上数据怎么讲指标”，可以答：讲指标口径和评测入口，不报没有根据的生产数字。
-- 如果继续追问“Admin/Ops 和业务价值有什么关系”，可以答：它让任务补偿、问题排查、健康巡检和清理审计可执行，不然系统只能靠人肉猜。
-
-## 边界和不能说满的地方
-
-- 可以坚定讲：PromptVersion、LLMCallLog、RetrievalTrace、RagEvalRun、SystemHealth、Cleanup、AuditLog。
-- 不要讲成：已经有真实线上准确率、P99 或 token/day；日志就等于评测；Eval 会直接污染正式聊天和 Memory。
+## 7. 零基础记忆法
+记住一句话：先讲“为什么需要这个模块”，再讲“请求从哪里来、状态落在哪里、失败怎么恢复、证据怎么追踪、权限怎么兜底”。按这个顺序答，大多数追问都能接住。

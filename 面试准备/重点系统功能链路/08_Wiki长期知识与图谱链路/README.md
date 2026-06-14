@@ -1,86 +1,163 @@
-﻿# 08 Wiki 长期知识与图谱链路
+# 团队 Wiki 长期知识与知识图谱
+
+> 本文件为 2026-06-01 重构版，依据当前代码、测试和 Flyway 迁移整理。不要再按旧阶段计划或旧题库口径背。
 
 ## 0. 本篇定位
+团队 RAG 的回答可能是临时结论，Wiki 要承载人工确认后的长期稳定知识，并能被搜索、版本化和图谱化。
 
-这条链路回答：团队侧如何把稳定知识从 Chat 或 Artifact 沉淀为 Wiki，并通过版本、索引和关系图支撑长期知识管理。
+## 1. 面试先说版
+Wiki 这块我会讲成团队长期知识层。团队 RAG 的回答和 Artifact 只是阶段性结果，不一定能直接成为稳定知识。NoteWeave 里可以从 ChatMessage 或 Artifact 创建 Wiki 草稿，经过人工编辑后发布为 WikiPageVersion，然后通过 WIKI_INDEX 任务进入检索。WikiLinkParser、WikiRelationService 和 WikiGraphService 会解析页面关系，KnowledgeGraphController 能暴露空间级图谱和节点详情。这个设计的价值是把“模型生成的临时答案”和“团队确认的长期知识”分开，同时保留版本、来源、Citation 和图谱关系。
 
-核心链路：
+## 2. 当前真实口径
+NoteWeave 用 WikiPage、WikiPageVersion、WikiIndex、WikiGraph 把团队长期知识从临时回答和 Artifact 中沉淀出来。
 
-```text
-ChatMessage / Artifact / manual draft
--> Wiki draft
--> publish
--> WikiPageVersion
--> WIKI_INDEX Task
--> Wiki search / WikiRetriever
--> Wiki relations / graph
-```
+### 已实现
+- TeamWikiController 提供 WikiPage CRUD、publish、versions、relations、message to wiki draft、artifact publish to wiki、search、wiki graph。
+- WikiRetriever 可以作为混合检索的一路来源。
+- KnowledgeGraphController 支持空间级 graph、wiki page graph、node detail、neighborhood、path。
+- AutoWikiMaintenanceService 和 V19 迁移说明当前还有自动维护方向。
 
-## 面试先说版
+### 设计目标
+- TeamWikiService 支持创建草稿、编辑、发布、归档、版本查看；WikiIndexTaskWorker 异步入索引；WikiRelationService/WikiGraphService/KnowledgeGraphService 管理链接、关系和图谱。
+- 让团队知识库不只是文件检索，还能沉淀成结构化、可版本、可引用、可导航的长期知识层。
 
-这条链路我会从“团队长期知识怎么沉淀”讲。RAG 能从原始文档里找证据，但团队协作还需要把稳定结论整理成 Wiki。NoteWeave 支持从聊天、Artifact 或手工草稿生成 Wiki draft，用户发布后形成版本，再异步入索引，成为后续 RAG 的长期知识召回来源。
+### 后续可扩展
+- 如果发布后入索引失败怎么办？
+- 如果 Wiki 链接指向不存在页面怎么办？
+- 如果团队知识和个人研究要互通，边界怎么设计？
 
-这里的取舍是：Wiki 不是模型生成后自动写入，而是人工确认后的长期团队知识。Wiki Graph 当前更偏页面关系、链接解析、可视化探索和 Wiki recall 辅助，不要夸成完整 GraphRAG 主链路。
+## 3. 代码和测试锚点
+- src/main/java/com/noteweave/team/wiki/controller/TeamWikiController.java
+- src/main/java/com/noteweave/team/wiki/service/TeamWikiService.java
+- src/main/java/com/noteweave/team/wiki/service/WikiIndexTaskWorker.java
+- src/main/java/com/noteweave/team/wiki/service/WikiGraphService.java
+- src/main/java/com/noteweave/graph/service/KnowledgeGraphService.java
+- src/test/java/com/noteweave/team/wiki/Phase10TeamWikiIntegrationTest.java
 
-## Q1：团队 Wiki 在系统里承担什么职责？
+## 4. 必会问题与答题骨架
 
-**答：**
+### Q1: Artifact 和 Wiki 为什么分开？
 
-团队 Wiki 承担的是人工确认后的长期团队知识。
+回答时按四步走：
+1. 先说场景：团队 RAG 的回答可能是临时结论，Wiki 要承载人工确认后的长期稳定知识，并能被搜索、版本化和图谱化。
+2. 再说方案：TeamWikiService 支持创建草稿、编辑、发布、归档、版本查看；WikiIndexTaskWorker 异步入索引；WikiRelationService/WikiGraphService/KnowledgeGraphService 管理链接、关系和图谱。
+3. 再说收益：让团队知识库不只是文件检索，还能沉淀成结构化、可版本、可引用、可导航的长期知识层。
+4. 最后落到真实代码锚点，不要停在概念。
 
-团队文档和 RAG 适合从原始资料里找证据，但团队长期协作还需要把稳定结论整理成 WikiPage。NoteWeave 支持手动创建 Wiki 草稿，也可以从 ChatMessage 或 Artifact 生成 Wiki Draft。发布后生成 WikiPageVersion，并通过 WIKI_INDEX Task 入索引，成为后续 RAG 的一个召回来源。
+可直接复述：
 
-这样团队知识从“原始文档片段”升级到“人工整理后的长期页面”，同时保留版本、引用和关系。
+> Wiki 这块我会讲成团队长期知识层。团队 RAG 的回答和 Artifact 只是阶段性结果，不一定能直接成为稳定知识。NoteWeave 里可以从 ChatMessage 或 Artifact 创建 Wiki 草稿，经过人工编辑后发布为 WikiPageVersion，然后通过 WIKI_INDEX 任务进入检索。WikiLinkParser、WikiRelationService 和 WikiGraphService 会解析页面关系，KnowledgeGraphController 能暴露空间级图谱和节点详情。这个设计的价值是把“模型生成的临时答案”和“团队确认的长期知识”分开，同时保留版本、来源、Citation 和图谱关系。
 
-## Q2：为什么 Wiki 发布也要异步入索引？
+常见追问：
+- 如果发布后入索引失败怎么办？
+- 如果 Wiki 链接指向不存在页面怎么办？
+- 如果团队知识和个人研究要互通，边界怎么设计？
 
-**答：**
+### Q2: Wiki 发布为什么要走异步入索引？
 
-因为入索引依赖 ES，可能失败，也可能需要处理引用、链接和图关系。异步任务能记录状态、重试和错误，不影响草稿和发布记录本身。
+回答时按四步走：
+1. 先说场景：团队 RAG 的回答可能是临时结论，Wiki 要承载人工确认后的长期稳定知识，并能被搜索、版本化和图谱化。
+2. 再说方案：TeamWikiService 支持创建草稿、编辑、发布、归档、版本查看；WikiIndexTaskWorker 异步入索引；WikiRelationService/WikiGraphService/KnowledgeGraphService 管理链接、关系和图谱。
+3. 再说收益：让团队知识库不只是文件检索，还能沉淀成结构化、可版本、可引用、可导航的长期知识层。
+4. 最后落到真实代码锚点，不要停在概念。
 
-这也和文档索引保持一致：长期知识进入检索链路时，不直接在用户请求里同步完成所有索引工作，而是通过 Task/Worker 保证状态可追踪。
+可直接复述：
 
-## Q3：Artifact 发布为 Wiki 和个人 Artifact 沉淀为 Synthesis 有什么区别？
+> Wiki 这块我会讲成团队长期知识层。团队 RAG 的回答和 Artifact 只是阶段性结果，不一定能直接成为稳定知识。NoteWeave 里可以从 ChatMessage 或 Artifact 创建 Wiki 草稿，经过人工编辑后发布为 WikiPageVersion，然后通过 WIKI_INDEX 任务进入检索。WikiLinkParser、WikiRelationService 和 WikiGraphService 会解析页面关系，KnowledgeGraphController 能暴露空间级图谱和节点详情。这个设计的价值是把“模型生成的临时答案”和“团队确认的长期知识”分开，同时保留版本、来源、Citation 和图谱关系。
 
-**答：**
+常见追问：
+- 如果发布后入索引失败怎么办？
+- 如果 Wiki 链接指向不存在页面怎么办？
+- 如果团队知识和个人研究要互通，边界怎么设计？
 
-团队 Wiki 面向团队共享知识，发布后进入团队可检索知识体系；个人 SynthesisCard 面向个人研究沉淀，默认 owner-only。
+### Q3: WikiRetriever 在 Hybrid RAG 里解决什么问题？
 
-两者相同点是都需要用户确认，不让 LLM 生成内容自动污染长期知识。不同点是团队 Wiki 有页面版本、发布状态、Wiki 索引和团队图关系；个人 Synthesis 更偏研究产物总结和个人知识卡片。
+回答时按四步走：
+1. 先说场景：团队 RAG 的回答可能是临时结论，Wiki 要承载人工确认后的长期稳定知识，并能被搜索、版本化和图谱化。
+2. 再说方案：TeamWikiService 支持创建草稿、编辑、发布、归档、版本查看；WikiIndexTaskWorker 异步入索引；WikiRelationService/WikiGraphService/KnowledgeGraphService 管理链接、关系和图谱。
+3. 再说收益：让团队知识库不只是文件检索，还能沉淀成结构化、可版本、可引用、可导航的长期知识层。
+4. 最后落到真实代码锚点，不要停在概念。
 
-## Q4：Wiki Graph 是当前主检索链路吗？
+可直接复述：
 
-**答：**
+> Wiki 这块我会讲成团队长期知识层。团队 RAG 的回答和 Artifact 只是阶段性结果，不一定能直接成为稳定知识。NoteWeave 里可以从 ChatMessage 或 Artifact 创建 Wiki 草稿，经过人工编辑后发布为 WikiPageVersion，然后通过 WIKI_INDEX 任务进入检索。WikiLinkParser、WikiRelationService 和 WikiGraphService 会解析页面关系，KnowledgeGraphController 能暴露空间级图谱和节点详情。这个设计的价值是把“模型生成的临时答案”和“团队确认的长期知识”分开，同时保留版本、来源、Citation 和图谱关系。
 
-不要把它说成 GraphRAG 主链路。
+常见追问：
+- 如果发布后入索引失败怎么办？
+- 如果 Wiki 链接指向不存在页面怎么办？
+- 如果团队知识和个人研究要互通，边界怎么设计？
 
-当前可以讲的是 Team Wiki 支持页面关系、链接解析、graph 展示和 WikiRetriever 作为 hybrid recall 的一部分。它增强团队长期知识的组织和召回，但不要夸大成完整 GraphRAG 推理系统。
+### Q4: 知识图谱在当前项目里承担什么作用？
 
-稳妥表达是：当前图谱更偏 Wiki 页面关系和可视化探索，以及作为 Wiki recall 的辅助来源；完整 GraphRAG、多跳推理、图算法排序可以作为后续扩展。
+回答时按四步走：
+1. 先说场景：团队 RAG 的回答可能是临时结论，Wiki 要承载人工确认后的长期稳定知识，并能被搜索、版本化和图谱化。
+2. 再说方案：TeamWikiService 支持创建草稿、编辑、发布、归档、版本查看；WikiIndexTaskWorker 异步入索引；WikiRelationService/WikiGraphService/KnowledgeGraphService 管理链接、关系和图谱。
+3. 再说收益：让团队知识库不只是文件检索，还能沉淀成结构化、可版本、可引用、可导航的长期知识层。
+4. 最后落到真实代码锚点，不要停在概念。
 
-## 实现兜底锚点
+可直接复述：
 
-- `TeamWikiService`
-- `WikiIndexTaskWorker`
-- `WikiIndexService`
-- `WikiSearchService`
-- `WikiRetriever`
-- `WikiGraphService`
-- `WikiRelationService`
-- `WikiLinkParser`
-- `Phase10TeamWikiIntegrationTest`
+> Wiki 这块我会讲成团队长期知识层。团队 RAG 的回答和 Artifact 只是阶段性结果，不一定能直接成为稳定知识。NoteWeave 里可以从 ChatMessage 或 Artifact 创建 Wiki 草稿，经过人工编辑后发布为 WikiPageVersion，然后通过 WIKI_INDEX 任务进入检索。WikiLinkParser、WikiRelationService 和 WikiGraphService 会解析页面关系，KnowledgeGraphController 能暴露空间级图谱和节点详情。这个设计的价值是把“模型生成的临时答案”和“团队确认的长期知识”分开，同时保留版本、来源、Citation 和图谱关系。
 
-## 3 到 5 分钟深答模板
+常见追问：
+- 如果发布后入索引失败怎么办？
+- 如果 Wiki 链接指向不存在页面怎么办？
+- 如果团队知识和个人研究要互通，边界怎么设计？
 
-> 团队 Wiki 解决的是“把稳定知识从原始资料和聊天回答里沉淀成长期团队知识”的问题。团队文档和 RAG 更适合找证据，但协作场景里还需要把稳定结论整理成 Wiki 页面。NoteWeave 支持从聊天、Artifact 或手工草稿生成 Wiki draft，发布后生成页面版本，再通过后台索引任务异步入索引，成为后续 Wiki recall 的来源。这样团队侧的长期知识既保留版本，又能进入搜索和 RAG。页面关系和图谱能力更偏长期知识组织、可视化探索和 Wiki recall 的辅助来源，而不是当前主检索链路上的完整 GraphRAG。
+### Q5: Wiki 版本和 Citation 如何支撑可追溯？
 
-## 常见追问继续怎么接
+回答时按四步走：
+1. 先说场景：团队 RAG 的回答可能是临时结论，Wiki 要承载人工确认后的长期稳定知识，并能被搜索、版本化和图谱化。
+2. 再说方案：TeamWikiService 支持创建草稿、编辑、发布、归档、版本查看；WikiIndexTaskWorker 异步入索引；WikiRelationService/WikiGraphService/KnowledgeGraphService 管理链接、关系和图谱。
+3. 再说收益：让团队知识库不只是文件检索，还能沉淀成结构化、可版本、可引用、可导航的长期知识层。
+4. 最后落到真实代码锚点，不要停在概念。
 
-- 如果继续追问“为什么 Wiki 不直接替代文档库”，可以答：Wiki 负责稳定结论，原始文档负责证据细节，两者不是替代关系。
-- 如果继续追问“发布为什么还要异步”，可以答：因为索引更新和关系刷新不该阻塞主事务，发布成功和可检索成功要靠任务链路最终收敛。
-- 如果继续追问“图谱现在有什么价值”，可以答：当前价值在知识组织、关系浏览和辅助召回，不要夸成完整 GraphRAG 推理引擎。
+可直接复述：
 
-## 边界和不能说满的地方
+> Wiki 这块我会讲成团队长期知识层。团队 RAG 的回答和 Artifact 只是阶段性结果，不一定能直接成为稳定知识。NoteWeave 里可以从 ChatMessage 或 Artifact 创建 Wiki 草稿，经过人工编辑后发布为 WikiPageVersion，然后通过 WIKI_INDEX 任务进入检索。WikiLinkParser、WikiRelationService 和 WikiGraphService 会解析页面关系，KnowledgeGraphController 能暴露空间级图谱和节点详情。这个设计的价值是把“模型生成的临时答案”和“团队确认的长期知识”分开，同时保留版本、来源、Citation 和图谱关系。
 
-- 可以坚定讲：Wiki draft / publish / version / index / recall / graph 展示。
-- 不要讲成：发布后自动全量替代文档证据；Wiki Graph 已经是完整 GraphRAG 主链路；生成内容会自动无审核沉淀进长期知识。
+常见追问：
+- 如果发布后入索引失败怎么办？
+- 如果 Wiki 链接指向不存在页面怎么办？
+- 如果团队知识和个人研究要互通，边界怎么设计？
+
+## 5. 大厂深挖追问路径
+1. 先问你做了什么。
+2. 再问为什么这样设计，不用更简单方案。
+3. 再问失败、重试、越权、删除、断线、重建索引时会发生什么。
+4. 最后问如何量化效果和下一步演进。
+
+把答案往下压一层：
+- 业务层：团队 RAG 的回答可能是临时结论，Wiki 要承载人工确认后的长期稳定知识，并能被搜索、版本化和图谱化。
+- 架构层：TeamWikiService 支持创建草稿、编辑、发布、归档、版本查看；WikiIndexTaskWorker 异步入索引；WikiRelationService/WikiGraphService/KnowledgeGraphService 管理链接、关系和图谱。
+- 数据层：引用 MySQL、Redis、MinIO、ES、Kafka 或 Citation/Trace 的真实职责。
+- 测试层：能说出对应 IntegrationTest 或 ServiceTest。
+- 边界层：明确哪些是后续扩展，不冒充已落地。
+
+## 6. 不能说满的地方
+- 不要把当前 Wiki Graph 说成完整 GraphRAG 主线。
+- 不要说复杂审批流已完成。
+- 不要说自动维护可以替代人工确认。
+
+## 7. 零基础记忆法
+记住一句话：先讲“为什么需要这个模块”，再讲“请求从哪里来、状态落在哪里、失败怎么恢复、证据怎么追踪、权限怎么兜底”。按这个顺序答，大多数追问都能接住。
+
+## 8. Wiki、Artifact、Document 的区别
+| 对象 | 生命周期 | 可信度 | 是否自动进入检索 | 面试口径 |
+|---|---|---|---|---|
+| Document | 原始资料 | 取决于上传内容 | 解析、chunk、索引后进入检索 | 团队资料来源 |
+| Artifact | 生成产物 | 需要用户判断 | 默认不自动变长期知识 | 阶段性工作成果 |
+| Wiki | 人工确认后的团队知识 | 更稳定 | 发布后通过 WIKI_INDEX 进入检索 | 长期知识层 |
+
+这三个对象不能混在一起讲。Document 是资料来源，Artifact 是生成结果，Wiki 是治理后的长期知识。把 Artifact 自动写 Wiki 看起来省操作，但会把模型草稿污染长期知识库。
+
+## 9. Wiki 发布后检索不到怎么查
+1. 先查 `wiki_page.status` 是否 PUBLISHED。
+2. 再查 `publishedVersionId` 是否和索引任务 payload 一致。
+3. 再查 `WIKI_INDEX` Task / TaskAttempt / TaskEvent 是否失败。
+4. 再查 ES wiki 文档 id 是否是 `wiki:{wikiPageId}:{publishedVersionId}`。
+5. 再查 HybridRetriever 是否打开 includeWiki，以及 WikiRetriever 是否按 spaceId 查询。
+6. 如果结果能查到但用户看不到，再回到 Space 权限和 Citation 展示校验。
+
+## 10. 图谱不能说满
+当前 WikiGraph 和 KnowledgeGraph 更适合讲成“长期知识导航和关系维护”，不要讲成完整 GraphRAG 主链路。面试里可以说后续会把图谱关系用于 query expansion、实体跳转和更强的 evidence planning，但当前 RAG 主召回仍是 BM25、向量和 Wiki recall。

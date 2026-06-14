@@ -1,94 +1,143 @@
-﻿# 06 WebSocket Runtime 与 Memory 链路
+# WebSocket Runtime 与长期记忆
+
+> 本文件为 2026-06-01 重构版，依据当前代码、测试和 Flyway 迁移整理。不要再按旧阶段计划或旧题库口径背。
 
 ## 0. 本篇定位
+真实工作台需要流式输出、停止、恢复、草稿和长期记忆边界，不能只靠一次 HTTP 返回。
 
-这条链路回答：NoteWeave 如何支持流式回答、stop/resume、DRAFT/FORMAL，以及长期记忆的分层写回和加载。
+## 1. 面试先说版
+WebSocket runtime 这块我会讲成用户体验和状态一致性的结合。HTTP 问答可以完成基本 RAG，但工作台需要流式 token、停止、刷新恢复和临时草稿。所以系统先通过 POST /api/v1/chat/ws-ticket 发一次性 ticket，握手后建立 /ws/chat/{ticket}。后端发统一事件 envelope，包括 connected、started、delta、completed、stopped、failed、restored。运行中的 partialContent、event seq、stop 标记和短期状态放 Redis，正式消息和最终结果落 MySQL。DRAFT 和 FORMAL 分开是关键：DRAFT 适合临时探索，不写长期 Memory；FORMAL 才会经过 MemoryWritebackStrategy，在过滤短问候、敏感内容和低价值输入后写 session summary、space memory 或 user memory。
 
-核心链路：
+## 2. 当前真实口径
+NoteWeave 用 WebSocket runtime 处理流式交互，用 DRAFT/FORMAL 区分临时探索和正式沉淀，用 MemoryWritebackStrategy 控制长期记忆。
 
-```text
-ws-ticket
--> WebSocket /ws/chat/{ticket}
--> chat.started / chat.delta / chat.completed
--> Redis runtime state
--> stop / resume / partialContent
--> FORMAL writeback
--> SessionSummary / SpaceMemory / UserMemory
-```
+### 已实现
+- WebSocketTicketController 提供 `/api/v1/chat/ws-ticket`。
+- WebSocketConfig 和 WebSocketAuthHandshakeInterceptor 处理 WebSocket 注册与握手安全。
+- ChatRuntimeService、ChatRuntimeStateStore、ActiveExecutionRegistry 实现 runtime、stop、resume。
+- MemoryController、MemoryWritebackService、MemoryWritebackStrategy、ContextReadRouter 实现长期记忆和上下文读取。
 
-## 面试先说版
+### 设计目标
+- ws-ticket 一次性消费，WebSocket 发送 chat.connected/chat.started/chat.delta/chat.completed/chat.stopped/chat.failed/chat.restored，Redis 保存 runtime/short-term/event state，Formal 会话写 MySQL 消息并触发受控 memory writeback。
+- 用户刷新、停止和恢复有状态可依，同时 DRAFT 不污染长期记忆。
 
-这条链路我会从“AI 工作台的运行态和长期记忆怎么分开”讲。HTTP 一问一答只能解决同步请求，但真实 AI 产品需要流式输出、中途停止、刷新恢复、草稿探索和正式知识沉淀。NoteWeave 用 WebSocket 承接流式体验，用 Redis 保存短期 runtime state，用 MySQL 保存正式消息、Citation、Artifact 和 Memory。
+### 后续可扩展
+- Redis runtime state 丢失后用户还能看到什么？
+- 哪些内容不能写入 Memory？
+- ContextReadRouter 为什么要分层读，而不是全量历史塞 prompt？
 
-另一个关键点是 DRAFT 和 FORMAL。DRAFT 是临时探索，不写长期 Memory；FORMAL 才可能根据策略写会话摘要、空间记忆或用户偏好。这样既支持顺滑交互，也避免把用户随手试的问题污染长期记忆。
+## 3. 代码和测试锚点
+- src/main/java/com/noteweave/chat/runtime/service/ChatRuntimeService.java
+- src/main/java/com/noteweave/chat/runtime/service/ChatRuntimeStateStore.java
+- src/main/java/com/noteweave/chat/runtime/service/ActiveExecutionRegistry.java
+- src/main/java/com/noteweave/memory/service/MemoryWritebackStrategy.java
+- src/test/java/com/noteweave/chat/Phase5WorkspaceChatRuntimeIntegrationTest.java
+- src/test/java/com/noteweave/memory/Phase12LongTermMemoryIntegrationTest.java
 
-## Q1：为什么要做 WebSocket Runtime，不只用 HTTP 问答？
+## 4. 必会问题与答题骨架
 
-**答：**
+### Q1: HTTP 能用，为什么还要 WebSocket？
 
-HTTP 问答适合非流式、请求响应式的场景，但真实 AI 工作台需要流式输出、停止生成、刷新恢复、DRAFT 临时探索等能力。
+回答时按四步走：
+1. 先说场景：真实工作台需要流式输出、停止、恢复、草稿和长期记忆边界，不能只靠一次 HTTP 返回。
+2. 再说方案：ws-ticket 一次性消费，WebSocket 发送 chat.connected/chat.started/chat.delta/chat.completed/chat.stopped/chat.failed/chat.restored，Redis 保存 runtime/short-term/event state，Formal 会话写 MySQL 消息并触发受控 memory writeback。
+3. 再说收益：用户刷新、停止和恢复有状态可依，同时 DRAFT 不污染长期记忆。
+4. 最后落到真实代码锚点，不要停在概念。
 
-WebSocket Runtime 解决的是会话执行过程中的运行态问题。用户发出消息后，服务端会推送 `chat.started`、多个 `chat.delta`、最后 `chat.completed`。如果用户中途 stop，就发 `chat.stopped` 并停止后续 delta。如果浏览器刷新，可以通过 ack/resume 恢复事件和 partialContent。
+可直接复述：
 
-## Q2：Redis 在 Runtime 里承担什么职责？
+> WebSocket runtime 这块我会讲成用户体验和状态一致性的结合。HTTP 问答可以完成基本 RAG，但工作台需要流式 token、停止、刷新恢复和临时草稿。所以系统先通过 POST /api/v1/chat/ws-ticket 发一次性 ticket，握手后建立 /ws/chat/{ticket}。后端发统一事件 envelope，包括 connected、started、delta、completed、stopped、failed、restored。运行中的 partialContent、event seq、stop 标记和短期状态放 Redis，正式消息和最终结果落 MySQL。DRAFT 和 FORMAL 分开是关键：DRAFT 适合临时探索，不写长期 Memory；FORMAL 才会经过 MemoryWritebackStrategy，在过滤短问候、敏感内容和低价值输入后写 session summary、space memory 或 user memory。
 
-**答：**
+常见追问：
+- Redis runtime state 丢失后用户还能看到什么？
+- 哪些内容不能写入 Memory？
+- ContextReadRouter 为什么要分层读，而不是全量历史塞 prompt？
 
-Redis 在这里主要承载短期运行态，不是主业务事实源，也不是后台任务队列。
+### Q2: DRAFT 和 FORMAL 为什么要区分？
 
-具体包括一次性 WebSocket ticket、当前 session runtime status、partialContent、事件 buffer、seq/ack/resume 状态、stop 标记等。这些状态有明显临时性，适合 TTL 过期，不适合全部落 MySQL。
+回答时按四步走：
+1. 先说场景：真实工作台需要流式输出、停止、恢复、草稿和长期记忆边界，不能只靠一次 HTTP 返回。
+2. 再说方案：ws-ticket 一次性消费，WebSocket 发送 chat.connected/chat.started/chat.delta/chat.completed/chat.stopped/chat.failed/chat.restored，Redis 保存 runtime/short-term/event state，Formal 会话写 MySQL 消息并触发受控 memory writeback。
+3. 再说收益：用户刷新、停止和恢复有状态可依，同时 DRAFT 不污染长期记忆。
+4. 最后落到真实代码锚点，不要停在概念。
 
-正式 ChatMessage、Citation、Task、Artifact、Memory 这些长期事实仍然在 MySQL。
+可直接复述：
 
-## Q3：为什么要区分 DRAFT 和 FORMAL？
+> WebSocket runtime 这块我会讲成用户体验和状态一致性的结合。HTTP 问答可以完成基本 RAG，但工作台需要流式 token、停止、刷新恢复和临时草稿。所以系统先通过 POST /api/v1/chat/ws-ticket 发一次性 ticket，握手后建立 /ws/chat/{ticket}。后端发统一事件 envelope，包括 connected、started、delta、completed、stopped、failed、restored。运行中的 partialContent、event seq、stop 标记和短期状态放 Redis，正式消息和最终结果落 MySQL。DRAFT 和 FORMAL 分开是关键：DRAFT 适合临时探索，不写长期 Memory；FORMAL 才会经过 MemoryWritebackStrategy，在过滤短问候、敏感内容和低价值输入后写 session summary、space memory 或 user memory。
 
-**答：**
+常见追问：
+- Redis runtime state 丢失后用户还能看到什么？
+- 哪些内容不能写入 Memory？
+- ContextReadRouter 为什么要分层读，而不是全量历史塞 prompt？
 
-因为用户在 AI 工作台里有两类行为：一类是正式知识生产，一类是临时探索。
+### Q3: runtime state 为什么放 Redis？
 
-FORMAL 会话适合长期保留，可以写 ChatMessage、Citation、Memory，总结后影响后续上下文。DRAFT 会话更像临时草稿，用户可能随便试问题、改方向、探索不成熟想法。如果 DRAFT 也写长期 Memory，很容易污染用户画像和空间记忆。
+回答时按四步走：
+1. 先说场景：真实工作台需要流式输出、停止、恢复、草稿和长期记忆边界，不能只靠一次 HTTP 返回。
+2. 再说方案：ws-ticket 一次性消费，WebSocket 发送 chat.connected/chat.started/chat.delta/chat.completed/chat.stopped/chat.failed/chat.restored，Redis 保存 runtime/short-term/event state，Formal 会话写 MySQL 消息并触发受控 memory writeback。
+3. 再说收益：用户刷新、停止和恢复有状态可依，同时 DRAFT 不污染长期记忆。
+4. 最后落到真实代码锚点，不要停在概念。
 
-所以 DRAFT 默认不写长期 Memory，可以被转换为 FORMAL，也可以丢弃或过期。
+可直接复述：
 
-## Q4：长期记忆为什么要分层？
+> WebSocket runtime 这块我会讲成用户体验和状态一致性的结合。HTTP 问答可以完成基本 RAG，但工作台需要流式 token、停止、刷新恢复和临时草稿。所以系统先通过 POST /api/v1/chat/ws-ticket 发一次性 ticket，握手后建立 /ws/chat/{ticket}。后端发统一事件 envelope，包括 connected、started、delta、completed、stopped、failed、restored。运行中的 partialContent、event seq、stop 标记和短期状态放 Redis，正式消息和最终结果落 MySQL。DRAFT 和 FORMAL 分开是关键：DRAFT 适合临时探索，不写长期 Memory；FORMAL 才会经过 MemoryWritebackStrategy，在过滤短问候、敏感内容和低价值输入后写 session summary、space memory 或 user memory。
 
-**答：**
+常见追问：
+- Redis runtime state 丢失后用户还能看到什么？
+- 哪些内容不能写入 Memory？
+- ContextReadRouter 为什么要分层读，而不是全量历史塞 prompt？
 
-因为不同记忆的作用域不同，不能把所有历史会话都塞进 Prompt。
+### Q4: stop/resume 怎么保证不重复、不丢状态？
 
-SessionSummary 记录某次正式会话的摘要；SpaceMemory 记录当前用户在某个空间里的工作上下文；UserMemory 记录跨空间的稳定偏好；MemoryItem 承载具体偏好或空间上下文条目。
+回答时按四步走：
+1. 先说场景：真实工作台需要流式输出、停止、恢复、草稿和长期记忆边界，不能只靠一次 HTTP 返回。
+2. 再说方案：ws-ticket 一次性消费，WebSocket 发送 chat.connected/chat.started/chat.delta/chat.completed/chat.stopped/chat.failed/chat.restored，Redis 保存 runtime/short-term/event state，Formal 会话写 MySQL 消息并触发受控 memory writeback。
+3. 再说收益：用户刷新、停止和恢复有状态可依，同时 DRAFT 不污染长期记忆。
+4. 最后落到真实代码锚点，不要停在概念。
 
-这样既能减少 token 和噪声，也能按作用域、置信度、过期时间、pin、禁用开关控制记忆写入和加载。
+可直接复述：
 
-## 常见追问
+> WebSocket runtime 这块我会讲成用户体验和状态一致性的结合。HTTP 问答可以完成基本 RAG，但工作台需要流式 token、停止、刷新恢复和临时草稿。所以系统先通过 POST /api/v1/chat/ws-ticket 发一次性 ticket，握手后建立 /ws/chat/{ticket}。后端发统一事件 envelope，包括 connected、started、delta、completed、stopped、failed、restored。运行中的 partialContent、event seq、stop 标记和短期状态放 Redis，正式消息和最终结果落 MySQL。DRAFT 和 FORMAL 分开是关键：DRAFT 适合临时探索，不写长期 Memory；FORMAL 才会经过 MemoryWritebackStrategy，在过滤短问候、敏感内容和低价值输入后写 session summary、space memory 或 user memory。
 
-**追问：Redis 丢了会怎样？**
+常见追问：
+- Redis runtime state 丢失后用户还能看到什么？
+- 哪些内容不能写入 Memory？
+- ContextReadRouter 为什么要分层读，而不是全量历史塞 prompt？
 
-短期体验会受影响，比如不能恢复最近 delta 或 partialContent，但正式落库的历史消息、Artifact、Citation、Task 不应该丢。
+### Q5: 长期记忆为什么要分 session summary、space memory、user memory？
 
-**追问：Memory 写入怎么避免污染？**
+回答时按四步走：
+1. 先说场景：真实工作台需要流式输出、停止、恢复、草稿和长期记忆边界，不能只靠一次 HTTP 返回。
+2. 再说方案：ws-ticket 一次性消费，WebSocket 发送 chat.connected/chat.started/chat.delta/chat.completed/chat.stopped/chat.failed/chat.restored，Redis 保存 runtime/short-term/event state，Formal 会话写 MySQL 消息并触发受控 memory writeback。
+3. 再说收益：用户刷新、停止和恢复有状态可依，同时 DRAFT 不污染长期记忆。
+4. 最后落到真实代码锚点，不要停在概念。
 
-通过写入策略控制。DRAFT 不写，短问候不写，包含 password、token、secret、api-key 等敏感信号的不写，低置信度偏好不覆盖高置信度偏好。
+可直接复述：
 
-## 实现兜底锚点
+> WebSocket runtime 这块我会讲成用户体验和状态一致性的结合。HTTP 问答可以完成基本 RAG，但工作台需要流式 token、停止、刷新恢复和临时草稿。所以系统先通过 POST /api/v1/chat/ws-ticket 发一次性 ticket，握手后建立 /ws/chat/{ticket}。后端发统一事件 envelope，包括 connected、started、delta、completed、stopped、failed、restored。运行中的 partialContent、event seq、stop 标记和短期状态放 Redis，正式消息和最终结果落 MySQL。DRAFT 和 FORMAL 分开是关键：DRAFT 适合临时探索，不写长期 Memory；FORMAL 才会经过 MemoryWritebackStrategy，在过滤短问候、敏感内容和低价值输入后写 session summary、space memory 或 user memory。
 
-- `WebSocketTicketService`
-- `ChatWebSocketHandler`
-- `ChatRuntimeService`
-- `ChatRuntimeStateStore`
-- `ActiveExecutionRegistry`
-- `MemoryWritebackStrategy`
-- `MemoryWritebackService`
-- `MemoryContextService`
-- `ContextReadRouter`
-- `Phase5WorkspaceChatRuntimeIntegrationTest`
-- `Phase12LongTermMemoryIntegrationTest`
+常见追问：
+- Redis runtime state 丢失后用户还能看到什么？
+- 哪些内容不能写入 Memory？
+- ContextReadRouter 为什么要分层读，而不是全量历史塞 prompt？
 
-## 3 到 5 分钟深答模板
+## 5. 大厂深挖追问路径
+1. 先问你做了什么。
+2. 再问为什么这样设计，不用更简单方案。
+3. 再问失败、重试、越权、删除、断线、重建索引时会发生什么。
+4. 最后问如何量化效果和下一步演进。
 
-> HTTP 问答能解决“一问一答”，但 AI 工作台真正麻烦的是运行态：流式输出、中途 stop、刷新后 resume、DRAFT 探索态和长期记忆写回。NoteWeave 为此单独做了 WebSocket Runtime。客户端先拿一次性 ticket 建连，服务端按 `chat.started`、`chat.delta`、`chat.completed` 推送事件，Redis 保存短期 runtime state、事件缓冲和 partialContent；用户 stop 时会设置停止标记并保留 partialContent，刷新后再根据 ack / resume 重放最近事件。正式消息、Citation、Artifact 和长期 Memory 仍然落 MySQL。Memory 也不是无脑写回，而是分成 SessionSummary、SpaceMemory 和 UserMemory，并通过写入策略过滤 DRAFT、寒暄、敏感信息和低价值内容。这样流式体验和长期知识边界就被分开了。
+把答案往下压一层：
+- 业务层：真实工作台需要流式输出、停止、恢复、草稿和长期记忆边界，不能只靠一次 HTTP 返回。
+- 架构层：ws-ticket 一次性消费，WebSocket 发送 chat.connected/chat.started/chat.delta/chat.completed/chat.stopped/chat.failed/chat.restored，Redis 保存 runtime/short-term/event state，Formal 会话写 MySQL 消息并触发受控 memory writeback。
+- 数据层：引用 MySQL、Redis、MinIO、ES、Kafka 或 Citation/Trace 的真实职责。
+- 测试层：能说出对应 IntegrationTest 或 ServiceTest。
+- 边界层：明确哪些是后续扩展，不冒充已落地。
 
-## 边界和不能说满的地方
+## 6. 不能说满的地方
+- 不要把 Redis 说成主业务事实源。
+- 不要说 DRAFT 会自动写长期记忆。
+- 不要说 stop 一定能终止外部 LLM 已经产生的所有 token，只能保证后端不继续推送并保存可控状态。
 
-- 可以坚定讲：Redis 负责短期运行态，MySQL 负责正式事实，DRAFT 不写长期 Memory。
-- 不要讲成：Redis 是主事实源；resume 能恢复所有历史状态；长期记忆会无差别保存全部会话内容。
+## 7. 零基础记忆法
+记住一句话：先讲“为什么需要这个模块”，再讲“请求从哪里来、状态落在哪里、失败怎么恢复、证据怎么追踪、权限怎么兜底”。按这个顺序答，大多数追问都能接住。

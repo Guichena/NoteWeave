@@ -1,228 +1,124 @@
-﻿# MySQL：业务事实与事务边界
+# MySQL：业务事实、表结构与事务边界
+
+> 本文件为 2026-06-01 加深版。面试问 MySQL 时，不要只讲 ACID，要讲 NoteWeave 如何把身份权限、任务状态、知识资产、证据链、记忆、评测和运维都落成可事务化事实。
 
-## 0. 本篇定位
+## 0. 一句话定位
 
-这篇用于回答 NoteWeave 为什么用 MySQL、MySQL 在项目里存什么、它和 Kafka/Redis/ES/MinIO 如何分工，以及面试里常见的事务、索引、锁、状态机、幂等和数据一致性问题。
+MySQL 是 NoteWeave 的最终业务事实源：谁能看什么、任务执行到哪、文档是否可检索、Artifact/Wiki/Synthesis 是否已确认、一次坏答案如何追溯，都要能回到表结构和状态字段。
 
-## 1. 本主题面试官想考什么
+## 1. 表结构按题组讲
 
-面试官问 MySQL，通常不是想听“关系型数据库支持事务”这么简单，而是想验证：
+### 身份与空间边界
 
-1. 你是否知道哪些数据必须是业务事实。
-2. 你是否理解 MySQL 与 Redis、ES、MinIO、Kafka 的边界。
-3. 你是否能讲清事务、唯一约束、行锁、状态机和 Outbox 的作用。
-4. 你是否知道索引、分页、归档和未来分库分表该怎么回答。
+核心表：
+- `users`：账号、邮箱、密码 hash、`system_role`、`status`。
+- `space`：空间类型、owner、状态。
+- `space_member`：`space_id + user_id` 唯一，保存 OWNER/EDITOR/VIEWER 和成员状态。
+- `user_session`：refresh token hash、过期和撤销。
 
-## 2. 高频问题清单
+面试重点：
+- `system_role` 和 `space_member.role` 分开，避免平台 Admin 和空间协作权限混在一起。
+- `idx_space_member_user_status`、`idx_space_member_space_status` 支撑“查我在哪些空间”和“查空间成员”两类高频路径。
 
-基础问题：
+### 长任务与 Outbox
 
-- NoteWeave 里 MySQL 存了哪些数据？
-- 为什么不用 ES 或 Redis 直接当主库？
-- Flyway 在项目里解决什么问题？
+核心表：
+- `task`：`task_type`、`target_type/target_id`、`task_status`、`idempotency_key`、`input_json/output_json`、`cancel_requested`、`retry_count`。
+- `task_attempt`：每次执行 attempt 和 worker 状态。
+- `task_event`：状态流转、失败原因和进度事件。
+- `task_outbox`：同事务写入消息事实，后续投递 Kafka。
 
-进阶问题：
+面试重点：
+- `uk_task_idempotency` 防止同一个业务动作重复创建任务。
+- `idx_task_type_status` 用来查某类任务积压，`idx_task_target` 用来按业务对象反查任务。
+- `task_outbox.status + next_retry_at` 是调度器扫描重试的关键索引。
 
-- Task/Outbox 为什么要和业务数据在同一个事务里写？
-- Worker 重复消费时 MySQL 怎么帮忙保证幂等？
-- Citation 为什么要关系化存储？
+### 团队知识摄取与索引
 
-深挖追问：
+核心表：
+- `knowledge_base`：团队知识库容器。
+- `document_upload`：分片上传会话、文件 md5、总 chunk 数、任务 id、状态。
+- `upload_chunk`：`upload_id + chunk_index` 唯一，记录每个分片对象。
+- `file_object`：`space_id + content_hash` 唯一，管理 MinIO 对象和 `ref_count`。
+- `document`：业务文档状态、`parse_status`、`index_status`、`active_index_version`、软删除字段。
+- `document_chunk`：`document_id + index_version + chunk_index` 唯一，记录 chunk、页码、offset、ES doc id。
 
-- `findByIdForUpdate` 这类行锁解决什么问题？
-- 如果文档 soft delete 了，MySQL 和 ES 怎么同步可见性？
-- 数据量变大后哪些表最可能先膨胀？
+面试重点：
+- `document` 是业务事实，`document_chunk` 是可追溯分片事实，ES 只是检索读模型。
+- `active_index_version` 让重建索引失败时不破坏旧版本。
+- `file_object` 按 space 隔离 content hash，避免跨空间秒传泄露文件存在性。
 
-压力追问：
+### Chat、RAG、证据和反馈
 
-- 当前有没有分库分表？
-- 如何设计索引？
-- 没有生产数据量怎么回答容量问题？
+核心表：
+- `chat_session`：用户、空间、session kind、scope snapshot、runtime status。
+- `chat_session_scope`：会话绑定的 KB/Wiki/范围。
+- `chat_message`：`session_id + message_seq` 唯一，保存对话顺序。
+- `citation`：证据来源、chunk、页码、offset、quote、snapshot、source version。
+- `message_citation`：消息和 citation 多对多，并可绑定 `retrieval_trace_id`。
+- `retrieval_trace` / `retrieval_trace_item`：召回、融合、后处理、选中证据。
+- `llm_call_log`：provider、model、prompt version、token、latency、scene。
+- `answer_feedback`：`user_id + message_id` 唯一，避免重复反馈。
 
-## 3. 问答与讲解
+面试重点：
+- Citation 不放在 message JSON 里，是为了独立权限校验、证据复用、Trace 排障和版本追溯。
+- `retrieval_trace_item` 把“召回候选”和“最终 evidence”分开，能解释为什么答案错。
+- `llm_call_log.scene` 和 `prompt_version_id` 能定位是哪条场景、哪版 prompt 产生的问题。
 
-### Q1：NoteWeave 里 MySQL 承担什么职责？
+### 个人研究、Artifact、Wiki 和长期沉淀
 
-#### 面试官为什么问
+核心表：
+- `research_project`、`source`：个人研究项目和资料来源，Source 有 import/compile 两套状态。
+- `article_card`、`concept_card`、`concept_alias`、`concept_relation`、`article_concept_relation`：个人知识结构化。
+- `artifact`、`artifact_version`、`artifact_source`、`artifact_citation`、`session_artifact`：版本化产物和来源。
+- `methodology_card`：方法论卡片，保存 workflow、output structure、quality checklist，并有 SYSTEM/SPACE/PROJECT 范围。
+- `synthesis_card`、`artifact_distillation_proposal`、`artifact_card_relation`、`synthesis_card_citation`：用户确认后的个人沉淀。
+- `wiki_page`、`wiki_page_version`、`wiki_page_citation`、`wiki_page_link`：团队长期知识、版本、证据和图谱链接。
 
-这是中间件边界题。面试官想看你是否知道 MySQL 是业务事实源，而不是只会说“存数据”。
+面试重点：
+- Artifact 和 Wiki/Synthesis 分开，是为了避免模型草稿自动污染长期知识。
+- `artifact_version_id` 出现在 proposal、relation 和 synthesis 中，是为了确认用户沉淀的是某个确定版本。
+- `wiki_page.published_version_id + index_status` 让发布事实和 ES 入索引状态分开。
+- `wiki_page_link` 用 `source_page_id + target_title` 唯一，支持 unresolved link 和图谱修复。
 
-#### 回答思路
+### 记忆、评测和运维
 
-先说 MySQL 保存长期业务事实，再按模块举例：用户、空间、权限、任务、文档元数据、Citation、Artifact、Memory、Eval、Admin/Ops。
+核心表：
+- `session_summary`、`space_memory`、`user_memory`、`memory_item`：分层长期记忆和可过期 memory item。
+- `prompt_version`：scene + version 唯一，管理不同场景 Prompt。
+- `rag_eval_case`、`rag_eval_run`、`rag_eval_result`：离线评测样本、执行批次和指标结果。
+- `audit_log`、`ops_cleanup_job`、`ops_cleanup_item`、`system_health_snapshot`：审计、资源清理和健康快照。
 
-#### 结合 NoteWeave 怎么答
+面试重点：
+- Memory 不是一张大表强塞所有内容，而是 session/space/user/item 分层，服务不同读取场景。
+- RAG Eval 与正式 ChatSession 分离，避免评测污染用户会话和 Memory。
+- cleanup 分 job/item 两层，scan 和 execute 可审计、可回放。
 
-NoteWeave 把正式状态都放在 MySQL：`users`、`space`、`task`、`task_outbox`、`document`、`document_chunk`、`citation`、`artifact`、`memory_item`、`rag_eval_run`、`system_health_snapshot` 等。Redis、ES、MinIO、Kafka 都不替代 MySQL 的业务事实位置。
+## 2. 高频深问与答法
 
-#### 技术原理 / 链路设计讲解
+### Q1: 为什么不用一张 JSON 大表保存所有 AI 结果？
 
-MySQL 适合保存结构化状态和关系：权限关系、任务状态机、引用关系、版本关系、审计记录。它提供事务、唯一约束、行锁和可查询关系模型，适合承载“系统到底发生了什么”的事实。ES 是检索索引，Redis 是短期状态，MinIO 是对象内容，Kafka 是事件分发，都不是最终业务事实源。
+答：AI 系统最需要追溯和边界。一张大 JSON 表短期开发快，但无法稳定回答“这个证据来自哪里、用户现在还有没有权限、哪个版本生成了这个 Artifact、哪个任务失败、哪个 prompt 产生坏答案”。NoteWeave 把事实拆成 message、citation、trace、artifact_version、wiki_version、synthesis、memory、eval_result，是为了让权限、版本、任务和排障都能被索引和查询。
 
-#### 实现兜底锚点
+### Q2: 为什么当前迁移里很少显式外键？
 
-- `src/main/resources/db/migration/V1__...` 到 `V18__...`
-- `TaskRepository` / `TaskOutboxRepository`
-- `DocumentRepository` / `DocumentChunkRepository`
-- `CitationRepository`
-- `ArtifactRepository` / `ArtifactVersionRepository`
-- `MemoryItemRepository`
-- `SystemHealthSnapshotRepository`
-- `SystemHealthService.checkMysql()`
+答：当前项目主要靠服务层校验、唯一索引、状态机和集成测试维护关系，比如 `space_id`、`document_id`、`artifact_id`、`citation_id` 都会在 Service 层做权限和存在性检查。这样在快速重构和异步任务里更灵活，也减少跨模块迁移耦合。面试可以补一句：如果进入更严格生产阶段，核心强关系可以逐步补 FK 或约束校验，但不能用 FK 替代权限和业务状态判断。
 
-#### 可直接复述的面试回答
+### Q3: 表索引设计怎么讲？
 
-MySQL 在 NoteWeave 里是业务事实源。像用户、空间、成员权限、任务状态、Outbox、文档元数据、chunk 元数据、Citation、Artifact 版本、个人卡片、Memory、Eval 和 Admin/Ops 记录，都落在 MySQL。其他中间件各有职责：Redis 存短期运行态，MinIO 存文件对象，Elasticsearch 存检索索引，Kafka 做后台任务分发。但一旦要回答“某个资源是否存在、归谁所有、当前状态是什么、是否有权限访问、任务是否成功、证据指向哪里”，最终都要回到 MySQL 的业务表。
+答：按查询路径讲，而不是背索引名。权限边界查 `space_id/status`，任务调度查 `task_type/task_status` 和 `task_outbox(status,next_retry_at)`，索引一致性查 `document_id/index_version`，RAG 排障查 `retrieval_trace(scene,created_at)` 和 `retrieval_trace_item(trace_id,rank_no)`，评测查 `rag_eval_run(space_id,created_at)`，运维查 `audit_log(action,created_at)` 和 `system_health_snapshot(component,checked_at)`。
 
-#### 常见追问
+### Q4: MySQL 和 ES 状态不一致怎么办？
 
-- 为什么 Citation 不直接存在 JSON 里？
-- ES 里也有 chunk，为什么还要 MySQL 的 `document_chunk`？
-- Redis 能不能存任务状态？
+答：MySQL 是事实源。先看 `document.status/active_index_version/index_status` 或 `wiki_page.index_status/published_version_id`，再看 ES 是否还有旧 doc。RAG 检索要过滤 space、knowledgeBase、lifecycleStatus、documentStatus，并校验 indexVersion 等于 activeIndexVersion。修复时可以重跑 DOCUMENT_REINDEX、WIKI_INDEX 或 cleanup，而不是直接信 ES。
 
-#### 常见坑
+### Q5: 为什么软删除这么多？
 
-- 不要说 ES 或 Redis 是主业务事实源。
-- 不要说 MinIO 对象本身代表用户有权限访问。
+答：知识系统里历史消息、Citation、Trace、Wiki 版本和 Artifact 都可能引用旧资源。直接物理删除会破坏审计和排障。软删除先让业务查询和检索不可见，保留追溯；后续再由 cleanup scan/execute 根据引用和保留策略清理 MinIO/ES 残留。
 
-### Q2：Task/Outbox 为什么要写在 MySQL 里？
+## 3. 不能说满
 
-#### 面试官为什么问
-
-这是事务一致性题。面试官会追问直接发 Kafka 会发生什么。
-
-#### 回答思路
-
-讲业务状态和待发送事件必须在同一个事务里形成事实，避免 DB 成功但消息丢失，或消息发出但事务回滚。
-
-#### 结合 NoteWeave 怎么答
-
-上传 merge 成功后，会创建 `Document`、`Task`、`TaskEvent`、`TaskOutbox`，后续由 dispatcher 投递 Kafka。Artifact、Source、Wiki、Eval、Cleanup 等长任务也复用同一套模式。
-
-#### 技术原理 / 链路设计讲解
-
-Outbox Pattern 的本质是把“需要发消息”也变成数据库事实。业务事务提交后，后台再投递 Kafka。投递失败可以重试，投递成功后修改 outbox 状态。Kafka 可能重复投递，所以 Worker 还要回查 MySQL 任务状态和幂等键。
-
-#### 实现兜底锚点
-
-- `TaskService`
-- `TaskOutboxService.createTaskCreatedOutbox`
-- `TaskOutboxDispatchScheduler`
-- `TaskExecutionCoordinator.claimTask`
-- `TaskServiceIntegrationTest`
-
-#### 可直接复述的面试回答
-
-NoteWeave 的 Task 和 Outbox 放在 MySQL，是为了把业务状态和待发送消息放进同一个事务里。比如文档 merge 后，系统不能只创建 Document 然后直接发 Kafka，因为可能出现 DB 成功但 Kafka 发送失败，也可能 Kafka 先发出但事务回滚。Outbox 的做法是：事务里先写 Task、TaskEvent 和 TaskOutbox，等事务提交后由 dispatcher 投递 Kafka。投递失败时 outbox 仍然可补偿；投递成功也不代表任务一定执行成功，Worker 还要回查 MySQL 状态并 claim 任务。这样链路是最终一致，而不是靠一次直接发消息赌成功。
-
-#### 常见追问
-
-- Outbox 会不会重复发？
-- Kafka 消息发到了但 Worker 重复消费怎么办？
-- 为什么还需要 `task_attempt` 和 `task_event`？
-
-#### 常见坑
-
-- 不要说 Outbox 保证绝对不重复。
-- 不要说 Kafka 成功就等于业务成功。
-
-### Q3：MySQL 在 Worker 幂等里起什么作用？
-
-#### 面试官为什么问
-
-这是重复消费和并发控制题。
-
-#### 回答思路
-
-讲 Worker 只把 Kafka 消息当触发信号，执行前回查 MySQL，只有 `PENDING` 能 claim 成 `RUNNING`。
-
-#### 结合 NoteWeave 怎么答
-
-`TaskExecutionCoordinator.claimTask` 通过 `findByIdForUpdate` 拿任务并检查状态。如果任务不再是 `PENDING`，重复消息会被跳过。
-
-#### 技术原理 / 链路设计讲解
-
-数据库行锁可以避免两个 Worker 同时把同一个任务 claim 成运行态。状态机本身也是幂等边界：`PENDING -> RUNNING -> SUCCESS/FAILED/CANCELLED/TIMEOUT`。真正业务副作用还要结合唯一约束、版本号或业务状态检查。
-
-#### 实现兜底锚点
-
-- `TaskExecutionCoordinator.claimTask`
-- `TaskRepository.findByIdForUpdate`
-- `TaskStatus`
-- `TaskAttempt`
-
-#### 可直接复述的面试回答
-
-Kafka 消息在 NoteWeave 里只是触发信号，Worker 不直接相信消息体。消费时会先用 taskId 回查 MySQL，并通过行锁 claim 任务，只有 `PENDING` 状态才能转成 `RUNNING`，同时创建 `TaskAttempt`。如果同一条消息被重复消费，或者 outbox 重复投递，第二次进来发现任务已经不是 `PENDING`，就会直接跳过。也就是说，幂等不是只靠 MQ，而是靠 MySQL 状态机、行锁、幂等键和具体业务表约束一起完成。
-
-#### 常见追问
-
-- 如果 Worker 执行到一半宕机怎么办？
-- 业务副作用已经写了一半怎么办？
-- `cancel_requested` 如何配合 MySQL 状态？
-
-#### 常见坑
-
-- 不要说 Kafka exactly-once 就能解决业务幂等。
-- 不要忽略业务侧唯一约束和状态检查。
-
-### Q4：MySQL 八股怎么结合项目讲？
-
-#### 面试官为什么问
-
-面试官可能从项目题切到数据库基础，比如事务、索引、锁、MVCC。
-
-#### 回答思路
-
-每个八股点都要落回 NoteWeave 的真实场景。
-
-#### 结合 NoteWeave 怎么答
-
-- 事务：创建业务记录、Task、TaskOutbox 必须一起提交。
-- 行锁：Worker claim task 时避免并发执行。
-- 唯一约束：任务幂等键、关联关系去重。
-- 索引：spaceId、userId、status、taskType、documentId、citationId 等查询维度。
-- MVCC：普通读不阻塞写，但关键状态迁移要加锁。
-
-#### 可直接复述的面试回答
-
-如果面试官问 MySQL 八股，我会尽量结合 NoteWeave 场景讲。事务对应的是业务记录和 Task/Outbox 同时写入；行锁对应的是 Worker claim 任务，防止重复执行；唯一约束对应幂等键和关系去重；索引对应列表查询、权限过滤、任务状态筛选和 citation 回溯；MVCC 则解释为什么普通查询可以读快照，但状态迁移这种关键路径必须用 `for update` 或等价机制保证并发安全。这样回答比单独背概念更像真实项目经验。
-
-#### 常见追问
-
-- 为什么不是所有查询都加锁？
-- 索引建太多有什么代价？
-- 大表怎么治理？
-
-#### 常见坑
-
-- 不要泛泛背八股，必须挂到任务、权限、文档、Citation、Memory 这些表。
-
-### Q5：当前没有分库分表怎么回答？
-
-#### 面试官为什么问
-
-这是压力题，考你是否会为了显得高级而乱吹。
-
-#### 回答思路
-
-明确当前没有分库分表，再说明为什么现在不需要，以及未来如何演进。
-
-#### 结合 NoteWeave 怎么答
-
-当前是本地验收的工程工作台，没有生产规模证据证明必须分库分表。未来最可能膨胀的是 `citation`、`retrieval_trace`、`llm_call_log`、`task_event`、`document_chunk` 这类表。
-
-#### 可直接复述的面试回答
-
-当前 NoteWeave 没有做分库分表，我不会把它说成已落地能力。原因是现阶段没有真实生产数据规模证明必须拆。现在更合理的是先做好空间隔离字段、索引、分页、归档、保留期和后台清理。如果未来 citation、retrieval trace、LLM log、task event 或 document chunk 这些表变大，我会先看查询模式和增长速度，优先做冷热归档、按时间或 space 维度分区、ES 检索分担查询压力，最后才考虑分库分表和分片键。
-
-#### 常见追问
-
-- 如果按 spaceId 分片会有什么问题？
-- trace 表按时间分区是否更合适？
-- 分库后跨空间 Admin 查询怎么办？
-
-#### 常见坑
-
-- 不要说当前已经做了分库分表。
-- 不要为了回答高并发题硬套电商订单模型。
+- 不要说数据库已经做了分库分表、读写分离或线上压测。
+- 不要说所有关系都由外键强约束；当前重点是服务层边界、唯一索引和状态机。
+- 不要说 ES/Redis/Kafka 可以代替 MySQL 事实源。
+- 不要说软删除后对象会立刻被物理清理。

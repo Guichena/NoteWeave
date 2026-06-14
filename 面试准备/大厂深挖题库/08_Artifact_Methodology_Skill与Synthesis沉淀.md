@@ -1,238 +1,101 @@
-# 文件：08_Artifact_Methodology_Skill与Synthesis沉淀.md
+# Artifact Methodology Skill 与 Synthesis 沉淀
+
+> 本文件为 2026-06-01 重构版，依据当前代码、测试和 Flyway 迁移整理。不要再按旧阶段计划或旧题库口径背。
 
 ## 0. 本篇定位
-
-这篇负责 Artifact、Methodology、Skill 和 Synthesis 沉淀边界的深挖。它适合回答生成产物为什么要版本化、MethodologyCard 解决什么问题、Skill 为什么是受控流水线而不是开放 Agent，以及为什么长期知识沉淀必须保留确认边界。
-
-## 1. 本主题面试官想考什么
-
-这个主题考察你对 AI 生成成果生命周期的设计：Artifact 为什么独立于 ChatMessage，为什么要版本化，Methodology 如何影响 prompt，Skill 在项目里到底是什么，为什么个人 Artifact 要用户确认后才沉淀为 SynthesisCard。
-
-## 2. 高频问题清单
-
-### 基础问题
-
-- Artifact 是什么？和 Message/Wiki/Card 有什么区别？
-- Artifact 为什么要版本化？
-- MethodologyCard 在项目里起什么作用？
-- Skill 执行在项目里到底是什么？
-
-### 进阶问题
-
-- 为什么生成结果不能自动进入 Wiki？
-- Methodology 为什么不直接写死在 prompt 里？
-- ArtifactPlanExecutor 的 plan 如何工作？
-- SkillExecutionLog 为什么要脱敏？
-- 个人 Artifact 为什么沉淀为 SynthesisCard，而不是直接改 ConceptCard？
-
-### 深挖追问
-
-- `PROJECT / SPACE / PRESET` 方法论匹配顺序如何设计？
-- Artifact distillation 为什么要绑定 artifactVersionId？
-- stale proposal 为什么要拒绝？
-- 如果 Skill 执行失败，Artifact 状态如何处理？
-
-### 压力追问
-
-- 你这里的 Skill 是不是 Agent？
-- 如何避免 Artifact 生成污染个人 Wiki？
-- 如果用户编辑 Artifact 后再沉淀，如何保证引用版本正确？
-- 如果未来支持开放插件式 Skill，需要补哪些安全边界？
-
-## 3. 问答与讲解
-
-### Q1：为什么 Artifact 要独立出来，而不是直接存 ChatMessage？
-
-#### 面试官为什么问
-
-面试官想看你是否理解“对话内容”和“可交付成果”的生命周期不同。
-
-#### 回答思路
-
-说明 ChatMessage 是交互记录，Artifact 是结构化成果，有版本、来源、引用、导出、编辑、再生成和沉淀生命周期。
-
-#### 结合我的项目怎么答
-
-项目有 Artifact、ArtifactVersion、ArtifactSource、ArtifactCitation、SessionArtifact。Artifact 可以来自团队 ChatMessage，也可以来自个人 ResearchProject。它支持查看、编辑、归档、导出和重新生成；生成过程通过 `ArtifactPlanExecutor` 执行固定 plan，并记录 SkillExecutionLog。
-
-#### 技术原理 / 链路设计讲解
-
-如果把成果直接放在 ChatMessage 里，会出现几个问题：无法版本化、无法独立编辑、无法导出、无法绑定多源引用、无法沉淀到 Wiki/Card、无法复用生成状态。Artifact 独立后，Chat 可以继续是交互记录，Artifact 则成为可管理的内容资产。
-
-#### 技术栈特点与选型理由
-
-MySQL 保存 Artifact 元数据、版本和引用关系；MinIO 可存导出或快照；Task Worker 负责生成；LLM 日志和 Skill 日志支持排障。
-
-#### 可直接复述的面试回答
-
-我把 Artifact 从 ChatMessage 里独立出来，是因为二者生命周期不一样。ChatMessage 是对话记录，Artifact 是可交付成果，比如报告、学习指南、对比分析、Wiki 草稿。Artifact 需要版本、来源、引用、编辑、导出、重新生成和后续沉淀能力。如果只存在 message content 里，后面很难做版本追踪和证据审计。当前项目用 Artifact、ArtifactVersion、ArtifactSource、ArtifactCitation 来管理成果，让它既能从聊天生成，也能从个人研究项目生成。
-
-#### 常见追问
-
-- Artifact 编辑后 citation 怎么处理？
-- Artifact 和 Wiki 的边界是什么？
-- ArtifactVersion 为什么不能覆盖？
-
-#### 常见坑
-
-不要说 Artifact 只是“生成结果页面”。要讲生命周期和证据关系。
-
----
-
-### Q2：MethodologyCard 为什么不直接写死在 prompt 里？
-
-#### 面试官为什么问
-
-这是可扩展性和 Prompt Governance 题。面试官想看你是否能把提示词从代码里抽象成可管理的知识。
-
-#### 回答思路
-
-说明写死 prompt 的问题：难复用、难版本、难按项目/空间/预设匹配、难治理。MethodologyCard 提供 workflow、outputStructure、qualityChecklist。
-
-#### 结合我的项目怎么答
-
-项目里 MethodologyMatcher 按 project -> personal space -> preset 的顺序匹配，优先 exact artifactType/problemType，再用 scene signal 破 ties，最后 GENERAL fallback。生成时 `MethodologyPromptSectionBuilder` 把选中的 methodology 注入 prompt，让不同类型 Artifact 有不同输出框架。
-
-#### 技术原理 / 链路设计讲解
-
-Methodology 本质上是“生成方法”和“质量标准”的结构化配置，而不是单纯 prompt 文本。把它抽出来后，项目可以支持预设模板、用户自定义、项目级覆盖、空间级复用和后续版本管理。
-
-#### 技术栈特点与选型理由
-
-MethodologyCard 存在 MySQL，便于 CRUD、scope、status、createdBy、版本和权限控制；Prompt rendering 通过服务层注入，避免散落在各个生成方法里。
-
-#### 可直接复述的面试回答
-
-MethodologyCard 我没有直接写死在 prompt 里，因为它更像生成方法论和质量标准，而不是一段固定提示词。比如研究报告、学习指南、工作准备材料，需要不同 workflow、输出结构和质量检查项。如果写死在代码里，后续项目级定制、个人空间复用、预设模板和版本管理都会很困难。当前设计是通过 MethodologyMatcher 按 project、space、preset 的顺序匹配，再把 workflow、outputStructure、qualityChecklist 注入生成 prompt。这样既保留稳定结构，又不把所有生成逻辑硬编码。
-
-#### 常见追问
-
-- GENERAL fallback 有什么意义？
-- 用户自定义方法论如何避免越权？
-- Methodology 会不会导致 prompt 过长？
-
-#### 常见坑
-
-不要把 Methodology 说成“几个模板”。它的亮点在作用域、匹配、注入和治理。
-
----
-
-### Q3：你这里的 Skill 是不是完整 Agent 平台？
-
-#### 面试官为什么问
-
-这是简历风险题。如果你写了 Skill，面试官可能会追问是否有工具调用、规划、权限沙箱、多 Agent 协作。
-
-#### 回答思路
-
-诚实降维：当前 Skill 更像可控的生成流水线步骤和执行日志，不是完全开放的 Agent 插件生态。然后讲它的价值：可观测、可取消、可记录、可扩展。
-
-#### 结合我的项目怎么答
-
-`ArtifactPlanExecutor` 对不同 ArtifactType 定义固定 plan，如 LoadGenerationContextSkill、SelectEvidenceSkill、GenerateReportSkill、SaveArtifactSkill。每一步会记录 SkillExecutionLog，包括状态、耗时、模型、token 和脱敏输入输出。它不是开放式 Agent 自主规划，而是受控编排。
-
-#### 技术原理 / 链路设计讲解
-
-受控 Skill pipeline 的好处是可预测：每个步骤职责清楚，可以在 taskContext 中检查取消、记录进度、失败时定位。开放 Agent 虽然灵活，但需要工具权限、沙箱、预算、循环控制、审计和安全策略，当前项目没有把它作为主链路实现。
-
-#### 技术栈特点与选型理由
-
-固定 plan 用 Java 服务实现，适合当前工程阶段；SkillExecutionLog 支持排障；TaskExecutionContext 支持取消和 progress。后续如果扩展开放 Skill，需要引入权限声明、输入输出 schema、资源预算和沙箱。
-
-#### 可直接复述的面试回答
-
-我会很明确地说，当前项目里的 Skill 不是完整开放式 Agent 平台。它更像受控的生成流水线步骤。比如生成报告会按 LoadGenerationContext、SelectEvidence、GenerateReport、SaveArtifact 这样的固定 plan 执行，每一步都有日志、耗时、状态和脱敏输入输出，也能在安全点响应取消。这样做的收益是可控、可观测、容易排障。完整 Agent 平台需要开放工具调用、权限沙箱、预算控制、循环终止和多工具审计，这些不是当前主链路，所以我不会把它夸大成已经实现的 Agent 生态。
-
-#### 常见追问
-
-- 如果未来做开放 Skill，需要哪些安全机制？
-- SkillExecutionLog 为什么要脱敏？
-- 固定 plan 会不会不够灵活？
-
-#### 常见坑
-
-不要为了显得高级说“这是 Agent”。诚实说“受控生成流水线”反而更可信。
-
----
-
-### Q4：个人 Artifact 为什么要用户确认后才沉淀为 SynthesisCard？
-
-#### 面试官为什么问
-
-这是知识污染控制题。面试官想看你有没有把 AI 输出和长期知识分层。
-
-#### 回答思路
-
-说明 Artifact 是生成成果，不一定稳定可信；SynthesisCard 是个人 Wiki 的长期知识，需要显式确认、绑定版本、复制 citation、避免改写 ConceptCard。
-
-#### 结合我的项目怎么答
-
-项目的 distillation 是两步：先生成 proposal，不写个人 Wiki；用户 confirm 后，服务端复核 owner-only 权限，确认 proposal 绑定的 artifactVersionId 仍是当前版本，再创建 SynthesisCard、artifact_card_relation、synthesis_card_citation、synthesis_concept_relation，并把 Artifact 标记为 DISTILLED_TO_PERSONAL_WIKI。
-
-#### 技术原理 / 链路设计讲解
-
-绑定 artifactVersionId 是为了避免“用户预览 A 版本，确认时 Artifact 已变成 B 版本”的错配。SynthesisCard 不直接改 ConceptCard，是因为生成成果可能是综合结论，不应该自动覆盖已有概念事实。
-
-#### 技术栈特点与选型理由
-
-MySQL 关系表保存 Artifact -> SynthesisCard 的 lineage；Citation 复制为正式关系；stale proposal 拒绝保证版本一致性。
-
-#### 可直接复述的面试回答
-
-个人 Artifact 默认不会自动进入个人 Wiki，因为 Artifact 是生成成果，可能还需要用户判断和编辑。真正进入长期知识的 SynthesisCard 必须经过用户确认。项目里 distillation 是两步：先生成 proposal，只做预览，不写 Card；确认时重新校验 owner 权限，并检查 proposal 绑定的 artifactVersionId 还是当前版本，避免用户预览的是旧版本却确认到新内容。确认后才创建 SynthesisCard、复制 citation，并建立 Artifact 到 Card 的关系。这样能避免 AI 输出自动污染个人知识库。
-
-#### 常见追问
-
-- stale proposal 怎么判断？
-- 为什么不直接合并 ConceptCard？
-- no-citation Artifact 能不能沉淀？
-
-#### 常见坑
-
-不要说“生成完自动保存到 Wiki”。这个项目的优势正是显式确认和版本绑定。
-
----
-
-## 4. 本主题总结
-
-Artifact 主题要讲清：Artifact 是可版本化成果，不等于 Message/Wiki/Card；Methodology 是结构化生成方法；Skill 是受控 pipeline，不是开放 Agent；Synthesis 沉淀必须用户确认并绑定具体版本。
-
-## 5. 面试前自查清单
-
-- 我是否能解释 Artifact、Wiki、Card、Message 的边界？
-- 我是否能讲出 ArtifactPlanExecutor 的固定 plan 价值？
-- 我是否能诚实说明 Skill 不是完整 Agent？
-- 我是否能解释 MethodologyCard 的匹配和注入？
-- 我是否能说明 distillation 为什么要 proposal/confirm 两步？
-
-## 6. 整条链路深讲：Artifact 如何从生成任务变成可沉淀成果
-
-第一步是创建 Studio/Artifact 任务。用户可以从团队 ChatMessage 或个人 ResearchProject 创建生成任务。系统先创建 Artifact 元数据，再创建 `ARTIFACT_GENERATE` Task，进入统一 Task/Outbox/Kafka Worker。
-
-第二步是加载生成上下文。`ArtifactPlanExecutor` 的第一步通常是 `LoadGenerationContextSkill`。如果来源是团队 ChatMessage，就加载 session、message、message citations；如果来源是个人 ResearchProject，就调用 `PersonalGenerationService.prepare`，加载 ResearchProject、ArticleCard、ConceptCard、SynthesisCard、MethodologyCard 和 SOURCE-backed evidence。
-
-第三步是方法论匹配。个人生成会通过 MethodologyMatcher 按 project -> personal space -> preset 查找 MethodologyCard。匹配结果会注入 workflow、outputStructure 和 qualityChecklist，让不同 ArtifactType 有不同生成结构。
-
-第四步是受控 Skill pipeline。不同 ArtifactType 有固定 plan，比如 REPORT 是 LoadGenerationContext、SelectEvidence、GenerateReport、SaveArtifact；WORK_PREP 是 LoadGenerationContext、SelectConceptCard、GenerateWorkPrep、SaveArtifact。每一步都会记录 SkillExecutionLog，输入输出要脱敏。
-
-第五步是生成与保存版本。Generate skill 调 LLM 得到内容，SaveArtifactSkill 创建 ArtifactVersion，并保存 ArtifactSource、ArtifactCitation 等关系。Artifact 不覆盖旧内容，而是保留版本。
-
-第六步是失败和取消。ArtifactPlanExecutor 每个 skill 前会检查 taskContext 是否取消；失败时记录 failed SkillExecutionLog，并通过 ArtifactPersistenceService 把 Artifact 状态收敛，避免卡在 GENERATING。
-
-第七步是沉淀。Artifact 默认只是生成成果，不自动进入 Wiki/Card。团队侧需要人工发布成 Wiki；个人侧调用 distill-to-personal-wiki，先生成 proposal，不写卡片；用户确认后才创建 SynthesisCard。
-
-第八步是版本绑定。distillation proposal 绑定当前 latest artifactVersionId。确认时再次校验 owner 权限，并检查 proposal 是否还是当前版本；如果 Artifact 已更新，就拒绝 stale proposal，避免确认错版本。
-
-## 7. 原理与设计原因速查
-
-- 为什么 Artifact 独立：它有版本、来源、引用、编辑、导出、再生成和沉淀生命周期，不能混在 ChatMessage。
-- 为什么 Methodology 不写死：方法论需要按项目、空间、预设复用和治理，写死 prompt 难维护。
-- 为什么 Skill 是受控 pipeline：当前项目需要可预测、可审计、可取消的生成步骤，不是开放式 Agent 自主规划。
-- 为什么 Skill 日志要脱敏：生成上下文可能包含私有资料、memory、prompt 和证据原文，不能直接暴露。
-- 为什么 Artifact 不自动变知识：LLM 输出需要用户判断，长期知识必须更高可信度。
-- 为什么 Synthesis 不改 Concept：Synthesis 是综合结论，Concept 是概念事实，自动覆盖会污染原有知识结构。
-- 为什么绑定 artifactVersionId：防止用户预览旧版本、确认时写入新版本的错配。
-
-## 8. 3 到 5 分钟深答模板
-
-Artifact 链路我会从“生成成果的生命周期”讲。用户创建生成任务时，系统先创建 Artifact，再创建 `ARTIFACT_GENERATE` Task，走统一异步 Worker。Worker 进入 ArtifactPlanExecutor 后，会按 ArtifactType 执行固定 plan。第一步加载上下文：团队来源会加载 ChatMessage 和 citations，个人来源会加载 ResearchProject 下的 ArticleCard、ConceptCard、SynthesisCard、MethodologyCard 和可回溯到 Source 的 evidence。然后 MethodologyMatcher 会按 project、space、preset 匹配方法论，把 workflow、输出结构和质量检查注入 prompt。后续每个 Skill 都是受控步骤，比如 SelectEvidence、GenerateReport、SaveArtifact，并记录脱敏 SkillExecutionLog。生成结果保存为 ArtifactVersion，不覆盖历史。Artifact 默认不是长期知识，团队要发布成 Wiki，个人要先生成 distillation proposal，用户确认后才创建 SynthesisCard。确认时会绑定 artifactVersionId 并做 stale proposal 校验，保证用户沉淀的就是预览过的那个版本。这条链路体现的是：生成可自动化，但知识沉淀必须可确认、可追溯、可版本化。
+这篇专门应对三个高风险追问：生成结果怎么落库和追溯，Methodology 为什么不是硬编码 prompt，Skill/MCP 到底是工程化编排还是被夸大的 Agent 平台。
+
+## 1. 面试先说版
+Artifact 不是 ChatMessage 的附属字段，而是一个有独立生命周期的生成产物。生成入口可以来自 Studio，也可以来自个人研究链路，统一创建 `ARTIFACT_GENERATE` 任务；执行时 `ArtifactPlanExecutor` 按计划加载上下文、可选加载 MCP 工具上下文、选择 evidence 或卡片、调用 LLM 生成，再通过 `SaveArtifactSkill` 保存 Artifact、ArtifactVersion、ArtifactSource、ArtifactCitation 和 SkillExecutionLog。MethodologyCard 负责把 workflow、outputStructure、qualityChecklist 这类方法论配置注入 prompt，避免所有输出模板写死在代码里。生成结果默认不自动进入 Wiki 或 ConceptCard，因为它可能只是阶段性草稿；真正沉淀到个人长期知识时，要由 `PersonalArtifactDistillationService` 先生成 proposal，再由用户确认后绑定具体 `artifactVersionId` 写入 SynthesisCard。
+
+## 2. 当前真实口径
+Artifact 是版本化产物，MethodologyCard 是可管理的输出方法论，Skill 是受控生成步骤和执行日志，Bilibili MCP 是 Studio 工具扩展路径之一，不是完整开放式 MCP 平台。
+
+### 已实现
+- Artifact 类型覆盖 REPORT、STUDY_GUIDE、READING_NOTES、BRIEFING、FAQ、COMPARISON、WIKI_DRAFT、ONBOARDING_GUIDE、TECHNICAL_SUMMARY、INCIDENT_REVIEW_DRAFT、PRESENTATION_OUTLINE、TIMELINE、WORK_PREP、MIND_MAP_OUTLINE。
+- `StudioTaskService` 创建 `ARTIFACT_GENERATE` 任务，并通过 Task/Outbox/Kafka/Worker 进入后台执行。
+- `ArtifactPlanExecutor` 根据 artifact type 选择 Skill 序列，记录 `SkillExecutionLog`，并支持 `LoadMcpToolContextSkill`。
+- `MethodologyCardController/Service` 支持方法论卡片 CRUD、归档、版本和 PROJECT/SPACE/PRESET 作用域。
+- `PersonalArtifactDistillationService` 支持 proposal/confirm，把 ArtifactVersion 沉淀为 SynthesisCard，并保留卡片关系和 citation。
+- `StudioMcpToolRegistry`、`RemoteBilibiliMcpToolService`、`LocalBilibiliMcpToolService`、`StudioMcpChatTriggerService` 支持受控的 Bilibili MCP 工具上下文。
+
+### 不能说满
+- 不要说当前是完全自治 Agent 平台。
+- 不要说 Artifact 自动进入团队 Wiki 或个人知识库。
+- 不要把 MethodologyCard 说成模型训练、RL 或自动学习策略。
+- 不要把 Bilibili MCP 说成完整 MCP marketplace 或所有工具调用主协议。
+
+## 3. 代码和测试锚点
+- `src/main/java/com/noteweave/studio/service/StudioTaskService.java`
+- `src/main/java/com/noteweave/artifact/service/ArtifactPlanExecutor.java`
+- `src/main/java/com/noteweave/artifact/service/ArtifactPersistenceService.java`
+- `src/main/java/com/noteweave/personal/methodology/service/MethodologyCardService.java`
+- `src/main/java/com/noteweave/personal/distillation/service/PersonalArtifactDistillationService.java`
+- `src/main/java/com/noteweave/studio/service/StudioMcpToolRegistry.java`
+- `src/main/java/com/noteweave/studio/service/RemoteBilibiliMcpToolService.java`
+- `src/test/java/com/noteweave/artifact/Phase8StudioArtifactIntegrationTest.java`
+- `src/test/java/com/noteweave/personal/Phase11PersonalGenerationIntegrationTest.java`
+- `src/test/java/com/noteweave/personal/Phase11_5PersonalArtifactDistillationIntegrationTest.java`
+- `src/test/java/com/noteweave/chat/Phase11_6ChatMcpIntegrationTest.java`
+- `src/test/java/com/noteweave/studio/service/RemoteBilibiliMcpToolServiceTest.java`
+
+## 4. 必会问题与深答
+
+### Q1: Artifact 为什么要独立于 ChatMessage？
+Artifact 面向的是可编辑、可导出、可版本化的阶段性成果，ChatMessage 面向的是一次会话过程。如果把报告、学习指南、FAQ 这类结果只塞进 message content，后面就很难回答三个问题：这个结果用了哪些来源，哪一版被用户确认，重新生成后旧版本还能不能追溯。当前项目把生成产物抽成 Artifact，并用 ArtifactVersion 保存历史，用 ArtifactSource 记录来自 ChatMessage、Document、Card 或 MCP 工具上下文的来源，用 ArtifactCitation 关联证据。这样面试时可以强调：聊天是交互入口，Artifact 是知识工作台里的正式产物，两者生命周期不同。
+
+追问接法：
+- 如果面试官问“是不是过度设计”，回答：只有普通闲聊不需要 Artifact；但 NoteWeave 的目标包含报告、学习指南、Wiki 草稿和工作准备，这些结果需要复用、导出、重生成和沉淀，所以要独立建模。
+- 如果问“如何避免越权”，回答：Artifact 不能只靠创建时权限，读取来源、citation、distillation 时都要回到 space/user 边界检查。
+
+### Q2: Artifact 为什么需要版本？
+版本解决的是“生成结果会被迭代，但历史责任不能丢”。同一个 Artifact 可能因为换了 Methodology、补充了 Source、重新选择 evidence 或重新调用模型而生成新内容。如果直接覆盖，用户看到的 SynthesisCard、Wiki 草稿或导出文件就无法解释来自哪一次生成。当前项目通过 ArtifactVersion 按 versionNo 递增保存内容，SynthesisCard 的沉淀还会绑定 `sourceArtifactVersionId`，这使得后续追溯能落到具体版本，而不是模糊地指向一个会变的 Artifact。
+
+追问接法：
+- “版本是不是会无限膨胀”：可以按归档、保留策略、低价值草稿清理和对象存储生命周期继续优化。
+- “重生成失败怎么办”：旧版本仍然存在，Task 失败只影响本次 attempt，不应该破坏上一个可用版本。
+
+### Q3: MethodologyCard 解决什么问题？
+MethodologyCard 解决的是“输出方法论可管理”，不是简单 prompt 模板。比如报告、学习指南、工作准备、事故复盘的结构不一样，质量检查项也不一样。如果全部硬编码到 `ArtifactPlanExecutor` 里，新增一种输出风格就要改代码；如果完全交给用户自然语言，又很难保证稳定结构。当前项目把 workflow、outputStructure、qualityChecklist 等字段放到 MethodologyCard，并区分 PRESET、SPACE、PROJECT 作用域，再由 MethodologyMatcher 和 MethodologyPromptSectionBuilder 注入生成提示。面试时可以说它让生成链路具备“可配置但受控”的能力。
+
+追问接法：
+- “为什么要 PROJECT/SPACE/PRESET 三级”：项目级适合某个研究主题，空间级适合团队或个人长期偏好，预置级提供默认兜底。
+- “会不会 prompt 太长”：需要在匹配阶段只选最相关方法论，并把结构化字段压成稳定 section，而不是堆所有卡片。
+
+### Q4: 为什么沉淀成 SynthesisCard 需要用户确认？
+因为模型生成结果不等于长期知识。Artifact 可能包含推断、临时表达或尚未核验的总结；如果自动写入 ConceptCard 或 SynthesisCard，就会污染个人知识库。当前项目采用 proposal/confirm 两步：先由 `PersonalArtifactDistillationService` 生成沉淀建议，用户确认后才创建 SynthesisCard，并通过 `artifact_card_relation`、`synthesis_card_citation` 和 `sourceArtifactVersionId` 记录来源。这样既保留 AI 辅助整理效率，又把长期知识的最终责任交给用户。
+
+追问接法：
+- “为什么不直接改 ConceptCard”：ConceptCard 更偏概念事实和关系，SynthesisCard 更适合用户确认后的综合结论，直接改概念卡会破坏原有证据结构。
+- “没有 citation 能不能沉淀”：可以生成草稿，但正式沉淀应该降低信任等级，至少在 UI 或审计上标记证据不足。
+
+### Q5: Skill 在这个项目里到底是什么，不是什么？
+Skill 在当前项目里是受控生成步骤，不是开放式自主 Agent。`ArtifactPlanExecutor` 会根据 artifact type 编排固定步骤，例如 `LoadGenerationContextSkill`、`SelectEvidenceSkill`、`GenerateReportSkill`、`SaveArtifactSkill`；每一步有输入、输出和日志，方便调试生成失败、证据缺失和 prompt 质量问题。它的价值是把“生成一个产物”拆成可观察的流水线，而不是让模型自由决定要调用什么、写哪里、删哪里。
+
+追问接法：
+- “为什么不说 Agent”：因为当前没有开放规划器、任意工具调用、长期自主目标和自动执行闭环，说 Agent 容易被追穿。
+- “怎么说得更强”：可以说它是 Agent 化能力的地基，已经有 plan、tool context、skill log、task orchestration，但当前按可控工作流落地。
+
+### Q6: Bilibili MCP 工具在当前项目里具体落在哪条链路？
+Bilibili MCP 落在 Studio/Artifact 生成链路和 Chat 显式触发链路。用户可以在生成参数里配置 `mcpToolName=bilibili` 和 URL，也可以在聊天里用 `/mcp bilibili <url>` 显式触发。`StudioMcpToolRegistry` 解析参数，远程模式走 `RemoteBilibiliMcpToolService` 调用独立的 `/api/v1/mcp/bilibili/invoke` 服务，本地模式走 `LocalBilibiliMcpToolService` 和 `BilibiliMcpCoreService`。工具返回的视频标题、元信息、字幕上下文会作为 `MCP Tool Context (bilibili)` 注入 Artifact prompt，后续仍然走 `ARTIFACT_GENERATE`、Skill 日志、ArtifactVersion 保存这条主链路。
+
+追问接法：
+- “这是不是完整 MCP 平台”：不是。当前是受控注册的 Bilibili 工具扩展，能说明工具解耦和远程服务化，但不能说成通用 marketplace。
+- “为什么要远程服务”：B 站解析、字幕抓取和外部网络依赖可以独立部署、隔离失败和演进，主系统只消费结构化上下文。
+
+### Q7: 如果生成结果被质疑不准确，你怎么排查？
+先查 Task，再查 Skill，再查证据。第一层看 `TaskAttempt` 和 `TaskEvent`，确认本次 `ARTIFACT_GENERATE` 是否成功、是否重试、是否中途取消。第二层看 `SkillExecutionLog`，确认上下文加载、MCP 工具调用、evidence 选择和生成步骤各自输入输出。第三层查 ArtifactCitation、Citation、RetrievalTrace 或 Source/Card 证据，确认生成内容是否真的有依据。最后看 MethodologyCard 和 prompt section，判断是不是输出结构或质量检查项诱导了错误表达。
+
+追问接法：
+- “如果是 MCP 字幕错了”：区分工具上下文错误和模型总结错误，优先保留工具返回原文、视频 URL 和标题，必要时重新拉取或标记该来源低置信。
+- “如果是用户资料越权”：立刻查 ArtifactSource 和 citation 的资源归属，确认返回前是否做了二次权限校验。
+
+## 5. 大厂深挖追问路径
+1. 先问你为什么需要 Artifact，而不是把结果存在 message。
+2. 再问版本、来源、citation 和 distillation 如何保证可追溯。
+3. 再问 Methodology 和 Skill 是否只是 prompt 模板换皮。
+4. 然后抓 MCP/Agent 这些简历高风险词，确认你有没有夸大。
+5. 最后问失败、越权、证据缺失、外部工具超时时怎么兜底。
+
+## 6. 一句话记忆
+Artifact 是“可版本化产物”，Methodology 是“可管理输出方法论”，Skill 是“可观察生成步骤”，Synthesis 是“用户确认后的长期沉淀”，Bilibili MCP 是“受控工具上下文扩展”，不是万能 Agent 平台。

@@ -1,211 +1,132 @@
-# 文件：09_复杂接口_排障_沟通_AI_Coding.md
+# 复杂接口、排障、沟通与 AI Coding
 
-## 0. 本篇定位
+> 本文件为 2026-06-01 重构版，依据当前代码、测试和 Flyway 迁移整理。不要再按旧阶段计划或旧题库口径背。
 
-这篇负责复杂接口、坏回答排障、业务沟通和 AI Coding 相关问题的主题深答。它适合回答“挑一个复杂接口详细讲一下”“出现坏回答怎么排查”“怎么给产品讲复杂方案”“平时怎么用 AI Coding”。
+## 0. 通用问题如何转成项目深答
+先把通用八股问题落到 NoteWeave 的真实模块，再回答场景、方案、收益、权衡、故障和指标。下面是本主题的项目化深答。
 
-## 1. 本主题覆盖的通用问题
+## 1. 本篇定位
+大厂追问通常从“为什么这样设计”转到“失败时怎么办”。
 
-- 挑一个复杂接口详细讲一下。
-- 出现坏回答怎么排查？
-- 组内业务交流时，怎么把复杂方案讲给业务方或产品？
-- 推进方案遇到分歧怎么对齐？
-- 平时怎么用 AI Coding？
-- AI 生成代码不符合预期怎么办？
-- 遇到开放题或压力题怎么回答？
+## 2. 面试先说版
+可靠性我会按五个故障域讲。第一是任务一致性，业务事实先落 MySQL，Outbox 再投 Kafka，Worker 回查 Task 状态执行，失败写 attempt 和 event。第二是索引一致性，文档 reindex 用版本切换，避免新索引失败破坏旧可用结果。第三是证据一致性，Citation 和 RetrievalTrace 能定位 bad answer 是召回问题、证据截断问题还是 LLM 生成问题。第四是运行态恢复，WebSocket partial 和事件状态放 Redis，最终消息仍落 MySQL。第五是清理和运维，cleanup 先 scan 生成 item，再 execute 并写 audit，避免盲删。
 
-## 2. 复杂接口推荐一：团队 RAG 问答接口
+## 3. 当前真实口径
+NoteWeave 的可靠性主轴是权限不串、任务可恢复、索引可回滚、证据可追溯、运行态可恢复、清理可审计。
 
-### 完整链路
+### 已实现
+- TaskAttempt/TaskEvent/AdminTaskService 提供失败和重试可见性。
+- Document reindex、embedding backfill、Wiki index、RAG eval、cleanup 均走 TaskType。
+- RetrievalTrace、LLMCallLog、AnswerFeedback、AuditLog 可辅助定位。
+- ResourceCleanupService、OpsCleanupJob、OpsCleanupItem 支持 scan-first 清理。
 
-```text
-POST /chat/sessions/{sessionId}/messages
--> get active session
--> validate TEAM_CHAT + FORMAL
--> requireAskQuestion
--> persist USER message
--> ContextReadRouter resolve read plan
--> resolve KnowledgeBase scope
--> HybridRetriever retrieve
--> EvidencePostProcessor process
--> persist RetrievalTrace
--> no-evidence fallback OR build prompt
--> ObservedLlmGateway chat
--> persist ASSISTANT message
--> CitationService saveForAssistantMessage
--> MemoryWritebackService writeAfterRound
--> return answer + citations
-```
+### 设计目标
+- 用统一 Task 状态机处理重试和取消，用 indexVersion/activeIndexVersion 处理索引切换，用 Citation/Trace 处理证据排查，用 Redis runtime 和 MySQL 最终消息处理断线恢复，用 scan-first cleanup 降低误删风险。
+- 回答压力题时不靠泛泛而谈，可以按链路定位到 DB、Kafka、ES、Redis、MinIO、LLM 每一层。
 
-### 为什么复杂
+### 后续可扩展
+- 你会先看日志、DB、还是 trace？
+- 哪些地方是最终一致，不是强一致？
+- 如果要扩展到更大规模，先拆哪条边界？
 
-- 权限：session、space、knowledgeBase、citation 都要校验。
-- 检索：BM25、Vector、Wiki recall 和 RRF。
-- 证据：去重、合并、限流、裁剪。
-- 生成：prompt version、LLM log、token、latency。
-- 持久化：message、citation、trace、memory。
-- 兜底：无证据不生成幻觉答案。
+## 4. 代码和测试锚点
+- src/main/java/com/noteweave/admin/service/AdminTaskService.java
+- src/main/java/com/noteweave/admin/service/ResourceCleanupService.java
+- src/main/java/com/noteweave/team/document/service/DocumentProcessingService.java
+- src/main/java/com/noteweave/chat/service/RetrievalTraceService.java
+- src/test/java/com/noteweave/admin/Phase15AdminOpsIntegrationTest.java
 
-### 可直接复述
+## 5. 必会问题与答题骨架
 
-我可以讲团队 RAG 问答接口。它不是简单调 LLM。请求进来后先校验 session 是 TEAM_CHAT FORMAL，再校验用户对 space 有提问权限。然后保存用户消息，解析 session scope 得到可见知识库。检索层会用 HybridRetriever 做 BM25、向量和 Wiki recall，再用 weighted RRF 融合。融合结果进入 EvidencePostProcessor，做 chunk 去重、相邻合并、同文档限流和上下文裁剪。系统先保存 RetrievalTrace；如果没有 evidence，就返回明确兜底；如果有 evidence，就构造 grounded prompt 调 LLM。最后保存 assistant message、Citation 和 message_citation，并在 FORMAL 会话里触发 memory writeback。这个接口体现了权限、检索、生成、证据和记忆的完整闭环。
+### Q1: 如果 Kafka 堆积怎么办？
 
-## 3. 复杂接口推荐二：文档上传 merge 接口
+回答时按四步走：
+1. 先说场景：大厂追问通常从“为什么这样设计”转到“失败时怎么办”。
+2. 再说方案：用统一 Task 状态机处理重试和取消，用 indexVersion/activeIndexVersion 处理索引切换，用 Citation/Trace 处理证据排查，用 Redis runtime 和 MySQL 最终消息处理断线恢复，用 scan-first cleanup 降低误删风险。
+3. 再说收益：回答压力题时不靠泛泛而谈，可以按链路定位到 DB、Kafka、ES、Redis、MinIO、LLM 每一层。
+4. 最后落到真实代码锚点，不要停在概念。
 
-### 完整链路
+可直接复述：
 
-```text
-POST /document-uploads/{uploadId}/merge
--> load upload for update
--> require upload permission
--> idempotent check existing documentId/taskId
--> validate chunk count
--> validate Redis bitmap
--> validate MinIO chunk objects
--> compute server-side SHA-256
--> merge chunk objects
--> find/create FileObject(spaceId + contentHash)
--> create Document
--> increment refCount
--> create DOCUMENT_PROCESS Task
--> write outbox
--> cleanup temp chunks/bitmap
--> return documentId/taskId
-```
+> 可靠性我会按五个故障域讲。第一是任务一致性，业务事实先落 MySQL，Outbox 再投 Kafka，Worker 回查 Task 状态执行，失败写 attempt 和 event。第二是索引一致性，文档 reindex 用版本切换，避免新索引失败破坏旧可用结果。第三是证据一致性，Citation 和 RetrievalTrace 能定位 bad answer 是召回问题、证据截断问题还是 LLM 生成问题。第四是运行态恢复，WebSocket partial 和事件状态放 Redis，最终消息仍落 MySQL。第五是清理和运维，cleanup 先 scan 生成 item，再 execute 并写 audit，避免盲删。
 
-### 为什么复杂
+常见追问：
+- 你会先看日志、DB、还是 trace？
+- 哪些地方是最终一致，不是强一致？
+- 如果要扩展到更大规模，先拆哪条边界？
 
-- 分片完整性不能只信 Redis。
-- contentHash 必须服务端计算。
-- FileObject 复用必须限制在同一 space。
-- merge 可能重试，需要幂等返回。
-- 解析索引是异步任务，不能同步阻塞。
+### Q2: 如果 ES 和 MySQL 状态不一致怎么办？
 
-### 可直接复述
+回答时按四步走：
+1. 先说场景：大厂追问通常从“为什么这样设计”转到“失败时怎么办”。
+2. 再说方案：用统一 Task 状态机处理重试和取消，用 indexVersion/activeIndexVersion 处理索引切换，用 Citation/Trace 处理证据排查，用 Redis runtime 和 MySQL 最终消息处理断线恢复，用 scan-first cleanup 降低误删风险。
+3. 再说收益：回答压力题时不靠泛泛而谈，可以按链路定位到 DB、Kafka、ES、Redis、MinIO、LLM 每一层。
+4. 最后落到真实代码锚点，不要停在概念。
 
-文档 merge 接口复杂在它连接了上传可靠性、对象存储、权限和异步任务。服务端会先锁定 upload，校验上传权限和状态；如果已经 merge 过，就幂等返回已有 documentId 和 taskId。否则会检查 UploadChunk 数量、Redis bitmap 和 MinIO chunk object，确认所有分片完整，再计算服务端 SHA-256 并合并最终对象。FileObject 只在同一 space 内按 contentHash 复用，避免跨租户推断。之后创建 Document，增加 refCount，并创建 DOCUMENT_PROCESS Task 进入异步解析索引链路。
+可直接复述：
 
-## 4. 坏回答排障链路
+> 可靠性我会按五个故障域讲。第一是任务一致性，业务事实先落 MySQL，Outbox 再投 Kafka，Worker 回查 Task 状态执行，失败写 attempt 和 event。第二是索引一致性，文档 reindex 用版本切换，避免新索引失败破坏旧可用结果。第三是证据一致性，Citation 和 RetrievalTrace 能定位 bad answer 是召回问题、证据截断问题还是 LLM 生成问题。第四是运行态恢复，WebSocket partial 和事件状态放 Redis，最终消息仍落 MySQL。第五是清理和运维，cleanup 先 scan 生成 item，再 execute 并写 audit，避免盲删。
 
-### 排查步骤
+常见追问：
+- 你会先看日志、DB、还是 trace？
+- 哪些地方是最终一致，不是强一致？
+- 如果要扩展到更大规模，先拆哪条边界？
 
-```text
-messageId / feedback
--> ChatSession / ChatMessage
--> RetrievalTrace
--> RetrievalTraceItem
--> Citation / message_citation
--> DocumentChunk / Source / WikiPageVersion
--> LLMCallLog / PromptVersion
--> classify root cause
-```
+### Q3: 如果 WebSocket 中途断开怎么办？
 
-### 归因类型
+回答时按四步走：
+1. 先说场景：大厂追问通常从“为什么这样设计”转到“失败时怎么办”。
+2. 再说方案：用统一 Task 状态机处理重试和取消，用 indexVersion/activeIndexVersion 处理索引切换，用 Citation/Trace 处理证据排查，用 Redis runtime 和 MySQL 最终消息处理断线恢复，用 scan-first cleanup 降低误删风险。
+3. 再说收益：回答压力题时不靠泛泛而谈，可以按链路定位到 DB、Kafka、ES、Redis、MinIO、LLM 每一层。
+4. 最后落到真实代码锚点，不要停在概念。
 
-- 召回不足：没有召回到正确证据。
-- 召回噪声：召回了错误 chunk。
-- 融合问题：RRF 权重或 rank 不合理。
-- 后处理问题：合并、截断、同文档限流导致证据不完整。
-- 生成问题：模型没有遵循证据。
-- Citation 问题：引用绑定错误。
-- 权限问题：scope/filter/二次校验错误。
+可直接复述：
 
-### 可直接复述
+> 可靠性我会按五个故障域讲。第一是任务一致性，业务事实先落 MySQL，Outbox 再投 Kafka，Worker 回查 Task 状态执行，失败写 attempt 和 event。第二是索引一致性，文档 reindex 用版本切换，避免新索引失败破坏旧可用结果。第三是证据一致性，Citation 和 RetrievalTrace 能定位 bad answer 是召回问题、证据截断问题还是 LLM 生成问题。第四是运行态恢复，WebSocket partial 和事件状态放 Redis，最终消息仍落 MySQL。第五是清理和运维，cleanup 先 scan 生成 item，再 execute 并写 audit，避免盲删。
 
-坏回答我不会直接改 prompt，而是沿链路排查。先根据 feedback 或 messageId 找到 session 和 message；再看 RetrievalTrace，判断 BM25、向量、Wiki 各召回了多少，是否 fallback；再看 trace item 的 rank、score、sourceVersion；然后查最终 Citation，看 answer 绑定了哪些 source、chunk 和 snapshot；如果证据没问题，再查 LLMCallLog 和 PromptVersion，看 prompt、模型、token 和错误信息。这样能定位是召回问题、证据处理问题、citation 问题还是生成问题。
+常见追问：
+- 你会先看日志、DB、还是 trace？
+- 哪些地方是最终一致，不是强一致？
+- 如果要扩展到更大规模，先拆哪条边界？
 
-## 5. 技术方案沟通
+### Q4: 如果 MinIO 有残留对象怎么清？
 
-### 给产品讲 Citation
+回答时按四步走：
+1. 先说场景：大厂追问通常从“为什么这样设计”转到“失败时怎么办”。
+2. 再说方案：用统一 Task 状态机处理重试和取消，用 indexVersion/activeIndexVersion 处理索引切换，用 Citation/Trace 处理证据排查，用 Redis runtime 和 MySQL 最终消息处理断线恢复，用 scan-first cleanup 降低误删风险。
+3. 再说收益：回答压力题时不靠泛泛而谈，可以按链路定位到 DB、Kafka、ES、Redis、MinIO、LLM 每一层。
+4. 最后落到真实代码锚点，不要停在概念。
 
-不要说“我要建 citation 表和 relation 表”。要说：
+可直接复述：
 
-用户看到 AI 回答后，需要知道依据来自哪里；管理员遇到坏回答时，需要反查是资料问题、检索问题还是模型问题；权限变化后，不能让用户继续看到无权资料。所以引用必须独立保存、可校验、可追踪。
+> 可靠性我会按五个故障域讲。第一是任务一致性，业务事实先落 MySQL，Outbox 再投 Kafka，Worker 回查 Task 状态执行，失败写 attempt 和 event。第二是索引一致性，文档 reindex 用版本切换，避免新索引失败破坏旧可用结果。第三是证据一致性，Citation 和 RetrievalTrace 能定位 bad answer 是召回问题、证据截断问题还是 LLM 生成问题。第四是运行态恢复，WebSocket partial 和事件状态放 Redis，最终消息仍落 MySQL。第五是清理和运维，cleanup 先 scan 生成 item，再 execute 并写 audit，避免盲删。
 
-### 给业务讲 Task/Outbox
+常见追问：
+- 你会先看日志、DB、还是 trace？
+- 哪些地方是最终一致，不是强一致？
+- 如果要扩展到更大规模，先拆哪条边界？
 
-不要说“用了 outbox pattern”。要说：
+### Q5: 如果用户看不到资料，怎么排查？
 
-上传成功不代表解析立刻完成。解析、索引、生成都可能耗时或失败，所以系统会返回 taskId，让用户看进度；失败可以重试，取消可以安全停止，管理员可以查原因。
+回答时按四步走：
+1. 先说场景：大厂追问通常从“为什么这样设计”转到“失败时怎么办”。
+2. 再说方案：用统一 Task 状态机处理重试和取消，用 indexVersion/activeIndexVersion 处理索引切换，用 Citation/Trace 处理证据排查，用 Redis runtime 和 MySQL 最终消息处理断线恢复，用 scan-first cleanup 降低误删风险。
+3. 再说收益：回答压力题时不靠泛泛而谈，可以按链路定位到 DB、Kafka、ES、Redis、MinIO、LLM 每一层。
+4. 最后落到真实代码锚点，不要停在概念。
 
-### 处理分歧
+可直接复述：
 
-把方案拆成：
+> 可靠性我会按五个故障域讲。第一是任务一致性，业务事实先落 MySQL，Outbox 再投 Kafka，Worker 回查 Task 状态执行，失败写 attempt 和 event。第二是索引一致性，文档 reindex 用版本切换，避免新索引失败破坏旧可用结果。第三是证据一致性，Citation 和 RetrievalTrace 能定位 bad answer 是召回问题、证据截断问题还是 LLM 生成问题。第四是运行态恢复，WebSocket partial 和事件状态放 Redis，最终消息仍落 MySQL。第五是清理和运维，cleanup 先 scan 生成 item，再 execute 并写 audit，避免盲删。
 
-- 当前收益。
-- 实现成本。
-- 风险。
-- 可回滚性。
-- 是否符合当前阶段。
+常见追问：
+- 你会先看日志、DB、还是 trace？
+- 哪些地方是最终一致，不是强一致？
+- 如果要扩展到更大规模，先拆哪条边界？
 
-例如是否微服务：当前单体更快打通闭环，未来 Worker/Search 成为瓶颈再拆。
+## 7. 不能说满的地方
+- 不要说所有失败都能自动恢复。
+- 不要说系统已经有真实压测数据。
+- 不要把当前单体项目包装成微服务已落地。
 
-## 6. AI Coding 回答
-
-### 合理口径
-
-AI Coding 用来做：
-
-- 代码阅读。
-- 方案草稿。
-- 测试 case 枚举。
-- 文档整理。
-- 小范围重构建议。
-
-关键业务代码仍要自己 review：
-
-- 权限。
-- 事务。
-- 幂等。
-- 异常处理。
-- 安全。
-- 数据一致性。
-
-### AI 生成不符合预期怎么办
-
-处理方式：
-
-1. 缩小上下文。
-2. 明确输入输出和错误日志。
-3. 要求小步 patch。
-4. 看 diff。
-5. 跑测试。
-6. 不接受大段不可解释改动。
-
-### 可直接复述
-
-我会用 AI Coding 做代码阅读、测试补全、方案对比和文档整理，但涉及权限、一致性、事务、异常处理和安全的代码一定自己 review。AI 生成不符合预期时，我不会让它无限大改，而是缩小上下文，给明确接口契约、错误日志和期望行为，让它做小步 patch，然后看 diff、跑测试。这个思路和 NoteWeave 对 AI 输出的处理一致：模型可以辅助生成，但最终要靠证据、权限、版本和测试约束。
-
-## 7. 压力题通用回答模板
-
-```text
-这个问题我先区分当前事实和未来扩展。
-当前项目已经实现的是 xxx。
-还没有生产数据/还不是主链路的是 xxx，我不会夸大。
-如果未来要做，我会从 xxx 层接入，并补 xxx 安全/观测/评测。
-验证上，我会看 xxx 指标，而不是只凭感觉。
-```
-
-### 示例：问 MCP
-
-当前 MCP 不是 NoteWeave 主链路。未来可以接在 Skill/tool 层或 Source import 层，但要补工具权限、沙箱、调用日志、超时、预算和失败回滚。
-
-### 示例：问分库分表
-
-当前没有分库分表，因为没有数据规模证据。未来如果 trace、citation、llm log 成为大表，先做归档、保留期、分区，再考虑分库分表。
-
-### 示例：问生产 QPS
-
-当前没有生产 QPS/P99，我不会编造。上线前会用上传压测、检索压测、WebSocket 压测和 RAG Eval 验证。
-
-## 常见追问继续怎么接
-
-- 如果继续追问“最复杂的是技术还是业务”，可以答：真正复杂的是权限、异步状态、证据回溯和用户体验要一起成立，不是单点算法难。
-- 如果继续追问“排障最先看哪里”，可以答：先按用户反馈定位具体会话，再顺着 `ChatMessage -> RetrievalTrace -> Citation -> LLMCallLog` 往后查。
-- 如果继续追问“AI Coding 最大风险是什么”，可以答：不是生成慢，而是把不理解的一致性和异常语义直接带进主链路，所以必须小步 patch、看 diff、跑测试。
-
-## 8. 边界和不能说满的地方
-
-- 可以坚定讲：复杂接口、排障路径、业务沟通和 AI Coding 的使用方法。
-- 不要讲成：所有代码都由 AI 生成；AI 生成结果可以不经 review 直接进主链路；当前已有完整生产事故复盘指标。
-
+## 8. 零基础记忆法
+记住一句话：先讲“为什么需要这个模块”，再讲“请求从哪里来、状态落在哪里、失败怎么恢复、证据怎么追踪、权限怎么兜底”。按这个顺序答，大多数追问都能接住。

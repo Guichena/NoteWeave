@@ -1,97 +1,175 @@
-﻿# 04 团队知识摄取与索引链路
+# 团队知识摄取与索引链路
+
+> 本文件为 2026-06-01 重构版，依据当前代码、测试和 Flyway 迁移整理。不要再按旧阶段计划或旧题库口径背。
 
 ## 0. 本篇定位
+知识库最难的不是上传按钮，而是文件对象、断点续传、解析失败、重复消费、索引版本和权限过滤。
 
-这条链路回答：团队文档如何从上传进入系统，并变成可检索、可引用的 DocumentChunk。
+## 1. 面试先说版
+团队知识摄取我会按端到端讲。从用户在某个 TEAM Space 的 KnowledgeBase 下 init upload 开始，系统校验 OWNER/EDITOR 权限，生成上传会话，分片写入 MinIO，并用 Redis/DB 记录上传进度。merge 时根据内容 hash 管理 FileObject 和 Document 元数据，同时创建 DOCUMENT_PROCESS 任务并写 Outbox。真正解析、chunk、索引放到 Worker 里做：DocumentProcessingService 用解析服务拿到文本，ChunkService 切成带 page、offset、contentHash 的块，VectorIndexerService 或相关索引服务写入 Elasticsearch。重建索引时不应该先破坏旧版本，而是用 indexVersion/activeIndexVersion 控制成功后切换，这样失败不会让用户突然查不到旧内容。
 
-核心链路：
+## 2. 当前真实口径
+团队文档从 KnowledgeBase 到 DocumentUpload、FileObject、Document、DocumentChunk、Elasticsearch index，最终成为 RAG 证据。
 
-```text
-KnowledgeBase
--> DocumentUpload init
--> chunk upload
--> merge
--> FileObject / Document
--> DOCUMENT_PROCESS Task
--> parse
--> chunk
--> indexVersion
--> Elasticsearch index
--> activeIndexVersion
-```
+### 已实现
+- KnowledgeBaseController、DocumentUploadController、DocumentController 覆盖知识库、上传、文档、chunk、reindex、embedding backfill。
+- DocumentUploadService 负责 init/chunk/status/merge/cancel。
+- DocumentProcessingService、ChunkService、VectorIndexerService 负责解析、切片和索引。
+- Phase2UploadFlowIntegrationTest、Phase3DocumentProcessingIntegrationTest、VectorIndexerServiceTest 覆盖关键路径。
 
-## 面试先说版
+### 设计目标
+- 上传 init 后分片进入 MinIO，Redis 记录短期上传状态，merge 后创建 Document、FileObject 引用和 DOCUMENT_PROCESS Task，Worker 解析文本、切 chunk、写 ES，并维护 activeIndexVersion。
+- 这让大文件、重复上传、失败重试、重建索引和软删除都能被解释，不会停留在“我把 PDF 读出来了”。
 
-这条链路我会从“团队资料怎么稳定进入 RAG 系统”讲。上传文件只是入口，真正的系统问题是：大文件怎么分片和断点续传，原始文件放哪里，解析和索引失败怎么恢复，相同文件能不能复用，重建索引时怎么不影响线上检索，以及检索时怎么避免读到旧版本或越权内容。
+### 后续可扩展
+- 解析失败后 Document 和 Task 状态如何变化？
+- 秒传能否跨 Space 复用？为什么要谨慎？
+- 如果 ES 写入成功但 DB 状态没切换，怎么排查？
 
-NoteWeave 的设计是：MySQL 存上传、文档和索引版本这些业务事实；MinIO 存原始文件、分片和解析后的大文本；Redis 用 bitmap 记录分片上传进度；Kafka/Worker 异步做解析、切片和索引；Elasticsearch 承接 BM25、向量检索和过滤。索引重建时不直接覆盖旧索引，而是写新 indexVersion，成功后再切 activeIndexVersion。
+## 3. 代码和测试锚点
+- src/main/java/com/noteweave/team/document/service/DocumentUploadService.java
+- src/main/java/com/noteweave/team/document/service/DocumentProcessingService.java
+- src/main/java/com/noteweave/team/document/chunk/ChunkService.java
+- src/main/java/com/noteweave/team/document/service/VectorIndexerService.java
+- src/test/java/com/noteweave/team/document/Phase2UploadFlowIntegrationTest.java
 
-这里能自然带出的八股是：分片上传、对象存储、Redis bitmap、异步任务、ES 与 MySQL 最终一致、索引版本切换、软删除和延迟清理。
+## 4. 必会问题与答题骨架
 
-## Q1：团队文档从上传到可检索的完整链路是什么？
+### Q1: 从上传到可检索，中间经历了哪些阶段？
 
-**答：**
+回答时按四步走：
+1. 先说场景：知识库最难的不是上传按钮，而是文件对象、断点续传、解析失败、重复消费、索引版本和权限过滤。
+2. 再说方案：上传 init 后分片进入 MinIO，Redis 记录短期上传状态，merge 后创建 Document、FileObject 引用和 DOCUMENT_PROCESS Task，Worker 解析文本、切 chunk、写 ES，并维护 activeIndexVersion。
+3. 再说收益：这让大文件、重复上传、失败重试、重建索引和软删除都能被解释，不会停留在“我把 PDF 读出来了”。
+4. 最后落到真实代码锚点，不要停在概念。
 
-用户先在某个团队空间的知识库下初始化上传，系统记录文件 md5、文件名、大小、分片大小、总分片数等元信息。分片上传时，分片对象写入 MinIO，并通过 Redis bitmap 记录哪些分片已经上传。
+可直接复述：
 
-上传完成后系统合并分片，生成最终对象，再按 `spaceId + contentHash` 复用或创建文件对象，并创建文档和后台处理任务。
+> 团队知识摄取我会按端到端讲。从用户在某个 TEAM Space 的 KnowledgeBase 下 init upload 开始，系统校验 OWNER/EDITOR 权限，生成上传会话，分片写入 MinIO，并用 Redis/DB 记录上传进度。merge 时根据内容 hash 管理 FileObject 和 Document 元数据，同时创建 DOCUMENT_PROCESS 任务并写 Outbox。真正解析、chunk、索引放到 Worker 里做：DocumentProcessingService 用解析服务拿到文本，ChunkService 切成带 page、offset、contentHash 的块，VectorIndexerService 或相关索引服务写入 Elasticsearch。重建索引时不应该先破坏旧版本，而是用 indexVersion/activeIndexVersion 控制成功后切换，这样失败不会让用户突然查不到旧内容。
 
-后台 Worker 消费任务后解析 PDF、Markdown、TXT 等文本，保存解析结果，再切成 chunk。最后把 chunk 写入 Elasticsearch，并在成功后切换文档的 activeIndexVersion。
+常见追问：
+- 解析失败后 Document 和 Task 状态如何变化？
+- 秒传能否跨 Space 复用？为什么要谨慎？
+- 如果 ES 写入成功但 DB 状态没切换，怎么排查？
 
-## Q2：为什么上传要异步解析？
+### Q2: 为什么要分片、断点续传和 cancel？
 
-**答：**
+回答时按四步走：
+1. 先说场景：知识库最难的不是上传按钮，而是文件对象、断点续传、解析失败、重复消费、索引版本和权限过滤。
+2. 再说方案：上传 init 后分片进入 MinIO，Redis 记录短期上传状态，merge 后创建 Document、FileObject 引用和 DOCUMENT_PROCESS Task，Worker 解析文本、切 chunk、写 ES，并维护 activeIndexVersion。
+3. 再说收益：这让大文件、重复上传、失败重试、重建索引和软删除都能被解释，不会停留在“我把 PDF 读出来了”。
+4. 最后落到真实代码锚点，不要停在概念。
 
-解析、切片、写索引都可能耗时，也可能依赖 MinIO、ES、Tika 等外部组件。如果放在用户请求里同步做，大文件会导致接口超时，失败也难以恢复。
+可直接复述：
 
-异步任务可以返回 taskId，让用户查看处理状态，失败后也能重试或排查。
+> 团队知识摄取我会按端到端讲。从用户在某个 TEAM Space 的 KnowledgeBase 下 init upload 开始，系统校验 OWNER/EDITOR 权限，生成上传会话，分片写入 MinIO，并用 Redis/DB 记录上传进度。merge 时根据内容 hash 管理 FileObject 和 Document 元数据，同时创建 DOCUMENT_PROCESS 任务并写 Outbox。真正解析、chunk、索引放到 Worker 里做：DocumentProcessingService 用解析服务拿到文本，ChunkService 切成带 page、offset、contentHash 的块，VectorIndexerService 或相关索引服务写入 Elasticsearch。重建索引时不应该先破坏旧版本，而是用 indexVersion/activeIndexVersion 控制成功后切换，这样失败不会让用户突然查不到旧内容。
 
-## Q3：为什么 `FileObject` 复用要按 Space 隔离？
+常见追问：
+- 解析失败后 Document 和 Task 状态如何变化？
+- 秒传能否跨 Space 复用？为什么要谨慎？
+- 如果 ES 写入成功但 DB 状态没切换，怎么排查？
 
-**答：**
+### Q3: FileObject 复用和权限隔离怎么平衡？
 
-文件内容可以相同，但权限不能共享。
+回答时按四步走：
+1. 先说场景：知识库最难的不是上传按钮，而是文件对象、断点续传、解析失败、重复消费、索引版本和权限过滤。
+2. 再说方案：上传 init 后分片进入 MinIO，Redis 记录短期上传状态，merge 后创建 Document、FileObject 引用和 DOCUMENT_PROCESS Task，Worker 解析文本、切 chunk、写 ES，并维护 activeIndexVersion。
+3. 再说收益：这让大文件、重复上传、失败重试、重建索引和软删除都能被解释，不会停留在“我把 PDF 读出来了”。
+4. 最后落到真实代码锚点，不要停在概念。
 
-如果两个团队上传了相同 hash 的文件，底层对象内容理论上可以复用，但业务元数据必须分开。A 团队能看到这个文件，不代表 B 团队也能看到 A 的 Document、Chunk、Citation 或检索结果。
+可直接复述：
 
-所以 `FileObject` 按 `spaceId + contentHash` 建唯一约束。这样既能在同一空间内复用对象，又不会因为 hash 相同导致跨空间权限污染。
+> 团队知识摄取我会按端到端讲。从用户在某个 TEAM Space 的 KnowledgeBase 下 init upload 开始，系统校验 OWNER/EDITOR 权限，生成上传会话，分片写入 MinIO，并用 Redis/DB 记录上传进度。merge 时根据内容 hash 管理 FileObject 和 Document 元数据，同时创建 DOCUMENT_PROCESS 任务并写 Outbox。真正解析、chunk、索引放到 Worker 里做：DocumentProcessingService 用解析服务拿到文本，ChunkService 切成带 page、offset、contentHash 的块，VectorIndexerService 或相关索引服务写入 Elasticsearch。重建索引时不应该先破坏旧版本，而是用 indexVersion/activeIndexVersion 控制成功后切换，这样失败不会让用户突然查不到旧内容。
 
-## Q4：解析和索引怎么保证一致性？
+常见追问：
+- 解析失败后 Document 和 Task 状态如何变化？
+- 秒传能否跨 Space 复用？为什么要谨慎？
+- 如果 ES 写入成功但 DB 状态没切换，怎么排查？
 
-**答：**
+### Q4: 为什么删除用 soft delete？
 
-核心是 indexVersion 和 activeIndexVersion。
+回答时按四步走：
+1. 先说场景：知识库最难的不是上传按钮，而是文件对象、断点续传、解析失败、重复消费、索引版本和权限过滤。
+2. 再说方案：上传 init 后分片进入 MinIO，Redis 记录短期上传状态，merge 后创建 Document、FileObject 引用和 DOCUMENT_PROCESS Task，Worker 解析文本、切 chunk、写 ES，并维护 activeIndexVersion。
+3. 再说收益：这让大文件、重复上传、失败重试、重建索引和软删除都能被解释，不会停留在“我把 PDF 读出来了”。
+4. 最后落到真实代码锚点，不要停在概念。
 
-文档处理时不会先把旧索引删掉再写新索引，而是创建新的 indexVersion。新版本解析、切片、写 ES 成功后，再把 Document 的 activeIndexVersion 切到新版本。如果新版本处理失败，旧版本仍然可用，检索链路不会被破坏。
+可直接复述：
 
-检索时也不是只相信 ES。ES 召回后还会回查 MySQL，确认文档没有删除、KnowledgeBase 没有归档、chunk 的 indexVersion 等于文档 activeIndexVersion。
+> 团队知识摄取我会按端到端讲。从用户在某个 TEAM Space 的 KnowledgeBase 下 init upload 开始，系统校验 OWNER/EDITOR 权限，生成上传会话，分片写入 MinIO，并用 Redis/DB 记录上传进度。merge 时根据内容 hash 管理 FileObject 和 Document 元数据，同时创建 DOCUMENT_PROCESS 任务并写 Outbox。真正解析、chunk、索引放到 Worker 里做：DocumentProcessingService 用解析服务拿到文本，ChunkService 切成带 page、offset、contentHash 的块，VectorIndexerService 或相关索引服务写入 Elasticsearch。重建索引时不应该先破坏旧版本，而是用 indexVersion/activeIndexVersion 控制成功后切换，这样失败不会让用户突然查不到旧内容。
 
-## 常见追问
+常见追问：
+- 解析失败后 Document 和 Task 状态如何变化？
+- 秒传能否跨 Space 复用？为什么要谨慎？
+- 如果 ES 写入成功但 DB 状态没切换，怎么排查？
 
-**追问：重复消费 DOCUMENT_PROCESS 会怎样？**
+### Q5: 重建索引怎么避免旧索引被破坏？
 
-当前链路按幂等目标处理。Worker 执行前会回查 task 和 Document 状态，chunk 侧也有版本和唯一约束，用来避免重复创建 active chunk 或重复切换错误版本。
+回答时按四步走：
+1. 先说场景：知识库最难的不是上传按钮，而是文件对象、断点续传、解析失败、重复消费、索引版本和权限过滤。
+2. 再说方案：上传 init 后分片进入 MinIO，Redis 记录短期上传状态，merge 后创建 Document、FileObject 引用和 DOCUMENT_PROCESS Task，Worker 解析文本、切 chunk、写 ES，并维护 activeIndexVersion。
+3. 再说收益：这让大文件、重复上传、失败重试、重建索引和软删除都能被解释，不会停留在“我把 PDF 读出来了”。
+4. 最后落到真实代码锚点，不要停在概念。
 
-**追问：删除 Document 时为什么不立刻物理删除？**
+可直接复述：
 
-删除主要是软删除。物理清理更适合放到 Admin/Ops 的 cleanup scan/execute 中，先扫描可清理资源，再确认执行，避免误删仍被引用的对象。
+> 团队知识摄取我会按端到端讲。从用户在某个 TEAM Space 的 KnowledgeBase 下 init upload 开始，系统校验 OWNER/EDITOR 权限，生成上传会话，分片写入 MinIO，并用 Redis/DB 记录上传进度。merge 时根据内容 hash 管理 FileObject 和 Document 元数据，同时创建 DOCUMENT_PROCESS 任务并写 Outbox。真正解析、chunk、索引放到 Worker 里做：DocumentProcessingService 用解析服务拿到文本，ChunkService 切成带 page、offset、contentHash 的块，VectorIndexerService 或相关索引服务写入 Elasticsearch。重建索引时不应该先破坏旧版本，而是用 indexVersion/activeIndexVersion 控制成功后切换，这样失败不会让用户突然查不到旧内容。
 
-## 实现兜底锚点
+常见追问：
+- 解析失败后 Document 和 Task 状态如何变化？
+- 秒传能否跨 Space 复用？为什么要谨慎？
+- 如果 ES 写入成功但 DB 状态没切换，怎么排查？
 
-- `DocumentUploadService`
-- `UploadBitmapService`
-- `DocumentProcessingService`
-- `DocumentParserService`
-- `ChunkService`
-- `VectorIndexerService`
-- `Phase2UploadFlowIntegrationTest`
-- `Phase3DocumentProcessingIntegrationTest`
+## 5. 大厂深挖追问路径
+1. 先问你做了什么。
+2. 再问为什么这样设计，不用更简单方案。
+3. 再问失败、重试、越权、删除、断线、重建索引时会发生什么。
+4. 最后问如何量化效果和下一步演进。
 
-## 3 到 5 分钟深答模板
+把答案往下压一层：
+- 业务层：知识库最难的不是上传按钮，而是文件对象、断点续传、解析失败、重复消费、索引版本和权限过滤。
+- 架构层：上传 init 后分片进入 MinIO，Redis 记录短期上传状态，merge 后创建 Document、FileObject 引用和 DOCUMENT_PROCESS Task，Worker 解析文本、切 chunk、写 ES，并维护 activeIndexVersion。
+- 数据层：引用 MySQL、Redis、MinIO、ES、Kafka 或 Citation/Trace 的真实职责。
+- 测试层：能说出对应 IntegrationTest 或 ServiceTest。
+- 边界层：明确哪些是后续扩展，不冒充已落地。
 
-> 团队文档从上传到可检索，我一般按六步讲。第一步是初始化上传，在团队空间的知识库下记录上传元信息；第二步是分片上传，把分片写入对象存储，并用 Redis bitmap 记录上传进度；第三步是 merge，合并成最终对象，按空间和内容 hash 做对象复用，但不跨空间共享权限；第四步是创建后台处理任务，通过统一任务底座异步解析；第五步是 Worker 解析文本、保存解析结果、切 chunk、写 Elasticsearch 索引；第六步是通过 activeIndexVersion 切换可检索版本。这个链路的关键不只是“文档进 ES”，而是上传态和处理态分离、对象复用不越权、索引重建失败不破坏旧版本、检索时还要回查 MySQL 状态。
+## 6. 不能说满的地方
+- 不要说上传成功就代表可被 RAG 检索。
+- 不要忽略 MinIO 对象残留和 cleanup。
+- 不要说硬删除文档后引用仍天然安全。
 
-## 边界和不能说满的地方
+## 7. 零基础记忆法
+记住一句话：先讲“为什么需要这个模块”，再讲“请求从哪里来、状态落在哪里、失败怎么恢复、证据怎么追踪、权限怎么兜底”。按这个顺序答，大多数追问都能接住。
 
-- 可以坚定讲：分片上传、断点续传、异步解析、indexVersion 和 activeIndexVersion。
-- 不要讲成：跨空间按 hash 直接共享权限；reindex 时直接覆盖旧索引；所有 OCR 或复杂文档类型都已完整支持。
+## 8. 为什么 Redis Bitmap 合适
+NoteWeave 里上传进度不是简单计数，而是每个 chunk 是否已经上传过。用 Bitmap 的好处是：
+
+- 读写都很轻，适合频繁打点。
+- 同一个 uploadId 下可以直接判断缺哪些 chunk。
+- 合并时能快速检查缺口，避免只靠数据库行状态做多次扫描。
+- TTL 到期后可以自然清理短期上传会话。
+
+面试时可以补一句：
+
+> 我用 Redis Bitmap 不是为了“显得复杂”，而是因为上传进度本质上是位级状态。它适合表达 chunk 是否到位，也适合断点续传和快速校验。
+
+## 9. 为什么解析、Chunk、索引不能同步塞在上传接口里
+因为这条链路天然长耗时，而且失败点很多：
+
+- 解析可能慢。
+- Chunk 可能爆内存或碰到奇怪格式。
+- ES 写入可能失败。
+- 向量回填可能失败。
+- 重试和补偿都需要状态追踪。
+
+所以上传接口只负责把文件可靠落地和发出任务，真正处理放到 Worker。这样可以避免接口超时，也能让失败进入 Task/Event/Retry 链路。
+
+## 10. 出问题时怎么查
+如果用户说“上传完了但搜不到”，我会按这个顺序查：
+
+1. `DocumentUpload` 是否 MERGED / PROCESSING / INDEXED。
+2. `Document.status`、`parse_status`、`index_status` 是否都到位。
+3. `Task`、`TaskAttempt`、`TaskEvent` 是否失败或重复消费。
+4. MinIO 原始对象和 parsed object 是否还在。
+5. ES 中的 `indexVersion`、`activeIndexVersion`、`spaceId`、`knowledgeBaseId` 是否正确。
+6. 如果是权限问题，再回到 Space / Citation 二次校验。

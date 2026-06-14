@@ -13,9 +13,9 @@ Use this order when facts conflict:
 
 Important note:
 
-- `docs/PROJECT_STATUS.md` still marks Phase 13/14/15 as pending in places.
-- The current codebase already contains Methodology CRUD, observability/eval admin APIs, and admin ops APIs.
-- For interview prep, treat those features as implemented, and call out that the phase status doc is stale.
+- `docs/PROJECT_STATUS.md` can lag behind the code in a few places.
+- The current codebase already contains Methodology CRUD, observability/eval admin APIs, admin ops APIs, Team Wiki graph/auto-maintenance features, and Studio Bilibili MCP support.
+- For interview prep, treat code, tests, and migrations as the source of truth, and mention doc drift when needed.
 
 ## Resume-Safe Talking Points
 
@@ -35,6 +35,8 @@ Use these as practical interview guardrails instead of explicit internal taxonom
 - artifact distillation into synthesis cards
 - long-term memory writeback and layered context loading
 - prompt versioning, llm logs, eval, cleanup, health, audit
+- team wiki graph and auto-maintenance loop
+- controlled Bilibili MCP tool extension for Studio
 
 ### Good Optimization / Extension Angles
 
@@ -47,6 +49,7 @@ Use these as practical interview guardrails instead of explicit internal taxonom
 - more complete prompt governance and eval metrics
 - more advanced retrieval-query rewrite and planner behavior
 - stronger partial-content persistence and replay policies
+- broader tool-extension governance beyond the current Bilibili MCP path
 
 ### Topics To Downgrade Unless The Repo Grows
 
@@ -282,6 +285,7 @@ Likely follow-ups:
 - Why require explicit confirmation before creating `SynthesisCard`?
 - How do methodology cards change prompt structure without becoming hard-coded templates?
 - What does “Skill” really mean in this project, and how far does it go today?
+- How does the Bilibili MCP tool sit inside Studio without turning the whole repo into a generic MCP platform?
 
 ### 9. Long-Term Memory
 
@@ -307,7 +311,36 @@ Likely follow-ups:
 - How do you keep useful continuity without dumping full history into every prompt?
 - How do you avoid writing unsafe or low-value memory?
 
-### 10. Observability, Eval, Admin, Ops
+### 10. Team Wiki, Graph, Auto Maintenance
+
+Core packages:
+
+- `com.noteweave.team.wiki`
+- `com.noteweave.graph`
+
+What to say:
+
+- Team Wiki is the long-term team knowledge layer, separate from temporary chat answers and generated artifacts.
+- Wiki pages have versions, citations, search, relation links, graph views, and an auto-maintenance path.
+- The graph feature is useful for browsing and relation inspection, but should not be oversold as a complete GraphRAG mainline.
+
+Repository anchors:
+
+- `TeamWikiController`
+- `TeamWikiService`
+- `WikiIndexTaskWorker`
+- `WikiGraphService`
+- `AutoWikiMaintenanceService`
+- `KnowledgeGraphService`
+- `Phase10TeamWikiIntegrationTest`
+
+Likely follow-ups:
+
+- Why separate Artifact from Wiki?
+- Why does Wiki publishing still go through indexing?
+- What is the boundary between Wiki graph and GraphRAG?
+
+### 11. Observability, Eval, Admin, Ops
 
 Core packages:
 
@@ -334,6 +367,7 @@ Likely follow-ups:
 - How do eval runs avoid polluting normal chat history?
 - What can an admin trace after a bad answer?
 - Why are health checks split by MySQL, Redis, MinIO, Kafka, Elasticsearch, and LLM provider?
+- How does wiki auto-maintenance affect the read/write path and search freshness?
 
 ## Resume Phrase Guardrails
 
@@ -359,7 +393,7 @@ Safe wording:
 
 Safe wording:
 
-- “我对 MCP 类工具协议有明确扩展预留和理解，但这个仓库当前主链路里还不是强依赖实现点。”
+- “当前仓库已经有 Studio Bilibili MCP 工具路径，包括本地/远程工具服务、对话显式触发和 Artifact workflow 编排；但我不会把它夸成完整通用 MCP 平台，它更像受控工具扩展能力。”
 
 ### Bibtex
 

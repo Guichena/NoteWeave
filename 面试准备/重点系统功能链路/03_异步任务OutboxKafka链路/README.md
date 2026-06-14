@@ -1,103 +1,142 @@
-﻿# 03 异步任务 Outbox Kafka 链路
+# 异步任务 Outbox Kafka 与一致性
+
+> 本文件为 2026-06-01 重构版，依据当前代码、测试和 Flyway 迁移整理。不要再按旧阶段计划或旧题库口径背。
 
 ## 0. 本篇定位
+上传、解析、索引、Source 编译、Artifact 生成、Eval、清理都是耗时任务，直接同步处理会超时，分散写后台任务又会失控。
 
-这条链路回答：NoteWeave 如何承接上传解析、Source 编译、Artifact 生成、Wiki 入索引、Eval、Cleanup 这类长任务。
+## 1. 面试先说版
+我会把这条链路讲成 NoteWeave 的工程地基。系统里很多动作都不是瞬时完成的，比如文档解析入索引、Source 编译、Artifact 生成、RAG Eval 和资源清理。我的设计是业务接口不直接把任务塞给某个临时线程，而是创建统一 Task，并在同一个事务里写 task_outbox。事务提交后由 outbox 调度器投递 Kafka，消费者拿到消息后只信 taskId，再回查数据库判断状态和幂等。Worker 执行时记录 TaskAttempt 和 TaskEvent，失败可以重试，运行中可以通过 cancel_requested 在安全点停止。这个方案牺牲了一点链路长度，但换来的是最终一致、可恢复和可观测。
 
-核心口径：
+## 2. 当前真实口径
+NoteWeave 统一用 Task、TaskAttempt、TaskEvent、TaskOutbox、Kafka、Worker 来承载后台任务。
 
-```text
-长任务统一进入 Task。
-业务事务内写 Task + TaskOutbox。
-事务提交后投递 Kafka。
-Worker 消费后回查 DB 状态。
-执行过程写 TaskAttempt / TaskEvent。
-Admin 可以统一查询、取消、重试和 mark failed。
-```
+### 已实现
+- TaskType 包含 DOCUMENT_PROCESS、DOCUMENT_REINDEX、SOURCE_IMPORT、SOURCE_COMPILE、ARTIFACT_GENERATE、EMBEDDING_BACKFILL、WIKI_INDEX、RAG_EVAL_RUN、CLEANUP_RESOURCE。
+- TaskController 提供任务查询、事件查询、skill logs、cancel、retry。
+- TaskOutboxService、TaskOutboxDispatchScheduler、TaskKafkaPublisher、TaskKafkaConsumer 形成 outbox 到 Kafka 的投递链路。
+- TaskExecutionCoordinator 统一协调 Worker 执行状态。
 
-## 面试先说版
+### 设计目标
+- 业务事务先写 Task 和 Outbox；Outbox 调度器投递 Kafka；Consumer 只信 taskId 并回查 DB；Worker 通过 TaskExecutionCoordinator 记录 attempt、event、状态和取消。
+- 它把幂等、重试、取消、审计、前端进度和 Admin 运维统一了，避免每个模块发明一套后台执行逻辑。
 
-这条链路我会从“AI 系统里的长任务怎么治理”讲，而不是一上来讲实现名称。NoteWeave 里文档解析、索引、生成、评测、清理都可能耗时，也依赖 MinIO、ES、LLM 这些外部组件，所以不能让用户请求同步等到最后。
+### 后续可扩展
+- 消息投递成功但 Worker 执行失败怎么办？
+- 重试是复用原 Task 还是创建新 Task？
+- Admin mark-failed 和业务失败有什么区别？
 
-我的设计是：MySQL 先记录任务事实和业务状态，Outbox 保证“业务数据落库”和“待投递消息”在本地事务内一起完成，Kafka 负责异步推进和削峰，Worker 消费后先回查 DB 状态再执行。它不是强事务模型，而是最终一致模型，核心靠状态机、幂等、重试、attempt/event 和 Admin 操作把任务收敛。
+## 3. 代码和测试锚点
+- src/main/java/com/noteweave/task/model/TaskType.java
+- src/main/java/com/noteweave/task/service/TaskService.java
+- src/main/java/com/noteweave/task/service/TaskOutboxService.java
+- src/main/java/com/noteweave/task/service/TaskExecutionCoordinator.java
+- src/test/java/com/noteweave/task/service/TaskServiceIntegrationTest.java
 
-这里能自然带出的八股是：本地消息表、MQ 最终一致、at-least-once、消费幂等、失败重试、补偿、Kafka 和 Redis 队列的取舍。面试官如果问“为什么不用本地线程池”，我会说本地线程池实现简单，但进程重启、多实例扩容、失败恢复和可观测都弱，不适合这类后台任务流。
+## 4. 必会问题与答题骨架
 
-## Q1：为什么要统一成 `Task + Outbox + Kafka + Worker`？
+### Q1: 为什么不直接在业务事务里发 Kafka？
 
-**答：**
+回答时按四步走：
+1. 先说场景：上传、解析、索引、Source 编译、Artifact 生成、Eval、清理都是耗时任务，直接同步处理会超时，分散写后台任务又会失控。
+2. 再说方案：业务事务先写 Task 和 Outbox；Outbox 调度器投递 Kafka；Consumer 只信 taskId 并回查 DB；Worker 通过 TaskExecutionCoordinator 记录 attempt、event、状态和取消。
+3. 再说收益：它把幂等、重试、取消、审计、前端进度和 Admin 运维统一了，避免每个模块发明一套后台执行逻辑。
+4. 最后落到真实代码锚点，不要停在概念。
 
-因为 NoteWeave 里很多核心操作都是长任务或易失败任务。如果每个模块各写一套后台执行逻辑，后续重试、取消、进度、错误排查和 Admin 管理都会碎掉。
+可直接复述：
 
-统一任务模型后，文档解析、Source 导入、Source 编译、Artifact 生成、Wiki 入索引、Embedding backfill、RAG Eval、资源清理都可以用同一套生命周期：
+> 我会把这条链路讲成 NoteWeave 的工程地基。系统里很多动作都不是瞬时完成的，比如文档解析入索引、Source 编译、Artifact 生成、RAG Eval 和资源清理。我的设计是业务接口不直接把任务塞给某个临时线程，而是创建统一 Task，并在同一个事务里写 task_outbox。事务提交后由 outbox 调度器投递 Kafka，消费者拿到消息后只信 taskId，再回查数据库判断状态和幂等。Worker 执行时记录 TaskAttempt 和 TaskEvent，失败可以重试，运行中可以通过 cancel_requested 在安全点停止。这个方案牺牲了一点链路长度，但换来的是最终一致、可恢复和可观测。
 
-```text
-创建 Task
--> 写 TaskOutbox
--> Kafka 投递
--> Worker 回查 Task 状态
--> 写 TaskAttempt / TaskEvent
--> 成功、失败、取消或重试
-```
+常见追问：
+- 消息投递成功但 Worker 执行失败怎么办？
+- 重试是复用原 Task 还是创建新 Task？
+- Admin mark-failed 和业务失败有什么区别？
 
-这样做的收益是：用户请求可以快速返回 taskId；后台任务有统一状态；失败有统一错误记录；Admin 可以统一查看、取消、重试和 mark failed；后续新增长任务也不用重新设计执行框架。
+### Q2: Outbox 解决的核心一致性问题是什么？
 
-## Q2：为什么不在业务事务里直接发 Kafka？
+回答时按四步走：
+1. 先说场景：上传、解析、索引、Source 编译、Artifact 生成、Eval、清理都是耗时任务，直接同步处理会超时，分散写后台任务又会失控。
+2. 再说方案：业务事务先写 Task 和 Outbox；Outbox 调度器投递 Kafka；Consumer 只信 taskId 并回查 DB；Worker 通过 TaskExecutionCoordinator 记录 attempt、event、状态和取消。
+3. 再说收益：它把幂等、重试、取消、审计、前端进度和 Admin 运维统一了，避免每个模块发明一套后台执行逻辑。
+4. 最后落到真实代码锚点，不要停在概念。
 
-**答：**
+可直接复述：
 
-直接发 Kafka 最大的问题是业务 DB 写入和消息投递很难放在一个强事务里。
+> 我会把这条链路讲成 NoteWeave 的工程地基。系统里很多动作都不是瞬时完成的，比如文档解析入索引、Source 编译、Artifact 生成、RAG Eval 和资源清理。我的设计是业务接口不直接把任务塞给某个临时线程，而是创建统一 Task，并在同一个事务里写 task_outbox。事务提交后由 outbox 调度器投递 Kafka，消费者拿到消息后只信 taskId，再回查数据库判断状态和幂等。Worker 执行时记录 TaskAttempt 和 TaskEvent，失败可以重试，运行中可以通过 cancel_requested 在安全点停止。这个方案牺牲了一点链路长度，但换来的是最终一致、可恢复和可观测。
 
-比如上传 merge 成功后，需要创建 Document、绑定 FileObject、创建 Task，然后让 Worker 去解析。如果 DB 已提交但 Kafka 发送失败，任务就没人执行；如果 Kafka 发出去了但 DB 回滚，Worker 拿到 taskId 又查不到任务。
+常见追问：
+- 消息投递成功但 Worker 执行失败怎么办？
+- 重试是复用原 Task 还是创建新 Task？
+- Admin mark-failed 和业务失败有什么区别？
 
-Outbox 的思路是：业务事务内只写本地数据库，包括业务状态和 `task_outbox`。事务提交后再由 dispatcher 把 outbox 消息投递到 Kafka。投递失败不会让业务数据回滚，而是保留 outbox 为 PENDING 或 FAILED，后续可以补偿投递。
+### Q3: Worker 重复消费如何保证幂等？
 
-## Q3：后台任务长时间没有结果怎么办？
+回答时按四步走：
+1. 先说场景：上传、解析、索引、Source 编译、Artifact 生成、Eval、清理都是耗时任务，直接同步处理会超时，分散写后台任务又会失控。
+2. 再说方案：业务事务先写 Task 和 Outbox；Outbox 调度器投递 Kafka；Consumer 只信 taskId 并回查 DB；Worker 通过 TaskExecutionCoordinator 记录 attempt、event、状态和取消。
+3. 再说收益：它把幂等、重试、取消、审计、前端进度和 Admin 运维统一了，避免每个模块发明一套后台执行逻辑。
+4. 最后落到真实代码锚点，不要停在概念。
 
-**答：**
+可直接复述：
 
-先根据 `task_status`、`task_attempt` 和 `task_event` 定位它卡在哪里。
+> 我会把这条链路讲成 NoteWeave 的工程地基。系统里很多动作都不是瞬时完成的，比如文档解析入索引、Source 编译、Artifact 生成、RAG Eval 和资源清理。我的设计是业务接口不直接把任务塞给某个临时线程，而是创建统一 Task，并在同一个事务里写 task_outbox。事务提交后由 outbox 调度器投递 Kafka，消费者拿到消息后只信 taskId，再回查数据库判断状态和幂等。Worker 执行时记录 TaskAttempt 和 TaskEvent，失败可以重试，运行中可以通过 cancel_requested 在安全点停止。这个方案牺牲了一点链路长度，但换来的是最终一致、可恢复和可观测。
 
-如果任务还在 PENDING，要看 outbox 是否已投递、Kafka 是否正常、dispatcher 是否工作。如果任务 RUNNING 很久，要看 Worker 是否超时、是否支持 cancel safe point、外部依赖是否卡住。如果任务 FAILED，要看错误类型，是临时依赖故障、参数错误、对象不存在，还是代码逻辑问题。
+常见追问：
+- 消息投递成功但 Worker 执行失败怎么办？
+- 重试是复用原 Task 还是创建新 Task？
+- Admin mark-failed 和业务失败有什么区别？
 
-处理方式上，不能简单“看到没成功就重跑”。要先查任务当前状态，再按任务类型决定是否 retry、cancel、mark failed 或人工修复。
+### Q4: 任务取消为什么用 cancel_requested 而不是强杀？
 
-## Q4：任务取消和 WebSocket stop 是一回事吗？
+回答时按四步走：
+1. 先说场景：上传、解析、索引、Source 编译、Artifact 生成、Eval、清理都是耗时任务，直接同步处理会超时，分散写后台任务又会失控。
+2. 再说方案：业务事务先写 Task 和 Outbox；Outbox 调度器投递 Kafka；Consumer 只信 taskId 并回查 DB；Worker 通过 TaskExecutionCoordinator 记录 attempt、event、状态和取消。
+3. 再说收益：它把幂等、重试、取消、审计、前端进度和 Admin 运维统一了，避免每个模块发明一套后台执行逻辑。
+4. 最后落到真实代码锚点，不要停在概念。
 
-**答：**
+可直接复述：
 
-不是。
+> 我会把这条链路讲成 NoteWeave 的工程地基。系统里很多动作都不是瞬时完成的，比如文档解析入索引、Source 编译、Artifact 生成、RAG Eval 和资源清理。我的设计是业务接口不直接把任务塞给某个临时线程，而是创建统一 Task，并在同一个事务里写 task_outbox。事务提交后由 outbox 调度器投递 Kafka，消费者拿到消息后只信 taskId，再回查数据库判断状态和幂等。Worker 执行时记录 TaskAttempt 和 TaskEvent，失败可以重试，运行中可以通过 cancel_requested 在安全点停止。这个方案牺牲了一点链路长度，但换来的是最终一致、可恢复和可观测。
 
-Task cancel 是后台任务生命周期控制，比如文档解析、Artifact 生成、Eval、Cleanup 这种任务可以通过 `cancel_requested` 通知 Worker 在安全点停止。
+常见追问：
+- 消息投递成功但 Worker 执行失败怎么办？
+- 重试是复用原 Task 还是创建新 Task？
+- Admin mark-failed 和业务失败有什么区别？
 
-WebSocket stop 是会话运行态控制，用户在流式输出中要求停止当前回答。它通过 `ActiveExecutionRegistry` 标记当前执行停止，停止继续推送 delta，并保留 partialContent 和 runtime state。
+### Q5: 如果 Kafka 短暂不可用，业务接口应该怎么表现？
 
-## 和 Austin 的类比
+回答时按四步走：
+1. 先说场景：上传、解析、索引、Source 编译、Artifact 生成、Eval、清理都是耗时任务，直接同步处理会超时，分散写后台任务又会失控。
+2. 再说方案：业务事务先写 Task 和 Outbox；Outbox 调度器投递 Kafka；Consumer 只信 taskId 并回查 DB；Worker 通过 TaskExecutionCoordinator 记录 attempt、event、状态和取消。
+3. 再说收益：它把幂等、重试、取消、审计、前端进度和 Admin 运维统一了，避免每个模块发明一套后台执行逻辑。
+4. 最后落到真实代码锚点，不要停在概念。
 
-Austin 里消息任务进入 MQ 后，通过状态机、重试、死信和补偿让发送链路收敛。NoteWeave 这里不是通知发送，而是知识处理任务。相似点是都接受异步中间态，并用状态、幂等、事件和补偿让任务最终收敛。
+可直接复述：
 
-## 实现兜底锚点
+> 我会把这条链路讲成 NoteWeave 的工程地基。系统里很多动作都不是瞬时完成的，比如文档解析入索引、Source 编译、Artifact 生成、RAG Eval 和资源清理。我的设计是业务接口不直接把任务塞给某个临时线程，而是创建统一 Task，并在同一个事务里写 task_outbox。事务提交后由 outbox 调度器投递 Kafka，消费者拿到消息后只信 taskId，再回查数据库判断状态和幂等。Worker 执行时记录 TaskAttempt 和 TaskEvent，失败可以重试，运行中可以通过 cancel_requested 在安全点停止。这个方案牺牲了一点链路长度，但换来的是最终一致、可恢复和可观测。
 
-- `TaskService`
-- `TaskOutboxService`
-- `TaskDispatcher`
-- `TaskKafkaPublisher`
-- `TaskKafkaConsumer`
-- `TaskWorkerRegistry`
-- `TaskServiceIntegrationTest`
-- `TaskAdminVisibilityIntegrationTest`
+常见追问：
+- 消息投递成功但 Worker 执行失败怎么办？
+- 重试是复用原 Task 还是创建新 Task？
+- Admin mark-failed 和业务失败有什么区别？
 
-## 3 到 5 分钟深答模板
+## 5. 大厂深挖追问路径
+1. 先问你做了什么。
+2. 再问为什么这样设计，不用更简单方案。
+3. 再问失败、重试、越权、删除、断线、重建索引时会发生什么。
+4. 最后问如何量化效果和下一步演进。
 
-> NoteWeave 里很多核心操作都不是适合放在 HTTP 请求里同步做完的，比如文档解析索引、Source 编译、Artifact 生成、Wiki 入索引、RAG Eval 和 Cleanup。所以我把它们统一放到任务体系里治理。业务入口先在 MySQL 里创建任务和 outbox，把“业务事实”和“待投递事实”放进同一个本地事务；事务提交后再投递 Kafka。Worker 消费时不会只相信消息体，而是回查 DB 状态并 claim 任务，再记录 attempt 和 event。这样重复消息、投递失败、执行超时、取消请求和 Admin 重试都能收敛到同一套状态机，而不是每个模块各自实现一套后台逻辑。
+把答案往下压一层：
+- 业务层：上传、解析、索引、Source 编译、Artifact 生成、Eval、清理都是耗时任务，直接同步处理会超时，分散写后台任务又会失控。
+- 架构层：业务事务先写 Task 和 Outbox；Outbox 调度器投递 Kafka；Consumer 只信 taskId 并回查 DB；Worker 通过 TaskExecutionCoordinator 记录 attempt、event、状态和取消。
+- 数据层：引用 MySQL、Redis、MinIO、ES、Kafka 或 Citation/Trace 的真实职责。
+- 测试层：能说出对应 IntegrationTest 或 ServiceTest。
+- 边界层：明确哪些是后续扩展，不冒充已落地。
 
-## 常见追问继续怎么接
+## 6. 不能说满的地方
+- 不要说 Outbox 保证强一致，它保证的是 DB 事实和消息投递的最终一致。
+- 不要把 Redis Stream 说成后台任务主队列。
+- 不要说取消可以任意打断正在执行的外部 IO，只能在安全点停止。
 
-- 如果继续追问“为什么不用定时扫表替代 Kafka”，可以答：扫表适合兜底，不适合承担主通知链路；Kafka 让任务分发更及时，扫表更像补偿机制。
-- 如果继续追问“幂等是怎么做的”，可以答：不是只靠 MQ 去重，而是消费侧回查任务状态、claim 所有权、记录 attempt 和 event。
-- 如果继续追问“失败后怎么收敛”，可以答：看任务状态机和重试策略，必要时 cancel、retry、mark failed 或走 Admin 人工补偿。
-
-## 边界和不能说满的地方
-
-- 可以坚定讲：这是最终一致、可补偿、消费侧幂等的设计。
-- 不要讲成：Outbox 保证绝不重复；Kafka 成功就等于业务成功；Redis 是主任务队列。
+## 7. 零基础记忆法
+记住一句话：先讲“为什么需要这个模块”，再讲“请求从哪里来、状态落在哪里、失败怎么恢复、证据怎么追踪、权限怎么兜底”。按这个顺序答，大多数追问都能接住。

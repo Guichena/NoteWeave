@@ -6,6 +6,7 @@
 - Prefer these over the raw `面试准备` files.
 - If the user wants mock interview, ask one question at a time and follow with 1 to 3 deeper追问.
 - Unless the user explicitly asks for a short version, answer every question in 2-minute-depth form by default.
+- When deepening the docs, group similar questions into clusters instead of appending separate deep-dive blocks to every module. Preferred clusters: boundary/isolation, async consistency, schema/index design, middleware responsibility boundaries, evidence/retrieval, knowledge distillation, MCP/Skill/Agent boundary, automation vs human confirmation, observability/eval/ops, verification/regression, scalability/degradation.
 
 ## A. Project Overview
 
@@ -60,6 +61,21 @@
 8. 没有证据时，为什么系统要明确返回兜底，而不是让模型自由发挥？
 9. 如果面试官问“你这里的 Hybrid RAG 只是把几种召回拼起来吗”，你会怎么解释真正的工程难点？
 
+## E2. 表结构、索引和中间件职责
+
+1. 你这个项目核心表结构怎么设计？为什么不是一张大 JSON 表？
+2. 哪些表是业务事实表、哪些是关系表、哪些是日志/trace 表？
+3. 为什么 `task/task_attempt/task_event/task_outbox` 要拆开？
+4. 为什么 `citation/retrieval_trace/retrieval_trace_item/llm_call_log/answer_feedback` 要拆开？
+5. 为什么 `methodology_card` 要有作用域和版本，`artifact_version`、`wiki_page_version`、`artifact_distillation_proposal` 为什么都要绑定确定版本？
+6. 当前迁移里为什么很少显式 foreign key？服务层、唯一索引和状态机如何补足边界？
+7. 哪些组合索引最重要？为什么 `space_id/status`、`task_type/task_status`、`document_id/index_version`、`methodology_card(space_id,card_scope,status)` 是高频路径？
+8. MySQL、Redis、MinIO、Elasticsearch、Kafka 分别承担什么职责？为什么不能互相替代？
+9. Redis 里实际存哪些 key？为什么这些状态可以 TTL 过期？
+10. MinIO 的 `object_key` 为什么不能当权限凭证？
+11. ES 和 MySQL 状态不一致时，为什么以 MySQL 为事实源？怎么修复？
+12. Kafka 配 Outbox 解决什么问题？为什么 Kafka 不能保证业务 exactly-once？
+
 ## F. WebSocket Runtime 和 Memory
 
 1. HTTP 问答已经能用了，为什么还要做 WebSocket runtime？
@@ -92,8 +108,18 @@
 7. distillation 里为什么要绑定具体的 `artifactVersionId`？
 8. 你简历里写的 `Skill 执行` 在这个项目里到底是什么，不是什么？
 9. 为什么说它更像“可控编排的生成流水线”，而不是“完全自治的 Agent 平台”？
+10. Bilibili MCP 工具在当前项目里具体落在哪条链路？为什么不能把它说成完整 MCP 平台？
 
-## I. Observability、Eval、Admin、Ops
+## I. Team Wiki、Graph、Auto Maintenance
+
+1. 团队 Wiki 为什么要从 ChatMessage 或 Artifact 中单独沉淀出来？
+2. Wiki 发布后为什么还要走异步 WIKI_INDEX？
+3. WikiPageVersion、WikiPageCitation 和 WikiPageLink 分别解决什么问题？
+4. KnowledgeGraphService 在当前项目里的作用是什么？
+5. 当前 Wiki Graph 和完整 GraphRAG 主链路有什么区别？
+6. AutoWikiMaintenanceService 可以怎么讲，哪些地方不能说满？
+
+## J. Observability、Eval、Admin、Ops
 
 1. 这个项目怎么做 prompt version 管理？为什么这件事重要？
 2. 一次错误回答出现后，管理员能沿着哪些日志或 trace 反查？
@@ -102,8 +128,9 @@
 5. System health 为什么拆成 MySQL、Redis、MinIO、Kafka、Elasticsearch、LLM provider 六类？
 6. cleanup scan/execute 为什么要拆成两步，而不是直接清？
 7. Audit log 在这个项目里的价值是什么？
+8. 如果面试官问“怎么证明不是纸上谈兵”，你怎么把单测、MockMvc、ContainerizedIntegrationTest、TaskEvent、RetrievalTrace、RAG Eval 串成一套验证口径？
 
-## J. 大厂面试官会补的挑战题
+## K. 大厂面试官会补的挑战题
 
 1. 如果未来把 NoteWeave 拆成多服务，你会先从哪条边界拆，为什么？
 2. 如果文档量上升一个数量级，当前索引与回溯设计最先会遇到什么瓶颈？
@@ -115,8 +142,9 @@
 8. 如果要给这个系统做更严肃的线上质量门禁，你会把哪些指标加入发布前检查？
 9. 如果简历里保留了 `MCP`，但面试官追问“你在项目里具体怎么落的”，你会怎么把它答成“扩展方向”而不是“当前强实现”？
 10. 如果简历里保留了 `Bibtex`，但仓库主链路还没做，你会怎么解释这个功能为什么容易补齐，以及会补在哪一层？
+11. 如果集成测试都通过了，为什么仍然不能把它包装成生产级 QPS/P99 或线上稳定性数据？
 
-## K. 不建议保留的原题方向
+## L. 不建议保留的原题方向
 
 下面这些方向在原题库里偏多，但不适合作为 NoteWeave 主答题：
 

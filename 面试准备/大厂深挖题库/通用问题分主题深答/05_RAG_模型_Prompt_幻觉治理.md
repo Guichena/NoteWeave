@@ -1,136 +1,133 @@
-# 文件：05_RAG_模型_Prompt_幻觉治理.md
+# RAG、模型、Prompt、幻觉治理
 
-## 0. 本篇定位
+> 本文件为 2026-06-01 重构版，依据当前代码、测试和 Flyway 迁移整理。不要再按旧阶段计划或旧题库口径背。
 
-这篇负责 RAG、模型、Prompt 和幻觉治理的主题深答。它适合回答检索方案为什么这么选、Prompt 如何约束答案、幻觉怎么处理、模型效果怎么评估，以及为什么不能把开放 Agent 或 GraphRAG 说成当前主链路。
+## 0. 通用问题如何转成项目深答
+先把通用八股问题落到 NoteWeave 的真实模块，再回答场景、方案、收益、权衡、故障和指标。下面是本主题的项目化深答。
 
-## 1. 本主题覆盖的通用问题
+## 1. 本篇定位
+大厂面试会重点追问 RAG 是否只是简单调用模型。NoteWeave 的重点是权限、召回、融合、证据后处理、Prompt、防幻觉、Citation 和 Trace。
 
-- 搜索接入是关键词、向量、混合检索还是别的方案？
-- 为什么这么选？
-- 文档切分怎么做？
-- 实际使用什么模型，为什么选它？
-- system prompt 怎么设计？
-- 大模型幻觉怎么处理？
-- 模型效果怎么判断？
-- 召回率、准确率怎么定义？
+## 2. 面试先说版
+RAG 这块我不会只说“接了向量库”。NoteWeave 的目标是 evidence-first。一次团队问答先经过 Space 权限和 session scope 判断，只在可见知识库内检索。检索层有 BM25、向量和 Wiki recall，并用 Weighted RRF 融合排序，避免单一召回方式漏掉关键词或语义相关内容。之后 EvidencePostProcessor 会对 chunk 做去重、相邻合并、每文档限流和上下文截断，避免 prompt 被重复证据撑爆。TeamRagPromptBuilder 再把证据以受控格式注入，明确文档内容不是系统指令，无证据时返回兜底。最后 CitationService 把回答和证据关系落到 citation/message_citation 等关系里，并保留 page、offset、quoteHash、snapshotObjectKey 这类字段，方便后续审计和二次权限校验。
 
-## 2. 架构视角怎么切入
+## 3. 当前真实口径
+NoteWeave 的团队问答是 evidence-first：先检索可见证据，再让模型在证据约束下回答，并把引用持久化。
 
-NoteWeave 的 RAG 不是“向量库 + LLM”，而是 evidence-first RAG：
+### 已实现
+- HybridRetriever、Bm25Retriever、VectorRetriever、WikiRetriever、WeightedReciprocalRankFusion 已在代码中出现。
+- EvidencePostProcessor 和 TeamRagPromptBuilder 有单测。
+- TeamChatService 负责保存用户消息、检索、构造 prompt、调用 LLM、保存 assistant message 和 citation。
+- RetrievalTraceService、LlmCallLogService、AnswerFeedbackService 支持追踪和反馈。
 
-```text
-Permission
--> Retrieval Scope
--> BM25 / Vector / Wiki Recall
--> Weighted RRF
--> EvidencePostProcessor
--> Grounded Prompt
--> LLM
--> Citation
--> RetrievalTrace / LLMCallLog / Eval
-```
+### 设计目标
+- HybridRetriever 组合 BM25、向量和 Wiki 召回，WeightedReciprocalRankFusion 做融合，EvidencePostProcessor 做去重、相邻合并、限流和截断，TeamRagPromptBuilder 约束模型只基于证据回答，CitationService 保存可回溯引用。
+- 回答质量、可解释性、权限安全和后续 Eval/排障都更强。
 
-这个回答要突出“证据先行”：模型只是最后生成层，前面有权限、检索、融合、证据处理和引用约束。
+### 后续可扩展
+- 如果向量召回失败，系统怎么降级？
+- 如果 Citation 被用户质疑不准确，先查哪几层？
+- Prompt injection 文档内容怎么处理？
 
-## 3. 完整链路深讲
+## 4. 代码和测试锚点
+- src/main/java/com/noteweave/team/rag/retriever/HybridRetriever.java
+- src/main/java/com/noteweave/team/rag/retriever/WeightedReciprocalRankFusion.java
+- src/main/java/com/noteweave/team/rag/evidence/EvidencePostProcessor.java
+- src/main/java/com/noteweave/team/rag/prompt/TeamRagPromptBuilder.java
+- src/main/java/com/noteweave/citation/service/CitationService.java
+- src/test/java/com/noteweave/chat/Phase9HybridRetrievalIntegrationTest.java
 
-### 3.1 检索范围
+## 5. 必会问题与答题骨架
 
-用户提问时，先校验 TEAM_CHAT、FORMAL session 和 ask permission。然后根据 session scope 获取 ACTIVE KnowledgeBase。前端传来的 scope 不能直接信任，要由服务端复核。
+### Q1: 为什么要做 Hybrid RAG？
 
-### 3.2 多路召回
+回答时按四步走：
+1. 先说场景：大厂面试会重点追问 RAG 是否只是简单调用模型。NoteWeave 的重点是权限、召回、融合、证据后处理、Prompt、防幻觉、Citation 和 Trace。
+2. 再说方案：HybridRetriever 组合 BM25、向量和 Wiki 召回，WeightedReciprocalRankFusion 做融合，EvidencePostProcessor 做去重、相邻合并、限流和截断，TeamRagPromptBuilder 约束模型只基于证据回答，CitationService 保存可回溯引用。
+3. 再说收益：回答质量、可解释性、权限安全和后续 Eval/排障都更强。
+4. 最后落到真实代码锚点，不要停在概念。
 
-- BM25：适合关键词、术语、错误码、标题、人名、编号。
-- Vector：适合语义相似、同义改写、自然语言问题。
-- Wiki recall：适合团队已沉淀的稳定知识。
+可直接复述：
 
-`HybridRetriever` 会先跑 BM25，再尝试 vector 和 wiki。向量失败时 fallbackUsed=true，并降级 BM25。
+> RAG 这块我不会只说“接了向量库”。NoteWeave 的目标是 evidence-first。一次团队问答先经过 Space 权限和 session scope 判断，只在可见知识库内检索。检索层有 BM25、向量和 Wiki recall，并用 Weighted RRF 融合排序，避免单一召回方式漏掉关键词或语义相关内容。之后 EvidencePostProcessor 会对 chunk 做去重、相邻合并、每文档限流和上下文截断，避免 prompt 被重复证据撑爆。TeamRagPromptBuilder 再把证据以受控格式注入，明确文档内容不是系统指令，无证据时返回兜底。最后 CitationService 把回答和证据关系落到 citation/message_citation 等关系里，并保留 page、offset、quoteHash、snapshotObjectKey 这类字段，方便后续审计和二次权限校验。
 
-### 3.3 RRF 融合
+常见追问：
+- 如果向量召回失败，系统怎么降级？
+- 如果 Citation 被用户质疑不准确，先查哪几层？
+- Prompt injection 文档内容怎么处理？
 
-不同召回源分数尺度不同，不能直接相加。Weighted RRF 基于排名融合：
+### Q2: BM25、向量和 Wiki recall 各解决什么问题？
 
-```text
-score(d) = sum(weight_i / (k + rank_i(d)))
-```
+回答时按四步走：
+1. 先说场景：大厂面试会重点追问 RAG 是否只是简单调用模型。NoteWeave 的重点是权限、召回、融合、证据后处理、Prompt、防幻觉、Citation 和 Trace。
+2. 再说方案：HybridRetriever 组合 BM25、向量和 Wiki 召回，WeightedReciprocalRankFusion 做融合，EvidencePostProcessor 做去重、相邻合并、限流和截断，TeamRagPromptBuilder 约束模型只基于证据回答，CitationService 保存可回溯引用。
+3. 再说收益：回答质量、可解释性、权限安全和后续 Eval/排障都更强。
+4. 最后落到真实代码锚点，不要停在概念。
 
-它更关注“多个召回器都认为靠前”的结果，而不是某一路分数特别大。
+可直接复述：
 
-### 3.4 证据后处理
+> RAG 这块我不会只说“接了向量库”。NoteWeave 的目标是 evidence-first。一次团队问答先经过 Space 权限和 session scope 判断，只在可见知识库内检索。检索层有 BM25、向量和 Wiki recall，并用 Weighted RRF 融合排序，避免单一召回方式漏掉关键词或语义相关内容。之后 EvidencePostProcessor 会对 chunk 做去重、相邻合并、每文档限流和上下文截断，避免 prompt 被重复证据撑爆。TeamRagPromptBuilder 再把证据以受控格式注入，明确文档内容不是系统指令，无证据时返回兜底。最后 CitationService 把回答和证据关系落到 citation/message_citation 等关系里，并保留 page、offset、quoteHash、snapshotObjectKey 这类字段，方便后续审计和二次权限校验。
 
-`EvidencePostProcessor` 做：
+常见追问：
+- 如果向量召回失败，系统怎么降级？
+- 如果 Citation 被用户质疑不准确，先查哪几层？
+- Prompt injection 文档内容怎么处理？
 
-- chunk 去重。
-- minScore 过滤。
-- 按 score、documentId、chunkIndex 排序。
-- 同文档证据限流。
-- 相邻 chunk 合并。
-- maxContextChars 截断。
-- citationIndex 编号。
+### Q3: Weighted RRF 为什么比简单拼接更稳？
 
-这一层解决“召回结果不能直接塞 prompt”的问题。
+回答时按四步走：
+1. 先说场景：大厂面试会重点追问 RAG 是否只是简单调用模型。NoteWeave 的重点是权限、召回、融合、证据后处理、Prompt、防幻觉、Citation 和 Trace。
+2. 再说方案：HybridRetriever 组合 BM25、向量和 Wiki 召回，WeightedReciprocalRankFusion 做融合，EvidencePostProcessor 做去重、相邻合并、限流和截断，TeamRagPromptBuilder 约束模型只基于证据回答，CitationService 保存可回溯引用。
+3. 再说收益：回答质量、可解释性、权限安全和后续 Eval/排障都更强。
+4. 最后落到真实代码锚点，不要停在概念。
 
-### 3.5 Prompt 与生成
+可直接复述：
 
-`TeamRagPromptBuilder` 把 evidence 编号、引用规则、无证据兜底、prompt injection 防护规则组织进 prompt。LLM 调用通过 `ObservedLlmGateway`，记录 promptVersion、scene、token、latency、error。
+> RAG 这块我不会只说“接了向量库”。NoteWeave 的目标是 evidence-first。一次团队问答先经过 Space 权限和 session scope 判断，只在可见知识库内检索。检索层有 BM25、向量和 Wiki recall，并用 Weighted RRF 融合排序，避免单一召回方式漏掉关键词或语义相关内容。之后 EvidencePostProcessor 会对 chunk 做去重、相邻合并、每文档限流和上下文截断，避免 prompt 被重复证据撑爆。TeamRagPromptBuilder 再把证据以受控格式注入，明确文档内容不是系统指令，无证据时返回兜底。最后 CitationService 把回答和证据关系落到 citation/message_citation 等关系里，并保留 page、offset、quoteHash、snapshotObjectKey 这类字段，方便后续审计和二次权限校验。
 
-### 3.6 Citation 与观测
+常见追问：
+- 如果向量召回失败，系统怎么降级？
+- 如果 Citation 被用户质疑不准确，先查哪几层？
+- Prompt injection 文档内容怎么处理？
 
-回答后保存 Citation 和 message_citation。RetrievalTrace 记录召回过程，Citation 记录最终答案使用的证据。二者共同支持坏回答排查。
+### Q4: Citation 为什么不直接存在 message JSON？
 
-## 4. 关键实现锚点
+回答时按四步走：
+1. 先说场景：大厂面试会重点追问 RAG 是否只是简单调用模型。NoteWeave 的重点是权限、召回、融合、证据后处理、Prompt、防幻觉、Citation 和 Trace。
+2. 再说方案：HybridRetriever 组合 BM25、向量和 Wiki 召回，WeightedReciprocalRankFusion 做融合，EvidencePostProcessor 做去重、相邻合并、限流和截断，TeamRagPromptBuilder 约束模型只基于证据回答，CitationService 保存可回溯引用。
+3. 再说收益：回答质量、可解释性、权限安全和后续 Eval/排障都更强。
+4. 最后落到真实代码锚点，不要停在概念。
 
-- `HybridRetriever`
-- `Bm25Retriever`
-- `VectorRetriever`
-- `WikiRetriever`
-- `WeightedReciprocalRankFusion`
-- `EvidencePostProcessor`
-- `TeamRagPromptBuilder`
-- `ObservedLlmGateway`
-- `CitationService`
-- `RetrievalTraceService`
-- `PromptVersionService`
+可直接复述：
 
-## 5. 为什么这么设计
+> RAG 这块我不会只说“接了向量库”。NoteWeave 的目标是 evidence-first。一次团队问答先经过 Space 权限和 session scope 判断，只在可见知识库内检索。检索层有 BM25、向量和 Wiki recall，并用 Weighted RRF 融合排序，避免单一召回方式漏掉关键词或语义相关内容。之后 EvidencePostProcessor 会对 chunk 做去重、相邻合并、每文档限流和上下文截断，避免 prompt 被重复证据撑爆。TeamRagPromptBuilder 再把证据以受控格式注入，明确文档内容不是系统指令，无证据时返回兜底。最后 CitationService 把回答和证据关系落到 citation/message_citation 等关系里，并保留 page、offset、quoteHash、snapshotObjectKey 这类字段，方便后续审计和二次权限校验。
 
-### 5.1 为什么不只用向量
+常见追问：
+- 如果向量召回失败，系统怎么降级？
+- 如果 Citation 被用户质疑不准确，先查哪几层？
+- Prompt injection 文档内容怎么处理？
 
-向量对语义相似好，但对专有名词、编号、错误码、精确短语不一定稳定。BM25 对这些更可靠。Wiki recall 则引入已确认知识。混合检索比单一路径更稳。
+### Q5: 没有证据时为什么要明确兜底？
 
-### 5.2 为什么不只靠 prompt 防幻觉
+回答时按四步走：
+1. 先说场景：大厂面试会重点追问 RAG 是否只是简单调用模型。NoteWeave 的重点是权限、召回、融合、证据后处理、Prompt、防幻觉、Citation 和 Trace。
+2. 再说方案：HybridRetriever 组合 BM25、向量和 Wiki 召回，WeightedReciprocalRankFusion 做融合，EvidencePostProcessor 做去重、相邻合并、限流和截断，TeamRagPromptBuilder 约束模型只基于证据回答，CitationService 保存可回溯引用。
+3. 再说收益：回答质量、可解释性、权限安全和后续 Eval/排障都更强。
+4. 最后落到真实代码锚点，不要停在概念。
 
-prompt 只能约束模型，但不能保证事实正确。必须从证据源头控制：无证据兜底、Citation 持久化、Trace 排查、Eval 回归。
+可直接复述：
 
-### 5.3 为什么 Citation 不放 JSON
+> RAG 这块我不会只说“接了向量库”。NoteWeave 的目标是 evidence-first。一次团队问答先经过 Space 权限和 session scope 判断，只在可见知识库内检索。检索层有 BM25、向量和 Wiki recall，并用 Weighted RRF 融合排序，避免单一召回方式漏掉关键词或语义相关内容。之后 EvidencePostProcessor 会对 chunk 做去重、相邻合并、每文档限流和上下文截断，避免 prompt 被重复证据撑爆。TeamRagPromptBuilder 再把证据以受控格式注入，明确文档内容不是系统指令，无证据时返回兜底。最后 CitationService 把回答和证据关系落到 citation/message_citation 等关系里，并保留 page、offset、quoteHash、snapshotObjectKey 这类字段，方便后续审计和二次权限校验。
 
-Citation 是证据关系，不是展示字段。关系化后才能做权限二次校验、版本追踪、Artifact/Card/Wiki 复用和排障。
+常见追问：
+- 如果向量召回失败，系统怎么降级？
+- 如果 Citation 被用户质疑不准确，先查哪几层？
+- Prompt injection 文档内容怎么处理？
 
-### 5.4 模型如何选择
+## 7. 不能说满的地方
+- 不要把 Hybrid RAG 说成 GraphRAG 主链路。
+- 不要编造 recall@k 或准确率。
+- 不要说 Citation 只靠模型输出的引用编号。
 
-当前仓库支持 OpenAI-compatible client 和 StubLlmClient，具体 provider 可配置。面试时不要编造某个生产模型版本。可以说选择模型会看上下文窗口、中文能力、成本、延迟、稳定性、工具生态和私有化约束。
-
-## 6. 可直接复述的深答
-
-NoteWeave 的 RAG 是 evidence-first 设计。用户提问后，系统先校验权限和 session scope，再做 BM25、向量和 Wiki 多路召回。BM25 解决关键词和术语精确匹配，向量解决语义改写，Wiki recall 引入已沉淀的稳定知识。多路结果通过 weighted RRF 融合，因为不同召回器的分数尺度不可比。融合后还不能直接塞进 prompt，需要 EvidencePostProcessor 做去重、低分过滤、相邻 chunk 合并、同文档限流和上下文裁剪。如果没有证据，就明确返回无证据兜底；如果有证据，TeamRagPromptBuilder 会把证据编号和引用规则注入 prompt，再通过 ObservedLlmGateway 调模型。最后 Citation、RetrievalTrace 和 LLMCallLog 都会持久化，方便排查坏回答。这样治理幻觉不是靠一句 prompt，而是靠检索、证据、引用和观测闭环。
-
-## 7. 追问兜底
-
-### 如果问“准确率多少”
-
-当前没有生产准确率数字，不编造。可以说明会用 Eval case、recall@k、MRR、citation coverage、人工 bad case 复盘来验证。
-
-### 如果问“citation coverage 高是否代表答案正确”
-
-不代表。它只能说明答案有引用覆盖，还要结合引用是否正确、claim 是否被证据支持、生成是否忠实。
-
-### 如果问“模型版本和上下文窗口”
-
-如果仓库没有固定生产配置，不要编造。说系统支持 provider 配置，本地可用 stub，真实上线会按成本、延迟、上下文和效果评测选型。
-
-## 8. 边界和不能说满的地方
-
-- 可以坚定讲：Hybrid RAG、Prompt 约束、Citation、Trace、Eval 和无证据兜底。
-- 不要讲成：当前已有真实线上准确率；citation coverage 等于正确率；GraphRAG、MCP、完整 Agent 已在主链路落地。
-
+## 8. 零基础记忆法
+记住一句话：先讲“为什么需要这个模块”，再讲“请求从哪里来、状态落在哪里、失败怎么恢复、证据怎么追踪、权限怎么兜底”。按这个顺序答，大多数追问都能接住。

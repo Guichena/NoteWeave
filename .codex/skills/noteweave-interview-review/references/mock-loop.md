@@ -80,6 +80,7 @@ When picking the next question:
    - WebSocket runtime and memory
    - personal research pipeline
    - artifact/wiki/methodology
+   - wiki graph and auto-maintenance
    - observability/eval/admin
 3. then use project intro as warm-up or recovery question if needed
 4. then prioritize risky resume phrases:
@@ -88,6 +89,7 @@ When picking the next question:
    - `Skill`
    - `Redis runtime state`
    - `MCP`
+   - `Bilibili MCP`
 5. only after that, expand breadth
 
 ## Recording Rules

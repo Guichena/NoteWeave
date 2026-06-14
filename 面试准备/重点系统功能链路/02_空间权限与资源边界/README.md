@@ -1,84 +1,162 @@
-﻿# 02 空间权限与资源边界
+# 空间权限与资源边界
+
+> 本文件为 2026-06-01 重构版，依据当前代码、测试和 Flyway 迁移整理。不要再按旧阶段计划或旧题库口径背。
 
 ## 0. 本篇定位
+AI 知识系统最怕串数据。团队文档、个人研究、Memory、Citation、Trace 都必须先有权限边界。
 
-这条链路回答：NoteWeave 如何保证团队知识、个人研究、Artifact、Citation、Memory 不互相越权。
+## 1. 面试先说版
+我在权限上不是只做接口拦截，而是先把业务容器定义清楚。NoteWeave 里 Space 是最高边界，分 PERSONAL 和 TEAM。个人研究项目、Source、个人卡片、个人 Artifact 都挂在个人空间或 owner 下；团队知识库、文档、Wiki、团队 Chat 都挂在团队空间下。系统后台又单独用 users.system_role 区分 USER 和 ADMIN，不把团队 OWNER 当系统管理员。这样设计的好处是后续 Citation 查询、RAG 召回、Memory 读取和 Admin API 都能复用统一权限判断，避免只在入口判断一次，后面按 id 查资源导致越权。
 
-核心口径：
+## 2. 当前真实口径
+NoteWeave 把 Space 作为最高业务容器，并把系统角色和空间角色分开，避免 Admin 权限、团队权限和个人私有数据混在一起。
 
-```text
-Space 是最高业务容器。
-TEAM 通过 SpaceMember.role 管理协作权限。
-PERSONAL 默认 owner-only。
-Admin system_role 和团队 OWNER 不能混用。
-关键资源读取必须回到统一资源访问校验或模块内权限校验。
-```
+### 已实现
+- AuthController 提供 register/login/refresh/logout/logout-all。
+- UserController 支持当前用户资料和密码更新。
+- SpaceController 支持 Space 创建、列表、成员、角色更新和成员移除。
+- SpacePermissionService 和 ResourceAccessService 承担统一权限检查。
+- Admin 接口位于 `/api/v1/admin/**`，通过系统角色隔离。
 
-## 面试先说版
+### 设计目标
+- 注册后创建 PERSONAL Space；TEAM Space 通过 SpaceMember 管 OWNER/EDITOR/VIEWER；后台用 users.system_role 管 USER/ADMIN；资源读取统一经过 SpacePermissionService 或 ResourceAccessService。
+- 后续 RAG、Citation、Artifact、Memory、Admin 都能复用同一套边界，不会在每个 Controller 里临时按 id 查询。
 
-这条链路我会从“AI 知识系统怎么避免越权”讲。RAG 系统的权限风险不只发生在接口入口，还会发生在检索、Citation、Artifact、Memory、预览下载这些后续链路里。所以 NoteWeave 把 Space 作为最高业务边界，团队空间和个人空间先隔离，再在团队空间内用成员角色控制协作权限。
+### 后续可扩展
+- Controller 做过权限校验后，Service 层还要不要校验？
+- 如果一个 Artifact 同时引用团队和个人资料，怎么判断可见性？
+- Admin 能否直接看用户私有 Memory？应该怎么限制？
 
-这里的关键取舍是：权限模型会比简单 userId 判断复杂，但所有资源都能回到同一条边界上。检索时先用 ES filter 做前置过滤，召回后再用 MySQL 做状态和权限复核；Citation 查询、Artifact 生成、Memory 写回也不能绕过空间边界。
+## 3. 代码和测试锚点
+- src/main/java/com/noteweave/auth/controller/AuthController.java
+- src/main/java/com/noteweave/space/controller/SpaceController.java
+- src/main/java/com/noteweave/permission/service/SpacePermissionService.java
+- src/main/java/com/noteweave/permission/service/ResourceAccessService.java
+- src/test/java/com/noteweave/permission/service/SpacePermissionServiceTest.java
 
-## Q1：为什么要把 `TEAM` 和 `PERSONAL` 做成一级空间？
+## 4. 必会问题与答题骨架
 
-**答：**
+### Q1: 为什么 Space 要做成一级业务边界？
 
-因为团队知识协作和个人研究沉淀的权限、生命周期和知识沉淀方式不一样。
+回答时按四步走：
+1. 先说场景：AI 知识系统最怕串数据。团队文档、个人研究、Memory、Citation、Trace 都必须先有权限边界。
+2. 再说方案：注册后创建 PERSONAL Space；TEAM Space 通过 SpaceMember 管 OWNER/EDITOR/VIEWER；后台用 users.system_role 管 USER/ADMIN；资源读取统一经过 SpacePermissionService 或 ResourceAccessService。
+3. 再说收益：后续 RAG、Citation、Artifact、Memory、Admin 都能复用同一套边界，不会在每个 Controller 里临时按 id 查询。
+4. 最后落到真实代码锚点，不要停在概念。
 
-团队侧的重点是共享知识库、团队 Chat、团队 Wiki、团队 Artifact 和成员协作。这里需要 `SpaceMember.role` 区分 `OWNER / EDITOR / VIEWER`，比如 Viewer 可以问答但不能上传文档或发布 Wiki。
+可直接复述：
 
-个人侧的重点是 ResearchProject、Source、ArticleCard、ConceptCard、SynthesisCard、个人 Artifact 和 UserMemory。这些内容默认只有 owner 能访问，因为个人研究里可能包含草稿、偏好、未公开资料和临时结论。
+> 我在权限上不是只做接口拦截，而是先把业务容器定义清楚。NoteWeave 里 Space 是最高边界，分 PERSONAL 和 TEAM。个人研究项目、Source、个人卡片、个人 Artifact 都挂在个人空间或 owner 下；团队知识库、文档、Wiki、团队 Chat 都挂在团队空间下。系统后台又单独用 users.system_role 区分 USER 和 ADMIN，不把团队 OWNER 当系统管理员。这样设计的好处是后续 Citation 查询、RAG 召回、Memory 读取和 Admin API 都能复用统一权限判断，避免只在入口判断一次，后面按 id 查资源导致越权。
 
-所以 `Space` 不是简单文件夹，而是后续知识、任务、引用、会话、记忆和成果的最高隔离边界。
+常见追问：
+- Controller 做过权限校验后，Service 层还要不要校验？
+- 如果一个 Artifact 同时引用团队和个人资料，怎么判断可见性？
+- Admin 能否直接看用户私有 Memory？应该怎么限制？
 
-## Q2：`users.system_role` 和 `SpaceMember.role` 为什么要分开？
+### Q2: systemRole 和 SpaceMember.role 为什么要分开？
 
-**答：**
+回答时按四步走：
+1. 先说场景：AI 知识系统最怕串数据。团队文档、个人研究、Memory、Citation、Trace 都必须先有权限边界。
+2. 再说方案：注册后创建 PERSONAL Space；TEAM Space 通过 SpaceMember 管 OWNER/EDITOR/VIEWER；后台用 users.system_role 管 USER/ADMIN；资源读取统一经过 SpacePermissionService 或 ResourceAccessService。
+3. 再说收益：后续 RAG、Citation、Artifact、Memory、Admin 都能复用同一套边界，不会在每个 Controller 里临时按 id 查询。
+4. 最后落到真实代码锚点，不要停在概念。
 
-这两个角色解决的问题不同。
+可直接复述：
 
-`users.system_role` 是系统后台权限，比如 ADMIN 能访问 `/api/v1/admin/**`，查看系统健康、任务、用户、审计日志、RAG Eval 和清理任务。
+> 我在权限上不是只做接口拦截，而是先把业务容器定义清楚。NoteWeave 里 Space 是最高边界，分 PERSONAL 和 TEAM。个人研究项目、Source、个人卡片、个人 Artifact 都挂在个人空间或 owner 下；团队知识库、文档、Wiki、团队 Chat 都挂在团队空间下。系统后台又单独用 users.system_role 区分 USER 和 ADMIN，不把团队 OWNER 当系统管理员。这样设计的好处是后续 Citation 查询、RAG 召回、Memory 读取和 Admin API 都能复用统一权限判断，避免只在入口判断一次，后面按 id 查资源导致越权。
 
-`SpaceMember.role` 是某个团队空间内的业务角色，比如 OWNER 可以管理成员和发布内容，EDITOR 可以上传和编辑，VIEWER 只能查看和问答。
+常见追问：
+- Controller 做过权限校验后，Service 层还要不要校验？
+- 如果一个 Artifact 同时引用团队和个人资料，怎么判断可见性？
+- Admin 能否直接看用户私有 Memory？应该怎么限制？
 
-如果把两者混在一起，会出现权限语义混乱。比如一个团队 OWNER 不应该天然拥有全系统 Admin 权限，一个系统 Admin 也不应该被当成某个团队空间的知识 owner。
+### Q3: 为什么 Citation 返回前还要二次权限校验？
 
-## Q3：资源访问为什么不能只在接口入口判断一次？
+回答时按四步走：
+1. 先说场景：AI 知识系统最怕串数据。团队文档、个人研究、Memory、Citation、Trace 都必须先有权限边界。
+2. 再说方案：注册后创建 PERSONAL Space；TEAM Space 通过 SpaceMember 管 OWNER/EDITOR/VIEWER；后台用 users.system_role 管 USER/ADMIN；资源读取统一经过 SpacePermissionService 或 ResourceAccessService。
+3. 再说收益：后续 RAG、Citation、Artifact、Memory、Admin 都能复用同一套边界，不会在每个 Controller 里临时按 id 查询。
+4. 最后落到真实代码锚点，不要停在概念。
 
-**答：**
+可直接复述：
 
-因为 NoteWeave 的资源是链式关联的。一次问答可能从 ChatSession 关联到 Space，再到 KnowledgeBase、DocumentChunk、Citation、Snapshot；一次 Artifact 可能关联 Source、Card、Citation、MethodologyCard；一次 Admin 查询也可能跨任务、用户、空间。
+> 我在权限上不是只做接口拦截，而是先把业务容器定义清楚。NoteWeave 里 Space 是最高边界，分 PERSONAL 和 TEAM。个人研究项目、Source、个人卡片、个人 Artifact 都挂在个人空间或 owner 下；团队知识库、文档、Wiki、团队 Chat 都挂在团队空间下。系统后台又单独用 users.system_role 区分 USER 和 ADMIN，不把团队 OWNER 当系统管理员。这样设计的好处是后续 Citation 查询、RAG 召回、Memory 读取和 Admin API 都能复用统一权限判断，避免只在入口判断一次，后面按 id 查资源导致越权。
 
-如果只在接口入口按 id 判断一次，很容易出现后续链路绕过权限的问题。更稳的方式是关键资源读取时都回到统一资源访问校验或模块内权限服务做二次确认。
+常见追问：
+- Controller 做过权限校验后，Service 层还要不要校验？
+- 如果一个 Artifact 同时引用团队和个人资料，怎么判断可见性？
+- Admin 能否直接看用户私有 Memory？应该怎么限制？
 
-典型例子是 Citation 查询。即使用户能看到某条 message，也不能直接把 citationId 返回出去，而要根据 Citation 的 `spaceId / sourceType / sourceId` 回查资源所属空间，确认当前用户仍然有权限。
+### Q4: 个人研究和团队知识为什么不能共用一套归属模型？
 
-## 常见追问
+回答时按四步走：
+1. 先说场景：AI 知识系统最怕串数据。团队文档、个人研究、Memory、Citation、Trace 都必须先有权限边界。
+2. 再说方案：注册后创建 PERSONAL Space；TEAM Space 通过 SpaceMember 管 OWNER/EDITOR/VIEWER；后台用 users.system_role 管 USER/ADMIN；资源读取统一经过 SpacePermissionService 或 ResourceAccessService。
+3. 再说收益：后续 RAG、Citation、Artifact、Memory、Admin 都能复用同一套边界，不会在每个 Controller 里临时按 id 查询。
+4. 最后落到真实代码锚点，不要停在概念。
 
-**追问：检索时权限怎么保证？**
+可直接复述：
 
-ES 查询带 `spaceId / knowledgeBaseId / status` 等 filter；检索后再通过 MySQL 校验文档状态、删除状态和 activeIndexVersion。也就是前置过滤加后置校验。
+> 我在权限上不是只做接口拦截，而是先把业务容器定义清楚。NoteWeave 里 Space 是最高边界，分 PERSONAL 和 TEAM。个人研究项目、Source、个人卡片、个人 Artifact 都挂在个人空间或 owner 下；团队知识库、文档、Wiki、团队 Chat 都挂在团队空间下。系统后台又单独用 users.system_role 区分 USER 和 ADMIN，不把团队 OWNER 当系统管理员。这样设计的好处是后续 Citation 查询、RAG 召回、Memory 读取和 Admin API 都能复用统一权限判断，避免只在入口判断一次，后面按 id 查资源导致越权。
 
-**追问：Admin 能不能看所有用户个人研究？**
+常见追问：
+- Controller 做过权限校验后，Service 层还要不要校验？
+- 如果一个 Artifact 同时引用团队和个人资料，怎么判断可见性？
+- Admin 能否直接看用户私有 Memory？应该怎么限制？
 
-不要夸大。Admin 主要用于系统管理、健康、任务、日志、评测和清理。涉及敏感日志和 Prompt 时，要强调脱敏和访问边界。
+### Q5: 如果用户被禁用，哪些链路应该受到影响？
 
-## 实现兜底锚点
+回答时按四步走：
+1. 先说场景：AI 知识系统最怕串数据。团队文档、个人研究、Memory、Citation、Trace 都必须先有权限边界。
+2. 再说方案：注册后创建 PERSONAL Space；TEAM Space 通过 SpaceMember 管 OWNER/EDITOR/VIEWER；后台用 users.system_role 管 USER/ADMIN；资源读取统一经过 SpacePermissionService 或 ResourceAccessService。
+3. 再说收益：后续 RAG、Citation、Artifact、Memory、Admin 都能复用同一套边界，不会在每个 Controller 里临时按 id 查询。
+4. 最后落到真实代码锚点，不要停在概念。
 
-- `Space`
-- `SpaceMember`
-- `SpacePermissionService`
-- `ResourceAccessService`
-- `SpaceController`
-- `SpaceControllerTest`
-- `SpacePermissionServiceTest`
+可直接复述：
 
-## 3 到 5 分钟深答模板
+> 我在权限上不是只做接口拦截，而是先把业务容器定义清楚。NoteWeave 里 Space 是最高边界，分 PERSONAL 和 TEAM。个人研究项目、Source、个人卡片、个人 Artifact 都挂在个人空间或 owner 下；团队知识库、文档、Wiki、团队 Chat 都挂在团队空间下。系统后台又单独用 users.system_role 区分 USER 和 ADMIN，不把团队 OWNER 当系统管理员。这样设计的好处是后续 Citation 查询、RAG 召回、Memory 读取和 Admin API 都能复用统一权限判断，避免只在入口判断一次，后面按 id 查资源导致越权。
 
-> 我把 `TEAM` 和 `PERSONAL` 做成一级空间，不是为了界面上多一个分类，而是因为团队知识协作和个人研究沉淀在权限模型、生命周期和长期知识边界上天然不同。团队空间强调成员协作、共享知识库、Citation 和 Wiki；个人空间强调 owner-only、Source、Card、Artifact、Synthesis 和个人 Memory。如果不在最外层把空间边界拆开，后面 Citation、Memory、Artifact、Wiki 都很容易串权限。权限上我又分成两层：`system_role` 负责系统后台能力，`SpaceMember.role` 负责团队业务角色。关键资源读取不会只在接口入口判断一次，而是回到统一资源访问校验或模块权限服务做二次确认，检索侧还有 ES 前置过滤和 MySQL 后置校验，所以回答、Citation、预览、下载这些链路都能守住同一套空间边界。
+常见追问：
+- Controller 做过权限校验后，Service 层还要不要校验？
+- 如果一个 Artifact 同时引用团队和个人资料，怎么判断可见性？
+- Admin 能否直接看用户私有 Memory？应该怎么限制？
 
-## 边界和不能说满的地方
+## 5. 大厂深挖追问路径
+1. 先问你做了什么。
+2. 再问为什么这样设计，不用更简单方案。
+3. 再问失败、重试、越权、删除、断线、重建索引时会发生什么。
+4. 最后问如何量化效果和下一步演进。
 
-- 可以坚定讲：Space 是最高业务隔离边界，团队和个人资源不会混讲。
-- 不要讲成：Admin 天然能随便看所有个人研究；接口入口鉴权一次就够；检索 filter 做了就不需要二次校验。
+把答案往下压一层：
+- 业务层：AI 知识系统最怕串数据。团队文档、个人研究、Memory、Citation、Trace 都必须先有权限边界。
+- 架构层：注册后创建 PERSONAL Space；TEAM Space 通过 SpaceMember 管 OWNER/EDITOR/VIEWER；后台用 users.system_role 管 USER/ADMIN；资源读取统一经过 SpacePermissionService 或 ResourceAccessService。
+- 数据层：引用 MySQL、Redis、MinIO、ES、Kafka 或 Citation/Trace 的真实职责。
+- 测试层：能说出对应 IntegrationTest 或 ServiceTest。
+- 边界层：明确哪些是后续扩展，不冒充已落地。
+
+## 6. 不能说满的地方
+- 不要把团队 OWNER 说成系统 ADMIN。
+- 不要说权限只靠前端路由隐藏。
+- 不要把 Citation 当普通 JSON 返回而忽略二次校验。
+
+## 7. 零基础记忆法
+记住一句话：先讲“为什么需要这个模块”，再讲“请求从哪里来、状态落在哪里、失败怎么恢复、证据怎么追踪、权限怎么兜底”。按这个顺序答，大多数追问都能接住。
+
+## 8. 权限追问必须讲到检索阶段
+面试官如果问“为什么不能先全局召回再按权限过滤”，不要只说安全风险，要把工程问题讲透：
+
+- 全局召回会让无权限内容参与排序，哪怕最后过滤掉，也可能挤掉本该出现的合法证据。
+- 全局召回会在 Trace、日志、调试接口里留下敏感 chunk 的痕迹。
+- 全局召回会让 Citation、EvidencePostProcessor、Prompt 构造阶段都需要额外兜底，任何一步漏掉都会越权。
+- NoteWeave 的做法是检索 query 阶段就带 `spaceId`、`knowledgeBaseId`、状态和版本过滤，返回 Citation 前还要回到资源权限做二次校验。
+
+面试表达可以这样说：
+
+> RAG 权限不能只做“结果过滤”。我会先在检索阶段限制候选集，再在 Citation 展示前做二次校验。原因是召回、排序、Trace、Prompt 都可能泄露信息，越早把无权限数据挡在链路外，系统越安全，也越容易排查。
+
+## 9. 如果发生越权应该怎么定位
+1. 先查用户是否仍是该 Space 成员，以及 SpaceMember.role 是否被错误放大。
+2. 再查 ES query 是否漏了 `spaceId` / `knowledgeBaseId` / status / version filter。
+3. 再查 Citation 查询是否直接按 id 返回，绕过了 ResourceAccessService。
+4. 再查 Artifact、Wiki、Memory 是否把跨空间证据复制成了长期内容。
+5. 最后查 Admin/Ops 和 Trace 暴露接口是否把调试信息给了普通用户。
