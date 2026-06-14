@@ -17,6 +17,7 @@ class ContextReadRouterTest {
         ContextReadPlan plan = contextReadRouter.resolve(ChatSessionKind.DRAFT, ChatSessionType.TEAM_CHAT);
 
         assertThat(plan.readRecentHistory()).isTrue();
+        assertThat(plan.readQuestionMemory()).isFalse();
         assertThat(plan.readSessionSummary()).isFalse();
         assertThat(plan.readSpaceMemory()).isFalse();
         assertThat(plan.readUserMemory()).isFalse();
@@ -28,6 +29,7 @@ class ContextReadRouterTest {
         ContextReadPlan plan = contextReadRouter.resolve(ChatSessionKind.FORMAL, ChatSessionType.TEAM_CHAT);
 
         assertThat(plan.readRecentHistory()).isTrue();
+        assertThat(plan.readQuestionMemory()).isTrue();
         assertThat(plan.readSessionSummary()).isTrue();
         assertThat(plan.readSpaceMemory()).isTrue();
         assertThat(plan.readUserMemory()).isTrue();

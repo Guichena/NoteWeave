@@ -30,6 +30,9 @@ class HybridRetrieverTest {
     private com.noteweave.team.wiki.service.WikiRetriever wikiRetriever;
 
     @Mock
+    private ClaimRetriever claimRetriever;
+
+    @Mock
     private WeightedReciprocalRankFusion fusion;
 
     private HybridRetriever hybridRetriever;
@@ -40,9 +43,10 @@ class HybridRetrieverTest {
                 bm25Retriever,
                 vectorRetriever,
                 wikiRetriever,
+                claimRetriever,
                 fusion,
                 new RagProperties(
-                        new RagProperties.Retrieval(RetrievalMode.HYBRID, 5, 2, 4_000, 1_200, 0.0d, 1.0d, 1.0d, 1.3d, 60),
+                        new RagProperties.Retrieval(RetrievalMode.HYBRID, 5, 2, 4_000, 1_200, 0.0d, 1.0d, 1.0d, 1.3d, 1.1d, 60),
                         new RagProperties.Prompt("No evidence")
                 )
         );
@@ -50,7 +54,7 @@ class HybridRetrieverTest {
 
     @Test
     void shouldFallbackToBm25AndWikiWhenVectorEmbeddingFails() {
-        TeamRetrievalQuery query = new TeamRetrievalQuery(1L, 10L, List.of(20L), "rollback", 5, true);
+        TeamRetrievalQuery query = new TeamRetrievalQuery(1L, 10L, List.of(20L), "rollback", 5, true, 77L);
         RetrievedChunk bm25Chunk = new RetrievedChunk(101L, 1001L, 20L, 10L, "DOCUMENT", 1001L, 2, 0, "Ops Runbook", "Rollback rehearsal is required.", 9.0d, 1, 0, 32, "2");
         RetrievalHit wikiHit = RetrievalHit.builder()
                 .retrieverName("Wiki")
@@ -87,6 +91,7 @@ class HybridRetrieverTest {
         when(bm25Retriever.retrieveChunks(query)).thenReturn(List.of(bm25Chunk));
         when(vectorRetriever.retrieve(query)).thenThrow(new BusinessException(ErrorCode.LLM_CONFIG_MISSING, "embedding key missing"));
         when(wikiRetriever.retrieve(query)).thenReturn(List.of(wikiHit));
+        when(claimRetriever.retrieve(query)).thenReturn(List.of());
         when(fusion.fuse(any(), any())).thenReturn(List.of(fusedHit, wikiHit));
 
         HybridRetriever.HybridRetrievalResult result = hybridRetriever.retrieve(query, RetrievalMode.HYBRID);
@@ -98,10 +103,48 @@ class HybridRetrieverTest {
         assertThat(result.fusedHits()).containsExactly(fusedHit, wikiHit);
         assertThat(result.traceJson()).contains("\"bm25\":1").contains("\"wiki\":1");
         verify(fusion).fuse(
-                argThat(hitLists -> hitLists.size() == 3
+                argThat(hitLists -> hitLists.size() == 4
                         && hitLists.get(0).size() == 1
                         && hitLists.get(1).isEmpty()
-                        && hitLists.get(2).size() == 1),
+                        && hitLists.get(2).size() == 1
+                        && hitLists.get(3).isEmpty()),
+                any()
+        );
+    }
+
+    @Test
+    void shouldIncludeClaimBranchInTraceJson() {
+        TeamRetrievalQuery query = new TeamRetrievalQuery(1L, 10L, List.of(20L), "graphrag", 5, true, 88L);
+        RetrievedChunk bm25Chunk = new RetrievedChunk(101L, 1001L, 20L, 10L, "DOCUMENT", 1001L, 2, 0, "Ops Runbook", "Rollback rehearsal is required.", 9.0d, 1, 0, 32, "2");
+        RetrievalHit claimHit = RetrievalHit.builder()
+                .retrieverName("Claim")
+                .chunkId(-1_000_000_000_123L)
+                .documentId(123L)
+                .knowledgeBaseId(0L)
+                .spaceId(10L)
+                .chunkIndex(0)
+                .documentTitle("Claim - GraphRAG")
+                .content("[CONCLUSION/SUPPORTED] GraphRAG is too heavy for the MVP.")
+                .score(2.0d)
+                .rank(1)
+                .metadata(Map.of("sourceType", "CLAIM", "sourceId", 123L, "indexVersion", 0))
+                .build();
+
+        when(bm25Retriever.retrieveChunks(query)).thenReturn(List.of(bm25Chunk));
+        when(vectorRetriever.retrieve(query)).thenReturn(List.of());
+        when(wikiRetriever.retrieve(query)).thenReturn(List.of());
+        when(claimRetriever.retrieve(query)).thenReturn(List.of(claimHit));
+        when(fusion.fuse(any(), any())).thenReturn(List.of(claimHit));
+
+        HybridRetriever.HybridRetrievalResult result = hybridRetriever.retrieve(query, RetrievalMode.HYBRID);
+
+        assertThat(result.traceJson()).contains("\"claim\":1");
+        verify(fusion).fuse(
+                argThat(hitLists -> hitLists.size() == 4
+                        && hitLists.get(0).size() == 1
+                        && hitLists.get(1).isEmpty()
+                        && hitLists.get(2).isEmpty()
+                        && hitLists.get(3).size() == 1),
                 any()
         );
     }

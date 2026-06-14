@@ -4,6 +4,7 @@
   "type": "commonjs",
   "scripts": {
     "install:browsers": "playwright install chromium",
+    "p4-claim": "node p4-claim-retrieval.js",
     "smoke": "node smoke.js",
     "visual-audit": "node visual-audit.js"
   },

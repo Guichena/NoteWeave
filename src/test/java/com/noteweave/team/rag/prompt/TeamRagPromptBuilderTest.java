@@ -40,6 +40,9 @@ class TeamRagPromptBuilderTest {
                 List.of(evidence),
                 List.of(history),
                 new PromptMemoryContext(
+                        List.of("[CONCLUSION/SUPPORTED, confidence 0.8] Rollback rehearsal is mandatory before release."),
+                        List.of("[CONCLUSION/REFUTED, confidence 0.6] In another question, rollback was deemed optional."),
+                        List.of("Current question hypothesis: rollback rehearsal is mandatory before release."),
                         List.of("Question: What changed?\nAnswer: Rollback rehearsal is mandatory."),
                         List.of("Use concise bullet answers in this workspace."),
                         List.of("The user prefers concise bullet answers.")
@@ -53,6 +56,9 @@ class TeamRagPromptBuilderTest {
                 .contains("Do not invent files, facts, or conclusions");
         assertThat(prompt.messages().get(1).content())
                 .contains("Recent conversation:")
+                .contains("Current question conclusions (latest, may include open issues):")
+                .contains("Related conclusions from your other research questions:")
+                .contains("Current research question memory:")
                 .contains("Relevant session summaries:")
                 .contains("Workspace long-term memory:")
                 .contains("User stable preferences:")
