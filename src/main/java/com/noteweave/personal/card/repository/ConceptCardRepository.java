@@ -12,6 +12,8 @@ public interface ConceptCardRepository extends JpaRepository<ConceptCard, Long> 
 
     Optional<ConceptCard> findByResearchProjectIdAndNormalizedName(Long researchProjectId, String normalizedName);
 
+    List<ConceptCard> findByResearchProjectIdAndNormalizedNameIn(Long researchProjectId, Collection<String> normalizedNames);
+
     List<ConceptCard> findByResearchProjectIdAndSpaceIdOrderByUpdatedAtDesc(Long researchProjectId, Long spaceId);
 
     List<ConceptCard> findBySpaceIdOrderByUpdatedAtDesc(Long spaceId);

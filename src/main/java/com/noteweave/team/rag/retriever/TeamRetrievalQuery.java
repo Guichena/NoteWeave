@@ -8,6 +8,7 @@ public record TeamRetrievalQuery(
         List<Long> knowledgeBaseIds,
         String query,
         int topK,
-        boolean includeWiki
+        boolean includeWiki,
+        Long researchQuestionId
 ) {
 }

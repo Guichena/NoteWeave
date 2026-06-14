@@ -35,6 +35,7 @@ public class SessionSummaryService {
         summary.setQueryType(session.getSessionType().name());
         summary.setScopeType(session.getScopeType().name());
         summary.setScopeId(null);
+        summary.setResearchQuestionId(session.getResearchQuestionId());
         summary.setSummary(buildSummary(userMessage, assistantMessage));
         summary.setReferenceSourceJson(writeJson(citations == null ? List.of() : citations.stream()
                 .map(citation -> java.util.Map.of(
@@ -56,6 +57,13 @@ public class SessionSummaryService {
     @Transactional(readOnly = true)
     public List<SessionSummary> retrieveRelevant(Long userId, Long spaceId) {
         return sessionSummaryRepository.findRelevant(userId, spaceId, LocalDateTime.now()).stream()
+                .limit(3)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<SessionSummary> retrieveByQuestion(Long userId, Long researchQuestionId) {
+        return sessionSummaryRepository.findRelevantByResearchQuestion(userId, researchQuestionId, LocalDateTime.now()).stream()
                 .limit(3)
                 .toList();
     }

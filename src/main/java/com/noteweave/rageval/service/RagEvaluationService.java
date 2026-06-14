@@ -246,7 +246,8 @@ public class RagEvaluationService {
                                 .toList(),
                         evalCase.getQueryText(),
                         ragProperties.retrieval().topK(),
-                        true
+                        true,
+                        null
                 ),
                 ragProperties.retrieval().mode()
         );

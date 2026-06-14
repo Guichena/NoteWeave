@@ -20,6 +20,8 @@ import com.noteweave.chat.repository.ChatSessionScopeRepository;
 import com.noteweave.common.error.BusinessException;
 import com.noteweave.common.error.ErrorCode;
 import com.noteweave.permission.service.ResourceAccessService;
+import com.noteweave.personal.question.model.ResearchQuestion;
+import com.noteweave.personal.question.service.ResearchQuestionService;
 import com.noteweave.team.kb.model.KnowledgeBaseStatus;
 import com.noteweave.team.kb.repository.KnowledgeBaseRepository;
 import java.time.LocalDateTime;
@@ -42,6 +44,7 @@ public class ChatSessionService {
     private final ResourceAccessService resourceAccessService;
     private final KnowledgeBaseRepository knowledgeBaseRepository;
     private final ArtifactRepository artifactRepository;
+    private final ResearchQuestionService researchQuestionService;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -59,6 +62,7 @@ public class ChatSessionService {
                 }
             }
         }
+        Long boundProjectId = resolveBoundProject(userId, request);
         ChatSession session = new ChatSession();
         session.setUserId(userId);
         session.setSpaceId(request.getSpaceId());
@@ -66,6 +70,8 @@ public class ChatSessionService {
         session.setSessionKind(request.getSessionKind());
         session.setTitle(request.getTitle().trim());
         session.setScopeType(request.getScopeType());
+        session.setResearchProjectId(boundProjectId);
+        session.setResearchQuestionId(request.getResearchQuestionId());
         session.setScopeIdsSnapshotJson(writeJson(request.getScopeIds()));
         session.setStatus(ChatSessionStatus.ACTIVE);
         session.setRuntimeStatus(ChatRuntimeStatus.IDLE);
@@ -196,6 +202,24 @@ public class ChatSessionService {
                 .toList();
     }
 
+    /**
+     * Validate and resolve the research-question / research-project binding for a new session.
+     * Both are optional; when a question is supplied we trust its owning project so the
+     * session is always anchored to a consistent (project, question) pair.
+     */
+    private Long resolveBoundProject(Long userId, CreateChatSessionRequest request) {
+        if (request.getResearchQuestionId() != null) {
+            ResearchQuestion question = researchQuestionService.getRequiredQuestion(userId, request.getResearchQuestionId());
+            if (request.getResearchProjectId() != null
+                    && !request.getResearchProjectId().equals(question.getResearchProjectId())) {
+                throw new BusinessException(ErrorCode.RESEARCH_QUESTION_ACCESS_DENIED,
+                        "research question does not belong to the supplied research project");
+            }
+            return question.getResearchProjectId();
+        }
+        return request.getResearchProjectId();
+    }
+
     private ChatSessionResponse toResponse(ChatSession session, List<Long> scopeIds) {
         return ChatSessionResponse.builder()
                 .id(session.getId())
@@ -205,6 +229,8 @@ public class ChatSessionService {
                 .sessionKind(session.getSessionKind())
                 .scopeType(session.getScopeType())
                 .scopeIds(scopeIds)
+                .researchProjectId(session.getResearchProjectId())
+                .researchQuestionId(session.getResearchQuestionId())
                 .title(session.getTitle())
                 .summary(session.getSummary())
                 .status(session.getStatus())

@@ -18,6 +18,7 @@ public record RagProperties(
             double bm25Weight,
             double vectorWeight,
             double wikiWeight,
+            double claimWeight,
             int rrfK
     ) {
     }

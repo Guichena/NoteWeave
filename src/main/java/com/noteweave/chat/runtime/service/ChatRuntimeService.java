@@ -201,7 +201,7 @@ public class ChatRuntimeService {
                 throw new BusinessException(ErrorCode.CHAT_MESSAGE_EMPTY);
             }
             ContextReadPlan readPlan = contextReadRouter.resolve(session.getSessionKind(), session.getSessionType());
-            PromptMemoryContext memoryContext = memoryContextService.load(userId, session, readPlan);
+            PromptMemoryContext memoryContext = memoryContextService.load(userId, session, readPlan, content);
 
             if (RequestIdHolder.get() == null) {
                 RequestIdHolder.set(requestId);
@@ -445,7 +445,8 @@ public class ChatRuntimeService {
                         resolveKnowledgeBaseScopeIds(session),
                         question,
                         ragProperties.retrieval().topK(),
-                        true
+                        true,
+                        session.getResearchQuestionId()
                 ),
                 ragProperties.retrieval().mode()
         );

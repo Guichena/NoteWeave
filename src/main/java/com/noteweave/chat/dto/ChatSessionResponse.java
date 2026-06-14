@@ -16,6 +16,8 @@ public class ChatSessionResponse {
     private Long id;
     private Long userId;
     private Long spaceId;
+    private Long researchProjectId;
+    private Long researchQuestionId;
     private ChatSessionType sessionType;
     private ChatSessionKind sessionKind;
     private ChatScopeType scopeType;

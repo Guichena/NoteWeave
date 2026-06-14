@@ -30,6 +30,12 @@ public class ChatSession {
     @Column(name = "space_id", nullable = false)
     private Long spaceId;
 
+    @Column(name = "research_project_id")
+    private Long researchProjectId;
+
+    @Column(name = "research_question_id")
+    private Long researchQuestionId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "session_type", nullable = false, length = 32)
     private ChatSessionType sessionType;

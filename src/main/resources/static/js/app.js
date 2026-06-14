@@ -80,6 +80,9 @@ const state = {
         projects: [],
         projectCounts: {},
         detail: null,
+        questionsByProject: {},
+        selectedQuestionIdByProject: {},
+        questionWorkspaceById: {},
         sourcesByProject: {},
         articleCardsByProject: {},
         conceptCardsByProject: {},
@@ -823,6 +826,9 @@ function clearPrivateState() {
         projects: [],
         projectCounts: {},
         detail: null,
+        questionsByProject: {},
+        selectedQuestionIdByProject: {},
+        questionWorkspaceById: {},
         sourcesByProject: {},
         articleCardsByProject: {},
         conceptCardsByProject: {},
@@ -1107,11 +1113,34 @@ async function loadProjectDetail(spaceId, projectId) {
     await loadProjectsPage(spaceId);
     state.studio.skills = await api.studio.listSkills();
     state.personal.detail = await api.personal.getProject(projectId);
+    state.personal.questionsByProject[projectId] = await api.personal.listQuestions(projectId);
     state.personal.sourcesByProject[projectId] = await api.personal.sources(projectId);
     state.personal.articleCardsByProject[projectId] = await api.personal.articleCards(projectId);
     state.personal.conceptCardsByProject[projectId] = await api.personal.conceptCards(projectId);
     state.personal.synthesisCardsByProject[projectId] = await api.personal.synthesisCards(projectId);
     state.personal.methodologyByProject[projectId] = await api.personal.methodologyCards(projectId);
+    const questions = state.personal.questionsByProject[projectId] || [];
+    const selectedQuestionId = Number(state.personal.selectedQuestionIdByProject[projectId]);
+    if (!questions.some((question) => Number(question.id) === selectedQuestionId)) {
+        state.personal.selectedQuestionIdByProject[projectId] = questions[0] ? Number(questions[0].id) : null;
+    }
+    if (state.personal.selectedQuestionIdByProject[projectId]) {
+        await loadProjectQuestionWorkspace(projectId, state.personal.selectedQuestionIdByProject[projectId], true);
+    }
+}
+
+async function loadProjectQuestionWorkspace(projectId, questionId, force = false) {
+    const normalizedQuestionId = Number(questionId);
+    if (!normalizedQuestionId) {
+        return null;
+    }
+    state.personal.selectedQuestionIdByProject[projectId] = normalizedQuestionId;
+    if (!force && state.personal.questionWorkspaceById[normalizedQuestionId]) {
+        return state.personal.questionWorkspaceById[normalizedQuestionId];
+    }
+    const workspace = await api.personal.questionWorkspace(normalizedQuestionId);
+    state.personal.questionWorkspaceById[normalizedQuestionId] = workspace;
+    return workspace;
 }
 
 async function loadStudioPage(spaceId) {
@@ -2628,6 +2657,9 @@ function renderProjectDetailPage(route) {
     const projectId = route.projectId;
     const project = state.personal.detail;
     const projectSpaceId = resolveProjectSpaceId(project);
+    const questions = state.personal.questionsByProject[projectId] || [];
+    const selectedQuestionId = Number(state.personal.selectedQuestionIdByProject[projectId]);
+    const selectedQuestionWorkspace = selectedQuestionId ? state.personal.questionWorkspaceById[selectedQuestionId] : null;
     const sources = state.personal.sourcesByProject[projectId] || [];
     const articles = state.personal.articleCardsByProject[projectId] || [];
     const concepts = state.personal.conceptCardsByProject[projectId] || [];
@@ -2675,6 +2707,9 @@ function renderProjectDetailPage(route) {
             </div>
         `;
     }
+    if (route.name === "project-detail") {
+        body += renderProjectQuestionWorkbench(projectId, questions, selectedQuestionId, selectedQuestionWorkspace);
+    }
 
     return `
         <div class="page-header">
@@ -2695,6 +2730,116 @@ function renderProjectDetailPage(route) {
         </div>
         ${renderGuideCards(projectGuideItems)}
         ${body}
+    `;
+}
+
+function renderProjectQuestionWorkbench(projectId, questions, selectedQuestionId, workspace) {
+    const selectedQuestion = questions.find((item) => Number(item.id) === Number(selectedQuestionId)) || null;
+    return `
+        <div class="content-grid cols-2" style="margin-top:16px;">
+            ${panel("研究问题", `
+                <form id="create-question-form" data-project-id="${projectId}" class="inline-form">
+                    <div class="field"><label>问题标题</label><input name="title" required placeholder="例如：GraphRAG 是否适合个人研究 Wiki MVP？"></div>
+                    <div class="field-grid cols-2">
+                        <div class="field"><label>问题类型</label><input name="questionType" placeholder="tradeoff / evaluation / roadmap"></div>
+                        <div class="field"><label>下一步</label><input name="nextStep" placeholder="先补哪类证据或实验"></div>
+                    </div>
+                    <div class="field"><label>当前假设</label><textarea name="currentHypothesis" placeholder="先写下当前猜想，后续可以被 claim 修正。"></textarea></div>
+                    <div class="field"><label>范围备注</label><textarea name="scopeNote" placeholder="边界、前提、暂不讨论什么。"></textarea></div>
+                    <button class="button" type="submit">创建研究问题</button>
+                </form>
+                <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">
+                <div class="list-stack">
+                    ${questions.map((question) => `
+                        <button class="list-item ${Number(question.id) === Number(selectedQuestionId) ? "active" : ""}" type="button" data-action="select-question" data-project-id="${projectId}" data-question-id="${question.id}">
+                            <div class="list-item-header">
+                                <strong>${escapeHtml(question.title)}</strong>
+                                ${badge(question.status || "OPEN")}
+                            </div>
+                            <div class="muted">${escapeHtml(question.currentHypothesis || question.questionType || "点击查看工作台")}</div>
+                        </button>
+                    `).join("") || emptyState("还没有研究问题", "先创建一个问题，随后就可以在右侧看到它的工作台与综述。")}
+                </div>
+            `, { subtitle: "把 project 拆成可持续推进的问题单元，然后围绕每个问题沉淀结论、证据、争议与下一步。" })}
+            ${panel(selectedQuestion ? "问题工作台" : "问题综述", selectedQuestion
+                ? renderResearchQuestionWorkspace(projectId, selectedQuestion, workspace)
+                : emptyState("请选择研究问题", "左侧选中一个问题后，这里会展示当前结论、开放问题、关联概念与问题综述。"),
+                { subtitle: selectedQuestion ? "这里聚合当前 claim、open issue、概念冲突、最近 session summary 和 overview。" : "" })}
+        </div>
+    `;
+}
+
+function renderResearchQuestionWorkspace(projectId, question, workspace) {
+    if (!workspace) {
+        return emptyState("工作台加载中", "稍后会展示问题当前的结论、证据、争议与下一步。");
+    }
+    const overview = workspace.latestOverview || null;
+    const currentAnswer = overview?.currentAnswer || question.currentAnswer || "尚未沉淀出明确结论。";
+    const nextStep = workspace.nextStep || question.nextStep || "先补充当前问题下的关键判断与证据。";
+    const currentClaims = workspace.currentClaims || [];
+    const openIssues = workspace.openIssues || [];
+    const relatedConcepts = workspace.relatedConcepts || [];
+    const conflictingConcepts = workspace.conflictingConcepts || [];
+    const recentSessions = workspace.recentSessions || [];
+    return `
+        <div class="list-stack">
+            <div class="list-item">
+                <div class="list-item-header">
+                    <strong>${escapeHtml(question.title)}</strong>
+                    ${badge(question.status || "OPEN")}
+                </div>
+                <div class="muted">${escapeHtml(question.scopeNote || question.currentHypothesis || "暂无范围备注。")}</div>
+                <div class="page-actions" style="margin-top:12px;">
+                    <button class="button" type="button" data-action="generate-question-overview" data-project-id="${projectId}" data-question-id="${question.id}">
+                        ${overview?.generated ? "刷新综述" : "生成综述"}
+                    </button>
+                </div>
+            </div>
+            <div class="metric-row">
+                <div class="metric"><strong>${formatNumber(currentClaims.length)}</strong><span>当前判断</span></div>
+                <div class="metric"><strong>${formatNumber(openIssues.length)}</strong><span>开放问题</span></div>
+                <div class="metric"><strong>${formatNumber(relatedConcepts.length)}</strong><span>关联概念</span></div>
+                <div class="metric"><strong>${formatNumber(conflictingConcepts.length)}</strong><span>冲突概念</span></div>
+            </div>
+            ${panel("当前结论", `<div class="muted">${escapeHtml(currentAnswer)}</div>`)}
+            ${panel("下一步", `<div class="muted">${escapeHtml(nextStep)}</div>`)}
+            ${panel("关键判断", currentClaims.map((claim) => `
+                <div class="list-item">
+                    <div class="list-item-header">
+                        <strong>${escapeHtml(claim.statement)}</strong>
+                        ${badge(claim.claimType || "CLAIM")} ${badge(claim.stance || "UNCERTAIN")} ${badge(claim.cardStatus || "READY")}
+                    </div>
+                    <div class="muted">${escapeHtml(claim.rationale || "无额外说明")}</div>
+                </div>
+            `).join("") || emptyState("暂无当前判断", "这个问题还没有沉淀出 claim。"))}
+            ${panel("未解决问题", openIssues.map((claim) => `
+                <div class="list-item">
+                    <strong>${escapeHtml(claim.statement)}</strong>
+                    <div class="muted">${escapeHtml(claim.rationale || "等待后续验证或补证。")}</div>
+                </div>
+            `).join("") || emptyState("暂无开放问题", "当前没有标记为 OPEN_ISSUE 的判断。"))}
+            ${panel("关联概念", relatedConcepts.map((concept) => `
+                <div class="list-item">
+                    <div class="list-item-header">
+                        <strong>${escapeHtml(concept.conceptName)}</strong>
+                        ${concept.conflicting ? badge("CONFLICT") : ""}
+                    </div>
+                    <div class="muted">${escapeHtml((concept.relationTypes || []).join(" / ") || "RELATED")} · ${formatNumber(concept.claimCount)} 条 claim</div>
+                </div>
+            `).join("") || emptyState("暂无关联概念", "当 claim 与 concept 绑定后，这里会显示概念侧视图。"))}
+            ${panel("最近会话摘要", recentSessions.map((item) => `
+                <div class="list-item">
+                    <div class="list-item-header">
+                        <strong>${escapeHtml(item.topic || `Session #${item.sessionId}`)}</strong>
+                        <span class="muted">${escapeHtml(formatDate(item.updatedAt))}</span>
+                    </div>
+                    <div class="muted">${escapeHtml(item.summary || "")}</div>
+                </div>
+            `).join("") || emptyState("暂无会话摘要", "正式会话写回后，这里会出现和该问题相关的最近摘要。"))}
+            ${panel("问题综述 Markdown", overview?.markdown
+                ? `<div class="artifact-reading-surface">${renderMarkdown(overview.markdown)}</div>`
+                : emptyState("尚未生成综述", "点击上方“生成综述”后，这里会出现稳定的 markdown 综述。"))}
+        </div>
     `;
 }
 
@@ -4823,6 +4968,23 @@ async function handleCreateProject(form) {
     await renderRoute();
 }
 
+async function handleCreateResearchQuestion(form) {
+    const projectId = Number(form.dataset.projectId);
+    const payload = Object.fromEntries(new FormData(form).entries());
+    payload.researchProjectId = projectId;
+    await api.personal.createQuestion(payload);
+    queueToast("研究问题已创建。", "success");
+    state.personal.selectedQuestionIdByProject[projectId] = null;
+    await renderRoute();
+}
+
+async function handleGenerateResearchQuestionOverview(projectId, questionId) {
+    await api.personal.generateQuestionOverview(questionId);
+    await loadProjectQuestionWorkspace(projectId, questionId, true);
+    queueToast("问题综述已生成。", "success");
+    paint();
+}
+
 async function handleSourceFile(form) {
     const file = form.elements.file.files[0];
     const projectId = Number(form.dataset.projectId);
@@ -5327,6 +5489,10 @@ document.addEventListener("click", async (event) => {
             case "open-project":
                 navigate(routeLink("project", Number(target.dataset.spaceId) || resolveProjectSpaceIdById(Number(target.dataset.projectId)), Number(target.dataset.projectId)));
                 break;
+            case "select-question":
+                await loadProjectQuestionWorkspace(Number(target.dataset.projectId), Number(target.dataset.questionId), true);
+                paint();
+                break;
             case "source-import":
                 await api.personal.triggerImport(Number(target.dataset.sourceId));
                 queueToast("资料重新导入任务已触发。", "success");
@@ -5339,6 +5505,9 @@ document.addEventListener("click", async (event) => {
                 break;
             case "open-artifact":
                 await openArtifactById(Number(target.dataset.artifactId), Number(target.dataset.spaceId));
+                break;
+            case "generate-question-overview":
+                await handleGenerateResearchQuestionOverview(Number(target.dataset.projectId), Number(target.dataset.questionId));
                 break;
             case "export-artifact":
                 await handleArtifactExport(Number(target.dataset.artifactId));
@@ -5444,6 +5613,9 @@ document.addEventListener("submit", async (event) => {
                 break;
             case "create-project-form":
                 await handleCreateProject(form);
+                break;
+            case "create-question-form":
+                await handleCreateResearchQuestion(form);
                 break;
             case "source-file-form":
                 await handleSourceFile(form);

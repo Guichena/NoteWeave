@@ -25,6 +25,10 @@ public class CreateChatSessionRequest {
     @NotNull
     private ChatScopeType scopeType;
 
+    private Long researchProjectId;
+
+    private Long researchQuestionId;
+
     @NotEmpty
     private List<Long> scopeIds;
 

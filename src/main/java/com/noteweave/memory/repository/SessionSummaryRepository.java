@@ -19,4 +19,14 @@ public interface SessionSummaryRepository extends JpaRepository<SessionSummary, 
             order by s.pin desc, s.importanceScore desc, s.updatedAt desc
             """)
     List<SessionSummary> findRelevant(Long userId, Long spaceId, LocalDateTime now);
+
+    @Query("""
+            select s from SessionSummary s
+            where s.userId = :userId
+              and s.researchQuestionId = :researchQuestionId
+              and (s.expiresAt is null or s.expiresAt > :now)
+              and s.stale = false
+            order by s.pin desc, s.importanceScore desc, s.updatedAt desc
+            """)
+    List<SessionSummary> findRelevantByResearchQuestion(Long userId, Long researchQuestionId, LocalDateTime now);
 }

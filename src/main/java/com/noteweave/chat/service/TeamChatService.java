@@ -120,7 +120,8 @@ public class TeamChatService {
                         resolveKnowledgeBaseScopeIds(session),
                         question,
                         ragProperties.retrieval().topK(),
-                        true
+                        true,
+                        session.getResearchQuestionId()
                 ),
                 ragProperties.retrieval().mode()
         );
@@ -155,7 +156,7 @@ public class TeamChatService {
             return outcome.response();
         }
 
-        PromptMemoryContext memoryContext = memoryContextService.load(userId, session, readPlan);
+        PromptMemoryContext memoryContext = memoryContextService.load(userId, session, readPlan, question);
         PromptVersion activePrompt = promptVersionService.findActiveEntity("TEAM_RAG_CHAT").orElse(null);
         String systemPrompt = renderPrompt(activePrompt, Map.of("noResultText", ragProperties.prompt().noResultText()));
         PromptMessages prompt = teamRagPromptBuilder.build(question, evidenceItems, recentMessages(sessionId), memoryContext, systemPrompt);

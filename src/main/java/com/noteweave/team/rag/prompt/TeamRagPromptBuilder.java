@@ -61,6 +61,9 @@ public class TeamRagPromptBuilder {
             }
             userPrompt.append('\n');
         }
+        appendMemorySection(userPrompt, "Current question conclusions (latest, may include open issues):", promptMemoryContext.claimSummaries());
+        appendMemorySection(userPrompt, "Related conclusions from your other research questions:", promptMemoryContext.recalledClaimSummaries());
+        appendMemorySection(userPrompt, "Current research question memory:", promptMemoryContext.questionSummaries());
         appendMemorySection(userPrompt, "Relevant session summaries:", promptMemoryContext.sessionSummaries());
         appendMemorySection(userPrompt, "Workspace long-term memory:", promptMemoryContext.spaceMemories());
         appendMemorySection(userPrompt, "User stable preferences:", promptMemoryContext.userMemories());

@@ -11,6 +11,7 @@ public class ContextReadRouter {
         if (sessionKind == ChatSessionKind.DRAFT) {
             return ContextReadPlan.builder()
                     .readRecentHistory(true)
+                    .readQuestionMemory(false)
                     .readSessionSummary(false)
                     .readSpaceMemory(false)
                     .readUserMemory(false)
@@ -20,6 +21,7 @@ public class ContextReadRouter {
         }
         return ContextReadPlan.builder()
                 .readRecentHistory(true)
+                .readQuestionMemory(true)
                 .readSessionSummary(true)
                 .readSpaceMemory(true)
                 .readUserMemory(true)

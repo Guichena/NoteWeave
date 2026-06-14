@@ -50,7 +50,7 @@ public class SearchDebugService {
                     .build();
         }
         HybridRetriever.HybridRetrievalResult retrieval = hybridRetriever.retrieve(
-                new TeamRetrievalQuery(userId, kb.getSpaceId(), List.of(kb.getId()), keyword.trim(), 20, false),
+                new TeamRetrievalQuery(userId, kb.getSpaceId(), List.of(kb.getId()), keyword.trim(), 20, false, null),
                 mode
         );
         List<SearchChunkHit> chunkHits = retrieval.fusedHits().stream()

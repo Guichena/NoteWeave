@@ -32,6 +32,9 @@ public class SessionSummary {
     @Column(name = "session_id", nullable = false)
     private Long sessionId;
 
+    @Column(name = "research_question_id")
+    private Long researchQuestionId;
+
     @Column(length = 128)
     private String topic;
 
