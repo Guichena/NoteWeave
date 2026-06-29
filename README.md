@@ -1,4 +1,4 @@
-﻿# NoteWeave v2
+﻿﻿# NoteWeave v2
 
 NoteWeave v2 是一次面向统一知识工作台的全新重构。
 
@@ -29,7 +29,9 @@ NoteWeave v2 是一次面向统一知识工作台的全新重构。
 1. `docs/系统架构设计.md`
 2. `docs/统一领域模型.md`
 3. `docs/MVP边界与路线图.md`
-4. `docs/项目亮点与简历草案.md`
+4. `docs/产品详细设计.md`
+5. `docs/技术架构详细设计.md`
+6. `docs/项目亮点与简历草案.md`
 
 ## 设计源文档优先级
 
