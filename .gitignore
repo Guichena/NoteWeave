@@ -1,0 +1,17 @@
+.idea/
+.vscode/
+
+target/
+build/
+dist/
+out/
+
+node_modules/
+.pnpm-store/
+
+*.log
+*.tmp
+*.bak
+
+.DS_Store
+Thumbs.db
