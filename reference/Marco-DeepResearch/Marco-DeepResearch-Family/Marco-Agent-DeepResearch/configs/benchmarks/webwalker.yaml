@@ -1,0 +1,13 @@
+# WebWalker Benchmark 配置
+
+benchmark:
+  name: "webwalker"
+  description: "WebWalker benchmark"
+  data_path: "dataset/webwalker.jsonl"
+
+# 字段映射（根据数据集格式配置）
+field_mapping:
+  question: "question"
+  answer: "answer"
+  task_id: "id"
+

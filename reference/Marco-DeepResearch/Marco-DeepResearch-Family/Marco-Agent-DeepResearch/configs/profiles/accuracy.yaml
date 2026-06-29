@@ -1,0 +1,54 @@
+# 精度模式 Profile
+# 尽可能打满轮次，通过 TTS 上下文管理延续推理
+
+model:
+  name: ""
+  api_key_env: "OPENAI_API_KEY"
+  api_base_env: "OPENAI_BASE_URL"
+  model_name_env: "MODEL_NAME"
+  max_context_length: 131072
+  tokenizer_path: ""
+
+generation:
+  max_tokens: 32768
+  temperature: 0.7
+  top_p: 0.95
+  max_retries: 5
+  stop_sequences:
+    - "</tool_call>"
+
+agent:
+  max_llm_calls: 600
+  token_safety_buffer: 16384
+  execution_mode: "accuracy"
+  tts_enabled: true
+  tts_strategy: "discard_verify"
+  tts_max_discard_count: 100
+  tts_round_threshold: 30
+  tts_give_up_llm_judge: false
+  tts_verify_enabled: true
+  tts_verify_max_answers: 8
+  tts_verify_early_stop_count: 4
+
+tools:
+  enabled:
+    - search
+    - visit
+  search:
+    timeout: 60
+    max_retries: 5
+    max_workers: 10
+    max_results_per_query: 10
+  visit:
+    mode: "hybrid"
+    timeout: 60
+    max_retries: 5
+    max_workers: 3
+    max_content_length: 409600
+    summary_max_tokens: 4096
+    summary_max_retries: 5
+
+runner:
+  max_workers: 5
+  rollout_count: 8
+  output_dir: "output"

@@ -54,10 +54,14 @@ NoteWeave v2 是一次面向统一知识工作台的全新重构。
 
 - `reference/WeKnora`
 - `reference/Marco-DeepResearch`
+- `reference/A-mem`
+- `reference/PlugMem`
+- `reference/sample-amazon-bedrock-agentcore-memory-mcp-server`
 
 ## 项目结构
 
 - `docs`：统一后的系统架构、领域模型、MVP 边界和项目亮点文档
 - `改造计划`：上游源设计文档与设计推演记录
+- `reference`：参考源码仓库与借鉴索引
 - `backend`：后端实现目录
 - `frontend`：前端实现目录

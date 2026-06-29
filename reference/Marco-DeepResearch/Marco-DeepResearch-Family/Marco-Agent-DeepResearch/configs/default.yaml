@@ -1,0 +1,75 @@
+# 默认配置文件
+# 可以被 benchmark / profile 配置覆盖
+
+# 模型配置
+model:
+  name: ""
+  api_key_env: "OPENAI_API_KEY"
+  api_base_env: "OPENAI_BASE_URL"
+  model_name_env: "MODEL_NAME"
+  max_context_length: 65536
+  tokenizer_path: ""
+
+# Benchmark 数据字段映射（默认值）
+field_mapping:
+  question: "question"
+  answer: "answer"
+  task_id: "task_id"
+
+# 生成配置
+generation:
+  max_tokens: 8192
+  temperature: 0.7
+  top_p: 0.95
+  max_retries: 5
+  stop_sequences:
+    - "</tool_call>"
+
+# Agent 配置
+agent:
+  max_llm_calls: 50
+  execution_mode: "efficiency"
+  truncate_side: "none"
+  max_tool_response_length: 65536
+  max_retries: 3
+  token_safety_buffer: 16384
+  # TTS (Test Time Scaling)
+  tts_enabled: false
+  tts_strategy: "discard_verify"
+  tts_max_discard_count: 20
+  tts_round_threshold: null
+  tts_give_up_llm_judge: false
+  tts_verify_enabled: false
+  tts_verify_max_answers: 8
+  tts_verify_early_stop_count: 4
+  # Search 空结果重启
+  search_empty_result_restart_enabled: false
+  search_empty_result_pattern: "Results:0 "
+
+# 工具配置
+tools:
+  enabled:
+    - search
+    - visit
+  # Search: Google via Serper API (env: GOOGLE_SEARCH_KEY, SEARCH_API_URL)
+  search:
+    timeout: 20
+    max_retries: 5
+    max_workers: 10
+    max_results_per_query: 10
+  # Visit: requests + Jina fallback, summary via OpenAI-compatible API
+  # env: JINA_API_KEY, SUMMARY_MODEL_OPENAI_API_KEY, SUMMARY_MODEL_OPENAI_BASE_URL, SUMMARY_MODEL_NAME
+  visit:
+    mode: "hybrid"
+    timeout: 15
+    max_retries: 5
+    max_workers: 3
+    max_content_length: 409600
+    summary_max_tokens: 4096
+    summary_max_retries: 5
+
+# 运行配置
+runner:
+  max_workers: 5
+  rollout_count: 8
+  output_dir: "output"

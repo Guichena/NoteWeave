@@ -1,0 +1,12 @@
+# xBench-DeepSearch 2505 Benchmark 配置
+
+benchmark:
+  name: "xbench-DeepSearch-2505"
+  description: "xbench-DeepSearch-2505 - General AI Assistant benchmark"
+  data_path: "dataset/xbench-DeepSearch-2505.jsonl"
+
+# 字段映射（根据数据集格式配置）
+field_mapping:
+  question: "prompt"
+  answer: "answer"
+  task_id: "id"

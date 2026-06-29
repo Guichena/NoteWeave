@@ -1,0 +1,13 @@
+# HLE Benchmark 配置
+
+benchmark:
+  name: "hle_sample"
+  description: "HLE sample benchmark"
+  data_path: "dataset/hle_text_only_sampled_200.jsonl"
+
+# 字段映射（根据数据集格式配置）
+field_mapping:
+  question: "query"
+  answer: "answer"
+  task_id: "id"
+

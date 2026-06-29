@@ -1,0 +1,11 @@
+# DeepSearchQA Benchmark 配置
+
+benchmark:
+  name: "deepsearchqa"
+  description: "DeepSearchQA benchmark"
+  data_path: "dataset/deepsearchqa.jsonl"
+
+field_mapping:
+  question: "question"
+  answer: "answer"
+  task_id: "example_id"

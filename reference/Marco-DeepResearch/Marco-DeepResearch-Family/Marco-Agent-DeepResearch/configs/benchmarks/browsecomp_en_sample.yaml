@@ -1,0 +1,13 @@
+# BrowseComp English Benchmark 配置
+
+benchmark:
+  name: "browsecomp_en_sample"
+  description: "BrowseComp English benchmark Sample Dataset"
+  data_path: "dataset/browsecomp-en_sampled_200.jsonl"
+
+# 字段映射（根据数据集格式配置）
+field_mapping:
+  question: "problem"
+  answer: "answer"
+  task_id: "task_id"
+

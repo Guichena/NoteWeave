@@ -1,0 +1,13 @@
+# BrowseComp Chinese Benchmark 配置
+
+benchmark:
+  name: "browsecomp_zh"
+  description: "BrowseComp Chinese benchmark"
+  data_path: "dataset/BrowseComp-ZH.jsonl"
+
+# 字段映射（根据数据集格式配置）
+field_mapping:
+  question: "Question"
+  answer: "Answer"
+  task_id: "task_id"
+

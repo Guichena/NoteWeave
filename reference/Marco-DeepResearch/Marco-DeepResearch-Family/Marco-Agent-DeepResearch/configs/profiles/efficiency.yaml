@@ -1,0 +1,45 @@
+# 效率模式 Profile
+# 达到 token / 轮次限制即停止
+
+model:
+  name: ""
+  api_key_env: "OPENAI_API_KEY"
+  api_base_env: "OPENAI_BASE_URL"
+  model_name_env: "MODEL_NAME"
+  max_context_length: 131072
+  tokenizer_path: ""
+
+generation:
+  max_tokens: 16384
+  temperature: 0.7
+  top_p: 0.95
+  max_retries: 5
+  stop_sequences:
+    - "</tool_call>"
+
+agent:
+  max_llm_calls: 50
+  execution_mode: "efficiency"
+
+tools:
+  enabled:
+    - search
+    - visit
+  search:
+    timeout: 60
+    max_retries: 5
+    max_workers: 10
+    max_results_per_query: 10
+  visit:
+    mode: "hybrid"
+    timeout: 60
+    max_retries: 5
+    max_workers: 3
+    max_content_length: 409600
+    summary_max_tokens: 4096
+    summary_max_retries: 5
+
+runner:
+  max_workers: 5
+  rollout_count: 8
+  output_dir: "output"
