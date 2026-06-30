@@ -13,8 +13,8 @@ NoteWeave v2 是一次面向统一知识工作台的全新重构。
 
 当前统一后的项目亮点也以这套架构为准：
 
-1. 基于 `Table-as-Search + Loop Engineering` 的 Deep Research 智能体
-2. 面向右侧产物栏的受控式异步产物生成 Agent
+1. 基于 `Evidence-Gated Branchable Research Harness` 的 Deep Research 智能体
+2. 面向右侧产物栏、采用 `Schema-Gated Skill Graph Runtime` 的受控式异步产物生成 Agent
 3. `RAG / Wiki / Note` 一体化知识工作流
 4. 基于 `Graduated Memory` 的门控式长期知识晋升机制
 5. 基于文件上传、Kafka、MinIO 的资料处理底座
