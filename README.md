@@ -6,7 +6,7 @@ NoteWeave v2 是一次面向统一知识工作台的全新重构。
 
 - 3 个用户可见工作模式：`问答`、`Wiki`、`资料调查`
 - 1 个轻量知识沉淀层：`Note`
-- 1 个独立长任务引擎：`Deep Research`
+- 1 个全局重型任务入口：`深度研究`
 - 1 个受控异步执行平面：`Artifact Runtime`
 - 1 套门控式长期记忆机制：`Graduated Memory`
 - 1 套贯穿全链路的 `Evidence / Citation / Version` 可追溯能力
@@ -14,7 +14,7 @@ NoteWeave v2 是一次面向统一知识工作台的全新重构。
 当前统一后的项目亮点也以这套架构为准：
 
 1. 基于 `Table-as-Search + Loop Engineering` 的 Deep Research 智能体
-2. 面向右侧按钮栏的受控式异步产物生成 Agent
+2. 面向右侧产物栏的受控式异步产物生成 Agent
 3. `RAG / Wiki / Note` 一体化知识工作流
 4. 基于 `Graduated Memory` 的门控式长期知识晋升机制
 5. 基于文件上传、Kafka、MinIO 的资料处理底座
@@ -30,6 +30,7 @@ NoteWeave v2 是一次面向统一知识工作台的全新重构。
 3. MVP 范围与任务边界
 4. 项目核心亮点
 5. 可用于简历表达的项目定位
+6. 技术栈与数据库设计
 
 ## 文档阅读顺序
 
@@ -41,7 +42,8 @@ NoteWeave v2 是一次面向统一知识工作台的全新重构。
 4. `docs/MVP边界与路线图.md`
 5. `docs/产品详细设计.md`
 6. `docs/技术架构详细设计.md`
-7. `docs/项目亮点与简历草案.md`
+7. `docs/技术栈与数据库设计.md`
+8. `docs/项目亮点与简历草案.md`
 
 ## 设计源文档优先级
 
