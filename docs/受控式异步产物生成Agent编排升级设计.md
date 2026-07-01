@@ -12,6 +12,15 @@
 - 更容易接入用户自定义 MCP
 - 更适合异步长任务与版本化产物体系
 
+在工程实现上，这个 Agent 更适合作为：
+
+- `Java` 主系统调度的独立 `Python Artifact Worker`
+
+也就是说：
+
+- `Java` 负责 `Artifact Job` 主对象、任务状态、结果落库与显式回写
+- `Python Artifact Worker` 负责 skill 编排、tool / MCP 调度、结构校验、局部修复与最终产物草稿生成
+
 ## 2. 先给结论
 
 NoteWeave 的产物生成 Agent 不建议走“一个大 Agent 自己规划一切”的路线，而更适合升级为：
