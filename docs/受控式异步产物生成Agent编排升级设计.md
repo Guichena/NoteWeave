@@ -21,6 +21,44 @@
 - `Java` 负责 `Artifact Job` 主对象、任务状态、结果落库与显式回写
 - `Python Artifact Worker` 负责 skill 编排、tool / MCP 调度、结构校验、局部修复与最终产物草稿生成
 
+## 2. 输入边界
+
+产物生成 Agent 默认绑定当前研究工作台，而不是绑定某一次会话。
+
+它的输入需要拆成三类，避免把内容来源、生成目标和运行能力混在一起。
+
+### 2.1 原材料
+
+原材料只指 Agent 真正读取、整理和引用的内容来源：
+
+- 当前研究工作台资料池
+- 工作台内已经保存为资料的系统产物
+- 资料对应的解析文本、索引片段、标题、摘要、标签、元数据和引用信息
+
+其中，系统产物只有在用户明确保存为资料后，才会和用户上传文件一样进入解析、索引、引用和后续复用链路。
+
+### 2.2 生成要求
+
+生成要求描述用户这次希望系统产出什么，不属于原材料：
+
+- 产物类型：报告、FAQ、测验、学习指南、Wiki 页面、结构化笔记
+- 风格配置：篇幅、语气、结构、受众、引用密度和输出格式
+- 回写方式：仅生成草稿、保存为产物版本、导出文件或保存为资料
+
+### 2.3 运行能力
+
+运行能力描述 Agent 可以用什么方式完成任务，也不属于原材料：
+
+- 内置 Skill
+- 内置 MCP 能力
+- 用户自定义 MCP 能力
+- Prompt Recipe
+- 输出 schema、证据约束和局部修复策略
+
+正式口径是：
+
+`产物生成 Agent 以当前研究工作台资料池和已保存为资料的系统产物作为原材料；Production Action 与 Style Profile 是本次任务的生成要求；Skill、MCP、Prompt Recipe 与 schema gate 是运行能力和执行约束。`
+
 ## 2. 先给结论
 
 NoteWeave 的产物生成 Agent 不建议走“一个大 Agent 自己规划一切”的路线，而更适合升级为：
@@ -414,9 +452,10 @@ Build Execution Plan
 ## 6. 推荐执行流程
 
 ```text
-用户点击右侧产物栏
+用户在当前研究工作台点击右侧产物栏
   -> Resolve Production Action
   -> Load Style Profile
+  -> Resolve Workspace Material Scope
   -> Build Artifact Execution Plan
   -> Schema Gate
   -> Expand Skill Graph Template
@@ -495,7 +534,7 @@ Build Execution Plan
 
 ## 10. 对 NoteWeave 最合适的一句话定位
 
-`NoteWeave 的受控式异步产物生成 Agent 不采用自由放养式多 Agent 编排，而采用 Schema-Gated Skill Graph Runtime：用户从右侧产物栏选择 Production Action 与 Style Profile，系统在受控工作流中动态展开技能子图、按需加载 MCP 能力，并通过 schema、approval、evidence 与 capability union policy 约束执行过程，从而在保证可扩展性的同时避免系统演化为失控的通用 Agent 平台。`
+`NoteWeave 的受控式异步产物生成 Agent 默认绑定研究工作台，以工作台资料池和已保存为资料的系统产物作为原材料；用户从右侧产物栏选择 Production Action 与 Style Profile 后，系统通过 Schema-Gated Skill Graph Runtime 动态展开技能子图、按需加载 MCP 能力，并通过 schema、approval、evidence 与 capability union policy 约束执行过程，从而在保证可扩展性的同时避免系统演化为失控的通用 Agent 平台。`
 
 ## 11. 2026 参考资料
 
