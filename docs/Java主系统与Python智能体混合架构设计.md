@@ -360,7 +360,6 @@ Python Worker 可以读取或写入：
 - [系统架构设计](D:/java-projects/NoteWeave-v2/docs/系统架构设计.md)
 - [技术架构详细设计](D:/java-projects/NoteWeave-v2/docs/技术架构详细设计.md)
 - [技术栈与数据库设计](D:/java-projects/NoteWeave-v2/docs/技术栈与数据库设计.md)
-- [后端模块与中间件落地设计](D:/java-projects/NoteWeave-v2/docs/后端模块与中间件落地设计.md)
 - [深度研究智能体工程落地设计](D:/java-projects/NoteWeave-v2/docs/深度研究智能体工程落地设计.md)
 - [受控式异步产物生成Agent编排升级设计](D:/java-projects/NoteWeave-v2/docs/受控式异步产物生成Agent编排升级设计.md)
 
