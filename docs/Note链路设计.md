@@ -4,14 +4,14 @@
 
 `Note 链路` 是 NoteWeave 在统一聊天界面中的“回答 + 整理”链路。
 
-它不再沿用对象转换式设计，而是转向 `NotebookLM 式 Workspace-bounded RAG + Marginalia 结构化检索漏斗`。
+它的实现重点直接参考 `Marginalia-style Structured Reading Funnel`：不直接对 chunk 做 top-k 问答，而是先通过资料标题、摘要、标签、历史笔记、结构化元数据和关系信号定位候选资料，再打开原文窗口读取可验证片段，抽取摘录卡片，并生成带引用的回答与结构化笔记。
 
-- `NotebookLM` 在这里重点参考的是它的资料问答技术路线，而不是整个系统的工作台形态：以当前工作台资料作为固定检索域，先做资料边界约束，再执行 `metadata filter + lexical / vector hybrid recall + passage rerank + citation-grounded generation`，最终形成带引用回答。Note 链路在这个基础上额外加入“结构化笔记沉淀”。
-- `Marginalia` 提供检索思想：系统不直接把 top-k chunk 丢给模型，而是先用标题、摘要、标签、时间、历史整理记录等结构化信号定位候选资料，再打开原文窗口读取、摘录和引用。
+- `Marginalia` 是 Note 链路的主要实现参考：系统先做资料级候选定位，再做原文窗口读取，最后生成可引用、可保存、可复用的结构化笔记。
+- `NotebookLM` 只作为资料问答体验的辅助参考：用户在当前研究工作台资料集合里提问，系统围绕资料回答并给出来源依据。
 
 一句话定义：
 
-`Note 链路是面向资料整理的溯源式问答链路：用户仍然在聊天框里提问，系统先回答问题，再基于候选资料、原文窗口和摘录卡片，把本次回答沉淀成一份可编辑、可保存、可继续参与后续检索的结构化笔记。`
+`Note 链路是面向资料整理的溯源式问答链路：用户仍然在聊天框里提问，系统先定位候选资料，再打开原文窗口读取可验证片段，抽取摘录卡片，并生成带引用的回答与结构化笔记。`
 
 ## 2. 核心原则
 
@@ -31,11 +31,11 @@ Note 链路默认基于当前研究工作台内的全部可用资料工作。
 - 已确认的生成结果
 - 已维护的 Wiki 页面
 
-### 2.2 先结构化定位，再读原文
+### 2.2 先定位候选资料，再读原文窗口
 
-Note 链路不直接做简单向量召回问答。
+Note 链路不直接做简单向量召回问答，也不把离散 chunk 直接丢给模型生成答案。
 
-它应先通过结构化信号定位候选资料：
+它的核心动作是先通过结构化信号定位候选资料：
 
 - 标题
 - 摘要
@@ -48,29 +48,32 @@ Note 链路不直接做简单向量召回问答。
 - 历史整理记录
 - 资料之间的引用或主题关系
 
-然后再选择少量关键资料打开原文窗口。
+然后再选择少量关键资料打开原文窗口，读取可验证片段，抽取摘录卡片，并把回答中的关键观点绑定到具体证据。
 
-这使 Note 链路更像“研究助理在翻资料”，而不是“模型在拼切片”。
+这使 Note 链路更像“研究助理在翻资料、做摘录、整理结论”，而不是“模型在拼切片”。
 
 ### 2.3 具体技术路线
 
-从工程实现上，Note 链路更适合被定义为：
+从工程实现上，Note 链路定义为：
 
-`Workspace-bounded RAG + Metadata-first Candidate Retrieval + Windowed Evidence Reading + Citation-grounded Answer Synthesis`
+`Marginalia-style Structured Reading Funnel + Windowed Evidence Reading + Citation-grounded Note Synthesis`
 
-可以拆成四段：
+可以拆成五段：
 
-1. `Workspace-bounded RAG`
+1. `Workspace-bounded Retrieval`
    当前研究工作台是固定检索边界，先做工作台级过滤，不做全库开放召回。
 
-2. `Metadata-first Candidate Retrieval`
-   先基于标题、摘要、标签、时间、资料关系、历史笔记做资料级候选召回，而不是直接 chunk top-k。
+2. `Structured Candidate Retrieval`
+   先基于资料标题、摘要、标签、文件夹、时间、历史笔记、结构化元数据和关系信号做资料级候选召回，而不是直接 chunk top-k。
 
-3. `Hybrid Recall + Rerank`
-   在候选资料内部再做 `BM25 / lexical recall + vector recall` 混合召回，并对片段进行 rerank，选出值得打开的原文窗口。
+3. `Candidate Triage`
+   对候选资料做轻量排序和筛选，优先选择最可能回答问题、最值得打开原文的资料。
 
-4. `Windowed Reading + Citation-grounded Generation`
-   不是把离散 chunk 直接交给模型，而是回到带上下文的原文窗口，再把 `问题 + 证据片段 + 来源定位` 共同交给模型生成带引用回答。
+4. `Windowed Evidence Reading`
+   打开原文窗口读取可验证片段，保留页码、段落、行号、表格范围、音视频时间段等可回跳位置。
+
+5. `Citation-grounded Note Synthesis`
+   基于 `问题 + 候选资料 + 原文窗口 + 摘录卡片 + 来源定位` 生成带引用回答，并沉淀为结构化笔记。
 
 这条路线的关键不是“RAG”三个字本身，而是：
 
@@ -188,14 +191,14 @@ Note 链路主流程定义为：
 用户在聊天框提问
   -> 系统读取当前研究工作台上下文
   -> 工作台级边界约束
-  -> 使用结构化信号定位候选资料
-  -> 在候选资料内部执行 hybrid recall
-  -> 对候选片段做 rerank
+  -> 通过资料标题、摘要、标签、历史笔记、结构化元数据和关系信号定位候选资料
+  -> 对候选资料做轻量排序和筛选
   -> 生成候选资料卡
   -> 选择关键资料打开原文窗口
-  -> 从原文窗口抽取摘录卡片
+  -> 从原文窗口读取可验证片段
+  -> 抽取摘录卡片
   -> 基于证据片段和来源定位生成带引用回答
-  -> 生成结构化笔记
+  -> 基于回答、摘录和引用生成结构化笔记
   -> 用户确认保存到工作台
   -> 保存后的笔记继续参与后续检索
 ```
@@ -203,14 +206,14 @@ Note 链路主流程定义为：
 对应 Marginalia 思路，可以理解为：
 
 ```text
-metadata / journal / tags / summaries
+titles / summaries / tags / metadata / history notes / relations
   -> candidate entries
-  -> hybrid recall
-  -> rerank
-  -> original windows
-  -> excerpts
+  -> candidate triage
+  -> original reading windows
+  -> verifiable evidence snippets
+  -> excerpt cards
   -> cited answer
-  -> reusable note
+  -> structured reusable note
 ```
 
 ## 5. 与问答链路和 Wiki 链路的区别
@@ -352,4 +355,4 @@ Workspace
 
 ## 9. 最终口径
 
-`Note 链路是 NoteWeave 中面向资料整理的溯源式问答链路。它参考 NotebookLM 式 Workspace-bounded RAG：以当前工作台资料为固定检索域，执行资料级边界约束、hybrid recall、片段 rerank 和 citation-grounded generation；同时结合 Marginalia 的结构化检索漏斗，先通过标题、摘要、标签、历史笔记和资料关系定位候选资料，再读取原文窗口并抽取可引用摘录，最终形成一份可编辑、可保存、可继续参与后续检索和知识页生成的结构化笔记。`
+`Note 链路是 NoteWeave 中面向资料整理的溯源式问答链路。它的实现重点参考 Marginalia-style Structured Reading Funnel：系统不直接对 chunk 做 top-k 问答，而是先通过资料标题、摘要、标签、历史笔记、结构化元数据和关系信号定位候选资料，再打开原文窗口读取可验证片段，抽取摘录卡片，并生成带引用的回答与结构化笔记。它和问答链路的区别在于更重视阅读、摘录和沉淀；和 Wiki 链路的区别在于不直接组织长期页面，而是先形成可保存、可复用的结构化笔记。`
