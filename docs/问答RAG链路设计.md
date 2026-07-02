@@ -8,7 +8,7 @@
 
 一句话定义：
 
-`问答 RAG 链路是面向快速理解和连续追问的资料问答链路：系统基于当前研究工作台的资料、结构化笔记、Wiki 页面、已确认产物和长期记忆进行检索，读取必要证据片段，生成带来源引用的回答，并允许用户将高价值回答保存为结构化笔记或继续派生产物。`
+`问答 RAG 链路是面向快速理解和连续追问的资料问答链路：系统基于当前研究工作台内已经解析和索引的资料进行检索，读取必要证据片段，生成带来源引用的回答，并允许用户将高价值回答保存为结构化笔记或继续派生产物。`
 
 ## 2. 与 Note / Wiki 的区别
 
@@ -58,15 +58,14 @@ Wiki 链路是 `稳定知识优先`。
 
 问答 RAG 链路默认只在当前研究工作台内检索，不做全局开放召回。
 
-可被检索的对象包括：
+基础检索对象包括：
 
 - 用户上传资料
 - URL / 文本导入资料
 - 音视频转写文本
-- 已保存结构化笔记
-- 已维护 Wiki 页面
-- 已确认 Artifact
-- 已晋升 Memory Object
+- 被用户明确保存为资料的系统生成内容
+
+问答 RAG 的基础闭环只建立在“工作台资料池 + 证据引用”之上。其他链路产生的内容如果要进入问答检索，必须先被用户明确保存为资料，再按普通资料统一解析、索引和引用。
 
 ### 3.2 先快后准
 
@@ -94,7 +93,7 @@ Citation 至少应能回到：
 
 聊天历史只用于理解上下文，不直接作为事实证据。
 
-如果回答需要事实依据，必须回到可检索资料、笔记、Wiki、Artifact 或 Memory Object。
+如果回答需要事实依据，必须回到当前工作台内可检索、可回跳的资料证据。
 
 ## 4. 技术路线
 
@@ -124,17 +123,19 @@ Citation 至少应能回到：
 
 ## 5. 检索对象
 
-问答 RAG 链路的检索对象不是单一 chunk，而是共享资料池中的多个内容层：
+问答 RAG 链路的检索对象以工作台资料池为主，不直接依赖其他链路内部对象：
 
 | 对象 | 用途 | 是否默认参与 |
 |---|---|---|
 | `Source Chunk` | 用户资料解析后的文本片段 | 是 |
-| `Knowledge Item: Note` | 用户保存的结构化笔记 | 是 |
-| `Knowledge Item: Wiki` | 已维护的长期知识页面 | 是 |
-| `Artifact Version` | 已确认的报告、FAQ、测验、学习指南等产物 | 是 |
-| `Memory Object` | 通过门控晋升的长期记忆 | 是 |
 | `Conversation Message` | 当前会话上下文理解 | 只作上下文，不作证据 |
-| `Research Trace` | Deep Research 过程资产 | 默认不进入主检索 |
+| `Generated Source` | 被用户明确保存为资料的系统生成内容 | 按资料接入 |
+
+说明：
+
+- 问答 RAG 不直接硬编码 Note / Wiki / Artifact / Memory 的内部对象。
+- 其他链路产生的内容只有被用户明确保存为资料后，才进入统一资料解析、索引和引用流程。
+- Research Trace 属于 Deep Research 过程资产，默认不进入主检索。
 
 ## 6. 主流程
 
@@ -249,7 +250,7 @@ Citation 至少应能回到：
 - 关键词结果提供精确命中
 - 向量结果提供语义补召
 - 结构化对象提高可解释性
-- Memory Object 只作为补充，不压过直接资料证据
+- 系统生成内容只有在被用户明确保存为资料后，才作为普通资料参与召回
 
 ## 9. Rerank 与证据选择
 
@@ -271,8 +272,8 @@ Rerank 阶段输入：
 
 1. 能直接回答问题的资料片段
 2. 有明确引用位置的资料片段
-3. 用户已确认的 Note / Wiki / Artifact
-4. 通过门控晋升的 Memory Object
+3. 来自当前用户选中资料或当前会话强相关资料的片段
+4. 被用户明确保存为资料的系统生成内容
 5. 仅语义相似但证据位置不清晰的片段
 
 ### 9.3 证据选择
@@ -308,7 +309,7 @@ Context Packing 规则：
 - 每条证据都带 `evidence_id`
 - 每条证据都带可生成 Citation 的定位信息
 - 删除重复、低分、无定位证据
-- Memory Object 只能作为背景信号，不能替代原始资料引用
+- 会话上下文只能帮助理解指代，不能替代资料证据
 
 ## 11. 回答生成
 
@@ -350,11 +351,6 @@ Context Packing 规则：
 - `source_snapshot`
 - `source_chunk`
 - `source_window`
-- `knowledge_item`
-- `knowledge_version`
-- `artifact`
-- `artifact_version`
-- `memory_object`
 - `citation`
 - `message_citation`
 - `retrieval_trace`
@@ -495,7 +491,11 @@ ConversationController
 - `embedding`
 - `status`
 
-### 15.2 knowledge_index
+### 15.2 资料化生成内容索引
+
+问答 RAG 不直接读取其他链路内部对象。系统生成内容如果被用户保存为资料，可以进入统一资料索引；具体索引是否拆分由实现阶段决定。
+
+#### knowledge_index
 
 字段：
 
@@ -511,7 +511,7 @@ ConversationController
 - `embedding`
 - `status`
 
-### 15.3 artifact_index
+#### artifact_index
 
 字段：
 
@@ -526,7 +526,7 @@ ConversationController
 - `embedding`
 - `status`
 
-### 15.4 memory_index
+#### memory_index
 
 字段：
 
@@ -596,4 +596,4 @@ ConversationController
 
 ## 18. 最终口径
 
-`问答 RAG 链路是 NoteWeave 的默认资料问答链路。它以当前研究工作台为检索边界，通过关键词检索、向量检索、结构化过滤和证据 rerank 召回资料、笔记、Wiki、Artifact 与 Memory 中的高价值片段，再通过 Citation-grounded Answer 生成可回跳来源的回答。它和 Note 链路的区别是答案优先、延迟更低、输出更轻；和 Wiki 链路的区别是不会优先进入长期页面组织，而是围绕当前问题快速给出可信回答。`
+`问答 RAG 链路是 NoteWeave 的默认资料问答链路。它以当前研究工作台为检索边界，通过关键词检索、向量检索、结构化过滤和证据 rerank 召回已解析资料中的高价值片段，再通过 Citation-grounded Answer 生成可回跳来源的回答。它和 Note 链路的区别是答案优先、延迟更低、输出更轻；和 Wiki 链路的区别是不会优先进入长期页面组织，而是围绕当前问题快速给出可信回答。`
