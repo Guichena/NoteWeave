@@ -1,4 +1,4 @@
-# NoteWeave v2 Java 主系统与 Python 智能体混合架构设计
+﻿# NoteWeave v2 Java 主系统与 Python 智能体混合架构设计
 
 ## 1. 目的
 
@@ -39,7 +39,7 @@ NoteWeave v2 推荐采用下面这套混合架构：
 
 也就是说：
 
-`模式层放 Java，智能执行层拆 Python，是最符合当前 NoteWeave 真实场景的做法。`
+`模式层放 Java，智能执行层拆 Python，是最符合当前结构化笔记Weave 真实场景的做法。`
 
 ## 3. 为什么这次拆分是合理的
 
@@ -51,7 +51,7 @@ NoteWeave v2 推荐采用下面这套混合架构：
 
 - 强依赖工作区模型
 - 强依赖权限和回写
-- 强依赖 `Source / Note / Wiki / Citation / Version`
+- 强依赖 `资料 / Note / Wiki / Citation / Version`
 - 强依赖低延迟 API 与前端状态同步
 
 因此它们更适合继续放在 `Java + Spring Boot` 主系统中。
@@ -114,7 +114,7 @@ Frontend
 NoteWeave v2
   ├── Java 主系统
   │     ├── Ask / Note / Wiki 三种聊天链路
-  │     ├── Workspace / Topic Scope / Source / Knowledge
+  │     ├── Workspace / Topic Scope / Material / Knowledge
   │     ├── Task / Outbox / Trace 真源
   │     ├── Artifact / Note / Wiki 回写
   │     └── API / SSE / 权限 / 状态管理
@@ -144,7 +144,7 @@ NoteWeave v2
 - 工作区与主题边界
 - 文件上传与资料管理
 - 问答链路、Note 链路、Wiki 链路
-- `Source / Note / Wiki / Artifact` 的主业务对象
+- `资料 / Note / Wiki / Artifact` 的主业务对象
 - `Research Run / Artifact Job` 的任务真源
 - MySQL 持久化
 - Kafka 投递
@@ -270,7 +270,7 @@ NoteWeave v2
   -> 执行 Skill Graph / Prompt / Capability Runtime
   -> 回传进度事件 / trace 事件 / 产物结果
   -> Java 落库 artifact / artifact_version
-  -> Java 处理回写为 Note / Wiki / Artifact
+  -> Java 处理保存为结构化笔记 / Wiki / Artifact
 ```
 
 ## 10. 哪些表只能由 Java 主写
