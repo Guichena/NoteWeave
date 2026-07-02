@@ -335,7 +335,20 @@ Memory Ledger 记录：
 
 `已经晋升的 Memory 应该如何在当前任务里使用。`
 
-它不把 Memory 原文直接塞进 prompt，而是编译成结构化控制信号。
+它不把 Memory 原文直接塞进 prompt，而是编译成结构化的 `Memory Control Pack`。
+
+`Memory Control Pack` 是 Memory 和业务链路之间唯一推荐的运行时接口。
+
+```text
+当前任务
+  -> 判断 Task Neighborhood
+  -> 读取可用 Memory Object
+  -> 过滤 STALE / SUPERSEDED / DISABLED
+  -> 编译 Memory Control Pack
+  -> 注入到对应链路的非证据控制区
+```
+
+Memory Control Pack 必须进入 prompt 或执行计划中的“控制区”，不能进入 evidence/context 区。
 
 ### 9.1 输入
 
@@ -352,16 +365,142 @@ Memory Ledger 记录：
 
 ```json
 {
+  "pack_type": "chat | artifact | research",
+  "task_neighborhood": "",
   "style_constraints": [],
   "structure_constraints": [],
   "terminology_policy": [],
   "forbidden_patterns": [],
+  "evidence_policy": [],
   "interaction_policy": [],
   "review_checklist": []
 }
 ```
 
-### 9.3 关键原则
+### 9.3 三类 Memory Control Pack
+
+NoteWeave 的运行时只设计三类 Control Pack，不为每个功能单独发明一套 Memory 接入。
+
+```text
+Memory Control Pack
+  ├── Chat Control Pack
+  │     ├── Ask
+  │     ├── Note
+  │     └── Wiki
+  ├── Artifact Control Pack
+  └── Research Control Pack
+```
+
+### 9.4 Chat Control Pack
+
+问答、Note、Wiki 都发生在同一个聊天页面，所以不需要三套 Memory 接入。
+
+统一链路：
+
+```text
+用户在聊天框提问
+  -> Conversation Orchestrator
+  -> 判断 answer_mode: ask / note / wiki
+  -> Memory Compiler 生成 Chat Control Pack
+  -> 进入对应回答链路
+```
+
+`Chat Control Pack` 的基础字段：
+
+```json
+{
+  "pack_type": "chat",
+  "answer_mode": "ask | note | wiki",
+  "style_constraints": [],
+  "terminology_policy": [],
+  "forbidden_patterns": [],
+  "interaction_policy": [],
+  "evidence_policy": [
+    "Memory 不作为事实来源，事实内容必须来自工作台资料池、原文窗口或 Wiki 页面"
+  ],
+  "review_checklist": []
+}
+```
+
+三种回答链路只做轻量差异：
+
+| answer_mode | 额外编译内容 |
+|---|---|
+| ask | 回答详略、语气、术语偏好、禁用表达 |
+| note | 笔记结构、整理风格、摘录解释风格、禁用路径 |
+| wiki | 页面命名偏好、正式表达、术语规范、禁用旧口径 |
+
+### 9.5 Artifact Control Pack
+
+产物生成是右侧按钮触发的独立异步任务，不和单次聊天强绑定。
+
+统一链路：
+
+```text
+用户点击右侧产物按钮
+  -> Artifact Job
+  -> Resolve Production Action
+  -> Load Style Profile
+  -> Memory Compiler 生成 Artifact Control Pack
+  -> Skill Graph / Prompt Recipe
+  -> Verify / Repair
+```
+
+`Artifact Control Pack` 的典型字段：
+
+```json
+{
+  "pack_type": "artifact",
+  "artifact_type": "report | faq | quiz | study_guide | wiki_page | note_doc",
+  "style_constraints": [],
+  "structure_constraints": [],
+  "audience_policy": [],
+  "format_policy": [],
+  "forbidden_patterns": [],
+  "evidence_policy": [
+    "产物事实必须来自工作台资料池或已保存为资料的系统产物",
+    "Memory 不作为产物生成原材料"
+  ],
+  "review_checklist": []
+}
+```
+
+Artifact Control Pack 只控制“怎么写”，不控制“读什么资料”。
+
+### 9.6 Research Control Pack
+
+Deep Research 是显式长任务，Memory 不能成为研究结论或 verifier 证据。
+
+统一链路：
+
+```text
+用户点击 Deep Research
+  -> Research Run
+  -> Memory Compiler 生成 Research Control Pack
+  -> Research Planning
+  -> Search / Read / Extract / Verify loop
+  -> Final Report Synthesis
+```
+
+`Research Control Pack` 的典型字段：
+
+```json
+{
+  "pack_type": "research",
+  "research_preferences": [],
+  "report_structure_policy": [],
+  "forbidden_patterns": [],
+  "evidence_policy": [
+    "Memory 不作为研究证据",
+    "研究结论必须由搜索结果、工作台资料或验证证据支持"
+  ],
+  "review_checklist": []
+}
+```
+
+Research Control Pack 可以影响研究报告结构和表达方式，但不能影响证据真假判断。
+
+### 9.7 关键原则
 
 - 问答时不注入事实型 Memory
 - Note 时不让 Memory 影响候选资料排序
@@ -373,77 +512,50 @@ Memory 只控制表达和行为。
 
 ## 10. 与系统功能的结合
 
-### 10.1 问答 RAG
+### 10.1 聊天页统一接入
 
-事实来源：
+问答、Note、Wiki 都在统一聊天页进行，因此统一接入 `Chat Control Pack`。
 
-- 工作台资料池
-- Source Chunk
-- Citation
+区别不在于 Memory 接入三次，而在于 `answer_mode` 不同：
 
-Memory 作用：
+- `ask` 使用问答 RAG 链路
+- `note` 使用结构化阅读漏斗
+- `wiki` 使用 Wiki-first 回答逻辑
 
-- 回答风格
-- 术语偏好
-- 禁用表达
-- 用户偏好
+Memory Compiler 只生成一份 Chat Control Pack，再由对应链路读取其中适合自己的字段。
 
-Memory 不参与：
+### 10.2 问答 RAG
 
-- 检索召回
-- rerank
-- citation
+事实来源是工作台资料池、Source Chunk 和 Citation。
 
-### 10.2 Note 链路
+Memory 只通过 Chat Control Pack 控制回答风格、术语偏好、禁用表达和用户偏好。
 
-事实来源：
+Memory 不参与检索召回、rerank 和 citation。
 
-- 候选资料
-- 原文窗口
-- 摘录卡片
+### 10.3 Note 链路
 
-Memory 作用：
+事实来源是候选资料、原文窗口和摘录卡片。
 
-- 笔记结构
-- 整理风格
-- 禁用旧方案
-- 用户偏好的表达方式
+Memory 只通过 Chat Control Pack 控制笔记结构、整理风格、禁用旧方案和用户偏好的表达方式。
 
-Memory 不参与：
+Memory 不参与候选资料排序、原文窗口选择和摘录事实生成。
 
-- 候选资料排序
-- 原文窗口选择
-- 摘录事实生成
+### 10.4 Wiki 链路
 
-### 10.3 Wiki 链路
+事实来源是 Wiki 页面、页面链接和来源回链。
 
-事实来源：
+Memory 只通过 Chat Control Pack 控制页面命名偏好、页面组织风格、禁用旧口径和展示方式。
 
-- Wiki 页面
-- 页面链接
-- 来源回链
+Memory 不参与 Wiki 页面检索、页面事实覆盖和来源回链替代。
 
-Memory 作用：
-
-- 页面命名偏好
-- 页面组织风格
-- 禁用旧口径
-- 展示方式
-
-Memory 不参与：
-
-- Wiki 页面检索
-- 页面事实覆盖
-- 来源回链替代
-
-### 10.4 产物生成 Agent
+### 10.5 产物生成 Agent
 
 原材料：
 
 - 当前研究工作台资料池
 - 已保存为资料的系统产物
 
-Memory 作用：
+Memory 通过 Artifact Control Pack 控制：
 
 - Style Profile 默认值
 - 报告结构
@@ -453,7 +565,7 @@ Memory 作用：
 
 Memory 不作为产物生成原材料。
 
-### 10.5 Deep Research
+### 10.6 Deep Research
 
 事实来源：
 
@@ -461,7 +573,7 @@ Memory 不作为产物生成原材料。
 - 工作台资料
 - 研究过程中的证据验证
 
-Memory 作用：
+Memory 通过 Research Control Pack 控制：
 
 - 研究偏好
 - 报告结构
@@ -589,7 +701,7 @@ Memory 不作为研究结论，也不作为 verifier 的事实依据。
 
 正式亮点可以写成：
 
-`面向研究工作台中多会话、多链路、多产物协作时用户偏好难保持、表达口径易漂移、否定方案反复出现和旧记忆污染新决策的问题，设计门控式任务邻域记忆机制：通过 Graduated Memory 将用户反馈、项目口径、产物修改和 Negative Memory 从弱信号逐步晋升为可追溯 Memory Object，再通过 Task-Neighborhood Memory Compiler 将其按问答、Note、Wiki、产物生成和 Deep Research 的不同场景编译为风格约束、结构约束、禁用路径和交互策略；Memory 不作为事实来源或检索索引，从而在不污染证据链的前提下保持系统行为一致。`
+`面向研究工作台中多会话、多链路、多产物协作时用户偏好难保持、表达口径易漂移、否定方案反复出现和旧记忆污染新决策的问题，设计门控式任务邻域记忆机制：通过 Graduated Memory 将用户反馈、项目口径、产物修改和 Negative Memory 从弱信号逐步晋升为可追溯 Memory Object，再通过 Task-Neighborhood Memory Compiler 编译为三类 Memory Control Pack：面向统一聊天页的 Chat Control Pack、面向右侧产物生成的 Artifact Control Pack、面向 Deep Research 的 Research Control Pack；Memory 不作为事实来源或检索索引，从而在不污染证据链的前提下保持系统行为一致。`
 
 ## 14. 实现边界
 
@@ -611,4 +723,3 @@ Memory 不作为研究结论，也不作为 verifier 的事实依据。
 - Memory 自动修改工作台资料
 - Memory 复制产物正文
 - 复杂可视化 Memory 管理后台
-

@@ -366,7 +366,7 @@ Build Execution Plan
 如果将来支持回写，再补：
 
 5. `Writeback Gate`
-   控制是否允许写回 Note / Wiki / Memory Candidate
+   控制是否允许写回 Note / Wiki，或是否允许产生产物修改类 Memory Signal
 
 ## 5. NoteWeave 版本的推荐对象模型
 
@@ -456,6 +456,7 @@ Build Execution Plan
   -> Resolve Production Action
   -> Load Style Profile
   -> Resolve Workspace Material Scope
+  -> Compile Artifact Control Pack
   -> Build Artifact Execution Plan
   -> Schema Gate
   -> Expand Skill Graph Template
@@ -466,7 +467,7 @@ Build Execution Plan
   -> Node-Level Verify
   -> Local Repair
   -> Commit Artifact Version
-  -> Optional Writeback / Retrieval Feedback / Memory Candidate
+  -> Optional Writeback / Retrieval Feedback / Memory Signal
 ```
 
 这条链路里最关键的三个新节点是：
@@ -474,6 +475,8 @@ Build Execution Plan
 - `Schema Gate`
 - `Lazy Capability Loading`
 - `Capability Union Policy`
+
+其中 `Artifact Control Pack` 来自 Memory Compiler，只承接风格、结构、受众、格式、禁用路径和证据边界约束，不决定产物原材料，也不参与资料检索。
 
 ## 7. 哪些能力适合先做成内置 Skill
 
