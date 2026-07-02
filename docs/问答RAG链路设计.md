@@ -210,7 +210,6 @@ Citation 至少应能回到：
 - `source_chunk_index`
 - `knowledge_index`
 - `artifact_index`
-- `memory_index`
 
 ### 8.2 向量检索
 
@@ -523,20 +522,6 @@ ConversationController
 - `title`
 - `content`
 - `summary`
-- `embedding`
-- `status`
-
-#### memory_index
-
-字段：
-
-- `workspace_id`
-- `topic_scope_id`
-- `memory_object_id`
-- `memory_type`
-- `canonical_content`
-- `retrieval_policy_json`
-- `freshness_score`
 - `embedding`
 - `status`
 
