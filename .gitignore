@@ -8,10 +8,21 @@ out/
 
 node_modules/
 .pnpm-store/
+*.tsbuildinfo
 
 *.log
 *.tmp
 *.bak
+
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+
+backend/target/
+frontend/vite.config.js
+frontend/vite.config.d.ts
+workers/**/.venv/
 
 .DS_Store
 Thumbs.db

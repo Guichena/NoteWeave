@@ -1,24 +1,23 @@
 # NoteWeave v2 Frontend
 
-前端采用 `React 19 + TypeScript 5 + Vite 8`，第一阶段直接实现 NotebookLM 风格的研究工作台。
+前端采用 `React 19 + TypeScript 5 + Vite 5`，阶段1/2先提供最小研究工作台壳。
 
-首批界面重点：
+当前页面包含：
 
-- 左侧资料区：上传、查看、管理工作台资料
-- 中间聊天区：承载三种聊天回答链路 `问答 RAG / Note / Wiki`
-- Deep Research 入口：发起独立研究任务并查看进度
-- 右侧产物栏：生成报告、FAQ、测验、学习指南、Wiki 页面、Note 文档
-- 任务状态与结果回写入口：把系统生成结果保存回工作台资料池
+1. 研究工作台概览
+2. `问答 RAG / Note / Wiki` 三种链路入口
+3. Deep Research 独立按钮
+4. 右侧产物栏入口
 
-建议前端按 `features` 组织：
+## 本地运行
 
-- `workspace`
-- `sources`
-- `chat`
-- `rag`
-- `note`
-- `wiki`
-- `research`
-- `artifacts`
-- `memory`
-- `shared`
+```bash
+npm install
+npm run dev
+```
+
+## 构建
+
+```bash
+npm run build
+```

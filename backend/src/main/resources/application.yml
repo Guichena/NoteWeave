@@ -1,0 +1,39 @@
+server:
+  port: ${SERVER_PORT:8081}
+
+spring:
+  application:
+    name: noteweave-v2-backend
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/noteweave?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+    username: ${SPRING_DATASOURCE_USERNAME:noteweave}
+    password: ${SPRING_DATASOURCE_PASSWORD:noteweave123}
+    driver-class-name: ${SPRING_DATASOURCE_DRIVER:com.mysql.cj.jdbc.Driver}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+  servlet:
+    multipart:
+      max-file-size: 128MB
+      max-request-size: 128MB
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
+noteweave:
+  storage:
+    local-root: ${NOTEWEAVE_STORAGE_LOCAL_ROOT:target/noteweave-storage}
+  document:
+    chunk-size: ${NOTEWEAVE_DOCUMENT_CHUNK_SIZE:900}
+    chunk-overlap: ${NOTEWEAVE_DOCUMENT_CHUNK_OVERLAP:120}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

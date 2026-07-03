@@ -1,28 +1,34 @@
 # NoteWeave v2 Backend
 
-后端采用 `Java 21 + Spring Boot 3.5.x`，是整个系统的业务真源与主协调层。
+后端采用 `Java 17 + Spring Boot 3.3.x`，是阶段1/2的业务真源与主协调层。
 
-当前后端负责：
+## 本阶段已覆盖
 
-- 研究工作台、资料、会话、任务、结果回写
-- 三种聊天回答链路的请求编排与引用返回
-- Deep Research 与右侧产物生成任务的创建、状态同步与结果入库
-- `MySQL / MinIO / Kafka / Elasticsearch / Redis` 的主业务接入
+1. `V001-V006` Flyway 迁移
+2. 创建工作台
+3. 创建上传事务、上传分片、完成上传
+4. 同步解析文本资料并生成 `source_chunk`
+5. 创建会话、发送 QA 消息、生成 citation
+6. 查询任务状态与聊天 SSE 回放
 
-首批建议模块：
+## 本地运行
 
-- `workspace`
-- `source`
-- `conversation`
-- `retrieval`
-- `citation`
-- `note`
-- `wiki`
-- `research`
-- `artifact`
-- `memory`
-- `task`
-- `storage`
-- `search`
-- `mcp`
-- `common`
+```bash
+./mvnw spring-boot:run
+```
+
+默认连接：
+
+- MySQL：`localhost:3306/noteweave`
+- Redis：`localhost:6379`
+- Kafka：`localhost:9092`
+- MinIO：`localhost:9000`
+- Elasticsearch：`localhost:9200`
+
+## 测试
+
+```bash
+./mvnw test
+```
+
+测试使用 H2 + Flyway，先保证阶段1/2契约和纵向闭环可验证。

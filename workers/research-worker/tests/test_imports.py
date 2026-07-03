@@ -1,0 +1,8 @@
+from app.config import load_settings
+from app.main import app
+
+
+def test_research_worker_imports() -> None:
+    settings = load_settings()
+    assert settings.worker_type == "research"
+    assert app.title == "NoteWeave Research Worker"
