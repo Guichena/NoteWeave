@@ -90,6 +90,7 @@ Note 链路参考 `shenmintao/marginalia`，不直接把 chunk top-k 当作答�
   -> 关系信号扩展（标签重叠 + 历史 Note 共同引用）
   -> 候选资料
   -> 验证批次
+  -> 条目元数据读取（tags / metadata_signals / related_entries）
   -> 原文窗口相关性重排
   -> 摘录卡片
   -> 带引用回答
@@ -130,11 +131,12 @@ Elasticsearch 后续替换点：
 先写测试：
 
 1. Note 模式回答包含候选资料。
-2. Note 模式回答包含 Journal 信号、关系扩展、验证批次、原文窗口和摘录卡片。
+2. Note 模式回答包含 Journal 信号、关系扩展、验证批次、条目元数据、原文窗口和摘录卡片。
 3. 上传资料解析后写入摘要、标签和结构化元数据。
 4. 保存为 Note 后保留引用关系。
 5. 保存过 Note 后，再次 Note 提问可以利用历史 Note 作为 journal 信号。
 6. Note 模式回答能够显式输出 `candidate_sources / relation_expansion_sources / verify_batch_sources`。
+7. Note 模式回答能够显式输出 `related_entries`。
 
 ### 完成定义
 
@@ -245,7 +247,7 @@ Frontend：
 3. Wiki 模式说明：全量 Wiki 检索、页面链接、图谱、反向链接、来源回链、默认 Wiki 工作台入口
 4. Wiki 工作台入口按钮：`/workspaces/{workspaceId}/wiki`
 5. 默认 Wiki 工作台视图：左侧 Wiki Index / 页面列表，中间页面正文与版本信息，右侧页面链接、统计、图谱、问题和日志
-6. Wiki 页面详情：点击页面后读取最新正文、版本号和 citation
+6. Wiki 页面详情：点击页面后读取最新正文、版本号、citation、outgoing links 和 backlinks
 7. 右侧知识沉淀入口：保存最新回答为 Note、创建 Wiki 页面
 8. Wiki 工作台页面维护入口：追加 Wiki 新版本、重命名、软删除、按当前资料重建 Wiki、重建链接、资料删除同步 Wiki、Auto Fix
 9. 聊天流式结果需要展示回答正文和 citation，避免前端只展示模型正文而丢失来源闭环

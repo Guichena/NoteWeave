@@ -1,5 +1,7 @@
 package com.noteweave.chat;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -15,9 +17,11 @@ import org.springframework.stereotype.Service;
 public class RetrievalService {
 
     private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
 
-    public RetrievalService(JdbcTemplate jdbcTemplate) {
+    public RetrievalService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
+        this.objectMapper = objectMapper;
     }
 
     public List<RetrievedChunk> retrieveForQa(String workspaceId, String query) {
@@ -274,6 +278,33 @@ public class RetrievalService {
                 .toList();
     }
 
+    public List<NoteEntryMetadata> readEntriesMetadataForNote(String workspaceId, List<CandidateSource> sources) {
+        if (sources == null || sources.isEmpty()) {
+            return List.of();
+        }
+        List<NoteEntryMetadata> metadataEntries = new ArrayList<>();
+        for (CandidateSource source : sources) {
+            Integer windowCount = jdbcTemplate.queryForObject("""
+                    select count(*)
+                    from source_window w
+                    join source_chunk c on c.id = w.source_chunk_id
+                    where c.workspace_id = ? and c.source_id = ?
+                    """, Integer.class, workspaceId, source.sourceId());
+            metadataEntries.add(new NoteEntryMetadata(
+                    source.sourceId(),
+                    source.title(),
+                    source.sourceType(),
+                    source.summary(),
+                    parseJsonStringArray(source.tagsJson()),
+                    metadataPreview(source.metadataJson()),
+                    source.chunkCount(),
+                    windowCount == null ? 0 : windowCount,
+                    relatedEntriesForSource(workspaceId, source)
+            ));
+        }
+        return metadataEntries;
+    }
+
     public List<NoteJournalHit> findNoteJournalHits(String workspaceId, String query) {
         Set<String> terms = extractTerms(query);
         List<NoteJournalHit> hits = jdbcTemplate.query("""
@@ -406,6 +437,128 @@ public class RetrievalService {
             tags.add(matcher.group(1));
         }
         return tags;
+    }
+
+    private List<String> parseJsonStringArray(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            List<String> values = objectMapper.readValue(json, new TypeReference<List<String>>() {
+            });
+            return values == null ? List.of() : values.stream().filter(value -> value != null && !value.isBlank()).limit(8).toList();
+        } catch (Exception ignored) {
+            return new ArrayList<>(extractTags(json)).stream().limit(8).toList();
+        }
+    }
+
+    private List<String> metadataPreview(String metadataJson) {
+        if (metadataJson == null || metadataJson.isBlank()) {
+            return List.of();
+        }
+        try {
+            Map<String, Object> metadata = objectMapper.readValue(metadataJson, new TypeReference<Map<String, Object>>() {
+            });
+            List<String> preview = new ArrayList<>();
+            for (Map.Entry<String, Object> entry : metadata.entrySet()) {
+                if (entry.getValue() == null) {
+                    continue;
+                }
+                preview.add(entry.getKey() + "=" + entry.getValue());
+                if (preview.size() >= 6) {
+                    break;
+                }
+            }
+            return preview;
+        } catch (Exception ignored) {
+            return List.of(metadataJson);
+        }
+    }
+
+    private List<RelatedEntryPreview> relatedEntriesForSource(String workspaceId, CandidateSource anchor) {
+        Map<String, Integer> sharedTagCounts = new HashMap<>();
+        Set<String> anchorTags = extractTags(anchor.tagsJson());
+        if (!anchorTags.isEmpty()) {
+            List<SourceRelationRow> rows = jdbcTemplate.query("""
+                    select s.id, s.title, coalesce(s.tags_json, '[]') as tags_json
+                    from source s
+                    where s.workspace_id = ? and s.status = 'READY' and s.id <> ?
+                    order by s.updated_at desc
+                    limit 30
+                    """, (rs, rowNum) -> new SourceRelationRow(
+                    rs.getString("id"),
+                    rs.getString("title"),
+                    rs.getString("tags_json")
+            ), workspaceId, anchor.sourceId());
+            for (SourceRelationRow row : rows) {
+                Set<String> otherTags = extractTags(row.tagsJson());
+                int overlap = 0;
+                for (String tag : anchorTags) {
+                    if (otherTags.contains(tag)) {
+                        overlap++;
+                    }
+                }
+                if (overlap > 0) {
+                    sharedTagCounts.put(row.sourceId(), overlap);
+                }
+            }
+        }
+
+        Map<String, Integer> coCitationCounts = new HashMap<>();
+        List<RelatedEntryPreview> related = jdbcTemplate.query("""
+                select c2.source_id, s.title, count(distinct i.id) as note_count
+                from knowledge_item i
+                join knowledge_version v on v.id = i.latest_version_id
+                join knowledge_version_citation kvc1 on kvc1.knowledge_version_id = v.id
+                join citation c1 on c1.id = kvc1.citation_id
+                join knowledge_version_citation kvc2 on kvc2.knowledge_version_id = v.id
+                join citation c2 on c2.id = kvc2.citation_id
+                join source s on s.id = c2.source_id
+                where i.workspace_id = ?
+                  and i.item_type = 'NOTE'
+                  and i.status = 'ACTIVE'
+                  and c1.source_id = ?
+                  and c2.source_id <> ?
+                group by c2.source_id, s.title
+                order by note_count desc, s.title asc
+                """, (rs, rowNum) -> {
+                    String sourceId = rs.getString("source_id");
+                    int coCitedNotes = rs.getInt("note_count");
+                    coCitationCounts.put(sourceId, coCitedNotes);
+                    int sharedTags = sharedTagCounts.getOrDefault(sourceId, 0);
+                    return new RelatedEntryPreview(
+                            sourceId,
+                            rs.getString("title"),
+                            sharedTags,
+                            coCitedNotes,
+                            sharedTags * 2 + coCitedNotes * 3
+                    );
+                }, workspaceId, anchor.sourceId(), anchor.sourceId());
+
+        Map<String, RelatedEntryPreview> bySourceId = new HashMap<>();
+        for (RelatedEntryPreview item : related) {
+            bySourceId.put(item.sourceId(), item);
+        }
+        for (Map.Entry<String, Integer> entry : sharedTagCounts.entrySet()) {
+            if (!bySourceId.containsKey(entry.getKey())) {
+                String title = jdbcTemplate.queryForObject("""
+                        select title from source
+                        where workspace_id = ? and id = ? and status = 'READY'
+                        """, String.class, workspaceId, entry.getKey());
+                bySourceId.put(entry.getKey(), new RelatedEntryPreview(
+                        entry.getKey(),
+                        title == null ? entry.getKey() : title,
+                        entry.getValue(),
+                        coCitationCounts.getOrDefault(entry.getKey(), 0),
+                        entry.getValue() * 2 + coCitationCounts.getOrDefault(entry.getKey(), 0) * 3
+                ));
+            }
+        }
+        return bySourceId.values().stream()
+                .sorted(Comparator.comparingInt(RelatedEntryPreview::score).reversed()
+                        .thenComparing(RelatedEntryPreview::title))
+                .limit(3)
+                .toList();
     }
 
     private String recallSignals(CandidateSource source, int metadataScore, int noteScore, int relationScore) {
@@ -565,6 +718,9 @@ public class RetrievalService {
     private record NoteCitationPair(String noteId, String sourceId) {
     }
 
+    private record SourceRelationRow(String sourceId, String title, String tagsJson) {
+    }
+
     private record ScoredCandidateSource(CandidateSource source, int metadataScore, int noteScore, int relationScore) {
         int score() {
             return source.score();
@@ -592,6 +748,28 @@ public class RetrievalService {
             int metadataScoreSum,
             int noteScoreSum,
             int relationScoreSum
+    ) {
+    }
+
+    public record NoteEntryMetadata(
+            String sourceId,
+            String title,
+            String sourceType,
+            String summary,
+            List<String> tags,
+            List<String> metadataSignals,
+            int chunkCount,
+            int windowCount,
+            List<RelatedEntryPreview> relatedEntries
+    ) {
+    }
+
+    public record RelatedEntryPreview(
+            String sourceId,
+            String title,
+            int sharedTagCount,
+            int coCitedNoteCount,
+            int score
     ) {
     }
 }

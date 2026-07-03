@@ -60,6 +60,7 @@ search_journal
   -> relation_hint_expand
   -> candidate_triage
   -> build_verify_batch
+  -> read_entries_metadata
   -> read_source_windows
   -> evidence_excerpt_cards
 ```
@@ -213,7 +214,24 @@ Journal 信号
 - 让回答前真正完成一次资料级 triage
 - 让前端和测试能看到这轮回答到底验证了哪些资料
 
-### 5.5 原文窗口
+### 5.5 条目元数据
+
+对齐 `marginalia/read_entries_metadata` 的思路，Note 链路在进入原文窗口之前，会先读取验证批次中每个资料的结构化元数据视图。
+
+当前实现会为每个 verify source 补齐：
+
+- `tags`
+  资料标签与主题词
+
+- `metadata_signals`
+  资料摘要、解析元数据、entry strategy、chunk/window 数量等结构化信号
+
+- `related_entries`
+  与该资料存在共享标签或历史 Note 共引关系的相邻资料
+
+这一步的目的不是直接回答，而是先让系统知道“这份资料是什么、可读性如何、和谁相关”，再决定后续窗口阅读和证据摘录。
+
+### 5.6 原文窗口
 
 原文窗口是 Note 链路区别于普通 RAG 的关键。
 
@@ -225,7 +243,7 @@ Journal 信号
 - 表格行列范围
 - 音视频转写时间段
 
-### 5.6 摘录证据
+### 5.7 摘录证据
 
 摘录证据用于支撑回答中的关键结论。
 
@@ -237,7 +255,7 @@ Journal 信号
 - 相关原因
 - 是否存在待确认或冲突
 
-### 5.7 可选结构化笔记
+### 5.8 可选结构化笔记
 
 当用户点击保存或需要整理时，系统可以把本次回答沉淀为结构化笔记。
 
@@ -270,6 +288,7 @@ Journal 信号
   -> relation_hint_expand：用标签重叠、历史共同引用和窗口可读性补充关系信号
   -> candidate_triage：按 journal / metadata / relation 配额选出主候选资料
   -> build_verify_batch：把主候选和关系扩展收束为验证批次
+  -> read_entries_metadata：读取 verify source 的 tags / metadata_signals / related_entries
   -> 打开验证批次中的原文窗口
   -> 抽取摘录卡片
   -> 基于证据和引用生成回答
@@ -284,6 +303,8 @@ Workspace
   -> SourceMetadata
   -> NoteRecallPlan
   -> NoteRecallTrace
+  -> NoteEntryMetadata
+  -> RelatedEntryPreview
   -> SourceWindow
   -> NoteJournalSignal
   -> ExcerptCard
@@ -296,6 +317,8 @@ Workspace
 - `SourceMetadata` 承载标题、摘要、标签、文件夹、类型等候选定位信号
 - `NoteRecallPlan` 承载 journal hits、candidate sources、relation expansion sources 和 verify batch
 - `NoteRecallTrace` 承载本轮召回中 metadata / journal / relation 三类信号的汇总轨迹
+- `NoteEntryMetadata` 承载 verify source 的 tags、metadata_signals、chunk/window readiness 和 related_entries
+- `RelatedEntryPreview` 承载共享标签与历史共引形成的相邻资料视图
 - `SourceWindow` 表示可回跳原文窗口
 - `NoteJournalSignal` 来自已保存 Note 及其 citation 回链，用于提示“哪些资料被历史整理过”
 - `ExcerptCard` 表示摘录证据

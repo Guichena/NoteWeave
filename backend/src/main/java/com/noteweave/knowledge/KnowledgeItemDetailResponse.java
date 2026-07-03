@@ -13,6 +13,8 @@ public record KnowledgeItemDetailResponse(
         String content,
         String summary,
         List<KnowledgeCitationResponse> citations,
+        List<WikiLinkResponse> outgoingLinks,
+        List<WikiLinkResponse> backlinks,
         Instant updatedAt
 ) {
 }

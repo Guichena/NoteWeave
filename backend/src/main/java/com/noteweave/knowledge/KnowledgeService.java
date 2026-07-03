@@ -378,6 +378,8 @@ public class KnowledgeService {
                     rs.getString("content"),
                     rs.getString("summary"),
                     citationsForVersion(versionId),
+                    "WIKI".equals(rs.getString("item_type")) ? listOutgoingLinks(rs.getString("id")) : List.of(),
+                    "WIKI".equals(rs.getString("item_type")) ? listBacklinks(rs.getString("id")) : List.of(),
                     toInstant(rs.getTimestamp("updated_at"))
             );
         }, itemId);
@@ -411,6 +413,17 @@ public class KnowledgeService {
             return scored;
         }
         return pages.stream().limit(5).toList();
+    }
+
+    public List<WikiPageContext> findRelevantWikiPageContexts(String workspaceId, String query) {
+        return findRelevantWikiPages(workspaceId, query).stream()
+                .map(page -> new WikiPageContext(
+                        page,
+                        listOutgoingLinks(page.itemId()).stream().limit(5).toList(),
+                        listBacklinks(page.itemId()).stream().limit(5).toList(),
+                        citationsForVersion(page.versionId()).stream().limit(5).toList()
+                ))
+                .toList();
     }
 
     @Transactional
@@ -486,6 +499,42 @@ public class KnowledgeService {
                 (Integer) rs.getObject("page_no"),
                 rs.getString("location_info")
         ), versionId);
+    }
+
+    private List<WikiLinkResponse> listOutgoingLinks(String itemId) {
+        return jdbcTemplate.query("""
+                select source_item_id, target_item_id, target_title, relation_type, relation_status, mention_count
+                from knowledge_item_link
+                where source_item_id = ?
+                order by relation_status asc, mention_count desc, updated_at desc
+                """, (rs, rowNum) -> new WikiLinkResponse(
+                rs.getString("source_item_id"),
+                rs.getString("target_item_id"),
+                rs.getString("target_title"),
+                rs.getString("relation_type"),
+                rs.getString("relation_status"),
+                rs.getInt("mention_count")
+        ), itemId);
+    }
+
+    private List<WikiLinkResponse> listBacklinks(String itemId) {
+        return jdbcTemplate.query("""
+                select l.source_item_id, l.target_item_id, coalesce(s.title, l.target_title) as source_title,
+                       l.relation_type, l.relation_status, l.mention_count
+                from knowledge_item_link l
+                left join knowledge_item s on s.id = l.source_item_id
+                where l.target_item_id = ?
+                order by l.mention_count desc, l.updated_at desc
+                """, (rs, rowNum) -> {
+            return new WikiLinkResponse(
+                    rs.getString("source_item_id"),
+                    rs.getString("target_item_id"),
+                    rs.getString("source_title"),
+                    rs.getString("relation_type"),
+                    rs.getString("relation_status"),
+                    rs.getInt("mention_count")
+            );
+        }, itemId);
     }
 
     private void bindVersionCitations(String versionId, List<String> citationIds) {
@@ -676,5 +725,13 @@ public class KnowledgeService {
         KnowledgePageHit withScore(int nextScore) {
             return new KnowledgePageHit(itemId, versionId, versionNo, title, content, summary, nextScore);
         }
+    }
+
+    public record WikiPageContext(
+            KnowledgePageHit page,
+            List<WikiLinkResponse> outgoingLinks,
+            List<WikiLinkResponse> backlinks,
+            List<KnowledgeCitationResponse> citations
+    ) {
     }
 }

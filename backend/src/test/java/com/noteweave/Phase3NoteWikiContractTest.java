@@ -55,6 +55,7 @@ class Phase3NoteWikiContractTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 候选资料")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 关系扩展")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 验证批次")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 条目元数据")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 摘录证据")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chat.citation")));
 
@@ -104,7 +105,9 @@ class Phase3NoteWikiContractTest {
                 .andExpect(jsonPath("$.data.item_type").value("WIKI"))
                 .andExpect(jsonPath("$.data.latest_version_no").value(2))
                 .andExpect(jsonPath("$.data.content").value(org.hamcrest.Matchers.containsString("全量 Wiki 检索链路")))
-                .andExpect(jsonPath("$.data.citations[0].quote_text").isNotEmpty());
+                .andExpect(jsonPath("$.data.citations[0].quote_text").isNotEmpty())
+                .andExpect(jsonPath("$.data.outgoing_links[0].target_title").value("Note 链路"))
+                .andExpect(jsonPath("$.data.backlinks").isArray());
 
         JsonNode wikiMessage = sendMessage(conversationId, "WIKI", "NoteWeave 阶段3怎么设计？");
         String wikiRequestId = wikiMessage.path("data").path("assistant_request_id").asText();
@@ -112,6 +115,9 @@ class Phase3NoteWikiContractTest {
         mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", wikiRequestId))
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 相关 Wiki 页面")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 相关页面")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 反向链接")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 来源回链")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 页面关系")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("v2")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("/wiki")))
@@ -142,6 +148,7 @@ class Phase3NoteWikiContractTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("companion.md")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("relation-expansion")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("verify_batch_sources")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("related_entries")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 摘录证据")));
     }
 
@@ -391,6 +398,10 @@ class Phase3NoteWikiContractTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.edges[0].target_title").value("已补齐页面"))
                 .andExpect(jsonPath("$.data.edges[0].relation_status").value("RESOLVED"));
+
+        mockMvc.perform(get("/api/v2/knowledge-items/{itemId}", itemId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.outgoing_links[0].target_title").value("已补齐页面"));
 
         mockMvc.perform(delete("/api/v2/knowledge-items/{itemId}", missingPageId))
                 .andExpect(status().isOk());

@@ -2,13 +2,18 @@ package com.noteweave.chat;
 
 import com.noteweave.chat.RetrievalService.CandidateSource;
 import com.noteweave.chat.RetrievalService.NoteJournalHit;
+import com.noteweave.chat.RetrievalService.NoteEntryMetadata;
 import com.noteweave.chat.RetrievalService.NoteRecallPlan;
 import com.noteweave.chat.RetrievalService.ReadingWindow;
+import com.noteweave.chat.RetrievalService.RelatedEntryPreview;
 import com.noteweave.chat.RetrievalService.RetrievedChunk;
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
+import com.noteweave.knowledge.KnowledgeCitationResponse;
 import com.noteweave.knowledge.KnowledgeService;
 import com.noteweave.knowledge.KnowledgeService.KnowledgePageHit;
+import com.noteweave.knowledge.KnowledgeService.WikiPageContext;
+import com.noteweave.knowledge.WikiLinkResponse;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -126,6 +131,7 @@ public class ChatService {
         List<NoteJournalHit> journalHits = recallPlan.journalHits();
         List<CandidateSource> relationExpansionSources = recallPlan.relationExpansionSources();
         List<CandidateSource> verifySources = recallPlan.verifySources();
+        List<NoteEntryMetadata> metadataEntries = retrievalService.readEntriesMetadataForNote(workspaceId, verifySources);
         List<ReadingWindow> windows = retrievalService.openSourceWindowsForNote(workspaceId, verifySources, request.content());
         List<RetrievedChunk> evidence = windows.stream().map(ReadingWindow::toRetrievedChunk).toList();
         if (candidates.isEmpty() || windows.isEmpty()) {
@@ -182,6 +188,27 @@ public class ChatService {
                     .append("，召回信号：").append(candidate.recallSignals()).append("\n");
         }
         builder.append("\n");
+        builder.append("## 条目元数据\n");
+        for (NoteEntryMetadata entry : metadataEntries) {
+            builder.append("- 《").append(entry.title()).append("》：")
+                    .append(entry.sourceType())
+                    .append("，chunk=").append(entry.chunkCount())
+                    .append("，window=").append(entry.windowCount())
+                    .append("，tags=").append(String.join(" / ", entry.tags())).append("\n");
+            if (!entry.metadataSignals().isEmpty()) {
+                builder.append("  metadata_signals: ").append(String.join("；", entry.metadataSignals())).append("\n");
+            }
+            if (!entry.relatedEntries().isEmpty()) {
+                builder.append("  related_entries:\n");
+                for (RelatedEntryPreview related : entry.relatedEntries()) {
+                    builder.append("  - 《").append(related.title()).append("》")
+                            .append("：shared_tags=").append(related.sharedTagCount())
+                            .append(", co_cited_notes=").append(related.coCitedNoteCount())
+                            .append(", score=").append(related.score()).append("\n");
+                }
+            }
+        }
+        builder.append("\n");
         builder.append("## 关键观点\n");
         for (int i = 0; i < windows.size(); i++) {
             ReadingWindow window = windows.get(i);
@@ -206,9 +233,11 @@ public class ChatService {
     }
 
     private AnswerDraft buildWikiAnswer(String workspaceId, SendMessageRequest request) {
-        List<KnowledgePageHit> pages = knowledgeService.findRelevantWikiPages(workspaceId, request.content());
-        List<String> wikiCitationIds = knowledgeService.citationIdsForWikiPages(pages);
-        if (pages.isEmpty()) {
+        List<WikiPageContext> contexts = knowledgeService.findRelevantWikiPageContexts(workspaceId, request.content());
+        List<String> wikiCitationIds = knowledgeService.citationIdsForWikiPages(
+                contexts.stream().map(WikiPageContext::page).toList()
+        );
+        if (contexts.isEmpty()) {
             StringBuilder fallback = new StringBuilder();
             fallback.append("## 基于全量 Wiki 的回答\n");
             fallback.append("当前 Wiki 知识网络还没有可直接命中的正式页面，因此本次不退回普通资料 RAG 直接作答。\n\n");
@@ -224,17 +253,48 @@ public class ChatService {
         builder.append("## 基于全量 Wiki 的回答\n");
         builder.append("我优先检索当前工作台已经沉淀的 Wiki Index、页面正文、页面链接、反向链接和来源回链，再基于正式知识网络给出回答。\n\n");
         builder.append("## 相关 Wiki 页面\n");
-        for (KnowledgePageHit page : pages) {
+        for (WikiPageContext context : contexts) {
+            KnowledgePageHit page = context.page();
             builder.append("- 《").append(page.title()).append("》v").append(page.versionNo())
-                    .append("：").append(trim(page.summary().isBlank() ? page.content() : page.summary(), 180)).append("\n");
+                    .append("：").append(trim(page.summary().isBlank() ? page.content() : page.summary(), 180))
+                    .append("，出链 ").append(context.outgoingLinks().size())
+                    .append("，反链 ").append(context.backlinks().size())
+                    .append("，来源 ").append(context.citations().size())
+                    .append("\n");
         }
         builder.append("\n## 简要结论\n");
-        builder.append(trim(pages.get(0).content(), 420)).append("\n\n");
-        builder.append("## 页面关系\n");
+        builder.append(trim(contexts.get(0).page().content(), 420)).append("\n\n");
+        builder.append("## 相关页面\n");
+        appendWikiLinks(builder, contexts.get(0).outgoingLinks(), "当前命中页面暂时没有显式出链。");
+        builder.append("\n## 反向链接\n");
+        appendWikiLinks(builder, contexts.get(0).backlinks(), "当前命中页面暂时没有被其他页面引用。");
+        builder.append("\n## 来源回链\n");
+        if (contexts.get(0).citations().isEmpty()) {
+            builder.append("当前命中页面暂时没有绑定来源引用。\n");
+        } else {
+            for (KnowledgeCitationResponse citation : contexts.get(0).citations()) {
+                builder.append("- ").append(citation.title())
+                        .append("：").append(trim(citation.quoteText(), 120))
+                        .append("（").append(citation.locationInfo()).append("）\n");
+            }
+        }
+        builder.append("\n## 页面关系\n");
         builder.append("相关页面关系、反向链接、图谱、统计、日志和 Wiki lint 可在默认 Wiki 工作台中查看。\n\n");
         builder.append("## 默认 Wiki 工作台\n");
         builder.append("/workspaces/").append(workspaceId).append("/wiki\n");
         return new AnswerDraft(builder.toString(), List.of(), wikiCitationIds);
+    }
+
+    private void appendWikiLinks(StringBuilder builder, List<WikiLinkResponse> links, String emptyMessage) {
+        if (links.isEmpty()) {
+            builder.append(emptyMessage).append("\n");
+            return;
+        }
+        for (WikiLinkResponse link : links) {
+            builder.append("- ").append(link.targetTitle())
+                    .append("：").append(link.relationStatus())
+                    .append("，").append(link.mentionCount()).append(" 次提及\n");
+        }
     }
 
     private void persistCitations(String workspaceId, String messageId, List<RetrievedChunk> evidence) {

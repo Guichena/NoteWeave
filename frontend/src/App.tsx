@@ -117,6 +117,8 @@ type KnowledgeCitation = {
 type KnowledgeItemDetail = WikiPage & {
   content: string;
   citations: KnowledgeCitation[];
+  outgoing_links: WikiLink[];
+  backlinks: WikiLink[];
 };
 
 type ApiResponse<T> = {
@@ -593,6 +595,18 @@ export function App() {
                   </div>
                 ) : null}
                 <div className="wiki-maintenance">
+                  <strong>页面出链</strong>
+                  {selectedWikiDetail?.outgoing_links?.length
+                    ? selectedWikiDetail.outgoing_links.map((link) => link.target_title).join(" / ")
+                    : "当前页面暂无显式出链"}
+                </div>
+                <div className="wiki-maintenance">
+                  <strong>反向链接</strong>
+                  {selectedWikiDetail?.backlinks?.length
+                    ? selectedWikiDetail.backlinks.map((link) => link.target_title).join(" / ")
+                    : "当前页面暂无反向链接"}
+                </div>
+                <div className="wiki-maintenance">
                   <strong>页面维护动作</strong>
                   <span>编辑正文会生成新版本；重命名会刷新页面关系；删除采用软删除并保留日志。</span>
                 </div>
@@ -639,11 +653,19 @@ export function App() {
               <button onClick={rebuildWikiLinks} disabled={isBusy || !workspace}>重建链接</button>
               <button onClick={autoFixWiki} disabled={isBusy || !workspace}>Auto Fix</button>
             </div>
-            {wikiHome.links.length === 0 && <p className="empty-state">暂无页面链接。</p>}
-            {wikiHome.links.map((link, index) => (
+            {selectedWikiDetail?.outgoing_links?.length === 0 && selectedWikiDetail?.backlinks?.length === 0 && (
+              <p className="empty-state">当前页面暂无直接关系。</p>
+            )}
+            {selectedWikiDetail?.outgoing_links?.map((link, index) => (
               <div className="link-card" key={`${link.source_item_id}-${link.target_title}-${index}`}>
                 <strong>{link.target_title}</strong>
-                <span>{link.relation_type} · {link.relation_status} · {link.mention_count} 次提及</span>
+                <span>出链 · {link.relation_type} · {link.relation_status} · {link.mention_count} 次提及</span>
+              </div>
+            ))}
+            {selectedWikiDetail?.backlinks?.map((link, index) => (
+              <div className="link-card" key={`backlink-${link.source_item_id}-${link.target_title}-${index}`}>
+                <strong>{link.target_title}</strong>
+                <span>反链 · {link.relation_type} · {link.relation_status} · {link.mention_count} 次提及</span>
               </div>
             ))}
             <p className="section-label">Wiki Graph</p>
