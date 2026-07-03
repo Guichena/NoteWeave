@@ -52,12 +52,15 @@ public class RetrievalService {
     public List<CandidateSource> findCandidateSourcesForNote(String workspaceId, String query) {
         List<CandidateSource> candidates = jdbcTemplate.query("""
                 select s.id, s.title, s.source_type, s.updated_at,
+                       coalesce(s.summary, '') as summary,
+                       coalesce(s.tags_json, '[]') as tags_json,
+                       coalesce(s.metadata_json, '{}') as metadata_json,
                        count(c.id) as chunk_count,
-                       min(c.content) as sample_text
+                       coalesce(min(c.content), '') as sample_text
                 from source s
                 left join source_chunk c on c.source_id = s.id
                 where s.workspace_id = ? and s.status = 'READY'
-                group by s.id, s.title, s.source_type, s.updated_at
+                group by s.id, s.title, s.source_type, s.updated_at, s.summary, s.tags_json, s.metadata_json
                 order by s.updated_at desc
                 limit 40
                 """, (rs, rowNum) -> new CandidateSource(
@@ -65,12 +68,15 @@ public class RetrievalService {
                 rs.getString("title"),
                 rs.getString("source_type"),
                 rs.getInt("chunk_count"),
+                rs.getString("summary"),
+                rs.getString("tags_json"),
+                rs.getString("metadata_json"),
                 rs.getString("sample_text"),
                 0
         ), workspaceId);
         Set<String> terms = extractTerms(query);
         List<CandidateSource> scored = candidates.stream()
-                .map(source -> source.withScore(score(source.title() + "\n" + source.sampleText(), terms)))
+                .map(source -> source.withScore(score(source.metadataForScoring(), terms)))
                 .filter(source -> source.score() > 0 || terms.isEmpty())
                 .sorted(Comparator.comparingInt(CandidateSource::score).reversed())
                 .limit(4)
@@ -127,7 +133,7 @@ public class RetrievalService {
         if (terms.isEmpty()) {
             return 1;
         }
-        String lower = content.toLowerCase(Locale.ROOT);
+        String lower = content == null ? "" : content.toLowerCase(Locale.ROOT);
         int score = 0;
         for (String term : terms) {
             if (lower.contains(term)) {
@@ -157,11 +163,18 @@ public class RetrievalService {
             String title,
             String sourceType,
             int chunkCount,
+            String summary,
+            String tagsJson,
+            String metadataJson,
             String sampleText,
             int score
     ) {
         CandidateSource withScore(int nextScore) {
-            return new CandidateSource(sourceId, title, sourceType, chunkCount, sampleText, nextScore);
+            return new CandidateSource(sourceId, title, sourceType, chunkCount, summary, tagsJson, metadataJson, sampleText, nextScore);
+        }
+
+        String metadataForScoring() {
+            return String.join("\n", title, sourceType, summary, tagsJson, metadataJson, sampleText);
         }
     }
 

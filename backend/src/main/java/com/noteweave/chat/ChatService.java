@@ -1,8 +1,8 @@
 package com.noteweave.chat;
 
-import com.noteweave.chat.RetrievalService.RetrievedChunk;
 import com.noteweave.chat.RetrievalService.CandidateSource;
 import com.noteweave.chat.RetrievalService.ReadingWindow;
+import com.noteweave.chat.RetrievalService.RetrievedChunk;
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
 import com.noteweave.knowledge.KnowledgeService;
@@ -97,18 +97,23 @@ public class ChatService {
         }
         StringBuilder builder = new StringBuilder();
         builder.append("## 直接回答\n");
-        builder.append("我先按 Note 链路把问题拆成可整理的资料笔记：").append(request.content()).append("\n\n");
-        builder.append("## 关键观点\n");
+        builder.append("我会按 Marginalia 式结构化阅读漏斗处理这个问题：先定位候选资料，再打开原文窗口，最后整理摘录卡片和结构化笔记。\n\n");
+        builder.append("问题：").append(request.content()).append("\n\n");
+        builder.append("## 候选资料\n");
+        for (CandidateSource candidate : candidates) {
+            builder.append("- 《").append(candidate.title()).append("》：")
+                    .append(candidate.sourceType()).append("，可读片段数 ").append(candidate.chunkCount())
+                    .append("，匹配分 ").append(candidate.score());
+            if (!candidate.summary().isBlank()) {
+                builder.append("，摘要：").append(trim(candidate.summary(), 120));
+            }
+            builder.append("\n");
+        }
+        builder.append("\n## 关键观点\n");
         for (int i = 0; i < windows.size(); i++) {
             ReadingWindow window = windows.get(i);
             builder.append("- 观点 ").append(i + 1).append("：来自《").append(window.title()).append("》的原文窗口，说明：")
                     .append(trim(window.content(), 140)).append("\n");
-        }
-        builder.append("\n## 候选资料\n");
-        for (CandidateSource candidate : candidates) {
-            builder.append("- 《").append(candidate.title()).append("》：")
-                    .append(candidate.sourceType()).append("，可读片段数 ").append(candidate.chunkCount())
-                    .append("，匹配分 ").append(candidate.score()).append("\n");
         }
         builder.append("\n## 摘录卡片\n");
         for (int i = 0; i < windows.size(); i++) {
@@ -133,19 +138,19 @@ public class ChatService {
             List<RetrievedChunk> fallbackEvidence = retrievalService.retrieveForQa(workspaceId, request.content());
             StringBuilder fallback = new StringBuilder();
             fallback.append("## 基于 Wiki 的回答\n");
-            fallback.append("当前默认 Wiki 工作台还没有可直接命中的页面，因此本次先回退到工作台资料补充回答。\n\n");
+            fallback.append("当前默认 Wiki 工作台还没有可直接命中的页面，因此本次先回到工作台资料补充回答。\n\n");
             fallback.append("## 来源补充\n");
             for (RetrievedChunk chunk : fallbackEvidence) {
                 fallback.append("- ").append(chunk.title()).append("：").append(trim(chunk.content(), 180)).append("\n");
             }
-            fallback.append("\n## 可选操作\n");
-            fallback.append("进入 Wiki 工作台：/workspaces/").append(workspaceId).append("/wiki\n");
+            fallback.append("\n## 默认 Wiki 工作台\n");
+            fallback.append("/workspaces/").append(workspaceId).append("/wiki\n");
             fallback.append("可以把稳定内容整理成正式 Wiki 页面，后续 Wiki 模式会优先读取它。");
             return new AnswerDraft(fallback.toString(), fallbackEvidence, List.of());
         }
         StringBuilder builder = new StringBuilder();
         builder.append("## 基于 Wiki 的回答\n");
-        builder.append("我优先读取了当前工作台已经沉淀的 Wiki 页面，并基于页面网络给出回答。\n\n");
+        builder.append("我优先读取当前工作台已经沉淀的 Wiki 页面，并基于页面链接、索引和来源回链给出回答。\n\n");
         builder.append("## 相关 Wiki 页面\n");
         for (KnowledgePageHit page : pages) {
             builder.append("- 《").append(page.title()).append("》v").append(page.versionNo())

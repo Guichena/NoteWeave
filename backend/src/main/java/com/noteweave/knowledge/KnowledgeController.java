@@ -42,6 +42,14 @@ public class KnowledgeController {
         return ApiResponse.success(knowledgeService.getWikiHome(workspaceId));
     }
 
+    @PostMapping("/knowledge-items/{itemId}/versions")
+    ApiResponse<KnowledgeItemResponse> appendVersion(
+            @PathVariable String itemId,
+            @Valid @RequestBody AppendKnowledgeVersionRequest request
+    ) {
+        return ApiResponse.success(knowledgeService.appendVersion(itemId, request));
+    }
+
     @PostMapping("/messages/{messageId}/save-as-note")
     ApiResponse<KnowledgeItemResponse> saveAsNote(
             @PathVariable String messageId,

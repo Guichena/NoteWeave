@@ -31,14 +31,7 @@ public class KnowledgeService {
         if (!workspaceService.exists(workspaceId)) {
             throw new BusinessException("WORKSPACE_NOT_FOUND", "工作台不存在");
         }
-        List<String> citationIds = List.of();
-        if (request.sourceMessageId() != null && !request.sourceMessageId().isBlank()) {
-            MessageSnapshot message = loadAssistantMessage(request.sourceMessageId());
-            if (!workspaceId.equals(message.workspaceId())) {
-                throw new BusinessException("MESSAGE_WORKSPACE_MISMATCH", "消息不属于当前工作台");
-            }
-            citationIds = citationIdsForMessage(request.sourceMessageId());
-        }
+        List<String> citationIds = citationIdsFromRequest(workspaceId, request.sourceMessageId(), List.of());
         return createItemWithVersion(workspaceId, request.itemType(), request.title(), request.content(), request.sourceMessageId(), citationIds);
     }
 
@@ -47,6 +40,48 @@ public class KnowledgeService {
         MessageSnapshot message = loadAssistantMessage(messageId);
         List<String> citationIds = citationIdsForMessage(messageId);
         return createItemWithVersion(message.workspaceId(), "NOTE", request.title(), message.content(), messageId, citationIds);
+    }
+
+    @Transactional
+    public KnowledgeItemResponse appendVersion(String itemId, AppendKnowledgeVersionRequest request) {
+        KnowledgeItemRef item = loadKnowledgeItem(itemId);
+        String content = request.content() == null ? "" : request.content().trim();
+        if (content.isBlank()) {
+            throw new BusinessException("KNOWLEDGE_CONTENT_REQUIRED", "知识版本内容不能为空");
+        }
+        List<String> citationIds = citationIdsFromRequest(item.workspaceId(), request.sourceMessageId(), request.citationIds());
+        Integer currentVersion = jdbcTemplate.queryForObject("""
+                select coalesce(max(version_no), 0) from knowledge_version where item_id = ?
+                """, Integer.class, itemId);
+        int nextVersionNo = (currentVersion == null ? 0 : currentVersion) + 1;
+        String versionId = Ids.newId();
+        String summary = summarize(content);
+        jdbcTemplate.update("""
+                insert into knowledge_version(id, item_id, version_no, content, summary, source_message_id)
+                values (?, ?, ?, ?, ?, ?)
+                """, versionId, itemId, nextVersionNo, content, summary, request.sourceMessageId());
+        bindVersionCitations(versionId, citationIds);
+        jdbcTemplate.update("""
+                update knowledge_item
+                set latest_version_id = ?, updated_at = current_timestamp
+                where id = ?
+                """, versionId, itemId);
+        if ("WIKI".equals(item.itemType())) {
+            jdbcTemplate.update("delete from knowledge_item_link where source_item_id = ?", itemId);
+            upsertWikiLinks(item.workspaceId(), itemId, item.title(), content);
+        }
+        return new KnowledgeItemResponse(itemId, item.itemType(), item.title(), "ACTIVE", versionId, nextVersionNo, summary, Instant.now());
+    }
+
+    private List<String> citationIdsFromRequest(String workspaceId, String sourceMessageId, List<String> directCitationIds) {
+        if (sourceMessageId != null && !sourceMessageId.isBlank()) {
+            MessageSnapshot message = loadAssistantMessage(sourceMessageId);
+            if (!workspaceId.equals(message.workspaceId())) {
+                throw new BusinessException("MESSAGE_WORKSPACE_MISMATCH", "消息不属于当前工作台");
+            }
+            return citationIdsForMessage(sourceMessageId);
+        }
+        return directCitationIds == null ? List.of() : directCitationIds;
     }
 
     private List<String> citationIdsForMessage(String messageId) {
@@ -123,7 +158,7 @@ public class KnowledgeService {
         ), workspaceId);
         Set<String> terms = extractTerms(query);
         List<KnowledgePageHit> scored = pages.stream()
-                .map(page -> page.withScore(score(page.title() + "\n" + page.content(), terms)))
+                .map(page -> page.withScore(score(page.title() + "\n" + page.summary() + "\n" + page.content(), terms)))
                 .filter(page -> page.score() > 0 || terms.isEmpty())
                 .sorted(Comparator.comparingInt(KnowledgePageHit::score).reversed())
                 .limit(5)
@@ -154,12 +189,7 @@ public class KnowledgeService {
                 insert into knowledge_version(id, item_id, version_no, content, summary, source_message_id)
                 values (?, ?, 1, ?, ?, ?)
                 """, versionId, itemId, content, summary, sourceMessageId);
-        for (int i = 0; i < citationIds.size(); i++) {
-            jdbcTemplate.update("""
-                    insert into knowledge_version_citation(id, knowledge_version_id, citation_id, sort_order)
-                    values (?, ?, ?, ?)
-                    """, Ids.newId(), versionId, citationIds.get(i), i);
-        }
+        bindVersionCitations(versionId, citationIds);
         if ("WIKI".equals(itemType)) {
             upsertWikiLinks(workspaceId, itemId, title, content);
         }
@@ -177,6 +207,15 @@ public class KnowledgeService {
                 where knowledge_version_id in (%s)
                 order by sort_order asc
                 """.formatted(placeholders), String.class, versionIds.toArray());
+    }
+
+    private void bindVersionCitations(String versionId, List<String> citationIds) {
+        for (int i = 0; i < citationIds.size(); i++) {
+            jdbcTemplate.update("""
+                    insert into knowledge_version_citation(id, knowledge_version_id, citation_id, sort_order)
+                    values (?, ?, ?, ?)
+                    """, Ids.newId(), versionId, citationIds.get(i), i);
+        }
     }
 
     private void upsertWikiLinks(String workspaceId, String sourceItemId, String sourceTitle, String content) {
@@ -218,6 +257,25 @@ public class KnowledgeService {
         return ids.isEmpty() ? null : ids.get(0);
     }
 
+    private KnowledgeItemRef loadKnowledgeItem(String itemId) {
+        return jdbcTemplate.query("""
+                select id, workspace_id, item_type, title, status from knowledge_item where id = ?
+                """, rs -> {
+            if (!rs.next()) {
+                throw new BusinessException("KNOWLEDGE_ITEM_NOT_FOUND", "知识对象不存在");
+            }
+            if (!"ACTIVE".equals(rs.getString("status"))) {
+                throw new BusinessException("KNOWLEDGE_ITEM_INACTIVE", "知识对象不可更新");
+            }
+            return new KnowledgeItemRef(
+                    rs.getString("id"),
+                    rs.getString("workspace_id"),
+                    rs.getString("item_type"),
+                    rs.getString("title")
+            );
+        }, itemId);
+    }
+
     private String defaultPageKind(String itemType) {
         return "WIKI".equals(itemType) ? "TOPIC" : null;
     }
@@ -255,7 +313,7 @@ public class KnowledgeService {
         if (terms.isEmpty()) {
             return 1;
         }
-        String lower = content.toLowerCase(Locale.ROOT);
+        String lower = content == null ? "" : content.toLowerCase(Locale.ROOT);
         int score = 0;
         for (String term : terms) {
             if (lower.contains(term)) {
@@ -278,6 +336,9 @@ public class KnowledgeService {
     }
 
     private record MessageSnapshot(String messageId, String workspaceId, String content) {
+    }
+
+    private record KnowledgeItemRef(String itemId, String workspaceId, String itemType, String title) {
     }
 
     public record KnowledgePageHit(
