@@ -54,6 +54,7 @@ class Phase3NoteWikiContractTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("Marginalia 式结构化检索漏斗")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 候选资料")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 关系扩展")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 验证批次")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 摘录证据")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chat.citation")));
 
@@ -140,6 +141,7 @@ class Phase3NoteWikiContractTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("anchor-research.md")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("companion.md")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("relation-expansion")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("verify_batch_sources")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 摘录证据")));
     }
 

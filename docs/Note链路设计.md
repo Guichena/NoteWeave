@@ -30,6 +30,7 @@ Note 链路学习的是 Marginalia 的检索漏斗：
 metadata / folder / catalog / tag / journal / relation
   -> candidate entries
   -> candidate triage
+  -> verify batch
   -> source windows
   -> evidence excerpts
   -> cited answer
@@ -42,6 +43,7 @@ metadata / folder / catalog / tag / journal / relation
 资料标题 / 摘要 / 标签 / 文件夹 / 文档类型 / 历史笔记 / 关系信号
   -> 候选资料
   -> 候选资料排序
+  -> 验证批次
   -> 原文窗口
   -> 摘录卡片
   -> 带引用回答
@@ -56,7 +58,8 @@ metadata / folder / catalog / tag / journal / relation
 search_journal
   -> search_metadata
   -> relation_hint_expand
-  -> read_entries_metadata
+  -> candidate_triage
+  -> build_verify_batch
   -> read_source_windows
   -> evidence_excerpt_cards
 ```
@@ -151,6 +154,7 @@ Note 模式的回答建议保留以下结构：
 Journal 信号
 候选资料
 关系扩展
+验证批次
 原文窗口
 摘录证据
 可选结构化笔记
@@ -173,7 +177,43 @@ Journal 信号
 - 标签或类型
 - 可读片段数量
 
-### 5.3 原文窗口
+### 5.3 关系扩展
+
+关系扩展不是直接把更多 chunk 塞给模型，而是把与主候选资料相关、但还没有进入主候选集合的资料显式列出来。
+
+当前实现里，关系扩展主要来自：
+
+- 标签重叠
+- 历史 Note 共同引用
+- 与 anchor 资料的主题相邻性
+
+这些资料会进入扩展候选，用于后续验证批次，而不是直接替代主候选资料。
+
+### 5.4 验证批次
+
+验证批次是当前实现里非常关键的一层，用来把“候选资料”和“关系扩展资料”收束成真正要打开原文窗口的一小批可验证对象。
+
+默认结构包括：
+
+- `candidate_sources`
+  当前轮主候选资料数量
+
+- `relation_expansion_sources`
+  当前轮关系扩展资料数量
+
+- `verify_batch_sources`
+  最终进入原文窗口读取的资料数量
+
+- `trace`
+  本轮 metadata、journal、relation 三类信号的累计得分
+
+这一步的价值是：
+
+- 避免 Note 链路退化成“全库 chunk top-k”
+- 让回答前真正完成一次资料级 triage
+- 让前端和测试能看到这轮回答到底验证了哪些资料
+
+### 5.5 原文窗口
 
 原文窗口是 Note 链路区别于普通 RAG 的关键。
 
@@ -185,7 +225,7 @@ Journal 信号
 - 表格行列范围
 - 音视频转写时间段
 
-### 5.4 摘录证据
+### 5.6 摘录证据
 
 摘录证据用于支撑回答中的关键结论。
 
@@ -197,7 +237,7 @@ Journal 信号
 - 相关原因
 - 是否存在待确认或冲突
 
-### 5.5 可选结构化笔记
+### 5.7 可选结构化笔记
 
 当用户点击保存或需要整理时，系统可以把本次回答沉淀为结构化笔记。
 
@@ -228,8 +268,9 @@ Journal 信号
   -> search_journal：从已保存 Note 和 citation 回链读取历史整理信号
   -> search_metadata：基于标题、摘要、标签、结构化元数据召回候选资料
   -> relation_hint_expand：用标签重叠、历史共同引用和窗口可读性补充关系信号
-  -> 对候选资料做 triage
-  -> 打开按问题相关性重排后的原文窗口
+  -> candidate_triage：按 journal / metadata / relation 配额选出主候选资料
+  -> build_verify_batch：把主候选和关系扩展收束为验证批次
+  -> 打开验证批次中的原文窗口
   -> 抽取摘录卡片
   -> 基于证据和引用生成回答
   -> 用户可选保存为结构化笔记
@@ -241,6 +282,8 @@ Journal 信号
 Workspace
   -> Source
   -> SourceMetadata
+  -> NoteRecallPlan
+  -> NoteRecallTrace
   -> SourceWindow
   -> NoteJournalSignal
   -> ExcerptCard
@@ -251,6 +294,8 @@ Workspace
 其中：
 
 - `SourceMetadata` 承载标题、摘要、标签、文件夹、类型等候选定位信号
+- `NoteRecallPlan` 承载 journal hits、candidate sources、relation expansion sources 和 verify batch
+- `NoteRecallTrace` 承载本轮召回中 metadata / journal / relation 三类信号的汇总轨迹
 - `SourceWindow` 表示可回跳原文窗口
 - `NoteJournalSignal` 来自已保存 Note 及其 citation 回链，用于提示“哪些资料被历史整理过”
 - `ExcerptCard` 表示摘录证据
@@ -264,6 +309,7 @@ Note 链路落地范围：
 资料级候选定位
   -> 历史 Note / Journal 信号召回
   -> 关系信号扩展
+  -> 验证批次构建
   -> 原文窗口读取
   -> 窗口相关性重排
   -> 摘录证据
@@ -281,4 +327,4 @@ Note 链路不单独拆成另一个产品页面，它始终服务聊天框回答
 
 ## 9. 最终口径
 
-`Note 链路的核心不是生成笔记，而是采用 Marginalia 式结构化检索漏斗回答问题。它先通过 search_journal、search_metadata 和 relation_hint_expand 定位候选资料，再打开按问题相关性重排的原文窗口，抽取摘录卡片并生成带引用回答；结构化笔记只是用户确认后的附加沉淀能力。`
+`Note 链路的核心不是生成笔记，而是采用 Marginalia 式结构化检索漏斗回答问题。它先通过 search_journal、search_metadata 和 relation_hint_expand 定位候选资料，再通过 candidate triage 和 verify batch 收束真正要验证的资料窗口，最后抽取摘录卡片并生成带引用回答；结构化笔记只是用户确认后的附加沉淀能力。`

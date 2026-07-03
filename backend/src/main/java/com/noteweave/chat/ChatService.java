@@ -2,6 +2,7 @@ package com.noteweave.chat;
 
 import com.noteweave.chat.RetrievalService.CandidateSource;
 import com.noteweave.chat.RetrievalService.NoteJournalHit;
+import com.noteweave.chat.RetrievalService.NoteRecallPlan;
 import com.noteweave.chat.RetrievalService.ReadingWindow;
 import com.noteweave.chat.RetrievalService.RetrievedChunk;
 import com.noteweave.common.BusinessException;
@@ -120,9 +121,12 @@ public class ChatService {
     }
 
     private AnswerDraft buildNoteAnswer(String workspaceId, SendMessageRequest request) {
-        List<CandidateSource> candidates = retrievalService.findCandidateSourcesForNote(workspaceId, request.content());
-        List<NoteJournalHit> journalHits = retrievalService.findNoteJournalHits(workspaceId, request.content());
-        List<ReadingWindow> windows = retrievalService.openSourceWindowsForNote(workspaceId, candidates, request.content());
+        NoteRecallPlan recallPlan = retrievalService.findNoteRecallPlan(workspaceId, request.content());
+        List<CandidateSource> candidates = recallPlan.candidateSources();
+        List<NoteJournalHit> journalHits = recallPlan.journalHits();
+        List<CandidateSource> relationExpansionSources = recallPlan.relationExpansionSources();
+        List<CandidateSource> verifySources = recallPlan.verifySources();
+        List<ReadingWindow> windows = retrievalService.openSourceWindowsForNote(workspaceId, verifySources, request.content());
         List<RetrievedChunk> evidence = windows.stream().map(ReadingWindow::toRetrievedChunk).toList();
         if (candidates.isEmpty() || windows.isEmpty()) {
             return new AnswerDraft("当前工作台资料不足，暂时无法通过 Marginalia 式资料级检索形成可靠回答。请先上传或保存更多资料。", List.of(), List.of());
@@ -153,7 +157,31 @@ public class ChatService {
             builder.append("\n");
         }
         builder.append("\n## 关系扩展\n");
-        builder.append("系统会把命中资料的标题、摘要、标签、历史 Note 引用和资料窗口可读性作为轻量关系信号；当前回答优先打开这些候选资料的原文窗口，而不是直接读取全库 chunk top-k。\n\n");
+        if (relationExpansionSources.isEmpty()) {
+            builder.append("本轮没有新增关系扩展资料，系统直接进入原文验证批次。\n\n");
+        } else {
+            builder.append("系统会把命中资料的标题、摘要、标签、历史 Note 引用和资料窗口可读性作为轻量关系信号，并把相邻资料加入扩展候选：\n");
+            for (CandidateSource candidate : relationExpansionSources) {
+                builder.append("- 《").append(candidate.title()).append("》：")
+                        .append(candidate.sourceType())
+                        .append("，召回信号：").append(candidate.recallSignals())
+                        .append("，匹配分 ").append(candidate.score()).append("\n");
+            }
+            builder.append("\n");
+        }
+        builder.append("## 验证批次\n");
+        builder.append("- candidate_sources: ").append(candidates.size()).append("\n");
+        builder.append("- relation_expansion_sources: ").append(relationExpansionSources.size()).append("\n");
+        builder.append("- verify_batch_sources: ").append(verifySources.size()).append("\n");
+        builder.append("- trace: metadata=").append(recallPlan.trace().metadataScoreSum())
+                .append(", journal=").append(recallPlan.trace().noteScoreSum())
+                .append(", relation=").append(recallPlan.trace().relationScoreSum()).append("\n");
+        for (CandidateSource candidate : verifySources) {
+            builder.append("- verify《").append(candidate.title()).append("》：")
+                    .append(candidate.sourceType())
+                    .append("，召回信号：").append(candidate.recallSignals()).append("\n");
+        }
+        builder.append("\n");
         builder.append("## 关键观点\n");
         for (int i = 0; i < windows.size(); i++) {
             ReadingWindow window = windows.get(i);

@@ -89,6 +89,7 @@ Note 链路参考 `shenmintao/marginalia`，不直接把 chunk top-k 当作答�
   -> 历史 Note / Journal 信号
   -> 关系信号扩展（标签重叠 + 历史 Note 共同引用）
   -> 候选资料
+  -> 验证批次
   -> 原文窗口相关性重排
   -> 摘录卡片
   -> 带引用回答
@@ -97,11 +98,12 @@ Note 链路参考 `shenmintao/marginalia`，不直接把 chunk top-k 当作答�
 
 ### 推荐类与函数
 
-1. `RetrievalService.findCandidateSourcesForNote(workspaceId, query)`
-2. `RetrievalService.findNoteJournalHits(workspaceId, query)`
-3. `RetrievalService.openSourceWindowsForNote(workspaceId, candidates, query)`
-4. `ChatService.buildNoteAnswer(workspaceId, request)`
-5. `KnowledgeService.saveMessageAsNote(messageId, request)`
+1. `RetrievalService.findNoteRecallPlan(workspaceId, query)`
+2. `RetrievalService.findCandidateSourcesForNote(workspaceId, query)`
+3. `RetrievalService.findNoteJournalHits(workspaceId, query)`
+4. `RetrievalService.openSourceWindowsForNote(workspaceId, candidates, query)`
+5. `ChatService.buildNoteAnswer(workspaceId, request)`
+6. `KnowledgeService.saveMessageAsNote(messageId, request)`
 
 ### 中间件接入
 
@@ -128,14 +130,15 @@ Elasticsearch 后续替换点：
 先写测试：
 
 1. Note 模式回答包含候选资料。
-2. Note 模式回答包含 Journal 信号、关系扩展、原文窗口和摘录卡片。
+2. Note 模式回答包含 Journal 信号、关系扩展、验证批次、原文窗口和摘录卡片。
 3. 上传资料解析后写入摘要、标签和结构化元数据。
 4. 保存为 Note 后保留引用关系。
 5. 保存过 Note 后，再次 Note 提问可以利用历史 Note 作为 journal 信号。
+6. Note 模式回答能够显式输出 `candidate_sources / relation_expansion_sources / verify_batch_sources`。
 
 ### 完成定义
 
-1. Note 模式不是 QA 换皮，而是能体现 journal 信号、候选资料、关系扩展、原文窗口、摘录证据和带引用回答。
+1. Note 模式不是 QA 换皮，而是能体现 journal 信号、候选资料、关系扩展、验证批次、原文窗口、摘录证据和带引用回答。
 2. Note 必须能回答问题，结构化笔记只是用户确认后的可选保存能力。
 
 ## 5. 子阶段 3.3：Wiki 链路

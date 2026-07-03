@@ -85,8 +85,13 @@ public class RetrievalService {
     }
 
     public List<CandidateSource> findCandidateSourcesForNote(String workspaceId, String query) {
+        return findNoteRecallPlan(workspaceId, query).candidateSources();
+    }
+
+    public NoteRecallPlan findNoteRecallPlan(String workspaceId, String query) {
         Set<String> terms = extractTerms(query);
         Map<String, Integer> noteSignals = noteJournalSignals(workspaceId, terms);
+        List<NoteJournalHit> journalHits = findNoteJournalHits(workspaceId, query);
         List<CandidateSource> candidates = jdbcTemplate.query("""
                 select s.id, s.title, s.source_type, s.updated_at,
                        coalesce(s.summary, '') as summary,
@@ -124,22 +129,116 @@ public class RetrievalService {
                 .limit(8)
                 .forEach(source -> anchorSourceIds.add(source.sourceId()));
         Map<String, Integer> relationSignals = relationSignalsForNote(workspaceId, candidates, anchorSourceIds);
-        List<CandidateSource> scored = candidates.stream()
+        List<ScoredCandidateSource> scored = candidates.stream()
                 .map(source -> {
                     int metadataScore = metadataScores.getOrDefault(source.sourceId(), 0);
                     int noteScore = noteSignals.getOrDefault(source.sourceId(), 0) * 5;
                     int relationScore = relationSignals.getOrDefault(source.sourceId(), 0);
-                    return source.withScore(metadataScore + noteScore + relationScore)
+                    CandidateSource scoredSource = source.withScore(metadataScore + noteScore + relationScore)
                             .withRecallSignals(recallSignals(source, metadataScore, noteScore, relationScore));
+                    return new ScoredCandidateSource(scoredSource, metadataScore, noteScore, relationScore);
                 })
                 .filter(source -> source.score() > 0 || terms.isEmpty())
-                .sorted(Comparator.comparingInt(CandidateSource::score).reversed())
-                .limit(4)
+                .sorted(Comparator.comparingInt(ScoredCandidateSource::score).reversed())
                 .toList();
-        if (!scored.isEmpty()) {
-            return scored;
+        if (scored.isEmpty()) {
+            List<CandidateSource> fallback = candidates.stream().limit(4).toList();
+            return new NoteRecallPlan(journalHits, fallback, List.of(), fallback, new NoteRecallTrace(
+                    journalHits.size(), fallback.size(), 0, fallback.size(), 0, 0, 0
+            ));
         }
-        return candidates.stream().limit(4).toList();
+        List<ScoredCandidateSource> candidateSources = selectCandidateSources(scored, 4);
+        Set<String> selectedIds = new LinkedHashSet<>(candidateSources.stream().map(ScoredCandidateSource::sourceId).toList());
+        List<ScoredCandidateSource> relationExpansion = scored.stream()
+                .filter(source -> !selectedIds.contains(source.sourceId()) && source.relationScore() > 0)
+                .sorted(Comparator.comparingInt(ScoredCandidateSource::relationScore).reversed()
+                        .thenComparing(Comparator.comparingInt(ScoredCandidateSource::score).reversed()))
+                .limit(3)
+                .toList();
+        List<CandidateSource> verifySources = buildVerifyBatch(candidateSources, relationExpansion, 6);
+        return new NoteRecallPlan(
+                journalHits,
+                candidateSources.stream().map(ScoredCandidateSource::source).toList(),
+                relationExpansion.stream().map(ScoredCandidateSource::source).toList(),
+                verifySources,
+                new NoteRecallTrace(
+                        journalHits.size(),
+                        candidateSources.size(),
+                        relationExpansion.size(),
+                        verifySources.size(),
+                        candidateSources.stream().mapToInt(ScoredCandidateSource::metadataScore).sum(),
+                        candidateSources.stream().mapToInt(ScoredCandidateSource::noteScore).sum(),
+                        candidateSources.stream().mapToInt(ScoredCandidateSource::relationScore).sum()
+                )
+        );
+    }
+
+    private List<ScoredCandidateSource> selectCandidateSources(List<ScoredCandidateSource> scored, int limit) {
+        if (scored.isEmpty()) {
+            return List.of();
+        }
+        List<ScoredCandidateSource> selected = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        takeByQuota(selected, seen, scored, limit, source -> source.noteScore() > 0, 1);
+        takeByQuota(selected, seen, scored, limit, source -> source.metadataScore() > 0, 2);
+        takeByQuota(selected, seen, scored, limit, source -> source.relationScore() > 0, 1);
+        for (ScoredCandidateSource source : scored) {
+            if (selected.size() >= limit) {
+                break;
+            }
+            if (seen.add(source.sourceId())) {
+                selected.add(source);
+            }
+        }
+        return selected;
+    }
+
+    private void takeByQuota(
+            List<ScoredCandidateSource> selected,
+            Set<String> seen,
+            List<ScoredCandidateSource> scored,
+            int limit,
+            java.util.function.Predicate<ScoredCandidateSource> predicate,
+            int quota
+    ) {
+        int taken = 0;
+        for (ScoredCandidateSource source : scored) {
+            if (selected.size() >= limit || taken >= quota) {
+                return;
+            }
+            if (seen.contains(source.sourceId()) || !predicate.test(source)) {
+                continue;
+            }
+            seen.add(source.sourceId());
+            selected.add(source);
+            taken++;
+        }
+    }
+
+    private List<CandidateSource> buildVerifyBatch(
+            List<ScoredCandidateSource> candidates,
+            List<ScoredCandidateSource> expansions,
+            int limit
+    ) {
+        List<CandidateSource> verify = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (ScoredCandidateSource source : candidates) {
+            if (verify.size() >= limit) {
+                break;
+            }
+            if (seen.add(source.sourceId())) {
+                verify.add(source.source());
+            }
+        }
+        for (ScoredCandidateSource source : expansions) {
+            if (verify.size() >= limit) {
+                break;
+            }
+            if (seen.add(source.sourceId())) {
+                verify.add(source.source());
+            }
+        }
+        return verify;
     }
 
     public List<ReadingWindow> openSourceWindowsForNote(String workspaceId, List<CandidateSource> sources, String query) {
@@ -464,5 +563,35 @@ public class RetrievalService {
     }
 
     private record NoteCitationPair(String noteId, String sourceId) {
+    }
+
+    private record ScoredCandidateSource(CandidateSource source, int metadataScore, int noteScore, int relationScore) {
+        int score() {
+            return source.score();
+        }
+
+        String sourceId() {
+            return source.sourceId();
+        }
+    }
+
+    public record NoteRecallPlan(
+            List<NoteJournalHit> journalHits,
+            List<CandidateSource> candidateSources,
+            List<CandidateSource> relationExpansionSources,
+            List<CandidateSource> verifySources,
+            NoteRecallTrace trace
+    ) {
+    }
+
+    public record NoteRecallTrace(
+            int journalHitCount,
+            int candidateCount,
+            int relationExpansionCount,
+            int verifyBatchCount,
+            int metadataScoreSum,
+            int noteScoreSum,
+            int relationScoreSum
+    ) {
     }
 }
