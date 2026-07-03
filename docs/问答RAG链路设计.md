@@ -134,6 +134,20 @@ Citation 至少应能回到：
 6. `Citation-grounded Answer`
    生成简洁回答，并把事实结论绑定到 Citation。
 
+当前 Java 原型已经落地其中的轻量等价实现：
+
+```text
+Query Understanding
+  -> workspace-bounded source_chunk recall
+  -> title / source_type / metadata structured scoring
+  -> chunk keyword scoring
+  -> source diversity selection
+  -> evidence packing with match_reason
+  -> Citation-grounded SSE answer
+```
+
+向量召回和 Elasticsearch 是同一接口下的替换实现，不改变问答 RAG 的链路口径。
+
 ## 5. 检索对象
 
 问答 RAG 链路的检索对象以工作台资料池为主，不直接依赖其他链路内部对象：
@@ -262,6 +276,20 @@ Citation 至少应能回到：
 - 结构化对象提高可解释性
 - 系统生成内容只有在被用户明确保存为资料后，才作为普通资料参与召回
 
+当前 MySQL 原型使用轻量合并策略：
+
+- `chunk-keyword`
+  正文片段命中用户问题词。
+
+- `metadata-filter`
+  资料标题、类型、摘要、标签或结构化元数据命中用户问题词。
+
+- `source-diversity`
+  证据选择阶段优先覆盖不同资料来源，特别是比较类问题。
+
+- `workspace-recent`
+  问题词为空或无直接命中时，按工作台内最近资料兜底。
+
 ## 9. Rerank 与证据选择
 
 ### 9.1 Rerank 输入
@@ -295,6 +323,18 @@ Rerank 阶段输入：
 - 对比类问题：保证每个被比较对象至少有 1-2 条证据
 - 来源查找类问题：宁可少答，也要保证引用准确
 
+当前实现的证据选择规则：
+
+```text
+候选 chunk 按 score 排序
+  -> 第一轮每个 source 至多选一条高分证据
+  -> 第二轮用剩余高分证据补足数量
+  -> 每条证据写入 match_reason
+  -> 生成 citation 和 message_citation
+```
+
+这样可以避免比较类问题被同一份资料的多个相邻片段垄断。
+
 ## 10. Context Packing
 
 模型输入不应塞入全部召回内容，而应压缩为结构化上下文：
@@ -327,6 +367,8 @@ Context Packing 规则：
 
 ```text
 直接回答
+
+证据选择
 
 关键依据
 - ...
@@ -550,26 +592,27 @@ ConversationController
 
 ## 17. 落地范围
 
-第一阶段建议实现：
+问答 RAG 链路落地范围：
 
 ```text
 工作台级过滤
   -> source chunk 关键词检索
-  -> source chunk 向量检索
-  -> 简单 RRF 合并
-  -> rerank 可选
+  -> source metadata 结构化评分
+  -> 轻量 RRF-style 合并
+  -> source diversity 证据选择
+  -> match_reason 可解释证据打包
   -> Citation 生成
   -> 带引用回答
   -> 保存为结构化笔记
 ```
 
-暂不做：
+当前工程边界：
 
-- 独立向量数据库
-- 全局跨工作台检索
-- 复杂 Claim Graph
-- 自动多轮研究
-- 自动改写 Wiki
+- 不引入独立向量数据库；ES 向量召回作为同接口替换实现。
+- 不做全局跨工作台检索。
+- 不把聊天历史当事实来源。
+- 不自动改写 Wiki。
+- 不把 QA 升级成 Deep Research；证据不足时提示切换 Note / Wiki / Deep Research。
 
 ## 18. 最终口径
 

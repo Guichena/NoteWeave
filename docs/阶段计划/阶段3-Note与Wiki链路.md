@@ -10,7 +10,7 @@
 
 这一阶段的关键不是再造一个泛化 Knowledge 系统，而是把三条有区分度的检索链路落清楚：
 
-- `QA` 采用工作台资料 chunk 的快速混合召回、rerank 和证据拼装。
+- `QA` 采用工作台资料 chunk 的快速召回、结构化元数据评分、来源多样性证据选择和 citation-grounded answer。
 - `NOTE` 参考 `shenmintao/marginalia`：采用结构化阅读检索漏斗，先定位候选资料，再打开原文窗口和摘录证据，最后生成带引用回答；结构化笔记只是可选沉淀。
 - `WIKI` 参考 `WebKonra / WeKnora`：采用全量 Wiki 检索，优先读取 Wiki Index、页面正文、页面链接、反向链接、图关系、版本和来源回链，并保留默认 Wiki 工作台入口。
 
@@ -235,8 +235,8 @@ Frontend：
 ### 完整实现要求
 
 1. 三个模式按钮：`问答 / Note / Wiki`
-2. Note 模式说明：候选资料、原文窗口、摘录证据、带引用回答、可选保存笔记
-3. Wiki 模式说明：全量 Wiki 检索、页面链接、反向链接、来源回链、默认 Wiki 工作台入口
+2. Note 模式说明：Journal 信号、候选资料、关系扩展、原文窗口、摘录证据、带引用回答、可选保存笔记
+3. Wiki 模式说明：全量 Wiki 检索、页面链接、图谱、反向链接、来源回链、默认 Wiki 工作台入口
 4. Wiki 工作台入口按钮：`/workspaces/{workspaceId}/wiki`
 5. 默认 Wiki 工作台视图：左侧 Wiki Index / 页面列表，中间页面正文与版本信息，右侧页面链接、统计、图谱、问题和日志
 6. Wiki 页面详情：点击页面后读取最新正文、版本号和 citation
@@ -254,4 +254,4 @@ Frontend：
 
 ## 9. 阶段口径
 
-`阶段3的目标是让聊天区真正具备三种有区分度的检索型回答链路：QA 负责快速证据问答，Note 参考 Marginalia 做资料级候选与原文窗口检索，Wiki 参考 WebKonra / WeKnora 做全量 Wiki 页面网络检索。`
+`阶段3的目标是让聊天区真正具备三种有区分度的检索型回答链路：QA 负责快速证据问答与来源覆盖，Note 参考 Marginalia 做 Journal 信号、资料级候选、关系扩展与原文窗口检索，Wiki 参考 WebKonra / WeKnora 做全量 Wiki 页面网络检索。`

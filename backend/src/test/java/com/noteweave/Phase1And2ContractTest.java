@@ -102,6 +102,9 @@ class Phase1And2ContractTest {
         mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", assistantRequestId))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 直接回答")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 证据选择")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("查询意图")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chat.citation")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chat.completed")));
 
@@ -109,6 +112,50 @@ class Phase1And2ContractTest {
         Integer messageCitationCount = jdbcTemplate.queryForObject("select count(*) from message_citation", Integer.class);
         assertThat(citationCount).isNotNull().isGreaterThan(0);
         assertThat(messageCitationCount).isNotNull().isGreaterThan(0);
+    }
+
+    @Test
+    void qaRagShouldSelectDiverseEvidenceAcrossWorkspaceSources() throws Exception {
+        String workspaceId = createWorkspace();
+        completeSingleChunkUpload(workspaceId, "rag-a.md", """
+                RAG 资料 A 说明检索增强生成需要先做工作台级资料召回，再把证据片段打包给模型。
+                它强调 citation-grounded answer，不能把聊天历史当事实来源。
+                """.getBytes(StandardCharsets.UTF_8));
+        completeSingleChunkUpload(workspaceId, "rag-b.md", """
+                RAG 资料 B 说明证据选择要覆盖不同来源，比较类问题应该避免只拿同一份资料的多个片段。
+                它强调 evidence rerank、source diversity 和 citation 回跳。
+                """.getBytes(StandardCharsets.UTF_8));
+        String conversationId = createConversation(workspaceId);
+
+        MvcResult messageResult = mockMvc.perform(post("/api/v2/conversations/{conversationId}/messages", conversationId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "content", "比较 RAG 的证据选择和 citation 要求",
+                                "answer_mode", "QA",
+                                "client_request_id", "qa-diverse"
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode message = objectMapper.readTree(messageResult.getResponse().getContentAsString());
+        String assistantRequestId = message.path("data").path("assistant_request_id").asText();
+        String assistantMessageId = message.path("data").path("assistant_message_id").asText();
+
+        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", assistantRequestId))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("查询意图：comparison")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("来源覆盖")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("RAG 资料 A")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("RAG 资料 B")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chat.citation")));
+
+        Integer distinctSourceCount = jdbcTemplate.queryForObject("""
+                select count(distinct c.source_id)
+                from message_citation mc
+                join citation c on c.id = mc.citation_id
+                where mc.message_id = ?
+                """, Integer.class, assistantMessageId);
+        assertThat(distinctSourceCount).isNotNull().isGreaterThanOrEqualTo(2);
     }
 
     @Test

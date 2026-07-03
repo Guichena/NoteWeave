@@ -168,7 +168,7 @@ Elasticsearch：
 
 ### 目标
 
-打通 `answer_mode = QA` 的统一聊天链路。
+打通 `answer_mode = QA` 的统一聊天链路，并完成结构化证据选择、来源覆盖和 citation-grounded answer。
 
 ### 优先迁移
 
@@ -195,6 +195,7 @@ Retrieval：
 2. `QueryRewriteService.rewriteQaQuery(query)`
 3. `ChunkRetriever.search(workspaceId, rewrittenQuery)`
 4. `EvidenceSelectionService.selectEvidence(candidates)`
+5. `EvidenceSelectionService.selectDiverseSources(candidates)`
 
 Citation：
 
@@ -242,6 +243,7 @@ Elasticsearch：
 2. 发送消息测试
 3. citation 落库测试
 4. SSE 输出测试
+5. 比较类问题来源覆盖测试
 
 再写：
 
@@ -255,6 +257,8 @@ Elasticsearch：
 1. 用户能在 QA 模式提问
 2. 系统返回答案与 citation
 3. `conversation_message` 与 `message_citation` 正常落库
+4. QA 回答包含直接回答、证据选择、关键依据、引用来源和可继续操作
+5. 比较类问题优先覆盖不同资料来源，避免同一资料片段垄断证据
 
 ## 7. 本阶段禁止项
 

@@ -22,7 +22,11 @@ public class RetrievalService {
 
     public List<RetrievedChunk> retrieveForQa(String workspaceId, String query) {
         List<RetrievedChunk> candidates = jdbcTemplate.query("""
-                select c.id, c.source_id, c.source_snapshot_id, c.chunk_no, c.content, c.location_info, s.title
+                select c.id, c.source_id, c.source_snapshot_id, c.chunk_no, c.heading, c.content, c.location_info,
+                       s.title, s.source_type,
+                       coalesce(s.summary, '') as summary,
+                       coalesce(s.tags_json, '[]') as tags_json,
+                       coalesce(s.metadata_json, '{}') as metadata_json
                 from source_chunk c
                 join source s on s.id = c.source_id
                 where c.workspace_id = ? and s.status = 'READY'
@@ -36,19 +40,48 @@ public class RetrievalService {
                 rs.getString("title"),
                 rs.getString("content"),
                 rs.getString("location_info"),
-                0
+                rs.getString("source_type"),
+                0,
+                ""
         ), workspaceId);
         Set<String> terms = extractTerms(query);
         List<RetrievedChunk> scored = candidates.stream()
-                .map(chunk -> chunk.withScore(score(chunk.content(), terms)))
+                .map(chunk -> {
+                    int contentScore = score(chunk.content(), terms) * 3;
+                    int metadataScore = score(chunk.title() + "\n" + chunk.sourceType(), terms) * 2;
+                    int totalScore = contentScore + metadataScore;
+                    return chunk.withScore(totalScore).withMatchReason(qaMatchReason(contentScore, metadataScore));
+                })
                 .filter(chunk -> chunk.score() > 0 || terms.isEmpty())
                 .sorted(Comparator.comparingInt(RetrievedChunk::score).reversed())
-                .limit(4)
                 .toList();
         if (!scored.isEmpty()) {
-            return scored;
+            return selectDiverseEvidence(scored, 6);
         }
-        return candidates.stream().limit(4).toList();
+        return selectDiverseEvidence(candidates, 6);
+    }
+
+    private List<RetrievedChunk> selectDiverseEvidence(List<RetrievedChunk> chunks, int limit) {
+        List<RetrievedChunk> selected = new ArrayList<>();
+        Set<String> seenSources = new LinkedHashSet<>();
+        for (RetrievedChunk chunk : chunks) {
+            if (selected.size() >= limit) {
+                return selected;
+            }
+            if (seenSources.add(chunk.sourceId())) {
+                selected.add(chunk.withMatchReason(appendReason(chunk.matchReason(), "source-diversity")));
+            }
+        }
+        for (RetrievedChunk chunk : chunks) {
+            if (selected.size() >= limit) {
+                break;
+            }
+            boolean exists = selected.stream().anyMatch(item -> item.chunkId().equals(chunk.chunkId()));
+            if (!exists) {
+                selected.add(chunk);
+            }
+        }
+        return selected;
     }
 
     public List<CandidateSource> findCandidateSourcesForNote(String workspaceId, String query) {
@@ -202,6 +235,30 @@ public class RetrievalService {
         return String.join(", ", signals);
     }
 
+    private String qaMatchReason(int contentScore, int metadataScore) {
+        List<String> reasons = new ArrayList<>();
+        if (contentScore > 0) {
+            reasons.add("chunk-keyword");
+        }
+        if (metadataScore > 0) {
+            reasons.add("metadata-filter");
+        }
+        if (reasons.isEmpty()) {
+            reasons.add("workspace-recent");
+        }
+        return String.join(", ", reasons);
+    }
+
+    private String appendReason(String current, String reason) {
+        if (current == null || current.isBlank()) {
+            return reason;
+        }
+        if (current.contains(reason)) {
+            return current;
+        }
+        return current + ", " + reason;
+    }
+
     private Set<String> extractTerms(String query) {
         String normalized = query == null ? "" : query.toLowerCase(Locale.ROOT);
         String[] parts = normalized.split("[^\\p{IsHan}a-zA-Z0-9]+");
@@ -239,10 +296,16 @@ public class RetrievalService {
             String title,
             String content,
             String locationInfo,
-            int score
+            String sourceType,
+            int score,
+            String matchReason
     ) {
         RetrievedChunk withScore(int nextScore) {
-            return new RetrievedChunk(chunkId, sourceId, sourceSnapshotId, chunkNo, title, content, locationInfo, nextScore);
+            return new RetrievedChunk(chunkId, sourceId, sourceSnapshotId, chunkNo, title, content, locationInfo, sourceType, nextScore, matchReason);
+        }
+
+        RetrievedChunk withMatchReason(String nextMatchReason) {
+            return new RetrievedChunk(chunkId, sourceId, sourceSnapshotId, chunkNo, title, content, locationInfo, sourceType, score, nextMatchReason);
         }
     }
 
@@ -286,7 +349,7 @@ public class RetrievalService {
         }
 
         RetrievedChunk toRetrievedChunk() {
-            return new RetrievedChunk(chunkId, sourceId, sourceSnapshotId, chunkNo, title, content, locationInfo, 1);
+            return new RetrievedChunk(chunkId, sourceId, sourceSnapshotId, chunkNo, title, content, locationInfo, "SOURCE", 1, "source-window");
         }
     }
 

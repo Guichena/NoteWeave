@@ -8,7 +8,9 @@ import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
 import com.noteweave.knowledge.KnowledgeService;
 import com.noteweave.knowledge.KnowledgeService.KnowledgePageHit;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -77,15 +79,43 @@ public class ChatService {
         if (evidence.isEmpty()) {
             return new AnswerDraft("当前工作台资料中暂未检索到足够依据，建议先上传相关资料后再提问。", List.of(), List.of());
         }
+        String questionType = classifyQuestion(request.content());
+        Set<String> sourceTitles = new LinkedHashSet<>();
+        for (RetrievedChunk chunk : evidence) {
+            sourceTitles.add(chunk.title());
+        }
         StringBuilder builder = new StringBuilder();
-        builder.append("根据当前工作台资料，可以先给出一个基于证据的回答：\n\n");
+        builder.append("## 直接回答\n");
+        builder.append("根据当前工作台资料，可以先给出一个低延迟、可引用的资料问答回答。");
+        if ("comparison".equals(questionType)) {
+            builder.append("这个问题属于比较类问题，因此证据选择会优先覆盖不同资料来源，避免只引用同一份资料。");
+        }
+        builder.append("\n\n");
+        builder.append("## 证据选择\n");
+        builder.append("- 查询意图：").append(questionType).append("\n");
+        builder.append("- 检索边界：当前 workspace 内已解析资料\n");
+        builder.append("- 检索策略：关键词召回 + 结构化元数据过滤 + 轻量 rerank + 来源覆盖\n");
+        builder.append("- 来源覆盖：").append(sourceTitles.size()).append(" 个资料来源");
+        if (!sourceTitles.isEmpty()) {
+            builder.append("（").append(String.join("、", sourceTitles)).append("）");
+        }
+        builder.append("\n\n");
+        builder.append("## 关键依据\n");
         for (int i = 0; i < evidence.size(); i++) {
             RetrievedChunk chunk = evidence.get(i);
-            builder.append(i + 1).append(". ");
-            builder.append(trim(chunk.content(), 220));
-            builder.append("\n");
+            builder.append("- 证据 ").append(i + 1)
+                    .append("《").append(chunk.title()).append("》")
+                    .append("：").append(trim(chunk.content(), 220))
+                    .append("（").append(chunk.locationInfo())
+                    .append("，score=").append(chunk.score())
+                    .append("，reason=").append(chunk.matchReason()).append("）\n");
         }
-        builder.append("\n以上内容来自已上传资料的可回溯片段，引用信息会随回答一起返回。");
+        builder.append("\n## 引用来源\n");
+        builder.append("本轮回答的事实依据全部来自当前轮选中的资料片段，引用信息会通过 `chat.citation` 事件返回，可回跳到 source / snapshot / chunk。\n\n");
+        builder.append("## 可继续操作\n");
+        builder.append("- 如果需要逐篇深读和摘录卡片，可以切换到 Note 链路。\n");
+        builder.append("- 如果问题依赖长期页面网络，可以切换到 Wiki 链路。\n");
+        builder.append("- 如果需要外部网页研究，可以启动 Deep Research。\n");
         return new AnswerDraft(builder.toString(), evidence, List.of());
     }
 
@@ -255,6 +285,23 @@ public class ChatService {
             return value == null ? "" : value;
         }
         return value.substring(0, Math.max(0, max - 1)) + "...";
+    }
+
+    private String classifyQuestion(String content) {
+        String value = content == null ? "" : content.toLowerCase();
+        if (value.contains("比较") || value.contains("对比") || value.contains("区别") || value.contains("compare")) {
+            return "comparison";
+        }
+        if (value.contains("总结") || value.contains("概括") || value.contains("summary")) {
+            return "summary";
+        }
+        if (value.contains("来源") || value.contains("引用") || value.contains("citation") || value.contains("source")) {
+            return "source_lookup";
+        }
+        if (value.contains("为什么") || value.contains("原因") || value.contains("推理") || value.contains("why")) {
+            return "reasoning";
+        }
+        return "definition";
     }
 
     private String escape(String data) {
