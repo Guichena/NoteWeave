@@ -135,18 +135,16 @@ public class ChatService {
         List<KnowledgePageHit> pages = knowledgeService.findRelevantWikiPages(workspaceId, request.content());
         List<String> wikiCitationIds = knowledgeService.citationIdsForWikiPages(pages);
         if (pages.isEmpty()) {
-            List<RetrievedChunk> fallbackEvidence = retrievalService.retrieveForQa(workspaceId, request.content());
             StringBuilder fallback = new StringBuilder();
             fallback.append("## 基于 Wiki 的回答\n");
-            fallback.append("当前默认 Wiki 工作台还没有可直接命中的页面，因此本次先回到工作台资料补充回答。\n\n");
-            fallback.append("## 来源补充\n");
-            for (RetrievedChunk chunk : fallbackEvidence) {
-                fallback.append("- ").append(chunk.title()).append("：").append(trim(chunk.content(), 180)).append("\n");
-            }
+            fallback.append("当前默认 Wiki 工作台还没有可直接命中的正式页面，因此本次不退回普通资料 RAG 直接作答。\n\n");
+            fallback.append("## 建议动作\n");
+            fallback.append("- 先在右侧知识沉淀区创建 Wiki 页面。\n");
+            fallback.append("- 或先用 Note 链路整理候选资料和摘录卡片，再把稳定结论写入 Wiki 页面。\n");
+            fallback.append("- Wiki 页面创建后，本模式会优先读取页面、页面链接和来源回链回答。\n");
             fallback.append("\n## 默认 Wiki 工作台\n");
             fallback.append("/workspaces/").append(workspaceId).append("/wiki\n");
-            fallback.append("可以把稳定内容整理成正式 Wiki 页面，后续 Wiki 模式会优先读取它。");
-            return new AnswerDraft(fallback.toString(), fallbackEvidence, List.of());
+            return new AnswerDraft(fallback.toString(), List.of(), List.of());
         }
         StringBuilder builder = new StringBuilder();
         builder.append("## 基于 Wiki 的回答\n");

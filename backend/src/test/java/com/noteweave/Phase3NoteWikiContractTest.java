@@ -106,6 +106,30 @@ class Phase3NoteWikiContractTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chat.citation")));
     }
 
+    @Test
+    void wikiModeShouldNotFallbackToOrdinaryRagWhenNoWikiPageExists() throws Exception {
+        String workspaceId = createWorkspace();
+        uploadSource(workspaceId);
+        String conversationId = createConversation(workspaceId);
+
+        JsonNode wikiMessage = sendMessage(conversationId, "WIKI", "NoteWeave 阶段3怎么设计？");
+        String wikiRequestId = wikiMessage.path("data").path("assistant_request_id").asText();
+        String assistantMessageId = wikiMessage.path("data").path("assistant_message_id").asText();
+
+        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", wikiRequestId))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("当前默认 Wiki 工作台还没有可直接命中的正式页面")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("创建 Wiki 页面")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("event: chat.citation"))));
+
+        Integer citationCount = jdbcTemplate.queryForObject(
+                "select count(*) from message_citation where message_id = ?",
+                Integer.class,
+                assistantMessageId
+        );
+        assertThat(citationCount).isZero();
+    }
+
     private void assertSourceMetadataCreated(String workspaceId) {
         Map<String, Object> row = jdbcTemplate.queryForMap("""
                 select summary, tags_json, metadata_json from source where workspace_id = ?
