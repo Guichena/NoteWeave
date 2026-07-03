@@ -49,6 +49,65 @@ public class RetrievalService {
         return candidates.stream().limit(4).toList();
     }
 
+    public List<CandidateSource> findCandidateSourcesForNote(String workspaceId, String query) {
+        List<CandidateSource> candidates = jdbcTemplate.query("""
+                select s.id, s.title, s.source_type, s.updated_at,
+                       count(c.id) as chunk_count,
+                       min(c.content) as sample_text
+                from source s
+                left join source_chunk c on c.source_id = s.id
+                where s.workspace_id = ? and s.status = 'READY'
+                group by s.id, s.title, s.source_type, s.updated_at
+                order by s.updated_at desc
+                limit 40
+                """, (rs, rowNum) -> new CandidateSource(
+                rs.getString("id"),
+                rs.getString("title"),
+                rs.getString("source_type"),
+                rs.getInt("chunk_count"),
+                rs.getString("sample_text"),
+                0
+        ), workspaceId);
+        Set<String> terms = extractTerms(query);
+        List<CandidateSource> scored = candidates.stream()
+                .map(source -> source.withScore(score(source.title() + "\n" + source.sampleText(), terms)))
+                .filter(source -> source.score() > 0 || terms.isEmpty())
+                .sorted(Comparator.comparingInt(CandidateSource::score).reversed())
+                .limit(4)
+                .toList();
+        if (!scored.isEmpty()) {
+            return scored;
+        }
+        return candidates.stream().limit(4).toList();
+    }
+
+    public List<ReadingWindow> openSourceWindowsForNote(String workspaceId, List<CandidateSource> sources) {
+        if (sources == null || sources.isEmpty()) {
+            return List.of();
+        }
+        List<ReadingWindow> windows = new ArrayList<>();
+        for (CandidateSource source : sources) {
+            windows.addAll(jdbcTemplate.query("""
+                    select c.id, c.source_id, c.source_snapshot_id, c.chunk_no, s.title, w.content, w.location_info
+                    from source_chunk c
+                    join source s on s.id = c.source_id
+                    join source_window w on w.source_chunk_id = c.id
+                    where c.workspace_id = ? and c.source_id = ?
+                    order by c.chunk_no asc, w.window_no asc
+                    limit 2
+                    """, (rs, rowNum) -> new ReadingWindow(
+                    rs.getString("id"),
+                    rs.getString("source_id"),
+                    rs.getString("source_snapshot_id"),
+                    rs.getInt("chunk_no"),
+                    rs.getString("title"),
+                    rs.getString("content"),
+                    rs.getString("location_info")
+            ), workspaceId, source.sourceId()));
+        }
+        return windows.stream().limit(6).toList();
+    }
+
     private Set<String> extractTerms(String query) {
         String normalized = query == null ? "" : query.toLowerCase(Locale.ROOT);
         String[] parts = normalized.split("[^\\p{IsHan}a-zA-Z0-9]+");
@@ -90,6 +149,33 @@ public class RetrievalService {
     ) {
         RetrievedChunk withScore(int nextScore) {
             return new RetrievedChunk(chunkId, sourceId, sourceSnapshotId, chunkNo, title, content, locationInfo, nextScore);
+        }
+    }
+
+    public record CandidateSource(
+            String sourceId,
+            String title,
+            String sourceType,
+            int chunkCount,
+            String sampleText,
+            int score
+    ) {
+        CandidateSource withScore(int nextScore) {
+            return new CandidateSource(sourceId, title, sourceType, chunkCount, sampleText, nextScore);
+        }
+    }
+
+    public record ReadingWindow(
+            String chunkId,
+            String sourceId,
+            String sourceSnapshotId,
+            int chunkNo,
+            String title,
+            String content,
+            String locationInfo
+    ) {
+        RetrievedChunk toRetrievedChunk() {
+            return new RetrievedChunk(chunkId, sourceId, sourceSnapshotId, chunkNo, title, content, locationInfo, 1);
         }
     }
 }

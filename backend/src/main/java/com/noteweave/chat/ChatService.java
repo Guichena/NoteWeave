@@ -1,9 +1,12 @@
 package com.noteweave.chat;
 
 import com.noteweave.chat.RetrievalService.RetrievedChunk;
+import com.noteweave.chat.RetrievalService.CandidateSource;
+import com.noteweave.chat.RetrievalService.ReadingWindow;
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
-import java.util.ArrayList;
+import com.noteweave.knowledge.KnowledgeService;
+import com.noteweave.knowledge.KnowledgeService.KnowledgePageHit;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -14,10 +17,12 @@ public class ChatService {
 
     private final JdbcTemplate jdbcTemplate;
     private final RetrievalService retrievalService;
+    private final KnowledgeService knowledgeService;
 
-    public ChatService(JdbcTemplate jdbcTemplate, RetrievalService retrievalService) {
+    public ChatService(JdbcTemplate jdbcTemplate, RetrievalService retrievalService, KnowledgeService knowledgeService) {
         this.jdbcTemplate = jdbcTemplate;
         this.retrievalService = retrievalService;
+        this.knowledgeService = knowledgeService;
     }
 
     @Transactional
@@ -30,19 +35,17 @@ public class ChatService {
                 values (?, ?, ?, ?, 'USER', ?, ?)
                 """, userMessageId, conversationId, conversation.workspaceId(), nextSeq, request.answerMode(), request.content());
 
-        List<RetrievedChunk> evidence = "QA".equals(request.answerMode())
-                ? retrievalService.retrieveForQa(conversation.workspaceId(), request.content())
-                : List.of();
+        AnswerDraft draft = buildAnswerDraft(conversation.workspaceId(), request);
         String assistantRequestId = Ids.newId();
         String assistantMessageId = Ids.newId();
-        String answer = buildAnswer(request, evidence);
         jdbcTemplate.update("""
                 insert into conversation_message(id, conversation_id, workspace_id, message_seq, role, answer_mode, content, assistant_request_id)
                 values (?, ?, ?, ?, 'ASSISTANT', ?, ?, ?)
-                """, assistantMessageId, conversationId, conversation.workspaceId(), nextSeq + 1, request.answerMode(), answer, assistantRequestId);
+                """, assistantMessageId, conversationId, conversation.workspaceId(), nextSeq + 1, request.answerMode(), draft.answer(), assistantRequestId);
         jdbcTemplate.update("update conversation set last_active_at = current_timestamp where id = ?", conversationId);
-        persistCitations(conversation.workspaceId(), assistantMessageId, evidence);
-        return new SendMessageResponse(userMessageId, assistantRequestId, "/api/v2/chat/requests/" + assistantRequestId + "/stream");
+        persistCitations(conversation.workspaceId(), assistantMessageId, draft.evidence());
+        bindExistingCitations(assistantMessageId, draft.existingCitationIds(), draft.evidence().size());
+        return new SendMessageResponse(userMessageId, assistantMessageId, assistantRequestId, "/api/v2/chat/requests/" + assistantRequestId + "/stream");
     }
 
     public String stream(String assistantRequestId) {
@@ -60,12 +63,18 @@ public class ChatService {
         return builder.toString();
     }
 
-    private String buildAnswer(SendMessageRequest request, List<RetrievedChunk> evidence) {
-        if (!"QA".equals(request.answerMode())) {
-            return "当前阶段只实现 QA 链路，Note/Wiki 链路会在阶段3接入。";
-        }
+    private AnswerDraft buildAnswerDraft(String workspaceId, SendMessageRequest request) {
+        return switch (request.answerMode()) {
+            case "NOTE" -> buildNoteAnswer(workspaceId, request);
+            case "WIKI" -> buildWikiAnswer(workspaceId, request);
+            default -> buildQaAnswer(workspaceId, request);
+        };
+    }
+
+    private AnswerDraft buildQaAnswer(String workspaceId, SendMessageRequest request) {
+        List<RetrievedChunk> evidence = retrievalService.retrieveForQa(workspaceId, request.content());
         if (evidence.isEmpty()) {
-            return "当前工作台资料中暂未检索到足够依据，建议先上传相关资料后再提问。";
+            return new AnswerDraft("当前工作台资料中暂未检索到足够依据，建议先上传相关资料后再提问。", List.of(), List.of());
         }
         StringBuilder builder = new StringBuilder();
         builder.append("根据当前工作台资料，可以先给出一个基于证据的回答：\n\n");
@@ -76,7 +85,77 @@ public class ChatService {
             builder.append("\n");
         }
         builder.append("\n以上内容来自已上传资料的可回溯片段，引用信息会随回答一起返回。");
-        return builder.toString();
+        return new AnswerDraft(builder.toString(), evidence, List.of());
+    }
+
+    private AnswerDraft buildNoteAnswer(String workspaceId, SendMessageRequest request) {
+        List<CandidateSource> candidates = retrievalService.findCandidateSourcesForNote(workspaceId, request.content());
+        List<ReadingWindow> windows = retrievalService.openSourceWindowsForNote(workspaceId, candidates);
+        List<RetrievedChunk> evidence = windows.stream().map(ReadingWindow::toRetrievedChunk).toList();
+        if (candidates.isEmpty() || windows.isEmpty()) {
+            return new AnswerDraft("当前工作台资料不足，暂时无法形成结构化笔记。请先上传或保存更多资料。", List.of(), List.of());
+        }
+        StringBuilder builder = new StringBuilder();
+        builder.append("## 直接回答\n");
+        builder.append("我先按 Note 链路把问题拆成可整理的资料笔记：").append(request.content()).append("\n\n");
+        builder.append("## 关键观点\n");
+        for (int i = 0; i < windows.size(); i++) {
+            ReadingWindow window = windows.get(i);
+            builder.append("- 观点 ").append(i + 1).append("：来自《").append(window.title()).append("》的原文窗口，说明：")
+                    .append(trim(window.content(), 140)).append("\n");
+        }
+        builder.append("\n## 候选资料\n");
+        for (CandidateSource candidate : candidates) {
+            builder.append("- 《").append(candidate.title()).append("》：")
+                    .append(candidate.sourceType()).append("，可读片段数 ").append(candidate.chunkCount())
+                    .append("，匹配分 ").append(candidate.score()).append("\n");
+        }
+        builder.append("\n## 摘录卡片\n");
+        for (int i = 0; i < windows.size(); i++) {
+            ReadingWindow window = windows.get(i);
+            builder.append("- 摘录 ").append(i + 1).append("：")
+                    .append(trim(window.content(), 220))
+                    .append("（来源：").append(window.title()).append(" / ").append(window.locationInfo()).append("）\n");
+        }
+        builder.append("\n## 结构化笔记\n");
+        builder.append("### 直接结论\n");
+        builder.append("这个问题可以先基于上面的候选资料和摘录形成一版可编辑笔记。\n\n");
+        builder.append("### 待确认问题\n");
+        builder.append("- 是否需要继续打开更多原文窗口？\n");
+        builder.append("- 是否要把这份整理保存到工作台 Note？\n");
+        return new AnswerDraft(builder.toString(), evidence, List.of());
+    }
+
+    private AnswerDraft buildWikiAnswer(String workspaceId, SendMessageRequest request) {
+        List<KnowledgePageHit> pages = knowledgeService.findRelevantWikiPages(workspaceId, request.content());
+        List<String> wikiCitationIds = knowledgeService.citationIdsForWikiPages(pages);
+        if (pages.isEmpty()) {
+            List<RetrievedChunk> fallbackEvidence = retrievalService.retrieveForQa(workspaceId, request.content());
+            StringBuilder fallback = new StringBuilder();
+            fallback.append("## 基于 Wiki 的回答\n");
+            fallback.append("当前默认 Wiki 工作台还没有可直接命中的页面，因此本次先回退到工作台资料补充回答。\n\n");
+            fallback.append("## 来源补充\n");
+            for (RetrievedChunk chunk : fallbackEvidence) {
+                fallback.append("- ").append(chunk.title()).append("：").append(trim(chunk.content(), 180)).append("\n");
+            }
+            fallback.append("\n## 可选操作\n");
+            fallback.append("进入 Wiki 工作台：/workspaces/").append(workspaceId).append("/wiki\n");
+            fallback.append("可以把稳定内容整理成正式 Wiki 页面，后续 Wiki 模式会优先读取它。");
+            return new AnswerDraft(fallback.toString(), fallbackEvidence, List.of());
+        }
+        StringBuilder builder = new StringBuilder();
+        builder.append("## 基于 Wiki 的回答\n");
+        builder.append("我优先读取了当前工作台已经沉淀的 Wiki 页面，并基于页面网络给出回答。\n\n");
+        builder.append("## 相关 Wiki 页面\n");
+        for (KnowledgePageHit page : pages) {
+            builder.append("- 《").append(page.title()).append("》v").append(page.versionNo())
+                    .append("：").append(trim(page.summary().isBlank() ? page.content() : page.summary(), 180)).append("\n");
+        }
+        builder.append("\n## 简要结论\n");
+        builder.append(trim(pages.get(0).content(), 420)).append("\n\n");
+        builder.append("## 默认 Wiki 工作台\n");
+        builder.append("/workspaces/").append(workspaceId).append("/wiki\n");
+        return new AnswerDraft(builder.toString(), List.of(), wikiCitationIds);
     }
 
     private void persistCitations(String workspaceId, String messageId, List<RetrievedChunk> evidence) {
@@ -92,6 +171,15 @@ public class ChatService {
                     insert into message_citation(id, message_id, citation_id, sort_order)
                     values (?, ?, ?, ?)
                     """, Ids.newId(), messageId, citationId, i);
+        }
+    }
+
+    private void bindExistingCitations(String messageId, List<String> citationIds, int sortOffset) {
+        for (int i = 0; i < citationIds.size(); i++) {
+            jdbcTemplate.update("""
+                    insert into message_citation(id, message_id, citation_id, sort_order)
+                    values (?, ?, ?, ?)
+                    """, Ids.newId(), messageId, citationIds.get(i), sortOffset + i);
         }
     }
 
@@ -156,5 +244,8 @@ public class ChatService {
     }
 
     private record MessageRef(String messageId, String content) {
+    }
+
+    private record AnswerDraft(String answer, List<RetrievedChunk> evidence, List<String> existingCitationIds) {
     }
 }
