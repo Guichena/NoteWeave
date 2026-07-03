@@ -20,11 +20,13 @@
 
 1. [TDD与迁移总则](D:/java-projects/NoteWeave-v2/docs/阶段计划/TDD与迁移总则.md)
 2. [AI开发提示模板](D:/java-projects/NoteWeave-v2/docs/阶段计划/AI开发提示模板.md)
-3. [阶段1-工程底座与迁移建仓](D:/java-projects/NoteWeave-v2/docs/阶段计划/阶段1-工程底座与迁移建仓.md)
-4. [阶段2-资料上传与问答RAG](D:/java-projects/NoteWeave-v2/docs/阶段计划/阶段2-资料上传与问答RAG.md)
-5. [阶段3-Note与Wiki链路](D:/java-projects/NoteWeave-v2/docs/阶段计划/阶段3-Note与Wiki链路.md)
-6. [阶段4-产物生成Agent](D:/java-projects/NoteWeave-v2/docs/阶段计划/阶段4-产物生成Agent.md)
-7. [阶段5-DeepResearch与Memory](D:/java-projects/NoteWeave-v2/docs/阶段计划/阶段5-DeepResearch与Memory.md)
+3. [函数级开发清单](D:/java-projects/NoteWeave-v2/docs/阶段计划/函数级开发清单.md)
+4. [中间件配置基线](D:/java-projects/NoteWeave-v2/docs/阶段计划/中间件配置基线.md)
+5. [阶段1-工程底座与迁移建仓](D:/java-projects/NoteWeave-v2/docs/阶段计划/阶段1-工程底座与迁移建仓.md)
+6. [阶段2-资料上传与问答RAG](D:/java-projects/NoteWeave-v2/docs/阶段计划/阶段2-资料上传与问答RAG.md)
+7. [阶段3-Note与Wiki链路](D:/java-projects/NoteWeave-v2/docs/阶段计划/阶段3-Note与Wiki链路.md)
+8. [阶段4-产物生成Agent](D:/java-projects/NoteWeave-v2/docs/阶段计划/阶段4-产物生成Agent.md)
+9. [阶段5-DeepResearch与Memory](D:/java-projects/NoteWeave-v2/docs/阶段计划/阶段5-DeepResearch与Memory.md)
 
 ## 3. 阶段树
 

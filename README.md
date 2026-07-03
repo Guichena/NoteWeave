@@ -20,6 +20,8 @@ NoteWeave v2 是一个参考 NotebookLM 产品形态重构的研究工作台。
 3. [数据库迁移与建表顺序](D:/java-projects/NoteWeave-v2/docs/数据库迁移与建表顺序.md)
 4. [最小接口契约](D:/java-projects/NoteWeave-v2/docs/最小接口契约.md)
 5. [阶段计划总入口](D:/java-projects/NoteWeave-v2/docs/阶段计划/README.md)
+6. [函数级开发清单](D:/java-projects/NoteWeave-v2/docs/阶段计划/函数级开发清单.md)
+7. [中间件配置基线](D:/java-projects/NoteWeave-v2/docs/阶段计划/中间件配置基线.md)
 
 ## 开发阶段
 
