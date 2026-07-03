@@ -88,6 +88,13 @@ class Phase3NoteWikiContractTest {
                 .andExpect(jsonPath("$.data.pages[0].latest_version_no").value(2))
                 .andExpect(jsonPath("$.data.links[0].target_title").value("Note 链路"));
 
+        mockMvc.perform(get("/api/v2/knowledge-items/{itemId}", wikiItemId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.item_type").value("WIKI"))
+                .andExpect(jsonPath("$.data.latest_version_no").value(2))
+                .andExpect(jsonPath("$.data.content").value(org.hamcrest.Matchers.containsString("WeKnora 式 Wiki-first 页面链路")))
+                .andExpect(jsonPath("$.data.citations[0].quote_text").isNotEmpty());
+
         JsonNode wikiMessage = sendMessage(conversationId, "WIKI", "NoteWeave 阶段3怎么设计？");
         String wikiRequestId = wikiMessage.path("data").path("assistant_request_id").asText();
 

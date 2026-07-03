@@ -139,6 +139,36 @@ public class KnowledgeService {
         ), workspaceId, itemType);
     }
 
+    public KnowledgeItemDetailResponse getItemDetail(String itemId) {
+        return jdbcTemplate.query("""
+                select i.id, i.item_type, i.title, i.status, i.latest_version_id, i.updated_at,
+                       v.id as version_id, v.version_no, v.content, coalesce(v.summary, '') as summary
+                from knowledge_item i
+                join knowledge_version v on v.id = i.latest_version_id
+                where i.id = ?
+                """, rs -> {
+            if (!rs.next()) {
+                throw new BusinessException("KNOWLEDGE_ITEM_NOT_FOUND", "知识对象不存在");
+            }
+            if (!"ACTIVE".equals(rs.getString("status"))) {
+                throw new BusinessException("KNOWLEDGE_ITEM_INACTIVE", "知识对象不可读取");
+            }
+            String versionId = rs.getString("version_id");
+            return new KnowledgeItemDetailResponse(
+                    rs.getString("id"),
+                    rs.getString("item_type"),
+                    rs.getString("title"),
+                    rs.getString("status"),
+                    rs.getString("latest_version_id"),
+                    rs.getInt("version_no"),
+                    rs.getString("content"),
+                    rs.getString("summary"),
+                    citationsForVersion(versionId),
+                    toInstant(rs.getTimestamp("updated_at"))
+            );
+        }, itemId);
+    }
+
     public List<KnowledgePageHit> findRelevantWikiPages(String workspaceId, String query) {
         List<KnowledgePageHit> pages = jdbcTemplate.query("""
                 select i.id, i.title, v.id as version_id, v.version_no, v.content, coalesce(v.summary, '') as summary, i.updated_at
@@ -207,6 +237,23 @@ public class KnowledgeService {
                 where knowledge_version_id in (%s)
                 order by sort_order asc
                 """.formatted(placeholders), String.class, versionIds.toArray());
+    }
+
+    private List<KnowledgeCitationResponse> citationsForVersion(String versionId) {
+        return jdbcTemplate.query("""
+                select c.id, c.source_id, c.title, c.quote_text, c.page_no, c.location_info
+                from knowledge_version_citation kvc
+                join citation c on c.id = kvc.citation_id
+                where kvc.knowledge_version_id = ?
+                order by kvc.sort_order asc
+                """, (rs, rowNum) -> new KnowledgeCitationResponse(
+                rs.getString("id"),
+                rs.getString("source_id"),
+                rs.getString("title"),
+                rs.getString("quote_text"),
+                (Integer) rs.getObject("page_no"),
+                rs.getString("location_info")
+        ), versionId);
     }
 
     private void bindVersionCitations(String versionId, List<String> citationIds) {

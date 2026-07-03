@@ -44,6 +44,20 @@ type WikiHome = {
   links: WikiLink[];
 };
 
+type KnowledgeCitation = {
+  citation_id: string;
+  source_id: string;
+  title: string;
+  quote_text: string;
+  page_no: number | null;
+  location_info: string;
+};
+
+type KnowledgeItemDetail = WikiPage & {
+  content: string;
+  citations: KnowledgeCitation[];
+};
+
 type ApiResponse<T> = {
   success: boolean;
   code: string;
@@ -67,6 +81,13 @@ export function App() {
   const [wikiUrl, setWikiUrl] = useState("");
   const [wikiHome, setWikiHome] = useState<WikiHome | null>(null);
   const [selectedWikiItemId, setSelectedWikiItemId] = useState("");
+  const [selectedWikiDetail, setSelectedWikiDetail] = useState<KnowledgeItemDetail | null>(null);
+  const [lastAssistantMessageId, setLastAssistantMessageId] = useState("");
+  const [lastAssistantAnswer, setLastAssistantAnswer] = useState("");
+  const [noteTitle, setNoteTitle] = useState("阶段整理笔记");
+  const [wikiTitle, setWikiTitle] = useState("阶段知识页");
+  const [wikiDraft, setWikiDraft] = useState("");
+  const [wikiAppendDraft, setWikiAppendDraft] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [status, setStatus] = useState("准备就绪");
 
@@ -133,7 +154,7 @@ export function App() {
     }
     await run(`${currentRoute().label} 提问`, async () => {
       setMessages((current) => [...current, { role: "user", content: trimmed }]);
-      const sent = await post<{ assistant_request_id: string; stream_url: string }>(
+      const sent = await post<{ assistant_message_id: string; assistant_request_id: string; stream_url: string }>(
         `/api/v2/conversations/${conversation.conversation_id}/messages`,
         {
           content: trimmed,
@@ -147,6 +168,9 @@ export function App() {
         ? `\n\n引用来源：\n${parsed.citations.map((citation, index) => `${index + 1}. ${citation}`).join("\n")}`
         : "";
       const answer = `${parsed.answer || "后端已完成回答，但没有返回 delta 内容。"}${citationBlock}`;
+      setLastAssistantMessageId(sent.assistant_message_id);
+      setLastAssistantAnswer(answer);
+      setWikiDraft((current) => current || answer);
       setMessages((current) => [...current, { role: "assistant", content: answer }]);
     });
   }
@@ -158,15 +182,76 @@ export function App() {
     }
     await run("读取默认 Wiki 工作台入口", async () => {
       const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
-      setWikiUrl(wiki.wiki_url);
-      setWikiHome(wiki);
-      setSelectedWikiItemId(wiki.pages[0]?.item_id ?? "");
+      await applyWikiHome(wiki, selectedWikiItemId || wiki.pages[0]?.item_id || "");
       setView("wiki");
       window.history.pushState({}, "", wiki.wiki_url);
       setMessages((current) => [
         ...current,
         { role: "system", content: `默认 Wiki 工作台：${wiki.wiki_url}，页面数 ${wiki.pages.length}，链接数 ${wiki.links.length}` }
       ]);
+    });
+  }
+
+  async function saveLatestAnswerAsNote() {
+    if (!lastAssistantMessageId) {
+      setStatus("请先完成一次聊天回答");
+      return;
+    }
+    await run("保存最新回答为 Note", async () => {
+      const saved = await post<WikiPage>(`/api/v2/messages/${lastAssistantMessageId}/save-as-note`, {
+        title: noteTitle
+      });
+      setMessages((current) => [
+        ...current,
+        { role: "system", content: `已保存 Note：${saved.title}（v${saved.latest_version_no}）` }
+      ]);
+    });
+  }
+
+  async function createWikiPage() {
+    if (!workspace) {
+      setStatus("请先创建工作台");
+      return;
+    }
+    const content = wikiDraft.trim() || lastAssistantAnswer.trim();
+    if (!content) {
+      setStatus("请先填写 Wiki 页面正文，或先完成一次聊天回答");
+      return;
+    }
+    await run("创建 Wiki 页面", async () => {
+      const created = await post<WikiPage>(`/api/v2/workspaces/${workspace.workspace_id}/knowledge-items`, {
+        item_type: "WIKI",
+        title: wikiTitle,
+        content,
+        source_message_id: lastAssistantMessageId || null
+      });
+      const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
+      await applyWikiHome(wiki, created.item_id);
+      setView("wiki");
+      window.history.pushState({}, "", wiki.wiki_url);
+    });
+  }
+
+  async function appendWikiVersion() {
+    if (!selectedWikiPage) {
+      setStatus("请先选择一个 Wiki 页面");
+      return;
+    }
+    const content = wikiAppendDraft.trim();
+    if (!content) {
+      setStatus("请先填写新的 Wiki 版本正文");
+      return;
+    }
+    await run(`追加 Wiki 页面《${selectedWikiPage.title}》版本`, async () => {
+      await post<WikiPage>(`/api/v2/knowledge-items/${selectedWikiPage.item_id}/versions`, {
+        content,
+        source_message_id: lastAssistantMessageId || null
+      });
+      const wiki = workspace ? await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`) : wikiHome;
+      if (wiki) {
+        await applyWikiHome(wiki, selectedWikiPage.item_id);
+      }
+      setWikiAppendDraft("");
     });
   }
 
@@ -192,7 +277,23 @@ export function App() {
     window.history.pushState({}, "", "/");
   }
 
+  async function selectWikiPage(page: WikiPage) {
+    setSelectedWikiItemId(page.item_id);
+    await run(`打开 Wiki 页面《${page.title}》`, async () => {
+      setSelectedWikiDetail(await get<KnowledgeItemDetail>(`/api/v2/knowledge-items/${page.item_id}`));
+      setWikiAppendDraft("");
+    });
+  }
+
   const selectedWikiPage = wikiHome?.pages.find((page) => page.item_id === selectedWikiItemId) ?? wikiHome?.pages[0];
+
+  async function applyWikiHome(wiki: WikiHome, preferredItemId: string) {
+    setWikiUrl(wiki.wiki_url);
+    setWikiHome(wiki);
+    const selected = wiki.pages.find((page) => page.item_id === preferredItemId) ?? wiki.pages[0];
+    setSelectedWikiItemId(selected?.item_id ?? "");
+    setSelectedWikiDetail(selected ? await get<KnowledgeItemDetail>(`/api/v2/knowledge-items/${selected.item_id}`) : null);
+  }
 
   return (
     <main className="shell">
@@ -239,7 +340,8 @@ export function App() {
                 <button
                   key={page.item_id}
                   className={page.item_id === selectedWikiPage?.item_id ? "active" : ""}
-                  onClick={() => setSelectedWikiItemId(page.item_id)}
+                  disabled={isBusy}
+                  onClick={() => void selectWikiPage(page)}
                 >
                   <span>{page.title}</span>
                   <small>v{page.latest_version_no}</small>
@@ -253,14 +355,36 @@ export function App() {
             {selectedWikiPage ? (
               <>
                 <h2>{selectedWikiPage.title}</h2>
-                <p className="version-pill">当前版本 v{selectedWikiPage.latest_version_no}</p>
+                <p className="version-pill">当前版本 v{selectedWikiDetail?.latest_version_no ?? selectedWikiPage.latest_version_no}</p>
                 <div className="wiki-summary">
-                  {selectedWikiPage.summary || "这个页面暂时还没有摘要。"}
+                  {selectedWikiDetail?.content || selectedWikiPage.summary || "这个页面暂时还没有正文。"}
                 </div>
+                {selectedWikiDetail?.citations.length ? (
+                  <div className="wiki-citations">
+                    <strong>来源引用</strong>
+                    {selectedWikiDetail.citations.map((citation, index) => (
+                      <span key={citation.citation_id}>
+                        {index + 1}. {citation.title}：{citation.quote_text}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
                 <div className="wiki-maintenance">
                   <strong>页面维护动作</strong>
                   <span>版本追加、来源引用和页面链接由后端接口底座承接；当前工作台视图聚焦页面浏览、版本识别和链接检查。</span>
                 </div>
+                <label className="input-block">
+                  <span>追加为新版本</span>
+                  <textarea
+                    value={wikiAppendDraft}
+                    onChange={(event) => setWikiAppendDraft(event.target.value)}
+                    placeholder="粘贴或编辑新的 Wiki 页面正文，提交后 latest_version_no 会递增。"
+                    rows={6}
+                  />
+                </label>
+                <button onClick={appendWikiVersion} disabled={isBusy}>
+                  追加 Wiki 版本
+                </button>
               </>
             ) : (
               <div className="empty-state">当前工作台暂无 Wiki 页面。</div>
@@ -338,6 +462,31 @@ export function App() {
           {wikiUrl && <p className="wiki-url">{wikiUrl}</p>}
           <button onClick={openWikiHome} disabled={isBusy || !workspace}>查看 Wiki Index</button>
           <button disabled>维护页面链接</button>
+          <hr />
+          <p className="section-label">知识沉淀</p>
+          <label className="rail-field">
+            <span>Note 标题</span>
+            <input value={noteTitle} onChange={(event) => setNoteTitle(event.target.value)} />
+          </label>
+          <button onClick={saveLatestAnswerAsNote} disabled={isBusy || !lastAssistantMessageId}>
+            保存最新回答为 Note
+          </button>
+          <label className="rail-field">
+            <span>Wiki 标题</span>
+            <input value={wikiTitle} onChange={(event) => setWikiTitle(event.target.value)} />
+          </label>
+          <label className="rail-field">
+            <span>Wiki 正文</span>
+            <textarea
+              value={wikiDraft}
+              onChange={(event) => setWikiDraft(event.target.value)}
+              placeholder="默认可使用最新回答，也可以手动整理正式页面正文。"
+              rows={5}
+            />
+          </label>
+          <button onClick={createWikiPage} disabled={isBusy || !workspace}>
+            创建 Wiki 页面
+          </button>
           <hr />
           <p className="section-label">右侧产物栏</p>
           <button disabled>生成报告</button>

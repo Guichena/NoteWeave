@@ -9,8 +9,10 @@
 3. `问答 RAG / Note / Wiki` 三种链路入口，并通过 `answer_mode` 调用同一聊天接口
 4. 聊天回答正文与 citation 展示
 5. Deep Research 独立按钮
-6. 右侧产物栏入口
-7. 默认 Wiki 工作台入口，可查看 Wiki Index、页面摘要、版本信息和页面链接关系
+6. 保存最新回答为 Note
+7. 创建 Wiki 页面，并可在 Wiki 工作台中追加新版本
+8. 右侧产物栏入口
+9. 默认 Wiki 工作台入口，可查看 Wiki Index、页面正文、版本信息、来源引用和页面链接关系
 
 当前模式口径：
 

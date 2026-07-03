@@ -42,6 +42,11 @@ public class KnowledgeController {
         return ApiResponse.success(knowledgeService.getWikiHome(workspaceId));
     }
 
+    @GetMapping("/knowledge-items/{itemId}")
+    ApiResponse<KnowledgeItemDetailResponse> getItem(@PathVariable String itemId) {
+        return ApiResponse.success(knowledgeService.getItemDetail(itemId));
+    }
+
     @PostMapping("/knowledge-items/{itemId}/versions")
     ApiResponse<KnowledgeItemResponse> appendVersion(
             @PathVariable String itemId,

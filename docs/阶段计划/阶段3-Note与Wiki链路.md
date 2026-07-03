@@ -44,6 +44,7 @@ MySQL：
 3. `KnowledgeService.appendVersion(itemId, request)`
 4. `KnowledgeService.findRelevantWikiPages(workspaceId, query)`
 5. `KnowledgeService.getWikiHome(workspaceId)`
+6. `KnowledgeService.getItemDetail(itemId)`
 
 ### TDD 要求
 
@@ -59,7 +60,7 @@ MySQL：
 
 1. Note 可以由助手回答保存而来。
 2. Wiki 可以创建、列表读取、追加版本。
-3. Wiki 页面链接和引用关系可回查。
+3. Wiki 页面详情可以读取最新正文、版本号、引用关系和页面链接。
 
 ## 4. 子阶段 3.2：Note 链路
 
@@ -146,7 +147,8 @@ Wiki Index / 页面列表
 2. `KnowledgeService.citationIdsForWikiPages(pages)`
 3. `KnowledgeService.getWikiHome(workspaceId)`
 4. `KnowledgeService.listWikiLinks(workspaceId)`
-5. `ChatService.buildWikiAnswer(workspaceId, request)`
+5. `KnowledgeService.getItemDetail(itemId)`
+6. `ChatService.buildWikiAnswer(workspaceId, request)`
 
 ### 中间件接入
 
@@ -166,7 +168,7 @@ Frontend：
 
 1. 统一聊天区继续使用 SSE。
 2. 回答中只保留默认 Wiki 工作台入口。
-3. Wiki 工作台通过普通页面接口读取页面、链接和来源。
+3. Wiki 工作台通过普通页面接口读取页面正文、链接和来源。
 
 ### TDD 要求
 
@@ -176,6 +178,7 @@ Frontend：
 2. Wiki 模式回答包含默认 Wiki 工作台入口。
 3. Wiki 页面追加版本后，回答读取最新版本。
 4. Wiki 页面中的 `[[页面名]]` 可以生成链接关系。
+5. Wiki 页面详情接口可以读取最新正文和 citation。
 
 ### 完成定义
 
@@ -195,8 +198,11 @@ Frontend：
 2. Note 模式说明：候选资料、原文窗口、摘录卡片、结构化笔记
 3. Wiki 模式说明：Wiki-first、页面链接、默认 Wiki 工作台入口
 4. Wiki 工作台入口按钮：`/workspaces/{workspaceId}/wiki`
-5. 默认 Wiki 工作台最小视图：左侧 Wiki Index / 页面列表，中间页面摘要与版本信息，右侧页面链接关系
-6. 聊天流式结果需要展示回答正文和 citation，避免前端只展示模型正文而丢失来源闭环
+5. 默认 Wiki 工作台最小视图：左侧 Wiki Index / 页面列表，中间页面正文与版本信息，右侧页面链接关系
+6. Wiki 页面详情：点击页面后读取最新正文、版本号和 citation
+7. 右侧知识沉淀入口：保存最新回答为 Note、创建 Wiki 页面
+8. Wiki 工作台页面维护入口：追加 Wiki 新版本
+9. 聊天流式结果需要展示回答正文和 citation，避免前端只展示模型正文而丢失来源闭环
 
 ## 7. 本阶段禁止项
 
