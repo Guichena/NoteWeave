@@ -31,6 +31,10 @@ button:disabled {
   color: #243f36;
 }
 
+.danger-button {
+  background: #9b3f2f;
+}
+
 textarea,
 input {
   width: 100%;
@@ -351,6 +355,13 @@ h1 {
   display: grid;
   gap: 6px;
   margin-top: 16px;
+}
+
+.maintenance-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
 }
 
 .wiki-citations {

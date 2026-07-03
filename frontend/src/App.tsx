@@ -54,6 +54,40 @@ type WikiHome = {
   links: WikiLink[];
 };
 
+type WikiSettings = {
+  workspace_id: string;
+  wiki_enabled: boolean;
+};
+
+type WikiStats = {
+  page_count: number;
+  link_count: number;
+  resolved_link_count: number;
+  unresolved_link_count: number;
+  citation_count: number;
+  issue_count: number;
+};
+
+type WikiIssue = {
+  issue_type: string;
+  severity: string;
+  title: string;
+  message: string;
+  suggested_action: string;
+};
+
+type WikiLogEntry = {
+  id: string;
+  event_type: string;
+  message: string;
+  created_at: string;
+};
+
+type WikiGraph = {
+  nodes: Array<{ item_id: string; title: string; page_kind: string; version_no: number }>;
+  edges: Array<{ source_item_id: string; target_item_id: string | null; target_title: string; relation_status: string }>;
+};
+
 type KnowledgeCitation = {
   citation_id: string;
   source_id: string;
@@ -79,7 +113,7 @@ export function App() {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [mode, setMode] = useState<AnswerMode>("qa");
-  const [sourceText, setSourceText] = useState("NoteWeave 阶段3包含问答 RAG、Marginalia 式 Note 链路和 WeKnora 式 Wiki 链路。");
+  const [sourceText, setSourceText] = useState("NoteWeave 阶段3包含问答 RAG、Marginalia 式资料级检索 Note 链路和 WebKonra / WeKnora 式全量 Wiki 检索链路。");
   const [question, setQuestion] = useState("阶段3里 Note 和 Wiki 有什么区别？");
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -90,6 +124,11 @@ export function App() {
   const [view, setView] = useState<"chat" | "wiki">("chat");
   const [wikiUrl, setWikiUrl] = useState("");
   const [wikiHome, setWikiHome] = useState<WikiHome | null>(null);
+  const [wikiEnabled, setWikiEnabled] = useState(false);
+  const [wikiStats, setWikiStats] = useState<WikiStats | null>(null);
+  const [wikiIssues, setWikiIssues] = useState<WikiIssue[]>([]);
+  const [wikiLog, setWikiLog] = useState<WikiLogEntry[]>([]);
+  const [wikiGraph, setWikiGraph] = useState<WikiGraph | null>(null);
   const [selectedWikiItemId, setSelectedWikiItemId] = useState("");
   const [selectedWikiDetail, setSelectedWikiDetail] = useState<KnowledgeItemDetail | null>(null);
   const [lastAssistantMessageId, setLastAssistantMessageId] = useState("");
@@ -98,6 +137,8 @@ export function App() {
   const [wikiTitle, setWikiTitle] = useState("阶段知识页");
   const [wikiDraft, setWikiDraft] = useState("");
   const [wikiAppendDraft, setWikiAppendDraft] = useState("");
+  const [wikiSearch, setWikiSearch] = useState("");
+  const [wikiRenameTitle, setWikiRenameTitle] = useState("");
   const [latestTask, setLatestTask] = useState<TaskStatus | null>(null);
   const [taskEvents, setTaskEvents] = useState<string[]>([]);
   const [isBusy, setIsBusy] = useState(false);
@@ -110,6 +151,8 @@ export function App() {
         description: "阶段1/2/3前端联调工作台"
       });
       setWorkspace(created);
+      const wikiSettings = await get<WikiSettings>(`/api/v2/workspaces/${created.workspace_id}/wiki-settings`);
+      setWikiEnabled(wikiSettings.wiki_enabled);
       const createdConversation = await post<Conversation>(`/api/v2/workspaces/${created.workspace_id}/conversations`, {
         title: "阶段1/2/3联调会话",
         conversation_type: "WORKSPACE_CHAT"
@@ -148,13 +191,39 @@ export function App() {
       const task = await get<TaskStatus>(`/api/v2/tasks/${completed.task_id}`);
       const eventStream = await requestText(`/api/v2/tasks/${completed.task_id}/events`);
       const events = parseEventStream(eventStream).map((event) => `${event.event}: ${event.data}`);
+      const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
       setLatestTask(task);
       setTaskEvents(events);
+      setWikiHome(wiki);
+      setWikiUrl(wiki.wiki_url);
       setMessages((current) => [
         ...current,
         {
           role: "system",
-          content: `资料已上传并解析：source=${completed.source_id}，parse=${completed.parse_status}，index=${completed.index_status}，task=${task.task_status}`
+          content: `资料已上传并解析：source=${completed.source_id}，parse=${completed.parse_status}，index=${completed.index_status}，task=${task.task_status}。${wikiEnabled ? "Wiki 构建已开启，本次资料变更已进入 Wiki ingest 队列。" : "Wiki 构建未开启，本次只进入问答/Note 检索索引。"}`
+        }
+      ]);
+    });
+  }
+
+  async function toggleWikiEnabled() {
+    if (!workspace) {
+      setStatus("请先创建工作台");
+      return;
+    }
+    await run(wikiEnabled ? "关闭 Wiki 构建" : "开启 Wiki 构建", async () => {
+      const next = !wikiEnabled;
+      const settings = await put<WikiSettings>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-settings`, {
+        wiki_enabled: next
+      });
+      setWikiEnabled(settings.wiki_enabled);
+      setMessages((current) => [
+        ...current,
+        {
+          role: "system",
+          content: settings.wiki_enabled
+            ? "已开启工作台级 Wiki 构建。资料上传或更新会进入 Wiki ingest 队列。"
+            : "已关闭工作台级 Wiki 构建。资料上传只进入普通检索索引。"
         }
       ]);
     });
@@ -230,9 +299,9 @@ export function App() {
       setStatus("请先创建工作台");
       return;
     }
-    const content = wikiDraft.trim() || lastAssistantAnswer.trim();
+    const content = wikiDraft.trim();
     if (!content) {
-      setStatus("请先填写 Wiki 页面正文，或先完成一次聊天回答");
+      setStatus("请先填写 Wiki 页面正文。Wiki 是研究工作台级知识网络，不默认绑定最近聊天回答。");
       return;
     }
     await run("创建 Wiki 页面", async () => {
@@ -240,7 +309,7 @@ export function App() {
         item_type: "WIKI",
         title: wikiTitle,
         content,
-        source_message_id: lastAssistantMessageId || null
+        source_message_id: null
       });
       const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
       await applyWikiHome(wiki, created.item_id);
@@ -262,13 +331,64 @@ export function App() {
     await run(`追加 Wiki 页面《${selectedWikiPage.title}》版本`, async () => {
       await post<WikiPage>(`/api/v2/knowledge-items/${selectedWikiPage.item_id}/versions`, {
         content,
-        source_message_id: lastAssistantMessageId || null
+        source_message_id: null
       });
       const wiki = workspace ? await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`) : wikiHome;
       if (wiki) {
         await applyWikiHome(wiki, selectedWikiPage.item_id);
       }
       setWikiAppendDraft("");
+    });
+  }
+
+  async function renameSelectedWikiPage() {
+    if (!selectedWikiPage || !workspace) {
+      setStatus("请先选择一个 Wiki 页面");
+      return;
+    }
+    const title = wikiRenameTitle.trim();
+    if (!title) {
+      setStatus("请先填写新的 Wiki 标题");
+      return;
+    }
+    await run(`重命名 Wiki 页面《${selectedWikiPage.title}》`, async () => {
+      const renamed = await patch<WikiPage>(`/api/v2/knowledge-items/${selectedWikiPage.item_id}/title`, { title });
+      const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
+      await applyWikiHome(wiki, renamed.item_id);
+    });
+  }
+
+  async function deleteSelectedWikiPage() {
+    if (!selectedWikiPage || !workspace) {
+      setStatus("请先选择一个 Wiki 页面");
+      return;
+    }
+    await run(`删除 Wiki 页面《${selectedWikiPage.title}》`, async () => {
+      await del(`/api/v2/knowledge-items/${selectedWikiPage.item_id}`);
+      const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
+      await applyWikiHome(wiki, "");
+    });
+  }
+
+  async function rebuildWikiLinks() {
+    if (!workspace) {
+      return;
+    }
+    await run("重建 Wiki 链接", async () => {
+      await post<WikiStats>(`/api/v2/workspaces/${workspace.workspace_id}/wiki/rebuild-links`, {});
+      const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
+      await applyWikiHome(wiki, selectedWikiItemId);
+    });
+  }
+
+  async function autoFixWiki() {
+    if (!workspace) {
+      return;
+    }
+    await run("自动修复 Wiki", async () => {
+      await post<{ created_pages: number }>(`/api/v2/workspaces/${workspace.workspace_id}/wiki/auto-fix`, {});
+      const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
+      await applyWikiHome(wiki, selectedWikiItemId);
     });
   }
 
@@ -299,27 +419,37 @@ export function App() {
     await run(`打开 Wiki 页面《${page.title}》`, async () => {
       setSelectedWikiDetail(await get<KnowledgeItemDetail>(`/api/v2/knowledge-items/${page.item_id}`));
       setWikiAppendDraft("");
+      setWikiRenameTitle(page.title);
     });
   }
 
   const selectedWikiPage = wikiHome?.pages.find((page) => page.item_id === selectedWikiItemId) ?? wikiHome?.pages[0];
+  const visibleWikiPages = wikiHome?.pages.filter((page) => {
+    const keyword = wikiSearch.trim().toLowerCase();
+    return !keyword || `${page.title}\n${page.summary}`.toLowerCase().includes(keyword);
+  }) ?? [];
 
   async function applyWikiHome(wiki: WikiHome, preferredItemId: string) {
     setWikiUrl(wiki.wiki_url);
     setWikiHome(wiki);
+    setWikiStats(await get<WikiStats>(`/api/v2/workspaces/${wiki.workspace_id}/wiki-stats`));
+    setWikiIssues(await get<WikiIssue[]>(`/api/v2/workspaces/${wiki.workspace_id}/wiki-issues`));
+    setWikiLog(await get<WikiLogEntry[]>(`/api/v2/workspaces/${wiki.workspace_id}/wiki-log`));
+    setWikiGraph(await get<WikiGraph>(`/api/v2/workspaces/${wiki.workspace_id}/wiki-graph`));
     const selected = wiki.pages.find((page) => page.item_id === preferredItemId) ?? wiki.pages[0];
     setSelectedWikiItemId(selected?.item_id ?? "");
     setSelectedWikiDetail(selected ? await get<KnowledgeItemDetail>(`/api/v2/knowledge-items/${selected.item_id}`) : null);
+    setWikiRenameTitle(selected?.title ?? "");
   }
 
   return (
     <main className="shell">
       <section className="hero">
         <p className="eyebrow">NoteWeave v2</p>
-        <h1>研究工作台的阶段1/2/3最小闭环</h1>
+        <h1>研究工作台的三链路完整闭环</h1>
         <p className="lede">
           在同一个工作台里完成创建、上传资料、三模式聊天和默认 Wiki 工作台入口。问答 RAG 负责快速证据问答，
-          Note 参考 Marginalia 做结构化阅读漏斗，Wiki 参考 WeKnora 做 Wiki-first 页面回答。
+          Note 参考 Marginalia 做资料级候选与原文窗口检索，Wiki 参考 WebKonra / WeKnora 做全量 Wiki 页面网络检索。
         </p>
       </section>
 
@@ -351,9 +481,15 @@ export function App() {
             <p className="section-label">Wiki Index</p>
             <h2>默认 Wiki 工作台</h2>
             <p className="wiki-url">{wikiHome.wiki_url}</p>
+            <input
+              value={wikiSearch}
+              onChange={(event) => setWikiSearch(event.target.value)}
+              placeholder="搜索页面标题或摘要"
+            />
             <div className="wiki-page-list">
               {wikiHome.pages.length === 0 && <p className="empty-state">还没有 Wiki 页面。可以先在 Wiki 模式回答后，将稳定内容创建为 Wiki 页面。</p>}
-              {wikiHome.pages.map((page) => (
+              {wikiHome.pages.length > 0 && visibleWikiPages.length === 0 && <p className="empty-state">没有匹配的 Wiki 页面。</p>}
+              {visibleWikiPages.map((page) => (
                 <button
                   key={page.item_id}
                   className={page.item_id === selectedWikiPage?.item_id ? "active" : ""}
@@ -388,7 +524,19 @@ export function App() {
                 ) : null}
                 <div className="wiki-maintenance">
                   <strong>页面维护动作</strong>
-                  <span>版本追加、来源引用和页面链接由后端接口底座承接；当前工作台视图聚焦页面浏览、版本识别和链接检查。</span>
+                  <span>编辑正文会生成新版本；重命名会刷新页面关系；删除采用软删除并保留日志。</span>
+                </div>
+                <label className="input-block">
+                  <span>重命名页面</span>
+                  <input value={wikiRenameTitle} onChange={(event) => setWikiRenameTitle(event.target.value)} />
+                </label>
+                <div className="maintenance-actions">
+                  <button onClick={renameSelectedWikiPage} disabled={isBusy}>
+                    重命名
+                  </button>
+                  <button className="danger-button" onClick={deleteSelectedWikiPage} disabled={isBusy}>
+                    删除页面
+                  </button>
                 </div>
                 <label className="input-block">
                   <span>追加为新版本</span>
@@ -410,11 +558,41 @@ export function App() {
 
           <aside className="wiki-links">
             <p className="section-label">页面关系</p>
+            {wikiStats && (
+              <div className="wiki-maintenance">
+                <strong>Wiki 健康度</strong>
+                <span>页面 {wikiStats.page_count} · 链接 {wikiStats.link_count} · 已解析 {wikiStats.resolved_link_count} · 断链 {wikiStats.unresolved_link_count} · 引用 {wikiStats.citation_count} · 问题 {wikiStats.issue_count}</span>
+              </div>
+            )}
+            <div className="wiki-maintenance">
+              <strong>维护动作</strong>
+              <button onClick={rebuildWikiLinks} disabled={isBusy || !workspace}>重建链接</button>
+              <button onClick={autoFixWiki} disabled={isBusy || !workspace}>Auto Fix</button>
+            </div>
             {wikiHome.links.length === 0 && <p className="empty-state">暂无页面链接。</p>}
             {wikiHome.links.map((link, index) => (
               <div className="link-card" key={`${link.source_item_id}-${link.target_title}-${index}`}>
                 <strong>{link.target_title}</strong>
                 <span>{link.relation_type} · {link.relation_status} · {link.mention_count} 次提及</span>
+              </div>
+            ))}
+            <p className="section-label">Wiki Graph</p>
+            <div className="wiki-maintenance">
+              <span>节点 {wikiGraph?.nodes.length ?? 0} · 边 {wikiGraph?.edges.length ?? 0}</span>
+            </div>
+            <p className="section-label">Lint Issues</p>
+            {wikiIssues.length === 0 && <p className="empty-state">暂无健康问题。</p>}
+            {wikiIssues.slice(0, 5).map((issue, index) => (
+              <div className="link-card" key={`${issue.issue_type}-${issue.title}-${index}`}>
+                <strong>{issue.issue_type} · {issue.severity}</strong>
+                <span>{issue.message}</span>
+              </div>
+            ))}
+            <p className="section-label">Wiki Log</p>
+            {wikiLog.slice(0, 4).map((entry) => (
+              <div className="link-card" key={entry.id}>
+                <strong>{entry.event_type}</strong>
+                <span>{entry.message}</span>
               </div>
             ))}
           </aside>
@@ -482,10 +660,16 @@ export function App() {
         </div>
 
         <aside className="artifact-rail">
-          <p className="section-label">Wiki 工作台</p>
+          <p className="section-label">工作台级 Wiki</p>
           <button onClick={openWikiHome} disabled={isBusy || !workspace}>
             进入默认 Wiki 工作台
           </button>
+          <button onClick={toggleWikiEnabled} disabled={isBusy || !workspace}>
+            {wikiEnabled ? "关闭 Wiki 构建" : "开启 Wiki 构建"}
+          </button>
+          <p className="phase-note">
+            参考 WeKnora：Wiki 是工作台级索引策略，开启后资料变化进入异步 Wiki ingest 队列。
+          </p>
           {wikiUrl && <p className="wiki-url">{wikiUrl}</p>}
           <button onClick={openWikiHome} disabled={isBusy || !workspace}>
             查看 Wiki Index / 页面关系
@@ -499,6 +683,8 @@ export function App() {
           <button onClick={saveLatestAnswerAsNote} disabled={isBusy || !lastAssistantMessageId}>
             保存最新回答为 Note
           </button>
+          <p className="section-label">Wiki 自动构建</p>
+          <p className="phase-note">手动补充只用于编辑修正；主流程是开启 Wiki 构建后由资料变更触发 ingest。</p>
           <label className="rail-field">
             <span>Wiki 标题</span>
             <input value={wikiTitle} onChange={(event) => setWikiTitle(event.target.value)} />
@@ -508,12 +694,12 @@ export function App() {
             <textarea
               value={wikiDraft}
               onChange={(event) => setWikiDraft(event.target.value)}
-              placeholder="默认可使用最新回答，也可以手动整理正式页面正文。"
+              placeholder="可选：手动补充或修正工作台级 Wiki 页面正文。资料上传后的 Wiki 页面会自动生成。"
               rows={5}
             />
           </label>
           <button onClick={createWikiPage} disabled={isBusy || !workspace}>
-            创建 Wiki 页面
+            手动补充 Wiki 页面
           </button>
           <hr />
           <p className="section-label">右侧产物栏</p>
@@ -542,6 +728,28 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body)
   });
   return (await response.json() as ApiResponse<T>).data;
+}
+
+async function put<T>(path: string, body: unknown): Promise<T> {
+  const response = await request(path, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  return (await response.json() as ApiResponse<T>).data;
+}
+
+async function patch<T>(path: string, body: unknown): Promise<T> {
+  const response = await request(path, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  return (await response.json() as ApiResponse<T>).data;
+}
+
+async function del(path: string): Promise<void> {
+  await request(path, { method: "DELETE" });
 }
 
 async function request(path: string, init?: RequestInit) {

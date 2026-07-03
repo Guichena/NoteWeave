@@ -69,8 +69,47 @@ public class KnowledgeService {
         if ("WIKI".equals(item.itemType())) {
             jdbcTemplate.update("delete from knowledge_item_link where source_item_id = ?", itemId);
             upsertWikiLinks(item.workspaceId(), itemId, item.title(), content);
+            logWiki(item.workspaceId(), itemId, "UPDATE_PAGE", "追加 Wiki 页面版本：" + item.title());
         }
         return new KnowledgeItemResponse(itemId, item.itemType(), item.title(), "ACTIVE", versionId, nextVersionNo, summary, Instant.now());
+    }
+
+    @Transactional
+    public KnowledgeItemResponse renameItem(String itemId, RenameKnowledgeItemRequest request) {
+        KnowledgeItemRef item = loadKnowledgeItem(itemId);
+        String nextTitle = request.title().trim();
+        if (nextTitle.isBlank()) {
+            throw new BusinessException("KNOWLEDGE_TITLE_REQUIRED", "知识标题不能为空");
+        }
+        jdbcTemplate.update("""
+                update knowledge_item
+                set title = ?, updated_at = current_timestamp
+                where id = ?
+                """, nextTitle, itemId);
+        if ("WIKI".equals(item.itemType())) {
+            refreshWikiLinksAfterPageTitleChange(item.workspaceId(), itemId, item.title(), nextTitle);
+            logWiki(item.workspaceId(), itemId, "RENAME_PAGE", "重命名 Wiki 页面：" + item.title() + " -> " + nextTitle);
+        }
+        return itemResponse(itemId);
+    }
+
+    @Transactional
+    public void deleteItem(String itemId) {
+        KnowledgeItemRef item = loadKnowledgeItem(itemId);
+        jdbcTemplate.update("""
+                update knowledge_item
+                set status = 'DELETED', updated_at = current_timestamp
+                where id = ?
+                """, itemId);
+        if ("WIKI".equals(item.itemType())) {
+            jdbcTemplate.update("delete from knowledge_item_link where source_item_id = ?", itemId);
+            jdbcTemplate.update("""
+                    update knowledge_item_link
+                    set target_item_id = null, relation_status = 'UNRESOLVED', updated_at = current_timestamp
+                    where workspace_id = ? and target_item_id = ?
+                    """, item.workspaceId(), itemId);
+            logWiki(item.workspaceId(), itemId, "DELETE_PAGE", "删除 Wiki 页面：" + item.title());
+        }
     }
 
     private List<String> citationIdsFromRequest(String workspaceId, String sourceMessageId, List<String> directCitationIds) {
@@ -118,6 +157,156 @@ public class KnowledgeService {
         ), workspaceId);
     }
 
+    public List<KnowledgeItemResponse> searchWikiPages(String workspaceId, String query) {
+        Set<String> terms = extractTerms(query);
+        return listItems(workspaceId, "WIKI").stream()
+                .filter(item -> terms.isEmpty() || score(item.title() + "\n" + item.summary(), terms) > 0)
+                .sorted(Comparator.comparingInt((KnowledgeItemResponse item) -> score(item.title() + "\n" + item.summary(), terms)).reversed())
+                .toList();
+    }
+
+    public WikiGraphResponse getWikiGraph(String workspaceId) {
+        List<WikiGraphNode> nodes = jdbcTemplate.query("""
+                select i.id, i.title, coalesce(i.page_kind, '') as page_kind, coalesce(v.version_no, 0) as version_no
+                from knowledge_item i
+                left join knowledge_version v on v.id = i.latest_version_id
+                where i.workspace_id = ? and i.item_type = 'WIKI' and i.status = 'ACTIVE'
+                order by i.updated_at desc
+                """, (rs, rowNum) -> new WikiGraphNode(
+                rs.getString("id"),
+                rs.getString("title"),
+                rs.getString("page_kind"),
+                rs.getInt("version_no")
+        ), workspaceId);
+        List<WikiGraphEdge> edges = jdbcTemplate.query("""
+                select source_item_id, target_item_id, target_title, relation_type, relation_status
+                from knowledge_item_link
+                where workspace_id = ?
+                order by updated_at desc
+                """, (rs, rowNum) -> new WikiGraphEdge(
+                rs.getString("source_item_id"),
+                rs.getString("target_item_id"),
+                rs.getString("target_title"),
+                rs.getString("relation_type"),
+                rs.getString("relation_status")
+        ), workspaceId);
+        return new WikiGraphResponse(workspaceId, nodes, edges);
+    }
+
+    public WikiStatsResponse getWikiStats(String workspaceId) {
+        int pageCount = count("select count(*) from knowledge_item where workspace_id = ? and item_type = 'WIKI' and status = 'ACTIVE'", workspaceId);
+        int linkCount = count("select count(*) from knowledge_item_link where workspace_id = ?", workspaceId);
+        int resolvedLinkCount = count("select count(*) from knowledge_item_link where workspace_id = ? and relation_status = 'RESOLVED'", workspaceId);
+        int unresolvedLinkCount = count("select count(*) from knowledge_item_link where workspace_id = ? and relation_status = 'UNRESOLVED'", workspaceId);
+        int citationCount = count("""
+                select count(*)
+                from knowledge_item i
+                join knowledge_version v on v.id = i.latest_version_id
+                join knowledge_version_citation c on c.knowledge_version_id = v.id
+                where i.workspace_id = ? and i.item_type = 'WIKI' and i.status = 'ACTIVE'
+                """, workspaceId);
+        return new WikiStatsResponse(workspaceId, pageCount, linkCount, resolvedLinkCount, unresolvedLinkCount, citationCount, lintWiki(workspaceId).size());
+    }
+
+    public List<WikiIssueResponse> lintWiki(String workspaceId) {
+        List<WikiIssueResponse> issues = new ArrayList<>();
+        issues.addAll(jdbcTemplate.query("""
+                select source_item_id, target_title
+                from knowledge_item_link
+                where workspace_id = ? and relation_status = 'UNRESOLVED'
+                order by updated_at desc
+                """, (rs, rowNum) -> new WikiIssueResponse(
+                "BROKEN_LINK",
+                "HIGH",
+                rs.getString("source_item_id"),
+                rs.getString("target_title"),
+                "页面引用了尚不存在的 Wiki 页面：" + rs.getString("target_title"),
+                "创建缺失页面或修改链接标题"
+        ), workspaceId));
+        issues.addAll(jdbcTemplate.query("""
+                select i.id, i.title
+                from knowledge_item i
+                left join knowledge_item_link outgoing on outgoing.source_item_id = i.id
+                left join knowledge_item_link incoming on incoming.target_item_id = i.id
+                where i.workspace_id = ? and i.item_type = 'WIKI' and i.status = 'ACTIVE'
+                group by i.id, i.title
+                having count(outgoing.id) = 0 and count(incoming.id) = 0
+                """, (rs, rowNum) -> new WikiIssueResponse(
+                "ORPHAN_PAGE",
+                "MEDIUM",
+                rs.getString("id"),
+                rs.getString("title"),
+                "页面没有出链或入链，可能没有进入 Wiki 网络。",
+                "补充页面链接或在相关页面中引用它"
+        ), workspaceId));
+        issues.addAll(jdbcTemplate.query("""
+                select i.id, i.title
+                from knowledge_item i
+                join knowledge_version v on v.id = i.latest_version_id
+                left join knowledge_version_citation c on c.knowledge_version_id = v.id
+                where i.workspace_id = ? and i.item_type = 'WIKI' and i.status = 'ACTIVE'
+                group by i.id, i.title
+                having count(c.id) = 0
+                """, (rs, rowNum) -> new WikiIssueResponse(
+                "MISSING_SOURCE",
+                "MEDIUM",
+                rs.getString("id"),
+                rs.getString("title"),
+                "页面缺少来源引用。",
+                "补充来源引用或从资料 ingest 重新生成"
+        ), workspaceId));
+        return issues;
+    }
+
+    public List<WikiLogEntryResponse> listWikiLog(String workspaceId) {
+        return jdbcTemplate.query("""
+                select id, item_id, event_type, message, created_at
+                from wiki_log_entry
+                where workspace_id = ?
+                order by created_at desc, id desc
+                limit 80
+                """, (rs, rowNum) -> new WikiLogEntryResponse(
+                rs.getString("id"),
+                rs.getString("item_id"),
+                rs.getString("event_type"),
+                rs.getString("message"),
+                toInstant(rs.getTimestamp("created_at"))
+        ), workspaceId);
+    }
+
+    @Transactional
+    public WikiStatsResponse rebuildWikiLinks(String workspaceId) {
+        List<WikiPageSnapshot> pages = loadWikiPageSnapshots(workspaceId);
+        jdbcTemplate.update("delete from knowledge_item_link where workspace_id = ?", workspaceId);
+        for (WikiPageSnapshot page : pages) {
+            upsertWikiLinks(workspaceId, page.itemId(), page.title(), page.content());
+        }
+        logWiki(workspaceId, null, "REBUILD_LINKS", "已重建 Wiki 页面链接关系");
+        return getWikiStats(workspaceId);
+    }
+
+    @Transactional
+    public WikiAutoFixResponse autoFixWiki(String workspaceId) {
+        List<String> missingTitles = jdbcTemplate.queryForList("""
+                select distinct target_title
+                from knowledge_item_link
+                where workspace_id = ? and relation_status = 'UNRESOLVED'
+                """, String.class, workspaceId);
+        int created = 0;
+        for (String title : missingTitles) {
+            if (findWikiItemIdByTitle(workspaceId, title) == null) {
+                createItemWithVersion(workspaceId, "WIKI", title,
+                        "# " + title + "\n\n## 待补充\n\n该页面由 Wiki auto-fix 根据断链自动创建，需要人工补充内容和来源。\n",
+                        null,
+                        List.of());
+                created++;
+            }
+        }
+        WikiStatsResponse stats = rebuildWikiLinks(workspaceId);
+        logWiki(workspaceId, null, "AUTO_FIX", "已自动创建缺失页面 " + created + " 个，并重建链接");
+        return new WikiAutoFixResponse(workspaceId, created, stats.linkCount(), stats.issueCount());
+    }
+
     public List<KnowledgeItemResponse> listItems(String workspaceId, String itemType) {
         return jdbcTemplate.query("""
                 select i.id, i.item_type, i.title, i.status, i.latest_version_id, i.updated_at,
@@ -137,6 +326,31 @@ public class KnowledgeService {
                 rs.getString("summary"),
                 toInstant(rs.getTimestamp("updated_at"))
         ), workspaceId, itemType);
+    }
+
+    private KnowledgeItemResponse itemResponse(String itemId) {
+        return jdbcTemplate.query("""
+                select i.id, i.item_type, i.title, i.status, i.latest_version_id, i.updated_at,
+                       coalesce(v.version_no, 0) as version_no,
+                       coalesce(v.summary, '') as summary
+                from knowledge_item i
+                left join knowledge_version v on v.id = i.latest_version_id
+                where i.id = ?
+                """, rs -> {
+            if (!rs.next()) {
+                throw new BusinessException("KNOWLEDGE_ITEM_NOT_FOUND", "知识对象不存在");
+            }
+            return new KnowledgeItemResponse(
+                    rs.getString("id"),
+                    rs.getString("item_type"),
+                    rs.getString("title"),
+                    rs.getString("status"),
+                    rs.getString("latest_version_id"),
+                    rs.getInt("version_no"),
+                    rs.getString("summary"),
+                    toInstant(rs.getTimestamp("updated_at"))
+            );
+        }, itemId);
     }
 
     public KnowledgeItemDetailResponse getItemDetail(String itemId) {
@@ -222,6 +436,7 @@ public class KnowledgeService {
         bindVersionCitations(versionId, citationIds);
         if ("WIKI".equals(itemType)) {
             upsertWikiLinks(workspaceId, itemId, title, content);
+            logWiki(workspaceId, itemId, "CREATE_PAGE", "创建 Wiki 页面：" + title);
         }
         return new KnowledgeItemResponse(itemId, itemType, title, "ACTIVE", versionId, 1, summary, Instant.now());
     }
@@ -280,6 +495,22 @@ public class KnowledgeService {
         }
     }
 
+    private void refreshWikiLinksAfterPageTitleChange(String workspaceId, String itemId, String oldTitle, String nextTitle) {
+        jdbcTemplate.update("""
+                update knowledge_item_link
+                set target_title = ?, target_item_id = ?, relation_status = 'RESOLVED', updated_at = current_timestamp
+                where workspace_id = ? and lower(target_title) = lower(?)
+                """, nextTitle, itemId, workspaceId, oldTitle);
+        jdbcTemplate.update("""
+                update knowledge_item_link
+                set target_item_id = ?, relation_status = 'RESOLVED', updated_at = current_timestamp
+                where workspace_id = ? and lower(target_title) = lower(?)
+                """, itemId, workspaceId, nextTitle);
+        jdbcTemplate.update("delete from knowledge_item_link where source_item_id = ?", itemId);
+        KnowledgeItemDetailResponse detail = getItemDetail(itemId);
+        upsertWikiLinks(workspaceId, itemId, nextTitle, detail.content());
+    }
+
     private List<String> extractWikiLinks(String content) {
         if (content == null || content.isBlank()) {
             return List.of();
@@ -302,6 +533,31 @@ public class KnowledgeService {
                 limit 1
                 """, String.class, workspaceId, title);
         return ids.isEmpty() ? null : ids.get(0);
+    }
+
+    private List<WikiPageSnapshot> loadWikiPageSnapshots(String workspaceId) {
+        return jdbcTemplate.query("""
+                select i.id, i.title, v.content
+                from knowledge_item i
+                join knowledge_version v on v.id = i.latest_version_id
+                where i.workspace_id = ? and i.item_type = 'WIKI' and i.status = 'ACTIVE'
+                """, (rs, rowNum) -> new WikiPageSnapshot(
+                rs.getString("id"),
+                rs.getString("title"),
+                rs.getString("content")
+        ), workspaceId);
+    }
+
+    private void logWiki(String workspaceId, String itemId, String eventType, String message) {
+        jdbcTemplate.update("""
+                insert into wiki_log_entry(id, workspace_id, item_id, event_type, message)
+                values (?, ?, ?, ?, ?)
+                """, Ids.newId(), workspaceId, itemId, eventType, message);
+    }
+
+    private int count(String sql, String workspaceId) {
+        Integer value = jdbcTemplate.queryForObject(sql, Integer.class, workspaceId);
+        return value == null ? 0 : value;
     }
 
     private KnowledgeItemRef loadKnowledgeItem(String itemId) {
@@ -386,6 +642,9 @@ public class KnowledgeService {
     }
 
     private record KnowledgeItemRef(String itemId, String workspaceId, String itemType, String title) {
+    }
+
+    private record WikiPageSnapshot(String itemId, String title, String content) {
     }
 
     public record KnowledgePageHit(

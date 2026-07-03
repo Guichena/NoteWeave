@@ -18,8 +18,8 @@
 当前模式口径：
 
 1. `问答 RAG`：基于当前研究工作台资料回答，并返回引用
-2. `Note`：参考 Marginalia 式结构化阅读漏斗，展示候选资料、原文窗口、摘录卡片和结构化笔记
-3. `Wiki`：参考 WeKnora 式 Wiki-first 链路，优先读取 Wiki 页面，并保留默认 Wiki 工作台入口
+2. `Note`：参考 Marginalia 式资料级检索，展示候选资料、原文窗口、摘录证据和带引用回答，结构化笔记只是可选保存能力
+3. `Wiki`：参考 WebKonra / WeKnora 式全量 Wiki 检索，支持 wiki 构建开关、页面 ingest、页面版本、链接/反链、来源回链、搜索、图谱、统计、日志、lint、rebuild links 和 auto-fix；Wiki 知识网络绑定研究工作台，不绑定单次会话
 
 ## 本地运行
 

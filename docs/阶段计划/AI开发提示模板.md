@@ -75,8 +75,8 @@
 4. docs/最小接口契约.md
 
 请先对齐阶段3口径：
-- Note 链路参考 shenmintao/marginalia，重点是资料级候选、原文窗口、摘录卡片和结构化笔记。
-- Wiki 链路参考 WeKnora，重点是 Wiki-first 页面检索、页面链接、来源回链和默认 Wiki 工作台入口。
+- Note 链路参考 shenmintao/marginalia，重点是资料级候选、原文窗口、摘录证据和带引用回答，结构化笔记只是可选保存能力。
+- Wiki 链路参考 WebKonra / WeKnora，重点是全量 Wiki 检索、页面链接、反向链接、图关系、来源回链和默认 Wiki 工作台入口。
 
 请用 TDD 完成当前子阶段，不要把 Note 和 Wiki 写成同一条泛化 Knowledge 链路。
 ```

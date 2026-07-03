@@ -40,7 +40,7 @@
 阶段3 Note / Wiki 双链路
   -> 3.1 知识对象与版本底座
   -> 3.2 Note 链路：Marginalia 式结构化阅读检索漏斗
-  -> 3.3 Wiki 链路：WeKnora 式 Wiki-first 页面体系
+  -> 3.3 Wiki 链路：WebKonra / WeKnora 式全量 Wiki 检索体系
   -> 3.4 前端三模式入口与 Wiki 工作台入口
 
 阶段4 右侧产物栏与 Artifact Agent
@@ -63,7 +63,7 @@
 3. 一次只完成当前子阶段，不跨阶段铺功能。
 4. 先打通纵向闭环，不先横向铺满。
 5. Note 链路参考 `shenmintao/marginalia`，不要写成普通 chunk top-k 问答。
-6. Wiki 链路参考 `WeKnora`，不要写成单纯 Markdown 页面生成。
+6. Wiki 链路参考 `WebKonra / WeKnora` 的全量 Wiki 检索，不要写成单纯 Markdown 页面生成或入口按钮。
 7. 每次完成后更新必要文档、提交并推送当前分支。
 
 ## 5. 阶段完成顺序

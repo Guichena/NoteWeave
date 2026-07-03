@@ -1,6 +1,7 @@
 package com.noteweave.chat;
 
 import com.noteweave.chat.RetrievalService.CandidateSource;
+import com.noteweave.chat.RetrievalService.NoteJournalHit;
 import com.noteweave.chat.RetrievalService.ReadingWindow;
 import com.noteweave.chat.RetrievalService.RetrievedChunk;
 import com.noteweave.common.BusinessException;
@@ -90,39 +91,54 @@ public class ChatService {
 
     private AnswerDraft buildNoteAnswer(String workspaceId, SendMessageRequest request) {
         List<CandidateSource> candidates = retrievalService.findCandidateSourcesForNote(workspaceId, request.content());
-        List<ReadingWindow> windows = retrievalService.openSourceWindowsForNote(workspaceId, candidates);
+        List<NoteJournalHit> journalHits = retrievalService.findNoteJournalHits(workspaceId, request.content());
+        List<ReadingWindow> windows = retrievalService.openSourceWindowsForNote(workspaceId, candidates, request.content());
         List<RetrievedChunk> evidence = windows.stream().map(ReadingWindow::toRetrievedChunk).toList();
         if (candidates.isEmpty() || windows.isEmpty()) {
-            return new AnswerDraft("当前工作台资料不足，暂时无法形成结构化笔记。请先上传或保存更多资料。", List.of(), List.of());
+            return new AnswerDraft("当前工作台资料不足，暂时无法通过 Marginalia 式资料级检索形成可靠回答。请先上传或保存更多资料。", List.of(), List.of());
         }
         StringBuilder builder = new StringBuilder();
         builder.append("## 直接回答\n");
-        builder.append("我会按 Marginalia 式结构化阅读漏斗处理这个问题：先定位候选资料，再打开原文窗口，最后整理摘录卡片和结构化笔记。\n\n");
+        builder.append("我会按 Marginalia 式结构化检索漏斗处理这个问题：先用 metadata / tag / journal 信号定位候选资料，再打开原文窗口读取摘录证据，最后生成带引用回答；结构化笔记只是可选沉淀。\n\n");
         builder.append("问题：").append(request.content()).append("\n\n");
+        if (!journalHits.isEmpty()) {
+            builder.append("## Journal 信号\n");
+            for (NoteJournalHit hit : journalHits) {
+                builder.append("- 历史 Note《").append(hit.title()).append("》：")
+                        .append(trim(hit.summary().isBlank() ? hit.content() : hit.summary(), 140))
+                        .append("，引用数 ").append(hit.citationCount())
+                        .append("，匹配分 ").append(hit.score()).append("\n");
+            }
+            builder.append("\n");
+        }
         builder.append("## 候选资料\n");
         for (CandidateSource candidate : candidates) {
             builder.append("- 《").append(candidate.title()).append("》：")
                     .append(candidate.sourceType()).append("，可读片段数 ").append(candidate.chunkCount())
-                    .append("，匹配分 ").append(candidate.score());
+                    .append("，匹配分 ").append(candidate.score())
+                    .append("，召回信号：").append(candidate.recallSignals());
             if (!candidate.summary().isBlank()) {
                 builder.append("，摘要：").append(trim(candidate.summary(), 120));
             }
             builder.append("\n");
         }
-        builder.append("\n## 关键观点\n");
+        builder.append("\n## 关系扩展\n");
+        builder.append("系统会把命中资料的标题、摘要、标签、历史 Note 引用和资料窗口可读性作为轻量关系信号；当前回答优先打开这些候选资料的原文窗口，而不是直接读取全库 chunk top-k。\n\n");
+        builder.append("## 关键观点\n");
         for (int i = 0; i < windows.size(); i++) {
             ReadingWindow window = windows.get(i);
             builder.append("- 观点 ").append(i + 1).append("：来自《").append(window.title()).append("》的原文窗口，说明：")
-                    .append(trim(window.content(), 140)).append("\n");
+                    .append(trim(window.content(), 140))
+                    .append("，窗口分 ").append(window.score()).append("\n");
         }
-        builder.append("\n## 摘录卡片\n");
+        builder.append("\n## 摘录证据\n");
         for (int i = 0; i < windows.size(); i++) {
             ReadingWindow window = windows.get(i);
-            builder.append("- 摘录 ").append(i + 1).append("：")
+            builder.append("- 摘录卡 ").append(i + 1).append("：")
                     .append(trim(window.content(), 220))
                     .append("（来源：").append(window.title()).append(" / ").append(window.locationInfo()).append("）\n");
         }
-        builder.append("\n## 结构化笔记\n");
+        builder.append("\n## 可选结构化笔记\n");
         builder.append("### 直接结论\n");
         builder.append("这个问题可以先基于上面的候选资料和摘录形成一版可编辑笔记。\n\n");
         builder.append("### 待确认问题\n");
@@ -136,19 +152,19 @@ public class ChatService {
         List<String> wikiCitationIds = knowledgeService.citationIdsForWikiPages(pages);
         if (pages.isEmpty()) {
             StringBuilder fallback = new StringBuilder();
-            fallback.append("## 基于 Wiki 的回答\n");
-            fallback.append("当前默认 Wiki 工作台还没有可直接命中的正式页面，因此本次不退回普通资料 RAG 直接作答。\n\n");
+            fallback.append("## 基于全量 Wiki 的回答\n");
+            fallback.append("当前 Wiki 知识网络还没有可直接命中的正式页面，因此本次不退回普通资料 RAG 直接作答。\n\n");
             fallback.append("## 建议动作\n");
             fallback.append("- 先在右侧知识沉淀区创建 Wiki 页面。\n");
-            fallback.append("- 或先用 Note 链路整理候选资料和摘录卡片，再把稳定结论写入 Wiki 页面。\n");
-            fallback.append("- Wiki 页面创建后，本模式会优先读取页面、页面链接和来源回链回答。\n");
+            fallback.append("- 或先用 Note 链路通过资料级检索读取原文窗口，再把稳定结论写入工作台 Wiki 页面。\n");
+            fallback.append("- Wiki 页面创建后，本模式会优先检索 Wiki Index、页面正文、页面链接、反向链接和来源回链回答。\n");
             fallback.append("\n## 默认 Wiki 工作台\n");
             fallback.append("/workspaces/").append(workspaceId).append("/wiki\n");
             return new AnswerDraft(fallback.toString(), List.of(), List.of());
         }
         StringBuilder builder = new StringBuilder();
-        builder.append("## 基于 Wiki 的回答\n");
-        builder.append("我优先读取当前工作台已经沉淀的 Wiki 页面，并基于页面链接、索引和来源回链给出回答。\n\n");
+        builder.append("## 基于全量 Wiki 的回答\n");
+        builder.append("我优先检索当前工作台已经沉淀的 Wiki Index、页面正文、页面链接、反向链接和来源回链，再基于正式知识网络给出回答。\n\n");
         builder.append("## 相关 Wiki 页面\n");
         for (KnowledgePageHit page : pages) {
             builder.append("- 《").append(page.title()).append("》v").append(page.versionNo())
@@ -156,6 +172,8 @@ public class ChatService {
         }
         builder.append("\n## 简要结论\n");
         builder.append(trim(pages.get(0).content(), 420)).append("\n\n");
+        builder.append("## 页面关系\n");
+        builder.append("相关页面关系、反向链接、图谱、统计、日志和 Wiki lint 可在默认 Wiki 工作台中查看。\n\n");
         builder.append("## 默认 Wiki 工作台\n");
         builder.append("/workspaces/").append(workspaceId).append("/wiki\n");
         return new AnswerDraft(builder.toString(), List.of(), wikiCitationIds);

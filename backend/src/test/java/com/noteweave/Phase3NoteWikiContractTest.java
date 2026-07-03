@@ -2,8 +2,10 @@ package com.noteweave;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -49,9 +51,10 @@ class Phase3NoteWikiContractTest {
 
         mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", noteRequestId))
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("Marginalia 式结构化阅读漏斗")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("Marginalia 式结构化检索漏斗")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 候选资料")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 摘录卡片")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 关系扩展")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 摘录证据")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chat.citation")));
 
         mockMvc.perform(post("/api/v2/messages/{messageId}/save-as-note", noteAssistantMessageId)
@@ -68,13 +71,20 @@ class Phase3NoteWikiContractTest {
         );
         assertThat(noteCount).isEqualTo(1);
 
+        JsonNode secondNoteMessage = sendMessage(conversationId, "NOTE", "继续整理 Note 链路和 Marginalia 的关系");
+        String secondNoteRequestId = secondNoteMessage.path("data").path("assistant_request_id").asText();
+        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", secondNoteRequestId))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("## Journal 信号")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("历史 Note")));
+
         JsonNode wikiItem = createWikiPage(workspaceId, noteAssistantMessageId);
         String wikiItemId = wikiItem.path("data").path("item_id").asText();
 
         mockMvc.perform(post("/api/v2/knowledge-items/{itemId}/versions", wikiItemId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
-                                "content", "# NoteWeave 阶段3总览\n\n阶段3最终采用 WeKnora 式 Wiki-first 页面链路，并把 [[Note 链路]] 作为结构化阅读入口。新增内容会进入第二版。",
+                                "content", "# NoteWeave 阶段3总览\n\n阶段3最终采用 WebKonra / WeKnora 式全量 Wiki 检索链路，并把 [[Note 链路]] 作为资料级检索入口。新增内容会进入第二版。",
                                 "source_message_id", noteAssistantMessageId
                         ))))
                 .andExpect(status().isOk())
@@ -92,7 +102,7 @@ class Phase3NoteWikiContractTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.item_type").value("WIKI"))
                 .andExpect(jsonPath("$.data.latest_version_no").value(2))
-                .andExpect(jsonPath("$.data.content").value(org.hamcrest.Matchers.containsString("WeKnora 式 Wiki-first 页面链路")))
+                .andExpect(jsonPath("$.data.content").value(org.hamcrest.Matchers.containsString("全量 Wiki 检索链路")))
                 .andExpect(jsonPath("$.data.citations[0].quote_text").isNotEmpty());
 
         JsonNode wikiMessage = sendMessage(conversationId, "WIKI", "NoteWeave 阶段3怎么设计？");
@@ -101,6 +111,7 @@ class Phase3NoteWikiContractTest {
         mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", wikiRequestId))
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 相关 Wiki 页面")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 页面关系")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("v2")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("/wiki")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chat.citation")));
@@ -118,7 +129,7 @@ class Phase3NoteWikiContractTest {
 
         mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", wikiRequestId))
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("当前默认 Wiki 工作台还没有可直接命中的正式页面")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("当前 Wiki 知识网络还没有可直接命中的正式页面")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("创建 Wiki 页面")))
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("event: chat.citation"))));
 
@@ -129,6 +140,150 @@ class Phase3NoteWikiContractTest {
         );
         assertThat(citationCount).isZero();
     }
+
+    @Test
+    void wikiPageCanBeCreatedAsWorkspaceAssetWithoutBindingConversationMessage() throws Exception {
+        String workspaceId = createWorkspace();
+
+        MvcResult result = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/knowledge-items", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "item_type", "WIKI",
+                                "title", "工作台级 Wiki 页面",
+                                "content", "# 工作台级 Wiki 页面\n\n这个页面属于研究工作台，不默认绑定某一次聊天。"
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.item_type").value("WIKI"))
+                .andReturn();
+
+        String itemId = objectMapper.readTree(result.getResponse().getContentAsString()).path("data").path("item_id").asText();
+        Map<String, Object> row = jdbcTemplate.queryForMap("""
+                select v.source_message_id
+                from knowledge_item i
+                join knowledge_version v on v.id = i.latest_version_id
+                where i.id = ?
+                """, itemId);
+        assertThat(row.get("source_message_id")).isNull();
+    }
+
+    @Test
+    void wikiIngestShouldBeControlledByWorkspaceLevelSwitch() throws Exception {
+        String disabledWorkspaceId = createWorkspace();
+        uploadSource(disabledWorkspaceId);
+        Integer disabledTaskCount = jdbcTemplate.queryForObject(
+                "select count(*) from task where workspace_id = ? and task_type = 'WIKI_INGEST'",
+                Integer.class,
+                disabledWorkspaceId
+        );
+        assertThat(disabledTaskCount).isZero();
+
+        String enabledWorkspaceId = createWorkspace();
+        mockMvc.perform(put("/api/v2/workspaces/{workspaceId}/wiki-settings", enabledWorkspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("wiki_enabled", true))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.wiki_enabled").value(true));
+        uploadSource(enabledWorkspaceId);
+
+        Integer enabledTaskCount = jdbcTemplate.queryForObject(
+                "select count(*) from task where workspace_id = ? and task_type = 'WIKI_INGEST'",
+                Integer.class,
+                enabledWorkspaceId
+        );
+        Integer outboxCount = jdbcTemplate.queryForObject("""
+                select count(*)
+                from task_outbox o
+                join task t on t.id = o.task_id
+                where t.workspace_id = ? and o.topic = 'noteweave.wiki.ingest'
+                """, Integer.class, enabledWorkspaceId);
+        assertThat(enabledTaskCount).isEqualTo(1);
+        assertThat(outboxCount).isEqualTo(1);
+
+        Integer generatedWikiPages = jdbcTemplate.queryForObject(
+                "select count(*) from knowledge_item where workspace_id = ? and item_type = 'WIKI'",
+                Integer.class,
+                enabledWorkspaceId
+        );
+        assertThat(generatedWikiPages).isEqualTo(1);
+    }
+
+    @Test
+    void wikiManagementEndpointsShouldCoverSearchGraphStatsLintAndAutoFix() throws Exception {
+        String workspaceId = createWorkspace();
+        MvcResult create = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/knowledge-items", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "item_type", "WIKI",
+                                "title", "Wiki 管理页",
+                                "content", "# Wiki 管理页\n\n这里引用 [[缺失页面]] 来测试断链修复。"
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn();
+        String itemId = objectMapper.readTree(create.getResponse().getContentAsString()).path("data").path("item_id").asText();
+
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/wiki-search", workspaceId)
+                        .param("q", "管理"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].title").value("Wiki 管理页"));
+
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/wiki-graph", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.nodes[0].item_id").value(itemId))
+                .andExpect(jsonPath("$.data.edges[0].target_title").value("缺失页面"))
+                .andExpect(jsonPath("$.data.edges[0].relation_status").value("UNRESOLVED"));
+
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/wiki-stats", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.page_count").value(1))
+                .andExpect(jsonPath("$.data.unresolved_link_count").value(1));
+
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/wiki-issues", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].issue_type").value("BROKEN_LINK"));
+
+        mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/wiki/auto-fix", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.created_pages").value(1));
+
+        mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/wiki/rebuild-links", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.resolved_link_count").value(1));
+
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/wiki-log", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].event_type").isNotEmpty());
+
+        MvcResult missingPage = mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/wiki-search", workspaceId)
+                        .param("q", "缺失页面"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].title").value("缺失页面"))
+                .andReturn();
+        String missingPageId = objectMapper.readTree(missingPage.getResponse().getContentAsString()).path("data").path(0).path("item_id").asText();
+
+        mockMvc.perform(patch("/api/v2/knowledge-items/{itemId}/title", missingPageId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("title", "已补齐页面"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.title").value("已补齐页面"));
+
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/wiki-graph", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.edges[0].target_title").value("已补齐页面"))
+                .andExpect(jsonPath("$.data.edges[0].relation_status").value("RESOLVED"));
+
+        mockMvc.perform(delete("/api/v2/knowledge-items/{itemId}", missingPageId))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/wiki-search", workspaceId)
+                        .param("q", "已补齐页面"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isEmpty());
+
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/wiki-log", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].event_type").value("DELETE_PAGE"));
+    }
+
 
     private void assertSourceMetadataCreated(String workspaceId) {
         Map<String, Object> row = jdbcTemplate.queryForMap("""
@@ -145,7 +300,7 @@ class Phase3NoteWikiContractTest {
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "item_type", "WIKI",
                                 "title", "NoteWeave 阶段3总览",
-                                "content", "# NoteWeave 阶段3总览\n\n阶段3采用 Wiki-first 回答逻辑，并保留 [[Note 链路]] 作为相关页面。",
+                                "content", "# NoteWeave 阶段3总览\n\n阶段3采用全量 Wiki 检索逻辑，并保留 [[Note 链路]] 作为相关页面。",
                                 "source_message_id", noteAssistantMessageId
                         ))))
                 .andExpect(status().isOk())
@@ -169,8 +324,8 @@ class Phase3NoteWikiContractTest {
     private void uploadSource(String workspaceId) throws Exception {
         byte[] content = """
                 NoteWeave phase3 补齐三种聊天链路中的 Note 和 Wiki。
-                Note 链路参考 Marginalia，先定位候选资料，再打开原文窗口，生成摘录卡片和结构化笔记。
-                Wiki 链路参考 WeKnora，优先读取已经沉淀的 Wiki 页面，并提供默认 Wiki 工作台入口。
+                Note 链路参考 Marginalia，先定位候选资料，再打开原文窗口，生成摘录证据和带引用回答。
+                Wiki 链路参考 WebKonra / WeKnora，优先读取已经沉淀的 Wiki 页面、索引、页面链接和来源回链。
                 """.getBytes(StandardCharsets.UTF_8);
 
         MvcResult init = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/uploads", workspaceId)

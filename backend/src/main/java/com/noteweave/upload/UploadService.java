@@ -5,6 +5,7 @@ import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
 import com.noteweave.common.Json;
 import com.noteweave.infra.LocalObjectStorage;
+import com.noteweave.knowledge.WikiIngestService;
 import com.noteweave.source.SourceParseService;
 import com.noteweave.task.TaskService;
 import com.noteweave.workspace.WorkspaceService;
@@ -26,6 +27,7 @@ public class UploadService {
     private final WorkspaceService workspaceService;
     private final LocalObjectStorage storage;
     private final SourceParseService sourceParseService;
+    private final WikiIngestService wikiIngestService;
     private final TaskService taskService;
     private final ObjectMapper objectMapper;
 
@@ -34,6 +36,7 @@ public class UploadService {
             WorkspaceService workspaceService,
             LocalObjectStorage storage,
             SourceParseService sourceParseService,
+            WikiIngestService wikiIngestService,
             TaskService taskService,
             ObjectMapper objectMapper
     ) {
@@ -41,6 +44,7 @@ public class UploadService {
         this.workspaceService = workspaceService;
         this.storage = storage;
         this.sourceParseService = sourceParseService;
+        this.wikiIngestService = wikiIngestService;
         this.taskService = taskService;
         this.objectMapper = objectMapper;
     }
@@ -128,6 +132,7 @@ public class UploadService {
         )));
 
         sourceParseService.parseAndIndex(upload.workspaceId(), sourceId, snapshotId, merged);
+        wikiIngestService.enqueueAndRunSourceIngestIfEnabled(upload.workspaceId(), sourceId);
         taskService.completeTask(taskId, "INDEXED", "资料已经解析并写入本地检索切片", sourceId);
         jdbcTemplate.update("""
                 update document_upload

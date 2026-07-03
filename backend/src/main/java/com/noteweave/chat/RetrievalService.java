@@ -2,9 +2,11 @@ package com.noteweave.chat;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -50,6 +52,8 @@ public class RetrievalService {
     }
 
     public List<CandidateSource> findCandidateSourcesForNote(String workspaceId, String query) {
+        Set<String> terms = extractTerms(query);
+        Map<String, Integer> noteSignals = noteJournalSignals(workspaceId, terms);
         List<CandidateSource> candidates = jdbcTemplate.query("""
                 select s.id, s.title, s.source_type, s.updated_at,
                        coalesce(s.summary, '') as summary,
@@ -72,11 +76,16 @@ public class RetrievalService {
                 rs.getString("tags_json"),
                 rs.getString("metadata_json"),
                 rs.getString("sample_text"),
-                0
+                0,
+                ""
         ), workspaceId);
-        Set<String> terms = extractTerms(query);
         List<CandidateSource> scored = candidates.stream()
-                .map(source -> source.withScore(score(source.metadataForScoring(), terms)))
+                .map(source -> {
+                    int metadataScore = score(source.metadataForScoring(), terms);
+                    int noteScore = noteSignals.getOrDefault(source.sourceId(), 0) * 5;
+                    return source.withScore(metadataScore + noteScore)
+                            .withRecallSignals(recallSignals(source, metadataScore, noteScore));
+                })
                 .filter(source -> source.score() > 0 || terms.isEmpty())
                 .sorted(Comparator.comparingInt(CandidateSource::score).reversed())
                 .limit(4)
@@ -87,10 +96,11 @@ public class RetrievalService {
         return candidates.stream().limit(4).toList();
     }
 
-    public List<ReadingWindow> openSourceWindowsForNote(String workspaceId, List<CandidateSource> sources) {
+    public List<ReadingWindow> openSourceWindowsForNote(String workspaceId, List<CandidateSource> sources, String query) {
         if (sources == null || sources.isEmpty()) {
             return List.of();
         }
+        Set<String> terms = extractTerms(query);
         List<ReadingWindow> windows = new ArrayList<>();
         for (CandidateSource source : sources) {
             windows.addAll(jdbcTemplate.query("""
@@ -100,7 +110,7 @@ public class RetrievalService {
                     join source_window w on w.source_chunk_id = c.id
                     where c.workspace_id = ? and c.source_id = ?
                     order by c.chunk_no asc, w.window_no asc
-                    limit 2
+                    limit 12
                     """, (rs, rowNum) -> new ReadingWindow(
                     rs.getString("id"),
                     rs.getString("source_id"),
@@ -108,10 +118,88 @@ public class RetrievalService {
                     rs.getInt("chunk_no"),
                     rs.getString("title"),
                     rs.getString("content"),
-                    rs.getString("location_info")
+                    rs.getString("location_info"),
+                    0
             ), workspaceId, source.sourceId()));
         }
-        return windows.stream().limit(6).toList();
+        return windows.stream()
+                .map(window -> window.withScore(score(window.content() + "\n" + window.title(), terms)))
+                .sorted(Comparator.comparingInt(ReadingWindow::score).reversed())
+                .limit(8)
+                .toList();
+    }
+
+    public List<NoteJournalHit> findNoteJournalHits(String workspaceId, String query) {
+        Set<String> terms = extractTerms(query);
+        List<NoteJournalHit> hits = jdbcTemplate.query("""
+                select i.id, i.title, coalesce(v.summary, '') as summary, v.content,
+                       count(c.id) as citation_count
+                from knowledge_item i
+                join knowledge_version v on v.id = i.latest_version_id
+                left join knowledge_version_citation kvc on kvc.knowledge_version_id = v.id
+                left join citation c on c.id = kvc.citation_id
+                where i.workspace_id = ? and i.item_type = 'NOTE' and i.status = 'ACTIVE'
+                group by i.id, i.title, v.summary, v.content, i.updated_at
+                order by i.updated_at desc
+                limit 30
+                """, (rs, rowNum) -> new NoteJournalHit(
+                rs.getString("id"),
+                rs.getString("title"),
+                rs.getString("summary"),
+                rs.getString("content"),
+                rs.getInt("citation_count"),
+                0
+        ), workspaceId);
+        return hits.stream()
+                .map(hit -> hit.withScore(score(hit.title() + "\n" + hit.summary() + "\n" + hit.content(), terms)))
+                .filter(hit -> hit.score() > 0 || terms.isEmpty())
+                .sorted(Comparator.comparingInt(NoteJournalHit::score).reversed())
+                .limit(3)
+                .toList();
+    }
+
+    private Map<String, Integer> noteJournalSignals(String workspaceId, Set<String> terms) {
+        if (terms.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Integer> signals = new HashMap<>();
+        List<NoteJournalSourceSignal> rows = jdbcTemplate.query("""
+                select c.source_id, i.title, coalesce(v.summary, '') as summary, v.content
+                from knowledge_item i
+                join knowledge_version v on v.id = i.latest_version_id
+                join knowledge_version_citation kvc on kvc.knowledge_version_id = v.id
+                join citation c on c.id = kvc.citation_id
+                where i.workspace_id = ? and i.item_type = 'NOTE' and i.status = 'ACTIVE'
+                """, (rs, rowNum) -> new NoteJournalSourceSignal(
+                rs.getString("source_id"),
+                rs.getString("title"),
+                rs.getString("summary"),
+                rs.getString("content")
+        ), workspaceId);
+        for (NoteJournalSourceSignal row : rows) {
+            int rowScore = score(row.title() + "\n" + row.summary() + "\n" + row.content(), terms);
+            if (rowScore > 0) {
+                signals.merge(row.sourceId(), rowScore, Integer::sum);
+            }
+        }
+        return signals;
+    }
+
+    private String recallSignals(CandidateSource source, int metadataScore, int noteScore) {
+        List<String> signals = new ArrayList<>();
+        if (metadataScore > 0) {
+            signals.add("metadata/tag/catalog");
+        }
+        if (noteScore > 0) {
+            signals.add("journal-note");
+        }
+        if (!source.sampleText().isBlank()) {
+            signals.add("source-window-ready");
+        }
+        if (signals.isEmpty()) {
+            signals.add("workspace-recency");
+        }
+        return String.join(", ", signals);
     }
 
     private Set<String> extractTerms(String query) {
@@ -167,10 +255,15 @@ public class RetrievalService {
             String tagsJson,
             String metadataJson,
             String sampleText,
-            int score
+            int score,
+            String recallSignals
     ) {
         CandidateSource withScore(int nextScore) {
-            return new CandidateSource(sourceId, title, sourceType, chunkCount, summary, tagsJson, metadataJson, sampleText, nextScore);
+            return new CandidateSource(sourceId, title, sourceType, chunkCount, summary, tagsJson, metadataJson, sampleText, nextScore, recallSignals);
+        }
+
+        CandidateSource withRecallSignals(String nextRecallSignals) {
+            return new CandidateSource(sourceId, title, sourceType, chunkCount, summary, tagsJson, metadataJson, sampleText, score, nextRecallSignals);
         }
 
         String metadataForScoring() {
@@ -185,10 +278,31 @@ public class RetrievalService {
             int chunkNo,
             String title,
             String content,
-            String locationInfo
+            String locationInfo,
+            int score
     ) {
+        ReadingWindow withScore(int nextScore) {
+            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, title, content, locationInfo, nextScore);
+        }
+
         RetrievedChunk toRetrievedChunk() {
             return new RetrievedChunk(chunkId, sourceId, sourceSnapshotId, chunkNo, title, content, locationInfo, 1);
         }
+    }
+
+    public record NoteJournalHit(
+            String noteId,
+            String title,
+            String summary,
+            String content,
+            int citationCount,
+            int score
+    ) {
+        NoteJournalHit withScore(int nextScore) {
+            return new NoteJournalHit(noteId, title, summary, content, citationCount, nextScore);
+        }
+    }
+
+    private record NoteJournalSourceSignal(String sourceId, String title, String summary, String content) {
     }
 }

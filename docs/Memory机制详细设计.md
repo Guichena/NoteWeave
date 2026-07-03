@@ -520,7 +520,7 @@ Memory 只控制表达和行为。
 
 - `ask` 使用问答 RAG 链路
 - `note` 使用结构化阅读漏斗
-- `wiki` 使用 Wiki-first 回答逻辑
+- `wiki` 使用全量 Wiki 知识网络回答链路
 
 Memory Compiler 只生成一份 Chat Control Pack，再由对应链路读取其中适合自己的字段。
 
