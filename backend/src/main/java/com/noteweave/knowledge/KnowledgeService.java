@@ -454,6 +454,23 @@ public class KnowledgeService {
                 """.formatted(placeholders), String.class, versionIds.toArray());
     }
 
+    public List<String> findSourceBackedWikiItemIds(String workspaceId, String sourceId, String sourceTitle) {
+        return jdbcTemplate.queryForList("""
+                select i.id
+                from knowledge_item i
+                join knowledge_version v on v.id = i.latest_version_id
+                join knowledge_version_citation kvc on kvc.knowledge_version_id = v.id
+                join citation c on c.id = kvc.citation_id
+                where i.workspace_id = ?
+                  and i.item_type = 'WIKI'
+                  and i.status = 'ACTIVE'
+                  and lower(i.title) = lower(?)
+                group by i.id
+                having sum(case when c.source_id = ? then 1 else 0 end) > 0
+                   and sum(case when c.source_id <> ? then 1 else 0 end) = 0
+                """, String.class, workspaceId, sourceTitle, sourceId, sourceId);
+    }
+
     private List<KnowledgeCitationResponse> citationsForVersion(String versionId) {
         return jdbcTemplate.query("""
                 select c.id, c.source_id, c.title, c.quote_text, c.page_no, c.location_info

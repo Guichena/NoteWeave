@@ -196,7 +196,7 @@ Frontend：
 5. Wiki 页面详情接口可以读取最新正文和 citation。
 6. 当前工作台没有 Wiki 页面时，Wiki 模式不退回普通资料 RAG，而是提示创建或维护 Wiki 页面。
 7. Wiki 构建开启后，已有 READY 资料会回补，后续资料上传会触发 `WIKI_INGEST`，自动生成或更新 Wiki 页面。
-8. Wiki 支持搜索、图谱、统计、日志、lint、按当前资料重建、rebuild links 和 auto-fix。
+8. Wiki 支持搜索、图谱、统计、日志、lint、按当前资料重建、rebuild links、source delete retract 和 auto-fix。
 
 ### 完成定义
 
@@ -223,9 +223,11 @@ Frontend：
 7. Wiki log：`GET /api/v2/workspaces/{workspaceId}/wiki-log`
 8. Rebuild links：`POST /api/v2/workspaces/{workspaceId}/wiki/rebuild-links`
 9. Rebuild wiki from sources：`POST /api/v2/workspaces/{workspaceId}/wiki/rebuild`
-10. Auto fix：`POST /api/v2/workspaces/{workspaceId}/wiki/auto-fix`
-11. Rename page：`PATCH /api/v2/knowledge-items/{itemId}/title`
-12. Soft delete page：`DELETE /api/v2/knowledge-items/{itemId}`
+10. Source list：`GET /api/v2/workspaces/{workspaceId}/sources`
+11. Source delete + wiki retract：`DELETE /api/v2/workspaces/{workspaceId}/sources/{sourceId}`
+12. Auto fix：`POST /api/v2/workspaces/{workspaceId}/wiki/auto-fix`
+13. Rename page：`PATCH /api/v2/knowledge-items/{itemId}/title`
+14. Soft delete page：`DELETE /api/v2/knowledge-items/{itemId}`
 
 ## 7. 子阶段 3.5：前端三模式入口与 Wiki 工作台入口
 
@@ -242,7 +244,7 @@ Frontend：
 5. 默认 Wiki 工作台视图：左侧 Wiki Index / 页面列表，中间页面正文与版本信息，右侧页面链接、统计、图谱、问题和日志
 6. Wiki 页面详情：点击页面后读取最新正文、版本号和 citation
 7. 右侧知识沉淀入口：保存最新回答为 Note、创建 Wiki 页面
-8. Wiki 工作台页面维护入口：追加 Wiki 新版本、重命名、软删除、按当前资料重建 Wiki、重建链接、Auto Fix
+8. Wiki 工作台页面维护入口：追加 Wiki 新版本、重命名、软删除、按当前资料重建 Wiki、重建链接、资料删除同步 Wiki、Auto Fix
 9. 聊天流式结果需要展示回答正文和 citation，避免前端只展示模型正文而丢失来源闭环
 
 ## 8. 本阶段禁止项

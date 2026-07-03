@@ -29,6 +29,16 @@ type TaskStatus = {
   error_message: string;
 };
 
+type SourceAsset = {
+  source_id: string;
+  title: string;
+  source_type: string;
+  status: string;
+  parse_status: string;
+  index_status: string;
+  updated_at: string;
+};
+
 type WikiPage = {
   item_id: string;
   item_type: string;
@@ -146,6 +156,7 @@ export function App() {
   const [wikiAppendDraft, setWikiAppendDraft] = useState("");
   const [wikiSearch, setWikiSearch] = useState("");
   const [wikiRenameTitle, setWikiRenameTitle] = useState("");
+  const [sources, setSources] = useState<SourceAsset[]>([]);
   const [latestTask, setLatestTask] = useState<TaskStatus | null>(null);
   const [taskEvents, setTaskEvents] = useState<string[]>([]);
   const [isBusy, setIsBusy] = useState(false);
@@ -158,6 +169,7 @@ export function App() {
         description: "阶段1/2/3前端联调工作台"
       });
       setWorkspace(created);
+      setSources([]);
       const wikiSettings = await get<WikiSettings>(`/api/v2/workspaces/${created.workspace_id}/wiki-settings`);
       setWikiEnabled(wikiSettings.wiki_enabled);
       const createdConversation = await post<Conversation>(`/api/v2/workspaces/${created.workspace_id}/conversations`, {
@@ -199,15 +211,47 @@ export function App() {
       const eventStream = await requestText(`/api/v2/tasks/${completed.task_id}/events`);
       const events = parseEventStream(eventStream).map((event) => `${event.event}: ${event.data}`);
       const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
+      const nextSources = await get<SourceAsset[]>(`/api/v2/workspaces/${workspace.workspace_id}/sources`);
       setLatestTask(task);
       setTaskEvents(events);
       setWikiHome(wiki);
       setWikiUrl(wiki.wiki_url);
+      setSources(nextSources);
       setMessages((current) => [
         ...current,
         {
           role: "system",
           content: `资料已上传并解析：source=${completed.source_id}，parse=${completed.parse_status}，index=${completed.index_status}，task=${task.task_status}。${wikiEnabled ? "Wiki 构建已开启，本次资料变更已进入 Wiki ingest 队列。" : "Wiki 构建未开启，本次只进入问答/Note 检索索引。"}`
+        }
+      ]);
+    });
+  }
+
+  async function deleteSource(source: SourceAsset) {
+    if (!workspace) {
+      return;
+    }
+    await run(`删除资料《${source.title}》`, async () => {
+      const deleted = await delJson<{ source_id: string; status: string; wiki_retract_task_id: string }>(
+        `/api/v2/workspaces/${workspace.workspace_id}/sources/${source.source_id}`
+      );
+      const nextSources = await get<SourceAsset[]>(`/api/v2/workspaces/${workspace.workspace_id}/sources`);
+      const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
+      setSources(nextSources);
+      await applyWikiHome(wiki, selectedWikiItemId);
+      if (deleted.wiki_retract_task_id) {
+        const task = await get<TaskStatus>(`/api/v2/tasks/${deleted.wiki_retract_task_id}`);
+        setLatestTask(task);
+        const eventStream = await requestText(`/api/v2/tasks/${deleted.wiki_retract_task_id}/events`);
+        setTaskEvents(parseEventStream(eventStream).map((event) => `${event.event}: ${event.data}`));
+      }
+      setMessages((current) => [
+        ...current,
+        {
+          role: "system",
+          content: deleted.wiki_retract_task_id
+            ? `资料已删除：${source.title}。Wiki retract 已清理相关自动生成页面。`
+            : `资料已删除：${source.title}。当前未开启 Wiki 构建，因此没有触发 Wiki retract。`
         }
       ]);
     });
@@ -665,6 +709,19 @@ export function App() {
               ))}
             </div>
           )}
+          {sources.length > 0 && (
+            <div className="task-card">
+              <strong>工作台资料</strong>
+              {sources.map((source) => (
+                <span key={source.source_id}>
+                  {source.title} · {source.status} · {source.index_status}
+                  <button className="inline-action" onClick={() => void deleteSource(source)} disabled={isBusy}>
+                    删除并同步 Wiki
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
 
           <div className="conversation">
             {messages.map((message, index) => (
@@ -779,6 +836,11 @@ async function patch<T>(path: string, body: unknown): Promise<T> {
 
 async function del(path: string): Promise<void> {
   await request(path, { method: "DELETE" });
+}
+
+async function delJson<T>(path: string): Promise<T> {
+  const response = await request(path, { method: "DELETE" });
+  return (await response.json() as ApiResponse<T>).data;
 }
 
 async function request(path: string, init?: RequestInit) {

@@ -55,6 +55,37 @@ public class WikiIngestService {
         return new WikiRebuildResponse(workspaceId, sourceIds.size(), taskIds.size(), taskIds);
     }
 
+    @Transactional
+    public String enqueueAndRunSourceRetractIfEnabled(String workspaceId, String sourceId, String sourceTitle) {
+        if (!workspaceService.isWikiEnabled(workspaceId)) {
+            return "";
+        }
+        String taskId = taskService.createTask(
+                workspaceId,
+                "WIKI_RETRACT",
+                "SOURCE",
+                sourceId,
+                "QUEUED",
+                "资料已删除，相关 Wiki 页面进入 retract 清理"
+        );
+        jdbcTemplate.update("""
+                insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
+                values (?, ?, 'noteweave.wiki.retract', ?, ?, 'READY')
+                """, Ids.newId(), taskId, sourceId, Json.write(objectMapper, Map.of(
+                "taskId", taskId,
+                "sourceId", sourceId,
+                "workspaceId", workspaceId,
+                "operation", "retract"
+        )));
+        List<String> itemIds = knowledgeService.findSourceBackedWikiItemIds(workspaceId, sourceId, sourceTitle);
+        for (String itemId : itemIds) {
+            knowledgeService.deleteItem(itemId);
+        }
+        jdbcTemplate.update("update task_outbox set status = 'SENT', sent_at = current_timestamp where task_id = ?", taskId);
+        taskService.completeTask(taskId, "WIKI_RETRACTED", "Wiki retract 已清理资料删除影响的页面：" + itemIds.size() + " 个", sourceId);
+        return taskId;
+    }
+
     private String enqueueAndRunSourceIngest(String workspaceId, String sourceId, String operation, String message) {
         String taskId = taskService.createTask(workspaceId, "WIKI_INGEST", "SOURCE", sourceId, "QUEUED", message);
         jdbcTemplate.update("""

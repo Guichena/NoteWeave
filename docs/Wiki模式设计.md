@@ -88,6 +88,7 @@ Wiki 知识网络绑定 `研究工作台`，不绑定单次会话。
 - 当 `wiki_enabled = true` 时，后续资料上传、重解析、删除等文件变化会进入 Wiki ingest / retract 队列
 - 当 `wiki_enabled = false` 时，资料只进入普通问答和 Note 检索索引，不触发 Wiki 构建
 - 用户也可以在默认 Wiki 工作台中点击“按当前资料重建 Wiki”，对全部 READY 资料重新执行 Wiki ingest
+- 用户删除资料时，系统会软删除 Source；如果 Wiki 构建已开启，则触发 `WIKI_RETRACT`，撤回由该资料自动生成的 Wiki 页面
 - 如果用户明确要把某条回答整理进 Wiki，可以作为人工编辑/修正入口，而不是主流程
 
 产品上推荐：
@@ -192,6 +193,7 @@ Wiki 工作台覆盖完整的个人研究工作台维护闭环：
 - Auto Fix
 - Wiki Log
 - 资料变化触发 Wiki ingest
+- 资料删除触发 Wiki retract
 - 开启 Wiki 后回补已有 READY 资料
 - 手动按当前资料重建 Wiki
 
@@ -255,6 +257,8 @@ Wiki Page
   重新读取当前工作台全部 READY 资料，按资料内容生成或追加 Wiki 页面版本。
 - `rebuild-links`
   只重新解析现有 Wiki 页面正文中的 `[[页面名]]`，刷新页面关系，不重新读取原始资料。
+
+`retract` 的范围是资料生命周期驱动的自动清理：当 Source 被删除时，系统只撤回由该 Source 自动生成、且最新版本 citations 全部来自该 Source 的 Wiki 页面；人工维护的综合页、对比页和多来源页面不会被误删。
 
 ## 13. 最终口径
 

@@ -118,6 +118,32 @@ class Phase3NoteWikiContractTest {
     }
 
     @Test
+    void noteModeShouldExpandCandidateSourcesByTagOverlapRelationSignals() throws Exception {
+        String workspaceId = createWorkspace();
+        uploadSource(workspaceId, "anchor-research.md", """
+                phase3 marginalia shared-signal
+                AnchorAlpha 是资料级候选定位的关键样例。
+                Note 链路需要先命中这份资料，再通过共享标签扩展相邻资料。
+                """);
+        uploadSource(workspaceId, "companion.md", """
+                phase3 marginalia shared-signal
+                这份资料只描述相邻主题材料，它和 anchor-research 共享同一组主题标签。
+                它应该通过 relation_hint_expand 进入候选资料，而不是靠 chunk top-k 直接命中。
+                """);
+        String conversationId = createConversation(workspaceId);
+
+        JsonNode noteMessage = sendMessage(conversationId, "NOTE", "请解释 AnchorAlpha");
+        String noteRequestId = noteMessage.path("data").path("assistant_request_id").asText();
+
+        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", noteRequestId))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("anchor-research.md")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("companion.md")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("relation-expansion")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 摘录证据")));
+    }
+
+    @Test
     void wikiModeShouldNotFallbackToOrdinaryRagWhenNoWikiPageExists() throws Exception {
         String workspaceId = createWorkspace();
         uploadSource(workspaceId);
@@ -250,6 +276,57 @@ class Phase3NoteWikiContractTest {
     }
 
     @Test
+    void deletingSourceShouldRetractGeneratedWikiPageWhenWikiIsEnabled() throws Exception {
+        String workspaceId = createWorkspace();
+        mockMvc.perform(put("/api/v2/workspaces/{workspaceId}/wiki-settings", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("wiki_enabled", true))))
+                .andExpect(status().isOk());
+
+        String sourceId = uploadSource(workspaceId);
+        String conversationId = createConversation(workspaceId);
+
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/sources", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].source_id").value(sourceId));
+
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/wiki-home", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.pages[0].title").value("phase3.md"));
+
+        mockMvc.perform(delete("/api/v2/workspaces/{workspaceId}/sources/{sourceId}", workspaceId, sourceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("DELETED"))
+                .andExpect(jsonPath("$.data.wiki_retract_task_id").isNotEmpty());
+
+        Integer retractTaskCount = jdbcTemplate.queryForObject(
+                "select count(*) from task where workspace_id = ? and task_type = 'WIKI_RETRACT'",
+                Integer.class,
+                workspaceId
+        );
+        assertThat(retractTaskCount).isEqualTo(1);
+
+        Map<String, Object> sourceRow = jdbcTemplate.queryForMap("select status, index_status from source where id = ?", sourceId);
+        assertThat(sourceRow.get("status")).isEqualTo("DELETED");
+        assertThat(sourceRow.get("index_status")).isEqualTo("DELETED");
+
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/sources", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isEmpty());
+
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/wiki-home", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.pages").isEmpty());
+
+        JsonNode wikiMessage = sendMessage(conversationId, "WIKI", "NoteWeave 阶段3怎么设计？");
+        String wikiRequestId = wikiMessage.path("data").path("assistant_request_id").asText();
+        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", wikiRequestId))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("当前 Wiki 知识网络还没有可直接命中的正式页面")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("event: chat.citation"))));
+    }
+
+    @Test
     void wikiManagementEndpointsShouldCoverSearchGraphStatsLintAndAutoFix() throws Exception {
         String workspaceId = createWorkspace();
         MvcResult create = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/knowledge-items", workspaceId)
@@ -363,17 +440,23 @@ class Phase3NoteWikiContractTest {
         return objectMapper.readTree(result.getResponse().getContentAsString()).path("data").path("workspace_id").asText();
     }
 
-    private void uploadSource(String workspaceId) throws Exception {
-        byte[] content = """
+    private String uploadSource(String workspaceId) throws Exception {
+        return uploadSource(workspaceId, "phase3.md", """
                 NoteWeave phase3 补齐三种聊天链路中的 Note 和 Wiki。
                 Note 链路参考 Marginalia，先定位候选资料，再打开原文窗口，生成摘录证据和带引用回答。
                 Wiki 链路参考 WebKonra / WeKnora，优先读取已经沉淀的 Wiki 页面、索引、页面链接和来源回链。
-                """.getBytes(StandardCharsets.UTF_8);
+                """);
+    }
+
+    private String uploadSource(String workspaceId, String fileName, String markdown) throws Exception {
+        byte[] content = """
+                %s
+                """.formatted(markdown).getBytes(StandardCharsets.UTF_8);
 
         MvcResult init = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/uploads", workspaceId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
-                                "file_name", "phase3.md",
+                                "file_name", fileName,
                                 "file_size", content.length,
                                 "mime_type", "text/markdown",
                                 "chunk_size", content.length,
@@ -390,6 +473,11 @@ class Phase3NoteWikiContractTest {
         mockMvc.perform(post("/api/v2/uploads/{uploadId}/complete", uploadId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.index_status").value("INDEXED"));
+        return jdbcTemplate.queryForObject(
+                "select source_id from document_upload where id = ?",
+                String.class,
+                uploadId
+        );
     }
 
     private String createConversation(String workspaceId) throws Exception {

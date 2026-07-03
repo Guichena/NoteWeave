@@ -264,6 +264,13 @@ h1 {
   color: #667169;
 }
 
+.inline-action {
+  margin-left: 10px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+}
+
 .rail-field {
   display: grid;
   gap: 6px;
