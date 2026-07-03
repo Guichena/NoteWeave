@@ -339,8 +339,8 @@ export function App() {
           <button onClick={createWorkspace} disabled={isBusy}>
             创建工作台
           </button>
-          <button className="research-button" disabled>
-            Deep Research
+          <button className="research-button" disabled title="阶段5接入 Deep Research 智能体">
+            Deep Research（阶段5）
           </button>
         </div>
       </section>
@@ -487,8 +487,9 @@ export function App() {
             进入默认 Wiki 工作台
           </button>
           {wikiUrl && <p className="wiki-url">{wikiUrl}</p>}
-          <button onClick={openWikiHome} disabled={isBusy || !workspace}>查看 Wiki Index</button>
-          <button disabled>维护页面链接</button>
+          <button onClick={openWikiHome} disabled={isBusy || !workspace}>
+            查看 Wiki Index / 页面关系
+          </button>
           <hr />
           <p className="section-label">知识沉淀</p>
           <label className="rail-field">
@@ -516,11 +517,12 @@ export function App() {
           </button>
           <hr />
           <p className="section-label">右侧产物栏</p>
-          <button disabled>生成报告</button>
-          <button disabled>生成 FAQ</button>
-          <button disabled>生成测验</button>
-          <button disabled>生成学习指南</button>
-          <button disabled>导出 Markdown / PDF</button>
+          <p className="phase-note">阶段4接入 Artifact Agent 后启用。</p>
+          <button disabled title="阶段4接入 Artifact Agent">生成报告</button>
+          <button disabled title="阶段4接入 Artifact Agent">生成 FAQ</button>
+          <button disabled title="阶段4接入 Artifact Agent">生成测验</button>
+          <button disabled title="阶段4接入 Artifact Agent">生成学习指南</button>
+          <button disabled title="阶段4接入 Artifact Agent">导出 Markdown / PDF</button>
         </aside>
       </section>
       )}

@@ -439,7 +439,7 @@ POST /api/v2/messages/{messageId}/save-as-note
 推荐模块：
 
 - `ConversationService`
-- `AskChainService`
+- `QaRagChainService`
 - `QueryRewriteService`
 - `RetrievalService`
 - `RerankService`
@@ -453,7 +453,7 @@ POST /api/v2/messages/{messageId}/save-as-note
 
 ```text
 ConversationController
-  -> AskChainService
+  -> QaRagChainService
       -> QueryRewriteService
       -> RetrievalService
       -> RerankService

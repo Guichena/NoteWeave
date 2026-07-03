@@ -376,6 +376,12 @@ h1 {
   background: #b8642f;
 }
 
+.phase-note {
+  margin: -4px 0 12px;
+  color: #667169;
+  font-size: 13px;
+}
+
 .artifact-rail button:disabled {
   background: #c9bca5;
   color: #5e655f;
