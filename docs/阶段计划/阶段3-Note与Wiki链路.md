@@ -195,6 +195,8 @@ Frontend：
 2. Note 模式说明：候选资料、原文窗口、摘录卡片、结构化笔记
 3. Wiki 模式说明：Wiki-first、页面链接、默认 Wiki 工作台入口
 4. Wiki 工作台入口按钮：`/workspaces/{workspaceId}/wiki`
+5. 默认 Wiki 工作台最小视图：左侧 Wiki Index / 页面列表，中间页面摘要与版本信息，右侧页面链接关系
+6. 聊天流式结果需要展示回答正文和 citation，避免前端只展示模型正文而丢失来源闭环
 
 ## 7. 本阶段禁止项
 

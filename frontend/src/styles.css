@@ -26,6 +26,11 @@ button:disabled {
   opacity: 0.54;
 }
 
+.secondary-button {
+  background: #dfd5bd;
+  color: #243f36;
+}
+
 textarea {
   width: 100%;
   resize: vertical;
@@ -114,8 +119,18 @@ h1 {
   grid-template-columns: minmax(0, 1fr) 280px;
 }
 
+.wiki-workbench {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) 280px;
+  gap: 24px;
+  margin-top: 32px;
+}
+
 .chat-panel,
-.artifact-rail {
+.artifact-rail,
+.wiki-index,
+.wiki-page,
+.wiki-links {
   border-radius: 32px;
   background: rgba(255, 251, 241, 0.8);
   border: 1px solid rgba(36, 63, 54, 0.14);
@@ -232,6 +247,92 @@ h1 {
   gap: 12px;
 }
 
+.wiki-index,
+.wiki-links {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.wiki-index h2,
+.wiki-page h2 {
+  margin: 0;
+}
+
+.wiki-page-list {
+  display: grid;
+  gap: 10px;
+}
+
+.wiki-page-list button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  border-radius: 18px;
+  background: rgba(223, 213, 189, 0.68);
+  color: #243f36;
+  text-align: left;
+}
+
+.wiki-page-list button.active {
+  background: #243f36;
+  color: #fff9ec;
+}
+
+.wiki-page-list small {
+  color: inherit;
+  opacity: 0.72;
+}
+
+.wiki-summary {
+  min-height: 260px;
+  margin-top: 18px;
+  padding: 22px;
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(255, 251, 241, 0.92), rgba(239, 228, 205, 0.72));
+  line-height: 1.85;
+  white-space: pre-wrap;
+}
+
+.version-pill {
+  display: inline-block;
+  margin: 14px 0 0;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(36, 63, 54, 0.1);
+  color: #243f36;
+  font-weight: 700;
+}
+
+.wiki-maintenance,
+.link-card,
+.empty-state {
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(36, 63, 54, 0.08);
+  line-height: 1.6;
+}
+
+.wiki-maintenance {
+  display: grid;
+  gap: 6px;
+  margin-top: 16px;
+}
+
+.link-card {
+  display: grid;
+  gap: 4px;
+}
+
+.link-card span,
+.wiki-maintenance span,
+.empty-state {
+  color: #667169;
+}
+
 .artifact-rail button {
   width: 100%;
   background: #b8642f;
@@ -264,6 +365,7 @@ h1 {
 
   .workspace-card,
   .layout,
+  .wiki-workbench,
   .mode-explainer {
     grid-template-columns: 1fr;
   }
