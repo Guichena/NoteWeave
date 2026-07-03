@@ -208,6 +208,48 @@ class Phase3NoteWikiContractTest {
     }
 
     @Test
+    void enablingWikiShouldBackfillExistingReadySourcesAndManualRebuildShouldAppendVersions() throws Exception {
+        String workspaceId = createWorkspace();
+        uploadSource(workspaceId);
+
+        Integer wikiPagesBeforeEnable = jdbcTemplate.queryForObject(
+                "select count(*) from knowledge_item where workspace_id = ? and item_type = 'WIKI'",
+                Integer.class,
+                workspaceId
+        );
+        assertThat(wikiPagesBeforeEnable).isZero();
+
+        mockMvc.perform(put("/api/v2/workspaces/{workspaceId}/wiki-settings", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("wiki_enabled", true))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.wiki_enabled").value(true));
+
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/wiki-home", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.pages[0].title").value("phase3.md"))
+                .andExpect(jsonPath("$.data.pages[0].latest_version_no").value(1))
+                .andExpect(jsonPath("$.data.links").isNotEmpty());
+
+        Integer backfillTaskCount = jdbcTemplate.queryForObject(
+                "select count(*) from task where workspace_id = ? and task_type = 'WIKI_INGEST'",
+                Integer.class,
+                workspaceId
+        );
+        assertThat(backfillTaskCount).isEqualTo(1);
+
+        mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/wiki/rebuild", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.source_count").value(1))
+                .andExpect(jsonPath("$.data.task_count").value(1));
+
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/wiki-home", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.pages[0].title").value("phase3.md"))
+                .andExpect(jsonPath("$.data.pages[0].latest_version_no").value(2));
+    }
+
+    @Test
     void wikiManagementEndpointsShouldCoverSearchGraphStatsLintAndAutoFix() throws Exception {
         String workspaceId = createWorkspace();
         MvcResult create = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/knowledge-items", workspaceId)

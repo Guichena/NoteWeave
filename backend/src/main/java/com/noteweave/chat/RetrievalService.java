@@ -112,12 +112,25 @@ public class RetrievalService {
                 0,
                 ""
         ), workspaceId);
+        Map<String, Integer> metadataScores = new HashMap<>();
+        for (CandidateSource source : candidates) {
+            metadataScores.put(source.sourceId(), score(source.metadataForScoring(), terms));
+        }
+        Set<String> anchorSourceIds = new LinkedHashSet<>();
+        candidates.stream()
+                .filter(source -> metadataScores.getOrDefault(source.sourceId(), 0) > 0 || noteSignals.getOrDefault(source.sourceId(), 0) > 0)
+                .sorted(Comparator.comparingInt((CandidateSource source) ->
+                        metadataScores.getOrDefault(source.sourceId(), 0) + noteSignals.getOrDefault(source.sourceId(), 0) * 5).reversed())
+                .limit(8)
+                .forEach(source -> anchorSourceIds.add(source.sourceId()));
+        Map<String, Integer> relationSignals = relationSignalsForNote(workspaceId, candidates, anchorSourceIds);
         List<CandidateSource> scored = candidates.stream()
                 .map(source -> {
-                    int metadataScore = score(source.metadataForScoring(), terms);
+                    int metadataScore = metadataScores.getOrDefault(source.sourceId(), 0);
                     int noteScore = noteSignals.getOrDefault(source.sourceId(), 0) * 5;
-                    return source.withScore(metadataScore + noteScore)
-                            .withRecallSignals(recallSignals(source, metadataScore, noteScore));
+                    int relationScore = relationSignals.getOrDefault(source.sourceId(), 0);
+                    return source.withScore(metadataScore + noteScore + relationScore)
+                            .withRecallSignals(recallSignals(source, metadataScore, noteScore, relationScore));
                 })
                 .filter(source -> source.score() > 0 || terms.isEmpty())
                 .sorted(Comparator.comparingInt(CandidateSource::score).reversed())
@@ -218,13 +231,94 @@ public class RetrievalService {
         return signals;
     }
 
-    private String recallSignals(CandidateSource source, int metadataScore, int noteScore) {
+    private Map<String, Integer> relationSignalsForNote(String workspaceId, List<CandidateSource> sources, Set<String> anchorSourceIds) {
+        if (sources.isEmpty() || anchorSourceIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Set<String>> tagsBySource = new HashMap<>();
+        for (CandidateSource source : sources) {
+            tagsBySource.put(source.sourceId(), extractTags(source.tagsJson()));
+        }
+        Map<String, Integer> signals = new HashMap<>();
+        for (CandidateSource source : sources) {
+            if (anchorSourceIds.contains(source.sourceId())) {
+                continue;
+            }
+            Set<String> tags = tagsBySource.getOrDefault(source.sourceId(), Set.of());
+            int overlap = 0;
+            for (String anchorId : anchorSourceIds) {
+                Set<String> anchorTags = tagsBySource.getOrDefault(anchorId, Set.of());
+                for (String tag : tags) {
+                    if (anchorTags.contains(tag)) {
+                        overlap++;
+                    }
+                }
+            }
+            if (overlap > 0) {
+                signals.merge(source.sourceId(), overlap * 2, Integer::sum);
+            }
+        }
+        Map<String, Integer> coCitation = noteCoCitationSignals(workspaceId, anchorSourceIds);
+        coCitation.forEach((sourceId, value) -> signals.merge(sourceId, value * 3, Integer::sum));
+        return signals;
+    }
+
+    private Map<String, Integer> noteCoCitationSignals(String workspaceId, Set<String> anchorSourceIds) {
+        if (anchorSourceIds.isEmpty()) {
+            return Map.of();
+        }
+        List<NoteCitationPair> rows = jdbcTemplate.query("""
+                select i.id as note_id, c.source_id
+                from knowledge_item i
+                join knowledge_version v on v.id = i.latest_version_id
+                join knowledge_version_citation kvc on kvc.knowledge_version_id = v.id
+                join citation c on c.id = kvc.citation_id
+                where i.workspace_id = ? and i.item_type = 'NOTE' and i.status = 'ACTIVE'
+                """, (rs, rowNum) -> new NoteCitationPair(
+                rs.getString("note_id"),
+                rs.getString("source_id")
+        ), workspaceId);
+        Map<String, Set<String>> sourceIdsByNote = new HashMap<>();
+        for (NoteCitationPair row : rows) {
+            sourceIdsByNote.computeIfAbsent(row.noteId(), ignored -> new LinkedHashSet<>()).add(row.sourceId());
+        }
+        Map<String, Integer> signals = new HashMap<>();
+        for (Set<String> sourceIds : sourceIdsByNote.values()) {
+            boolean hasAnchor = sourceIds.stream().anyMatch(anchorSourceIds::contains);
+            if (!hasAnchor) {
+                continue;
+            }
+            for (String sourceId : sourceIds) {
+                if (!anchorSourceIds.contains(sourceId)) {
+                    signals.merge(sourceId, 1, Integer::sum);
+                }
+            }
+        }
+        return signals;
+    }
+
+    private Set<String> extractTags(String tagsJson) {
+        if (tagsJson == null || tagsJson.isBlank()) {
+            return Set.of();
+        }
+        Set<String> tags = new LinkedHashSet<>();
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\"([^\"]{1,80})\"").matcher(tagsJson.toLowerCase(Locale.ROOT));
+        while (matcher.find()) {
+            tags.add(matcher.group(1));
+        }
+        return tags;
+    }
+
+    private String recallSignals(CandidateSource source, int metadataScore, int noteScore, int relationScore) {
         List<String> signals = new ArrayList<>();
         if (metadataScore > 0) {
             signals.add("metadata/tag/catalog");
         }
         if (noteScore > 0) {
             signals.add("journal-note");
+        }
+        if (relationScore > 0) {
+            signals.add("relation-expansion");
         }
         if (!source.sampleText().isBlank()) {
             signals.add("source-window-ready");
@@ -367,5 +461,8 @@ public class RetrievalService {
     }
 
     private record NoteJournalSourceSignal(String sourceId, String title, String summary, String content) {
+    }
+
+    private record NoteCitationPair(String noteId, String sourceId) {
     }
 }

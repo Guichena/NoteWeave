@@ -59,6 +59,13 @@ type WikiSettings = {
   wiki_enabled: boolean;
 };
 
+type WikiRebuild = {
+  workspace_id: string;
+  source_count: number;
+  task_count: number;
+  task_ids: string[];
+};
+
 type WikiStats = {
   page_count: number;
   link_count: number;
@@ -217,12 +224,16 @@ export function App() {
         wiki_enabled: next
       });
       setWikiEnabled(settings.wiki_enabled);
+      if (settings.wiki_enabled) {
+        const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
+        await applyWikiHome(wiki, selectedWikiItemId);
+      }
       setMessages((current) => [
         ...current,
         {
           role: "system",
           content: settings.wiki_enabled
-            ? "已开启工作台级 Wiki 构建。资料上传或更新会进入 Wiki ingest 队列。"
+            ? "已开启工作台级 Wiki 构建。已有资料会自动回补，后续资料上传或更新会进入 Wiki ingest 队列。"
             : "已关闭工作台级 Wiki 构建。资料上传只进入普通检索索引。"
         }
       ]);
@@ -378,6 +389,21 @@ export function App() {
       await post<WikiStats>(`/api/v2/workspaces/${workspace.workspace_id}/wiki/rebuild-links`, {});
       const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
       await applyWikiHome(wiki, selectedWikiItemId);
+    });
+  }
+
+  async function rebuildWorkspaceWiki() {
+    if (!workspace) {
+      return;
+    }
+    await run("重建工作台 Wiki", async () => {
+      const rebuilt = await post<WikiRebuild>(`/api/v2/workspaces/${workspace.workspace_id}/wiki/rebuild`, {});
+      const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
+      await applyWikiHome(wiki, selectedWikiItemId);
+      setMessages((current) => [
+        ...current,
+        { role: "system", content: `已按当前工作台资料重建 Wiki：资料 ${rebuilt.source_count} 个，任务 ${rebuilt.task_count} 个。` }
+      ]);
     });
   }
 
@@ -667,8 +693,11 @@ export function App() {
           <button onClick={toggleWikiEnabled} disabled={isBusy || !workspace}>
             {wikiEnabled ? "关闭 Wiki 构建" : "开启 Wiki 构建"}
           </button>
+          <button onClick={rebuildWorkspaceWiki} disabled={isBusy || !workspace || !wikiEnabled}>
+            按当前资料重建 Wiki
+          </button>
           <p className="phase-note">
-            参考 WeKnora：Wiki 是工作台级索引策略，开启后资料变化进入异步 Wiki ingest 队列。
+            参考 WeKnora：Wiki 是工作台级索引策略，开启后已有资料会回补，后续资料变化进入异步 Wiki ingest 队列。
           </p>
           {wikiUrl && <p className="wiki-url">{wikiUrl}</p>}
           <button onClick={openWikiHome} disabled={isBusy || !workspace}>

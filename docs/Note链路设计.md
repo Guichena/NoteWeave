@@ -125,6 +125,7 @@ Note 链路的关键不是多拿几个 chunk，而是先通过结构化信号找
 
 - `relation signal`
   候选资料之间的标签重叠、主题共现和历史 Note 共同引用。
+  当前实现会把命中的资料作为 anchor，基于共享标签和历史 Note 共同引用给相邻资料加权，并在候选资料的召回信号中标记为 `relation-expansion`。
 
 - `window readiness`
   资料是否已经完成切片并具备可打开的原文窗口。

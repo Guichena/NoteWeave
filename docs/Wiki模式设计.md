@@ -84,8 +84,10 @@ Wiki 知识网络绑定 `研究工作台`，不绑定单次会话。
 - 创建、追加、维护 Wiki 页面应通过研究工作台级按钮触发
 - Wiki 页面不默认绑定最近一条聊天消息
 - Wiki 构建由工作台级 `wiki_enabled` 开关控制
-- 当 `wiki_enabled = true` 时，资料上传、重解析、删除等文件变化会进入 Wiki ingest / retract 队列
+- 当 `wiki_enabled` 从 `false` 切到 `true` 时，系统会对当前工作台内已经解析完成的资料做一次 Wiki 回补
+- 当 `wiki_enabled = true` 时，后续资料上传、重解析、删除等文件变化会进入 Wiki ingest / retract 队列
 - 当 `wiki_enabled = false` 时，资料只进入普通问答和 Note 检索索引，不触发 Wiki 构建
+- 用户也可以在默认 Wiki 工作台中点击“按当前资料重建 Wiki”，对全部 READY 资料重新执行 Wiki ingest
 - 如果用户明确要把某条回答整理进 Wiki，可以作为人工编辑/修正入口，而不是主流程
 
 产品上推荐：
@@ -117,7 +119,7 @@ NoteWeave 的工程实现采用轻量等价方案：
 
 ```text
 workspace.wiki_enabled
-  -> source parse completed
+  -> enable_backfill / source parse completed / manual_rebuild
   -> WIKI_INGEST task_outbox
   -> WikiIngestService 消费并生成 / 更新页面
   -> 写入 Citation / Link / Log / Issue Signal
@@ -162,6 +164,7 @@ Wiki 工作台不是 Wiki 链路本身，而是查看和维护 Wiki 网络的辅
 
 - 搜索页面和概念
 - 查看页面图谱
+- 按当前资料重建 Wiki
 - 重建页面链接
 - 检查断链
 - 检查缺少来源
@@ -189,6 +192,8 @@ Wiki 工作台覆盖完整的个人研究工作台维护闭环：
 - Auto Fix
 - Wiki Log
 - 资料变化触发 Wiki ingest
+- 开启 Wiki 后回补已有 READY 资料
+- 手动按当前资料重建 Wiki
 
 这里不引入 WeKnora 的企业级多人审核、租户权限和独立 issue 状态表，而是用 NoteWeave 的 `knowledge_item.status`、`knowledge_version`、`knowledge_item_link`、`wiki_log_entry` 和动态 lint 结果完成个人工作台治理。
 
@@ -243,6 +248,13 @@ Wiki Page
 ```
 
 多人协作权限和复杂审核流不属于个人研究工作台 Wiki 的核心路径；当前架构聚焦完整覆盖 Wiki 构建、页面、版本、链接、引用、搜索、图谱、统计、日志、lint、rebuild、auto-fix、重命名和软删除。
+
+这里的 `rebuild` 和 `rebuild-links` 是两个动作：
+
+- `rebuild`
+  重新读取当前工作台全部 READY 资料，按资料内容生成或追加 Wiki 页面版本。
+- `rebuild-links`
+  只重新解析现有 Wiki 页面正文中的 `[[页面名]]`，刷新页面关系，不重新读取原始资料。
 
 ## 13. 最终口径
 

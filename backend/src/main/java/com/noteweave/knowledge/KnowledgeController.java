@@ -18,9 +18,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class KnowledgeController {
 
     private final KnowledgeService knowledgeService;
+    private final WikiIngestService wikiIngestService;
 
-    public KnowledgeController(KnowledgeService knowledgeService) {
+    public KnowledgeController(KnowledgeService knowledgeService, WikiIngestService wikiIngestService) {
         this.knowledgeService = knowledgeService;
+        this.wikiIngestService = wikiIngestService;
     }
 
     @PostMapping("/workspaces/{workspaceId}/knowledge-items")
@@ -75,6 +77,11 @@ public class KnowledgeController {
     @PostMapping("/workspaces/{workspaceId}/wiki/rebuild-links")
     ApiResponse<WikiStatsResponse> rebuildWikiLinks(@PathVariable String workspaceId) {
         return ApiResponse.success(knowledgeService.rebuildWikiLinks(workspaceId));
+    }
+
+    @PostMapping("/workspaces/{workspaceId}/wiki/rebuild")
+    ApiResponse<WikiRebuildResponse> rebuildWiki(@PathVariable String workspaceId) {
+        return ApiResponse.success(wikiIngestService.enqueueAndRunWorkspaceIngestIfEnabled(workspaceId, "manual_rebuild"));
     }
 
     @PostMapping("/workspaces/{workspaceId}/wiki/auto-fix")

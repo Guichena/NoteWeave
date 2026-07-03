@@ -5,6 +5,7 @@ import com.noteweave.common.Ids;
 import com.noteweave.common.Json;
 import com.noteweave.task.TaskService;
 import com.noteweave.workspace.WorkspaceService;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -39,7 +40,23 @@ public class WikiIngestService {
         if (!workspaceService.isWikiEnabled(workspaceId)) {
             return "";
         }
-        String taskId = taskService.createTask(workspaceId, "WIKI_INGEST", "SOURCE", sourceId, "QUEUED", "Wiki 构建已开启，资料变更已进入 Wiki ingest 队列");
+        return enqueueAndRunSourceIngest(workspaceId, sourceId, "ingest", "Wiki 构建已开启，资料变更已进入 Wiki ingest 队列");
+    }
+
+    @Transactional
+    public WikiRebuildResponse enqueueAndRunWorkspaceIngestIfEnabled(String workspaceId, String trigger) {
+        if (!workspaceService.isWikiEnabled(workspaceId)) {
+            return new WikiRebuildResponse(workspaceId, 0, 0, List.of());
+        }
+        List<String> sourceIds = readySourceIds(workspaceId);
+        List<String> taskIds = sourceIds.stream()
+                .map(sourceId -> enqueueAndRunSourceIngest(workspaceId, sourceId, trigger, "Wiki 工作台级回补/重建已入队"))
+                .toList();
+        return new WikiRebuildResponse(workspaceId, sourceIds.size(), taskIds.size(), taskIds);
+    }
+
+    private String enqueueAndRunSourceIngest(String workspaceId, String sourceId, String operation, String message) {
+        String taskId = taskService.createTask(workspaceId, "WIKI_INGEST", "SOURCE", sourceId, "QUEUED", message);
         jdbcTemplate.update("""
                 insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
                 values (?, ?, 'noteweave.wiki.ingest', ?, ?, 'READY')
@@ -47,7 +64,7 @@ public class WikiIngestService {
                 "taskId", taskId,
                 "sourceId", sourceId,
                 "workspaceId", workspaceId,
-                "operation", "ingest"
+                "operation", operation
         )));
         KnowledgeItemResponse page = ingestSource(workspaceId, sourceId);
         jdbcTemplate.update("update task_outbox set status = 'SENT', sent_at = current_timestamp where task_id = ?", taskId);
@@ -65,6 +82,14 @@ public class WikiIngestService {
             return knowledgeService.createItemWithVersion(workspaceId, "WIKI", source.title(), content, null, citationIds);
         }
         return knowledgeService.appendVersion(existingItemId, new AppendKnowledgeVersionRequest(content, null, citationIds));
+    }
+
+    private List<String> readySourceIds(String workspaceId) {
+        return jdbcTemplate.queryForList("""
+                select id from source
+                where workspace_id = ? and status = 'READY'
+                order by updated_at asc, id asc
+                """, String.class, workspaceId);
     }
 
     private SourceForWiki loadSource(String workspaceId, String sourceId) {
@@ -120,9 +145,16 @@ public class WikiIngestService {
         builder.append("# ").append(source.title()).append("\n\n");
         builder.append("## 摘要\n\n");
         builder.append(source.summary().isBlank() ? "该页面由 Wiki ingest 根据资料内容生成，可通过 Wiki 工作台继续维护。" : source.summary()).append("\n\n");
+        List<String> concepts = wikiConcepts(source);
+        if (!concepts.isEmpty()) {
+            builder.append("## 关联概念\n\n");
+            for (String concept : concepts) {
+                builder.append("- [[").append(concept).append("]]\n");
+            }
+            builder.append("\n");
+        }
         builder.append("## 关键内容\n\n");
-        for (int i = 0; i < chunks.size(); i++) {
-            ChunkForWiki chunk = chunks.get(i);
+        for (ChunkForWiki chunk : chunks) {
             builder.append("- ").append(trim(chunk.content(), 220))
                     .append("（").append(chunk.locationInfo()).append("）\n");
         }
@@ -133,6 +165,33 @@ public class WikiIngestService {
         builder.append("## 构建说明\n\n");
         builder.append("该页面由工作台级 Wiki ingest 根据资料变化生成，不绑定单次会话。\n");
         return builder.toString();
+    }
+
+    private List<String> wikiConcepts(SourceForWiki source) {
+        List<String> concepts = new ArrayList<>();
+        addConcept(concepts, source.sourceType());
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\"([^\"]{2,40})\"").matcher(source.tagsJson());
+        while (matcher.find() && concepts.size() < 6) {
+            addConcept(concepts, matcher.group(1));
+        }
+        for (String part : source.title().replaceAll("\\.[a-zA-Z0-9]{1,8}$", "").split("[\\s_\\-]+")) {
+            if (concepts.size() >= 6) {
+                break;
+            }
+            addConcept(concepts, part);
+        }
+        return concepts;
+    }
+
+    private void addConcept(List<String> concepts, String value) {
+        String normalized = value == null ? "" : value.trim();
+        if (normalized.length() < 2 || normalized.length() > 40) {
+            return;
+        }
+        boolean exists = concepts.stream().anyMatch(item -> item.equalsIgnoreCase(normalized));
+        if (!exists) {
+            concepts.add(normalized);
+        }
     }
 
     private String findWikiItemIdByTitle(String workspaceId, String title) {

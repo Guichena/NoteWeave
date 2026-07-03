@@ -22,7 +22,7 @@ NOTE：回答绑定 conversation_id，检索边界绑定 workspace_id，保存�
 WIKI：Wiki 知识网络绑定 workspace_id，聊天中的 WIKI 链路只读取当前工作台 Wiki 网络
 ```
 
-Wiki 构建通过研究工作台级 `wiki_enabled` 开关控制，不默认绑定最近聊天消息。开启后，资料上传和解析完成会进入 Wiki ingest 链路，并生成或更新工作台级 Wiki 页面、引用、链接和日志。
+Wiki 构建通过研究工作台级 `wiki_enabled` 开关控制，不默认绑定最近聊天消息。开启开关时会回补当前工作台内已解析完成的资料；开启后，资料上传和解析完成会进入 Wiki ingest 链路，并生成或更新工作台级 Wiki 页面、引用、链接和日志。用户也可以在默认 Wiki 工作台中按当前资料手动重建 Wiki。
 
 ## 2. 子阶段树
 
@@ -87,7 +87,7 @@ Note 链路参考 `shenmintao/marginalia`，不直接把 chunk top-k 当作答�
 ```text
 资料标题 / 摘要 / 标签 / 结构化元数据
   -> 历史 Note / Journal 信号
-  -> 关系信号扩展
+  -> 关系信号扩展（标签重叠 + 历史 Note 共同引用）
   -> 候选资料
   -> 原文窗口相关性重排
   -> 摘录卡片
@@ -195,8 +195,8 @@ Frontend：
 4. Wiki 页面中的 `[[页面名]]` 可以生成链接关系。
 5. Wiki 页面详情接口可以读取最新正文和 citation。
 6. 当前工作台没有 Wiki 页面时，Wiki 模式不退回普通资料 RAG，而是提示创建或维护 Wiki 页面。
-7. Wiki 构建开启后，资料上传会触发 `WIKI_INGEST`，自动生成或更新 Wiki 页面。
-8. Wiki 支持搜索、图谱、统计、日志、lint、rebuild links 和 auto-fix。
+7. Wiki 构建开启后，已有 READY 资料会回补，后续资料上传会触发 `WIKI_INGEST`，自动生成或更新 Wiki 页面。
+8. Wiki 支持搜索、图谱、统计、日志、lint、按当前资料重建、rebuild links 和 auto-fix。
 
 ### 完成定义
 
@@ -222,9 +222,10 @@ Frontend：
 6. Wiki issues：`GET /api/v2/workspaces/{workspaceId}/wiki-issues`
 7. Wiki log：`GET /api/v2/workspaces/{workspaceId}/wiki-log`
 8. Rebuild links：`POST /api/v2/workspaces/{workspaceId}/wiki/rebuild-links`
-9. Auto fix：`POST /api/v2/workspaces/{workspaceId}/wiki/auto-fix`
-10. Rename page：`PATCH /api/v2/knowledge-items/{itemId}/title`
-11. Soft delete page：`DELETE /api/v2/knowledge-items/{itemId}`
+9. Rebuild wiki from sources：`POST /api/v2/workspaces/{workspaceId}/wiki/rebuild`
+10. Auto fix：`POST /api/v2/workspaces/{workspaceId}/wiki/auto-fix`
+11. Rename page：`PATCH /api/v2/knowledge-items/{itemId}/title`
+12. Soft delete page：`DELETE /api/v2/knowledge-items/{itemId}`
 
 ## 7. 子阶段 3.5：前端三模式入口与 Wiki 工作台入口
 
@@ -241,7 +242,7 @@ Frontend：
 5. 默认 Wiki 工作台视图：左侧 Wiki Index / 页面列表，中间页面正文与版本信息，右侧页面链接、统计、图谱、问题和日志
 6. Wiki 页面详情：点击页面后读取最新正文、版本号和 citation
 7. 右侧知识沉淀入口：保存最新回答为 Note、创建 Wiki 页面
-8. Wiki 工作台页面维护入口：追加 Wiki 新版本、重命名、软删除、重建链接、Auto Fix
+8. Wiki 工作台页面维护入口：追加 Wiki 新版本、重命名、软删除、按当前资料重建 Wiki、重建链接、Auto Fix
 9. 聊天流式结果需要展示回答正文和 citation，避免前端只展示模型正文而丢失来源闭环
 
 ## 8. 本阶段禁止项
