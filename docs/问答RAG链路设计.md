@@ -384,7 +384,7 @@ Context Packing 规则：
 ### 13.1 发送消息
 
 ```text
-POST /api/conversations/{conversationId}/messages
+POST /api/v2/conversations/{conversationId}/messages
 ```
 
 请求体：
@@ -393,7 +393,7 @@ POST /api/conversations/{conversationId}/messages
 {
   "content": "这几篇资料对 RAG 的定义是什么？",
   "answer_mode": "QA",
-  "context_snapshot_id": 123
+  "client_request_id": "qa-001"
 }
 ```
 
@@ -401,30 +401,26 @@ POST /api/conversations/{conversationId}/messages
 
 ```json
 {
-  "message_id": 1001,
-  "assistant_message_id": 1002,
-  "status": "completed",
-  "answer": "...",
-  "citations": []
+  "user_message_id": "msg_user",
+  "assistant_message_id": "msg_assistant",
+  "assistant_request_id": "req_assistant",
+  "stream_url": "/api/v2/chat/requests/req_assistant/stream"
 }
 ```
 
 ### 13.2 流式回答
 
 ```text
-GET /api/conversations/{conversationId}/messages/{messageId}/stream
+GET /api/v2/chat/requests/{assistantRequestId}/stream
 ```
 
 事件：
 
 ```text
-retrieval_started
-retrieval_done
-rerank_done
-answer_delta
-citation_ready
-completed
-failed
+chat.delta
+chat.citation
+chat.completed
+chat.failed
 ```
 
 ### 13.3 保存为结构化笔记
