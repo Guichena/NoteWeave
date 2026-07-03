@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.noteweave.infra.LocalObjectStorage;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -35,6 +36,9 @@ class Phase1And2ContractTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private LocalObjectStorage storage;
 
     @Test
     void phase1And2ShouldRunWorkspaceUploadRagCitationFlow() throws Exception {
@@ -109,6 +113,35 @@ class Phase1And2ContractTest {
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
     }
 
+    @Test
+    void duplicateUploadsShouldReuseCanonicalFileObject() throws Exception {
+        String workspaceId = createWorkspace();
+        byte[] content = "同一份资料重复上传时应该复用 file_object，并保留可读取的规范化对象。".getBytes(StandardCharsets.UTF_8);
+
+        completeSingleChunkUpload(workspaceId, "duplicate-a.md", content);
+        completeSingleChunkUpload(workspaceId, "duplicate-b.md", content);
+
+        Map<String, Object> fileObject = jdbcTemplate.queryForMap("""
+                select id, object_key, ref_count from file_object where workspace_id = ?
+                """, workspaceId);
+        Integer fileObjectCount = jdbcTemplate.queryForObject(
+                "select count(*) from file_object where workspace_id = ?",
+                Integer.class,
+                workspaceId
+        );
+        Integer sourceCount = jdbcTemplate.queryForObject(
+                "select count(*) from source where workspace_id = ?",
+                Integer.class,
+                workspaceId
+        );
+
+        assertThat(fileObjectCount).isEqualTo(1);
+        assertThat(sourceCount).isEqualTo(2);
+        assertThat(fileObject.get("ref_count")).isEqualTo(2);
+        assertThat(storage.exists((String) fileObject.get("object_key"))).isTrue();
+        assertThat(storage.read((String) fileObject.get("object_key"))).isEqualTo(content);
+    }
+
     private String createWorkspace() throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v2/workspaces")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -136,6 +169,29 @@ class Phase1And2ContractTest {
                 .andExpect(jsonPath("$.data.upload_id").isNotEmpty())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString()).path("data").path("upload_id").asText();
+    }
+
+    private void completeSingleChunkUpload(String workspaceId, String fileName, byte[] content) throws Exception {
+        MvcResult init = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/uploads", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "file_name", fileName,
+                                "file_size", content.length,
+                                "mime_type", "text/markdown",
+                                "chunk_size", content.length,
+                                "total_chunks", 1
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn();
+        String uploadId = objectMapper.readTree(init.getResponse().getContentAsString()).path("data").path("upload_id").asText();
+        mockMvc.perform(put("/api/v2/uploads/{uploadId}/chunks/{chunkIndex}", uploadId, 0)
+                        .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                        .content(content))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/v2/uploads/{uploadId}/complete", uploadId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.parse_status").value("PARSED"))
+                .andExpect(jsonPath("$.data.index_status").value("INDEXED"));
     }
 
     private String createConversation(String workspaceId) throws Exception {

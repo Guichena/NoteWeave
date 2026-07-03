@@ -34,6 +34,10 @@ public class LocalObjectStorage {
         }
     }
 
+    public boolean exists(String objectKey) {
+        return Files.exists(root.resolve(objectKey).normalize());
+    }
+
     public Path path(String objectKey) {
         return root.resolve(objectKey).normalize();
     }

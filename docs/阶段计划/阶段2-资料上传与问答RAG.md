@@ -65,6 +65,8 @@ MinIO：
    `workspace/{workspaceId}/upload_tmp/{uploadId}/{chunkIndex}`
 2. 原始文件路径：
    `workspace/{workspaceId}/source/{sourceId}/snapshot/{versionNo}/original/{fileName}`
+3. 去重规范化文件路径：
+   `workspace/{workspaceId}/file_object/{sha256}-{fileName}`
 
 ### TDD 要求
 
@@ -84,6 +86,8 @@ MinIO：
 
 1. 用户能完成一次上传
 2. 系统能创建 `source` 及快照
+3. 同一工作台内重复上传相同内容时复用同一个 `file_object`
+4. `file_object.object_key` 指向的规范化对象必须真实可读
 
 ## 5. 子阶段 2.2 解析、切片、索引
 

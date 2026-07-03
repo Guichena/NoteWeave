@@ -101,7 +101,7 @@ public class UploadService {
         }
         byte[] merged = mergeChunks(chunkRows);
         String sha256 = sha256(merged);
-        String fileObjectId = getOrCreateFileObject(upload, sha256, merged.length);
+        FileObjectRef fileObject = getOrCreateFileObject(upload, sha256, merged.length, merged);
         String sourceId = Ids.newId();
         String snapshotId = Ids.newId();
         String objectKey = "workspace/%s/source/%s/snapshot/1/original/%s".formatted(upload.workspaceId(), sourceId, sanitize(upload.fileName()));
@@ -109,11 +109,11 @@ public class UploadService {
         jdbcTemplate.update("""
                 insert into source(id, workspace_id, file_object_id, title, source_type, status, parse_status, index_status)
                 values (?, ?, ?, ?, 'USER_UPLOAD', 'PROCESSING', 'PENDING', 'PENDING')
-                """, sourceId, upload.workspaceId(), fileObjectId, upload.fileName());
+                """, sourceId, upload.workspaceId(), fileObject.id(), upload.fileName());
         jdbcTemplate.update("""
                 insert into source_snapshot(id, source_id, file_object_id, version_no, object_key, sha256, parse_status, index_status)
                 values (?, ?, ?, 1, ?, ?, 'PENDING', 'PENDING')
-                """, snapshotId, sourceId, fileObjectId, objectKey, sha256);
+                """, snapshotId, sourceId, fileObject.id(), objectKey, sha256);
         String taskId = taskService.createTask(upload.workspaceId(), "SOURCE_PARSE", "SOURCE", sourceId, "PARSING", "资料解析与切片");
         jdbcTemplate.update("""
                 insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
@@ -158,21 +158,26 @@ public class UploadService {
         }
     }
 
-    private String getOrCreateFileObject(UploadRow upload, String sha256, long size) {
-        List<String> existing = jdbcTemplate.queryForList("""
-                select id from file_object where workspace_id = ? and sha256 = ?
-                """, String.class, upload.workspaceId(), sha256);
+    private FileObjectRef getOrCreateFileObject(UploadRow upload, String sha256, long size, byte[] merged) {
+        List<FileObjectRef> existing = jdbcTemplate.query("""
+                select id, object_key from file_object where workspace_id = ? and sha256 = ?
+                """, (rs, rowNum) -> new FileObjectRef(rs.getString("id"), rs.getString("object_key")), upload.workspaceId(), sha256);
         if (!existing.isEmpty()) {
-            jdbcTemplate.update("update file_object set ref_count = ref_count + 1 where id = ?", existing.get(0));
-            return existing.get(0);
+            FileObjectRef ref = existing.get(0);
+            if (!storage.exists(ref.objectKey())) {
+                storage.write(ref.objectKey(), merged);
+            }
+            jdbcTemplate.update("update file_object set ref_count = ref_count + 1 where id = ?", ref.id());
+            return ref;
         }
         String fileObjectId = Ids.newId();
         String objectKey = "workspace/%s/file_object/%s-%s".formatted(upload.workspaceId(), sha256, sanitize(upload.fileName()));
+        storage.write(objectKey, merged);
         jdbcTemplate.update("""
                 insert into file_object(id, workspace_id, object_key, sha256, file_size, mime_type, ref_count)
                 values (?, ?, ?, ?, ?, ?, 1)
                 """, fileObjectId, upload.workspaceId(), objectKey, sha256, size, upload.mimeType());
-        return fileObjectId;
+        return new FileObjectRef(fileObjectId, objectKey);
     }
 
     private UploadRow findUpload(String uploadId) {
@@ -224,5 +229,8 @@ public class UploadService {
             String sourceId,
             String taskId
     ) {
+    }
+
+    private record FileObjectRef(String id, String objectKey) {
     }
 }
