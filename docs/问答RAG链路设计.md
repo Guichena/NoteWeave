@@ -113,7 +113,7 @@ Citation 至少应能回到：
    同时使用关键词检索、向量检索和结构化过滤召回候选内容。
 
 4. `Evidence Rerank`
-   对候选 chunk / note / wiki / artifact / memory 做二次排序，优先选择能直接回答问题、来源可靠、引用位置明确的证据。
+   对候选资料片段做二次排序，优先选择能直接回答问题、来源可靠、引用位置明确的证据。
 
 5. `Context Packing`
    将少量证据片段、引用定位、必要会话上下文组装成模型输入，避免把大量无关资料塞给模型。
@@ -180,7 +180,7 @@ Citation 至少应能回到：
     "workspace_id": 1,
     "topic_scope_id": 2
   },
-  "preferred_sources": ["source", "note", "wiki", "artifact", "memory"],
+  "preferred_material_types": ["uploaded_file", "imported_text", "generated_source"],
   "answer_style": "short | normal | detailed",
   "needs_citation": true
 }
@@ -208,8 +208,8 @@ Citation 至少应能回到：
 推荐由 `Elasticsearch` 承接：
 
 - `source_chunk_index`
-- `knowledge_index`
-- `artifact_index`
+
+问答 RAG 不直接查询 Note、Wiki、Artifact 或 Memory 的内部索引。只有当系统生成内容被用户明确保存进工作台资料池后，才按普通资料进入统一资料索引。
 
 ### 8.2 向量检索
 
@@ -235,9 +235,7 @@ Citation 至少应能回到：
 可选过滤：
 
 - source_type
-- knowledge_type
-- artifact_type
-- memory_type
+- material_type
 - created_by
 - updated_at
 - tag
@@ -360,7 +358,7 @@ Context Packing 规则：
 `conversation_message` 建议补充或保留：
 
 - `retrieval_trace_id`
-- `answer_chain`
+- `answer_mode`
 - `model_name`
 - `latency_ms`
 - `citation_count`
@@ -394,7 +392,7 @@ POST /api/conversations/{conversationId}/messages
 ```json
 {
   "content": "这几篇资料对 RAG 的定义是什么？",
-  "answer_chain": "ASK",
+  "answer_mode": "QA",
   "context_snapshot_id": 123
 }
 ```
@@ -432,12 +430,12 @@ failed
 ### 13.3 保存为结构化笔记
 
 ```text
-POST /api/conversations/{conversationId}/messages/{messageId}/save-note
+POST /api/v2/messages/{messageId}/save-as-note
 ```
 
 作用：
 
-- 将当前回答、引用和用户可编辑内容生成 `KnowledgeItem(type=NOTE)`
+- 将当前回答、引用和用户可编辑内容保存为工作台内的结构化笔记
 - 保留 `message_citation -> knowledge_version_citation` 的证据链
 
 ## 14. 后端模块
@@ -494,31 +492,16 @@ ConversationController
 
 问答 RAG 不直接读取其他链路内部对象。系统生成内容如果被用户保存为资料，可以进入统一资料索引；具体索引是否拆分由实现阶段决定。
 
-#### knowledge_index
+#### generated_source_index
 
 字段：
 
 - `workspace_id`
 - `topic_scope_id`
-- `knowledge_item_id`
-- `knowledge_version_id`
-- `knowledge_type`
-- `title`
-- `content`
-- `summary`
-- `tags`
-- `embedding`
-- `status`
-
-#### artifact_index
-
-字段：
-
-- `workspace_id`
-- `topic_scope_id`
-- `artifact_id`
-- `artifact_version_id`
-- `artifact_type`
+- `source_id`
+- `source_snapshot_id`
+- `generated_from_type`
+- `generated_from_id`
 - `title`
 - `content`
 - `summary`

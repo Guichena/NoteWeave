@@ -78,6 +78,12 @@ class Phase1And2ContractTest {
                 .andExpect(jsonPath("$.data.task_status").value("COMPLETED"))
                 .andExpect(jsonPath("$.data.result_ref").value(sourceId));
 
+        mockMvc.perform(get("/api/v2/tasks/{taskId}/events", taskId))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: task.status")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: task.completed")));
+
         String conversationId = createConversation(workspaceId);
         MvcResult messageResult = mockMvc.perform(post("/api/v2/conversations/{conversationId}/messages", conversationId)
                         .contentType(MediaType.APPLICATION_JSON)

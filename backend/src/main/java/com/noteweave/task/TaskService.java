@@ -2,6 +2,9 @@ package com.noteweave.task;
 
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -62,5 +65,43 @@ public class TaskService {
                     rs.getString("target_id") == null ? "" : rs.getString("target_id")
             );
         }, taskId);
+    }
+
+    public String streamEvents(String taskId) {
+        getTask(taskId);
+        List<TaskEventResponse> events = jdbcTemplate.query("""
+                select id, event_type, message, created_at
+                from task_event
+                where task_id = ?
+                order by created_at asc, id asc
+                """, (rs, rowNum) -> new TaskEventResponse(
+                rs.getString("id"),
+                rs.getString("event_type"),
+                rs.getString("message") == null ? "" : rs.getString("message"),
+                toInstant(rs.getTimestamp("created_at"))
+        ), taskId);
+        StringBuilder builder = new StringBuilder();
+        for (TaskEventResponse event : events) {
+            builder.append("event: ").append(toSseEventName(event.eventType())).append("\n");
+            builder.append("data: ").append(escape(event.message())).append("\n\n");
+        }
+        return builder.toString();
+    }
+
+    private String toSseEventName(String eventType) {
+        return switch (eventType) {
+            case "TASK_CREATED" -> "task.status";
+            case "TASK_COMPLETED" -> "task.completed";
+            case "TASK_FAILED" -> "task.failed";
+            default -> "task.progress";
+        };
+    }
+
+    private String escape(String data) {
+        return data.replace("\r", "").replace("\n", "\\n");
+    }
+
+    private Instant toInstant(Timestamp value) {
+        return value == null ? Instant.now() : value.toInstant();
     }
 }
