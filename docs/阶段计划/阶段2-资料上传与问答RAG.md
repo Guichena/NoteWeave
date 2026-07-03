@@ -162,6 +162,7 @@ Elasticsearch：
 1. `parse_status / index_status` 能正确变化
 2. chunk 能按工作台维度检索
 3. 资料解析任务会写入 `task_event`，并可通过 `/api/v2/tasks/{taskId}/events` 以 SSE 读取
+4. 前端上传解析后展示任务状态和任务事件流
 
 ## 6. 子阶段 2.3 问答与引用闭环
 

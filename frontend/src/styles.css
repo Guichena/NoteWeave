@@ -245,6 +245,21 @@ h1 {
   font-weight: 700;
 }
 
+.task-card {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  background: rgba(36, 63, 54, 0.08);
+  line-height: 1.55;
+}
+
+.task-card span,
+.task-card small {
+  color: #667169;
+}
+
 .rail-field {
   display: grid;
   gap: 6px;

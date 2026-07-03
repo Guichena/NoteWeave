@@ -19,6 +19,16 @@ type Message = {
   content: string;
 };
 
+type TaskStatus = {
+  task_id: string;
+  task_type: string;
+  task_status: string;
+  progress_phase: string;
+  progress_message: string;
+  result_ref: string;
+  error_message: string;
+};
+
 type WikiPage = {
   item_id: string;
   item_type: string;
@@ -88,6 +98,8 @@ export function App() {
   const [wikiTitle, setWikiTitle] = useState("阶段知识页");
   const [wikiDraft, setWikiDraft] = useState("");
   const [wikiAppendDraft, setWikiAppendDraft] = useState("");
+  const [latestTask, setLatestTask] = useState<TaskStatus | null>(null);
+  const [taskEvents, setTaskEvents] = useState<string[]>([]);
   const [isBusy, setIsBusy] = useState(false);
   const [status, setStatus] = useState("准备就绪");
 
@@ -133,11 +145,16 @@ export function App() {
         `/api/v2/uploads/${upload.upload_id}/complete`,
         {}
       );
+      const task = await get<TaskStatus>(`/api/v2/tasks/${completed.task_id}`);
+      const eventStream = await requestText(`/api/v2/tasks/${completed.task_id}/events`);
+      const events = parseEventStream(eventStream).map((event) => `${event.event}: ${event.data}`);
+      setLatestTask(task);
+      setTaskEvents(events);
       setMessages((current) => [
         ...current,
         {
           role: "system",
-          content: `资料已上传并解析：source=${completed.source_id}，parse=${completed.parse_status}，index=${completed.index_status}`
+          content: `资料已上传并解析：source=${completed.source_id}，parse=${completed.parse_status}，index=${completed.index_status}，task=${task.task_status}`
         }
       ]);
     });
@@ -434,6 +451,16 @@ export function App() {
           <button onClick={uploadSource} disabled={isBusy || !workspace}>
             上传并解析资料
           </button>
+          {latestTask && (
+            <div className="task-card">
+              <strong>资料处理任务</strong>
+              <span>{latestTask.task_type} · {latestTask.task_status} · {latestTask.progress_phase}</span>
+              <span>{latestTask.progress_message}</span>
+              {taskEvents.map((event, index) => (
+                <small key={`${event}-${index}`}>{event}</small>
+              ))}
+            </div>
+          )}
 
           <div className="conversation">
             {messages.map((message, index) => (
@@ -541,15 +568,20 @@ function parseSse(stream: string, eventName: string) {
 }
 
 function parseAllSse(stream: string, eventName: string) {
-  const events = stream.split("\n\n");
-  const values: string[] = [];
-  for (const event of events) {
-    if (event.includes(`event: ${eventName}`)) {
-      const dataLine = event.split("\n").find((line) => line.startsWith("data: "));
-      if (dataLine) {
-        values.push(dataLine.replace("data: ", "").replaceAll("\\n", "\n"));
-      }
-    }
-  }
-  return values;
+  return parseEventStream(stream)
+    .filter((event) => event.event === eventName)
+    .map((event) => event.data);
+}
+
+function parseEventStream(stream: string) {
+  return stream.split("\n\n")
+    .map((eventBlock) => {
+      const eventLine = eventBlock.split("\n").find((line) => line.startsWith("event: "));
+      const dataLine = eventBlock.split("\n").find((line) => line.startsWith("data: "));
+      return {
+        event: eventLine?.replace("event: ", "") ?? "",
+        data: dataLine?.replace("data: ", "").replaceAll("\\n", "\n") ?? ""
+      };
+    })
+    .filter((event) => event.event);
 }
