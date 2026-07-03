@@ -94,6 +94,11 @@ public class KnowledgeController {
         return ApiResponse.success(knowledgeService.getItemDetail(itemId));
     }
 
+    @GetMapping("/knowledge-items/{itemId}/versions")
+    ApiResponse<List<KnowledgeVersionSummaryResponse>> listVersions(@PathVariable String itemId) {
+        return ApiResponse.success(knowledgeService.listItemVersions(itemId));
+    }
+
     @PostMapping("/knowledge-items/{itemId}/versions")
     ApiResponse<KnowledgeItemResponse> appendVersion(
             @PathVariable String itemId,

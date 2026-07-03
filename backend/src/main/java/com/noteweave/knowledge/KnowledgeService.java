@@ -385,6 +385,26 @@ public class KnowledgeService {
         }, itemId);
     }
 
+    public List<KnowledgeVersionSummaryResponse> listItemVersions(String itemId) {
+        KnowledgeItemRef item = loadKnowledgeItem(itemId);
+        return jdbcTemplate.query("""
+                select v.id, v.version_no, coalesce(v.summary, '') as summary, v.source_message_id, v.created_at,
+                       count(kvc.id) as citation_count
+                from knowledge_version v
+                left join knowledge_version_citation kvc on kvc.knowledge_version_id = v.id
+                where v.item_id = ?
+                group by v.id, v.version_no, v.summary, v.source_message_id, v.created_at
+                order by v.version_no desc, v.created_at desc
+                """, (rs, rowNum) -> new KnowledgeVersionSummaryResponse(
+                rs.getString("id"),
+                rs.getInt("version_no"),
+                rs.getString("summary"),
+                rs.getString("source_message_id"),
+                rs.getInt("citation_count"),
+                toInstant(rs.getTimestamp("created_at"))
+        ), item.itemId());
+    }
+
     public List<KnowledgePageHit> findRelevantWikiPages(String workspaceId, String query) {
         List<KnowledgePageHit> pages = jdbcTemplate.query("""
                 select i.id, i.title, v.id as version_id, v.version_no, v.content, coalesce(v.summary, '') as summary, i.updated_at

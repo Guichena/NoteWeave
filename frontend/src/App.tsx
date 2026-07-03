@@ -121,6 +121,15 @@ type KnowledgeItemDetail = WikiPage & {
   backlinks: WikiLink[];
 };
 
+type KnowledgeVersionSummary = {
+  version_id: string;
+  version_no: number;
+  summary: string;
+  source_message_id: string | null;
+  citation_count: number;
+  created_at: string;
+};
+
 type ApiResponse<T> = {
   success: boolean;
   code: string;
@@ -150,6 +159,7 @@ export function App() {
   const [wikiGraph, setWikiGraph] = useState<WikiGraph | null>(null);
   const [selectedWikiItemId, setSelectedWikiItemId] = useState("");
   const [selectedWikiDetail, setSelectedWikiDetail] = useState<KnowledgeItemDetail | null>(null);
+  const [selectedWikiVersions, setSelectedWikiVersions] = useState<KnowledgeVersionSummary[]>([]);
   const [lastAssistantMessageId, setLastAssistantMessageId] = useState("");
   const [lastAssistantAnswer, setLastAssistantAnswer] = useState("");
   const [noteTitle, setNoteTitle] = useState("阶段整理笔记");
@@ -490,6 +500,7 @@ export function App() {
     setSelectedWikiItemId(page.item_id);
     await run(`打开 Wiki 页面《${page.title}》`, async () => {
       setSelectedWikiDetail(await get<KnowledgeItemDetail>(`/api/v2/knowledge-items/${page.item_id}`));
+      setSelectedWikiVersions(await get<KnowledgeVersionSummary[]>(`/api/v2/knowledge-items/${page.item_id}/versions`));
       setWikiAppendDraft("");
       setWikiRenameTitle(page.title);
     });
@@ -511,6 +522,7 @@ export function App() {
     const selected = wiki.pages.find((page) => page.item_id === preferredItemId) ?? wiki.pages[0];
     setSelectedWikiItemId(selected?.item_id ?? "");
     setSelectedWikiDetail(selected ? await get<KnowledgeItemDetail>(`/api/v2/knowledge-items/${selected.item_id}`) : null);
+    setSelectedWikiVersions(selected ? await get<KnowledgeVersionSummary[]>(`/api/v2/knowledge-items/${selected.item_id}/versions`) : []);
     setWikiRenameTitle(selected?.title ?? "");
   }
 
@@ -583,6 +595,15 @@ export function App() {
                 <p className="version-pill">当前版本 v{selectedWikiDetail?.latest_version_no ?? selectedWikiPage.latest_version_no}</p>
                 <div className="wiki-summary">
                   {selectedWikiDetail?.content || selectedWikiPage.summary || "这个页面暂时还没有正文。"}
+                </div>
+                <div className="wiki-citations">
+                  <strong>版本历史</strong>
+                  {selectedWikiVersions.length === 0 && <span>当前页面还没有版本记录。</span>}
+                  {selectedWikiVersions.map((version) => (
+                    <span key={version.version_id}>
+                      v{version.version_no} · 引用 {version.citation_count} · {version.summary || "无摘要"}
+                    </span>
+                  ))}
                 </div>
                 {selectedWikiDetail?.citations.length ? (
                   <div className="wiki-citations">

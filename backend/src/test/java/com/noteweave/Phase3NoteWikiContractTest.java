@@ -109,6 +109,12 @@ class Phase3NoteWikiContractTest {
                 .andExpect(jsonPath("$.data.outgoing_links[0].target_title").value("Note 链路"))
                 .andExpect(jsonPath("$.data.backlinks").isArray());
 
+        mockMvc.perform(get("/api/v2/knowledge-items/{itemId}/versions", wikiItemId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].version_no").value(2))
+                .andExpect(jsonPath("$.data[1].version_no").value(1))
+                .andExpect(jsonPath("$.data[0].citation_count").value(org.hamcrest.Matchers.greaterThanOrEqualTo(1)));
+
         JsonNode wikiMessage = sendMessage(conversationId, "WIKI", "NoteWeave 阶段3怎么设计？");
         String wikiRequestId = wikiMessage.path("data").path("assistant_request_id").asText();
 
@@ -402,6 +408,10 @@ class Phase3NoteWikiContractTest {
         mockMvc.perform(get("/api/v2/knowledge-items/{itemId}", itemId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.outgoing_links[0].target_title").value("已补齐页面"));
+
+        mockMvc.perform(get("/api/v2/knowledge-items/{itemId}/versions", itemId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].version_no").value(1));
 
         mockMvc.perform(delete("/api/v2/knowledge-items/{itemId}", missingPageId))
                 .andExpect(status().isOk());
