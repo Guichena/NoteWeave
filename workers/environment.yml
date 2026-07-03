@@ -1,0 +1,11 @@
+name: noteweave-workers
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - fastapi>=0.115.0
+      - pydantic-settings>=2.6.0
+      - pytest>=9.0.0
+      - uvicorn>=0.32.0
