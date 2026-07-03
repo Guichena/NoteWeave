@@ -11,6 +11,7 @@ import com.noteweave.workspace.WorkspaceService;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -66,6 +67,7 @@ public class UploadService {
         if (chunkIndex < 0 || chunkIndex >= upload.totalChunks()) {
             throw new BusinessException("UPLOAD_CHUNK_OUT_OF_RANGE", "分片序号超出范围");
         }
+        verifyContentMd5(contentMd5, content);
         String objectKey = "workspace/%s/upload_tmp/%s/%d".formatted(upload.workspaceId(), uploadId, chunkIndex);
         storage.write(objectKey, content);
         int updated = jdbcTemplate.update("""
@@ -209,6 +211,25 @@ public class UploadService {
             return HexFormat.of().formatHex(digest.digest(content));
         } catch (Exception ex) {
             throw new IllegalStateException("SHA-256 not available", ex);
+        }
+    }
+
+    private void verifyContentMd5(String contentMd5, byte[] content) {
+        if (contentMd5 == null || contentMd5.isBlank()) {
+            return;
+        }
+        String normalized = contentMd5.trim();
+        try {
+            byte[] digest = MessageDigest.getInstance("MD5").digest(content);
+            String hex = HexFormat.of().formatHex(digest);
+            String base64 = Base64.getEncoder().encodeToString(digest);
+            if (!normalized.equalsIgnoreCase(hex) && !normalized.equals(base64)) {
+                throw new BusinessException("UPLOAD_CHUNK_MD5_MISMATCH", "分片 MD5 校验失败");
+            }
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new IllegalStateException("MD5 not available", ex);
         }
     }
 

@@ -12,6 +12,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.infra.LocalObjectStorage;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.Base64;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -142,6 +144,28 @@ class Phase1And2ContractTest {
         assertThat(storage.read((String) fileObject.get("object_key"))).isEqualTo(content);
     }
 
+    @Test
+    void uploadChunkShouldValidateOptionalContentMd5() throws Exception {
+        String workspaceId = createWorkspace();
+        String uploadId = createUpload(workspaceId);
+        byte[] content = "需要被校验的资料分片".getBytes(StandardCharsets.UTF_8);
+
+        mockMvc.perform(put("/api/v2/uploads/{uploadId}/chunks/{chunkIndex}", uploadId, 0)
+                        .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                        .header("Content-MD5", "bad-md5")
+                        .content(content))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("UPLOAD_CHUNK_MD5_MISMATCH"));
+
+        mockMvc.perform(put("/api/v2/uploads/{uploadId}/chunks/{chunkIndex}", uploadId, 0)
+                        .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                        .header("Content-MD5", base64Md5(content))
+                        .content(content))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.accepted").value(true));
+    }
+
     private String createWorkspace() throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v2/workspaces")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -205,5 +229,9 @@ class Phase1And2ContractTest {
                 .andExpect(jsonPath("$.data.conversation_id").isNotEmpty())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString()).path("data").path("conversation_id").asText();
+    }
+
+    private String base64Md5(byte[] content) throws Exception {
+        return Base64.getEncoder().encodeToString(MessageDigest.getInstance("MD5").digest(content));
     }
 }
