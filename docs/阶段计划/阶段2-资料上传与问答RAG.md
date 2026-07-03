@@ -6,7 +6,11 @@
 
 `工作台 -> 上传资料 -> 完成解析索引 -> 发起问答 -> 返回带引用答案`
 
-## 2. 子阶段树
+## 2. 与原始 NoteWeave Phase 的关系
+
+当前阶段 2 主要对应原始 `Phase 1：问答模式`，同时把原始设计里没有单独拆开的上传、解析、切片和引用底座一起补齐。
+
+## 3. 子阶段树
 
 ```text
 2.1 上传与建档
@@ -14,7 +18,7 @@
 2.3 问答与引用闭环
 ```
 
-## 3. 子阶段 2.1 上传与建档
+## 4. 子阶段 2.1 上传与建档
 
 ### 目标
 
@@ -24,6 +28,43 @@
 
 1. 旧版文件上传与分片合并逻辑
 2. 旧版文件去重与对象存储映射逻辑
+
+### 推荐函数与类
+
+Controller：
+
+1. `UploadController.uploadChunk(uploadId, chunkIndex, contentMd5, filePart)`
+2. `UploadController.completeUpload(uploadId)`
+
+Application：
+
+1. `UploadApplicationService.acceptChunk(cmd)`
+2. `UploadApplicationService.completeUpload(uploadId)`
+
+Domain / Infra：
+
+1. `FileMergeService.mergeUploadChunks(uploadId)`
+2. `FileObjectService.getOrCreateFileObject(workspaceId, mergedFile)`
+3. `SourceDomainService.createSourceFromUpload(cmd)`
+4. `SourceSnapshotService.createInitialSnapshot(sourceId, fileObjectId, objectKey, hash)`
+5. `SourceTaskPublisher.publishParseTask(sourceId, snapshotId)`
+
+### 中间件接入
+
+MySQL：
+
+1. `document_upload`
+2. `upload_chunk`
+3. `file_object`
+4. `source`
+5. `source_snapshot`
+
+MinIO：
+
+1. 临时分片路径：
+   `workspace/{workspaceId}/upload_tmp/{uploadId}/{chunkIndex}`
+2. 原始文件路径：
+   `workspace/{workspaceId}/source/{sourceId}/snapshot/{versionNo}/original/{fileName}`
 
 ### TDD 要求
 
@@ -44,7 +85,7 @@
 1. 用户能完成一次上传
 2. 系统能创建 `source` 及快照
 
-## 4. 子阶段 2.2 解析、切片、索引
+## 5. 子阶段 2.2 解析、切片、索引
 
 ### 目标
 
@@ -55,6 +96,46 @@
 1. 旧版解析器
 2. 旧版 chunker
 3. 旧版 ES 索引写入逻辑
+
+### 推荐函数与类
+
+Java：
+
+1. `OutboxPublishScheduler.publishPendingEvents()`
+2. `SourceTaskConsumer.handleParseTask(event)`
+3. `SourceParseService.parseSource(sourceId, snapshotId)`
+4. `ChunkBuildService.buildChunks(parsedDocument)`
+5. `SourceChunkService.persistChunks(snapshotId, chunks)`
+6. `SourceIndexService.indexChunks(snapshotId, chunks)`
+7. `SourceStatusService.markParsed(sourceId, snapshotId)`
+8. `SourceStatusService.markIndexed(sourceId, snapshotId)`
+
+Parser 子函数：
+
+1. `ParserRouter.selectParser(mimeType)`
+2. `MarkdownParser.parse(file)`
+3. `PdfParser.parse(file)`
+4. `TextStructureExtractor.extractSections(text)`
+
+### 中间件接入
+
+Kafka：
+
+1. topic：`noteweave.source.parse`
+2. topic：`noteweave.source.index`
+3. consumer group：`noteweave-source-worker`
+
+MinIO：
+
+1. 解析正文：
+   `workspace/{workspaceId}/source/{sourceId}/snapshot/{versionNo}/parsed/content.md`
+2. 结构元数据：
+   `workspace/{workspaceId}/source/{sourceId}/snapshot/{versionNo}/parsed/structure.json`
+
+Elasticsearch：
+
+1. index alias：`nw-source-chunk`
+2. 查询必须带 `workspace_id`
 
 ### TDD 要求
 
@@ -76,7 +157,7 @@
 1. `parse_status / index_status` 能正确变化
 2. chunk 能按工作台维度检索
 
-## 5. 子阶段 2.3 问答与引用闭环
+## 6. 子阶段 2.3 问答与引用闭环
 
 ### 目标
 
@@ -87,6 +168,64 @@
 1. 旧版 RAG 检索逻辑
 2. 旧版 citation 回源逻辑
 3. 旧版流式输出逻辑
+
+### 推荐函数与类
+
+Controller：
+
+1. `ChatController.sendMessage(conversationId, req)`
+2. `ChatStreamController.stream(requestId)`
+
+Application / Orchestrator：
+
+1. `ChatApplicationService.sendMessage(cmd)`
+2. `ChatOrchestrator.answerQa(messageId, context)`
+3. `ChatContextService.buildChatContext(conversationId, answerMode)`
+
+Retrieval：
+
+1. `RetrievalDomainService.retrieveForQa(workspaceId, query)`
+2. `QueryRewriteService.rewriteQaQuery(query)`
+3. `ChunkRetriever.search(workspaceId, rewrittenQuery)`
+4. `EvidenceSelectionService.selectEvidence(candidates)`
+
+Citation：
+
+1. `CitationService.createCitations(messageId, selectedEvidence)`
+2. `CitationBackfillService.buildCitationView(citationIds)`
+
+Stream：
+
+1. `ChatStreamService.open(requestId)`
+2. `ChatStreamService.publishDelta(requestId, delta)`
+3. `ChatStreamService.publishCitation(requestId, citationItem)`
+4. `ChatStreamService.complete(requestId, messageId)`
+
+### 中间件接入
+
+MySQL：
+
+1. `conversation`
+2. `conversation_message`
+3. `citation`
+4. `message_citation`
+
+Redis：
+
+1. `idempotency:chat:{requestId}`
+2. `stream:chat:{assistantRequestId}`
+
+SSE 事件：
+
+1. `chat.delta`
+2. `chat.citation`
+3. `chat.completed`
+4. `chat.failed`
+
+Elasticsearch：
+
+1. 只查当前工作台 alias `nw-source-chunk`
+2. 第一批默认 `BM25 + metadata filter`
 
 ### TDD 要求
 
@@ -110,7 +249,7 @@
 2. 系统返回答案与 citation
 3. `conversation_message` 与 `message_citation` 正常落库
 
-## 6. 本阶段禁止项
+## 7. 本阶段禁止项
 
 1. 不扩展到 Note / Wiki
 2. 不接入 Artifact

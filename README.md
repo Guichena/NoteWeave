@@ -20,8 +20,11 @@ NoteWeave v2 是一个参考 NotebookLM 产品形态重构的研究工作台。
 3. [数据库迁移与建表顺序](D:/java-projects/NoteWeave-v2/docs/数据库迁移与建表顺序.md)
 4. [最小接口契约](D:/java-projects/NoteWeave-v2/docs/最小接口契约.md)
 5. [阶段计划总入口](D:/java-projects/NoteWeave-v2/docs/阶段计划/README.md)
-6. [函数级开发清单](D:/java-projects/NoteWeave-v2/docs/阶段计划/函数级开发清单.md)
-7. [中间件配置基线](D:/java-projects/NoteWeave-v2/docs/阶段计划/中间件配置基线.md)
+
+说明：
+
+- 每个阶段文档里已经内嵌对应子阶段的函数清单、中间件接入、测试顺序和迁移来源
+- 后续直接看阶段文档即可，不再维护两份平行的“函数级清单 / 中间件基线”文档
 
 ## 开发阶段
 
