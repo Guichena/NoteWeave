@@ -1,14 +1,15 @@
 # NoteWeave v2 Frontend
 
-前端采用 `React 19 + TypeScript 5 + Vite 5`，阶段1/2/3先提供最小研究工作台壳。
+前端采用 `React 19 + TypeScript 5 + Vite 5`，阶段1/2/3提供最小研究工作台闭环。
 
 当前页面包含：
 
-1. 研究工作台概览
-2. `问答 RAG / Note / Wiki` 三种链路入口
+1. 创建研究工作台与默认会话
+2. 上传文本资料并触发解析切片
+3. `问答 RAG / Note / Wiki` 三种链路入口，并通过 `answer_mode` 调用同一聊天接口
 3. Deep Research 独立按钮
 4. 右侧产物栏入口
-5. Wiki 工作台跳转入口
+5. 默认 Wiki 工作台查询入口
 
 当前模式口径：
 
@@ -20,6 +21,13 @@
 
 ```bash
 npm install
+npm run dev
+```
+
+默认请求同源 `/api/v2`。如果后端运行在 `http://localhost:8081`，可以设置：
+
+```bash
+$env:VITE_API_BASE_URL="http://localhost:8081"
 npm run dev
 ```
 
