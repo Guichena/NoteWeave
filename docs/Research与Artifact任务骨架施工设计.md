@@ -14,7 +14,7 @@
   -> Java 落正式结果
 ```
 
-当前版本的目标不是一次性做重型智能体平台，而是先把 `Java 主系统 <-> Python Worker` 的任务契约、结果落库、回归测试全部稳定下来，再逐步把真实检索、真实搜索、真实导出填进去。
+当前版本的目标不是一次性做重型智能体平台，而是先把 `Java 主系统 <-> Python Worker` 的任务契约、结果落库、回归测试全部稳定下来，再逐步把真实读取、真实抽取、真实导出填进去。
 
 ## 2. 当前已经落地的能力
 
@@ -70,7 +70,7 @@ action resolve
 ```text
 planner
   -> query bundle
-  -> workspace search hits
+  -> search adapters
   -> bounded read windows
   -> evidence cards
   -> table-as-state ledger
@@ -84,27 +84,31 @@ planner
 
 1. [workers/research-worker/app/planner.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/planner.py)
 2. [workers/research-worker/app/search.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/search.py)
-3. [workers/research-worker/app/reader.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/reader.py)
-4. [workers/research-worker/app/extractor.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/extractor.py)
-5. [workers/research-worker/app/state.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/state.py)
-6. [workers/research-worker/app/branch.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/branch.py)
-7. [workers/research-worker/app/verifier.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/verifier.py)
-8. [workers/research-worker/app/reporter.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/reporter.py)
-9. [workers/research-worker/app/kafka_consumer.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/kafka_consumer.py)
-10. [workers/research-worker/app/runner.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/runner.py)
+3. [workers/research-worker/app/search_adapters.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/search_adapters.py)
+4. [workers/research-worker/app/harness.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/harness.py)
+5. [workers/research-worker/app/reader.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/reader.py)
+6. [workers/research-worker/app/extractor.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/extractor.py)
+7. [workers/research-worker/app/state.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/state.py)
+8. [workers/research-worker/app/branch.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/branch.py)
+9. [workers/research-worker/app/verifier.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/verifier.py)
+10. [workers/research-worker/app/reporter.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/reporter.py)
+11. [workers/research-worker/app/kafka_consumer.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/kafka_consumer.py)
+12. [workers/research-worker/app/runner.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/runner.py)
 
 它现在具备的工程语义是：
 
 1. 先编译研究计划和查询集合，而不是直接写报告。
 2. 查询集合包含直接查询、资料定向查询、覆盖缺口检查和反证证据检查。
-3. `workspace search hits` 会记录命中的资料字段、覆盖度分数、搜索角度和检索理由。
-4. `bounded read windows` 控制每次研究保留多少资料窗口，避免无限塞上下文。
-5. `evidence cards` 把读取窗口转换成可验证证据单元。
-6. 用 `Table-as-State` 形式保存来源、阅读目标、证据摘录、支持度和验证注记。
-7. 用 `branch recovery` 在无命中、无窗口、无证据或冲突证据时生成受控恢复计划。
-8. 用 `Local Verifier` 检查问题归一化、证据覆盖、来源数量和 evidence policy。
-9. 用 `Global Verifier` 做整体放行判断，决定是 `READY_TO_WRITE` 还是 `WRITE_WITH_GUARDRAILS`。
-10. 最终输出带状态账本和验证结果的研究报告。
+3. `SearchAdapter` 默认走工作台资料快照，有外部搜索 key 时叠加外部搜索。
+4. `CompositeSearchAdapter` 会按 `global_search_limit` 控制预算，并按 `source_id / url / title` 合并去重。
+5. `search hits` 会记录命中的资料字段、覆盖度分数、搜索角度、检索理由、来源 provider 和 adapter 类型。
+6. `bounded read windows` 控制每次研究保留多少资料窗口，避免无限塞上下文。
+7. `evidence cards` 把读取窗口转换成可验证证据单元。
+8. 用 `Table-as-State` 形式保存来源、阅读目标、证据摘录、支持度和验证注记。
+9. 用 `branch recovery` 在无命中、无窗口、无证据或冲突证据时生成受控恢复计划。
+10. 用 `Local Verifier` 检查问题归一化、证据覆盖、来源数量和 evidence policy。
+11. 用 `Global Verifier` 做整体放行判断，决定是 `READY_TO_WRITE` 还是 `WRITE_WITH_GUARDRAILS`。
+12. 最终输出带状态账本、Harness Trace 和验证结果的研究报告。
 
 ## 3. 与 Memory 的关系
 
@@ -125,7 +129,7 @@ planner
 
 这一批骨架刻意没有做重：
 
-1. Research 还没有接真实外部搜索 API 或浏览器工具，目前搜索范围仍是工作台资料快照。
+1. Research 还没有接网页读取和网页快照 adapter，外部搜索命中目前主要作为后续读取阶段的候选来源。
 2. Artifact 还没有接真实 `Skill / MCP / 用户自定义外部能力`。
 3. Research 报告还没有自动回写成工作台正式资料。
 4. Artifact 导出 PDF / MD 文件还没有正式接 MinIO 持久化链路。
@@ -150,7 +154,9 @@ planner
 
 1. [workers/research-worker/tests/test_runner.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/tests/test_runner.py)
 2. [workers/research-worker/tests/test_kafka_consumer.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/tests/test_kafka_consumer.py)
-3. [workers/artifact-worker/tests/test_runner.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/tests/test_runner.py)
+3. [workers/research-worker/tests/test_harness.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/tests/test_harness.py)
+4. [workers/research-worker/tests/test_search_adapters.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/tests/test_search_adapters.py)
+5. [workers/artifact-worker/tests/test_runner.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/tests/test_runner.py)
 
 当前测试重点：
 
@@ -158,6 +164,8 @@ planner
 2. runner 能走完整 phase sequence。
 3. Kafka 消息可以触发 Research Worker 按 task id 拉取输入并回调 Java。
 4. 输出结构包含执行计划、状态账本、验证结果等关键字段。
+5. SearchAdapter 无外部 key 时只走工作台资料，有外部 key 时可以合并外部搜索结果。
+6. SearchAdapter 结果必须携带 `search_angle / retrieval_reason / confidence_score`。
 
 ### 5.3 已通过的回归范围
 
@@ -185,9 +193,9 @@ planner
 
 下一轮优先补这几件事：
 
-1. 把 `query_set` 接到真实搜索或工作台资料召回。
+1. 补 `ReadAdapter`，让 workspace hit 与 external url hit 都能产生稳定读取窗口。
 2. 把 `table-as-state ledger` 从内存结构升级为研究过程快照。
-3. 接入真实 `Search / Read / Extract / Verify`。
+3. 接入 LLM 驱动的 `Extract / Verify / Report`。
 4. 让最终报告可选回写为工作台资料。
 
 ## 7. 完成定义

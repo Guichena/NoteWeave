@@ -11,10 +11,12 @@
 3. Python Research Worker 能消费 Kafka、拉取 Java 输入、回调 progress / complete / fail。
 4. Worker 内部已有轻量 `Plan -> Search -> Read -> Extract -> Verify -> Branch -> Report` 闭环。
 5. Search 命中已具备 `search_angles / matched_fields / coverage_score`。
+6. `ResearchHarness` 与 `ResearchStepTrace` 已接入 runner，结果里会输出 `harness_trace / harness_summary`。
+7. `SearchAdapter` 已完成第一阶段落地：无外部 key 时只走工作台资料，有外部 key 时叠加外部搜索并做预算控制、结果归一化和去重。
 
 还没有完成的是：
 
-1. 真实外部搜索或浏览器搜索 adapter。
+1. 网页读取与网页快照 adapter。
 2. LLM 驱动的计划、证据抽取、验证和报告合成。
 3. 可恢复的研究过程快照。
 4. 最终研究报告回写为工作台资料。
@@ -81,6 +83,7 @@ NoteWeave 落地口径：
   -> web search adapter 读取环境变量配置
   -> 无 key 时自动降级 workspace adapter
   -> TDD 覆盖 query bundle、搜索预算、空结果恢复
+  -> 状态：已完成第一阶段实现
 
 5B.3 读取与网页快照 Adapter
   -> 定义 ReadAdapter
@@ -166,6 +169,8 @@ ResearchHarness.summarize_trace(...) -> dict
 
 ## 5. 5B.2 真实搜索 Adapter
 
+状态：已完成第一阶段实现。
+
 ### 5.1 新增文件
 
 1. `workers/research-worker/app/search_adapters.py`
@@ -180,7 +185,17 @@ ExternalSearchAdapter.search(...)
 CompositeSearchAdapter.search(...)
 ```
 
-### 5.3 TDD
+### 5.3 已落地行为
+
+1. `build_default_search_adapter()` 默认返回 `WorkspaceSearchAdapter`。
+2. 配置 `NOTEWEAVE_RESEARCH_SEARCH_API_KEY`、`SERPER_API_KEY` 或 `SEARCH_API_KEY` 后，自动启用 `CompositeSearchAdapter`。
+3. 外部搜索 transport 采用 Serper-compatible JSON HTTP 契约，且不引入额外 Python 依赖。
+4. `CompositeSearchAdapter` 按 `global_search_limit` 控制总搜索预算。
+5. 合并结果时按 `source_id / url / title` 去重，工作台资料优先级高于外部同名结果。
+6. 外部搜索命中统一归一化为 `ResearchSearchHit`，携带 `url / provider / adapter / search_angle / retrieval_reason / confidence_score`。
+7. runner 已从直接调用 `run_workspace_search` 改为调用 `run_research_search`。
+
+### 5.4 TDD
 
 1. 无外部 key 时只使用 workspace adapter。
 2. 有外部 key 时外部搜索结果与 workspace 命中合并去重。
@@ -260,11 +275,10 @@ CompositeSearchAdapter.search(...)
 
 ## 11. 当前下一步
 
-立即执行 `5B.1 Harness 契约与 Trace`。
+立即执行 `5B.3 读取与网页快照 Adapter`。
 
-本阶段不直接接真实 OpenAI API，先确保：
+下一步先不直接接真实 OpenAI API，先确保：
 
-1. Harness 契约稳定。
-2. Trace 可观测。
-3. runner 可以在不配置 LLM 的情况下稳定通过所有测试。
-
+1. workspace hit 能继续稳定打开资料窗口。
+2. 外部 url hit 在没有网页 reader 时也能产生可解释 fallback。
+3. 后续接真实网页抓取时不会破坏当前 SearchAdapter 契约。

@@ -6,14 +6,14 @@ from app.harness import build_harness, build_step_trace
 from app.models import ResearchProgressEvent, ResearchTaskInput, ResearchTaskResult
 from app.reader import open_read_windows
 from app.reporter import write_research_report
-from app.search import run_workspace_search
+from app.search_adapters import run_research_search
 from app.state import build_state_ledger
 from app.verifier import run_global_verifier, run_local_verifier
 
 
 PHASE_SEQUENCE = [
     ("PLANNING", 10, "research plan compiled"),
-    ("SEARCHING", 28, "workspace search hits resolved"),
+    ("SEARCHING", 28, "research search adapter hits resolved"),
     ("READING", 48, "bounded read windows opened"),
     ("EXTRACTING", 68, "evidence cards extracted"),
     ("VERIFYING", 86, "dual verifier completed"),
@@ -24,11 +24,11 @@ PHASE_SEQUENCE = [
 def run_research_task(task_input: ResearchTaskInput) -> tuple[list[ResearchProgressEvent], ResearchTaskResult]:
     harness = build_harness(task_input)
     plan, harness_trace = harness.plan(task_input)
-    search_hits = run_workspace_search(task_input, plan)
+    search_hits = run_research_search(task_input, plan)
     harness_trace.append(
         build_step_trace(
             phase="SEARCHING",
-            message="workspace search hits resolved",
+            message="research search adapter hits resolved",
             inputs={"query_count": len(plan.query_set), "source_count": len(task_input.source_scope)},
             outputs={
                 "search_hits": len(search_hits),
@@ -176,7 +176,7 @@ def run_research_task(task_input: ResearchTaskInput) -> tuple[list[ResearchProgr
             "harness_summary": harness.summarize_trace(harness_trace),
         },
         trace_summary=(
-            "research harness executed: plan -> workspace search -> bounded read windows "
+            "research harness executed: plan -> search adapters -> bounded read windows "
             "-> evidence cards -> table-as-state ledger -> branch recovery "
             "-> dual verifier -> report writer"
         ),
