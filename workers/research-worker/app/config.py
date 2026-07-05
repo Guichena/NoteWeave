@@ -7,6 +7,9 @@ class Settings(BaseSettings):
     kafka_bootstrap_servers: str = "localhost:9092"
     kafka_research_topic: str = "noteweave.research.run"
     kafka_group_id: str = "noteweave-research-worker"
+    llm_api_key: str = ""
+    llm_base_url: str = ""
+    llm_model: str = ""
 
     model_config = SettingsConfigDict(env_prefix="NOTEWEAVE_")
 

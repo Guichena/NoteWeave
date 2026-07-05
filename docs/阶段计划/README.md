@@ -23,6 +23,7 @@
 5. [阶段3-Note与Wiki链路](D:/java-projects/NoteWeave-v2/docs/阶段计划/阶段3-Note与Wiki链路.md)
 6. [阶段4-产物生成Agent](D:/java-projects/NoteWeave-v2/docs/阶段计划/阶段4-产物生成Agent.md)
 7. [阶段5-DeepResearch与Memory](D:/java-projects/NoteWeave-v2/docs/阶段计划/阶段5-DeepResearch与Memory.md)
+8. [阶段5B-ResearchAgent全量实现](D:/java-projects/NoteWeave-v2/docs/阶段计划/阶段5B-ResearchAgent全量实现.md)
 
 ## 3. 阶段树
 
@@ -52,6 +53,14 @@
   -> 5.1 Research Run 骨架
   -> 5.2 验证驱动研究闭环
   -> 5.3 Memory Control Pack
+  -> 5B Research Agent 全量实现
+       -> 5B.1 Harness 契约与 Trace
+       -> 5B.2 真实搜索 Adapter
+       -> 5B.3 读取与网页快照 Adapter
+       -> 5B.4 LLM 驱动抽取与验证
+       -> 5B.5 Loop Runtime 与 Stop Contract
+       -> 5B.6 过程快照与报告回写
+       -> 5B.7 启动部署与运行脚本
 ```
 
 ## 4. 统一要求

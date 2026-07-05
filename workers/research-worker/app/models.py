@@ -53,6 +53,22 @@ class ResearchPlan(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class ResearchStepTrace(BaseModel):
+    trace_id: str
+    phase: str
+    status: str
+    message: str
+    inputs: dict[str, object] = Field(default_factory=dict)
+    outputs: dict[str, object] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ResearchHarnessDecision(BaseModel):
+    decision: str
+    reason: str
+    next_phase: str = ""
+
+
 class ResearchSearchHit(BaseModel):
     hit_id: str
     source_id: str
