@@ -1,204 +1,96 @@
-# 阶段4：产物生成Agent
+# 阶段4：产物生成 Agent
 
 ## 1. 阶段目标
 
-阶段 4 要让右侧产物栏真正可用：
+这一阶段的目标是把右侧产物栏真正打通，让用户可以在工作台内发起异步产物生成任务，并拿到可保存、可回写、可继续扩展的结果。
 
-1. 用户可点击动作
-2. Java 创建任务
-3. Artifact Worker 执行
-4. 生成版本化产物
-5. 结果可保存为资料
+当前第一批已聚焦三个目标：
 
-## 2. 与原始 NoteWeave Phase 的关系
+1. Java 侧任务创建与状态流转闭环。
+2. Python Artifact Worker 运行时骨架闭环。
+3. 版本化结果落库闭环。
 
-当前阶段 4 主要对应原始 `Phase 4：轻量流转`，但在 v2 中把它从“轻量结果流转”升级成一个真正可执行的右侧产物系统。
+## 2. 当前已经完成的部分
 
-## 3. 子阶段树
+### 2.1 Java 主链路
 
-```text
-4.1 Artifact 任务与动作
-4.2 Worker 执行与版本化
-4.3 保存为资料与导出
-```
-
-## 4. 子阶段 4.1 Artifact 任务与动作
-
-### 目标
-
-打通 `artifact_job + production_action` 的创建与查询。
-
-### 第一批动作
-
-1. 报告
-2. FAQ
-3. 测验
-
-### 优先迁移
-
-1. 旧版任务执行基础设施
-2. 旧版产物模板
-3. 旧版导出配置
-
-### 推荐函数与类
-
-1. `ArtifactJobController.createArtifactJob(req)`
-2. `ArtifactJobService.createJob(cmd)`
-3. `ProductionActionResolver.resolve(actionKey)`
-4. `ArtifactTaskPublisher.publishArtifactJob(taskId, artifactJobId)`
-
-### 中间件接入
-
-MySQL：
+已经具备：
 
 1. `artifact_job`
-2. `production_action`
-3. `style_profile`
-4. `prompt_recipe`
+2. `artifact_version`
+3. `POST /api/v2/workspaces/{workspaceId}/artifact-jobs`
+4. `GET /internal/worker/artifact-tasks/{taskId}/input`
+5. `POST /internal/worker/tasks/{taskId}/progress`
+6. `POST /internal/worker/tasks/{taskId}/complete`
+7. `POST /internal/worker/tasks/{taskId}/fail`
 
-Kafka：
+### 2.2 Python Worker 当前内部设计
 
-1. topic：`noteweave.artifact.job`
-2. consumer group：`noteweave-artifact-worker`
+当前 Artifact Worker 采用的是轻量但受控的执行链：
 
-### TDD 要求
+```text
+resolve action
+  -> compile execution plan
+  -> schema gate
+  -> compose sections
+  -> local repair
+  -> verify output
+  -> export markdown
+```
 
-先写：
+当前的实现重点不是“多智能体炫技”，而是“先把产物生成做成可控系统”。
 
-1. `artifact_job` 创建测试
-2. action 解析测试
-3. 任务查询测试
+### 2.3 当前支持的工程语义
 
-再写：
+1. 先按 `action_key` 生成执行计划，而不是直接一把梭写结果。
+2. 计划内显式声明 `required_capabilities` 和 `schema_gate_rules`。
+3. 结果按 section 组织，便于后续做模板化、局部修复和导出。
+4. 本地修复阶段负责补齐缺失 section、处理禁用表达。
+5. 最终校验阶段负责确认结构完整、标题完整、章节可用。
 
-1. artifact job controller
-2. action resolver
-3. task binding
+## 3. 当前关键文件
 
-### 完成定义
+1. [workers/artifact-worker/app/models.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/app/models.py)
+2. [workers/artifact-worker/app/compiler.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/app/compiler.py)
+3. [workers/artifact-worker/app/composer.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/app/composer.py)
+4. [workers/artifact-worker/app/repair.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/app/repair.py)
+5. [workers/artifact-worker/app/verifier.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/app/verifier.py)
+6. [workers/artifact-worker/app/runner.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/app/runner.py)
 
-1. 前端能创建产物任务
-2. 至少 3 个动作可被识别
+## 4. TDD 要求
 
-## 5. 子阶段 4.2 Worker 执行与版本化
-
-### 目标
-
-让 Python Artifact Worker 能消费任务并回传 `artifact_version`。
-
-### 推荐函数与类
+### 4.1 已落地测试
 
 Java：
 
-1. `ArtifactWorkerInputController.getTaskInput(taskId)`
-2. `ArtifactWorkerCallbackController.reportProgress(taskId, req)`
-3. `ArtifactWorkerCallbackController.complete(taskId, req)`
-4. `ArtifactVersionService.createVersionFromWorkerResult(jobId, result)`
+1. [backend/src/test/java/com/noteweave/Phase6ResearchArtifactContractTest.java](/D:/java-projects/NoteWeave-v2/backend/src/test/java/com/noteweave/Phase6ResearchArtifactContractTest.java)
 
 Python：
 
-1. `load_artifact_task_input(task_id)`
-2. `run_artifact_task(task_input)`
-3. `resolve_action(task_input)`
-4. `compile_source_bundle(task_input)`
-5. `verify_artifact_output(output)`
-6. `submit_artifact_result(task_id, result)`
-7. `submit_artifact_failure(task_id, error)`
+1. [workers/artifact-worker/tests/test_runner.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/tests/test_runner.py)
+2. [workers/artifact-worker/tests/test_imports.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/tests/test_imports.py)
 
-### 中间件接入
+### 4.2 当前测试覆盖点
 
-Kafka：
+1. 创建任务后可以拿到 worker 输入。
+2. worker 可以完成完整 phase sequence。
+3. 输出结果包含 `execution_plan`、`sections`、`verification`。
+4. 回调完成后可以落 `artifact_version`。
 
-1. topic：`noteweave.artifact.job`
-2. ack：`manual`
+## 5. 下一步施工重点
 
-Redis / SSE：
+下一轮建议按这个顺序继续：
 
-1. `stream:task:{taskId}`
-2. 事件：
-   `task.status`
-   `task.progress`
-   `task.completed`
-   `task.failed`
+1. 把 `REPORT / FAQ / QUIZ / STUDY_GUIDE / WIKI / NOTE` 的结构模板独立配置化。
+2. 给 `style_profile` 和 `control_pack` 增加更细的 prompt 组装层。
+3. 接入正式导出链路，把 markdown / pdf 落到对象存储。
+4. 再决定是否把默认 skill / 默认 MCP 注入进去。
 
-MinIO：
+## 6. 当前完成定义
 
-1. 结果快照可先写 `noteweave-derived`
+这一阶段当前可以认为已经完成了第一批目标：
 
-### TDD 要求
-
-先写：
-
-1. Worker 输入契约测试
-2. 输出 schema 测试
-3. 完成回传测试
-4. 失败回传测试
-
-再写：
-
-1. worker runner
-2. action compiler
-3. result submitter
-4. artifact version creator
-
-### 完成定义
-
-1. 任务能从创建走到完成
-2. 产物有版本
-
-## 6. 子阶段 4.3 保存为资料与导出
-
-### 目标
-
-让 Artifact 成为工作台正式资料的一部分。
-
-### 推荐函数与类
-
-1. `ArtifactExportService.exportMarkdown(artifactVersionId)`
-2. `ArtifactExportService.exportPdf(artifactVersionId)`
-3. `ArtifactSaveAsSourceService.saveAsSource(artifactId, versionNo)`
-4. `GeneratedSourceIngestService.ingestArtifactVersion(artifactVersionId)`
-
-### 中间件接入
-
-MinIO：
-
-1. 导出路径：
-   `workspace/{workspaceId}/artifact/{artifactId}/version/{versionNo}/export/{format}/{fileName}`
-
-MySQL：
-
-1. `artifact`
-2. `artifact_version`
-3. `source`
-4. `source_snapshot`
-
-Kafka：
-
-1. 保存为资料后继续走 `noteweave.source.parse`
-2. 后续索引继续走 `noteweave.source.index`
-
-### TDD 要求
-
-先写：
-
-1. `save-as-source` 集成测试
-2. 导出文件生成测试
-3. 回写后再检索测试
-
-再写：
-
-1. artifact exporter
-2. save-as-source service
-3. source ingest bridge
-
-### 完成定义
-
-1. Artifact 可导出
-2. Artifact 可保存为资料
-3. 回写资料后可再次被主链路消费
-
-## 7. 本阶段禁止项
-
-1. 不做可视化 Skill 编排平台
-2. 不做完整 MCP 自定义后台
+1. 前端可以发起 Artifact 异步任务。
+2. Java 侧任务、回调、版本落库链路已经打通。
+3. Python Worker 已经不是空壳，而是具备受控编排的内部运行骨架。
+4. 全链路回归没有打坏已有 QA / Note / Wiki / Memory 功能。

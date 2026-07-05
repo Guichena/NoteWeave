@@ -4,6 +4,12 @@
 
 这份文档专门定义 NoteWeave v2 的 Memory 机制。
 
+配套施工文档：
+
+- [Memory与三条聊天链路组合施工设计.md](/D:/java-projects/NoteWeave-v2/docs/Memory与三条聊天链路组合施工设计.md)
+- [连续对话上下文窗施工设计.md](/D:/java-projects/NoteWeave-v2/docs/连续对话上下文窗施工设计.md)
+- [阶段5A-Memory机制与聊天控制.md](/D:/java-projects/NoteWeave-v2/docs/阶段计划/阶段5A-Memory机制与聊天控制.md)
+
 正式口径：
 
 `NoteWeave 的 Memory 不是资料库，也不是事实检索索引，而是一套门控式记忆晋升 + 任务邻域记忆编译机制。`

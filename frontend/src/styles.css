@@ -208,6 +208,55 @@ h1 {
   line-height: 1.7;
 }
 
+.bubble-body {
+  white-space: pre-wrap;
+}
+
+.bubble-label {
+  margin-bottom: 8px;
+  color: #8e4f24;
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.bubble-cards {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.message-card {
+  border: 1px solid rgba(36, 63, 54, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 251, 241, 0.52);
+  overflow: hidden;
+}
+
+.message-card summary {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.message-card summary::-webkit-details-marker {
+  display: none;
+}
+
+.message-card summary span {
+  color: #667169;
+  font-size: 0.9rem;
+}
+
+.message-card-body {
+  padding: 0 14px 14px;
+  white-space: pre-wrap;
+  color: #304139;
+}
+
 .user {
   justify-self: end;
   background: #243f36;
@@ -305,6 +354,58 @@ h1 {
   gap: 10px;
 }
 
+.wiki-kind-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filter-pill {
+  padding: 0.5rem 0.85rem;
+  border-radius: 999px;
+  background: rgba(223, 213, 189, 0.68);
+  color: #243f36;
+}
+
+.filter-pill.active {
+  background: #243f36;
+  color: #fff9ec;
+}
+
+.wiki-page-group {
+  display: grid;
+  gap: 8px;
+}
+
+.wiki-page-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+  color: #667169;
+}
+
+.wiki-page-card {
+  display: grid;
+  justify-items: start;
+}
+
+.nav-button {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  width: 100%;
+  border-radius: 18px;
+  background: rgba(223, 213, 189, 0.68);
+  color: #243f36;
+  text-align: left;
+}
+
+.nav-button.active {
+  background: #243f36;
+  color: #fff9ec;
+}
+
 .wiki-page-list button {
   display: flex;
   align-items: center;
@@ -364,6 +465,35 @@ h1 {
   margin-top: 16px;
 }
 
+.maintenance-drawer {
+  margin-top: 16px;
+  border: 1px solid rgba(36, 63, 54, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 251, 241, 0.5);
+  overflow: hidden;
+}
+
+.maintenance-drawer summary {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.maintenance-drawer summary::-webkit-details-marker {
+  display: none;
+}
+
+.maintenance-drawer summary span {
+  color: #667169;
+  font-size: 0.92rem;
+}
+
+.maintenance-drawer > *:not(summary) {
+  margin: 0 14px 14px;
+}
+
 .maintenance-actions {
   display: flex;
   gap: 10px;
@@ -371,10 +501,38 @@ h1 {
   flex-wrap: wrap;
 }
 
+.wiki-inline-actions,
+.wiki-inline-pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wiki-inline-actions button,
+.wiki-inline-pills button {
+  width: auto;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 0.85rem;
+  border-radius: 999px;
+  background: #243f36;
+  color: #fff9ec;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
 .wiki-citations {
   display: grid;
   gap: 8px;
   margin-top: 16px;
+}
+
+.wiki-search-hit-list {
+  display: grid;
+  gap: 8px;
 }
 
 .link-card {

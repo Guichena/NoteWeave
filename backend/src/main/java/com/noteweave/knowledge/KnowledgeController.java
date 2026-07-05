@@ -46,6 +46,11 @@ public class KnowledgeController {
         return ApiResponse.success(knowledgeService.getWikiHome(workspaceId));
     }
 
+    @GetMapping("/workspaces/{workspaceId}/wiki-index")
+    ApiResponse<WikiIndexResponse> wikiIndex(@PathVariable String workspaceId) {
+        return ApiResponse.success(knowledgeService.getWikiIndex(workspaceId));
+    }
+
     @GetMapping("/workspaces/{workspaceId}/wiki-search")
     ApiResponse<List<KnowledgeItemResponse>> searchWiki(
             @PathVariable String workspaceId,
@@ -55,8 +60,15 @@ public class KnowledgeController {
     }
 
     @GetMapping("/workspaces/{workspaceId}/wiki-graph")
-    ApiResponse<WikiGraphResponse> wikiGraph(@PathVariable String workspaceId) {
-        return ApiResponse.success(knowledgeService.getWikiGraph(workspaceId));
+    ApiResponse<WikiGraphResponse> wikiGraph(
+            @PathVariable String workspaceId,
+            @RequestParam(name = "mode", defaultValue = "overview") String mode,
+            @RequestParam(name = "center", defaultValue = "") String centerItemId,
+            @RequestParam(name = "depth", defaultValue = "1") int depth,
+            @RequestParam(name = "limit", defaultValue = "24") int limit,
+            @RequestParam(name = "kinds", required = false) List<String> pageKinds
+    ) {
+        return ApiResponse.success(knowledgeService.getWikiGraph(workspaceId, mode, centerItemId, depth, limit, pageKinds));
     }
 
     @GetMapping("/workspaces/{workspaceId}/wiki-stats")
@@ -64,14 +76,28 @@ public class KnowledgeController {
         return ApiResponse.success(knowledgeService.getWikiStats(workspaceId));
     }
 
+    @GetMapping("/workspaces/{workspaceId}/wiki/rebuild-advice")
+    ApiResponse<WikiRebuildAdviceResponse> wikiRebuildAdvice(@PathVariable String workspaceId) {
+        return ApiResponse.success(knowledgeService.getWikiRebuildAdvice(workspaceId));
+    }
+
     @GetMapping("/workspaces/{workspaceId}/wiki-issues")
-    ApiResponse<List<WikiIssueResponse>> wikiIssues(@PathVariable String workspaceId) {
-        return ApiResponse.success(knowledgeService.lintWiki(workspaceId));
+    ApiResponse<List<WikiIssueResponse>> wikiIssues(
+            @PathVariable String workspaceId,
+            @RequestParam(name = "issue_type", required = false) String issueType,
+            @RequestParam(name = "severity", required = false) String severity,
+            @RequestParam(name = "auto_fixable", required = false) Boolean autoFixable,
+            @RequestParam(name = "item_id", required = false) String itemId
+    ) {
+        return ApiResponse.success(knowledgeService.listWikiIssues(workspaceId, issueType, severity, autoFixable, itemId));
     }
 
     @GetMapping("/workspaces/{workspaceId}/wiki-log")
-    ApiResponse<List<WikiLogEntryResponse>> wikiLog(@PathVariable String workspaceId) {
-        return ApiResponse.success(knowledgeService.listWikiLog(workspaceId));
+    ApiResponse<List<WikiLogEntryResponse>> wikiLog(
+            @PathVariable String workspaceId,
+            @RequestParam(name = "item_id", required = false) String itemId
+    ) {
+        return ApiResponse.success(knowledgeService.listWikiLog(workspaceId, itemId));
     }
 
     @PostMapping("/workspaces/{workspaceId}/wiki/rebuild-links")
@@ -97,6 +123,14 @@ public class KnowledgeController {
     @GetMapping("/knowledge-items/{itemId}/versions")
     ApiResponse<List<KnowledgeVersionSummaryResponse>> listVersions(@PathVariable String itemId) {
         return ApiResponse.success(knowledgeService.listItemVersions(itemId));
+    }
+
+    @GetMapping("/knowledge-items/{itemId}/versions/{versionNo}")
+    ApiResponse<KnowledgeVersionDetailResponse> getVersion(
+            @PathVariable String itemId,
+            @PathVariable int versionNo
+    ) {
+        return ApiResponse.success(knowledgeService.getItemVersionDetail(itemId, versionNo));
     }
 
     @PostMapping("/knowledge-items/{itemId}/versions")

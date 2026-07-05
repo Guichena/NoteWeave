@@ -1,0 +1,186 @@
+# Research 与 Artifact 任务骨架施工设计
+
+## 1. 文档目标
+
+这份文档只描述当前已经落地的 `Deep Research` 与 `右侧产物生成` 任务骨架，重点是把下面这条主线打通：
+
+```text
+前端发起任务
+  -> Java 创建业务对象与 task
+  -> 写入 task_outbox
+  -> Python Worker 按 taskId 拉取输入
+  -> Worker 回传 progress / complete / fail
+  -> Java 落正式结果
+```
+
+当前版本的目标不是一次性做重型智能体平台，而是先把 `Java 主系统 <-> Python Worker` 的任务契约、结果落库、回归测试全部稳定下来，再逐步把真实检索、真实搜索、真实导出填进去。
+
+## 2. 当前已经落地的能力
+
+### 2.1 Java 主链路
+
+已经完成：
+
+1. `artifact_job`
+2. `artifact_version`
+3. `research_run`
+4. `research_trace`
+5. `POST /api/v2/workspaces/{workspaceId}/artifact-jobs`
+6. `POST /api/v2/workspaces/{workspaceId}/research-runs`
+7. `GET /internal/worker/artifact-tasks/{taskId}/input`
+8. `GET /internal/worker/research-tasks/{taskId}/input`
+9. `POST /internal/worker/tasks/{taskId}/heartbeat`
+10. `POST /internal/worker/tasks/{taskId}/progress`
+11. `POST /internal/worker/tasks/{taskId}/complete`
+12. `POST /internal/worker/tasks/{taskId}/fail`
+
+### 2.2 Artifact Worker 当前内部结构
+
+当前 Artifact Worker 不是空壳了，已经有一套可讲、可测的轻量执行链：
+
+```text
+action resolve
+  -> schema-gated execution plan
+  -> section compose
+  -> local repair
+  -> output verify
+  -> export markdown
+```
+
+对应模块：
+
+1. [workers/artifact-worker/app/compiler.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/app/compiler.py)
+2. [workers/artifact-worker/app/composer.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/app/composer.py)
+3. [workers/artifact-worker/app/repair.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/app/repair.py)
+4. [workers/artifact-worker/app/verifier.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/app/verifier.py)
+5. [workers/artifact-worker/app/runner.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/app/runner.py)
+
+它现在具备的工程语义是：
+
+1. 先根据 `action_key` 编译产物执行计划，而不是直接裸生成。
+2. 计划里内置 `schema gate rules`，强制约束章节结构和来源引用。
+3. 先按章节生成草稿，再做一次本地修复，补齐缺失 section、去掉禁用表达。
+4. 最后做输出校验，保证结果结构可控。
+
+### 2.3 Research Worker 当前内部结构
+
+当前 Research Worker 也不再只是 phase 占位，而是已经有一套轻量版研究闭环：
+
+```text
+planner
+  -> query bundle
+  -> table-as-state ledger
+  -> local verifier
+  -> global verifier
+  -> report writer
+```
+
+对应模块：
+
+1. [workers/research-worker/app/planner.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/planner.py)
+2. [workers/research-worker/app/state.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/state.py)
+3. [workers/research-worker/app/verifier.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/verifier.py)
+4. [workers/research-worker/app/reporter.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/reporter.py)
+5. [workers/research-worker/app/runner.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/runner.py)
+
+它现在具备的工程语义是：
+
+1. 先编译研究计划和查询集合，而不是直接写报告。
+2. 用 `Table-as-State` 形式保存来源、阅读目标、证据摘录、支持度和验证注记。
+3. 用 `Local Verifier` 检查问题归一化、证据覆盖、来源数量和 evidence policy。
+4. 用 `Global Verifier` 做整体放行判断，决定是 `READY_TO_WRITE` 还是 `WRITE_WITH_GUARDRAILS`。
+5. 最终输出带状态账本和验证结果的研究报告。
+
+## 3. 与 Memory 的关系
+
+当前 Artifact / Research 都已经接上了 `Control Pack`，但仍然严格遵守既定边界：
+
+1. Memory 只作为运行时控制注入。
+2. Memory 不作为事实证据。
+3. Memory 不替代工作台资料检索。
+4. Memory 不参与 citation 排序。
+
+也就是说：
+
+1. Research 的事实基础仍然来自工作台资料和后续搜索证据。
+2. Artifact 的原材料仍然来自工作台资料与任务输入。
+3. Memory 负责风格、结构、禁用路径、交互约束，不负责“证明事实”。
+
+## 4. 当前明确不做的事情
+
+这一批骨架刻意没有做重：
+
+1. Python Worker 还没有直接消费 Kafka。
+2. Research 还没有接真实 `Search / Read / Extract / Verify / Repair` 外部工具。
+3. Artifact 还没有接真实 `Skill / MCP / 用户自定义外部能力`。
+4. Research 报告还没有自动回写成工作台正式资料。
+5. Artifact 导出 PDF / MD 文件还没有正式接 MinIO 持久化链路。
+
+## 5. TDD 与回归
+
+### 5.1 Java 合约测试
+
+当前主测试文件：
+
+1. [backend/src/test/java/com/noteweave/Phase6ResearchArtifactContractTest.java](/D:/java-projects/NoteWeave-v2/backend/src/test/java/com/noteweave/Phase6ResearchArtifactContractTest.java)
+
+已覆盖：
+
+1. `artifactJobShouldCreateTaskExposeWorkerInputAndPersistVersion`
+2. `researchRunShouldCreateTaskExposeWorkerInputAndPersistFinalReport`
+3. `workerFailShouldMarkArtifactTaskAndJobAsFailed`
+4. `workerFailShouldMarkResearchTaskAndRunAsFailed`
+
+### 5.2 Python Worker 测试
+
+1. [workers/research-worker/tests/test_runner.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/tests/test_runner.py)
+2. [workers/artifact-worker/tests/test_runner.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/tests/test_runner.py)
+
+当前测试重点：
+
+1. 输入模型可解析。
+2. runner 能走完整 phase sequence。
+3. 输出结构包含执行计划、状态账本、验证结果等关键字段。
+
+### 5.3 已通过的回归范围
+
+当前已回归通过：
+
+1. `Phase1And2ContractTest`
+2. `Phase3NoteWikiContractTest`
+3. `Phase5MemoryContractTest`
+4. `Phase6ResearchArtifactContractTest`
+5. `workers/research-worker` pytest
+6. `workers/artifact-worker` pytest
+
+## 6. 下一步建议
+
+### 6.1 Artifact 下一步
+
+下一轮优先补这几件事：
+
+1. 把 `action_key -> outline` 升级为正式产物模板配置。
+2. 给章节生成增加更细的 `source bundle` 和 `style profile` 输入。
+3. 接入导出链路，把 markdown / pdf 正式持久化。
+4. 再决定是否接内置 skill 与默认 MCP。
+
+### 6.2 Research 下一步
+
+下一轮优先补这几件事：
+
+1. 把 `query_set` 接到真实搜索或工作台资料召回。
+2. 把 `table-as-state ledger` 从内存结构升级为研究过程快照。
+3. 接入真实 `Search / Read / Extract / Verify`。
+4. 让最终报告可选回写为工作台资料。
+
+## 7. 完成定义
+
+这份骨架施工文档当前对应的完成定义是：
+
+1. Artifact 与 Research 都能创建业务对象和 task。
+2. Worker 都能按 taskId 拉取输入。
+3. Worker 都能回传 progress / complete / fail。
+4. Java 都能把最终结果落进正式业务表。
+5. Memory Control Pack 已有稳定注入点。
+6. 这批新增能力没有打坏 QA / Note / Wiki / Memory 主链路。
+7. Artifact / Research 的失败回调都能同步业务对象状态与 task 状态。

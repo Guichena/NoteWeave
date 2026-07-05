@@ -6,6 +6,8 @@ public record WikiIssueResponse(
         String itemId,
         String title,
         String message,
-        String suggestedAction
+        String suggestedAction,
+        boolean autoFixable,
+        String actionCode
 ) {
 }

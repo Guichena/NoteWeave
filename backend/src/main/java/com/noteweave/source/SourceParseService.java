@@ -18,6 +18,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class SourceParseService {
 
+    private static final int WINDOW_CHARS = 320;
+    private static final int WINDOW_OVERLAP = 80;
+
     private final JdbcTemplate jdbcTemplate;
     private final DocumentChunker documentChunker;
     private final ObjectMapper objectMapper;
@@ -41,10 +44,13 @@ public class SourceParseService {
                     values (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, chunkId, workspaceId, sourceId, snapshotId, i, "片段 " + (i + 1), content,
                     Math.max(1, content.length() / 2), "chunk:" + i);
-            jdbcTemplate.update("""
-                    insert into source_window(id, source_chunk_id, window_no, content, location_info)
-                    values (?, ?, ?, ?, ?)
-                    """, Ids.newId(), chunkId, 0, content, "chunk:" + i);
+            List<String> windows = buildReadWindows(content);
+            for (int windowNo = 0; windowNo < windows.size(); windowNo++) {
+                jdbcTemplate.update("""
+                        insert into source_window(id, source_chunk_id, window_no, content, location_info)
+                        values (?, ?, ?, ?, ?)
+                        """, Ids.newId(), chunkId, windowNo, windows.get(windowNo), "chunk:" + i + "/window:" + windowNo);
+            }
         }
 
         List<String> tags = deriveTags(sourceMeta.title(), sourceMeta.sourceType(), text);
@@ -111,6 +117,33 @@ public class SourceParseService {
         } catch (JsonProcessingException ex) {
             throw new BusinessException("JSON_WRITE_FAILED", "资料元数据序列化失败");
         }
+    }
+
+    private List<String> buildReadWindows(String content) {
+        String normalized = content == null ? "" : content.trim();
+        if (normalized.isBlank()) {
+            return List.of("");
+        }
+        if (normalized.length() <= WINDOW_CHARS) {
+            return List.of(normalized);
+        }
+        List<String> windows = new ArrayList<>();
+        int start = 0;
+        while (start < normalized.length()) {
+            int end = Math.min(normalized.length(), start + WINDOW_CHARS);
+            if (end < normalized.length()) {
+                int paragraphBreak = normalized.lastIndexOf("\n\n", end);
+                if (paragraphBreak > start + WINDOW_CHARS / 2) {
+                    end = paragraphBreak;
+                }
+            }
+            windows.add(normalized.substring(start, end).trim());
+            if (end >= normalized.length()) {
+                break;
+            }
+            start = Math.max(end - WINDOW_OVERLAP, start + 1);
+        }
+        return windows;
     }
 
     private record SourceMeta(String title, String sourceType) {

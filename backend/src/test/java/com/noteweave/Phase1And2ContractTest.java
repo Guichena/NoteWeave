@@ -105,6 +105,7 @@ class Phase1And2ContractTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 直接回答")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 证据选择")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("查询意图")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("Deep Research"))))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chat.citation")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chat.completed")));
 
@@ -156,6 +157,99 @@ class Phase1And2ContractTest {
                 where mc.message_id = ?
                 """, Integer.class, assistantMessageId);
         assertThat(distinctSourceCount).isNotNull().isGreaterThanOrEqualTo(2);
+    }
+
+    @Test
+    void qaModeShouldCarryRollingConversationContextForFollowUpQuestions() throws Exception {
+        String workspaceId = createWorkspace();
+        completeSingleChunkUpload(workspaceId, "alpha-context.md", """
+                AlphaSpec 的关键要求包括分阶段发布、证据留痕和来源可回跳。
+                AlphaSpec 还要求回答过程优先围绕当前主题持续展开，而不是切到别的资料。
+                AlphaSpec 的第二个关键要求是证据留痕，这能保证后续追问仍然围绕同一主题继续验证。
+                """.getBytes(StandardCharsets.UTF_8));
+        completeSingleChunkUpload(workspaceId, "beta-context.md", """
+                BetaSpec 讨论的是离线导入、批量解析和异步索引。
+                它和 AlphaSpec 的关键要求不是同一个主题。
+                """.getBytes(StandardCharsets.UTF_8));
+        String conversationId = createConversation(workspaceId);
+
+        sendMessage(conversationId, "QA", "先介绍 AlphaSpec 的关键要求");
+        sendMessage(conversationId, "QA", "把它分成两点讲");
+        JsonNode followUp = sendMessage(conversationId, "QA", "第二点为什么重要");
+        String assistantRequestId = followUp.path("data").path("assistant_request_id").asText();
+        String assistantMessageId = followUp.path("data").path("assistant_message_id").asText();
+
+        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", assistantRequestId))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("会话上下文：已纳入最近连续对话窗口")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("连续对话窗口：最近 2 轮相关对话")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("主题锚点：")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("AlphaSpec")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chat.citation")));
+
+        Integer alphaCitationCount = jdbcTemplate.queryForObject("""
+                select count(*)
+                from message_citation mc
+                join citation c on c.id = mc.citation_id
+                where mc.message_id = ? and c.title = 'alpha-context.md'
+                """, Integer.class, assistantMessageId);
+        assertThat(alphaCitationCount).isNotNull().isGreaterThan(0);
+    }
+
+    @Test
+    void qaModeShouldCompileOlderSameTopicTurnsIntoTopicSummary() throws Exception {
+        String workspaceId = createWorkspace();
+        completeSingleChunkUpload(workspaceId, "alpha-summary.md", """
+                AlphaSpec 包含四类连续相关要求：分阶段发布、证据留痕、来源回跳和主题连续推进。
+                这些要求共同强调回答链路要围绕同一主题逐步展开，并保留可验证依据。
+                """.getBytes(StandardCharsets.UTF_8));
+        String conversationId = createConversation(workspaceId);
+
+        sendMessage(conversationId, "QA", "AlphaSpec 的分阶段发布要求是什么");
+        sendMessage(conversationId, "QA", "AlphaSpec 的证据留痕要求是什么");
+        sendMessage(conversationId, "QA", "AlphaSpec 的来源回跳要求是什么");
+        sendMessage(conversationId, "QA", "AlphaSpec 的主题连续要求是什么");
+        JsonNode followUp = sendMessage(conversationId, "QA", "继续总结它们的共同原则");
+        String assistantRequestId = followUp.path("data").path("assistant_request_id").asText();
+
+        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", assistantRequestId))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("会话上下文：已纳入最近连续对话窗口")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("连续对话窗口：最近 3 轮相关对话")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("前序主题摘要：")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("AlphaSpec")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chat.citation")));
+    }
+
+    @Test
+    void qaModeShouldCutOffOldWindowWhenUserStartsANewExplicitTopic() throws Exception {
+        String workspaceId = createWorkspace();
+        completeSingleChunkUpload(workspaceId, "alpha-topic.md", """
+                AlphaSpec 关注主题连续展开和证据留痕。
+                """.getBytes(StandardCharsets.UTF_8));
+        completeSingleChunkUpload(workspaceId, "beta-topic.md", """
+                BetaSpec 的重点是离线导入、批量解析和异步索引。
+                """.getBytes(StandardCharsets.UTF_8));
+        String conversationId = createConversation(workspaceId);
+
+        sendMessage(conversationId, "QA", "先介绍 AlphaSpec 的关键要求");
+        JsonNode followUp = sendMessage(conversationId, "QA", "请介绍 BetaSpec 的离线导入要求");
+        String assistantRequestId = followUp.path("data").path("assistant_request_id").asText();
+        String assistantMessageId = followUp.path("data").path("assistant_message_id").asText();
+
+        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", assistantRequestId))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("会话上下文：已纳入最近连续对话窗口"))))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("BetaSpec")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chat.citation")));
+
+        Integer betaCitationCount = jdbcTemplate.queryForObject("""
+                select count(*)
+                from message_citation mc
+                join citation c on c.id = mc.citation_id
+                where mc.message_id = ? and c.title = 'beta-topic.md'
+                """, Integer.class, assistantMessageId);
+        assertThat(betaCitationCount).isNotNull().isGreaterThan(0);
     }
 
     @Test
@@ -282,6 +376,21 @@ class Phase1And2ContractTest {
                 .andExpect(jsonPath("$.data.conversation_id").isNotEmpty())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString()).path("data").path("conversation_id").asText();
+    }
+
+    private JsonNode sendMessage(String conversationId, String answerMode, String content) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/v2/conversations/{conversationId}/messages", conversationId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "content", content,
+                                "answer_mode", answerMode,
+                                "client_request_id", answerMode + "-" + System.nanoTime()
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.assistant_message_id").isNotEmpty())
+                .andExpect(jsonPath("$.data.assistant_request_id").isNotEmpty())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString());
     }
 
     private String base64Md5(byte[] content) throws Exception {

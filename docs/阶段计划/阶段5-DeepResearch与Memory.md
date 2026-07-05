@@ -1,234 +1,139 @@
-# 阶段5：DeepResearch与Memory
+# 阶段5：Deep Research 与 Memory
 
 ## 1. 阶段目标
 
-阶段 5 是亮点收口阶段，目标是：
+这一阶段的目标有两条：
 
-1. 打通 Deep Research
-2. 打通研究报告回写
-3. 接入 Memory Control Pack
+1. 把 `Deep Research` 做成工作台里的独立长任务能力。
+2. 把 `Memory` 做成运行时控制层，而不是事实检索层。
 
-## 2. 与原始 NoteWeave Phase 的关系
+当前已经按“先稳闭环、再上重量级能力”的顺序推进：
 
-当前阶段 5 不直接对应原始三模式 Phase，而是承接原始设计里单独存在的：
+1. 先完成 Memory 主对象、晋升、编译和聊天接入。
+2. 再完成 Research Run / Worker / 结果回传骨架。
+3. 最后再逐步接真实搜索、真实读取和真实研究循环。
 
-1. `Deep Research`
-2. `Graduated Memory`
+## 2. 当前已经完成的部分
 
-也就是说，它是三模式之外的重型执行层和长期沉淀层。
+### 2.1 Memory 当前状态
 
-## 3. 子阶段树
+Memory 第一阶段已经打通最小闭环：
 
 ```text
-5.1 Research Run 骨架
-5.2 验证驱动研究闭环
-5.3 Memory Control Pack
+memory_signal
+  -> memory_candidate
+  -> memory_object
+  -> control pack
+  -> ChatService
 ```
 
-## 4. 子阶段 5.1 Research Run 骨架
-
-### 目标
-
-建立 `research_run`、Research Worker 和任务状态闭环。
-
-### 优先迁移
-
-1. 旧版任务重试、超时与失败恢复基础设施
-2. 旧版搜索 / 读取工具封装
-
-### 推荐函数与类
-
-Java：
-
-1. `ResearchRunController.createResearchRun(req)`
-2. `ResearchRunService.createRun(cmd)`
-3. `ResearchTaskPublisher.publishResearchTask(taskId, runId)`
-4. `ResearchWorkerInputController.getResearchTaskInput(taskId)`
-5. `ResearchWorkerCallbackController.reportProgress(taskId, req)`
-
-Python：
-
-1. `load_research_task_input(task_id)`
-2. `run_research_task(task_input)`
-3. `report_research_progress(task_id, payload)`
-
-### 中间件接入
-
-MySQL：
-
-1. `research_run`
-2. `task`
-3. `task_outbox`
-
-Kafka：
-
-1. topic：`noteweave.research.run`
-2. consumer group：`noteweave-research-worker`
-
-### TDD 要求
-
-先写：
-
-1. `research_run` 创建测试
-2. Worker 输入接口测试
-3. 进度回传测试
-
-再写：
-
-1. research controller
-2. research task service
-3. worker input API
-
-### 完成定义
-
-1. 用户能启动 Research
-2. 前端能看到任务进度
-
-## 5. 子阶段 5.2 验证驱动研究闭环
-
-### 目标
-
-第一批只实现最小 Research Harness：
-
-1. Search
-2. Read
-3. Extract
-4. Verify
-5. Write Report
-
-### 推荐函数与类
-
-Python：
-
-1. `build_research_plan(task_input)`
-2. `load_table_state(run_id)`
-3. `search_web(query_set)`
-4. `read_source(goal, source_ref)`
-5. `extract_cell_candidates(row, column, content)`
-6. `verify_cell_value(candidate, evidence)`
-7. `update_research_cell(run_id, rowId, columnKey, verifiedValue)`
-8. `write_research_report(run_id, table_state)`
-9. `submit_research_result(task_id, result)`
-
-Java：
-
-1. `ResearchTraceService.appendTrace(runId, traceType, payload)`
-2. `ResearchCellService.upsertCell(runId, rowId, columnKey, payload)`
-3. `ResearchReportSaveService.saveReportAsSource(runId)`
-
-### 中间件接入
-
-Kafka：
-
-1. 研究任务输入走 `noteweave.research.run`
-
-MinIO：
-
-1. research 快照：
-   `workspace/{workspaceId}/research/{researchRunId}/snapshot/{checkpointId}.json`
-
-MySQL：
-
-1. `research_row`
-2. `research_cell`
-3. `research_trace`
-
-Elasticsearch：
-
-1. 研究读取工作台资料时继续用 `nw-source-chunk`
-
-### TDD 要求
-
-先写：
-
-1. table state 更新测试
-2. verifier 结果测试
-3. 报告输出 schema 测试
-4. 失败恢复测试
-
-再写：
-
-1. planner
-2. reader
-3. verifier
-4. report writer
-
-### 完成定义
-
-1. Research Worker 能输出研究报告
-2. `research_row / research_cell / research_trace` 能稳定落地
-
-## 6. 子阶段 5.3 Memory Control Pack
-
-### 目标
-
-把 Memory 接到运行时控制层，而不是接到事实检索层。
-
-### 核心要求
-
-1. 有 `memory_signal`
-2. 有 `memory_candidate`
-3. 有 `memory_object`
-4. 生成 `Chat / Artifact / Research Control Pack`
-
-### 推荐函数与类
-
-Java：
-
-1. `MemorySignalService.extractFromArtifactFeedback(feedback)`
-2. `MemorySignalService.extractFromConversationFeedback(feedback)`
-3. `MemoryCandidateService.buildCandidates(signalIds)`
-4. `MemoryPromotionService.promoteCandidate(candidateId)`
-5. `MemoryCompilerService.compileChatControlPack(workspaceId, answerMode)`
-6. `MemoryCompilerService.compileArtifactControlPack(workspaceId, actionKey)`
-7. `MemoryCompilerService.compileResearchControlPack(workspaceId, profile)`
-
-Python / Runtime：
-
-1. `apply_chat_control_pack(prompt, pack)`
-2. `apply_artifact_control_pack(task_input, pack)`
-3. `apply_research_control_pack(task_input, pack)`
-
-### 中间件接入
-
-MySQL：
+已经落地：
 
 1. `memory_signal`
 2. `memory_candidate`
 3. `memory_object`
 4. `memory_usage_log`
+5. `MemoryCompilerService`
+6. `Chat Control Pack` 注入 QA / Note / Wiki
 
-Kafka：
+当前边界仍然严格成立：
 
-1. 如需异步晋升，topic：`noteweave.memory.promote`
+1. Memory 不进入事实检索链路。
+2. Memory 不参与 citation 证据排序。
+3. Memory 只负责风格、结构、禁用路径、交互策略。
 
-Elasticsearch：
+### 2.2 Research Run 当前状态
 
-1. `nw-memory` 只作为记忆对象检索，不参与事实召回排序
+已经具备：
 
-### TDD 要求
+1. `research_run`
+2. `research_trace`
+3. `POST /api/v2/workspaces/{workspaceId}/research-runs`
+4. `GET /internal/worker/research-tasks/{taskId}/input`
+5. `POST /internal/worker/tasks/{taskId}/progress`
+6. `POST /internal/worker/tasks/{taskId}/complete`
+7. `POST /internal/worker/tasks/{taskId}/fail`
 
-先写：
+### 2.3 Research Worker 当前内部设计
 
-1. memory 对象读写测试
-2. candidate 晋升测试
-3. control pack 编译测试
-4. control pack 注入测试
+当前 Research Worker 采用的是轻量研究闭环，不是空壳：
 
-再写：
+```text
+planner
+  -> query bundle
+  -> table-as-state ledger
+  -> local verifier
+  -> global verifier
+  -> report writer
+```
 
-1. memory signal extractor
-2. promotion service
-3. compiler service
-4. runtime injector
+当前已经具备这些工程语义：
 
-### 完成定义
+1. 先编译研究计划和查询集合。
+2. 用 `Table-as-State` 保存来源、阅读目标、证据摘录、支持度和验证注记。
+3. 用 `Local Verifier` 校验问题、来源数量和 evidence policy。
+4. 用 `Global Verifier` 决定是直接写报告，还是带 guardrails 写报告。
+5. 最终报告输出包含状态账本和验证结果。
 
-1. Memory 能影响风格、结构、禁用路径和交互策略
-2. Memory 不进入 citation，不参与 chunk 召回排序
+## 3. 当前关键文件
 
-## 7. 本阶段禁止项
+### 3.1 Memory
 
-1. 不做通用 Agent 平台
-2. 不做复杂分支工作台 UI
-3. 不做 Memory 事实检索化
+1. [backend/src/main/java/com/noteweave/memory/MemoryController.java](/D:/java-projects/NoteWeave-v2/backend/src/main/java/com/noteweave/memory/MemoryController.java)
+2. [backend/src/main/java/com/noteweave/memory/MemoryCompilerService.java](/D:/java-projects/NoteWeave-v2/backend/src/main/java/com/noteweave/memory/MemoryCompilerService.java)
+3. [backend/src/main/java/com/noteweave/chat/ChatService.java](/D:/java-projects/NoteWeave-v2/backend/src/main/java/com/noteweave/chat/ChatService.java)
+
+### 3.2 Research
+
+1. [workers/research-worker/app/models.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/models.py)
+2. [workers/research-worker/app/planner.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/planner.py)
+3. [workers/research-worker/app/state.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/state.py)
+4. [workers/research-worker/app/verifier.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/verifier.py)
+5. [workers/research-worker/app/reporter.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/reporter.py)
+6. [workers/research-worker/app/runner.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/runner.py)
+
+## 4. TDD 要求
+
+### 4.1 已落地测试
+
+Java：
+
+1. [backend/src/test/java/com/noteweave/Phase5MemoryContractTest.java](/D:/java-projects/NoteWeave-v2/backend/src/test/java/com/noteweave/Phase5MemoryContractTest.java)
+2. [backend/src/test/java/com/noteweave/Phase6ResearchArtifactContractTest.java](/D:/java-projects/NoteWeave-v2/backend/src/test/java/com/noteweave/Phase6ResearchArtifactContractTest.java)
+
+Python：
+
+1. [workers/research-worker/tests/test_runner.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/tests/test_runner.py)
+2. [workers/research-worker/tests/test_imports.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/tests/test_imports.py)
+
+### 4.2 当前测试覆盖点
+
+1. Memory 信号、晋升、控制包编译可用。
+2. Chat Control Pack 已接入 QA / Note / Wiki。
+3. Research Run 能创建任务、暴露 worker 输入、落最终结果。
+4. Research Worker 能输出 `state_ledger`、`local_verifier`、`global_verifier`。
+5. Research 失败回调能同步 `research_run` 与 `task` 状态，并写入失败 trace。
+
+## 5. 下一步施工重点
+
+下一轮建议按这个顺序继续：
+
+1. 把 Research 的 `query_set` 接到真实工作台召回或搜索能力。
+2. 把 `Table-as-State` 从内存结构升级为研究过程快照与 trace。
+3. 把最终研究报告变成可选回写资料。
+4. 再决定是否给 Research 引入更强的 loop harness。
+
+Memory 这边下一轮建议：
+
+1. 把 Artifact / Research Control Pack 接到真实 worker prompt 注入点。
+2. 进一步收敛术语、结构和风格策略的编译规则。
+3. 在不进入事实检索的前提下，增强工作台级行为偏好控制。
+
+## 6. 当前完成定义
+
+这一阶段当前可以认为已经完成了第一批目标：
+
+1. Memory 已经进入聊天控制层。
+2. Research 已经具备任务、回调、结果落库闭环。
+3. Python Research Worker 已经具备可讲的研究内部结构。
+4. 新增能力没有打坏 QA / Note / Wiki / Artifact 主链路。
