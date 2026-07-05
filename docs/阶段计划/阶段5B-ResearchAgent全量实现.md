@@ -13,14 +13,14 @@
 5. Search 命中已具备 `search_angles / matched_fields / coverage_score`。
 6. `ResearchHarness` 与 `ResearchStepTrace` 已接入 runner，结果里会输出 `harness_trace / harness_summary`。
 7. `SearchAdapter` 已完成第一阶段落地：无外部 key 时只走工作台资料，有外部 key 时叠加外部搜索并做预算控制、结果归一化和去重。
+8. `ReadAdapter` 已完成第一阶段落地：workspace hit 打开资料窗口，external url hit 在未启用网页抓取时生成可解释 fallback。
 
 还没有完成的是：
 
-1. 网页读取与网页快照 adapter。
-2. LLM 驱动的计划、证据抽取、验证和报告合成。
-3. 可恢复的研究过程快照。
-4. 最终研究报告回写为工作台资料。
-5. 正式 worker 启动脚本与 Kafka consumer 部署入口。
+1. LLM 驱动的计划、证据抽取、验证和报告合成。
+2. 可恢复的研究过程快照。
+3. 最终研究报告回写为工作台资料。
+4. 正式 worker 启动脚本与 Kafka consumer 部署入口。
 
 ## 2. 参考项目映射
 
@@ -90,6 +90,7 @@ NoteWeave 落地口径：
   -> workspace source_window 默认实现
   -> url reader / fetched page snapshot 预留实现
   -> TDD 覆盖窗口预算、来源快照、失败降级
+  -> 状态：已完成第一阶段实现
 
 5B.4 LLM 驱动抽取与验证
   -> 定义 LlmClient 协议
@@ -204,12 +205,24 @@ CompositeSearchAdapter.search(...)
 
 ## 6. 5B.3 读取 Adapter
 
+状态：已完成第一阶段实现。
+
 ### 6.1 新增文件
 
 1. `workers/research-worker/app/read_adapters.py`
 2. `workers/research-worker/tests/test_read_adapters.py`
 
-### 6.2 TDD
+### 6.2 已落地行为
+
+1. `WorkspaceReadAdapter` 负责读取工作台资料命中，优先使用 `sample_text`，其次使用搜索 snippet 和 summary。
+2. `UrlReadAdapter` 负责读取外部 URL 命中。
+3. 默认不主动抓取网页，未配置 URL reader 时会生成包含搜索 snippet 与 URL 的 `FALLBACK` 读取窗口。
+4. 配置 `NOTEWEAVE_RESEARCH_ENABLE_URL_READER=true` 后，会启用轻量 `HttpUrlSnapshotTransport` 尝试抓取网页文本。
+5. `CompositeReadAdapter` 按搜索命中顺序读取，并统一遵守 `tool_response_retention_budget`。
+6. `ResearchReadWindow` 已携带 `url / provider / adapter / snapshot_status / snapshot_key`，为后续 MinIO 快照落盘预留字段。
+7. runner 已从直接调用 `open_read_windows` 改为调用 `run_research_read`。
+
+### 6.3 TDD
 
 1. workspace hit 能打开窗口。
 2. url hit 在没有网络 reader 时生成可解释 fallback。
@@ -275,10 +288,10 @@ CompositeSearchAdapter.search(...)
 
 ## 11. 当前下一步
 
-立即执行 `5B.3 读取与网页快照 Adapter`。
+立即执行 `5B.4 LLM 抽取与验证`。
 
 下一步先不直接接真实 OpenAI API，先确保：
 
-1. workspace hit 能继续稳定打开资料窗口。
-2. 外部 url hit 在没有网页 reader 时也能产生可解释 fallback。
-3. 后续接真实网页抓取时不会破坏当前 SearchAdapter 契约。
+1. 本地 fake / rule-based LLM client 契约稳定。
+2. 证据抽取能从 read windows 生成结构化 evidence cards。
+3. verifier 能拒绝无证据结论，并能在 LLM 不可用时稳定 fallback。

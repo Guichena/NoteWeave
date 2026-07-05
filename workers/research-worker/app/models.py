@@ -96,6 +96,11 @@ class ResearchReadWindow(BaseModel):
     window_text: str
     retention_reason: str
     token_estimate: int
+    url: str = ""
+    provider: str = ""
+    adapter: str = "workspace"
+    snapshot_status: str = "WORKSPACE"
+    snapshot_key: str = ""
 
 
 class ResearchEvidenceCard(BaseModel):

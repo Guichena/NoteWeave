@@ -4,7 +4,7 @@ from app.branch import plan_branch_recovery
 from app.extractor import extract_evidence_cards
 from app.harness import build_harness, build_step_trace
 from app.models import ResearchProgressEvent, ResearchTaskInput, ResearchTaskResult
-from app.reader import open_read_windows
+from app.read_adapters import run_research_read
 from app.reporter import write_research_report
 from app.search_adapters import run_research_search
 from app.state import build_state_ledger
@@ -37,7 +37,7 @@ def run_research_task(task_input: ResearchTaskInput) -> tuple[list[ResearchProgr
             },
         )
     )
-    read_windows = open_read_windows(task_input, plan, search_hits)
+    read_windows = run_research_read(task_input, plan, search_hits)
     harness_trace.append(
         build_step_trace(
             phase="READING",
