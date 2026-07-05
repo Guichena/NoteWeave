@@ -5,7 +5,7 @@
 - `research-worker`：后续承接 Deep Research
 - `artifact-worker`：后续承接右侧产物生成
 
-当前 worker 不直写业务真源，只暴露健康检查与配置装载测试。正式任务输入和结果回传按 `docs/最小接口契约.md` 接入 Java 主系统。
+当前 worker 不直写业务真源。Research Worker 已支持按 `task_id` 拉取 Java 主系统输入、执行内部研究 loop，并把进度和结果回调给 Java；Artifact Worker 当前仍以本地执行骨架为主。正式任务输入和结果回传按 `docs/最小接口契约.md` 接入 Java 主系统。
 
 当前 Java 主系统已经落下第一批内部承接接口：
 
@@ -21,8 +21,15 @@
 - `research-worker`
   - `app/models.py`
   - `app/planner.py`
+  - `app/search.py`
+  - `app/reader.py`
+  - `app/extractor.py`
+  - `app/branch.py`
+  - `app/state.py`
+  - `app/verifier.py`
   - `app/reporter.py`
   - `app/runner.py`
+  - `app/callback.py`
 
 - `artifact-worker`
   - `app/models.py`
@@ -30,7 +37,12 @@
   - `app/verifier.py`
   - `app/runner.py`
 
-这两条链路当前都只做“可验证的占位 loop”，不直接访问业务真源，也不直接消费 Kafka；它们的职责是先把输入 schema、阶段推进和最终结果 schema 固定下来。
+Research Worker 当前已经具备 `Search / Read / Extract / Verify / Branch / Write` 的轻量闭环，并提供：
+
+- `POST /debug/run-task`：直接提交完整 worker input，用于本地调试。
+- `POST /tasks/{task_id}/run`：按 `task_id` 从 Java 拉取 input，执行后依次回调 `progress` 和 `complete`；失败时回调 `fail`。
+
+Artifact Worker 当前仍只做“可验证的占位 loop”。两条链路暂时都不直接消费 Kafka；Kafka / outbox 消费器可以在后续阶段接入到 `POST /tasks/{task_id}/run` 或等价的 worker 调度入口。
 
 ## Python 环境
 
