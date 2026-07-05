@@ -57,7 +57,12 @@ def write_research_report(
         "## Evidence Ledger",
     ]
 
+    valid_evidence_ids = {card.evidence_id for card in evidence_cards}
+    rendered_evidence_rows = 0
     for row in ledger.rows:
+        if row.evidence_id not in valid_evidence_ids:
+            continue
+        rendered_evidence_rows += 1
         lines.extend(
             [
                 f"- {row.source_title}",
@@ -69,7 +74,7 @@ def write_research_report(
             ]
         )
 
-    if not ledger.rows:
+    if rendered_evidence_rows == 0:
         lines.append("- No evidence row was built for this run.")
 
     lines.extend(

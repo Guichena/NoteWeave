@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.branch import plan_branch_recovery
 from app.extractor import extract_evidence_cards
 from app.harness import build_harness, build_step_trace
+from app.llm_client import build_default_llm_client
 from app.models import ResearchProgressEvent, ResearchTaskInput, ResearchTaskResult
 from app.read_adapters import run_research_read
 from app.reporter import write_research_report
@@ -23,6 +24,7 @@ PHASE_SEQUENCE = [
 
 def run_research_task(task_input: ResearchTaskInput) -> tuple[list[ResearchProgressEvent], ResearchTaskResult]:
     harness = build_harness(task_input)
+    llm_client = build_default_llm_client()
     plan, harness_trace = harness.plan(task_input)
     search_hits = run_research_search(task_input, plan)
     harness_trace.append(
@@ -50,7 +52,12 @@ def run_research_task(task_input: ResearchTaskInput) -> tuple[list[ResearchProgr
             },
         )
     )
-    evidence_cards = extract_evidence_cards(task_input, plan, read_windows)
+    evidence_cards = extract_evidence_cards(
+        task_input,
+        plan,
+        read_windows,
+        llm_client=llm_client,
+    )
     harness_trace.append(
         build_step_trace(
             phase="EXTRACTING",
@@ -71,6 +78,7 @@ def run_research_task(task_input: ResearchTaskInput) -> tuple[list[ResearchProgr
         search_hits,
         read_windows,
         evidence_cards,
+        llm_client=llm_client,
     )
     branch_decisions = plan_branch_recovery(
         search_hits,

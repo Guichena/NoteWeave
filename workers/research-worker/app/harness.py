@@ -45,7 +45,10 @@ class ResearchHarness:
 def build_harness(task_input: ResearchTaskInput) -> ResearchHarness:
     del task_input
     settings = load_settings()
-    llm_enabled = bool(getattr(settings, "llm_api_key", "").strip())
+    llm_enabled = bool(
+        getattr(settings, "llm_api_key", "").strip()
+        and getattr(settings, "llm_model", "").strip()
+    )
     return ResearchHarness(mode="LLM" if llm_enabled else "RULE", llm_enabled=llm_enabled)
 
 

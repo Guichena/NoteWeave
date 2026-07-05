@@ -93,8 +93,10 @@ planner
 9. [workers/research-worker/app/branch.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/branch.py)
 10. [workers/research-worker/app/verifier.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/verifier.py)
 11. [workers/research-worker/app/reporter.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/reporter.py)
-12. [workers/research-worker/app/kafka_consumer.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/kafka_consumer.py)
-13. [workers/research-worker/app/runner.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/runner.py)
+12. [workers/research-worker/app/llm_client.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/llm_client.py)
+13. [workers/research-worker/app/json_repair.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/json_repair.py)
+14. [workers/research-worker/app/kafka_consumer.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/kafka_consumer.py)
+15. [workers/research-worker/app/runner.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/runner.py)
 
 它现在具备的工程语义是：
 
@@ -106,12 +108,14 @@ planner
 6. `ReadAdapter` 默认打开工作台资料窗口，外部 URL 命中在未启用网页抓取时生成可解释 fallback。
 7. `CompositeReadAdapter` 按搜索命中顺序读取，并统一遵守 `tool_response_retention_budget`。
 8. `read windows` 会记录 `url / provider / adapter / snapshot_status / snapshot_key`，为后续网页快照落 MinIO 做准备。
-9. `evidence cards` 把读取窗口转换成可验证证据单元。
-10. 用 `Table-as-State` 形式保存来源、阅读目标、证据摘录、支持度和验证注记。
-11. 用 `branch recovery` 在无命中、无窗口、无证据或冲突证据时生成受控恢复计划。
-12. 用 `Local Verifier` 检查问题归一化、证据覆盖、来源数量和 evidence policy。
-13. 用 `Global Verifier` 做整体放行判断，决定是 `READY_TO_WRITE` 还是 `WRITE_WITH_GUARDRAILS`。
-14. 最终输出带状态账本、Harness Trace 和验证结果的研究报告。
+9. `LlmClient` 提供 fake 与 OpenAI-compatible 两种实现，不配置 key/model 时保持规则模式。
+10. `json_repair` 能处理常见 LLM JSON 输出问题，例如 fenced JSON 和 trailing comma。
+11. `evidence cards` 优先由 LLM JSON schema 输出生成，坏输出自动回落到规则抽取。
+12. 用 `Table-as-State` 形式保存来源、阅读目标、证据摘录、支持度和验证注记。
+13. 用 `branch recovery` 在无命中、无窗口、无证据或冲突证据时生成受控恢复计划。
+14. 用 `Local Verifier` 检查问题归一化、证据覆盖、来源数量和 evidence policy，并可合并 LLM judge 警告。
+15. 用 `Global Verifier` 做整体放行判断，决定是 `READY_TO_WRITE` 还是 `WRITE_WITH_GUARDRAILS`。
+16. 报告生成只渲染真实 `evidence_cards` 中存在的证据 ID，避免 ghost evidence 进入最终报告。
 
 ## 3. 与 Memory 的关系
 
@@ -132,10 +136,11 @@ planner
 
 这一批骨架刻意没有做重：
 
-1. Research 还没有把网页快照正式保存到 MinIO，当前 URL reader 只做可选轻量抓取和 fallback 窗口。
+1. Research 还没有受控多轮 Loop Runtime，当前 runner 仍是单轮闭环。
 2. Artifact 还没有接真实 `Skill / MCP / 用户自定义外部能力`。
 3. Research 报告还没有自动回写成工作台正式资料。
 4. Artifact 导出 PDF / MD 文件还没有正式接 MinIO 持久化链路。
+5. Research 还没有把网页快照正式保存到 MinIO，当前 URL reader 只做可选轻量抓取和 fallback 窗口。
 
 ## 5. TDD 与回归
 
@@ -160,7 +165,8 @@ planner
 3. [workers/research-worker/tests/test_harness.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/tests/test_harness.py)
 4. [workers/research-worker/tests/test_search_adapters.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/tests/test_search_adapters.py)
 5. [workers/research-worker/tests/test_read_adapters.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/tests/test_read_adapters.py)
-6. [workers/artifact-worker/tests/test_runner.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/tests/test_runner.py)
+6. [workers/research-worker/tests/test_llm_extract_verify.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/tests/test_llm_extract_verify.py)
+7. [workers/artifact-worker/tests/test_runner.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/tests/test_runner.py)
 
 当前测试重点：
 
@@ -171,6 +177,9 @@ planner
 5. SearchAdapter 无外部 key 时只走工作台资料，有外部 key 时可以合并外部搜索结果。
 6. SearchAdapter 结果必须携带 `search_angle / retrieval_reason / confidence_score`。
 7. ReadAdapter 能打开 workspace window，并能为 external url hit 生成 fallback 或 fetched window。
+8. LLM Extractor 能处理合法 JSON、可修复 JSON 和不可用输出 fallback。
+9. Local Verifier 能拒绝无证据结论，并可合并 LLM judge 的警告。
+10. Report Writer 只允许真实 evidence card 进入证据账本展示。
 
 ### 5.3 已通过的回归范围
 
@@ -198,7 +207,7 @@ planner
 
 下一轮优先补这几件事：
 
-1. 接入 LLM 驱动的 `Extract / Verify / Report`，并保留 rule fallback。
+1. 补受控多轮 `Loop Runtime / Stop Contract`。
 2. 把 `table-as-state ledger` 从内存结构升级为研究过程快照。
 3. 把 URL snapshot 与 checkpoint 正式保存到 MinIO。
 4. 让最终报告可选回写为工作台资料。

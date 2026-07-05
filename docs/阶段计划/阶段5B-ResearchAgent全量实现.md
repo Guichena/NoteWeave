@@ -14,10 +14,11 @@
 6. `ResearchHarness` 与 `ResearchStepTrace` 已接入 runner，结果里会输出 `harness_trace / harness_summary`。
 7. `SearchAdapter` 已完成第一阶段落地：无外部 key 时只走工作台资料，有外部 key 时叠加外部搜索并做预算控制、结果归一化和去重。
 8. `ReadAdapter` 已完成第一阶段落地：workspace hit 打开资料窗口，external url hit 在未启用网页抓取时生成可解释 fallback。
+9. `LlmClient / JSON Repair / LLM Extract / LLM Verify` 已完成第一阶段落地：无模型配置时保持规则 fallback，有模型配置时尝试 OpenAI-compatible JSON 契约。
 
 还没有完成的是：
 
-1. LLM 驱动的计划、证据抽取、验证和报告合成。
+1. 受控多轮 Loop Runtime 与 Stop Contract。
 2. 可恢复的研究过程快照。
 3. 最终研究报告回写为工作台资料。
 4. 正式 worker 启动脚本与 Kafka consumer 部署入口。
@@ -99,6 +100,7 @@ NoteWeave 落地口径：
   -> Evidence Extractor 支持 JSON schema 输出
   -> Local / Global Verifier 支持 LLM judge + rule fallback
   -> TDD 覆盖 JSON 解析、坏输出修复、证据不足警告
+  -> 状态：已完成第一阶段实现
 
 5B.5 Loop Runtime 与 Stop Contract
   -> 引入 bounded loop，不再固定单轮
@@ -231,13 +233,27 @@ CompositeSearchAdapter.search(...)
 
 ## 7. 5B.4 LLM 抽取与验证
 
+状态：已完成第一阶段实现。
+
 ### 7.1 新增文件
 
 1. `workers/research-worker/app/llm_client.py`
 2. `workers/research-worker/app/json_repair.py`
 3. `workers/research-worker/tests/test_llm_extract_verify.py`
 
-### 7.2 TDD
+### 7.2 已落地行为
+
+1. `LlmClient` 定义 `complete_json(purpose, payload)` 契约。
+2. `FakeLlmClient` 用于 TDD，不依赖真实 API。
+3. `OpenAICompatibleLlmClient` 使用轻量标准库 HTTP 请求，不额外引入依赖。
+4. `build_default_llm_client()` 读取 `NOTEWEAVE_LLM_API_KEY / NOTEWEAVE_LLM_MODEL / NOTEWEAVE_LLM_BASE_URL`。
+5. 不配置 key 或 model 时 runner 保持规则模式。
+6. `json_repair` 支持 fenced JSON、截取 JSON 对象和 trailing comma 修复。
+7. `extract_evidence_cards` 支持 LLM JSON schema 输出，坏输出自动回落到规则抽取。
+8. `run_local_verifier` 支持可选 LLM judge 警告与恢复动作合并。
+9. `write_research_report` 只渲染真实 `evidence_cards` 中存在的证据 ID，避免 ghost evidence 进入报告。
+
+### 7.3 TDD
 
 1. fake LLM 返回合法 JSON 时生成 evidence cards。
 2. fake LLM 返回坏 JSON 时走 repair / fallback。
@@ -288,10 +304,11 @@ CompositeSearchAdapter.search(...)
 
 ## 11. 当前下一步
 
-立即执行 `5B.4 LLM 抽取与验证`。
+立即执行 `5B.5 Loop Runtime 与 Stop Contract`。
 
-下一步先不直接接真实 OpenAI API，先确保：
+下一步重点是把当前固定单轮链路升级为受控多轮：
 
-1. 本地 fake / rule-based LLM client 契约稳定。
-2. 证据抽取能从 read windows 生成结构化 evidence cards。
-3. verifier 能拒绝无证据结论，并能在 LLM 不可用时稳定 fallback。
+1. 默认最多 2 轮。
+2. 第一轮无证据时触发搜索或范围扩展恢复。
+3. 冲突证据触发反证复核。
+4. 达到预算时必须带 guardrails 收口，不能无限循环。
