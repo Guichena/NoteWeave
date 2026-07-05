@@ -11,6 +11,7 @@
 
 - `GET /internal/worker/research-tasks/{taskId}/input`
 - `GET /internal/worker/artifact-tasks/{taskId}/input`
+- `POST /internal/worker/research-outbox/dispatch`
 - `POST /internal/worker/tasks/{taskId}/heartbeat`
 - `POST /internal/worker/tasks/{taskId}/progress`
 - `POST /internal/worker/tasks/{taskId}/complete`
@@ -43,6 +44,8 @@ Research Worker 当前已经具备 `Search / Read / Extract / Verify / Branch / 
 - `POST /tasks/{task_id}/run`：按 `task_id` 从 Java 拉取 input，执行后依次回调 `progress` 和 `complete`；失败时回调 `fail`。
 
 Artifact Worker 当前仍只做“可验证的占位 loop”。两条链路暂时都不直接消费 Kafka；Kafka / outbox 消费器可以在后续阶段接入到 `POST /tasks/{task_id}/run` 或等价的 worker 调度入口。
+
+当前 Java 侧已经有最小 Research outbox dispatcher：它会扫描 `noteweave.research.run` 的 READY outbox，调用 Research Worker 的 `POST /tasks/{task_id}/run`，成功后把 outbox 标记为 `SENT`。这先满足本地可执行闭环，后续可替换为定时任务、后台消费者或 Kafka 消费器。
 
 ## Python 环境
 

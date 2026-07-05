@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -25,6 +26,7 @@ import org.springframework.test.web.servlet.MvcResult;
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@Import(TestResearchWorkerRunClientConfig.class)
 class Phase6ResearchArtifactContractTest {
 
     @Autowired
@@ -35,6 +37,9 @@ class Phase6ResearchArtifactContractTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private TestResearchWorkerRunClientConfig.RecordingResearchWorkerRunClient recordingResearchWorkerRunClient;
 
     @Test
     void artifactJobShouldCreateTaskExposeWorkerInputAndPersistVersion() throws Exception {
@@ -225,6 +230,42 @@ class Phase6ResearchArtifactContractTest {
                 researchRunId
         );
         assertThat(traceCount).isNotNull().isGreaterThanOrEqualTo(2);
+    }
+
+    @Test
+    void researchOutboxDispatcherShouldInvokeResearchWorkerAndMarkOutboxSent() throws Exception {
+        recordingResearchWorkerRunClient.reset();
+        jdbcTemplate.update("update task_outbox set status = 'SENT', sent_at = current_timestamp where topic = 'noteweave.research.run'");
+        String workspaceId = createWorkspace();
+        uploadSource(workspaceId, "dispatch-research-input.md", """
+                Dispatch source for the research worker.
+                It proves the outbox can call the Python worker runner.
+                """);
+
+        MvcResult createResult = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/research-runs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "question", "Can the research worker be dispatched?",
+                                "profile", "default"
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        String taskId = objectMapper.readTree(createResult.getResponse().getContentAsString())
+                .path("data").path("task_id").asText();
+
+        mockMvc.perform(post("/internal/worker/research-outbox/dispatch")
+                        .param("limit", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.dispatched_count").value(1));
+
+        assertThat(recordingResearchWorkerRunClient.taskIds()).containsExactly(taskId);
+        String outboxStatus = jdbcTemplate.queryForObject(
+                "select status from task_outbox where task_id = ? and topic = 'noteweave.research.run'",
+                String.class,
+                taskId
+        );
+        assertThat(outboxStatus).isEqualTo("SENT");
     }
 
     @Test

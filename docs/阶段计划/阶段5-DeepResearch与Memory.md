@@ -55,6 +55,7 @@ memory_signal
 7. `POST /internal/worker/tasks/{taskId}/complete`
 8. `POST /internal/worker/tasks/{taskId}/fail`
 9. Research Worker `POST /tasks/{taskId}/run`
+10. `POST /internal/worker/research-outbox/dispatch`
 
 这里的 Java 侧当前仍然是 Research / Artifact 的任务编排、输入装配、状态落库和 worker 回调骨架，不是完整 Research 执行引擎。真正的研究内部循环先放在 Python Research Worker 中推进。
 
@@ -62,7 +63,9 @@ Research Run 的资料范围按创建任务时的 `source_scope_json` 固化为 
 
 Research Run 详情接口会返回最终报告、source scope 快照、Research Control Pack 和 `research_trace` 列表。Worker 完成回调时，`FINAL_REPORT` trace 会保存 `result_payload`，因此 `search_hits`、`read_windows`、`evidence_cards`、`branch_decisions`、`state_ledger`、verifier 结果可以通过详情接口回看。
 
-Research Worker 现在提供 `callback.py` 和 `POST /tasks/{taskId}/run` 执行入口，可以按 task id 拉取 Java worker input，运行研究 loop，逐阶段回调 progress，最终回调 complete；异常时回调 fail。Kafka / outbox 消费器还未接入，但 worker 已经具备被调度执行的最小闭环。
+Research Worker 现在提供 `callback.py` 和 `POST /tasks/{taskId}/run` 执行入口，可以按 task id 拉取 Java worker input，运行研究 loop，逐阶段回调 progress，最终回调 complete；异常时回调 fail。
+
+Java 侧已经提供最小 `ResearchOutboxDispatcher`，可以扫描 `noteweave.research.run` 的 READY outbox，调用 Research Worker 执行入口，成功后把 outbox 标记为 `SENT`。这还不是完整 Kafka 消费器，但已经打通了 `Research Run -> task_outbox -> Python Worker -> Java callback -> research_trace` 的可执行闭环。
 
 ### 2.3 Research Worker 当前内部设计
 
@@ -142,14 +145,15 @@ Python：
 6. Research Detail API 能返回最终报告、资料快照、控制包和研究过程 trace。
 7. Research 完成回调能把 worker `result_payload` 写入 `FINAL_REPORT` trace。
 8. Research Worker 能通过 callback adapter 拉取 Java input、发送 progress、complete 和 fail。
-9. Research 失败回调能同步 `research_run` 与 `task` 状态，并写入失败 trace。
+9. Research outbox dispatcher 能把 READY research outbox 调度到 Python Worker，并把 outbox 标记为 `SENT`。
+10. Research 失败回调能同步 `research_run` 与 `task` 状态，并写入失败 trace。
 
 ## 5. 下一步施工重点
 
 下一轮建议按这个顺序继续：
 
 1. 把 Research 的 `workspace search hits` 从当前快照 source scope adapter 升级为真实召回或搜索 adapter。
-2. 把 Kafka / outbox 消费器接到 Research Worker 的 task 执行入口。
+2. 把当前手动触发的 Research outbox dispatcher 升级为定时任务、后台消费者或 Kafka 消费器。
 3. 把 `Table-as-State` 从 worker payload / FINAL_REPORT trace 继续升级为更细粒度的研究过程快照。
 4. 把最终研究报告变成可选回写资料。
 5. 把 Research Control Pack 接入真实 prompt / tool 参数注入点。
