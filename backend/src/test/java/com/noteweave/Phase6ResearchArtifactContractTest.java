@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -176,7 +177,18 @@ class Phase6ResearchArtifactContractTest {
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "result_type", "RESEARCH_REPORT",
                                 "result_title", "Alpha Research Report",
-                                "result_payload", Map.of("report_markdown", "## Alpha Research Report\n\nVerified findings."),
+                                "result_payload", Map.of(
+                                        "report_markdown", "## Alpha Research Report\n\nVerified findings.",
+                                        "evidence_cards", java.util.List.of(Map.of(
+                                                "evidence_id", "ev-1",
+                                                "source_id", "src-1",
+                                                "quote_text", "Verified findings."
+                                        )),
+                                        "branch_decisions", java.util.List.of(Map.of(
+                                                "decision", "NO_BRANCH",
+                                                "branch_reason", "VERIFIED_PATH"
+                                        ))
+                                ),
                                 "trace_summary", "research harness finished",
                                 "citations", java.util.List.of(Map.of("title", "research-input.md"))
                         ))))
@@ -195,6 +207,17 @@ class Phase6ResearchArtifactContractTest {
                 researchRunId
         );
         assertThat(reportMarkdown).contains("Alpha Research Report");
+
+        MvcResult detailResult = mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}", workspaceId, researchRunId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.data.final_report_markdown").value(org.hamcrest.Matchers.containsString("Alpha Research Report")))
+                .andExpect(jsonPath("$.data.source_scope.length()").value(1))
+                .andReturn();
+        JsonNode detail = objectMapper.readTree(detailResult.getResponse().getContentAsString()).path("data");
+        JsonNode finalTrace = findTrace(detail.path("traces"), "FINAL_REPORT");
+        assertThat(finalTrace.path("payload").path("result_payload").path("evidence_cards").get(0).path("evidence_id").asText()).isEqualTo("ev-1");
+        assertThat(finalTrace.path("payload").path("result_payload").path("branch_decisions").get(0).path("decision").asText()).isEqualTo("NO_BRANCH");
 
         Integer traceCount = jdbcTemplate.queryForObject(
                 "select count(*) from research_trace where research_run_id = ?",
@@ -331,5 +354,14 @@ class Phase6ResearchArtifactContractTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.parse_status").value("PARSED"))
                 .andExpect(jsonPath("$.data.index_status").value("INDEXED"));
+    }
+
+    private JsonNode findTrace(JsonNode traces, String traceType) {
+        for (JsonNode trace : traces) {
+            if (traceType.equals(trace.path("trace_type").asText())) {
+                return trace;
+            }
+        }
+        throw new AssertionError("trace not found: " + traceType);
     }
 }

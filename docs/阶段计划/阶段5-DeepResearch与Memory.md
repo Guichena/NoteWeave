@@ -49,14 +49,17 @@ memory_signal
 1. `research_run`
 2. `research_trace`
 3. `POST /api/v2/workspaces/{workspaceId}/research-runs`
-4. `GET /internal/worker/research-tasks/{taskId}/input`
-5. `POST /internal/worker/tasks/{taskId}/progress`
-6. `POST /internal/worker/tasks/{taskId}/complete`
-7. `POST /internal/worker/tasks/{taskId}/fail`
+4. `GET /api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}`
+5. `GET /internal/worker/research-tasks/{taskId}/input`
+6. `POST /internal/worker/tasks/{taskId}/progress`
+7. `POST /internal/worker/tasks/{taskId}/complete`
+8. `POST /internal/worker/tasks/{taskId}/fail`
 
 这里的 Java 侧当前仍然是 Research / Artifact 的任务编排、输入装配、状态落库和 worker 回调骨架，不是完整 Research 执行引擎。真正的研究内部循环先放在 Python Research Worker 中推进。
 
 Research Run 的资料范围按创建任务时的 `source_scope_json` 固化为 source id 快照。Worker 拉取输入时按这个快照加载资料标题、摘要和首个 `source_window` 文本，不再重新读取当前工作台最新资料列表，避免长任务执行过程中新增文件污染既有 Research Run。
+
+Research Run 详情接口会返回最终报告、source scope 快照、Research Control Pack 和 `research_trace` 列表。Worker 完成回调时，`FINAL_REPORT` trace 会保存 `result_payload`，因此 `search_hits`、`read_windows`、`evidence_cards`、`branch_decisions`、`state_ledger`、verifier 结果可以通过详情接口回看。
 
 ### 2.3 Research Worker 当前内部设计
 
@@ -129,14 +132,16 @@ Python：
 3. Research Run 能创建任务、暴露 worker 输入、落最终结果。
 4. Research Worker 能输出 `search_hits`、`read_windows`、`evidence_cards`、`branch_decisions`、`state_ledger`、`local_verifier`、`global_verifier`。
 5. Research Worker Input 能按创建时 source scope 快照返回资料，并携带 `sample_text` 作为读取窗口输入。
-6. Research 失败回调能同步 `research_run` 与 `task` 状态，并写入失败 trace。
+6. Research Detail API 能返回最终报告、资料快照、控制包和研究过程 trace。
+7. Research 完成回调能把 worker `result_payload` 写入 `FINAL_REPORT` trace。
+8. Research 失败回调能同步 `research_run` 与 `task` 状态，并写入失败 trace。
 
 ## 5. 下一步施工重点
 
 下一轮建议按这个顺序继续：
 
 1. 把 Research 的 `workspace search hits` 从当前快照 source scope adapter 升级为真实召回或搜索 adapter。
-2. 把 `Table-as-State` 从 worker payload 升级为研究过程快照与 trace。
+2. 把 `Table-as-State` 从 worker payload / FINAL_REPORT trace 继续升级为更细粒度的研究过程快照。
 3. 把最终研究报告变成可选回写资料。
 4. 把 Research Control Pack 接入真实 prompt / tool 参数注入点。
 

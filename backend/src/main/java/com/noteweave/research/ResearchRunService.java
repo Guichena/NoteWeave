@@ -14,6 +14,9 @@ import com.noteweave.worker.WorkerFailRequest;
 import com.noteweave.worker.WorkerSourceScopeItemResponse;
 import com.noteweave.worker.WorkerTaskCallbackService.CompletionOutcome;
 import com.noteweave.workspace.WorkspaceService;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -112,6 +115,55 @@ public class ResearchRunService {
         );
     }
 
+    public ResearchRunDetailResponse getRunDetail(String workspaceId, String researchRunId) {
+        requireWorkspace(workspaceId);
+        DetailRow row = jdbcTemplate.query("""
+                select id, workspace_id, task_id, question, profile_key, context_snapshot_id,
+                       source_scope_json, control_pack_json, status, final_report_title,
+                       final_report_markdown, trace_summary, created_at, updated_at
+                from research_run
+                where workspace_id = ? and id = ?
+                """, rs -> {
+            if (!rs.next()) {
+                throw new BusinessException("RESEARCH_RUN_NOT_FOUND", "研究任务不存在");
+            }
+            return new DetailRow(
+                    rs.getString("id"),
+                    rs.getString("workspace_id"),
+                    rs.getString("task_id"),
+                    rs.getString("question"),
+                    rs.getString("profile_key"),
+                    rs.getString("context_snapshot_id"),
+                    rs.getString("source_scope_json"),
+                    rs.getString("control_pack_json"),
+                    rs.getString("status"),
+                    rs.getString("final_report_title"),
+                    rs.getString("final_report_markdown"),
+                    rs.getString("trace_summary"),
+                    toInstant(rs.getTimestamp("created_at")),
+                    toInstant(rs.getTimestamp("updated_at"))
+            );
+        }, workspaceId, researchRunId);
+
+        return new ResearchRunDetailResponse(
+                row.researchRunId(),
+                row.workspaceId(),
+                row.taskId(),
+                row.question(),
+                row.profileKey(),
+                blankIfNull(row.contextSnapshotId()),
+                row.status(),
+                blankIfNull(row.finalReportTitle()),
+                blankIfNull(row.finalReportMarkdown()),
+                blankIfNull(row.traceSummary()),
+                loadSourceScopeSnapshot(row.workspaceId(), row.sourceScopeJson()),
+                readControlPack(row.controlPackJson()),
+                loadTraces(row.researchRunId()),
+                row.createdAt(),
+                row.updatedAt()
+        );
+    }
+
     @Transactional
     public void markRunning(String taskId, String phase, String message, Map<String, Object> metrics) {
         RunRow row = findByTaskId(taskId);
@@ -146,6 +198,8 @@ public class ResearchRunService {
         );
         insertTrace(row.researchRunId(), "FINAL_REPORT", request.resultTitle(), Map.of(
                 "result_type", request.resultType(),
+                "result_payload", request.resultPayload() == null ? Map.of() : request.resultPayload(),
+                "trace_summary", request.traceSummary() == null ? "" : request.traceSummary(),
                 "citations", request.citations() == null ? List.of() : request.citations()
         ));
         return new CompletionOutcome("RESEARCH_REPORTED", "研究报告已生成：" + request.resultTitle(), row.researchRunId());
@@ -194,6 +248,21 @@ public class ResearchRunService {
                 insert into research_trace(id, research_run_id, trace_type, trace_message, payload_json)
                 values (?, ?, ?, ?, ?)
                 """, Ids.newId(), researchRunId, type, message, Json.write(objectMapper, payload));
+    }
+
+    private List<ResearchTraceResponse> loadTraces(String researchRunId) {
+        return jdbcTemplate.query("""
+                select id, trace_type, trace_message, payload_json, created_at
+                from research_trace
+                where research_run_id = ?
+                order by created_at asc, id asc
+                """, (rs, rowNum) -> new ResearchTraceResponse(
+                rs.getString("id"),
+                rs.getString("trace_type"),
+                rs.getString("trace_message"),
+                readPayloadMap(rs.getString("payload_json")),
+                toInstant(rs.getTimestamp("created_at"))
+        ), researchRunId);
     }
 
     private List<WorkerSourceScopeItemResponse> loadReadySourceScope(String workspaceId) {
@@ -271,6 +340,18 @@ public class ResearchRunService {
         }
     }
 
+    private Map<String, Object> readPayloadMap(String json) {
+        if (json == null || json.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<LinkedHashMap<String, Object>>() {
+            });
+        } catch (JsonProcessingException ex) {
+            throw new BusinessException("RESEARCH_TRACE_PAYLOAD_PARSE_FAILED", "研究轨迹载荷解析失败");
+        }
+    }
+
     private void requireWorkspace(String workspaceId) {
         if (!workspaceService.exists(workspaceId)) {
             throw new BusinessException("WORKSPACE_NOT_FOUND", "工作台不存在");
@@ -304,6 +385,10 @@ public class ResearchRunService {
         return value == null ? "" : value;
     }
 
+    private Instant toInstant(Timestamp timestamp) {
+        return timestamp == null ? null : timestamp.toInstant();
+    }
+
     private record RunRow(
             String researchRunId,
             String workspaceId,
@@ -313,6 +398,24 @@ public class ResearchRunService {
             String contextSnapshotId,
             String sourceScopeJson,
             String controlPackJson
+    ) {
+    }
+
+    private record DetailRow(
+            String researchRunId,
+            String workspaceId,
+            String taskId,
+            String question,
+            String profileKey,
+            String contextSnapshotId,
+            String sourceScopeJson,
+            String controlPackJson,
+            String status,
+            String finalReportTitle,
+            String finalReportMarkdown,
+            String traceSummary,
+            Instant createdAt,
+            Instant updatedAt
     ) {
     }
 }

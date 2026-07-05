@@ -2,6 +2,7 @@ package com.noteweave.research;
 
 import com.noteweave.common.ApiResponse;
 import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -24,5 +25,13 @@ public class ResearchRunController {
             @Valid @RequestBody CreateResearchRunRequest request
     ) {
         return ApiResponse.success(researchRunService.createRun(workspaceId, request));
+    }
+
+    @GetMapping("/{researchRunId}")
+    ApiResponse<ResearchRunDetailResponse> getResearchRun(
+            @PathVariable String workspaceId,
+            @PathVariable String researchRunId
+    ) {
+        return ApiResponse.success(researchRunService.getRunDetail(workspaceId, researchRunId));
     }
 }
