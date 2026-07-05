@@ -34,4 +34,12 @@ public class ResearchRunController {
     ) {
         return ApiResponse.success(researchRunService.getRunDetail(workspaceId, researchRunId));
     }
+
+    @PostMapping("/{researchRunId}/save-report-as-source")
+    ApiResponse<SaveResearchReportSourceResponse> saveReportAsSource(
+            @PathVariable String workspaceId,
+            @PathVariable String researchRunId
+    ) {
+        return ApiResponse.success(researchRunService.saveReportAsSource(workspaceId, researchRunId));
+    }
 }

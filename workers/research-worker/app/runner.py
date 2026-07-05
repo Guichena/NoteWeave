@@ -135,8 +135,32 @@ def run_research_task(task_input: ResearchTaskInput) -> tuple[list[ResearchProgr
             },
         )
     )
+    loop_rounds_payload = [
+        round_summary.model_dump(mode="json")
+        for round_summary in loop_result.rounds
+    ]
+    loop_decision_payload = loop_result.final_decision.model_dump(mode="json")
+    checkpoint_candidate = {
+        "checkpoint_no": max(1, len(loop_rounds_payload)),
+        "snapshot_type": "RESEARCH_LOOP_CHECKPOINT",
+        "loop_rounds": loop_rounds_payload,
+        "loop_decision": loop_decision_payload,
+        "state_ledger": ledger.model_dump(mode="json"),
+        "local_verifier": local_result.model_dump(mode="json"),
+        "global_verifier": global_result.model_dump(mode="json"),
+    }
+    result_title = task_input.input_payload.question.strip()[:120] or "Research Report"
+    report_source_candidate = {
+        "title": result_title,
+        "source_type": "GENERATED_RESEARCH_REPORT",
+        "generated_by": "research_agent",
+        "generated_ref_type": "RESEARCH_RUN",
+        "generated_ref_id": task_input.target_id,
+        "content_markdown": report_markdown,
+        "citation_count": len(ledger.rows),
+    }
     result = ResearchTaskResult(
-        result_title=task_input.input_payload.question.strip()[:120] or "Research Report",
+        result_title=result_title,
         result_payload={
             "report_markdown": report_markdown,
             "query_set": plan.query_set,
@@ -161,11 +185,10 @@ def run_research_task(task_input: ResearchTaskInput) -> tuple[list[ResearchProgr
             "local_verifier": local_result.model_dump(mode="json"),
             "global_verifier": global_result.model_dump(mode="json"),
             "stop_contract": plan.stop_contract,
-            "loop_rounds": [
-                round_summary.model_dump(mode="json")
-                for round_summary in loop_result.rounds
-            ],
-            "loop_decision": loop_result.final_decision.model_dump(mode="json"),
+            "loop_rounds": loop_rounds_payload,
+            "loop_decision": loop_decision_payload,
+            "research_checkpoint_candidate": checkpoint_candidate,
+            "report_source_candidate": report_source_candidate,
             "harness_trace": [
                 trace.model_dump(mode="json")
                 for trace in harness_trace

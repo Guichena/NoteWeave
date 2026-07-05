@@ -121,6 +121,8 @@ planner
 17. 用 `Global Verifier` 做整体放行判断，决定是 `READY_TO_WRITE` 还是 `WRITE_WITH_GUARDRAILS`。
 18. 达到 loop 预算后必须 `WRITE_WITH_GUARDRAILS`，不能无限循环。
 19. 报告生成只渲染真实 `evidence_cards` 中存在的证据 ID，避免 ghost evidence 进入最终报告。
+20. Worker result 会输出 `research_checkpoint_candidate` 与 `report_source_candidate`。
+21. Java 可以把完成后的研究报告保存为 `GENERATED_RESEARCH_REPORT` 资料，并进入 source parse/index 链路。
 
 ## 3. 与 Memory 的关系
 
@@ -141,7 +143,7 @@ planner
 
 这一批骨架刻意没有做重：
 
-1. Research 还没有可恢复 checkpoint 持久化，当前 checkpoint 仍在 result payload 层。
+1. Research 还没有可恢复 checkpoint / URL snapshot 的 MinIO 持久化，当前 checkpoint 仍在 result payload 层。
 2. Artifact 还没有接真实 `Skill / MCP / 用户自定义外部能力`。
 3. Research 报告还没有自动回写成工作台正式资料。
 4. Artifact 导出 PDF / MD 文件还没有正式接 MinIO 持久化链路。
@@ -187,6 +189,8 @@ planner
 9. Local Verifier 能拒绝无证据结论，并可合并 LLM judge 的警告。
 10. Report Writer 只允许真实 evidence card 进入证据账本展示。
 11. LoopRuntime 默认最多 2 轮，冲突证据触发反证复核，预算耗尽强制 guardrails 收口。
+12. Worker 输出 checkpoint/report source candidate。
+13. Java `save-report-as-source` 能把研究报告回写成工作台资料，并保留 `generated_by=research_agent`。
 
 ### 5.3 已通过的回归范围
 
@@ -214,9 +218,9 @@ planner
 
 下一轮优先补这几件事：
 
-1. 把 `table-as-state ledger` 从内存结构升级为研究过程快照。
-2. 把 URL snapshot 与 checkpoint 正式保存到 MinIO。
-3. 让最终报告可选回写为工作台资料。
+1. 把 URL snapshot 与 checkpoint 正式保存到 MinIO。
+2. 补齐 Research Worker API / Kafka Consumer 启动脚本。
+3. 补本地部署 smoke test。
 
 ## 7. 完成定义
 

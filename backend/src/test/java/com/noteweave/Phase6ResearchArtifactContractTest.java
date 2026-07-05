@@ -277,6 +277,107 @@ class Phase6ResearchArtifactContractTest {
     }
 
     @Test
+    void completedResearchReportShouldBeSavedAsWorkspaceSource() throws Exception {
+        String workspaceId = createWorkspace();
+        uploadSource(workspaceId, "save-report-input.md", """
+                Source for report save-as-source.
+                It proves generated research reports can join the workspace material pool.
+                """);
+
+        MvcResult createResult = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/research-runs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "question", "How should the saved report behave?",
+                                "profile", "default"
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        String researchRunId = objectMapper.readTree(createResult.getResponse().getContentAsString())
+                .path("data").path("research_run_id").asText();
+        String taskId = objectMapper.readTree(createResult.getResponse().getContentAsString())
+                .path("data").path("task_id").asText();
+
+        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "result_type", "RESEARCH_REPORT",
+                                "result_title", "Saved Research Report",
+                                "result_payload", Map.of(
+                                        "report_markdown", "# Saved Research Report\n\nGenerated report body.",
+                                        "report_source_candidate", Map.of(
+                                                "title", "Saved Research Report",
+                                                "source_type", "GENERATED_RESEARCH_REPORT",
+                                                "generated_by", "research_agent",
+                                                "content_markdown", "# Saved Research Report\n\nGenerated report body."
+                                        )
+                                ),
+                                "trace_summary", "research harness finished",
+                                "citations", java.util.List.of(Map.of("title", "save-report-input.md"))
+                        ))))
+                .andExpect(status().isOk());
+
+        MvcResult saveResult = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}/save-report-as-source", workspaceId, researchRunId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("READY"))
+                .andExpect(jsonPath("$.data.source_type").value("GENERATED_RESEARCH_REPORT"))
+                .andReturn();
+
+        String sourceId = objectMapper.readTree(saveResult.getResponse().getContentAsString())
+                .path("data").path("source_id").asText();
+
+        Map<String, Object> sourceRow = jdbcTemplate.queryForMap("""
+                select source_type, generated_by, generated_ref_id, status, parse_status, index_status
+                from source
+                where id = ?
+                """, sourceId);
+        assertThat(sourceRow.get("source_type")).isEqualTo("GENERATED_RESEARCH_REPORT");
+        assertThat(sourceRow.get("generated_by")).isEqualTo("research_agent");
+        assertThat(sourceRow.get("generated_ref_id")).isEqualTo(researchRunId);
+        assertThat(sourceRow.get("status")).isEqualTo("READY");
+        assertThat(sourceRow.get("parse_status")).isEqualTo("PARSED");
+        assertThat(sourceRow.get("index_status")).isEqualTo("INDEXED");
+
+        String reportSourceId = jdbcTemplate.queryForObject(
+                "select report_source_id from research_run where id = ?",
+                String.class,
+                researchRunId
+        );
+        assertThat(reportSourceId).isEqualTo(sourceId);
+
+        Integer chunkCount = jdbcTemplate.queryForObject(
+                "select count(*) from source_chunk where source_id = ?",
+                Integer.class,
+                sourceId
+        );
+        assertThat(chunkCount).isNotNull().isGreaterThanOrEqualTo(1);
+
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/sources", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("Saved Research Report")));
+    }
+
+    @Test
+    void unfinishedResearchReportShouldNotBeSavedAsWorkspaceSource() throws Exception {
+        String workspaceId = createWorkspace();
+        MvcResult createResult = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/research-runs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "question", "Should unfinished reports be saved?",
+                                "profile", "default"
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        String researchRunId = objectMapper.readTree(createResult.getResponse().getContentAsString())
+                .path("data").path("research_run_id").asText();
+
+        mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}/save-report-as-source", workspaceId, researchRunId))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("RESEARCH_REPORT_NOT_READY"));
+    }
+
+    @Test
     void workerFailShouldMarkArtifactTaskAndJobAsFailed() throws Exception {
         String workspaceId = createWorkspace();
 

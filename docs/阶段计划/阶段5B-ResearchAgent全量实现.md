@@ -16,12 +16,13 @@
 8. `ReadAdapter` 已完成第一阶段落地：workspace hit 打开资料窗口，external url hit 在未启用网页抓取时生成可解释 fallback。
 9. `LlmClient / JSON Repair / LLM Extract / LLM Verify` 已完成第一阶段落地：无模型配置时保持规则 fallback，有模型配置时尝试 OpenAI-compatible JSON 契约。
 10. `LoopRuntime / Stop Contract` 已完成第一阶段落地：默认最多 2 轮，冲突证据触发反证复核，预算耗尽强制 guardrails 收口。
+11. `research_checkpoint_candidate / report_source_candidate` 已输出到 Worker result payload。
+12. Java 已支持 `save-report-as-source`，能把完成后的研究报告写回工作台资料池并复用 source parse/index 链路。
 
 还没有完成的是：
 
-1. 可恢复的研究过程快照。
-2. 最终研究报告回写为工作台资料。
-3. 正式 worker 启动脚本与 Kafka consumer 部署入口。
+1. checkpoint / URL snapshot 正式保存到 MinIO。
+2. 正式 worker 启动脚本与 Kafka consumer 部署入口。
 
 ## 2. 参考项目映射
 
@@ -114,6 +115,7 @@ NoteWeave 落地口径：
   -> Worker result 输出 report_source_candidate
   -> Research 完成后可由 Java 回写资料池
   -> TDD 覆盖 generated_by=research_agent 和 citation 保留
+  -> 状态：已完成第一阶段实现
 
 5B.7 启动部署与运行脚本
   -> conda worker 环境
@@ -291,6 +293,8 @@ CompositeSearchAdapter.search(...)
 
 ## 9. 5B.6 报告回写
 
+状态：已完成第一阶段实现。
+
 ### 9.1 Java 侧新增或完善
 
 1. `POST /api/v2/research-runs/{researchRunId}/save-report-as-source`
@@ -298,7 +302,26 @@ CompositeSearchAdapter.search(...)
 3. report markdown 存 MinIO / local storage
 4. citation 关系保留
 
-### 9.2 TDD
+### 9.2 已落地行为
+
+1. Worker result payload 输出 `research_checkpoint_candidate`。
+2. Worker result payload 输出 `report_source_candidate`。
+3. 新增 migration `V013__add_research_report_source_mapping.sql`。
+4. `source` 增加 `generated_by / generated_ref_id`。
+5. `research_run` 增加 `report_source_id`。
+6. Java 新增 `POST /api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}/save-report-as-source`。
+7. 已完成的 Research Run 可以生成 `GENERATED_RESEARCH_REPORT` 类型资料。
+8. 保存后的报告会创建 `file_object / source / source_snapshot / source_chunk / source_window`。
+9. 保存后会调用 `SourceParseService.parseAndIndex`，因此该报告与用户上传资料处于同一检索层级。
+10. 未完成或无报告正文的 Research Run 会返回 `RESEARCH_REPORT_NOT_READY`。
+
+当前边界：
+
+1. checkpoint candidate 已输出，但还没有正式落 MinIO。
+2. URL snapshot 正式持久化还没有落地。
+3. citation 当前保留在 research trace/result payload，尚未额外拆成专门关系表。
+
+### 9.3 TDD
 
 1. 完成的 research run 可以保存为 source。
 2. 未完成或失败的 run 不能保存。
@@ -319,11 +342,11 @@ CompositeSearchAdapter.search(...)
 
 ## 11. 当前下一步
 
-立即执行 `5B.6 过程快照与报告回写`。
+立即执行 `5B.7 启动部署与运行脚本`。
 
-下一步重点是把当前内存态运行结果沉淀为可恢复资产：
+下一步重点是把当前 Research Worker 的运行入口补完整：
 
-1. Worker result 输出 `research_checkpoint_candidate`。
-2. Worker result 输出 `report_source_candidate`。
-3. Java 侧增加保存研究报告为工作台资料的接口。
-4. 回写后的资料保留 `generated_by=research_agent` 与 citation 信息。
+1. conda 环境启动脚本。
+2. Research API server 启动脚本。
+3. Research Kafka consumer 启动脚本。
+4. import / health / 配置读取 smoke test。

@@ -153,6 +153,25 @@ def test_run_research_task_should_emit_full_phase_sequence_and_report() -> None:
     assert result.citations[0]["evidence_id"] == "ev-1"
 
 
+def test_research_task_should_emit_checkpoint_and_report_source_candidates() -> None:
+    task_input = _build_task_input()
+
+    _events, result = run_research_task(task_input)
+
+    checkpoint = result.result_payload["research_checkpoint_candidate"]
+    report_source = result.result_payload["report_source_candidate"]
+    assert checkpoint["checkpoint_no"] == len(result.result_payload["loop_rounds"])
+    assert checkpoint["state_ledger"]["evidence_card_count"] == 1
+    assert checkpoint["loop_decision"]["decision"] in {
+        "SYNTHESIZE_REPORT",
+        "WRITE_WITH_GUARDRAILS",
+    }
+    assert report_source["source_type"] == "GENERATED_RESEARCH_REPORT"
+    assert report_source["generated_by"] == "research_agent"
+    assert report_source["title"] == "AlphaResearch should focus on what?"
+    assert "AlphaResearch should focus on what?" in report_source["content_markdown"]
+
+
 def test_research_task_should_create_recovery_branch_when_evidence_is_missing() -> None:
     task_input = ResearchTaskInput.model_validate(
         {

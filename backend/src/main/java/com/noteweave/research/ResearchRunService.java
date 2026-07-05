@@ -6,16 +6,22 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
 import com.noteweave.common.Json;
+import com.noteweave.infra.LocalObjectStorage;
+import com.noteweave.knowledge.WikiIngestService;
 import com.noteweave.memory.MemoryCompilerService;
 import com.noteweave.memory.MemoryControlPackResponse;
+import com.noteweave.source.SourceParseService;
 import com.noteweave.task.TaskService;
 import com.noteweave.worker.WorkerContextSnapshotResponse;
 import com.noteweave.worker.WorkerFailRequest;
 import com.noteweave.worker.WorkerSourceScopeItemResponse;
 import com.noteweave.worker.WorkerTaskCallbackService.CompletionOutcome;
 import com.noteweave.workspace.WorkspaceService;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,19 +37,28 @@ public class ResearchRunService {
     private final WorkspaceService workspaceService;
     private final TaskService taskService;
     private final MemoryCompilerService memoryCompilerService;
+    private final LocalObjectStorage storage;
+    private final SourceParseService sourceParseService;
+    private final WikiIngestService wikiIngestService;
 
     public ResearchRunService(
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
             WorkspaceService workspaceService,
             TaskService taskService,
-            MemoryCompilerService memoryCompilerService
+            MemoryCompilerService memoryCompilerService,
+            LocalObjectStorage storage,
+            SourceParseService sourceParseService,
+            WikiIngestService wikiIngestService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.workspaceService = workspaceService;
         this.taskService = taskService;
         this.memoryCompilerService = memoryCompilerService;
+        this.storage = storage;
+        this.sourceParseService = sourceParseService;
+        this.wikiIngestService = wikiIngestService;
     }
 
     @Transactional
@@ -165,6 +180,62 @@ public class ResearchRunService {
     }
 
     @Transactional
+    public SaveResearchReportSourceResponse saveReportAsSource(String workspaceId, String researchRunId) {
+        requireWorkspace(workspaceId);
+        SaveReportRow row = loadSaveReportRow(workspaceId, researchRunId);
+        if (row.reportSourceId() != null && !row.reportSourceId().isBlank()) {
+            return loadSavedReportSource(workspaceId, row.reportSourceId());
+        }
+        if (!"COMPLETED".equals(row.status()) || row.finalReportMarkdown() == null || row.finalReportMarkdown().isBlank()) {
+            throw new BusinessException("RESEARCH_REPORT_NOT_READY", "研究报告尚未完成，不能写入资料池");
+        }
+
+        byte[] reportBytes = row.finalReportMarkdown().getBytes(StandardCharsets.UTF_8);
+        String sha256 = sha256(reportBytes);
+        FileObjectRef fileObject = getOrCreateGeneratedFileObject(
+                workspaceId,
+                researchRunId,
+                row.finalReportTitle(),
+                sha256,
+                reportBytes
+        );
+        String sourceId = Ids.newId();
+        String snapshotId = Ids.newId();
+        String objectKey = "workspace/%s/research/%s/report/final.md".formatted(workspaceId, researchRunId);
+        storage.write(objectKey, reportBytes);
+        jdbcTemplate.update("""
+                insert into source(
+                    id, workspace_id, file_object_id, title, source_type, status,
+                    parse_status, index_status, generated_by, generated_ref_id
+                )
+                values (?, ?, ?, ?, 'GENERATED_RESEARCH_REPORT', 'PROCESSING', 'PENDING', 'PENDING', 'research_agent', ?)
+                """,
+                sourceId,
+                workspaceId,
+                fileObject.id(),
+                reportTitle(row),
+                researchRunId
+        );
+        jdbcTemplate.update("""
+                insert into source_snapshot(id, source_id, file_object_id, version_no, object_key, sha256, parse_status, index_status)
+                values (?, ?, ?, 1, ?, ?, 'PENDING', 'PENDING')
+                """, snapshotId, sourceId, fileObject.id(), objectKey, sha256);
+
+        sourceParseService.parseAndIndex(workspaceId, sourceId, snapshotId, reportBytes);
+        wikiIngestService.enqueueAndRunSourceIngestIfEnabled(workspaceId, sourceId);
+        jdbcTemplate.update("""
+                update research_run
+                set report_source_id = ?, updated_at = current_timestamp
+                where id = ?
+                """, sourceId, researchRunId);
+        insertTrace(researchRunId, "REPORT_SAVED_AS_SOURCE", reportTitle(row), Map.of(
+                "source_id", sourceId,
+                "generated_by", "research_agent"
+        ));
+        return loadSavedReportSource(workspaceId, sourceId);
+    }
+
+    @Transactional
     public void markRunning(String taskId, String phase, String message, Map<String, Object> metrics) {
         RunRow row = findByTaskId(taskId);
         jdbcTemplate.update("""
@@ -218,6 +289,50 @@ public class ResearchRunService {
                 "error_code", request.errorCode(),
                 "retryable", request.retryable()
         ));
+    }
+
+    private SaveReportRow loadSaveReportRow(String workspaceId, String researchRunId) {
+        return jdbcTemplate.query("""
+                select id, workspace_id, status, final_report_title, final_report_markdown, report_source_id
+                from research_run
+                where workspace_id = ? and id = ?
+                """, rs -> {
+            if (!rs.next()) {
+                throw new BusinessException("RESEARCH_RUN_NOT_FOUND", "研究任务不存在");
+            }
+            return new SaveReportRow(
+                    rs.getString("id"),
+                    rs.getString("workspace_id"),
+                    rs.getString("status"),
+                    rs.getString("final_report_title"),
+                    rs.getString("final_report_markdown"),
+                    rs.getString("report_source_id")
+            );
+        }, workspaceId, researchRunId);
+    }
+
+    private SaveResearchReportSourceResponse loadSavedReportSource(String workspaceId, String sourceId) {
+        return jdbcTemplate.query("""
+                select id, title, source_type, status, parse_status, index_status,
+                       coalesce(generated_by, '') as generated_by,
+                       coalesce(generated_ref_id, '') as generated_ref_id
+                from source
+                where workspace_id = ? and id = ?
+                """, rs -> {
+            if (!rs.next()) {
+                throw new BusinessException("SOURCE_NOT_FOUND", "资料不存在");
+            }
+            return new SaveResearchReportSourceResponse(
+                    rs.getString("id"),
+                    rs.getString("title"),
+                    rs.getString("source_type"),
+                    rs.getString("status"),
+                    rs.getString("parse_status"),
+                    rs.getString("index_status"),
+                    rs.getString("generated_by"),
+                    rs.getString("generated_ref_id")
+            );
+        }, workspaceId, sourceId);
     }
 
     private RunRow findByTaskId(String taskId) {
@@ -377,6 +492,55 @@ public class ResearchRunService {
         return Json.write(objectMapper, payload);
     }
 
+    private FileObjectRef getOrCreateGeneratedFileObject(
+            String workspaceId,
+            String researchRunId,
+            String title,
+            String sha256,
+            byte[] bytes
+    ) {
+        List<FileObjectRef> existing = jdbcTemplate.query("""
+                select id, object_key from file_object where workspace_id = ? and sha256 = ?
+                """, (rs, rowNum) -> new FileObjectRef(rs.getString("id"), rs.getString("object_key")), workspaceId, sha256);
+        if (!existing.isEmpty()) {
+            FileObjectRef ref = existing.get(0);
+            if (!storage.exists(ref.objectKey())) {
+                storage.write(ref.objectKey(), bytes);
+            }
+            jdbcTemplate.update("update file_object set ref_count = ref_count + 1 where id = ?", ref.id());
+            return ref;
+        }
+        String fileObjectId = Ids.newId();
+        String objectKey = "workspace/%s/file_object/%s-%s.md".formatted(workspaceId, sha256, sanitize(title));
+        storage.write(objectKey, bytes);
+        jdbcTemplate.update("""
+                insert into file_object(id, workspace_id, object_key, sha256, file_size, mime_type, ref_count)
+                values (?, ?, ?, ?, ?, 'text/markdown', 1)
+                """, fileObjectId, workspaceId, objectKey, sha256, bytes.length);
+        return new FileObjectRef(fileObjectId, objectKey);
+    }
+
+    private String reportTitle(SaveReportRow row) {
+        if (row.finalReportTitle() != null && !row.finalReportTitle().isBlank()) {
+            return row.finalReportTitle();
+        }
+        return "Research Report " + row.researchRunId();
+    }
+
+    private String sha256(byte[] content) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(content));
+        } catch (Exception ex) {
+            throw new IllegalStateException("SHA-256 not available", ex);
+        }
+    }
+
+    private String sanitize(String value) {
+        String normalized = value == null ? "research-report" : value;
+        return normalized.replaceAll("[^\\p{IsHan}a-zA-Z0-9._-]+", "-");
+    }
+
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
     }
@@ -417,5 +581,18 @@ public class ResearchRunService {
             Instant createdAt,
             Instant updatedAt
     ) {
+    }
+
+    private record SaveReportRow(
+            String researchRunId,
+            String workspaceId,
+            String status,
+            String finalReportTitle,
+            String finalReportMarkdown,
+            String reportSourceId
+    ) {
+    }
+
+    private record FileObjectRef(String id, String objectKey) {
     }
 }
