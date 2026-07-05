@@ -181,15 +181,24 @@ public class ArtifactJobService {
 
     private List<WorkerSourceScopeItemResponse> loadReadySourceScope(String workspaceId) {
         return jdbcTemplate.query("""
-                select id, title, coalesce(summary, '') as summary
-                from source
-                where workspace_id = ? and status = 'READY'
-                order by updated_at desc, id desc
+                select s.id, s.title, coalesce(s.summary, '') as summary,
+                       coalesce((
+                           select sw.content
+                           from source_chunk sc
+                           join source_window sw on sw.source_chunk_id = sc.id
+                           where sc.source_id = s.id
+                           order by sc.chunk_no asc, sw.window_no asc
+                           limit 1
+                       ), '') as sample_text
+                from source s
+                where s.workspace_id = ? and s.status = 'READY'
+                order by s.updated_at desc, s.id desc
                 limit 20
                 """, (rs, rowNum) -> new WorkerSourceScopeItemResponse(
                 rs.getString("id"),
                 rs.getString("title"),
-                rs.getString("summary")
+                rs.getString("summary"),
+                rs.getString("sample_text")
         ), workspaceId);
     }
 

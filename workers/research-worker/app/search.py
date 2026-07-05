@@ -47,6 +47,9 @@ def _build_snippet(source: SourceScopeItem, plan: ResearchPlan) -> str:
     summary = source.summary.strip()
     if summary:
         return summary
+    sample_text = source.sample_text.strip()
+    if sample_text:
+        return sample_text
     return (
         f"{source.title} is in the workspace scope but has no summary. "
         f"Open it only for cautious evidence related to {plan.normalized_question}."
@@ -56,6 +59,8 @@ def _build_snippet(source: SourceScopeItem, plan: ResearchPlan) -> str:
 def _score_source_match(source: SourceScopeItem, snippet: str) -> float:
     if source.summary.strip():
         return 0.82
+    if source.sample_text.strip():
+        return 0.68
     if snippet.strip():
         return 0.42
     return 0.2

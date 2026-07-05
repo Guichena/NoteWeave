@@ -1,6 +1,7 @@
 package com.noteweave.research;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
@@ -104,7 +105,7 @@ public class ResearchRunService {
                 row.taskId(),
                 row.workspaceId(),
                 row.researchRunId(),
-                loadReadySourceScope(row.workspaceId()),
+                loadSourceScopeSnapshot(row.workspaceId(), row.sourceScopeJson()),
                 new WorkerContextSnapshotResponse(row.contextSnapshotId() == null ? "" : row.contextSnapshotId()),
                 readControlPack(row.controlPackJson()),
                 new ResearchWorkerInputPayload(row.question(), row.profileKey(), blankIfNull(row.contextSnapshotId()))
@@ -167,7 +168,8 @@ public class ResearchRunService {
 
     private RunRow findByTaskId(String taskId) {
         return jdbcTemplate.query("""
-                select id, workspace_id, task_id, question, profile_key, context_snapshot_id, control_pack_json
+                select id, workspace_id, task_id, question, profile_key, context_snapshot_id,
+                       source_scope_json, control_pack_json
                 from research_run
                 where task_id = ?
                 """, rs -> {
@@ -181,6 +183,7 @@ public class ResearchRunService {
                     rs.getString("question"),
                     rs.getString("profile_key"),
                     rs.getString("context_snapshot_id"),
+                    rs.getString("source_scope_json"),
                     rs.getString("control_pack_json")
             );
         }, taskId);
@@ -195,16 +198,69 @@ public class ResearchRunService {
 
     private List<WorkerSourceScopeItemResponse> loadReadySourceScope(String workspaceId) {
         return jdbcTemplate.query("""
-                select id, title, coalesce(summary, '') as summary
-                from source
-                where workspace_id = ? and status = 'READY'
-                order by updated_at desc, id desc
+                select s.id, s.title, coalesce(s.summary, '') as summary,
+                       coalesce((
+                           select sw.content
+                           from source_chunk sc
+                           join source_window sw on sw.source_chunk_id = sc.id
+                           where sc.source_id = s.id
+                           order by sc.chunk_no asc, sw.window_no asc
+                           limit 1
+                       ), '') as sample_text
+                from source s
+                where s.workspace_id = ? and s.status = 'READY'
+                order by s.updated_at desc, s.id desc
                 limit 20
                 """, (rs, rowNum) -> new WorkerSourceScopeItemResponse(
                 rs.getString("id"),
                 rs.getString("title"),
-                rs.getString("summary")
+                rs.getString("summary"),
+                rs.getString("sample_text")
         ), workspaceId);
+    }
+
+    private List<WorkerSourceScopeItemResponse> loadSourceScopeSnapshot(String workspaceId, String sourceScopeJson) {
+        List<String> sourceIds = readSourceScopeIds(sourceScopeJson);
+        if (sourceIds.isEmpty()) {
+            return List.of();
+        }
+        return sourceIds.stream()
+                .map(sourceId -> loadSourceScopeItem(workspaceId, sourceId))
+                .flatMap(List::stream)
+                .toList();
+    }
+
+    private List<WorkerSourceScopeItemResponse> loadSourceScopeItem(String workspaceId, String sourceId) {
+        return jdbcTemplate.query("""
+                select s.id, s.title, coalesce(s.summary, '') as summary,
+                       coalesce((
+                           select sw.content
+                           from source_chunk sc
+                           join source_window sw on sw.source_chunk_id = sc.id
+                           where sc.source_id = s.id
+                           order by sc.chunk_no asc, sw.window_no asc
+                           limit 1
+                       ), '') as sample_text
+                from source s
+                where s.workspace_id = ? and s.id = ? and s.status = 'READY'
+                """, (rs, rowNum) -> new WorkerSourceScopeItemResponse(
+                rs.getString("id"),
+                rs.getString("title"),
+                rs.getString("summary"),
+                rs.getString("sample_text")
+        ), workspaceId, sourceId);
+    }
+
+    private List<String> readSourceScopeIds(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<>() {
+            });
+        } catch (JsonProcessingException ex) {
+            throw new BusinessException("RESEARCH_SOURCE_SCOPE_PARSE_FAILED", "研究资料范围解析失败");
+        }
     }
 
     private MemoryControlPackResponse readControlPack(String json) {
@@ -255,6 +311,7 @@ public class ResearchRunService {
             String question,
             String profileKey,
             String contextSnapshotId,
+            String sourceScopeJson,
             String controlPackJson
     ) {
     }

@@ -72,6 +72,25 @@ def test_research_loop_should_materialize_search_read_and_extract_objects() -> N
     assert evidence_cards[0].support_score >= 0.7
 
 
+def test_workspace_search_should_use_sample_text_when_summary_is_blank() -> None:
+    payload = _build_task_input().model_dump(mode="json")
+    payload["source_scope"] = [
+        {
+            "source_id": "src-window",
+            "title": "Window Only Source",
+            "summary": "",
+            "sample_text": "Window text contains the only concrete research evidence.",
+        }
+    ]
+    task_input = ResearchTaskInput.model_validate(payload)
+    plan = build_research_plan(task_input)
+    search_hits = run_workspace_search(task_input, plan)
+
+    assert search_hits[0].source_title == "Window Only Source"
+    assert "only concrete research evidence" in search_hits[0].snippet
+    assert search_hits[0].confidence_score >= 0.6
+
+
 def test_run_research_task_should_emit_full_phase_sequence_and_report() -> None:
     task_input = _build_task_input()
     events, result = run_research_task(task_input)

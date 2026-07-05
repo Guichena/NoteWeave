@@ -144,13 +144,21 @@ class Phase6ResearchArtifactContractTest {
         String taskId = objectMapper.readTree(createResult.getResponse().getContentAsString())
                 .path("data").path("task_id").asText();
 
+        uploadSource(workspaceId, "late-research-input.md", """
+                Late source uploaded after the research run was created.
+                It must not enter the existing run source scope snapshot.
+                """);
+
         mockMvc.perform(get("/internal/worker/research-tasks/{taskId}/input", taskId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.workspace_id").value(workspaceId))
                 .andExpect(jsonPath("$.data.target_id").value(researchRunId))
                 .andExpect(jsonPath("$.data.input_payload.profile_key").value("DEFAULT"))
                 .andExpect(jsonPath("$.data.control_pack.pack_type").value("research"))
-                .andExpect(jsonPath("$.data.source_scope.length()").value(1));
+                .andExpect(jsonPath("$.data.source_scope.length()").value(1))
+                .andExpect(jsonPath("$.data.source_scope[0].title").value("research-input.md"))
+                .andExpect(jsonPath("$.data.source_scope[0].sample_text")
+                        .value(org.hamcrest.Matchers.containsString("Research input source")));
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/progress", taskId)
                         .contentType(MediaType.APPLICATION_JSON)

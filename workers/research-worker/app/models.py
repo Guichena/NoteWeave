@@ -7,6 +7,7 @@ class SourceScopeItem(BaseModel):
     source_id: str
     title: str
     summary: str = ""
+    sample_text: str = ""
 
 
 class ContextSnapshot(BaseModel):
