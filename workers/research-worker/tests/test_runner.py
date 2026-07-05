@@ -51,6 +51,9 @@ def test_build_research_plan_should_compile_query_set_and_stop_contract() -> Non
     assert plan.stop_contract["must_respect_evidence_policy"] is True
     assert plan.stop_contract["global_search_limit"] == 8
     assert plan.stop_contract["tool_response_retention_budget"] == 5
+    assert "coverage_gap" in plan.stop_contract["search_angles"]
+    assert any("coverage gap check" in query for query in plan.query_set)
+    assert any("counterfactual evidence check" in query for query in plan.query_set)
     assert "support_level" in plan.state_columns
 
 
@@ -64,6 +67,9 @@ def test_research_loop_should_materialize_search_read_and_extract_objects() -> N
     assert search_hits[0].hit_id == "hit-1"
     assert search_hits[0].source_title == "Alpha Source"
     assert search_hits[0].query in plan.query_set
+    assert search_hits[0].search_angle in {"direct", "source_scoped"}
+    assert "summary" in search_hits[0].matched_fields
+    assert search_hits[0].coverage_score > 0
     assert read_windows[0].window_id == "window-1"
     assert read_windows[0].source_id == "src-1"
     assert "Alpha source suggests" in read_windows[0].window_text
@@ -89,6 +95,32 @@ def test_workspace_search_should_use_sample_text_when_summary_is_blank() -> None
     assert search_hits[0].source_title == "Window Only Source"
     assert "only concrete research evidence" in search_hits[0].snippet
     assert search_hits[0].confidence_score >= 0.6
+
+
+def test_workspace_search_should_rank_relevant_source_by_query_coverage() -> None:
+    payload = _build_task_input().model_dump(mode="json")
+    payload["source_scope"] = [
+        {
+            "source_id": "src-low",
+            "title": "General Workspace Notes",
+            "summary": "This source is broad and does not mention verifier evidence windows.",
+        },
+        {
+            "source_id": "src-high",
+            "title": "Verified Evidence Windows",
+            "summary": (
+                "AlphaResearch should focus on verified evidence windows, "
+                "support levels, and local verifier checks."
+            ),
+        },
+    ]
+    task_input = ResearchTaskInput.model_validate(payload)
+    plan = build_research_plan(task_input)
+    search_hits = run_workspace_search(task_input, plan)
+
+    assert search_hits[0].source_id == "src-high"
+    assert search_hits[0].matched_fields
+    assert search_hits[0].coverage_score >= search_hits[1].coverage_score
 
 
 def test_run_research_task_should_emit_full_phase_sequence_and_report() -> None:

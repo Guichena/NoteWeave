@@ -62,6 +62,9 @@ class ResearchSearchHit(BaseModel):
     snippet: str
     confidence_score: float
     retrieval_reason: str
+    search_angle: str = "direct"
+    matched_fields: list[str] = Field(default_factory=list)
+    coverage_score: float = 0.0
 
 
 class ResearchReadWindow(BaseModel):

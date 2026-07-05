@@ -63,9 +63,9 @@ Research Run 的资料范围按创建任务时的 `source_scope_json` 固化为 
 
 Research Run 详情接口会返回最终报告、source scope 快照、Research Control Pack 和 `research_trace` 列表。Worker 完成回调时，`FINAL_REPORT` trace 会保存 `result_payload`，因此 `search_hits`、`read_windows`、`evidence_cards`、`branch_decisions`、`state_ledger`、verifier 结果可以通过详情接口回看。
 
-Research Worker 现在提供 `callback.py` 和 `POST /tasks/{taskId}/run` 执行入口，可以按 task id 拉取 Java worker input，运行研究 loop，逐阶段回调 progress，最终回调 complete；异常时回调 fail。
+Research Worker 现在提供 `callback.py`、`POST /tasks/{taskId}/run` 和 Kafka consumer 执行入口。HTTP 入口用于本地调试和复用执行逻辑；正式异步路径由 worker 消费 `noteweave.research.run` Kafka 消息，按 `task_id` 拉取 Java worker input，运行研究 loop，逐阶段回调 progress，最终回调 complete；异常时回调 fail。
 
-Java 侧已经提供最小 `ResearchOutboxDispatcher`，可以扫描 `noteweave.research.run` 的 READY outbox，调用 Research Worker 执行入口，成功后把 outbox 标记为 `SENT`。这还不是完整 Kafka 消费器，但已经打通了 `Research Run -> task_outbox -> Python Worker -> Java callback -> research_trace` 的可执行闭环。
+Java 侧已经提供最小 Kafka publisher：扫描 `noteweave.research.run` 的 READY 消息，发布到 Kafka，成功后把消息标记为 `SENT`。当前闭环是 `Research Run -> task_outbox -> Kafka -> Python Research Worker -> Java callback -> research_trace`。
 
 ### 2.3 Research Worker 当前内部设计
 
@@ -88,15 +88,16 @@ planner
 当前已经具备这些工程语义：
 
 1. 先编译研究计划、查询集合和 Stop Contract。
-2. 用 `workspace search hits` 表示 Research Run 快照资料范围内的检索命中。
-3. 用 `bounded read windows` 控制工具结果保留预算，避免无限塞上下文。
-4. 用 `evidence cards` 把读取窗口转换成可验证证据单元。
-5. 用 `Table-as-State` 保存来源、阅读目标、证据卡、支持度、冲突度和验证注记。
-6. 用 `branch recovery` 在无命中、无窗口、无证据或冲突证据时生成受控恢复计划。
-7. 用 `Local Verifier` 校验问题、query bundle、search hit、read window、evidence card、ledger 和 evidence policy。
-8. 用 `Global Verifier` 决定是直接写报告，还是带 guardrails 写报告。
-9. 最终报告输出包含状态账本、证据卡、分支决策和验证结果。
-10. 用 Java callback adapter 将阶段进度、最终结果和失败状态回传主系统。
+2. 查询集合包含直接查询、资料定向查询、覆盖缺口检查和反证证据检查四类 `search_angles`。
+3. 用 `workspace search hits` 表示 Research Run 快照资料范围内的检索命中，并记录 `matched_fields`、`coverage_score` 和 `retrieval_reason`。
+4. 用 `bounded read windows` 控制工具结果保留预算，避免无限塞上下文。
+5. 用 `evidence cards` 把读取窗口转换成可验证证据单元。
+6. 用 `Table-as-State` 保存来源、阅读目标、证据卡、支持度、冲突度和验证注记。
+7. 用 `branch recovery` 在无命中、无窗口、无证据或冲突证据时生成受控恢复计划。
+8. 用 `Local Verifier` 校验问题、query bundle、search hit、read window、evidence card、ledger 和 evidence policy。
+9. 用 `Global Verifier` 决定是直接写报告，还是带 guardrails 写报告。
+10. 最终报告输出包含状态账本、证据卡、分支决策和验证结果。
+11. 用 Java callback adapter 将阶段进度、最终结果和失败状态回传主系统。
 
 ## 3. 当前关键文件
 
@@ -145,7 +146,7 @@ Python：
 6. Research Detail API 能返回最终报告、资料快照、控制包和研究过程 trace。
 7. Research 完成回调能把 worker `result_payload` 写入 `FINAL_REPORT` trace。
 8. Research Worker 能通过 callback adapter 拉取 Java input、发送 progress、complete 和 fail。
-9. Research outbox dispatcher 能把 READY research outbox 调度到 Python Worker，并把 outbox 标记为 `SENT`。
+9. Research Kafka publisher 能把 READY research 消息发布到 Kafka，并把消息标记为 `SENT`。
 10. Research 失败回调能同步 `research_run` 与 `task` 状态，并写入失败 trace。
 
 ## 5. 下一步施工重点
@@ -153,10 +154,11 @@ Python：
 下一轮建议按这个顺序继续：
 
 1. 把 Research 的 `workspace search hits` 从当前快照 source scope adapter 升级为真实召回或搜索 adapter。
-2. 把当前手动触发的 Research outbox dispatcher 升级为定时任务、后台消费者或 Kafka 消费器。
-3. 把 `Table-as-State` 从 worker payload / FINAL_REPORT trace 继续升级为更细粒度的研究过程快照。
-4. 把最终研究报告变成可选回写资料。
-5. 把 Research Control Pack 接入真实 prompt / tool 参数注入点。
+2. 把当前手动触发的 Research Kafka publisher 升级为定时任务或后台 publisher。
+3. 把 Python Kafka consumer 接入本地/部署启动脚本和进程守护。
+4. 把 `Table-as-State` 从 worker payload / FINAL_REPORT trace 继续升级为更细粒度的研究过程快照。
+5. 把最终研究报告变成可选回写资料。
+6. 把 Research Control Pack 接入真实 prompt / tool 参数注入点。
 
 Memory 这边下一轮建议：
 

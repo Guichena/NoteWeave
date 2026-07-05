@@ -8,7 +8,8 @@
 前端发起任务
   -> Java 创建业务对象与 task
   -> 写入 task_outbox
-  -> Python Worker 按 taskId 拉取输入
+  -> Java 发布 Kafka 消息
+  -> Python Worker 消费 Kafka 并按 taskId 拉取输入
   -> Worker 回传 progress / complete / fail
   -> Java 落正式结果
 ```
@@ -69,7 +70,11 @@ action resolve
 ```text
 planner
   -> query bundle
+  -> workspace search hits
+  -> bounded read windows
+  -> evidence cards
   -> table-as-state ledger
+  -> branch recovery
   -> local verifier
   -> global verifier
   -> report writer
@@ -78,18 +83,28 @@ planner
 对应模块：
 
 1. [workers/research-worker/app/planner.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/planner.py)
-2. [workers/research-worker/app/state.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/state.py)
-3. [workers/research-worker/app/verifier.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/verifier.py)
-4. [workers/research-worker/app/reporter.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/reporter.py)
-5. [workers/research-worker/app/runner.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/runner.py)
+2. [workers/research-worker/app/search.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/search.py)
+3. [workers/research-worker/app/reader.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/reader.py)
+4. [workers/research-worker/app/extractor.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/extractor.py)
+5. [workers/research-worker/app/state.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/state.py)
+6. [workers/research-worker/app/branch.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/branch.py)
+7. [workers/research-worker/app/verifier.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/verifier.py)
+8. [workers/research-worker/app/reporter.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/reporter.py)
+9. [workers/research-worker/app/kafka_consumer.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/kafka_consumer.py)
+10. [workers/research-worker/app/runner.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/runner.py)
 
 它现在具备的工程语义是：
 
 1. 先编译研究计划和查询集合，而不是直接写报告。
-2. 用 `Table-as-State` 形式保存来源、阅读目标、证据摘录、支持度和验证注记。
-3. 用 `Local Verifier` 检查问题归一化、证据覆盖、来源数量和 evidence policy。
-4. 用 `Global Verifier` 做整体放行判断，决定是 `READY_TO_WRITE` 还是 `WRITE_WITH_GUARDRAILS`。
-5. 最终输出带状态账本和验证结果的研究报告。
+2. 查询集合包含直接查询、资料定向查询、覆盖缺口检查和反证证据检查。
+3. `workspace search hits` 会记录命中的资料字段、覆盖度分数、搜索角度和检索理由。
+4. `bounded read windows` 控制每次研究保留多少资料窗口，避免无限塞上下文。
+5. `evidence cards` 把读取窗口转换成可验证证据单元。
+6. 用 `Table-as-State` 形式保存来源、阅读目标、证据摘录、支持度和验证注记。
+7. 用 `branch recovery` 在无命中、无窗口、无证据或冲突证据时生成受控恢复计划。
+8. 用 `Local Verifier` 检查问题归一化、证据覆盖、来源数量和 evidence policy。
+9. 用 `Global Verifier` 做整体放行判断，决定是 `READY_TO_WRITE` 还是 `WRITE_WITH_GUARDRAILS`。
+10. 最终输出带状态账本和验证结果的研究报告。
 
 ## 3. 与 Memory 的关系
 
@@ -110,11 +125,10 @@ planner
 
 这一批骨架刻意没有做重：
 
-1. Python Worker 还没有直接消费 Kafka。
-2. Research 还没有接真实 `Search / Read / Extract / Verify / Repair` 外部工具。
-3. Artifact 还没有接真实 `Skill / MCP / 用户自定义外部能力`。
-4. Research 报告还没有自动回写成工作台正式资料。
-5. Artifact 导出 PDF / MD 文件还没有正式接 MinIO 持久化链路。
+1. Research 还没有接真实外部搜索 API 或浏览器工具，目前搜索范围仍是工作台资料快照。
+2. Artifact 还没有接真实 `Skill / MCP / 用户自定义外部能力`。
+3. Research 报告还没有自动回写成工作台正式资料。
+4. Artifact 导出 PDF / MD 文件还没有正式接 MinIO 持久化链路。
 
 ## 5. TDD 与回归
 
@@ -128,19 +142,22 @@ planner
 
 1. `artifactJobShouldCreateTaskExposeWorkerInputAndPersistVersion`
 2. `researchRunShouldCreateTaskExposeWorkerInputAndPersistFinalReport`
-3. `workerFailShouldMarkArtifactTaskAndJobAsFailed`
-4. `workerFailShouldMarkResearchTaskAndRunAsFailed`
+3. `researchOutboxDispatcherShouldPublishKafkaMessageAndMarkOutboxSent`
+4. `workerFailShouldMarkArtifactTaskAndJobAsFailed`
+5. `workerFailShouldMarkResearchTaskAndRunAsFailed`
 
 ### 5.2 Python Worker 测试
 
 1. [workers/research-worker/tests/test_runner.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/tests/test_runner.py)
-2. [workers/artifact-worker/tests/test_runner.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/tests/test_runner.py)
+2. [workers/research-worker/tests/test_kafka_consumer.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/tests/test_kafka_consumer.py)
+3. [workers/artifact-worker/tests/test_runner.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/tests/test_runner.py)
 
 当前测试重点：
 
 1. 输入模型可解析。
 2. runner 能走完整 phase sequence。
-3. 输出结构包含执行计划、状态账本、验证结果等关键字段。
+3. Kafka 消息可以触发 Research Worker 按 task id 拉取输入并回调 Java。
+4. 输出结构包含执行计划、状态账本、验证结果等关键字段。
 
 ### 5.3 已通过的回归范围
 

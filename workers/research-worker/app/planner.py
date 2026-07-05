@@ -10,6 +10,9 @@ def build_research_plan(task_input: ResearchTaskInput) -> ResearchPlan:
     query_set = [question]
     for item in task_input.source_scope[:3]:
         query_set.append(f"{question} :: {item.title}".strip())
+    if task_input.source_scope:
+        query_set.append(f"{question} :: coverage gap check")
+        query_set.append(f"{question} :: counterfactual evidence check")
 
     report_sections = [
         "Research Question",
@@ -52,6 +55,12 @@ def build_research_plan(task_input: ResearchTaskInput) -> ResearchPlan:
         "global_search_limit": 8,
         "tool_response_retention_budget": 5,
         "branch_budget": 1,
+        "search_angles": [
+            "direct",
+            "source_scoped",
+            "coverage_gap",
+            "counterfactual",
+        ],
     }
 
     return ResearchPlan(

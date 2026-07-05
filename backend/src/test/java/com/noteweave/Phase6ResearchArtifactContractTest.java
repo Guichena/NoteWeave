@@ -26,7 +26,7 @@ import org.springframework.test.web.servlet.MvcResult;
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@Import(TestResearchWorkerRunClientConfig.class)
+@Import(TestResearchOutboxPublisherConfig.class)
 class Phase6ResearchArtifactContractTest {
 
     @Autowired
@@ -39,7 +39,7 @@ class Phase6ResearchArtifactContractTest {
     private JdbcTemplate jdbcTemplate;
 
     @Autowired
-    private TestResearchWorkerRunClientConfig.RecordingResearchWorkerRunClient recordingResearchWorkerRunClient;
+    private TestResearchOutboxPublisherConfig.RecordingResearchOutboxPublisher recordingResearchOutboxPublisher;
 
     @Test
     void artifactJobShouldCreateTaskExposeWorkerInputAndPersistVersion() throws Exception {
@@ -233,13 +233,13 @@ class Phase6ResearchArtifactContractTest {
     }
 
     @Test
-    void researchOutboxDispatcherShouldInvokeResearchWorkerAndMarkOutboxSent() throws Exception {
-        recordingResearchWorkerRunClient.reset();
+    void researchOutboxDispatcherShouldPublishKafkaMessageAndMarkOutboxSent() throws Exception {
+        recordingResearchOutboxPublisher.reset();
         jdbcTemplate.update("update task_outbox set status = 'SENT', sent_at = current_timestamp where topic = 'noteweave.research.run'");
         String workspaceId = createWorkspace();
         uploadSource(workspaceId, "dispatch-research-input.md", """
                 Dispatch source for the research worker.
-                It proves the outbox can call the Python worker runner.
+                It proves the outbox can publish a Kafka research message.
                 """);
 
         MvcResult createResult = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/research-runs", workspaceId)
@@ -253,13 +253,21 @@ class Phase6ResearchArtifactContractTest {
 
         String taskId = objectMapper.readTree(createResult.getResponse().getContentAsString())
                 .path("data").path("task_id").asText();
+        String researchRunId = objectMapper.readTree(createResult.getResponse().getContentAsString())
+                .path("data").path("research_run_id").asText();
 
         mockMvc.perform(post("/internal/worker/research-outbox/dispatch")
                         .param("limit", "1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.dispatched_count").value(1));
 
-        assertThat(recordingResearchWorkerRunClient.taskIds()).containsExactly(taskId);
+        assertThat(recordingResearchOutboxPublisher.messages()).hasSize(1);
+        TestResearchOutboxPublisherConfig.PublishedMessage message = recordingResearchOutboxPublisher.messages().get(0);
+        assertThat(message.topic()).isEqualTo("noteweave.research.run");
+        assertThat(message.messageKey()).isEqualTo(researchRunId);
+        JsonNode payload = objectMapper.readTree(message.payloadJson());
+        assertThat(payload.path("task_id").asText()).isEqualTo(taskId);
+        assertThat(payload.path("target_id").asText()).isEqualTo(researchRunId);
         String outboxStatus = jdbcTemplate.queryForObject(
                 "select status from task_outbox where task_id = ? and topic = 'noteweave.research.run'",
                 String.class,
