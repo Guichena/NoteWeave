@@ -123,6 +123,7 @@ planner
 19. 报告生成只渲染真实 `evidence_cards` 中存在的证据 ID，避免 ghost evidence 进入最终报告。
 20. Worker result 会输出 `research_checkpoint_candidate` 与 `report_source_candidate`。
 21. Java 可以把完成后的研究报告保存为 `GENERATED_RESEARCH_REPORT` 资料，并进入 source parse/index 链路。
+22. Research API server 与 Kafka consumer 已有 conda 启动脚本。
 
 ## 3. 与 Memory 的关系
 
@@ -191,6 +192,7 @@ planner
 11. LoopRuntime 默认最多 2 轮，冲突证据触发反证复核，预算耗尽强制 guardrails 收口。
 12. Worker 输出 checkpoint/report source candidate。
 13. Java `save-report-as-source` 能把研究报告回写成工作台资料，并保留 `generated_by=research_agent`。
+14. Research Worker smoke 覆盖 health、consumer import 和 Kafka bootstrap 配置覆盖。
 
 ### 5.3 已通过的回归范围
 
@@ -219,8 +221,8 @@ planner
 下一轮优先补这几件事：
 
 1. 把 URL snapshot 与 checkpoint 正式保存到 MinIO。
-2. 补齐 Research Worker API / Kafka Consumer 启动脚本。
-3. 补本地部署 smoke test。
+2. Research Run 过程态细粒度落库。
+3. Artifact Worker 的 Skill / MCP 编排增强。
 
 ## 7. 完成定义
 

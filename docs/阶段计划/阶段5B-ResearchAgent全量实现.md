@@ -18,11 +18,11 @@
 10. `LoopRuntime / Stop Contract` 已完成第一阶段落地：默认最多 2 轮，冲突证据触发反证复核，预算耗尽强制 guardrails 收口。
 11. `research_checkpoint_candidate / report_source_candidate` 已输出到 Worker result payload。
 12. Java 已支持 `save-report-as-source`，能把完成后的研究报告写回工作台资料池并复用 source parse/index 链路。
+13. Research Worker 启动脚本与 smoke test 已完成第一阶段落地。
 
 还没有完成的是：
 
 1. checkpoint / URL snapshot 正式保存到 MinIO。
-2. 正式 worker 启动脚本与 Kafka consumer 部署入口。
 
 ## 2. 参考项目映射
 
@@ -123,6 +123,7 @@ NoteWeave 落地口径：
   -> Research Kafka consumer 启动
   -> docker compose / PowerShell 本地脚本
   -> TDD / smoke 覆盖 health、consumer import、配置读取
+  -> 状态：已完成第一阶段实现
 ```
 
 ## 4. 5B.1 Harness 契约与 Trace
@@ -329,12 +330,22 @@ CompositeSearchAdapter.search(...)
 
 ## 10. 5B.7 启动部署
 
+状态：已完成第一阶段实现。
+
 ### 10.1 新增脚本
 
 1. `workers/scripts/start-research-api.ps1`
 2. `workers/scripts/start-research-consumer.ps1`
 
-### 10.2 TDD / Smoke
+### 10.2 已落地行为
+
+1. `setup-workers-conda.ps1` 负责创建/更新 `noteweave-workers` conda 环境。
+2. `start-research-api.ps1` 进入 `workers/research-worker` 并通过 conda 运行 `uvicorn app.main:app`。
+3. `start-research-consumer.ps1` 进入 `workers/research-worker` 并通过 conda 运行 `python -m app.kafka_consumer`。
+4. Kafka consumer 支持 `NOTEWEAVE_KAFKA_BOOTSTRAP_SERVERS` 覆盖。
+5. smoke test 覆盖 health、consumer import、Kafka 配置读取。
+
+### 10.3 TDD / Smoke
 
 1. `python -m app.kafka_consumer` import 成功。
 2. `/health` 返回 worker_type。
@@ -342,11 +353,11 @@ CompositeSearchAdapter.search(...)
 
 ## 11. 当前下一步
 
-立即执行 `5B.7 启动部署与运行脚本`。
+阶段 5B 第一阶段已经完成。
 
-下一步重点是把当前 Research Worker 的运行入口补完整：
+后续增强建议单独进入新阶段：
 
-1. conda 环境启动脚本。
-2. Research API server 启动脚本。
-3. Research Kafka consumer 启动脚本。
-4. import / health / 配置读取 smoke test。
+1. checkpoint / URL snapshot 正式保存到 MinIO。
+2. Research Run 过程态细粒度落库。
+3. 外部 URL reader 接入更稳的网页抓取服务。
+4. Artifact Worker 的 Skill / MCP 编排增强。
