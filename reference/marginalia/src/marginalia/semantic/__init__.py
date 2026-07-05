@@ -1,1 +1,0 @@
-"""Local semantic recall support."""

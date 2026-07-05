@@ -17,6 +17,7 @@ node_modules/
 .env
 .venv/
 .conda/
+reference/
 __pycache__/
 .pytest_cache/
 
