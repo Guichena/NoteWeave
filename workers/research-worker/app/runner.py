@@ -1,15 +1,10 @@
 from __future__ import annotations
 
-from app.branch import plan_branch_recovery
-from app.extractor import extract_evidence_cards
 from app.harness import build_harness, build_step_trace
 from app.llm_client import build_default_llm_client
+from app.loop_runtime import run_research_loop
 from app.models import ResearchProgressEvent, ResearchTaskInput, ResearchTaskResult
-from app.read_adapters import run_research_read
 from app.reporter import write_research_report
-from app.search_adapters import run_research_search
-from app.state import build_state_ledger
-from app.verifier import run_global_verifier, run_local_verifier
 
 
 PHASE_SEQUENCE = [
@@ -26,7 +21,16 @@ def run_research_task(task_input: ResearchTaskInput) -> tuple[list[ResearchProgr
     harness = build_harness(task_input)
     llm_client = build_default_llm_client()
     plan, harness_trace = harness.plan(task_input)
-    search_hits = run_research_search(task_input, plan)
+    loop_result = run_research_loop(task_input, plan, llm_client=llm_client)
+    plan = loop_result.plan
+    search_hits = loop_result.artifacts.search_hits
+    read_windows = loop_result.artifacts.read_windows
+    evidence_cards = loop_result.artifacts.evidence_cards
+    ledger = loop_result.artifacts.ledger
+    local_result = loop_result.artifacts.local_result
+    branch_decisions = loop_result.artifacts.branch_decisions
+    global_result = loop_result.artifacts.global_result
+
     harness_trace.append(
         build_step_trace(
             phase="SEARCHING",
@@ -39,7 +43,6 @@ def run_research_task(task_input: ResearchTaskInput) -> tuple[list[ResearchProgr
             },
         )
     )
-    read_windows = run_research_read(task_input, plan, search_hits)
     harness_trace.append(
         build_step_trace(
             phase="READING",
@@ -51,12 +54,6 @@ def run_research_task(task_input: ResearchTaskInput) -> tuple[list[ResearchProgr
                 "token_estimate": sum(window.token_estimate for window in read_windows),
             },
         )
-    )
-    evidence_cards = extract_evidence_cards(
-        task_input,
-        plan,
-        read_windows,
-        llm_client=llm_client,
     )
     harness_trace.append(
         build_step_trace(
@@ -70,23 +67,6 @@ def run_research_task(task_input: ResearchTaskInput) -> tuple[list[ResearchProgr
             },
         )
     )
-    ledger = build_state_ledger(task_input, plan, search_hits, read_windows, evidence_cards)
-    local_result = run_local_verifier(
-        task_input,
-        plan,
-        ledger,
-        search_hits,
-        read_windows,
-        evidence_cards,
-        llm_client=llm_client,
-    )
-    branch_decisions = plan_branch_recovery(
-        search_hits,
-        read_windows,
-        evidence_cards,
-        local_result,
-    )
-    global_result = run_global_verifier(local_result, ledger, branch_decisions)
     harness_trace.append(
         build_step_trace(
             phase="VERIFYING",
@@ -101,6 +81,8 @@ def run_research_task(task_input: ResearchTaskInput) -> tuple[list[ResearchProgr
                 "global_status": global_result.status,
                 "global_decision": global_result.decision,
                 "recovery_actions": len(global_result.recovery_actions),
+                "loop_decision": loop_result.final_decision.decision,
+                "loop_rounds": len(loop_result.rounds),
             },
             warnings=list(local_result.warnings) + list(ledger.unresolved_questions),
         )
@@ -120,6 +102,8 @@ def run_research_task(task_input: ResearchTaskInput) -> tuple[list[ResearchProgr
                 "ledger_rows": len(ledger.rows),
                 "local_status": local_result.status,
                 "global_status": global_result.status,
+                "loop_rounds": len(loop_result.rounds),
+                "loop_decision": loop_result.final_decision.decision,
             },
         )
         for phase, progress_percent, message in PHASE_SEQUENCE
@@ -177,6 +161,11 @@ def run_research_task(task_input: ResearchTaskInput) -> tuple[list[ResearchProgr
             "local_verifier": local_result.model_dump(mode="json"),
             "global_verifier": global_result.model_dump(mode="json"),
             "stop_contract": plan.stop_contract,
+            "loop_rounds": [
+                round_summary.model_dump(mode="json")
+                for round_summary in loop_result.rounds
+            ],
+            "loop_decision": loop_result.final_decision.model_dump(mode="json"),
             "harness_trace": [
                 trace.model_dump(mode="json")
                 for trace in harness_trace
@@ -184,8 +173,8 @@ def run_research_task(task_input: ResearchTaskInput) -> tuple[list[ResearchProgr
             "harness_summary": harness.summarize_trace(harness_trace),
         },
         trace_summary=(
-            "research harness executed: plan -> search adapters -> bounded read windows "
-            "-> evidence cards -> table-as-state ledger -> branch recovery "
+            "research harness executed: plan -> bounded loop runtime -> search adapters "
+            "-> read adapters -> evidence cards -> table-as-state ledger -> branch recovery "
             "-> dual verifier -> report writer"
         ),
         citations=[

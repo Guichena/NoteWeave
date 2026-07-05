@@ -55,6 +55,8 @@ def build_research_plan(task_input: ResearchTaskInput) -> ResearchPlan:
         "global_search_limit": 8,
         "tool_response_retention_budget": 5,
         "branch_budget": 1,
+        "max_loop_rounds": 2,
+        "min_evidence_cards": 1,
         "search_angles": [
             "direct",
             "source_scoped",

@@ -15,13 +15,13 @@
 7. `SearchAdapter` 已完成第一阶段落地：无外部 key 时只走工作台资料，有外部 key 时叠加外部搜索并做预算控制、结果归一化和去重。
 8. `ReadAdapter` 已完成第一阶段落地：workspace hit 打开资料窗口，external url hit 在未启用网页抓取时生成可解释 fallback。
 9. `LlmClient / JSON Repair / LLM Extract / LLM Verify` 已完成第一阶段落地：无模型配置时保持规则 fallback，有模型配置时尝试 OpenAI-compatible JSON 契约。
+10. `LoopRuntime / Stop Contract` 已完成第一阶段落地：默认最多 2 轮，冲突证据触发反证复核，预算耗尽强制 guardrails 收口。
 
 还没有完成的是：
 
-1. 受控多轮 Loop Runtime 与 Stop Contract。
-2. 可恢复的研究过程快照。
-3. 最终研究报告回写为工作台资料。
-4. 正式 worker 启动脚本与 Kafka consumer 部署入口。
+1. 可恢复的研究过程快照。
+2. 最终研究报告回写为工作台资料。
+3. 正式 worker 启动脚本与 Kafka consumer 部署入口。
 
 ## 2. 参考项目映射
 
@@ -107,6 +107,7 @@ NoteWeave 落地口径：
   -> 每轮决定 SEARCH_MORE / READ_MORE / VERIFY / WRITE
   -> StopContract 控制最大轮次、最大搜索数、最小证据数
   -> TDD 覆盖预算耗尽、冲突分支、强制收口
+  -> 状态：已完成第一阶段实现
 
 5B.6 过程快照与报告回写
   -> Java 增加 report save-as-source 接口实现
@@ -262,12 +263,26 @@ CompositeSearchAdapter.search(...)
 
 ## 8. 5B.5 Loop Runtime
 
+状态：已完成第一阶段实现。
+
 ### 8.1 新增文件
 
 1. `workers/research-worker/app/loop_runtime.py`
 2. `workers/research-worker/tests/test_loop_runtime.py`
 
-### 8.2 TDD
+### 8.2 已落地行为
+
+1. 新增 `ResearchLoopDecision` 与 `ResearchLoopRoundSummary`。
+2. `StopContract` 增加 `max_loop_rounds=2` 与 `min_evidence_cards=1`。
+3. `run_research_loop()` 统一执行 `Search -> Read -> Extract -> Verify -> Branch -> Global Verify`。
+4. 第一轮无搜索命中时输出 `EXPAND_SOURCE_SCOPE`，不继续空转。
+5. 有搜索命中但无 evidence card 时输出 `READ_MORE` 或 `EXTRACT_AGAIN`。
+6. 冲突证据在预算内触发 `COUNTERFACTUAL_RECHECK`。
+7. 达到最大轮数仍未满足条件时输出 `WRITE_WITH_GUARDRAILS`。
+8. runner 已从固定单轮改为调用 `run_research_loop()`。
+9. result payload 新增 `loop_rounds` 与 `loop_decision`。
+
+### 8.3 TDD
 
 1. 默认最大 2 轮。
 2. 第一轮无证据时触发 `SEARCH_MORE` 或 `EXPAND_SOURCE_SCOPE`。
@@ -304,11 +319,11 @@ CompositeSearchAdapter.search(...)
 
 ## 11. 当前下一步
 
-立即执行 `5B.5 Loop Runtime 与 Stop Contract`。
+立即执行 `5B.6 过程快照与报告回写`。
 
-下一步重点是把当前固定单轮链路升级为受控多轮：
+下一步重点是把当前内存态运行结果沉淀为可恢复资产：
 
-1. 默认最多 2 轮。
-2. 第一轮无证据时触发搜索或范围扩展恢复。
-3. 冲突证据触发反证复核。
-4. 达到预算时必须带 guardrails 收口，不能无限循环。
+1. Worker result 输出 `research_checkpoint_candidate`。
+2. Worker result 输出 `report_source_candidate`。
+3. Java 侧增加保存研究报告为工作台资料的接口。
+4. 回写后的资料保留 `generated_by=research_agent` 与 citation 信息。

@@ -69,6 +69,24 @@ class ResearchHarnessDecision(BaseModel):
     next_phase: str = ""
 
 
+class ResearchLoopDecision(BaseModel):
+    decision: str
+    reason: str
+    round_no: int
+    should_continue: bool = False
+    recovery_actions: list[str] = Field(default_factory=list)
+
+
+class ResearchLoopRoundSummary(BaseModel):
+    round_no: int
+    search_hit_count: int
+    read_window_count: int
+    evidence_card_count: int
+    branch_decision: str
+    global_decision: str
+    loop_decision: ResearchLoopDecision
+
+
 class ResearchSearchHit(BaseModel):
     hit_id: str
     source_id: str
