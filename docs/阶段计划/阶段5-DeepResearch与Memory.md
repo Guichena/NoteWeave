@@ -54,6 +54,8 @@ memory_signal
 6. `POST /internal/worker/tasks/{taskId}/complete`
 7. `POST /internal/worker/tasks/{taskId}/fail`
 
+这里的 Java 侧当前仍然是 Research / Artifact 的任务编排、输入装配、状态落库和 worker 回调骨架，不是完整 Research 执行引擎。真正的研究内部循环先放在 Python Research Worker 中推进。
+
 ### 2.3 Research Worker 当前内部设计
 
 当前 Research Worker 采用的是轻量研究闭环，不是空壳：
@@ -61,7 +63,11 @@ memory_signal
 ```text
 planner
   -> query bundle
+  -> workspace search hits
+  -> bounded read windows
+  -> evidence cards
   -> table-as-state ledger
+  -> branch recovery
   -> local verifier
   -> global verifier
   -> report writer
@@ -69,11 +75,15 @@ planner
 
 当前已经具备这些工程语义：
 
-1. 先编译研究计划和查询集合。
-2. 用 `Table-as-State` 保存来源、阅读目标、证据摘录、支持度和验证注记。
-3. 用 `Local Verifier` 校验问题、来源数量和 evidence policy。
-4. 用 `Global Verifier` 决定是直接写报告，还是带 guardrails 写报告。
-5. 最终报告输出包含状态账本和验证结果。
+1. 先编译研究计划、查询集合和 Stop Contract。
+2. 用 `workspace search hits` 表示当前工作台资料范围内的检索命中。
+3. 用 `bounded read windows` 控制工具结果保留预算，避免无限塞上下文。
+4. 用 `evidence cards` 把读取窗口转换成可验证证据单元。
+5. 用 `Table-as-State` 保存来源、阅读目标、证据卡、支持度、冲突度和验证注记。
+6. 用 `branch recovery` 在无命中、无窗口、无证据或冲突证据时生成受控恢复计划。
+7. 用 `Local Verifier` 校验问题、query bundle、search hit、read window、evidence card、ledger 和 evidence policy。
+8. 用 `Global Verifier` 决定是直接写报告，还是带 guardrails 写报告。
+9. 最终报告输出包含状态账本、证据卡、分支决策和验证结果。
 
 ## 3. 当前关键文件
 
@@ -87,10 +97,14 @@ planner
 
 1. [workers/research-worker/app/models.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/models.py)
 2. [workers/research-worker/app/planner.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/planner.py)
-3. [workers/research-worker/app/state.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/state.py)
-4. [workers/research-worker/app/verifier.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/verifier.py)
-5. [workers/research-worker/app/reporter.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/reporter.py)
-6. [workers/research-worker/app/runner.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/runner.py)
+3. [workers/research-worker/app/search.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/search.py)
+4. [workers/research-worker/app/reader.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/reader.py)
+5. [workers/research-worker/app/extractor.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/extractor.py)
+6. [workers/research-worker/app/branch.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/branch.py)
+7. [workers/research-worker/app/state.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/state.py)
+8. [workers/research-worker/app/verifier.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/verifier.py)
+9. [workers/research-worker/app/reporter.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/reporter.py)
+10. [workers/research-worker/app/runner.py](/D:/java-projects/NoteWeave-v2/workers/research-worker/app/runner.py)
 
 ## 4. TDD 要求
 
@@ -111,17 +125,17 @@ Python：
 1. Memory 信号、晋升、控制包编译可用。
 2. Chat Control Pack 已接入 QA / Note / Wiki。
 3. Research Run 能创建任务、暴露 worker 输入、落最终结果。
-4. Research Worker 能输出 `state_ledger`、`local_verifier`、`global_verifier`。
+4. Research Worker 能输出 `search_hits`、`read_windows`、`evidence_cards`、`branch_decisions`、`state_ledger`、`local_verifier`、`global_verifier`。
 5. Research 失败回调能同步 `research_run` 与 `task` 状态，并写入失败 trace。
 
 ## 5. 下一步施工重点
 
 下一轮建议按这个顺序继续：
 
-1. 把 Research 的 `query_set` 接到真实工作台召回或搜索能力。
-2. 把 `Table-as-State` 从内存结构升级为研究过程快照与 trace。
+1. 把 Research 的 `workspace search hits` 从当前工作台 source scope adapter 升级为真实召回或搜索 adapter。
+2. 把 `Table-as-State` 从 worker payload 升级为研究过程快照与 trace。
 3. 把最终研究报告变成可选回写资料。
-4. 再决定是否给 Research 引入更强的 loop harness。
+4. 把 Research Control Pack 接入真实 prompt / tool 参数注入点。
 
 Memory 这边下一轮建议：
 
@@ -135,5 +149,5 @@ Memory 这边下一轮建议：
 
 1. Memory 已经进入聊天控制层。
 2. Research 已经具备任务、回调、结果落库闭环。
-3. Python Research Worker 已经具备可讲的研究内部结构。
+3. Python Research Worker 已经具备 Search / Read / Extract / Verify / Branch / Write 的轻量研究内部结构。
 4. 新增能力没有打坏 QA / Note / Wiki / Artifact 主链路。

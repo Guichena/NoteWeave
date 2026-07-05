@@ -3,7 +3,11 @@ from __future__ import annotations
 from app.models import (
     GlobalVerifierResult,
     LocalVerifierResult,
+    ResearchBranchDecision,
+    ResearchEvidenceCard,
     ResearchPlan,
+    ResearchReadWindow,
+    ResearchSearchHit,
     ResearchStateLedger,
     ResearchTaskInput,
 )
@@ -13,6 +17,10 @@ def write_research_report(
     task_input: ResearchTaskInput,
     plan: ResearchPlan,
     ledger: ResearchStateLedger,
+    search_hits: list[ResearchSearchHit],
+    read_windows: list[ResearchReadWindow],
+    evidence_cards: list[ResearchEvidenceCard],
+    branch_decisions: list[ResearchBranchDecision],
     local_result: LocalVerifierResult,
     global_result: GlobalVerifierResult,
 ) -> str:
@@ -35,11 +43,15 @@ def write_research_report(
         "",
         "## Key Findings",
         (
-            "- The harness completed planning, state-ledger assembly, local verification, "
-            "and global verification in a bounded loop."
+            "- The harness completed planning, workspace search, bounded reading, "
+            "evidence extraction, local verification, and global verification."
         ),
         (
             f"- Current workspace source scope: {', '.join(source_titles) if source_titles else 'No explicit source attached'}"
+        ),
+        (
+            f"- Runtime objects: {len(search_hits)} search hits, "
+            f"{len(read_windows)} read windows, {len(evidence_cards)} evidence cards."
         ),
         "",
         "## Evidence Ledger",
@@ -50,8 +62,10 @@ def write_research_report(
             [
                 f"- {row.source_title}",
                 f"  focus: {row.read_focus}",
+                f"  evidence: {row.evidence_id}",
+                f"  claim: {row.claim_text}",
                 f"  excerpt: {row.evidence_excerpt}",
-                f"  support: {row.support_level}",
+                f"  support: {row.support_level} ({row.support_score:.2f})",
             ]
         )
 
@@ -67,6 +81,11 @@ def write_research_report(
             f"- Evidence policy: {evidence_policy}",
         ]
     )
+
+    for branch_decision in branch_decisions:
+        lines.append(
+            f"- Branch decision: {branch_decision.decision} / {branch_decision.branch_reason}"
+        )
 
     for question in ledger.unresolved_questions:
         lines.append(f"- Unresolved: {question}")

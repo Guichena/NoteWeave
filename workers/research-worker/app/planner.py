@@ -22,7 +22,11 @@ def build_research_plan(task_input: ResearchTaskInput) -> ResearchPlan:
         "source_title",
         "search_query",
         "read_focus",
+        "evidence_id",
+        "claim_text",
         "evidence_excerpt",
+        "relation_type",
+        "support_score",
         "support_level",
         "verifier_note",
     ]
@@ -45,6 +49,9 @@ def build_research_plan(task_input: ResearchTaskInput) -> ResearchPlan:
         "must_respect_evidence_policy": True,
         "requires_local_verifier": True,
         "requires_global_verifier": True,
+        "global_search_limit": 8,
+        "tool_response_retention_budget": 5,
+        "branch_budget": 1,
     }
 
     return ResearchPlan(
