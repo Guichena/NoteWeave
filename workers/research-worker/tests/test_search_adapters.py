@@ -38,7 +38,7 @@ def test_search_transport_should_not_retry_non_retryable_401(monkeypatch, transp
             request.full_url, 401, "unauthorized", {}, io.BytesIO(b"unauthorized")
         )
 
-    monkeypatch.setattr("app.search_adapters.urllib.request.urlopen", reject)
+    monkeypatch.setattr("app.search_adapters.credential_safe_urlopen", reject)
 
     assert transport.search("query", 2) == []
     assert attempts == 1

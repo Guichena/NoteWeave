@@ -4,6 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
@@ -17,24 +20,33 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
+@AutoConfigureMockMvc
 @ActiveProfiles("test")
 class ResearchAgentIncrementalFinalizationServiceTest {
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private ResearchAgentIncrementalFinalizationService finalization;
+    @Autowired private MockMvc mockMvc;
     @SpyBean private ResearchAgentIncrementalFinalizationFaultInjector finalizationFaults;
     private String runId;
     private String parentTaskId;
+    private String workspaceId;
 
     @BeforeEach
     void setUp() {
-        String workspaceId = Ids.newId(); runId = Ids.newId(); parentTaskId = Ids.newId(); String rowId = Ids.newId();
+        workspaceId = Ids.newId(); runId = Ids.newId(); parentTaskId = Ids.newId(); String rowId = Ids.newId();
         jdbcTemplate.update("insert into workspace(id, owner_id, name, status) values (?, 'local-user', 'finalization-test', 'ACTIVE')", workspaceId);
         jdbcTemplate.update("insert into task(id, workspace_id, task_type, task_status, target_type, target_id) values (?, ?, 'RESEARCH_RUN', 'RUNNING', 'RESEARCH_RUN', ?)", parentTaskId, workspaceId, runId);
         jdbcTemplate.update("insert into research_run(id, workspace_id, task_id, question, profile_key, source_scope_json, status, agent_execution_mode) values (?, ?, ?, 'What is verified?', 'DEFAULT', '[]', 'RUNNING', 'INCREMENTAL_V1')", runId, workspaceId, parentTaskId);
         jdbcTemplate.update("insert into research_row(id, research_run_id, row_key, row_status) values (?, ?, 'entity-1', 'CANDIDATE_READY')", rowId, runId);
-        jdbcTemplate.update("insert into research_cell(id, research_run_id, research_row_id, cell_key, column_key, candidate_value, cell_status, evidence_refs_json, repair_count) values (?, ?, ?, 'entity-1:claim', 'claim', 'Verified answer', 'VERIFIED', '[\"evidence-1\"]', 0)", Ids.newId(), runId, rowId);
+        String cellId = Ids.newId();
+        String sourceEvidenceId = Ids.newId();
+        jdbcTemplate.update("insert into research_cell(id, research_run_id, research_row_id, cell_key, column_key, candidate_value, cell_status, evidence_refs_json, repair_count) values (?, ?, ?, 'entity-1:claim', 'claim', 'Verified answer', 'VERIFIED', '[\"evidence-1\"]', 0)", cellId, runId, rowId);
+        jdbcTemplate.update("insert into source_evidence(id, research_run_id, evidence_key, source_id, source_title, quote_text, claim_text) values (?, ?, 'evidence-1', 'external:incremental-source', 'Incremental source', 'Verified citation excerpt', 'Verified claim')", sourceEvidenceId, runId);
+        jdbcTemplate.update("insert into research_cell_evidence(id, research_run_id, research_cell_id, source_evidence_id, evidence_key) values (?, ?, ?, ?, 'evidence-1')", Ids.newId(), runId, cellId, sourceEvidenceId);
     }
 
     @Test
@@ -49,6 +61,34 @@ class ResearchAgentIncrementalFinalizationServiceTest {
         assertThat(jdbcTemplate.queryForObject("select status from research_run where id = ?", String.class, runId)).isEqualTo("COMPLETED");
         assertThat(jdbcTemplate.queryForObject("select task_status from task where id = ?", String.class, parentTaskId)).isEqualTo("COMPLETED");
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_trace where research_run_id = ? and trace_type = 'INCREMENTAL_FINALIZED'", Integer.class, runId)).isEqualTo(1);
+    }
+
+    @Test
+    void finalizedIncrementalResearchExposesCitationGatedEvidenceManifest() throws Exception {
+        finalization.finalizeIncrementalRun(runId);
+
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from research_evidence_manifest_item item
+                join research_evidence_manifest manifest on manifest.id = item.manifest_id
+                where manifest.research_run_id = ? and item.evidence_id = 'evidence-1'
+                  and item.source_id = 'external:incremental-source'
+                  and item.excerpt = 'Verified citation excerpt'
+                """, Integer.class, runId)).isEqualTo(1);
+    }
+
+    @Test
+    void idempotentIncrementalFinalizerBackfillsAMissingEvidenceManifest() throws Exception {
+        finalization.finalizeIncrementalRun(runId);
+        jdbcTemplate.update("delete from research_evidence_manifest_item where manifest_id in (select id from research_evidence_manifest where research_run_id = ?)", runId);
+        jdbcTemplate.update("delete from research_evidence_manifest where research_run_id = ?", runId);
+
+        assertThat(finalization.finalizeIncrementalRun(runId).idempotentReplay()).isTrue();
+
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from research_evidence_manifest_item item
+                join research_evidence_manifest manifest on manifest.id = item.manifest_id
+                where manifest.research_run_id = ? and item.evidence_id = 'evidence-1'
+                """, Integer.class, runId)).isEqualTo(1);
     }
 
     @Test

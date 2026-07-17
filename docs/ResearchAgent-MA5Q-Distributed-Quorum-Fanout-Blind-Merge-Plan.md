@@ -162,9 +162,9 @@ Backend 盲验输入不包含 task id、worker id、execution id 或 slot 的可
 
 本轮可复核证据：
 
-- Backend MySQL 8.4 扩大 Research 聚合回归：`194 tests, 0 failures, 0 errors, 1 skipped`；唯一 skip 为需显式 `NOTEWEAVE_REDIS_INTEGRATION=true` 的 Redis integration；
+- Backend MySQL 8.4 Research 聚合回归：`202 tests, 0 failures, 0 errors, 1 skipped`；唯一 skip 为需显式 `NOTEWEAVE_REDIS_INTEGRATION=true` 的 Redis integration；
 - MySQL LockMatrix：MySQL `8.4.9`、READ-COMMITTED、`13/13` cases，`test_only_harness_removed=true`；
-- Research Worker 全量：`359 passed`；
+- Research Worker 全量：`361 passed`；
 - Java task snapshot/completion canonical object key 已统一为 unsigned UTF-8 顺序，与 Python `sort_keys=True` 的 Unicode code-point 顺序对齐；包含非 BMP key 的跨运行时回归向量已通过；
 - deterministic report 使用同一 unsigned UTF-8 cell 顺序，并转义 Markdown table 控制字符；Redis permit 对容量耗尽记录 `result=limited`；
 - `git diff --check`：无 whitespace error；

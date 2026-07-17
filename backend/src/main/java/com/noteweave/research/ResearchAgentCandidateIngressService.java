@@ -118,13 +118,16 @@ public class ResearchAgentCandidateIngressService {
         Integer required = jdbcTemplate.queryForObject("""
                 select count(*) from research_agent_task rat
                 join research_run rr on rr.id = rat.research_run_id
-                where rat.id = ? and rat.role = 'DEEP_CELL'
-                  and rat.snapshot_schema_version = 'research-agent-task-snapshot.v1'
+                where rat.id = ?
+                  and ((rat.role = 'DEEP_CELL' and rat.snapshot_schema_version in (
+                          'research-agent-task-snapshot.v1', 'research-agent-task-snapshot.v2'))
+                       or (rat.role = 'COUNTERFACTUAL'
+                           and rat.snapshot_schema_version = 'research-agent-task-snapshot.v2'))
                   and rr.agent_execution_mode = 'INCREMENTAL_V1'
                 """, Integer.class, taskId);
         if (required != null && required == 1) {
             throw new BusinessException("RESEARCH_AGENT_ATOMIC_COMPLETION_REQUIRED",
-                    "Snapshot-ready DEEP_CELL tasks must use the atomic completion endpoint");
+                    "Snapshot-ready research agent tasks must use the atomic completion endpoint");
         }
     }
     private Object[] parameters(String runId, List<String> keys) { java.util.List<Object> values = new java.util.ArrayList<>(); values.add(runId); values.addAll(keys); return values.toArray(); }

@@ -9,6 +9,7 @@ import urllib.request
 from typing import Callable, Protocol
 
 from app.config import load_settings
+from app.http_security import credential_safe_urlopen
 
 
 logger = logging.getLogger(__name__)
@@ -128,7 +129,7 @@ class OpenAICompatibleLlmClient:
                 self.cancellation_checker()
             attempts = attempt
             try:
-                with urllib.request.urlopen(request, timeout=purpose_timeout_seconds) as response:
+                with credential_safe_urlopen(request, timeout=purpose_timeout_seconds) as response:
                     data = json.loads(response.read().decode("utf-8"))
                 termination_reason = "SUCCESS"
                 break

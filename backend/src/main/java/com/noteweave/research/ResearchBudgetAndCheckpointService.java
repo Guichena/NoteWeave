@@ -17,7 +17,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ResearchBudgetAndCheckpointService {
 
-    private static final String ATOMIC_SNAPSHOT_SCHEMA = "research-agent-task-snapshot.v1";
+    private static final String ATOMIC_SNAPSHOT_SCHEMA_V1 = "research-agent-task-snapshot.v1";
+    private static final String ATOMIC_SNAPSHOT_SCHEMA_V2 = "research-agent-task-snapshot.v2";
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -256,11 +257,14 @@ public class ResearchBudgetAndCheckpointService {
         if (!discovered.runId().equals(locked.runId()) || !discovered.taskId().equals(locked.taskId())) {
             throw new IllegalStateException("Budget reservation identity changed while acquiring locks");
         }
-        if ("INCREMENTAL_V1".equals(executionMode)
-                && "DEEP_CELL".equals(task.role())
-                && ATOMIC_SNAPSHOT_SCHEMA.equals(task.snapshotSchemaVersion())) {
+        boolean atomicDeepCell = "DEEP_CELL".equals(task.role())
+                && (ATOMIC_SNAPSHOT_SCHEMA_V1.equals(task.snapshotSchemaVersion())
+                || ATOMIC_SNAPSHOT_SCHEMA_V2.equals(task.snapshotSchemaVersion()));
+        boolean atomicCounterfactual = "COUNTERFACTUAL".equals(task.role())
+                && ATOMIC_SNAPSHOT_SCHEMA_V2.equals(task.snapshotSchemaVersion());
+        if ("INCREMENTAL_V1".equals(executionMode) && (atomicDeepCell || atomicCounterfactual)) {
             throw new BusinessException("RESEARCH_AGENT_ATOMIC_COMPLETION_REQUIRED",
-                    "Snapshot-ready DEEP_CELL budget must be finalized by atomic completion");
+                    "Snapshot-ready research task budget must be finalized by atomic completion");
         }
         return locked;
     }

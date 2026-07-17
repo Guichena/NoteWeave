@@ -119,19 +119,19 @@ def test_execution_result_should_reject_negative_usage() -> None:
         ExecutionUsage(search_calls=-1)
 
 
-def test_ma0_execution_mode_should_default_to_legacy_sequential_runtime() -> None:
-    assert Settings().research_agent_execution_mode == "SEQUENTIAL_V1"
+def test_ma0_execution_mode_should_default_to_incremental_runtime() -> None:
+    assert Settings().research_agent_execution_mode == "INCREMENTAL_V1"
     assert Settings().research_agent_max_concurrency == 1
     assert Settings().research_agent_bundle_max_cells == 3
 
 
 def test_ma0_execution_mode_should_use_research_worker_scoped_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("NOTEWEAVE_RESEARCH_AGENT_EXECUTION_MODE", "SEQUENTIAL_V2")
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_AGENT_EXECUTION_MODE", "INCREMENTAL_V1")
     monkeypatch.setenv("NOTEWEAVE_RESEARCH_AGENT_MAX_CONCURRENCY", "2")
     monkeypatch.setenv("NOTEWEAVE_RESEARCH_AGENT_BUNDLE_MAX_CELLS", "2")
 
     settings = Settings()
 
-    assert settings.research_agent_execution_mode == "SEQUENTIAL_V2"
+    assert settings.research_agent_execution_mode == "INCREMENTAL_V1"
     assert settings.research_agent_max_concurrency == 2
     assert settings.research_agent_bundle_max_cells == 2

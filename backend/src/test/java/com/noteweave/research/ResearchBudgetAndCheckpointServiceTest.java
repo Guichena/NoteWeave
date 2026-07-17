@@ -117,6 +117,28 @@ class ResearchBudgetAndCheckpointServiceTest {
         assertThat(reservationState(reservationId)).isEqualTo(before);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"DEEP_CELL", "COUNTERFACTUAL"})
+    void shouldRejectDirectSettlementForEveryV2AtomicRole(String role) {
+        String reservationId = atomicReservation("v2-" + role.toLowerCase());
+        String taskId = jdbcTemplate.queryForObject(
+                "select research_agent_task_id from research_budget_reservation where id = ?",
+                String.class, reservationId);
+        jdbcTemplate.update("""
+                update research_agent_task
+                set role = ?, snapshot_schema_version = 'research-agent-task-snapshot.v2',
+                    logical_task_key = 'atomic:v2:budget', candidate_quorum = 1, candidate_slot = 1
+                where id = ?
+                """, role, taskId);
+        Map<String, Object> before = reservationState(reservationId);
+
+        assertAtomicRequired(() -> service.settle(
+                new ResearchBudgetAndCheckpointService.SettleCommand(
+                        reservationId, Map.of("llm_calls", 0L))));
+
+        assertThat(reservationState(reservationId)).isEqualTo(before);
+    }
+
     private ResearchBudgetAndCheckpointService.CheckpointCommand checkpoint(long taskHighWater, long candidateHighWater, long mergeHighWater) {
         return new ResearchBudgetAndCheckpointService.CheckpointCommand(
                 runId, 1, 1, 0, 1, "ledger-hash", taskHighWater, candidateHighWater, mergeHighWater,

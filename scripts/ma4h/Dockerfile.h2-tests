@@ -2,6 +2,8 @@ FROM noteweave-ma4g-lock-matrix:local
 
 WORKDIR /workspace
 
+RUN rm -rf /workspace/src
+
 COPY backend/pom.xml ./pom.xml
 COPY backend/maven-settings.xml ./maven-settings.xml
 COPY backend/src ./src

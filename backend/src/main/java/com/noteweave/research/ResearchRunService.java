@@ -40,6 +40,7 @@ public class ResearchRunService {
     private final LocalObjectStorage storage;
     private final SourceParseService sourceParseService;
     private final WikiIngestService wikiIngestService;
+    private final ResearchAgentRunBootstrapService agentRunBootstrapService;
 
     public ResearchRunService(
             JdbcTemplate jdbcTemplate,
@@ -49,7 +50,8 @@ public class ResearchRunService {
             MemoryCompilerService memoryCompilerService,
             LocalObjectStorage storage,
             SourceParseService sourceParseService,
-            WikiIngestService wikiIngestService
+            WikiIngestService wikiIngestService,
+            ResearchAgentRunBootstrapService agentRunBootstrapService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -59,13 +61,32 @@ public class ResearchRunService {
         this.storage = storage;
         this.sourceParseService = sourceParseService;
         this.wikiIngestService = wikiIngestService;
+        this.agentRunBootstrapService = agentRunBootstrapService;
     }
 
     @Transactional
     public ResearchRunResponse createRun(String workspaceId, CreateResearchRunRequest request) {
         requireWorkspace(workspaceId);
-        String researchRunId = Ids.newId();
         String profileKey = normalizeToken(request.profile());
+        List<WorkerSourceScopeItemResponse> readySources = loadReadySourceScope(workspaceId);
+        List<String> requestedSourceIds = request.sourceScopeSourceIds() == null
+                ? List.of()
+                : request.sourceScopeSourceIds().stream().distinct().toList();
+        List<String> sourceScopeIds = readySources.stream()
+                .map(WorkerSourceScopeItemResponse::sourceId)
+                .filter(sourceId -> requestedSourceIds.isEmpty() || requestedSourceIds.contains(sourceId))
+                .toList();
+        if (sourceScopeIds.isEmpty()) {
+            throw new BusinessException(
+                    "RESEARCH_AGENT_SOURCE_SCOPE_REQUIRED",
+                    "Research Agent requires at least one ready workspace source");
+        }
+        if (!requestedSourceIds.isEmpty() && sourceScopeIds.size() != requestedSourceIds.size()) {
+            throw new BusinessException(
+                    "RESEARCH_AGENT_SOURCE_SCOPE_INVALID",
+                    "Research Agent source scope contains a missing or unready source");
+        }
+        String researchRunId = Ids.newId();
         String taskId = taskService.createTask(
                 workspaceId,
                 "RESEARCH_RUN",
@@ -75,46 +96,44 @@ public class ResearchRunService {
                 "Deep Research 任务已创建"
         );
         MemoryControlPackResponse controlPack = memoryCompilerService.compileResearchControlPack(workspaceId, profileKey);
-        List<String> sourceScopeIds = loadReadySourceScope(workspaceId).stream()
-                .map(WorkerSourceScopeItemResponse::sourceId)
-                .toList();
         jdbcTemplate.update("""
                 insert into research_run(
                     id, workspace_id, task_id, question, profile_key, context_snapshot_id,
-                    source_scope_json, control_pack_json, status
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, 'QUEUED')
+                    source_scope_json, control_pack_json, status, agent_execution_mode
+                ) values (?, ?, ?, ?, ?, null, ?, ?, 'RUNNING', 'INCREMENTAL_V1')
                 """,
                 researchRunId,
                 workspaceId,
                 taskId,
                 request.question().trim(),
                 profileKey,
-                blankToNull(request.contextSnapshotId()),
                 Json.write(objectMapper, sourceScopeIds),
                 Json.write(objectMapper, controlPack)
         );
-        jdbcTemplate.update("""
-                insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
-                values (?, ?, 'noteweave.research.run', ?, ?, 'READY')
-                """,
-                Ids.newId(),
-                taskId,
+        agentRunBootstrapService.bootstrap(
                 researchRunId,
-                Json.write(objectMapper, Map.of(
-                        "task_id", taskId,
-                        "task_type", "RESEARCH_RUN",
-                        "workspace_id", workspaceId,
-                        "target_type", "RESEARCH_RUN",
-                        "target_id", researchRunId,
-                        "payload_version", "v1",
-                        "trace_id", researchRunId,
-                        "created_at", System.currentTimeMillis()
-                )));
+                request.question().trim(),
+                new ResearchIntentResponse(
+                        request.researchGoal(),
+                        request.deliverableFormat(),
+                        request.constraints(),
+                        request.timeRange(),
+                        request.depth(),
+                        request.researchType()),
+                sourceScopeIds.size());
+        jdbcTemplate.update("""
+                update task
+                set task_status = 'RUNNING', progress_phase = 'AGENT_COORDINATING',
+                    progress_message = 'Research Agent canonical matrix initialized',
+                    updated_at = current_timestamp
+                where id = ?
+                """,
+                taskId);
         insertTrace(researchRunId, "RUN_CREATED", "Research run 已入队", Map.of(
                 "question", request.question().trim(),
                 "profile_key", profileKey
         ));
-        return new ResearchRunResponse(researchRunId, taskId, "QUEUED");
+        return new ResearchRunResponse(researchRunId, taskId, "RUNNING");
     }
 
     public ResearchWorkerInputResponse getWorkerInput(String taskId) {
@@ -251,6 +270,14 @@ public class ResearchRunService {
 
     @Transactional
     public CompletionOutcome completeFromWorker(String taskId, com.noteweave.worker.WorkerCompleteRequest request) {
+        String executionMode = jdbcTemplate.query("""
+                select agent_execution_mode from research_run where task_id = ?
+                """, rs -> rs.next() ? rs.getString(1) : null, taskId);
+        if ("INCREMENTAL_V1".equals(executionMode)) {
+            throw new BusinessException(
+                    "RESEARCH_AGENT_ATOMIC_COMPLETION_REQUIRED",
+                    "Incremental Research Agent runs must complete through the atomic completion boundary");
+        }
         RunRow row = findByTaskId(taskId);
         String reportMarkdown = extractReport(request.resultPayload());
         jdbcTemplate.update("""

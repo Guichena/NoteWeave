@@ -387,7 +387,7 @@ def test_llm_gateway_should_retry_and_record_tokens_cost_and_termination(monkeyp
             raise urllib.error.URLError("temporary")
         return Response()
 
-    monkeypatch.setattr("app.llm_client.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("app.llm_client.credential_safe_urlopen", fake_urlopen)
     monkeypatch.setattr("app.llm_client.time.sleep", lambda *_: None)
     client = OpenAICompatibleLlmClient(
         "key",
@@ -423,7 +423,7 @@ def test_llm_gateway_should_apply_per_purpose_model_and_generation_limits(monkey
         captured.update(json.loads(request.data.decode("utf-8")))
         return Response()
 
-    monkeypatch.setattr("app.llm_client.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("app.llm_client.credential_safe_urlopen", fake_urlopen)
     client = OpenAICompatibleLlmClient(
         "key",
         "default-model",
@@ -450,7 +450,7 @@ def test_llm_gateway_should_not_retry_non_retryable_http_4xx(monkeypatch) -> Non
         calls["count"] += 1
         raise urllib.error.HTTPError(request.full_url, 401, "unauthorized", {}, None)
 
-    monkeypatch.setattr("app.llm_client.urllib.request.urlopen", reject)
+    monkeypatch.setattr("app.llm_client.credential_safe_urlopen", reject)
     client = OpenAICompatibleLlmClient("key", "model", max_attempts=4)
 
     assert client.complete_json("research.extract", {"x": 1}) == ""
@@ -465,7 +465,7 @@ def test_llm_gateway_should_preserve_429_and_5xx_counts_across_retries(monkeypat
         code = next(statuses)
         raise urllib.error.HTTPError(request.full_url, code, "provider failure", {}, None)
 
-    monkeypatch.setattr("app.llm_client.urllib.request.urlopen", reject)
+    monkeypatch.setattr("app.llm_client.credential_safe_urlopen", reject)
     monkeypatch.setattr("app.llm_client.time.sleep", lambda *_: None)
     client = OpenAICompatibleLlmClient("key", "model", max_attempts=2)
 
@@ -494,7 +494,7 @@ def test_llm_gateway_should_enforce_per_task_call_budget(monkeypatch) -> None:
         calls["count"] += 1
         return Response()
 
-    monkeypatch.setattr("app.llm_client.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("app.llm_client.credential_safe_urlopen", fake_urlopen)
     client = OpenAICompatibleLlmClient("key", "model", max_total_calls=1)
 
     assert client.complete_json("research.extract", {"x": 1}) == "{}"

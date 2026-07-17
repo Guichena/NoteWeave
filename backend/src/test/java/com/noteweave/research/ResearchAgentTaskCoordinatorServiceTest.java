@@ -83,6 +83,22 @@ class ResearchAgentTaskCoordinatorServiceTest {
     }
 
     @Test
+    void shouldBindCreatedTasksToTheCanonicalCellBranchId() {
+        String branchId = Ids.newId();
+        jdbcTemplate.update("""
+                insert into research_branch(id, research_run_id, branch_key, branch_reason, branch_status)
+                values (?, ?, 'main', 'test', 'ACTIVE')
+                """, branchId, runId);
+        jdbcTemplate.update("update research_cell set branch_id = ? where research_run_id = ?", branchId, runId);
+
+        coordinator.planAndEnqueue(runId);
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select distinct branch_id from research_agent_task where research_run_id = ?",
+                String.class, runId)).isEqualTo(branchId);
+    }
+
+    @Test
     void shouldFanOutAHighRiskCellIntoTwoIndependentDurableCandidateSlots() {
         jdbcTemplate.update("update research_cell set high_risk = true where research_run_id = ? and cell_key = 'entity-1:method'", runId);
 

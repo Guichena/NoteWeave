@@ -11,6 +11,7 @@ import urllib.parse
 import urllib.request
 from typing import Protocol
 
+from app.http_security import credential_safe_urlopen
 from app.models import ResearchPlan, ResearchSearchHit, ResearchTaskInput
 from app.search import run_workspace_search
 from app.source_profile import infer_search_lane, infer_source_domain, infer_source_quality
@@ -107,7 +108,7 @@ class HttpJsonSearchTransport:
                 method="POST",
             )
             try:
-                with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+                with credential_safe_urlopen(request, timeout=self.timeout_seconds) as response:
                     data = json.loads(response.read().decode("utf-8"))
                 return _extract_raw_results(data, limit)
             except urllib.error.HTTPError as error:
@@ -189,7 +190,7 @@ class HttpGetSearchTransport:
                 method="GET",
             )
             try:
-                with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+                with credential_safe_urlopen(request, timeout=self.timeout_seconds) as response:
                     data = json.loads(response.read().decode("utf-8"))
                 return _extract_raw_results(data, limit)
             except urllib.error.HTTPError as error:

@@ -451,6 +451,29 @@ def test_agent_consumer_should_dead_letter_contract_poison_before_claim_then_com
     assert dlq.records[0]["retryable"] is False
 
 
+def test_agent_consumer_should_redact_credentials_from_dead_letter_payload() -> None:
+    from app.agent_kafka_consumer import consume_research_agent_commands
+
+    secret = "super-secret-agent-token"
+    poison = json.dumps({
+        "schema_version": "research-agent-command.v1",
+        "authorization": f"Bearer {secret}",
+        "api_key": secret,
+        "unknown": True,
+    })
+    consumer = _FakeKafkaConsumer([_FakeKafkaMessage(poison)])
+    dlq = _RecordingDlq()
+
+    consume_research_agent_commands(
+        consumer, FakeAgentClient(), lambda *_: None,
+        worker_instance_id="worker-a", dead_letter_sink=dlq,
+    )
+
+    serialized_record = json.dumps(dlq.records[0], sort_keys=True)
+    assert secret not in serialized_record
+    assert "[REDACTED]" in serialized_record
+
+
 def test_agent_consumer_should_not_commit_poison_message_when_dlq_fails() -> None:
     from app.agent_kafka_consumer import consume_research_agent_commands
 

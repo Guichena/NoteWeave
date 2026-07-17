@@ -47,13 +47,17 @@ public class ResearchAgentTaskCoordinatorService {
         if (waveNo < 1) throw new BusinessException("RESEARCH_AGENT_COORDINATOR_WAVE_INVALID", "Wave number must be positive");
         RunScope run = requireIncrementalRunnableRun(runId);
         List<Map<String, Object>> sources = loadTrustedSources(run.workspaceId(), run.sourceScopeJson());
-        if (sources.isEmpty()) throw new BusinessException("RESEARCH_AGENT_COORDINATOR_SOURCE_SCOPE_EMPTY", "Incremental taskization requires ready workspace sources");
+        if (sources.isEmpty()) {
+            throw new BusinessException("RESEARCH_AGENT_COORDINATOR_SOURCE_SCOPE_EMPTY",
+                    "Incremental taskization requires ready workspace sources");
+        }
         List<CellScope> cells = jdbcTemplate.query("""
-                select cell_key, cell_version, plan_revision, entity_set_version, high_risk
+                select cell_key, cell_version, plan_revision, entity_set_version, high_risk, branch_id
                 from research_cell
                 where research_run_id = ? and cell_status not in ('FROZEN', 'VERIFIED') and active_task_id is null
                 order by cell_key
-                """, (rs, rowNum) -> new CellScope(rs.getString(1), rs.getInt(2), rs.getInt(3), rs.getInt(4), rs.getBoolean(5)), runId);
+                """, (rs, rowNum) -> new CellScope(rs.getString(1), rs.getInt(2), rs.getInt(3), rs.getInt(4),
+                        rs.getBoolean(5), rs.getString(6)), runId);
         int created = 0;
         int replayed = 0;
         int enqueued = 0;
@@ -61,7 +65,8 @@ public class ResearchAgentTaskCoordinatorService {
             CellScope first = bundle.get(0);
             String entityId = entityId(first.cellKey());
             if (bundle.stream().anyMatch(cell -> !entityId(cell.cellKey()).equals(entityId)
-                    || cell.planRevision() != first.planRevision() || cell.entitySetVersion() != first.entitySetVersion())) {
+                    || cell.planRevision() != first.planRevision() || cell.entitySetVersion() != first.entitySetVersion()
+                    || !java.util.Objects.equals(cell.branchId(), first.branchId()))) {
                 throw new BusinessException("RESEARCH_AGENT_COORDINATOR_SCOPE_INVALID", "Task bundle mixes entity or plan scope");
             }
             String logicalFingerprint = fingerprint(run.id(), waveNo, entityId, first.planRevision(), first.entitySetVersion(), bundle);
@@ -76,12 +81,14 @@ public class ResearchAgentTaskCoordinatorService {
                 Map<String, Object> snapshotBudget = new LinkedHashMap<>(reservation);
                 ResearchAgentTaskService.TaskSnapshot task = taskService.createTask(new ResearchAgentTaskService.CreateTaskCommand(
                         run.id(), "deep-cell:" + slotFingerprint, "coordinator:" + slotFingerprint, waveNo, role, entityId,
-                        candidateSlot == 1 ? "branch-main" : "branch-quorum-2",
+                        first.branchId() == null ? "branch-main" : first.branchId(),
                         first.planRevision(), first.entitySetVersion(),
                         bundle.stream().map(CellScope::cellKey).toList(), snapshotBudget,
                         bundle.stream().map(cell -> new ResearchAgentTaskService.TargetCellBinding(cell.cellKey(), cell.version())).toList(),
                         new ResearchAgentTaskService.TaskExecutionContext("research-default",
-                                Map.of("source_scope", slotSources, "allow_external_search", false, "allow_external_fetch", false),
+                                Map.of("source_scope", slotSources,
+                                        "allow_external_search", false,
+                                        "allow_external_fetch", false),
                                 Map.of("query", run.question()))
                 ));
                 jdbcTemplate.update("""
@@ -189,11 +196,12 @@ public class ResearchAgentTaskCoordinatorService {
             throw new BusinessException("RESEARCH_AGENT_REPAIR_INVALID", "Counterfactual target cell is required");
         }
         CellScope cell = jdbcTemplate.query("""
-                select cell_key, cell_version, plan_revision, entity_set_version, high_risk
+                select cell_key, cell_version, plan_revision, entity_set_version, high_risk, branch_id
                 from research_cell
                 where research_run_id = ? and cell_key = ? and cell_status not in ('FROZEN', 'VERIFIED') and active_task_id is null
                 for update
-                """, rs -> rs.next() ? new CellScope(rs.getString(1), rs.getInt(2), rs.getInt(3), rs.getInt(4), rs.getBoolean(5)) : null,
+                """, rs -> rs.next() ? new CellScope(rs.getString(1), rs.getInt(2), rs.getInt(3), rs.getInt(4),
+                        rs.getBoolean(5), rs.getString(6)) : null,
                 runId, cellKey);
         if (cell == null) throw new BusinessException("RESEARCH_AGENT_REPAIR_TARGET_INVALID", "Counterfactual target is foreign, frozen, verified, or active");
         return cell;
@@ -312,5 +320,6 @@ public class ResearchAgentTaskCoordinatorService {
         }
     }
     private record RunScope(String id, String workspaceId, String question, String sourceScopeJson, String status, String executionMode) { }
-    private record CellScope(String cellKey, int version, int planRevision, int entitySetVersion, boolean highRisk) { }
+    private record CellScope(String cellKey, int version, int planRevision, int entitySetVersion,
+                             boolean highRisk, String branchId) { }
 }

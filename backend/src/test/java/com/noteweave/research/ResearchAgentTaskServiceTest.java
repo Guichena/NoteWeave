@@ -12,6 +12,8 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -286,28 +288,36 @@ class ResearchAgentTaskServiceTest {
     }
 
     @Test
-    void shouldRejectLeavingIncrementalModeWhileAgentTaskIsActive() {
+    void shouldKeepTheSoleIncrementalModeIdempotentWhileAgentTaskIsActive() {
         taskService.createTask(command("task-key-mode-switch", "idem-mode-switch"));
 
-        assertThatThrownBy(() -> executionModeService.setMode(runId, "SEQUENTIAL_V1"))
-                .isInstanceOf(BusinessException.class)
-                .extracting(error -> ((BusinessException) error).code())
-                .isEqualTo("RESEARCH_AGENT_EXECUTION_MODE_ACTIVE_TASKS");
+        executionModeService.setMode(runId, "INCREMENTAL_V1");
         assertThat(jdbcTemplate.queryForObject("select agent_execution_mode from research_run where id = ?", String.class, runId))
                 .isEqualTo("INCREMENTAL_V1");
     }
 
     @Test
-    void shouldRejectLeavingIncrementalModeAfterTerminalAgentTaskHistoryExists() {
+    void shouldKeepTheSoleIncrementalModeIdempotentAfterTerminalAgentTaskHistoryExists() {
         ResearchAgentTaskService.TaskSnapshot task = taskService.createTask(command("task-key-mode-history", "idem-mode-history"));
         jdbcTemplate.update("update research_agent_task set status = 'SUBMITTED', terminal_at = current_timestamp where id = ?", task.taskId());
 
-        assertThatThrownBy(() -> executionModeService.setMode(runId, "SEQUENTIAL_V1"))
-                .isInstanceOf(BusinessException.class)
-                .extracting(error -> ((BusinessException) error).code())
-                .isEqualTo("RESEARCH_AGENT_EXECUTION_MODE_INCREMENTAL_HISTORY");
+        executionModeService.setMode(runId, "INCREMENTAL_V1");
         assertThat(jdbcTemplate.queryForObject("select agent_execution_mode from research_run where id = ?", String.class, runId))
                 .isEqualTo("INCREMENTAL_V1");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"SEQUENTIAL_V1", "SEQUENTIAL_V2", "LOCAL_PARALLEL"})
+    void shouldRejectEveryLegacyModeAtTheResearchAgentControlBoundary(String legacyMode) {
+        jdbcTemplate.update("update research_run set agent_execution_mode = 'SEQUENTIAL_V1' where id = ?", runId);
+
+        assertThatThrownBy(() -> executionModeService.setMode(runId, legacyMode))
+                .isInstanceOf(BusinessException.class)
+                .extracting(error -> ((BusinessException) error).code())
+                .isEqualTo("RESEARCH_AGENT_EXECUTION_MODE_INVALID");
+        assertThat(jdbcTemplate.queryForObject(
+                "select agent_execution_mode from research_run where id = ?", String.class, runId))
+                .isEqualTo("SEQUENTIAL_V1");
     }
 
     @Test

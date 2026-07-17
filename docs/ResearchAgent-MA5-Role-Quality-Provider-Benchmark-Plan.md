@@ -26,7 +26,7 @@ MA5 要回答的不是“能否启动多个 Worker”，MA4 已经回答了这�
 - Worker 独立的 `NOTEWEAVE_RESEARCH_LLM_*` 配置和 LLM usage ledger；
 - 自动 wave/checkpoint/repair/finalization。
 
-当前剩余缺口只属于外部证明：当前进程的 Research LLM key/base URL/model 均未配置，真实 Provider 退出门尚不可执行。角色画像、分布式双候选 taskization、匿名盲验、benchmark manifest/archive/comparator 和 429/5xx 记账均已落地并通过 deterministic 测试。
+当前仍有两类边界：其一是外部证明，当前进程的 Research LLM key/base URL/model 均未配置，真实 Provider 退出门尚不可执行；其二是外部网页证据尚未纳入 v2 原子 completion 的 URL/snapshot authority contract。因此当前自动主链要求至少一份已解析 workspace source。角色画像、分布式双候选 taskization、匿名盲验、benchmark manifest/archive/comparator 和 429/5xx 记账均已落地并通过 deterministic 测试。
 
 ## 3. 冻结的公开测试 seam
 
@@ -155,7 +155,7 @@ MA6 只做简历项目需要的运行治理：`INCREMENTAL_V1` 唯一授权、�
 - quorum group lifecycle 在单 slot retry/failed 时保留 binding，最后一个 sibling terminal 后释放；
 - Worker v2 snapshot 与合法 COUNTERFACTUAL quorum slot/quorum=1 repair task 对齐；repair accepted merge 会在同一 completion 事务中把对应 OPEN decision 置为 `RESOLVED`。
 
-验证证据：Backend MySQL 8.4 扩大 Research 聚合 `194 tests, 0 failures, 0 errors, 1 skipped`（skip 为环境门控 Redis integration），MySQL LockMatrix `13/13`，Research Worker `359/359`。补充回归覆盖 Java/Python canonical Unicode key 顺序、deterministic report Markdown 转义和 Redis permit `limited` 指标。
+验证证据：Backend MySQL 8.4 Research 聚合 `202 tests, 0 failures, 0 errors, 1 skipped`（skip 为环境门控 Redis integration），MySQL LockMatrix `13/13`，Research Worker `361/361`。补充回归覆盖自动 Run bootstrap、legacy callback fail-closed、DLQ redaction、provider redirect fail-closed、Java/Python canonical Unicode key 顺序、deterministic report Markdown 转义和 Redis permit `limited` 指标。
 
 尚未完成且不得改写为已完成：
 

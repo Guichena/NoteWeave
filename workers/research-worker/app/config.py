@@ -15,15 +15,15 @@ class Settings(BaseSettings):
     kafka_research_agent_group_id: str = "noteweave-research-agent-worker"
     kafka_consume_max_attempts: int = 3
     kafka_consume_raise_on_failure: bool = False
-    # MA0 feature flags: kept sequential until later phases introduce a scheduler.
-    research_agent_execution_mode: str = "SEQUENTIAL_V1"
+    # INCREMENTAL_V1 is the only automatic runtime mode. Historical local
+    # modes remain parseable only for deterministic benchmark replay.
+    research_agent_execution_mode: str = "INCREMENTAL_V1"
     research_agent_max_concurrency: int = 1
     research_agent_bundle_max_cells: int = 3
-    # Distributed Agent transport remains opt-in and allowlisted by the Backend.
-    research_agent_consumer_enabled: bool = False
-    research_agent_deep_cell_executor_enabled: bool = False
+    research_agent_consumer_enabled: bool = True
+    research_agent_deep_cell_executor_enabled: bool = True
     research_agent_fake_provider_enabled: bool = False
-    research_agent_worker_instance_id: str = ""
+    research_agent_worker_instance_id: str = "research-agent-worker-1"
     research_agent_lease_seconds: int = Field(default=60, ge=4, le=3600)
     research_agent_heartbeat_interval_seconds: float | None = Field(default=None, gt=0)
     research_agent_heartbeat_failure_budget_seconds: float | None = Field(default=None, gt=0)

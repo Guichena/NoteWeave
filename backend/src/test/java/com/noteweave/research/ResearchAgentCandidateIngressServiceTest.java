@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -79,6 +81,40 @@ class ResearchAgentCandidateIngressServiceTest {
         assertThat(jdbcTemplate.queryForObject("select candidate_value from research_cell where id = ?", String.class, cellId))
                 .isEqualTo("old");
         assertThat(jdbcTemplate.queryForObject("select cell_version from research_cell where id = ?", Integer.class, cellId)).isEqualTo(3);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"DEEP_CELL", "COUNTERFACTUAL"})
+    void shouldFailClosedAllSplitCompletionRoutesForEveryV2AtomicRole(String role) {
+        jdbcTemplate.update("""
+                update research_agent_task
+                set role = ?, snapshot_schema_version = 'research-agent-task-snapshot.v2',
+                    logical_task_key = 'atomic:v2:test', candidate_quorum = 1, candidate_slot = 1
+                where id = ?
+                """, role, agentTaskId);
+        claim = taskService.claimTask(new ResearchAgentTaskService.ClaimCommand(agentTaskId, "worker-v2", 60));
+
+        assertAtomicRequired(() -> evidenceService.appendWorkspaceEvidence(
+                new ResearchAgentEvidenceIngestionService.EvidenceBatchCommand(
+                        claim.taskId(), "worker-v2", claim.leaseEpoch(), claim.fencingToken(),
+                        List.of(evidence("The method is documented.")))));
+        assertAtomicRequired(() -> candidateService.appendAndVerify(
+                new ResearchAgentCandidateIngressService.CandidateBatchCommand(
+                        claim.taskId(), "worker-v2", claim.leaseEpoch(), claim.fencingToken(), "execution-v2",
+                        List.of(new ResearchAgentCandidateIngressService.CandidateProposal(
+                                "candidate-v2", "candidate-idem-v2", "entity-1:method", 3,
+                                "The method is documented.", List.of("evidence-1"), 0.9)))));
+        assertAtomicRequired(() -> taskService.submitExecution(new ResearchAgentTaskService.SubmitCommand(
+                claim.taskId(), "worker-v2", claim.leaseEpoch(), claim.fencingToken(), "execution-v2",
+                "CANDIDATE_BATCH_SUBMITTED", Map.of("llm_calls", 1), "sha256:atomic-v2-guard")));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from source_evidence where research_run_id = ?", Integer.class, runId)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from research_agent_candidate where research_run_id = ?", Integer.class, runId)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from research_agent_execution where research_agent_task_id = ?", Integer.class,
+                agentTaskId)).isZero();
     }
 
     @Test

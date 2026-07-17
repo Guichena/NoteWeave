@@ -43,7 +43,7 @@ from app.kafka_consumer import (
     _commit_if_supported,
     _message_value,
 )
-from app.trace_security import sanitize_error_message
+from app.trace_security import sanitize_error_message, sanitize_trace_payload
 
 
 class AgentTaskClient(Protocol):
@@ -469,13 +469,27 @@ def _is_retryable_agent_error(exc: Exception | None) -> bool:
 def _dlq_record(original_message: object, exc: Exception, attempt_count: int, retryable: bool) -> dict[str, object]:
     sanitized = sanitize_error_message(exc)
     return {
-        "original_message": repr(original_message)[:4000],
+        "original_message": _sanitize_dead_letter_message(original_message),
         "error_type": type(exc).__name__,
         "error_message": sanitized,
         "trace_digest": "sha256:" + sha256(sanitized.encode("utf-8")).hexdigest(),
         "attempt_count": attempt_count,
         "retryable": retryable,
     }
+
+
+def _sanitize_dead_letter_message(original_message: object) -> str:
+    candidate: object = original_message
+    if isinstance(candidate, bytes):
+        candidate = candidate.decode("utf-8", errors="replace")
+    if isinstance(candidate, str):
+        try:
+            candidate = json.loads(candidate)
+        except (json.JSONDecodeError, TypeError):
+            return sanitize_error_message(repr(candidate), max_chars=4000)
+    if isinstance(candidate, dict):
+        return json.dumps(sanitize_trace_payload(candidate), sort_keys=True, separators=(",", ":"))[:4000]
+    return sanitize_error_message(repr(candidate), max_chars=4000)
 
 
 def _dead_letter_or_stop(sink: DeadLetterSink, record: dict[str, object], cause: Exception | None) -> None:
