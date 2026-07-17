@@ -1,0 +1,51 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: noteweave
+      MYSQL_USER: noteweave
+      MYSQL_PASSWORD: noteweave123
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --transaction-isolation=READ-COMMITTED
+      - --performance-schema=ON
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    networks: [ma4h]
+
+  h2-tests:
+    image: noteweave-ma4h-h2-tests:local
+    build:
+      context: ../..
+      dockerfile: scripts/ma4h/Dockerfile.h2-tests
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/noteweave?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: noteweave
+      SPRING_DATASOURCE_PASSWORD: noteweave123
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 8
+      SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: 0
+      SPRING_KAFKA_LISTENER_AUTO_STARTUP: "false"
+      NOTEWEAVE_KAFKA_ENABLED: "false"
+      NOTEWEAVE_REDIS_ENABLED: "false"
+      NOTEWEAVE_RESEARCH_AGENT_LIFECYCLE_REAPER_ENABLED: "false"
+    command:
+      - -DtestIncludes=com/noteweave/research/ResearchAgentTrustedPermitServiceTest.java,com/noteweave/research/ResearchAgentTaskServiceTest.java,com/noteweave/research/ResearchAgentRateLimitServiceTest.java
+      - -Dtest=ResearchAgentTrustedPermitServiceTest,ResearchAgentTaskServiceTest,ResearchAgentRateLimitServiceTest
+      - test
+    networks: [ma4h]
+
+volumes:
+  mysql-data:
+
+networks:
+  ma4h:
+    internal: true

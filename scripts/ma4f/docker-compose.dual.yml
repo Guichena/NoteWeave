@@ -1,0 +1,17 @@
+services:
+  seed:
+    command:
+      - mysql -hmysql -unoteweave -pnoteweave123 noteweave < /fixture/seed.sql && mysql -hmysql -unoteweave -pnoteweave123 noteweave < /fixture/dual-extra.sql
+
+  dispatch:
+    depends_on:
+      worker-b:
+        condition: service_started
+    command:
+      - |
+        sleep 10
+        curl --fail --silent --show-error -X POST -H 'X-NoteWeave-Internal-Token: ma4f-fixture-token' http://backend:8081/internal/research-agent/coordinator/runs/00000000-0000-0000-0000-00000000f002/dispatch
+        curl --fail --silent --show-error -X POST -H 'X-NoteWeave-Internal-Token: ma4f-fixture-token' 'http://backend:8081/internal/research-agent/coordinator/runs/00000000-0000-0000-0000-00000000f002/publish?limit=100'
+
+  verify:
+    command: ["sh /fixture/verify-dual.sh"]

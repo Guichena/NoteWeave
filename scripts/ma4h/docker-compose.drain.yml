@@ -1,0 +1,18 @@
+services:
+  worker-a:
+    command: ["python", "/fixture/slow_fake_consumer.py"]
+    environment:
+      NOTEWEAVE_RESEARCH_AGENT_WORKER_INSTANCE_ID: ma4h-drain-worker-a
+      NOTEWEAVE_KAFKA_RESEARCH_AGENT_GROUP_ID: noteweave-ma4h-drain-workers
+      NOTEWEAVE_RESEARCH_AGENT_LEASE_SECONDS: 4
+      NOTEWEAVE_RESEARCH_AGENT_HEARTBEAT_INTERVAL_SECONDS: 1
+      NOTEWEAVE_RESEARCH_AGENT_HEARTBEAT_FAILURE_BUDGET_SECONDS: 2
+      NOTEWEAVE_RESEARCH_AGENT_HEARTBEAT_REQUEST_TIMEOUT_SECONDS: 0.25
+      NOTEWEAVE_RESEARCH_AGENT_DRAIN_GRACE_SECONDS: 2
+      NOTEWEAVE_RESEARCH_AGENT_DRAIN_POLL_TIMEOUT_MS: 50
+      MA4H_FAKE_PHASE_DELAY_SECONDS: 5
+      MA4H_DRAIN_PHASE_MARKER: /control/phase-started
+      PYTHONPATH: /app
+    volumes:
+      - ../ma4h/slow_fake_consumer.py:/fixture/slow_fake_consumer.py:ro
+      - control-data:/control

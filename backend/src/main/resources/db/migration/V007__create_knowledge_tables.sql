@@ -17,7 +17,7 @@ create table knowledge_version (
     id varchar(36) primary key,
     item_id varchar(36) not null,
     version_no int not null,
-    content clob not null,
+    content longtext not null,
     summary varchar(1000) null,
     source_message_id varchar(36) null,
     created_at timestamp not null default current_timestamp,

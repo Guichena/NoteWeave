@@ -1,0 +1,8 @@
+services:
+  mysql:
+    volumes:
+      - ./:/fixture:ro
+
+  kafka:
+    volumes:
+      - ./:/fixture:ro

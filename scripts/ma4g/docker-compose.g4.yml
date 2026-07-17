@@ -1,0 +1,16 @@
+services:
+  worker-a:
+    command: ["python", "/fixture/slow_fake_consumer.py"]
+    environment:
+      MA4G_FAKE_PHASE_DELAY_SECONDS: 0.75
+      PYTHONPATH: /app
+    volumes:
+      - ./:/fixture:ro
+
+  worker-b:
+    command: ["python", "/fixture/slow_fake_consumer.py"]
+    environment:
+      MA4G_FAKE_PHASE_DELAY_SECONDS: 0.75
+      PYTHONPATH: /app
+    volumes:
+      - ./:/fixture:ro

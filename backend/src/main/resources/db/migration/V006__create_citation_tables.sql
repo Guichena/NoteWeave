@@ -5,7 +5,7 @@ create table citation (
     source_snapshot_id varchar(36) not null,
     source_chunk_id varchar(36) not null,
     title varchar(300) not null,
-    quote_text clob not null,
+    quote_text longtext not null,
     page_no int null,
     location_info varchar(300) null,
     created_at timestamp not null default current_timestamp,

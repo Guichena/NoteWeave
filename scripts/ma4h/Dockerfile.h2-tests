@@ -1,0 +1,11 @@
+FROM noteweave-ma4g-lock-matrix:local
+
+WORKDIR /workspace
+
+COPY backend/pom.xml ./pom.xml
+COPY backend/maven-settings.xml ./maven-settings.xml
+COPY backend/src ./src
+
+RUN mvn -o -s maven-settings.xml -B -ntp -Dmaven.test.skip=true clean package
+
+ENTRYPOINT ["mvn", "-o", "-s", "maven-settings.xml", "-B", "-ntp"]

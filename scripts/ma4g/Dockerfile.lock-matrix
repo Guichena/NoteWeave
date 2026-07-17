@@ -1,0 +1,20 @@
+FROM maven:3.9.9-eclipse-temurin-17
+
+WORKDIR /workspace
+
+COPY backend/pom.xml ./pom.xml
+COPY backend/maven-settings.xml ./maven-settings.xml
+RUN mvn -s maven-settings.xml -B -ntp \
+    -Dmaven.wagon.http.retryHandler.count=5 dependency:go-offline
+
+COPY backend/src ./src
+# Invoke the target class online to resolve its complete Surefire/JUnit graph.
+# Compose only enables MA4G_LOCK_MATRIX_ENABLED at runtime, so this build step is skipped.
+RUN mvn -s maven-settings.xml -B -ntp \
+    -Dmaven.wagon.http.retryHandler.count=5 \
+    -Dtest=com.noteweave.research.ResearchAgentMySqlLockMatrixIT \
+    -DfailIfNoTests=false test && \
+    mvn -s maven-settings.xml -B -ntp \
+    -Dmaven.wagon.http.retryHandler.count=5 -DskipTests package
+
+ENTRYPOINT ["mvn", "-o", "-s", "maven-settings.xml", "-B", "-ntp", "-Dtest=com.noteweave.research.ResearchAgentMySqlLockMatrixIT", "-DfailIfNoTests=true", "test"]

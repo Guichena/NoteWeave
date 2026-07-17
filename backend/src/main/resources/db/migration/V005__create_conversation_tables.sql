@@ -27,7 +27,7 @@ create table conversation_message (
     message_seq int not null,
     role varchar(32) not null,
     answer_mode varchar(32) null,
-    content clob not null,
+    content longtext not null,
     assistant_request_id varchar(36) null,
     created_at timestamp not null default current_timestamp,
     constraint fk_conversation_message_conversation foreign key (conversation_id) references conversation(id),
@@ -41,7 +41,7 @@ create table ui_context_snapshot (
     id varchar(36) primary key,
     workspace_id varchar(36) not null,
     conversation_id varchar(36) null,
-    snapshot_json clob not null,
+    snapshot_json longtext not null,
     created_at timestamp not null default current_timestamp,
     constraint fk_ui_context_snapshot_workspace foreign key (workspace_id) references workspace(id)
 );

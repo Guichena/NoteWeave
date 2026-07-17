@@ -1,0 +1,5 @@
+services:
+  h2-tests:
+    command:
+      - -Dtest=ResearchAgentTaskCoordinatorServiceTest,ResearchAgentCoordinatorSchedulerTest,ResearchAgentCommandDispatchSchedulerTest
+      - test

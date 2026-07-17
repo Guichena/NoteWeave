@@ -32,7 +32,7 @@ create table task_event (
     task_id varchar(36) not null,
     event_type varchar(64) not null,
     message varchar(1000) null,
-    payload_json clob null,
+    payload_json longtext null,
     created_at timestamp not null default current_timestamp,
     constraint fk_task_event_task foreign key (task_id) references task(id)
 );
@@ -42,7 +42,7 @@ create table task_outbox (
     task_id varchar(36) not null,
     topic varchar(160) not null,
     message_key varchar(160) not null,
-    payload_json clob not null,
+    payload_json longtext not null,
     status varchar(32) not null,
     created_at timestamp not null default current_timestamp,
     sent_at timestamp null,

@@ -1,0 +1,32 @@
+services:
+  response-loss-proxy:
+    image: noteweave-ma4g-research-worker:local
+    depends_on:
+      backend:
+        condition: service_healthy
+    command: ["python", "/fixture/response_loss_proxy.py"]
+    environment:
+      MA4G_PROXY_LISTEN_HOST: 0.0.0.0
+      MA4G_PROXY_LISTEN_PORT: 8089
+      MA4G_PROXY_UPSTREAM_HOST: backend
+      MA4G_PROXY_UPSTREAM_PORT: 8081
+      MA4G_PROXY_CONTROL_DIR: /control
+      MA4G_PROXY_REPLAY_WAIT_SECONDS: 25
+    volumes:
+      - ./:/fixture:ro
+      - control-data:/control
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8089/healthz', timeout=2).read()"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks: [ma4g]
+
+  worker-a:
+    depends_on:
+      response-loss-proxy:
+        condition: service_healthy
+    environment:
+      NOTEWEAVE_JAVA_BASE_URL: http://response-loss-proxy:8089
+      NOTEWEAVE_RESEARCH_AGENT_COMPLETION_MAX_ATTEMPTS: 3
+

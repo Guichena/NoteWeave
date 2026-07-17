@@ -21,6 +21,7 @@ class _SearchCandidate:
 def run_workspace_search(
     task_input: ResearchTaskInput,
     plan: ResearchPlan,
+    selected_queries: list[str] | None = None,
 ) -> list[ResearchSearchHit]:
     """Resolve the query bundle against the current workspace source scope."""
     global_limit = int(plan.stop_contract.get("global_search_limit", 8))
@@ -33,6 +34,7 @@ def run_workspace_search(
             plan,
             source,
             source_index,
+            selected_queries=selected_queries,
         )
         snippet = _build_snippet(source, plan)
         confidence_score = _score_source_match(source, snippet, coverage_score)
@@ -79,14 +81,16 @@ def _select_best_query(
     plan: ResearchPlan,
     source: SourceScopeItem,
     source_index: int,
+    selected_queries: list[str] | None = None,
 ) -> tuple[str, str, list[str], float]:
-    if not plan.query_set:
+    query_candidates = list(selected_queries or plan.query_set)
+    if not query_candidates:
         return plan.normalized_question, "direct", [], 0.0
-    best_query = _select_query(plan, source_index)
+    best_query = query_candidates[0]
     best_score = -1.0
     best_fields: list[str] = []
     best_index = source_index
-    for query_index, query in enumerate(plan.query_set):
+    for query_index, query in enumerate(query_candidates):
         matched_fields, coverage_score = _score_query_coverage(query, source)
         if coverage_score > best_score:
             best_query = query
@@ -94,13 +98,6 @@ def _select_best_query(
             best_fields = matched_fields
             best_index = query_index
     return best_query, _search_angle(best_query, best_index), best_fields, max(best_score, 0.0)
-
-
-def _select_query(plan: ResearchPlan, source_index: int) -> str:
-    if not plan.query_set:
-        return plan.normalized_question
-    query_index = min(source_index, len(plan.query_set) - 1)
-    return plan.query_set[query_index]
 
 
 def _build_snippet(source: SourceScopeItem, plan: ResearchPlan) -> str:

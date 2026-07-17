@@ -1,0 +1,9 @@
+services:
+  i1-tests:
+    image: noteweave-ma4i-i1-tests:local
+    build:
+      context: ../..
+      dockerfile: scripts/ma4h/Dockerfile.h2-tests
+    command:
+      - -Dtest=ResearchAgentWaveBarrierTest
+      - test

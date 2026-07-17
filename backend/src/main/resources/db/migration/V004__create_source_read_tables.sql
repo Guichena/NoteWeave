@@ -5,7 +5,7 @@ create table source_chunk (
     source_snapshot_id varchar(36) not null,
     chunk_no int not null,
     heading varchar(300) null,
-    content clob not null,
+    content longtext not null,
     token_estimate int not null,
     location_info varchar(300) null,
     created_at timestamp not null default current_timestamp,
@@ -20,7 +20,7 @@ create table source_window (
     id varchar(36) primary key,
     source_chunk_id varchar(36) not null,
     window_no int not null,
-    content clob not null,
+    content longtext not null,
     location_info varchar(300) null,
     created_at timestamp not null default current_timestamp,
     constraint fk_source_window_chunk foreign key (source_chunk_id) references source_chunk(id)

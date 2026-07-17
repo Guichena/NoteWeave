@@ -1,0 +1,194 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: noteweave
+      MYSQL_USER: noteweave
+      MYSQL_PASSWORD: noteweave123
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    networks: [ma4f]
+
+  redis:
+    image: redis:7.2
+    command: ["redis-server", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks: [ma4f]
+
+  kafka:
+    image: bitnamilegacy/kafka@sha256:f45d5b813412e1ef7ce67b467309a84e4c6dc03d7626a0b6da867db9b69bd107
+    environment:
+      KAFKA_CFG_NODE_ID: 1
+      KAFKA_CFG_PROCESS_ROLES: broker,controller
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    volumes:
+      - kafka-data:/bitnami/kafka
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server 127.0.0.1:9092 --list >/dev/null 2>&1"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 10s
+    networks: [ma4f]
+
+  kafka-init:
+    image: bitnamilegacy/kafka@sha256:f45d5b813412e1ef7ce67b467309a84e4c6dc03d7626a0b6da867db9b69bd107
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic noteweave.research.agent.command --partitions 4 --replication-factor 1
+        /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic noteweave.research.agent.command.dlq --partitions 1 --replication-factor 1
+    networks: [ma4f]
+
+  backend:
+    image: noteweave-ma4f-backend:local
+    build:
+      context: ../../backend
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      SERVER_PORT: 8081
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/noteweave?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: noteweave
+      SPRING_DATASOURCE_PASSWORD: noteweave123
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      NOTEWEAVE_KAFKA_ENABLED: "true"
+      NOTEWEAVE_KAFKA_RESEARCH_AGENT_TOPIC: noteweave.research.agent.command
+      NOTEWEAVE_STORAGE_BACKEND: local
+      NOTEWEAVE_STORAGE_LOCAL_ROOT: /app/storage
+      NOTEWEAVE_ES_ENABLED: "false"
+      MANAGEMENT_HEALTH_ELASTICSEARCH_ENABLED: "false"
+      NOTEWEAVE_INTERNAL_AUTH_TOKEN: ma4f-fixture-token
+      NOTEWEAVE_LOCAL_USER_FALLBACK: "false"
+      NOTEWEAVE_RESEARCH_AGENT_COMMAND_DISPATCH_ENABLED: "false"
+      NOTEWEAVE_RESEARCH_AGENT_LIFECYCLE_REAPER_ENABLED: ${MA4F_REAPER_ENABLED:-false}
+      NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_ENABLED: "true"
+      NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_ALLOW_LOCAL_FALLBACK: "false"
+      NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_CAPACITY: 100
+      NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_REFILL_PER_MINUTE: 100
+    volumes:
+      - backend-storage:/app/storage
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8081/actuator/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 60
+      start_period: 20s
+    networks: [ma4f]
+
+  seed:
+    image: mysql:8.4
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - ./:/fixture:ro
+    entrypoint: ["/bin/sh", "-ec"]
+    command: ["mysql -hmysql -unoteweave -pnoteweave123 noteweave < /fixture/seed.sql"]
+    networks: [ma4f]
+
+  worker-a:
+    image: noteweave-ma4f-research-worker:local
+    build:
+      context: ../../workers/research-worker
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+    command: ["python", "-m", "app.agent_kafka_consumer"]
+    environment: &worker-environment
+      NOTEWEAVE_JAVA_BASE_URL: http://backend:8081
+      NOTEWEAVE_INTERNAL_AUTH_TOKEN: ma4f-fixture-token
+      NOTEWEAVE_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      NOTEWEAVE_KAFKA_RESEARCH_AGENT_TOPIC: noteweave.research.agent.command
+      NOTEWEAVE_KAFKA_RESEARCH_AGENT_DLQ_TOPIC: noteweave.research.agent.command.dlq
+      NOTEWEAVE_KAFKA_RESEARCH_AGENT_GROUP_ID: noteweave-ma4f-workers
+      NOTEWEAVE_KAFKA_CONSUME_MAX_ATTEMPTS: 1
+      NOTEWEAVE_RESEARCH_AGENT_CONSUMER_ENABLED: "true"
+      NOTEWEAVE_RESEARCH_AGENT_DEEP_CELL_EXECUTOR_ENABLED: "true"
+      NOTEWEAVE_RESEARCH_AGENT_FAKE_PROVIDER_ENABLED: "true"
+      NOTEWEAVE_RESEARCH_AGENT_WORKER_INSTANCE_ID: ma4f-worker-a
+      NOTEWEAVE_RESEARCH_AGENT_LEASE_SECONDS: 15
+      NOTEWEAVE_RESEARCH_LLM_API_KEY: ""
+      NOTEWEAVE_RESEARCH_LLM_BASE_URL: ""
+      NOTEWEAVE_RESEARCH_LLM_MODEL: ""
+    networks: [ma4f]
+
+  worker-b:
+    image: noteweave-ma4f-research-worker:local
+    build:
+      context: ../../workers/research-worker
+    profiles: ["dual"]
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+    command: ["python", "-m", "app.agent_kafka_consumer"]
+    environment:
+      <<: *worker-environment
+      NOTEWEAVE_RESEARCH_AGENT_WORKER_INSTANCE_ID: ma4f-worker-b
+    networks: [ma4f]
+
+  dispatch:
+    image: noteweave-ma4f-backend:local
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+      worker-a:
+        condition: service_started
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        sleep 5
+        curl --fail --silent --show-error -X POST -H 'X-NoteWeave-Internal-Token: ma4f-fixture-token' http://backend:8081/internal/research-agent/coordinator/runs/00000000-0000-0000-0000-00000000f002/dispatch
+        curl --fail --silent --show-error -X POST -H 'X-NoteWeave-Internal-Token: ma4f-fixture-token' 'http://backend:8081/internal/research-agent/coordinator/runs/00000000-0000-0000-0000-00000000f002/publish?limit=10'
+    networks: [ma4f]
+
+  verify:
+    image: mysql:8.4
+    depends_on:
+      dispatch:
+        condition: service_completed_successfully
+    volumes:
+      - ./:/fixture:ro
+    entrypoint: ["/bin/sh", "-ec"]
+    command: ["sh /fixture/verify.sh"]
+    networks: [ma4f]
+
+volumes:
+  mysql-data:
+  kafka-data:
+  backend-storage:
+
+networks:
+  ma4f:
+    internal: true

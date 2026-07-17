@@ -23,3 +23,13 @@ def test_kafka_bootstrap_servers_should_be_overridable(monkeypatch) -> None:
     settings = load_settings()
 
     assert settings.kafka_bootstrap_servers == "kafka-a:9092,kafka-b:9092"
+
+
+def test_kafka_consume_retry_settings_should_be_overridable(monkeypatch) -> None:
+    monkeypatch.setenv("NOTEWEAVE_KAFKA_CONSUME_MAX_ATTEMPTS", "5")
+    monkeypatch.setenv("NOTEWEAVE_KAFKA_CONSUME_RAISE_ON_FAILURE", "true")
+
+    settings = load_settings()
+
+    assert settings.kafka_consume_max_attempts == 5
+    assert settings.kafka_consume_raise_on_failure is True

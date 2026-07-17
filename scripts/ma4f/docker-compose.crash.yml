@@ -1,0 +1,20 @@
+services:
+  backend:
+    environment:
+      NOTEWEAVE_RESEARCH_AGENT_LIFECYCLE_REAPER_ENABLED: "true"
+      NOTEWEAVE_RESEARCH_AGENT_LIFECYCLE_REAPER_DELAY_MS: 250
+
+  worker-a:
+    command: ["python", "/fixture/claim_then_crash.py"]
+    volumes:
+      - ./:/fixture:ro
+
+  dispatch:
+    command:
+      - |
+        sleep 5
+        curl --fail --silent --show-error -X POST -H 'X-NoteWeave-Internal-Token: ma4f-fixture-token' http://backend:8081/internal/research-agent/coordinator/runs/00000000-0000-0000-0000-00000000f002/dispatch
+        curl --fail --silent --show-error -X POST -H 'X-NoteWeave-Internal-Token: ma4f-fixture-token' 'http://backend:8081/internal/research-agent/coordinator/runs/00000000-0000-0000-0000-00000000f002/publish?limit=10'
+
+  verify:
+    command: ["sh /fixture/verify-crash.sh"]

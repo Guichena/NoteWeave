@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from app.models import ResearchSearchHit, ResearchTaskInput
+from app.fetch_adapters import WorkspaceFetchAdapter, run_research_fetch
+from app.models import ResearchFetchedDocument, ResearchSearchHit, ResearchTaskInput
 from app.planner import build_research_plan
 from app.read_adapters import (
     CompositeReadAdapter,
@@ -8,16 +9,6 @@ from app.read_adapters import (
     WorkspaceReadAdapter,
     run_research_read,
 )
-
-
-class FakeUrlSnapshotTransport:
-    def __init__(self, content_by_url: dict[str, dict[str, object]]) -> None:
-        self.content_by_url = content_by_url
-        self.calls: list[tuple[str, str, int]] = []
-
-    def read(self, url: str, query: str, token_budget: int) -> dict[str, object]:
-        self.calls.append((url, query, token_budget))
-        return self.content_by_url[url]
 
 
 def _build_task_input() -> ResearchTaskInput:
@@ -63,29 +54,47 @@ def _workspace_hit() -> ResearchSearchHit:
     )
 
 
-def _url_hit(hit_id: str = "hit-url", rank: int = 2) -> ResearchSearchHit:
-    return ResearchSearchHit(
-        hit_id=hit_id,
-        source_id=f"web-{hit_id}",
+def _fetched_url_document() -> ResearchFetchedDocument:
+    return ResearchFetchedDocument(
+        fetch_id="fetch-1",
+        hit_id="hit-url",
+        source_id="web-hit-url",
         source_title="External Evidence",
         query="verifier loops external",
-        rank=rank,
-        snippet="External snippet about verifier loops.",
-        confidence_score=0.81,
-        retrieval_reason="external search match",
-        search_angle="coverage_gap",
-        url=f"https://example.com/{hit_id}",
+        rank=2,
+        url="https://example.com/hit-url",
         provider="fake-web",
-        adapter="external",
+        adapter="external_url",
+        search_angle="coverage_gap",
+        snapshot_text="Fetched page snapshot with verifier loop details.",
+        snapshot_status="FETCHED",
+        snapshot_key="research/ws-1/run-1/snapshot/page.json",
+        fetch_status="FETCHED",
+        fetch_method="FAKE_FETCH",
+        content_origin="FETCHED_SNAPSHOT",
+        content_type_label="WEBPAGE",
+        fetch_error_reason="",
+        fetch_failure_code="",
+        fetch_attempts=["FAKE_FETCH"],
+        transport_chain=["FAKE_FETCH"],
+        transport_resolution="FAKE_FETCH",
+        transport_fallback_reason="",
+        transport_fallback_code="",
+        transport_attempt_count=1,
+        snapshot_archive_ready=True,
+        source_domain="example.com",
+        source_quality="OFFICIAL_DOC",
+        source_quality_score=0.93,
     )
 
 
-def test_workspace_read_adapter_should_open_workspace_window() -> None:
+def test_workspace_read_adapter_should_open_workspace_window_from_fetched_document() -> None:
     task_input = _build_task_input()
     plan = build_research_plan(task_input)
-    adapter = WorkspaceReadAdapter()
+    document = WorkspaceFetchAdapter().fetch_hit(task_input, plan, _workspace_hit(), fetch_index=1)
 
-    window = adapter.read_hit(task_input, plan, _workspace_hit(), window_index=1)
+    assert document is not None
+    window = WorkspaceReadAdapter().read_hit(task_input, plan, document, window_index=1)
 
     assert window is not None
     assert window.source_id == "src-workspace"
@@ -93,69 +102,169 @@ def test_workspace_read_adapter_should_open_workspace_window() -> None:
     assert "local and global checks" in window.window_text
     assert window.adapter == "workspace"
     assert window.snapshot_status == "WORKSPACE"
+    assert window.fetch_status == "WORKSPACE_READY"
+    assert window.fetch_method == "WORKSPACE"
+    assert window.content_origin == "WORKSPACE_TEXT"
+    assert window.content_type_label == "WORKSPACE_TEXT"
+    assert window.fetch_failure_code == ""
+    assert window.transport_chain == ["WORKSPACE"]
+    assert window.transport_resolution == "WORKSPACE"
+    assert window.transport_fallback_code == ""
+    assert window.transport_attempt_count == 1
+    assert window.snapshot_archive_ready is False
+    assert window.source_quality == "WORKSPACE_SOURCE"
+    assert window.read_strategy
     assert window.token_estimate > 0
 
 
-def test_url_read_adapter_without_transport_should_create_fallback_window() -> None:
+def test_url_read_adapter_should_preserve_fetched_document_metadata() -> None:
     task_input = _build_task_input()
     plan = build_research_plan(task_input)
-    adapter = UrlReadAdapter()
 
-    window = adapter.read_hit(task_input, plan, _url_hit(), window_index=1)
+    window = UrlReadAdapter().read_hit(task_input, plan, _fetched_url_document(), window_index=1)
 
     assert window is not None
     assert window.url == "https://example.com/hit-url"
-    assert "External snippet about verifier loops" in window.window_text
-    assert "https://example.com/hit-url" in window.window_text
-    assert window.adapter == "external_url"
-    assert window.snapshot_status == "FALLBACK"
-    assert "no url snapshot transport" in window.retention_reason
-
-
-def test_url_read_adapter_with_transport_should_use_snapshot_content() -> None:
-    task_input = _build_task_input()
-    plan = build_research_plan(task_input)
-    hit = _url_hit()
-    transport = FakeUrlSnapshotTransport(
-        {
-            hit.url: {
-                "text": "Fetched page snapshot with verifier loop details.",
-                "snapshot_key": "research/ws-1/run-1/snapshot/page.json",
-            }
-        }
-    )
-    adapter = UrlReadAdapter(transport=transport)
-
-    window = adapter.read_hit(task_input, plan, hit, window_index=1)
-
-    assert window is not None
     assert window.window_text == "Fetched page snapshot with verifier loop details."
+    assert window.adapter == "external_url"
     assert window.snapshot_status == "FETCHED"
     assert window.snapshot_key == "research/ws-1/run-1/snapshot/page.json"
-    assert transport.calls == [(hit.url, hit.query, 800)]
+    assert window.fetch_status == "FETCHED"
+    assert window.fetch_method == "FAKE_FETCH"
+    assert window.content_origin == "FETCHED_SNAPSHOT"
+    assert window.content_type_label == "WEBPAGE"
+    assert window.fetch_failure_code == ""
+    assert window.fetch_attempts == ["FAKE_FETCH"]
+    assert window.transport_chain == ["FAKE_FETCH"]
+    assert window.transport_resolution == "FAKE_FETCH"
+    assert window.transport_fallback_code == ""
+    assert window.transport_attempt_count == 1
+    assert window.snapshot_archive_ready is True
+    assert window.source_domain == "example.com"
+    assert "after url snapshot fetch" in window.retention_reason
 
 
-def test_composite_read_adapter_should_preserve_hit_order_and_retention_budget() -> None:
+def test_url_read_adapter_should_preserve_structured_failure_classification() -> None:
     task_input = _build_task_input()
     plan = build_research_plan(task_input)
-    plan.stop_contract["tool_response_retention_budget"] = 2
-    hits = [_url_hit("hit-url-1", 1), _workspace_hit(), _url_hit("hit-url-2", 3)]
+    document = _fetched_url_document().model_copy(
+        update={
+            "fetch_status": "FALLBACK_USED",
+            "fetch_method": "HTTP",
+            "content_origin": "SEARCH_SNIPPET_FALLBACK",
+            "content_type_label": "PDF",
+            "fetch_error_reason": "unsupported binary content type: application/pdf",
+            "fetch_failure_code": "UNSUPPORTED_CONTENT_TYPE",
+            "transport_fallback_reason": "unsupported binary content type: application/pdf",
+            "transport_fallback_code": "UNSUPPORTED_CONTENT_TYPE",
+        }
+    )
+
+    window = UrlReadAdapter().read_hit(task_input, plan, document, window_index=1)
+
+    assert window is not None
+    assert window.fetch_status == "FALLBACK_USED"
+    assert window.content_origin == "SEARCH_SNIPPET_FALLBACK"
+    assert window.content_type_label == "PDF"
+    assert window.fetch_failure_code == "UNSUPPORTED_CONTENT_TYPE"
+    assert window.transport_fallback_code == "UNSUPPORTED_CONTENT_TYPE"
+    assert window.transport_attempt_count == 1
+    assert window.snapshot_archive_ready is False
+
+
+def test_composite_read_adapter_should_preserve_document_order() -> None:
+    task_input = _build_task_input()
+    plan = build_research_plan(task_input)
+    workspace_document = WorkspaceFetchAdapter().fetch_hit(task_input, plan, _workspace_hit(), fetch_index=1)
+    assert workspace_document is not None
+    documents = [_fetched_url_document(), workspace_document]
     adapter = CompositeReadAdapter([WorkspaceReadAdapter(), UrlReadAdapter()])
 
-    windows = adapter.read(task_input, plan, hits)
+    windows = adapter.read(task_input, plan, documents)
 
-    assert [window.hit_id for window in windows] == ["hit-url-1", "hit-workspace"]
+    assert [window.hit_id for window in windows] == ["hit-url", "hit-workspace"]
     assert len(windows) == 2
 
 
-def test_run_research_read_should_emit_required_window_contract() -> None:
+def test_run_research_read_should_support_prefetched_documents_and_legacy_search_hits() -> None:
+    task_input = _build_task_input()
+    plan = build_research_plan(task_input)
+    prefetched_windows = run_research_read(
+        task_input,
+        plan,
+        fetched_documents=[_fetched_url_document()],
+    )
+    legacy_windows = run_research_read(
+        task_input,
+        plan,
+        [_workspace_hit()],
+    )
+
+    assert len(prefetched_windows) == 1
+    assert prefetched_windows[0].hit_id == "hit-url"
+    assert len(legacy_windows) == 1
+    assert legacy_windows[0].source_id == "src-workspace"
+
+
+def test_requirement_targeted_read_should_annotate_focus_from_prefetched_documents() -> None:
+    task_input = _build_task_input()
+    plan = build_research_plan(task_input)
+    plan.stop_contract["recovery_mode"] = "READ_MORE"
+    plan.stop_contract["recovery_target_requirement_labels"] = ["Evidence finding: verify the claim"]
+    plan.stop_contract["recovery_target_columns"] = ["claim_text", "evidence_excerpt"]
+
+    windows = run_research_read(
+        task_input,
+        plan,
+        fetched_documents=[_fetched_url_document()],
+    )
+
+    assert len(windows) == 1
+    assert "prioritize evidence finding: verify the claim" in windows[0].read_focus.lower()
+    assert "fill columns claim_text, evidence_excerpt" in windows[0].read_focus.lower()
+
+
+def test_requirement_targeted_read_should_surface_requirement_target_metadata() -> None:
+    payload = _build_task_input().model_dump(mode="json")
+    payload["input_payload"]["research_intent"] = {
+        "research_goal": "Verify the primary answer direction.",
+        "deliverable_format": "Evidence-backed brief",
+        "constraints": ["Keep the answer anchored to verified evidence."],
+        "time_range": "",
+        "depth": "STANDARD",
+    }
+    task_input = ResearchTaskInput.model_validate(payload)
+    plan = build_research_plan(task_input)
+    targeted_query = next(
+        query for query in plan.query_set if "verified evidence search" in query
+    )
+    document = _fetched_url_document().model_copy(update={"query": targeted_query})
+
+    windows = run_research_read(
+        task_input,
+        plan,
+        fetched_documents=[document],
+    )
+
+    assert len(windows) == 1
+    assert windows[0].query_family == "verified_evidence"
+    assert windows[0].target_requirement_ids == ["constraint_finding_1"]
+    assert windows[0].target_requirement_labels == [
+        "Evidence finding: Keep the answer anchored to verified evidence."
+    ]
+    assert "claim_text" in windows[0].target_columns
+    assert "evidence_excerpt" in windows[0].target_columns
+    assert "prioritize evidence finding: keep the answer anchored to verified evidence." in windows[0].read_focus.lower()
+
+
+def test_run_research_fetch_and_read_should_form_search_fetch_read_chain() -> None:
     task_input = _build_task_input()
     plan = build_research_plan(task_input)
 
-    windows = run_research_read(task_input, plan, [_workspace_hit(), _url_hit()])
+    fetched_documents = run_research_fetch(task_input, plan, [_workspace_hit()])
+    windows = run_research_read(task_input, plan, fetched_documents=fetched_documents)
 
-    assert len(windows) == 2
-    assert all(window.source_id for window in windows)
-    assert all(window.query for window in windows)
-    assert all(window.read_focus for window in windows)
-    assert all(window.token_estimate > 0 for window in windows)
+    assert len(fetched_documents) == 1
+    assert fetched_documents[0].fetch_status == "WORKSPACE_READY"
+    assert len(windows) == 1
+    assert windows[0].fetch_status == "WORKSPACE_READY"

@@ -1,0 +1,28 @@
+services:
+  lock-matrix-test:
+    image: noteweave-ma4g-lock-matrix:local
+    build:
+      context: ../..
+      dockerfile: scripts/ma4g/Dockerfile.lock-matrix
+    profiles: ["lockmatrix"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      MA4G_LOCK_MATRIX_ENABLED: "true"
+      MA4G_LOCK_MATRIX_ROOT_JDBC_URL: jdbc:mysql://mysql:3306/noteweave?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      MA4G_LOCK_MATRIX_ROOT_USER: root
+      MA4G_LOCK_MATRIX_ROOT_PASSWORD: root
+      MA4G_LOCK_MATRIX_EVIDENCE_DIR: /control/lock-matrix
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/noteweave?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: noteweave
+      SPRING_DATASOURCE_PASSWORD: noteweave123
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 8
+      SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: 0
+      SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT: 5000
+      NOTEWEAVE_RESEARCH_AGENT_LIFECYCLE_REAPER_ENABLED: "false"
+      NOTEWEAVE_RESEARCH_AGENT_COMMAND_DISPATCH_ENABLED: "false"
+    volumes:
+      - control-data:/control
+    networks: [ma4g]

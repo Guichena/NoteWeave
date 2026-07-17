@@ -1,0 +1,9 @@
+{
+  "worker_instance_id": "ma4f-worker-a",
+  "lease_epoch": 1,
+  "fencing_token": 1,
+  "execution_key": "ma4f-stale-worker-a",
+  "termination_reason": "STALE_SHOULD_BE_REJECTED",
+  "usage": {"llm_calls": 0},
+  "trace_digest": "sha256:stale"
+}

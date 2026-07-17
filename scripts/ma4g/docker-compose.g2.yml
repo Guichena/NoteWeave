@@ -1,0 +1,27 @@
+services:
+  g2-fault-client:
+    image: noteweave-ma4g-research-worker:local
+    profiles: ["g2"]
+    depends_on:
+      backend:
+        condition: service_healthy
+    command: ["python", "/fixture/g2_fault_client.py"]
+    environment:
+      NOTEWEAVE_JAVA_BASE_URL: http://backend:8081
+      NOTEWEAVE_INTERNAL_AUTH_TOKEN: ma4g-fixture-token
+      NOTEWEAVE_RESEARCH_AGENT_WORKER_INSTANCE_ID: ma4g-g2-fault-worker
+      NOTEWEAVE_RESEARCH_AGENT_LEASE_SECONDS: 120
+      NOTEWEAVE_RESEARCH_AGENT_COMPLETION_MAX_ATTEMPTS: 1
+      NOTEWEAVE_RESEARCH_AGENT_FAKE_PROVIDER_ENABLED: "true"
+      NOTEWEAVE_RESEARCH_LLM_API_KEY: ""
+      NOTEWEAVE_RESEARCH_LLM_BASE_URL: ""
+      NOTEWEAVE_RESEARCH_LLM_MODEL: ""
+      # The fixture is launched from /fixture, while the Worker package lives
+      # in the image at /app.
+      PYTHONPATH: /app
+      MA4G_TASK_ID: ${MA4G_TASK_ID:-unset}
+      MA4G_RUN_ID: 00000000-0000-0000-0000-00000000a002
+    volumes:
+      - ./:/fixture:ro
+      - control-data:/control
+    networks: [ma4g]

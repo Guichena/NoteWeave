@@ -14,5 +14,22 @@ spring:
       port: 6379
 
 noteweave:
+  quota:
+    enabled: false
+  security:
+    acl-cache-enabled: false
+  redis:
+    enabled: false
+  worker:
+    artifact-auto-dispatch-enabled: false
   storage:
+    backend: local
     local-root: target/test-noteweave-storage
+  kafka:
+    enabled: false
+  research:
+    agent:
+      coordinator-enabled: false
+      rollout-guard-enabled: false
+  elasticsearch:
+    enabled: false

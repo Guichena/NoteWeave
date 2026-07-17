@@ -1,0 +1,100 @@
+services:
+  mysql-legacy:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: noteweave_legacy
+      MYSQL_USER: noteweave
+      MYSQL_PASSWORD: noteweave123
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --transaction-isolation=READ-COMMITTED
+    volumes:
+      - mysql-legacy-data:/var/lib/mysql
+      - ./:/fixture:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    networks: [ma4g]
+
+  backend-v044:
+    image: noteweave-ma4g-backend:local
+    profiles: ["migration-v044"]
+    depends_on:
+      mysql-legacy:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment: &migration-backend-environment
+      SERVER_PORT: 8082
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-legacy:3306/noteweave_legacy?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: noteweave
+      SPRING_DATASOURCE_PASSWORD: noteweave123
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      NOTEWEAVE_KAFKA_ENABLED: "true"
+      NOTEWEAVE_KAFKA_RESEARCH_AGENT_TOPIC: noteweave.research.agent.command
+      NOTEWEAVE_STORAGE_BACKEND: local
+      NOTEWEAVE_STORAGE_LOCAL_ROOT: /app/storage
+      NOTEWEAVE_ES_ENABLED: "false"
+      MANAGEMENT_HEALTH_ELASTICSEARCH_ENABLED: "false"
+      NOTEWEAVE_INTERNAL_AUTH_TOKEN: ma4g-fixture-token
+      NOTEWEAVE_LOCAL_USER_FALLBACK: "false"
+      NOTEWEAVE_RESEARCH_AGENT_COMMAND_DISPATCH_ENABLED: "false"
+      NOTEWEAVE_RESEARCH_AGENT_LIFECYCLE_REAPER_ENABLED: "false"
+      NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_ENABLED: "false"
+      SPRING_FLYWAY_TARGET: "44"
+    volumes:
+      - backend-storage:/app/storage
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8082/actuator/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 60
+      start_period: 20s
+    networks: [ma4g]
+
+  legacy-seed-v044:
+    image: mysql:8.4
+    profiles: ["migration-v044"]
+    depends_on:
+      backend-v044:
+        condition: service_healthy
+    volumes:
+      - ./:/fixture:ro
+    entrypoint: ["/bin/sh", "-ec"]
+    command: ["mysql -hmysql-legacy -unoteweave -pnoteweave123 noteweave_legacy < /fixture/legacy-seed-v044.sql"]
+    networks: [ma4g]
+
+  backend-v045:
+    image: noteweave-ma4g-backend:local
+    profiles: ["migration-v045"]
+    depends_on:
+      mysql-legacy:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      <<: *migration-backend-environment
+      SERVER_PORT: 8083
+      SPRING_FLYWAY_TARGET: "45"
+    volumes:
+      - backend-storage:/app/storage
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8083/actuator/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 60
+      start_period: 20s
+    networks: [ma4g]
+
+volumes:
+  mysql-legacy-data:

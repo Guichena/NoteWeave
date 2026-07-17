@@ -1,0 +1,94 @@
+{
+  "case": {
+    "case_key": "alpha-research-exact-table",
+    "question": "Compare the Alpha Research paper's problem and method.",
+    "schema": {
+      "research_type": "PAPER_SURVEY",
+      "entity_type": "academic paper",
+      "columns": ["paper_title", "problem", "method"]
+    },
+    "gold_version": "ma5-gold-v1",
+    "source_snapshot_digest": "sha256:2b86a3c2d3cb7b4e383f973f65fe0a78849dd86eacb105a9f10af4d3424cf0e8",
+    "gold": {
+      "case_key": "alpha-research-exact-table",
+      "expected_entities": ["Alpha Research"],
+      "required_cells": [
+        {
+          "entity": "Alpha Research",
+          "column": "paper_title",
+          "value": "Alpha Research",
+          "value_match": "normalized_exact"
+        },
+        {
+          "entity": "Alpha Research",
+          "column": "problem",
+          "value": "Unverified claims can enter research reports",
+          "value_match": "normalized_exact"
+        },
+        {
+          "entity": "Alpha Research",
+          "column": "method",
+          "value": "Evidence-bound cell verification",
+          "value_match": "normalized_exact"
+        }
+      ],
+      "require_exact_table_match": true,
+      "expect_counterfactual": false,
+      "min_row_completeness": 1.0,
+      "min_citation_accuracy": 1.0
+    },
+    "task_input": {
+      "task_id": "ma5-alpha-research-task",
+      "workspace_id": "ma5-benchmark-workspace",
+      "target_id": "ma5-alpha-research-run",
+      "source_scope": [
+        {
+          "source_id": "ma5-alpha-research-source-v1",
+          "title": "Alpha Research",
+          "summary": "Paper title: Alpha Research. Problem: Unverified claims can enter research reports. Method: Evidence-bound cell verification. The method binds each candidate value to quoted evidence and requires verifier approval before canonical merge."
+        }
+      ],
+      "control_pack": {
+        "pack_type": "research",
+        "target_key": "MA5_BENCHMARK",
+        "task_neighborhood": "RESEARCH_MA5_BENCHMARK",
+        "style_constraints": ["Use concise factual values."],
+        "structure_constraints": ["Return a comparison table."],
+        "evidence_policy": ["Use only the frozen workspace source snapshot."],
+        "review_checklist": ["Every required cell must have direct evidence."]
+      },
+      "input_payload": {
+        "question": "Compare the Alpha Research paper's problem and method.",
+        "profile_key": "RESEARCH_AGENT_MA5",
+        "research_intent": {
+          "research_goal": "Extract the paper title, problem, and method into an exact table.",
+          "deliverable_format": "Evidence-backed comparison table",
+          "constraints": ["Do not infer values absent from the source."],
+          "depth": "DEEP",
+          "research_type": "PAPER_SURVEY"
+        }
+      }
+    }
+  },
+  "profile": {
+    "profile_key": "sequential-simulated-v1",
+    "execution_mode": "SEQUENTIAL",
+    "provider_kind": "SIMULATED",
+    "provider": "rule-mode",
+    "model": "no-llm",
+    "source_policy": {
+      "allow_external": false,
+      "archive_required": true
+    },
+    "budget": {
+      "max_concurrency": 1,
+      "max_llm_calls": 8,
+      "max_cost": 0.0
+    },
+    "random_policy": {
+      "temperature": 0.0,
+      "seed": 7
+    },
+    "rollout_no": 1
+  }
+}
