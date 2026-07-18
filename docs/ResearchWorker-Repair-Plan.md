@@ -756,13 +756,14 @@ git diff --check: passed（仅既有 LF/CRLF 提示）
 4. **A/B 快照一致性**：benchmark record schema 升为 `research-agent-benchmark-record.v2`，保存 `observed_source_snapshot_digest`；比较器拒绝真实读取快照不一致的 rollout 集，避免把实时网页变化当成算法收益。
 5. **旧 Worker HTTP 执行入口移除**：`/debug/run-task` 与 `/tasks/{task_id}/run` 不再注册，Worker HTTP 面只保留 health；正式执行入口为 agent Kafka consumer。`start-research-consumer.ps1` 已切换到 `app.agent_kafka_consumer`。
 6. **Windows 验证脚本可移植性**：新增 `.gitattributes` 将 `scripts/ma4g/*.sh` 固定为 LF；修复前 LockMatrix 的 13 个测试虽已运行，最终 verifier 会因 CRLF 在 `set -euo pipefail` 处失败并正确留下 FAILED manifest。修复后重新执行，MySQL 8.4.9 / READ-COMMITTED 的 A–L2 共 `13/13`，manifest 为 `VERIFIED`。
+7. **有限并发下的研究优先级**：Coordinator 不再只依赖 cell-key/FIFO；任务持久化 `priority_score/priority_reason`，以服务端权威的 counterfactual、high-risk 和报告关键列计算精炼优先级，Dispatcher 按 `priority desc, wave asc` 取有限批次。两个公共 seam 测试先因列缺失红灯，再由 V083 迁移和实现转绿。
 
 隔离 worktree 的 Worker 全量结果为：
 
 ```text
-375 passed, 0 failed, 0 skipped
+377 passed, 0 failed, 0 skipped
 ```
 
-Backend 隔离 H2 Research Agent 聚合为 `209 tests, 0 failures, 0 errors, 1 skipped`；skip 仍是环境门控 Redis integration。MySQL LockMatrix 为 `13/13` 且最终 verifier/manifest 均通过，而不是只读取测试进程日志。
+Backend 当前 Research Agent 聚合为 `212 tests, 0 failures, 0 errors, 1 skipped`；skip 仍是环境门控 Redis integration。MySQL LockMatrix 为 `13/13` 且最终 verifier/manifest 均通过，而不是只读取测试进程日志。
 
 当前仍未完成、且不能包装成已完成的外部证明：真实 Research LLM/Search 凭证、真实公网四轮 A/B、生产网络长期 lease/recovery soak、答案质量与 p95 优于 TAS/MiroFlow/DeepWideSearch 的证据。MA5 runner 的 `SEQUENTIAL_V2/LOCAL_PARALLEL` 只证明同进程算法 seam，不替代分布式 `INCREMENTAL_V1` 的运行证据。

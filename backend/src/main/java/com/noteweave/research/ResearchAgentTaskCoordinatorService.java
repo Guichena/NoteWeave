@@ -66,6 +66,7 @@ public class ResearchAgentTaskCoordinatorService {
         int enqueued = 0;
         for (List<CellScope> bundle : bundles(cells)) {
             CellScope first = bundle.get(0);
+            TaskPriority priority = priorityFor(bundle);
             String entityId = entityId(first.cellKey());
             if (bundle.stream().anyMatch(cell -> !entityId(cell.cellKey()).equals(entityId)
                     || cell.planRevision() != first.planRevision() || cell.entitySetVersion() != first.entitySetVersion()
@@ -97,9 +98,11 @@ public class ResearchAgentTaskCoordinatorService {
                 jdbcTemplate.update("""
                         update research_agent_task
                         set logical_task_key = ?, quorum_group_key = ?, candidate_quorum = ?, candidate_slot = ?,
-                            snapshot_schema_version = 'research-agent-task-snapshot.v2', snapshot_digest = null
+                            snapshot_schema_version = 'research-agent-task-snapshot.v2', snapshot_digest = null,
+                            priority_score = ?, priority_reason = ?
                         where id = ?
-                        """, "deep-cell:" + logicalFingerprint, quorumGroupKey, candidateQuorum, candidateSlot, task.taskId());
+                        """, "deep-cell:" + logicalFingerprint, quorumGroupKey, candidateQuorum, candidateSlot,
+                        priority.score(), priority.reason(), task.taskId());
                 boolean existed = jdbcTemplate.queryForObject(
                         "select count(*) from research_budget_reservation where research_agent_task_id = ?",
                         Integer.class, task.taskId()) > 0;
@@ -145,6 +148,7 @@ public class ResearchAgentTaskCoordinatorService {
                 throw new BusinessException("RESEARCH_AGENT_REPAIR_SOURCE_SCOPE_EMPTY", "Counterfactual repair has no independent source scope");
             }
             String fingerprint = repairFingerprint(run.id(), command.parentCheckpointSeq(), command.waveNo(), cell, target);
+            TaskPriority priority = repairPriority(cell);
             Map<String, Object> snapshotBudget = new LinkedHashMap<>(deepCellBudget(1));
             ResearchAgentTaskService.TaskSnapshot task = taskService.createTask(new ResearchAgentTaskService.CreateTaskCommand(
                     run.id(), "counterfactual:" + fingerprint, "repair:" + fingerprint, command.waveNo(), "COUNTERFACTUAL",
@@ -162,9 +166,10 @@ public class ResearchAgentTaskCoordinatorService {
                     update research_agent_task
                     set logical_task_key = ?, quorum_group_key = null, candidate_quorum = 1, candidate_slot = 1,
                         snapshot_schema_version = 'research-agent-task-snapshot.v2', snapshot_digest = null,
+                        priority_score = ?, priority_reason = ?,
                         updated_at = current_timestamp
                     where id = ?
-                    """, "counterfactual:" + fingerprint, task.taskId());
+                    """, "counterfactual:" + fingerprint, priority.score(), priority.reason(), task.taskId());
             boolean existed = jdbcTemplate.queryForObject("select count(*) from research_budget_reservation where research_agent_task_id = ?", Integer.class, task.taskId()) > 0;
             budgetService.reserve(new ResearchBudgetAndCheckpointService.ReserveCommand(
                     run.id(), task.taskId(), "repair-reserve:" + fingerprint, deepCellBudget(1)));
@@ -262,6 +267,47 @@ public class ResearchAgentTaskCoordinatorService {
             result.add(List.copyOf(cells.subList(i, Math.min(cells.size(), i + MAX_CELLS_PER_TASK))));
         }
     }
+
+    private TaskPriority priorityFor(List<CellScope> bundle) {
+        boolean highRisk = bundle.stream().anyMatch(CellScope::highRisk);
+        int reportDependency = bundle.stream()
+                .mapToInt(cell -> reportDependencyWeight(columnKey(cell.cellKey())))
+                .max()
+                .orElse(0);
+        int score = (highRisk ? 10_000 : 0) + reportDependency;
+        String reason = (highRisk ? "HIGH_RISK+" : "STANDARD+") + reportDependencyReason(reportDependency);
+        return new TaskPriority(score, reason);
+    }
+
+    private TaskPriority repairPriority(CellScope cell) {
+        int reportDependency = reportDependencyWeight(columnKey(cell.cellKey()));
+        return new TaskPriority(20_000 + reportDependency, "COUNTERFACTUAL+" + reportDependencyReason(reportDependency));
+    }
+
+    private int reportDependencyWeight(String columnKey) {
+        return switch (columnKey) {
+            case "answer" -> 4_000;
+            case "key_evidence", "evidence" -> 3_000;
+            case "limitations" -> 2_000;
+            case "implications" -> 1_000;
+            default -> 500;
+        };
+    }
+
+    private String reportDependencyReason(int weight) {
+        return switch (weight) {
+            case 4_000 -> "ANSWER";
+            case 3_000 -> "EVIDENCE";
+            case 2_000 -> "LIMITATIONS";
+            case 1_000 -> "IMPLICATIONS";
+            default -> "OTHER";
+        };
+    }
+
+    private String columnKey(String cellKey) {
+        int separator = cellKey.indexOf(':');
+        return separator < 0 || separator == cellKey.length() - 1 ? "" : cellKey.substring(separator + 1);
+    }
     private List<Map<String, Object>> sourcesForSlot(
             List<Map<String, Object>> sources, int candidateQuorum, int candidateSlot
     ) {
@@ -312,6 +358,7 @@ public class ResearchAgentTaskCoordinatorService {
         } catch (Exception exception) { throw new IllegalStateException("Cannot create repair task fingerprint", exception); }
     }
     public record CoordinatorReceipt(int createdTaskCount, int idempotentReplayCount, int enqueuedCommandCount, int scopedCellCount) { }
+    private record TaskPriority(int score, String reason) { }
     public record CounterfactualRepairCommand(String researchRunId, int parentCheckpointSeq, int waveNo,
                                               List<CounterfactualTarget> targets) { }
     public record CounterfactualTarget(String cellKey, String reasonDigest, List<String> excludedSourceIds) {

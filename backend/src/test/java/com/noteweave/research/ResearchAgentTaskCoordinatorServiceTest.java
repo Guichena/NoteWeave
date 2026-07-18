@@ -149,6 +149,28 @@ class ResearchAgentTaskCoordinatorServiceTest {
     }
 
     @Test
+    void shouldPersistHigherPriorityForHighRiskBundles() {
+        jdbcTemplate.update("update research_cell set high_risk = true where research_run_id = ? and cell_key = 'entity-1:method'", runId);
+
+        coordinator.planAndEnqueueForWave(runId, 1);
+
+        List<Map<String, Object>> tasks = jdbcTemplate.queryForList("""
+                select target_cells_json, priority_score, priority_reason
+                from research_agent_task
+                where research_run_id = ?
+                order by priority_score desc, candidate_slot
+                """, runId);
+        assertThat(tasks).hasSize(3);
+        assertThat(tasks.subList(0, 2))
+                .allSatisfy(task -> {
+                    assertThat(String.valueOf(task.get("target_cells_json"))).contains("entity-1:method");
+                    assertThat(String.valueOf(task.get("priority_reason"))).contains("HIGH_RISK");
+                });
+        assertThat(((Number) tasks.get(1).get("priority_score")).intValue())
+                .isGreaterThan(((Number) tasks.get(2).get("priority_score")).intValue());
+    }
+
+    @Test
     void shouldClaimAHighRiskCandidateSlotWithAQuorumBoundV2Snapshot() throws Exception {
         jdbcTemplate.update("update research_cell set high_risk = true where research_run_id = ? and cell_key = 'entity-1:method'", runId);
         coordinator.planAndEnqueueForWave(runId, 1);

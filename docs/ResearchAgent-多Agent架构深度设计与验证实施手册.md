@@ -27,12 +27,12 @@
 | 范围 | 已核查证据 | 可以得出的结论 | 不可推出的结论 |
 | --- | --- | --- | --- |
 | NoteWeave Worker | `agent_contracts.py`、`agent_kafka_consumer.py`、`task_snapshot_contract.py`、`role_executor.py`、`deep_cell_executor.py` | 已有严格 command/claim/snapshot/result 驱动、隔离 DEEP_CELL 执行和 evidence/candidate 回传；fake E2E 已验证 | fake/workspace-only 链路不表示 external/LLM provider 已验证 |
-| NoteWeave Backend | `ResearchAgent*Service`、V038–V044、`ResearchRunService` | 已有 append-only 审计、CAS、lease/reaper/cancel、预算 reservation/settlement、checkpoint、outbox/dispatcher、coordinator 和 ingress | 不能由局部服务和 R1–R4 推出 post-CAS crash、自动 Run 收口或生产 SLO |
+| NoteWeave Backend | `ResearchAgent*Service`、V038–V083、`ResearchRunService` | 已有 append-only 审计、CAS、lease/reaper/cancel、预算 reservation/settlement、checkpoint、priority dispatch、coordinator、atomic completion/finalization 和 ingress | 不能由 deterministic/集成测试推出真实 Provider 质量或生产 SLO |
 | Table-as-Search | `run_widesearch_inference.py`、`run_*_batch_inference.py`、prompts | 有 Wide/Deep 层次、受限 `max_tool_threads`、benchmark 批处理并发 | 它的共享表并发写法不适合直接复制到带 VERIFIED 语义的 ledger |
 | MiroFlow | `src/tool/manager.py`、`src/logging/task_tracer.py`、LLM provider 层 | per-agent 工具管理、黑名单、独立 trace/session 值得借鉴 | `async` 或多 tool call 不等于实际并行调度 |
 | Marco / DeepWideSearch | `configs/profiles`、`marco/agent`、`DeepWideSearch/eval` | profile/budget/timeout、表格 depth/width/efficiency 指标值得借鉴 | 它们不是可直接嵌入本系统的生产级分布式调度器 |
 
-本轮最终测试结果为 Backend MySQL 8.4 Research 聚合 `202 tests, 0 failures, 0 errors, 1 skipped`（skip 为环境门控 Redis integration）、MySQL LockMatrix `13/13`、Worker 全量 `375/375`。新增外部 archive authority、loopback provenance 拒绝、Coordinator server-policy snapshot、本地真实 HTTP permit/archive 顺序、REAL external preflight 和四轮 suite runner 回归均已通过。Compose 与 deterministic fake-provider/HTTP fixture 证据不代表真实 LLM/Search provider 已验证；第 4 节和第 15 节继续区分已经证明与尚未证明的能力。
+当前工作区最终回归基线为 Backend Research 聚合 `212 tests, 0 failures, 0 errors, 1 skipped`（skip 为环境门控 Redis integration）、MySQL LockMatrix `13/13`、Worker 全量 `377/377`。新增外部 archive authority、loopback provenance 拒绝、Coordinator server-policy snapshot、durable priority dispatch、本地真实 HTTP permit/archive 顺序、REAL external preflight 和四轮 suite runner 回归均已通过。Compose 与 deterministic fake-provider/HTTP fixture 证据不代表真实 LLM/Search provider 已验证；第 4 节和第 15 节继续区分已经证明与尚未证明的能力。
 
 ## 3. 参考实现的真实含义与取舍
 
@@ -296,7 +296,7 @@ MA4H 已实现周期性 LeaseKeeper、共享 cancel token、heartbeat stale/unav
 
 ### 9.2 优先级与 admission
 
-MA4E 当前按实体和稳定 fingerprint 生成最多 3 个 cell 的 bundle，尚未实现完整 wave priority。MA4I 应实现确定性排序，避免让 LLM 直接决定调度：
+MA4E/MA4I 当前按实体和稳定 fingerprint 生成最多 3 个 cell 的 bundle，并把精炼版优先级持久化到 `research_agent_task.priority_score/priority_reason`。分数由服务端权威字段计算：`COUNTERFACTUAL > high-risk > answer > evidence > limitations > implications > stable fallback`；Dispatcher 在有限批次内按 `priority desc, wave asc, created_at, id` 取任务，避免让 LLM 决定调度。
 
 ```text
 priority =
@@ -315,11 +315,11 @@ admit only when:
   provider/workspace/run capacity is available
 ```
 
-排序键需包含 `priority desc, wave asc, entity_id asc, task_id asc`，确保同一 snapshot 可复现。`Counterfactual` 不与原任务共享 source/evidence；它的 priority 由冲突严重度和最终报告影响决定。
+简历项目没有为缺少权威输入的数据虚构 `estimated_cost` 或 `duplicate_source_penalty`；这些项保留为真实 Provider/生产调参扩展。`Counterfactual` 不与原任务共享 source/evidence，并获得最高调度层级。
 
 ### 9.3 Wave barrier 与早停
 
-这是 MA4I 的目标语义，当前 Coordinator 尚不会在 task submit 后自动触发：同 wave 的 task 都到可解释终态或 deadline 后，重新运行 Local Verifier、写单调 checkpoint、重算缺口并决定下一 wave/repair。以下条件触发早停：必填 cell 已满足、citation audit 完成、没有 blocker、剩余预算低于最小 bundle reservation，或 deadline/cancel 到达。
+MA4I 已由 `ResearchAgentCoordinatorTickService`、Snapshot/Recovery/Repair Advancement 服务实现：active task 存在时 no-op；失败或 verifier repair gap 出现时写单调 checkpoint 并任务化反证修复；citation-gated ledger 达到终态后进入原子 finalization。健康门只阻止新的 initial wave，不能丢弃已有历史。
 
 ## 10. 预算、计费和 Worker 自主配置
 
@@ -333,7 +333,7 @@ consumed <= run_limit and consumed <= role/cell limit
 same execution replay does not consume twice
 ```
 
-当前是 execution 结束时聚合 usage，并没有 durable per-call usage，也没有完整记录已 settle reservation 的 unused 差额。MA4H 应补齐 per-call durable usage、unused release 和 crash/cancel 守恒；MA5 再校验真实 LLM token、search/fetch/read 调用、wall-clock、估算费用与 provider 账单。无法精确报价的 provider 也应记录调用数和估算方法版本。
+当前原子 completion 会将 execution 聚合 usage 与 reservation 同事务结算，`released_json = reserved - consumed`，cancel/retry-exhausted 则释放整笔剩余额度；回放不得二次结算。简历项目刻意不扩张为逐 token 的 Provider 账单系统：permit 审计和聚合 usage 是运行真源，真实 Provider token/费用对账仍属于 MA5 外部证据门。
 
 ### 10.2 Worker 可使用自己的模型配置，但不能自己扩大权限
 
@@ -351,7 +351,7 @@ research-worker-wide:   discovery provider credential + approved model alias
 
 当前 MA4D workspace path 已实现：Worker append 候选和逐字 evidence，不提交 merge verdict；Backend 验证 source/quote/task/lease/cell binding，计算最小结构化 verdict，再经 Merge Gate CAS 更新 cell；版本、lease、证据绑定错误或 frozen cell 会被拒绝并保留审计。R1–R4 证明该限定路径不会因双 Worker/replay 产生第二次 cell version。
 
-完整目标仍包括：更独立的 `SUPPORTS / CONTRADICTS / INSUFFICIENT / UNSAFE` verifier；冲突、高风险或 citation weakness 自动创建带排除来源约束的 `COUNTERFACTUAL` task；Local/Global Verifier、Premature Commitment Guard 与 Citation Audit 控制报告生成。Coordinator 自动 repair 属于 MA4I，SYNTHESIS/report gate 属于 MA4J，真实 external evidence 独立性评测属于 MA5。
+当前已具备独立的四路 verifier 语义、high-risk 双 durable slot、blind merge、quorum conflict repair、带排除来源约束的 `COUNTERFACTUAL` task，以及 evidence-bound finalization gate。真实 external evidence 的质量、独立性和收益仍只能由 MA5 四轮同条件 Provider A/B 证明。
 
 禁止以“多个 Agent 得出相同文字”当作独立证据。独立性至少以 source canonical ID、domain、publication lineage、discovery round 和 evidence content hash 判断；同一转载链只能计作一条证据谱系。
 
@@ -427,7 +427,7 @@ R1–R4 当前保存 task/outbox/execution/evidence/candidate/merge/cell/budget 
 
 | 类别 | 当前证据 | 尚未闭合的门槛 |
 | --- | --- | --- |
-| Contract | strict command/snapshot/result、v1/v2 quorum/repair snapshot、extra field/identity/digest 拒绝、external archive receipt binding、REAL provider preflight 与本地真实 HTTP 调用顺序进入 Worker `375/375` | 真实 provider 跨网络协议兼容性 |
+| Contract | strict command/snapshot/result、v1/v2 quorum/repair snapshot、extra field/identity/digest 拒绝、external archive receipt binding、REAL provider preflight 与本地真实 HTTP 调用顺序进入 Worker `377/377` | 真实 provider 跨网络协议兼容性 |
 | Claim/fencing | 定向竞争、旧 fencing 拒绝、MA4H heartbeat/cancel/lease-loss 已验证 | 真实 provider 长调用与生产网络长期 soak |
 | Submit/replay | execution/settlement 幂等、post-CAS crash 与 response-loss replay 已验证 | 生产 broker/network 长期 soak |
 | CAS | stale/frozen/evidence binding、post-write crash、双 slot blind merge、冲突 repair 已验证 | 真实 provider 长期并发与生产 soak |
@@ -440,7 +440,7 @@ R1–R4 当前保存 task/outbox/execution/evidence/candidate/merge/cell/budget 
 | Security | server snapshot、workspace source/逐字 quote、旧 lease/scope 拒绝、hardened external fetch、lease-bound archive、服务端 SHA-256/quote/provenance 复核 | 真实 provider 与生产网络长期 soak |
 | Quality/performance | MA5 benchmark/archive、自动四轮 suite runner 与 simulated 失败样本已生成；MA6 健康门已实现 | 真实 provider 至少四轮同条件 A/B；生产 SLO |
 
-本轮代码级证据包括 Backend MySQL 8.4 的 archive/atomic-completion 定向集成测试、Worker 全量 `375/375`；锁序证据为 MySQL 8.4.9 LockMatrix `13/13`。补充回归覆盖自动 Run bootstrap、legacy callback fail-closed、DLQ redaction、provider redirect fail-closed、external archive receipt/未归档 fail-closed、本地真实 HTTP permit → archive → extract 顺序、REAL external preflight、四轮 immutable suite archive/comparison、Java/Python unsigned UTF-8 canonical key 顺序、deterministic report 排序/Markdown 转义和 Redis `limited` 指标。这些证据仍不能证明真实 provider 吞吐、延迟、外部限流、答案质量或生产稳定性。
+本轮代码级证据包括 Backend MySQL 8.4 的 archive/atomic-completion 定向集成测试、Worker 全量 `377/377`；锁序证据为 MySQL 8.4.9 LockMatrix `13/13`。补充回归覆盖自动 Run bootstrap、legacy callback fail-closed、DLQ redaction、provider redirect fail-closed、external archive receipt/未归档 fail-closed、本地真实 HTTP permit → archive → extract 顺序、REAL external preflight、四轮 immutable suite archive/comparison、Java/Python unsigned UTF-8 canonical key 顺序、deterministic report 排序/Markdown 转义和 Redis `limited` 指标。这些证据仍不能证明真实 provider 吞吐、延迟、外部限流、答案质量或生产稳定性。
 
 ## 16. 质量、效率与放量判定
 
@@ -468,7 +468,7 @@ MA5 runner 的顺序/并行档位是同进程 `SEQUENTIAL_V2` / `LOCAL_PARALLEL`
 
 ## 17. 发布前可复核命令
 
-以下命令须分开执行并保存每项退出码，避免长串命令超时后误报绿色。当前保存结果为 Backend MySQL Research 聚合 `202 tests, 0 failures, 0 errors, 1 skipped`、Worker `371/371`：
+以下命令须分开执行并保存每项退出码，避免长串命令超时后误报绿色。当前保存结果为 Backend Research 聚合 `212 tests, 0 failures, 0 errors, 1 skipped`、Worker `377/377`；另有 MySQL LockMatrix `13/13`：
 
 ```powershell
 python -m pytest workers/research-worker/tests -q

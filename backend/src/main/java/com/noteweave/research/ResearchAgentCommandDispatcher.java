@@ -29,7 +29,7 @@ public class ResearchAgentCommandDispatcher {
                   and rr.status not in ('COMPLETED', 'FAILED', 'CANCELLED')
                   and (rat.status in ('PENDING', 'EXPIRED')
                     or (rat.status = 'RETRY_WAIT' and (rat.next_attempt_at is null or rat.next_attempt_at <= current_timestamp)))
-                order by rao.created_at, rao.id limit ?
+                order by rat.priority_score desc, rat.wave_no, rao.created_at, rao.id limit ?
                 """, (rs, rowNum) -> new OutboxRow(rs.getString(1), rs.getInt(2), rs.getString(3), rs.getString(4), rs.getString(5)), safeLimit);
         return publish(rows);
     }
@@ -47,7 +47,7 @@ public class ResearchAgentCommandDispatcher {
                   and rr.status not in ('COMPLETED', 'FAILED', 'CANCELLED')
                   and (rat.status in ('PENDING', 'EXPIRED')
                     or (rat.status = 'RETRY_WAIT' and (rat.next_attempt_at is null or rat.next_attempt_at <= current_timestamp)))
-                order by rao.created_at, rao.id limit ?
+                order by rat.priority_score desc, rat.wave_no, rao.created_at, rao.id limit ?
                 """, (rs, rowNum) -> new OutboxRow(rs.getString(1), rs.getInt(2), rs.getString(3), rs.getString(4), rs.getString(5)),
                 runId, safeLimit);
         return publish(rows);

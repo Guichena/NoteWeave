@@ -78,6 +78,29 @@ class ResearchAgentCommandOutboxServiceTest {
     }
 
     @Test
+    void shouldDispatchHighestPriorityReadyCommandBeforeFifoOrder() {
+        outboxService.enqueue(agentTaskId);
+        String urgentTaskId = taskService.createTask(new ResearchAgentTaskService.CreateTaskCommand(
+                runId, "urgent-agent-task", "urgent-agent-idem", 1, "COUNTERFACTUAL", "entity-2", "branch-main", 0, 1,
+                List.of("entity-2:answer"), Map.of("llm_calls", 1)
+        )).taskId();
+        outboxService.enqueue(urgentTaskId);
+        jdbcTemplate.update("update research_agent_task set priority_score = 10, priority_reason = 'NORMAL' where id = ?", agentTaskId);
+        jdbcTemplate.update("update research_agent_task set priority_score = 100, priority_reason = 'HIGH_RISK' where id = ?", urgentTaskId);
+        java.util.List<String> publishedKeys = new java.util.ArrayList<>();
+        ResearchAgentCommandDispatcher dispatcher = new ResearchAgentCommandDispatcher(
+                jdbcTemplate, (topic, messageKey, payloadJson) -> publishedKeys.add(messageKey));
+
+        var response = dispatcher.dispatchReadyForRun(runId, 1);
+
+        assertThat(response.dispatchedCount()).isEqualTo(1);
+        assertThat(publishedKeys).containsExactly(urgentTaskId);
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from research_agent_outbox where research_agent_task_id = ?", String.class, agentTaskId))
+                .isEqualTo("READY");
+    }
+
+    @Test
     void shouldDispatchOnlyReadyCommandsForRequestedRun() {
         outboxService.enqueue(agentTaskId);
         String anotherRunId = createRunAndAgentTask("another-run");
