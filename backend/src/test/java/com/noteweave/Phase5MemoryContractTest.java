@@ -531,17 +531,17 @@ class Phase5MemoryContractTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.memory_objects.length()").value(1));
 
-        sendMessage(conversationId, "QA", "先介绍 AlphaWorkbench 的核心原则");
-        sendMessage(conversationId, "QA", "AlphaWorkbench 的四个原则分别是什么");
-        sendMessage(conversationId, "QA", "AlphaWorkbench 的第二个原则为什么重要");
-        sendMessage(conversationId, "QA", "AlphaWorkbench 的第三个原则解决什么问题");
+        sendCompletedMessage(conversationId, "QA", "先介绍 AlphaWorkbench 的核心原则");
+        sendCompletedMessage(conversationId, "QA", "AlphaWorkbench 的四个原则分别是什么");
+        sendCompletedMessage(conversationId, "QA", "AlphaWorkbench 的第二个原则为什么重要");
+        sendCompletedMessage(conversationId, "QA", "AlphaWorkbench 的第三个原则解决什么问题");
 
         JsonNode qaFollowUp = sendMessage(conversationId, "QA", "继续总结 AlphaWorkbench 这些原则的共同目标");
         String qaRequestId = qaFollowUp.path("data").path("assistant_request_id").asText();
         ChatStreamTestSupport.perform(mockMvc, qaRequestId)
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 表达控制")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("前序主题摘要")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("连续对话窗口")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("先结论后结构")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("统一使用研究工作台")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.citation")));
@@ -551,7 +551,7 @@ class Phase5MemoryContractTest {
         ChatStreamTestSupport.perform(mockMvc, noteRequestId)
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 表达控制")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("前序主题摘要")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("连续对话窗口")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("【原文窗口】")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("先结论后结构")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.citation")));
@@ -561,7 +561,7 @@ class Phase5MemoryContractTest {
         ChatStreamTestSupport.perform(mockMvc, wikiRequestId)
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 表达控制")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("前序主题摘要")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("连续对话窗口")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("AlphaWorkbench 页面")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("统一使用研究工作台")));
 
@@ -1049,6 +1049,21 @@ class Phase5MemoryContractTest {
                 .andExpect(status().isOk())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString());
+    }
+
+    private JsonNode sendCompletedMessage(
+            String conversationId,
+            String answerMode,
+            String content
+    ) throws Exception {
+        JsonNode response = sendMessage(conversationId, answerMode, content);
+        ChatStreamTestSupport.perform(
+                        mockMvc,
+                        response.path("data").path("assistant_request_id").asText())
+                .andExpect(status().isOk())
+                .andExpect(content().string(
+                        org.hamcrest.Matchers.containsString("event:chat.completed")));
+        return response;
     }
 
     private void createManualWikiPage(String workspaceId, String title, String content) throws Exception {

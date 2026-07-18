@@ -939,7 +939,6 @@ public class ResearchRunService {
     }
 
     private void projectCompletedReportCard(String researchRunId, String workspaceId, String reportTitle) {
-        String card = "研究报告已完成：" + reportTitle + "\n\nresearch_run_id: " + researchRunId;
         ResearchConversationProjection target = jdbcTemplate.query("""
                 select conversation_id, answer_message_id
                 from research_run where workspace_id = ? and id = ?

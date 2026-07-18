@@ -76,25 +76,11 @@ final class ResearchAgentLegacyResultRouteGuardInterceptor implements HandlerInt
             recordRoute(route, TaskSchema.ATOMIC_V1);
             throw atomicCompletionRequired();
         }
-        if (bodyIdentity.duplicateTaskId()) {
-            recordRoute(route, TaskSchema.MISSING_OR_INVALID);
-            throw invalidLegacyBody("Legacy result request contains duplicate task_id fields");
-        }
-
         TaskSchema observedSchema = schemas.contains(TaskSchema.LEGACY_NON_SNAPSHOT)
                 ? TaskSchema.LEGACY_NON_SNAPSHOT
                 : schemas.contains(TaskSchema.UNKNOWN) ? TaskSchema.UNKNOWN : TaskSchema.MISSING_OR_INVALID;
         recordRoute(route, observedSchema);
-
-        if (Boolean.TRUE.equals(request.getAttribute(
-                ResearchAgentLegacyResultRawBodyFilter.BODY_TOO_LARGE_ATTRIBUTE))) {
-            throw invalidLegacyBody("Legacy result request exceeds the bounded route limit");
-        }
-        if (Boolean.TRUE.equals(request.getAttribute(
-                ResearchAgentLegacyResultRawBodyFilter.BODY_READ_FAILED_ATTRIBUTE))) {
-            throw invalidLegacyBody("Legacy result request body could not be read");
-        }
-        return true;
+        throw atomicCompletionRequired();
     }
 
     private BodyTaskIdentity extractBodyTaskIdentity(HttpServletRequest request) {
@@ -213,11 +199,7 @@ final class ResearchAgentLegacyResultRouteGuardInterceptor implements HandlerInt
 
     private BusinessException atomicCompletionRequired() {
         return new BusinessException("RESEARCH_AGENT_ATOMIC_COMPLETION_REQUIRED",
-                "Snapshot-ready DEEP_CELL tasks must use the atomic completion endpoint");
-    }
-
-    private BusinessException invalidLegacyBody(String message) {
-        return new BusinessException("RESEARCH_AGENT_LEGACY_RESULT_INVALID", message);
+                "Legacy split-result routes are retired; use the atomic completion endpoint");
     }
 
     private record BodyTaskIdentity(Set<String> taskIds, boolean duplicateTaskId) {

@@ -6,13 +6,13 @@
 
 | 阶段 | 目标 | 状态 | 入口文档 |
 |---|---|---|---|
-| Phase 0 | 固定术语、不变量、Golden Scenarios 和测试基线 | 进行中 | `phase-0-1-conversation-turn.md` |
-| Phase 1 | Research 接入 Conversation，建立统一 Turn 提交账本与三段事务恢复 | 进行中 | `phase-0-1-conversation-turn.md`、`phase-1-transaction-recovery.md` |
-| Phase 2 | RunInputSnapshot、RetrievalConfig 和 Evidence 固化 | 进行中 | `phase-2-snapshot-retrieval-evidence.md` |
-| Phase 3 | Segment Summary Revision 与长上下文 | 待开始 | 待 Phase 2 完成后建立 |
-| Phase 4 | Canonical MemoryRuntime | 进行中 | `phase-4-memory-runtime.md` |
-| Phase 5 | Artifact 显式上游输入 | 待开始 | 待 Phase 2 Snapshot 可复用后建立 |
-| Phase 6 | 事件、评测与旧路径删除 | 待开始 | 待双写/迁移观测完成后建立 |
+| Phase 0 | 固定术语、不变量、Golden Scenarios 和测试基线 | 已完成 | `phase-0-1-conversation-turn.md` |
+| Phase 1 | Research 接入 Conversation，建立统一 Turn 提交账本与三段事务恢复 | 已完成 | `phase-0-1-conversation-turn.md`、`phase-1-transaction-recovery.md` |
+| Phase 2 | RunInputSnapshot、RetrievalConfig 和 Evidence 固化 | 已完成 | `phase-2-snapshot-retrieval-evidence.md` |
+| Phase 3 | Segment Summary Revision 与长上下文 | 已完成 | `phase-3-segment-long-context.md`、`phase-3-execution-log.md` |
+| Phase 4 | Canonical MemoryRuntime | 已完成 | `phase-4-memory-runtime.md`、`phase-4-execution-log.md` |
+| Phase 5 | Artifact 显式上游输入 | 已完成 | `phase-5-artifact-explicit-input.md`、`phase-5-execution-log.md` |
+| Phase 6 | 事件、评测与旧路径删除 | 已完成 | `phase-6-events-evaluation-cleanup.md`、`phase-6-execution-log.md` |
 
 ## 固定领域语言
 

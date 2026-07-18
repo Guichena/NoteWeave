@@ -25,7 +25,7 @@ const requiredAppSnippets = [
   "lazy(() => import(\"./features/artifacts/ArtifactRail\")",
   "artifactComposerOpen ? <Suspense",
   "保存最新回答为 Note",
-  "打开 Wiki 工作台",
+  "进入 Wiki 工作台",
   "开启 Wiki 构建"
 ];
 

@@ -129,11 +129,7 @@ class ResearchAgentLegacyResultRouteGuardTest {
                 + "x".repeat(ResearchAgentCompletionEnvelopeParser.MAX_PAYLOAD_BYTES) + "\"}";
 
         assertAtomicRequired("/internal/research-agent/workspace-evidence-batches", oversizedAtomic);
-        mockMvc.perform(post("/internal/research-agent/candidate-batches")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(oversizedLegacy))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("RESEARCH_AGENT_LEGACY_RESULT_INVALID"));
+        assertAtomicRequired("/internal/research-agent/candidate-batches", oversizedLegacy);
 
         verifyNoInteractions(evidenceService, candidateService);
         assertThat(stateDigest(atomic)).isEqualTo(before);
@@ -196,22 +192,12 @@ class ResearchAgentLegacyResultRouteGuardTest {
 
         assertAtomicRequired("/internal/research-agent/workspace-evidence-batches",
                 validEvidence(atomic.taskId()));
-        mockMvc.perform(post("/internal/research-agent/candidate-batches")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(validCandidate(legacy.taskId())))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value("OK"));
+        assertAtomicRequired("/internal/research-agent/candidate-batches",
+                validCandidate(legacy.taskId()));
         String unknownTaskId = Ids.newId();
-        mockMvc.perform(post("/internal/research-agent-tasks/{taskId}/submit", unknownTaskId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(validSubmit()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value("OK"));
-        mockMvc.perform(post("/internal/research-agent/workspace-evidence-batches")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        assertAtomicRequired("/internal/research-agent-tasks/" + unknownTaskId + "/submit",
+                validSubmit());
+        assertAtomicRequired("/internal/research-agent/workspace-evidence-batches", "{}");
 
         assertThat(legacyRouteCount("evidence", "atomic_v1") - atomicEvidence).isEqualTo(1.0);
         assertThat(legacyRouteCount("candidate", "legacy_non_snapshot") - legacyCandidate).isEqualTo(1.0);
@@ -273,37 +259,15 @@ class ResearchAgentLegacyResultRouteGuardTest {
     }
 
     @Test
-    void shouldPreserveLegacyValidationAndPrimitiveRoutes() throws Exception {
-        mockMvc.perform(post("/internal/research-agent/workspace-evidence-batches")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"task_id\":\"" + legacy.taskId() + "\"}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
-        mockMvc.perform(post("/internal/research-agent/candidate-batches")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"task_id\":\"" + legacy.taskId() + "\"}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    void shouldRejectLegacyNonSnapshotTasksBeforeEveryRetiredPrimitive() throws Exception {
+        assertAtomicRequired("/internal/research-agent/workspace-evidence-batches",
+                validEvidence(legacy.taskId()));
+        assertAtomicRequired("/internal/research-agent/candidate-batches",
+                validCandidate(legacy.taskId()));
+        assertAtomicRequired("/internal/research-agent-tasks/" + legacy.taskId() + "/submit",
+                validSubmit());
 
-        mockMvc.perform(post("/internal/research-agent/workspace-evidence-batches")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(validEvidence(legacy.taskId())))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value("OK"));
-        mockMvc.perform(post("/internal/research-agent/candidate-batches")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(validCandidate(legacy.taskId())))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value("OK"));
-        mockMvc.perform(post("/internal/research-agent-tasks/{taskId}/submit", legacy.taskId())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(validSubmit()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value("OK"));
-
-        verify(evidenceService).appendWorkspaceEvidence(any());
-        verify(candidateService).appendAndVerify(any());
-        verify(taskService).submitExecution(any());
+        verifyNoInteractions(evidenceService, candidateService, taskService);
     }
 
     private void assertAtomicRequired(String path, String body) throws Exception {
