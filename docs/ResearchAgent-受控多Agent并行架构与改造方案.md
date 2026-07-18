@@ -30,7 +30,7 @@ NoteWeave 可以引入类似 Table-as-Search 的多 Agent 并行机制，而且�
 6. Local/Global Verifier、Premature Commitment Guard、Citation Audit 与最终合成继续单点收口。
 7. 当前已演进为 Kafka/MySQL lease 驱动的多进程执行；高风险 cell 额外采用两个独立 durable slot，并由服务端盲验汇合。
 
-截至 2026-07-18，本文的架构主链不再只是目标设计：MA4A-J、MA5Q、MA6 和外部网页证据的 archive-before-completion 链均已落地，正常创建入口也已接入该链路。最新可复核结果包括 Backend MySQL 8.4 的定向外部证据/归档集成测试、LockMatrix `13/13` 与 Research Worker `366/366`。真实 Provider 凭证仍未配置，因此这些证据只证明契约、并发一致性、恢复、盲验、调度及网页 provenance 闭环，不证明真实质量、成本或 p95 改善。
+截至 2026-07-18，本文的架构主链不再只是目标设计：MA4A-J、MA5Q、MA6 和外部网页证据的 archive-before-completion 链均已落地，正常创建入口也已接入该链路。最新可复核结果包括 Backend MySQL 8.4 的定向外部证据/归档集成测试、LockMatrix `13/13` 与 Research Worker `367/367`；Worker 还以本地真实 HTTP transport fixture 验证了 permit → archive → extract 的调用顺序。真实 Provider 凭证仍未配置，因此这些证据只证明契约、并发一致性、恢复、盲验、调度及网页 provenance 闭环，不证明真实质量、成本或 p95 改善。
 
 当前 Agent completion 的权威证据边界是已解析的 workspace source，或服务端已归档的 external snapshot。外部网页仍先经过 Worker 侧 SSRF/重定向/内容安全检查；随后必须以 `task_id + worker + lease_epoch + fencing_token + window + source` 进入内部归档端点，由 Backend 生成内容 SHA-256 与 snapshot key。completion 仅携带稳定的 window/source 身份，Backend 在同一原子事务中从归档表锁定、复核标题、逐字 quote 与内容哈希，并将 URL/provider/adapter/provenance 以服务端值写入 `source_evidence`。未归档、降级、抓取失败或回执不匹配的网页窗口不得进入 evidence/candidate。真实网页 Provider 的效果仍需外部 A/B 证明。
 
@@ -1247,7 +1247,7 @@ NoteWeave 可以形成如下差异化：
 | MA2：单进程受限并发 | 已完成：`LOCAL_PARALLEL` 以隔离 snapshot 并发 proposal，结果按 task 输入顺序收集，Merge 仍单写。 | Scheduler/集成定向与 Worker 全量 `236 passed`；Compose、编译、diff 检查通过。 | 不得将其表述为真实 provider 并行、分布式多写者或 p95 改善；这些需要 MA3+ 与真实 A/B。 |
 | MA3：增量持久化与 CAS | 已完成：cell CAS、append-only candidate/merge、task lease/execution、budget reservation、checkpoint high-water mark、`INCREMENTAL_V1` 写入隔离与审计投影已落地。 | Incremental 1/1、CAS 3/3、Task 2/2、Budget/Checkpoint 2/2、Phase6 32/32 联合回归通过。 | MA4 的 command transport、reaper、Redis 限流、Worker client 与真实工具执行完成前，不得称为分布式执行。 |
 | MA4：分布式执行 | MA4A-J 已在简历项目、受控 fake-provider 证据范围完成。 | claim/lease/fencing、预算/限流、原子 completion、recovery/checkpoint/repair、原子 report 均有定向或隔离证据。 | 不等于真实 provider 质量、p95 或生产稳定性。 |
-| MA5：角色质量与 A/B | role profile、high-risk 双 durable slot、Backend blind merge、可执行的 quorum=1 verifier-decision repair、成功后 decision RESOLVED、fair benchmark/archive、LLM 429/5xx ledger 已实现；外部网页按 hardened fetch → lease-bound server archive → atomic provenance validation 进入 v2 evidence contract。正常 Run 自动 bootstrap canonical matrix，旧 callback 不能绕过 atomic finalizer。 | Backend MySQL 定向归档/atomic completion 集成测试、LockMatrix `13/13`、Worker `366/366`；Java/Python canonical Unicode 排序向量、deterministic report 转义、DLQ redaction、provider redirect fail-closed 与 external archive fail-closed 回归已通过。 | 真实 provider 每 mode 四轮与生产 SLO 仍待完成；不得从 deterministic/fixture 证据声称质量或 p95 提升。 |
+| MA5：角色质量与 A/B | role profile、high-risk 双 durable slot、Backend blind merge、可执行的 quorum=1 verifier-decision repair、成功后 decision RESOLVED、fair benchmark/archive、LLM 429/5xx ledger 已实现；外部网页按 hardened fetch → lease-bound server archive → atomic provenance validation 进入 v2 evidence contract。正常 Run 自动 bootstrap canonical matrix，旧 callback 不能绕过 atomic finalizer。 | Backend MySQL 定向归档/atomic completion 集成测试、LockMatrix `13/13`、Worker `367/367`；Java/Python canonical Unicode 排序向量、真实本地 HTTP permit/archive 顺序、deterministic report 转义、DLQ redaction、provider redirect fail-closed 与 external archive fail-closed 回归已通过。 | 真实 provider 每 mode 四轮与生产 SLO 仍待完成；不得从 deterministic/fixture 证据声称质量或 p95 提升。 |
 | MA6：运行治理 | 默认健康策略与数据库 guard 已实现；旧 canary/manual endpoint 已删除。 | policy/Coordinator 联合回归通过；仅暂停新的 initial wave，已有历史继续恢复收口。 | 没有生产样本和 SLO，不得称为生产灰度完成。 |
 
 ### 24.5 关键决策记录（ADR）

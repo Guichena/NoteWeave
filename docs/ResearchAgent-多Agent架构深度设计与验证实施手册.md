@@ -32,7 +32,7 @@
 | MiroFlow | `src/tool/manager.py`、`src/logging/task_tracer.py`、LLM provider 层 | per-agent 工具管理、黑名单、独立 trace/session 值得借鉴 | `async` 或多 tool call 不等于实际并行调度 |
 | Marco / DeepWideSearch | `configs/profiles`、`marco/agent`、`DeepWideSearch/eval` | profile/budget/timeout、表格 depth/width/efficiency 指标值得借鉴 | 它们不是可直接嵌入本系统的生产级分布式调度器 |
 
-本轮最终测试结果为 Backend MySQL 8.4 Research 聚合 `202 tests, 0 failures, 0 errors, 1 skipped`（skip 为环境门控 Redis integration）、MySQL LockMatrix `13/13`、Worker 全量 `366/366`。新增外部 archive authority、loopback provenance 拒绝和 Coordinator server-policy snapshot 定向回归均已通过。Compose 与 deterministic fake-provider 证据不代表真实 LLM/Search provider 已验证；第 4 节和第 15 节继续区分已经证明与尚未证明的能力。
+本轮最终测试结果为 Backend MySQL 8.4 Research 聚合 `202 tests, 0 failures, 0 errors, 1 skipped`（skip 为环境门控 Redis integration）、MySQL LockMatrix `13/13`、Worker 全量 `367/367`。新增外部 archive authority、loopback provenance 拒绝、Coordinator server-policy snapshot 和本地真实 HTTP permit/archive 顺序回归均已通过。Compose 与 deterministic fake-provider/HTTP fixture 证据不代表真实 LLM/Search provider 已验证；第 4 节和第 15 节继续区分已经证明与尚未证明的能力。
 
 ## 3. 参考实现的真实含义与取舍
 
@@ -427,7 +427,7 @@ R1–R4 当前保存 task/outbox/execution/evidence/candidate/merge/cell/budget 
 
 | 类别 | 当前证据 | 尚未闭合的门槛 |
 | --- | --- | --- |
-| Contract | strict command/snapshot/result、v1/v2 quorum/repair snapshot、extra field/identity/digest 拒绝、external archive receipt binding 进入 Worker `366/366` | 真实 provider 跨网络协议兼容性 |
+| Contract | strict command/snapshot/result、v1/v2 quorum/repair snapshot、extra field/identity/digest 拒绝、external archive receipt binding 与本地真实 HTTP 调用顺序进入 Worker `367/367` | 真实 provider 跨网络协议兼容性 |
 | Claim/fencing | 定向竞争、旧 fencing 拒绝、MA4H heartbeat/cancel/lease-loss 已验证 | 真实 provider 长调用与生产网络长期 soak |
 | Submit/replay | execution/settlement 幂等、post-CAS crash 与 response-loss replay 已验证 | 生产 broker/network 长期 soak |
 | CAS | stale/frozen/evidence binding、post-write crash、双 slot blind merge、冲突 repair 已验证 | 真实 provider 长期并发与生产 soak |
@@ -440,7 +440,7 @@ R1–R4 当前保存 task/outbox/execution/evidence/candidate/merge/cell/budget 
 | Security | server snapshot、workspace source/逐字 quote、旧 lease/scope 拒绝、hardened external fetch、lease-bound archive、服务端 SHA-256/quote/provenance 复核 | 真实 provider 与生产网络长期 soak |
 | Quality/performance | MA5 benchmark/archive 与 simulated 失败样本已生成；MA6 健康门已实现 | 真实 provider 至少四轮同条件 A/B；生产 SLO |
 
-本轮代码级证据包括 Backend MySQL 8.4 的 archive/atomic-completion 定向集成测试、Worker 全量 `366/366`；锁序证据为 MySQL 8.4.9 LockMatrix `13/13`。补充回归覆盖自动 Run bootstrap、legacy callback fail-closed、DLQ redaction、provider redirect fail-closed、external archive receipt/未归档 fail-closed、Java/Python unsigned UTF-8 canonical key 顺序、deterministic report 排序/Markdown 转义和 Redis `limited` 指标。这些证据仍不能证明真实 provider 吞吐、延迟、外部限流、答案质量或生产稳定性。
+本轮代码级证据包括 Backend MySQL 8.4 的 archive/atomic-completion 定向集成测试、Worker 全量 `367/367`；锁序证据为 MySQL 8.4.9 LockMatrix `13/13`。补充回归覆盖自动 Run bootstrap、legacy callback fail-closed、DLQ redaction、provider redirect fail-closed、external archive receipt/未归档 fail-closed、本地真实 HTTP permit → archive → extract 顺序、Java/Python unsigned UTF-8 canonical key 顺序、deterministic report 排序/Markdown 转义和 Redis `limited` 指标。这些证据仍不能证明真实 provider 吞吐、延迟、外部限流、答案质量或生产稳定性。
 
 ## 16. 质量、效率与放量判定
 

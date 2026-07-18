@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
 
 import pytest
@@ -82,6 +85,17 @@ def _counterfactual_repair_snapshot() -> dict[str, object]:
             "repair_reason_digest": "sha256:repair-reason",
         },
     )
+    return {**payload, "snapshot_digest": snapshot_digest(payload)}
+
+
+def _external_snapshot() -> dict[str, object]:
+    payload = _snapshot()
+    payload.pop("snapshot_digest")
+    payload["source_policy"] = {
+        **payload["source_policy"],  # type: ignore[dict-item]
+        "allow_external_search": True,
+        "allow_external_fetch": True,
+    }
     return {**payload, "snapshot_digest": snapshot_digest(payload)}
 
 
@@ -313,6 +327,90 @@ def test_deep_cell_should_archive_external_window_before_emitting_external_evide
 
     assert len(permit.archive_calls) == 1
     assert permit.archive_calls[0]["content_text"] == "Archived external quote."
+    assert completion.evidence[0].snapshot_status == "EXTERNAL_ARCHIVED"
+    assert completion.candidates[0].evidence_keys == (completion.evidence[0].evidence_key,)
+
+
+def test_deep_cell_should_use_real_http_permits_and_archive_before_external_evidence() -> None:
+    from app.agent_task_client import JavaResearchAgentTaskClient
+    from app.deep_cell_executor import DeepCellExecutor
+
+    calls: list[tuple[str, dict[str, object], str]] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802 - stdlib HTTP handler contract
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            calls.append((self.path, payload, self.headers.get("X-NoteWeave-Internal-Token", "")))
+            if self.path == "/internal/research-agent/permits":
+                data = {"status": "GRANTED", "tool_identity": payload["tool_identity"]}
+            elif self.path == "/internal/research-agent/external-snapshots":
+                content_sha256 = hashlib.sha256(str(payload["content_text"]).encode("utf-8")).hexdigest()
+                data = {
+                    "archive_id": "archive-http-1",
+                    "task_id": payload["task_id"],
+                    "window_id": payload["window_id"],
+                    "source_id": payload["source_id"],
+                    "snapshot_status": "EXTERNAL_ARCHIVED",
+                    "snapshot_key": f"research/external/{payload['task_id']}/{content_sha256}",
+                    "content_sha256": content_sha256,
+                    "idempotent_replay": False,
+                }
+            else:
+                self.send_error(404)
+                return
+            encoded = json.dumps({"data": data}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            return
+
+    class ExternalHttpToolchain(_Toolchain):
+        def read(self, _task_input, _plan, _documents, *, allow_external: bool):
+            self.calls.append(("read", allow_external))
+            return [SimpleNamespace(
+                window_id="window-http-1", source_id="web-source-http-1", source_title="External HTTP source",
+                query="How does it work?", read_focus="method", window_text="HTTP archived external quote.",
+                url="https://example.com/http-evidence", provider="search-provider", adapter="external_url",
+                snapshot_status="FETCHED", snapshot_key="worker-fetch-key", snapshot_archive_ready=True,
+            )]
+
+        def extract(self, _task_input, _plan, _windows, *, llm_client):
+            self.calls.append(("extract", llm_client is not None))
+            return [SimpleNamespace(
+                evidence_id="evidence-http-1", window_id="window-http-1", source_id="web-source-http-1",
+                source_title="External HTTP source", quote_text="HTTP archived external quote.",
+                claim_text="HTTP external conclusion.", relation_type="SUPPORTS", support_score=0.9,
+                conflict_score=0.0, entity_id="entity-1", column_key="method",
+            )]
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        client = JavaResearchAgentTaskClient(
+            f"http://127.0.0.1:{server.server_port}", "internal-test-token", "worker-a"
+        )
+        completion = DeepCellExecutor(
+            client, "worker-a", toolchain=ExternalHttpToolchain(), enable_llm=False
+        )(_command(), _claim(_external_snapshot()))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert [(path, payload.get("tool_identity")) for path, payload, _token in calls] == [
+        ("/internal/research-agent/permits", "search"),
+        ("/internal/research-agent/permits", "fetch"),
+        ("/internal/research-agent/permits", "read"),
+        ("/internal/research-agent/external-snapshots", None),
+        ("/internal/research-agent/permits", "extract"),
+    ]
+    assert all(token == "internal-test-token" for _path, _payload, token in calls)
     assert completion.evidence[0].snapshot_status == "EXTERNAL_ARCHIVED"
     assert completion.candidates[0].evidence_keys == (completion.evidence[0].evidence_key,)
 
