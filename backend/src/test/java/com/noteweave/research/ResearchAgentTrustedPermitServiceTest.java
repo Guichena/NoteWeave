@@ -245,6 +245,39 @@ class ResearchAgentTrustedPermitServiceTest {
     }
 
     @Test
+    void shouldExposeTheLeaseBoundExternalArchiveHttpContractUsedByTheWorker() throws Exception {
+        mockMvc.perform(post("/internal/research-agent/external-snapshots")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "task_id":"%s",
+                                  "worker_instance_id":"worker-a",
+                                  "lease_epoch":%d,
+                                  "fencing_token":%d,
+                                  "window_id":"external-window-http",
+                                  "source_id":"web-source-http",
+                                  "source_title":"External HTTP source",
+                                  "source_url":"https://example.com/http-contract",
+                                  "provider":"search-provider",
+                                  "adapter":"external_url",
+                                  "content_text":"Archived through the Worker HTTP contract."
+                                }
+                                """.formatted(claim.taskId(), claim.leaseEpoch(), claim.fencingToken())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.task_id").value(claim.taskId()))
+                .andExpect(jsonPath("$.data.window_id").value("external-window-http"))
+                .andExpect(jsonPath("$.data.source_id").value("web-source-http"))
+                .andExpect(jsonPath("$.data.snapshot_status").value("EXTERNAL_ARCHIVED"))
+                .andExpect(jsonPath("$.data.snapshot_key").value(
+                        org.hamcrest.Matchers.startsWith("research/external/" + claim.taskId() + "/")))
+                .andExpect(jsonPath("$.data.content_sha256").value(
+                        org.hamcrest.Matchers.matchesPattern("[0-9a-f]{64}")))
+                .andExpect(jsonPath("$.data.idempotent_replay").value(false));
+
+        verifyNoInteractions(rateLimitService);
+    }
+
+    @Test
     void shouldRejectExternalArchiveWhenLeaseIsStaleOrIdentityIsReusedWithDifferentContent() {
         ResearchExternalSnapshotArchiveService.ArchiveCommand command = archiveCommand("Original archived web evidence.");
         externalSnapshotArchiveService.archive(command);
@@ -261,6 +294,23 @@ class ResearchAgentTrustedPermitServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(error -> ((BusinessException) error).code())
                 .isEqualTo("RESEARCH_AGENT_TASK_STALE_LEASE");
+        verifyNoInteractions(rateLimitService);
+    }
+
+    @Test
+    void shouldRejectLoopbackUrlBeforeItCanBecomeExternalEvidenceProvenance() {
+        ResearchExternalSnapshotArchiveService.ArchiveCommand loopback =
+                new ResearchExternalSnapshotArchiveService.ArchiveCommand(
+                        claim.taskId(), "worker-a", claim.leaseEpoch(), claim.fencingToken(), "external-window-loopback",
+                        "web-source-loopback", "Loopback source", "http://127.0.0.1/admin",
+                        "search-provider", "external_url", "Never archive loopback content.");
+
+        assertThatThrownBy(() -> externalSnapshotArchiveService.archive(loopback))
+                .isInstanceOf(BusinessException.class)
+                .extracting(error -> ((BusinessException) error).code())
+                .isEqualTo("RESEARCH_AGENT_EXTERNAL_ARCHIVE_INVALID");
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_external_snapshot where research_agent_task_id = ?",
+                Integer.class, claim.taskId())).isZero();
         verifyNoInteractions(rateLimitService);
     }
 

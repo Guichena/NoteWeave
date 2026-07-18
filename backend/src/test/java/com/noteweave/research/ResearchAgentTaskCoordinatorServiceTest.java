@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.BusinessException;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -35,6 +37,7 @@ class ResearchAgentTaskCoordinatorServiceTest {
     @SpyBean private ResearchAgentCoordinatorTickFaultInjector coordinatorTickFaults;
     @SpyBean private ResearchBudgetAndCheckpointService budgetService;
     @SpyBean private ResearchAgentCommandOutboxService outboxService;
+    @MockBean private ResearchAgentExternalEvidencePolicy externalEvidencePolicy;
 
     private String runId;
     private String workspaceId;
@@ -80,6 +83,19 @@ class ResearchAgentTaskCoordinatorServiceTest {
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_outbox where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("select execution_context_json from research_agent_task where research_run_id = ?", String.class, runId))
                 .contains("The method is documented.", "allow_external_search", "false");
+    }
+
+    @Test
+    void shouldGrantExternalToolScopeOnlyWhenTheServerPolicyEnablesIt() throws Exception {
+        when(externalEvidencePolicy.enabled()).thenReturn(true);
+
+        coordinator.planAndEnqueue(runId);
+
+        String context = jdbcTemplate.queryForObject(
+                "select execution_context_json from research_agent_task where research_run_id = ?", String.class, runId);
+        var sourcePolicy = objectMapper.readTree(context).path("source_policy");
+        assertThat(sourcePolicy.path("allow_external_search").asBoolean()).isTrue();
+        assertThat(sourcePolicy.path("allow_external_fetch").asBoolean()).isTrue();
     }
 
     @Test
@@ -316,6 +332,7 @@ class ResearchAgentTaskCoordinatorServiceTest {
 
     @Test
     void shouldCreateReplayableCounterfactualWithServerCheckedIndependentSourceScope() {
+        when(externalEvidencePolicy.enabled()).thenReturn(true);
         String excludedSourceId = jdbcTemplate.queryForObject(
                 "select id from source where workspace_id = ? order by id limit 1", String.class, workspaceId);
         String independentSourceId = insertReadySource("Independent source");
@@ -335,7 +352,9 @@ class ResearchAgentTaskCoordinatorServiceTest {
         assertThat(jdbcTemplate.queryForObject("select role from research_agent_task where research_run_id = ?", String.class, runId))
                 .isEqualTo("COUNTERFACTUAL");
         String context = jdbcTemplate.queryForObject("select execution_context_json from research_agent_task where research_run_id = ?", String.class, runId);
-        assertThat(context).contains("excluded_source_ids", excludedSourceId, "Independent source").doesNotContain("Trusted source");
+        assertThat(context).contains("excluded_source_ids", excludedSourceId, "Independent source",
+                        "\"allow_external_search\":true", "\"allow_external_fetch\":true")
+                .doesNotContain("Trusted source");
         assertThat(jdbcTemplate.queryForObject("select repair_count from research_cell where research_run_id = ? and cell_key = 'entity-1:method'", Integer.class, runId))
                 .isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_budget_reservation where research_run_id = ?", Integer.class, runId)).isEqualTo(1);

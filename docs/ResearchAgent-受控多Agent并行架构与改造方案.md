@@ -751,7 +751,8 @@ and payload_sha256/idempotency key is valid
 延续 Worker 与主链路隔离，并在 Research 内新增 role profile：
 
 ```text
-NOTEWEAVE_RESEARCH_AGENT_EXECUTION_MODE=SEQUENTIAL|LOCAL_PARALLEL|DISTRIBUTED
+NOTEWEAVE_RESEARCH_AGENT_EXECUTION_MODE=INCREMENTAL_V1
+NOTEWEAVE_RESEARCH_AGENT_EXTERNAL_EVIDENCE_ENABLED=false
 NOTEWEAVE_RESEARCH_AGENT_MAX_CONCURRENCY=4
 NOTEWEAVE_RESEARCH_AGENT_BUNDLE_MAX_CELLS=3
 NOTEWEAVE_RESEARCH_AGENT_LEASE_SECONDS=120
@@ -767,7 +768,7 @@ NOTEWEAVE_RESEARCH_AGENT_ROLE_OPTIONS={...}
 - `cell_verifier`；
 - `global_verifier`。
 
-每个 role 可配置 model、temperature、max_tokens、timeout、max_attempts、input/output cost。未配置时继承 Research Worker 默认，不读取 Backend/Artifact LLM 配置。
+每个 role 可配置 model、temperature、max_tokens、timeout、max_attempts、input/output cost。未配置时继承 Research Worker 默认，不读取 Backend/Artifact LLM 配置。`NOTEWEAVE_RESEARCH_AGENT_EXTERNAL_EVIDENCE_ENABLED` 是 Backend 的服务端授权开关，默认 `false`；开启后 Coordinator 才会把 `allow_external_search/fetch=true` 写入不可变 task snapshot，Worker 仍需自己的 Search/URL/LLM 配置与 permit。
 
 ### 13.2 预算分配
 

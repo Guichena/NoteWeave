@@ -26,6 +26,9 @@ spring:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
 
 noteweave:
+  research:
+    agent:
+      external-evidence-enabled: ${NOTEWEAVE_RESEARCH_AGENT_EXTERNAL_EVIDENCE_ENABLED:false}
   storage:
     local-root: ${NOTEWEAVE_STORAGE_LOCAL_ROOT:target/noteweave-storage}
   document:

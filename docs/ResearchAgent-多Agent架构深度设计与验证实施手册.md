@@ -32,7 +32,7 @@
 | MiroFlow | `src/tool/manager.py`、`src/logging/task_tracer.py`、LLM provider 层 | per-agent 工具管理、黑名单、独立 trace/session 值得借鉴 | `async` 或多 tool call 不等于实际并行调度 |
 | Marco / DeepWideSearch | `configs/profiles`、`marco/agent`、`DeepWideSearch/eval` | profile/budget/timeout、表格 depth/width/efficiency 指标值得借鉴 | 它们不是可直接嵌入本系统的生产级分布式调度器 |
 
-本轮最终测试结果为 Backend MySQL 8.4 Research 聚合 `202 tests, 0 failures, 0 errors, 1 skipped`（skip 为环境门控 Redis integration）、MySQL LockMatrix `13/13`、Worker 全量 `361/361`。Compose 与 deterministic fake-provider 证据不代表真实 LLM/Search provider 已验证；第 4 节和第 15 节继续区分已经证明与尚未证明的能力。
+本轮最终测试结果为 Backend MySQL 8.4 Research 聚合 `202 tests, 0 failures, 0 errors, 1 skipped`（skip 为环境门控 Redis integration）、MySQL LockMatrix `13/13`、Worker 全量 `366/366`。新增外部 archive authority、loopback provenance 拒绝和 Coordinator server-policy snapshot 定向回归均已通过。Compose 与 deterministic fake-provider 证据不代表真实 LLM/Search provider 已验证；第 4 节和第 15 节继续区分已经证明与尚未证明的能力。
 
 ## 3. 参考实现的真实含义与取舍
 
@@ -230,7 +230,7 @@ MA4H 已将 permit endpoint 收口为 `task_id + worker + lease_epoch + fencing_
 * Backend 计算最小 verifier verdict，再调用 CAS merge；Worker 不能直接提交 `SUPPORTS` 来写 cell；
 * submit 时以 execution identity 结算聚合 usage，并取消尚未发布的 retry delivery。
 
-历史顺序曾是 evidence/candidate/CAS 先发生，execution submit 后发生，因而存在 CAS 成功但 submit 未发生的窗口。MA4G 已以 immutable completion envelope 和单个 Backend transaction 将 execution/completion/evidence/candidate/merge/CAS/budget/task/outbox 一起收口；真实 MySQL G2 kill、G3 response-loss replay 与 G4 双 Worker replay 已验证该窗口不产生半提交、重复 version 或重复结算。external fetched evidence 仍必须在 MA5 先归档并建立 provenance，不能把任意 Worker 文本作为 evidence。
+历史顺序曾是 evidence/candidate/CAS 先发生，execution submit 后发生，因而存在 CAS 成功但 submit 未发生的窗口。MA4G 已以 immutable completion envelope 和单个 Backend transaction 将 execution/completion/evidence/candidate/merge/CAS/budget/task/outbox 一起收口；真实 MySQL G2 kill、G3 response-loss replay 与 G4 双 Worker replay 已验证该窗口不产生半提交、重复 version 或重复结算。external fetched evidence 现在必须先经 hardened fetch、lease-bound server archive 和 provenance 复核，不能把任意 Worker 文本作为 evidence。
 
 ## 8. 状态机、投递与恢复
 

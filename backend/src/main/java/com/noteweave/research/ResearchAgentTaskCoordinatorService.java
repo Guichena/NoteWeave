@@ -27,13 +27,16 @@ public class ResearchAgentTaskCoordinatorService {
     private final ResearchAgentTaskService taskService;
     private final ResearchBudgetAndCheckpointService budgetService;
     private final ResearchAgentCommandOutboxService outboxService;
+    private final ResearchAgentExternalEvidencePolicy externalEvidencePolicy;
 
     public ResearchAgentTaskCoordinatorService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
                                                ResearchAgentTaskService taskService,
                                                ResearchBudgetAndCheckpointService budgetService,
-                                               ResearchAgentCommandOutboxService outboxService) {
+                                               ResearchAgentCommandOutboxService outboxService,
+                                               ResearchAgentExternalEvidencePolicy externalEvidencePolicy) {
         this.jdbcTemplate = jdbcTemplate; this.objectMapper = objectMapper; this.taskService = taskService;
         this.budgetService = budgetService; this.outboxService = outboxService;
+        this.externalEvidencePolicy = externalEvidencePolicy;
     }
 
     @Transactional
@@ -87,8 +90,8 @@ public class ResearchAgentTaskCoordinatorService {
                         bundle.stream().map(cell -> new ResearchAgentTaskService.TargetCellBinding(cell.cellKey(), cell.version())).toList(),
                         new ResearchAgentTaskService.TaskExecutionContext("research-default",
                                 Map.of("source_scope", slotSources,
-                                        "allow_external_search", false,
-                                        "allow_external_fetch", false),
+                                        "allow_external_search", externalEvidencePolicy.enabled(),
+                                        "allow_external_fetch", externalEvidencePolicy.enabled()),
                                 Map.of("query", run.question()))
                 ));
                 jdbcTemplate.update("""
@@ -150,7 +153,8 @@ public class ResearchAgentTaskCoordinatorService {
                     List.of(new ResearchAgentTaskService.TargetCellBinding(cell.cellKey(), cell.version())),
                     new ResearchAgentTaskService.TaskExecutionContext("research-default",
                             Map.of("source_scope", independentSources, "excluded_source_ids", target.excludedSourceIds(),
-                                    "allow_external_search", false, "allow_external_fetch", false),
+                                    "allow_external_search", externalEvidencePolicy.enabled(),
+                                    "allow_external_fetch", externalEvidencePolicy.enabled()),
                             Map.of("query", run.question(), "repair_reason_digest", target.reasonDigest(),
                                     "parent_checkpoint_seq", command.parentCheckpointSeq()))
             ));

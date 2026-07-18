@@ -2,6 +2,7 @@ package com.noteweave.research;
 
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
+import java.net.InetAddress;
 import java.net.URI;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -98,7 +99,7 @@ public class ResearchExternalSnapshotArchiveService {
         try {
             URI uri = URI.create(command.sourceUrl());
             if (!("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
-                    || uri.getHost() == null || uri.getUserInfo() != null) {
+                    || uri.getHost() == null || uri.getUserInfo() != null || nonPublicLiteralHost(uri.getHost())) {
                 throw invalidUrl();
             }
         } catch (IllegalArgumentException exception) {
@@ -112,6 +113,35 @@ public class ResearchExternalSnapshotArchiveService {
 
     private String sourceDomain(String sourceUrl) {
         return URI.create(sourceUrl).getHost().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /**
+     * The Worker performs DNS resolution plus connection pinning before fetch.
+     * The Backend deliberately does not resolve a user-controlled hostname,
+     * but it can still reject localhost and numeric non-public destinations
+     * before they become durable provenance metadata.
+     */
+    private boolean nonPublicLiteralHost(String rawHost) {
+        String host = rawHost == null ? "" : rawHost.strip();
+        if (host.startsWith("[") && host.endsWith("]")) host = host.substring(1, host.length() - 1);
+        if (host.equalsIgnoreCase("localhost") || host.equalsIgnoreCase("localhost.localdomain")
+                || host.equalsIgnoreCase("metadata.google.internal")) return true;
+        if (!host.matches("\\d{1,3}(?:\\.\\d{1,3}){3}") && !host.contains(":")) return false;
+        try {
+            InetAddress address = InetAddress.getByName(host);
+            if (address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()
+                    || address.isSiteLocalAddress() || address.isMulticastAddress()) return true;
+            byte[] bytes = address.getAddress();
+            if (bytes.length == 4) {
+                int first = Byte.toUnsignedInt(bytes[0]);
+                int second = Byte.toUnsignedInt(bytes[1]);
+                return first == 0 || first == 127 || (first == 100 && second >= 64 && second <= 127);
+            }
+            return bytes.length == 16 && (Byte.toUnsignedInt(bytes[0]) & 0xFE) == 0xFC;
+        } catch (java.net.UnknownHostException exception) {
+            // A malformed numeric literal must not be retained as an external authority URL.
+            return true;
+        }
     }
 
     private String sha256Hex(String value) {
