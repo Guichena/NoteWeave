@@ -1,0 +1,177 @@
+{
+  "schemaVersion" : "retrieval-evaluation-evidence-receipt-v1",
+  "generatedAt" : 1784148171.825162600,
+  "datasetVersion" : "stage5-real-qa-r6-recovered-20260716-reviewed-sanitized",
+  "strategyProfile" : "qa-retrieval-v2",
+  "goldArtifact" : {
+    "byteSize" : 126824,
+    "sha256" : "99c658d3feb76d9d18b0dfd3b05c82207ae6cc7b16be70e92e6158a7345e8add"
+  },
+  "snapshots" : [ {
+    "sequence" : 1,
+    "snapshotVersion" : "stage5-r6-recovered-snapshot-1",
+    "artifact" : {
+      "byteSize" : 6029,
+      "sha256" : "4f769c4a3f430ca3b701115b4e4bd7b495e70b33a070cb8c98954971248fb69d"
+    },
+    "caseCount" : 8,
+    "quality" : {
+      "caseCount" : 8,
+      "retrievalCaseCount" : 6,
+      "refusalCaseCount" : 2,
+      "macroRecallAtK" : 0.9305555555555555,
+      "macroMrr" : 1.0,
+      "macroNdcgAtK" : 1.0,
+      "macroCitationPrecision" : 0.8888888888888888,
+      "macroCitationCoverage" : 0.9305555555555555,
+      "refusalAccuracy" : 1.0,
+      "scopeViolationCount" : 0
+    },
+    "runtime" : {
+      "latencyMicros" : {
+        "min" : 280679,
+        "p50" : 370558,
+        "p95" : 2034074,
+        "max" : 2034074
+      },
+      "totalCandidateCount" : 84,
+      "averageCandidateCount" : 10.5
+    },
+    "rankingSignature" : "7a19459f954dae8a7634e380aad6040cda679c83bdb3828a771c22d0085c84c3"
+  }, {
+    "sequence" : 2,
+    "snapshotVersion" : "stage5-r6-recovered-snapshot-2",
+    "artifact" : {
+      "byteSize" : 6028,
+      "sha256" : "3bec253711d2b0ba5369c7fe72a0e42c983846158604218ef0cc36a090e9b129"
+    },
+    "caseCount" : 8,
+    "quality" : {
+      "caseCount" : 8,
+      "retrievalCaseCount" : 6,
+      "refusalCaseCount" : 2,
+      "macroRecallAtK" : 0.9305555555555555,
+      "macroMrr" : 1.0,
+      "macroNdcgAtK" : 1.0,
+      "macroCitationPrecision" : 0.8888888888888888,
+      "macroCitationCoverage" : 0.9305555555555555,
+      "refusalAccuracy" : 1.0,
+      "scopeViolationCount" : 0
+    },
+    "runtime" : {
+      "latencyMicros" : {
+        "min" : 190304,
+        "p50" : 281900,
+        "p95" : 775584,
+        "max" : 775584
+      },
+      "totalCandidateCount" : 84,
+      "averageCandidateCount" : 10.5
+    },
+    "rankingSignature" : "7a19459f954dae8a7634e380aad6040cda679c83bdb3828a771c22d0085c84c3"
+  }, {
+    "sequence" : 3,
+    "snapshotVersion" : "stage5-r6-recovered-snapshot-3",
+    "artifact" : {
+      "byteSize" : 6024,
+      "sha256" : "bed0c3591c9b859705d513b511159f41f7b442545eb9b77955d6f1becde30dd0"
+    },
+    "caseCount" : 8,
+    "quality" : {
+      "caseCount" : 8,
+      "retrievalCaseCount" : 6,
+      "refusalCaseCount" : 2,
+      "macroRecallAtK" : 0.9305555555555555,
+      "macroMrr" : 1.0,
+      "macroNdcgAtK" : 1.0,
+      "macroCitationPrecision" : 0.8888888888888888,
+      "macroCitationCoverage" : 0.9305555555555555,
+      "refusalAccuracy" : 1.0,
+      "scopeViolationCount" : 0
+    },
+    "runtime" : {
+      "latencyMicros" : {
+        "min" : 38382,
+        "p50" : 48817,
+        "p95" : 990318,
+        "max" : 990318
+      },
+      "totalCandidateCount" : 84,
+      "averageCandidateCount" : 10.5
+    },
+    "rankingSignature" : "7a19459f954dae8a7634e380aad6040cda679c83bdb3828a771c22d0085c84c3"
+  }, {
+    "sequence" : 4,
+    "snapshotVersion" : "stage5-r6-recovered-snapshot-4",
+    "artifact" : {
+      "byteSize" : 6021,
+      "sha256" : "fb8d0ef97d2960f5e38b01d5ee693f93f07a5592de868192f2f2ad50ff6dad57"
+    },
+    "caseCount" : 8,
+    "quality" : {
+      "caseCount" : 8,
+      "retrievalCaseCount" : 6,
+      "refusalCaseCount" : 2,
+      "macroRecallAtK" : 0.9305555555555555,
+      "macroMrr" : 1.0,
+      "macroNdcgAtK" : 1.0,
+      "macroCitationPrecision" : 0.8888888888888888,
+      "macroCitationCoverage" : 0.9305555555555555,
+      "refusalAccuracy" : 1.0,
+      "scopeViolationCount" : 0
+    },
+    "runtime" : {
+      "latencyMicros" : {
+        "min" : 30211,
+        "p50" : 38953,
+        "p95" : 288278,
+        "max" : 288278
+      },
+      "totalCandidateCount" : 84,
+      "averageCandidateCount" : 10.5
+    },
+    "rankingSignature" : "7a19459f954dae8a7634e380aad6040cda679c83bdb3828a771c22d0085c84c3"
+  }, {
+    "sequence" : 5,
+    "snapshotVersion" : "stage5-r6-recovered-snapshot-5",
+    "artifact" : {
+      "byteSize" : 6021,
+      "sha256" : "1c70a0b811faa38b54efa839c6f01ee751274e5a8772a10dff45686eed27df51"
+    },
+    "caseCount" : 8,
+    "quality" : {
+      "caseCount" : 8,
+      "retrievalCaseCount" : 6,
+      "refusalCaseCount" : 2,
+      "macroRecallAtK" : 0.9305555555555555,
+      "macroMrr" : 1.0,
+      "macroNdcgAtK" : 1.0,
+      "macroCitationPrecision" : 0.8888888888888888,
+      "macroCitationCoverage" : 0.9305555555555555,
+      "refusalAccuracy" : 1.0,
+      "scopeViolationCount" : 0
+    },
+    "runtime" : {
+      "latencyMicros" : {
+        "min" : 35323,
+        "p50" : 39189,
+        "p95" : 286357,
+        "max" : 286357
+      },
+      "totalCandidateCount" : 84,
+      "averageCandidateCount" : 10.5
+    },
+    "rankingSignature" : "7a19459f954dae8a7634e380aad6040cda679c83bdb3828a771c22d0085c84c3"
+  } ],
+  "stability" : {
+    "snapshotCount" : 5,
+    "distinctRankingSignatureCount" : 1,
+    "rankingsStable" : true,
+    "combinedLatencyMicros" : {
+      "min" : 30211,
+      "p50" : 190304,
+      "p95" : 775584,
+      "max" : 2034074
+    }
+  }
+}

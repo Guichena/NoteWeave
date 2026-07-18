@@ -1,0 +1,7 @@
+{
+    "schema_version":  "noteweave-ma4h-permit-scope-evidence.v1",
+    "status":  "FAILED",
+    "project_name":  "noteweave-ma4h-h5-20260717t0740d",
+    "completed_at_utc":  "2026-07-17T07:09:35.9985453Z",
+    "boundary":  "real MySQL/Redis/Kafka backend permit route; no real provider evidence"
+}

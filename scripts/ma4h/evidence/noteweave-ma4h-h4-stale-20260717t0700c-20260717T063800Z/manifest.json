@@ -1,0 +1,8 @@
+{
+    "schema_version":  "noteweave-ma4h-heartbeat-fault-evidence.v1",
+    "status":  "VERIFIED",
+    "project_name":  "noteweave-ma4h-h4-stale-20260717t0700c",
+    "fault_mode":  "stale",
+    "completed_at_utc":  "2026-07-17T06:42:17.6763090Z",
+    "boundary":  "deterministic fake-provider heartbeat fault and DB-clock recovery; no real provider cancellation evidence"
+}

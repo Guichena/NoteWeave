@@ -1,267 +1,315 @@
 ﻿import { useEffect, useState } from "react";
+import { useRef } from "react";
+import { lazy, Suspense } from "react";
 import { routes, type AnswerMode } from "./routes";
+import {
+  consumeSse,
+  ConversationStreamClient
+} from "./shared/event-stream";
+import { workspaceApi } from "./features/workspace/api";
+import { type Workspace } from "./features/workspace/model";
+import { sourcesApi } from "./features/sources/api";
+import { type SourceAsset } from "./features/sources/model";
+import { conversationsApi } from "./features/conversations/api";
+import { type Conversation } from "./features/conversations/model";
+import { answersApi } from "./features/answers/api";
+import { type AnswerRunState } from "./features/answers/model";
+import {
+  AnswerRunStore,
+  createAnswerRunState,
+  reduceAnswerRunState
+} from "./features/answers/store";
+import { knowledgeApi } from "./features/knowledge/api";
+import { useKnowledgeState } from "./features/knowledge/useKnowledgeState";
+import {
+  type KnowledgeCitation,
+  type WikiGraphMode,
+  type WikiIndexSource,
+  type WikiIssue,
+  type WikiPage,
+  type WikiTaskSummary
+} from "./features/knowledge/model";
+import { MemoryReviewWorkbench } from "./features/memory/MemoryReviewWorkbench";
+import { useExecutionRegistry } from "./features/executions/useExecutionRegistry";
+import {
+  type ExecutionEvent as StreamEvent,
+  type ExecutionTask as TaskStatus
+} from "./features/executions/model";
+import { artifactsApi } from "./features/artifacts/api";
+import { useArtifactState } from "./features/artifacts/useArtifactState";
+import { researchApi } from "./features/research/api";
+import {
+  type ResearchRunSummary,
+  type ResearchIntentCompletionContract,
+  type ResearchRecoveryTargets,
+  type ResearchRowSummary,
+  type ResearchFinalAnswer,
+  type ResearchReportStructure,
+  type ResearchCounterfactualSummary,
+  type ResearchRunSummarySnapshot,
+  type ResearchHistoryFilter,
+  type SignalTone,
+  type SignalChip,
+  type ResearchTimelineMilestone,
+  type ResearchTimelinePathSummary,
+  type SaveResearchReportSource
+} from "./features/research/model";
+import { useResearchState } from "./features/research/useResearchState";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+import {
+  buildArtifactJobInputs,
+  buildArtifactStudioSkill,
+  buildInitialArtifactFormValues,
+  isArtifactFormReady,
+  readArtifactLanguage,
+  readArtifactUrl,
+  type ArtifactSkillSummary,
+  type ArtifactStudioField,
+  type ArtifactStudioSkill
+} from "./artifactStudio";
+import { type ArtifactHistoryItem } from "./artifactHistory";
+import { buildArtifactSidebarState } from "./artifactSidebar";
+import { type ArtifactRuntimeTrace } from "./artifactRuntimeTrace";
+import {
+  buildResearchReportExportArtifact,
+  buildResearchReportExportStatusMessage
+} from "./researchReportDelivery";
+import {
+  buildWaitContextDetailLines,
+  buildWaitContextNarrative,
+  buildWaitContextSignalChips,
+  summarizeRunStatus,
+} from "./runStatus";
+import { shouldReuseLatestArtifactVersion } from "./artifactHistorySelection";
 
-type Workspace = {
-  workspace_id: string;
-  name: string;
-  status: string;
-};
-
-type Conversation = {
-  conversation_id: string;
-  title: string;
-};
+const LazyResearchSidebar = lazy(() => import("./features/research/ResearchSidebar").then((module) => ({
+  default: module.ResearchSidebar
+})));
+const LazyArtifactRail = lazy(() => import("./features/artifacts/ArtifactRail").then((module) => ({
+  default: module.ArtifactRail
+})));
+const LazyResearchReportPanel = lazy(() => import("./features/research/ResearchReportPanel").then((module) => ({
+  default: module.ResearchReportPanel
+})));
 
 type Message = {
   role: "user" | "assistant" | "system";
   content: string;
   answerMode?: AnswerMode;
   citations?: string[];
+  answerRunId?: string;
+  answerStatus?: string;
+  answerError?: string;
 };
 
-type TaskStatus = {
-  task_id: string;
-  task_type: string;
-  task_status: string;
-  progress_phase: string;
-  progress_message: string;
-  result_ref: string;
-  error_message: string;
-};
+const DEFAULT_ARTIFACT_STUDIO_SKILL_SUMMARIES: ArtifactSkillSummary[] = [
+  {
+    skill_key: "resume_highlight",
+    display_name: "简历亮点描述",
+    description: "把当前工作台资料整理成适合写进简历的项目亮点和影响表述。",
+    status: "ACTIVE",
+    input_schema: {
+      type: "object",
+      properties: {
+        language: {
+          type: "string",
+          default: "zh-CN",
+          oneOf: [
+            { const: "zh-CN", title: "中文（简体）" },
+            { const: "en", title: "English" },
+            { const: "zh-EN", title: "中英双语" }
+          ]
+        }
+      }
+    },
+    default_input_hints: ["强调架构设计", "强调工程复杂度", "适合校招简历"]
+  },
+  {
+    skill_key: "study_guide",
+    display_name: "学习指南",
+    description: "按知识点、关键概念和练习建议生成结构化学习材料。",
+    status: "ACTIVE",
+    input_schema: {
+      type: "object",
+      properties: {
+        language: {
+          type: "string",
+          default: "zh-CN",
+          oneOf: [
+            { const: "zh-CN", title: "中文（简体）" },
+            { const: "en", title: "English" },
+            { const: "zh-EN", title: "中英双语" }
+          ]
+        }
+      }
+    },
+    default_input_hints: ["突出关键概念", "加入练习路径", "适合新人上手"]
+  },
+  {
+    skill_key: "quiz_pack",
+    display_name: "测验题集",
+    description: "围绕当前资料生成题目、答案解析和评分要点。",
+    status: "ACTIVE",
+    input_schema: {
+      type: "object",
+      properties: {
+        language: {
+          type: "string",
+          default: "zh-CN",
+          oneOf: [
+            { const: "zh-CN", title: "中文（简体）" },
+            { const: "en", title: "English" },
+            { const: "zh-EN", title: "中英双语" }
+          ]
+        }
+      }
+    },
+    default_input_hints: ["区分题型难度", "附标准答案", "保留评分要点"]
+  },
+  {
+    skill_key: "wiki_page",
+    display_name: "Wiki 页面",
+    description: "沉淀成定义、机制、引用和相关页面齐全的知识页草稿。",
+    status: "ACTIVE",
+    input_schema: {
+      type: "object",
+      properties: {
+        language: {
+          type: "string",
+          default: "zh-CN",
+          oneOf: [
+            { const: "zh-CN", title: "中文（简体）" },
+            { const: "en", title: "English" },
+            { const: "zh-EN", title: "中英双语" }
+          ]
+        }
+      }
+    },
+    default_input_hints: ["定义先行", "补充关键机制", "保留相关页面建议"]
+  },
+  {
+    skill_key: "bilibili_course_note_pdf",
+    display_name: "B站讲义 PDF",
+    description: "面向 B 站视频链接生成图文讲义与 PDF 编译请求。",
+    status: "ACTIVE",
+    input_schema: {
+      type: "object",
+      properties: {
+        language: {
+          type: "string",
+          default: "zh-CN",
+          oneOf: [
+            { const: "zh-CN", title: "中文（简体）" },
+            { const: "en", title: "English" },
+            { const: "zh-EN", title: "中英双语" }
+          ]
+        },
+        url: { type: "string" }
+      },
+      required: ["url"]
+    },
+    default_input_hints: ["填写 B 站视频链接", "保留章节结构", "输出讲义 PDF"]
+  }
+];
 
-type SourceAsset = {
-  source_id: string;
-  title: string;
-  source_type: string;
-  status: string;
-  parse_status: string;
-  index_status: string;
-  updated_at: string;
-};
+const ARTIFACT_STUDIO_PRESENTATION_ENTRIES = [
+    {
+      key: "resume_highlight",
+      title: "简历亮点描述",
+      summary: "把当前工作台资料整理成适合写进简历的项目亮点和影响表述。",
+      artifactType: "Resume Highlights",
+      sourceHint: "当前工作台资料 / 最新回答",
+      runtimeHint: "快速生成",
+      badges: ["推荐", "聊天生成"],
+      styleHint: "结果导向、动词开头、突出指标与复杂度。",
+      promptFocus: "输出适合简历使用的项目亮点描述",
+      tone: "blue"
+    },
+    {
+      key: "study_guide",
+      title: "学习指南",
+      summary: "按知识点、关键概念和练习建议生成结构化学习材料。",
+      artifactType: "Study Guide",
+      sourceHint: "当前工作台资料",
+      runtimeHint: "可扩展为异步",
+      badges: ["常用", "结构化"],
+      styleHint: "教学口吻、层次清晰、包含复习路径。",
+      promptFocus: "输出带章节结构的学习指南",
+      tone: "gold"
+    },
+    {
+      key: "quiz_pack",
+      title: "测验题集",
+      summary: "围绕当前资料生成题目、答案解析和评分要点。",
+      artifactType: "Quiz",
+      sourceHint: "当前工作台资料 / 选中资料",
+      runtimeHint: "可扩展为异步",
+      badges: ["练习", "结构化"],
+      styleHint: "区分难度，附带标准答案和解析。",
+      promptFocus: "输出可直接使用的测验题集",
+      tone: "green"
+    },
+    {
+      key: "wiki_page",
+      title: "Wiki 页面",
+      summary: "沉淀成定义、机制、引用和相关页面齐全的知识页草稿。",
+      artifactType: "Wiki Page",
+      sourceHint: "当前工作台资料 / 已保存产物",
+      runtimeHint: "建议校验后入库",
+      badges: ["知识沉淀", "需校验"],
+      styleHint: "定义明确、结构稳定、保留相关页面建议。",
+      promptFocus: "输出适合 Wiki 的知识页草稿",
+      tone: "violet"
+    },
+    {
+      key: "bilibili_course_note_pdf",
+      title: "B站讲义 PDF",
+      summary: "面向 B 站视频链接生成图文讲义与 PDF 编译请求。",
+      artifactType: "Course Note PDF",
+      sourceHint: "B站链接 / 内置能力",
+      runtimeHint: "异步 + System MCP",
+      badges: ["System MCP", "异步"],
+      styleHint: "专业讲义体，保留章节、图示和总结。",
+      promptFocus: "输出 B 站讲义 PDF 生成请求",
+      tone: "rose"
+    }
+  ] satisfies Array<{ key: string } & Partial<ArtifactStudioSkill>>;
 
-type WikiPage = {
-  item_id: string;
-  item_type: string;
-  page_kind: string;
-  title: string;
-  latest_version_id: string;
-  latest_version_no: number;
-  summary: string;
-  updated_at: string;
-  outgoing_count: number;
-  backlink_count: number;
-  citation_count: number;
-  unresolved_count: number;
-};
+const ARTIFACT_STUDIO_PRESENTATION: Record<string, Partial<ArtifactStudioSkill>> = Object.fromEntries(
+  ARTIFACT_STUDIO_PRESENTATION_ENTRIES.map((skill) => [skill.key, skill])
+);
 
-type WikiLink = {
-  source_item_id: string;
-  target_item_id: string | null;
-  target_title: string;
-  relation_type: string;
-  relation_status: string;
-  mention_count: number;
-};
+const DEFAULT_ARTIFACT_STUDIO_SKILLS: ArtifactStudioSkill[] = DEFAULT_ARTIFACT_STUDIO_SKILL_SUMMARIES.map((skill) =>
+  buildArtifactStudioSkill(skill, ARTIFACT_STUDIO_PRESENTATION[skill.skill_key])
+);
 
-type WikiHome = {
-  workspace_id: string;
-  wiki_url: string;
-  pages: WikiPage[];
-  links: WikiLink[];
-};
+function sortArtifactStudioSkills(skills: ArtifactStudioSkill[]): ArtifactStudioSkill[] {
+  const order = new Map(DEFAULT_ARTIFACT_STUDIO_SKILLS.map((skill, index) => [skill.key, index]));
+  return skills
+    .slice()
+    .sort((left, right) => {
+      const leftOrder = order.get(left.key) ?? Number.MAX_SAFE_INTEGER;
+      const rightOrder = order.get(right.key) ?? Number.MAX_SAFE_INTEGER;
+      if (leftOrder !== rightOrder) {
+        return leftOrder - rightOrder;
+      }
+      return left.title.localeCompare(right.title, "zh-CN");
+    });
+}
 
-type WikiSettings = {
-  workspace_id: string;
-  wiki_enabled: boolean;
-};
-
-type WikiRebuild = {
-  workspace_id: string;
-  source_count: number;
-  task_count: number;
-  task_ids: string[];
-};
-
-type WikiStats = {
-  page_count: number;
-  link_count: number;
-  resolved_link_count: number;
-  unresolved_link_count: number;
-  citation_count: number;
-  issue_count: number;
-  auto_fixable_issue_count: number;
-  manual_review_issue_count: number;
-  pages_by_kind: Record<string, number>;
-  recent_updates: WikiPage[];
-  recent_tasks: WikiTaskSummary[];
-  pending_task_count: number;
-  wiki_enabled: boolean;
-};
-
-type WikiIssue = {
-  item_id: string;
-  issue_type: string;
-  severity: string;
-  title: string;
-  message: string;
-  suggested_action: string;
-  auto_fixable: boolean;
-  action_code: string;
-};
-
-type WikiLogEntry = {
-  id: string;
-  item_id: string | null;
-  event_type: string;
-  message: string;
-  created_at: string;
-};
-
-type WikiGraph = {
-  nodes: Array<{
-    item_id: string;
-    title: string;
-    page_kind: string;
-    version_no: number;
-    degree: number;
-    outgoing_count: number;
-    backlink_count: number;
-    citation_count: number;
-    unresolved_count: number;
-  }>;
-  edges: Array<{
-    source_item_id: string;
-    source_title: string;
-    target_item_id: string | null;
-    target_title: string;
-    relation_type: string;
-    relation_status: string;
-    mention_count: number;
-  }>;
-  meta: {
-    mode: "overview" | "ego";
-    center_item_id: string;
-    depth: number;
-    total_nodes: number;
-    returned_nodes: number;
-    truncated: boolean;
-  };
-};
-
-type WikiRebuildAdvice = {
-  should_enable_wiki: boolean;
-  ready_source_count: number;
-  active_wiki_page_count: number;
-  message: string;
-  recommended_action: string;
-  recommended_issue_type: string;
-  focus_item_id: string;
-  focus_title: string;
-};
-
-type WikiIndexSource = {
-  source_id: string;
-  title: string;
-  status: string;
-  index_status: string;
-  related_pages: WikiTaskRelatedPage[];
-  recommended_action: string;
-  focus_item_id: string;
-  focus_title: string;
-  updated_at: string;
-};
-
-type WikiTaskRelatedPage = {
-  item_id: string;
-  title: string;
-  page_kind: string;
-};
-
-type WikiTaskSummary = {
-  task_id: string;
-  task_type: string;
-  task_status: string;
-  progress_phase: string;
-  progress_message: string;
-  target_type: string;
-  target_id: string;
-  target_title: string;
-  related_pages: WikiTaskRelatedPage[];
-  updated_at: string;
-};
-
-type WikiIndex = {
-  workspace_id: string;
-  wiki_enabled: boolean;
-  ready_source_count: number;
-  page_count: number;
-  source_backed_page_count: number;
-  manual_page_count: number;
-  link_count: number;
-  resolved_link_count: number;
-  unresolved_link_count: number;
-  citation_count: number;
-  issue_count: number;
-  auto_fixable_issue_count: number;
-  manual_review_issue_count: number;
-  pending_task_count: number;
-  pages_by_kind: Record<string, number>;
-  recent_updates: WikiPage[];
-  recent_tasks: WikiStats["recent_tasks"];
-  recent_sources: WikiIndexSource[];
-  top_issues: WikiIssue[];
-};
-
-type KnowledgeCitation = {
-  citation_id: string;
-  source_id: string;
-  title: string;
-  quote_text: string;
-  page_no: number | null;
-  location_info: string;
-};
-
-type KnowledgeItemDetail = WikiPage & {
-  content: string;
-  source_message_id: string | null;
-  citations: KnowledgeCitation[];
-  outgoing_links: WikiLink[];
-  backlinks: WikiLink[];
-  version_created_at: string;
-};
-
-type KnowledgeVersionDetail = {
-  version_id: string;
-  item_id: string;
-  version_no: number;
-  content: string;
-  summary: string;
-  source_message_id: string | null;
-  citations: KnowledgeCitation[];
-  created_at: string;
-};
-
-type KnowledgeVersionSummary = {
-  version_id: string;
-  version_no: number;
-  summary: string;
-  source_message_id: string | null;
-  citation_count: number;
-  created_at: string;
-};
-
-type ApiResponse<T> = {
-  success: boolean;
-  code: string;
-  message: string;
-  data: T;
-};
+function resolveArtifactSkillTitle(skillKey: string, skills: ArtifactStudioSkill[]): string {
+  return skills.find((skill) => skill.key === skillKey)?.title || skillKey;
+}
 
 export function App() {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const {
+    getExecution,
+    loadExecution
+  } = useExecutionRegistry(workspace?.workspace_id ?? "");
   const [conversation, setConversation] = useState<Conversation | null>(null);
+  const [conversationStreamConnected, setConversationStreamConnected] = useState(false);
+  const answerRunStoreRef = useRef(new AnswerRunStore());
   const [mode, setMode] = useState<AnswerMode>("qa");
   const [sourceText, setSourceText] = useState("NoteWeave 支持在同一个研究工作台里使用问答 RAG、Marginalia 式 Note 检索链路和 WebKonra / WeKnora 式 Wiki 检索链路。");
   const [question, setQuestion] = useState("Note 和 Wiki 两种检索方式有什么区别？");
@@ -271,30 +319,37 @@ export function App() {
       content: "先创建工作台并上传一段资料，然后就可以在同一个聊天框里切换问答、Note、Wiki 三种链路。"
     }
   ]);
-  const [view, setView] = useState<"chat" | "wiki">("chat");
-  const [wikiUrl, setWikiUrl] = useState("");
-  const [wikiHome, setWikiHome] = useState<WikiHome | null>(null);
-  const [wikiIndex, setWikiIndex] = useState<WikiIndex | null>(null);
-  const [wikiEnabled, setWikiEnabled] = useState(false);
-  const [wikiStats, setWikiStats] = useState<WikiStats | null>(null);
-  const [wikiIssues, setWikiIssues] = useState<WikiIssue[]>([]);
-  const [wikiLog, setWikiLog] = useState<WikiLogEntry[]>([]);
-  const [wikiGraph, setWikiGraph] = useState<WikiGraph | null>(null);
-  const [wikiRebuildAdvice, setWikiRebuildAdvice] = useState<WikiRebuildAdvice | null>(null);
-  const [selectedWikiItemId, setSelectedWikiItemId] = useState("");
-  const [selectedWikiDetail, setSelectedWikiDetail] = useState<KnowledgeItemDetail | null>(null);
-  const [selectedWikiVersions, setSelectedWikiVersions] = useState<KnowledgeVersionSummary[]>([]);
-  const [selectedWikiVersionDetail, setSelectedWikiVersionDetail] = useState<KnowledgeVersionDetail | null>(null);
-  const [selectedWikiLog, setSelectedWikiLog] = useState<WikiLogEntry[]>([]);
+  const [view, setView] = useState<"chat" | "wiki" | "memory" | "research">("chat");
   const [lastAssistantMessageId, setLastAssistantMessageId] = useState("");
   const [noteTitle, setNoteTitle] = useState("工作台整理笔记");
+  const [artifactStudioSkills, setArtifactStudioSkills] = useState<ArtifactStudioSkill[]>(DEFAULT_ARTIFACT_STUDIO_SKILLS);
+  const {
+    artifactJobs,
+    latestArtifactVersion,
+    selectedArtifactHistoryVersion,
+    selectedArtifactHistoryKey,
+    artifactHistoryLoadingKey,
+    artifactSavedSourceByVersionId,
+    artifactWritebackByVersionId,
+    clear: clearArtifactState,
+    refreshJobs: refreshArtifactJobs,
+    selectHistoryVersion,
+    recordSavedSource,
+    recordWriteback,
+    applyRollback
+  } = useArtifactState(workspace?.workspace_id ?? "");
+  const [selectedArtifactSkillKey, setSelectedArtifactSkillKey] = useState("resume_highlight");
+  const [artifactComposerOpen, setArtifactComposerOpen] = useState(false);
+  const [artifactFormValues, setArtifactFormValues] = useState<Record<string, string>>(
+    buildInitialArtifactFormValues(DEFAULT_ARTIFACT_STUDIO_SKILLS[0])
+  );
+  const [artifactCustomInstruction, setArtifactCustomInstruction] = useState("");
   const [wikiTitle, setWikiTitle] = useState("工作台知识页");
   const [wikiDraft, setWikiDraft] = useState("");
   const [wikiAppendDraft, setWikiAppendDraft] = useState("");
   const [wikiSearch, setWikiSearch] = useState("");
-  const [wikiSearchResults, setWikiSearchResults] = useState<WikiPage[] | null>(null);
   const [wikiRenameTitle, setWikiRenameTitle] = useState("");
-  const [wikiGraphMode, setWikiGraphMode] = useState<"overview" | "ego">("overview");
+  const [wikiGraphMode, setWikiGraphMode] = useState<WikiGraphMode>("overview");
   const [wikiKindFilter, setWikiKindFilter] = useState<string>("ALL");
   const [wikiGraphKindFilters, setWikiGraphKindFilters] = useState<string[]>([]);
   const [wikiGraphSearch, setWikiGraphSearch] = useState("");
@@ -302,83 +357,347 @@ export function App() {
   const [wikiIssueScopeFilter, setWikiIssueScopeFilter] = useState<"ALL" | "AUTO" | "MANUAL">("ALL");
   const [wikiIssueSeverityFilter, setWikiIssueSeverityFilter] = useState<string>("ALL");
   const [wikiIssuePageFilter, setWikiIssuePageFilter] = useState<"ALL" | "CURRENT">("ALL");
-  const [filteredWikiIssues, setFilteredWikiIssues] = useState<WikiIssue[]>([]);
+  const {
+    wikiHome,
+    wikiIndex,
+    wikiEnabled,
+    wikiStats,
+    wikiIssues,
+    wikiLog,
+    wikiGraph,
+    wikiRebuildAdvice,
+    selectedWikiItemId,
+    selectedWikiDetail,
+    selectedWikiVersions,
+    selectedWikiVersionDetail,
+    selectedWikiLog,
+    wikiSearchResults,
+    filteredWikiIssues,
+    refreshHome: refreshWikiHome,
+    refreshFromServer: refreshWikiFromServer,
+    clearSelection: clearWikiSelection,
+    selectPage: selectKnowledgePage,
+    refreshGraph: refreshWikiGraph,
+    loadVersion: loadKnowledgeVersion,
+    restoreLatestVersion: restoreLatestKnowledgeVersion,
+    findFirstIssue: findFirstWikiIssue,
+    updateEnabled: updateWikiEnabled
+  } = useKnowledgeState({
+    workspaceId: workspace?.workspace_id ?? "",
+    search: wikiSearch,
+    issueType: wikiIssueTypeFilter,
+    issueSeverity: wikiIssueSeverityFilter,
+    issueScope: wikiIssueScopeFilter,
+    issuePage: wikiIssuePageFilter
+  });
+  useEffect(() => {
+    setWikiRenameTitle(selectedWikiDetail?.title ?? "");
+  }, [selectedWikiDetail?.item_id, selectedWikiDetail?.title]);
   const [sources, setSources] = useState<SourceAsset[]>([]);
-  const [latestTask, setLatestTask] = useState<TaskStatus | null>(null);
-  const [taskEvents, setTaskEvents] = useState<string[]>([]);
+  const [selectedQaSourceIds, setSelectedQaSourceIds] = useState<string[]>([]);
+  const [latestTaskId, setLatestTaskId] = useState("");
+  const latestTaskExecution = getExecution(latestTaskId);
+  const latestTask = latestTaskExecution?.task ?? null;
+  const taskEvents = latestTaskExecution?.events ?? [];
+  const [researchQuestion, setResearchQuestion] = useState("请围绕当前主题开展 Deep Research，并明确给出已验证结论、冲突点和后续恢复建议。");
+  const [researchProfile, setResearchProfile] = useState("default");
+  const [researchGoal, setResearchGoal] = useState("沉淀一份可验证、可恢复的研究结论摘要。");
+  const [researchDeliverableFormat, setResearchDeliverableFormat] = useState("Evidence-backed research report");
+  const [researchConstraintsText, setResearchConstraintsText] = useState("必须显式区分已验证结论、冲突点与后续恢复动作。");
+  const [researchTimeRange, setResearchTimeRange] = useState("");
+  const [researchDepth, setResearchDepth] = useState("STANDARD");
+  const [researchType, setResearchType] = useState("AUTO");
+  const [selectedResearchSourceIds, setSelectedResearchSourceIds] = useState<string[]>([]);
+  const [latestResearchTaskId, setLatestResearchTaskId] = useState("");
+  const latestResearchTaskExecution = getExecution(latestResearchTaskId);
+  const latestResearchTask = latestResearchTaskExecution?.task ?? null;
+  const researchTaskEvents = latestResearchTaskExecution?.events ?? [];
+  const {
+    researchRuns,
+    currentResearchRunId,
+    currentResearchRun,
+    clear: resetResearchState,
+    prepareRun: prepareResearchRun,
+    loadHistory: fetchResearchRunHistory,
+    loadRunDetail: fetchResearchRunDetail
+  } = useResearchState({
+    workspaceId: workspace?.workspace_id ?? ""
+  });
+  const [researchHistoryFilter, setResearchHistoryFilter] = useState<ResearchHistoryFilter>("ALL");
+  const [focusedResearchSourceId, setFocusedResearchSourceId] = useState("");
+  const [researchDetailOpen, setResearchDetailOpen] = useState(false);
+  const sourceById = new Map(sources.map((source) => [source.source_id, source] as const));
   const [isBusy, setIsBusy] = useState(false);
   const [status, setStatus] = useState("准备就绪");
+  const selectedArtifactSkill =
+    artifactStudioSkills.find((skill) => skill.key === selectedArtifactSkillKey)
+    ?? artifactStudioSkills[0]
+    ?? DEFAULT_ARTIFACT_STUDIO_SKILLS[0];
 
   useEffect(() => {
-    if (!workspace || !wikiHome) {
-      setWikiSearchResults(null);
+    if (!workspace || !conversation) {
+      setConversationStreamConnected(false);
       return;
     }
-    const keyword = wikiSearch.trim();
-    if (!keyword) {
-      setWikiSearchResults(null);
-      return;
+    const streamPath = `/api/v2/workspaces/${workspace.workspace_id}`
+      + `/conversations/${conversation.conversation_id}/events`;
+    const client = new ConversationStreamClient(streamPath, {
+      onConnectionChange: (connected) => {
+        if (!connected) {
+          setConversationStreamConnected(false);
+        }
+      },
+      onError: () => setStatus("会话流正在重连，回答状态将从快照恢复"),
+      onEvent: (event) => {
+        try {
+          const updates = answerRunStoreRef.current.applyConversationEvent(event);
+          if (event.event === "conversation.snapshot") {
+            setConversationStreamConnected(true);
+          }
+          applyAnswerRunUpdates(updates);
+        } catch {
+          setStatus("会话快照格式无效，将等待下一次重连恢复");
+        }
+      }
+    });
+
+    function applyAnswerRunUpdates(updates: AnswerRunState[]) {
+      if (updates.length === 0) {
+        return;
+      }
+      setMessages((current) => updates.reduce(
+        (messages, answer) => updateAssistantMessageByRun(messages, answer.runId, answer),
+        current
+      ));
     }
-    const timeoutId = window.setTimeout(() => {
-      void get<WikiPage[]>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-search?q=${encodeURIComponent(keyword)}`)
-        .then((pages) => setWikiSearchResults(pages))
-        .catch(() => setWikiSearchResults([]));
-    }, 200);
-    return () => window.clearTimeout(timeoutId);
-  }, [workspace, wikiHome, wikiSearch]);
+
+    client.start();
+    return () => {
+      client.stop();
+      setConversationStreamConnected(false);
+      answerRunStoreRef.current.clear("会话已切换");
+    };
+  }, [workspace?.workspace_id, conversation?.conversation_id]);
 
   useEffect(() => {
-    if (!workspace || !wikiHome) {
-      setFilteredWikiIssues([]);
-      return;
-    }
-    const timeoutId = window.setTimeout(() => {
-      const query = buildWikiIssueQuery({
-        issueType: wikiIssueTypeFilter,
-        severity: wikiIssueSeverityFilter,
-        scope: wikiIssueScopeFilter,
-        page: wikiIssuePageFilter,
-        selectedItemId: selectedWikiItemId
+    let cancelled = false;
+    void artifactsApi.listSkills()
+      .then((skills) => {
+        if (cancelled) {
+          return;
+        }
+        const loadedSkills = sortArtifactStudioSkills(
+          skills.length > 0
+            ? skills.map((skill) => buildArtifactStudioSkill(skill, ARTIFACT_STUDIO_PRESENTATION[skill.skill_key]))
+            : DEFAULT_ARTIFACT_STUDIO_SKILLS
+        );
+        setArtifactStudioSkills(loadedSkills);
+        setSelectedArtifactSkillKey((current) => (
+          loadedSkills.some((skill) => skill.key === current)
+            ? current
+            : (loadedSkills[0]?.key ?? "resume_highlight")
+        ));
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+        setArtifactStudioSkills(DEFAULT_ARTIFACT_STUDIO_SKILLS);
       });
-      void get<WikiIssue[]>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-issues?${query.toString()}`)
-        .then((issues) => setFilteredWikiIssues(issues))
-        .catch(() => setFilteredWikiIssues([]));
-    }, 120);
-    return () => window.clearTimeout(timeoutId);
-  }, [
-    workspace,
-    wikiHome,
-    wikiIssueTypeFilter,
-    wikiIssueSeverityFilter,
-    wikiIssueScopeFilter,
-    wikiIssuePageFilter,
-    selectedWikiItemId
-  ]);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
-    if (!workspace || !wikiHome || !selectedWikiItemId) {
-      setSelectedWikiLog([]);
+    setArtifactFormValues((current) => buildInitialArtifactFormValues(selectedArtifactSkill, current));
+  }, [selectedArtifactSkill.key]);
+
+  useEffect(() => {
+    if (!workspace) {
+      clearArtifactState();
+      return;
+    }
+    void loadArtifactJobs(workspace.workspace_id);
+  }, [workspace]);
+
+  useEffect(() => {
+    if (!workspace || latestTask?.task_type !== "ARTIFACT_JOB") {
+      return;
+    }
+    void loadArtifactJobs(workspace.workspace_id);
+  }, [workspace, latestTask?.task_id, latestTask?.task_status, latestTask?.progress_phase]);
+
+  useEffect(() => {
+    setSelectedResearchSourceIds((current) => current.filter((sourceId) => sources.some((source) => source.source_id === sourceId)));
+  }, [sources]);
+
+  useEffect(() => {
+    if (!focusedResearchSourceId) {
       return;
     }
     const timeoutId = window.setTimeout(() => {
-      void get<WikiLogEntry[]>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-log?item_id=${encodeURIComponent(selectedWikiItemId)}`)
-        .then((entries) => setSelectedWikiLog(entries))
-        .catch(() => setSelectedWikiLog([]));
-    }, 120);
+      const target = document.getElementById(`research-source-scope-${focusedResearchSourceId}`);
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 0);
     return () => window.clearTimeout(timeoutId);
-  }, [workspace, wikiHome, selectedWikiItemId]);
+  }, [focusedResearchSourceId, view, sources.length]);
+
+  async function loadArtifactJobs(_workspaceId: string) {
+    try {
+      return await refreshArtifactJobs();
+    } catch {
+      return [];
+    }
+  }
+
+  async function openArtifactHistoryVersion(item: ArtifactHistoryItem) {
+    if (!workspace) {
+      return;
+    }
+    try {
+      await selectHistoryVersion({
+        key: item.key,
+        artifactJobId: item.artifactJobId,
+        versionNo: item.versionNo
+      }, shouldReuseLatestArtifactVersion({
+        artifactJobId: item.artifactJobId,
+        versionNo: item.versionNo
+      }, latestArtifactVersion));
+    } catch {
+      setStatus("历史产物版本详情加载失败");
+    }
+  }
+
+  async function saveArtifactVersionAsSource(version: { artifact_job_id: string; version_no: number }) {
+    if (!workspace) {
+      setStatus("请先创建工作台");
+      return;
+    }
+    await run("保存产物为资料", async () => {
+      const saved = await artifactsApi.saveVersionAsSource(
+        workspace.workspace_id,
+        version.artifact_job_id,
+        version.version_no
+      );
+      recordSavedSource(artifactVersionSaveKey(version), saved.source_id);
+      setSources(await sourcesApi.list(workspace.workspace_id));
+    });
+  }
+
+  async function writeArtifactVersionToKnowledge(
+    version: { artifact_job_id: string; version_no: number; title: string },
+    itemType: "NOTE" | "WIKI"
+  ) {
+    if (!workspace) {
+      setStatus("请先创建工作台");
+      return;
+    }
+    const label = itemType === "NOTE" ? "Note" : "Wiki";
+    await run(`写回 ${label}`, async () => {
+      await artifactsApi.writebackVersion(
+        workspace.workspace_id,
+        version.artifact_job_id,
+        version.version_no,
+        { item_type: itemType, title: version.title }
+      );
+      const key = artifactVersionSaveKey(version);
+      recordWriteback(key, itemType);
+    });
+  }
+
+  async function regenerateArtifactVersion(version: { artifact_job_id: string; version_no: number }) {
+    if (!workspace) {
+      setStatus("请先创建工作台");
+      return;
+    }
+    await run("再生成产物版本", async () => {
+      await artifactsApi.regenerateVersion(
+        workspace.workspace_id,
+        version.artifact_job_id,
+        version.version_no
+      );
+      await loadArtifactJobs(workspace.workspace_id);
+    });
+  }
+
+  async function rollbackArtifactVersion(version: { artifact_job_id: string; version_no: number }) {
+    if (!workspace) {
+      setStatus("请先创建工作台");
+      return;
+    }
+    await run("追加式回滚产物", async () => {
+      const rolledBack = await artifactsApi.rollbackVersion(
+        workspace.workspace_id,
+        version.artifact_job_id,
+        version.version_no
+      );
+      applyRollback(rolledBack);
+      await loadArtifactJobs(workspace.workspace_id);
+    });
+  }
+
+  async function compareArtifactWithPreviousVersion(version: { artifact_job_id: string; version_no: number }) {
+    if (!workspace || version.version_no <= 1) {
+      setStatus("当前版本没有可比较的上一版本");
+      return;
+    }
+    try {
+      setIsBusy(true);
+      setStatus("比较产物版本中...");
+      const comparison = await artifactsApi.compareVersions(
+        workspace.workspace_id,
+        version.artifact_job_id,
+        version.version_no - 1,
+        version.version_no
+      );
+      setStatus(comparison.summary);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "比较产物版本失败");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  function downloadArtifactVersionPdf(version: {
+    artifact_job_id: string;
+    version_no: number;
+    runtime_trace?: ArtifactRuntimeTrace | null;
+    files?: Array<{ file_format: string; status: string }>;
+  }) {
+    if (!workspace) {
+      setStatus("请先创建工作台");
+      return;
+    }
+    const exportStatus = version.runtime_trace?.export_trace?.status ?? "";
+    const hasStoredPdf = Array.isArray(version.files)
+      && version.files.some((file) => file.file_format === "PDF" && file.status === "READY");
+    if (!hasStoredPdf && exportStatus !== "COMPILED") {
+      setStatus("该版本尚未生成可下载的 PDF");
+      return;
+    }
+    window.open(
+      artifactsApi.exportPdfUrl(workspace.workspace_id, version.artifact_job_id, version.version_no),
+      "_blank",
+      "noopener,noreferrer"
+    );
+  }
 
   async function createWorkspace() {
     await run("创建工作台", async () => {
-      const created = await post<Workspace>("/api/v2/workspaces", {
+      const created = await workspaceApi.create({
         name: "NoteWeave 研究工作台",
         description: "用于上传资料、持续对话和维护工作台级 Wiki 的研究空间"
       });
       setWorkspace(created);
       setSources([]);
-      const wikiSettings = await get<WikiSettings>(`/api/v2/workspaces/${created.workspace_id}/wiki-settings`);
-      setWikiEnabled(wikiSettings.wiki_enabled);
-      const createdConversation = await post<Conversation>(`/api/v2/workspaces/${created.workspace_id}/conversations`, {
+      setSelectedResearchSourceIds([]);
+      setLatestTaskId("");
+      setLatestResearchTaskId("");
+      resetResearchState();
+      const createdConversation = await conversationsApi.create(created.workspace_id, {
         title: "默认研究会话",
         conversation_type: "WORKSPACE_CHAT"
       });
@@ -396,32 +715,12 @@ export function App() {
       return;
     }
     await run("上传资料并解析", async () => {
-      const bytes = new TextEncoder().encode(sourceText);
-      const upload = await post<{ upload_id: string }>(`/api/v2/workspaces/${workspace.workspace_id}/uploads`, {
-        file_name: "frontend-source.md",
-        file_size: bytes.byteLength,
-        mime_type: "text/markdown",
-        chunk_size: bytes.byteLength,
-        total_chunks: 1
-      });
-      await request(`/api/v2/uploads/${upload.upload_id}/chunks/0`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/octet-stream" },
-        body: bytes
-      });
-      const completed = await post<{ source_id: string; task_id: string; parse_status: string; index_status: string }>(
-        `/api/v2/uploads/${upload.upload_id}/complete`,
-        {}
-      );
-      const task = await get<TaskStatus>(`/api/v2/tasks/${completed.task_id}`);
-      const eventStream = await requestText(`/api/v2/tasks/${completed.task_id}/events`);
-      const events = parseEventStream(eventStream).map((event) => `${event.event}: ${event.data}`);
-      const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
-      const nextSources = await get<SourceAsset[]>(`/api/v2/workspaces/${workspace.workspace_id}/sources`);
-      setLatestTask(task);
-      setTaskEvents(events);
-      setWikiHome(wiki);
-      setWikiUrl(wiki.wiki_url);
+      const completed = await sourcesApi.uploadText(workspace.workspace_id, sourceText);
+      const execution = await loadExecution(completed.task_id);
+      const task = execution.task;
+      const nextSources = await sourcesApi.list(workspace.workspace_id);
+      setLatestTaskId(completed.task_id);
+      await refreshWikiHome();
       setSources(nextSources);
       setMessages((current) => [
         ...current,
@@ -433,23 +732,255 @@ export function App() {
     });
   }
 
+  function toggleResearchScope(sourceId: string) {
+    setSelectedResearchSourceIds((current) => (
+      current.includes(sourceId)
+        ? current.filter((entry) => entry !== sourceId)
+        : [...current, sourceId]
+    ));
+  }
+
+  function toggleQaScope(sourceId: string) {
+    setSelectedQaSourceIds((current) => (
+      current.includes(sourceId)
+        ? current.filter((entry) => entry !== sourceId)
+        : [...current, sourceId]
+    ));
+  }
+
+  function addResearchSourceToScope(sourceId: string) {
+    setSelectedResearchSourceIds((current) => (
+      current.includes(sourceId) ? current : [...current, sourceId]
+    ));
+    setFocusedResearchSourceId(sourceId);
+  }
+
+  function removeResearchSourceFromScope(sourceId: string) {
+    setSelectedResearchSourceIds((current) => current.filter((entry) => entry !== sourceId));
+    setFocusedResearchSourceId(sourceId);
+  }
+
+  async function loadResearchRunHistory(preferredRunId?: string) {
+    if (!workspace) {
+      return [];
+    }
+    const runs = await fetchResearchRunHistory();
+    const nextRunId = preferredRunId || currentResearchRunId;
+    if (!nextRunId && runs.length > 0) {
+      prepareResearchRun(runs[0].research_run_id);
+      await fetchResearchRunDetail(runs[0].research_run_id);
+    }
+    return runs;
+  }
+
+  async function loadResearchRunDetail(researchRunId: string, checkpointNo?: number | null) {
+    if (!workspace) {
+      return null;
+    }
+    return fetchResearchRunDetail(researchRunId, checkpointNo);
+  }
+
+  async function refreshResearchTask(taskId: string, researchRunId: string) {
+    const execution = await loadExecution(taskId);
+    const task = execution.task;
+    setLatestResearchTaskId(taskId);
+    const runs = await loadResearchRunHistory(task.result_ref || researchRunId);
+    const detail = await loadResearchRunDetail(task.result_ref || researchRunId);
+    return {
+      task,
+      runs,
+      detail
+    };
+  }
+
+  async function startDeepResearch() {
+    if (!workspace) {
+      setStatus("请先创建工作台");
+      return;
+    }
+    const nextQuestion = researchQuestion.trim();
+    if (!nextQuestion) {
+      setStatus("请先填写 Deep Research 问题");
+      return;
+    }
+    if (selectedResearchSourceIds.length === 0) {
+      setStatus("请至少选择一份已解析的资料后再启动 Deep Research");
+      return;
+    }
+    const nextProfile = researchProfile.trim() || "default";
+    const nextGoal = researchGoal.trim();
+    const nextDeliverableFormat = researchDeliverableFormat.trim();
+    const nextConstraints = researchConstraintsText
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    const nextTimeRange = researchTimeRange.trim();
+    const nextDepth = researchDepth.trim() || "STANDARD";
+    const nextResearchType = researchType.trim() || "AUTO";
+    await run("启动 Deep Research", async () => {
+      const created = await researchApi.createRun(workspace.workspace_id, {
+        question: nextQuestion,
+        profile: nextProfile,
+        research_goal: nextGoal,
+        deliverable_format: nextDeliverableFormat,
+        constraints: nextConstraints,
+        time_range: nextTimeRange,
+        depth: nextDepth,
+        research_type: nextResearchType,
+        source_scope_source_ids: selectedResearchSourceIds
+      });
+      prepareResearchRun(created.research_run_id);
+      const refreshed = await refreshResearchTask(created.task_id, created.research_run_id);
+      const createdRunSummary = refreshed.runs.find((run) => run.research_run_id === created.research_run_id) ?? null;
+      const createdRunBaseline = findRunContinuityBaseline(refreshed.runs, createdRunSummary);
+      const createdRunBaselineLabel = createdRunSummary
+        ? buildRunContinuityBaselineLabel(createdRunBaseline, createdRunSummary)
+        : "";
+      const createdRunContinuityNarrative = createdRunSummary
+        ? buildRunContinuityNarrative(createdRunBaseline, createdRunSummary)
+        : "";
+      setMessages((current) => [
+        ...current,
+        {
+          role: "system",
+          content: `已创建 Deep Research：run=${created.research_run_id}，profile=${nextProfile}，depth=${nextDepth}，显式资料范围 ${selectedResearchSourceIds.length} 份。${buildLifecycleCreationNarrative(
+            nextQuestion,
+            nextGoal,
+            nextDepth,
+            selectedResearchSourceIds.length
+          )}${createdRunBaselineLabel ? ` continuity baseline=${createdRunBaselineLabel}。` : ""}${createdRunContinuityNarrative ? ` ${createdRunContinuityNarrative}` : ""}`
+        }
+      ]);
+    });
+  }
+
+  async function refreshCurrentResearchRun() {
+    if (!workspace || !currentResearchRunId) {
+      setStatus("当前还没有可刷新的 Deep Research run");
+      return;
+    }
+    await run("刷新 Deep Research", async () => {
+      if (latestResearchTask?.task_id) {
+        await refreshResearchTask(latestResearchTask.task_id, currentResearchRunId);
+      } else {
+        await loadResearchRunHistory(currentResearchRunId);
+        await loadResearchRunDetail(currentResearchRunId);
+      }
+    });
+  }
+
+  async function openResearchRunHistoryItem(runSummary: ResearchRunSummary) {
+    if (!workspace) {
+      return;
+    }
+    await run(`打开 Research Run ${runSummary.research_run_id}`, async () => {
+      prepareResearchRun(runSummary.research_run_id);
+      if (runSummary.task_id) {
+        await loadExecution(runSummary.task_id);
+        setLatestResearchTaskId(runSummary.task_id);
+      }
+      await loadResearchRunDetail(runSummary.research_run_id);
+    });
+  }
+
+  async function openResearchWorkbench() {
+    if (!workspace) {
+      setStatus("请先创建工作台");
+      return;
+    }
+    setView("research");
+    window.history.pushState({}, "", "/research");
+    await run("打开 Deep Research 工作台", async () => {
+      const runs = await loadResearchRunHistory();
+      if (!currentResearchRunId && runs.length === 0) {
+        resetResearchState();
+      }
+    });
+  }
+
+  function openMemoryWorkbench() {
+    if (!workspace) {
+      setStatus("请先创建工作台");
+      return;
+    }
+    setView("memory");
+    window.history.pushState({}, "", "/memory/reviews");
+    setStatus("已打开 Memory 人工审核工作台");
+  }
+
+  async function saveResearchReportAsSource() {
+    if (!workspace || !currentResearchRunId) {
+      setStatus("当前没有可写回的 Deep Research 报告");
+      return;
+    }
+    await run("保存 Deep Research 报告到资料池", async () => {
+      const saved = await researchApi.saveReportAsSource(
+        workspace.workspace_id,
+        currentResearchRunId
+      );
+      const nextSources = await sourcesApi.list(workspace.workspace_id);
+      setSources(nextSources);
+      const runs = await loadResearchRunHistory(currentResearchRunId);
+      const savedRunSummary = runs.find((run) => run.research_run_id === currentResearchRunId) ?? currentResearchRunSummary;
+      const savedRunBaseline = findRunContinuityBaseline(runs, savedRunSummary);
+      const savedRunBaselineLabel = savedRunSummary
+        ? buildRunContinuityBaselineLabel(savedRunBaseline, savedRunSummary)
+        : "";
+      const savedRunContinuityNarrative = savedRunSummary
+        ? buildRunContinuityNarrative(savedRunBaseline, savedRunSummary)
+        : "";
+      setMessages((current) => [
+        ...current,
+        {
+          role: "system",
+          content: `Deep Research 报告已写回资料池：source=${saved.source_id}，status=${saved.status}，index=${saved.index_status}。${
+            buildArtifactRecoveryNarrative(
+              currentResearchRunSummary?.recovery_mode || currentResearchRun?.report_structure?.recovery_status.active_recovery_strategy || currentResearchRun?.report_structure?.recovery_mode || "",
+              currentRunSummaryRecoveryTargets
+            ) || ""
+          }${savedRunBaselineLabel ? ` continuity baseline=${savedRunBaselineLabel}。` : ""}${savedRunContinuityNarrative ? ` ${savedRunContinuityNarrative}` : ""}`
+        }
+      ]);
+    });
+  }
+
+  function exportResearchReportMarkdown() {
+    const exportArtifact = buildResearchReportExportArtifact({
+      final_report_markdown: currentResearchRun?.final_report_markdown,
+      final_report_title: currentResearchRun?.final_report_title,
+      question: currentResearchRun?.question
+    });
+    if (!exportArtifact) {
+      setStatus("当前没有可导出的 Deep Research Markdown 报告");
+      return;
+    }
+    const blob = new Blob([exportArtifact.content], { type: exportArtifact.mimeType });
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = exportArtifact.fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(objectUrl);
+    setStatus(buildResearchReportExportStatusMessage(exportArtifact.fileName));
+  }
+
   async function deleteSource(source: SourceAsset) {
     if (!workspace) {
       return;
     }
     await run(`删除资料《${source.title}》`, async () => {
-      const deleted = await delJson<{ source_id: string; status: string; wiki_retract_task_id: string }>(
-        `/api/v2/workspaces/${workspace.workspace_id}/sources/${source.source_id}`
-      );
-      const nextSources = await get<SourceAsset[]>(`/api/v2/workspaces/${workspace.workspace_id}/sources`);
-      const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
+      const deleted = await sourcesApi.remove(workspace.workspace_id, source.source_id);
+      const nextSources = await sourcesApi.list(workspace.workspace_id);
       setSources(nextSources);
-      await applyWikiHome(wiki, selectedWikiItemId);
+      await refreshWikiFromServer(selectedWikiItemId, {
+        mode: wikiGraphMode,
+        graphKinds: wikiGraphKindFilters
+      });
       if (deleted.wiki_retract_task_id) {
-        const task = await get<TaskStatus>(`/api/v2/tasks/${deleted.wiki_retract_task_id}`);
-        setLatestTask(task);
-        const eventStream = await requestText(`/api/v2/tasks/${deleted.wiki_retract_task_id}/events`);
-        setTaskEvents(parseEventStream(eventStream).map((event) => `${event.event}: ${event.data}`));
+        await loadExecution(deleted.wiki_retract_task_id);
+        setLatestTaskId(deleted.wiki_retract_task_id);
       }
       setMessages((current) => [
         ...current,
@@ -470,15 +1001,7 @@ export function App() {
     }
     await run(wikiEnabled ? "关闭 Wiki 构建" : "开启 Wiki 构建", async () => {
       const next = !wikiEnabled;
-      const settings = await put<WikiSettings>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-settings`, {
-        wiki_enabled: next
-      });
-      setWikiEnabled(settings.wiki_enabled);
-      if (settings.wiki_enabled) {
-        const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
-        await applyWikiHome(wiki, selectedWikiItemId);
-      }
-      setWikiRebuildAdvice(await get<WikiRebuildAdvice>(`/api/v2/workspaces/${workspace.workspace_id}/wiki/rebuild-advice`));
+      const settings = await updateWikiEnabled(next, wikiGraphMode, wikiGraphKindFilters);
       setMessages((current) => [
         ...current,
         {
@@ -491,27 +1014,25 @@ export function App() {
     });
   }
 
-  async function sendMessage() {
+  async function sendConversationPrompt(content: string, runLabel = `${currentRoute().label} 提问`) {
     if (!conversation) {
       setStatus("请先创建工作台和会话");
       return;
     }
-    const trimmed = question.trim();
+    const trimmed = content.trim();
     if (!trimmed) {
       return;
     }
-    await run(`${currentRoute().label} 提问`, async () => {
+    await run(runLabel, async () => {
       setMessages((current) => [...current, { role: "user", content: trimmed }]);
-      let sent: { assistant_message_id: string; assistant_request_id: string; stream_url: string };
+      let sent;
       try {
-        sent = await post<{ assistant_message_id: string; assistant_request_id: string; stream_url: string }>(
-          `/api/v2/conversations/${conversation.conversation_id}/messages`,
-          {
-            content: trimmed,
-            answer_mode: mode.toUpperCase(),
-            client_request_id: `${mode}-${Date.now()}`
-          }
-        );
+        sent = await answersApi.send(conversation.conversation_id, {
+          content: trimmed,
+          answer_mode: mode.toUpperCase(),
+          client_request_id: `${mode}-${Date.now()}`,
+          source_scope_source_ids: mode === "qa" ? selectedQaSourceIds : []
+        });
       } catch (error) {
         setMessages((current) => {
           const rollbackIndex = [...current]
@@ -525,11 +1046,209 @@ export function App() {
         });
         throw error;
       }
-      const stream = await requestText(sent.stream_url);
-      const parsed = parseChatStream(stream);
-      const answer = parsed.answer || "后端已完成回答，但没有返回 delta 内容。";
       setLastAssistantMessageId(sent.assistant_message_id);
-      setMessages((current) => [...current, { role: "assistant", content: answer, answerMode: mode, citations: parsed.citations }]);
+      const buffered = answerRunStoreRef.current.get(sent.answer_run_id);
+      setMessages((current) => [...current, {
+        role: "assistant",
+        content: buffered?.content ?? "",
+        answerMode: mode,
+        citations: buffered?.citations ?? [],
+        answerRunId: sent.answer_run_id,
+        answerStatus: buffered?.status ?? "GENERATING",
+        answerError: buffered?.error ?? ""
+      }]);
+      if (conversationStreamConnected) {
+        await answerRunStoreRef.current.waitFor(sent.answer_run_id);
+        const completed = await reconcileAnswerRun(sent.answer_run_id);
+        if (!completed?.content) {
+          setMessages((current) => updateAssistantMessageByRun(current, sent.answer_run_id, {
+            ...(completed ?? createAnswerRunState(sent.answer_run_id)),
+            content: "后端已完成回答，但没有返回 delta 内容。",
+            status: "COMPLETED"
+          }));
+        }
+        return;
+      }
+      let fallback = createAnswerRunState(sent.answer_run_id);
+      await streamEvents(sent.answer_stream_url || sent.stream_url, (event) => {
+        fallback = reduceAnswerRunState(fallback, event.event, event.data);
+        if (fallback.status === "FAILED" || fallback.status === "CANCELLED") {
+          setMessages((current) => updateLastAssistantMessage(current, fallback));
+          throw new Error(fallback.error || "回答流失败");
+        }
+        setMessages((current) => updateLastAssistantMessage(
+          current,
+          fallback
+        ));
+      });
+      if (!fallback.content) {
+        setMessages((current) => updateLastAssistantMessage(
+          current,
+          {
+            ...fallback,
+            content: "后端已完成回答，但没有返回 delta 内容。"
+          }
+        ));
+      }
+      await reconcileAnswerRun(sent.answer_run_id, fallback);
+    });
+  }
+
+  async function reconcileAnswerRun(answerRunId: string, fallback?: AnswerRunState) {
+    if (!workspace) {
+      return answerRunStoreRef.current.get(answerRunId) ?? fallback;
+    }
+    const snapshot = await answersApi.getRun(workspace.workspace_id, answerRunId);
+    const current = answerRunStoreRef.current.get(answerRunId);
+    if (!current && fallback) {
+      answerRunStoreRef.current.reconcileRun({
+        id: fallback.runId,
+        status: fallback.status,
+        content: fallback.content,
+        error_message: fallback.error
+      });
+    }
+    const reconciled = answerRunStoreRef.current.reconcileRun(snapshot);
+    setMessages((messages) => updateAssistantMessageByRun(messages, answerRunId, reconciled));
+    return reconciled;
+  }
+
+  async function sendMessage() {
+    await sendConversationPrompt(question);
+  }
+
+  function updateArtifactFormValue(fieldKey: string, value: string) {
+    setArtifactFormValues((current) => ({
+      ...current,
+      [fieldKey]: value
+    }));
+  }
+
+  function appendArtifactHint(hint: string) {
+    setArtifactCustomInstruction((current) => {
+      const trimmedCurrent = current.trim();
+      if (!trimmedCurrent) {
+        return hint;
+      }
+      return trimmedCurrent.includes(hint)
+        ? current
+        : `${trimmedCurrent}\n- ${hint}`;
+    });
+  }
+
+  function renderArtifactField(field: ArtifactStudioField) {
+    const value = artifactFormValues[field.key] || "";
+    if (field.kind === "select") {
+      return (
+        <label key={field.key} className="rail-field">
+          <span>{field.label}</span>
+          <select value={value} onChange={(event) => updateArtifactFormValue(field.key, event.target.value)}>
+            {(field.options || []).map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      );
+    }
+
+    return (
+      <label key={field.key} className="rail-field">
+        <span>{field.label}</span>
+        <input
+          value={value}
+          onChange={(event) => updateArtifactFormValue(field.key, event.target.value)}
+          placeholder={field.placeholder}
+          type={field.kind === "url" ? "url" : "text"}
+        />
+      </label>
+    );
+  }
+
+  function buildArtifactPrompt(skill: ArtifactStudioSkill) {
+    const artifactLanguage = readArtifactLanguage(artifactFormValues);
+    const artifactUrl = readArtifactUrl(skill, artifactFormValues);
+    const baseHeader = [
+      `请基于当前工作台资料，${skill.promptFocus}。`,
+      `输出语言：${artifactLanguage}。`,
+      `额外要求：${skill.styleHint}`
+    ];
+    const customInstruction = artifactCustomInstruction.trim();
+    if (customInstruction) {
+      baseHeader.push(`补充说明：${customInstruction}`);
+    }
+
+    switch (skill.key) {
+      case "resume_highlight":
+        return `${baseHeader.join("\n")}\n请按“项目背景 / 我的动作 / 技术复杂度 / 业务或工程结果 / 可写入简历的亮点句”输出，并尽量量化影响。`;
+      case "study_guide":
+        return `${baseHeader.join("\n")}\n请按“主题概览 / 关键概念 / 章节结构 / 易错点 / 练习建议 / 复习路径”输出学习指南。`;
+      case "quiz_pack":
+        return `${baseHeader.join("\n")}\n请给出分层难度的题目设计，并按“题目 / 标准答案 / 解析 / 评分要点”输出。`;
+      case "wiki_page":
+        return `${baseHeader.join("\n")}\n请生成适合沉淀为 Wiki 的页面草稿，并覆盖“概览 / 关键机制 / 证据与引用提示 / 相关页面建议”。`;
+      case "bilibili_course_note_pdf":
+        return `${baseHeader.join("\n")}\nB站链接：${artifactUrl || "请补充视频链接"}。\n请按独立 Artifact Worker 的受控异步链路组织任务，必要时调用 Bilibili Render PDF MCP，输出产物计划、章节结构、字幕来源策略与 PDF 讲义要求。`;
+      default:
+        return baseHeader.join("\n");
+    }
+  }
+
+  function buildArtifactRequirement(skill: ArtifactStudioSkill) {
+    const artifactLanguage = readArtifactLanguage(artifactFormValues);
+    const artifactUrl = readArtifactUrl(skill, artifactFormValues);
+    const requirements = [
+      skill.promptFocus,
+      `输出语言：${artifactLanguage}`,
+      `风格要求：${skill.styleHint}`
+    ];
+    const customInstruction = artifactCustomInstruction.trim();
+    if (customInstruction) {
+      requirements.push(`补充说明：${customInstruction}`);
+    }
+    if (skill.key === "bilibili_course_note_pdf") {
+      requirements.push(`B站链接：${artifactUrl || "请补充视频链接"}`);
+      requirements.push("需要按讲义章节、字幕获取策略与 PDF 产物要求组织异步任务");
+    }
+    return requirements.join("\n");
+  }
+
+  function prepareArtifactPrompt(skill: ArtifactStudioSkill) {
+    const prompt = buildArtifactPrompt(skill);
+    setView("chat");
+    setMode("qa");
+    setQuestion(prompt);
+    setArtifactComposerOpen(false);
+    setStatus(`已将“${skill.title}”的生成请求填入聊天输入框。`);
+    return prompt;
+  }
+
+  async function launchArtifactPrompt(skill: ArtifactStudioSkill) {
+    if (!workspace) {
+      setStatus("请先创建工作台");
+      return;
+    }
+    const userRequirement = buildArtifactRequirement(skill);
+    const inputs = buildArtifactJobInputs(skill, artifactFormValues);
+    await run(`创建 ${skill.title} 任务`, async () => {
+      const created = await artifactsApi.createJob(workspace.workspace_id, {
+        skill_key: skill.key,
+        user_requirement: userRequirement,
+        inputs
+      });
+      await loadArtifactJobs(workspace.workspace_id);
+      setArtifactComposerOpen(false);
+      setArtifactCustomInstruction("");
+      setArtifactFormValues(buildInitialArtifactFormValues(skill));
+      setMessages((current) => [
+        ...current,
+        {
+          role: "system",
+          content: `已创建 ${skill.title} 任务：job=${created.artifact_job_id}，task=${created.task_id}，当前状态 ${created.status}。`
+        }
+      ]);
+      setStatus(`已创建“${skill.title}”任务，系统会通过独立 Artifact Worker 异步生成结果。`);
     });
   }
 
@@ -539,9 +1258,10 @@ export function App() {
       return;
     }
     await run("读取默认 Wiki 工作台入口", async () => {
-      const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
-      await applyWikiHome(wiki, selectedWikiItemId);
-      setWikiRebuildAdvice(await get<WikiRebuildAdvice>(`/api/v2/workspaces/${workspace.workspace_id}/wiki/rebuild-advice`));
+      const wiki = await refreshWikiFromServer(selectedWikiItemId, {
+        mode: wikiGraphMode,
+        graphKinds: wikiGraphKindFilters
+      });
       setView("wiki");
       window.history.pushState({}, "", wiki.wiki_url);
       setMessages((current) => [
@@ -556,12 +1276,8 @@ export function App() {
       return;
     }
     setWikiGraphMode("overview");
-    setSelectedWikiItemId("");
-    setSelectedWikiDetail(null);
-    setSelectedWikiVersions([]);
-    setSelectedWikiVersionDetail(null);
     setWikiRenameTitle("");
-    setWikiGraph(await loadWikiGraph(workspace.workspace_id, { mode: "overview" }));
+    await clearWikiSelection({ mode: "overview", graphKinds: wikiGraphKindFilters });
   }
 
   async function saveLatestAnswerAsNote() {
@@ -570,9 +1286,7 @@ export function App() {
       return;
     }
     await run("保存最新回答为 Note", async () => {
-      const saved = await post<WikiPage>(`/api/v2/messages/${lastAssistantMessageId}/save-as-note`, {
-        title: noteTitle
-      });
+      const saved = await knowledgeApi.saveMessageAsNote(lastAssistantMessageId, noteTitle);
       setMessages((current) => [
         ...current,
         { role: "system", content: `已保存 Note：${saved.title}（v${saved.latest_version_no}）` }
@@ -591,15 +1305,16 @@ export function App() {
       return;
     }
     await run("手动补缺 / 修正 Wiki 页面", async () => {
-      const created = await post<WikiPage>(`/api/v2/workspaces/${workspace.workspace_id}/knowledge-items`, {
+      const created = await knowledgeApi.createItem(workspace.workspace_id, {
         item_type: "WIKI",
         title: wikiTitle,
         content,
         source_message_id: null
       });
-      const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
-      await applyWikiHome(wiki, created.item_id);
-      setWikiRebuildAdvice(await get<WikiRebuildAdvice>(`/api/v2/workspaces/${workspace.workspace_id}/wiki/rebuild-advice`));
+      const wiki = await refreshWikiFromServer(created.item_id, {
+        mode: wikiGraphMode,
+        graphKinds: wikiGraphKindFilters
+      });
       setWikiDraft("");
       setMessages((current) => [
         ...current,
@@ -626,13 +1341,15 @@ export function App() {
       return;
     }
     await run(`追加 Wiki 页面《${selectedWikiPage.title}》版本`, async () => {
-      await post<WikiPage>(`/api/v2/knowledge-items/${selectedWikiPage.item_id}/versions`, {
+      await knowledgeApi.appendVersion(selectedWikiPage.item_id, {
         content,
         source_message_id: null
       });
-      const wiki = workspace ? await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`) : wikiHome;
-      if (wiki) {
-        await applyWikiHome(wiki, selectedWikiPage.item_id);
+      if (workspace) {
+        await refreshWikiFromServer(selectedWikiPage.item_id, {
+          mode: wikiGraphMode,
+          graphKinds: wikiGraphKindFilters
+        });
       }
       setWikiAppendDraft("");
     });
@@ -649,9 +1366,11 @@ export function App() {
       return;
     }
     await run(`重命名 Wiki 页面《${selectedWikiPage.title}》`, async () => {
-      const renamed = await patch<WikiPage>(`/api/v2/knowledge-items/${selectedWikiPage.item_id}/title`, { title });
-      const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
-      await applyWikiHome(wiki, renamed.item_id);
+      const renamed = await knowledgeApi.renameItem(selectedWikiPage.item_id, title);
+      await refreshWikiFromServer(renamed.item_id, {
+        mode: wikiGraphMode,
+        graphKinds: wikiGraphKindFilters
+      });
     });
   }
 
@@ -661,9 +1380,8 @@ export function App() {
       return;
     }
     await run(`删除 Wiki 页面《${selectedWikiPage.title}》`, async () => {
-      await del(`/api/v2/knowledge-items/${selectedWikiPage.item_id}`);
-      const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
-      await applyWikiHome(wiki, "");
+      await knowledgeApi.deleteItem(selectedWikiPage.item_id);
+      await refreshWikiFromServer("", { mode: "overview", graphKinds: wikiGraphKindFilters });
     });
   }
 
@@ -672,9 +1390,11 @@ export function App() {
       return;
     }
     await run("重建 Wiki 链接", async () => {
-      await post<WikiStats>(`/api/v2/workspaces/${workspace.workspace_id}/wiki/rebuild-links`, {});
-      const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
-      await applyWikiHome(wiki, selectedWikiItemId);
+      await knowledgeApi.rebuildLinks(workspace.workspace_id);
+      await refreshWikiFromServer(selectedWikiItemId, {
+        mode: wikiGraphMode,
+        graphKinds: wikiGraphKindFilters
+      });
     });
   }
 
@@ -683,10 +1403,11 @@ export function App() {
       return;
     }
     await run("重建工作台 Wiki", async () => {
-      const rebuilt = await post<WikiRebuild>(`/api/v2/workspaces/${workspace.workspace_id}/wiki/rebuild`, {});
-      const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
-      await applyWikiHome(wiki, selectedWikiItemId);
-      setWikiRebuildAdvice(await get<WikiRebuildAdvice>(`/api/v2/workspaces/${workspace.workspace_id}/wiki/rebuild-advice`));
+      const rebuilt = await knowledgeApi.rebuild(workspace.workspace_id);
+      await refreshWikiFromServer(selectedWikiItemId, {
+        mode: wikiGraphMode,
+        graphKinds: wikiGraphKindFilters
+      });
       setMessages((current) => [
         ...current,
         { role: "system", content: `已按当前工作台资料重建 Wiki：资料 ${rebuilt.source_count} 个，任务 ${rebuilt.task_count} 个。` }
@@ -699,10 +1420,11 @@ export function App() {
       return;
     }
     await run("自动修复 Wiki", async () => {
-      const fixed = await post<{ created_pages: number; remaining_issues: number }>(`/api/v2/workspaces/${workspace.workspace_id}/wiki/auto-fix`, {});
-      const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
-      await applyWikiHome(wiki, selectedWikiItemId);
-      setWikiRebuildAdvice(await get<WikiRebuildAdvice>(`/api/v2/workspaces/${workspace.workspace_id}/wiki/rebuild-advice`));
+      const fixed = await knowledgeApi.autoFix(workspace.workspace_id);
+      await refreshWikiFromServer(selectedWikiItemId, {
+        mode: wikiGraphMode,
+        graphKinds: wikiGraphKindFilters
+      });
       setMessages((current) => [
         ...current,
         {
@@ -818,92 +1540,18 @@ ${relationLine}
   }
 
   async function loadWikiVersion(itemId: string, versionNo: number) {
-    setSelectedWikiVersionDetail(await get<KnowledgeVersionDetail>(`/api/v2/knowledge-items/${itemId}/versions/${versionNo}`));
+    await loadKnowledgeVersion(itemId, versionNo);
   }
 
-  function buildWikiIssueQuery(filters: {
-    issueType: string;
-    severity: string;
-    scope: "ALL" | "AUTO" | "MANUAL";
-    page: "ALL" | "CURRENT";
-    selectedItemId: string;
-  }) {
-    const query = new URLSearchParams();
-    if (filters.issueType !== "ALL") {
-      query.set("issue_type", filters.issueType);
-    }
-    if (filters.severity !== "ALL") {
-      query.set("severity", filters.severity);
-    }
-    if (filters.scope === "AUTO") {
-      query.set("auto_fixable", "true");
-    }
-    if (filters.scope === "MANUAL") {
-      query.set("auto_fixable", "false");
-    }
-    if (filters.page === "CURRENT" && filters.selectedItemId) {
-      query.set("item_id", filters.selectedItemId);
-    }
-    return query;
-  }
-
-  function buildWikiGraphQuery(
-    mode: "overview" | "ego",
-    selectedItemId?: string,
-    graphKinds: string[] = wikiGraphKindFilters
-  ) {
-    const query = new URLSearchParams();
-    if (mode === "ego" && selectedItemId) {
-      query.set("mode", "ego");
-      query.set("center", selectedItemId);
-      query.set("depth", "1");
-      query.set("limit", "12");
-    } else {
-      query.set("mode", "overview");
-      query.set("limit", "24");
-    }
-    graphKinds.forEach((kind) => query.append("kinds", kind));
-    return query;
-  }
-
-  async function loadWikiGraph(
-    workspaceId: string,
-    options?: {
-      mode?: "overview" | "ego";
-      selectedItemId?: string;
-      graphKinds?: string[];
-    }
-  ) {
-    const nextMode = options?.mode ?? wikiGraphMode;
-    const nextSelectedItemId = options?.selectedItemId;
-    const nextKinds = options?.graphKinds ?? wikiGraphKindFilters;
-    const query = buildWikiGraphQuery(nextMode, nextSelectedItemId, nextKinds);
-    return get<WikiGraph>(`/api/v2/workspaces/${workspaceId}/wiki-graph?${query.toString()}`);
-  }
-
-  async function selectWikiPage(page: WikiPage, nextGraphMode?: "overview" | "ego") {
-    setSelectedWikiItemId(page.item_id);
+  async function selectWikiPage(page: WikiPage, nextGraphMode?: WikiGraphMode) {
     await run(`打开 Wiki 页面《${page.title}》`, async () => {
-      const detail = await get<KnowledgeItemDetail>(`/api/v2/knowledge-items/${page.item_id}`);
-      setSelectedWikiDetail(detail);
-      setSelectedWikiVersions(await get<KnowledgeVersionSummary[]>(`/api/v2/knowledge-items/${page.item_id}/versions`));
-      if (workspace) {
-        const graphMode = nextGraphMode ?? wikiGraphMode;
-        setWikiGraphMode(graphMode);
-        setWikiGraph(await loadWikiGraph(workspace.workspace_id, { mode: graphMode, selectedItemId: page.item_id }));
-      }
-      setSelectedWikiVersionDetail({
-        version_id: detail.latest_version_id,
-        item_id: detail.item_id,
-        version_no: detail.latest_version_no,
-        content: detail.content,
-        summary: detail.summary,
-        source_message_id: detail.source_message_id,
-        citations: detail.citations,
-        created_at: detail.version_created_at
-      });
+      const graphMode = nextGraphMode ?? wikiGraphMode;
+      setWikiGraphMode(graphMode);
+      await selectKnowledgePage(page, workspace ? {
+        mode: graphMode,
+        graphKinds: wikiGraphKindFilters
+      } : undefined);
       setWikiAppendDraft("");
-      setWikiRenameTitle(page.title);
     });
   }
 
@@ -997,60 +1645,142 @@ ${relationLine}
       return rankDiff !== 0 ? rankDiff : left.localeCompare(right);
     })
   );
-
-  async function applyWikiHome(wiki: WikiHome, preferredItemId: string) {
-    setWikiUrl(wiki.wiki_url);
-    setWikiHome(wiki);
-    setWikiIndex(await get<WikiIndex>(`/api/v2/workspaces/${wiki.workspace_id}/wiki-index`));
-    setWikiStats(await get<WikiStats>(`/api/v2/workspaces/${wiki.workspace_id}/wiki-stats`));
-    const issues = await get<WikiIssue[]>(`/api/v2/workspaces/${wiki.workspace_id}/wiki-issues`);
-    setWikiIssues(issues);
-    setFilteredWikiIssues(issues);
-    setWikiLog(await get<WikiLogEntry[]>(`/api/v2/workspaces/${wiki.workspace_id}/wiki-log`));
-    setWikiRebuildAdvice(await get<WikiRebuildAdvice>(`/api/v2/workspaces/${wiki.workspace_id}/wiki/rebuild-advice`));
-    const selected = preferredItemId ? (wiki.pages.find((page) => page.item_id === preferredItemId) ?? null) : null;
-    setSelectedWikiItemId(selected?.item_id ?? "");
-    setWikiGraph(await loadWikiGraph(wiki.workspace_id, { selectedItemId: selected?.item_id }));
-    const detail = selected ? await get<KnowledgeItemDetail>(`/api/v2/knowledge-items/${selected.item_id}`) : null;
-    setSelectedWikiDetail(detail);
-    setSelectedWikiVersions(selected ? await get<KnowledgeVersionSummary[]>(`/api/v2/knowledge-items/${selected.item_id}/versions`) : []);
-      setSelectedWikiVersionDetail(detail
+  const researchScopeSources = sources.filter((source) => selectedResearchSourceIds.includes(source.source_id));
+  const filteredResearchRuns = researchRuns.filter((run) => matchesResearchHistoryFilter(run, researchHistoryFilter));
+  const chronologicalResearchRuns = [...researchRuns].sort(compareResearchRunsByTimeAsc);
+  const researchRunById = new Map(researchRuns.map((run) => [run.research_run_id, run] as const));
+  const runContinuityBaselineById = new Map<string, ResearchRunSummary | null>();
+  chronologicalResearchRuns.forEach((run, index) => {
+    const resumeBaseline = run.resumed_from_research_run_id
+      ? researchRunById.get(run.resumed_from_research_run_id) ?? null
+      : null;
+    runContinuityBaselineById.set(
+      run.research_run_id,
+      resumeBaseline ?? (index > 0 ? chronologicalResearchRuns[index - 1] ?? null : null)
+    );
+  });
+  const currentResearchRunSummary = researchRuns.find((run) => run.research_run_id === currentResearchRunId) ?? null;
+  const researchTimelineMilestones = buildResearchTimelineMilestones(chronologicalResearchRuns);
+  const researchTimelinePath = buildResearchTimelinePathSummary(
+    chronologicalResearchRuns,
+    researchTimelineMilestones,
+    currentResearchRunSummary
+  );
+  const summarizedResearchQuestion = summarizeText(researchQuestion.trim(), 88) || "当前还没有填写显式研究问题。";
+  const summarizedResearchGoal = summarizeText(researchGoal.trim(), 88) || "当前还没有填写显式研究目标。";
+  const researchScopeCount = selectedResearchSourceIds.length;
+  const currentResearchProcessSummary = currentResearchRun?.research_process_summary
+    ?? currentResearchRunSummary?.research_process_summary
+    ?? null;
+  const researchReportStructure = currentResearchRun?.report_structure ?? null;
+  const researchClosedLoopState = currentResearchRun?.closed_loop_state ?? null;
+  const currentResearchSourceEvidenceSummary = currentResearchProcessSummary?.source_evidence_summary ?? null;
+  const researchReportIntentContract = readIntentCompletionContract(researchReportStructure?.intent_completion_contract);
+  const researchClosedLoopIntentContract = readIntentCompletionContract(researchClosedLoopState?.state_ledger?.intent_completion_contract);
+  const currentRecoveryStatus = asRecord(researchReportStructure?.recovery_status);
+  const currentGuardrailedRows = asResearchRows(currentRecoveryStatus["guardrailed_rows"]);
+  const currentRecoveryTargets = readRecoveryTargets(
+    researchClosedLoopState?.recovery_targets
+    ?? researchReportStructure?.closed_loop_state?.["recovery_targets"]
+    ?? researchReportStructure?.recovery_status?.["recovery_targets"]
+  );
+  const currentIntentCompletionContract = researchReportIntentContract ?? researchClosedLoopIntentContract;
+  const latestResearchProgressEvent = [...researchTaskEvents].reverse().find((event) => event.event === "task.progress") ?? null;
+  const latestWorkspaceProgressEvent = [...taskEvents].reverse().find((event) => event.event === "task.progress") ?? null;
+  const currentSavedReportSource = currentResearchRun?.saved_report_source ?? null;
+  const currentSavedReportSourceAsset = currentSavedReportSource
+    ? sources.find((source) => source.source_id === currentSavedReportSource.source_id) ?? null
+    : null;
+  const currentSavedReportSourceInScope = currentSavedReportSource
+    ? selectedResearchSourceIds.includes(currentSavedReportSource.source_id)
+    : false;
+  const currentRunSummarySnapshot = extractRunSummarySnapshot(currentResearchRunSummary);
+  const currentResearchWaitContext = currentResearchRun?.wait_context ?? currentResearchRunSummary?.wait_context ?? latestResearchTask?.wait_context ?? null;
+  const currentResearchWaitSignals = buildWaitContextSignalChips(currentResearchWaitContext);
+  const currentResearchWaitDetails = buildWaitContextDetailLines(currentResearchWaitContext);
+  const latestResearchTaskWaitSignals = buildWaitContextSignalChips(latestResearchTask?.wait_context ?? null);
+  const latestResearchTaskWaitDetails = buildWaitContextDetailLines(latestResearchTask?.wait_context ?? null);
+  const latestWorkspaceTaskWaitSignals = buildWaitContextSignalChips(latestTask?.wait_context ?? null);
+  const latestWorkspaceTaskWaitDetails = buildWaitContextDetailLines(latestTask?.wait_context ?? null);
+  const currentRunSummaryRecoveryTargets = currentRunSummarySnapshot.recoveryTargets;
+  const currentVerifiedFindings = researchReportStructure?.verified_findings ?? [];
+  const currentConflictReview = asRecord(researchReportStructure?.conflict_and_counterfactual_review);
+  const currentConflictedRows = asResearchRows(currentConflictReview["conflicted_rows"]);
+  const currentCounterfactualSummary = currentResearchRun?.counterfactual_summary ?? researchClosedLoopState?.counterfactual_summary ?? researchReportStructure?.counterfactual_summary ?? null;
+  const currentFinalAnswer = readResearchFinalAnswer(
+    researchReportStructure,
+    currentVerifiedFindings,
+    currentConflictedRows,
+    currentGuardrailedRows,
+    currentIntentCompletionContract
+  );
+  const currentExecutiveSummary = readResearchExecutiveSummary(
+    researchReportStructure,
+    currentVerifiedFindings,
+    currentConflictedRows,
+    currentGuardrailedRows,
+    currentCounterfactualSummary
+  );
+  const currentKeyTakeaways = readResearchKeyTakeaways(
+    researchReportStructure,
+    currentVerifiedFindings
+  );
+  const resultSnapshotTitle = currentFinalAnswer.answer_status
+    || currentResearchRunSummary?.final_report_title
+    || "Result Snapshot";
+  const resultSnapshotNarrative = [
+    currentFinalAnswer.confidence_label,
+    currentFinalAnswer.coverage_label,
+    currentFinalAnswer.source_basis
+  ]
+    .filter(Boolean)
+    .join(" · ") || currentExecutiveSummary[0] || "当前结论仍在等待更多证据或 verifier 放行。";
+  const currentEvidenceHighlights = readResearchEvidenceHighlights(
+    researchReportStructure,
+    currentVerifiedFindings,
+    currentConflictedRows,
+    currentGuardrailedRows
+  );
+  const currentUncertaintyAndRisks = readResearchUncertaintyAndRisks(
+    researchReportStructure,
+    currentConflictedRows,
+    currentGuardrailedRows,
+    currentIntentCompletionContract
+  );
+  const artifactSidebarState = buildArtifactSidebarState({
+    artifactJobs,
+    latestArtifactVersion,
+    selectedArtifactHistoryVersion,
+    selectedArtifactHistoryKey,
+    currentResearchRunSummary,
+    latestTask,
+    workspaceReady: Boolean(workspace),
+    wikiState: workspace
       ? {
-          version_id: detail.latest_version_id,
-          item_id: detail.item_id,
-          version_no: detail.latest_version_no,
-          content: detail.content,
-          summary: detail.summary,
-          source_message_id: detail.source_message_id,
-          citations: detail.citations,
-          created_at: detail.version_created_at
+          enabled: wikiEnabled,
+          pageCount: wikiIndex?.page_count ?? wikiHome?.pages.length ?? 0,
+          pendingTaskCount: wikiIndex?.pending_task_count ?? 0,
+          updatedAt: wikiHome?.pages[0]?.updated_at ?? ""
         }
-      : null);
-    setWikiRenameTitle(selected?.title ?? "");
-  }
-
+      : null,
+    sourcesCount: sources.length,
+    resolveArtifactSkillTitle: (skillKey) => resolveArtifactSkillTitle(skillKey, artifactStudioSkills),
+    formatRelativeTime
+  });
   function restoreLatestWikiVersion() {
-    if (!selectedWikiDetail) {
-      return;
-    }
-    setSelectedWikiVersionDetail({
-      version_id: selectedWikiDetail.latest_version_id,
-      item_id: selectedWikiDetail.item_id,
-      version_no: selectedWikiDetail.latest_version_no,
-      content: selectedWikiDetail.content,
-      summary: selectedWikiDetail.summary,
-      source_message_id: selectedWikiDetail.source_message_id,
-      citations: selectedWikiDetail.citations,
-      created_at: selectedWikiDetail.version_created_at
-    });
+    restoreLatestKnowledgeVersion();
   }
 
-  async function switchWikiGraphMode(nextMode: "overview" | "ego") {
+  async function switchWikiGraphMode(nextMode: WikiGraphMode) {
     if (!workspace) {
       return;
     }
     setWikiGraphMode(nextMode);
-    setWikiGraph(await loadWikiGraph(workspace.workspace_id, { mode: nextMode, selectedItemId: selectedWikiItemId }));
+    await refreshWikiGraph({
+      mode: nextMode,
+      selectedItemId: selectedWikiItemId,
+      graphKinds: wikiGraphKindFilters
+    });
   }
 
   async function toggleWikiGraphKind(kind: string) {
@@ -1061,11 +1791,11 @@ ${relationLine}
       ? wikiGraphKindFilters.filter((entry) => entry !== kind)
       : [...wikiGraphKindFilters, kind].sort((left, right) => getWikiKindRank(left) - getWikiKindRank(right));
     setWikiGraphKindFilters(nextKinds);
-    setWikiGraph(await loadWikiGraph(workspace.workspace_id, {
+    await refreshWikiGraph({
       mode: wikiGraphMode,
       selectedItemId: selectedWikiItemId,
       graphKinds: nextKinds
-    }));
+    });
   }
 
   async function resetWikiGraphKinds() {
@@ -1073,11 +1803,11 @@ ${relationLine}
       return;
     }
     setWikiGraphKindFilters([]);
-    setWikiGraph(await loadWikiGraph(workspace.workspace_id, {
+    await refreshWikiGraph({
       mode: wikiGraphMode,
       selectedItemId: selectedWikiItemId,
       graphKinds: []
-    }));
+    });
   }
 
   async function openWikiGraphPage(itemId: string) {
@@ -1113,16 +1843,17 @@ ${relationLine}
       return;
     }
     if (!wikiHome) {
-      const wiki = await get<WikiHome>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-home`);
-      await applyWikiHome(wiki, "");
+      const wiki = await refreshWikiFromServer("", {
+        mode: "overview",
+        graphKinds: wikiGraphKindFilters
+      });
       setView("wiki");
       window.history.pushState({}, "", wiki.wiki_url);
     } else {
       setView("wiki");
       await openWikiIndex();
     }
-    const matchedIssues = await get<WikiIssue[]>(`/api/v2/workspaces/${workspace.workspace_id}/wiki-issues?issue_type=${encodeURIComponent(issueType)}`);
-    const firstIssue = matchedIssues[0] ?? null;
+    const firstIssue = await findFirstWikiIssue(issueType);
     setWikiIssueScopeFilter(firstIssue?.auto_fixable ? "AUTO" : issueType === "BROKEN_LINK" ? "AUTO" : "MANUAL");
     setWikiIssueTypeFilter(issueType || "ALL");
     setWikiIssueSeverityFilter("ALL");
@@ -1318,24 +2049,23 @@ ${relationLine}
 
   return (
     <main className="shell">
-      <section className="hero">
-        <p className="eyebrow">NoteWeave v2</p>
-        <h1>研究工作台的三链路完整闭环</h1>
-        <p className="lede">
-          在同一个工作台里完成创建、上传资料、三模式聊天和默认 Wiki 工作台入口。问答 RAG 负责快速证据问答，
-          Note 参考 Marginalia 做资料级候选与原文窗口检索，Wiki 参考 WebKonra / WeKnora 做全量 Wiki 页面网络检索。
-        </p>
-      </section>
+      <header className="hero">
+        <div>
+          <h1>NoteWeave</h1>
+          <p className="lede">研究工作台</p>
+        </div>
+        <span className="hero-mode">{currentRoute().label}</span>
+      </header>
 
       <section className="workspace-card">
         <div>
-          <p className="section-label">研究工作台</p>
-          <h2>{workspace ? workspace.name : "尚未创建工作台"}</h2>
-          <p>{conversation ? `当前会话：${conversation.title}` : "先创建工作台，系统会自动创建一个默认会话。"}</p>
+          <p className="section-label">Workspace</p>
+          <h2>{workspace ? workspace.name : "新建研究工作台"}</h2>
+          <p>{conversation ? `当前会话：${conversation.title}` : "创建后即可添加资料并开始对话"}</p>
           <p className="status-line">{status}</p>
         </div>
         <div className="action-group">
-          {view === "wiki" && (
+          {view !== "chat" && (
             <button className="secondary-button" onClick={backToChat}>
               返回聊天
             </button>
@@ -1484,7 +2214,7 @@ ${relationLine}
                     {selectedWikiVersionDetail.citations.length === 0 && <span>该历史版本没有绑定引用。</span>}
                     {selectedWikiVersionDetail.citations.map((citation, index) => (
                       <span key={`history-${citation.citation_id}`}>
-                        {index + 1}. {citation.title}：{citation.quote_text}
+                        {index + 1}. {buildKnowledgeCitationLabel(citation)}：{citation.quote_text}
                       </span>
                     ))}
                   </div>
@@ -1494,7 +2224,7 @@ ${relationLine}
                     <strong>来源引用</strong>
                     {selectedWikiDetail.citations.map((citation, index) => (
                       <span key={citation.citation_id}>
-                        {index + 1}. {citation.title}：{citation.quote_text}
+                        {index + 1}. {buildKnowledgeCitationLabel(citation)}：{citation.quote_text}
                       </span>
                     ))}
                   </div>
@@ -2131,6 +2861,279 @@ ${relationLine}
             </details>
           </aside>
         </section>
+      ) : view === "memory" ? (
+        <MemoryReviewWorkbench workspaceId={workspace?.workspace_id ?? ""} />
+      ) : view === "research" ? (
+        <section className="research-workbench">
+          <Suspense fallback={(
+            <aside className="research-index research-sidebar-loading">
+              <p className="section-label">Deep Research</p>
+              <span>正在加载独立研究控制台…</span>
+            </aside>
+          )}>
+            <LazyResearchSidebar
+              {...{
+                summarizedResearchQuestion,
+                summarizedResearchGoal,
+                researchDeliverableFormat,
+                researchProfile,
+                researchDepth,
+                researchType,
+                researchScopeCount,
+                researchQuestion,
+                setResearchQuestion,
+                researchGoal,
+                setResearchGoal,
+                setResearchProfile,
+                setResearchDeliverableFormat,
+                researchTimeRange,
+                setResearchTimeRange,
+                setResearchDepth,
+                setResearchType,
+                researchConstraintsText,
+                setResearchConstraintsText,
+                startDeepResearch,
+                isBusy,
+                workspace,
+                loadResearchRunHistory,
+                sources,
+                selectedResearchSourceIds,
+                currentSavedReportSource,
+                focusedResearchSourceId,
+                toggleResearchScope,
+                setFocusedResearchSourceId,
+                buildSourceOriginBadge,
+                researchScopeSources,
+                currentSavedReportSourceInScope,
+                researchRuns,
+                filteredResearchRuns,
+                researchHistoryFilter,
+                setResearchHistoryFilter,
+                researchHistoryFilterLabel,
+                researchTimelineMilestones,
+                runContinuityBaselineById,
+                buildRunContinuityBaselineLabel,
+                buildRunContinuityNarrative,
+                currentResearchRunSummary,
+                sameStageLabel,
+                timelineStageLabel,
+                currentRunStageLabelFromSummary,
+                openResearchRunHistoryItem,
+                summarizeText,
+                buildRunCheckpointNarrative,
+                formatTimestamp,
+                researchTimelinePath,
+                buildRunSignalChips,
+                buildRunPrimaryTone,
+                readRecoveryTargets,
+                currentResearchRunId,
+                formatRecoveryTargetLabels,
+                formatRecoveryTargetColumns,
+                buildCurrentRecoveryNarrative,
+              }}
+            />
+          </Suspense>
+
+          <Suspense fallback={(
+            <article className="research-page research-report-loading">
+              <p className="section-label">Research Run</p>
+              <span>正在加载研究主报告…</span>
+            </article>
+          )}>
+            <LazyResearchReportPanel
+              {...{
+                currentResearchRun,
+                formatTimestamp,
+                buildReportRecoveryNarrative,
+                currentResearchRunSummary,
+                researchReportStructure,
+                currentRecoveryTargets,
+                refreshCurrentResearchRun,
+                isBusy,
+                currentResearchRunId,
+                exportResearchReportMarkdown,
+                saveResearchReportAsSource,
+                setResearchDetailOpen,
+                formatResearchAnswerStatus,
+                currentFinalAnswer,
+                resultSnapshotTitle,
+                resultSnapshotNarrative,
+                currentExecutiveSummary,
+                currentResearchSourceEvidenceSummary,
+                currentVerifiedFindings,
+                currentIntentCompletionContract,
+                currentKeyTakeaways,
+                currentUncertaintyAndRisks,
+                buildResearchSourceLabel,
+                sourceById,
+                summarizeText,
+                currentSavedReportSource,
+                currentEvidenceHighlights,
+                researchClosedLoopState,
+                buildArtifactRecoveryNarrative,
+                currentRunSummaryRecoveryTargets,
+                currentSavedReportSourceAsset,
+                currentSavedReportSourceInScope,
+                removeResearchSourceFromScope,
+                addResearchSourceToScope,
+                setFocusedResearchSourceId,
+                researchTimelinePath,
+              }}
+            />
+          </Suspense>
+
+          <aside className="research-side">
+            <p className="section-label">Research Detail</p>
+            <div className="task-card">
+              <strong>研究详情</strong>
+              <span>主界面只保留研究主流程；checkpoint、verifier、trace、counterfactual 等高级信息统一放到详情弹窗。</span>
+              {currentResearchRunSummary ? (
+                <>
+                  <small>{currentResearchRunSummary.status} · {currentResearchRunSummary.profile_key || "DEFAULT"} · checkpoints={currentResearchRunSummary.checkpoint_count}</small>
+                  <small>rows={currentResearchRunSummary.ledger_row_count} · verified={currentResearchRunSummary.verified_row_count} · conflicted={currentResearchRunSummary.conflicted_row_count}</small>
+                  {buildWaitContextNarrative(currentResearchWaitContext) ? (
+                    <small>{buildWaitContextNarrative(currentResearchWaitContext)}</small>
+                  ) : null}
+                  {currentResearchWaitSignals.length > 0 ? (
+                    <div className="signal-chip-row artifact-wait-signal-row">
+                      {currentResearchWaitSignals.map((chip, index) => (
+                        <span key={`current-research-wait-signal-${index}`} className={`signal-chip tone-${chip.tone}`}>
+                          {chip.label}: {chip.value}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {currentResearchWaitDetails.length > 0 ? (
+                    <div className="artifact-runtime-trace">
+                      {currentResearchWaitDetails.map((line, index) => (
+                        <small key={`current-research-wait-detail-${index}`} className="artifact-runtime-trace-line">
+                          <strong>{line.label}</strong> · {line.value}
+                        </small>
+                      ))}
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <small>选择一个 run 后可查看完整研究详情。</small>
+              )}
+              <div className="research-inline-actions">
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => {
+                    setResearchDetailOpen(true);
+                  }}
+                  disabled={!currentResearchRun}
+                >
+                  打开研究详情
+                </button>
+              </div>
+            </div>
+            {latestResearchTask ? (
+              <div className="task-card">
+                <strong>当前任务进度</strong>
+                <span>{summarizeRunStatus(latestResearchTask.task_status)} · {latestResearchTask.progress_phase}</span>
+                <small>{latestResearchTask.progress_message}</small>
+                {buildWaitContextNarrative(latestResearchTask.wait_context) ? (
+                  <small>{buildWaitContextNarrative(latestResearchTask.wait_context)}</small>
+                ) : null}
+                {latestResearchTaskWaitSignals.length > 0 ? (
+                  <div className="signal-chip-row artifact-wait-signal-row">
+                    {latestResearchTaskWaitSignals.map((chip, index) => (
+                      <span key={`latest-research-task-wait-signal-${index}`} className={`signal-chip tone-${chip.tone}`}>
+                        {chip.label}: {chip.value}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {latestResearchTaskWaitDetails.length > 0 ? (
+                  <div className="artifact-runtime-trace">
+                    {latestResearchTaskWaitDetails.map((line, index) => (
+                      <small key={`latest-research-task-wait-detail-${index}`} className="artifact-runtime-trace-line">
+                        <strong>{line.label}</strong> · {line.value}
+                      </small>
+                    ))}
+                  </div>
+                ) : null}
+                {buildResearchTaskRuntimeSnapshot(latestResearchProgressEvent, latestResearchTask) ? (
+                  <small>{buildResearchTaskRuntimeSnapshot(latestResearchProgressEvent, latestResearchTask)}</small>
+                ) : null}
+              </div>
+            ) : null}
+          </aside>
+
+          {researchDetailOpen ? (
+            <div
+              className="research-detail-overlay"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Deep Research 研究详情"
+              onClick={() => setResearchDetailOpen(false)}
+            >
+              <div className="research-detail-modal research-detail-modal-simple" onClick={(event) => event.stopPropagation()}>
+                <div className="research-detail-header">
+                  <div>
+                    <p className="section-label">Research</p>
+                    <h3>{currentResearchRun?.final_report_title || currentResearchRun?.question || "Deep Research"}</h3>
+                    <small>
+                      {formatResearchAnswerStatus(currentFinalAnswer.answer_status)} · {currentResearchRun?.source_scope.length ?? 0} 个资料来源 · {currentResearchSourceEvidenceSummary?.citation_count ?? 0} 条引用
+                    </small>
+                  </div>
+                  <button type="button" className="secondary-button" onClick={() => setResearchDetailOpen(false)}>
+                    关闭
+                  </button>
+                </div>
+                <div className="research-detail-content research-detail-content-simple">
+                  <section className="wiki-summary">
+                    <strong>研究结果</strong>
+                    <p>{currentFinalAnswer.answer_text || "研究正在进行中，完成后会在这里展示结论。"}</p>
+                    {currentExecutiveSummary.length > 0 ? (
+                      <div className="research-evidence-grid">
+                        {currentExecutiveSummary.slice(0, 3).map((item, index) => (
+                          <div key={`research-detail-summary-${index}`} className="link-card research-evidence-card">
+                            <strong>要点 {index + 1}</strong>
+                            <span>{item}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </section>
+
+                  <section className="wiki-citations">
+                    <strong>研究进度</strong>
+                    <span>{currentResearchRun?.status || latestResearchTask?.task_status || "等待开始"}</span>
+                    <small>{buildResearchTaskRuntimeSnapshot(latestResearchProgressEvent, latestResearchTask) || (currentResearchProcessSummary ? `已纳入 ${currentResearchProcessSummary.source_scope_count} 个资料来源进行检索和阅读。` : "系统会在检索、阅读和汇总完成后更新结果。")}</small>
+                    <small>
+                      已纳入 {currentResearchRun?.source_scope.length ?? 0} 个来源 · 已确认 {currentResearchSourceEvidenceSummary?.verified_finding_count ?? currentVerifiedFindings.length} 条要点
+                    </small>
+                  </section>
+
+                  <section className="wiki-citations">
+                    <strong>引用与来源</strong>
+                    {currentEvidenceHighlights.length > 0 ? currentEvidenceHighlights.slice(0, 5).map((finding, index) => (
+                      <div key={`research-detail-source-${index}`} className="link-card research-evidence-card">
+                        <strong>{buildResearchSourceLabel(finding, sourceById, "未命名来源")}</strong>
+                        <span>{summarizeText(finding.claim_text || "暂无可展示的引用摘要", 180)}</span>
+                      </div>
+                    )) : (
+                      <span>暂未返回可展示的来源；研究完成后会显示支撑结论的引用。</span>
+                    )}
+                  </section>
+
+                  <div className="research-inline-actions">
+                    <button type="button" className="secondary-button" onClick={() => void refreshCurrentResearchRun()} disabled={isBusy || !currentResearchRunId}>
+                      刷新
+                    </button>
+                    <button type="button" className="secondary-button" onClick={() => void saveResearchReportAsSource()} disabled={isBusy || !currentResearchRun?.final_report_markdown}>
+                      保存为资料
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+        </section>
       ) : (
         <section className="layout">
         <div className="chat-panel">
@@ -2147,45 +3150,69 @@ ${relationLine}
             ))}
           </div>
 
-          <div className="mode-explainer">
-            {routes.map((route) => (
-              <article key={route.key} className={route.key === mode ? "selected" : ""}>
-                <strong>{route.label}</strong>
-                <span>{route.description}</span>
-              </article>
-            ))}
-          </div>
-
-          <label className="input-block">
-            <span>上传资料内容</span>
-            <textarea value={sourceText} onChange={(event) => setSourceText(event.target.value)} rows={4} />
-          </label>
-          <button onClick={uploadSource} disabled={isBusy || !workspace}>
-            上传并解析资料
-          </button>
-          {latestTask && (
-            <div className="task-card">
-              <strong>资料处理任务</strong>
-              <span>{latestTask.task_type} · {latestTask.task_status} · {latestTask.progress_phase}</span>
-              <span>{latestTask.progress_message}</span>
-              {taskEvents.map((event, index) => (
-                <small key={`${event}-${index}`}>{event}</small>
-              ))}
+          <details className="source-drawer">
+            <summary>
+              <span>资料库</span>
+              <small>{sources.length} 份资料</small>
+            </summary>
+            <div className="source-drawer-body">
+              <label className="input-block">
+                <span>资料内容</span>
+                <textarea value={sourceText} onChange={(event) => setSourceText(event.target.value)} rows={4} />
+              </label>
+              <button onClick={uploadSource} disabled={isBusy || !workspace}>
+                上传并解析
+              </button>
+              {latestTask && (
+                <div className="task-card">
+                  <strong>资料处理任务</strong>
+                  <span>{latestTask.task_type} · {summarizeRunStatus(latestTask.task_status)} · {latestTask.progress_phase}</span>
+                  <span>{latestTask.progress_message}</span>
+                  {buildWaitContextNarrative(latestTask.wait_context) ? (
+                    <small>{buildWaitContextNarrative(latestTask.wait_context)}</small>
+                  ) : null}
+                  {latestWorkspaceTaskWaitSignals.length > 0 ? (
+                    <div className="signal-chip-row artifact-wait-signal-row">
+                      {latestWorkspaceTaskWaitSignals.map((chip, index) => (
+                        <span key={`workspace-task-wait-signal-${index}`} className={`signal-chip tone-${chip.tone}`}>
+                          {chip.label}: {chip.value}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {latestWorkspaceTaskWaitDetails.length > 0 ? (
+                    <div className="artifact-runtime-trace">
+                      {latestWorkspaceTaskWaitDetails.map((line, index) => (
+                        <small key={`workspace-task-wait-detail-${index}`} className="artifact-runtime-trace-line">
+                          <strong>{line.label}</strong> · {line.value}
+                        </small>
+                      ))}
+                    </div>
+                  ) : null}
+                  {buildGenericTaskRuntimeSnapshot(latestWorkspaceProgressEvent, latestTask) ? (
+                    <small>{buildGenericTaskRuntimeSnapshot(latestWorkspaceProgressEvent, latestTask)}</small>
+                  ) : null}
+                  {taskEvents.map((event, index) => (
+                    <small key={`${event.event}-${index}`}>{buildTaskEventNarrative(event, latestTask)}</small>
+                  ))}
+                </div>
+              )}
+              {sources.length > 0 && (
+                <div className="task-card">
+                  <strong>工作台资料</strong>
+                  {sources.map((source) => (
+                    <span key={source.source_id}>
+                      {source.title} · {source.status} · {source.index_status}
+                      {source.generated_by === "research_agent" ? ` · ${buildSourceOriginBadge(source)}` : ""}
+                      <button className="inline-action" onClick={() => void deleteSource(source)} disabled={isBusy}>
+                        删除资料
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
-          {sources.length > 0 && (
-            <div className="task-card">
-              <strong>工作台资料</strong>
-              {sources.map((source) => (
-                <span key={source.source_id}>
-                  {source.title} · {source.status} · {source.index_status}
-                  <button className="inline-action" onClick={() => void deleteSource(source)} disabled={isBusy}>
-                    删除资料
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
+          </details>
 
           <div className="conversation">
             {messages.map((message, index) => (
@@ -2199,110 +3226,1337 @@ ${relationLine}
             <span>{currentRoute().label} 问题</span>
             <textarea value={question} onChange={(event) => setQuestion(event.target.value)} rows={3} />
           </label>
+          {mode === "qa" ? (
+            <div className="qa-scope-hint">
+              当前问答范围：{sources.length > 0 ? `此 Workspace 的 ${sources.length} 份资料` : "暂未上传资料"}。
+              {selectedQaSourceIds.length > 0
+                ? ` 已显式限定 ${selectedQaSourceIds.length} 份资料。`
+                : " 回答会附带对应来源引用。"}
+              {sources.length > 0 ? (
+                <details>
+                  <summary>指定本次 QA 的资料范围（可选）</summary>
+                  <div className="qa-scope-options">
+                    {sources.filter((source) => source.status === "READY" && source.index_status === "INDEXED").map((source) => (
+                      <button
+                        type="button"
+                        key={source.source_id}
+                        className={selectedQaSourceIds.includes(source.source_id) ? "active filter-pill" : "filter-pill"}
+                        onClick={() => toggleQaScope(source.source_id)}
+                        disabled={isBusy}
+                      >
+                        {source.title}
+                      </button>
+                    ))}
+                    {selectedQaSourceIds.length > 0 ? (
+                      <button type="button" className="secondary-button" onClick={() => setSelectedQaSourceIds([])} disabled={isBusy}>
+                        使用全部资料
+                      </button>
+                    ) : null}
+                  </div>
+                </details>
+              ) : " 先上传资料后即可开始基于证据的问答。"}
+            </div>
+          ) : null}
           <div className="composer-actions">
             <button onClick={sendMessage} disabled={isBusy || !conversation}>
               发送到 {currentRoute().label}
             </button>
+            <button className="secondary-button" onClick={() => setArtifactComposerOpen(true)} disabled={isBusy || !workspace}>
+              打开 Artifact Studio
+            </button>
           </div>
         </div>
 
-        <aside className="artifact-rail">
-          <p className="section-label">工作台级 Wiki</p>
-          <button onClick={openWikiHome} disabled={isBusy || !workspace}>
-            打开 Wiki 工作台
-          </button>
-          <button onClick={toggleWikiEnabled} disabled={isBusy || !workspace}>
-            {wikiEnabled ? "关闭 Wiki 构建" : "开启 Wiki 构建"}
-          </button>
-          <button onClick={rebuildWorkspaceWiki} disabled={isBusy || !workspace || !wikiEnabled}>
-            按当前资料重建 Wiki
-          </button>
-          <p className="phase-note">
-            参考 WeKnora：Wiki 是工作台级索引策略，开启后已有资料会回补，后续资料变化进入异步 Wiki ingest 队列。
-          </p>
-          {wikiRebuildAdvice ? <p className="phase-note">{wikiRebuildAdvice.message}</p> : null}
-          {wikiUrl && <p className="wiki-url">{wikiUrl}</p>}
-          <p className="phase-note">如果需要补页、修正文案或查看维护问题，统一进入 Wiki 工作台里的维护工具区处理。</p>
-          <hr />
-          <p className="section-label">知识沉淀</p>
-          <label className="rail-field">
-            <span>Note 标题</span>
-            <input value={noteTitle} onChange={(event) => setNoteTitle(event.target.value)} />
-          </label>
-          <button onClick={saveLatestAnswerAsNote} disabled={isBusy || !lastAssistantMessageId}>
-            保存最新回答为 Note
-          </button>
-          <hr />
-          <p className="section-label">当前范围</p>
-          <p className="phase-note">当前原型已接入三条聊天链路和工作台级 Wiki。Deep Research 与产物生成还不在这个页面展示，避免和当前可用能力混淆。</p>
-        </aside>
+        {artifactComposerOpen ? <Suspense fallback={(
+          <aside className="artifact-rail artifact-rail-loading">
+            <p className="section-label">Artifact Studio</p>
+            <span>正在加载产物控制台…</span>
+          </aside>
+        )}>
+          <LazyArtifactRail
+            {...{
+              artifactComposerOpen,
+              isBusy,
+              setArtifactComposerOpen,
+              selectedArtifactSkill,
+              renderArtifactField,
+              artifactCustomInstruction,
+              setArtifactCustomInstruction,
+              appendArtifactHint,
+              workspace,
+              prepareArtifactPrompt,
+              isArtifactFormReady,
+              artifactFormValues,
+              launchArtifactPrompt,
+              artifactStudioSkills,
+              setSelectedArtifactSkillKey,
+              setArtifactFormValues,
+              artifactSidebarState,
+              latestArtifactVersion,
+              formatRelativeTime,
+              saveArtifactVersionAsSource,
+              artifactSavedSourceByVersionId,
+              artifactVersionSaveKey,
+              writeArtifactVersionToKnowledge,
+              artifactWritebackByVersionId,
+              regenerateArtifactVersion,
+              compareArtifactWithPreviousVersion,
+              rollbackArtifactVersion,
+              downloadArtifactVersionPdf,
+              resolveArtifactSkillTitle,
+              summarizeRunStatus,
+              openArtifactHistoryVersion,
+              artifactHistoryLoadingKey,
+              openWikiHome,
+              openResearchWorkbench,
+              openMemoryWorkbench,
+              toggleWikiEnabled,
+              wikiEnabled,
+              noteTitle,
+              setNoteTitle,
+              saveLatestAnswerAsNote,
+              lastAssistantMessageId,
+              wikiRebuildAdvice,
+            }}
+          />
+        </Suspense> : null}
       </section>
       )}
     </main>
   );
 }
 
-async function get<T>(path: string): Promise<T> {
-  const response = await request(path);
-  return (await response.json() as ApiResponse<T>).data;
+function artifactVersionSaveKey(version: { artifact_job_id: string; version_no: number }): string {
+  return `${version.artifact_job_id}:${version.version_no}`;
 }
 
-async function post<T>(path: string, body: unknown): Promise<T> {
-  const response = await request(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  return (await response.json() as ApiResponse<T>).data;
+async function streamEvents(path: string, onEvent: (event: StreamEvent) => void) {
+  await consumeSse(path, (event) => onEvent(toStreamEvent(event.event, event.data, event.id)));
 }
 
-async function put<T>(path: string, body: unknown): Promise<T> {
-  const response = await request(path, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  return (await response.json() as ApiResponse<T>).data;
-}
-
-async function patch<T>(path: string, body: unknown): Promise<T> {
-  const response = await request(path, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  return (await response.json() as ApiResponse<T>).data;
-}
-
-async function del(path: string): Promise<void> {
-  await request(path, { method: "DELETE" });
-}
-
-async function delJson<T>(path: string): Promise<T> {
-  const response = await request(path, { method: "DELETE" });
-  return (await response.json() as ApiResponse<T>).data;
-}
-
-async function request(path: string, init?: RequestInit) {
-  const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
-  const response = await fetch(url, init);
-  if (!response.ok) {
-    const payload = await response.text();
-    throw new Error(payload || `请求失败：${response.status}`);
+function updateLastAssistantMessage(current: Message[], answer: AnswerRunState) {
+  let targetIndex = -1;
+  for (let index = current.length - 1; index >= 0; index -= 1) {
+    if (current[index].role === "assistant") {
+      targetIndex = index;
+      break;
+    }
   }
-  return response;
+  if (targetIndex < 0) {
+    return current;
+  }
+  return current.map((message, index) => index === targetIndex
+    ? {
+      ...message,
+      content: answer.content,
+      citations: [...answer.citations],
+      answerStatus: answer.status,
+      answerError: answer.error
+    }
+    : message);
 }
 
-async function requestText(path: string) {
-  const response = await request(path);
-  return response.text();
+function updateAssistantMessageByRun(
+  current: Message[],
+  answerRunId: string,
+  answer: AnswerRunState
+) {
+  return current.map((message) => message.answerRunId === answerRunId
+    ? {
+      ...message,
+      content: answer.content,
+      citations: [...answer.citations],
+      answerStatus: answer.status,
+      answerError: answer.error
+    }
+    : message);
 }
 
-function parseChatStream(stream: string) {
-  const answer = parseSse(stream, "chat.delta");
-  const citations = parseAllSse(stream, "chat.citation");
-  return { answer, citations };
+function summarizeText(text: string, limit = 140) {
+  if (text.length <= limit) {
+    return text;
+  }
+  return `${text.slice(0, limit).trimEnd()}...`;
 }
+
+function formatTimestamp(value: string) {
+  if (!value) {
+    return "-";
+  }
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) {
+    return value;
+  }
+  return timestamp.toLocaleString();
+}
+
+function formatRelativeTime(value: string) {
+  if (!value) {
+    return "时间未知";
+  }
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) {
+    return value;
+  }
+  const diff = Date.now() - timestamp.getTime();
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  if (diff < minute) {
+    return "刚刚";
+  }
+  if (diff < hour) {
+    return `${Math.max(1, Math.floor(diff / minute))} 分钟前`;
+  }
+  if (diff < day) {
+    return `${Math.max(1, Math.floor(diff / hour))} 小时前`;
+  }
+  return `${Math.max(1, Math.floor(diff / day))} 天前`;
+}
+
+
+
+function numberFromUnknown(value: unknown) {
+  if (typeof value === "number" && !Number.isNaN(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, unknown>;
+}
+
+function asRecordArray(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item) => item && typeof item === "object" && !Array.isArray(item))
+    .map((item) => item as Record<string, unknown>);
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => typeof item === "string" ? item : "")
+    .filter((item) => Boolean(item));
+}
+
+function readRecoveryTargets(value: unknown): ResearchRecoveryTargets | null {
+  const record = asRecord(value);
+  if (!Object.keys(record).length) {
+    return null;
+  }
+  const requirementIds = asStringArray(record.requirement_ids);
+  const requirementTypes = asStringArray(record.requirement_types);
+  const requirementLabels = asStringArray(record.requirement_labels);
+  const targetColumns = asStringArray(record.target_columns);
+  const targetQueries = asStringArray(record.target_queries);
+  const targetSources = asStringArray(record.target_sources);
+  if (
+    requirementIds.length === 0
+    && requirementTypes.length === 0
+    && requirementLabels.length === 0
+    && targetColumns.length === 0
+    && targetQueries.length === 0
+    && targetSources.length === 0
+  ) {
+    return null;
+  }
+  return {
+    requirement_ids: requirementIds,
+    requirement_types: requirementTypes,
+    requirement_labels: requirementLabels,
+    target_columns: targetColumns,
+    target_queries: targetQueries,
+    target_sources: targetSources,
+    requirement_count: numberFromUnknown(record.requirement_count) || requirementIds.length,
+    query_count: numberFromUnknown(record.query_count) || targetQueries.length,
+    source_count: numberFromUnknown(record.source_count) || targetSources.length,
+    column_count: numberFromUnknown(record.column_count) || targetColumns.length,
+  };
+}
+
+function asResearchFinalAnswer(value: unknown): ResearchFinalAnswer | null {
+  const record = asRecord(value);
+  if (!Object.keys(record).length) {
+    return null;
+  }
+  return {
+    answer_text: String(record.answer_text || "").trim(),
+    answer_status: String(record.answer_status || "").trim(),
+    confidence_label: String(record.confidence_label || "").trim(),
+    coverage_label: String(record.coverage_label || "").trim(),
+    source_basis: String(record.source_basis || "").trim(),
+    ledger_row_count: numberFromUnknown(record.ledger_row_count)
+  };
+}
+
+
+function readResearchFinalAnswer(
+  reportStructure: ResearchReportStructure | null,
+  verifiedFindings: ResearchRowSummary[],
+  conflictedRows: ResearchRowSummary[],
+  guardrailedRows: ResearchRowSummary[],
+  intentContract: ResearchIntentCompletionContract | null
+): ResearchFinalAnswer {
+  const structured = asResearchFinalAnswer(reportStructure?.final_answer);
+  if (structured && structured.answer_text) {
+    return structured;
+  }
+  const topClaims = verifiedFindings
+    .map((row) => row.claim_text || "")
+    .filter((item) => Boolean(item))
+    .slice(0, 3);
+  let answerText = "当前还没有形成稳定的最终答案。";
+  if (topClaims.length > 0) {
+    answerText = `基于当前 verifier 批准的证据，研究结论为：${topClaims.join("；")}`;
+  } else if (conflictedRows.length > 0) {
+    answerText = `当前仍有 ${conflictedRows.length} 条冲突证据阻塞稳定结论，结果需要继续纠偏。`;
+  } else if (guardrailedRows.length > 0) {
+    answerText = `当前可以给出受控答案，但还有 ${guardrailedRows.length} 条 guardrailed finding 需要修复后再提升置信度。`;
+  }
+  const answerStatus = verifiedFindings.length > 0
+    ? (conflictedRows.length > 0 ? "GUARDED" : "VERIFIED")
+    : "RECOVERY_NEEDED";
+  return {
+    answer_text: answerText,
+    answer_status: answerStatus,
+    confidence_label: verifiedFindings.length > 0
+      ? `已形成 ${verifiedFindings.length} 条 verifier 批准 finding`
+      : "当前仍在恢复与验证阶段",
+    coverage_label: intentContract
+      ? `${intentContract.satisfied_requirement_count}/${intentContract.total_requirement_count} 个 intent requirement 已满足`
+      : `${verifiedFindings.length} 条 finding 可用于合成`,
+    source_basis: summarizeResearchSourceBasis(verifiedFindings),
+    ledger_row_count: verifiedFindings.length + conflictedRows.length + guardrailedRows.length
+  };
+}
+
+function readResearchExecutiveSummary(
+  reportStructure: ResearchReportStructure | null,
+  verifiedFindings: ResearchRowSummary[],
+  conflictedRows: ResearchRowSummary[],
+  guardrailedRows: ResearchRowSummary[],
+  counterfactualSummary: ResearchCounterfactualSummary | null
+) {
+  const structured = asStringArray(reportStructure?.executive_summary);
+  if (structured.length > 0) {
+    return structured;
+  }
+  const summary = [
+    verifiedFindings.length > 0
+      ? `本次研究已沉淀 ${verifiedFindings.length} 条可直接合成答案的 finding。`
+      : "本次研究仍处于受控恢复中，尚未形成稳定答案。"
+  ];
+  if (conflictedRows.length > 0) {
+    summary.push(`${conflictedRows.length} 条 finding 仍处于冲突状态。`);
+  } else if (guardrailedRows.length > 0) {
+    summary.push(`${guardrailedRows.length} 条 finding 仍带 guardrails，需要继续修复。`);
+  }
+  if (counterfactualSummary?.has_counterfactual_recheck) {
+    summary.push(`反证分支已介入，共触发 ${counterfactualSummary.counterfactual_branch_count} 个 counterfactual branch。`);
+  }
+  return summary;
+}
+
+function readResearchKeyTakeaways(
+  reportStructure: ResearchReportStructure | null,
+  verifiedFindings: ResearchRowSummary[]
+) {
+  const structured = asStringArray(reportStructure?.key_takeaways);
+  if (structured.length > 0) {
+    return structured;
+  }
+  return verifiedFindings
+    .map((row) => row.claim_text || "")
+    .filter((item) => Boolean(item))
+    .slice(0, 4);
+}
+
+function readResearchEvidenceHighlights(
+  reportStructure: ResearchReportStructure | null,
+  verifiedFindings: ResearchRowSummary[],
+  conflictedRows: ResearchRowSummary[],
+  guardrailedRows: ResearchRowSummary[]
+) {
+  const structured = asResearchRows(reportStructure?.evidence_highlights);
+  if (structured.length > 0) {
+    return structured;
+  }
+  if (verifiedFindings.length > 0) {
+    return verifiedFindings.slice(0, 3);
+  }
+  return [...conflictedRows, ...guardrailedRows].slice(0, 3);
+}
+
+function readResearchUncertaintyAndRisks(
+  reportStructure: ResearchReportStructure | null,
+  conflictedRows: ResearchRowSummary[],
+  guardrailedRows: ResearchRowSummary[],
+  intentContract: ResearchIntentCompletionContract | null
+) {
+  const structured = asStringArray(reportStructure?.uncertainty_and_risks);
+  if (structured.length > 0) {
+    return structured;
+  }
+  const risks: string[] = [];
+  if (conflictedRows.length > 0) {
+    risks.push(`仍有 ${conflictedRows.length} 条冲突 finding 可能改变最终结论。`);
+  }
+  if (guardrailedRows.length > 0) {
+    risks.push(`仍有 ${guardrailedRows.length} 条 guardrailed finding 需要修复。`);
+  }
+  if (intentContract && intentContract.pending_requirement_count > 0) {
+    risks.push(`还有 ${intentContract.pending_requirement_count} 个 intent requirement 未闭合。`);
+  }
+  if (risks.length === 0) {
+    risks.push("当前没有明显的阻塞性冲突，答案可直接阅读。");
+  }
+  return risks;
+}
+
+
+function summarizeResearchSourceBasis(rows: ResearchRowSummary[]) {
+  const titles = [...new Set(rows.map((row) => row.source_title || "").filter((item) => Boolean(item)))];
+  if (titles.length === 0) {
+    return "当前还没有 verifier 批准的来源基础。";
+  }
+  return `${titles.length} 个来源支撑：${titles.slice(0, 3).join(" / ")}`;
+}
+
+function formatResearchAnswerStatus(status: string) {
+  switch ((status || "").toUpperCase()) {
+    case "VERIFIED":
+      return "Verifier Approved";
+    case "GUARDED":
+      return "Guarded";
+    case "RECOVERY_NEEDED":
+      return "Recovery Needed";
+    default:
+      return status || "Unknown";
+  }
+}
+
+function formatRecoveryTargetLabels(targets: ResearchRecoveryTargets | null) {
+  if (!targets) {
+    return "";
+  }
+  return targets.requirement_labels.slice(0, 2).join(" / ");
+}
+
+function formatRecoveryTargetColumns(targets: ResearchRecoveryTargets | null) {
+  if (!targets) {
+    return "";
+  }
+  return targets.target_columns.slice(0, 3).join(", ");
+}
+
+function formatRecoveryTargetQueries(targets: ResearchRecoveryTargets | null) {
+  if (!targets) {
+    return "";
+  }
+  return targets.target_queries.slice(0, 2).join(" / ");
+}
+
+function formatRecoveryTargetSources(targets: ResearchRecoveryTargets | null) {
+  if (!targets) {
+    return "";
+  }
+  return targets.target_sources.slice(0, 2).join(" / ");
+}
+
+function summarizeRecoveryTargetTypes(targets: ResearchRecoveryTargets | null) {
+  if (!targets) {
+    return "";
+  }
+  const normalized = [...new Set(targets.requirement_types.map((item) => {
+    switch (item) {
+      case "CONFLICT_FINDING":
+        return "conflict";
+      case "CONSTRAINT_FINDING":
+        return "evidence";
+      case "GOAL_FINDING":
+        return "goal";
+      default:
+        return normalizeSignalValue(item).toLowerCase() || "target";
+    }
+  }))];
+  return normalized.slice(0, 2).join(" / ");
+}
+
+function summarizeRecoveryTargetFocus(targets: ResearchRecoveryTargets | null) {
+  if (!targets) {
+    return "";
+  }
+  const columns = targets.target_columns.slice(0, 2).join(", ");
+  if (columns) {
+    return columns;
+  }
+  const sources = targets.target_sources.slice(0, 1).join(" / ");
+  if (sources) {
+    return sources;
+  }
+  const queries = targets.target_queries.slice(0, 1).join(" / ");
+  if (queries) {
+    return summarizeText(queries, 32);
+  }
+  return `${targets.requirement_count || 0} targets`;
+}
+
+function buildRecoveryTargetNarrativeFragment(targets: ResearchRecoveryTargets | null) {
+  if (!targets) {
+    return "";
+  }
+  const types = summarizeRecoveryTargetTypes(targets);
+  const columns = formatRecoveryTargetColumns(targets);
+  const queries = formatRecoveryTargetQueries(targets);
+  const sources = formatRecoveryTargetSources(targets);
+  if (columns) {
+    return `当前纠偏靶点：${types || "target"} requirement，恢复焦点已收敛到 columns ${columns}`;
+  }
+  if (queries) {
+    return `当前纠偏靶点：${types || "target"} requirement，恢复焦点正在围绕 queries ${summarizeText(queries, 48)}`;
+  }
+  if (sources) {
+    return `当前纠偏靶点：${types || "target"} requirement，恢复焦点正在围绕 sources ${sources}`;
+  }
+  if (types) {
+    return `当前纠偏靶点：${types} requirement`;
+  }
+  return `当前纠偏靶点：${targets.requirement_count || 0} 个 requirement`;
+}
+
+function buildCurrentRecoveryNarrative(recoveryMode: string, targets: ResearchRecoveryTargets | null) {
+  const normalizedMode = normalizeSignalValue(recoveryMode);
+  const targetNarrative = buildRecoveryTargetNarrativeFragment(targets);
+  if (normalizedMode && targetNarrative) {
+    return `当前恢复说明：strategy=${normalizedMode}；${targetNarrative}。`;
+  }
+  if (targetNarrative) {
+    return `当前恢复说明：${targetNarrative}。`;
+  }
+  if (normalizedMode) {
+    return `当前恢复说明：当前 closed-loop 处于 ${normalizedMode}。`;
+  }
+  return "";
+}
+
+
+function buildReportRecoveryNarrative(recoveryMode: string, targets: ResearchRecoveryTargets | null) {
+  const narrative = buildCurrentRecoveryNarrative(recoveryMode, targets);
+  if (!narrative) {
+    return "";
+  }
+  return narrative.replace("当前恢复说明：", "报告区纠偏说明：");
+}
+
+function buildArtifactRecoveryNarrative(recoveryMode: string, targets: ResearchRecoveryTargets | null) {
+  const narrative = buildCurrentRecoveryNarrative(recoveryMode, targets);
+  if (!narrative) {
+    return "";
+  }
+  return narrative.replace("当前恢复说明：", "产物出口纠偏说明：");
+}
+
+
+function buildLifecycleCreationNarrative(
+  question: string,
+  researchGoal: string,
+  depth: string,
+  sourceScopeCount: number
+) {
+  const goalText = researchGoal.trim() || summarizeText(question, 48) || "显式研究问题";
+  const scopeText = sourceScopeCount > 0
+    ? `显式资料范围 ${sourceScopeCount} 份`
+    : "当前未附带显式资料范围";
+  return `生命周期说明：新建 run 将围绕 ${goalText} 进入 closed-loop research，depth=${depth || "STANDARD"}，${scopeText}。`;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function buildSourceOriginBadge(source: SourceAsset | SaveResearchReportSource) {
+  if (source.generated_by === "research_agent") {
+    return `Research Report(${source.generated_ref_id || "unknown run"})`;
+  }
+  return "Workspace Source";
+}
+
+function buildKnowledgeCitationLabel(citation: KnowledgeCitation) {
+  if (citation.generated_by === "research_agent") {
+    return `${citation.title} · Research Report(${citation.generated_ref_id || "unknown run"})`;
+  }
+  return citation.title;
+}
+
+function buildResearchSourceLabel(
+  item: Record<string, unknown> | ResearchRowSummary | null | undefined,
+  sourceById: Map<string, SourceAsset>,
+  fallback: string
+) {
+  const record = item && typeof item === "object" ? item as Record<string, unknown> : {};
+  const sourceId = String(record.source_id ?? "").trim();
+  const sourceTitle = String(record.source_title ?? record.title ?? "").trim();
+  const directGeneratedBy = String(record.generated_by ?? "").trim();
+  const directGeneratedRefId = String(record.generated_ref_id ?? "").trim();
+  const source = sourceId ? sourceById.get(sourceId) : undefined;
+  const generatedBy = directGeneratedBy || source?.generated_by || "";
+  const generatedRefId = directGeneratedRefId || source?.generated_ref_id || "";
+  const title = sourceTitle || source?.title || fallback;
+  if (generatedBy === "research_agent") {
+    return `${title} · Research Report(${generatedRefId || "unknown run"})`;
+  }
+  return title;
+}
+
+function buildRunCheckpointNarrative(run: ResearchRunSummary) {
+  const checkpointCount = numberFromUnknown(run.checkpoint_count);
+  if (checkpointCount <= 0) {
+    return "Checkpoint 命中：当前 run 尚未沉淀显式 checkpoint。";
+  }
+  const recoveryTargets = readRecoveryTargets(run.recovery_targets);
+  const recoveryNarrative = buildCurrentRecoveryNarrative(run.recovery_mode || "", recoveryTargets);
+  return recoveryNarrative
+    ? `Checkpoint 命中：已沉淀 ${checkpointCount} 个 checkpoint；${recoveryNarrative}`
+    : `Checkpoint 命中：已沉淀 ${checkpointCount} 个 checkpoint。`;
+}
+
+function branchLaneLabel(branchId: string) {
+  const normalized = normalizeSignalValue(branchId);
+  if (!normalized || normalized === "branch-main") {
+    return "主分支";
+  }
+  return "反证分支";
+}
+
+
+function buildBranchCheckpointDeltaNarrative(
+  baselineBranchId: string,
+  baselineCheckpointCount: number,
+  baselineCounterfactualBranchCount: number,
+  currentBranchId: string,
+  currentCheckpointCount: number,
+  currentCounterfactualBranchCount: number
+) {
+  const baselineLane = branchLaneLabel(baselineBranchId);
+  const currentLane = branchLaneLabel(currentBranchId);
+  if (baselineCheckpointCount <= 0 && currentCheckpointCount <= 0) {
+    return "分支沉淀判断：baseline 与 current 都还没有显式 checkpoint 沉淀。";
+  }
+  if (baselineLane !== currentLane) {
+    return `分支沉淀判断：已从${baselineLane}切换到${currentLane}；baseline checkpoint=${baselineCheckpointCount}，current checkpoint=${currentCheckpointCount}。`;
+  }
+  if (currentCheckpointCount > baselineCheckpointCount) {
+    return `分支沉淀判断：继续在${currentLane}上累积 checkpoint；baseline=${baselineCheckpointCount}，current=${currentCheckpointCount}。`;
+  }
+  if (currentCheckpointCount < baselineCheckpointCount) {
+    return `分支沉淀判断：当前${currentLane}可见 checkpoint 少于 baseline；baseline=${baselineCheckpointCount}，current=${currentCheckpointCount}。`;
+  }
+  if (currentCounterfactualBranchCount !== baselineCounterfactualBranchCount) {
+    return `分支沉淀判断：checkpoint 数量保持 ${currentCheckpointCount}，但 counterfactual branches 从 ${baselineCounterfactualBranchCount} 变为 ${currentCounterfactualBranchCount}。`;
+  }
+  return `分支沉淀判断：baseline 与 current 都停留在${currentLane}，checkpoint 沉淀规模保持 ${currentCheckpointCount}。`;
+}
+
+function buildContinuityStateNarrative(
+  baselineBranchId: string,
+  baselineCheckpointCount: number,
+  baselineCounterfactualBranchCount: number,
+  currentBranchId: string,
+  currentCheckpointCount: number,
+  currentCounterfactualBranchCount: number,
+  baselineVerifiedCount: number,
+  currentVerifiedCount: number,
+  baselineConflictedCount: number,
+  currentConflictedCount: number
+) {
+  const branchNarrative = buildBranchCheckpointDeltaNarrative(
+    baselineBranchId,
+    baselineCheckpointCount,
+    baselineCounterfactualBranchCount,
+    currentBranchId,
+    currentCheckpointCount,
+    currentCounterfactualBranchCount
+  );
+  const verifiedDelta = currentVerifiedCount - baselineVerifiedCount;
+  const conflictedDelta = currentConflictedCount - baselineConflictedCount;
+  let stateJudgement = "闭环状态整体保持平移。";
+  if (verifiedDelta > 0 && conflictedDelta < 0) {
+    stateJudgement = "闭环状态表现为收敛推进：verified 上升且 conflicted 下降。";
+  } else if (verifiedDelta > 0 && conflictedDelta === 0) {
+    stateJudgement = "闭环状态表现为结论增厚：verified 上升而 conflicted 持平。";
+  } else if (verifiedDelta === 0 && conflictedDelta < 0) {
+    stateJudgement = "闭环状态表现为冲突消解：verified 持平而 conflicted 下降。";
+  } else if (verifiedDelta < 0 && conflictedDelta > 0) {
+    stateJudgement = "闭环状态表现为重新失稳：verified 回落且 conflicted 上升。";
+  } else if (verifiedDelta < 0) {
+    stateJudgement = "闭环状态仍在重排：verified 数量较基线回落。";
+  } else if (conflictedDelta > 0) {
+    stateJudgement = "闭环状态仍在扩散冲突：conflicted 数量较基线增加。";
+  }
+  return `${branchNarrative} Table-as-State 从 verified ${baselineVerifiedCount} -> ${currentVerifiedCount}、conflicted ${baselineConflictedCount} -> ${currentConflictedCount}，${stateJudgement}`;
+}
+
+function buildRunContinuityBaselineLabel(
+  baselineRun: ResearchRunSummary | null,
+  currentRun: ResearchRunSummary
+) {
+  if (!baselineRun) {
+    return "";
+  }
+  if (currentRun.resumed_from_research_run_id && baselineRun.research_run_id === currentRun.resumed_from_research_run_id) {
+    return `resume source ${baselineRun.research_run_id} #${currentRun.resumed_from_checkpoint_no ?? "-"}`;
+  }
+  return `previous run ${baselineRun.research_run_id}`;
+}
+
+function buildRunContinuityNarrative(
+  baselineRun: ResearchRunSummary | null,
+  currentRun: ResearchRunSummary
+) {
+  if (!baselineRun) {
+    return "";
+  }
+  const baselineSnapshot = extractRunSummarySnapshot(baselineRun);
+  const currentSnapshot = extractRunSummarySnapshot(currentRun);
+  return buildContinuityStateNarrative(
+    baselineSnapshot.activeBranchId,
+    baselineSnapshot.checkpointCount,
+    baselineSnapshot.counterfactualBranchCount,
+    currentSnapshot.activeBranchId,
+    currentSnapshot.checkpointCount,
+    currentSnapshot.counterfactualBranchCount,
+    baselineSnapshot.verifiedRowCount,
+    currentSnapshot.verifiedRowCount,
+    baselineSnapshot.conflictedRowCount,
+    currentSnapshot.conflictedRowCount
+  );
+}
+
+function findRunContinuityBaseline(
+  runs: ResearchRunSummary[],
+  currentRun: ResearchRunSummary | null | undefined
+) {
+  if (!currentRun) {
+    return null;
+  }
+  const chronologicalRuns = [...runs].sort(compareResearchRunsByTimeAsc);
+  const currentIndex = chronologicalRuns.findIndex((run) => run.research_run_id === currentRun.research_run_id);
+  if (currentRun.resumed_from_research_run_id) {
+    return chronologicalRuns.find((run) => run.research_run_id === currentRun.resumed_from_research_run_id) ?? null;
+  }
+  if (currentIndex <= 0) {
+    return null;
+  }
+  return chronologicalRuns[currentIndex - 1] ?? null;
+}
+
+function labelTaskType(taskType: string) {
+  switch (normalizeSignalValue(taskType)) {
+    case "RESEARCH_RUN":
+      return "Deep Research 任务";
+    case "SOURCE_PARSE":
+      return "资料处理任务";
+    case "WIKI_INGEST":
+      return "Wiki ingest 任务";
+    case "WIKI_RETRACT":
+      return "Wiki retract 任务";
+    case "ARTIFACT_JOB":
+      return "产物任务";
+    default:
+      return normalizeSignalValue(taskType) || "任务";
+  }
+}
+
+function readTaskEventPhase(event: StreamEvent, task: TaskStatus | null) {
+  const payload = asRecord(event.payload);
+  return normalizeSignalValue(payload.phase ?? task?.progress_phase);
+}
+
+function readTaskEventMetrics(event: StreamEvent) {
+  const payload = asRecord(event.payload);
+  return asRecord(payload.metrics);
+}
+
+
+
+
+
+
+
+
+
+function formatTaskMetric(metric: string, value: string | number | null | undefined) {
+  if (value == null || value === "") {
+    return "";
+  }
+  return `${metric} ${value}`;
+}
+
+function buildResearchTaskMetricSummary(event: StreamEvent, limit = 6) {
+  const payload = asRecord(event.payload);
+  const metrics = readTaskEventMetrics(event);
+  const items = [
+    formatTaskMetric("scope", numberFromUnknown(metrics.source_count) || undefined),
+    formatTaskMetric("query", numberFromUnknown(metrics.query_count) || undefined),
+    formatTaskMetric("hits", numberFromUnknown(metrics.search_hits) || undefined),
+    formatTaskMetric("windows", numberFromUnknown(metrics.read_windows) || undefined),
+    formatTaskMetric("evidence", numberFromUnknown(metrics.evidence_cards) || undefined),
+    formatTaskMetric("rows", numberFromUnknown(metrics.ledger_rows) || undefined),
+    formatTaskMetric("cells", numberFromUnknown(metrics.ledger_cells) || undefined),
+    formatTaskMetric("branches", numberFromUnknown(metrics.branch_count) || undefined),
+    formatTaskMetric("rounds", numberFromUnknown(metrics.loop_rounds) || undefined),
+    formatTaskMetric("local", normalizeSignalValue(metrics.local_status) || undefined),
+    formatTaskMetric("global", normalizeSignalValue(metrics.global_status) || undefined),
+    formatTaskMetric("loop", normalizeSignalValue(metrics.loop_decision) || undefined),
+    formatTaskMetric("progress", numberFromUnknown(payload.progress_percent) > 0 ? `${numberFromUnknown(payload.progress_percent)}%` : undefined),
+  ].filter(Boolean);
+  if (!items.length) {
+    return "";
+  }
+  return `当前闭环计量：${items.slice(0, limit).join(" · ")}`;
+}
+
+
+function buildResearchTaskRuntimeSnapshot(event: StreamEvent | null, task: TaskStatus | null) {
+  if (!event) {
+    return "";
+  }
+  const phase = readTaskEventPhase(event, task);
+  const metricSummary = buildResearchTaskMetricSummary(event, 8);
+  if (!metricSummary) {
+    return "";
+  }
+  switch (phase) {
+    case "SEARCHING":
+      return `Research Harness runtime snapshot：当前处于检索扩展段。${metricSummary}`;
+    case "READING":
+      return `Research Harness runtime snapshot：当前处于读窗压缩段。${metricSummary}`;
+    case "EXTRACTING":
+      return `Research Harness runtime snapshot：当前正在把读窗沉淀为 Table-as-State。${metricSummary}`;
+    case "VERIFYING":
+      return `Research Harness runtime snapshot：当前正在进入 Dual Verifier / 反证分支判断。${metricSummary}`;
+    case "WRITING":
+      return `Research Harness runtime snapshot：当前正在把闭环结果固化为报告产物。${metricSummary}`;
+    default:
+      return `Research Harness runtime snapshot：${metricSummary}`;
+  }
+}
+
+
+
+
+
+
+
+function buildGenericTaskRuntimeSnapshot(event: StreamEvent | null, task: TaskStatus | null) {
+  if (!event || !task) {
+    return "";
+  }
+  const payload = asRecord(event.payload);
+  const progressPercent = numberFromUnknown(payload.progress_percent);
+  const phase = readTaskEventPhase(event, task);
+  const metrics = readTaskEventMetrics(event);
+  const base = [
+    phase ? `phase ${phase}` : "",
+    progressPercent > 0 ? `progress ${progressPercent}%` : "",
+    Object.keys(metrics).length ? `metrics ${Object.keys(metrics).length}` : ""
+  ].filter(Boolean).join(" · ");
+  if (!base) {
+    return "";
+  }
+  return `${labelTaskType(task.task_type)} runtime snapshot：${base}`;
+}
+
+
+
+function buildTaskEventNarrative(event: StreamEvent, task: TaskStatus | null) {
+  const taskLabel = labelTaskType(task?.task_type || "");
+  const phase = readTaskEventPhase(event, task);
+  const message = summarizeText(event.message || event.data || task?.progress_message || "", 96);
+  switch (event.event) {
+    case "task.status":
+      switch (normalizeSignalValue(task?.task_type)) {
+        case "SOURCE_PARSE":
+          return "资料处理链路已接管上传内容，准备解析、切片并建立检索索引。";
+        case "WIKI_RETRACT":
+          return "工作台已开始清理资料删除带来的 Wiki 回链影响。";
+        case "WIKI_INGEST":
+          return "工作台已开始按资料更新 Wiki 页面与回链。";
+        case "ARTIFACT_JOB":
+          return "产物任务已入队，等待版本化与资料回流。";
+        default:
+          return `${taskLabel}已入队。${message}`;
+      }
+    case "task.heartbeat": {
+      const heartbeatAt = String(asRecord(event.payload).heartbeat_at ?? "").trim();
+      return `${taskLabel}保活心跳：${heartbeatAt || "worker running"}`;
+    }
+    case "task.completed":
+      return `${taskLabel}已完成：${message || "当前任务已经处理完成。"}`;
+    case "task.failed":
+      return `${taskLabel}失败：${message || summarizeText(task?.error_message || "任务执行中断", 96)}。`;
+    case "task.progress":
+    default:
+      switch (normalizeSignalValue(task?.task_type)) {
+        case "SOURCE_PARSE":
+          if (phase === "PARSING") {
+            return "资料正在解析、切片并写入本地检索索引。";
+          }
+          if (phase === "INDEXED") {
+            return "资料已经进入检索索引，可继续用于 QA / Note / Wiki 链路。";
+          }
+          return `资料处理正在推进：${message || "等待下一个阶段。"}`;
+        case "WIKI_RETRACT":
+          return `Wiki retract 正在清理受影响页面：${message || "处理中。"}`;
+        case "WIKI_INGEST":
+          return `Wiki ingest 正在根据资料更新工作台页面：${message || "处理中。"}`;
+        case "ARTIFACT_JOB":
+          return `产物任务正在推进版本化与资料回流：${message || "处理中。"}`;
+        default:
+          return `${taskLabel}正在推进：${message || "处理中。"}`;
+      }
+  }
+}
+
+function readIntentCompletionContract(value: unknown): ResearchIntentCompletionContract | null {
+  const record = asRecord(value);
+  if (!Object.keys(record).length) {
+    return null;
+  }
+  return {
+    status: String(record.status ?? ""),
+    reason_code: String(record.reason_code ?? ""),
+    total_requirement_count: numberFromUnknown(record.total_requirement_count),
+    satisfied_requirement_count: numberFromUnknown(record.satisfied_requirement_count),
+    pending_requirement_count: numberFromUnknown(record.pending_requirement_count),
+    missing_requirement_labels: asStringArray(record.missing_requirement_labels),
+    requirements: asRecordArray(record.requirements).map((requirement) => ({
+      requirement_id: String(requirement.requirement_id ?? ""),
+      requirement_type: String(requirement.requirement_type ?? ""),
+      label: String(requirement.label ?? ""),
+      status: String(requirement.status ?? ""),
+      evidence_anchor: String(requirement.evidence_anchor ?? ""),
+      evidence_refs: asStringArray(requirement.evidence_refs),
+      coverage_note: String(requirement.coverage_note ?? ""),
+      missing_reason: String(requirement.missing_reason ?? ""),
+    })),
+  };
+}
+
+function asResearchRows(value: unknown): ResearchRowSummary[] {
+  return asRecordArray(value) as ResearchRowSummary[];
+}
+
+function compareResearchRunsByTimeAsc(left: ResearchRunSummary, right: ResearchRunSummary) {
+  const leftTime = Date.parse(left.created_at || left.updated_at || "");
+  const rightTime = Date.parse(right.created_at || right.updated_at || "");
+  return leftTime - rightTime;
+}
+
+function researchHistoryFilterLabel(filter: ResearchHistoryFilter) {
+  switch (filter) {
+    case "RECOVERY":
+      return "恢复";
+    case "CONFLICT":
+      return "冲突";
+    case "STABLE":
+      return "稳定";
+    case "RESUMED":
+      return "续跑";
+    default:
+      return "全部";
+  }
+}
+
+function matchesResearchHistoryFilter(run: ResearchRunSummary, filter: ResearchHistoryFilter) {
+  if (filter === "ALL") {
+    return true;
+  }
+  if (filter === "RESUMED") {
+    return isResumedRun(run);
+  }
+  if (filter === "RECOVERY") {
+    return isRecoveryRun(run);
+  }
+  if (filter === "CONFLICT") {
+    return isConflictRun(run);
+  }
+  if (filter === "STABLE") {
+    return isStableRun(run);
+  }
+  return true;
+}
+
+function buildRunPrimaryTone(run: ResearchRunSummary): SignalTone {
+  const reasons = [
+    run.local_verifier_reason,
+    run.global_verifier_reason,
+    run.final_loop_reason,
+    run.recovery_mode,
+    run.research_intent_alignment_reason
+  ].map(normalizeSignalValue);
+  const hasConflict = run.conflicted_row_count > 0 || reasons.some(isConflictSignal);
+  if (hasConflict) {
+    return "conflict";
+  }
+  const hasRecovery = Boolean(run.recovery_mode) || (run.counterfactual_summary?.counterfactual_branch_count ?? 0) > 0 || reasons.some(isRecoverySignal);
+  if (hasRecovery) {
+    return "recovery";
+  }
+  if (run.resumed_from_research_run_id) {
+    return "resume";
+  }
+  if (reasons.some(isStableSignal) || run.global_verifier_decision === "READY_TO_WRITE") {
+    return "stable";
+  }
+  return "neutral";
+}
+
+function buildResearchTimelineMilestones(runs: ResearchRunSummary[]): ResearchTimelineMilestone[] {
+  const milestones: ResearchTimelineMilestone[] = [];
+  const firstConflict = runs.find(isConflictRun);
+  const firstRecovery = runs.find(isRecoveryRun);
+  const firstResumed = runs.find(isResumedRun);
+  const recoveryAnchorIndex = runs.findIndex((run) => isConflictRun(run) || isRecoveryRun(run) || isResumedRun(run));
+  const firstStableAfterDrift = recoveryAnchorIndex >= 0
+    ? runs.slice(recoveryAnchorIndex + 1).find(isStableRun)
+    : null;
+
+  pushMilestone(milestones, firstConflict, "first-conflict", "首次失稳", "首次进入 conflict / guardrail path", "conflict");
+  pushMilestone(milestones, firstRecovery, "first-recovery", "首次恢复", "首次进入 recovery / counterfactual path", "recovery");
+  pushMilestone(milestones, firstResumed, "first-resume", "首次续跑", "首次从 checkpoint 或 lineage 恢复任务", "resume");
+  pushMilestone(milestones, firstStableAfterDrift, "first-restable", "首次回稳", "在 drift / recovery 之后第一次回到 stable path", "stable");
+
+  return milestones;
+}
+
+function buildResearchTimelinePathSummary(
+  runs: ResearchRunSummary[],
+  milestones: ResearchTimelineMilestone[],
+  currentRun: ResearchRunSummary | null
+): ResearchTimelinePathSummary {
+  if (runs.length === 0 && milestones.length === 0) {
+    return {
+      stageLabels: [],
+      currentStageLabel: "",
+      hasRestabilized: false,
+      narrative: "",
+      currentRunStageLabel: "",
+      currentRunAlignedWithPath: false
+    };
+  }
+  const stageLabels: string[] = [];
+  const firstStableRun = runs.find(isStableRun);
+  const recoveryAnchorRun = currentRun && (isConflictRun(currentRun) || isRecoveryRun(currentRun) || isResumedRun(currentRun))
+    ? currentRun
+    : [...runs].reverse().find((run) => isConflictRun(run) || isRecoveryRun(run) || isResumedRun(run)) ?? null;
+  const recoveryNarrative = buildRecoveryTargetNarrativeFragment(
+    recoveryAnchorRun ? readRecoveryTargets(recoveryAnchorRun.recovery_targets) : null
+  );
+  if (firstStableRun) {
+    stageLabels.push("稳定");
+  }
+  const orderedMilestones = [...milestones].sort((left, right) => compareResearchRunsByTimeAsc(left.run, right.run));
+  for (const milestone of orderedMilestones) {
+    const nextLabel = timelineStageLabel(milestone);
+    if (stageLabels[stageLabels.length - 1] !== nextLabel) {
+      stageLabels.push(nextLabel);
+    }
+  }
+  const currentStageLabel = stageLabels[stageLabels.length - 1] ?? "";
+  const currentRunStageLabel = currentRun ? currentRunStageLabelFromSummary(currentRun) : "";
+  const currentRunAlignedWithPath = Boolean(currentRunStageLabel) && currentRunStageLabel === currentStageLabel;
+  const hasRestabilized = stageLabels.lastIndexOf("稳定") > stageLabels.findIndex((label) => label !== "稳定");
+  const narrative = hasRestabilized
+    ? recoveryNarrative
+      ? `研究路径已经经历失稳与恢复，并重新回到相对稳定阶段。最近一次 closed-loop recovery 中，${recoveryNarrative}。`
+      : "研究路径已经经历失稳与恢复，并重新回到相对稳定阶段。"
+    : stageLabels.includes("恢复")
+      ? recoveryNarrative
+        ? `研究路径已经进入恢复或反证纠偏阶段，${recoveryNarrative}，尚需继续观察是否重新收敛。`
+        : "研究路径已经进入恢复或反证纠偏阶段，尚需继续观察是否重新收敛。"
+      : stageLabels.includes("冲突")
+        ? recoveryNarrative
+          ? `研究路径已经出现冲突或 guardrail 信号，${recoveryNarrative}，后续重点关注 recovery 是否启动。`
+          : "研究路径已经出现冲突或 guardrail 信号，后续重点关注 recovery 是否启动。"
+        : "当前历史仍以稳定路径为主，尚未出现明显 recovery 闭环。";
+  return {
+    stageLabels,
+    currentStageLabel,
+    hasRestabilized,
+    narrative,
+    currentRunStageLabel,
+    currentRunAlignedWithPath
+  };
+}
+
+function pushMilestone(
+  milestones: ResearchTimelineMilestone[],
+  run: ResearchRunSummary | null | undefined,
+  key: string,
+  label: string,
+  description: string,
+  tone: SignalTone
+) {
+  if (!run || milestones.some((entry) => entry.run.research_run_id === run.research_run_id)) {
+    return;
+  }
+  const recoveryNarrative = buildRecoveryTargetNarrativeFragment(readRecoveryTargets(run.recovery_targets));
+  milestones.push({
+    key,
+    label,
+    description: recoveryNarrative ? `${description}；${recoveryNarrative}` : description,
+    tone,
+    run,
+    chips: buildRunSignalChips(run)
+  });
+}
+
+function timelineStageLabel(milestone: ResearchTimelineMilestone) {
+  if (milestone.key === "first-resume") {
+    return "续跑";
+  }
+  if (milestone.key === "first-restable") {
+    return "回稳";
+  }
+  switch (milestone.tone) {
+    case "conflict":
+      return "冲突";
+    case "recovery":
+      return "恢复";
+    case "stable":
+      return "稳定";
+    case "resume":
+      return "续跑";
+    default:
+      return milestone.label;
+  }
+}
+
+function currentRunStageLabelFromSummary(run: ResearchRunSummary) {
+  if (isConflictRun(run)) {
+    return "冲突";
+  }
+  if (isRecoveryRun(run)) {
+    return "恢复";
+  }
+  if (isStableRun(run)) {
+    return "稳定";
+  }
+  if (isResumedRun(run)) {
+    return "续跑";
+  }
+  return run.status === "QUEUED" ? "排队" : "观察";
+}
+
+function sameStageLabel(left: string, right: string) {
+  return normalizeStageLabel(left) === normalizeStageLabel(right);
+}
+
+function normalizeStageLabel(label: string) {
+  if (label === "回稳") {
+    return "稳定";
+  }
+  return label;
+}
+
+function buildRunSignalChips(run: ResearchRunSummary): SignalChip[] {
+  const chips: SignalChip[] = [];
+  const recoveryTargets = readRecoveryTargets(run.recovery_targets);
+  pushSignalChip(chips, run.resumed_from_research_run_id ? {
+    label: "lineage",
+    value: `resume #${run.resumed_from_checkpoint_no ?? "-"}`,
+    tone: "resume"
+  } : null);
+  pushSignalChip(chips, run.local_verifier_reason ? {
+    label: "local",
+    value: run.local_verifier_reason,
+    tone: classifySignalTone(run.local_verifier_reason, run.recovery_mode)
+  } : null);
+  pushSignalChip(chips, run.global_verifier_reason ? {
+    label: "global",
+    value: run.global_verifier_reason,
+    tone: classifySignalTone(run.global_verifier_reason, run.recovery_mode)
+  } : null);
+  pushSignalChip(chips, run.final_loop_reason ? {
+    label: "loop",
+    value: run.final_loop_reason,
+    tone: classifySignalTone(run.final_loop_reason, run.recovery_mode)
+  } : null);
+  pushSignalChip(chips, run.recovery_mode ? {
+    label: "recovery",
+    value: run.recovery_mode,
+    tone: "recovery"
+  } : null);
+  pushSignalChip(chips, recoveryTargets ? {
+    label: "target",
+    value: summarizeRecoveryTargetTypes(recoveryTargets),
+    tone: recoveryTargets.requirement_types.includes("CONFLICT_FINDING") ? "conflict" : "recovery"
+  } : null);
+  pushSignalChip(chips, recoveryTargets ? {
+    label: "focus",
+    value: summarizeRecoveryTargetFocus(recoveryTargets),
+    tone: "recovery"
+  } : null);
+  pushSignalChip(chips, run.research_intent_alignment_reason ? {
+    label: "intent",
+    value: `${run.research_intent_alignment_status || "WARN"}:${run.research_intent_alignment_reason}`,
+    tone: run.research_intent_alignment_status === "PASS" ? "stable" : "recovery"
+  } : null);
+  return chips.slice(0, 6);
+}
+
+
+function pushSignalChip(chips: SignalChip[], chip: SignalChip | null) {
+  if (!chip || !chip.value) {
+    return;
+  }
+  if (chips.some((entry) => entry.label === chip.label && entry.value === chip.value)) {
+    return;
+  }
+  chips.push(chip);
+}
+
+
+function normalizeSignalValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function classifySignalTone(reason: string, recoveryMode: string): SignalTone {
+  if (recoveryMode) {
+    return "recovery";
+  }
+  if (isConflictSignal(reason)) {
+    return "conflict";
+  }
+  if (isRecoverySignal(reason)) {
+    return "recovery";
+  }
+  if (isStableSignal(reason)) {
+    return "stable";
+  }
+  return "neutral";
+}
+
+function isConflictSignal(reason: string) {
+  return /CONFLICT|LOW_CONFIDENCE|GUARDRAIL|WRITE_WITH_GUARDRAILS/i.test(reason);
+}
+
+function isRecoverySignal(reason: string) {
+  return /COUNTERFACTUAL|RECOVER|READ_MORE|EXTRACT_AGAIN|INTENT_REQUIREMENTS_PARTIAL|RESEARCH_INTENT_PARTIAL/i.test(reason);
+}
+
+function isStableSignal(reason: string) {
+  return /STOP_CONTRACT_SATISFIED|CHECKPOINT_VALID|READY_TO_WRITE|VERIFIED_PATH|PASS/i.test(reason);
+}
+
+function isConflictRun(run: ResearchRunSummary) {
+  return buildRunPrimaryTone(run) === "conflict";
+}
+
+function isRecoveryRun(run: ResearchRunSummary) {
+  return Boolean(run.recovery_mode) || (run.counterfactual_summary?.counterfactual_branch_count ?? 0) > 0 || buildRunPrimaryTone(run) === "recovery";
+}
+
+function isStableRun(run: ResearchRunSummary) {
+  return buildRunPrimaryTone(run) === "stable";
+}
+
+function isResumedRun(run: ResearchRunSummary) {
+  return Boolean(run.resumed_from_research_run_id);
+}
+
+
+function extractRunSummarySnapshot(run: ResearchRunSummary | null): ResearchRunSummarySnapshot {
+  return {
+    status: run?.status ?? "",
+    profileKey: run?.profile_key ?? "",
+    activeBranchId: run?.active_branch_id ?? "",
+    localVerifierStatus: run?.local_verifier_status ?? "",
+    localVerifierReason: run?.local_verifier_reason ?? "",
+    globalVerifierDecision: run?.global_verifier_decision ?? "",
+    globalVerifierReason: run?.global_verifier_reason ?? "",
+    finalLoopDecision: run?.final_loop_decision ?? "",
+    finalLoopReason: run?.final_loop_reason ?? "",
+    recoveryMode: run?.recovery_mode ?? "",
+    ledgerRowCount: numberFromUnknown(run?.ledger_row_count),
+    verifiedRowCount: numberFromUnknown(run?.verified_row_count),
+    conflictedRowCount: numberFromUnknown(run?.conflicted_row_count),
+    blockedRowCount: numberFromUnknown(run?.blocked_row_count),
+    guardrailedRowCount: numberFromUnknown(run?.guardrailed_row_count),
+    targetedBlockedRowCount: numberFromUnknown(run?.recovery_targeted_blocked_row_count),
+    uncoveredBlockedRowCount: numberFromUnknown(run?.uncovered_blocked_row_count),
+    requirementPartialBlockedRowCount: numberFromUnknown(run?.requirement_partial_blocked_row_count),
+    checkpointCount: numberFromUnknown(run?.checkpoint_count),
+    sourceScopeCount: numberFromUnknown(run?.source_scope_count),
+    counterfactualBranchCount: run?.counterfactual_summary?.counterfactual_branch_count ?? 0,
+    researchIntentAlignmentStatus: run?.research_intent_alignment_status ?? "",
+    researchIntentAlignmentReason: run?.research_intent_alignment_reason ?? "",
+    intentSatisfiedConstraintCount: numberFromUnknown(run?.intent_satisfied_constraint_count),
+    intentConstraintCount: numberFromUnknown(run?.intent_constraint_count),
+    intentSatisfiedRequirementCount: numberFromUnknown(run?.intent_satisfied_requirement_count),
+    intentRequirementCount: numberFromUnknown(run?.intent_requirement_count),
+    intentPendingRequirementCount: numberFromUnknown(run?.intent_pending_requirement_count),
+    missingIntentRequirements: Array.isArray(run?.missing_intent_requirements) ? run?.missing_intent_requirements : [],
+    recoveryTargets: readRecoveryTargets(run?.recovery_targets)
+  };
+}
+
 
 type MessageSection = {
   title: string;
@@ -2326,14 +4580,33 @@ function MessageBubble({ message }: { message: Message }) {
     return <div className="bubble-body">{message.content}</div>;
   }
   const presentation = buildAssistantPresentation(message);
+  const isGenerating = message.answerStatus === "GENERATING";
+  const isFailed = message.answerStatus === "FAILED" || message.answerStatus === "CANCELLED";
+  const body = presentation.body
+    || (isGenerating
+      ? "正在检索当前工作台资料并生成回答…"
+      : isFailed
+        ? "本次回答未能完成。"
+        : "此回答暂未返回正文。");
   return (
-    <>
+    <div aria-live={isGenerating ? "polite" : undefined}>
+      {isGenerating ? (
+        <div className="answer-run-status">
+          <span className="answer-run-spinner" aria-hidden="true" />
+          正在生成回答
+        </div>
+      ) : null}
+      {isFailed ? (
+        <div className="answer-run-error" role="alert">
+          回答未完成：{message.answerError || "请稍后重试。"}
+        </div>
+      ) : null}
       {presentation.leadTitle ? <div className="bubble-label">{presentation.leadTitle}</div> : null}
-      <div className="bubble-body">{presentation.body}</div>
+      <div className="bubble-body">{body}</div>
       {presentation.cards.length > 0 ? (
         <div className="bubble-cards">
           {presentation.cards.map((card, index) => (
-            <details className="message-card" key={`${card.title}-${index}`}>
+            <details className="message-card" key={`${card.title}-${index}`} open={card.title === "来源引用"}>
               <summary>
                 <strong>{card.title}</strong>
                 <span>{card.preview}</span>
@@ -2343,7 +4616,7 @@ function MessageBubble({ message }: { message: Message }) {
           ))}
         </div>
       ) : null}
-    </>
+    </div>
   );
 }
 
@@ -2585,26 +4858,36 @@ function trimText(value: string, limit: number) {
   return value.length <= limit ? value : `${value.slice(0, Math.max(0, limit - 1))}…`;
 }
 
-function parseSse(stream: string, eventName: string) {
-  return parseAllSse(stream, eventName)[0] ?? "";
+function parseStreamEventData(data: string) {
+  try {
+    const parsed = JSON.parse(data);
+    const record = asRecord(parsed);
+    return {
+      message: String(record.message ?? data),
+      payload: asRecord(record.payload),
+      eventType: String(record.event_type ?? ""),
+      createdAt: String(record.created_at ?? ""),
+    };
+  } catch {
+    return {
+      message: data,
+      payload: {},
+      eventType: "",
+      createdAt: "",
+    };
+  }
 }
 
-function parseAllSse(stream: string, eventName: string) {
-  return parseEventStream(stream)
-    .filter((event) => event.event === eventName)
-    .map((event) => event.data);
-}
-
-function parseEventStream(stream: string) {
-  return stream.split("\n\n")
-    .map((eventBlock) => {
-      const eventLine = eventBlock.split("\n").find((line) => line.startsWith("event: "));
-      const dataLine = eventBlock.split("\n").find((line) => line.startsWith("data: "));
-      return {
-        event: eventLine?.replace("event: ", "") ?? "",
-        data: dataLine?.replace("data: ", "").replaceAll("\\n", "\n") ?? ""
-      };
-    })
-    .filter((event) => event.event);
+function toStreamEvent(event: string, data: string, id = ""): StreamEvent {
+  const parsed = parseStreamEventData(data);
+  return {
+    id: id || `${event}-${parsed.createdAt}-${data.length}`,
+    event,
+    data,
+    message: parsed.message,
+    payload: parsed.payload,
+    eventType: parsed.eventType,
+    createdAt: parsed.createdAt
+  };
 }
 

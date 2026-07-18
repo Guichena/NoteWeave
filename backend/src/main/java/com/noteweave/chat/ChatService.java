@@ -1,27 +1,38 @@
 package com.noteweave.chat;
 
-import com.noteweave.chat.RetrievalService.CandidateSource;
-import com.noteweave.chat.RetrievalService.NoteJournalHit;
-import com.noteweave.chat.RetrievalService.NoteEntryMetadata;
-import com.noteweave.chat.RetrievalService.NoteRecallPlan;
-import com.noteweave.chat.RetrievalService.ReadingWindow;
-import com.noteweave.chat.RetrievalService.RelatedEntryPreview;
-import com.noteweave.chat.RetrievalService.RetrievedChunk;
+import com.noteweave.answer.AnswerRunRef;
+import com.noteweave.answer.AnswerGenerationGateway;
+import com.noteweave.answer.AnswerGenerationMaterial;
+import com.noteweave.answer.AnswerGenerationOrchestrator;
+import com.noteweave.answer.AnswerSubmissionService;
+import com.noteweave.answer.strategy.AnswerContext;
+import com.noteweave.answer.strategy.AnswerMode;
+import com.noteweave.answer.strategy.AnswerModeStrategy;
+import com.noteweave.answer.strategy.AnswerModeStrategyRegistry;
+import com.noteweave.answer.strategy.AnswerPolicy;
+import com.noteweave.answer.strategy.AnswerStrategyContractValidator;
+import com.noteweave.answer.strategy.EvidenceBundle;
+import com.noteweave.answer.strategy.PromptSpec;
+import com.noteweave.answer.strategy.RetrievalPlan;
+import com.noteweave.answer.strategy.RetrievalOrchestrator;
+import com.noteweave.answer.AnswerLiveEvent;
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
-import com.noteweave.knowledge.KnowledgeCitationResponse;
-import com.noteweave.knowledge.KnowledgeService;
-import com.noteweave.knowledge.KnowledgeService.KnowledgePageHit;
-import com.noteweave.knowledge.KnowledgeService.WikiPageContext;
-import com.noteweave.knowledge.WikiLinkResponse;
+import com.noteweave.conversation.EffectiveRetrievalConfig;
+import com.noteweave.conversation.ConversationContextProjectionService;
 import com.noteweave.memory.MemoryCompilerService;
 import com.noteweave.memory.MemoryControlPackResponse;
+import com.noteweave.quota.WorkloadQuotaService;
+import com.noteweave.security.WorkspaceAccessGuard;
+import com.noteweave.security.WorkspacePermission;
+import com.noteweave.security.AuditActorProvider;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.time.Instant;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,543 +41,272 @@ import org.springframework.transaction.annotation.Transactional;
 public class ChatService {
 
     private final JdbcTemplate jdbcTemplate;
-    private final RetrievalService retrievalService;
-    private final KnowledgeService knowledgeService;
     private final MemoryCompilerService memoryCompilerService;
+    private final AnswerGenerationGateway answerGenerationGateway;
+    private final AnswerGenerationOrchestrator answerGenerationOrchestrator;
+    private final AnswerSubmissionService answerSubmissionService;
+    private final AnswerModeStrategyRegistry answerModeStrategyRegistry;
+    private final RetrievalOrchestrator unifiedRetrievalOrchestrator;
+    private final EvidenceCitationAssembler evidenceCitationAssembler;
+    private final WorkspaceAccessGuard workspaceAccessGuard;
+    private final AuditActorProvider auditActorProvider;
+    private final AnswerStrategyContractValidator strategyContractValidator;
+    private final WorkloadQuotaService workloadQuotaService;
+    private final ConversationContextProjectionService contextProjectionService;
 
     public ChatService(
             JdbcTemplate jdbcTemplate,
-            RetrievalService retrievalService,
-            KnowledgeService knowledgeService,
-            MemoryCompilerService memoryCompilerService
+            MemoryCompilerService memoryCompilerService,
+            AnswerGenerationGateway answerGenerationGateway,
+            AnswerGenerationOrchestrator answerGenerationOrchestrator,
+            AnswerSubmissionService answerSubmissionService,
+            AnswerModeStrategyRegistry answerModeStrategyRegistry,
+            RetrievalOrchestrator unifiedRetrievalOrchestrator,
+            EvidenceCitationAssembler evidenceCitationAssembler,
+            WorkspaceAccessGuard workspaceAccessGuard,
+            AuditActorProvider auditActorProvider,
+            AnswerStrategyContractValidator strategyContractValidator,
+            WorkloadQuotaService workloadQuotaService,
+            ConversationContextProjectionService contextProjectionService
     ) {
         this.jdbcTemplate = jdbcTemplate;
-        this.retrievalService = retrievalService;
-        this.knowledgeService = knowledgeService;
         this.memoryCompilerService = memoryCompilerService;
+        this.answerGenerationGateway = answerGenerationGateway;
+        this.answerGenerationOrchestrator = answerGenerationOrchestrator;
+        this.answerSubmissionService = answerSubmissionService;
+        this.answerModeStrategyRegistry = answerModeStrategyRegistry;
+        this.unifiedRetrievalOrchestrator = unifiedRetrievalOrchestrator;
+        this.evidenceCitationAssembler = evidenceCitationAssembler;
+        this.workspaceAccessGuard = workspaceAccessGuard;
+        this.auditActorProvider = auditActorProvider;
+        this.strategyContractValidator = strategyContractValidator;
+        this.workloadQuotaService = workloadQuotaService;
+        this.contextProjectionService = contextProjectionService;
+    }
+
+    public PreparedAnswerMaterial compilePreparedAnswer(
+            String conversationId,
+            String userMessageId,
+            String workspaceId,
+            SendMessageRequest request
+    ) {
+        workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.ANSWER_RUN);
+        AnswerMode.parse(request.answerMode());
+        workloadQuotaService.requireRate(workspaceId, "chat");
+        EffectiveRetrievalConfig retrievalConfig = EffectiveRetrievalConfig.resolve(
+                request.retrievalStrategy(), request.retrievalChannels(),
+                request.sourceScopeSourceIds(), request.groundingRefs());
+        AnswerDraft draft = buildAnswerDraft(conversationId, userMessageId, workspaceId, request, retrievalConfig);
+        return new PreparedAnswerMaterial(
+                draft.answer(),
+                draft.existingCitationIds(),
+                draft.chatControlPack(),
+                draft.retrievalPlan(),
+                draft.evidenceBundle(),
+                draft.promptSpec(),
+                draft.maximumOutputTokens()
+        );
     }
 
     @Transactional
-    public SendMessageResponse sendMessage(String conversationId, SendMessageRequest request) {
-        ConversationRef conversation = findConversation(conversationId);
-        int nextSeq = nextMessageSeq(conversationId);
-        String userMessageId = Ids.newId();
+    public void finalizePreparedAnswer(
+            String workspaceId,
+            String runId,
+            String assistantMessageId,
+            String assistantRequestId,
+            String answerMode,
+            PreparedAnswerMaterial material
+    ) {
         jdbcTemplate.update("""
-                insert into conversation_message(id, conversation_id, workspace_id, message_seq, role, answer_mode, content)
-                values (?, ?, ?, ?, 'USER', ?, ?)
-                """, userMessageId, conversationId, conversation.workspaceId(), nextSeq, request.answerMode(), request.content());
-
-        AnswerDraft draft = buildAnswerDraft(conversationId, userMessageId, conversation.workspaceId(), request);
-        String assistantRequestId = Ids.newId();
-        String assistantMessageId = Ids.newId();
-        jdbcTemplate.update("""
-                insert into conversation_message(id, conversation_id, workspace_id, message_seq, role, answer_mode, content, assistant_request_id)
-                values (?, ?, ?, ?, 'ASSISTANT', ?, ?, ?)
-                """, assistantMessageId, conversationId, conversation.workspaceId(), nextSeq + 1, request.answerMode(), draft.answer(), assistantRequestId);
-        jdbcTemplate.update("update conversation set last_active_at = current_timestamp where id = ?", conversationId);
-        persistCitations(conversation.workspaceId(), assistantMessageId, draft.evidence());
-        bindExistingCitations(assistantMessageId, draft.existingCitationIds(), draft.evidence().size());
+                update conversation_message
+                set content = ?
+                where workspace_id = ? and id = ? and context_status = 'PENDING'
+                """, material.answer(), workspaceId, assistantMessageId);
+        int newCitationCount = evidenceCitationAssembler.persist(
+                workspaceId, assistantMessageId, material.evidenceBundle(), material.promptSpec());
+        bindExistingCitations(
+                workspaceId, assistantMessageId, material.existingCitationIds(), newCitationCount);
         memoryCompilerService.logPackUsage(
-                conversation.workspaceId(),
-                request.answerMode(),
+                workspaceId,
+                answerMode,
                 "CONVERSATION_MESSAGE",
                 assistantMessageId,
-                draft.chatControlPack()
+                material.chatControlPack()
         );
-        return new SendMessageResponse(userMessageId, assistantMessageId, assistantRequestId, "/api/v2/chat/requests/" + assistantRequestId + "/stream");
+        answerSubmissionService.prepareExistingRun(
+                workspaceId,
+                runId,
+                assistantMessageId,
+                assistantRequestId,
+                material.answer(),
+                material.retrievalPlan(),
+                material.evidenceBundle(),
+                material.promptVersion(),
+                material.maximumOutputTokens()
+        );
     }
 
-    public String stream(String assistantRequestId) {
-        MessageRef message = findAssistantMessage(assistantRequestId);
-        List<CitationItem> citations = citationsForMessage(message.messageId());
-        StringBuilder builder = new StringBuilder();
-        builder.append("event: chat.delta\n");
-        builder.append("data: ").append(escape(message.content())).append("\n\n");
-        for (CitationItem citation : citations) {
-            builder.append("event: chat.citation\n");
-            builder.append("data: ").append(escape(citation.title() + " | " + citation.quoteText())).append("\n\n");
-        }
-        builder.append("event: chat.completed\n");
-        builder.append("data: ").append(message.messageId()).append("\n\n");
-        return builder.toString();
+    public void stream(String assistantRequestId, java.util.function.Consumer<ChatStreamEvent> eventConsumer) {
+        answerGenerationOrchestrator.stream(assistantRequestId, event -> eventConsumer.accept(
+                new ChatStreamEvent(event.id(), event.eventType(), event.data())));
     }
 
-    private AnswerDraft buildAnswerDraft(String conversationId, String currentUserMessageId, String workspaceId, SendMessageRequest request) {
-        ConversationContext context = buildConversationContext(conversationId, currentUserMessageId, request.content());
+    public void streamRun(
+            String workspaceId,
+            String runId,
+            java.util.function.Consumer<ChatStreamEvent> eventConsumer
+    ) {
+        AnswerRunRef run = answerGenerationOrchestrator.requireRun(workspaceId, runId);
+        workspaceAccessGuard.requirePermission(run.workspaceId(), WorkspacePermission.WORKSPACE_READ);
+        answerGenerationOrchestrator.streamRun(workspaceId, runId, event -> eventConsumer.accept(
+                new ChatStreamEvent(event.id(), event.eventType(), event.data())));
+    }
+
+    /** Starts generation after the already-authorized send command. */
+    void startRun(String workspaceId, String runId) {
+        answerGenerationOrchestrator.startRun(workspaceId, runId);
+    }
+
+    public void followRun(
+            String workspaceId,
+            String runId,
+            long after,
+            java.util.function.Consumer<AnswerLiveEvent> eventConsumer
+    ) {
+        AnswerRunRef run = answerGenerationOrchestrator.requireRun(workspaceId, runId);
+        workspaceAccessGuard.requirePermission(run.workspaceId(), WorkspacePermission.WORKSPACE_READ);
+        answerGenerationOrchestrator.followRun(workspaceId, runId, after, eventConsumer);
+    }
+
+    public void requireStreamAccess(String assistantRequestId) {
+        AnswerGenerationMaterial message = answerGenerationGateway.load(assistantRequestId);
+        workspaceAccessGuard.requirePermission(message.workspaceId(), WorkspacePermission.WORKSPACE_READ);
+    }
+
+    private AnswerDraft buildAnswerDraft(
+            String conversationId,
+            String currentUserMessageId,
+            String workspaceId,
+            SendMessageRequest request,
+            EffectiveRetrievalConfig retrievalConfig
+    ) {
+        ConversationContext conversationContext = buildConversationContext(
+                workspaceId, conversationId, currentUserMessageId, request.content());
         MemoryControlPackResponse chatControlPack = memoryCompilerService.compileChatControlPack(workspaceId, request.answerMode());
-        return switch (request.answerMode()) {
-            case "NOTE" -> buildNoteAnswer(workspaceId, request, context, chatControlPack);
-            case "WIKI" -> buildWikiAnswer(workspaceId, request, context, chatControlPack);
-            default -> buildQaAnswer(workspaceId, request, context, chatControlPack);
-        };
-    }
-
-    private AnswerDraft buildQaAnswer(
-            String workspaceId,
-            SendMessageRequest request,
-            ConversationContext context,
-            MemoryControlPackResponse chatControlPack
-    ) {
-        List<RetrievedChunk> evidence = retrievalService.retrieveForQa(workspaceId, context.retrievalQuestion());
-        if (evidence.isEmpty()) {
-            return new AnswerDraft("当前工作台资料中暂未检索到足够依据，可先上传相关资料后再提问。", List.of(), List.of(), chatControlPack);
+        AnswerMode mode = AnswerMode.parse(request.answerMode());
+        Set<String> sourceScope = new LinkedHashSet<>(request.sourceScopeSourceIds());
+        if (!sourceScope.isEmpty() && mode != AnswerMode.QA) {
+            throw new BusinessException(
+                    "ANSWER_SOURCE_SCOPE_UNSUPPORTED",
+                    "显式资料范围当前仅支持 QA 回答模式"
+            );
         }
-        String questionType = classifyQuestion(context.currentQuestion());
-        Set<String> sourceTitles = new LinkedHashSet<>();
-        for (RetrievedChunk chunk : evidence) {
-            sourceTitles.add(chunk.title());
-        }
-        StringBuilder builder = new StringBuilder();
-        builder.append("## 直接回答\n");
-        builder.append("根据当前工作台资料，可以先给出一个低延迟、可引用的资料问答回答。");
-        if (context.contextApplied()) {
-            builder.append("本轮已结合最近连续对话窗口理解这次追问。");
-        }
-        if (chatControlPack.hasControls()) {
-            builder.append("本轮还应用了工作台级 Chat Control Pack。");
-        }
-        if ("comparison".equals(questionType)) {
-            builder.append("这个问题属于比较类问题，因此证据选择会优先覆盖不同资料来源，避免只引用同一份资料。");
-        }
-        builder.append("\n\n");
-        builder.append("## 证据选择\n");
-        builder.append("- 查询意图：").append(questionType).append("\n");
-        if (context.contextApplied()) {
-            builder.append("- 会话上下文：已纳入最近连续对话窗口\n");
-            builder.append("- 连续对话窗口：最近 ").append(context.windowTurnCount()).append(" 轮相关对话\n");
-            if (!context.topicAnchor().isBlank()) {
-                builder.append("- 主题锚点：").append(context.topicAnchor()).append("\n");
-            }
-            if (!context.topicSummary().isBlank()) {
-                builder.append("- 前序主题摘要：").append(context.topicSummary()).append("\n");
-            }
-        }
-        builder.append("- 检索边界：当前 workspace 内已解析资料\n");
-        builder.append("- 检索策略：关键词召回 + 结构化元数据过滤 + 轻量 rerank + 来源覆盖\n");
-        builder.append("- 来源覆盖：").append(sourceTitles.size()).append(" 个资料来源");
-        if (!sourceTitles.isEmpty()) {
-            builder.append("（").append(String.join("、", sourceTitles)).append("）");
-        }
-        builder.append("\n\n");
-        builder.append("## 关键依据\n");
-        for (int i = 0; i < evidence.size(); i++) {
-            RetrievedChunk chunk = evidence.get(i);
-            builder.append("- 证据 ").append(i + 1)
-                    .append("《").append(chunk.title()).append("》")
-                    .append("：").append(trim(chunk.content(), 220))
-                    .append("（").append(chunk.locationInfo())
-                    .append("，score=").append(chunk.score())
-                    .append("，reason=").append(chunk.matchReason()).append("）\n");
-        }
-        builder.append("\n## 引用来源\n");
-        builder.append("本轮回答的事实依据全部来自当前轮选中的资料片段，引用信息会通过 `chat.citation` 事件返回，可回跳到 source / snapshot / chunk。\n\n");
-        appendChatControlSection(builder, chatControlPack);
-        builder.append("## 可继续操作\n");
-        builder.append("- 如果需要逐篇深读和摘录卡片，可以切换到 Note 链路。\n");
-        builder.append("- 如果问题依赖长期页面网络，可以切换到 Wiki 链路。\n");
-        return new AnswerDraft(builder.toString(), evidence, List.of(), chatControlPack);
-    }
-
-    private AnswerDraft buildNoteAnswer(
-            String workspaceId,
-            SendMessageRequest request,
-            ConversationContext context,
-            MemoryControlPackResponse chatControlPack
-    ) {
-        NoteRecallPlan recallPlan = retrievalService.findNoteRecallPlan(workspaceId, context.retrievalQuestion());
-        List<CandidateSource> candidates = recallPlan.candidateSources();
-        List<NoteJournalHit> journalHits = recallPlan.journalHits();
-        List<CandidateSource> relationExpansionSources = recallPlan.relationExpansionSources();
-        List<CandidateSource> verifySources = recallPlan.verifySources();
-        List<NoteEntryMetadata> metadataEntries = retrievalService.readEntriesMetadataForNote(workspaceId, verifySources, context.retrievalQuestion());
-        List<ReadingWindow> windows = retrievalService.openSourceWindowsForNote(workspaceId, verifySources, context.retrievalQuestion());
-        List<RetrievedChunk> evidence = windows.stream().map(ReadingWindow::toRetrievedChunk).toList();
-        if (candidates.isEmpty() || windows.isEmpty()) {
-            return new AnswerDraft("当前工作台资料不足，暂时无法通过 Marginalia 式资料级检索形成可靠回答。请先上传或保存更多资料。", List.of(), List.of(), chatControlPack);
-        }
-        StringBuilder builder = new StringBuilder();
-        builder.append("## 直接回答\n");
-        builder.append(buildNoteSynthesis(context.currentQuestion(), windows, journalHits, context, chatControlPack)).append("\n\n");
-        builder.append("## 资料定位\n");
-        builder.append("【定位说明】\n");
-        builder.append("本轮按 Marginalia 式结构化检索漏斗先定位资料，再决定深读窗口；对外以正常聊天回答为主，资料依据通过可展开卡片展示。\n");
-        builder.append("- 当前问题：").append(request.content()).append("\n");
-        if (context.contextApplied()) {
-            builder.append("- 会话上下文：已纳入最近连续对话窗口，避免把这轮追问当成孤立查询\n");
-            builder.append("- 连续对话窗口：最近 ").append(context.windowTurnCount()).append(" 轮相关对话\n");
-            if (!context.topicAnchor().isBlank()) {
-                builder.append("- 主题锚点：").append(context.topicAnchor()).append("\n");
-            }
-            if (!context.topicSummary().isBlank()) {
-                builder.append("- 前序主题摘要：").append(context.topicSummary()).append("\n");
-            }
-        }
-        builder.append("- 呈现策略：聊天正文只保留直接回答，检索细节以下挂卡片折叠展示。\n");
-        if (!journalHits.isEmpty()) {
-            builder.append("\n【Journal 信号】\n");
-            for (NoteJournalHit hit : journalHits) {
-                builder.append("- 历史 Note《").append(hit.title()).append("》：")
-                        .append(trim(hit.summary().isBlank() ? hit.content() : hit.summary(), 140))
-                        .append("，引用数 ").append(hit.citationCount())
-                        .append("，匹配分 ").append(hit.score());
-                if (!"fresh".equals(hit.freshnessStatus())) {
-                    builder.append("，状态 ").append(hit.freshnessStatus())
-                            .append("（").append(hit.freshnessNote()).append("）");
-                    if (hit.staleSourceCount() > 0) {
-                        builder.append("，stale_sources=").append(hit.staleSourceCount());
-                    }
-                    if (hit.unavailableSourceCount() > 0) {
-                        builder.append("，unavailable_sources=").append(hit.unavailableSourceCount());
-                    }
-                }
-                builder.append("\n");
-            }
-        }
-        builder.append("\n【候选资料】\n");
-        for (CandidateSource candidate : candidates) {
-            builder.append("- 《").append(candidate.title()).append("》：")
-                    .append(candidate.sourceType()).append("，可读片段数 ").append(candidate.chunkCount())
-                    .append("，可读窗口数 ").append(candidate.windowCount())
-                    .append("，匹配分 ").append(candidate.score())
-                    .append("，召回信号：").append(candidate.recallSignals());
-            if (candidate.totalQueryTerms() > 0) {
-                builder.append("，query_coverage=").append(candidate.coveredQueryTerms()).append("/").append(candidate.totalQueryTerms());
-            }
-            if (!candidate.coverageTerms().isEmpty()) {
-                builder.append("，coverage_terms=").append(String.join("/", candidate.coverageTerms()));
-            }
-            if (!candidate.matchedFields().isEmpty()) {
-                builder.append("，matched_fields=").append(String.join("/", candidate.matchedFields()));
-            }
-            if (candidate.selectionReason() != null && !candidate.selectionReason().isBlank()) {
-                builder.append("，selection_reason=").append(candidate.selectionReason());
-            }
-            if (!candidate.summary().isBlank()) {
-                builder.append("，摘要：").append(trim(candidate.summary(), 120));
-            }
-            builder.append("\n");
-        }
-        builder.append("\n【关系扩展】\n");
-        if (relationExpansionSources.isEmpty()) {
-            builder.append("本轮没有新增关系扩展资料，系统直接进入原文验证批次。\n");
-        } else {
-            builder.append("系统会把命中资料的标题、摘要、标签、历史 Note 引用和资料窗口可读性作为轻量关系信号，并把相邻资料加入扩展候选：\n");
-            for (CandidateSource candidate : relationExpansionSources) {
-                builder.append("- 《").append(candidate.title()).append("》：")
-                        .append(candidate.sourceType())
-                        .append("，召回信号：").append(candidate.recallSignals())
-                        .append("，匹配分 ").append(candidate.score()).append("\n");
-            }
-        }
-        builder.append("\n【验证摘要】\n");
-        builder.append("- candidate_sources: ").append(candidates.size()).append("\n");
-        builder.append("- relation_expansion_sources: ").append(relationExpansionSources.size()).append("\n");
-        builder.append("- verify_batch_sources: ").append(verifySources.size()).append("\n");
-        builder.append("- candidate_quota_trace: ").append(summarizeCandidateSelection(candidates)).append("\n");
-        builder.append("- verify_admission_trace: ").append(summarizeVerifyAdmission(verifySources)).append("\n");
-        builder.append("- trace: metadata=").append(recallPlan.trace().metadataScoreSum())
-                .append(", journal=").append(recallPlan.trace().noteScoreSum())
-                .append(", relation=").append(recallPlan.trace().relationScoreSum())
-                .append(", readiness=").append(recallPlan.trace().readinessScoreSum()).append("\n");
-        for (CandidateSource candidate : verifySources) {
-            builder.append("- verify《").append(candidate.title()).append("》：")
-                    .append(candidate.sourceType())
-                    .append("，window_count=").append(candidate.windowCount())
-                    .append("，召回信号：").append(candidate.recallSignals());
-            if (candidate.totalQueryTerms() > 0) {
-                builder.append("，query_coverage=").append(candidate.coveredQueryTerms()).append("/").append(candidate.totalQueryTerms());
-            }
-            if (!candidate.matchedFields().isEmpty()) {
-                builder.append("，matched_fields=").append(String.join("/", candidate.matchedFields()));
-            }
-            if (candidate.verifyAdmissionReason() != null && !candidate.verifyAdmissionReason().isBlank()) {
-                builder.append("，verify_admission_reason=").append(candidate.verifyAdmissionReason());
-            }
-            builder.append("\n");
-        }
-        builder.append("\n## 深读窗口\n");
-        builder.append("【资料元信息】\n");
-        for (NoteEntryMetadata entry : metadataEntries) {
-            builder.append("- 《").append(entry.title()).append("》：")
-                    .append(entry.sourceType())
-                    .append("，parse=").append(entry.parseStatus())
-                    .append("，index=").append(entry.indexStatus())
-                    .append("，chunk=").append(entry.chunkCount())
-                    .append("，window=").append(entry.windowCount())
-                    .append("，tags=").append(String.join(" / ", entry.tags())).append("\n");
-            if (!entry.metadataSignals().isEmpty()) {
-                builder.append("  metadata_signals=")
-                        .append(String.join(" | ", entry.metadataSignals()))
-                        .append("\n");
-            }
-            if (!entry.windowLocators().isEmpty()) {
-                builder.append("  window_locators=").append(summarizeWindowLocators(entry.windowLocators())).append("\n");
-                if (entry.hasMoreWindows()) {
-                    builder.append("  window_has_more=true\n");
-                }
-            }
-            if (!entry.relatedEntries().isEmpty()) {
-                builder.append("  related_entries=").append(summarizeRelatedEntries(entry.relatedEntries())).append("\n");
-            }
-        }
-        builder.append("\n【原文窗口】\n");
-        for (int i = 0; i < windows.size(); i++) {
-            ReadingWindow window = windows.get(i);
-            builder.append("- read ").append(i + 1)
-                    .append("：").append(window.title())
-                    .append(" / chunk=").append(window.chunkNo())
-                    .append(" / window=").append(window.windowNo())
-                    .append(" / read_role=").append(window.readRole());
-            if (window.readObjective() != null && !window.readObjective().isBlank()) {
-                builder.append(" / read_objective=").append(window.readObjective());
-            }
-            if ("continuation-window".equals(window.readRole())) {
-                builder.append(" / anchor_window=").append(window.anchorWindowNo());
-            }
-            if (window.heading() != null && !window.heading().isBlank()) {
-                builder.append(" / heading=").append(window.heading());
-            }
-            builder.append(" / locator=").append(window.locationInfo())
-                    .append(" / score=").append(window.score())
-                    .append("\n");
-        }
-        builder.append("\n## 摘录证据\n");
-        builder.append("【摘录证据】\n");
-        for (int i = 0; i < windows.size(); i++) {
-            ReadingWindow window = windows.get(i);
-            builder.append("- 摘录卡 ").append(i + 1).append("：")
-                    .append(trim(window.content(), 220))
-                    .append("（来源：").append(window.title());
-            if (window.heading() != null && !window.heading().isBlank()) {
-                builder.append(" / ").append(window.heading());
-            }
-            builder.append(" / ").append(window.locationInfo());
-            if (window.readRole() != null && !window.readRole().isBlank()) {
-                builder.append(" / ").append(window.readRole());
-            }
-            if (window.readObjective() != null && !window.readObjective().isBlank()) {
-                builder.append(" / ").append(window.readObjective());
-            }
-            builder.append("）\n");
-        }
-        appendChatControlSection(builder, chatControlPack);
-        return new AnswerDraft(builder.toString(), evidence, List.of(), chatControlPack);
-    }
-
-    private String buildNoteSynthesis(
-            String question,
-            List<ReadingWindow> windows,
-            List<NoteJournalHit> journalHits,
-            ConversationContext context,
-            MemoryControlPackResponse chatControlPack
-    ) {
-        StringBuilder builder = new StringBuilder();
-        builder.append("基于当前候选资料与原文窗口，可以先给出一版可验证回答：");
-        if (context.contextApplied()) {
-            builder.append("本轮已结合最近连续对话窗口理解这次追问。");
-            if (!context.topicAnchor().isBlank()) {
-                builder.append("当前主题锚点是“").append(context.topicAnchor()).append("”。");
-            }
-        }
-        if (chatControlPack.hasControls()) {
-            builder.append("本轮还应用了工作台级 Chat Control Pack。");
-        }
-        boolean hasStaleJournal = journalHits.stream().anyMatch(hit -> !"fresh".equals(hit.freshnessStatus()));
-        if (hasStaleJournal) {
-            builder.append("历史整理里存在已更新或已失效的来源，本轮已经优先按当前可读原文窗口重新核对。");
-        }
-        builder.append("\n");
-        Set<String> seenSources = new LinkedHashSet<>();
-        int count = 0;
-        for (ReadingWindow window : windows) {
-            if (!seenSources.add(window.sourceId())) {
-                continue;
-            }
-            builder.append("- 《").append(window.title()).append("》指出：")
-                    .append(trim(window.content(), 120));
-            if (window.heading() != null && !window.heading().isBlank()) {
-                builder.append("（").append(window.heading()).append("）");
-            }
-            builder.append("\n");
-            count++;
-            if (count >= 3) {
-                break;
-            }
-        }
-        if (count == 0) {
-            builder.append("- 当前没有足够的原文窗口可用于综合回答。\n");
-        }
-        String questionType = classifyQuestion(question);
-        if ("comparison".equals(questionType) && count >= 2) {
-            builder.append("这些资料更适合放在同一轮做对比阅读，再继续展开差异与共识。\n");
-        } else if ("reasoning".equals(questionType)) {
-            builder.append("这类问题更依赖原文上下文，因此后面的原文窗口与摘录证据会比普通问答更重要。\n");
-        }
-        return builder.toString().trim();
-    }
-
-    private String summarizeWindowLocators(List<RetrievalService.WindowLocator> locators) {
-        return locators.stream()
-                .limit(3)
-                .map(this::formatWindowLocator)
-                .reduce((left, right) -> left + " | " + right)
-                .orElse("none");
-    }
-
-    private String formatWindowLocator(RetrievalService.WindowLocator locator) {
-        StringBuilder builder = new StringBuilder();
-        builder.append("chunk=").append(locator.chunkNo())
-                .append(",window=").append(locator.windowNo());
-        if (locator.heading() != null && !locator.heading().isBlank()) {
-            builder.append(",heading=").append(locator.heading());
-        }
-        if (locator.locationInfo() != null && !locator.locationInfo().isBlank()) {
-            builder.append(",locator=").append(locator.locationInfo());
-        }
-        if (locator.readRole() != null && !locator.readRole().isBlank()) {
-            builder.append(",read_role=").append(locator.readRole());
-        }
-        if (locator.readObjective() != null && !locator.readObjective().isBlank()) {
-            builder.append(",read_objective=").append(locator.readObjective());
-        }
-        if (locator.anchorWindowNo() != null) {
-            builder.append(",anchor_window=").append(locator.anchorWindowNo());
-        }
-        builder.append(",score=").append(locator.score());
-        return builder.toString();
-    }
-
-    private String summarizeRelatedEntries(List<RelatedEntryPreview> relatedEntries) {
-        return relatedEntries.stream()
-                .limit(3)
-                .map(related -> "《" + related.title() + "》"
-                        + "(shared_tags=" + related.sharedTagCount()
-                        + ",co_cited_notes=" + related.coCitedNoteCount()
-                        + ",co_cited_turns=" + related.coCitedTurnCount()
-                        + ",lexical_overlap=" + related.lexicalOverlapScore()
-                        + ",graph_neighbor=" + related.graphNeighborhoodScore()
-                        + ",reason=" + related.relationReason()
-                        + ",score=" + related.score() + ")")
-                .reduce((left, right) -> left + " | " + right)
-                .orElse("none");
-    }
-
-    private String summarizeCandidateSelection(List<CandidateSource> candidates) {
-        Map<String, Integer> counts = new LinkedHashMap<>();
-        counts.put("journal-quota", 0);
-        counts.put("metadata-quota", 0);
-        counts.put("relation-quota", 0);
-        counts.put("top-score-backfill", 0);
-        counts.put("relation-expansion", 0);
-        for (CandidateSource candidate : candidates) {
-            String reason = candidate.selectionReason();
-            if (reason == null || reason.isBlank()) {
-                continue;
-            }
-            counts.merge(reason, 1, Integer::sum);
-        }
-        return counts.entrySet().stream()
-                .filter(entry -> entry.getValue() > 0)
-                .map(entry -> entry.getKey() + "=" + entry.getValue())
-                .reduce((left, right) -> left + ", " + right)
-                .orElse("none");
-    }
-
-    private String summarizeVerifyAdmission(List<CandidateSource> verifySources) {
-        Map<String, Integer> counts = new LinkedHashMap<>();
-        for (CandidateSource candidate : verifySources) {
-            String reason = candidate.verifyAdmissionReason();
-            if (reason == null || reason.isBlank()) {
-                continue;
-            }
-            counts.merge(reason, 1, Integer::sum);
-        }
-        return counts.entrySet().stream()
-                .map(entry -> entry.getKey() + "=" + entry.getValue())
-                .reduce((left, right) -> left + ", " + right)
-                .orElse("none");
-    }
-
-    private AnswerDraft buildWikiAnswer(
-            String workspaceId,
-            SendMessageRequest request,
-            ConversationContext context,
-            MemoryControlPackResponse chatControlPack
-    ) {
-        List<WikiPageContext> contexts = knowledgeService.findRelevantWikiPageContexts(workspaceId, context.retrievalQuestion());
-        List<String> wikiCitationIds = knowledgeService.citationIdsForWikiPages(
-                contexts.stream().map(WikiPageContext::page).toList()
+        Map<String, String> attributes = new LinkedHashMap<>();
+        attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_CURRENT_QUESTION, conversationContext.currentQuestion());
+        attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_REQUEST_CONTENT, request.content());
+        attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_QUESTION_TYPE,
+                classifyQuestion(conversationContext.currentQuestion()));
+        attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_CONTEXT_APPLIED,
+                Boolean.toString(conversationContext.contextApplied()));
+        attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_WINDOW_TURN_COUNT,
+                Integer.toString(conversationContext.windowTurnCount()));
+        attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_TOPIC_ANCHOR, conversationContext.topicAnchor());
+        attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_TOPIC_SUMMARY, conversationContext.topicSummary());
+        attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_HAS_CHAT_CONTROLS,
+                Boolean.toString(chatControlPack.hasControls()));
+        attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_CHAT_CONTROL_SECTION,
+                renderChatControlSection(chatControlPack));
+        attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_TEMPLATE_LABEL, templateLabel(mode));
+        AnswerContext context = new AnswerContext(
+                workspaceId,
+                conversationId,
+                currentUserMessageId,
+                conversationContext.retrievalQuestion(),
+                sourceScope,
+                attributes,
+                Instant.now()
         );
-        if (contexts.isEmpty()) {
-            StringBuilder fallback = new StringBuilder();
-            fallback.append("## 基于全量 Wiki 的回答\n");
-            fallback.append("当前 Wiki 知识网络还没有可直接命中的正式页面，因此本次不退回普通资料 RAG 直接作答。\n\n");
-            fallback.append("## 建议动作\n");
-            fallback.append("- 如果这是一个需要长期维护的主题，先开启工作台级 Wiki 构建，并让现有资料进入 Wiki ingest。\n");
-            fallback.append("- 如果要立刻补齐某个概念页，可以在默认 Wiki 工作台中手动补充或修正页面正文。\n");
-            fallback.append("- 或先用 Note 链路通过资料级检索读取原文窗口，再把稳定结论沉淀进工作台 Wiki 网络。\n");
-            appendChatControlSection(fallback, chatControlPack);
-            fallback.append("\n## 默认 Wiki 工作台\n");
-            fallback.append("/workspaces/").append(workspaceId).append("/wiki\n");
-            return new AnswerDraft(fallback.toString(), List.of(), List.of(), chatControlPack);
-        }
-        StringBuilder builder = new StringBuilder();
-        builder.append("## 基于全量 Wiki 的回答\n");
-        builder.append("我优先检索当前工作台已经沉淀的 Wiki Index、页面正文、页面链接、反向链接和来源回链，再基于多页面知识网络综合回答，而不是退回普通资料 chunk 问答。\n\n");
-        if (context.contextApplied()) {
-            builder.append("本轮已结合最近连续对话窗口理解这次追问。");
-            if (!context.topicAnchor().isBlank()) {
-                builder.append(" 当前主题锚点是“").append(context.topicAnchor()).append("”。");
-            }
-            builder.append("\n\n");
-        }
-        if (chatControlPack.hasControls()) {
-            builder.append("本轮还应用了工作台级 Chat Control Pack。\n\n");
-        }
-        builder.append("## 相关 Wiki 页面\n");
-        for (WikiPageContext pageContext : contexts) {
-            KnowledgePageHit page = pageContext.page();
-            builder.append("- 《").append(page.title()).append("》v").append(page.versionNo())
-                    .append("：").append(trim(page.summary().isBlank() ? page.content() : page.summary(), 180))
-                    .append("，出链 ").append(pageContext.outgoingLinks().size())
-                    .append("，反链 ").append(pageContext.backlinks().size())
-                    .append("，来源 ").append(pageContext.citations().size())
-                    .append("\n");
-        }
-        builder.append("\n## 综合结论\n");
-        builder.append(buildWikiSynthesis(contexts)).append("\n\n");
-        builder.append("## 关键页面关系\n");
-        appendWikiLinks(builder, collectNetworkLinks(contexts, true), "当前命中的 Wiki 页面之间还没有足够显式的页面关系。");
-        builder.append("\n## 反向引用关系\n");
-        appendWikiLinks(builder, collectNetworkLinks(contexts, false), "当前命中的 Wiki 页面暂时没有明显反向引用网络。");
-        builder.append("\n## 来源回链\n");
-        List<KnowledgeCitationResponse> citations = collectNetworkCitations(contexts);
-        if (citations.isEmpty()) {
-            builder.append("当前命中页面暂时没有绑定来源引用。\n");
+        AnswerModeStrategy strategy = answerModeStrategyRegistry.require(mode);
+        RetrievalPlan strategyPlan = strategy.plan(context);
+        RetrievalPlan plan = "NONE".equals(retrievalConfig.strategy())
+                ? new RetrievalPlan("none-v1", mode, List.of(), strategyPlan.budget())
+                : strategyPlan;
+        EvidenceBundle bundle;
+        if ("NONE".equals(retrievalConfig.strategy())) {
+            bundle = new EvidenceBundle(
+                    "none:" + currentUserMessageId,
+                    plan.version(),
+                    List.of(),
+                    false,
+                    List.of(),
+                    Instant.now(),
+                    Map.of("retrieval_disabled", "true")
+            );
         } else {
-            for (KnowledgeCitationResponse citation : citations) {
-                builder.append("- ").append(citation.title())
-                        .append("：").append(trim(citation.quoteText(), 120))
-                        .append("（").append(citation.locationInfo()).append("）\n");
-            }
+            strategyContractValidator.validatePlan(mode, context, plan);
+            bundle = unifiedRetrievalOrchestrator.execute(context, plan);
         }
-        builder.append("\n## 页面关系\n");
-        builder.append("相关页面关系、图谱、待处理任务、问题分层和治理动作都可以在默认 Wiki 工作台中继续查看。\n\n");
-        if (context.contextApplied()) {
-            builder.append("## 会话上下文\n");
-            builder.append("- 连续对话窗口：最近 ").append(context.windowTurnCount()).append(" 轮相关对话\n");
-            if (!context.topicAnchor().isBlank()) {
-                builder.append("- 主题锚点：").append(context.topicAnchor()).append("\n");
-            }
-            if (!context.topicSummary().isBlank()) {
-                builder.append("- 前序主题摘要：").append(context.topicSummary()).append("\n");
-            }
-            builder.append("\n");
+        PromptSpec prompt = strategy.compose(context, bundle);
+        AnswerPolicy policy = strategy.policy();
+        strategyContractValidator.validatePromptAndPolicy(
+                plan, bundle, prompt, policy);
+        String tagged = prefixWithTemplateMarker(prompt.userPrompt(), attributes.get("template_label"));
+        return new AnswerDraft(
+                tagged,
+                selectedWikiCitationIds(bundle),
+                chatControlPack,
+                plan,
+                bundle,
+                prompt,
+                policy.maximumOutputTokens()
+        );
+    }
+
+    private String templateLabel(AnswerMode mode) {
+        return mode.name().substring(0, 1) + mode.name().substring(1).toLowerCase() + " 链路模板";
+    }
+
+    private String prefixWithTemplateMarker(String body, String modeLabel) {
+        return "> **[TEMPLATE PLACEHOLDER]** 当前答案为 `" + modeLabel + "` 拼接原型，"
+                + "未接 LLM；接入 LLM 后此标记将被移除，由模型综合生成。\n\n" + body;
+    }
+
+    static List<String> selectedWikiCitationIds(EvidenceBundle bundle) {
+        List<String> selectedEvidenceIds = bundle.evidence().stream()
+                .filter(evidence -> "KNOWLEDGE_VERSION".equals(evidence.kind()))
+                .map(EvidenceBundle.Evidence::evidenceId)
+                .toList();
+        List<String> retrievedEvidenceIds = metadataIds(
+                bundle, WikiEvidenceRetriever.RETRIEVED_EVIDENCE_IDS_METADATA);
+        if (selectedEvidenceIds.equals(retrievedEvidenceIds)) {
+            return metadataIds(bundle, WikiEvidenceRetriever.EXISTING_CITATION_IDS_METADATA);
         }
-        appendChatControlSection(builder, chatControlPack);
-        builder.append("## 默认 Wiki 工作台\n");
-        builder.append("/workspaces/").append(workspaceId).append("/wiki\n");
-        return new AnswerDraft(builder.toString(), List.of(), wikiCitationIds, chatControlPack);
+        List<String> selected = new ArrayList<>();
+        for (EvidenceBundle.Evidence evidence : bundle.evidence()) {
+            if (!"KNOWLEDGE_VERSION".equals(evidence.kind())) {
+                continue;
+            }
+            String value = evidence.metadata().get("citation_ids");
+            if (value == null || value.isBlank()) {
+                continue;
+            }
+            java.util.Arrays.stream(value.split(","))
+                    .map(String::trim)
+                    .filter(item -> !item.isBlank())
+                    .forEach(selected::add);
+        }
+        return List.copyOf(selected);
+    }
+
+    private static List<String> metadataIds(EvidenceBundle bundle, String key) {
+        String value = bundle.metadata().get(key);
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(value.split(","))
+                .map(String::trim)
+                .filter(item -> !item.isBlank())
+                .toList();
     }
 
     private void appendChatControlSection(StringBuilder builder, MemoryControlPackResponse chatControlPack) {
@@ -583,6 +323,12 @@ public class ChatService {
         builder.append("\n");
     }
 
+    private String renderChatControlSection(MemoryControlPackResponse chatControlPack) {
+        StringBuilder builder = new StringBuilder();
+        appendChatControlSection(builder, chatControlPack);
+        return builder.toString();
+    }
+
     private void appendControlLine(StringBuilder builder, String prefix, List<String> values) {
         if (values == null || values.isEmpty()) {
             return;
@@ -590,82 +336,14 @@ public class ChatService {
         builder.append(prefix).append(String.join("；", values)).append("\n");
     }
 
-    private void appendWikiLinks(StringBuilder builder, List<WikiLinkResponse> links, String emptyMessage) {
-        if (links.isEmpty()) {
-            builder.append(emptyMessage).append("\n");
-            return;
-        }
-        for (WikiLinkResponse link : links) {
-            builder.append("- ").append(link.targetTitle())
-                    .append("：").append(link.relationStatus())
-                    .append("，").append(link.mentionCount()).append(" 次提及\n");
-        }
-    }
-
-    private String buildWikiSynthesis(List<WikiPageContext> contexts) {
-        List<String> facts = new ArrayList<>();
-        for (WikiPageContext context : contexts.stream().limit(3).toList()) {
-            KnowledgePageHit page = context.page();
-            String snippet = trim(page.summary().isBlank() ? page.content() : page.summary(), 150);
-            facts.add("《" + page.title() + "》指出：" + snippet);
-        }
-        if (facts.isEmpty()) {
-            return "当前没有足够的 Wiki 页面可综合。";
-        }
-        return String.join("\n", facts);
-    }
-
-    private List<WikiLinkResponse> collectNetworkLinks(List<WikiPageContext> contexts, boolean outgoing) {
-        Map<String, WikiLinkResponse> dedup = new LinkedHashMap<>();
-        for (WikiPageContext context : contexts.stream().limit(3).toList()) {
-            List<WikiLinkResponse> links = outgoing ? context.outgoingLinks() : context.backlinks();
-            for (WikiLinkResponse link : links) {
-                String key = (link.targetItemId() == null ? "" : link.targetItemId()) + "|" + link.targetTitle() + "|" + link.relationStatus();
-                dedup.putIfAbsent(key, link);
-                if (dedup.size() >= 6) {
-                    return new ArrayList<>(dedup.values());
-                }
-            }
-        }
-        return new ArrayList<>(dedup.values());
-    }
-
-    private List<KnowledgeCitationResponse> collectNetworkCitations(List<WikiPageContext> contexts) {
-        Map<String, KnowledgeCitationResponse> dedup = new LinkedHashMap<>();
-        for (WikiPageContext context : contexts.stream().limit(3).toList()) {
-            for (KnowledgeCitationResponse citation : context.citations()) {
-                String key = citation.sourceId() + "|" + citation.title() + "|" + citation.locationInfo();
-                dedup.putIfAbsent(key, citation);
-                if (dedup.size() >= 6) {
-                    return new ArrayList<>(dedup.values());
-                }
-            }
-        }
-        return new ArrayList<>(dedup.values());
-    }
-
-    private void persistCitations(String workspaceId, String messageId, List<RetrievedChunk> evidence) {
-        for (int i = 0; i < evidence.size(); i++) {
-            RetrievedChunk chunk = evidence.get(i);
-            String citationId = Ids.newId();
-            jdbcTemplate.update("""
-                    insert into citation(id, workspace_id, source_id, source_snapshot_id, source_chunk_id, title, quote_text, page_no, location_info)
-                    values (?, ?, ?, ?, ?, ?, ?, null, ?)
-                    """, citationId, workspaceId, chunk.sourceId(), chunk.sourceSnapshotId(), chunk.chunkId(), chunk.title(),
-                    trim(chunk.content(), 360), chunk.locationInfo());
-            jdbcTemplate.update("""
-                    insert into message_citation(id, message_id, citation_id, sort_order)
-                    values (?, ?, ?, ?)
-                    """, Ids.newId(), messageId, citationId, i);
-        }
-    }
-
-    private void bindExistingCitations(String messageId, List<String> citationIds, int sortOffset) {
+    private void bindExistingCitations(String workspaceId, String messageId, List<String> citationIds, int sortOffset) {
         for (int i = 0; i < citationIds.size(); i++) {
             jdbcTemplate.update("""
                     insert into message_citation(id, message_id, citation_id, sort_order)
-                    values (?, ?, ?, ?)
-                    """, Ids.newId(), messageId, citationIds.get(i), sortOffset + i);
+                    select ?, ?, c.id, ?
+                    from citation c
+                    where c.workspace_id = ? and c.id = ?
+                    """, Ids.newId(), messageId, sortOffset + i, workspaceId, citationIds.get(i));
         }
     }
 
@@ -678,41 +356,6 @@ public class ChatService {
             }
             return new ConversationRef(rs.getString("id"), rs.getString("workspace_id"));
         }, conversationId);
-    }
-
-    private MessageRef findAssistantMessage(String assistantRequestId) {
-        return jdbcTemplate.query("""
-                select id, content from conversation_message where assistant_request_id = ?
-                """, rs -> {
-            if (!rs.next()) {
-                throw new BusinessException("CHAT_REQUEST_NOT_FOUND", "聊天请求不存在");
-            }
-            return new MessageRef(rs.getString("id"), rs.getString("content"));
-        }, assistantRequestId);
-    }
-
-    private List<CitationItem> citationsForMessage(String messageId) {
-        return jdbcTemplate.query("""
-                select c.id, c.source_id, c.title, c.quote_text, c.page_no, c.location_info
-                from message_citation mc
-                join citation c on c.id = mc.citation_id
-                where mc.message_id = ?
-                order by mc.sort_order asc
-                """, (rs, rowNum) -> new CitationItem(
-                rs.getString("id"),
-                rs.getString("source_id"),
-                rs.getString("title"),
-                rs.getString("quote_text"),
-                (Integer) rs.getObject("page_no"),
-                rs.getString("location_info")
-        ), messageId);
-    }
-
-    private int nextMessageSeq(String conversationId) {
-        Integer maxSeq = jdbcTemplate.queryForObject("""
-                select coalesce(max(message_seq), 0) from conversation_message where conversation_id = ?
-                """, Integer.class, conversationId);
-        return maxSeq == null ? 1 : maxSeq + 1;
     }
 
     private String trim(String value, int max) {
@@ -739,26 +382,20 @@ public class ChatService {
         return "definition";
     }
 
-    private String escape(String data) {
-        return data.replace("\r", "").replace("\n", "\\n");
-    }
-
-    private ConversationContext buildConversationContext(String conversationId, String currentUserMessageId, String currentQuestion) {
+    private ConversationContext buildConversationContext(
+            String workspaceId, String conversationId, String currentUserMessageId, String currentQuestion) {
         String trimmedQuestion = currentQuestion == null ? "" : currentQuestion.trim();
         if (!isContextDependentQuestion(trimmedQuestion)) {
             return new ConversationContext(trimmedQuestion, trimmedQuestion, false, 0, "", "", List.of());
         }
-        List<ConversationHistoryMessage> history = jdbcTemplate.query("""
-                select message_seq, role, content
-                from conversation_message
-                where conversation_id = ? and id <> ?
-                order by message_seq desc
-                limit 12
-                """, (rs, rowNum) -> new ConversationHistoryMessage(
-                rs.getInt("message_seq"),
-                rs.getString("role"),
-                rs.getString("content")
-        ), conversationId, currentUserMessageId);
+        Integer cutoffSeq = jdbcTemplate.queryForObject(
+                "select message_seq from conversation_message where id = ?", Integer.class, currentUserMessageId);
+        ConversationContextProjectionService.CompilationProjection projection = contextProjectionService.compile(
+                workspaceId, conversationId, cutoffSeq == null ? 0 : cutoffSeq);
+        List<ConversationHistoryMessage> history = projection.rawMessages().stream()
+                .filter(message -> !message.messageId().equals(currentUserMessageId))
+                .map(message -> new ConversationHistoryMessage(message.messageSeq(), message.role(), message.content()))
+                .toList();
         List<ConversationTurn> turns = buildConversationTurns(history);
         if (turns.isEmpty()) {
             return new ConversationContext(trimmedQuestion, trimmedQuestion, false, 0, "", "", List.of());
@@ -768,7 +405,9 @@ public class ChatService {
             return new ConversationContext(trimmedQuestion, trimmedQuestion, false, 0, "", "", List.of());
         }
         String topicAnchor = buildTopicAnchor(trimmedQuestion, workingTurns);
-        String topicSummary = buildTopicSummary(topicAnchor, workingTurns, turns);
+        String topicSummary = projection.summaryText().isBlank()
+                ? buildTopicSummary(topicAnchor, workingTurns, turns)
+                : projection.summaryText();
         StringBuilder retrievalQuestion = new StringBuilder();
         retrievalQuestion.append("当前问题：").append(trimmedQuestion);
         if (!topicAnchor.isBlank()) {
@@ -799,8 +438,7 @@ public class ChatService {
         List<ConversationTurn> turns = new ArrayList<>();
         String pendingUserQuestion = null;
         int pendingUserSeq = 0;
-        for (int i = history.size() - 1; i >= 0; i--) {
-            ConversationHistoryMessage message = history.get(i);
+        for (ConversationHistoryMessage message : history) {
             if ("USER".equals(message.role())) {
                 pendingUserQuestion = message.content();
                 pendingUserSeq = message.messageSeq();
@@ -1039,15 +677,36 @@ public class ChatService {
     private record ConversationRef(String conversationId, String workspaceId) {
     }
 
-    private record MessageRef(String messageId, String content) {
-    }
-
     private record AnswerDraft(
             String answer,
-            List<RetrievedChunk> evidence,
             List<String> existingCitationIds,
-            MemoryControlPackResponse chatControlPack
+            MemoryControlPackResponse chatControlPack,
+            RetrievalPlan retrievalPlan,
+            EvidenceBundle evidenceBundle,
+            PromptSpec promptSpec,
+            int maximumOutputTokens
     ) {
+        private String promptVersion() {
+            return promptSpec == null ? retrievalPlan.version() : promptSpec.promptVersion();
+        }
+    }
+
+    public record PreparedAnswerMaterial(
+            String answer,
+            List<String> existingCitationIds,
+            MemoryControlPackResponse chatControlPack,
+            RetrievalPlan retrievalPlan,
+            EvidenceBundle evidenceBundle,
+            PromptSpec promptSpec,
+            int maximumOutputTokens
+    ) {
+        public PreparedAnswerMaterial {
+            existingCitationIds = existingCitationIds == null ? List.of() : List.copyOf(existingCitationIds);
+        }
+
+        public String promptVersion() {
+            return promptSpec == null ? retrievalPlan.version() : promptSpec.promptVersion();
+        }
     }
 
     private record ConversationHistoryMessage(int messageSeq, String role, String content) {
@@ -1067,4 +726,3 @@ public class ChatService {
     ) {
     }
 }
-

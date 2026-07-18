@@ -1,0 +1,85 @@
+[
+    {
+        "Id": "sha256:1a226a4eee1346ac64d5d93263b5d54dd99d12bbbe700a367de503c0be1cd10e",
+        "RepoTags": [
+            "noteweave-ma4h-h2-tests:local"
+        ],
+        "RepoDigests": [
+            "noteweave-ma4h-h2-tests@sha256:1a226a4eee1346ac64d5d93263b5d54dd99d12bbbe700a367de503c0be1cd10e"
+        ],
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2026-07-16T16:39:42.091607577Z",
+        "Config": {
+            "Env": [
+                "PATH=/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "JAVA_HOME=/opt/java/openjdk",
+                "LANG=en_US.UTF-8",
+                "LANGUAGE=en_US:en",
+                "LC_ALL=en_US.UTF-8",
+                "JAVA_VERSION=jdk-17.0.15+6",
+                "MAVEN_HOME=/usr/share/maven",
+                "MAVEN_CONFIG=/root/.m2"
+            ],
+            "Entrypoint": [
+                "mvn",
+                "-o",
+                "-s",
+                "maven-settings.xml",
+                "-B",
+                "-ntp"
+            ],
+            "WorkingDir": "/workspace",
+            "Labels": {
+                "com.docker.compose.project": "noteweave-ma4h-h2-20260717t0010b",
+                "com.docker.compose.service": "h2-tests",
+                "com.docker.compose.version": "5.1.3",
+                "org.opencontainers.image.description": "Apache Maven is a software project management and comprehension tool. Based on the concept of a project object model (POM), Maven can manage a project's build, reporting and documentation from a central piece of information.",
+                "org.opencontainers.image.ref.name": "ubuntu",
+                "org.opencontainers.image.source": "https://github.com/carlossg/docker-maven",
+                "org.opencontainers.image.title": "Apache Maven",
+                "org.opencontainers.image.url": "https://github.com/carlossg/docker-maven",
+                "org.opencontainers.image.version": "24.04"
+            }
+        },
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 627623359,
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:a8346d259389bc6221b4f3c61bad4e48087c5b82308e8f53ce703cfc8333c7b3",
+                "sha256:4c41447729a38d919c65c0eaf1046130dea407b3bd2d1f70811d39240750d53d",
+                "sha256:9856e94b1c9ff0ed50d3683f917e247f7ae0bfba411d92bf9f0b26eb18f69fec",
+                "sha256:a78b38ff25de9d3d51cde454a8e68c313cf126ad800aec0b17755b2ae079b4c0",
+                "sha256:0fc8f53d420eedf35ac0a1f1261ac9b1e15783c7f7d1c059d1c108b7acbe9033",
+                "sha256:b785a6cc0460e9180938abbacc074e2283a72c9b63a07525b03f8b5ebcf20da6",
+                "sha256:1a9e2d36a4636e477c9ab0e44854806a44a0b59adbcb680fe560e1deb51b9073",
+                "sha256:fecd55477da67cac7410a78cb3b5c5472eb8162512f5e71ec2d5da1c8f15d79f",
+                "sha256:e6cd9425212c6e3448ca44265307f9f60d15d22574052294ca8d8acde2579bae",
+                "sha256:b8263db439fb445243cd02a7b826065a0c0c7eb2f4a16943eb1aefc0e3ab61e1",
+                "sha256:0d47a38935f58c8f0fae670f730833b845628bd7371d5c9e1448542e7b9e63b1",
+                "sha256:0909dc20887dad9da3167f2568a5fc06c6300b980926a4d27e725a4d78b0ac2c",
+                "sha256:aa3185475a789b37175b15ac7d3f672ac64b8efd58c0f60b0eba5c0b90329a56",
+                "sha256:3c42d15a8f091602501f09768b4355e4d631c614c50ae07c29fa6a46224cec3c",
+                "sha256:82f8645a782e09ee2beb59e7fd836350d2af59e9e9e411c75db163ca33a87c05",
+                "sha256:e2ce1caa63726dca40c9dfc0b3436ab91b668f9b300b77d74126c3f0ad7e2bcf"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "2026-07-16T16:39:46.04689336Z"
+        },
+        "Descriptor": {
+            "mediaType": "application/vnd.oci.image.index.v1+json",
+            "digest": "sha256:1a226a4eee1346ac64d5d93263b5d54dd99d12bbbe700a367de503c0be1cd10e",
+            "size": 856
+        },
+        "Identity": {
+            "Build": [
+                {
+                    "Ref": "j33wz75dfscjyletu7lbpswyq",
+                    "CreatedAt": "2026-07-16T16:39:51.053363553Z"
+                }
+            ]
+        }
+    }
+]

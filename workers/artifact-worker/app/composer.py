@@ -3,28 +3,6 @@ from __future__ import annotations
 from app.models import ArtifactExecutionPlan, ArtifactSectionDraft, ArtifactTaskInput
 
 
-def compose_sections(
-    task_input: ArtifactTaskInput,
-    plan: ArtifactExecutionPlan,
-) -> list[ArtifactSectionDraft]:
-    source_titles = [item.title for item in task_input.source_scope[:3]]
-    source_line = ", ".join(source_titles) if source_titles else "workspace source pool"
-
-    sections: list[ArtifactSectionDraft] = []
-    for heading in plan.outline:
-        sections.append(
-            ArtifactSectionDraft(
-                heading=heading,
-                body=(
-                    f"This section addresses {heading.lower()} using material compiled from "
-                    f"{source_line}."
-                ),
-                source_refs=source_titles[:1] or [],
-            )
-        )
-    return sections
-
-
 def render_markdown(
     task_input: ArtifactTaskInput,
     plan: ArtifactExecutionPlan,
@@ -32,11 +10,13 @@ def render_markdown(
 ) -> str:
     source_titles = [item.title for item in task_input.source_scope[:3]]
     lines = [
-        f"# {plan.action_key.title()} Draft",
+        f"# {plan.action_display_name}",
         "",
         "## Generation Goal",
-        f"- Action: {plan.action_key}",
+        f"- Skill: {plan.skill_key or task_input.input_payload.skill_key or 'legacy_action_request'}",
+        f"- Goal: {plan.execution_spec.goal or task_input.input_payload.generation_brief or plan.action_display_name}",
         f"- Style profile: {plan.style_profile_key}",
+        f"- Writeback gate: {plan.writeback_gate.decision} ({plan.writeback_gate.requested_mode})",
         "",
         "## Sections",
     ]
@@ -63,5 +43,13 @@ def render_markdown(
         lines.extend(["", "## Control Notes"])
         for note in plan.notes:
             lines.append(f"- {note}")
+
+    lines.extend(
+        [
+            "",
+            "## Runtime Keywords",
+            "- " + " / ".join(plan.required_phrases or ["Controlled Agentic Graph Harness"]),
+        ]
+    )
 
     return "\n".join(lines).strip() + "\n"

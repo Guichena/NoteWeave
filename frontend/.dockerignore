@@ -1,0 +1,7 @@
+node_modules
+dist
+.idea
+.vscode
+*.log
+vite.config.js
+vite.config.d.ts

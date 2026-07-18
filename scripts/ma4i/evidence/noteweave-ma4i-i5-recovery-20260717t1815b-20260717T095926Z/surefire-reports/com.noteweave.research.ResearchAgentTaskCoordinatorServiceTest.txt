@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.noteweave.research.ResearchAgentTaskCoordinatorServiceTest
+-------------------------------------------------------------------------------
+Tests run: 19, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 79.26 s -- in com.noteweave.research.ResearchAgentTaskCoordinatorServiceTest

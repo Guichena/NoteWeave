@@ -4,11 +4,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
 import com.noteweave.common.Json;
-import com.noteweave.infra.LocalObjectStorage;
-import com.noteweave.knowledge.WikiIngestService;
-import com.noteweave.source.SourceParseService;
-import com.noteweave.task.TaskService;
-import com.noteweave.workspace.WorkspaceService;
+import com.noteweave.storage.ObjectStorage;
+import com.noteweave.source.SourceMessagingMode;
+import com.noteweave.source.SourceParsePort;
+import com.noteweave.source.SourceWikiCommandPort;
+import com.noteweave.source.SourceCatalogVersionService;
+import com.noteweave.task.TaskCommandPort;
+import com.noteweave.security.WorkspaceAccessGuard;
+import com.noteweave.security.WorkspacePermission;
+import com.noteweave.security.AuditActorProvider;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -16,6 +20,8 @@ import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,48 +29,70 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class UploadService {
 
+    private static final Logger log = LoggerFactory.getLogger(UploadService.class);
+    private static final String BUCKET_SOURCE = "noteweave-source";
+    private static final String BUCKET_DERIVED = "noteweave-derived";
+
     private final JdbcTemplate jdbcTemplate;
-    private final WorkspaceService workspaceService;
-    private final LocalObjectStorage storage;
-    private final SourceParseService sourceParseService;
-    private final WikiIngestService wikiIngestService;
-    private final TaskService taskService;
+    private final WorkspaceAccessGuard workspaceAccessGuard;
+    private final ObjectStorage storage;
+    private final SourceParsePort sourceParsePort;
+    private final SourceWikiCommandPort wikiCommandPort;
+    private final TaskCommandPort taskCommandPort;
     private final ObjectMapper objectMapper;
+    private final SourceMessagingMode messagingMode;
+    private final UploadSecurityPolicy uploadSecurityPolicy;
+    private final AuditActorProvider auditActorProvider;
+    private final SourceCatalogVersionService sourceCatalogVersionService;
 
     public UploadService(
             JdbcTemplate jdbcTemplate,
-            WorkspaceService workspaceService,
-            LocalObjectStorage storage,
-            SourceParseService sourceParseService,
-            WikiIngestService wikiIngestService,
-            TaskService taskService,
-            ObjectMapper objectMapper
+            WorkspaceAccessGuard workspaceAccessGuard,
+            ObjectStorage storage,
+            SourceParsePort sourceParsePort,
+            SourceWikiCommandPort wikiCommandPort,
+            TaskCommandPort taskCommandPort,
+            ObjectMapper objectMapper,
+            SourceMessagingMode messagingMode,
+            UploadSecurityPolicy uploadSecurityPolicy,
+            AuditActorProvider auditActorProvider,
+            SourceCatalogVersionService sourceCatalogVersionService
     ) {
         this.jdbcTemplate = jdbcTemplate;
-        this.workspaceService = workspaceService;
+        this.workspaceAccessGuard = workspaceAccessGuard;
         this.storage = storage;
-        this.sourceParseService = sourceParseService;
-        this.wikiIngestService = wikiIngestService;
-        this.taskService = taskService;
+        this.sourceParsePort = sourceParsePort;
+        this.wikiCommandPort = wikiCommandPort;
+        this.taskCommandPort = taskCommandPort;
         this.objectMapper = objectMapper;
+        this.messagingMode = messagingMode;
+        this.uploadSecurityPolicy = uploadSecurityPolicy;
+        this.auditActorProvider = auditActorProvider;
+        this.sourceCatalogVersionService = sourceCatalogVersionService;
+        log.info("UploadService initialised with object storage backend: {}", storage.backendName());
     }
 
     @Transactional
     public CreateUploadResponse createUpload(String workspaceId, CreateUploadRequest request) {
-        if (!workspaceService.exists(workspaceId)) {
-            throw new BusinessException("WORKSPACE_NOT_FOUND", "工作台不存在");
-        }
+        uploadSecurityPolicy.validateMetadata(request);
+        workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.SOURCE_WRITE);
+        String actor = auditActorProvider.currentOrSystem("UPLOAD");
         String uploadId = Ids.newId();
         jdbcTemplate.update("""
-                insert into document_upload(id, workspace_id, file_name, file_size, mime_type, chunk_size, total_chunks, status)
-                values (?, ?, ?, ?, ?, ?, ?, 'UPLOADING')
-                """, uploadId, workspaceId, request.fileName(), request.fileSize(), request.mimeType(), request.chunkSize(), request.totalChunks());
+                insert into document_upload(
+                    id, workspace_id, file_name, file_size, mime_type, chunk_size, total_chunks, status,
+                    created_by, updated_by
+                ) values (?, ?, ?, ?, ?, ?, ?, 'UPLOADING', ?, ?)
+                """, uploadId, workspaceId, request.fileName(), request.fileSize(), request.mimeType(),
+                request.chunkSize(), request.totalChunks(), actor, actor);
         return new CreateUploadResponse(uploadId, "UPLOADING", request.chunkSize(), request.totalChunks());
     }
 
     @Transactional
     public UploadChunkResponse acceptChunk(String uploadId, int chunkIndex, String contentMd5, byte[] content) {
         UploadRow upload = findUpload(uploadId);
+        workspaceAccessGuard.requirePermission(upload.workspaceId(), WorkspacePermission.SOURCE_WRITE);
+        String actor = auditActorProvider.currentOrSystem("UPLOAD");
         if (!"UPLOADING".equals(upload.status())) {
             throw new BusinessException("UPLOAD_NOT_WRITABLE", "当前上传事务不可继续写入");
         }
@@ -72,13 +100,18 @@ public class UploadService {
             throw new BusinessException("UPLOAD_CHUNK_OUT_OF_RANGE", "分片序号超出范围");
         }
         verifyContentMd5(contentMd5, content);
+        uploadSecurityPolicy.validateChunk(chunkIndex, upload.totalChunks(), upload.chunkSize(), content);
         String objectKey = "workspace/%s/upload_tmp/%s/%d".formatted(upload.workspaceId(), uploadId, chunkIndex);
-        storage.write(objectKey, content);
+        storage.write(BUCKET_SOURCE, objectKey, content);
         int updated = jdbcTemplate.update("""
                 update upload_chunk
                 set content_md5 = ?, object_key = ?, byte_size = ?, created_at = current_timestamp
                 where upload_id = ? and chunk_index = ?
-                """, contentMd5, objectKey, content.length, uploadId, chunkIndex);
+                  and exists (
+                      select 1 from document_upload u
+                      where u.id = upload_chunk.upload_id and u.workspace_id = ?
+                  )
+                """, contentMd5, objectKey, content.length, uploadId, chunkIndex, upload.workspaceId());
         if (updated == 0) {
             jdbcTemplate.update("""
                     insert into upload_chunk(id, upload_id, chunk_index, content_md5, object_key, byte_size)
@@ -86,9 +119,9 @@ public class UploadService {
                     """, Ids.newId(), uploadId, chunkIndex, contentMd5, objectKey, content.length);
             jdbcTemplate.update("""
                     update document_upload
-                    set uploaded_chunks = uploaded_chunks + 1, updated_at = current_timestamp
-                    where id = ?
-                    """, uploadId);
+                    set uploaded_chunks = uploaded_chunks + 1, updated_by = ?, updated_at = current_timestamp
+                    where workspace_id = ? and id = ?
+                    """, actor, upload.workspaceId(), uploadId);
         }
         return new UploadChunkResponse(uploadId, chunkIndex, true);
     }
@@ -96,68 +129,95 @@ public class UploadService {
     @Transactional
     public CompleteUploadResponse completeUpload(String uploadId) {
         UploadRow upload = findUpload(uploadId);
+        workspaceAccessGuard.requirePermission(upload.workspaceId(), WorkspacePermission.SOURCE_WRITE);
+        String actor = auditActorProvider.currentOrSystem("UPLOAD");
         if ("COMPLETED".equals(upload.status()) && upload.sourceId() != null && upload.taskId() != null) {
-            return sourceResult(upload.sourceId(), upload.taskId());
+            return sourceResult(upload.workspaceId(), upload.sourceId(), upload.taskId());
         }
         List<Map<String, Object>> chunkRows = jdbcTemplate.queryForList("""
-                select chunk_index, object_key from upload_chunk where upload_id = ? order by chunk_index
-                """, uploadId);
+                select c.chunk_index, c.object_key
+                from upload_chunk c
+                join document_upload u on u.id = c.upload_id
+                where u.workspace_id = ? and c.upload_id = ?
+                order by c.chunk_index
+                """, upload.workspaceId(), uploadId);
         if (chunkRows.size() != upload.totalChunks()) {
             throw new BusinessException("UPLOAD_CHUNK_INCOMPLETE", "上传分片尚未完整");
         }
         byte[] merged = mergeChunks(chunkRows);
+        uploadSecurityPolicy.validateMergedContent(upload.mimeType(), upload.fileSize(), merged);
         String sha256 = sha256(merged);
         FileObjectRef fileObject = getOrCreateFileObject(upload, sha256, merged.length, merged);
         String sourceId = Ids.newId();
         String snapshotId = Ids.newId();
         String objectKey = "workspace/%s/source/%s/snapshot/1/original/%s".formatted(upload.workspaceId(), sourceId, sanitize(upload.fileName()));
-        storage.write(objectKey, merged);
+        storage.write(BUCKET_SOURCE, objectKey, merged);
         jdbcTemplate.update("""
-                insert into source(id, workspace_id, file_object_id, title, source_type, status, parse_status, index_status)
-                values (?, ?, ?, ?, 'USER_UPLOAD', 'PROCESSING', 'PENDING', 'PENDING')
-                """, sourceId, upload.workspaceId(), fileObject.id(), upload.fileName());
+                insert into source(
+                    id, workspace_id, file_object_id, title, source_type, status, parse_status, index_status,
+                    created_by, updated_by
+                ) values (?, ?, ?, ?, 'USER_UPLOAD', 'PROCESSING', 'PENDING', 'PENDING', ?, ?)
+                """, sourceId, upload.workspaceId(), fileObject.id(), upload.fileName(), actor, actor);
+        sourceCatalogVersionService.bump(upload.workspaceId());
         jdbcTemplate.update("""
                 insert into source_snapshot(id, source_id, file_object_id, version_no, object_key, sha256, parse_status, index_status)
                 values (?, ?, ?, 1, ?, ?, 'PENDING', 'PENDING')
                 """, snapshotId, sourceId, fileObject.id(), objectKey, sha256);
-        String taskId = taskService.createTask(upload.workspaceId(), "SOURCE_PARSE", "SOURCE", sourceId, "PARSING", "资料解析与切片");
-        jdbcTemplate.update("""
-                insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
-                values (?, ?, 'noteweave.source.parse', ?, ?, 'READY')
-                """, Ids.newId(), taskId, sourceId, Json.write(objectMapper, Map.of(
+        String taskId = taskCommandPort.createTask(
+                upload.workspaceId(), "SOURCE_PARSE", "SOURCE", sourceId, "PARSING", "资料解析与切片");
+        Map<String, Object> payload = Map.of(
                 "taskId", taskId,
                 "sourceId", sourceId,
                 "snapshotId", snapshotId,
                 "workspaceId", upload.workspaceId()
-        )));
+        );
+        jdbcTemplate.update("""
+                insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
+                values (?, ?, 'noteweave.source.parse', ?, ?, 'READY')
+                """, Ids.newId(), taskId, sourceId, Json.write(objectMapper, payload));
 
-        sourceParseService.parseAndIndex(upload.workspaceId(), sourceId, snapshotId, merged);
-        wikiIngestService.enqueueAndRunSourceIngestIfEnabled(upload.workspaceId(), sourceId);
-        taskService.completeTask(taskId, "INDEXED", "资料已经解析并写入本地检索切片", sourceId);
+        // 当 Kafka 关闭时（开发/测试场景），同步执行解析以保证上传后立刻可用。
+        // 生产环境（Docker / 启用 Kafka）下，异步消费会接管，状态会从 PARSING_QUEUED 推进到 PARSED。
+        boolean kafkaEnabled = messagingMode.isAsyncEnabled();
+        String finalParseStatus = "PARSING_QUEUED";
+        String finalIndexStatus = "INDEX_QUEUED";
+        if (!kafkaEnabled) {
+            taskCommandPort.startTask(taskId);
+            sourceParsePort.parseAndIndex(upload.workspaceId(), sourceId, snapshotId, merged);
+            taskCommandPort.completeTask(taskId, "INDEXED", "资料已经解析并写入本地检索切片", sourceId);
+            finalParseStatus = "PARSED";
+            finalIndexStatus = "INDEXED";
+        }
+
+        // WikiIngestService 统一负责 outbox、Kafka 投递以及 Kafka 关闭时的同步降级，
+        // 避免这里二次发布同一 ingest 消息。
+        wikiCommandPort.requestSourceIngest(upload.workspaceId(), sourceId);
+
         jdbcTemplate.update("""
                 update document_upload
-                set status = 'COMPLETED', source_id = ?, task_id = ?, updated_at = current_timestamp
-                where id = ?
-                """, sourceId, taskId, uploadId);
-        return new CompleteUploadResponse(sourceId, taskId, "PARSED", "INDEXED");
+                set status = 'COMPLETED', source_id = ?, task_id = ?, updated_by = ?, updated_at = current_timestamp
+                where workspace_id = ? and id = ?
+                """, sourceId, taskId, actor, upload.workspaceId(), uploadId);
+        return new CompleteUploadResponse(sourceId, taskId, finalParseStatus, finalIndexStatus);
     }
 
-    private CompleteUploadResponse sourceResult(String sourceId, String taskId) {
+    private CompleteUploadResponse sourceResult(String workspaceId, String sourceId, String taskId) {
         return jdbcTemplate.query("""
-                select parse_status, index_status from source where id = ?
+                select parse_status, index_status from source where workspace_id = ? and id = ?
                 """, rs -> {
             if (!rs.next()) {
                 throw new BusinessException("SOURCE_NOT_FOUND", "资料不存在");
             }
             return new CompleteUploadResponse(sourceId, taskId, rs.getString("parse_status"), rs.getString("index_status"));
-        }, sourceId);
+        }, workspaceId, sourceId);
     }
 
     private byte[] mergeChunks(List<Map<String, Object>> chunkRows) {
         try {
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             for (Map<String, Object> row : chunkRows) {
-                output.write(storage.read((String) row.get("object_key")));
+                String objectKey = (String) row.get("object_key");
+                output.write(storage.read(BUCKET_SOURCE, objectKey));
             }
             return output.toByteArray();
         } catch (Exception ex) {
@@ -171,15 +231,20 @@ public class UploadService {
                 """, (rs, rowNum) -> new FileObjectRef(rs.getString("id"), rs.getString("object_key")), upload.workspaceId(), sha256);
         if (!existing.isEmpty()) {
             FileObjectRef ref = existing.get(0);
-            if (!storage.exists(ref.objectKey())) {
-                storage.write(ref.objectKey(), merged);
+            String bucket = storage.backendName().equals("local") ? "noteweave-source" : ref.objectKey().contains("/") ? ref.objectKey().substring(0, ref.objectKey().indexOf('/')) : BUCKET_SOURCE;
+            String key = storage.backendName().equals("local") ? ref.objectKey().substring(ref.objectKey().indexOf('/') + 1) : ref.objectKey();
+            if (!storage.exists(bucket, key)) {
+                storage.write(bucket, key, merged);
             }
-            jdbcTemplate.update("update file_object set ref_count = ref_count + 1 where id = ?", ref.id());
+            jdbcTemplate.update("""
+                    update file_object set ref_count = ref_count + 1
+                    where workspace_id = ? and id = ?
+                    """, upload.workspaceId(), ref.id());
             return ref;
         }
         String fileObjectId = Ids.newId();
         String objectKey = "workspace/%s/file_object/%s-%s".formatted(upload.workspaceId(), sha256, sanitize(upload.fileName()));
-        storage.write(objectKey, merged);
+        storage.write(BUCKET_SOURCE, objectKey, merged);
         jdbcTemplate.update("""
                 insert into file_object(id, workspace_id, object_key, sha256, file_size, mime_type, ref_count)
                 values (?, ?, ?, ?, ?, ?, 1)

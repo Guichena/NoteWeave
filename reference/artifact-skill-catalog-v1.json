@@ -1,0 +1,18 @@
+{
+  "skills": {
+    "resume_highlight": {"properties": ["language"], "required": []},
+    "study_guide": {"properties": ["language"], "required": []},
+    "quiz_pack": {"properties": ["language"], "required": []},
+    "wiki_page": {"properties": ["language"], "required": []},
+    "bilibili_course_note_pdf": {"properties": ["language", "url"], "required": ["url"]},
+    "report_draft": {"properties": ["language"], "required": []},
+    "faq_draft": {"properties": ["language"], "required": []},
+    "structured_note": {"properties": ["language"], "required": []},
+    "video_summary": {"properties": ["language", "url"], "required": ["url"]},
+    "audio_minutes": {"properties": ["language"], "required": []},
+    "course_notes": {"properties": ["language", "url"], "required": []}
+  },
+  "defaults": {
+    "language": "zh-CN"
+  }
+}

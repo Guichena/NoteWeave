@@ -1,0 +1,2 @@
+{"success":false,"code":"RESEARCH_AGENT_PERMIT_INVALID","message":"Research agent permit request is invalid","data":null,"request_id":"ed1d0dd1-3e56-4d75-b0f8-11b038ec872d"}
+400

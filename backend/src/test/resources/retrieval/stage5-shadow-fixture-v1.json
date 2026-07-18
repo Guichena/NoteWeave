@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "retrieval-shadow-v1",
+  "snapshotVersion": "es-shadow-fixture-20260714",
+  "cases": [
+    {
+      "caseId": "qa-spring-configuration",
+      "latencyMicros": 1200,
+      "candidateCount": 4,
+      "rankedEvidence": [
+        {
+          "evidenceId": "qa-out-of-scope",
+          "sourceId": "source-secret",
+          "score": 18.0,
+          "citationIds": ["citation-secret"]
+        },
+        {
+          "evidenceId": "qa-spring-config",
+          "sourceId": "source-spring-guide",
+          "score": 16.0,
+          "citationIds": ["citation-spring-config"]
+        }
+      ]
+    },
+    {
+      "caseId": "note-recall-refactor",
+      "latencyMicros": 800,
+      "candidateCount": 3,
+      "rankedEvidence": [
+        {
+          "evidenceId": "note-recall",
+          "sourceId": "source-note-recall",
+          "score": 12.0,
+          "citationIds": ["citation-note-recall"]
+        }
+      ]
+    },
+    {
+      "caseId": "wiki-citation-provenance",
+      "latencyMicros": 1000,
+      "candidateCount": 2,
+      "rankedEvidence": [
+        {
+          "evidenceId": "wiki-version",
+          "sourceId": "source-wiki-version",
+          "score": 9.0,
+          "citationIds": ["citation-wiki-version"]
+        }
+      ]
+    },
+    {
+      "caseId": "qa-insufficient-evidence",
+      "latencyMicros": 600,
+      "candidateCount": 2,
+      "rankedEvidence": [
+        {
+          "evidenceId": "refusal-spring",
+          "sourceId": "source-spring-guide",
+          "score": 4.0,
+          "citationIds": ["citation-refusal-spring"]
+        }
+      ]
+    }
+  ]
+}

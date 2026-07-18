@@ -3,8 +3,9 @@ package com.noteweave.knowledge;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.Ids;
 import com.noteweave.common.Json;
-import com.noteweave.task.TaskService;
-import com.noteweave.workspace.WorkspaceService;
+import com.noteweave.source.SourceMessagingMode;
+import com.noteweave.task.TaskCommandPort;
+import com.noteweave.workspace.WorkspaceQueryPort;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -18,36 +19,93 @@ import org.springframework.transaction.annotation.Transactional;
 public class WikiIngestService {
 
     private final JdbcTemplate jdbcTemplate;
-    private final WorkspaceService workspaceService;
-    private final KnowledgeService knowledgeService;
-    private final TaskService taskService;
+    private final WorkspaceQueryPort workspaceQueryPort;
+    private final KnowledgeQueryService knowledgeQueryService;
+    private final KnowledgeCommandService knowledgeCommandService;
+    private final KnowledgeGovernanceService knowledgeGovernanceService;
+    private final TaskCommandPort taskCommandPort;
     private final ObjectMapper objectMapper;
+    private final SourceMessagingMode messagingMode;
 
     public WikiIngestService(
             JdbcTemplate jdbcTemplate,
-            WorkspaceService workspaceService,
-            KnowledgeService knowledgeService,
-            TaskService taskService,
-            ObjectMapper objectMapper
+            WorkspaceQueryPort workspaceQueryPort,
+            KnowledgeQueryService knowledgeQueryService,
+            KnowledgeCommandService knowledgeCommandService,
+            KnowledgeGovernanceService knowledgeGovernanceService,
+            TaskCommandPort taskCommandPort,
+            ObjectMapper objectMapper,
+            SourceMessagingMode messagingMode
     ) {
         this.jdbcTemplate = jdbcTemplate;
-        this.workspaceService = workspaceService;
-        this.knowledgeService = knowledgeService;
-        this.taskService = taskService;
+        this.workspaceQueryPort = workspaceQueryPort;
+        this.knowledgeQueryService = knowledgeQueryService;
+        this.knowledgeCommandService = knowledgeCommandService;
+        this.knowledgeGovernanceService = knowledgeGovernanceService;
+        this.taskCommandPort = taskCommandPort;
         this.objectMapper = objectMapper;
+        this.messagingMode = messagingMode;
     }
 
     @Transactional
     public String enqueueAndRunSourceIngestIfEnabled(String workspaceId, String sourceId) {
-        if (!workspaceService.isWikiEnabled(workspaceId)) {
+        if (!workspaceQueryPort.isWikiEnabled(workspaceId)) {
             return "";
         }
         return enqueueAndRunSourceIngest(workspaceId, sourceId, "ingest", "Wiki 构建已开启，资料变更已进入 Wiki ingest 队列");
     }
 
+    /**
+     * Kafka 消费者回调入口：直接执行 source ingest。
+     */
+    @Transactional
+    public void runSourceIngestNow(String taskId, String workspaceId, String sourceId) {
+        if (!workspaceQueryPort.isWikiEnabled(workspaceId)) {
+            taskCommandPort.cancelTask(taskId, "WIKI_DISABLED", "Wiki 构建已关闭，跳过资料 ingest", sourceId);
+            return;
+        }
+        taskCommandPort.startTask(taskId);
+        try {
+            KnowledgeItemResponse page = ingestSource(workspaceId, sourceId);
+            taskCommandPort.completeTask(taskId, "WIKI_INDEXED", "Wiki ingest 已生成或更新工作台级页面", page.itemId());
+        } catch (RuntimeException ex) {
+            taskCommandPort.completeTask(taskId, "WIKI_INDEXED_FAILED", "Wiki ingest 失败：" + ex.getMessage(), sourceId);
+            throw ex;
+        }
+    }
+
+    /**
+     * Kafka 消费者回调入口：直接执行 source retract。
+     */
+    @Transactional
+    public void runSourceRetractNow(String taskId, String workspaceId, String sourceId) {
+        if (!workspaceQueryPort.isWikiEnabled(workspaceId)) {
+            taskCommandPort.cancelTask(taskId, "WIKI_DISABLED", "Wiki 构建已关闭，跳过资料 retract", sourceId);
+            return;
+        }
+        taskCommandPort.startTask(taskId);
+        try {
+            List<String> itemIds = knowledgeQueryService.findSourceBackedWikiItemIds(
+                    workspaceId, sourceId);
+            for (String itemId : itemIds) {
+                knowledgeCommandService.deleteItem(itemId);
+            }
+            List<String> remainingSourceIds = readySourceIds(workspaceId);
+            for (String remainingSourceId : remainingSourceIds) {
+                ingestSource(workspaceId, remainingSourceId);
+            }
+            refreshWorkspaceIndexPage(workspaceId, "source_retract");
+            taskCommandPort.completeTask(taskId, "WIKI_RETRACTED",
+                    "Wiki retract 已清理资料删除影响的页面：" + itemIds.size() + " 个", sourceId);
+        } catch (RuntimeException ex) {
+            taskCommandPort.completeTask(taskId, "WIKI_RETRACTED_FAILED", "Wiki retract 失败：" + ex.getMessage(), sourceId);
+            throw ex;
+        }
+    }
+
     @Transactional
     public WikiRebuildResponse enqueueAndRunWorkspaceIngestIfEnabled(String workspaceId, String trigger) {
-        if (!workspaceService.isWikiEnabled(workspaceId)) {
+        if (!workspaceQueryPort.isWikiEnabled(workspaceId)) {
             return new WikiRebuildResponse(workspaceId, 0, 0, List.of());
         }
         List<String> sourceIds = readySourceIds(workspaceId);
@@ -59,10 +117,10 @@ public class WikiIngestService {
 
     @Transactional
     public String enqueueAndRunSourceRetractIfEnabled(String workspaceId, String sourceId, String sourceTitle) {
-        if (!workspaceService.isWikiEnabled(workspaceId)) {
+        if (!workspaceQueryPort.isWikiEnabled(workspaceId)) {
             return "";
         }
-        String taskId = taskService.createTask(
+        String taskId = taskCommandPort.createTask(
                 workspaceId,
                 "WIKI_RETRACT",
                 "SOURCE",
@@ -79,9 +137,14 @@ public class WikiIngestService {
                 "workspaceId", workspaceId,
                 "operation", "retract"
         )));
-        List<String> itemIds = knowledgeService.findSourceBackedWikiItemIds(workspaceId, sourceId);
+        if (messagingMode.isAsyncEnabled()) {
+            return taskId;
+        }
+        taskCommandPort.startTask(taskId);
+        List<String> itemIds = knowledgeQueryService.findSourceBackedWikiItemIds(
+                workspaceId, sourceId);
         for (String itemId : itemIds) {
-            knowledgeService.deleteItem(itemId);
+            knowledgeCommandService.deleteItem(itemId);
         }
         List<String> remainingSourceIds = readySourceIds(workspaceId);
         if (!remainingSourceIds.isEmpty()) {
@@ -91,24 +154,29 @@ public class WikiIngestService {
             refreshWorkspaceIndexPage(workspaceId, "source_retract");
         }
         jdbcTemplate.update("update task_outbox set status = 'SENT', sent_at = current_timestamp where task_id = ?", taskId);
-        taskService.completeTask(taskId, "WIKI_RETRACTED", "Wiki retract 已清理资料删除影响的页面：" + itemIds.size() + " 个", sourceId);
+        taskCommandPort.completeTask(taskId, "WIKI_RETRACTED", "Wiki retract 已清理资料删除影响的页面：" + itemIds.size() + " 个", sourceId);
         return taskId;
     }
 
     private String enqueueAndRunSourceIngest(String workspaceId, String sourceId, String operation, String message) {
-        String taskId = taskService.createTask(workspaceId, "WIKI_INGEST", "SOURCE", sourceId, "QUEUED", message);
-        jdbcTemplate.update("""
-                insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
-                values (?, ?, 'noteweave.wiki.ingest', ?, ?, 'READY')
-                """, Ids.newId(), taskId, sourceId, Json.write(objectMapper, Map.of(
+        String taskId = taskCommandPort.createTask(workspaceId, "WIKI_INGEST", "SOURCE", sourceId, "QUEUED", message);
+        Map<String, Object> payload = Map.of(
                 "taskId", taskId,
                 "sourceId", sourceId,
                 "workspaceId", workspaceId,
                 "operation", operation
-        )));
-        KnowledgeItemResponse page = ingestSource(workspaceId, sourceId);
-        jdbcTemplate.update("update task_outbox set status = 'SENT', sent_at = current_timestamp where task_id = ?", taskId);
-        taskService.completeTask(taskId, "WIKI_INDEXED", "Wiki ingest 已生成或更新工作台级页面", page.itemId());
+        );
+        jdbcTemplate.update("""
+                insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
+                values (?, ?, 'noteweave.wiki.ingest', ?, ?, 'READY')
+                """, Ids.newId(), taskId, sourceId, Json.write(objectMapper, payload));
+        if (!messagingMode.isAsyncEnabled()) {
+            runSourceIngestNow(taskId, workspaceId, sourceId);
+            jdbcTemplate.update(
+                    "update task_outbox set status = 'SENT', sent_at = current_timestamp where task_id = ?",
+                    taskId
+            );
+        }
         return taskId;
     }
 
@@ -116,7 +184,7 @@ public class WikiIngestService {
         SourceForWiki source = loadSource(workspaceId, sourceId);
         List<ChunkForWiki> chunks = loadChunks(workspaceId, sourceId);
         List<String> citationIds = createCitations(workspaceId, chunks, 3);
-        KnowledgeItemResponse sourcePage = knowledgeService.upsertWikiPage(
+        KnowledgeItemResponse sourcePage = knowledgeCommandService.upsertWikiPage(
                 workspaceId,
                 source.title(),
                 buildSourcePageContent(source, chunks),
@@ -133,7 +201,7 @@ public class WikiIngestService {
                     6
             );
             List<String> conceptCitationIds = createCitations(workspaceId, relatedChunks, 4);
-            knowledgeService.upsertWikiPage(
+            knowledgeCommandService.upsertWikiPage(
                     workspaceId,
                     concept,
                     buildConceptPageContent(concept, relatedSources, relatedChunks, source),
@@ -309,15 +377,17 @@ public class WikiIngestService {
         List<ChunkForWiki> overviewChunks = loadRecentWorkspaceChunks(workspaceId, 4);
         List<String> citationIds = createCitations(workspaceId, overviewChunks, 4);
         String content = buildWorkspaceIndexPageContent(workspaceId, triggerTitle, pages);
-        knowledgeService.upsertWikiPage(workspaceId, "Wiki Index", content, citationIds);
+        knowledgeCommandService.upsertWikiPage(
+                workspaceId, "Wiki Index", content, citationIds);
     }
 
     private String buildWorkspaceIndexPageContent(String workspaceId, String triggerTitle, List<SimpleWikiPage> pages) {
         List<SimpleWikiPage> visiblePages = pages.stream()
                 .filter(page -> !"Wiki Index".equalsIgnoreCase(page.title()))
                 .toList();
-        WikiStatsResponse stats = knowledgeService.getWikiStats(workspaceId);
-        List<WikiIssueResponse> topIssues = knowledgeService.listWikiIssues(workspaceId, null, null, null, null).stream()
+        WikiStatsResponse stats = knowledgeGovernanceService.getWikiStats(workspaceId);
+        List<WikiIssueResponse> topIssues = knowledgeGovernanceService
+                .listWikiIssues(workspaceId, null, null, null, null).stream()
                 .limit(4)
                 .toList();
         StringBuilder builder = new StringBuilder();

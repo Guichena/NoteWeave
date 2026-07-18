@@ -1,0 +1,9 @@
+.venv
+.conda
+.pytest_cache
+__pycache__
+*.pyc
+tests
+runtime
+exports
+*.log

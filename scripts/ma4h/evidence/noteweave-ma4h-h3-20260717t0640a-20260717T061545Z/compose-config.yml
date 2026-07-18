@@ -1,0 +1,263 @@
+name: noteweave-ma4h-h3-20260717t0640a
+services:
+  backend:
+    build:
+      context: D:\java-projects\NoteWeave-v2\backend
+      dockerfile: Dockerfile
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+        required: true
+      mysql:
+        condition: service_healthy
+        required: true
+      redis:
+        condition: service_healthy
+        required: true
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      MANAGEMENT_HEALTH_ELASTICSEARCH_ENABLED: "false"
+      NOTEWEAVE_ES_ENABLED: "false"
+      NOTEWEAVE_INTERNAL_AUTH_TOKEN: ma4g-fixture-token
+      NOTEWEAVE_KAFKA_ENABLED: "true"
+      NOTEWEAVE_KAFKA_RESEARCH_AGENT_TOPIC: noteweave.research.agent.command
+      NOTEWEAVE_LOCAL_USER_FALLBACK: "false"
+      NOTEWEAVE_RESEARCH_AGENT_COMMAND_DISPATCH_ENABLED: "false"
+      NOTEWEAVE_RESEARCH_AGENT_COORDINATOR_CANARY_ENABLED: "true"
+      NOTEWEAVE_RESEARCH_AGENT_COORDINATOR_CANARY_RUNS: 00000000-0000-0000-0000-00000000a002
+      NOTEWEAVE_RESEARCH_AGENT_COORDINATOR_CANARY_WORKSPACES: 00000000-0000-0000-0000-00000000a001
+      NOTEWEAVE_RESEARCH_AGENT_LIFECYCLE_REAPER_ENABLED: "false"
+      NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_ALLOW_LOCAL_FALLBACK: "false"
+      NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_CAPACITY: "1000"
+      NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_ENABLED: "true"
+      NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_REFILL_PER_MINUTE: "1000"
+      NOTEWEAVE_STORAGE_BACKEND: local
+      NOTEWEAVE_STORAGE_LOCAL_ROOT: /app/storage
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      SERVER_PORT: "8081"
+      SPRING_DATASOURCE_PASSWORD: noteweave123
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/noteweave?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: noteweave
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - --fail
+        - --silent
+        - http://127.0.0.1:8081/actuator/health
+      timeout: 3s
+      interval: 3s
+      retries: 60
+      start_period: 20s
+    image: noteweave-ma4g-backend:local
+    networks:
+      ma4g: null
+    volumes:
+      - type: volume
+        source: backend-storage
+        target: /app/storage
+        volume: {}
+  kafka:
+    environment:
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_CFG_NODE_ID: "1"
+      KAFKA_CFG_PROCESS_ROLES: broker,controller
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server 127.0.0.1:9092 --list >/dev/null 2>&1
+      timeout: 5s
+      interval: 3s
+      retries: 40
+      start_period: 10s
+    image: bitnamilegacy/kafka@sha256:f45d5b813412e1ef7ce67b467309a84e4c6dc03d7626a0b6da867db9b69bd107
+    networks:
+      ma4g: null
+    volumes:
+      - type: volume
+        source: kafka-data
+        target: /bitnami/kafka
+        volume: {}
+      - type: bind
+        source: D:\java-projects\NoteWeave-v2\scripts\ma4g
+        target: /fixture
+        read_only: true
+        bind: {}
+  kafka-init:
+    command:
+      - |
+        /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic noteweave.research.agent.command --partitions 4 --replication-factor 1
+        /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic noteweave.research.agent.command.dlq --partitions 1 --replication-factor 1
+    depends_on:
+      kafka:
+        condition: service_healthy
+        required: true
+    entrypoint:
+      - /bin/sh
+      - -ec
+    image: bitnamilegacy/kafka@sha256:f45d5b813412e1ef7ce67b467309a84e4c6dc03d7626a0b6da867db9b69bd107
+    networks:
+      ma4g: null
+  mysql:
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --transaction-isolation=READ-COMMITTED
+      - --performance-schema=ON
+    environment:
+      MYSQL_DATABASE: noteweave
+      MYSQL_PASSWORD: noteweave123
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_USER: noteweave
+    healthcheck:
+      test:
+        - CMD
+        - mysqladmin
+        - ping
+        - -h
+        - 127.0.0.1
+        - -uroot
+        - -proot
+      timeout: 3s
+      interval: 3s
+      retries: 40
+    image: mysql:8.4
+    networks:
+      ma4g: null
+    volumes:
+      - type: volume
+        source: mysql-data
+        target: /var/lib/mysql
+        volume: {}
+      - type: bind
+        source: D:\java-projects\NoteWeave-v2\scripts\ma4g
+        target: /fixture
+        read_only: true
+        bind: {}
+  redis:
+    command:
+      - redis-server
+      - --appendonly
+      - "no"
+    healthcheck:
+      test:
+        - CMD
+        - redis-cli
+        - ping
+      timeout: 3s
+      interval: 3s
+      retries: 30
+    image: redis:7.2
+    networks:
+      ma4g: null
+  worker-a:
+    profiles:
+      - workers
+    build:
+      context: D:\java-projects\NoteWeave-v2\workers\research-worker
+      dockerfile: Dockerfile
+    command:
+      - python
+      - /fixture/slow_fake_consumer.py
+    depends_on:
+      backend:
+        condition: service_healthy
+        required: true
+      kafka-init:
+        condition: service_completed_successfully
+        required: true
+    environment:
+      MA4H_DRAIN_PHASE_MARKER: /control/phase-started
+      MA4H_FAKE_PHASE_DELAY_SECONDS: "5"
+      NOTEWEAVE_INTERNAL_AUTH_TOKEN: ma4g-fixture-token
+      NOTEWEAVE_JAVA_BASE_URL: http://backend:8081
+      NOTEWEAVE_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      NOTEWEAVE_KAFKA_CONSUME_MAX_ATTEMPTS: "1"
+      NOTEWEAVE_KAFKA_RESEARCH_AGENT_DLQ_TOPIC: noteweave.research.agent.command.dlq
+      NOTEWEAVE_KAFKA_RESEARCH_AGENT_GROUP_ID: noteweave-ma4h-drain-workers
+      NOTEWEAVE_KAFKA_RESEARCH_AGENT_TOPIC: noteweave.research.agent.command
+      NOTEWEAVE_RESEARCH_AGENT_COMPLETION_MAX_ATTEMPTS: "3"
+      NOTEWEAVE_RESEARCH_AGENT_CONSUMER_ENABLED: "true"
+      NOTEWEAVE_RESEARCH_AGENT_DEEP_CELL_EXECUTOR_ENABLED: "true"
+      NOTEWEAVE_RESEARCH_AGENT_DRAIN_GRACE_SECONDS: "2"
+      NOTEWEAVE_RESEARCH_AGENT_DRAIN_POLL_TIMEOUT_MS: "50"
+      NOTEWEAVE_RESEARCH_AGENT_FAKE_PROVIDER_ENABLED: "true"
+      NOTEWEAVE_RESEARCH_AGENT_HEARTBEAT_FAILURE_BUDGET_SECONDS: "2"
+      NOTEWEAVE_RESEARCH_AGENT_HEARTBEAT_INTERVAL_SECONDS: "1"
+      NOTEWEAVE_RESEARCH_AGENT_HEARTBEAT_REQUEST_TIMEOUT_SECONDS: "0.25"
+      NOTEWEAVE_RESEARCH_AGENT_LEASE_SECONDS: "4"
+      NOTEWEAVE_RESEARCH_AGENT_WORKER_INSTANCE_ID: ma4h-drain-worker-a
+      NOTEWEAVE_RESEARCH_LLM_API_KEY: ""
+      NOTEWEAVE_RESEARCH_LLM_BASE_URL: ""
+      NOTEWEAVE_RESEARCH_LLM_MODEL: ""
+      PYTHONPATH: /app
+    image: noteweave-ma4g-research-worker:local
+    networks:
+      ma4g: null
+    volumes:
+      - type: bind
+        source: D:\java-projects\NoteWeave-v2\scripts\ma4h\slow_fake_consumer.py
+        target: /fixture/slow_fake_consumer.py
+        read_only: true
+        bind: {}
+      - type: volume
+        source: control-data
+        target: /control
+        volume: {}
+  worker-b:
+    profiles:
+      - workers
+    build:
+      context: D:\java-projects\NoteWeave-v2\workers\research-worker
+      dockerfile: Dockerfile
+    command:
+      - python
+      - -m
+      - app.agent_kafka_consumer
+    depends_on:
+      backend:
+        condition: service_healthy
+        required: true
+      kafka-init:
+        condition: service_completed_successfully
+        required: true
+    environment:
+      NOTEWEAVE_INTERNAL_AUTH_TOKEN: ma4g-fixture-token
+      NOTEWEAVE_JAVA_BASE_URL: http://backend:8081
+      NOTEWEAVE_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      NOTEWEAVE_KAFKA_CONSUME_MAX_ATTEMPTS: "1"
+      NOTEWEAVE_KAFKA_RESEARCH_AGENT_DLQ_TOPIC: noteweave.research.agent.command.dlq
+      NOTEWEAVE_KAFKA_RESEARCH_AGENT_GROUP_ID: noteweave-ma4g-workers
+      NOTEWEAVE_KAFKA_RESEARCH_AGENT_TOPIC: noteweave.research.agent.command
+      NOTEWEAVE_RESEARCH_AGENT_COMPLETION_MAX_ATTEMPTS: "3"
+      NOTEWEAVE_RESEARCH_AGENT_CONSUMER_ENABLED: "true"
+      NOTEWEAVE_RESEARCH_AGENT_DEEP_CELL_EXECUTOR_ENABLED: "true"
+      NOTEWEAVE_RESEARCH_AGENT_FAKE_PROVIDER_ENABLED: "true"
+      NOTEWEAVE_RESEARCH_AGENT_LEASE_SECONDS: "120"
+      NOTEWEAVE_RESEARCH_AGENT_WORKER_INSTANCE_ID: ma4g-worker-b
+      NOTEWEAVE_RESEARCH_LLM_API_KEY: ""
+      NOTEWEAVE_RESEARCH_LLM_BASE_URL: ""
+      NOTEWEAVE_RESEARCH_LLM_MODEL: ""
+    image: noteweave-ma4g-research-worker:local
+    networks:
+      ma4g: null
+networks:
+  ma4g:
+    name: noteweave-ma4h-h3-20260717t0640a_ma4g
+    internal: true
+volumes:
+  backend-storage:
+    name: noteweave-ma4h-h3-20260717t0640a_backend-storage
+  control-data:
+    name: noteweave-ma4h-h3-20260717t0640a_control-data
+  kafka-data:
+    name: noteweave-ma4h-h3-20260717t0640a_kafka-data
+  mysql-data:
+    name: noteweave-ma4h-h3-20260717t0640a_mysql-data

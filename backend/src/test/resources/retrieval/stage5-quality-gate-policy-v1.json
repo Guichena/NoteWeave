@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "retrieval-quality-gate-v1",
+  "policyVersion": "stage5-fixture-policy-v1",
+  "datasetVersion": "stage5-fixture-20260714",
+  "minimumCaseCount": 4,
+  "thresholds": {
+    "minimumMacroRecallAtK": 0.9,
+    "minimumMacroMrr": 0.9,
+    "minimumMacroNdcgAtK": 0.9,
+    "minimumMacroCitationPrecision": 0.9,
+    "minimumMacroCitationCoverage": 0.9,
+    "minimumRefusalAccuracy": 1.0,
+    "minimumMacroRecallDelta": -0.05,
+    "minimumMacroMrrDelta": -0.05,
+    "minimumMacroNdcgDelta": -0.05,
+    "minimumMacroCitationPrecisionDelta": -0.05,
+    "minimumMacroCitationCoverageDelta": -0.05,
+    "minimumRefusalAccuracyDelta": -0.05,
+    "minimumMeanTopKOverlap": 0.75,
+    "maximumTop1ChangedRatio": 0.25,
+    "maximumScopeViolationCount": 0,
+    "maximumP95LatencyMicros": 1000
+  }
+}

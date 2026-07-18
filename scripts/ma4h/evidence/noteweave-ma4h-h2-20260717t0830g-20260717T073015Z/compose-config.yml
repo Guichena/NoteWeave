@@ -1,0 +1,59 @@
+name: noteweave-ma4h-h2-20260717t0830g
+services:
+  h2-tests:
+    build:
+      context: D:\java-projects\NoteWeave-v2
+      dockerfile: scripts/ma4h/Dockerfile.h2-tests
+    command:
+      - -DtestIncludes=com/noteweave/research/ResearchAgentTrustedPermitServiceTest.java,com/noteweave/research/ResearchAgentTaskServiceTest.java,com/noteweave/research/ResearchAgentRateLimitServiceTest.java
+      - -Dtest=ResearchAgentTrustedPermitServiceTest,ResearchAgentTaskServiceTest,ResearchAgentRateLimitServiceTest
+      - test
+    depends_on:
+      mysql:
+        condition: service_healthy
+        required: true
+    environment:
+      NOTEWEAVE_KAFKA_ENABLED: "false"
+      NOTEWEAVE_REDIS_ENABLED: "false"
+      NOTEWEAVE_RESEARCH_AGENT_COMMAND_DISPATCH_ENABLED: "false"
+      NOTEWEAVE_RESEARCH_AGENT_LIFECYCLE_REAPER_ENABLED: "false"
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "8"
+      SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: "0"
+      SPRING_DATASOURCE_PASSWORD: noteweave123
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/noteweave?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: noteweave
+      SPRING_KAFKA_LISTENER_AUTO_STARTUP: "false"
+    image: noteweave-ma4h-h2-tests:local
+    networks:
+      ma4h: null
+  mysql:
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --transaction-isolation=READ-COMMITTED
+      - --performance-schema=ON
+    environment:
+      MYSQL_DATABASE: noteweave
+      MYSQL_PASSWORD: noteweave123
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_USER: noteweave
+    healthcheck:
+      test:
+        - CMD
+        - mysqladmin
+        - ping
+        - -h
+        - 127.0.0.1
+        - -uroot
+        - -proot
+      timeout: 3s
+      interval: 3s
+      retries: 40
+    image: mysql:8.4
+    networks:
+      ma4h: null
+networks:
+  ma4h:
+    name: noteweave-ma4h-h2-20260717t0830g_ma4h
+    internal: true

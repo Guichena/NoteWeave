@@ -1,96 +1,39 @@
-# 阶段4：产物生成 Agent
+# 阶段4：产物生成 Agent（现行状态）
+
+> 更新于 2026-07-11。现行冻结需求、冲突审计和剩余事项以 `docs/产物生成Agent需求审计与收尾改造.md` 为准。本文件不再使用 action-first 或用户自定义 MCP 作为产品口径。
 
 ## 1. 阶段目标
 
-这一阶段的目标是把右侧产物栏真正打通，让用户可以在工作台内发起异步产物生成任务，并拿到可保存、可回写、可继续扩展的结果。
+右侧产物栏对外只暴露系统内置 Skill。用户以 `skillKey + userRequirement + inputs` 创建异步 Artifact Job；Java 维护业务真源与任务状态，Python Worker 编译并执行内部 RuntimePlan，最终形成可审计的 Artifact Version。
 
-当前第一批已聚焦三个目标：
+## 2. 已完成主闭环
 
-1. Java 侧任务创建与状态流转闭环。
-2. Python Artifact Worker 运行时骨架闭环。
-3. 版本化结果落库闭环。
+1. Java 已提供 Skill catalog、Artifact Job/Version、冻结 source scope、worker input、终态幂等 callback 和版本详情。
+2. Artifact outbox 已具备自动调度、单记录 claim、失败退避和陈旧 claim 回收，不再要求人工 dispatch。
+3. Python 已具备 Intent Compiler、ExecutionSpec、Skill Graph、Capability Policy、source acquisition、Verifier/Repair、可选 OpenAI-compatible LLM 生成与显式 deterministic fallback。
+4. waiting、provider delivery、callback receipt 和 resume 具备 typed trace；获取运行态与等待队列已落盘，可在重启后恢复。
+5. Bilibili 专用 Skill 使用系统 MCP，自动执行字幕获取、host ack 与 resume；PDF 优先走 XeLaTeX，并具备嵌入中文字体的 ReportLab 真实 PDF fallback。
+6. Artifact Version 可显式保存为工作台资料或由 Java host 写回 Note/Wiki；PDF 成功编译后可经 Java 主系统代理下载。
+7. 前端支持 schema-driven Skill 表单、任务状态、历史版本、runtime audit、保存为资料、Note/Wiki 写回和 PDF 下载。
+8. Markdown/PDF 已统一归档到 ObjectStorage，版本详情返回 `artifact_file` typed metadata；PDF 下载不再以 Worker 临时目录作为真源。
+9. 同一 Job 支持新 Task 再生成、版本比较与追加式回滚，并以 `artifact_job_run` 保存每次运行输入快照。
+10. outbox 具备 owner-scoped lease、dead-letter、metrics 和人工 redrive；`/internal/*` 支持部署级共享令牌认证。
 
-## 2. 当前已经完成的部分
+## 3. 关键约束
 
-### 2.1 Java 主链路
+1. `Production Action / Style Profile / Skill Graph / Prompt Recipe / MCP binding` 只属于 Python 内部运行时。
+2. 产品不开放用户自定义 MCP；遗留 custom registry 仅限内部兼容/调试，并且 `/debug/*` 默认关闭。
+3. Java `ArtifactVersion` 是正式业务真源；worker 文件 repository 只承担运行态快照与二进制导出暂存。
+4. Memory Control Pack 只约束风格、结构、证据和禁用边界，不替代 source facts。
+5. 未配置模型时必须显式记录 fallback；配置模型时正文必须消费冻结 source content。
 
-已经具备：
+## 4. 当前验证基线
 
-1. `artifact_job`
-2. `artifact_version`
-3. `POST /api/v2/workspaces/{workspaceId}/artifact-jobs`
-4. `GET /internal/worker/artifact-tasks/{taskId}/input`
-5. `POST /internal/worker/tasks/{taskId}/progress`
-6. `POST /internal/worker/tasks/{taskId}/complete`
-7. `POST /internal/worker/tasks/{taskId}/fail`
+- Artifact Worker：`192 passed`。
+- Research Worker：`83 passed / 61 skipped`（验证共享 internal auth header 未破坏 Research 回调）。
+- Java Backend：全量 `80 passed`。
+- Frontend：`40 passed`，production build 通过。
 
-### 2.2 Python Worker 当前内部设计
+## 5. 后续增强
 
-当前 Artifact Worker 采用的是轻量但受控的执行链：
-
-```text
-resolve action
-  -> compile execution plan
-  -> schema gate
-  -> compose sections
-  -> local repair
-  -> verify output
-  -> export markdown
-```
-
-当前的实现重点不是“多智能体炫技”，而是“先把产物生成做成可控系统”。
-
-### 2.3 当前支持的工程语义
-
-1. 先按 `action_key` 生成执行计划，而不是直接一把梭写结果。
-2. 计划内显式声明 `required_capabilities` 和 `schema_gate_rules`。
-3. 结果按 section 组织，便于后续做模板化、局部修复和导出。
-4. 本地修复阶段负责补齐缺失 section、处理禁用表达。
-5. 最终校验阶段负责确认结构完整、标题完整、章节可用。
-
-## 3. 当前关键文件
-
-1. [workers/artifact-worker/app/models.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/app/models.py)
-2. [workers/artifact-worker/app/compiler.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/app/compiler.py)
-3. [workers/artifact-worker/app/composer.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/app/composer.py)
-4. [workers/artifact-worker/app/repair.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/app/repair.py)
-5. [workers/artifact-worker/app/verifier.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/app/verifier.py)
-6. [workers/artifact-worker/app/runner.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/app/runner.py)
-
-## 4. TDD 要求
-
-### 4.1 已落地测试
-
-Java：
-
-1. [backend/src/test/java/com/noteweave/Phase6ResearchArtifactContractTest.java](/D:/java-projects/NoteWeave-v2/backend/src/test/java/com/noteweave/Phase6ResearchArtifactContractTest.java)
-
-Python：
-
-1. [workers/artifact-worker/tests/test_runner.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/tests/test_runner.py)
-2. [workers/artifact-worker/tests/test_imports.py](/D:/java-projects/NoteWeave-v2/workers/artifact-worker/tests/test_imports.py)
-
-### 4.2 当前测试覆盖点
-
-1. 创建任务后可以拿到 worker 输入。
-2. worker 可以完成完整 phase sequence。
-3. 输出结果包含 `execution_plan`、`sections`、`verification`。
-4. 回调完成后可以落 `artifact_version`。
-
-## 5. 下一步施工重点
-
-下一轮建议按这个顺序继续：
-
-1. 把 `REPORT / FAQ / QUIZ / STUDY_GUIDE / WIKI / NOTE` 的结构模板独立配置化。
-2. 给 `style_profile` 和 `control_pack` 增加更细的 prompt 组装层。
-3. 接入正式导出链路，把 markdown / pdf 落到对象存储。
-4. 再决定是否把默认 skill / 默认 MCP 注入进去。
-
-## 6. 当前完成定义
-
-这一阶段当前可以认为已经完成了第一批目标：
-
-1. 前端可以发起 Artifact 异步任务。
-2. Java 侧任务、回调、版本落库链路已经打通。
-3. Python Worker 已经不是空壳，而是具备受控编排的内部运行骨架。
-4. 全链路回归没有打坏已有 QA / Note / Wiki / Memory 功能。
+本轮指定的生产化事项已经闭环。后续可按运行规模继续增加 provider 超时运维 UI、外部告警渠道、模型成本/延迟指标和 prompt injection 防护。

@@ -6,6 +6,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
 import com.noteweave.common.Json;
+import com.noteweave.security.CurrentUserProvider;
+import com.noteweave.security.WorkspaceAccessGuard;
+import com.noteweave.security.WorkspacePermission;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -16,14 +19,27 @@ public class MemorySignalService {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final CurrentUserProvider currentUserProvider;
+    private final WorkspaceAccessGuard workspaceAccessGuard;
+    private final MemoryCandidatePolicy candidatePolicy;
 
-    public MemorySignalService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+    public MemorySignalService(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
+            CurrentUserProvider currentUserProvider,
+            WorkspaceAccessGuard workspaceAccessGuard,
+            MemoryCandidatePolicy candidatePolicy
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.currentUserProvider = currentUserProvider;
+        this.workspaceAccessGuard = workspaceAccessGuard;
+        this.candidatePolicy = candidatePolicy;
     }
 
     public MemorySignalResponse createSignal(String workspaceId, CreateMemorySignalRequest request) {
-        requireWorkspace(workspaceId);
+        workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.ANSWER_RUN);
+        String userId = currentUserProvider.requireUserId();
         MemoryCompileHints hints = new MemoryCompileHints(
                 normalizeList(request.styleConstraints()),
                 normalizeList(request.structureConstraints()),
@@ -36,22 +52,24 @@ public class MemorySignalService {
         String signalType = normalizeToken(request.signalType());
         String sourceType = normalizeToken(request.sourceType());
         String taskNeighborhood = normalizeToken(request.taskNeighborhood());
-        double confidenceScore = estimateConfidence(sourceType);
+        double confidenceScore = candidatePolicy.confidenceForSource(sourceType);
         jdbcTemplate.update("""
                 insert into memory_signal(
                     id, workspace_id, user_id, source_type, source_id, signal_type, signal_text,
-                    task_neighborhood, compile_hints_json, confidence_score
-                ) values (?, ?, 'local-user', ?, ?, ?, ?, ?, ?, ?)
+                    task_neighborhood, compile_hints_json, confidence_score, policy_version
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 signalId,
                 workspaceId,
+                userId,
                 sourceType,
                 blankToNull(request.sourceId()),
                 signalType,
                 request.signalText().trim(),
                 taskNeighborhood,
                 Json.write(objectMapper, hints),
-                confidenceScore
+                confidenceScore,
+                candidatePolicy.version()
         );
         return new MemorySignalResponse(
                 signalId,
@@ -61,7 +79,8 @@ public class MemorySignalService {
                 blankToNull(request.sourceId()),
                 request.signalText().trim(),
                 taskNeighborhood,
-                confidenceScore
+                confidenceScore,
+                candidatePolicy.version()
         );
     }
 
@@ -73,7 +92,7 @@ public class MemorySignalService {
         for (String signalId : signalIds) {
             SignalRow row = jdbcTemplate.query("""
                     select id, workspace_id, user_id, source_type, source_id, signal_type, signal_text,
-                           task_neighborhood, compile_hints_json, confidence_score
+                           task_neighborhood, compile_hints_json, confidence_score, policy_version
                     from memory_signal
                     where workspace_id = ? and id = ?
                     """, rs -> {
@@ -90,7 +109,8 @@ public class MemorySignalService {
                         rs.getString("signal_text"),
                         rs.getString("task_neighborhood"),
                         readCompileHints(rs.getString("compile_hints_json")),
-                        rs.getDouble("confidence_score")
+                        rs.getDouble("confidence_score"),
+                        rs.getString("policy_version")
                 );
             }, workspaceId, signalId);
             if (row == null) {
@@ -110,13 +130,6 @@ public class MemorySignalService {
             });
         } catch (JsonProcessingException ex) {
             throw new BusinessException("MEMORY_SIGNAL_PARSE_FAILED", "Memory signal 配置解析失败");
-        }
-    }
-
-    private void requireWorkspace(String workspaceId) {
-        Integer count = jdbcTemplate.queryForObject("select count(*) from workspace where id = ?", Integer.class, workspaceId);
-        if (count == null || count == 0) {
-            throw new BusinessException("WORKSPACE_NOT_FOUND", "工作台不存在");
         }
     }
 
@@ -145,17 +158,6 @@ public class MemorySignalService {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
-    private double estimateConfidence(String sourceType) {
-        return switch (sourceType) {
-            case "USER_FEEDBACK" -> 0.98;
-            case "PROJECT_DECISION" -> 0.97;
-            case "ARTIFACT_FEEDBACK" -> 0.78;
-            case "CONVERSATION_FEEDBACK" -> 0.72;
-            case "MODEL_INFERENCE" -> 0.35;
-            default -> 0.60;
-        };
-    }
-
     record MemoryCompileHints(
             List<String> styleConstraints,
             List<String> structureConstraints,
@@ -176,7 +178,8 @@ public class MemorySignalService {
             String signalText,
             String taskNeighborhood,
             MemoryCompileHints compileHints,
-            double confidenceScore
+            double confidenceScore,
+            String policyVersion
     ) {
     }
 }

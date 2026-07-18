@@ -2,13 +2,24 @@ package com.noteweave.memory;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.noteweave.capability.CapabilityCatalogPort;
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
+import com.noteweave.security.CurrentUserProvider;
+import io.micrometer.core.instrument.MeterRegistry;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -17,10 +28,28 @@ public class MemoryCompilerService {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final ObjectProvider<CapabilityCatalogPort> capabilityCatalogProvider;
+    private final CurrentUserProvider currentUserProvider;
+    private final MemoryCompilerPolicy compilerPolicy;
+    private final MemoryCompiledPackCache compiledPackCache;
+    private final MeterRegistry meterRegistry;
 
-    public MemoryCompilerService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+    public MemoryCompilerService(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
+            ObjectProvider<CapabilityCatalogPort> capabilityCatalogProvider,
+            CurrentUserProvider currentUserProvider,
+            MemoryCompilerPolicy compilerPolicy,
+            MemoryCompiledPackCache compiledPackCache,
+            MeterRegistry meterRegistry
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.capabilityCatalogProvider = capabilityCatalogProvider;
+        this.currentUserProvider = currentUserProvider;
+        this.compilerPolicy = compilerPolicy;
+        this.compiledPackCache = compiledPackCache;
+        this.meterRegistry = meterRegistry;
     }
 
     public MemoryControlPackResponse compileChatControlPack(String workspaceId, String answerMode) {
@@ -30,20 +59,38 @@ public class MemoryCompilerService {
         neighborhoods.add("CHAT");
         neighborhoods.add("CHAT_" + normalizedMode);
         return compilePack(workspaceId, "chat", normalizedMode, "CHAT_" + normalizedMode, neighborhoods,
-                List.of("Memory 不作为事实来源，事实内容必须来自工作台资料池、原文窗口或 Wiki 页面"));
+                List.of("Memory 不作为事实来源，事实内容必须来自工作台资料池、原文窗口或 Wiki 页面"),
+                List.of());
     }
 
-    public MemoryControlPackResponse compileArtifactControlPack(String workspaceId, String actionKey) {
-        String normalizedAction = MemorySignalService.normalizeToken(actionKey);
+    public MemoryControlPackResponse compileArtifactControlPack(String workspaceId, String skillKey) {
+        List<String> degradationReasons = new ArrayList<>();
+        CapabilityCatalogPort catalog = capabilityCatalogProvider.getIfAvailable();
+        String normalizedSkillKey;
+        String normalizedAction;
+        if (catalog == null) {
+            normalizedSkillKey = normalizeCapabilityKey(skillKey);
+            normalizedAction = "";
+            degradationReasons.add("capability_catalog_unavailable");
+        } else {
+            CapabilityCatalogPort.CapabilityDescriptor capability =
+                    catalog.requireCapability(skillKey);
+            normalizedSkillKey = capability.capabilityKey();
+            normalizedAction = MemorySignalService.normalizeToken(capability.actionKey());
+        }
+        String skillNeighborhood = "ARTIFACT_SKILL_" + MemorySignalService.normalizeToken(normalizedSkillKey);
         Set<String> neighborhoods = new LinkedHashSet<>();
         neighborhoods.add("COMMON");
         neighborhoods.add("ARTIFACT");
-        neighborhoods.add("ARTIFACT_" + normalizedAction);
-        return compilePack(workspaceId, "artifact", normalizedAction, "ARTIFACT_" + normalizedAction, neighborhoods,
+        if (!normalizedAction.isBlank()) {
+            neighborhoods.add("ARTIFACT_" + normalizedAction);
+        }
+        neighborhoods.add(skillNeighborhood);
+        return compilePack(workspaceId, "artifact", normalizedSkillKey, skillNeighborhood, neighborhoods,
                 List.of(
                         "产物事实必须来自工作台资料池或已保存为资料的系统产物",
                         "Memory 不作为产物生成原材料"
-                ));
+                ), degradationReasons);
     }
 
     public MemoryControlPackResponse compileResearchControlPack(String workspaceId, String profileKey) {
@@ -56,25 +103,51 @@ public class MemoryCompilerService {
                 List.of(
                         "Memory 不作为研究证据",
                         "研究结论必须由搜索结果、工作台资料或验证证据支持"
-                ));
+                ), List.of());
     }
 
     public void logPackUsage(String workspaceId, String taskType, String targetType, String targetId, MemoryControlPackResponse pack) {
         if (pack == null || pack.memoryObjectIds().isEmpty()) {
             return;
         }
-        for (String memoryObjectId : pack.memoryObjectIds()) {
+        List<MemoryReferenceResponse> references = pack.memoryReferences().isEmpty()
+                ? hydrateReferences(workspaceId, pack.memoryObjectIds())
+                : pack.memoryReferences();
+        for (MemoryReferenceResponse reference : references) {
+            Integer existing = jdbcTemplate.queryForObject("""
+                    select count(*)
+                    from memory_usage_log
+                    where workspace_id = ? and target_type = ? and target_id = ?
+                      and memory_item_id = ?
+                    """, Integer.class, workspaceId, targetType, targetId,
+                    reference.memoryObjectId());
+            if (existing != null && existing > 0) {
+                continue;
+            }
             jdbcTemplate.update("""
-                    insert into memory_usage_log(id, memory_object_id, workspace_id, task_type, target_type, target_id, compiled_as)
-                    values (?, ?, ?, ?, ?, ?, ?)
+                    insert into memory_usage_log(
+                        id, memory_object_id, memory_version_id,
+                        memory_item_id, memory_revision_id, workspace_id,
+                        task_type, target_type, target_id, compiled_as,
+                        outcome_policy_version
+                    )
+                    select ?, i.legacy_memory_object_id,
+                           case when i.legacy_memory_object_id is null then null else ? end,
+                           i.id, ?, ?, ?, ?, ?, ?, ?
+                    from memory_item i
+                    where i.workspace_id = ? and i.id = ?
                     """,
                     Ids.newId(),
-                    memoryObjectId,
+                    reference.memoryVersionId(),
+                    reference.memoryVersionId(),
                     workspaceId,
                     taskType,
                     targetType,
                     targetId,
-                    pack.packType()
+                    pack.packType(),
+                    MemoryOutcomePolicy.VERSION,
+                    workspaceId,
+                    reference.memoryObjectId()
             );
         }
     }
@@ -85,33 +158,87 @@ public class MemoryCompilerService {
             String targetKey,
             String taskNeighborhood,
             Set<String> allowedNeighborhoods,
-            List<String> evidencePolicy
+            List<String> evidencePolicy,
+            List<String> degradationReasons
     ) {
-        List<ObjectRow> rows = jdbcTemplate.query("""
-                select id, task_neighborhood_json, compile_policy_json, status
-                from memory_object
-                where workspace_id = ? and status = 'ACTIVE'
-                order by created_at asc
-                """, (rs, rowNum) -> new ObjectRow(
-                rs.getString("id"),
-                readStringList(rs.getString("task_neighborhood_json")),
-                readCompileHints(rs.getString("compile_policy_json")),
-                rs.getString("status")
-        ), workspaceId);
+        String currentUserId = currentUserProvider.requireUserId();
+        List<StateRow> stateRows = loadStateRows(workspaceId);
+        List<StateRow> eligibleState = stateRows.stream()
+                .filter(row -> compilerPolicy.scopeAllowed(
+                        row.memoryScope(), row.ownerUserId(), currentUserId))
+                .filter(row -> compilerPolicy.neighborhoodPriority(
+                        row.taskNeighborhoods(), taskNeighborhood, allowedNeighborhoods) < 3)
+                .sorted(java.util.Comparator.comparing(StateRow::memoryObjectId))
+                .toList();
+        MemoryCompiledPackCache.CacheKey cacheKey = new MemoryCompiledPackCache.CacheKey(
+                workspaceId,
+                fingerprint(List.of(currentUserId)),
+                packType,
+                requestFingerprint(
+                        packType,
+                        targetKey,
+                        taskNeighborhood,
+                        allowedNeighborhoods,
+                        evidencePolicy,
+                        degradationReasons),
+                compilerPolicy.version(),
+                stateFingerprint(eligibleState)
+        );
+        java.util.Optional<MemoryControlPackResponse> cached = compiledPackCache.get(cacheKey);
+        if (cached.isPresent()) {
+            return cached.get();
+        }
+
+        List<ObjectRow> rows = loadObjectRows(workspaceId);
+        List<RankedObject> rankedRows = rows.stream()
+                .filter(row -> compilerPolicy.scopeAllowed(
+                        row.memoryScope(), row.ownerUserId(), currentUserId))
+                .map(row -> new RankedObject(
+                        row,
+                        compilerPolicy.scopePriority(row.memoryScope()),
+                        compilerPolicy.neighborhoodPriority(
+                                row.taskNeighborhoods(), taskNeighborhood, allowedNeighborhoods)))
+                .filter(row -> row.neighborhoodPriority() < 3)
+                .sorted((left, right) -> compilerPolicy.comparator().compare(
+                        left.rankable(), right.rankable()))
+                .toList();
 
         List<String> memoryObjectIds = new ArrayList<>();
+        List<MemoryReferenceResponse> memoryReferences = new ArrayList<>();
         Set<String> styleConstraints = new LinkedHashSet<>();
         Set<String> structureConstraints = new LinkedHashSet<>();
         Set<String> terminologyPolicy = new LinkedHashSet<>();
         Set<String> forbiddenPatterns = new LinkedHashSet<>();
         Set<String> interactionPolicy = new LinkedHashSet<>();
         Set<String> reviewChecklist = new LinkedHashSet<>();
+        int maximumTokens = compilerPolicy.maximumTokens(packType);
+        int selectedTokens = evidencePolicy.stream()
+                .mapToInt(compilerPolicy::estimateTokens)
+                .sum();
 
-        for (ObjectRow row : rows) {
-            if (!matchesNeighborhood(row.taskNeighborhoods(), allowedNeighborhoods)) {
+        for (RankedObject ranked : rankedRows) {
+            ObjectRow row = ranked.row();
+            int incrementalTokens = incrementalTokens(
+                    row.compileHints(),
+                    styleConstraints,
+                    structureConstraints,
+                    terminologyPolicy,
+                    forbiddenPatterns,
+                    interactionPolicy,
+                    reviewChecklist
+            );
+            if (selectedTokens + incrementalTokens > maximumTokens) {
                 continue;
             }
+            selectedTokens += incrementalTokens;
             memoryObjectIds.add(row.memoryObjectId());
+            memoryReferences.add(new MemoryReferenceResponse(
+                    row.memoryObjectId(),
+                    row.memoryVersionId(),
+                    row.utilityScore(),
+                    ranked.scopePriority(),
+                    ranked.neighborhoodPriority(),
+                    selectionReason(ranked)));
             styleConstraints.addAll(row.compileHints().styleConstraints());
             structureConstraints.addAll(row.compileHints().structureConstraints());
             terminologyPolicy.addAll(row.compileHints().terminologyPolicy());
@@ -120,7 +247,7 @@ public class MemoryCompilerService {
             reviewChecklist.addAll(row.compileHints().reviewChecklist());
         }
 
-        return new MemoryControlPackResponse(
+        MemoryControlPackResponse pack = new MemoryControlPackResponse(
                 packType,
                 targetKey,
                 taskNeighborhood,
@@ -131,17 +258,239 @@ public class MemoryCompilerService {
                 List.copyOf(evidencePolicy),
                 List.copyOf(interactionPolicy),
                 List.copyOf(reviewChecklist),
-                List.copyOf(memoryObjectIds)
+                List.copyOf(memoryObjectIds),
+                List.copyOf(memoryReferences),
+                new MemoryCompilationTraceResponse(
+                        compilerPolicy.version(),
+                        maximumTokens,
+                        selectedTokens,
+                        rankedRows.size(),
+                        memoryReferences.size(),
+                        rankedRows.size() - memoryReferences.size(),
+                        rankedRows.size() > memoryReferences.size(),
+                        !degradationReasons.isEmpty(),
+                        degradationReasons
+                )
         );
+        compiledPackCache.put(cacheKey, pack);
+        return pack;
     }
 
-    private boolean matchesNeighborhood(List<String> objectNeighborhoods, Set<String> allowedNeighborhoods) {
-        for (String neighborhood : objectNeighborhoods) {
-            if (allowedNeighborhoods.contains(neighborhood)) {
-                return true;
-            }
+    private List<StateRow> loadStateRows(String workspaceId) {
+        long startedAt = System.nanoTime();
+        try {
+            List<StateRow> rows = jdbcTemplate.query("""
+                    select i.id, r.id as revision_id, i.utility_score,
+                           i.memory_scope, i.owner_user_id, i.updated_at,
+                           r.normalized_value_json, r.display_text,
+                           r.status, r.valid_from, r.valid_until
+                    from memory_item i
+                    join memory_runtime_revision r
+                      on r.id = i.current_revision_id
+                     and r.memory_item_id = i.id
+                    where i.workspace_id = ? and i.status = 'ACTIVE'
+                      and i.review_status = 'APPROVED'
+                      and r.status = 'ACTIVE'
+                      and r.valid_from <= current_timestamp
+                      and (r.valid_until is null or r.valid_until > current_timestamp)
+                    """, (rs, rowNum) -> {
+                CanonicalPayload payload = readCanonicalPayload(
+                        rs.getString("normalized_value_json"), rs.getString("display_text"));
+                return new StateRow(
+                        rs.getString("id"),
+                        rs.getString("revision_id"),
+                        rs.getDouble("utility_score"),
+                        rs.getString("memory_scope"),
+                        rs.getString("owner_user_id"),
+                        rs.getTimestamp("updated_at").toInstant(),
+                        payload.taskNeighborhoods(),
+                        rs.getString("status"),
+                        timestampText(rs.getTimestamp("valid_from")),
+                        timestampText(rs.getTimestamp("valid_until"))
+                );
+            }, workspaceId);
+            recordDatabaseLoad("state", "success", startedAt);
+            return rows;
+        } catch (RuntimeException exception) {
+            recordDatabaseLoad("state", "error", startedAt);
+            throw exception;
         }
-        return false;
+    }
+
+    private List<ObjectRow> loadObjectRows(String workspaceId) {
+        long startedAt = System.nanoTime();
+        try {
+            List<ObjectRow> rows = jdbcTemplate.query("""
+                    select i.id, r.id as revision_id, i.utility_score,
+                           i.memory_scope, i.owner_user_id, i.updated_at,
+                           r.normalized_value_json, r.display_text, r.status
+                    from memory_item i
+                    join memory_runtime_revision r
+                      on r.id = i.current_revision_id
+                     and r.memory_item_id = i.id
+                    where i.workspace_id = ? and i.status = 'ACTIVE'
+                      and i.review_status = 'APPROVED'
+                      and r.status = 'ACTIVE'
+                      and r.valid_from <= current_timestamp
+                      and (r.valid_until is null or r.valid_until > current_timestamp)
+                    """, (rs, rowNum) -> {
+                CanonicalPayload payload = readCanonicalPayload(
+                        rs.getString("normalized_value_json"), rs.getString("display_text"));
+                return new ObjectRow(
+                        rs.getString("id"),
+                        rs.getString("revision_id"),
+                        rs.getDouble("utility_score"),
+                        rs.getString("memory_scope"),
+                        rs.getString("owner_user_id"),
+                        rs.getTimestamp("updated_at").toInstant(),
+                        payload.taskNeighborhoods(),
+                        payload.compileHints(),
+                        rs.getString("status")
+                );
+            }, workspaceId);
+            recordDatabaseLoad("pack", "success", startedAt);
+            return rows;
+        } catch (RuntimeException exception) {
+            recordDatabaseLoad("pack", "error", startedAt);
+            throw exception;
+        }
+    }
+
+    private String requestFingerprint(
+            String packType,
+            String targetKey,
+            String taskNeighborhood,
+            Set<String> allowedNeighborhoods,
+            List<String> evidencePolicy,
+            List<String> degradationReasons
+    ) {
+        List<String> fields = new ArrayList<>();
+        fields.add(packType);
+        fields.add(targetKey);
+        fields.add(taskNeighborhood);
+        allowedNeighborhoods.stream().sorted().forEach(value -> fields.add("n:" + value));
+        evidencePolicy.forEach(value -> fields.add("e:" + value));
+        degradationReasons.forEach(value -> fields.add("d:" + value));
+        return fingerprint(fields);
+    }
+
+    private String stateFingerprint(List<StateRow> rows) {
+        List<String> fields = new ArrayList<>();
+        fields.add(Integer.toString(rows.size()));
+        for (StateRow row : rows) {
+            fields.add(row.memoryObjectId());
+            fields.add(row.memoryVersionId());
+            fields.add(Double.toString(row.utilityScore()));
+            fields.add(row.memoryScope());
+            fields.add(row.ownerUserId());
+            fields.add(row.updatedAt().toString());
+            row.taskNeighborhoods().stream().sorted()
+                    .forEach(value -> fields.add("n:" + value));
+            fields.add(row.status());
+            fields.add(row.validFrom());
+            fields.add(row.validTo());
+        }
+        return fingerprint(fields);
+    }
+
+    private String fingerprint(List<String> fields) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            for (String field : fields) {
+                byte[] bytes = (field == null ? "<null>" : field)
+                        .getBytes(StandardCharsets.UTF_8);
+                digest.update(ByteBuffer.allocate(Integer.BYTES).putInt(bytes.length).array());
+                digest.update(bytes);
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (java.security.NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 unavailable", exception);
+        }
+    }
+
+    private String timestampText(java.sql.Timestamp timestamp) {
+        return timestamp == null ? "" : timestamp.toInstant().toString();
+    }
+
+    private void recordDatabaseLoad(String phase, String result, long startedAt) {
+        meterRegistry.timer(
+                        "noteweave.memory.compiler.db.load",
+                        "phase", phase,
+                        "result", result)
+                .record(System.nanoTime() - startedAt, TimeUnit.NANOSECONDS);
+    }
+
+    private int incrementalTokens(
+            MemorySignalService.MemoryCompileHints hints,
+            Set<String> styleConstraints,
+            Set<String> structureConstraints,
+            Set<String> terminologyPolicy,
+            Set<String> forbiddenPatterns,
+            Set<String> interactionPolicy,
+            Set<String> reviewChecklist
+    ) {
+        return incrementalTokens(hints.styleConstraints(), styleConstraints)
+                + incrementalTokens(hints.structureConstraints(), structureConstraints)
+                + incrementalTokens(hints.terminologyPolicy(), terminologyPolicy)
+                + incrementalTokens(hints.forbiddenPatterns(), forbiddenPatterns)
+                + incrementalTokens(hints.interactionPolicy(), interactionPolicy)
+                + incrementalTokens(hints.reviewChecklist(), reviewChecklist);
+    }
+
+    private int incrementalTokens(List<String> candidates, Set<String> selected) {
+        return candidates.stream()
+                .filter(item -> !selected.contains(item))
+                .mapToInt(compilerPolicy::estimateTokens)
+                .sum();
+    }
+
+    private String selectionReason(RankedObject ranked) {
+        return "scope_priority=" + ranked.scopePriority()
+                + ";neighborhood_priority=" + ranked.neighborhoodPriority()
+                + ";utility=" + ranked.row().utilityScore()
+                + ";fresh_at=" + ranked.row().updatedAt();
+    }
+
+    private String normalizeCapabilityKey(String value) {
+        return value == null ? "" : value.trim()
+                .toLowerCase(Locale.ROOT)
+                .replace('-', '_')
+                .replace(' ', '_');
+    }
+
+    private List<MemoryReferenceResponse> hydrateReferences(
+            String workspaceId,
+            List<String> memoryObjectIds
+    ) {
+        if (memoryObjectIds.isEmpty()) {
+            return List.of();
+        }
+        String placeholders = String.join(",", memoryObjectIds.stream()
+                .map(ignored -> "?").toList());
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(workspaceId);
+        parameters.addAll(memoryObjectIds);
+        List<MemoryReferenceResponse> rows = jdbcTemplate.query("""
+                select i.id, r.id as revision_id, i.utility_score,
+                       r.normalized_value_json, r.display_text
+                from memory_item i
+                join memory_runtime_revision r
+                  on r.id = i.current_revision_id
+                 and r.memory_item_id = i.id
+                where i.workspace_id = ? and i.id in (%s)
+                """.formatted(placeholders), (rs, rowNum) -> new MemoryReferenceResponse(
+                rs.getString("id"),
+                rs.getString("revision_id"),
+                rs.getDouble("utility_score")
+        ), parameters.toArray());
+        java.util.Map<String, MemoryReferenceResponse> byId = rows.stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        MemoryReferenceResponse::memoryObjectId,
+                        item -> item));
+        return memoryObjectIds.stream()
+                .map(byId::get)
+                .filter(java.util.Objects::nonNull)
+                .toList();
     }
 
     private List<String> readStringList(String json) {
@@ -168,11 +517,99 @@ public class MemoryCompilerService {
         }
     }
 
+    private CanonicalPayload readCanonicalPayload(String json, String displayText) {
+        List<String> fallbackStyle = displayText == null || displayText.isBlank()
+                ? List.of() : List.of(displayText);
+        if (json == null || json.isBlank()) {
+            return new CanonicalPayload(
+                    List.of("COMMON"),
+                    new MemorySignalService.MemoryCompileHints(
+                            fallbackStyle, List.of(), List.of(), List.of(), List.of(), List.of()),
+                    null);
+        }
+        try {
+            JsonNode root = objectMapper.readTree(json);
+            List<String> neighborhoods = readStringListNode(root.path("task_neighborhoods"));
+            if (neighborhoods.isEmpty()) {
+                neighborhoods = List.of("COMMON");
+            }
+            JsonNode hintsNode = readNestedJson(root.path("compile_hints"));
+            MemorySignalService.MemoryCompileHints hints = hintsNode.isMissingNode() || hintsNode.isNull()
+                    ? new MemorySignalService.MemoryCompileHints(
+                            fallbackStyle, List.of(), List.of(), List.of(), List.of(), List.of())
+                    : objectMapper.treeToValue(hintsNode, MemorySignalService.MemoryCompileHints.class);
+            JsonNode utilityNode = root.path("utility_score");
+            Double utilityScore = utilityNode.isNumber() ? utilityNode.doubleValue() : null;
+            return new CanonicalPayload(neighborhoods, hints, utilityScore);
+        } catch (JsonProcessingException exception) {
+            throw new BusinessException(
+                    "MEMORY_CANONICAL_PAYLOAD_PARSE_FAILED", "Canonical Memory payload parse failed");
+        }
+    }
+
+    private List<String> readStringListNode(JsonNode node) throws JsonProcessingException {
+        JsonNode value = readNestedJson(node);
+        if (!value.isArray()) {
+            return List.of();
+        }
+        return objectMapper.treeToValue(value, new TypeReference<>() {
+        });
+    }
+
+    private JsonNode readNestedJson(JsonNode node) throws JsonProcessingException {
+        if (node.isTextual()) {
+            return objectMapper.readTree(node.textValue());
+        }
+        return node;
+    }
+
+    private record CanonicalPayload(
+            List<String> taskNeighborhoods,
+            MemorySignalService.MemoryCompileHints compileHints,
+            Double persistedUtilityScore
+    ) {
+    }
+
     private record ObjectRow(
             String memoryObjectId,
+            String memoryVersionId,
+            double utilityScore,
+            String memoryScope,
+            String ownerUserId,
+            java.time.Instant updatedAt,
             List<String> taskNeighborhoods,
             MemorySignalService.MemoryCompileHints compileHints,
             String status
     ) {
+    }
+
+    private record StateRow(
+            String memoryObjectId,
+            String memoryVersionId,
+            double utilityScore,
+            String memoryScope,
+            String ownerUserId,
+            java.time.Instant updatedAt,
+            List<String> taskNeighborhoods,
+            String status,
+            String validFrom,
+            String validTo
+    ) {
+    }
+
+    private record RankedObject(
+            ObjectRow row,
+            int scopePriority,
+            int neighborhoodPriority
+    ) {
+        private MemoryCompilerPolicy.RankableMemory rankable() {
+            return new MemoryCompilerPolicy.RankableMemory(
+                    row.memoryObjectId(),
+                    scopePriority,
+                    neighborhoodPriority,
+                    row.utilityScore(),
+                    row.updatedAt()
+            );
+        }
     }
 }

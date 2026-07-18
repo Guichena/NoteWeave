@@ -1,0 +1,146 @@
+{
+  "schemaVersion": "retrieval-gold-v1",
+  "datasetVersion": "stage5-fixture-20260714",
+  "cases": [
+    {
+      "id": "qa-spring-configuration",
+      "mode": "QA",
+      "workspaceId": "workspace-fixture",
+      "query": "spring boot configuration properties",
+      "allowedSourceIds": ["source-spring-guide", "source-spring-env", "source-react"],
+      "topK": 2,
+      "shouldRefuse": false,
+      "relevantEvidenceIds": ["qa-spring-config", "qa-spring-env"],
+      "expectedCitationIds": ["citation-spring-config", "citation-spring-env"],
+      "candidates": [
+        {
+          "evidenceId": "qa-spring-config",
+          "sourceId": "source-spring-guide",
+          "title": "Spring Boot configuration properties",
+          "content": "Spring Boot binds external configuration properties into typed configuration classes.",
+          "sourceType": "PDF",
+          "citationIds": ["citation-spring-config"]
+        },
+        {
+          "evidenceId": "qa-spring-env",
+          "sourceId": "source-spring-env",
+          "title": "Externalized configuration in Spring Boot",
+          "content": "Properties can come from files, environment variables, and command line configuration.",
+          "sourceType": "MARKDOWN",
+          "citationIds": ["citation-spring-env"]
+        },
+        {
+          "evidenceId": "qa-react-state",
+          "sourceId": "source-react",
+          "title": "React state management",
+          "content": "Component state and reducers coordinate browser user interfaces.",
+          "sourceType": "WEB",
+          "citationIds": ["citation-react"]
+        },
+        {
+          "evidenceId": "qa-out-of-scope",
+          "sourceId": "source-secret",
+          "title": "Spring Boot configuration properties secret copy",
+          "content": "Spring Boot configuration properties repeated for a forbidden source.",
+          "sourceType": "PDF",
+          "citationIds": ["citation-secret"]
+        }
+      ]
+    },
+    {
+      "id": "note-recall-refactor",
+      "mode": "NOTE",
+      "workspaceId": "workspace-fixture",
+      "query": "继续整理检索重构笔记",
+      "allowedSourceIds": ["source-note-recall", "source-note-ui"],
+      "topK": 1,
+      "shouldRefuse": false,
+      "relevantEvidenceIds": ["note-recall"],
+      "expectedCitationIds": ["citation-note-recall"],
+      "candidates": [
+        {
+          "evidenceId": "note-recall",
+          "sourceId": "source-note-recall",
+          "title": "检索重构笔记",
+          "content": "继续整理检索重构笔记，拆分 Retriever、Repository 与 Ranker。",
+          "sourceType": "NOTE",
+          "citationIds": ["citation-note-recall"]
+        },
+        {
+          "evidenceId": "note-ui",
+          "sourceId": "source-note-ui",
+          "title": "界面设计笔记",
+          "content": "记录颜色、间距和响应式布局方案。",
+          "sourceType": "NOTE",
+          "citationIds": ["citation-note-ui"]
+        },
+        {
+          "evidenceId": "note-out-of-scope",
+          "sourceId": "source-private-note",
+          "title": "检索重构笔记私有副本",
+          "content": "继续整理检索重构笔记。",
+          "sourceType": "NOTE",
+          "citationIds": ["citation-private-note"]
+        }
+      ]
+    },
+    {
+      "id": "wiki-citation-provenance",
+      "mode": "WIKI",
+      "workspaceId": "workspace-fixture",
+      "query": "citation provenance",
+      "allowedSourceIds": ["source-wiki-provenance", "source-wiki-version"],
+      "topK": 1,
+      "shouldRefuse": false,
+      "relevantEvidenceIds": ["wiki-provenance"],
+      "expectedCitationIds": ["citation-wiki-provenance"],
+      "candidates": [
+        {
+          "evidenceId": "wiki-provenance",
+          "sourceId": "source-wiki-provenance",
+          "title": "Citation provenance",
+          "content": "Citation provenance links a knowledge version to its source passage and snapshot.",
+          "sourceType": "WIKI",
+          "citationIds": ["citation-wiki-provenance"]
+        },
+        {
+          "evidenceId": "wiki-version",
+          "sourceId": "source-wiki-version",
+          "title": "Knowledge version lifecycle",
+          "content": "Versions support rebuild, rollback, and freshness checks.",
+          "sourceType": "WIKI",
+          "citationIds": ["citation-wiki-version"]
+        }
+      ]
+    },
+    {
+      "id": "qa-insufficient-evidence",
+      "mode": "QA",
+      "workspaceId": "workspace-fixture",
+      "query": "quantum banana theorem",
+      "allowedSourceIds": ["source-spring-guide", "source-react"],
+      "topK": 3,
+      "shouldRefuse": true,
+      "relevantEvidenceIds": [],
+      "expectedCitationIds": [],
+      "candidates": [
+        {
+          "evidenceId": "refusal-spring",
+          "sourceId": "source-spring-guide",
+          "title": "Application configuration",
+          "content": "Typed settings are loaded from files and environment variables.",
+          "sourceType": "PDF",
+          "citationIds": ["citation-refusal-spring"]
+        },
+        {
+          "evidenceId": "refusal-react",
+          "sourceId": "source-react",
+          "title": "Browser component state",
+          "content": "Reducers update interface state after user actions.",
+          "sourceType": "WEB",
+          "citationIds": ["citation-refusal-react"]
+        }
+      ]
+    }
+  ]
+}

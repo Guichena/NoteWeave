@@ -1,6 +1,10 @@
 server:
   port: ${SERVER_PORT:8081}
 
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] %logger{36} request_id=%X{request_id:-} correlation_id=%X{correlation_id:-} user_id=%X{user_id:-} workspace_id=%X{workspace_id:-} task_id=%X{task_id:-} source_id=%X{source_id:-} answer_run_id=%X{answer_run_id:-} event_id=%X{event_id:-} - %msg%n"
+
 spring:
   application:
     name: noteweave-v2-backend
@@ -24,19 +28,117 @@ spring:
       port: ${REDIS_PORT:6379}
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ${KAFKA_CONSUMER_GROUP_ID:noteweave-backend}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
 
 noteweave:
   research:
     agent:
       external-evidence-enabled: ${NOTEWEAVE_RESEARCH_AGENT_EXTERNAL_EVIDENCE_ENABLED:false}
+      lifecycle-reaper-enabled: ${NOTEWEAVE_RESEARCH_AGENT_LIFECYCLE_REAPER_ENABLED:false}
+      lifecycle-reaper-delay-ms: ${NOTEWEAVE_RESEARCH_AGENT_LIFECYCLE_REAPER_DELAY_MS:1000}
+      command-dispatch-delay-ms: ${NOTEWEAVE_RESEARCH_AGENT_COMMAND_DISPATCH_DELAY_MS:1000}
+      command-dispatch-batch-size: ${NOTEWEAVE_RESEARCH_AGENT_COMMAND_DISPATCH_BATCH_SIZE:25}
+      rollout-guard-enabled: ${NOTEWEAVE_RESEARCH_AGENT_ROLLOUT_GUARD_ENABLED:true}
+      rollout-window-minutes: ${NOTEWEAVE_RESEARCH_AGENT_ROLLOUT_WINDOW_MINUTES:15}
+      rollout-minimum-task-sample: ${NOTEWEAVE_RESEARCH_AGENT_ROLLOUT_MINIMUM_TASK_SAMPLE:10}
+      rollout-max-terminal-failure-rate: ${NOTEWEAVE_RESEARCH_AGENT_ROLLOUT_MAX_TERMINAL_FAILURE_RATE:0.20}
+      rollout-max-delivery-failure-rate: ${NOTEWEAVE_RESEARCH_AGENT_ROLLOUT_MAX_DELIVERY_FAILURE_RATE:0.20}
+      rollout-max-rejected-merge-rate: ${NOTEWEAVE_RESEARCH_AGENT_ROLLOUT_MAX_REJECTED_MERGE_RATE:0.30}
+  environment: ${NOTEWEAVE_ENVIRONMENT:local}
+  security:
+    local-user-fallback: ${NOTEWEAVE_LOCAL_USER_FALLBACK:true}
+    acl-cache-enabled: ${NOTEWEAVE_ACL_CACHE_ENABLED:true}
+    acl-cache-ttl-seconds: ${NOTEWEAVE_ACL_CACHE_TTL_SECONDS:300}
+    acl-negative-cache-ttl-seconds: ${NOTEWEAVE_ACL_NEGATIVE_CACHE_TTL_SECONDS:30}
+    acl-cache-jitter-seconds: ${NOTEWEAVE_ACL_CACHE_JITTER_SECONDS:60}
+  cache:
+    source-catalog:
+      enabled: ${NOTEWEAVE_SOURCE_CATALOG_CACHE_ENABLED:true}
+      ttl-seconds: ${NOTEWEAVE_SOURCE_CATALOG_CACHE_TTL_SECONDS:120}
+      jitter-seconds: ${NOTEWEAVE_SOURCE_CATALOG_CACHE_JITTER_SECONDS:30}
+    wiki-page-version:
+      enabled: ${NOTEWEAVE_WIKI_PAGE_VERSION_CACHE_ENABLED:true}
+      ttl-seconds: ${NOTEWEAVE_WIKI_PAGE_VERSION_CACHE_TTL_SECONDS:600}
+      jitter-seconds: ${NOTEWEAVE_WIKI_PAGE_VERSION_CACHE_JITTER_SECONDS:120}
+    memory-compiled-pack:
+      enabled: ${NOTEWEAVE_MEMORY_COMPILED_PACK_CACHE_ENABLED:true}
+      ttl-seconds: ${NOTEWEAVE_MEMORY_COMPILED_PACK_CACHE_TTL_SECONDS:180}
+      jitter-seconds: ${NOTEWEAVE_MEMORY_COMPILED_PACK_CACHE_JITTER_SECONDS:30}
+  quota:
+    enabled: ${NOTEWEAVE_QUOTA_ENABLED:true}
+    rate:
+      capacity: ${NOTEWEAVE_QUOTA_RATE_CAPACITY:20}
+      refill-per-minute: ${NOTEWEAVE_QUOTA_RATE_REFILL_PER_MINUTE:20}
+    concurrency:
+      limit: ${NOTEWEAVE_QUOTA_CONCURRENCY_LIMIT:4}
+      lease-seconds: ${NOTEWEAVE_QUOTA_LEASE_SECONDS:300}
+    local:
+      rate:
+        capacity: ${NOTEWEAVE_QUOTA_LOCAL_RATE_CAPACITY:5}
+        refill-per-minute: ${NOTEWEAVE_QUOTA_LOCAL_RATE_REFILL_PER_MINUTE:5}
+      concurrency:
+        limit: ${NOTEWEAVE_QUOTA_LOCAL_CONCURRENCY_LIMIT:1}
+  redis:
+    enabled: ${NOTEWEAVE_REDIS_ENABLED:true}
+    connect-timeout-ms: ${NOTEWEAVE_REDIS_CONNECT_TIMEOUT_MS:500}
+    command-timeout-ms: ${NOTEWEAVE_REDIS_COMMAND_TIMEOUT_MS:750}
+  internal:
+    auth-token: ${NOTEWEAVE_INTERNAL_AUTH_TOKEN:}
   storage:
+    backend: ${NOTEWEAVE_STORAGE_BACKEND:minio}
     local-root: ${NOTEWEAVE_STORAGE_LOCAL_ROOT:target/noteweave-storage}
+    minio:
+      endpoint: ${NOTEWEAVE_MINIO_ENDPOINT:http://localhost:9000}
+      access-key: ${NOTEWEAVE_MINIO_ACCESS_KEY:minioadmin}
+      secret-key: ${NOTEWEAVE_MINIO_SECRET_KEY:minioadmin}
+      region: ${NOTEWEAVE_MINIO_REGION:us-east-1}
+      bucket-source: ${NOTEWEAVE_MINIO_BUCKET_SOURCE:noteweave-source}
+      bucket-derived: ${NOTEWEAVE_MINIO_BUCKET_DERIVED:noteweave-derived}
+      bucket-export: ${NOTEWEAVE_MINIO_BUCKET_EXPORT:noteweave-export}
   document:
     chunk-size: ${NOTEWEAVE_DOCUMENT_CHUNK_SIZE:900}
     chunk-overlap: ${NOTEWEAVE_DOCUMENT_CHUNK_OVERLAP:120}
+  kafka:
+    enabled: ${NOTEWEAVE_KAFKA_ENABLED:true}
+    topics:
+      source-parse: ${NOTEWEAVE_KAFKA_TOPIC_SOURCE_PARSE:noteweave.source.parse}
+      source-chunk: ${NOTEWEAVE_KAFKA_TOPIC_SOURCE_CHUNK:noteweave.source.chunk}
+      source-index: ${NOTEWEAVE_KAFKA_TOPIC_SOURCE_INDEX:noteweave.source.index}
+      wiki-ingest: ${NOTEWEAVE_KAFKA_TOPIC_WIKI_INGEST:noteweave.wiki.ingest}
+      wiki-retract: ${NOTEWEAVE_KAFKA_TOPIC_WIKI_RETRACT:noteweave.wiki.retract}
+      generated-ingest: ${NOTEWEAVE_KAFKA_TOPIC_GENERATED_INGEST:noteweave.generated.ingest}
+      conversation-summary: ${NOTEWEAVE_KAFKA_TOPIC_CONVERSATION_SUMMARY:noteweave.conversation.summary}
+      research-agent-command: ${NOTEWEAVE_KAFKA_RESEARCH_AGENT_TOPIC:noteweave.research.agent.command}
+  elasticsearch:
+    enabled: ${NOTEWEAVE_ES_ENABLED:true}
+    host: ${NOTEWEAVE_ES_HOST:localhost}
+    port: ${NOTEWEAVE_ES_PORT:9200}
+    scheme: ${NOTEWEAVE_ES_SCHEME:http}
+    index-prefix: ${NOTEWEAVE_ES_INDEX_PREFIX:noteweave_chunk}
+  llm:
+    enabled: ${NOTEWEAVE_LLM_ENABLED:false}
+    endpoint: ${NOTEWEAVE_LLM_ENDPOINT:http://localhost:11434/v1/chat/completions}
+    model: ${NOTEWEAVE_LLM_MODEL:noteweave-chat}
+    api-key: ${NOTEWEAVE_LLM_API_KEY:}
+    timeout-seconds: ${NOTEWEAVE_LLM_TIMEOUT_SECONDS:60}
+  worker:
+    artifact-base-url: ${NOTEWEAVE_WORKER_ARTIFACT_BASE_URL:http://localhost:18092}
+  executors:
+    answer-io:
+      core-size: ${NOTEWEAVE_ANSWER_IO_CORE_SIZE:4}
+      max-size: ${NOTEWEAVE_ANSWER_IO_MAX_SIZE:16}
+      queue-capacity: ${NOTEWEAVE_ANSWER_IO_QUEUE_CAPACITY:64}
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics

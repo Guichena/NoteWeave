@@ -1,0 +1,76 @@
+-------------------------------------------------------------------------------
+Test set: com.noteweave.research.ResearchAgentCommandDispatchSchedulerTest
+-------------------------------------------------------------------------------
+Tests run: 4, Failures: 2, Errors: 1, Skipped: 0, Time elapsed: 2.527 s <<< FAILURE! -- in com.noteweave.research.ResearchAgentCommandDispatchSchedulerTest
+com.noteweave.research.ResearchAgentCommandDispatchSchedulerTest.shouldDispatchConfiguredBoundedBatch -- Time elapsed: 0.791 s <<< ERROR!
+org.springframework.beans.factory.NoSuchBeanDefinitionException: No qualifying bean of type 'com.noteweave.research.ResearchAgentCommandDispatchScheduler' available
+	at org.springframework.beans.factory.support.DefaultListableBeanFactory.getBean(DefaultListableBeanFactory.java:343)
+	at org.springframework.beans.factory.support.DefaultListableBeanFactory.getBean(DefaultListableBeanFactory.java:334)
+	at org.springframework.context.support.AbstractApplicationContext.getBean(AbstractApplicationContext.java:1261)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at org.springframework.boot.test.context.assertj.AssertProviderApplicationContextInvocationHandler.invokeApplicationContextMethod(AssertProviderApplicationContextInvocationHandler.java:147)
+	at org.springframework.boot.test.context.assertj.AssertProviderApplicationContextInvocationHandler.invoke(AssertProviderApplicationContextInvocationHandler.java:85)
+	at jdk.proxy2/jdk.proxy2.$Proxy78.getBean(Unknown Source)
+	at com.noteweave.research.ResearchAgentCommandDispatchSchedulerTest.lambda$shouldDispatchConfiguredBoundedBatch$3(ResearchAgentCommandDispatchSchedulerTest.java:37)
+	at org.springframework.boot.test.context.runner.AbstractApplicationContextRunner.accept(AbstractApplicationContextRunner.java:434)
+	at org.springframework.boot.test.context.runner.AbstractApplicationContextRunner.consumeAssertableContext(AbstractApplicationContextRunner.java:363)
+	at org.springframework.boot.test.context.runner.AbstractApplicationContextRunner.lambda$run$0(AbstractApplicationContextRunner.java:341)
+	at org.springframework.boot.test.util.TestPropertyValues.lambda$applyToSystemProperties$1(TestPropertyValues.java:174)
+	at org.springframework.boot.test.util.TestPropertyValues.applyToSystemProperties(TestPropertyValues.java:188)
+	at org.springframework.boot.test.util.TestPropertyValues.applyToSystemProperties(TestPropertyValues.java:173)
+	at org.springframework.boot.test.context.runner.AbstractApplicationContextRunner.lambda$run$1(AbstractApplicationContextRunner.java:341)
+	at org.springframework.boot.test.context.runner.AbstractApplicationContextRunner.withContextClassLoader(AbstractApplicationContextRunner.java:369)
+	at org.springframework.boot.test.context.runner.AbstractApplicationContextRunner.run(AbstractApplicationContextRunner.java:340)
+	at com.noteweave.research.ResearchAgentCommandDispatchSchedulerTest.shouldDispatchConfiguredBoundedBatch(ResearchAgentCommandDispatchSchedulerTest.java:36)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+
+com.noteweave.research.ResearchAgentCommandDispatchSchedulerTest.shouldFailFastForUnsafeBatchSize -- Time elapsed: 0.249 s <<< FAILURE!
+java.lang.AssertionError: 
+
+Expecting:
+ <Started application [AnnotationConfigApplicationContext@16a49a5d id = 'org.springframework.context.annotation.AnnotationConfigApplicationContext@16a49a5d', applicationName = '', beanDefinitionCount = 7]>
+to have failed
+but context started successfully
+	at com.noteweave.research.ResearchAgentCommandDispatchSchedulerTest.lambda$shouldFailFastForUnsafeBatchSize$4(ResearchAgentCommandDispatchSchedulerTest.java:49)
+	at org.springframework.boot.test.context.runner.AbstractApplicationContextRunner.accept(AbstractApplicationContextRunner.java:434)
+	at org.springframework.boot.test.context.runner.AbstractApplicationContextRunner.consumeAssertableContext(AbstractApplicationContextRunner.java:363)
+	at org.springframework.boot.test.context.runner.AbstractApplicationContextRunner.lambda$run$0(AbstractApplicationContextRunner.java:341)
+	at org.springframework.boot.test.util.TestPropertyValues.lambda$applyToSystemProperties$1(TestPropertyValues.java:174)
+	at org.springframework.boot.test.util.TestPropertyValues.applyToSystemProperties(TestPropertyValues.java:188)
+	at org.springframework.boot.test.util.TestPropertyValues.applyToSystemProperties(TestPropertyValues.java:173)
+	at org.springframework.boot.test.context.runner.AbstractApplicationContextRunner.lambda$run$1(AbstractApplicationContextRunner.java:341)
+	at org.springframework.boot.test.context.runner.AbstractApplicationContextRunner.withContextClassLoader(AbstractApplicationContextRunner.java:369)
+	at org.springframework.boot.test.context.runner.AbstractApplicationContextRunner.run(AbstractApplicationContextRunner.java:340)
+	at com.noteweave.research.ResearchAgentCommandDispatchSchedulerTest.shouldFailFastForUnsafeBatchSize(ResearchAgentCommandDispatchSchedulerTest.java:48)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+
+com.noteweave.research.ResearchAgentCommandDispatchSchedulerTest.shouldBePresentByDefaultForIncrementalOutboxDelivery -- Time elapsed: 0.029 s <<< FAILURE!
+java.lang.AssertionError: 
+
+Expecting:
+ <Started application [AnnotationConfigApplicationContext@2ab0702e id = 'org.springframework.context.annotation.AnnotationConfigApplicationContext@2ab0702e', applicationName = '', beanDefinitionCount = 7]>
+to have a single bean of type:
+ <com.noteweave.research.ResearchAgentCommandDispatchScheduler>
+but found no beans of that type
+	at com.noteweave.research.ResearchAgentCommandDispatchSchedulerTest.lambda$shouldBePresentByDefaultForIncrementalOutboxDelivery$1(ResearchAgentCommandDispatchSchedulerTest.java:22)
+	at org.springframework.boot.test.context.runner.AbstractApplicationContextRunner.accept(AbstractApplicationContextRunner.java:434)
+	at org.springframework.boot.test.context.runner.AbstractApplicationContextRunner.consumeAssertableContext(AbstractApplicationContextRunner.java:363)
+	at org.springframework.boot.test.context.runner.AbstractApplicationContextRunner.lambda$run$0(AbstractApplicationContextRunner.java:341)
+	at org.springframework.boot.test.util.TestPropertyValues.lambda$applyToSystemProperties$1(TestPropertyValues.java:174)
+	at org.springframework.boot.test.util.TestPropertyValues.applyToSystemProperties(TestPropertyValues.java:188)
+	at org.springframework.boot.test.util.TestPropertyValues.applyToSystemProperties(TestPropertyValues.java:173)
+	at org.springframework.boot.test.context.runner.AbstractApplicationContextRunner.lambda$run$1(AbstractApplicationContextRunner.java:341)
+	at org.springframework.boot.test.context.runner.AbstractApplicationContextRunner.withContextClassLoader(AbstractApplicationContextRunner.java:369)
+	at org.springframework.boot.test.context.runner.AbstractApplicationContextRunner.run(AbstractApplicationContextRunner.java:340)
+	at com.noteweave.research.ResearchAgentCommandDispatchSchedulerTest.shouldBePresentByDefaultForIncrementalOutboxDelivery(ResearchAgentCommandDispatchSchedulerTest.java:21)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+

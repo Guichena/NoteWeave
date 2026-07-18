@@ -1,0 +1,78 @@
+package com.noteweave.worker;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.noteweave.config.NoteWeaveProperties;
+import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.client.RestClient;
+
+@Component
+public class HttpArtifactWorkerControlClient implements ArtifactWorkerControlClient {
+
+    private final RestClient restClient;
+    private final ObjectMapper objectMapper;
+
+    @Autowired
+    public HttpArtifactWorkerControlClient(
+            ObjectMapper objectMapper,
+            NoteWeaveProperties properties,
+            @Value("${noteweave.internal.auth-token:}") String internalAuthToken
+    ) {
+        this.objectMapper = objectMapper;
+        RestClient.Builder builder = RestClient.builder().baseUrl(properties.worker().artifactBaseUrl());
+        if (internalAuthToken != null && !internalAuthToken.isBlank()) {
+            builder.defaultHeader("X-NoteWeave-Internal-Token", internalAuthToken.trim());
+        }
+        this.restClient = builder.build();
+    }
+
+    public HttpArtifactWorkerControlClient(ObjectMapper objectMapper, NoteWeaveProperties properties) {
+        this(objectMapper, properties, "");
+    }
+
+    @Override
+    public ArtifactWorkerExecutionResponse resumeTask(String taskId, ArtifactWorkerResumeRequest request) {
+        String responseBody = restClient.post()
+                .uri("/tasks/{taskId}/resume", taskId)
+                .body(request)
+                .retrieve()
+                .body(String.class);
+        return parseApiData(responseBody, ArtifactWorkerExecutionResponse.class);
+    }
+
+    @Override
+    public ArtifactAcquisitionAckResponse acknowledgeAcquisition(ArtifactAcquisitionAckRequest request) {
+        String responseBody = restClient.post()
+                .uri("/callbacks/acquisition/ack")
+                .body(request)
+                .retrieve()
+                .body(String.class);
+        return parseApiData(responseBody, ArtifactAcquisitionAckResponse.class);
+    }
+
+    private <T> T parseApiData(String responseBody, Class<T> targetType) {
+        try {
+            JsonNode root = objectMapper.readTree(responseBody == null ? "{}" : responseBody);
+            JsonNode data = root;
+            if (root.has("success")) {
+                if (!root.path("success").asBoolean(false)) {
+                    throw new IllegalStateException(
+                            "artifact worker control request failed: "
+                                    + root.path("code").asText("ERROR")
+                                    + " "
+                                    + root.path("message").asText("")
+                    );
+                }
+                data = root.path("data");
+            }
+            if (data.isMissingNode() || data.isNull()) {
+                throw new IllegalStateException("artifact worker control response is missing data");
+            }
+            return objectMapper.treeToValue(data, targetType);
+        } catch (Exception ex) {
+            throw new IllegalStateException("artifact worker control response is invalid", ex);
+        }
+    }
+}

@@ -1,0 +1,67 @@
+{
+  "waiting_tasks": {
+    "debug-waiting-task-skill-first-test": {
+      "task_id": "debug-waiting-task-skill-first-test",
+      "workspace_id": "ws-artifact-debug-waiting",
+      "target_id": "artifact-debug-waiting-skill-first",
+      "status": "WAITING_FOR_PROVIDER",
+      "unavailable_capabilities": [],
+      "approval_request": {},
+      "blocked_operations": [
+        {
+          "request_id": "fetch-debug-waiting-task-skill-first-test-input-url-1-extract_transcript",
+          "source_id": "input-url-1",
+          "operation_key": "EXTRACT_TRANSCRIPT",
+          "capability_name": "EXTRACT_TRANSCRIPT",
+          "callback_status": "WAITING_FOR_PROVIDER"
+        }
+      ],
+      "task_input": {
+        "task_id": "debug-waiting-task-skill-first-test",
+        "workspace_id": "ws-artifact-debug-waiting",
+        "target_id": "artifact-debug-waiting-skill-first",
+        "input_snapshot_id": "",
+        "replay_availability": "FULL",
+        "source_scope": [],
+        "upstream_refs": [],
+        "context_snapshot": {
+          "context_snapshot_id": "ctx-debug-waiting-task-skill-first-test"
+        },
+        "control_pack": {
+          "pack_type": "artifact",
+          "target_key": "bilibili_course_note_pdf",
+          "task_neighborhood": "ARTIFACT_SKILL_BILIBILI_COURSE_NOTE_PDF",
+          "style_constraints": [],
+          "structure_constraints": [
+            "Export the final result as a lecture note PDF."
+          ],
+          "terminology_policy": [],
+          "forbidden_patterns": [],
+          "evidence_policy": [
+            "Keep the note traceable to transcript and screenshots."
+          ],
+          "interaction_policy": [],
+          "review_checklist": [
+            "Preserve asynchronous provider waiting semantics."
+          ],
+          "memory_object_ids": []
+        },
+        "input_payload": {
+          "skill_key": "",
+          "action_key": "",
+          "style_profile_key": "",
+          "prompt_recipe_id": "",
+          "context_snapshot_id": "ctx-debug-waiting-task-skill-first-test",
+          "user_requirement": "",
+          "generation_brief": "Generate a detailed lecture note PDF from the Bilibili video.",
+          "inputs": {
+            "url": "https://www.bilibili.com/video/BV1NoteWeaveDemo",
+            "language": "zh-CN"
+          },
+          "requested_capabilities": [],
+          "writeback_mode": "NONE"
+        }
+      }
+    }
+  }
+}

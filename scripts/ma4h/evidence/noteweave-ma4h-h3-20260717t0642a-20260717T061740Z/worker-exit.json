@@ -1,0 +1,267 @@
+[
+    {
+        "Id": "1ae1f9d23b42d7bef8741339b37768e8c3c5adaf211a59ab5e00425977f9c7ce",
+        "Created": "2026-07-17T06:19:57.345498078Z",
+        "Path": "python",
+        "Args": [
+            "/fixture/slow_fake_consumer.py"
+        ],
+        "State": {
+            "Status": "exited",
+            "Running": false,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 0,
+            "ExitCode": 75,
+            "Error": "",
+            "StartedAt": "2026-07-17T06:20:05.310488537Z",
+            "FinishedAt": "2026-07-17T06:20:17.13540986Z"
+        },
+        "Image": "sha256:04889baea2a2e4975d173e5a0a1d82d5b51fdd8abc13033dfbb9704ff3279596",
+        "ResolvConfPath": "/var/lib/docker/containers/1ae1f9d23b42d7bef8741339b37768e8c3c5adaf211a59ab5e00425977f9c7ce/resolv.conf",
+        "HostnamePath": "/var/lib/docker/containers/1ae1f9d23b42d7bef8741339b37768e8c3c5adaf211a59ab5e00425977f9c7ce/hostname",
+        "HostsPath": "/var/lib/docker/containers/1ae1f9d23b42d7bef8741339b37768e8c3c5adaf211a59ab5e00425977f9c7ce/hosts",
+        "LogPath": "/var/lib/docker/containers/1ae1f9d23b42d7bef8741339b37768e8c3c5adaf211a59ab5e00425977f9c7ce/1ae1f9d23b42d7bef8741339b37768e8c3c5adaf211a59ab5e00425977f9c7ce-json.log",
+        "Name": "/noteweave-ma4h-h3-20260717t0642a-worker-a-1",
+        "RestartCount": 0,
+        "Driver": "overlayfs",
+        "Platform": "linux",
+        "MountLabel": "",
+        "ProcessLabel": "",
+        "AppArmorProfile": "",
+        "ExecIDs": null,
+        "HostConfig": {
+            "Binds": [
+                "noteweave-ma4h-h3-20260717t0642a_control-data:/control:rw",
+                "/run/desktop/mnt/host/d/java-projects/NoteWeave-v2/scripts/ma4h/slow_fake_consumer.py:/fixture/slow_fake_consumer.py:ro"
+            ],
+            "ContainerIDFile": "",
+            "LogConfig": {
+                "Type": "json-file",
+                "Config": {}
+            },
+            "NetworkMode": "noteweave-ma4h-h3-20260717t0642a_ma4g",
+            "PortBindings": {},
+            "RestartPolicy": {
+                "Name": "no",
+                "MaximumRetryCount": 0
+            },
+            "AutoRemove": false,
+            "VolumeDriver": "",
+            "VolumesFrom": null,
+            "ConsoleSize": [
+                0,
+                0
+            ],
+            "CapAdd": null,
+            "CapDrop": null,
+            "CgroupnsMode": "private",
+            "Dns": null,
+            "DnsOptions": null,
+            "DnsSearch": null,
+            "ExtraHosts": [],
+            "GroupAdd": null,
+            "IpcMode": "private",
+            "Cgroup": "",
+            "Links": null,
+            "OomScoreAdj": 0,
+            "PidMode": "",
+            "Privileged": false,
+            "PublishAllPorts": false,
+            "ReadonlyRootfs": false,
+            "SecurityOpt": null,
+            "UTSMode": "",
+            "UsernsMode": "",
+            "ShmSize": 67108864,
+            "Runtime": "runc",
+            "Isolation": "",
+            "CpuShares": 0,
+            "Memory": 0,
+            "NanoCpus": 0,
+            "CgroupParent": "",
+            "BlkioWeight": 0,
+            "BlkioWeightDevice": null,
+            "BlkioDeviceReadBps": null,
+            "BlkioDeviceWriteBps": null,
+            "BlkioDeviceReadIOps": null,
+            "BlkioDeviceWriteIOps": null,
+            "CpuPeriod": 0,
+            "CpuQuota": 0,
+            "CpuRealtimePeriod": 0,
+            "CpuRealtimeRuntime": 0,
+            "CpusetCpus": "",
+            "CpusetMems": "",
+            "Devices": null,
+            "DeviceCgroupRules": null,
+            "DeviceRequests": null,
+            "MemoryReservation": 0,
+            "MemorySwap": 0,
+            "MemorySwappiness": null,
+            "OomKillDisable": null,
+            "PidsLimit": null,
+            "Ulimits": null,
+            "CpuCount": 0,
+            "CpuPercent": 0,
+            "IOMaximumIOps": 0,
+            "IOMaximumBandwidth": 0,
+            "MaskedPaths": [
+                "/proc/acpi",
+                "/proc/asound",
+                "/proc/interrupts",
+                "/proc/kcore",
+                "/proc/keys",
+                "/proc/latency_stats",
+                "/proc/sched_debug",
+                "/proc/scsi",
+                "/proc/timer_list",
+                "/proc/timer_stats",
+                "/sys/devices/virtual/powercap",
+                "/sys/firmware"
+            ],
+            "ReadonlyPaths": [
+                "/proc/bus",
+                "/proc/fs",
+                "/proc/irq",
+                "/proc/sys",
+                "/proc/sysrq-trigger"
+            ]
+        },
+        "Storage": {
+            "RootFS": {
+                "Snapshot": {
+                    "Name": "overlayfs"
+                }
+            }
+        },
+        "Mounts": [
+            {
+                "Type": "volume",
+                "Name": "noteweave-ma4h-h3-20260717t0642a_control-data",
+                "Source": "/var/lib/docker/volumes/noteweave-ma4h-h3-20260717t0642a_control-data/_data",
+                "Destination": "/control",
+                "Driver": "local",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": ""
+            },
+            {
+                "Type": "bind",
+                "Source": "/run/desktop/mnt/host/d/java-projects/NoteWeave-v2/scripts/ma4h/slow_fake_consumer.py",
+                "Destination": "/fixture/slow_fake_consumer.py",
+                "Mode": "ro",
+                "RW": false,
+                "Propagation": "rprivate"
+            }
+        ],
+        "Config": {
+            "Hostname": "1ae1f9d23b42",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": true,
+            "AttachStderr": true,
+            "ExposedPorts": {
+                "18091/tcp": {}
+            },
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "NOTEWEAVE_RESEARCH_AGENT_HEARTBEAT_INTERVAL_SECONDS=1",
+                "NOTEWEAVE_RESEARCH_AGENT_FAKE_PROVIDER_ENABLED=true",
+                "NOTEWEAVE_JAVA_BASE_URL=http://backend:8081",
+                "NOTEWEAVE_RESEARCH_AGENT_DRAIN_GRACE_SECONDS=2",
+                "NOTEWEAVE_RESEARCH_AGENT_HEARTBEAT_FAILURE_BUDGET_SECONDS=2",
+                "NOTEWEAVE_RESEARCH_LLM_BASE_URL=",
+                "NOTEWEAVE_RESEARCH_AGENT_DEEP_CELL_EXECUTOR_ENABLED=true",
+                "NOTEWEAVE_KAFKA_CONSUME_MAX_ATTEMPTS=1",
+                "NOTEWEAVE_RESEARCH_AGENT_HEARTBEAT_REQUEST_TIMEOUT_SECONDS=0.25",
+                "NOTEWEAVE_RESEARCH_AGENT_WORKER_INSTANCE_ID=ma4h-drain-worker-a",
+                "NOTEWEAVE_RESEARCH_LLM_MODEL=",
+                "NOTEWEAVE_KAFKA_RESEARCH_AGENT_TOPIC=noteweave.research.agent.command",
+                "MA4H_DRAIN_PHASE_MARKER=/control/phase-started",
+                "NOTEWEAVE_RESEARCH_AGENT_DRAIN_POLL_TIMEOUT_MS=50",
+                "NOTEWEAVE_RESEARCH_AGENT_COMPLETION_MAX_ATTEMPTS=3",
+                "NOTEWEAVE_INTERNAL_AUTH_TOKEN=ma4g-fixture-token",
+                "MA4H_FAKE_PHASE_DELAY_SECONDS=5",
+                "NOTEWEAVE_RESEARCH_AGENT_CONSUMER_ENABLED=true",
+                "NOTEWEAVE_RESEARCH_AGENT_LEASE_SECONDS=4",
+                "NOTEWEAVE_KAFKA_BOOTSTRAP_SERVERS=kafka:9092",
+                "NOTEWEAVE_KAFKA_RESEARCH_AGENT_GROUP_ID=noteweave-ma4h-drain-workers",
+                "NOTEWEAVE_RESEARCH_LLM_API_KEY=",
+                "NOTEWEAVE_KAFKA_RESEARCH_AGENT_DLQ_TOPIC=noteweave.research.agent.command.dlq",
+                "PYTHONPATH=/app",
+                "PATH=/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "LANG=C.UTF-8",
+                "GPG_KEY=7169605F62C751356D054A26A821E680E5FA6305",
+                "PYTHON_VERSION=3.12.13",
+                "PYTHON_SHA256=c08bc65a81971c1dd5783182826503369466c7e67374d1646519adf05207b684",
+                "PYTHONDONTWRITEBYTECODE=1",
+                "PYTHONUNBUFFERED=1"
+            ],
+            "Cmd": [
+                "python",
+                "/fixture/slow_fake_consumer.py"
+            ],
+            "Image": "noteweave-ma4g-research-worker:local",
+            "Volumes": null,
+            "WorkingDir": "/app",
+            "Entrypoint": null,
+            "Labels": {
+                "com.docker.compose.config-hash": "ff7662cb9c22b9f86f3bce26c55e0e0df2b381f9ec3bcf07c9b587e6b9783430",
+                "com.docker.compose.container-number": "1",
+                "com.docker.compose.depends_on": "backend:service_healthy:false,kafka-init:service_completed_successfully:false",
+                "com.docker.compose.image": "sha256:04889baea2a2e4975d173e5a0a1d82d5b51fdd8abc13033dfbb9704ff3279596",
+                "com.docker.compose.oneoff": "False",
+                "com.docker.compose.project": "noteweave-ma4h-h3-20260717t0642a",
+                "com.docker.compose.project.config_files": "D:\\java-projects\\NoteWeave-v2\\scripts\\ma4g\\docker-compose.yml,D:\\java-projects\\NoteWeave-v2\\scripts\\ma4h\\docker-compose.drain.yml",
+                "com.docker.compose.project.working_dir": "D:\\java-projects\\NoteWeave-v2\\scripts\\ma4g",
+                "com.docker.compose.service": "worker-a",
+                "com.docker.compose.version": "5.1.3"
+            },
+            "StopTimeout": 1
+        },
+        "NetworkSettings": {
+            "SandboxID": "",
+            "SandboxKey": "",
+            "Ports": {},
+            "Networks": {
+                "noteweave-ma4h-h3-20260717t0642a_ma4g": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": [
+                        "noteweave-ma4h-h3-20260717t0642a-worker-a-1",
+                        "worker-a"
+                    ],
+                    "DriverOpts": null,
+                    "GwPriority": 0,
+                    "NetworkID": "308673c9eb956cd249e748c4a8c12e361e8c09ff518940324d08dd2964154a1e",
+                    "EndpointID": "",
+                    "Gateway": "",
+                    "IPAddress": "",
+                    "MacAddress": "",
+                    "IPPrefixLen": 0,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "DNSNames": [
+                        "noteweave-ma4h-h3-20260717t0642a-worker-a-1",
+                        "worker-a",
+                        "1ae1f9d23b42"
+                    ]
+                }
+            }
+        },
+        "ImageManifestDescriptor": {
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "digest": "sha256:9bb40c171731321b9318502f452af8b40ee9db1c6b958e9f9b542d5b59b97d98",
+            "size": 1625,
+            "platform": {
+                "architecture": "amd64",
+                "os": "linux"
+            }
+        }
+    }
+]

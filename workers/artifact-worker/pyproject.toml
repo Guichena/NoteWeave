@@ -3,11 +3,16 @@ name = "noteweave-artifact-worker"
 version = "0.0.1"
 requires-python = ">=3.12"
 dependencies = [
-  "fastapi>=0.115.0",
-  "pydantic-settings>=2.6.0",
-  "pytest>=9.0.0",
-  "uvicorn>=0.32.0"
+  "fastapi>=0.115.0,<1",
+  "pydantic-settings>=2.6.0,<3",
+  "faster-whisper>=1.2.1,<2",
+  "reportlab>=4.2.0,<5",
+  "uvicorn>=0.32.0,<1",
+  "yt-dlp>=2025.6.30,<2027"
 ]
+
+[project.optional-dependencies]
+test = ["pytest>=9.0.0,<10"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

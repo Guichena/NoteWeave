@@ -1,0 +1,8 @@
+{
+    "schema_version":  "noteweave-ma4i-i5-evidence.v1",
+    "status":  "VERIFIED",
+    "project_name":  "noteweave-ma4i-i5-scheduler-20260717t1755a",
+    "test_exit_code":  0,
+    "completed_at_utc":  "2026-07-17T09:53:20.6890001Z",
+    "boundary":  "MySQL 8.4 restart-safe coordinator database contract; no Kafka delivery, worker crash, or real-provider evidence"
+}

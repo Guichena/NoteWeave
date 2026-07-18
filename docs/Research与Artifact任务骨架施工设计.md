@@ -1,5 +1,7 @@
 # Research 与 Artifact 任务骨架施工设计
 
+> **阶段性历史基线。** Research 部分仍可作为演进记录；Artifact 部分关于 `action_key`、占位执行链和“后续再接 Skill/MCP”的描述已失效。现行 Artifact 基线见 `产物生成Agent需求审计与收尾改造.md`。
+
 ## 1. 文档目标
 
 这份文档只描述当前已经落地的 `Deep Research` 与 `右侧产物生成` 任务骨架，重点是把下面这条主线打通：
@@ -140,15 +142,15 @@ planner
 2. Artifact 的原材料仍然来自工作台资料与任务输入。
 3. Memory 负责风格、结构、禁用路径、交互约束，不负责“证明事实”。
 
-## 4. 当前明确不做的事情
+## 4. 骨架阶段原定不做事项及当前状态
 
-这一批骨架刻意没有做重：
+以下是骨架阶段的原始边界；截至 2026-07-12，Research/Artifact 后续阶段已继续补齐其中多项：
 
-1. Research 还没有可恢复 checkpoint / URL snapshot 的 MinIO 持久化，当前 checkpoint 仍在 result payload 层。
+1. Research 已有不可变 execution checkpoint、对象存储 JSON snapshot 与精确 resume；网页证据保留 snapshot text/hash/provenance，公网归档 canary 仍需在正常 DNS/egress 环境验证。
 2. Artifact 还没有接真实 `Skill / MCP / 用户自定义外部能力`。
-3. Research 报告还没有自动回写成工作台正式资料。
-4. Artifact 导出 PDF / MD 文件还没有正式接 MinIO 持久化链路。
-5. Research 还没有把网页快照正式保存到 MinIO，当前 URL reader 只做可选轻量抓取和 fallback 窗口。
+3. Research 报告已支持保存为工作台正式资料，并保留 generated source lineage。
+4. Artifact 导出 PDF / MD 文件已接对象存储、checksum 和 file metadata。
+5. Research 的 URL reader 已具备真实抓取、IP pinning、snapshot hash/provenance 与 fallback；独立网页归档对象仍不冒充已完成的外部永久存档服务。
 
 ## 5. TDD 与回归
 

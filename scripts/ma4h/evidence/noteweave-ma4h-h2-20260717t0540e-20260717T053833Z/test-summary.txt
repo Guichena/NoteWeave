@@ -1,0 +1,3 @@
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.203 s -- in com.noteweave.research.ResearchAgentRateLimitServiceTest
+Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.392 s -- in com.noteweave.research.ResearchAgentTaskServiceTest
+Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 101.2 s -- in com.noteweave.research.ResearchAgentTrustedPermitServiceTest

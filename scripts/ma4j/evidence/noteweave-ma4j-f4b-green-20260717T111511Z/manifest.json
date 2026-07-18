@@ -1,0 +1,6 @@
+{
+  "status": "VERIFIED",
+  "tests": "1/1",
+  "schema": "Flyway V050 plus user V060 / MySQL 8.4",
+  "boundary": "Coordinator terminal verified-ledger handoff to atomic finalizer; no OS process kill or Kafka delivery"
+}

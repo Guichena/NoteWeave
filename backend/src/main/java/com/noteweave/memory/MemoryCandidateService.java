@@ -17,15 +17,24 @@ public class MemoryCandidateService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final MemorySignalService memorySignalService;
+    private final MemoryCandidatePolicy candidatePolicy;
+    private final MemoryCandidateGate candidateGate;
+    private final MemoryStatementMatcher statementMatcher;
 
     public MemoryCandidateService(
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
-            MemorySignalService memorySignalService
+            MemorySignalService memorySignalService,
+            MemoryCandidatePolicy candidatePolicy,
+            MemoryCandidateGate candidateGate,
+            MemoryStatementMatcher statementMatcher
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.memorySignalService = memorySignalService;
+        this.candidatePolicy = candidatePolicy;
+        this.candidateGate = candidateGate;
+        this.statementMatcher = statementMatcher;
     }
 
     public List<MemoryCandidateResponse> buildCandidates(String workspaceId, List<String> signalIds) {
@@ -33,16 +42,15 @@ public class MemoryCandidateService {
         List<MemoryCandidateResponse> responses = new ArrayList<>();
         for (MemorySignalService.SignalRow signal : signals) {
             String normalizedStatement = normalizeStatement(signal.signalText());
-            double noveltyScore = computeNovelty(workspaceId, normalizedStatement, signal.signalType(), signal.taskNeighborhood());
-            double marginalUtilityScore = computeMarginalUtility(signal.sourceType(), signal.signalType(), signal.taskNeighborhood());
             boolean negativeMemory = "NEGATIVE".equals(signal.signalType());
-            String evidenceGateStatus = signal.confidenceScore() >= 0.70 ? "PASS" : "NEEDS_REVIEW";
-            String conflictStatus = detectConflict(workspaceId, normalizedStatement, negativeMemory, signal.taskNeighborhood());
-            String reviewStatus = "PASS".equals(evidenceGateStatus)
-                    && marginalUtilityScore >= 0.60
-                    && !"CONFLICTING_ACTIVE_MEMORY".equals(conflictStatus)
-                    ? "READY"
-                    : "NEEDS_REVIEW";
+            List<ObjectMatch> activeMatches = findMatchingActiveObjects(
+                    workspaceId, normalizedStatement, signal.taskNeighborhood());
+            double noveltyScore = computeNovelty(activeMatches);
+            double marginalUtilityScore = candidatePolicy.marginalUtility(
+                    signal.sourceType(), signal.signalType(), signal.taskNeighborhood());
+            String conflictStatus = detectConflict(activeMatches, negativeMemory);
+            MemoryCandidateGate.GateDecision gate = candidateGate.evaluate(
+                    signal, marginalUtilityScore, conflictStatus);
             String candidateId = Ids.newId();
             List<String> neighborhoods = List.of(signal.taskNeighborhood());
             jdbcTemplate.update("""
@@ -50,8 +58,9 @@ public class MemoryCandidateService {
                         id, workspace_id, user_id, candidate_type, normalized_statement, task_neighborhood_json,
                         evidence_gate_status, novelty_score, marginal_utility_score, negative_memory_flag,
                         conflict_status, staleness_status, compile_policy_json, forbidden_pattern_json,
-                        created_from_signal_ids_json, review_status
-                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?)
+                        created_from_signal_ids_json, review_status, policy_version,
+                        risk_score, scope_status
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?, ?, ?)
                     """,
                     candidateId,
                     workspaceId,
@@ -59,7 +68,7 @@ public class MemoryCandidateService {
                     signal.signalType(),
                     normalizedStatement,
                     Json.write(objectMapper, neighborhoods),
-                    evidenceGateStatus,
+                    gate.evidenceGateStatus(),
                     noveltyScore,
                     marginalUtilityScore,
                     negativeMemory,
@@ -67,7 +76,10 @@ public class MemoryCandidateService {
                     Json.write(objectMapper, signal.compileHints()),
                     Json.write(objectMapper, signal.compileHints().forbiddenPatterns()),
                     Json.write(objectMapper, List.of(signal.signalId())),
-                    reviewStatus
+                    gate.reviewStatus(),
+                    gate.policyVersion(),
+                    gate.riskScore(),
+                    gate.scopeStatus()
             );
             responses.add(new MemoryCandidateResponse(
                     candidateId,
@@ -75,13 +87,16 @@ public class MemoryCandidateService {
                     signal.signalType(),
                     normalizedStatement,
                     neighborhoods,
-                    evidenceGateStatus,
+                    gate.evidenceGateStatus(),
                     noveltyScore,
                     marginalUtilityScore,
                     negativeMemory,
                     conflictStatus,
                     "ACTIVE",
-                    reviewStatus
+                    gate.reviewStatus(),
+                    gate.riskScore(),
+                    gate.scopeStatus(),
+                    gate.policyVersion()
             ));
         }
         return responses;
@@ -92,7 +107,8 @@ public class MemoryCandidateService {
                 select id, workspace_id, candidate_type, normalized_statement, task_neighborhood_json,
                        evidence_gate_status, novelty_score, marginal_utility_score, negative_memory_flag,
                        conflict_status, staleness_status, compile_policy_json, forbidden_pattern_json,
-                       created_from_signal_ids_json, review_status
+                       created_from_signal_ids_json, review_status, policy_version,
+                       risk_score, scope_status
                 from memory_candidate
                 where workspace_id = ? and id = ?
                 """, rs -> {
@@ -114,7 +130,10 @@ public class MemoryCandidateService {
                     readCompileHints(rs.getString("compile_policy_json")),
                     readStringList(rs.getString("forbidden_pattern_json")),
                     readStringList(rs.getString("created_from_signal_ids_json")),
-                    rs.getString("review_status")
+                    rs.getString("review_status"),
+                    rs.getString("policy_version"),
+                    rs.getDouble("risk_score"),
+                    rs.getString("scope_status")
             );
         }, workspaceId, candidateId);
         if (row == null) {
@@ -123,10 +142,9 @@ public class MemoryCandidateService {
         return row;
     }
 
-    private String detectConflict(String workspaceId, String statement, boolean negativeMemory, String taskNeighborhood) {
-        List<ObjectRow> active = findMatchingActiveObjects(workspaceId, statement, taskNeighborhood);
-        for (ObjectRow object : active) {
-            boolean existingNegative = "NEGATIVE".equals(object.memoryType());
+    private String detectConflict(List<ObjectMatch> active, boolean negativeMemory) {
+        for (ObjectMatch match : active) {
+            boolean existingNegative = "NEGATIVE".equals(match.object().memoryType());
             if (existingNegative != negativeMemory) {
                 return "CONFLICTING_ACTIVE_MEMORY";
             }
@@ -134,26 +152,21 @@ public class MemoryCandidateService {
         return active.isEmpty() ? "NO_CONFLICT" : "EXISTING_EQUIVALENT";
     }
 
-    private double computeNovelty(String workspaceId, String statement, String signalType, String taskNeighborhood) {
-        return findMatchingActiveObjects(workspaceId, statement, taskNeighborhood).isEmpty() ? 1.0 : 0.25;
+    private double computeNovelty(List<ObjectMatch> matches) {
+        double maximumSimilarity = matches.stream()
+                .mapToDouble(ObjectMatch::similarity)
+                .max()
+                .orElse(0.0);
+        return maximumSimilarity == 0.0
+                ? 1.0
+                : Math.max(0.0, 1.0 - maximumSimilarity * 0.75);
     }
 
-    private double computeMarginalUtility(String sourceType, String signalType, String taskNeighborhood) {
-        double score = switch (sourceType) {
-            case "USER_FEEDBACK", "PROJECT_DECISION" -> 0.90;
-            case "ARTIFACT_FEEDBACK", "CONVERSATION_FEEDBACK" -> 0.72;
-            default -> 0.40;
-        };
-        if ("DECISION".equals(signalType) || "NEGATIVE".equals(signalType)) {
-            score += 0.05;
-        }
-        if ("COMMON".equals(taskNeighborhood)) {
-            score += 0.03;
-        }
-        return Math.min(score, 0.99);
-    }
-
-    private List<ObjectRow> findMatchingActiveObjects(String workspaceId, String statement, String taskNeighborhood) {
+    private List<ObjectMatch> findMatchingActiveObjects(
+            String workspaceId,
+            String statement,
+            String taskNeighborhood
+    ) {
         List<ObjectRow> rows = jdbcTemplate.query("""
                 select id, memory_type, task_neighborhood_json, canonical_statement
                 from memory_object
@@ -164,11 +177,13 @@ public class MemoryCandidateService {
                 readStringList(rs.getString("task_neighborhood_json")),
                 rs.getString("canonical_statement")
         ), workspaceId);
-        List<ObjectRow> matches = new ArrayList<>();
+        List<ObjectMatch> matches = new ArrayList<>();
         for (ObjectRow row : rows) {
-            if (normalizeStatement(row.canonicalStatement()).equals(statement)
+            double similarity = statementMatcher.similarity(
+                    row.canonicalStatement(), statement);
+            if (similarity >= candidatePolicy.equivalentStatementSimilarity()
                     && row.taskNeighborhoods().contains(taskNeighborhood)) {
-                matches.add(row);
+                matches.add(new ObjectMatch(row, similarity));
             }
         }
         return matches;
@@ -217,10 +232,16 @@ public class MemoryCandidateService {
             MemorySignalService.MemoryCompileHints compileHints,
             List<String> forbiddenPatterns,
             List<String> signalIds,
-            String reviewStatus
+            String reviewStatus,
+            String policyVersion,
+            double riskScore,
+            String scopeStatus
     ) {
     }
 
     private record ObjectRow(String memoryObjectId, String memoryType, List<String> taskNeighborhoods, String canonicalStatement) {
+    }
+
+    private record ObjectMatch(ObjectRow object, double similarity) {
     }
 }

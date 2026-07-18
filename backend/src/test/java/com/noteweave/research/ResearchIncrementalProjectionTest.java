@@ -43,9 +43,7 @@ class ResearchIncrementalProjectionTest {
 
     @Test
     void legacyWorkerCompletionShouldNotBypassIncrementalCanonicalFinalization() {
-        jdbcTemplate.update(
-                "update research_run set agent_execution_mode = 'INCREMENTAL_V1' where id = ?",
-                runId);
+        researchRunService.setAgentExecutionMode(runId, "INCREMENTAL_V1");
         taskService.createTask(new ResearchAgentTaskService.CreateTaskCommand(
                 runId, "agent-task", "agent-idem", 1, "DEEP_CELL", "entity-1", "branch-main", 0, 1,
                 List.of("entity-1:method"), Map.of("llm_calls", 1)

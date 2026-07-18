@@ -1,0 +1,14 @@
+.git
+.idea
+.vscode
+**/.pytest_cache
+**/__pycache__
+**/*.pyc
+**/node_modules
+**/dist
+**/target
+**/.mvn
+workers/artifact-worker/.conda
+workers/artifact-worker/runtime
+workers/research-worker/.conda
+frontend/node_modules

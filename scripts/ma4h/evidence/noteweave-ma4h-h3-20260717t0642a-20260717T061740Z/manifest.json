@@ -1,0 +1,7 @@
+{
+    "schema_version":  "noteweave-ma4h-drain-evidence.v1",
+    "status":  "VERIFIED",
+    "project_name":  "noteweave-ma4h-h3-20260717t0642a",
+    "completed_at_utc":  "2026-07-17T06:21:23.9348603Z",
+    "boundary":  "deterministic fake-provider SIGTERM/drain/recovery; no real provider cancellation evidence"
+}

@@ -8,6 +8,7 @@ public record MemorySignalResponse(
         String sourceId,
         String signalText,
         String taskNeighborhood,
-        double confidenceScore
+        double confidenceScore,
+        String policyVersion
 ) {
 }

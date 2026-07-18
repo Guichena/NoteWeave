@@ -2,6 +2,7 @@ package com.noteweave.research;
 
 import com.noteweave.common.ApiResponse;
 import jakarta.validation.Valid;
+import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -19,6 +20,11 @@ public class ResearchRunController {
         this.researchRunService = researchRunService;
     }
 
+    @GetMapping
+    ApiResponse<List<ResearchRunSummaryResponse>> listResearchRuns(@PathVariable String workspaceId) {
+        return ApiResponse.success(researchRunService.listRuns(workspaceId));
+    }
+
     @PostMapping
     ApiResponse<ResearchRunResponse> createResearchRun(
             @PathVariable String workspaceId,
@@ -33,6 +39,40 @@ public class ResearchRunController {
             @PathVariable String researchRunId
     ) {
         return ApiResponse.success(researchRunService.getRunDetail(workspaceId, researchRunId));
+    }
+
+    @GetMapping("/{researchRunId}/evidence")
+    ApiResponse<ResearchEvidenceManifestResponse> getResearchEvidence(
+            @PathVariable String workspaceId,
+            @PathVariable String researchRunId
+    ) {
+        return ApiResponse.success(researchRunService.evidenceManifest(workspaceId, researchRunId));
+    }
+
+    @GetMapping("/{researchRunId}/checkpoints")
+    ApiResponse<List<ResearchCheckpointSummaryResponse>> listResearchCheckpoints(
+            @PathVariable String workspaceId,
+            @PathVariable String researchRunId
+    ) {
+        return ApiResponse.success(researchRunService.listCheckpoints(workspaceId, researchRunId));
+    }
+
+    @GetMapping("/{researchRunId}/checkpoints/{checkpointNo}")
+    ApiResponse<ResearchCheckpointResponse> getResearchCheckpoint(
+            @PathVariable String workspaceId,
+            @PathVariable String researchRunId,
+            @PathVariable int checkpointNo
+    ) {
+        return ApiResponse.success(researchRunService.getCheckpoint(workspaceId, researchRunId, checkpointNo));
+    }
+
+    @PostMapping("/{researchRunId}/resume-from-checkpoint/{checkpointNo}")
+    ApiResponse<ResearchRunResponse> resumeResearchRunFromCheckpoint(
+            @PathVariable String workspaceId,
+            @PathVariable String researchRunId,
+            @PathVariable int checkpointNo
+    ) {
+        return ApiResponse.success(researchRunService.resumeFromCheckpoint(workspaceId, researchRunId, checkpointNo));
     }
 
     @PostMapping("/{researchRunId}/save-report-as-source")

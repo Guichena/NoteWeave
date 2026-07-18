@@ -1,0 +1,8 @@
+{
+    "schema_version":  "noteweave-ma4h-h2-evidence.v1",
+    "status":  "VERIFIED",
+    "project_name":  "noteweave-ma4h-h2-20260717t0520d",
+    "test_exit_code":  0,
+    "completed_at_utc":  "2026-07-17T05:25:58.2401343Z",
+    "boundary":  "MySQL 8.4 + mocked rate-limit transport; no real provider evidence"
+}

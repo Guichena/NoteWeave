@@ -13,8 +13,17 @@ public record MemoryControlPackResponse(
         List<String> evidencePolicy,
         List<String> interactionPolicy,
         List<String> reviewChecklist,
-        List<String> memoryObjectIds
+        List<String> memoryObjectIds,
+        List<MemoryReferenceResponse> memoryReferences,
+        MemoryCompilationTraceResponse compilationTrace
 ) {
+
+    public MemoryControlPackResponse {
+        memoryObjectIds = memoryObjectIds == null ? List.of() : List.copyOf(memoryObjectIds);
+        memoryReferences = memoryReferences == null ? List.of() : List.copyOf(memoryReferences);
+        compilationTrace = compilationTrace == null
+                ? MemoryCompilationTraceResponse.empty() : compilationTrace;
+    }
 
     public boolean hasControls() {
         return !memoryObjectIds.isEmpty();

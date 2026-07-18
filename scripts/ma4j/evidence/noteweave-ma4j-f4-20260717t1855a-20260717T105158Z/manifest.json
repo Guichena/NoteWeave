@@ -1,0 +1,6 @@
+{
+  "status": "VERIFIED",
+  "tests": "4/4",
+  "schema": "Flyway v049 / MySQL 8.4",
+  "boundary": "Database-native immutable report artifact, rollback and concurrent linearization; no automatic coordinator handoff or OS process kill"
+}

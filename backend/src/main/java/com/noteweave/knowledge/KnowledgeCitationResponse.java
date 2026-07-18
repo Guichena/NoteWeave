@@ -6,6 +6,8 @@ public record KnowledgeCitationResponse(
         String title,
         String quoteText,
         Integer pageNo,
-        String locationInfo
+        String locationInfo,
+        String generatedBy,
+        String generatedRefId
 ) {
 }

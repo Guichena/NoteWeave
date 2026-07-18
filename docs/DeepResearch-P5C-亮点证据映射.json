@@ -1,0 +1,91 @@
+{
+  "pack_key": "deep-research-p5c",
+  "core_keywords": [
+    {
+      "keyword": "Research Harness",
+      "summary": "研究主链由正式 harness 组织，而不是一次性 prompt。",
+      "evidence_refs": [
+        "workers/research-worker/app/harness.py",
+        "workers/research-worker/tests/test_harness.py",
+        "workers/scripts/run-gate1-smoke.ps1"
+      ]
+    },
+    {
+      "keyword": "Closed-Loop Research",
+      "summary": "研究、读取、验证、纠偏和成文由闭环驱动。",
+      "evidence_refs": [
+        "workers/research-worker/app/loop_runtime.py",
+        "workers/research-worker/app/runner.py",
+        "docs/DeepResearch-Gate1样例说明.md"
+      ]
+    },
+    {
+      "keyword": "Table-as-State",
+      "summary": "row/cell/evidence/verifier 状态进入结构化状态真源。",
+      "evidence_refs": [
+        "workers/research-worker/app/state.py",
+        "workers/research-worker/app/models.py",
+        "docs/深度研究智能体编排升级设计.md"
+      ]
+    },
+    {
+      "keyword": "Dual Verifier",
+      "summary": "本地 verifier 和全局 verifier 共同控制闭环收口。",
+      "evidence_refs": [
+        "workers/research-worker/app/verifier.py",
+        "workers/research-worker/app/verifier_gate_policy.py",
+        "frontend/src/App.tsx"
+      ]
+    },
+    {
+      "keyword": "反证分支",
+      "summary": "冲突证据会触发 counterfactual branch，而不是被平均抹平。",
+      "evidence_refs": [
+        "workers/research-worker/app/branch.py",
+        "workers/research-worker/app/gate1_smoke.py",
+        "docs/DeepResearch-P5B-demo-suite.json"
+      ]
+    }
+  ],
+  "demo_flow": [
+    {
+      "step": 1,
+      "title": "输入研究任务",
+      "evidence_refs": [
+        "frontend/src/App.tsx"
+      ]
+    },
+    {
+      "step": 2,
+      "title": "主界面看结论 / 报告 / 来源",
+      "evidence_refs": [
+        "frontend/src/App.tsx",
+        "docs/深度研究智能体全量交付执行文档.md"
+      ]
+    },
+    {
+      "step": 3,
+      "title": "process 看 search / fetch / read",
+      "evidence_refs": [
+        "docs/DeepResearch-Gate1样例说明.md",
+        "frontend/src/App.tsx"
+      ]
+    },
+    {
+      "step": 4,
+      "title": "audit 看 verifier / 反证分支 / checkpoint",
+      "evidence_refs": [
+        "frontend/src/App.tsx",
+        "docs/DeepResearch-P5B-demo-suite.md"
+      ]
+    },
+    {
+      "step": 5,
+      "title": "导出与资料回流",
+      "evidence_refs": [
+        "scripts/verify-p5a-research-delivery.ps1",
+        "docs/DeepResearch-P5A验证说明.md"
+      ]
+    }
+  ]
+}

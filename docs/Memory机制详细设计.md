@@ -1,5 +1,7 @@
 # NoteWeave v2 Memory 机制详细设计
 
+> Memory 文档中的 Artifact Action/Style 术语只描述 Control Pack 的历史编译语境。现行 Artifact 请求以 Skill 为主语，Memory 只提供约束，不参与来源事实和运行路径决策。
+
 ## 1. 定位
 
 这份文档专门定义 NoteWeave v2 的 Memory 机制。

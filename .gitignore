@@ -17,14 +17,20 @@ node_modules/
 .env
 .venv/
 .conda/
-reference/
+reference/*
+!reference/artifact-skill-catalog-v1.json
 __pycache__/
 .pytest_cache/
 
 backend/target/
+backups/stage5-r6-recovered/raw/
+backups/stage5-r6-recovered/artifacts/
 frontend/vite.config.js
 frontend/vite.config.d.ts
 workers/**/.venv/
+workers/**/.artifact-worker-*.json
+workers/**/runtime/
+workers/**/exports/
 
 .DS_Store
 Thumbs.db

@@ -1,0 +1,5 @@
+{
+  "status": "VERIFIED",
+  "tests": "4/4",
+  "boundary": "MySQL F1-F3 deterministic finalization, rollback and concurrent linearization; no report artifact source or OS process kill"
+}

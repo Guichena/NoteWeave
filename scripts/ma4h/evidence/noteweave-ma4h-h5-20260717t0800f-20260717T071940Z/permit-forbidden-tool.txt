@@ -1,0 +1,2 @@
+{"success":false,"code":"RESEARCH_AGENT_PERMIT_TOOL_FORBIDDEN","message":"The requested tool is not allowed for the authoritative task role","data":null,"request_id":"72612498-4b46-488f-876a-d4d7d55125d1"}
+400

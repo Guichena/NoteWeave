@@ -1,0 +1,15 @@
+name: noteweave-ma4i-i1-20260717t0855c
+services:
+  i1-tests:
+    build:
+      context: D:\java-projects\NoteWeave-v2
+      dockerfile: scripts/ma4h/Dockerfile.h2-tests
+    command:
+      - -Dtest=ResearchAgentWaveBarrierTest
+      - test
+    image: noteweave-ma4i-i1-tests:local
+    networks:
+      default: null
+networks:
+  default:
+    name: noteweave-ma4i-i1-20260717t0855c_default

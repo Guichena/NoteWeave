@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "retrieval-qa-annotation-request-v1",
+  "datasetVersion": "stage5-realistic-qa-draft-20260714",
+  "candidatePoolSize": 5,
+  "cases": [
+    {
+      "id": "private-qa-case",
+      "workspaceId": "workspace-private",
+      "query": "spring secret token=abcdefgh1234 alice@example.com",
+      "allowedSourceIds": ["source-allowed"],
+      "topK": 2
+    }
+  ]
+}

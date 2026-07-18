@@ -1,0 +1,58 @@
+{
+  "record": {
+    "calls": {
+      "fetch": 1,
+      "llm": 0,
+      "read": 1,
+      "search": 1
+    },
+    "case_key": "alpha-research-exact-table",
+    "comparison_digest": "c9284266b0ee3542646aafadceb5e7aaf7cd278a23f8ae6a7e95084aa5bfd2c2",
+    "estimated_cost": 0.0,
+    "execution_mode": "SEQUENTIAL",
+    "http_429_count": 0,
+    "http_5xx_count": 0,
+    "input_tokens": 0,
+    "manifest_digest": "45d68c6a2d5fe328059560dacbd4e5571fbeecaf65665ac664d4da0b80e059d7",
+    "output_tokens": 0,
+    "profile_key": "sequential-simulated-v1",
+    "provider_kind": "SIMULATED",
+    "quality": {
+      "branch_correction_success": 1.0,
+      "case_key": "alpha-research-exact-table",
+      "cell_f1": 0.0,
+      "cell_precision": 0.0,
+      "cell_recall": 0.0,
+      "cell_value_accuracy": 0.0,
+      "citation_association_accuracy": 0.0,
+      "citation_support_accuracy": 0.0,
+      "column_f1": 0.0,
+      "column_precision": 0.0,
+      "column_recall": 0.0,
+      "core_entity_accuracy": 1.0,
+      "entity_f1": 1.0,
+      "entity_precision": 1.0,
+      "entity_recall": 1.0,
+      "exact_table_evaluable": true,
+      "exact_table_failure_reasons": [
+        "VERIFIED_CELL_SET_MISMATCH",
+        "CELL_VALUE_MISMATCH:Alpha Research:paper_title",
+        "CELL_VALUE_MISMATCH:Alpha Research:problem",
+        "CELL_VALUE_MISMATCH:Alpha Research:method"
+      ],
+      "exact_table_success": false,
+      "passed": false,
+      "required_column_f1": 0.0,
+      "row_completeness": 0.0,
+      "row_f1": 0.0,
+      "row_precision": 0.0,
+      "row_recall": 0.0,
+      "strict_passed": false
+    },
+    "retry_count": 0,
+    "rollout_no": 1,
+    "termination_reason": "WRITE_WITH_GUARDRAILS",
+    "wall_clock_ms": 23.748
+  },
+  "schema_version": "research-agent-benchmark-record.v1"
+}

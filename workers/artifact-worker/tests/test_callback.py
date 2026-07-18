@@ -1,0 +1,555 @@
+from __future__ import annotations
+
+import pytest
+
+import app.callback as callback_module
+from app.callback import (
+    JavaArtifactCallbackClient,
+    _dispatch_system_provider_operations,
+    acknowledge_acquisition_operation_with_callbacks,
+    run_artifact_task_with_callbacks,
+)
+from app.acquisition_runtime import clear_acquisition_runtime, dispatch_acquisition_operation, list_acquisition_operations
+from app.artifact_repository import clear_artifact_repository, get_artifact_version_detail
+from app.capability_approval_queue import clear_approval_requests
+from app.capability_provider import (
+    reset_capability_provider_approval_status,
+    reset_capability_provider_discovery_status,
+    reset_capability_provider_health_status,
+    reset_capability_provider_status,
+)
+from app.capability_wait_queue import clear_waiting_tasks, get_waiting_task
+from app.models import ArtifactProgressEvent, ArtifactTaskInput, ArtifactTaskResult
+from app.runner import run_artifact_task
+
+
+def _build_resume_task_input() -> ArtifactTaskInput:
+    return ArtifactTaskInput.model_validate(
+        {
+            "task_id": "task-a-callback",
+            "workspace_id": "ws-1",
+            "target_id": "artifact-1",
+            "source_scope": [
+                {
+                    "source_id": "src-1",
+                    "title": "Callback Source",
+                    "summary": "Controlled Agentic Graph Harness drives artifact generation.",
+                }
+            ],
+            "context_snapshot": {"context_snapshot_id": "ctx-task-a-callback"},
+            "control_pack": {
+                "pack_type": "artifact",
+                "target_key": "resume_highlight",
+                "task_neighborhood": "ARTIFACT_SKILL_RESUME_HIGHLIGHT",
+                "style_constraints": ["Use action verbs and concise bullets."],
+                "structure_constraints": ["Output a short resume-ready highlight list."],
+                "terminology_policy": ["Keep key runtime terms in English."],
+                "forbidden_patterns": [],
+                "evidence_policy": ["Anchor every bullet to the provided source scope."],
+                "interaction_policy": [],
+                "review_checklist": ["Preserve skill-first naming."],
+                "memory_object_ids": [],
+            },
+            "input_payload": {
+                "skill_key": "resume_highlight",
+                "action_key": "",
+                "style_profile_key": "interview",
+                "prompt_recipe_id": "",
+                "context_snapshot_id": "ctx-task-a-callback",
+                "user_requirement": "Emphasize Schema-Gated Skill Graph Runtime and Verifier / Repair.",
+                "generation_brief": "Generate concise project highlights for a resume.",
+                "inputs": {},
+                "requested_capabilities": [],
+                "writeback_mode": "NONE",
+            },
+        }
+    )
+
+
+def _build_waiting_task_input() -> ArtifactTaskInput:
+    return ArtifactTaskInput.model_validate(
+        {
+            "task_id": "task-a-waiting",
+            "workspace_id": "ws-1",
+            "target_id": "artifact-2",
+            "source_scope": [],
+            "context_snapshot": {"context_snapshot_id": "ctx-task-a-waiting"},
+            "control_pack": {
+                "pack_type": "artifact",
+                "target_key": "bilibili_course_note_pdf",
+                "task_neighborhood": "ARTIFACT_SKILL_BILIBILI_COURSE_NOTE_PDF",
+                "style_constraints": [],
+                "structure_constraints": ["Export the final result as a lecture note PDF."],
+                "terminology_policy": [],
+                "forbidden_patterns": [],
+                "evidence_policy": ["Keep the note traceable to the transcript and screenshots."],
+                "interaction_policy": [],
+                "review_checklist": ["Preserve asynchronous provider waiting semantics."],
+                "memory_object_ids": [],
+            },
+            "input_payload": {
+                "skill_key": "bilibili_course_note_pdf",
+                "action_key": "",
+                "style_profile_key": "teaching",
+                "prompt_recipe_id": "",
+                "context_snapshot_id": "ctx-task-a-waiting",
+                "user_requirement": "Wait for subtitle extraction and PDF compilation to finish asynchronously.",
+                "generation_brief": "Generate a detailed lecture note PDF from the Bilibili video.",
+                "inputs": {
+                    "url": "https://www.bilibili.com/video/BV1NoteWeaveDemo",
+                    "language": "zh-CN",
+                },
+                "requested_capabilities": [],
+                "writeback_mode": "NONE",
+            },
+        }
+    )
+
+
+class FakeCallbackClient:
+    def __init__(
+        self,
+        task_input: ArtifactTaskInput,
+        should_fail_fetch: bool = False,
+        should_fail_progress: bool = False,
+        should_fail_complete: bool = False,
+    ) -> None:
+        self.task_input = task_input
+        self.should_fail_fetch = should_fail_fetch
+        self.should_fail_progress = should_fail_progress
+        self.should_fail_complete = should_fail_complete
+        self.fetched_task_ids: list[str] = []
+        self.progress_events: list[ArtifactProgressEvent] = []
+        self.completed_results: list[ArtifactTaskResult] = []
+        self.failures: list[dict[str, str]] = []
+
+    def fetch_task_input(self, task_id: str) -> ArtifactTaskInput:
+        self.fetched_task_ids.append(task_id)
+        if self.should_fail_fetch:
+            raise RuntimeError("java input unavailable")
+        return self.task_input
+
+    def send_progress(self, task_id: str, event: ArtifactProgressEvent) -> None:
+        if self.should_fail_progress:
+            raise RuntimeError("java progress callback unavailable")
+        self.progress_events.append(event)
+
+    def send_complete(self, task_id: str, result: ArtifactTaskResult) -> None:
+        if self.should_fail_complete:
+            raise RuntimeError("java complete callback unavailable")
+        self.completed_results.append(result)
+
+    def send_fail(self, task_id: str, phase: str, error_code: str, error_message: str) -> None:
+        self.failures.append(
+            {
+                "task_id": task_id,
+                "phase": phase,
+                "error_code": error_code,
+                "error_message": error_message,
+            }
+        )
+
+
+def test_java_artifact_callback_client_should_send_internal_auth_token(monkeypatch) -> None:
+    captured_headers: dict[str, str] = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def read(self) -> bytes:
+            return b'{"success":true,"data":{}}'
+
+    def fake_urlopen(req, timeout):
+        captured_headers.update({key.lower(): value for key, value in req.header_items()})
+        return FakeResponse()
+
+    monkeypatch.setattr(callback_module.request, "urlopen", fake_urlopen)
+    client = JavaArtifactCallbackClient("http://java-host:8081", "shared-secret")
+
+    client._request("GET", "/internal/worker/artifact-outbox/metrics")
+
+    assert captured_headers["x-noteweave-internal-token"] == "shared-secret"
+
+
+def test_java_artifact_callback_client_should_send_stable_callback_idempotency_keys(
+    monkeypatch,
+) -> None:
+    captured_headers: list[dict[str, str]] = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def read(self) -> bytes:
+            return b'{"success":true,"data":{}}'
+
+    def fake_urlopen(req, timeout):
+        captured_headers.append({key.lower(): value for key, value in req.header_items()})
+        return FakeResponse()
+
+    monkeypatch.setattr(callback_module.request, "urlopen", fake_urlopen)
+    client = JavaArtifactCallbackClient("http://java-host:8081", "shared-secret")
+    event = ArtifactProgressEvent(
+        phase="COMPOSING",
+        progress_percent=60,
+        message="sections generated",
+    )
+    _, result = run_artifact_task(_build_resume_task_input())
+
+    client.send_progress("task-a-callback", event)
+    client.send_progress("task-a-callback", event)
+    client.send_complete("task-a-callback", result)
+    client.send_fail("task-a-callback", "WORKER_EXECUTION", "VALUEERROR", "invalid result")
+
+    keys = [headers["x-noteweave-idempotency-key"] for headers in captured_headers]
+    assert keys[0] == keys[1]
+    assert len(set(keys[1:])) == 3
+    assert all(key.startswith("artifact-worker-") for key in keys)
+
+
+def test_run_artifact_task_with_callbacks_should_fetch_emit_progress_and_complete() -> None:
+    client = FakeCallbackClient(_build_resume_task_input())
+
+    response = run_artifact_task_with_callbacks("task-a-callback", client)
+
+    assert response.status == "COMPLETED"
+    assert response.progress_events == 5
+    assert client.fetched_task_ids == ["task-a-callback"]
+    assert [event.phase for event in client.progress_events] == [
+        "RESOLVING",
+        "ACQUIRING",
+        "COMPOSING",
+        "VERIFYING",
+        "EXPORTING",
+    ]
+    assert len(client.completed_results) == 1
+    assert client.completed_results[0].job_snapshot.status == "COMPLETED"
+    assert client.failures == []
+
+
+def test_duplicate_acquisition_ack_should_retry_complete_delivery_after_transport_failure() -> None:
+    clear_artifact_repository()
+    clear_acquisition_runtime()
+    clear_waiting_tasks()
+    clear_approval_requests()
+    reset_capability_provider_discovery_status()
+    reset_capability_provider_health_status()
+    reset_capability_provider_approval_status()
+    reset_capability_provider_status()
+
+    try:
+        client = FakeCallbackClient(
+            _build_waiting_task_input(),
+            should_fail_complete=True,
+        )
+        run_artifact_task_with_callbacks("task-a-waiting", client)
+        transcript_operation = next(
+            operation
+            for operation in list_acquisition_operations(task_id="task-a-waiting")
+            if operation["operation_key"] == "EXTRACT_TRANSCRIPT"
+        )
+        dispatch_response = dispatch_acquisition_operation(transcript_operation["request_id"])
+        callback_token = dispatch_response["operation"]["callback_token"]
+        provider_payload = {
+            "subtitle_preview": [
+                "Controlled Agentic Graph Harness unifies the artifact runtime.",
+            ]
+        }
+
+        with pytest.raises(RuntimeError, match="complete callback unavailable"):
+            acknowledge_acquisition_operation_with_callbacks(
+                callback_token=callback_token,
+                final_status="ACKNOWLEDGED",
+                provider_payload=provider_payload,
+                client=client,
+            )
+
+        assert get_waiting_task("task-a-waiting") is not None
+        client.should_fail_complete = False
+        retry_response = acknowledge_acquisition_operation_with_callbacks(
+            callback_token=callback_token,
+            final_status="ACKNOWLEDGED",
+            provider_payload=provider_payload,
+            client=client,
+        )
+    finally:
+        clear_artifact_repository()
+        clear_acquisition_runtime()
+        clear_waiting_tasks()
+        clear_approval_requests()
+        reset_capability_provider_discovery_status()
+        reset_capability_provider_health_status()
+        reset_capability_provider_approval_status()
+        reset_capability_provider_status()
+
+    assert len(retry_response.resumed_tasks) == 1
+    assert retry_response.resumed_tasks[0].status == "COMPLETED"
+    assert len(client.completed_results) == 1
+    assert client.failures == []
+
+
+def test_run_artifact_task_with_callbacks_should_stop_at_waiting_progress_without_completing() -> None:
+    client = FakeCallbackClient(_build_waiting_task_input())
+
+    response = run_artifact_task_with_callbacks("task-a-waiting", client)
+
+    assert response.status == "WAITING_FOR_PROVIDER"
+    assert response.progress_events == 1
+    assert client.fetched_task_ids == ["task-a-waiting"]
+    assert client.completed_results == []
+    assert client.failures == []
+    wait_event = client.progress_events[0]
+    assert wait_event.phase == "WAITING_FOR_PROVIDER"
+    assert wait_event.payload["provider_job"]["provider_id"] == "builtin-bilibili-mcp"
+    assert wait_event.payload["provider_job"]["operation_key"] == "EXTRACT_TRANSCRIPT"
+    assert wait_event.payload["provider_job"]["request_id"].startswith("fetch-task-a-waiting-input-url-1-")
+    assert wait_event.payload["provider_job"]["provider_receipt_id"].startswith(
+        "provider-receipt-fetch-task-a-waiting-input-url-1-"
+    )
+    assert wait_event.payload["provider_job"]["provider_job_id"].startswith("provider-job-builtin-bilibili-mcp-")
+    assert wait_event.payload["provider_job"]["delivery_id"].startswith(
+        "acq-delivery-fetch-task-a-waiting-input-url-1-"
+    )
+    assert wait_event.payload["provider_job"]["callback_token"].startswith(
+        "acq-callback-token-fetch-task-a-waiting-input-url-1-"
+    )
+    assert wait_event.payload["provider_job"]["provider_status"] == "AVAILABLE"
+    assert wait_event.payload["provider_job"]["health_status"] == "HEALTHY"
+    assert wait_event.payload["provider_job"]["provider_job_status"] == "WAITING_FOR_PROVIDER"
+    assert wait_event.payload["provider_job"]["callback_status"] == "WAITING_FOR_PROVIDER"
+    assert wait_event.payload["provider_job"]["dispatch_count"] == 1
+    assert wait_event.payload["provider_job"]["previous_failed_delivery_count"] == 0
+    assert wait_event.payload["provider_job"]["has_previous_failed_delivery"] is False
+    assert wait_event.payload["provider_job"]["provider_delivery_attempts"][0]["delivery_id"].startswith(
+        "acq-delivery-fetch-task-a-waiting-input-url-1-"
+    )
+    assert wait_event.payload["provider_job"]["provider_delivery_attempts"][0]["dispatch_count"] == 1
+    assert wait_event.payload["provider_job"]["provider_delivery_attempts"][0]["ack_status"] == "PENDING"
+
+
+def test_formal_callback_path_should_dispatch_system_bilibili_provider_after_waiting_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, result = run_artifact_task(_build_waiting_task_input())
+    calls: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(
+        callback_module,
+        "submit_system_mcp_acquisition_operation",
+        lambda request_id, java_base_url: calls.append((request_id, java_base_url))
+        or {"request_id": request_id, "status": "DISPATCHED"},
+    )
+
+    dispatches = _dispatch_system_provider_operations(result, "http://java-host:8081")
+
+    assert len(dispatches) == 1
+    assert calls[0][0].startswith("fetch-task-a-waiting-input-url-1-")
+    assert calls[0][1] == "http://java-host:8081"
+
+
+def test_run_artifact_task_with_callbacks_should_not_report_input_transport_failure_as_execution_failure() -> None:
+    client = FakeCallbackClient(_build_resume_task_input(), should_fail_fetch=True)
+
+    with pytest.raises(RuntimeError):
+        run_artifact_task_with_callbacks("task-a-callback", client)
+
+    assert client.completed_results == []
+    assert client.failures == []
+
+
+def test_run_artifact_task_with_callbacks_should_report_generation_failures_to_java(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = FakeCallbackClient(_build_resume_task_input())
+    monkeypatch.setattr(
+        callback_module,
+        "run_artifact_task",
+        lambda task_input: (_ for _ in ()).throw(ValueError("generation failed")),
+    )
+
+    with pytest.raises(ValueError, match="generation failed"):
+        run_artifact_task_with_callbacks("task-a-callback", client)
+
+    assert client.failures[0]["phase"] == "WORKER_EXECUTION"
+    assert client.failures[0]["error_code"] == "VALUEERROR"
+
+
+@pytest.mark.parametrize("failure_point", ["progress", "complete"])
+def test_run_artifact_task_with_callbacks_should_not_turn_callback_delivery_failure_into_task_failure(
+    failure_point: str,
+) -> None:
+    client = FakeCallbackClient(
+        _build_resume_task_input(),
+        should_fail_progress=failure_point == "progress",
+        should_fail_complete=failure_point == "complete",
+    )
+
+    with pytest.raises(RuntimeError, match="callback unavailable"):
+        run_artifact_task_with_callbacks("task-a-callback", client)
+
+    assert client.failures == []
+
+
+def test_acquisition_ack_with_callbacks_should_resume_waiting_task_and_complete_to_java() -> None:
+    clear_artifact_repository()
+    clear_acquisition_runtime()
+    clear_waiting_tasks()
+    clear_approval_requests()
+    reset_capability_provider_discovery_status()
+    reset_capability_provider_health_status()
+    reset_capability_provider_approval_status()
+    reset_capability_provider_status()
+
+    try:
+        client = FakeCallbackClient(_build_waiting_task_input())
+        waiting_response = run_artifact_task_with_callbacks("task-a-waiting", client)
+        transcript_operation = next(
+            operation
+            for operation in list_acquisition_operations(task_id="task-a-waiting")
+            if operation["operation_key"] == "EXTRACT_TRANSCRIPT"
+        )
+        dispatch_response = dispatch_acquisition_operation(transcript_operation["request_id"])
+
+        ack_response = acknowledge_acquisition_operation_with_callbacks(
+            callback_token=dispatch_response["operation"]["callback_token"],
+            final_status="ACKNOWLEDGED",
+            result_locator=(
+                "provider://builtin-bilibili-mcp/get_subtitle/"
+                "fetch-task-a-waiting-input-url-1-extract_transcript"
+            ),
+            provider_payload={
+                "title": "Bilibili Transcript",
+                "plain_text": "Controlled Agentic Graph Harness unifies Action, Style, Graph and Runtime.",
+                "segments": [
+                    {
+                        "segment_id": "seg-1",
+                        "text": "Schema-Gated Skill Graph Runtime constrains the execution plan.",
+                    }
+                ],
+                "source_refs": ["provider://builtin-bilibili-mcp/get_subtitle/demo"],
+            },
+            client=client,
+        )
+        completed_version = get_artifact_version_detail(
+            target_id=client.completed_results[0].job_snapshot.target_id,
+            version_id=client.completed_results[0].version_snapshot.version_id,
+        )
+    finally:
+        clear_artifact_repository()
+        clear_acquisition_runtime()
+        clear_waiting_tasks()
+        clear_approval_requests()
+        reset_capability_provider_discovery_status()
+        reset_capability_provider_health_status()
+        reset_capability_provider_approval_status()
+        reset_capability_provider_status()
+
+    assert waiting_response.status == "WAITING_FOR_PROVIDER"
+    assert ack_response.operation["provider_job_status"] == "SUCCEEDED"
+    assert ack_response.operation["callback_status"] == "ACKNOWLEDGED"
+    assert ack_response.operation["provider_id"] == "builtin-bilibili-mcp"
+    assert ack_response.operation["server_id"] == "builtin-bilibili-mcp"
+    assert ack_response.operation["tool_name"] == "get_bilibili_subtitle"
+    assert ack_response.operation["provider_status"] == "AVAILABLE"
+    assert ack_response.operation["health_status"] == "HEALTHY"
+    assert ack_response.operation["callback_token"].startswith("acq-callback-token-fetch-task-a-waiting-input-url-1-")
+    assert ack_response.receipt["request_id"] == ack_response.operation["request_id"]
+    assert ack_response.receipt["task_id"] == "task-a-waiting"
+    assert ack_response.receipt["source_id"] == "input-url-1"
+    assert ack_response.receipt["operation_key"] == "EXTRACT_TRANSCRIPT"
+    assert (
+        ack_response.receipt["result_locator"]
+        == "provider://builtin-bilibili-mcp/get_subtitle/fetch-task-a-waiting-input-url-1-extract_transcript"
+    )
+    assert ack_response.receipt["completed_at"]
+    assert ack_response.receipt["dispatch_count"] == 1
+    assert len(ack_response.resumed_tasks) == 1
+    assert ack_response.resumed_tasks[0].status == "COMPLETED"
+    assert len(client.progress_events) == 6
+    assert [event.phase for event in client.progress_events[1:]] == [
+        "RESOLVING",
+        "ACQUIRING",
+        "COMPOSING",
+        "VERIFYING",
+        "EXPORTING",
+    ]
+    assert len(client.completed_results) == 1
+    assert client.completed_results[0].job_snapshot.status == "COMPLETED"
+    assert client.completed_results[0].result_payload["resume_scope"]["matched_operation_key"] == "EXTRACT_TRANSCRIPT"
+    assert client.completed_results[0].result_payload["acquisition_callback_trace"]["status"] == "ATTACHED"
+    assert (
+        client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["receipt_id"]
+        == ack_response.receipt["receipt_id"]
+    )
+    assert (
+        client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["delivery_id"]
+        == ack_response.receipt["delivery_id"]
+    )
+    assert (
+        client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["provider_job_id"]
+        == ack_response.receipt["provider_job_id"]
+    )
+    assert (
+        client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["request_id"]
+        == ack_response.receipt["request_id"]
+    )
+    assert (
+        client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["task_id"]
+        == ack_response.receipt["task_id"]
+    )
+    assert (
+        client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["source_id"]
+        == ack_response.receipt["source_id"]
+    )
+    assert (
+        client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["operation_key"]
+        == ack_response.receipt["operation_key"]
+    )
+    assert (
+        client.completed_results[0].result_payload["acquisition_callback_trace"]["operation"]["provider_id"]
+        == ack_response.operation["provider_id"]
+    )
+    assert (
+        client.completed_results[0].result_payload["acquisition_callback_trace"]["operation"]["server_id"]
+        == ack_response.operation["server_id"]
+    )
+    assert (
+        client.completed_results[0].result_payload["acquisition_callback_trace"]["operation"]["tool_name"]
+        == ack_response.operation["tool_name"]
+    )
+    assert (
+        client.completed_results[0].result_payload["acquisition_callback_trace"]["operation"]["callback_token"]
+        == ack_response.operation["callback_token"]
+    )
+    assert (
+        client.completed_results[0].result_payload["acquisition_callback_trace"]["operation"]["provider_status"]
+        == "AVAILABLE"
+    )
+    assert (
+        client.completed_results[0].result_payload["acquisition_callback_trace"]["operation"]["health_status"]
+        == "HEALTHY"
+    )
+    assert (
+        client.completed_results[0].result_payload["acquisition_callback_trace"]["operation"]["provider_job_status"]
+        == "SUCCEEDED"
+    )
+    assert client.completed_results[0].result_payload["lifecycle_trace"]["current_phase"] == "EXPORTING"
+    assert client.completed_results[0].result_payload["lifecycle_trace"]["steps"][0]["phase"] == "RESUMING"
+    assert client.completed_results[0].result_payload["lifecycle_trace"]["steps"][0]["status"] == "COMPLETED"
+    assert (
+        client.completed_results[0].result_payload["lifecycle_trace"]["resume_scope"]["matched_request_id"]
+        == client.completed_results[0].result_payload["resume_scope"]["matched_request_id"]
+    )
+    assert completed_version["runtime_trace"]["acquisition_callback_trace"]["status"] == "ATTACHED"
+    assert (
+        completed_version["runtime_trace"]["acquisition_callback_trace"]["receipt"]["receipt_id"]
+        == ack_response.receipt["receipt_id"]
+    )
+    assert client.failures == []

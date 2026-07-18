@@ -17,12 +17,27 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v2")
 public class KnowledgeController {
 
-    private final KnowledgeService knowledgeService;
     private final WikiIngestService wikiIngestService;
+    private final KnowledgeQueryService knowledgeQueryService;
+    private final KnowledgeGraphService knowledgeGraphService;
+    private final KnowledgeVersionService knowledgeVersionService;
+    private final KnowledgeCommandService knowledgeCommandService;
+    private final KnowledgeGovernanceService knowledgeGovernanceService;
 
-    public KnowledgeController(KnowledgeService knowledgeService, WikiIngestService wikiIngestService) {
-        this.knowledgeService = knowledgeService;
+    public KnowledgeController(
+            WikiIngestService wikiIngestService,
+            KnowledgeQueryService knowledgeQueryService,
+            KnowledgeGraphService knowledgeGraphService,
+            KnowledgeVersionService knowledgeVersionService,
+            KnowledgeCommandService knowledgeCommandService,
+            KnowledgeGovernanceService knowledgeGovernanceService
+    ) {
         this.wikiIngestService = wikiIngestService;
+        this.knowledgeQueryService = knowledgeQueryService;
+        this.knowledgeGraphService = knowledgeGraphService;
+        this.knowledgeVersionService = knowledgeVersionService;
+        this.knowledgeCommandService = knowledgeCommandService;
+        this.knowledgeGovernanceService = knowledgeGovernanceService;
     }
 
     @PostMapping("/workspaces/{workspaceId}/knowledge-items")
@@ -30,7 +45,7 @@ public class KnowledgeController {
             @PathVariable String workspaceId,
             @Valid @RequestBody KnowledgeItemRequest request
     ) {
-        return ApiResponse.success(knowledgeService.createItem(workspaceId, request));
+        return ApiResponse.success(knowledgeCommandService.createItem(workspaceId, request));
     }
 
     @GetMapping("/workspaces/{workspaceId}/knowledge-items")
@@ -38,17 +53,17 @@ public class KnowledgeController {
             @PathVariable String workspaceId,
             @RequestParam(name = "item_type", defaultValue = "WIKI") String itemType
     ) {
-        return ApiResponse.success(knowledgeService.listItems(workspaceId, itemType));
+        return ApiResponse.success(knowledgeQueryService.listItems(workspaceId, itemType));
     }
 
     @GetMapping("/workspaces/{workspaceId}/wiki-home")
     ApiResponse<WikiHomeResponse> wikiHome(@PathVariable String workspaceId) {
-        return ApiResponse.success(knowledgeService.getWikiHome(workspaceId));
+        return ApiResponse.success(knowledgeQueryService.getWikiHome(workspaceId));
     }
 
     @GetMapping("/workspaces/{workspaceId}/wiki-index")
     ApiResponse<WikiIndexResponse> wikiIndex(@PathVariable String workspaceId) {
-        return ApiResponse.success(knowledgeService.getWikiIndex(workspaceId));
+        return ApiResponse.success(knowledgeQueryService.getWikiIndex(workspaceId));
     }
 
     @GetMapping("/workspaces/{workspaceId}/wiki-search")
@@ -56,7 +71,7 @@ public class KnowledgeController {
             @PathVariable String workspaceId,
             @RequestParam(name = "q", defaultValue = "") String query
     ) {
-        return ApiResponse.success(knowledgeService.searchWikiPages(workspaceId, query));
+        return ApiResponse.success(knowledgeQueryService.searchWikiPages(workspaceId, query));
     }
 
     @GetMapping("/workspaces/{workspaceId}/wiki-graph")
@@ -68,17 +83,19 @@ public class KnowledgeController {
             @RequestParam(name = "limit", defaultValue = "24") int limit,
             @RequestParam(name = "kinds", required = false) List<String> pageKinds
     ) {
-        return ApiResponse.success(knowledgeService.getWikiGraph(workspaceId, mode, centerItemId, depth, limit, pageKinds));
+        return ApiResponse.success(knowledgeGraphService.getWikiGraph(
+                workspaceId, mode, centerItemId, depth, limit, pageKinds));
     }
 
     @GetMapping("/workspaces/{workspaceId}/wiki-stats")
     ApiResponse<WikiStatsResponse> wikiStats(@PathVariable String workspaceId) {
-        return ApiResponse.success(knowledgeService.getWikiStats(workspaceId));
+        return ApiResponse.success(knowledgeGovernanceService.getWikiStats(workspaceId));
     }
 
     @GetMapping("/workspaces/{workspaceId}/wiki/rebuild-advice")
     ApiResponse<WikiRebuildAdviceResponse> wikiRebuildAdvice(@PathVariable String workspaceId) {
-        return ApiResponse.success(knowledgeService.getWikiRebuildAdvice(workspaceId));
+        return ApiResponse.success(
+                knowledgeGovernanceService.getWikiRebuildAdvice(workspaceId));
     }
 
     @GetMapping("/workspaces/{workspaceId}/wiki-issues")
@@ -89,7 +106,8 @@ public class KnowledgeController {
             @RequestParam(name = "auto_fixable", required = false) Boolean autoFixable,
             @RequestParam(name = "item_id", required = false) String itemId
     ) {
-        return ApiResponse.success(knowledgeService.listWikiIssues(workspaceId, issueType, severity, autoFixable, itemId));
+        return ApiResponse.success(knowledgeGovernanceService.listWikiIssues(
+                workspaceId, issueType, severity, autoFixable, itemId));
     }
 
     @GetMapping("/workspaces/{workspaceId}/wiki-log")
@@ -97,12 +115,14 @@ public class KnowledgeController {
             @PathVariable String workspaceId,
             @RequestParam(name = "item_id", required = false) String itemId
     ) {
-        return ApiResponse.success(knowledgeService.listWikiLog(workspaceId, itemId));
+        return ApiResponse.success(
+                knowledgeGovernanceService.listWikiLog(workspaceId, itemId));
     }
 
     @PostMapping("/workspaces/{workspaceId}/wiki/rebuild-links")
     ApiResponse<WikiStatsResponse> rebuildWikiLinks(@PathVariable String workspaceId) {
-        return ApiResponse.success(knowledgeService.rebuildWikiLinks(workspaceId));
+        return ApiResponse.success(
+                knowledgeGovernanceService.rebuildWikiLinks(workspaceId));
     }
 
     @PostMapping("/workspaces/{workspaceId}/wiki/rebuild")
@@ -112,17 +132,17 @@ public class KnowledgeController {
 
     @PostMapping("/workspaces/{workspaceId}/wiki/auto-fix")
     ApiResponse<WikiAutoFixResponse> autoFixWiki(@PathVariable String workspaceId) {
-        return ApiResponse.success(knowledgeService.autoFixWiki(workspaceId));
+        return ApiResponse.success(knowledgeGovernanceService.autoFixWiki(workspaceId));
     }
 
     @GetMapping("/knowledge-items/{itemId}")
     ApiResponse<KnowledgeItemDetailResponse> getItem(@PathVariable String itemId) {
-        return ApiResponse.success(knowledgeService.getItemDetail(itemId));
+        return ApiResponse.success(knowledgeQueryService.getItemDetail(itemId));
     }
 
     @GetMapping("/knowledge-items/{itemId}/versions")
     ApiResponse<List<KnowledgeVersionSummaryResponse>> listVersions(@PathVariable String itemId) {
-        return ApiResponse.success(knowledgeService.listItemVersions(itemId));
+        return ApiResponse.success(knowledgeVersionService.listItemVersions(itemId));
     }
 
     @GetMapping("/knowledge-items/{itemId}/versions/{versionNo}")
@@ -130,7 +150,8 @@ public class KnowledgeController {
             @PathVariable String itemId,
             @PathVariable int versionNo
     ) {
-        return ApiResponse.success(knowledgeService.getItemVersionDetail(itemId, versionNo));
+        return ApiResponse.success(
+                knowledgeVersionService.getItemVersionDetail(itemId, versionNo));
     }
 
     @PostMapping("/knowledge-items/{itemId}/versions")
@@ -138,7 +159,7 @@ public class KnowledgeController {
             @PathVariable String itemId,
             @Valid @RequestBody AppendKnowledgeVersionRequest request
     ) {
-        return ApiResponse.success(knowledgeService.appendVersion(itemId, request));
+        return ApiResponse.success(knowledgeVersionService.appendVersion(itemId, request));
     }
 
     @PatchMapping("/knowledge-items/{itemId}/title")
@@ -146,12 +167,12 @@ public class KnowledgeController {
             @PathVariable String itemId,
             @Valid @RequestBody RenameKnowledgeItemRequest request
     ) {
-        return ApiResponse.success(knowledgeService.renameItem(itemId, request));
+        return ApiResponse.success(knowledgeCommandService.renameItem(itemId, request));
     }
 
     @DeleteMapping("/knowledge-items/{itemId}")
     ApiResponse<Void> deleteItem(@PathVariable String itemId) {
-        knowledgeService.deleteItem(itemId);
+        knowledgeCommandService.deleteItem(itemId);
         return ApiResponse.success(null);
     }
 
@@ -160,6 +181,6 @@ public class KnowledgeController {
             @PathVariable String messageId,
             @Valid @RequestBody SaveNoteRequest request
     ) {
-        return ApiResponse.success(knowledgeService.saveMessageAsNote(messageId, request));
+        return ApiResponse.success(knowledgeCommandService.saveMessageAsNote(messageId, request));
     }
 }

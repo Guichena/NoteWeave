@@ -48,8 +48,21 @@ class Phase3NoteWikiContractTest {
         JsonNode noteMessage = sendMessage(conversationId, "NOTE", "请整理 NoteWeave 阶段3的 Note 链路");
         String noteAssistantMessageId = noteMessage.path("data").path("assistant_message_id").asText();
         String noteRequestId = noteMessage.path("data").path("assistant_request_id").asText();
+        String noteAnswerRunId = noteMessage.path("data").path("answer_run_id").asText();
 
-        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", noteRequestId))
+        Map<String, Object> noteRunContract = jdbcTemplate.queryForMap("""
+                select r.retrieval_plan_version, r.evidence_bundle_json,
+                       mr.prompt_version, mr.evidence_bundle_ref
+                from answer_run r
+                join message_revision mr on mr.answer_run_id = r.id and mr.revision_no = 1
+                where r.id = ?
+                """, noteAnswerRunId);
+        assertThat(noteRunContract.get("retrieval_plan_version")).isEqualTo("note-marginalia-v1");
+        assertThat(noteRunContract.get("prompt_version")).isEqualTo("note-marginalia-v1");
+        assertThat(noteRunContract.get("evidence_bundle_ref").toString())
+                .startsWith("evidence-bundle:");
+
+        ChatStreamTestSupport.perform(mockMvc, noteRequestId)
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("Marginalia 式结构化检索漏斗")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 资料定位")))
@@ -59,7 +72,7 @@ class Phase3NoteWikiContractTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 深读窗口")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 摘录证据")))
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("## 继续追问"))))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chat.citation")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.citation")));
 
         mockMvc.perform(post("/api/v2/messages/{messageId}/save-as-note", noteAssistantMessageId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -77,7 +90,7 @@ class Phase3NoteWikiContractTest {
 
         JsonNode secondNoteMessage = sendMessage(conversationId, "NOTE", "继续整理 Note 链路和 Marginalia 的关系");
         String secondNoteRequestId = secondNoteMessage.path("data").path("assistant_request_id").asText();
-        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", secondNoteRequestId))
+        ChatStreamTestSupport.perform(mockMvc, secondNoteRequestId)
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("【Journal 信号】")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("历史 Note")));
@@ -129,9 +142,46 @@ class Phase3NoteWikiContractTest {
                 .andExpect(jsonPath("$.data.citations[0].quote_text").isNotEmpty());
 
         JsonNode wikiMessage = sendMessage(conversationId, "WIKI", "NoteWeave 阶段3怎么设计？");
+        String wikiAnswerRunId = wikiMessage.path("data").path("answer_run_id").asText();
+        Map<String, Object> wikiRunContract = jdbcTemplate.queryForMap("""
+                select r.retrieval_plan_version, r.evidence_bundle_json,
+                       mr.prompt_version, mr.evidence_bundle_ref
+                from answer_run r
+                join message_revision mr on mr.answer_run_id = r.id and mr.revision_no = 1
+                where r.id = ?
+                """, wikiAnswerRunId);
+        assertThat(wikiRunContract.get("retrieval_plan_version")).isEqualTo("wiki-page-graph-v1");
+        assertThat(wikiRunContract.get("prompt_version")).isEqualTo("wiki-page-graph-v1");
+        assertThat(wikiRunContract.get("evidence_bundle_ref").toString())
+                .startsWith("evidence-bundle:");
+        String latestWikiVersionId = jdbcTemplate.queryForObject("""
+                select latest_version_id from knowledge_item where id = ?
+                """, String.class, wikiItemId);
+        JsonNode wikiBundleSnapshot = objectMapper.readTree(
+                wikiRunContract.get("evidence_bundle_json").toString());
+        assertThat(wikiBundleSnapshot.path("evidence").get(0)
+                .path("knowledge_version_id").asText()).isEqualTo(latestWikiVersionId);
+        assertThat(wikiBundleSnapshot.path("evidence").get(0)
+                .path("fresh_at").asText()).isNotBlank();
+        String wikiRetrievalSummaryPayload = jdbcTemplate.queryForObject("""
+                select payload_json
+                from answer_event
+                where answer_run_id = ? and event_type = 'retrieval.summary'
+                """, String.class, wikiAnswerRunId);
+        JsonNode wikiRetrievalSummary = objectMapper.readTree(wikiRetrievalSummaryPayload);
+        JsonNode graphMeasurements = wikiRetrievalSummary.path("execution_trace")
+                .path("steps").get(0).path("measurements");
+        assertThat(graphMeasurements.path("graph_hop_limit").asInt()).isEqualTo(1);
+        assertThat(graphMeasurements.path("graph_node_limit").asInt()).isEqualTo(30);
+        assertThat(graphMeasurements.path("graph_edge_limit").asInt()).isEqualTo(60);
+        assertThat(graphMeasurements.path("graph_character_limit").asInt()).isEqualTo(4_000);
+        assertThat(graphMeasurements.path("graph_hops_used").asInt()).isBetween(0, 1);
+        assertThat(graphMeasurements.path("graph_nodes_used").asInt()).isBetween(0, 30);
+        assertThat(graphMeasurements.path("graph_edges_used").asInt()).isBetween(0, 60);
+        assertThat(graphMeasurements.path("graph_characters_used").asInt()).isBetween(0, 4_000);
         String wikiRequestId = wikiMessage.path("data").path("assistant_request_id").asText();
 
-        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", wikiRequestId))
+        ChatStreamTestSupport.perform(mockMvc, wikiRequestId)
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 相关 Wiki 页面")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 综合结论")))
@@ -141,7 +191,7 @@ class Phase3NoteWikiContractTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 页面关系")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("v2")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("/wiki")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chat.citation")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.citation")));
     }
 
     @Test
@@ -162,7 +212,7 @@ class Phase3NoteWikiContractTest {
         JsonNode noteMessage = sendMessage(conversationId, "NOTE", "请解释 AnchorAlpha");
         String noteRequestId = noteMessage.path("data").path("assistant_request_id").asText();
 
-        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", noteRequestId))
+        ChatStreamTestSupport.perform(mockMvc, noteRequestId)
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("anchor-research.md")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("companion.md")))
@@ -198,7 +248,7 @@ class Phase3NoteWikiContractTest {
         JsonNode noteMessage = sendMessage(conversationId, "NOTE", "AnchorCoverage Spec2026");
         String noteRequestId = noteMessage.path("data").path("assistant_request_id").asText();
 
-        MvcResult result = mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", noteRequestId))
+        MvcResult result = ChatStreamTestSupport.perform(mockMvc, noteRequestId)
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("query_coverage=2/2")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("matched_fields=")))
@@ -235,7 +285,7 @@ class Phase3NoteWikiContractTest {
         JsonNode noteMessage = sendMessage(conversationId, "NOTE", "请整理 QuotaDiversityToken SpecGrid");
         String noteRequestId = noteMessage.path("data").path("assistant_request_id").asText();
 
-        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", noteRequestId))
+        ChatStreamTestSupport.perform(mockMvc, noteRequestId)
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("source-type-quota")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("quota-sheet.md")))
@@ -266,7 +316,7 @@ class Phase3NoteWikiContractTest {
         JsonNode noteMessage = sendMessage(conversationId, "NOTE", "请整理 WindowReadyToken SpecReadiness");
         String noteRequestId = noteMessage.path("data").path("assistant_request_id").asText();
 
-        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", noteRequestId))
+        ChatStreamTestSupport.perform(mockMvc, noteRequestId)
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("windowless-top.md")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("source-window-missing")))
@@ -296,7 +346,7 @@ class Phase3NoteWikiContractTest {
         JsonNode noteMessage = sendMessage(conversationId, "NOTE", "请解释 AnchorAlpha");
         String noteRequestId = noteMessage.path("data").path("assistant_request_id").asText();
 
-        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", noteRequestId))
+        ChatStreamTestSupport.perform(mockMvc, noteRequestId)
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("deep-neighbor.md")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("graph-neighbor")))
@@ -342,14 +392,14 @@ class Phase3NoteWikiContractTest {
 
         JsonNode qaMessage = sendMessage(conversationId, "QA", "请同时总结 AnchorTurnShared 和 TurnNeighborOnly");
         String qaRequestId = qaMessage.path("data").path("assistant_request_id").asText();
-        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", qaRequestId))
+        ChatStreamTestSupport.perform(mockMvc, qaRequestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chat.citation")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.citation")));
 
         JsonNode noteMessage = sendMessage(conversationId, "NOTE", "请解释 AnchorTurnShared");
         String noteRequestId = noteMessage.path("data").path("assistant_request_id").asText();
 
-        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", noteRequestId))
+        ChatStreamTestSupport.perform(mockMvc, noteRequestId)
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("co_cited_turns=")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("co-cited-turns")))
@@ -380,9 +430,9 @@ class Phase3NoteWikiContractTest {
 
         JsonNode staleQaMessage = sendMessage(conversationId, "QA", "请总结 staleBranchToken");
         String staleAssistantMessageId = staleQaMessage.path("data").path("assistant_message_id").asText();
-        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", staleQaMessage.path("data").path("assistant_request_id").asText()))
+        ChatStreamTestSupport.perform(mockMvc, staleQaMessage.path("data").path("assistant_request_id").asText())
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chat.citation")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.citation")));
 
         mockMvc.perform(post("/api/v2/messages/{messageId}/save-as-note", staleAssistantMessageId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -392,9 +442,9 @@ class Phase3NoteWikiContractTest {
 
         JsonNode freshQaMessage = sendMessage(conversationId, "QA", "请总结 freshBranchToken");
         String freshAssistantMessageId = freshQaMessage.path("data").path("assistant_message_id").asText();
-        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", freshQaMessage.path("data").path("assistant_request_id").asText()))
+        ChatStreamTestSupport.perform(mockMvc, freshQaMessage.path("data").path("assistant_request_id").asText())
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chat.citation")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.citation")));
 
         mockMvc.perform(post("/api/v2/messages/{messageId}/save-as-note", freshAssistantMessageId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -411,7 +461,7 @@ class Phase3NoteWikiContractTest {
         JsonNode noteMessage = sendMessage(conversationId, "NOTE", "继续整理 JournalFreshness");
         String noteRequestId = noteMessage.path("data").path("assistant_request_id").asText();
 
-        MvcResult result = mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", noteRequestId))
+        MvcResult result = ChatStreamTestSupport.perform(mockMvc, noteRequestId)
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("【Journal 信号】")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("状态 stale-source-updated")))
@@ -437,9 +487,9 @@ class Phase3NoteWikiContractTest {
 
         JsonNode qaMessage = sendMessage(conversationId, "QA", "请总结 deletedOnlyToken");
         String assistantMessageId = qaMessage.path("data").path("assistant_message_id").asText();
-        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", qaMessage.path("data").path("assistant_request_id").asText()))
+        ChatStreamTestSupport.perform(mockMvc, qaMessage.path("data").path("assistant_request_id").asText())
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chat.citation")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.citation")));
 
         mockMvc.perform(post("/api/v2/messages/{messageId}/save-as-note", assistantMessageId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -456,7 +506,7 @@ class Phase3NoteWikiContractTest {
         JsonNode noteMessage = sendMessage(conversationId, "NOTE", "继续整理 AvailabilityShared");
         String noteRequestId = noteMessage.path("data").path("assistant_request_id").asText();
 
-        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", noteRequestId))
+        ChatStreamTestSupport.perform(mockMvc, noteRequestId)
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("【Journal 信号】")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("source-unavailable")))
@@ -475,11 +525,11 @@ class Phase3NoteWikiContractTest {
         String wikiRequestId = wikiMessage.path("data").path("assistant_request_id").asText();
         String assistantMessageId = wikiMessage.path("data").path("assistant_message_id").asText();
 
-        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", wikiRequestId))
+        ChatStreamTestSupport.perform(mockMvc, wikiRequestId)
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("当前 Wiki 知识网络还没有可直接命中的正式页面")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("开启工作台级 Wiki 构建")))
-                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("event: chat.citation"))));
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("event:chat.citation"))));
 
         Integer citationCount = jdbcTemplate.queryForObject(
                 "select count(*) from message_citation where message_id = ?",
@@ -693,12 +743,21 @@ class Phase3NoteWikiContractTest {
     @Test
     void deletingSourceShouldRetractGeneratedWikiPageWhenWikiIsEnabled() throws Exception {
         String workspaceId = createWorkspace();
+        Long catalogVersionBeforeUpload = jdbcTemplate.queryForObject(
+                "select source_catalog_version from workspace where id = ?",
+                Long.class,
+                workspaceId);
         mockMvc.perform(put("/api/v2/workspaces/{workspaceId}/wiki-settings", workspaceId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("wiki_enabled", true))))
                 .andExpect(status().isOk());
 
         String sourceId = uploadSource(workspaceId);
+        Long catalogVersionAfterUpload = jdbcTemplate.queryForObject(
+                "select source_catalog_version from workspace where id = ?",
+                Long.class,
+                workspaceId);
+        assertThat(catalogVersionAfterUpload).isGreaterThan(catalogVersionBeforeUpload);
         String conversationId = createConversation(workspaceId);
 
         mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/sources", workspaceId))
@@ -714,6 +773,11 @@ class Phase3NoteWikiContractTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("DELETED"))
                 .andExpect(jsonPath("$.data.wiki_retract_task_id").isNotEmpty());
+        Long catalogVersionAfterDelete = jdbcTemplate.queryForObject(
+                "select source_catalog_version from workspace where id = ?",
+                Long.class,
+                workspaceId);
+        assertThat(catalogVersionAfterDelete).isGreaterThan(catalogVersionAfterUpload);
 
         Integer retractTaskCount = jdbcTemplate.queryForObject(
                 "select count(*) from task where workspace_id = ? and task_type = 'WIKI_RETRACT'",
@@ -739,10 +803,10 @@ class Phase3NoteWikiContractTest {
 
         JsonNode wikiMessage = sendMessage(conversationId, "WIKI", "NoteWeave 阶段3怎么设计？");
         String wikiRequestId = wikiMessage.path("data").path("assistant_request_id").asText();
-        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", wikiRequestId))
+        ChatStreamTestSupport.perform(mockMvc, wikiRequestId)
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("当前 Wiki 知识网络还没有可直接命中的正式页面")))
-                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("event: chat.citation"))));
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("event:chat.citation"))));
     }
 
     @Test
@@ -1117,9 +1181,9 @@ class Phase3NoteWikiContractTest {
         JsonNode qaMessage = sendMessage(conversationId, "QA", "请总结这份 stale-source 资料");
         String assistantMessageId = qaMessage.path("data").path("assistant_message_id").asText();
         String requestId = qaMessage.path("data").path("assistant_request_id").asText();
-        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", requestId))
+        ChatStreamTestSupport.perform(mockMvc, requestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chat.citation")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.citation")));
 
         MvcResult page = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/knowledge-items", workspaceId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -1225,9 +1289,9 @@ class Phase3NoteWikiContractTest {
         JsonNode qaMessage = sendMessage(conversationId, "QA", "请总结 orphan-source 资料");
         String assistantMessageId = qaMessage.path("data").path("assistant_message_id").asText();
         String requestId = qaMessage.path("data").path("assistant_request_id").asText();
-        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", requestId))
+        ChatStreamTestSupport.perform(mockMvc, requestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chat.citation")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.citation")));
 
         MvcResult create = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/knowledge-items", workspaceId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -1281,9 +1345,9 @@ class Phase3NoteWikiContractTest {
         JsonNode qaMessage = sendMessage(conversationId, "QA", "请总结这份 stale-enabled 资料");
         String assistantMessageId = qaMessage.path("data").path("assistant_message_id").asText();
         String requestId = qaMessage.path("data").path("assistant_request_id").asText();
-        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", requestId))
+        ChatStreamTestSupport.perform(mockMvc, requestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chat.citation")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.citation")));
 
         mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/knowledge-items", workspaceId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -1322,19 +1386,19 @@ class Phase3NoteWikiContractTest {
                 """);
         String conversationId = createConversation(workspaceId);
 
-        sendMessage(conversationId, "NOTE", "请整理 AnchorAlpha 的资料定位");
-        sendMessage(conversationId, "NOTE", "把关键要求分成两点整理");
+        sendCompletedMessage(conversationId, "NOTE", "请整理 AnchorAlpha 的资料定位");
+        sendCompletedMessage(conversationId, "NOTE", "把关键要求分成两点整理");
         JsonNode followUp = sendMessage(conversationId, "NOTE", "第二点为什么重要");
         String assistantRequestId = followUp.path("data").path("assistant_request_id").asText();
         String assistantMessageId = followUp.path("data").path("assistant_message_id").asText();
 
-        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", assistantRequestId))
+        ChatStreamTestSupport.perform(mockMvc, assistantRequestId)
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("会话上下文：已纳入最近连续对话窗口")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("连续对话窗口：最近 2 轮相关对话")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("主题锚点：")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("AnchorAlpha")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chat.citation")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.citation")));
 
         Integer alphaCitationCount = jdbcTemplate.queryForObject("""
                 select count(*)
@@ -1369,12 +1433,12 @@ class Phase3NoteWikiContractTest {
                 """);
         String conversationId = createConversation(workspaceId);
 
-        sendMessage(conversationId, "WIKI", "请介绍 Alpha策略");
-        sendMessage(conversationId, "WIKI", "把它分成页面定位和关联页面两点讲");
+        sendCompletedMessage(conversationId, "WIKI", "请介绍 Alpha策略");
+        sendCompletedMessage(conversationId, "WIKI", "把它分成页面定位和关联页面两点讲");
         JsonNode followUp = sendMessage(conversationId, "WIKI", "第二点为什么成立");
         String assistantRequestId = followUp.path("data").path("assistant_request_id").asText();
 
-        mockMvc.perform(get("/api/v2/chat/requests/{assistantRequestId}/stream", assistantRequestId))
+        ChatStreamTestSupport.perform(mockMvc, assistantRequestId)
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("本轮已结合最近连续对话窗口理解这次追问。")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("连续对话窗口：最近 2 轮相关对话")))
@@ -1431,7 +1495,12 @@ class Phase3NoteWikiContractTest {
                         ))))
                 .andExpect(status().isOk())
                 .andReturn();
-        return objectMapper.readTree(result.getResponse().getContentAsString()).path("data").path("workspace_id").asText();
+        String workspaceId = objectMapper.readTree(result.getResponse().getContentAsString())
+                .path("data").path("workspace_id").asText();
+        jdbcTemplate.update(
+                "update workspace set retrieval_strategy_v2_enabled = true where id = ?",
+                workspaceId);
+        return workspaceId;
     }
 
     private String uploadSource(String workspaceId) throws Exception {
@@ -1499,5 +1568,20 @@ class Phase3NoteWikiContractTest {
                 .andExpect(jsonPath("$.data.assistant_request_id").isNotEmpty())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString());
+    }
+
+    private JsonNode sendCompletedMessage(
+            String conversationId,
+            String answerMode,
+            String content
+    ) throws Exception {
+        JsonNode response = sendMessage(conversationId, answerMode, content);
+        ChatStreamTestSupport.perform(
+                        mockMvc,
+                        response.path("data").path("assistant_request_id").asText())
+                .andExpect(status().isOk())
+                .andExpect(content().string(
+                        org.hamcrest.Matchers.containsString("event:chat.completed")));
+        return response;
     }
 }

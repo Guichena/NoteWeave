@@ -1,0 +1,104 @@
+{
+  "suite_key": "deep-research-p5b",
+  "suite_title": "Deep Research Demo Suite",
+  "demo_cases": [
+    {
+      "case_key": "wide_deep_report",
+      "title": "Wide Search + Deep Read",
+      "objective": "展示 Deep Research 如何把 wide search 和 deep read 收敛为正式报告。",
+      "expected_highlights": [
+        "Research Harness 驱动默认主链",
+        "Table-as-State 产生稳定 verified findings",
+        "最终报告与来源列表可直接展示"
+      ],
+      "source_display_points": [
+        "Workspace source 作为初始研究范围进入报告来源",
+        "verified findings 中可见 source_title 与 provenance"
+      ],
+      "process_display_points": [
+        "Search Timeline 展示 wide-to-deep 查询推进",
+        "Read Timeline 展示 bounded read window"
+      ],
+      "audit_display_points": [
+        "Verifier Gate 展示 READY_TO_WRITE / SYNTHESIZE_REPORT",
+        "Harness Control State 展示主链收敛状态"
+      ]
+    },
+    {
+      "case_key": "conflict_counterfactual",
+      "title": "Conflict Counterfactual",
+      "objective": "展示冲突证据如何触发 verifier-gated 反证分支。",
+      "expected_highlights": [
+        "Dual Verifier 将冲突研究收敛为 guarded write",
+        "反证分支显式参与路径纠偏",
+        "报告保留 conflict-aware 结论而不是简单平均"
+      ],
+      "source_display_points": [
+        "冲突来源在 verified/conflict 相关结构中可见",
+        "counterfactual target evidence 与来源绑定可见"
+      ],
+      "process_display_points": [
+        "Search Timeline 可看到针对冲突的额外查询",
+        "Source Evidence Summary 可看到 conflict evidence"
+      ],
+      "audit_display_points": [
+        "Counterfactual Branch Summary 明确显示 has_counterfactual_recheck",
+        "Verifier Gate / Final Loop Decision 明确显示 guarded write"
+      ]
+    },
+    {
+      "case_key": "external_fetch_fallback",
+      "title": "External Fetch Fallback",
+      "objective": "展示外部网页抓取失败或无 transport 时，系统如何保留 fallback 证据并完成报告。",
+      "expected_highlights": [
+        "ResearchToolbox 暴露 fetch/read fallback 元数据",
+        "外部来源仍能进入正式报告链路",
+        "fallback 场景可解释、可展示"
+      ],
+      "source_display_points": [
+        "external source 在结果 payload 中保留 source_id / source_title / url",
+        "saved report downstream 可继续带出 generated provenance"
+      ],
+      "process_display_points": [
+        "Fetch Timeline 明确显示 FALLBACK_USED / NO_TRANSPORT",
+        "Read Timeline 明确显示 fallback read window"
+      ],
+      "audit_display_points": [
+        "audit summary 仍然完整可读",
+        "Harness Control State 能说明 fallback 下的写作决策"
+      ]
+    }
+  ],
+  "acceptance_commands": [
+    {
+      "command_key": "manifest_check",
+      "label": "P5-B Demo Manifest Check",
+      "command": "node scripts/check-p5b-demo-suite.mjs"
+    },
+    {
+      "command_key": "gate1_smoke",
+      "label": "Gate 1 Smoke Harness",
+      "command": "powershell -ExecutionPolicy Bypass -File workers/scripts/run-gate1-smoke.ps1"
+    },
+    {
+      "command_key": "worker_regression",
+      "label": "Research Worker Regression",
+      "command": "conda run -n noteweave-workers python -m pytest workers/research-worker/tests/test_harness.py"
+    },
+    {
+      "command_key": "backend_contract",
+      "label": "Backend Research Artifact Contract",
+      "command": ".\\mvnw.cmd -f backend/pom.xml -Dtest=Phase6ResearchArtifactContractTest test"
+    },
+    {
+      "command_key": "frontend_build",
+      "label": "Frontend Build",
+      "command": "npm --prefix frontend run build"
+    },
+    {
+      "command_key": "frontend_ui_contract",
+      "label": "Frontend UI Contract",
+      "command": "npm --prefix frontend run ui:check"
+    }
+  ]
+}

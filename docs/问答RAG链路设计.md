@@ -454,9 +454,12 @@ POST /api/v2/conversations/{conversationId}/messages
 {
   "content": "这几篇资料对 RAG 的定义是什么？",
   "answer_mode": "QA",
-  "client_request_id": "qa-001"
+  "client_request_id": "qa-001",
+  "source_scope_source_ids": ["source_a", "source_b"]
 }
 ```
+
+`source_scope_source_ids` 为可选字段。未传时保持 Workspace 全量资料语义；传入时只允许从这些 Source 的 Passage 形成 EvidenceBundle 和 citation。当前该字段仅支持 `QA`，`NOTE/WIKI` 携带时明确返回 `ANSWER_SOURCE_SCOPE_UNSUPPORTED`。
 
 返回：
 

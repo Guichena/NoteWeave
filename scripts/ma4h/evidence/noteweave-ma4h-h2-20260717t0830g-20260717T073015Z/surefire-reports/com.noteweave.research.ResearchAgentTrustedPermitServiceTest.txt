@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.noteweave.research.ResearchAgentTrustedPermitServiceTest
+-------------------------------------------------------------------------------
+Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 92.70 s -- in com.noteweave.research.ResearchAgentTrustedPermitServiceTest

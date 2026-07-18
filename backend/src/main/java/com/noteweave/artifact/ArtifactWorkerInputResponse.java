@@ -9,7 +9,10 @@ public record ArtifactWorkerInputResponse(
         String taskId,
         String workspaceId,
         String targetId,
+        String inputSnapshotId,
+        String replayAvailability,
         List<WorkerSourceScopeItemResponse> sourceScope,
+        List<ArtifactUpstreamRefRequest> upstreamRefs,
         WorkerContextSnapshotResponse contextSnapshot,
         MemoryControlPackResponse controlPack,
         ArtifactWorkerInputPayload inputPayload

@@ -14,6 +14,9 @@ public record MemoryCandidateResponse(
         boolean negativeMemory,
         String conflictStatus,
         String stalenessStatus,
-        String reviewStatus
+        String reviewStatus,
+        double riskScore,
+        String scopeStatus,
+        String policyVersion
 ) {
 }

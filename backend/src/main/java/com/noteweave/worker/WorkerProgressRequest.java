@@ -10,6 +10,7 @@ public record WorkerProgressRequest(
         @NotBlank @Size(max = 64) String phase,
         @Min(0) @Max(100) Integer progressPercent,
         @NotBlank @Size(max = 1000) String message,
-        Map<String, Object> metrics
+        Map<String, Object> metrics,
+        Map<String, Object> payload
 ) {
 }

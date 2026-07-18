@@ -1,0 +1,8 @@
+{
+    "schema_version":  "noteweave-ma4i-i5-evidence.v1",
+    "status":  "FAILED",
+    "project_name":  "noteweave-ma4i-i5-recovery-20260717t1805a",
+    "test_exit_code":  1,
+    "completed_at_utc":  "2026-07-17T09:58:38.2955785Z",
+    "boundary":  "MySQL 8.4 restart-safe coordinator database contract; no Kafka delivery, worker crash, or real-provider evidence"
+}

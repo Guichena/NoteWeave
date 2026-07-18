@@ -9,6 +9,7 @@ public record TaskResponse(
         String resultRef,
         String errorMessage,
         String targetType,
-        String targetId
+        String targetId,
+        WaitContextResponse waitContext
 ) {
 }

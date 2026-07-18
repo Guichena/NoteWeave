@@ -1,5 +1,7 @@
 ﻿# 受控式异步产物生成 Agent 编排升级设计
 
+> **历史研究稿，不是现行施工契约。** 本文保留早期 Action-first、Style Profile 对外暴露和用户自定义 MCP 的方案演进记录。现行产品已冻结为 `Skill-first + System MCP only + Java Artifact Job/Version + Python Runtime Brain`，以 `产物生成Agent需求审计与收尾改造.md` 和 `产物生成Skill优先重构设计.md` 为准；本文第 8 节不得用于当前产品施工。
+
 ## 1. 目的
 
 这份文档在 [改造计划/受控式异步产物生成智能体架构设计.md](D:/java-projects/NoteWeave-v2/改造计划/受控式异步产物生成智能体架构设计.md) 的基础上，吸收 2026 年关于 agent 编排、skill 组合、tool / MCP 调度的最新设计思想，给出更适合 NoteWeave 的升级方案。

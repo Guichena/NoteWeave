@@ -1,0 +1,266 @@
+[
+    {
+        "Id": "3a16261934a487369c425cd08de4032c1df97a417a389835b2092d27a2996e93",
+        "Created": "2026-07-17T06:31:37.223313389Z",
+        "Path": "python",
+        "Args": [
+            "/fixture/heartbeat_fault_consumer.py"
+        ],
+        "State": {
+            "Status": "exited",
+            "Running": false,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 0,
+            "ExitCode": 1,
+            "Error": "",
+            "StartedAt": "2026-07-17T06:31:42.135240148Z",
+            "FinishedAt": "2026-07-17T06:31:52.900122357Z"
+        },
+        "Image": "sha256:d3cd18b1ac8d5958d3c5aeb2f33b3c1fec73eba1b219100404fb3eeb860cf7a8",
+        "ResolvConfPath": "/var/lib/docker/containers/3a16261934a487369c425cd08de4032c1df97a417a389835b2092d27a2996e93/resolv.conf",
+        "HostnamePath": "/var/lib/docker/containers/3a16261934a487369c425cd08de4032c1df97a417a389835b2092d27a2996e93/hostname",
+        "HostsPath": "/var/lib/docker/containers/3a16261934a487369c425cd08de4032c1df97a417a389835b2092d27a2996e93/hosts",
+        "LogPath": "/var/lib/docker/containers/3a16261934a487369c425cd08de4032c1df97a417a389835b2092d27a2996e93/3a16261934a487369c425cd08de4032c1df97a417a389835b2092d27a2996e93-json.log",
+        "Name": "/noteweave-ma4h-h4-stale-20260717t0650a-worker-a-1",
+        "RestartCount": 0,
+        "Driver": "overlayfs",
+        "Platform": "linux",
+        "MountLabel": "",
+        "ProcessLabel": "",
+        "AppArmorProfile": "",
+        "ExecIDs": null,
+        "HostConfig": {
+            "Binds": [
+                "D:\\java-projects\\NoteWeave-v2\\scripts\\ma4h\\heartbeat_fault_consumer.py:/fixture/heartbeat_fault_consumer.py:ro",
+                "noteweave-ma4h-h4-stale-20260717t0650a_control-data:/control:rw"
+            ],
+            "ContainerIDFile": "",
+            "LogConfig": {
+                "Type": "json-file",
+                "Config": {}
+            },
+            "NetworkMode": "noteweave-ma4h-h4-stale-20260717t0650a_ma4g",
+            "PortBindings": {},
+            "RestartPolicy": {
+                "Name": "no",
+                "MaximumRetryCount": 0
+            },
+            "AutoRemove": false,
+            "VolumeDriver": "",
+            "VolumesFrom": null,
+            "ConsoleSize": [
+                0,
+                0
+            ],
+            "CapAdd": null,
+            "CapDrop": null,
+            "CgroupnsMode": "private",
+            "Dns": null,
+            "DnsOptions": null,
+            "DnsSearch": null,
+            "ExtraHosts": [],
+            "GroupAdd": null,
+            "IpcMode": "private",
+            "Cgroup": "",
+            "Links": null,
+            "OomScoreAdj": 0,
+            "PidMode": "",
+            "Privileged": false,
+            "PublishAllPorts": false,
+            "ReadonlyRootfs": false,
+            "SecurityOpt": null,
+            "UTSMode": "",
+            "UsernsMode": "",
+            "ShmSize": 67108864,
+            "Runtime": "runc",
+            "Isolation": "",
+            "CpuShares": 0,
+            "Memory": 0,
+            "NanoCpus": 0,
+            "CgroupParent": "",
+            "BlkioWeight": 0,
+            "BlkioWeightDevice": null,
+            "BlkioDeviceReadBps": null,
+            "BlkioDeviceWriteBps": null,
+            "BlkioDeviceReadIOps": null,
+            "BlkioDeviceWriteIOps": null,
+            "CpuPeriod": 0,
+            "CpuQuota": 0,
+            "CpuRealtimePeriod": 0,
+            "CpuRealtimeRuntime": 0,
+            "CpusetCpus": "",
+            "CpusetMems": "",
+            "Devices": null,
+            "DeviceCgroupRules": null,
+            "DeviceRequests": null,
+            "MemoryReservation": 0,
+            "MemorySwap": 0,
+            "MemorySwappiness": null,
+            "OomKillDisable": null,
+            "PidsLimit": null,
+            "Ulimits": null,
+            "CpuCount": 0,
+            "CpuPercent": 0,
+            "IOMaximumIOps": 0,
+            "IOMaximumBandwidth": 0,
+            "MaskedPaths": [
+                "/proc/acpi",
+                "/proc/asound",
+                "/proc/interrupts",
+                "/proc/kcore",
+                "/proc/keys",
+                "/proc/latency_stats",
+                "/proc/sched_debug",
+                "/proc/scsi",
+                "/proc/timer_list",
+                "/proc/timer_stats",
+                "/sys/devices/virtual/powercap",
+                "/sys/firmware"
+            ],
+            "ReadonlyPaths": [
+                "/proc/bus",
+                "/proc/fs",
+                "/proc/irq",
+                "/proc/sys",
+                "/proc/sysrq-trigger"
+            ]
+        },
+        "Storage": {
+            "RootFS": {
+                "Snapshot": {
+                    "Name": "overlayfs"
+                }
+            }
+        },
+        "Mounts": [
+            {
+                "Type": "bind",
+                "Source": "D:\\java-projects\\NoteWeave-v2\\scripts\\ma4h\\heartbeat_fault_consumer.py",
+                "Destination": "/fixture/heartbeat_fault_consumer.py",
+                "Mode": "ro",
+                "RW": false,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "volume",
+                "Name": "noteweave-ma4h-h4-stale-20260717t0650a_control-data",
+                "Source": "/var/lib/docker/volumes/noteweave-ma4h-h4-stale-20260717t0650a_control-data/_data",
+                "Destination": "/control",
+                "Driver": "local",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": ""
+            }
+        ],
+        "Config": {
+            "Hostname": "3a16261934a4",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": true,
+            "AttachStderr": true,
+            "ExposedPorts": {
+                "18091/tcp": {}
+            },
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "NOTEWEAVE_KAFKA_CONSUME_MAX_ATTEMPTS=1",
+                "NOTEWEAVE_RESEARCH_LLM_API_KEY=",
+                "NOTEWEAVE_RESEARCH_AGENT_DEEP_CELL_EXECUTOR_ENABLED=true",
+                "NOTEWEAVE_RESEARCH_AGENT_WORKER_INSTANCE_ID=ma4h-heartbeat-fault-worker-a",
+                "NOTEWEAVE_INTERNAL_AUTH_TOKEN=ma4g-fixture-token",
+                "NOTEWEAVE_RESEARCH_AGENT_HEARTBEAT_FAILURE_BUDGET_SECONDS=2",
+                "NOTEWEAVE_RESEARCH_AGENT_COMPLETION_MAX_ATTEMPTS=3",
+                "NOTEWEAVE_RESEARCH_AGENT_HEARTBEAT_INTERVAL_SECONDS=1",
+                "MA4H_HEARTBEAT_PHASE_DELAY_SECONDS=5",
+                "PYTHONPATH=/app",
+                "NOTEWEAVE_KAFKA_BOOTSTRAP_SERVERS=kafka:9092",
+                "NOTEWEAVE_RESEARCH_LLM_MODEL=",
+                "NOTEWEAVE_KAFKA_RESEARCH_AGENT_TOPIC=noteweave.research.agent.command",
+                "NOTEWEAVE_RESEARCH_AGENT_CONSUMER_ENABLED=true",
+                "MA4H_HEARTBEAT_FAULT_MODE=stale",
+                "NOTEWEAVE_RESEARCH_AGENT_HEARTBEAT_REQUEST_TIMEOUT_SECONDS=0.25",
+                "NOTEWEAVE_KAFKA_RESEARCH_AGENT_GROUP_ID=noteweave-ma4h-heartbeat-fault-workers",
+                "NOTEWEAVE_RESEARCH_LLM_BASE_URL=",
+                "NOTEWEAVE_RESEARCH_AGENT_FAKE_PROVIDER_ENABLED=true",
+                "NOTEWEAVE_KAFKA_RESEARCH_AGENT_DLQ_TOPIC=noteweave.research.agent.command.dlq",
+                "MA4H_HEARTBEAT_PHASE_MARKER=/control/heartbeat-phases",
+                "NOTEWEAVE_RESEARCH_AGENT_LEASE_SECONDS=4",
+                "NOTEWEAVE_JAVA_BASE_URL=http://backend:8081",
+                "PATH=/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "LANG=C.UTF-8",
+                "GPG_KEY=7169605F62C751356D054A26A821E680E5FA6305",
+                "PYTHON_VERSION=3.12.13",
+                "PYTHON_SHA256=c08bc65a81971c1dd5783182826503369466c7e67374d1646519adf05207b684",
+                "PYTHONDONTWRITEBYTECODE=1",
+                "PYTHONUNBUFFERED=1"
+            ],
+            "Cmd": [
+                "python",
+                "/fixture/heartbeat_fault_consumer.py"
+            ],
+            "Image": "noteweave-ma4g-research-worker:local",
+            "Volumes": null,
+            "WorkingDir": "/app",
+            "Entrypoint": null,
+            "Labels": {
+                "com.docker.compose.config-hash": "c296c8c45b2273701142beeb65fae765cff9848a856ae12a8c040f1ff6628d1e",
+                "com.docker.compose.container-number": "1",
+                "com.docker.compose.depends_on": "backend:service_healthy:false,kafka-init:service_completed_successfully:false",
+                "com.docker.compose.image": "sha256:d3cd18b1ac8d5958d3c5aeb2f33b3c1fec73eba1b219100404fb3eeb860cf7a8",
+                "com.docker.compose.oneoff": "False",
+                "com.docker.compose.project": "noteweave-ma4h-h4-stale-20260717t0650a",
+                "com.docker.compose.project.config_files": "D:\\java-projects\\NoteWeave-v2\\scripts\\ma4g\\docker-compose.yml,D:\\java-projects\\NoteWeave-v2\\scripts\\ma4h\\docker-compose.heartbeat-fault.yml",
+                "com.docker.compose.project.working_dir": "D:\\java-projects\\NoteWeave-v2\\scripts\\ma4g",
+                "com.docker.compose.service": "worker-a",
+                "com.docker.compose.version": "5.1.3"
+            },
+            "StopTimeout": 1
+        },
+        "NetworkSettings": {
+            "SandboxID": "",
+            "SandboxKey": "",
+            "Ports": {},
+            "Networks": {
+                "noteweave-ma4h-h4-stale-20260717t0650a_ma4g": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": [
+                        "noteweave-ma4h-h4-stale-20260717t0650a-worker-a-1",
+                        "worker-a"
+                    ],
+                    "DriverOpts": null,
+                    "GwPriority": 0,
+                    "NetworkID": "ced641c52b78dc999979ce3f9b25407edb7cf497bc136ef7b7ec86f5c874798c",
+                    "EndpointID": "",
+                    "Gateway": "",
+                    "IPAddress": "",
+                    "MacAddress": "",
+                    "IPPrefixLen": 0,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "DNSNames": [
+                        "noteweave-ma4h-h4-stale-20260717t0650a-worker-a-1",
+                        "worker-a",
+                        "3a16261934a4"
+                    ]
+                }
+            }
+        },
+        "ImageManifestDescriptor": {
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "digest": "sha256:5600c1fc2c232c1160ebc0b4e6b7bb7d94c8c7597fc87c7bc094b5c823f5ac34",
+            "size": 1625,
+            "platform": {
+                "architecture": "amd64",
+                "os": "linux"
+            }
+        }
+    }
+]

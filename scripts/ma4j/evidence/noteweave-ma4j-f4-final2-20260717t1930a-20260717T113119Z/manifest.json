@@ -1,0 +1,6 @@
+{
+  "status": "VERIFIED",
+  "tests": "29/29",
+  "schema": "current Flyway chain with Research artifact V050 and turn-submission V060 / MySQL 8.4",
+  "boundary": "MA4J database finalization, coordinator handoff and scheduler contracts; deterministic fail-stop, not OS process kill or real provider"
+}

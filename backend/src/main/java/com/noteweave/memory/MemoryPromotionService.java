@@ -5,6 +5,10 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.Ids;
 import com.noteweave.common.Json;
+import com.noteweave.common.BusinessException;
+import com.noteweave.security.CurrentUserProvider;
+import com.noteweave.security.WorkspaceAccessGuard;
+import com.noteweave.security.WorkspacePermission;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -19,70 +23,130 @@ public class MemoryPromotionService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final MemoryCandidateService memoryCandidateService;
+    private final CurrentUserProvider currentUserProvider;
+    private final WorkspaceAccessGuard workspaceAccessGuard;
+    private final MemoryStatementMatcher statementMatcher;
+    private final MemoryVersionService memoryVersionService;
+    private final CanonicalMemoryReviewService canonicalMemoryReviewService;
 
     public MemoryPromotionService(
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
-            MemoryCandidateService memoryCandidateService
+            MemoryCandidateService memoryCandidateService,
+            CurrentUserProvider currentUserProvider,
+            WorkspaceAccessGuard workspaceAccessGuard,
+            MemoryStatementMatcher statementMatcher,
+            MemoryVersionService memoryVersionService,
+            CanonicalMemoryReviewService canonicalMemoryReviewService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.memoryCandidateService = memoryCandidateService;
+        this.currentUserProvider = currentUserProvider;
+        this.workspaceAccessGuard = workspaceAccessGuard;
+        this.statementMatcher = statementMatcher;
+        this.memoryVersionService = memoryVersionService;
+        this.canonicalMemoryReviewService = canonicalMemoryReviewService;
     }
 
     @Transactional
     public MemoryPromotionResponse promoteSignals(String workspaceId, List<String> signalIds) {
+        workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.MEMORY_REVIEW);
+        String userId = currentUserProvider.requireUserId();
         List<MemoryCandidateResponse> builtCandidates = memoryCandidateService.buildCandidates(workspaceId, signalIds);
         List<MemoryObjectResponse> objects = new ArrayList<>();
         for (MemoryCandidateResponse response : builtCandidates) {
             MemoryCandidateService.CandidateRow candidate = memoryCandidateService.findCandidate(workspaceId, response.candidateId());
             if (!"READY".equals(candidate.reviewStatus())) {
+                canonicalMemoryReviewService.projectProposal(candidate);
                 continue;
             }
-            MemoryObjectResponse existing = findEquivalentActiveObject(workspaceId, candidate);
-            if (existing != null) {
-                jdbcTemplate.update("update memory_candidate set review_status = 'MERGED_EXISTING', updated_at = current_timestamp where id = ?",
-                        candidate.candidateId());
-                objects.add(existing);
-                continue;
-            }
-            String memoryObjectId = Ids.newId();
-            String memoryType = candidate.candidateType();
-            String ledgerJson = Json.write(objectMapper, new MemoryLedger(
-                    candidate.signalIds(),
-                    candidate.evidenceGateStatus(),
-                    candidate.noveltyScore(),
-                    candidate.marginalUtilityScore(),
-                    candidate.candidateId()
-            ));
-            jdbcTemplate.update("""
-                    insert into memory_object(
-                        id, workspace_id, user_id, memory_type, memory_scope, canonical_statement,
-                        task_neighborhood_json, compile_policy_json, forbidden_pattern_json, ledger_json, status
-                    ) values (?, ?, 'local-user', ?, 'WORKSPACE', ?, ?, ?, ?, ?, 'ACTIVE')
-                    """,
-                    memoryObjectId,
-                    workspaceId,
-                    memoryType,
-                    candidate.normalizedStatement(),
-                    Json.write(objectMapper, candidate.taskNeighborhoods()),
-                    Json.write(objectMapper, candidate.compileHints()),
-                    Json.write(objectMapper, candidate.forbiddenPatterns()),
-                    ledgerJson
-            );
-            jdbcTemplate.update("update memory_candidate set review_status = 'PROMOTED', updated_at = current_timestamp where id = ?",
-                    candidate.candidateId());
-            objects.add(new MemoryObjectResponse(
-                    memoryObjectId,
-                    workspaceId,
-                    memoryType,
-                    "WORKSPACE",
-                    candidate.normalizedStatement(),
-                    candidate.taskNeighborhoods(),
-                    "ACTIVE"
-            ));
+            objects.add(promoteReadyCandidate(workspaceId, userId, candidate));
         }
         return new MemoryPromotionResponse(builtCandidates, objects);
+    }
+
+    @Transactional
+    public MemoryObjectResponse promoteCandidate(String workspaceId, String candidateId) {
+        workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.MEMORY_REVIEW);
+        MemoryCandidateService.CandidateRow candidate =
+                memoryCandidateService.findCandidate(workspaceId, candidateId);
+        if (!"READY".equals(candidate.reviewStatus())) {
+            throw new BusinessException(
+                    "MEMORY_CANDIDATE_NOT_READY",
+                    "Memory candidate 尚未通过 review"
+            );
+        }
+        return promoteReadyCandidate(
+                workspaceId, currentUserProvider.requireUserId(), candidate);
+    }
+
+    private MemoryObjectResponse promoteReadyCandidate(
+            String workspaceId,
+            String userId,
+            MemoryCandidateService.CandidateRow candidate
+    ) {
+        MemoryObjectResponse existing = findEquivalentActiveObject(workspaceId, candidate);
+        if (existing != null) {
+            jdbcTemplate.update("update memory_candidate set review_status = 'MERGED_EXISTING', updated_at = current_timestamp where id = ?",
+                    candidate.candidateId());
+            return existing;
+        }
+        String memoryObjectId = Ids.newId();
+        String memoryType = candidate.candidateType();
+        String ledgerJson = Json.write(objectMapper, new MemoryLedger(
+                candidate.signalIds(),
+                candidate.evidenceGateStatus(),
+                candidate.noveltyScore(),
+                candidate.marginalUtilityScore(),
+                candidate.candidateId(),
+                candidate.policyVersion(),
+                candidate.riskScore(),
+                candidate.scopeStatus()
+        ));
+        jdbcTemplate.update("""
+                insert into memory_object(
+                    id, workspace_id, user_id, memory_type, memory_scope, canonical_statement,
+                    task_neighborhood_json, compile_policy_json, forbidden_pattern_json, ledger_json,
+                    status, utility_score, review_status, outcome_policy_version
+                ) values (?, ?, ?, ?, 'WORKSPACE', ?, ?, ?, ?, ?, 'ACTIVE', ?, 'APPROVED', ?)
+                """,
+                memoryObjectId,
+                workspaceId,
+                userId,
+                memoryType,
+                candidate.normalizedStatement(),
+                Json.write(objectMapper, candidate.taskNeighborhoods()),
+                Json.write(objectMapper, candidate.compileHints()),
+                Json.write(objectMapper, candidate.forbiddenPatterns()),
+                ledgerJson,
+                candidate.marginalUtilityScore(),
+                MemoryOutcomePolicy.VERSION
+        );
+        memoryVersionService.createInitialVersion(
+                new MemoryVersionService.InitialVersionCommand(
+                        workspaceId,
+                        memoryObjectId,
+                        candidate.normalizedStatement(),
+                        candidate.taskNeighborhoods(),
+                        candidate.compileHints(),
+                        candidate.forbiddenPatterns(),
+                        candidate.candidateId(),
+                        candidate.policyVersion(),
+                        candidate.riskScore(),
+                        candidate.scopeStatus()
+                ));
+        jdbcTemplate.update("update memory_candidate set review_status = 'PROMOTED', updated_at = current_timestamp where id = ?",
+                candidate.candidateId());
+        return new MemoryObjectResponse(
+                memoryObjectId,
+                workspaceId,
+                memoryType,
+                "WORKSPACE",
+                candidate.normalizedStatement(),
+                candidate.taskNeighborhoods(),
+                "ACTIVE"
+        );
     }
 
     private MemoryObjectResponse findEquivalentActiveObject(String workspaceId, MemoryCandidateService.CandidateRow candidate) {
@@ -104,7 +168,8 @@ public class MemoryPromotionService {
             left.retainAll(candidate.taskNeighborhoods());
             if (!left.isEmpty()
                     && response.memoryType().equals(candidate.candidateType())
-                    && normalize(response.canonicalStatement()).equals(candidate.normalizedStatement())) {
+                    && statementMatcher.equivalent(
+                    response.canonicalStatement(), candidate.normalizedStatement())) {
                 return response;
             }
         }
@@ -123,16 +188,15 @@ public class MemoryPromotionService {
         }
     }
 
-    private String normalize(String value) {
-        return value == null ? "" : value.replace("\r", "").replace('\n', ' ').trim();
-    }
-
     private record MemoryLedger(
             List<String> sourceSignalIds,
             String evidenceGateStatus,
             double noveltyScore,
             double marginalUtilityScore,
-            String promotedFromCandidateId
+            String promotedFromCandidateId,
+            String policyVersion,
+            double riskScore,
+            String scopeStatus
     ) {
     }
 }

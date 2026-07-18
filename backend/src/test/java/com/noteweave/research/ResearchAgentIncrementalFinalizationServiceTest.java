@@ -39,6 +39,7 @@ class ResearchAgentIncrementalFinalizationServiceTest {
     void setUp() {
         workspaceId = Ids.newId(); runId = Ids.newId(); parentTaskId = Ids.newId(); String rowId = Ids.newId();
         jdbcTemplate.update("insert into workspace(id, owner_id, name, status) values (?, 'local-user', 'finalization-test', 'ACTIVE')", workspaceId);
+        jdbcTemplate.update("insert into workspace_member(id, workspace_id, user_id, role, status) values (?, ?, 'local-user', 'OWNER', 'ACTIVE')", Ids.newId(), workspaceId);
         jdbcTemplate.update("insert into task(id, workspace_id, task_type, task_status, target_type, target_id) values (?, ?, 'RESEARCH_RUN', 'RUNNING', 'RESEARCH_RUN', ?)", parentTaskId, workspaceId, runId);
         jdbcTemplate.update("insert into research_run(id, workspace_id, task_id, question, profile_key, source_scope_json, status, agent_execution_mode) values (?, ?, ?, 'What is verified?', 'DEFAULT', '[]', 'RUNNING', 'INCREMENTAL_V1')", runId, workspaceId, parentTaskId);
         jdbcTemplate.update("insert into research_row(id, research_run_id, row_key, row_status) values (?, ?, 'entity-1', 'CANDIDATE_READY')", rowId, runId);
@@ -67,13 +68,14 @@ class ResearchAgentIncrementalFinalizationServiceTest {
     void finalizedIncrementalResearchExposesCitationGatedEvidenceManifest() throws Exception {
         finalization.finalizeIncrementalRun(runId);
 
-        assertThat(jdbcTemplate.queryForObject("""
-                select count(*) from research_evidence_manifest_item item
-                join research_evidence_manifest manifest on manifest.id = item.manifest_id
-                where manifest.research_run_id = ? and item.evidence_id = 'evidence-1'
-                  and item.source_id = 'external:incremental-source'
-                  and item.excerpt = 'Verified citation excerpt'
-                """, Integer.class, runId)).isEqualTo(1);
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}/evidence",
+                        workspaceId, runId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.run_id").value(runId))
+                .andExpect(jsonPath("$.data.evidence.length()").value(1))
+                .andExpect(jsonPath("$.data.evidence[0].evidence_id").value("evidence-1"))
+                .andExpect(jsonPath("$.data.evidence[0].source_id").value("external:incremental-source"))
+                .andExpect(jsonPath("$.data.evidence[0].excerpt").value("Verified citation excerpt"));
     }
 
     @Test
@@ -84,11 +86,11 @@ class ResearchAgentIncrementalFinalizationServiceTest {
 
         assertThat(finalization.finalizeIncrementalRun(runId).idempotentReplay()).isTrue();
 
-        assertThat(jdbcTemplate.queryForObject("""
-                select count(*) from research_evidence_manifest_item item
-                join research_evidence_manifest manifest on manifest.id = item.manifest_id
-                where manifest.research_run_id = ? and item.evidence_id = 'evidence-1'
-                """, Integer.class, runId)).isEqualTo(1);
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}/evidence",
+                        workspaceId, runId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.evidence.length()").value(1))
+                .andExpect(jsonPath("$.data.evidence[0].evidence_id").value("evidence-1"));
     }
 
     @Test
