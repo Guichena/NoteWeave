@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 import json
+import os
+from types import SimpleNamespace
 
 import pytest
 
@@ -101,6 +103,7 @@ def test_benchmark_runner_emits_quality_cost_reliability_and_fairness_manifest()
     assert record.http_5xx_count == 0
     assert record.termination_reason == "COMPLETED"
     assert record.provider_kind == "REAL"
+    assert record.observed_source_snapshot_digest == "sha256:sources-v1"
     assert len(record.manifest_digest) == 64
     assert len(record.comparison_digest) == 64
 
@@ -141,7 +144,7 @@ def test_benchmark_archive_is_immutable_and_simulation_cannot_claim_quality_impr
     replay = archive.write(records[0])
 
     assert replay == artifact
-    assert json.loads(artifact.read_text(encoding="utf-8"))["schema_version"] == "research-agent-benchmark-record.v1"
+    assert json.loads(artifact.read_text(encoding="utf-8"))["schema_version"] == "research-agent-benchmark-record.v2"
     with pytest.raises(FileExistsError, match="immutable benchmark artifact conflict"):
         archive.write(replace(records[0], wall_clock_ms=999.0))
 
@@ -155,6 +158,12 @@ def test_benchmark_archive_is_immutable_and_simulation_cannot_claim_quality_impr
         BenchmarkComparator(min_rollouts_per_mode=4).compare([
             *records[:-1],
             replace(records[-1], comparison_digest="different"),
+        ])
+
+    with pytest.raises(ValueError, match="observed source snapshots differ"):
+        BenchmarkComparator(min_rollouts_per_mode=4).compare([
+            *records[:-1],
+            replace(records[-1], observed_source_snapshot_digest="sha256:changed"),
         ])
 
 
@@ -272,6 +281,227 @@ def test_real_provider_boundary_fails_closed_when_independent_worker_config_is_m
     )
 
     with pytest.raises(RuntimeError, match="Research LLM configuration incomplete"):
+        ResearchTaskBenchmarkBoundary().execute(profile, case)
+
+
+def test_workspace_only_benchmark_must_strip_ambient_external_provider_credentials(monkeypatch) -> None:
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_SEARCH_PROVIDER", "serper")
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_SEARCH_API_KEY", "ambient-search-secret")
+    monkeypatch.setenv("SERPER_API_KEY", "ambient-serper-secret")
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_ENABLE_URL_READER", "true")
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_JINA_API_KEY", "ambient-jina-secret")
+    captured: dict[str, str | None] = {}
+
+    def fake_run(task_input):
+        del task_input
+        for name in (
+            "NOTEWEAVE_RESEARCH_SEARCH_PROVIDER",
+            "NOTEWEAVE_RESEARCH_SEARCH_API_KEY",
+            "SERPER_API_KEY",
+            "NOTEWEAVE_RESEARCH_ENABLE_URL_READER",
+            "NOTEWEAVE_RESEARCH_JINA_API_KEY",
+        ):
+            captured[name] = os.environ.get(name)
+        return [], SimpleNamespace(result_payload={})
+
+    monkeypatch.setattr("app.benchmark_runtime.run_research_task", fake_run)
+    case = BenchmarkCase(
+        case_key="workspace-only-boundary",
+        question="question",
+        schema={},
+        gold_version="gold-v1",
+        source_snapshot_digest="sha256:sources-v1",
+        gold={"case_key": "workspace-only-boundary"},
+        task_input={
+            "task_id": "workspace-only-task",
+            "workspace_id": "workspace-only-workspace",
+            "target_id": "workspace-only-run",
+            "source_scope": [],
+            "control_pack": {
+                "pack_type": "research",
+                "target_key": "MA5_BENCHMARK",
+                "task_neighborhood": "RESEARCH_MA5_BENCHMARK",
+            },
+            "input_payload": {"question": "question", "profile_key": "MA5_BENCHMARK"},
+        },
+    )
+    profile = BenchmarkProfile(
+        profile_key="workspace-only-v1",
+        execution_mode="SEQUENTIAL",
+        provider_kind="SIMULATED",
+        provider="deterministic-fake",
+        model="no-llm",
+        source_policy={"allow_external": False},
+        budget={"max_concurrency": 1},
+        random_policy={"temperature": 0.0, "seed": 7},
+        rollout_no=1,
+    )
+
+    ResearchTaskBenchmarkBoundary().execute(profile, case)
+
+    assert captured == {
+        "NOTEWEAVE_RESEARCH_SEARCH_PROVIDER": None,
+        "NOTEWEAVE_RESEARCH_SEARCH_API_KEY": None,
+        "SERPER_API_KEY": None,
+        "NOTEWEAVE_RESEARCH_ENABLE_URL_READER": "false",
+        "NOTEWEAVE_RESEARCH_JINA_API_KEY": None,
+    }
+
+
+def test_benchmark_profile_must_bind_call_limit_temperature_and_seed_to_runtime(monkeypatch) -> None:
+    captured: dict[str, str | None] = {}
+
+    def fake_run(task_input):
+        del task_input
+        captured["max_llm_calls"] = os.environ.get("NOTEWEAVE_RESEARCH_LLM_MAX_TOTAL_CALLS")
+        captured["purpose_options"] = os.environ.get("NOTEWEAVE_RESEARCH_LLM_PURPOSE_OPTIONS")
+        return [], SimpleNamespace(result_payload={})
+
+    monkeypatch.setattr("app.benchmark_runtime.run_research_task", fake_run)
+    case = BenchmarkCase(
+        case_key="runtime-policy-boundary",
+        question="question",
+        schema={},
+        gold_version="gold-v1",
+        source_snapshot_digest="sha256:sources-v1",
+        gold={"case_key": "runtime-policy-boundary"},
+        task_input={
+            "task_id": "runtime-policy-task",
+            "workspace_id": "runtime-policy-workspace",
+            "target_id": "runtime-policy-run",
+            "source_scope": [],
+            "control_pack": {
+                "pack_type": "research",
+                "target_key": "MA5_BENCHMARK",
+                "task_neighborhood": "RESEARCH_MA5_BENCHMARK",
+            },
+            "input_payload": {"question": "question", "profile_key": "MA5_BENCHMARK"},
+        },
+    )
+    profile = BenchmarkProfile(
+        profile_key="runtime-policy-v1",
+        execution_mode="PARALLEL",
+        provider_kind="SIMULATED",
+        provider="deterministic-fake",
+        model="no-llm",
+        source_policy={"allow_external": False},
+        budget={"max_concurrency": 2, "max_llm_calls": 3},
+        random_policy={"temperature": 0.2, "seed": 11},
+        rollout_no=1,
+    )
+
+    ResearchTaskBenchmarkBoundary().execute(profile, case)
+
+    assert captured["max_llm_calls"] == "3"
+    assert json.loads(captured["purpose_options"] or "{}") == {
+        purpose: {"seed": 11, "temperature": 0.2}
+        for purpose in (
+            "research.extract",
+            "research.verify.cell",
+            "research.verify.citation",
+            "research.verify.local",
+        )
+    }
+
+
+def test_benchmark_boundary_must_reject_rollout_that_exceeds_declared_cost(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.benchmark_runtime.run_research_task",
+        lambda task_input: (
+            [],
+            SimpleNamespace(result_payload={
+                "llm_cost_ledger": {
+                    "provider_call_count": 2,
+                    "estimated_cost": 0.25,
+                }
+            }),
+        ),
+    )
+    case = BenchmarkCase(
+        case_key="cost-boundary",
+        question="question",
+        schema={},
+        gold_version="gold-v1",
+        source_snapshot_digest="sha256:sources-v1",
+        gold={"case_key": "cost-boundary"},
+        task_input={
+            "task_id": "cost-task",
+            "workspace_id": "cost-workspace",
+            "target_id": "cost-run",
+            "source_scope": [],
+            "control_pack": {
+                "pack_type": "research",
+                "target_key": "MA5_BENCHMARK",
+                "task_neighborhood": "RESEARCH_MA5_BENCHMARK",
+            },
+            "input_payload": {"question": "question", "profile_key": "MA5_BENCHMARK"},
+        },
+    )
+    profile = BenchmarkProfile(
+        profile_key="cost-v1",
+        execution_mode="SEQUENTIAL",
+        provider_kind="SIMULATED",
+        provider="deterministic-fake",
+        model="no-llm",
+        source_policy={"allow_external": False},
+        budget={"max_concurrency": 1, "max_llm_calls": 3, "max_cost": 0.1},
+        random_policy={"temperature": 0.0, "seed": 7},
+        rollout_no=1,
+    )
+
+    with pytest.raises(RuntimeError, match="declared max_cost"):
+        ResearchTaskBenchmarkBoundary().execute(profile, case)
+
+
+def test_archive_required_benchmark_must_reject_unarchivable_external_documents(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.benchmark_runtime.run_research_task",
+        lambda task_input: (
+            [],
+            SimpleNamespace(result_payload={
+                "fetched_documents": [{
+                    "adapter": "external_url",
+                    "source_id": "external-1",
+                    "snapshot_archive_ready": False,
+                    "fetch_status": "FALLBACK_USED",
+                }],
+                "llm_cost_ledger": {"provider_call_count": 0, "estimated_cost": 0.0},
+            }),
+        ),
+    )
+    case = BenchmarkCase(
+        case_key="archive-boundary",
+        question="question",
+        schema={},
+        gold_version="gold-v1",
+        source_snapshot_digest="sha256:sources-v1",
+        gold={"case_key": "archive-boundary"},
+        task_input={
+            "task_id": "archive-task",
+            "workspace_id": "archive-workspace",
+            "target_id": "archive-run",
+            "source_scope": [],
+            "control_pack": {
+                "pack_type": "research",
+                "target_key": "MA5_BENCHMARK",
+                "task_neighborhood": "RESEARCH_MA5_BENCHMARK",
+            },
+            "input_payload": {"question": "question", "profile_key": "MA5_BENCHMARK"},
+        },
+    )
+    profile = BenchmarkProfile(
+        profile_key="archive-v1",
+        execution_mode="SEQUENTIAL",
+        provider_kind="SIMULATED",
+        provider="deterministic-fake",
+        model="no-llm",
+        source_policy={"allow_external": True, "archive_required": True},
+        budget={"max_concurrency": 1, "max_llm_calls": 1, "max_cost": 0.0},
+        random_policy={"temperature": 0.0, "seed": 7},
+        rollout_no=1,
+    )
+
+    with pytest.raises(RuntimeError, match="archive-ready external snapshots"):
         ResearchTaskBenchmarkBoundary().execute(profile, case)
 
 

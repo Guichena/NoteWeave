@@ -1,7 +1,11 @@
 import importlib
+from pathlib import Path
 
 from app.config import load_settings
 from app.main import health
+
+
+ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_health_should_return_research_worker_type() -> None:
@@ -11,10 +15,17 @@ def test_health_should_return_research_worker_type() -> None:
     assert response["worker_type"] == "research"
 
 
-def test_kafka_consumer_module_should_import() -> None:
-    module = importlib.import_module("app.kafka_consumer")
+def test_agent_kafka_consumer_module_should_import() -> None:
+    module = importlib.import_module("app.agent_kafka_consumer")
 
-    assert hasattr(module, "run_research_kafka_consumer_forever")
+    assert hasattr(module, "run_research_agent_kafka_consumer_forever")
+
+
+def test_start_script_should_launch_the_only_incremental_agent_consumer() -> None:
+    script = (ROOT / "workers" / "scripts" / "start-research-consumer.ps1").read_text(encoding="utf-8")
+
+    assert "python -m app.agent_kafka_consumer" in script
+    assert "python -m app.kafka_consumer" not in script
 
 
 def test_kafka_bootstrap_servers_should_be_overridable(monkeypatch) -> None:

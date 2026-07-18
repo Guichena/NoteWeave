@@ -745,3 +745,24 @@ git diff --check: passed（仅既有 LF/CRLF 提示）
 6. **LLM 配置隔离**：Research Worker 仅读取 `NOTEWEAVE_RESEARCH_LLM_*`，不读取 Backend 的 `NOTEWEAVE_LLM_*`；Artifact Worker 对应使用 `NOTEWEAVE_ARTIFACT_LLM_*`。
 
 本轮验证：Research Worker `207 passed`；Artifact Worker 配置隔离回归 `193 passed`；`docker compose --profile app config --quiet` 与 `git diff --check` 均通过。仍未把模拟测试包装成真实模型效果：真实 provider URL/key/model 配置后，仍应独立执行 live smoke、费用校准和质量基准评测。
+
+## 17. 2026-07-18 全量审计与 TDD 补强记录
+
+本轮从 `67a8323e` 创建隔离 worktree 复核 Research Agent，先运行审计信号，再按公开 seam 做红 → 绿测试。审计发现并已修复：
+
+1. **跨数据库 JSON 兼容**：H2 JSON 兼容类型可能把 `source_domains_json/evidence_ids_json` 返回为一层 JSON 字符串，quorum completion 会误报 `RESEARCH_AGENT_COMPLETION_QUORUM_CONFLICT`。`ResearchAgentCompletionCommitter` 现在只解包一层并继续执行严格数组/非空字符串校验；Research completion 定向测试恢复为全绿。
+2. **MA5 公平性不是 manifest 装饰**：benchmark runner 现在实际绑定 `max_concurrency`、`max_llm_calls`、temperature、seed；LLM request body 支持 seed；超过 `max_cost` 的 rollout fail-closed。
+3. **外部能力隔离**：`allow_external=false` 的 rollout 会在临时环境中清空 Search/Jina 凭证并关闭 URL reader；`archive_required=true` 时任何未归档或 fallback 的 external document 都不会进入 benchmark record。
+4. **A/B 快照一致性**：benchmark record schema 升为 `research-agent-benchmark-record.v2`，保存 `observed_source_snapshot_digest`；比较器拒绝真实读取快照不一致的 rollout 集，避免把实时网页变化当成算法收益。
+5. **旧 Worker HTTP 执行入口移除**：`/debug/run-task` 与 `/tasks/{task_id}/run` 不再注册，Worker HTTP 面只保留 health；正式执行入口为 agent Kafka consumer。`start-research-consumer.ps1` 已切换到 `app.agent_kafka_consumer`。
+6. **Windows 验证脚本可移植性**：新增 `.gitattributes` 将 `scripts/ma4g/*.sh` 固定为 LF；修复前 LockMatrix 的 13 个测试虽已运行，最终 verifier 会因 CRLF 在 `set -euo pipefail` 处失败并正确留下 FAILED manifest。修复后重新执行，MySQL 8.4.9 / READ-COMMITTED 的 A–L2 共 `13/13`，manifest 为 `VERIFIED`。
+
+隔离 worktree 的 Worker 全量结果为：
+
+```text
+375 passed, 0 failed, 0 skipped
+```
+
+Backend 隔离 H2 Research Agent 聚合为 `209 tests, 0 failures, 0 errors, 1 skipped`；skip 仍是环境门控 Redis integration。MySQL LockMatrix 为 `13/13` 且最终 verifier/manifest 均通过，而不是只读取测试进程日志。
+
+当前仍未完成、且不能包装成已完成的外部证明：真实 Research LLM/Search 凭证、真实公网四轮 A/B、生产网络长期 lease/recovery soak、答案质量与 p95 优于 TAS/MiroFlow/DeepWideSearch 的证据。MA5 runner 的 `SEQUENTIAL_V2/LOCAL_PARALLEL` 只证明同进程算法 seam，不替代分布式 `INCREMENTAL_V1` 的运行证据。

@@ -1152,7 +1152,18 @@ class ResearchAgentCompletionCommitter {
 
     private List<String> readStringList(String json) {
         try {
-            List<String> values = objectMapper.readValue(json, new TypeReference<>() { });
+            var node = objectMapper.readTree(json);
+            // H2's JSON compatibility type returns a bound JSON document as a
+            // JSON string, while MySQL returns the document itself. Unwrap that
+            // single driver-added layer without accepting arbitrary nested
+            // encodings, then apply the same strict array validation.
+            if (node != null && node.isTextual()) {
+                node = objectMapper.readTree(node.textValue());
+            }
+            if (node == null || !node.isArray()) {
+                throw new IllegalArgumentException("invalid string list");
+            }
+            List<String> values = objectMapper.convertValue(node, new TypeReference<>() { });
             if (values == null || values.stream().anyMatch(value -> value == null || value.isBlank())) {
                 throw new IllegalArgumentException("invalid string list");
             }

@@ -431,6 +431,7 @@ def test_llm_gateway_should_apply_per_purpose_model_and_generation_limits(monkey
             "evidence_extraction": {
                 "model": "extractor-model",
                 "temperature": 0.1,
+                "seed": 11,
                 "max_tokens": 900,
             }
         },
@@ -439,6 +440,7 @@ def test_llm_gateway_should_apply_per_purpose_model_and_generation_limits(monkey
     assert client.complete_json("evidence_extraction", {"window": "x"}) == "{}"
     assert captured["model"] == "extractor-model"
     assert captured["temperature"] == 0.1
+    assert captured["seed"] == 11
     assert captured["max_tokens"] == 900
     assert client.usage_summary()["calls"][0]["model"] == "extractor-model"
 

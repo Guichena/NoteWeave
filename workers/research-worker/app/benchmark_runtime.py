@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from contextlib import contextmanager
@@ -35,7 +36,27 @@ class ResearchTaskBenchmarkBoundary:
             "NOTEWEAVE_RESEARCH_AGENT_MAX_CONCURRENCY": str(
                 max(1, int(profile.budget.get("max_concurrency", 4)))
             ),
+            "NOTEWEAVE_RESEARCH_LLM_MAX_TOTAL_CALLS": str(
+                max(0, int(profile.budget.get("max_llm_calls", 0)))
+            ),
+            "NOTEWEAVE_RESEARCH_LLM_PURPOSE_OPTIONS": json.dumps(
+                _benchmark_purpose_options(profile),
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
         }
+        if not bool(profile.source_policy.get("allow_external")):
+            updates.update({
+                "NOTEWEAVE_RESEARCH_SEARCH_PROVIDER": None,
+                "NOTEWEAVE_RESEARCH_SEARCH_PROVIDER_CHAIN": None,
+                "NOTEWEAVE_RESEARCH_SEARCH_API_KEY": None,
+                "NOTEWEAVE_RESEARCH_SERPER_API_KEY": None,
+                "SERPER_API_KEY": None,
+                "SEARCH_API_KEY": None,
+                "NOTEWEAVE_RESEARCH_ENABLE_URL_READER": "false",
+                "NOTEWEAVE_RESEARCH_JINA_API_KEY": None,
+                "JINA_API_KEY": None,
+            })
         if profile.provider_kind == "SIMULATED":
             # A simulated run must never consume ambient real-provider credentials.
             updates.update({
@@ -47,6 +68,8 @@ class ResearchTaskBenchmarkBoundary:
             _events, result = run_research_task(task_input)
         payload = dict(result.result_payload)
         llm = _dict(payload.get("llm_cost_ledger"))
+        _require_budget_compliance(profile, llm)
+        _require_archive_compliance(profile, payload)
         return BenchmarkExecution(
             result_payload=payload,
             usage={
@@ -128,6 +151,60 @@ def _has_external_search_credentials() -> bool:
         if any(os.getenv(key, "").strip() for key in keys):
             return True
     return False
+
+
+def _benchmark_purpose_options(profile: BenchmarkProfile) -> dict[str, dict[str, int | float]]:
+    temperature = float(profile.random_policy.get("temperature", 0.0))
+    if not 0.0 <= temperature <= 2.0:
+        raise ValueError("benchmark temperature must be between 0 and 2")
+    seed = int(profile.random_policy.get("seed", 0))
+    return {
+        purpose: {"temperature": temperature, "seed": seed}
+        for purpose in (
+            "research.extract",
+            "research.verify.cell",
+            "research.verify.citation",
+            "research.verify.local",
+        )
+    }
+
+
+def _require_budget_compliance(
+    profile: BenchmarkProfile,
+    llm_ledger: dict[str, object],
+) -> None:
+    if "max_llm_calls" in profile.budget:
+        maximum_calls = max(0, int(profile.budget["max_llm_calls"]))
+        actual_calls = max(0, int(llm_ledger.get("provider_call_count") or 0))
+        if maximum_calls and actual_calls > maximum_calls:
+            raise RuntimeError("benchmark rollout exceeded declared max_llm_calls")
+    if "max_cost" in profile.budget:
+        maximum_cost = max(0.0, float(profile.budget["max_cost"]))
+        actual_cost = max(0.0, float(llm_ledger.get("estimated_cost") or 0.0))
+        if actual_cost > maximum_cost + 1e-12:
+            raise RuntimeError("benchmark rollout exceeded declared max_cost")
+
+
+def _require_archive_compliance(
+    profile: BenchmarkProfile,
+    payload: dict[str, object],
+) -> None:
+    if not (
+        bool(profile.source_policy.get("allow_external"))
+        and profile.source_policy.get("archive_required") is True
+    ):
+        return
+    external_documents = [
+        item
+        for item in _list(payload.get("fetched_documents"))
+        if isinstance(item, dict) and str(item.get("adapter") or "") == "external_url"
+    ]
+    if any(
+        item.get("snapshot_archive_ready") is not True
+        or str(item.get("fetch_status") or "") != "FETCHED"
+        for item in external_documents
+    ):
+        raise RuntimeError("benchmark rollout requires archive-ready external snapshots")
 
 
 def _search_calls(payload: dict[str, object]) -> int:

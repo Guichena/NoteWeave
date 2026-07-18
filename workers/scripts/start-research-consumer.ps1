@@ -14,7 +14,7 @@ if (-not $condaCommand) {
 
 Push-Location $researchWorker
 try {
-    conda run -n $EnvironmentName python -m app.kafka_consumer
+    conda run -n $EnvironmentName python -m app.agent_kafka_consumer
 } finally {
     Pop-Location
 }

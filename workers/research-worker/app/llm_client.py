@@ -96,6 +96,8 @@ class OpenAICompatibleLlmClient:
         }
         if "temperature" in purpose_config:
             request_payload["temperature"] = float(purpose_config["temperature"])
+        if "seed" in purpose_config:
+            request_payload["seed"] = int(purpose_config["seed"])
         if "max_tokens" in purpose_config:
             request_payload["max_tokens"] = max(1, int(purpose_config["max_tokens"]))
         purpose_timeout_seconds = max(1, int(purpose_config.get("timeout_seconds") or self.timeout_seconds))

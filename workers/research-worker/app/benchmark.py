@@ -66,6 +66,7 @@ class BenchmarkRecord:
     rollout_no: int
     manifest_digest: str
     comparison_digest: str
+    observed_source_snapshot_digest: str
     quality: dict[str, object]
     wall_clock_ms: float
     calls: dict[str, int]
@@ -117,6 +118,11 @@ class BenchmarkRunner:
             rollout_no=profile.rollout_no,
             manifest_digest=_digest(manifest),
             comparison_digest=_digest(comparison_manifest),
+            observed_source_snapshot_digest=_observed_source_snapshot_digest(
+                profile,
+                case,
+                execution.result_payload,
+            ),
             quality=evaluate_research_result(case.gold, execution.result_payload),
             wall_clock_ms=elapsed_ms,
             calls={
@@ -147,7 +153,7 @@ class BenchmarkArchive:
             / f"rollout-{record.rollout_no:04d}.json"
         )
         payload = {
-            "schema_version": "research-agent-benchmark-record.v1",
+            "schema_version": "research-agent-benchmark-record.v2",
             "record": asdict(record),
         }
         encoded = (json.dumps(payload, sort_keys=True, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
@@ -172,6 +178,8 @@ class BenchmarkComparator:
             raise ValueError("benchmark records must not be empty")
         if len({item.comparison_digest for item in records}) != 1:
             raise ValueError("benchmark conditions differ")
+        if len({item.observed_source_snapshot_digest for item in records}) != 1:
+            raise ValueError("observed source snapshots differ")
         if len({item.case_key for item in records}) != 1 or len({item.provider_kind for item in records}) != 1:
             raise ValueError("benchmark conditions differ")
         grouped: dict[str, list[BenchmarkRecord]] = {}
@@ -282,6 +290,34 @@ def _manifest(profile: BenchmarkProfile, case: BenchmarkCase, *, include_mode: b
 def _digest(value: dict[str, object]) -> str:
     encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _observed_source_snapshot_digest(
+    profile: BenchmarkProfile,
+    case: BenchmarkCase,
+    result_payload: dict[str, object],
+) -> str:
+    if not bool(profile.source_policy.get("allow_external")):
+        return case.source_snapshot_digest
+    documents = result_payload.get("fetched_documents")
+    observations = [
+        {
+            "source_id": str(item.get("source_id") or ""),
+            "url": str(item.get("url") or ""),
+            "snapshot_key": str(item.get("snapshot_key") or ""),
+            "content_sha256": str(item.get("content_sha256") or ""),
+        }
+        for item in documents
+        if isinstance(item, dict) and str(item.get("adapter") or "") == "external_url"
+    ] if isinstance(documents, list) else []
+    if not observations:
+        return case.source_snapshot_digest
+    observations.sort(key=lambda item: (
+        item["source_id"], item["url"], item["snapshot_key"], item["content_sha256"]
+    ))
+    return "sha256:" + hashlib.sha256(
+        json.dumps(observations, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
 
 
 def _non_negative_int(value: object) -> int:
