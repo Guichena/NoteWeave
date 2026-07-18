@@ -93,6 +93,26 @@ class ResearchAgentTrustedPermitServiceTest {
     }
 
     @Test
+    void shouldGrantWebToolPermitForCoordinatorV2Snapshot() {
+        jdbcTemplate.update("""
+                update research_agent_task
+                set snapshot_schema_version = 'research-agent-task-snapshot.v2',
+                    logical_task_key = 'deep-cell:web-only', quorum_group_key = null,
+                    candidate_quorum = 1, candidate_slot = 1,
+                    snapshot_digest = null
+                where id = ?
+                """, claim.taskId());
+        claim = taskService.heartbeat(new ResearchAgentTaskService.LeaseCommand(
+                claim.taskId(), "worker-a", claim.leaseEpoch(), claim.fencingToken(), 30));
+
+        ResearchAgentPermitService.PermitReceipt receipt = permitService.requirePermit(command("search"));
+
+        assertThat(receipt).isEqualTo(new ResearchAgentPermitService.PermitReceipt("GRANTED", "search"));
+        verify(rateLimitService).requirePermit(new ResearchAgentRateLimitService.PermitRequest(
+                "research-default", workspaceId, runId, "DEEP_CELL"));
+    }
+
+    @Test
     void shouldRejectCallerSuppliedLegacyScopeFieldsInsteadOfIgnoringSpoof() throws Exception {
         mockMvc.perform(post("/internal/research-agent/permits")
                         .contentType(MediaType.APPLICATION_JSON)

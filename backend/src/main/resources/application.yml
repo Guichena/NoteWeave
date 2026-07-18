@@ -41,7 +41,7 @@ spring:
 noteweave:
   research:
     agent:
-      external-evidence-enabled: ${NOTEWEAVE_RESEARCH_AGENT_EXTERNAL_EVIDENCE_ENABLED:false}
+      external-evidence-enabled: ${NOTEWEAVE_RESEARCH_AGENT_EXTERNAL_EVIDENCE_ENABLED:true}
       lifecycle-reaper-enabled: ${NOTEWEAVE_RESEARCH_AGENT_LIFECYCLE_REAPER_ENABLED:false}
       lifecycle-reaper-delay-ms: ${NOTEWEAVE_RESEARCH_AGENT_LIFECYCLE_REAPER_DELAY_MS:1000}
       command-dispatch-delay-ms: ${NOTEWEAVE_RESEARCH_AGENT_COMMAND_DISPATCH_DELAY_MS:1000}

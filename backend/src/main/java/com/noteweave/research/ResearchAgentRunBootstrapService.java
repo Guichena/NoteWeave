@@ -17,7 +17,7 @@ public class ResearchAgentRunBootstrapService {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public BootstrapReceipt bootstrap(String runId, String question, ResearchIntentResponse intent, int sourceCount) {
+    public BootstrapReceipt bootstrap(String runId, String question, ResearchIntentResponse intent) {
         String branchId = Ids.newId();
         String rowId = Ids.newId();
         jdbcTemplate.update("""
@@ -40,8 +40,7 @@ public class ResearchAgentRunBootstrapService {
                         candidate_value, cell_status, evidence_refs_json, repair_count,
                         cell_version, plan_revision, entity_set_version, high_risk)
                     values (?, ?, ?, ?, ?, ?, null, 'GAP', '[]', 0, 0, 1, 1, ?)
-                    """, Ids.newId(), runId, rowId, "subject:" + column, branchId, column,
-                    sourceCount >= 2 && "answer".equals(column));
+                    """, Ids.newId(), runId, rowId, "subject:" + column, branchId, column, false);
         }
         return new BootstrapReceipt(branchId, rowId, DEFAULT_COLUMNS.size());
     }

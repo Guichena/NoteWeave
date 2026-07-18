@@ -95,10 +95,6 @@ public class ResearchRunService {
         );
         MemoryControlPackResponse controlPack = memoryCompilerService.compileResearchControlPack(workspaceId, profileKey);
         List<String> sourceScopeIds = resolveRequestedSourceScopeIds(workspaceId, request.sourceScopeSourceIds());
-        if (sourceScopeIds.isEmpty()) {
-            throw new BusinessException("RESEARCH_AGENT_SOURCE_SCOPE_REQUIRED",
-                    "Incremental Research Agent requires at least one ready workspace source");
-        }
         jdbcTemplate.update("""
                 insert into research_run(
                     id, workspace_id, task_id, question, profile_key,
@@ -115,7 +111,7 @@ public class ResearchRunService {
                 Json.write(objectMapper, controlPack)
         );
         researchAgentRunBootstrapService.bootstrap(
-                researchRunId, request.question().trim(), researchIntent, sourceScopeIds.size());
+                researchRunId, request.question().trim(), researchIntent);
         jdbcTemplate.update("""
                 update task set task_status = 'RUNNING', progress_phase = 'AGENT_COORDINATING',
                     progress_message = 'Research Agent matrix initialized', updated_at = current_timestamp

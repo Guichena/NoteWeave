@@ -44,7 +44,7 @@ from app.research_agent_completion_contract import (
     canonical_json_digest,
     require_worker_instance_id,
 )
-from app.search_adapters import WorkspaceSearchAdapter, build_default_search_adapter, run_research_search
+from app.search_adapters import SeedSourceSearchAdapter, build_default_search_adapter, run_research_search
 from app.task_snapshot_contract import ResearchAgentTaskSnapshot, require_trusted_claim_snapshot
 
 
@@ -78,7 +78,7 @@ class ExistingResearchToolchain:
     """Production adapter wired to the existing hardened Research adapters."""
 
     def search(self, task_input: ResearchTaskInput, plan: ResearchPlan, *, allow_external: bool) -> list[object]:
-        adapter = build_default_search_adapter() if allow_external else WorkspaceSearchAdapter()
+        adapter = build_default_search_adapter() if allow_external else SeedSourceSearchAdapter()
         return list(run_research_search(task_input, plan, adapter=adapter))
 
     def fetch(self, task_input: ResearchTaskInput, plan: ResearchPlan, hits: list[object], *, allow_external: bool) -> list[object]:

@@ -15,6 +15,7 @@ from app.search_adapters import (
     ExternalSearchAdapter,
     HttpGetSearchTransport,
     HttpJsonSearchTransport,
+    SeedSourceSearchAdapter,
     WorkspaceSearchAdapter,
     build_search_query_plan,
     build_default_search_adapter,
@@ -95,6 +96,15 @@ def test_default_search_adapter_should_use_workspace_only_without_external_key(m
     assert hits[0].source_id == "src-workspace"
     assert hits[0].adapter == "workspace"
     assert hits[0].source_quality == "WORKSPACE_SOURCE"
+
+
+def test_seed_source_adapter_only_matches_explicitly_selected_seed_snapshots() -> None:
+    task_input = _build_task_input()
+    plan = build_research_plan(task_input)
+
+    hits = SeedSourceSearchAdapter().search(task_input, plan)
+
+    assert [hit.source_id for hit in hits] == ["src-workspace"]
 
 
 def test_composite_search_adapter_should_merge_workspace_and_external_hits() -> None:

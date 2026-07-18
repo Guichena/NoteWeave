@@ -18,12 +18,16 @@ class _SearchCandidate:
     source_index: int
 
 
-def run_workspace_search(
+def run_seed_source_search(
     task_input: ResearchTaskInput,
     plan: ResearchPlan,
     selected_queries: list[str] | None = None,
 ) -> list[ResearchSearchHit]:
-    """Resolve the query bundle against the current workspace source scope."""
+    """Match queries only against seed snapshots explicitly selected for this run.
+
+    This is not Workspace index retrieval: sources absent from ``source_scope``
+    are never discovered or searched here.
+    """
     global_limit = int(plan.stop_contract.get("global_search_limit", 8))
     if global_limit <= 0 or not task_input.source_scope:
         return []
@@ -77,6 +81,11 @@ def run_workspace_search(
     return hits
 
 
+# Compatibility alias for older tests and callers. New code must use the seed
+# terminology so Workspace ownership is not confused with evidence scope.
+run_workspace_search = run_seed_source_search
+
+
 def _select_best_query(
     plan: ResearchPlan,
     source: SourceScopeItem,
@@ -108,7 +117,7 @@ def _build_snippet(source: SourceScopeItem, plan: ResearchPlan) -> str:
     if sample_text:
         return sample_text
     return (
-        f"{source.title} is in the workspace scope but has no summary. "
+        f"{source.title} is an explicitly selected seed with no summary. "
         f"Open it only for cautious evidence related to {plan.normalized_question}."
     )
 
@@ -179,9 +188,9 @@ def _build_retrieval_reason(candidate: _SearchCandidate) -> str:
     matched_fields = (
         ", ".join(candidate.matched_fields)
         if candidate.matched_fields
-        else "fallback source scope"
+        else "fallback selected seed"
     )
     return (
-        f"{candidate.search_angle} query matched workspace source fields: "
+        f"{candidate.search_angle} query matched selected seed fields: "
         f"{matched_fields}; coverage={candidate.coverage_score:.2f}"
     )

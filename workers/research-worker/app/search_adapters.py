@@ -13,7 +13,7 @@ from typing import Protocol
 
 from app.http_security import credential_safe_urlopen
 from app.models import ResearchPlan, ResearchSearchHit, ResearchTaskInput
-from app.search import run_workspace_search
+from app.search import run_seed_source_search
 from app.source_profile import infer_search_lane, infer_source_domain, infer_source_quality
 
 
@@ -40,7 +40,9 @@ class ExternalSearchTransport(Protocol):
         """Return provider-specific raw search results."""
 
 
-class WorkspaceSearchAdapter:
+class SeedSourceSearchAdapter:
+    """Searches only the immutable seed samples supplied in the task snapshot."""
+
     def search(
         self,
         task_input: ResearchTaskInput,
@@ -48,7 +50,7 @@ class WorkspaceSearchAdapter:
         remaining_budget: int | None = None,
     ) -> list[ResearchSearchHit]:
         query_plan = build_search_query_plan(plan, remaining_budget)
-        hits = run_workspace_search(
+        hits = run_seed_source_search(
             task_input,
             plan,
             selected_queries=[item.query for item in query_plan],
@@ -73,6 +75,11 @@ class WorkspaceSearchAdapter:
             )
             for hit in hits
         ]
+
+
+# Backward-compatible import name. This adapter has never searched the full
+# Workspace index; it only matches explicitly selected task seed snapshots.
+WorkspaceSearchAdapter = SeedSourceSearchAdapter
 
 
 class HttpJsonSearchTransport:
@@ -386,9 +393,9 @@ class CompositeSearchAdapter:
 def build_default_search_adapter() -> SearchAdapter:
     external_adapters = _build_external_search_adapters()
     if not external_adapters:
-        return WorkspaceSearchAdapter()
+        return SeedSourceSearchAdapter()
 
-    return CompositeSearchAdapter([WorkspaceSearchAdapter(), *external_adapters])
+    return CompositeSearchAdapter([SeedSourceSearchAdapter(), *external_adapters])
 
 
 def run_research_search(

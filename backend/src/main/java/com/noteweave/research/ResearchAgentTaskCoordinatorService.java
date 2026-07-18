@@ -50,10 +50,6 @@ public class ResearchAgentTaskCoordinatorService {
         if (waveNo < 1) throw new BusinessException("RESEARCH_AGENT_COORDINATOR_WAVE_INVALID", "Wave number must be positive");
         RunScope run = requireIncrementalRunnableRun(runId);
         List<Map<String, Object>> sources = loadTrustedSources(run.workspaceId(), run.sourceScopeJson());
-        if (sources.isEmpty()) {
-            throw new BusinessException("RESEARCH_AGENT_COORDINATOR_SOURCE_SCOPE_EMPTY",
-                    "Incremental taskization requires ready workspace sources");
-        }
         List<CellScope> cells = jdbcTemplate.query("""
                 select cell_key, cell_version, plan_revision, entity_set_version, high_risk, branch_id
                 from research_cell

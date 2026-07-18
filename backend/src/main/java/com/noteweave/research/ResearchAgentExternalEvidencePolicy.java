@@ -9,7 +9,7 @@ public class ResearchAgentExternalEvidencePolicy {
     private final boolean enabled;
 
     public ResearchAgentExternalEvidencePolicy(
-            @Value("${noteweave.research.agent.external-evidence-enabled:false}") boolean enabled
+            @Value("${noteweave.research.agent.external-evidence-enabled:true}") boolean enabled
     ) {
         this.enabled = enabled;
     }

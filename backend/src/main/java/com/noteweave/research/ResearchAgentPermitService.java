@@ -15,7 +15,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ResearchAgentPermitService {
 
-    private static final String SNAPSHOT_SCHEMA = ResearchAgentTaskSnapshotCanonicalizer.SCHEMA_VERSION;
+    private static final Set<String> SNAPSHOT_SCHEMAS = Set.of(
+            ResearchAgentTaskSnapshotCanonicalizer.SCHEMA_V1,
+            ResearchAgentTaskSnapshotCanonicalizer.SCHEMA_V2);
     private static final Map<String, Set<String>> ROLE_TOOLS = Map.of(
             "DEEP_CELL", Set.of("search", "fetch", "read", "extract", "archive"),
             "WIDE_DISCOVERY", Set.of("search", "fetch", "read", "extract", "archive"),
@@ -60,6 +62,7 @@ public class ResearchAgentPermitService {
                     rat.lease_epoch, rat.fencing_token, rat.role, rat.entity_id, rat.branch_id,
                     rat.plan_revision, rat.entity_set_version, rat.target_bindings_json, rat.budget_json,
                     rat.execution_context_json, rat.snapshot_schema_version, rat.snapshot_digest,
+                    rat.logical_task_key, rat.quorum_group_key, rat.candidate_quorum, rat.candidate_slot,
                     (rat.lease_expires_at > current_timestamp) as lease_valid
                 from research_agent_task rat
                 join research_run rr on rr.id = rat.research_run_id
@@ -83,6 +86,10 @@ public class ResearchAgentPermitService {
                         rs.getString("execution_context_json"),
                         rs.getString("snapshot_schema_version"),
                         rs.getString("snapshot_digest"),
+                        rs.getString("logical_task_key"),
+                        rs.getString("quorum_group_key"),
+                        rs.getInt("candidate_quorum"),
+                        rs.getInt("candidate_slot"),
                         rs.getBoolean("lease_valid")) : null,
                 command.taskId(), runId);
 
@@ -94,13 +101,16 @@ public class ResearchAgentPermitService {
                 || !task.leaseValid()) {
             throw staleLease();
         }
-        if (!SNAPSHOT_SCHEMA.equals(task.snapshotSchemaVersion())) throw invalidSnapshot();
+        if (!SNAPSHOT_SCHEMAS.contains(task.snapshotSchemaVersion())) throw invalidSnapshot();
 
         ResearchAgentTaskSnapshotCanonicalizer.CanonicalSnapshot canonical = snapshotCanonicalizer.canonicalize(
                 new ResearchAgentTaskSnapshotCanonicalizer.SnapshotInput(
-                        task.id(), task.runId(), task.workspaceId(), task.role(), task.entityId(), task.branchId(),
+                        task.snapshotSchemaVersion(), task.id(), task.runId(), task.workspaceId(), task.role(),
+                        task.entityId(), task.branchId(),
                         task.planRevision(), task.entitySetVersion(), task.leaseEpoch(), task.fencingToken(),
-                        task.targetBindingsJson(), task.budgetJson(), task.executionContextJson()));
+                        task.targetBindingsJson(), task.budgetJson(), task.executionContextJson(),
+                        task.logicalTaskKey(), task.quorumGroupKey(), task.candidateQuorum(), task.candidateSlot(),
+                        task.candidateQuorum() == 2));
         if (!canonical.digest().equals(task.snapshotDigest())) throw invalidSnapshot();
 
         Set<String> allowedTools = ROLE_TOOLS.get(task.role());
@@ -199,6 +209,10 @@ public class ResearchAgentPermitService {
             String executionContextJson,
             String snapshotSchemaVersion,
             String snapshotDigest,
+            String logicalTaskKey,
+            String quorumGroupKey,
+            int candidateQuorum,
+            int candidateSlot,
             boolean leaseValid
     ) { }
 }
