@@ -126,7 +126,9 @@ class ResearchAgentCompletionEvidence(_FrozenStrictContract):
     relation_type: Literal["SUPPORTS", "WEAK_SUPPORT", "CONFLICTS"]
     support_score_ppm: int = Field(ge=0, le=1_000_000)
     conflict_score_ppm: int = Field(ge=0, le=1_000_000)
-    snapshot_status: Literal["WORKSPACE"]
+    # EXTERNAL_ARCHIVED never trusts a Worker supplied URL or snapshot key: the
+    # Backend resolves it by (task, window, source) from its immutable archive.
+    snapshot_status: Literal["WORKSPACE", "EXTERNAL_ARCHIVED"]
 
     @field_validator("evidence_key", "window_id", "source_id")
     @classmethod

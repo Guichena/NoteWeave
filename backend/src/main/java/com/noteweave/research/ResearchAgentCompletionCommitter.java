@@ -9,8 +9,11 @@ import com.noteweave.common.Json;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.text.Normalizer;
 import java.sql.Timestamp;
+import java.util.HexFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -105,7 +108,8 @@ class ResearchAgentCompletionCommitter {
 
         validateAuthority(run, task, reservation, targets, cells, envelope);
         Map<String, TrustedSource> trustedSources = trustedSources(task.executionContextJson());
-        validateEvidenceAuthority(envelope.evidence(), trustedSources);
+        Map<String, TrustedEvidenceSource> trustedEvidence = validateEvidenceAuthority(
+                run.id(), task.id(), envelope.evidence(), trustedSources);
         checkpoint(ResearchAgentCompletionFaultInjector.Stage.AFTER_LOCKS, 0);
 
         String executionId = Ids.newId();
@@ -150,7 +154,7 @@ class ResearchAgentCompletionCommitter {
         checkpoint(ResearchAgentCompletionFaultInjector.Stage.AFTER_COMPLETION_ANCHOR, 0);
 
         Map<String, EvidencePersisted> evidenceByKey = appendEvidence(
-                run.id(), completionId, envelope.evidence(), trustedSources);
+                run.id(), completionId, envelope.evidence(), trustedEvidence);
         List<CandidatePersisted> candidates = appendCandidates(
                 run.id(), task, completionId, executionId, envelope.candidates(), evidenceByKey);
         MergeOutcome mergeOutcome = task.candidateQuorum() == 2
@@ -425,17 +429,68 @@ class ResearchAgentCompletionCommitter {
         }
     }
 
-    private void validateEvidenceAuthority(
+    private Map<String, TrustedEvidenceSource> validateEvidenceAuthority(
+            String runId,
+            String taskId,
             List<ResearchAgentCompletionEnvelope.Evidence> evidence,
             Map<String, TrustedSource> trustedSources
     ) {
+        Map<String, TrustedEvidenceSource> result = new HashMap<>();
         for (ResearchAgentCompletionEnvelope.Evidence item : evidence) {
+            if ("EXTERNAL_ARCHIVED".equals(item.snapshotStatus())) {
+                ExternalArchive archive = loadArchivedExternalSnapshot(runId, taskId, item);
+                if (!archive.sourceTitle().equals(item.sourceTitle())
+                        || !archive.contentText().contains(item.quoteText())
+                        || !sha256Hex(archive.contentText()).equalsIgnoreCase(archive.contentSha256())) {
+                    throw invalidEvidence("External archived evidence does not match its server-persisted snapshot");
+                }
+                result.put(item.evidenceKey(), new TrustedEvidenceSource(
+                        archive.sourceId(), archive.sourceTitle(), archive.sourceUrl(), archive.provider(),
+                        archive.adapter(), "EXTERNAL_ARCHIVED", archive.snapshotKey()));
+                continue;
+            }
             TrustedSource source = trustedSources.get(item.sourceId());
             if (source == null || !source.title().equals(item.sourceTitle())
                     || !source.sampleText().contains(item.quoteText())) {
                 throw new BusinessException("RESEARCH_AGENT_COMPLETION_EVIDENCE_UNGROUNDED",
                         "Completion evidence is not grounded in the server-persisted source scope");
             }
+            result.put(item.evidenceKey(), new TrustedEvidenceSource(
+                    source.id(), source.title(), null, "workspace", "workspace", "WORKSPACE", null));
+        }
+        return Map.copyOf(result);
+    }
+
+    private ExternalArchive loadArchivedExternalSnapshot(
+            String runId,
+            String taskId,
+            ResearchAgentCompletionEnvelope.Evidence item
+    ) {
+        ExternalArchive archive = jdbcTemplate.query("""
+                select source_id, source_title, source_url, provider, adapter, snapshot_key,
+                       content_text, content_sha256, archive_status
+                from research_external_snapshot
+                where research_run_id = ? and research_agent_task_id = ?
+                  and window_id = ? and source_id = ?
+                for update
+                """, rs -> rs.next() ? new ExternalArchive(
+                rs.getString("source_id"), rs.getString("source_title"), rs.getString("source_url"),
+                rs.getString("provider"), rs.getString("adapter"), rs.getString("snapshot_key"),
+                rs.getString("content_text"), rs.getString("content_sha256"), rs.getString("archive_status")) : null,
+                runId, taskId, item.windowId(), item.sourceId());
+        if (archive == null || !"ARCHIVED".equals(archive.archiveStatus())) {
+            throw new BusinessException("RESEARCH_AGENT_COMPLETION_EXTERNAL_ARCHIVE_REQUIRED",
+                    "External completion evidence requires a server-persisted archived snapshot");
+        }
+        return archive;
+    }
+
+    private String sha256Hex(String value) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest((value == null ? "" : value).getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 unavailable", exception);
         }
     }
 
@@ -443,12 +498,17 @@ class ResearchAgentCompletionCommitter {
             String runId,
             String completionId,
             List<ResearchAgentCompletionEnvelope.Evidence> evidence,
-            Map<String, TrustedSource> trustedSources
+            Map<String, TrustedEvidenceSource> trustedEvidence
     ) {
         Map<String, EvidencePersisted> result = new HashMap<>();
         int ordinal = 0;
         for (ResearchAgentCompletionEnvelope.Evidence item : evidence.stream()
                 .sorted(Comparator.comparing(ResearchAgentCompletionEnvelope.Evidence::evidenceKey)).toList()) {
+            TrustedEvidenceSource authority = trustedEvidence.get(item.evidenceKey());
+            if (authority == null) throw new IllegalStateException("Validated evidence authority is missing");
+            if (!authority.sourceId().equals(item.sourceId())) {
+                throw new IllegalStateException("Validated evidence source identity is inconsistent");
+            }
             String evidenceId = Ids.newId();
             BigDecimal legacySupport = legacyScore(item.supportScorePpm());
             BigDecimal legacyConflict = legacyScore(item.conflictScorePpm());
@@ -459,10 +519,10 @@ class ResearchAgentCompletionCommitter {
             content.put("evidence_key", item.evidenceKey());
             content.put("window_id", item.windowId());
             content.put("source_id", item.sourceId());
-            content.put("source_title", trustedSources.get(item.sourceId()).title());
-            content.put("source_url", null);
-            content.put("provider", "workspace");
-            content.put("adapter", "workspace");
+            content.put("source_title", authority.sourceTitle());
+            content.put("source_url", authority.sourceUrl());
+            content.put("provider", authority.provider());
+            content.put("adapter", authority.adapter());
             content.put("search_query", item.searchQuery());
             content.put("read_focus", item.readFocus());
             content.put("quote_text", item.quoteText());
@@ -472,8 +532,8 @@ class ResearchAgentCompletionCommitter {
             content.put("conflict_score", legacyConflict.toPlainString());
             content.put("support_score_ppm", item.supportScorePpm());
             content.put("conflict_score_ppm", item.conflictScorePpm());
-            content.put("snapshot_status", "WORKSPACE");
-            content.put("snapshot_key", null);
+            content.put("snapshot_status", authority.snapshotStatus());
+            content.put("snapshot_key", authority.snapshotKey());
             String contentDigest = canonicalizer.domainSeparatedDigest(EVIDENCE_DIGEST_DOMAIN, content);
             try {
                 jdbcTemplate.update("""
@@ -482,12 +542,13 @@ class ResearchAgentCompletionCommitter {
                             source_url, provider, adapter, search_query, read_focus, quote_text, claim_text,
                             relation_type, support_score, conflict_score, snapshot_status, snapshot_key,
                             agent_completion_id, content_digest, support_score_ppm, conflict_score_ppm
-                        ) values (?, ?, ?, ?, ?, ?, null, 'workspace', 'workspace', ?, ?, ?, ?, ?, ?, ?,
-                                  'WORKSPACE', null, ?, ?, ?, ?)
+                        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, evidenceId, runId, item.evidenceKey(), item.windowId(), item.sourceId(),
-                        trustedSources.get(item.sourceId()).title(), item.searchQuery(), item.readFocus(),
+                        authority.sourceTitle(), authority.sourceUrl(), authority.provider(), authority.adapter(),
+                        item.searchQuery(), item.readFocus(),
                         item.quoteText(), item.claimText(), item.relationType(), legacySupport, legacyConflict,
-                        completionId, contentDigest, item.supportScorePpm(), item.conflictScorePpm());
+                        authority.snapshotStatus(), authority.snapshotKey(), completionId, contentDigest,
+                        item.supportScorePpm(), item.conflictScorePpm());
             } catch (DataIntegrityViolationException exception) {
                 throw new BusinessException("RESEARCH_AGENT_COMPLETION_EVIDENCE_CONFLICT",
                         "Evidence stable key raced with different content");
@@ -1223,6 +1284,28 @@ class ResearchAgentCompletionCommitter {
     ) { }
 
     private record TrustedSource(String id, String title, String sampleText) { }
+
+    private record TrustedEvidenceSource(
+            String sourceId,
+            String sourceTitle,
+            String sourceUrl,
+            String provider,
+            String adapter,
+            String snapshotStatus,
+            String snapshotKey
+    ) { }
+
+    private record ExternalArchive(
+            String sourceId,
+            String sourceTitle,
+            String sourceUrl,
+            String provider,
+            String adapter,
+            String snapshotKey,
+            String contentText,
+            String contentSha256,
+            String archiveStatus
+    ) { }
 
     private record EvidencePersisted(
             String id,

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import unicodedata
+from copy import copy
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Protocol
@@ -49,6 +50,12 @@ from app.task_snapshot_contract import ResearchAgentTaskSnapshot, require_truste
 
 class PermitClient(Protocol):
     def require_permit(self, snapshot: ResearchAgentTaskSnapshot, tool_identity: str) -> None:
+        ...
+
+    def archive_external_snapshot(
+        self, snapshot: ResearchAgentTaskSnapshot, *, window_id: str, source_id: str, source_title: str,
+        source_url: str, provider: str, adapter: str, content_text: str,
+    ) -> object:
         ...
 
 
@@ -161,6 +168,9 @@ class DeepCellExecutor:
         context.usage.add("read_calls")
 
         require_active()
+        windows, archived_external_windows = _archive_external_windows(snapshot, windows, self.permit_client)
+
+        require_active()
         context.toolbox.require("extract")
         self.permit_client.require_permit(snapshot, "extract")
         require_active()
@@ -168,9 +178,9 @@ class DeepCellExecutor:
         context.usage.add("extract_calls")
         require_active()
 
-        workspace_evidence = _workspace_evidence_payload(snapshot, cards, windows)
-        candidates = _candidate_payload(snapshot, cards, workspace_evidence)
-        termination = "CANDIDATES_PROPOSED" if candidates else "EVIDENCE_ONLY" if workspace_evidence else "NO_SUPPORTED_CANDIDATE"
+        trusted_evidence = _trusted_evidence_payload(snapshot, cards, windows)
+        candidates = _candidate_payload(snapshot, cards, trusted_evidence)
+        termination = "CANDIDATES_PROPOSED" if candidates else "EVIDENCE_ONLY" if trusted_evidence else "NO_SUPPORTED_CANDIDATE"
         trace = {
             "schema_version": "research-agent-deep-cell-trace.v1",
             "task_id": snapshot.task_id,
@@ -182,7 +192,8 @@ class DeepCellExecutor:
                 "documents": len(documents),
                 "windows": len(windows),
                 "extracted_cards": len(cards),
-                "workspace_evidence": len(workspace_evidence),
+                "trusted_evidence": len(trusted_evidence),
+                "external_archived_windows": archived_external_windows,
                 "candidates": len(candidates),
             },
             "termination": termination,
@@ -192,7 +203,7 @@ class DeepCellExecutor:
             "fetch_calls": int(context.usage.values.get("fetch_calls", 0)),
             "read_calls": int(context.usage.values.get("read_calls", 0)),
             "extract_calls": int(context.usage.values.get("extract_calls", 0)),
-            "evidence_cards": len(workspace_evidence),
+            "evidence_cards": len(trusted_evidence),
             "candidates_submitted": len(candidates),
         }
         budget_usage["llm_calls"] = _llm_provider_call_count(llm_client)
@@ -208,7 +219,7 @@ class DeepCellExecutor:
             "budget_usage": budget_usage,
             "telemetry": {"search_hits": len(hits), "documents": len(documents), "windows": len(windows)},
             "trace_digest": canonical_json_digest(trace),
-            "evidence": workspace_evidence,
+            "evidence": trusted_evidence,
             "candidates": candidates,
         })
 def _build_task_scope(snapshot: ResearchAgentTaskSnapshot) -> tuple[ResearchTaskInput, ResearchPlan, bool]:
@@ -275,14 +286,71 @@ def _execution_key(claim: AgentTaskClaim) -> str:
     return f"deep-cell:{claim.agent_task_id}:{claim.lease_epoch}:{claim.fencing_token}"
 
 
-def _workspace_evidence_payload(snapshot: ResearchAgentTaskSnapshot, cards: list[object],
-                                windows: list[object]) -> list[dict[str, object]]:
-    """Prepare only evidence that the Backend can ground in its trusted workspace scope."""
+def _archive_external_windows(
+    snapshot: ResearchAgentTaskSnapshot, windows: list[object], permit_client: PermitClient
+) -> tuple[list[object], int]:
+    """Upgrade only server-acknowledged external windows to the completion authority state."""
+    result: list[object] = []
+    archived = 0
+    for window in windows:
+        if not _external_archive_candidate(window):
+            result.append(window)
+            continue
+        receipt = permit_client.archive_external_snapshot(
+            snapshot,
+            window_id=str(getattr(window, "window_id", "")),
+            source_id=str(getattr(window, "source_id", "")),
+            source_title=str(getattr(window, "source_title", "")),
+            source_url=str(getattr(window, "url", "")),
+            provider=str(getattr(window, "provider", "")),
+            adapter=str(getattr(window, "adapter", "")),
+            content_text=str(getattr(window, "window_text", "")),
+        )
+        if (getattr(receipt, "snapshot_status", "") != "EXTERNAL_ARCHIVED"
+                or getattr(receipt, "task_id", "") != snapshot.task_id
+                or getattr(receipt, "window_id", "") != getattr(window, "window_id", "")
+                or getattr(receipt, "source_id", "") != getattr(window, "source_id", "")
+                or not str(getattr(receipt, "snapshot_key", "")).strip()):
+            raise ValueError("external archive receipt does not bind the read window")
+        result.append(_with_archive_receipt(window, str(getattr(receipt, "snapshot_key"))))
+        archived += 1
+    return result, archived
+
+
+def _external_archive_candidate(window: object) -> bool:
+    return bool(
+        getattr(window, "adapter", "") == "external_url"
+        and getattr(window, "snapshot_status", "") != "WORKSPACE"
+        and bool(getattr(window, "snapshot_archive_ready", False))
+        and str(getattr(window, "window_id", "")).strip()
+        and str(getattr(window, "source_id", "")).strip()
+        and str(getattr(window, "source_title", "")).strip()
+        and str(getattr(window, "url", "")).strip()
+        and str(getattr(window, "provider", "")).strip()
+        and str(getattr(window, "window_text", "")).strip()
+    )
+
+
+def _with_archive_receipt(window: object, snapshot_key: str) -> object:
+    update = {"snapshot_status": "EXTERNAL_ARCHIVED", "snapshot_key": snapshot_key, "snapshot_archive_ready": True}
+    model_copy = getattr(window, "model_copy", None)
+    if callable(model_copy):
+        return model_copy(update=update)
+    clone = copy(window)
+    for key, value in update.items():
+        setattr(clone, key, value)
+    return clone
+
+
+def _trusted_evidence_payload(snapshot: ResearchAgentTaskSnapshot, cards: list[object],
+                              windows: list[object]) -> list[dict[str, object]]:
+    """Prepare only workspace or server-archived external evidence for atomic completion."""
     windows_by_id = {getattr(window, "window_id", ""): window for window in windows}
     payload: list[dict[str, object]] = []
     for card in cards:
         window = windows_by_id.get(getattr(card, "window_id", ""))
-        if window is None or getattr(window, "snapshot_status", "") != "WORKSPACE":
+        status = getattr(window, "snapshot_status", "") if window is not None else ""
+        if status not in {"WORKSPACE", "EXTERNAL_ARCHIVED"}:
             continue
         if not str(getattr(card, "evidence_id", "")).strip():
             continue
@@ -301,7 +369,7 @@ def _workspace_evidence_payload(snapshot: ResearchAgentTaskSnapshot, cards: list
             "relation_type": relation,
             "support_score_ppm": _score_ppm(getattr(card, "support_score", 0.0)),
             "conflict_score_ppm": _score_ppm(getattr(card, "conflict_score", 0.0)),
-            "snapshot_status": "WORKSPACE",
+            "snapshot_status": status,
         }
         if all(str(item[field]).strip() for field in (
             "evidence_key", "window_id", "source_id", "source_title", "search_query", "read_focus", "quote_text", "claim_text"

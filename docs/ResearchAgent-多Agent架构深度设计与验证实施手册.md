@@ -18,7 +18,7 @@
 
 当前 `INCREMENTAL_V1 Run → coordinator taskization → reservation/outbox → Kafka → 受限角色 Worker → workspace evidence/candidate → Backend verifier/CAS → execution/budget settlement → wave/checkpoint/repair → synthesis/finalization` 已闭合。MA5Q 还把 high-risk cell fan-out 为两个独立 durable slot，首候选只 staging，第二候选由服务端 blind verifier 决定单次 CAS；冲突 decision 会自动进入排除旧来源的 COUNTERFACTUAL repair。
 
-这仍不是生产化分布式 Research 平台。当前证据证明 deterministic 契约、真实 MySQL 事务/锁序、恢复和调度闭环；没有真实 provider/external archive 四轮 A/B、长期 soak 或生产 SLO，因此不能声称质量、成本或 wall-clock 已优于参考项目。
+这仍不是生产化分布式 Research 平台。当前证据证明 deterministic 契约、真实 MySQL 事务/锁序、恢复、调度和 external archive provenance 闭环；没有真实 provider 四轮 A/B、长期 soak 或生产 SLO，因此不能声称质量、成本或 wall-clock 已优于参考项目。
 
 ## 2. 核查方法与证据边界
 
@@ -78,7 +78,7 @@ DeepWideSearch 将输出建模为表，评测包括 unique-column F1、row F1、
 | versioned TaskSnapshot | V044、`ResearchAgentTaskService`、`task_snapshot_contract.py` | 已实现 | claim 后可验证 server scope/digest；permit 仍需反查 authoritative lease |
 | Worker command consumer | `agent_command_contract.py`、`agent_task_client.py`、`agent_kafka_consumer.py` | 已实现、默认关闭 | validate→claim→execute→submit→commit 与 DLQ 顺序已进入可运行服务 |
 | DEEP_CELL executor | `role_executor.py`、`deep_cell_executor.py` | 已实现（受控范围） | 有隔离 Search→Fetch→Read→Extract；当前 E2E 只证明 fake/workspace evidence |
-| evidence/candidate ingress | `ResearchAgentEvidenceIngestionService`、`ResearchAgentCandidateIngressService` | 已实现（workspace evidence） | Worker 不提交 merge verdict，Backend verifier/CAS；external evidence 归档未完成 |
+| evidence/candidate ingress | `ResearchAgentCompletionCommitter`、`ResearchExternalSnapshotArchiveService` | 已实现（workspace + archived external evidence） | Worker 不提交 merge verdict，Backend verifier/CAS；外部文本必须先以租约绑定身份归档，再由 completion 在 DB 锁内复核 provenance、全文 quote 与 SHA-256 |
 | Redis permit/预算结算 | `ResearchAgentRateLimitService`、`ResearchBudgetAndCheckpointService` | 已实现（当前边界） | Redis 原子 bucket、默认 fail-closed、submit settle；可信 permit/per-call durable usage 留给 MA4H |
 | Coordinator taskization/dispatch | `ResearchAgentTaskCoordinatorService`、自动 Coordinator scheduler/dispatcher | 已实现；`INCREMENTAL_V1` 是唯一启用条件 | Run→task/reservation/outbox、自动 wave/repair/checkpoint/finalization 已闭合；旧 canary/manual dispatch/双 allowlist 已删除 |
 | 隔离多 Worker E2E | `scripts/ma4f`、R1–R4 保存结果 | 已验证（fake provider） | 证明受控多进程链路、写前 crash 和 replay；不证明 post-CAS crash/真实 provider |
@@ -381,14 +381,14 @@ R1–R4 当前保存 task/outbox/execution/evidence/candidate/merge/cell/budget 
 | MA4A | command contract/outbox/client/consumer | 完成（限定范围） | 独立 transport、严格 validate/claim/submit/commit/DLQ；测试/transport 可显式关闭 |
 | MA4B | reaper/cancel/DLQ/redrive | 完成（限定范围） | retry/backoff、cancel、delivery failure/redrive、旧 fencing 拒绝；LeaseKeeper/drain 转 MA4H |
 | MA4C | Redis permit、reservation/settlement | 完成（限定范围） | 原子多维 bucket、默认 fail-closed、幂等 settlement/release；trusted permit/per-call usage 转 MA4H |
-| MA4D | TaskSnapshot、DEEP_CELL、evidence/candidate/CAS | 完成（workspace/fake 范围） | 隔离执行与 Backend-only verdict/CAS；external archived evidence/真实 provider 转 MA5 |
+| MA4D | TaskSnapshot、DEEP_CELL、evidence/candidate/CAS | 完成（workspace + archived external 范围） | 隔离执行与 Backend-only verdict/CAS；网页必须 hardened fetch → lease-bound archive → atomic completion，真实 provider 质量转 MA5 |
 | MA4E | Coordinator taskization | 完成 | Run→task/reservation/outbox 同事务、稳定 fingerprint；当前由自动 Coordinator 接管 |
 | MA4F | Outbox 激活与隔离 E2E | 完成（fake-provider 证据范围） | R1–R4：单/双 Worker、写前 crash、replay digest/lag/DLQ 全部通过 |
 | MA4G | 原子 completion/post-CAS crash | 已实现并验证（隔离 deterministic fake-provider + 真实 MySQL/Kafka） | LockMatrix；fresh/V044→V045 migration；G1 原子基线；G2 named-lock 精确 kill 与 DB-clock recovery；G3 response-loss byte replay；G4 双 Worker 16 task/32 cell offset replay。非真实 provider/非生产证明。 |
 | MA4H | LeaseKeeper/cancel/drain/trusted permit | 完成（受控证据范围） | 长调用续租、lease/cancel fail-closed、SIGTERM drain、服务端 trusted permit 已验证 |
 | MA4I | Run advancement/wave/checkpoint/repair | 完成（受控证据范围） | 自动 barrier/repair/checkpoint、DB-clock reaper 与模式互斥已验证 |
 | MA4J | SYNTHESIS/report/Run+父 task 收口 | 完成（受控证据范围） | evidence-bound deterministic artifact、Run/父 task/trace 同事务收口已验证 |
-| MA5 | 角色质量、分布式盲验与 provider A/B | 代码与 deterministic/MySQL 证据完成；外部证据待完成 | role profile、high-risk 双 durable slot、blind merge、冲突 repair、benchmark/archive/429/5xx ledger 已落地；真实 provider 四轮未完成 |
+| MA5 | 角色质量、分布式盲验与 provider A/B | 代码与 deterministic/MySQL 证据完成；外部归档链已完成 | role profile、high-risk 双 durable slot、blind merge、冲突 repair、benchmark/archive/429/5xx ledger 与 archive-before-completion provenance 已落地；真实 provider 四轮未完成 |
 | MA6 | 运行治理/自动暂停 | 已实现代码门；生产证据待完成 | 默认健康门暂停新的 initial wave，已有增量历史继续 recovery/finalize；不声称生产 SLO |
 
 每一个阶段都应先提交“范围、失败模型、红灯测试、数据迁移、回滚策略”的子计划，再写生产代码。不得把 `INCREMENTAL_V1` 的状态交给 legacy delete/rebuild 路径；没有真实 A/B 前不宣称质量或 p95 提升。
@@ -427,7 +427,7 @@ R1–R4 当前保存 task/outbox/execution/evidence/candidate/merge/cell/budget 
 
 | 类别 | 当前证据 | 尚未闭合的门槛 |
 | --- | --- | --- |
-| Contract | strict command/snapshot/result、v1/v2 quorum/repair snapshot、extra field/identity/digest 拒绝进入 Worker `361/361` | MA5 external evidence/archive contract |
+| Contract | strict command/snapshot/result、v1/v2 quorum/repair snapshot、extra field/identity/digest 拒绝、external archive receipt binding 进入 Worker `366/366` | 真实 provider 跨网络协议兼容性 |
 | Claim/fencing | 定向竞争、旧 fencing 拒绝、MA4H heartbeat/cancel/lease-loss 已验证 | 真实 provider 长调用与生产网络长期 soak |
 | Submit/replay | execution/settlement 幂等、post-CAS crash 与 response-loss replay 已验证 | 生产 broker/network 长期 soak |
 | CAS | stale/frozen/evidence binding、post-write crash、双 slot blind merge、冲突 repair 已验证 | 真实 provider 长期并发与生产 soak |
@@ -437,10 +437,10 @@ R1–R4 当前保存 task/outbox/execution/evidence/candidate/merge/cell/budget 
 | Recovery | R3 仅覆盖 claim 后、任何业务写前 crash；R4 覆盖消费重放 | MA4G 写后 crash；MA4H heartbeat partition/drain；MA4I/J coordinator/finalize crash |
 | Run advancement | 自动 wave/checkpoint/repair 与 execution-mode 单写接管已验证 | 真实 provider 运行证据 |
 | Finalization | evidence-bound artifact 与 Run/父 task 原子终态已验证 | 真实 provider 报告质量证据 |
-| Security | server snapshot、workspace source/逐字 quote、旧 lease/scope 拒绝 | MA4H trusted permit；MA5 external archive、SSRF/injection/secret canary |
+| Security | server snapshot、workspace source/逐字 quote、旧 lease/scope 拒绝、hardened external fetch、lease-bound archive、服务端 SHA-256/quote/provenance 复核 | 真实 provider 与生产网络长期 soak |
 | Quality/performance | MA5 benchmark/archive 与 simulated 失败样本已生成；MA6 健康门已实现 | 真实 provider 至少四轮同条件 A/B；生产 SLO |
 
-本轮代码级证据为 Backend MySQL 8.4 Research 聚合 `202 tests, 0 failures, 0 errors, 1 skipped`、Worker 全量 `361/361`；锁序证据为 MySQL 8.4.9 LockMatrix `13/13`。补充回归覆盖自动 Run bootstrap、legacy callback fail-closed、DLQ redaction、provider redirect fail-closed、Java/Python unsigned UTF-8 canonical key 顺序、deterministic report 排序/Markdown 转义和 Redis `limited` 指标。这些证据仍不能证明真实 provider 吞吐、延迟、外部限流、答案质量或生产稳定性。
+本轮代码级证据包括 Backend MySQL 8.4 的 archive/atomic-completion 定向集成测试、Worker 全量 `366/366`；锁序证据为 MySQL 8.4.9 LockMatrix `13/13`。补充回归覆盖自动 Run bootstrap、legacy callback fail-closed、DLQ redaction、provider redirect fail-closed、external archive receipt/未归档 fail-closed、Java/Python unsigned UTF-8 canonical key 顺序、deterministic report 排序/Markdown 转义和 Redis `limited` 指标。这些证据仍不能证明真实 provider 吞吐、延迟、外部限流、答案质量或生产稳定性。
 
 ## 16. 质量、效率与放量判定
 

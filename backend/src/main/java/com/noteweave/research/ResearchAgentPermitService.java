@@ -17,10 +17,10 @@ public class ResearchAgentPermitService {
 
     private static final String SNAPSHOT_SCHEMA = ResearchAgentTaskSnapshotCanonicalizer.SCHEMA_VERSION;
     private static final Map<String, Set<String>> ROLE_TOOLS = Map.of(
-            "DEEP_CELL", Set.of("search", "fetch", "read", "extract"),
-            "WIDE_DISCOVERY", Set.of("search", "fetch", "read", "extract"),
-            "COUNTERFACTUAL", Set.of("search", "fetch", "read", "extract"),
-            "EVIDENCE_AUDIT", Set.of("fetch", "read", "extract"),
+            "DEEP_CELL", Set.of("search", "fetch", "read", "extract", "archive"),
+            "WIDE_DISCOVERY", Set.of("search", "fetch", "read", "extract", "archive"),
+            "COUNTERFACTUAL", Set.of("search", "fetch", "read", "extract", "archive"),
+            "EVIDENCE_AUDIT", Set.of("fetch", "read", "extract", "archive"),
             "SYNTHESIS", Set.of("extract")
     );
 
@@ -112,8 +112,12 @@ public class ResearchAgentPermitService {
         }
         String providerKey = providerKey(task.executionContextJson());
         meter("authorized");
-        rateLimitService.requirePermit(new ResearchAgentRateLimitService.PermitRequest(
-                providerKey, task.workspaceId(), task.runId(), task.role()));
+        // Archiving does not invoke an external provider.  It must share the exact
+        // authoritative lease check above, but must not consume provider quota.
+        if (!"archive".equals(command.toolIdentity())) {
+            rateLimitService.requirePermit(new ResearchAgentRateLimitService.PermitRequest(
+                    providerKey, task.workspaceId(), task.runId(), task.role()));
+        }
         return new PermitReceipt("GRANTED", command.toolIdentity());
     }
 

@@ -883,6 +883,68 @@ class ResearchAgentCompletionServiceTest {
     }
 
     @Test
+    void shouldRequireAServerArchivedSnapshotBeforeAcceptingExternalEvidence() {
+        Fixture fixture = fixture(1);
+        ResearchAgentCompletionEnvelope base = envelope(fixture, true);
+        ResearchAgentCompletionEnvelope.Evidence original = base.evidence().get(0);
+        ResearchAgentCompletionEnvelope external = signed(new ResearchAgentCompletionEnvelope(
+                base.schemaVersion(), base.taskId(), base.workerInstanceId(), base.leaseEpoch(),
+                base.fencingToken(), base.executionKey(), base.taskSnapshotDigest(), base.terminationReason(),
+                base.budgetUsage(), base.telemetry(), base.traceDigest(),
+                List.of(new ResearchAgentCompletionEnvelope.Evidence(
+                        original.evidenceKey(), "external-window-1", "web-source-1", "External source",
+                        original.searchQuery(), original.readFocus(), "Archived external quote",
+                        original.claimText(), original.relationType(), original.supportScorePpm(),
+                        original.conflictScorePpm(), "EXTERNAL_ARCHIVED")),
+                base.candidates(), null));
+
+        String before = state(fixture);
+        assertCode(() -> completionService.complete(fixture.taskId(), external),
+                "RESEARCH_AGENT_COMPLETION_EXTERNAL_ARCHIVE_REQUIRED");
+        assertThat(state(fixture)).isEqualTo(before);
+    }
+
+    @Test
+    void shouldAtomicallyAcceptExternalEvidenceOnlyWhenItMatchesTheServerArchive() {
+        Fixture fixture = fixture(1);
+        String content = "Header. Archived external quote. Footer.";
+        jdbcTemplate.update("""
+                insert into research_external_snapshot(
+                    id, research_run_id, research_agent_task_id, window_id, source_id, source_title,
+                    source_url, source_domain, provider, adapter, snapshot_key, content_text,
+                    content_sha256, archive_status)
+                values (?, ?, ?, 'external-window-1', 'web-source-1', 'External source',
+                        'https://example.com/research', 'example.com', 'search-provider', 'external_url',
+                        'research/external/snapshot-1', ?, ?, 'ARCHIVED')
+                """, Ids.newId(), fixture.runId(), fixture.taskId(), content, sha256Hex(content));
+        ResearchAgentCompletionEnvelope base = envelope(fixture, true);
+        ResearchAgentCompletionEnvelope.Evidence original = base.evidence().get(0);
+        ResearchAgentCompletionEnvelope external = signed(new ResearchAgentCompletionEnvelope(
+                base.schemaVersion(), base.taskId(), base.workerInstanceId(), base.leaseEpoch(),
+                base.fencingToken(), base.executionKey(), base.taskSnapshotDigest(), base.terminationReason(),
+                base.budgetUsage(), base.telemetry(), base.traceDigest(),
+                List.of(new ResearchAgentCompletionEnvelope.Evidence(
+                        original.evidenceKey(), "external-window-1", "web-source-1", "External source",
+                        original.searchQuery(), original.readFocus(), "Archived external quote",
+                        original.claimText(), original.relationType(), original.supportScorePpm(),
+                        original.conflictScorePpm(), "EXTERNAL_ARCHIVED")),
+                base.candidates(), null));
+
+        ResearchAgentCompletionReceipt receipt = completionService.complete(fixture.taskId(), external);
+
+        assertThat(receipt.acceptedMerges()).hasSize(1);
+        assertThat(jdbcTemplate.queryForMap("""
+                select source_url, provider, adapter, snapshot_status, snapshot_key
+                from source_evidence where research_run_id = ? and evidence_key = ?
+                """, fixture.runId(), original.evidenceKey()))
+                .containsEntry("source_url", "https://example.com/research")
+                .containsEntry("provider", "search-provider")
+                .containsEntry("adapter", "external_url")
+                .containsEntry("snapshot_status", "EXTERNAL_ARCHIVED")
+                .containsEntry("snapshot_key", "research/external/snapshot-1");
+    }
+
+    @Test
     void shouldFailClosedAllLegacySplitWritesForSnapshotReadyDeepCell() {
         Fixture fixture = fixture(1);
         ResearchAgentCompletionEnvelope envelope = envelope(fixture, true);
@@ -1484,6 +1546,15 @@ class ResearchAgentCompletionServiceTest {
         return "merge:" + canonicalizer.domainSeparatedDigest(
                 "research-agent-merge-key.v1", Map.of("candidate_key", candidateKey))
                 .substring("sha256:".length());
+    }
+
+    private String sha256Hex(String value) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException exception) {
+            throw new IllegalStateException(exception);
+        }
     }
 
     private void assertZeroState(Fixture fixture, ResearchAgentCompletionEnvelope envelope, String code) {

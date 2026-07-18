@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import http.client
 import json
@@ -58,6 +59,18 @@ class AgentCompletionReceipt:
     task_id: str
     completion_digest: str
     receipt_digest: str
+    idempotent_replay: bool
+
+
+@dataclass(frozen=True)
+class ExternalSnapshotArchiveReceipt:
+    archive_id: str
+    task_id: str
+    window_id: str
+    source_id: str
+    snapshot_status: str
+    snapshot_key: str
+    content_sha256: str
     idempotent_replay: bool
 
 
@@ -179,6 +192,49 @@ class JavaResearchAgentTaskClient:
         if set(data) != {"status", "tool_identity"} or data.get("status") != "GRANTED" \
                 or data.get("tool_identity") != tool_identity:
             raise AgentTaskProtocolError("Research agent permit response does not match the requested tool")
+
+    def archive_external_snapshot(
+        self,
+        snapshot: ResearchAgentTaskSnapshot,
+        *,
+        window_id: str,
+        source_id: str,
+        source_title: str,
+        source_url: str,
+        provider: str,
+        adapter: str,
+        content_text: str,
+    ) -> ExternalSnapshotArchiveReceipt:
+        """Persist external text first; only the returned archive may back completion evidence."""
+        content_digest = hashlib.sha256(content_text.encode("utf-8")).hexdigest()
+        try:
+            data = self._data(self._request(
+                "POST",
+                "/internal/research-agent/external-snapshots",
+                {
+                    "task_id": snapshot.task_id,
+                    "worker_instance_id": self.worker_instance_id,
+                    "lease_epoch": snapshot.lease_epoch,
+                    "fencing_token": snapshot.fencing_token,
+                    "window_id": window_id,
+                    "source_id": source_id,
+                    "source_title": source_title,
+                    "source_url": source_url,
+                    "provider": provider,
+                    "adapter": adapter,
+                    "content_text": content_text,
+                },
+                idempotency_key=(
+                    f"agent-archive:{snapshot.task_id}:{snapshot.lease_epoch}:"
+                    f"{snapshot.fencing_token}:{window_id}:{source_id}:{content_digest}"
+                ),
+            ))
+        except AgentTaskApiError as exc:
+            if exc.error_code == "RESEARCH_AGENT_TASK_STALE_LEASE":
+                from app.execution_control import stop_current_execution
+                stop_current_execution("STALE_LEASE")
+            raise
+        return _validated_external_archive_receipt(data, snapshot, window_id, source_id)
 
     def report_delivery_failure(self, command: ResearchAgentCommand, failure: dict[str, object]) -> None:
         reason_code = str(failure.get("error_type") or "AGENT_COMMAND_FAILURE")[:128]
@@ -307,6 +363,10 @@ _RESERVATION_KEYS = {
 _MAX_RECEIPT_COUNTER = 1_000_000
 _MAX_CELL_VERSION = 2_147_483_647
 _MAX_RECEIPT_BYTES = 256 * 1024
+_EXTERNAL_ARCHIVE_RECEIPT_FIELDS = {
+    "archive_id", "task_id", "window_id", "source_id", "snapshot_status", "snapshot_key",
+    "content_sha256", "idempotent_replay",
+}
 
 
 def _validated_completion_receipt(payload: dict[str, Any],
@@ -410,4 +470,31 @@ def _validated_completion_receipt(payload: dict[str, Any],
         completion_digest=completion_digest,
         receipt_digest=receipt_digest,
         idempotent_replay=replay,
+    )
+
+
+def _validated_external_archive_receipt(
+    payload: dict[str, Any], snapshot: ResearchAgentTaskSnapshot, window_id: str, source_id: str
+) -> ExternalSnapshotArchiveReceipt:
+    if set(payload) != _EXTERNAL_ARCHIVE_RECEIPT_FIELDS:
+        raise AgentTaskProtocolError("external archive response contains missing or unknown fields")
+    required = ("archive_id", "task_id", "window_id", "source_id", "snapshot_key", "content_sha256")
+    values: dict[str, str] = {}
+    for key in required:
+        value = payload.get(key)
+        if (not isinstance(value, str) or is_unicode_blank(value) or has_unicode_boundary_whitespace(value)
+                or len(value) > 512 or not unicodedata.is_normalized("NFC", value)):
+            raise AgentTaskProtocolError(f"external archive response has invalid {key}")
+        values[key] = value
+    if (values["task_id"] != snapshot.task_id or values["window_id"] != window_id
+            or values["source_id"] != source_id or payload.get("snapshot_status") != "EXTERNAL_ARCHIVED"
+            or not re.fullmatch(r"[0-9a-f]{64}", values["content_sha256"])
+            or not values["snapshot_key"].startswith("research/external/" + snapshot.task_id + "/")
+            or not isinstance(payload.get("idempotent_replay"), bool)):
+        raise AgentTaskProtocolError("external archive response does not match the requested snapshot")
+    return ExternalSnapshotArchiveReceipt(
+        archive_id=values["archive_id"], task_id=values["task_id"], window_id=values["window_id"],
+        source_id=values["source_id"], snapshot_status="EXTERNAL_ARCHIVED",
+        snapshot_key=values["snapshot_key"], content_sha256=values["content_sha256"],
+        idempotent_replay=bool(payload["idempotent_replay"]),
     )

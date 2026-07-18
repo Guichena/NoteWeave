@@ -183,7 +183,8 @@ public class ResearchAgentCompletionCanonicalizer {
         text(item.readFocus(), 4096, false, "read_focus");
         text(item.quoteText(), 16_384, false, "quote_text");
         text(item.claimText(), 16_384, false, "claim_text");
-        if (!RELATIONS.contains(item.relationType()) || !"WORKSPACE".equals(item.snapshotStatus())
+        if (!RELATIONS.contains(item.relationType())
+                || !Set.of("WORKSPACE", "EXTERNAL_ARCHIVED").contains(item.snapshotStatus())
                 || item.supportScorePpm() < 0 || item.supportScorePpm() > 1_000_000
                 || item.conflictScorePpm() < 0 || item.conflictScorePpm() > 1_000_000) {
             throw invalid("Evidence score, relation, or snapshot status is invalid");

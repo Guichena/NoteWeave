@@ -32,6 +32,7 @@ class ResearchAgentTrustedPermitServiceTest {
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private ResearchAgentTaskService taskService;
     @Autowired private ResearchAgentPermitService permitService;
+    @Autowired private ResearchExternalSnapshotArchiveService externalSnapshotArchiveService;
     @Autowired private MockMvc mockMvc;
     @MockBean private ResearchAgentRateLimitService rateLimitService;
 
@@ -217,9 +218,61 @@ class ResearchAgentTrustedPermitServiceTest {
         assertThat(heartbeat.snapshotDigest()).isEqualTo(claim.snapshotDigest());
     }
 
+    @Test
+    void shouldArchiveExternalTextOnlyUnderTheExactAuthoritativeLeaseAndReplayIdentically() {
+        ResearchExternalSnapshotArchiveService.ArchiveCommand command = archiveCommand("Archived web evidence.");
+
+        ResearchExternalSnapshotArchiveService.ArchiveReceipt first = externalSnapshotArchiveService.archive(command);
+        ResearchExternalSnapshotArchiveService.ArchiveReceipt replay = externalSnapshotArchiveService.archive(command);
+
+        assertThat(first.idempotentReplay()).isFalse();
+        assertThat(first.snapshotStatus()).isEqualTo("EXTERNAL_ARCHIVED");
+        assertThat(first.snapshotKey()).startsWith("research/external/" + claim.taskId() + "/");
+        assertThat(replay).isEqualTo(new ResearchExternalSnapshotArchiveService.ArchiveReceipt(
+                first.archiveId(), claim.taskId(), "external-window-1", "web-source-1", "EXTERNAL_ARCHIVED",
+                first.snapshotKey(), first.contentSha256(), true));
+        assertThat(jdbcTemplate.queryForMap("""
+                select research_run_id, research_agent_task_id, source_url, source_domain, content_text, content_sha256
+                from research_external_snapshot where id = ?
+                """, first.archiveId()))
+                .containsEntry("research_run_id", runId)
+                .containsEntry("research_agent_task_id", claim.taskId())
+                .containsEntry("source_url", "https://example.com/research")
+                .containsEntry("source_domain", "example.com")
+                .containsEntry("content_text", "Archived web evidence.")
+                .containsEntry("content_sha256", first.contentSha256());
+        verifyNoInteractions(rateLimitService);
+    }
+
+    @Test
+    void shouldRejectExternalArchiveWhenLeaseIsStaleOrIdentityIsReusedWithDifferentContent() {
+        ResearchExternalSnapshotArchiveService.ArchiveCommand command = archiveCommand("Original archived web evidence.");
+        externalSnapshotArchiveService.archive(command);
+
+        assertThatThrownBy(() -> externalSnapshotArchiveService.archive(
+                archiveCommand("Tampered archived web evidence.")))
+                .isInstanceOf(BusinessException.class)
+                .extracting(error -> ((BusinessException) error).code())
+                .isEqualTo("RESEARCH_AGENT_EXTERNAL_ARCHIVE_CONFLICT");
+        assertThatThrownBy(() -> externalSnapshotArchiveService.archive(
+                new ResearchExternalSnapshotArchiveService.ArchiveCommand(
+                        claim.taskId(), "worker-b", claim.leaseEpoch(), claim.fencingToken(), "other-window", "web-source-2",
+                        "Other source", "https://example.com/other", "search-provider", "external_url", "Other content")))
+                .isInstanceOf(BusinessException.class)
+                .extracting(error -> ((BusinessException) error).code())
+                .isEqualTo("RESEARCH_AGENT_TASK_STALE_LEASE");
+        verifyNoInteractions(rateLimitService);
+    }
+
     private ResearchAgentPermitService.PermitCommand command(String toolIdentity) {
         return new ResearchAgentPermitService.PermitCommand(
                 claim.taskId(), "worker-a", claim.leaseEpoch(), claim.fencingToken(), toolIdentity);
+    }
+
+    private ResearchExternalSnapshotArchiveService.ArchiveCommand archiveCommand(String content) {
+        return new ResearchExternalSnapshotArchiveService.ArchiveCommand(
+                claim.taskId(), "worker-a", claim.leaseEpoch(), claim.fencingToken(), "external-window-1", "web-source-1",
+                "External source", "https://example.com/research", "search-provider", "external_url", content);
     }
 
     private void assertStale(ResearchAgentPermitService.PermitCommand command) {

@@ -106,6 +106,22 @@ class _Permit:
         self.calls.append((snapshot.provider_key, tool_identity))
 
 
+class _ArchivePermit(_Permit):
+    def __init__(self) -> None:
+        super().__init__()
+        self.archive_calls: list[dict[str, object]] = []
+
+    def archive_external_snapshot(self, snapshot, **payload):
+        self.archive_calls.append(payload)
+        return SimpleNamespace(
+            task_id=snapshot.task_id,
+            window_id=payload["window_id"],
+            source_id=payload["source_id"],
+            snapshot_status="EXTERNAL_ARCHIVED",
+            snapshot_key=f"research/external/{snapshot.task_id}/" + "a" * 64,
+        )
+
+
 class _Toolchain:
     def __init__(self) -> None:
         self.calls: list[tuple[str, bool]] = []
@@ -266,6 +282,72 @@ def test_deep_cell_should_build_atomic_evidence_and_candidate_without_any_early_
     assert completion.candidates[0].cell_key == "entity-1:method"
     assert completion.candidates[0].evidence_keys == (completion.evidence[0].evidence_key,)
     assert completion.candidates[0].confidence_ppm == 900_000
+
+
+def test_deep_cell_should_archive_external_window_before_emitting_external_evidence() -> None:
+    from app.deep_cell_executor import DeepCellExecutor
+
+    class ExternalToolchain(_Toolchain):
+        def read(self, _task_input, _plan, _documents, *, allow_external: bool):
+            self.calls.append(("read", allow_external))
+            return [SimpleNamespace(
+                window_id="window-1", source_id="web-source-1", source_title="External source",
+                query="How does it work?", read_focus="method", window_text="Archived external quote.",
+                url="https://example.com/research", provider="search-provider", adapter="external_url",
+                snapshot_status="FETCHED", snapshot_key="worker-fetch-key", snapshot_archive_ready=True,
+            )]
+
+        def extract(self, _task_input, _plan, _windows, *, llm_client):
+            self.calls.append(("extract", llm_client is not None))
+            return [SimpleNamespace(
+                evidence_id="evidence-1", window_id="window-1", source_id="web-source-1",
+                source_title="External source", quote_text="Archived external quote.",
+                claim_text="External conclusion.", relation_type="SUPPORTS", support_score=0.9,
+                conflict_score=0.0, entity_id="entity-1", column_key="method",
+            )]
+
+    permit = _ArchivePermit()
+    completion = DeepCellExecutor(permit, "worker-a", toolchain=ExternalToolchain(), enable_llm=False)(
+        _command(), _claim(_snapshot())
+    )
+
+    assert len(permit.archive_calls) == 1
+    assert permit.archive_calls[0]["content_text"] == "Archived external quote."
+    assert completion.evidence[0].snapshot_status == "EXTERNAL_ARCHIVED"
+    assert completion.candidates[0].evidence_keys == (completion.evidence[0].evidence_key,)
+
+
+def test_deep_cell_should_fail_closed_for_unarchived_external_window() -> None:
+    from app.deep_cell_executor import DeepCellExecutor
+
+    class UnarchivedExternalToolchain(_Toolchain):
+        def read(self, _task_input, _plan, _documents, *, allow_external: bool):
+            self.calls.append(("read", allow_external))
+            return [SimpleNamespace(
+                window_id="window-1", source_id="web-source-1", source_title="External source",
+                query="How does it work?", read_focus="method", window_text="Unarchived external quote.",
+                url="https://example.com/research", provider="search-provider", adapter="external_url",
+                snapshot_status="FETCHED", snapshot_key="worker-fetch-key", snapshot_archive_ready=False,
+            )]
+
+        def extract(self, _task_input, _plan, _windows, *, llm_client):
+            self.calls.append(("extract", llm_client is not None))
+            return [SimpleNamespace(
+                evidence_id="evidence-1", window_id="window-1", source_id="web-source-1",
+                source_title="External source", quote_text="Unarchived external quote.",
+                claim_text="External conclusion.", relation_type="SUPPORTS", support_score=0.9,
+                conflict_score=0.0, entity_id="entity-1", column_key="method",
+            )]
+
+    permit = _ArchivePermit()
+    completion = DeepCellExecutor(permit, "worker-a", toolchain=UnarchivedExternalToolchain(), enable_llm=False)(
+        _command(), _claim(_snapshot())
+    )
+
+    assert permit.archive_calls == []
+    assert completion.evidence == ()
+    assert completion.candidates == ()
+    assert completion.termination_reason == "NO_SUPPORTED_CANDIDATE"
 
 
 def test_deterministic_fake_toolchain_should_use_no_external_or_llm_provider(monkeypatch) -> None:

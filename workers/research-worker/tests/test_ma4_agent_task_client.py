@@ -272,6 +272,39 @@ def test_client_permit_should_stop_managed_execution_on_authoritative_stale_leas
     assert control.stop_reason == "STALE_LEASE"
 
 
+def test_client_should_archive_external_snapshot_with_only_authoritative_lease_identity(monkeypatch) -> None:
+    from app.agent_task_client import JavaResearchAgentTaskClient
+
+    client = JavaResearchAgentTaskClient("http://backend", "token", "worker-a")
+    snapshot = SimpleNamespace(task_id="task-1", lease_epoch=2, fencing_token=7)
+    calls: list[tuple[str, str, dict, str]] = []
+
+    def fake_request(method, path, payload=None, idempotency_key=""):
+        calls.append((method, path, payload or {}, idempotency_key))
+        return {"data": {
+            "archive_id": "archive-1", "task_id": "task-1", "window_id": "window-1", "source_id": "source-1",
+            "snapshot_status": "EXTERNAL_ARCHIVED", "snapshot_key": "research/external/task-1/" + "a" * 64,
+            "content_sha256": "b" * 64, "idempotent_replay": False,
+        }}
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    receipt = client.archive_external_snapshot(
+        snapshot, window_id="window-1", source_id="source-1", source_title="External source",
+        source_url="https://example.com/research", provider="search-provider", adapter="external_url",
+        content_text="Archived external quote.",
+    )
+
+    assert receipt.snapshot_status == "EXTERNAL_ARCHIVED"
+    assert calls[0][1] == "/internal/research-agent/external-snapshots"
+    assert calls[0][2] == {
+        "task_id": "task-1", "worker_instance_id": "worker-a", "lease_epoch": 2, "fencing_token": 7,
+        "window_id": "window-1", "source_id": "source-1", "source_title": "External source",
+        "source_url": "https://example.com/research", "provider": "search-provider", "adapter": "external_url",
+        "content_text": "Archived external quote.",
+    }
+    assert calls[0][3].startswith("agent-archive:task-1:2:7:window-1:source-1:")
+
+
 @pytest.mark.parametrize(
     "response_loss",
     [error.URLError("response lost after commit"), ConnectionResetError("connection reset after commit")],
