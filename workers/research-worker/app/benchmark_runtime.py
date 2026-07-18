@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from contextlib import contextmanager
 
 from app.benchmark import BenchmarkCase, BenchmarkExecution, BenchmarkProfile
@@ -76,6 +77,19 @@ class ResearchTaskBenchmarkBoundary:
             )
         if settings.llm_model.strip() != profile.model.strip():
             raise RuntimeError("benchmark profile model differs from Research Worker model configuration")
+        if bool(profile.source_policy.get("allow_external")):
+            if not _has_external_search_credentials():
+                raise RuntimeError(
+                    "Research Search configuration incomplete: at least one configured provider API key is required"
+                )
+            if profile.source_policy.get("archive_required") is not True or not (
+                settings.research_enable_url_reader
+                or settings.research_jina_api_key.strip()
+                or os.getenv("JINA_API_KEY", "").strip()
+            ):
+                raise RuntimeError(
+                    "REAL external benchmark archive-ready snapshot transport is required and archive_required must be true"
+                )
 
 
 @contextmanager
@@ -94,6 +108,26 @@ def _temporary_environment(updates: dict[str, str | None]):
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+
+
+def _has_external_search_credentials() -> bool:
+    providers = [
+        item.strip()
+        for item in (
+            os.getenv("NOTEWEAVE_RESEARCH_SEARCH_PROVIDER_CHAIN", "")
+            or os.getenv("NOTEWEAVE_RESEARCH_SEARCH_PROVIDER", "")
+            or "serper"
+        ).split(",")
+        if item.strip()
+    ]
+    for index, provider in enumerate(providers):
+        normalized = re.sub(r"[^A-Z0-9]+", "_", provider.upper()).strip("_")
+        keys = [f"NOTEWEAVE_RESEARCH_{normalized}_API_KEY"]
+        if index == 0:
+            keys.extend(("NOTEWEAVE_RESEARCH_SEARCH_API_KEY", "SERPER_API_KEY", "SEARCH_API_KEY"))
+        if any(os.getenv(key, "").strip() for key in keys):
+            return True
+    return False
 
 
 def _search_calls(payload: dict[str, object]) -> int:

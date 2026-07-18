@@ -12,9 +12,11 @@ from app.benchmark import (
     BenchmarkExecution,
     BenchmarkProfile,
     BenchmarkRunner,
+    BenchmarkSuiteRunner,
 )
 from app.benchmark_runtime import ResearchTaskBenchmarkBoundary
 from app.run_ma5_benchmark import main as run_benchmark_main
+from app.run_ma5_benchmark_suite import main as run_benchmark_suite_main
 
 
 class FixedExecutionBoundary:
@@ -156,6 +158,91 @@ def test_benchmark_archive_is_immutable_and_simulation_cannot_claim_quality_impr
         ])
 
 
+def test_benchmark_suite_should_run_each_mode_four_times_archive_and_compare(tmp_path) -> None:
+    case = BenchmarkCase(
+        case_key="suite-case",
+        question="What is Acme revenue?",
+        schema={"columns": ["revenue"]},
+        gold_version="gold-v1",
+        source_snapshot_digest="sha256:sources-v1",
+        gold={
+            "case_key": "suite-case",
+            "expected_entities": ["Acme"],
+            "required_cells": [{"entity": "Acme", "column": "revenue", "value": "100"}],
+            "require_exact_table_match": True,
+        },
+    )
+    profile = BenchmarkProfile(
+        profile_key="suite-sim-v1",
+        execution_mode="SEQUENTIAL",
+        provider_kind="SIMULATED",
+        provider="deterministic-fake",
+        model="fake-model-v1",
+        source_policy={"allow_external": False, "archive_required": True},
+        budget={"max_concurrency": 1},
+        random_policy={"temperature": 0.0, "seed": 7},
+        rollout_no=1,
+    )
+
+    records, comparison = BenchmarkSuiteRunner(FixedExecutionBoundary(), tmp_path / "archive").run(
+        profile, case, rollouts_per_mode=4
+    )
+
+    assert len(records) == 8
+    assert {record.execution_mode for record in records} == {"SEQUENTIAL", "PARALLEL"}
+    assert {record.rollout_no for record in records} == {1, 2, 3, 4}
+    assert comparison.verdict == "EXTERNAL_EVIDENCE_PENDING"
+    assert comparison.quality_improvement_claim_allowed is False
+    assert len(list((tmp_path / "archive").rglob("rollout-*.json"))) == 8
+
+
+def test_benchmark_suite_cli_writes_comparison_summary(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        "app.run_ma5_benchmark_suite.ResearchTaskBenchmarkBoundary",
+        lambda: FixedExecutionBoundary(),
+    )
+    spec = {
+        "case": {
+            "case_key": "suite-cli-case",
+            "question": "What is Acme revenue?",
+            "schema": {"columns": ["revenue"]},
+            "gold_version": "gold-v1",
+            "source_snapshot_digest": "sha256:sources-v1",
+            "gold": {
+                "case_key": "suite-cli-case",
+                "expected_entities": ["Acme"],
+                "required_cells": [{"entity": "Acme", "column": "revenue", "value": "100"}],
+                "require_exact_table_match": True,
+            },
+        },
+        "profile": {
+            "profile_key": "suite-cli-sim-v1",
+            "execution_mode": "SEQUENTIAL",
+            "provider_kind": "SIMULATED",
+            "provider": "deterministic-fake",
+            "model": "fake-model-v1",
+            "source_policy": {"allow_external": False, "archive_required": True},
+            "budget": {"max_concurrency": 1},
+            "random_policy": {"temperature": 0.0, "seed": 7},
+            "rollout_no": 1,
+        },
+    }
+    spec_path = tmp_path / "suite-spec.json"
+    summary_path = tmp_path / "suite-summary.json"
+    spec_path.write_text(json.dumps(spec), encoding="utf-8")
+
+    assert run_benchmark_suite_main([
+        "--spec", str(spec_path),
+        "--archive", str(tmp_path / "archive"),
+        "--summary", str(summary_path),
+    ]) == 0
+
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary["schema_version"] == "research-agent-benchmark-suite.v1"
+    assert summary["rollout_count"] == 8
+    assert summary["comparison"]["verdict"] == "EXTERNAL_EVIDENCE_PENDING"
+
+
 def test_real_provider_boundary_fails_closed_when_independent_worker_config_is_missing(monkeypatch) -> None:
     for name in (
         "NOTEWEAVE_RESEARCH_LLM_API_KEY",
@@ -185,6 +272,77 @@ def test_real_provider_boundary_fails_closed_when_independent_worker_config_is_m
     )
 
     with pytest.raises(RuntimeError, match="Research LLM configuration incomplete"):
+        ResearchTaskBenchmarkBoundary().execute(profile, case)
+
+
+def test_real_external_benchmark_fails_before_execution_when_search_config_is_missing(monkeypatch) -> None:
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_LLM_API_KEY", "llm-secret")
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_LLM_BASE_URL", "https://llm.example/v1")
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_LLM_MODEL", "research-model")
+    for name in (
+        "NOTEWEAVE_RESEARCH_SEARCH_PROVIDER_CHAIN",
+        "NOTEWEAVE_RESEARCH_SEARCH_PROVIDER",
+        "NOTEWEAVE_RESEARCH_SEARCH_API_KEY",
+        "SERPER_API_KEY",
+        "SEARCH_API_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    case = BenchmarkCase(
+        case_key="external-provider-preflight",
+        question="question",
+        schema={},
+        gold_version="gold-v1",
+        source_snapshot_digest="sha256:sources-v1",
+        gold={"case_key": "external-provider-preflight"},
+        task_input={"input_payload": {"question": "question"}},
+    )
+    profile = BenchmarkProfile(
+        profile_key="real-external-v1",
+        execution_mode="SEQUENTIAL",
+        provider_kind="REAL",
+        provider="openai-compatible",
+        model="research-model",
+        source_policy={"allow_external": True, "archive_required": True},
+        budget={},
+        random_policy={"temperature": 0.0},
+        rollout_no=1,
+    )
+
+    with pytest.raises(RuntimeError, match="Research Search configuration incomplete"):
+        ResearchTaskBenchmarkBoundary().execute(profile, case)
+
+
+def test_real_external_benchmark_requires_archive_ready_snapshot_transport(monkeypatch) -> None:
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_LLM_API_KEY", "llm-secret")
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_LLM_BASE_URL", "https://llm.example/v1")
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_LLM_MODEL", "research-model")
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_SEARCH_PROVIDER", "serper")
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_SEARCH_API_KEY", "search-secret")
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_ENABLE_URL_READER", "false")
+    for name in ("NOTEWEAVE_RESEARCH_JINA_API_KEY", "JINA_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    case = BenchmarkCase(
+        case_key="external-snapshot-preflight",
+        question="question",
+        schema={},
+        gold_version="gold-v1",
+        source_snapshot_digest="sha256:sources-v1",
+        gold={"case_key": "external-snapshot-preflight"},
+        task_input={"input_payload": {"question": "question"}},
+    )
+    profile = BenchmarkProfile(
+        profile_key="real-external-v1",
+        execution_mode="SEQUENTIAL",
+        provider_kind="REAL",
+        provider="openai-compatible",
+        model="research-model",
+        source_policy={"allow_external": True, "archive_required": True},
+        budget={},
+        random_policy={"temperature": 0.0},
+        rollout_no=1,
+    )
+
+    with pytest.raises(RuntimeError, match="archive-ready snapshot transport is required"):
         ResearchTaskBenchmarkBoundary().execute(profile, case)
 
 

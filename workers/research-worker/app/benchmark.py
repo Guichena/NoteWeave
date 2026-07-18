@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from statistics import mean
 from typing import Callable, Protocol
@@ -209,6 +209,52 @@ class BenchmarkComparator:
             quality_improvement_claim_allowed=non_inferior and reliable and strict_gain,
             summaries=summaries,
         )
+
+
+class BenchmarkSuiteRunner:
+    """Runs a fair immutable A/B suite instead of relying on hand-authored rollout files."""
+
+    def __init__(
+        self,
+        execution_boundary: BenchmarkExecutionBoundary,
+        archive_root: Path,
+        *,
+        comparator: BenchmarkComparator | None = None,
+    ) -> None:
+        self.runner = BenchmarkRunner(execution_boundary)
+        self.archive = BenchmarkArchive(archive_root)
+        self.comparator = comparator or BenchmarkComparator(min_rollouts_per_mode=4)
+
+    def run(
+        self,
+        profile: BenchmarkProfile,
+        case: BenchmarkCase,
+        *,
+        modes: tuple[str, ...] = ("SEQUENTIAL", "PARALLEL"),
+        rollouts_per_mode: int = 4,
+    ) -> tuple[tuple[BenchmarkRecord, ...], BenchmarkComparison]:
+        if rollouts_per_mode < 4:
+            raise ValueError("benchmark suite requires at least four rollouts per mode")
+        normalized_modes = tuple(dict.fromkeys(str(mode).strip().upper() for mode in modes if str(mode).strip()))
+        if "SEQUENTIAL" not in normalized_modes or len(normalized_modes) < 2:
+            raise ValueError("benchmark suite requires SEQUENTIAL and at least one candidate mode")
+        if any(mode not in {"SEQUENTIAL", "PARALLEL", "SPECULATIVE"} for mode in normalized_modes):
+            raise ValueError("benchmark suite contains an unsupported execution mode")
+
+        records: list[BenchmarkRecord] = []
+        for mode in normalized_modes:
+            for rollout_no in range(1, rollouts_per_mode + 1):
+                rollout_profile = replace(
+                    profile,
+                    profile_key=f"{profile.profile_key}-{mode.lower()}",
+                    execution_mode=mode,
+                    rollout_no=rollout_no,
+                )
+                record = self.runner.run(rollout_profile, case)
+                self.archive.write(record)
+                records.append(record)
+        frozen_records = tuple(records)
+        return frozen_records, self.comparator.compare(list(frozen_records))
 
 
 def _manifest(profile: BenchmarkProfile, case: BenchmarkCase, *, include_mode: bool) -> dict[str, object]:
