@@ -34,6 +34,7 @@ public class ChatController {
 
     private final ChatService chatService;
     private final ConversationTurnModule conversationTurnModule;
+    private final NoteAnswerSourceService noteAnswerSourceService;
     private final Executor answerIoExecutor;
     private final Executor sseConnectionExecutor;
     private final AnswerRunService answerRunService;
@@ -42,6 +43,7 @@ public class ChatController {
     public ChatController(
             ChatService chatService,
             ConversationTurnModule conversationTurnModule,
+            NoteAnswerSourceService noteAnswerSourceService,
             @Qualifier("answerIoExecutor") Executor answerIoExecutor,
             @Qualifier("sseConnectionExecutor") Executor sseConnectionExecutor,
             AnswerRunService answerRunService,
@@ -49,10 +51,30 @@ public class ChatController {
     ) {
         this.chatService = chatService;
         this.conversationTurnModule = conversationTurnModule;
+        this.noteAnswerSourceService = noteAnswerSourceService;
         this.answerIoExecutor = answerIoExecutor;
         this.sseConnectionExecutor = sseConnectionExecutor;
         this.answerRunService = answerRunService;
         this.answerCancellationRegistry = answerCancellationRegistry;
+    }
+
+    @PostMapping("/messages/{messageId}/source-draft")
+    ApiResponse<NoteSourceDraftResponse> buildSourceDraft(
+            @PathVariable String messageId,
+            @Valid @RequestBody(required = false) NoteSourceDraftRequest request
+    ) {
+        return ApiResponse.success(noteAnswerSourceService.buildSourceDraft(
+                messageId,
+                request == null ? new NoteSourceDraftRequest(null) : request
+        ));
+    }
+
+    @PostMapping("/messages/{messageId}/save-as-source")
+    ApiResponse<SaveMessageAsSourceResponse> saveMessageAsSource(
+            @PathVariable String messageId,
+            @Valid @RequestBody SaveMessageAsSourceRequest request
+    ) {
+        return ApiResponse.success(noteAnswerSourceService.saveAsSource(messageId, request));
     }
 
     @PostMapping("/conversations/{conversationId}/messages")

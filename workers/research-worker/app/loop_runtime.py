@@ -390,18 +390,26 @@ def evaluate_loop_decision(
     )
     commitment_guard = evaluate_premature_commitment_guard(plan, ledger, evidence_card_count)
     if search_hit_count == 0:
-        actions = ["attach workspace sources or enable external search before rerun"]
-        no_source_scope = int(plan.stop_contract.get("source_scope_count", 0)) == 0
-        if no_source_scope:
-            actions.append("abandon_condition:NO_SEARCH_HITS_WITHOUT_SOURCE_SCOPE")
+        retrieval_mode = str(plan.stop_contract.get("retrieval_mode", "")).upper()
+        if retrieval_mode == "WEB_ONLY":
+            actions = ["verify the web search provider and broaden the discovery queries before rerun"]
+        elif retrieval_mode == "WEB_PLUS_SEEDS":
+            actions = ["broaden web discovery queries and review the selected seed sources before rerun"]
+        elif retrieval_mode == "SOURCES_ONLY":
+            actions = ["review or replace the selected seed sources before rerun"]
+        else:
+            actions = ["review the configured retrieval channels and broaden discovery before rerun"]
+        no_evidence = evidence_card_count == 0
+        if no_evidence:
+            actions.append("abandon_condition:NO_SEARCH_HITS_WITHOUT_EVIDENCE")
         return ResearchLoopDecision(
             decision="EXPAND_SOURCE_SCOPE",
             reason="NO_SEARCH_HITS",
             round_no=round_no,
             should_continue=False,
             recovery_actions=actions,
-            terminal_disposition="ABANDON" if no_source_scope else "GUARDED_COMPLETE",
-            abandon_reason="NO_SEARCH_HITS_WITHOUT_SOURCE_SCOPE" if no_source_scope else "",
+            terminal_disposition="ABANDON" if no_evidence else "GUARDED_COMPLETE",
+            abandon_reason="NO_SEARCH_HITS_WITHOUT_EVIDENCE" if no_evidence else "",
         )
 
     if round_no >= max_rounds and global_result.decision != "READY_TO_WRITE":

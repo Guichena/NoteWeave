@@ -398,6 +398,14 @@ def build_default_search_adapter() -> SearchAdapter:
     return CompositeSearchAdapter([SeedSourceSearchAdapter(), *external_adapters])
 
 
+def build_web_search_adapter() -> SearchAdapter:
+    """Build an external-only search adapter or fail instead of falling back to seeds."""
+    external_adapters = _build_external_search_adapters()
+    if not external_adapters:
+        raise RuntimeError("RESEARCH_WEB_PROVIDER_UNAVAILABLE")
+    return CompositeSearchAdapter(external_adapters)
+
+
 def run_research_search(
     task_input: ResearchTaskInput,
     plan: ResearchPlan,

@@ -175,12 +175,4 @@ public class KnowledgeController {
         knowledgeCommandService.deleteItem(itemId);
         return ApiResponse.success(null);
     }
-
-    @PostMapping("/messages/{messageId}/save-as-note")
-    ApiResponse<KnowledgeItemResponse> saveAsNote(
-            @PathVariable String messageId,
-            @Valid @RequestBody SaveNoteRequest request
-    ) {
-        return ApiResponse.success(knowledgeCommandService.saveMessageAsNote(messageId, request));
-    }
 }

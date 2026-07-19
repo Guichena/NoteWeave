@@ -6,6 +6,8 @@ export type ResearchRunResponse = {
   status: string;
 };
 
+export type ResearchRetrievalMode = "WEB_ONLY" | "WEB_PLUS_SEEDS" | "SOURCES_ONLY";
+
 export type CreateResearchRunInput = {
   question: string;
   profile: string;
@@ -15,6 +17,8 @@ export type CreateResearchRunInput = {
   time_range: string;
   depth: string;
   research_type: string;
+  retrieval_mode: ResearchRetrievalMode;
+  seed_source_ids: string[];
   source_scope_source_ids: string[];
 };
 
@@ -27,6 +31,35 @@ export type SaveResearchReportSource = {
   index_status: string;
   generated_by: string;
   generated_ref_id: string;
+};
+
+export type ResearchCollection = {
+  collection_id: string;
+  workspace_id: string;
+  research_run_id: string;
+  title: string;
+  status: string;
+  report: { title: string; markdown: string };
+  adopted_sources: Array<{
+    source_kind: string;
+    evidence_id: string;
+    source_id: string;
+    source_snapshot_key: string;
+    source_url: string;
+    source_domain: string;
+    title: string;
+    excerpt: string;
+    citation_count: number;
+  }>;
+  notes: Array<{
+    note_key: string;
+    note_type: string;
+    title: string;
+    content: string;
+    evidence_refs_json: string;
+  }>;
+  created_at: string;
+  updated_at: string;
 };
 
 export type ResearchRunSummary = {

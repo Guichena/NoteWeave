@@ -1,11 +1,27 @@
 import { apiClient, type ApiClient } from "../../shared/api";
-import { type CompletedSourceUpload, type DeletedSource, type SourceAsset } from "./model";
+import {
+  type CompletedSourceUpload,
+  type DeletedSource,
+  type NoteSourceDraft,
+  type NoteSourceDraftInput,
+  type SaveAnswerAsSourceInput,
+  type SavedAnswerSource,
+  type SourceAsset
+} from "./model";
 
 export class SourcesApi {
   constructor(private readonly client: ApiClient = apiClient) {}
 
   list(workspaceId: string) {
     return this.client.get<SourceAsset[]>(`/api/v2/workspaces/${workspaceId}/sources`);
+  }
+
+  buildNoteSourceDraft(messageId: string, input: NoteSourceDraftInput = {}) {
+    return this.client.post<NoteSourceDraft>(`/api/v2/messages/${messageId}/source-draft`, input);
+  }
+
+  saveAnswerAsSource(messageId: string, input: SaveAnswerAsSourceInput) {
+    return this.client.post<SavedAnswerSource>(`/api/v2/messages/${messageId}/save-as-source`, input);
   }
 
   async uploadText(workspaceId: string, content: string, fileName = "frontend-source.md") {

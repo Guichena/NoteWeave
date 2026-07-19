@@ -50,6 +50,8 @@ public class ResearchRunService {
     private final ResearchAgentProjectionService researchAgentProjectionService;
     private final ResearchAgentRunBootstrapService researchAgentRunBootstrapService;
     private final ConversationResearchProjectionService conversationResearchProjectionService;
+    private final ResearchAgentExternalEvidencePolicy externalEvidencePolicy;
+    private final ResearchCollectionService researchCollectionService;
 
     public ResearchRunService(
             JdbcTemplate jdbcTemplate,
@@ -63,7 +65,9 @@ public class ResearchRunService {
             SourceCatalogVersionService sourceCatalogVersionService,
             ResearchAgentProjectionService researchAgentProjectionService,
             ResearchAgentRunBootstrapService researchAgentRunBootstrapService,
-            ConversationResearchProjectionService conversationResearchProjectionService
+            ConversationResearchProjectionService conversationResearchProjectionService,
+            ResearchAgentExternalEvidencePolicy externalEvidencePolicy,
+            ResearchCollectionService researchCollectionService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -77,6 +81,8 @@ public class ResearchRunService {
         this.researchAgentProjectionService = researchAgentProjectionService;
         this.researchAgentRunBootstrapService = researchAgentRunBootstrapService;
         this.conversationResearchProjectionService = conversationResearchProjectionService;
+        this.externalEvidencePolicy = externalEvidencePolicy;
+        this.researchCollectionService = researchCollectionService;
     }
 
     @Transactional
@@ -94,12 +100,14 @@ public class ResearchRunService {
                 "Deep Research 任务已创建"
         );
         MemoryControlPackResponse controlPack = memoryCompilerService.compileResearchControlPack(workspaceId, profileKey);
-        List<String> sourceScopeIds = resolveRequestedSourceScopeIds(workspaceId, request.sourceScopeSourceIds());
+        ResearchAcquisitionPolicy acquisitionPolicy = ResearchAcquisitionPolicy.compile(request, externalEvidencePolicy);
+        List<String> sourceScopeIds = resolveRequestedSourceScopeIds(workspaceId, acquisitionPolicy.seedSourceIds());
         jdbcTemplate.update("""
                 insert into research_run(
                     id, workspace_id, task_id, question, profile_key,
-                    research_intent_json, source_scope_json, control_pack_json, status, agent_execution_mode
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, 'RUNNING', 'INCREMENTAL_V1')
+                    research_intent_json, source_scope_json, control_pack_json, retrieval_mode,
+                    status, agent_execution_mode
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, 'RUNNING', 'INCREMENTAL_V1')
                 """,
                 researchRunId,
                 workspaceId,
@@ -108,7 +116,8 @@ public class ResearchRunService {
                 profileKey,
                 Json.write(objectMapper, researchIntent),
                 Json.write(objectMapper, sourceScopeIds),
-                Json.write(objectMapper, controlPack)
+                Json.write(objectMapper, controlPack),
+                acquisitionPolicy.mode().name()
         );
         researchAgentRunBootstrapService.bootstrap(
                 researchRunId, request.question().trim(), researchIntent);
@@ -122,6 +131,7 @@ public class ResearchRunService {
                 "profile_key", profileKey,
                 "research_intent", objectMapper.convertValue(researchIntent, new TypeReference<Map<String, Object>>() {
                 }),
+                "retrieval_mode", acquisitionPolicy.mode().name(),
                 "source_scope_count", sourceScopeIds.size()
         ));
         memoryCompilerService.logPackUsage(
@@ -839,6 +849,7 @@ public class ResearchRunService {
                 row.researchRunId()
         );
         persistFinalEvidenceManifest(row, reportMarkdown, request.citations());
+        researchCollectionService.materialize(row.researchRunId());
         projectCompletedReportCard(row.researchRunId(), row.workspaceId(), request.resultTitle());
         persistClosedLoopState(row.workspaceId(), row.researchRunId(), resultPayload);
         persistClosedLoopTraces(row.researchRunId(), request.resultTitle(), resultPayload);

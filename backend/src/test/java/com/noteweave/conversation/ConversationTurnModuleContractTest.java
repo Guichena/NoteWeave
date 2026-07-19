@@ -10,6 +10,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.chat.ChatService;
+import com.noteweave.research.ResearchAgentTaskCoordinatorService;
+import com.noteweave.research.ResearchAgentTaskService;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -31,6 +33,8 @@ class ConversationTurnModuleContractTest {
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
     @Autowired JdbcTemplate jdbcTemplate;
+    @Autowired ResearchAgentTaskCoordinatorService researchTaskCoordinator;
+    @Autowired ResearchAgentTaskService researchAgentTaskService;
     @SpyBean ChatService chatService;
 
     @Test
@@ -544,11 +548,52 @@ class ConversationTurnModuleContractTest {
                 .andExpect(jsonPath("$.data.query_message_id").value(receipt.path("message_id").asText()))
                 .andExpect(jsonPath("$.data.assistant_message_id").value(receipt.path("assistant_message_id").asText()))
                 .andExpect(jsonPath("$.data.requested_turn_mode").value("DEEP_RESEARCH"))
-                .andExpect(jsonPath("$.data.retrieval_config.strategy").value("EXPLICIT"))
+                .andExpect(jsonPath("$.data.retrieval_config.strategy").value("AUTO"))
                 .andExpect(jsonPath("$.data.snapshot.segment_summary_refs.length()").value(0))
                 .andExpect(jsonPath("$.data.snapshot.recent_message_refs.length()").value(1))
                 .andExpect(jsonPath("$.data.snapshot.recent_message_refs[0].message_id")
                         .value(receipt.path("message_id").asText()));
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from research_run
+                where id = ? and workspace_id = ? and retrieval_mode = 'WEB_ONLY'
+                """, Integer.class, receipt.path("research_run_id").asText(), workspaceId)).isEqualTo(1);
+    }
+
+    @Test
+    void deepResearchCoordinatorConsumesFrozenConversationContextInItsResearchBrief() throws Exception {
+        String workspaceId = createWorkspace();
+        String conversationId = createConversation(workspaceId);
+        submit(conversationId, Map.of(
+                "content", "We are comparing OpenSERP with hosted search providers",
+                "answer_mode", "QA",
+                "client_request_id", "research-brief-context-1"
+        ), 200);
+        JsonNode receipt = submit(conversationId, Map.of(
+                "content", "Continue the research and focus on deployment tradeoffs",
+                "answer_mode", "DEEP_RESEARCH",
+                "client_request_id", "research-brief-context-2"
+        ), 200);
+        String runId = receipt.path("research_run_id").asText();
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select agent_execution_mode from research_run where id = ?", String.class, runId))
+                .isEqualTo("INCREMENTAL_V1");
+
+        researchTaskCoordinator.planAndEnqueue(runId);
+        String taskId = jdbcTemplate.queryForObject("""
+                select id from research_agent_task where research_run_id = ? order by task_key limit 1
+                """, String.class, runId);
+        ResearchAgentTaskService.ClaimedTask claim = researchAgentTaskService.claimTask(
+                new ResearchAgentTaskService.ClaimCommand(taskId, "research-brief-worker", 30));
+        JsonNode snapshot = objectMapper.readTree(claim.taskSnapshotJson());
+
+        assertThat(snapshot.path("query_policy").path("research_brief").path("entry_point").asText())
+                .isEqualTo("CONVERSATION");
+        assertThat(snapshot.path("query_policy").path("query").asText())
+                .contains("OpenSERP with hosted search providers")
+                .contains("focus on deployment tradeoffs");
+        assertThat(snapshot.path("source_policy").toString())
+                .doesNotContain("OpenSERP with hosted search providers");
     }
 
     @Test
@@ -628,13 +673,7 @@ class ConversationTurnModuleContractTest {
         ), 200);
         String researchRunId = receipt.path("research_run_id").asText();
 
-        MvcResult detailResult = mockMvc.perform(get(
-                        "/api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}",
-                        workspaceId, researchRunId))
-                .andExpect(status().isOk())
-                .andReturn();
-        String taskId = objectMapper.readTree(detailResult.getResponse().getContentAsString())
-                .path("data").path("task_id").asText();
+        String taskId = legacyTaskIdForResearchRun(workspaceId, researchRunId);
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
                         .header("X-NoteWeave-Idempotency-Key", "research-complete-event-1")
@@ -681,7 +720,7 @@ class ConversationTurnModuleContractTest {
                 "answer_mode", "DEEP_RESEARCH",
                 "client_request_id", "research-summary-prefix-research"
         ), 200);
-        String taskId = taskIdForResearchRun(workspaceId, receipt.path("research_run_id").asText());
+        String taskId = legacyTaskIdForResearchRun(workspaceId, receipt.path("research_run_id").asText());
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
                         .header("X-NoteWeave-Idempotency-Key", "research-summary-prefix-complete")
                         .header("X-NoteWeave-Callback-Event-Id", "research-summary-prefix-complete")
@@ -785,7 +824,7 @@ class ConversationTurnModuleContractTest {
                 "client_request_id", "research-evidence-manifest-1"
         ), 200);
         String researchRunId = receipt.path("research_run_id").asText();
-        String taskId = taskIdForResearchRun(workspaceId, researchRunId);
+        String taskId = legacyTaskIdForResearchRun(workspaceId, researchRunId);
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
                         .header("X-NoteWeave-Idempotency-Key", "research-evidence-complete-event-1")
@@ -857,7 +896,7 @@ class ConversationTurnModuleContractTest {
                 "client_request_id", "research-evidence-delete-1"
         ), 200);
         String researchRunId = receipt.path("research_run_id").asText();
-        String taskId = taskIdForResearchRun(workspaceId, researchRunId);
+        String taskId = legacyTaskIdForResearchRun(workspaceId, researchRunId);
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
                         .header("X-NoteWeave-Idempotency-Key", "research-evidence-delete-complete-1")
@@ -907,13 +946,7 @@ class ConversationTurnModuleContractTest {
                 "client_request_id", "research-fencing-1"
         ), 200);
         String researchRunId = receipt.path("research_run_id").asText();
-        MvcResult detailResult = mockMvc.perform(get(
-                        "/api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}",
-                        workspaceId, researchRunId))
-                .andExpect(status().isOk())
-                .andReturn();
-        String taskId = objectMapper.readTree(detailResult.getResponse().getContentAsString())
-                .path("data").path("task_id").asText();
+        String taskId = legacyTaskIdForResearchRun(workspaceId, researchRunId);
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
                         .header("X-NoteWeave-Callback-Event-Id", "stale-event")
@@ -1224,7 +1257,16 @@ class ConversationTurnModuleContractTest {
         ));
     }
 
-    private String taskIdForResearchRun(String workspaceId, String researchRunId) throws Exception {
+    private String legacyTaskIdForResearchRun(String workspaceId, String researchRunId) throws Exception {
+        int updated = jdbcTemplate.update("""
+                update research_run
+                set agent_execution_mode = 'SEQUENTIAL_V1'
+                where id = ? and workspace_id = ?
+                  and not exists (
+                    select 1 from research_agent_task where research_run_id = ?
+                  )
+                """, researchRunId, workspaceId, researchRunId);
+        assertThat(updated).as("legacy callback fixture must switch before incremental taskization").isEqualTo(1);
         MvcResult detail = mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}",
                         workspaceId, researchRunId))
                 .andExpect(status().isOk())
@@ -1234,27 +1276,12 @@ class ConversationTurnModuleContractTest {
 
     private JsonNode submit(String conversationId, Map<String, Object> request, int expectedStatus)
             throws Exception {
-        Map<String, Object> effectiveRequest = new java.util.LinkedHashMap<>(request);
-        if ("DEEP_RESEARCH".equals(effectiveRequest.get("answer_mode"))
-                && !effectiveRequest.containsKey("source_scope_source_ids")) {
-            String workspaceId = jdbcTemplate.queryForObject(
-                    "select workspace_id from conversation where id = ?", String.class, conversationId);
-            effectiveRequest.put("source_scope_source_ids", java.util.List.of(
-                    seedResearchSource(workspaceId)));
-        }
         MvcResult result = mockMvc.perform(post("/api/v2/conversations/{conversationId}/messages", conversationId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(effectiveRequest)))
+                        .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().is(expectedStatus))
                 .andReturn();
-        JsonNode data = objectMapper.readTree(result.getResponse().getContentAsString()).path("data");
-        if (expectedStatus == 200 && "DEEP_RESEARCH".equals(effectiveRequest.get("answer_mode"))
-                && !data.path("research_run_id").asText().isBlank()) {
-            jdbcTemplate.update(
-                    "update research_run set agent_execution_mode = 'SEQUENTIAL_V1' where id = ?",
-                    data.path("research_run_id").asText());
-        }
-        return data;
+        return objectMapper.readTree(result.getResponse().getContentAsString()).path("data");
     }
 
     private String seedResearchSource(String workspaceId) {

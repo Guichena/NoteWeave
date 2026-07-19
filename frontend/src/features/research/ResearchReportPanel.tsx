@@ -1,6 +1,7 @@
 import { type SourceAsset } from "../sources/model";
 import {
   type ResearchClosedLoopState,
+  type ResearchCollection,
   type ResearchFinalAnswer,
   type ResearchIntentCompletionContract,
   type ResearchRecoveryTargets,
@@ -15,6 +16,7 @@ import {
 
 type ResearchReportPanelProps = Record<string, any> & {
   currentResearchRun: ResearchRunDetail | null;
+  currentResearchCollection: ResearchCollection | null;
   currentResearchRunSummary: ResearchRunSummary | null;
   researchReportStructure: ResearchReportStructure | null;
   researchClosedLoopState: ResearchClosedLoopState | null;
@@ -37,6 +39,7 @@ type ResearchReportPanelProps = Record<string, any> & {
 export function ResearchReportPanel(props: ResearchReportPanelProps) {
   const {
     currentResearchRun,
+    currentResearchCollection,
     formatTimestamp,
     buildReportRecoveryNarrative,
     currentResearchRunSummary,
@@ -153,6 +156,27 @@ export function ResearchReportPanel(props: ResearchReportPanelProps) {
                   </small>
                   <small>检索过程、网页阅读轨迹和 verifier / checkpoint 审计已收纳到“研究详情”中展示。</small>
                 </div>
+                {currentResearchCollection ? (
+                  <div className="wiki-citations">
+                    <strong>Workspace Research Collection</strong>
+                    <span>
+                      {currentResearchCollection.adopted_sources.length} 个采用来源 · {currentResearchCollection.notes.length} 条研究笔记
+                    </span>
+                    {currentResearchCollection.adopted_sources.map((source) => (
+                      <div key={`${source.source_kind}-${source.source_snapshot_key || source.source_id}`} className="link-card research-evidence-card">
+                        <strong>{source.title || source.source_url || source.source_id}</strong>
+                        <span>{source.excerpt}</span>
+                        <small>{source.source_kind} · citations={source.citation_count} · {source.source_domain || "workspace seed"}</small>
+                      </div>
+                    ))}
+                    {currentResearchCollection.notes.map((note) => (
+                      <div key={note.note_key} className="link-card">
+                        <strong>{note.note_type} · {note.title}</strong>
+                        <span>{note.content}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
                 {researchReportStructure ? (
                   <>
                     <div className="wiki-citations">

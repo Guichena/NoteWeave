@@ -49,4 +49,41 @@ describe("SourcesApi", () => {
     expect(get).toHaveBeenCalledWith("/api/v2/workspaces/workspace/sources");
     expect(deleteJson).toHaveBeenCalledWith("/api/v2/workspaces/workspace/sources/source");
   });
+
+  it("owns note answer draft and save-as-source paths", async () => {
+    const post = vi.fn(async (path: string) => {
+      if (path.endsWith("/source-draft")) {
+        return {
+          message_id: "message",
+          title: "标题",
+          content: "# 标题\n\n中性正文",
+          rewrite_mode: "template",
+          source_content: "原始回答"
+        };
+      }
+      return {
+        source_id: "source",
+        message_id: "message",
+        title: "标题",
+        status: "READY",
+        parse_status: "PARSED",
+        index_status: "INDEXED",
+        generated_by: "note_answer",
+        generated_ref_id: "message"
+      };
+    });
+    const api = new SourcesApi({ post } as unknown as ApiClient);
+
+    await api.buildNoteSourceDraft("message", { title: "标题" });
+    await api.saveAnswerAsSource("message", {
+      title: "标题",
+      content: "中性正文"
+    });
+
+    expect(post).toHaveBeenCalledWith("/api/v2/messages/message/source-draft", { title: "标题" });
+    expect(post).toHaveBeenCalledWith("/api/v2/messages/message/save-as-source", {
+      title: "标题",
+      content: "中性正文"
+    });
+  });
 });

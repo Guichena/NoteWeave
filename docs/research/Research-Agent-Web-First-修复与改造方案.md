@@ -2,7 +2,7 @@
 
 > 基线日期：2026-07-18  
 > 参考项目：[OpenSERP 项目深度分析](./OpenSERP-项目深度分析.md)、[Craft Agents OSS 项目深度分析](./Craft-Agents-项目深度分析.md)  
-> 目标：构建类似 NotebookLM 研究能力的网络研究 Agent。它可以从独立研究页或聊天中发起，结合研究问题、聊天上下文和可选资料，在公开网络上发现、抓取、筛选和验证来源，生成有引用的总结与报告，并把采纳的资料、研究笔记和报告沉淀到当前 Workspace。
+> 目标：构建类似 NotebookLM 研究能力的网络研究 Agent。用户必须先进入一个 Workspace，再从该 Workspace 的研究页或聊天中发起研究；Agent 结合研究问题、聊天上下文和可选资料，在公开网络上发现、抓取、筛选和验证来源，生成有引用的总结与报告，并把采纳的资料、研究笔记和报告沉淀回这个 Workspace。
 
 ## 1. 修改背景与结论
 
@@ -16,6 +16,13 @@
 
 因此，问题不是 Python worker 的部署位置，而是检索模式、任务权威和证据权威都被 `source_scope` 隐式控制。
 
+这里必须区分两个不能混为一谈的概念：
+
+1. **Workspace 归属是强制且唯一的。** Workspace 对应 NotebookLM 的 notebook，是一次 Research Run 的工作单位。Research 不能脱离 Workspace 创建，也不能在一次 run 中跨 Workspace；run、聊天上下文、权限、预算、任务、证据快照、报告、研究笔记和最终 Collection 都绑定发起时的同一个 `workspace_id`。
+2. **Workspace sources 不是默认检索范围。** 进入某个 Workspace 只确定“研究属于哪里、使用谁的权限、成果保存到哪里”，不代表 Agent 默认只能检索该 Workspace 已有资料。已有资料只有在用户显式选择时才作为 seeds 或封闭语料参与研究。
+
+因此，“Workspace 与搜索能力解耦”更准确的含义是：**不解除 Research 与 Workspace 的绑定，只解除 `workspace_id` 对检索语料范围的隐式控制。** 产品模型应表述为 `Workspace-bound, Web-capable Research`，而不是无 Workspace 的独立搜索 Agent。
+
 正确修复不是删掉一处非空校验，而是明确“研究输入、网络调查、证据归档、报告生成、Workspace 沉淀”五个阶段，并引入显式的 evidence acquisition mode，贯通 UI、聊天、Run、task snapshot、adapter selection、permit、archive、completion 和 counterfactual repair。
 
 推荐的产品语义是：
@@ -26,14 +33,14 @@
 | `WEB_PLUS_SEEDS` | 必须 | 可用作起点和对照 | 用户提供内部材料，同时要求外部补充和验证 |
 | `SOURCES_ONLY` | 禁止 | 必须 | 私有资料总结、封闭语料审查、不能访问公网的任务 |
 
-Deep Research UI 和聊天中的 Deep Research 默认应为 `WEB_ONLY`。Workspace 继续承担租户、ACL、配额、run/artifact 归属、研究成果容器和凭据策略，但不再决定研究语料范围。
+当前 Workspace 内的 Deep Research 页面和聊天 Deep Research 默认应为 `WEB_ONLY`。Workspace 继续作为 notebook 级工作单位，承担租户、ACL、配额、run/artifact 归属、聊天上下文、研究成果容器和凭据策略，但不再自动把“该 Workspace 已有 sources”解释为研究语料范围。
 
 本次改造的核心决策如下：
 
 | 决策 | 结论 |
 |---|---|
 | Research Agent 是什么 | 面向公开网络的研究、资料收集、证据验证、总结和报告 Agent |
-| Workspace 是什么 | 租户与权限边界、可选 seed 来源、研究成果和资料集合的沉淀位置 |
+| Workspace 是什么 | 类似 NotebookLM notebook 的唯一研究工作单位；是强制归属、权限与上下文边界，也是可选 seed 来源和成果沉淀容器 |
 | 聊天是什么 | Research Brief 的上下文入口，不是默认事实证据 |
 | 默认检索模式 | `WEB_ONLY` |
 | 可选资料如何使用 | 显式选择 `WEB_PLUS_SEEDS` 或 `SOURCES_ONLY`，不能隐式混入 |

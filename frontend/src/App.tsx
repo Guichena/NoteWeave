@@ -52,6 +52,8 @@ import {
   type SignalChip,
   type ResearchTimelineMilestone,
   type ResearchTimelinePathSummary,
+  type ResearchRetrievalMode,
+  type ResearchCollection,
   type SaveResearchReportSource
 } from "./features/research/model";
 import { useResearchState } from "./features/research/useResearchState";
@@ -320,8 +322,11 @@ export function App() {
     }
   ]);
   const [view, setView] = useState<"chat" | "wiki" | "memory" | "research">("chat");
-  const [lastAssistantMessageId, setLastAssistantMessageId] = useState("");
-  const [noteTitle, setNoteTitle] = useState("工作台整理笔记");
+  const [lastNoteAssistantMessageId, setLastNoteAssistantMessageId] = useState("");
+  const [lastNoteAnswerContent, setLastNoteAnswerContent] = useState("");
+  const [sourceDraftTitle, setSourceDraftTitle] = useState("工作台整理笔记");
+  const [sourceDraftContent, setSourceDraftContent] = useState("");
+  const [sourceDraftRewriteMode, setSourceDraftRewriteMode] = useState("");
   const [artifactStudioSkills, setArtifactStudioSkills] = useState<ArtifactStudioSkill[]>(DEFAULT_ARTIFACT_STUDIO_SKILLS);
   const {
     artifactJobs,
@@ -407,7 +412,9 @@ export function App() {
   const [researchTimeRange, setResearchTimeRange] = useState("");
   const [researchDepth, setResearchDepth] = useState("STANDARD");
   const [researchType, setResearchType] = useState("AUTO");
+  const [researchRetrievalMode, setResearchRetrievalMode] = useState<ResearchRetrievalMode>("WEB_ONLY");
   const [selectedResearchSourceIds, setSelectedResearchSourceIds] = useState<string[]>([]);
+  const [currentResearchCollection, setCurrentResearchCollection] = useState<ResearchCollection | null>(null);
   const [latestResearchTaskId, setLatestResearchTaskId] = useState("");
   const latestResearchTaskExecution = getExecution(latestResearchTaskId);
   const latestResearchTask = latestResearchTaskExecution?.task ?? null;
@@ -777,7 +784,17 @@ export function App() {
     if (!workspace) {
       return null;
     }
-    return fetchResearchRunDetail(researchRunId, checkpointNo);
+    const detail = await fetchResearchRunDetail(researchRunId, checkpointNo);
+    if (detail?.status === "COMPLETED") {
+      try {
+        setCurrentResearchCollection(await researchApi.getCollection(workspace.workspace_id, researchRunId));
+      } catch {
+        setCurrentResearchCollection(null);
+      }
+    } else {
+      setCurrentResearchCollection(null);
+    }
+    return detail;
   }
 
   async function refreshResearchTask(taskId: string, researchRunId: string) {
@@ -803,8 +820,8 @@ export function App() {
       setStatus("请先填写 Deep Research 问题");
       return;
     }
-    if (selectedResearchSourceIds.length === 0) {
-      setStatus("请至少选择一份已解析的资料后再启动 Deep Research");
+    if (researchRetrievalMode !== "WEB_ONLY" && selectedResearchSourceIds.length === 0) {
+      setStatus(`${researchRetrievalMode} 模式至少需要一份已解析资料`);
       return;
     }
     const nextProfile = researchProfile.trim() || "default";
@@ -827,7 +844,9 @@ export function App() {
         time_range: nextTimeRange,
         depth: nextDepth,
         research_type: nextResearchType,
-        source_scope_source_ids: selectedResearchSourceIds
+        retrieval_mode: researchRetrievalMode,
+        seed_source_ids: researchRetrievalMode === "WEB_ONLY" ? [] : selectedResearchSourceIds,
+        source_scope_source_ids: []
       });
       prepareResearchRun(created.research_run_id);
       const refreshed = await refreshResearchTask(created.task_id, created.research_run_id);
@@ -1046,8 +1065,19 @@ export function App() {
         });
         throw error;
       }
-      setLastAssistantMessageId(sent.assistant_message_id);
       const buffered = answerRunStoreRef.current.get(sent.answer_run_id);
+      if (mode === "note") {
+        setLastNoteAssistantMessageId(sent.assistant_message_id);
+        setLastNoteAnswerContent(buffered?.content ?? "");
+        setSourceDraftContent("");
+        setSourceDraftRewriteMode("");
+        setSourceDraftTitle((current) => current.trim() || "工作台整理笔记");
+      } else {
+        setLastNoteAssistantMessageId("");
+        setLastNoteAnswerContent("");
+        setSourceDraftContent("");
+        setSourceDraftRewriteMode("");
+      }
       setMessages((current) => [...current, {
         role: "assistant",
         content: buffered?.content ?? "",
@@ -1060,6 +1090,10 @@ export function App() {
       if (conversationStreamConnected) {
         await answerRunStoreRef.current.waitFor(sent.answer_run_id);
         const completed = await reconcileAnswerRun(sent.answer_run_id);
+        if (mode === "note" && completed?.content) {
+          setLastNoteAnswerContent(completed.content);
+          await prepareNoteSourceDraft(sent.assistant_message_id, sourceDraftTitle, completed.content);
+        }
         if (!completed?.content) {
           setMessages((current) => updateAssistantMessageByRun(current, sent.answer_run_id, {
             ...(completed ?? createAnswerRunState(sent.answer_run_id)),
@@ -1090,7 +1124,93 @@ export function App() {
           }
         ));
       }
-      await reconcileAnswerRun(sent.answer_run_id, fallback);
+      const reconciled = await reconcileAnswerRun(sent.answer_run_id, fallback);
+      if (mode === "note" && reconciled?.content) {
+        setLastNoteAnswerContent(reconciled.content);
+        await prepareNoteSourceDraft(sent.assistant_message_id, sourceDraftTitle, reconciled.content);
+      }
+    });
+  }
+
+  async function prepareNoteSourceDraft(
+    messageId: string,
+    preferredTitle: string,
+    fallbackContent = lastNoteAnswerContent
+  ): Promise<{ title: string; content: string; rewriteMode: string }> {
+    try {
+      const draft = await sourcesApi.buildNoteSourceDraft(messageId, {
+        title: preferredTitle.trim() || "工作台整理笔记"
+      });
+      const title = draft.title || preferredTitle;
+      const content = draft.content || fallbackContent;
+      const rewriteMode = draft.rewrite_mode || "template";
+      setSourceDraftTitle(title);
+      setSourceDraftContent(content);
+      setSourceDraftRewriteMode(rewriteMode);
+      return { title, content, rewriteMode };
+    } catch {
+      setSourceDraftContent(fallbackContent);
+      setSourceDraftRewriteMode("raw");
+      return {
+        title: preferredTitle.trim() || "工作台整理笔记",
+        content: fallbackContent,
+        rewriteMode: "raw"
+      };
+    }
+  }
+
+  async function rewriteNoteSourceDraft() {
+    if (!lastNoteAssistantMessageId) {
+      setStatus("请先完成一次 Note 模式回答");
+      return;
+    }
+    await run("生成中性入库草稿", async () => {
+      await prepareNoteSourceDraft(lastNoteAssistantMessageId, sourceDraftTitle, lastNoteAnswerContent);
+    });
+  }
+
+  async function saveNoteAnswerAsSource() {
+    if (!workspace) {
+      setStatus("请先创建工作台");
+      return;
+    }
+    if (!lastNoteAssistantMessageId) {
+      setStatus("请先完成一次 Note 模式回答");
+      return;
+    }
+    await run("确认入库为资料", async () => {
+      let title = sourceDraftTitle.trim();
+      let content = sourceDraftContent.trim();
+      let rewriteMode = sourceDraftRewriteMode || "manual";
+      if (!content) {
+        const draft = await prepareNoteSourceDraft(
+          lastNoteAssistantMessageId,
+          title || "工作台整理笔记",
+          lastNoteAnswerContent
+        );
+        title = draft.title.trim() || title;
+        content = draft.content.trim();
+        rewriteMode = draft.rewriteMode;
+      }
+      if (!title) {
+        throw new Error("请填写入库标题");
+      }
+      if (!content) {
+        throw new Error("请填写或确认入库正文");
+      }
+      const saved = await sourcesApi.saveAnswerAsSource(lastNoteAssistantMessageId, {
+        title,
+        content
+      });
+      const nextSources = await sourcesApi.list(workspace.workspace_id);
+      setSources(nextSources);
+      setMessages((current) => [
+        ...current,
+        {
+          role: "system",
+          content: `已确认入库资料：${saved.title || title}（source=${saved.source_id}，parse=${saved.parse_status}，index=${saved.index_status}，rewrite=${rewriteMode}）`
+        }
+      ]);
     });
   }
 
@@ -1278,20 +1398,6 @@ export function App() {
     setWikiGraphMode("overview");
     setWikiRenameTitle("");
     await clearWikiSelection({ mode: "overview", graphKinds: wikiGraphKindFilters });
-  }
-
-  async function saveLatestAnswerAsNote() {
-    if (!lastAssistantMessageId) {
-      setStatus("请先完成一次聊天回答");
-      return;
-    }
-    await run("保存最新回答为 Note", async () => {
-      const saved = await knowledgeApi.saveMessageAsNote(lastAssistantMessageId, noteTitle);
-      setMessages((current) => [
-        ...current,
-        { role: "system", content: `已保存 Note：${saved.title}（v${saved.latest_version_no}）` }
-      ]);
-    });
   }
 
   async function createWikiPage() {
@@ -2879,6 +2985,7 @@ ${relationLine}
                 researchProfile,
                 researchDepth,
                 researchType,
+                researchRetrievalMode,
                 researchScopeCount,
                 researchQuestion,
                 setResearchQuestion,
@@ -2890,6 +2997,7 @@ ${relationLine}
                 setResearchTimeRange,
                 setResearchDepth,
                 setResearchType,
+                setResearchRetrievalMode,
                 researchConstraintsText,
                 setResearchConstraintsText,
                 startDeepResearch,
@@ -2943,6 +3051,7 @@ ${relationLine}
             <LazyResearchReportPanel
               {...{
                 currentResearchRun,
+                currentResearchCollection,
                 formatTimestamp,
                 buildReportRecoveryNarrative,
                 currentResearchRunSummary,
@@ -3312,10 +3421,14 @@ ${relationLine}
               openMemoryWorkbench,
               toggleWikiEnabled,
               wikiEnabled,
-              noteTitle,
-              setNoteTitle,
-              saveLatestAnswerAsNote,
-              lastAssistantMessageId,
+              sourceDraftTitle,
+              setSourceDraftTitle,
+              sourceDraftContent,
+              setSourceDraftContent,
+              sourceDraftRewriteMode,
+              rewriteNoteSourceDraft,
+              saveNoteAnswerAsSource,
+              lastNoteAssistantMessageId,
               wikiRebuildAdvice,
             }}
           />

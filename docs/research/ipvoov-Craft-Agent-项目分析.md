@@ -432,11 +432,11 @@ NoteWeave 已有 HTTP security、trace security、内部服务认证、Workspace
 
 Craft-Agent 的 Research 图从一开始就允许只给问题、直接搜索 Web。它没有 Workspace 概念，也没有要求内部 source。
 
-NoteWeave Python worker 现在已经有 external adapter，甚至能在 `source_scope` 为空时运行并给出 `NO_SEARCH_HITS_WITHOUT_SOURCE_SCOPE` 等决策；但 Java backend 的 `ResearchRunService.createRun()` 和增量 task coordinator 仍强制至少一个 ready workspace source。也就是说：
+在本轮改造前，NoteWeave Python worker 已经有 external adapter，甚至能在 `source_scope` 为空时运行；但它仍用 `NO_SEARCH_HITS_WITHOUT_SOURCE_SCOPE` 表达零命中，Java backend 的 `ResearchRunService.createRun()` 和增量 task coordinator 也强制至少一个 ready workspace source。也就是说：
 
 > NoteWeave 的“只能从 Workspace source 开始”主要是 control plane 的产品契约约束，不是 Python Research Agent 的固有技术限制。
 
-Craft-Agent 能作为一个清晰的外部 Web-only UX 对照，但无需复制它的 LangGraph 才能修正 NoteWeave。更合理的改造仍是显式定义 `WEB_ONLY`、`WEB_PLUS_SOURCES`、`SOURCES_ONLY`，然后让 backend 按模式决定 source scope 是否必填。
+Craft-Agent 能作为一个清晰的外部 Web-only UX 对照，但无需复制它的 LangGraph 才能修正 NoteWeave。当前改造采用了显式的 `WEB_ONLY`、`WEB_PLUS_SEEDS`、`SOURCES_ONLY`：Research Run 仍强制且唯一归属于当前 Workspace，只由 retrieval mode 决定 Workspace seeds 是否参与检索。零 Web 命中现在按“没有获得证据”处理，不再把空 Workspace source scope 当成失败原因。
 
 ## 15. 值得借鉴的内容
 
@@ -602,4 +602,3 @@ Discovery 结果进入正式 snapshot，Planner 再据此生成 cell schema 和 
 - [Python REPL](https://github.com/ipvoov/Craft-Agent/blob/3ce19c4e0382b54f27c9d04b0a723eca50687409/src/tools/python_repl.py)
 - [DeerFlow 上游对应 commit](https://github.com/bytedance/deer-flow/tree/b7a4b0f44610150e1f535dc70e3f57d0d5f56fcd)
 - [DeerFlow 2.0 与 1.x 关系说明](https://github.com/bytedance/deer-flow/blob/a028dfd5fb70bd6e26c7dbf9e89543c7c006f9a2/README.md)
-

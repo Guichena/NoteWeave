@@ -205,9 +205,10 @@ def test_budget_exhaustion_should_force_guardrailed_write_without_infinite_loop(
     )
 
 
-def test_no_hits_without_source_scope_should_be_explicit_abandonment() -> None:
+def test_web_only_no_hits_should_be_explicit_evidence_abandonment() -> None:
     plan = build_research_plan(_build_task_input())
     plan.stop_contract["source_scope_count"] = 0
+    plan.stop_contract["retrieval_mode"] = "WEB_ONLY"
     decision = evaluate_loop_decision(
         plan=plan,
         round_no=1,
@@ -223,7 +224,9 @@ def test_no_hits_without_source_scope_should_be_explicit_abandonment() -> None:
 
     assert decision.should_continue is False
     assert decision.terminal_disposition == "ABANDON"
-    assert decision.abandon_reason == "NO_SEARCH_HITS_WITHOUT_SOURCE_SCOPE"
+    assert decision.abandon_reason == "NO_SEARCH_HITS_WITHOUT_EVIDENCE"
+    assert all("attach workspace sources" not in action for action in decision.recovery_actions)
+    assert any("web search provider" in action for action in decision.recovery_actions)
 
 
 def test_ready_result_should_be_explicit_verified_completion() -> None:

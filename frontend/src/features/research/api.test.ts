@@ -11,11 +11,13 @@ describe("ResearchApi", () => {
 
     await api.listRuns("workspace", init);
     await api.getRun("workspace", "run", init);
+    await api.getCollection("workspace", "run", init);
     await api.getCheckpoint("workspace", "run", 7, init);
 
     expect(get.mock.calls).toEqual([
       ["/api/v2/workspaces/workspace/research-runs", init],
       ["/api/v2/workspaces/workspace/research-runs/run", init],
+      ["/api/v2/workspaces/workspace/research-runs/run/collection", init],
       ["/api/v2/workspaces/workspace/research-runs/run/checkpoints/7", init]
     ]);
   });
@@ -32,7 +34,9 @@ describe("ResearchApi", () => {
       time_range: "2025-2026",
       depth: "STANDARD",
       research_type: "AUTO",
-      source_scope_source_ids: ["source"]
+      retrieval_mode: "WEB_PLUS_SEEDS" as const,
+      seed_source_ids: ["source"],
+      source_scope_source_ids: []
     };
 
     await api.createRun("workspace", input);

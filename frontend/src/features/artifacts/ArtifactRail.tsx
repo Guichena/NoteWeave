@@ -58,10 +58,14 @@ export function ArtifactRail(props: ArtifactRailProps) {
     openMemoryWorkbench,
     toggleWikiEnabled,
     wikiEnabled,
-    noteTitle,
-    setNoteTitle,
-    saveLatestAnswerAsNote,
-    lastAssistantMessageId,
+    sourceDraftTitle,
+    setSourceDraftTitle,
+    sourceDraftContent,
+    setSourceDraftContent,
+    sourceDraftRewriteMode,
+    rewriteNoteSourceDraft,
+    saveNoteAnswerAsSource,
+    lastNoteAssistantMessageId,
     wikiRebuildAdvice
   } = props;
   return (
@@ -420,13 +424,45 @@ export function ArtifactRail(props: ArtifactRailProps) {
                 <button className="secondary-button" onClick={toggleWikiEnabled} disabled={isBusy || !workspace}>
                   {wikiEnabled ? "关闭 Wiki 构建" : "开启 Wiki 构建"}
                 </button>
-                <label className="rail-field">
-                  <span>Note 标题</span>
-                  <input value={noteTitle} onChange={(event) => setNoteTitle(event.target.value)} />
-                </label>
-                <button onClick={saveLatestAnswerAsNote} disabled={isBusy || !lastAssistantMessageId}>
-                  保存最新回答为 Note
-                </button>
+                <div className="artifact-utility-section">
+                  <p className="section-label">Note 确认入库</p>
+                  <p className="phase-note">
+                    仅 Note 模式回答可整理后进入资料池。系统会先生成中性 Markdown 草稿（模板/LLM），你确认后再入库；入库后与上传资料一视同仁。
+                  </p>
+                  <label className="rail-field">
+                    <span>资料标题</span>
+                    <input
+                      value={sourceDraftTitle}
+                      onChange={(event) => setSourceDraftTitle(event.target.value)}
+                      placeholder="例如：阶段3 Note 整理"
+                    />
+                  </label>
+                  <label className="rail-field">
+                    <span>中性 Markdown 正文</span>
+                    <textarea
+                      value={sourceDraftContent}
+                      onChange={(event) => setSourceDraftContent(event.target.value)}
+                      rows={8}
+                      placeholder="Note 回答完成后会自动生成中性草稿，也可点下方按钮重写"
+                    />
+                  </label>
+                  {sourceDraftRewriteMode ? (
+                    <p className="phase-note">当前草稿来源：{sourceDraftRewriteMode}</p>
+                  ) : null}
+                  <button
+                    className="secondary-button"
+                    onClick={() => void rewriteNoteSourceDraft()}
+                    disabled={isBusy || !workspace || !lastNoteAssistantMessageId}
+                  >
+                    生成/刷新中性草稿
+                  </button>
+                  <button
+                    onClick={() => void saveNoteAnswerAsSource()}
+                    disabled={isBusy || !workspace || !lastNoteAssistantMessageId}
+                  >
+                    确认入库为资料
+                  </button>
+                </div>
                 {wikiRebuildAdvice ? <p className="phase-note">{wikiRebuildAdvice.message}</p> : null}
               </div>
             </>

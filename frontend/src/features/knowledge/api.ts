@@ -104,10 +104,6 @@ export class KnowledgeApi {
     return this.client.post<WikiPage>(`/api/v2/knowledge-items/${itemId}/versions`, input);
   }
 
-  saveMessageAsNote(messageId: string, title: string) {
-    return this.client.post<WikiPage>(`/api/v2/messages/${messageId}/save-as-note`, { title });
-  }
-
   rebuildLinks(workspaceId: string) {
     return this.client.post<WikiStats>(`/api/v2/workspaces/${workspaceId}/wiki/rebuild-links`, {});
   }

@@ -74,7 +74,8 @@ class ResearchAgentAutomaticRunBootstrapTest {
         ResearchRunResponse created = researchRunService.createRun(workspaceId, new CreateResearchRunRequest(
                 "How does controlled multi-agent research improve evidence quality?",
                 "DEFAULT", "Produce an evidence-backed technical assessment", "Markdown report",
-                List.of("Call out limitations"), null, "DEEP", "TECHNICAL", List.of(sourceId, secondSourceId)));
+                List.of("Call out limitations"), null, "DEEP", "TECHNICAL", List.of(),
+                "WEB_PLUS_SEEDS", List.of(sourceId, secondSourceId)));
 
         assertThat(created.status()).isEqualTo("RUNNING");
         assertThat(jdbcTemplate.queryForObject(
@@ -113,7 +114,7 @@ class ResearchAgentAutomaticRunBootstrapTest {
 
         ResearchRunResponse created = researchRunService.createRun(workspaceId, new CreateResearchRunRequest(
                 "Research a claim without selected evidence", "DEFAULT", "Find evidence", "Markdown report",
-                List.of(), null, "DEEP", "TECHNICAL", List.of()));
+                List.of(), null, "DEEP", "TECHNICAL", List.of(), "WEB_ONLY", List.of()));
 
         assertThat(created.status()).isEqualTo("RUNNING");
         assertThat(jdbcTemplate.queryForObject(
@@ -137,6 +138,7 @@ class ResearchAgentAutomaticRunBootstrapTest {
                 new ResearchAgentTaskService.ClaimCommand(agentTaskId, "web-only-worker", 30));
         JsonNode snapshot = objectMapper.readTree(claimed.taskSnapshotJson());
         assertThat(snapshot.path("workspace_id").asText()).isEqualTo(workspaceId);
+        assertThat(snapshot.path("source_policy").path("retrieval_mode").asText()).isEqualTo("WEB_ONLY");
         assertThat(snapshot.path("source_policy").path("source_scope").isArray()).isTrue();
         assertThat(snapshot.path("source_policy").path("source_scope")).isEmpty();
         assertThat(snapshot.path("source_policy").path("allow_external_search").asBoolean()).isTrue();

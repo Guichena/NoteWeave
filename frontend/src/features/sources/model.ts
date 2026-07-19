@@ -22,3 +22,31 @@ export type DeletedSource = {
   status: string;
   wiki_retract_task_id: string;
 };
+
+export type SaveAnswerAsSourceInput = {
+  title: string;
+  content?: string;
+};
+
+export type NoteSourceDraftInput = {
+  title?: string;
+};
+
+export type NoteSourceDraft = {
+  message_id: string;
+  title: string;
+  content: string;
+  rewrite_mode: string;
+  source_content: string;
+};
+
+export type SavedAnswerSource = {
+  source_id: string;
+  message_id: string;
+  title: string;
+  status: string;
+  parse_status: string;
+  index_status: string;
+  generated_by: string;
+  generated_ref_id: string;
+};

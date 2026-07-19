@@ -44,7 +44,12 @@ from app.research_agent_completion_contract import (
     canonical_json_digest,
     require_worker_instance_id,
 )
-from app.search_adapters import SeedSourceSearchAdapter, build_default_search_adapter, run_research_search
+from app.search_adapters import (
+    SeedSourceSearchAdapter,
+    build_default_search_adapter,
+    build_web_search_adapter,
+    run_research_search,
+)
 from app.task_snapshot_contract import ResearchAgentTaskSnapshot, require_trusted_claim_snapshot
 
 
@@ -78,7 +83,13 @@ class ExistingResearchToolchain:
     """Production adapter wired to the existing hardened Research adapters."""
 
     def search(self, task_input: ResearchTaskInput, plan: ResearchPlan, *, allow_external: bool) -> list[object]:
-        adapter = build_default_search_adapter() if allow_external else SeedSourceSearchAdapter()
+        retrieval_mode = str(plan.stop_contract.get("retrieval_mode", "")).upper()
+        if retrieval_mode == "WEB_ONLY":
+            adapter = build_web_search_adapter()
+        elif retrieval_mode == "WEB_PLUS_SEEDS":
+            adapter = build_default_search_adapter()
+        else:
+            adapter = SeedSourceSearchAdapter()
         return list(run_research_search(task_input, plan, adapter=adapter))
 
     def fetch(self, task_input: ResearchTaskInput, plan: ResearchPlan, hits: list[object], *, allow_external: bool) -> list[object]:
@@ -228,6 +239,23 @@ def _build_task_scope(snapshot: ResearchAgentTaskSnapshot) -> tuple[ResearchTask
     if not isinstance(raw_query, str) or not raw_query.strip() or not isinstance(raw_scope, list):
         raise ValueError("DEEP_CELL snapshot requires query_policy.query and source_policy.source_scope")
     source_scope = [SourceScopeItem.model_validate(item) for item in raw_scope]
+    allow_external = bool(snapshot.source_policy.get("allow_external_search", False)) and bool(
+        snapshot.source_policy.get("allow_external_fetch", False)
+    )
+    raw_mode = str(snapshot.source_policy.get("retrieval_mode", "")).strip().upper()
+    retrieval_mode = raw_mode or (
+        "WEB_PLUS_SEEDS" if allow_external and source_scope
+        else "WEB_ONLY" if allow_external
+        else "SOURCES_ONLY"
+    )
+    if retrieval_mode not in {"WEB_ONLY", "WEB_PLUS_SEEDS", "SOURCES_ONLY"}:
+        raise ValueError("DEEP_CELL snapshot retrieval_mode is invalid")
+    if retrieval_mode == "WEB_ONLY" and source_scope:
+        raise ValueError("WEB_ONLY snapshot must not contain seed sources")
+    if retrieval_mode != "WEB_ONLY" and not source_scope:
+        raise ValueError(f"{retrieval_mode} snapshot requires seed sources")
+    if (retrieval_mode != "SOURCES_ONLY") != allow_external:
+        raise ValueError("DEEP_CELL snapshot retrieval_mode conflicts with external tool policy")
     columns: list[ResearchColumn] = []
     for target in snapshot.target_cells:
         entity, separator, column = target.cell_id.partition(":")
@@ -251,9 +279,7 @@ def _build_task_scope(snapshot: ResearchAgentTaskSnapshot) -> tuple[ResearchTask
         "research_type": snapshot.role,
     })
     plan.stop_contract["deep_cell_entity_id"] = snapshot.entity_id
-    allow_external = bool(snapshot.source_policy.get("allow_external_search", False)) and bool(
-        snapshot.source_policy.get("allow_external_fetch", False)
-    )
+    plan.stop_contract["retrieval_mode"] = retrieval_mode
     return task_input, plan, allow_external
 
 

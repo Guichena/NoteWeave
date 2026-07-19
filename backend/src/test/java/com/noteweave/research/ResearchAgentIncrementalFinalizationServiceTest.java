@@ -79,6 +79,24 @@ class ResearchAgentIncrementalFinalizationServiceTest {
     }
 
     @Test
+    void finalizedResearchMaterializesAWorkspaceResearchCollection() throws Exception {
+        finalization.finalizeIncrementalRun(runId);
+
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}/collection",
+                        workspaceId, runId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.workspace_id").value(workspaceId))
+                .andExpect(jsonPath("$.data.research_run_id").value(runId))
+                .andExpect(jsonPath("$.data.report.markdown", org.hamcrest.Matchers.containsString("Verified answer")))
+                .andExpect(jsonPath("$.data.adopted_sources.length()").value(1))
+                .andExpect(jsonPath("$.data.adopted_sources[0].source_id").value("external:incremental-source"))
+                .andExpect(jsonPath("$.data.adopted_sources[0].excerpt").value("Verified citation excerpt"))
+                .andExpect(jsonPath("$.data.notes.length()").value(1))
+                .andExpect(jsonPath("$.data.notes[0].note_type").value("FINDING"))
+                .andExpect(jsonPath("$.data.notes[0].content").value("Verified answer"));
+    }
+
+    @Test
     void idempotentIncrementalFinalizerBackfillsAMissingEvidenceManifest() throws Exception {
         finalization.finalizeIncrementalRun(runId);
         jdbcTemplate.update("delete from research_evidence_manifest_item where manifest_id in (select id from research_evidence_manifest where research_run_id = ?)", runId);

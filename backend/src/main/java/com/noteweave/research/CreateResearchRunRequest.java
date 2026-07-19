@@ -13,6 +13,22 @@ public record CreateResearchRunRequest(
         @Size(max = 512) String timeRange,
         @Size(max = 64) String depth,
         @Size(max = 64) String researchType,
-        List<@NotBlank @Size(max = 36) String> sourceScopeSourceIds
+        List<@NotBlank @Size(max = 36) String> sourceScopeSourceIds,
+        @Size(max = 32) String retrievalMode,
+        List<@NotBlank @Size(max = 36) String> seedSourceIds
 ) {
+    public CreateResearchRunRequest(
+            String question,
+            String profile,
+            String researchGoal,
+            String deliverableFormat,
+            List<String> constraints,
+            String timeRange,
+            String depth,
+            String researchType,
+            List<String> sourceScopeSourceIds
+    ) {
+        this(question, profile, researchGoal, deliverableFormat, constraints, timeRange, depth,
+                researchType, sourceScopeSourceIds, null, null);
+    }
 }

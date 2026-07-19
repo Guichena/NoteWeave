@@ -28,15 +28,18 @@ public class ResearchAgentTaskCoordinatorService {
     private final ResearchBudgetAndCheckpointService budgetService;
     private final ResearchAgentCommandOutboxService outboxService;
     private final ResearchAgentExternalEvidencePolicy externalEvidencePolicy;
+    private final ResearchBriefCompiler researchBriefCompiler;
 
     public ResearchAgentTaskCoordinatorService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
                                                ResearchAgentTaskService taskService,
                                                ResearchBudgetAndCheckpointService budgetService,
                                                ResearchAgentCommandOutboxService outboxService,
-                                               ResearchAgentExternalEvidencePolicy externalEvidencePolicy) {
+                                               ResearchAgentExternalEvidencePolicy externalEvidencePolicy,
+                                               ResearchBriefCompiler researchBriefCompiler) {
         this.jdbcTemplate = jdbcTemplate; this.objectMapper = objectMapper; this.taskService = taskService;
         this.budgetService = budgetService; this.outboxService = outboxService;
         this.externalEvidencePolicy = externalEvidencePolicy;
+        this.researchBriefCompiler = researchBriefCompiler;
     }
 
     @Transactional
@@ -49,6 +52,7 @@ public class ResearchAgentTaskCoordinatorService {
     public CoordinatorReceipt planAndEnqueueForWave(String runId, int waveNo) {
         if (waveNo < 1) throw new BusinessException("RESEARCH_AGENT_COORDINATOR_WAVE_INVALID", "Wave number must be positive");
         RunScope run = requireIncrementalRunnableRun(runId);
+        ResearchBriefCompiler.CompiledBrief brief = researchBriefCompiler.compile(run.id(), run.question());
         List<Map<String, Object>> sources = loadTrustedSources(run.workspaceId(), run.sourceScopeJson());
         List<CellScope> cells = jdbcTemplate.query("""
                 select cell_key, cell_version, plan_revision, entity_set_version, high_risk, branch_id
@@ -86,10 +90,8 @@ public class ResearchAgentTaskCoordinatorService {
                         bundle.stream().map(CellScope::cellKey).toList(), snapshotBudget,
                         bundle.stream().map(cell -> new ResearchAgentTaskService.TargetCellBinding(cell.cellKey(), cell.version())).toList(),
                         new ResearchAgentTaskService.TaskExecutionContext("research-default",
-                                Map.of("source_scope", slotSources,
-                                        "allow_external_search", externalEvidencePolicy.enabled(),
-                                        "allow_external_fetch", externalEvidencePolicy.enabled()),
-                                Map.of("query", run.question()))
+                                sourcePolicy(run, slotSources),
+                                brief.queryPolicy())
                 ));
                 jdbcTemplate.update("""
                         update research_agent_task
@@ -124,6 +126,7 @@ public class ResearchAgentTaskCoordinatorService {
             throw new BusinessException("RESEARCH_AGENT_REPAIR_INVALID", "Counterfactual repair contract is invalid");
         }
         RunScope run = requireIncrementalRunnableRun(command.researchRunId());
+        ResearchBriefCompiler.CompiledBrief brief = researchBriefCompiler.compile(run.id(), run.question());
         List<Map<String, Object>> sources = loadTrustedSources(run.workspaceId(), run.sourceScopeJson());
         if (sources.isEmpty()) throw new BusinessException("RESEARCH_AGENT_COORDINATOR_SOURCE_SCOPE_EMPTY", "Counterfactual repair requires ready workspace sources");
         List<CounterfactualTarget> targets = command.targets().stream()
@@ -152,11 +155,8 @@ public class ResearchAgentTaskCoordinatorService {
                     List.of(cell.cellKey()), snapshotBudget,
                     List.of(new ResearchAgentTaskService.TargetCellBinding(cell.cellKey(), cell.version())),
                     new ResearchAgentTaskService.TaskExecutionContext("research-default",
-                            Map.of("source_scope", independentSources, "excluded_source_ids", target.excludedSourceIds(),
-                                    "allow_external_search", externalEvidencePolicy.enabled(),
-                                    "allow_external_fetch", externalEvidencePolicy.enabled()),
-                            Map.of("query", run.question(), "repair_reason_digest", target.reasonDigest(),
-                                    "parent_checkpoint_seq", command.parentCheckpointSeq()))
+                            repairSourcePolicy(run, independentSources, target.excludedSourceIds()),
+                            repairQueryPolicy(brief, target.reasonDigest(), command.parentCheckpointSeq()))
             ));
             jdbcTemplate.update("""
                     update research_agent_task
@@ -187,9 +187,11 @@ public class ResearchAgentTaskCoordinatorService {
 
     private RunScope requireIncrementalRunnableRun(String runId) {
         RunScope run = jdbcTemplate.query("""
-                select id, workspace_id, question, source_scope_json, status, agent_execution_mode
+                select id, workspace_id, question, source_scope_json, retrieval_mode, status, agent_execution_mode
                 from research_run where id = ? for update
-                """, rs -> rs.next() ? new RunScope(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5), rs.getString(6)) : null, runId);
+                """, rs -> rs.next() ? new RunScope(
+                        rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
+                        ResearchRetrievalMode.valueOf(rs.getString(5)), rs.getString(6), rs.getString(7)) : null, runId);
         if (run == null) throw new BusinessException("RESEARCH_AGENT_RUN_NOT_FOUND", "Research run does not exist");
         if (!"INCREMENTAL_V1".equals(run.executionMode())) throw new BusinessException("RESEARCH_AGENT_COORDINATOR_MODE_INVALID", "Task coordinator requires INCREMENTAL_V1");
         if (List.of("COMPLETED", "FAILED", "CANCELLED").contains(run.status())) throw new BusinessException("RESEARCH_AGENT_RUN_TERMINAL", "Cannot taskize terminal run");
@@ -366,7 +368,45 @@ public class ResearchAgentTaskCoordinatorService {
             }
         }
     }
-    private record RunScope(String id, String workspaceId, String question, String sourceScopeJson, String status, String executionMode) { }
+    private Map<String, Object> sourcePolicy(RunScope run, List<Map<String, Object>> sources) {
+        boolean allowExternal = run.retrievalMode().usesWeb() && externalEvidencePolicy.enabled();
+        return Map.of(
+                "retrieval_mode", run.retrievalMode().name(),
+                "source_scope", sources,
+                "allow_external_search", allowExternal,
+                "allow_external_fetch", allowExternal);
+    }
+
+    private Map<String, Object> repairSourcePolicy(
+            RunScope run,
+            List<Map<String, Object>> sources,
+            List<String> excludedSourceIds
+    ) {
+        Map<String, Object> policy = new LinkedHashMap<>(sourcePolicy(run, sources));
+        policy.put("excluded_source_ids", excludedSourceIds);
+        return Map.copyOf(policy);
+    }
+
+    private Map<String, Object> repairQueryPolicy(
+            ResearchBriefCompiler.CompiledBrief brief,
+            String reasonDigest,
+            int parentCheckpointSeq
+    ) {
+        Map<String, Object> policy = new LinkedHashMap<>(brief.queryPolicy());
+        policy.put("repair_reason_digest", reasonDigest);
+        policy.put("parent_checkpoint_seq", parentCheckpointSeq);
+        return Map.copyOf(policy);
+    }
+
+    private record RunScope(
+            String id,
+            String workspaceId,
+            String question,
+            String sourceScopeJson,
+            ResearchRetrievalMode retrievalMode,
+            String status,
+            String executionMode
+    ) { }
     private record CellScope(String cellKey, int version, int planRevision, int entitySetVersion,
                              boolean highRisk, String branchId) { }
 }

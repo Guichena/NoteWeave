@@ -74,12 +74,11 @@ class Phase3NoteWikiContractTest {
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("## 继续追问"))))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.citation")));
 
-        mockMvc.perform(post("/api/v2/messages/{messageId}/save-as-note", noteAssistantMessageId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("title", "阶段3 Note 链路整理"))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.item_type").value("NOTE"))
-                .andExpect(jsonPath("$.data.latest_version_no").value(1));
+        createJournalNote(workspaceId, "阶段3 Note 链路整理", """
+                # 阶段3 Note 链路整理
+
+                Marginalia 式结构化检索漏斗会把候选资料、关系扩展和原文窗口组织成可引用回答。
+                """, noteAssistantMessageId);
 
         Integer noteCount = jdbcTemplate.queryForObject(
                 "select count(*) from knowledge_item where workspace_id = ? and item_type = 'NOTE'",
@@ -87,6 +86,46 @@ class Phase3NoteWikiContractTest {
                 workspaceId
         );
         assertThat(noteCount).isEqualTo(1);
+
+        MvcResult draftResult = mockMvc.perform(post("/api/v2/messages/{messageId}/source-draft", noteAssistantMessageId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("title", "Note 模式确认入库"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.message_id").value(noteAssistantMessageId))
+                .andExpect(jsonPath("$.data.rewrite_mode").value("template"))
+                .andExpect(jsonPath("$.data.content").isNotEmpty())
+                .andReturn();
+        String draftContent = objectMapper.readTree(draftResult.getResponse().getContentAsString())
+                .path("data").path("content").asText();
+        assertThat(draftContent).doesNotContain("## 资料定位");
+        assertThat(draftContent).doesNotContain("【候选资料】");
+
+        mockMvc.perform(post("/api/v2/messages/{messageId}/save-as-source", noteAssistantMessageId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "title", "Note 模式确认入库",
+                                "content", draftContent
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.message_id").value(noteAssistantMessageId))
+                .andExpect(jsonPath("$.data.generated_by").value("note_answer"))
+                .andExpect(jsonPath("$.data.generated_ref_id").value(noteAssistantMessageId))
+                .andExpect(jsonPath("$.data.parse_status").value("PARSED"))
+                .andExpect(jsonPath("$.data.index_status").value("INDEXED"));
+
+        mockMvc.perform(post("/api/v2/messages/{messageId}/save-as-source", noteAssistantMessageId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "title", "Note 模式确认入库",
+                                "content", "重复确认应返回同一资料"
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.generated_ref_id").value(noteAssistantMessageId));
+
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from source
+                where workspace_id = ? and generated_by = 'note_answer' and generated_ref_id = ?
+                """, Integer.class, workspaceId, noteAssistantMessageId)).isEqualTo(1);
 
         JsonNode secondNoteMessage = sendMessage(conversationId, "NOTE", "继续整理 Note 链路和 Marginalia 的关系");
         String secondNoteRequestId = secondNoteMessage.path("data").path("assistant_request_id").asText();
@@ -415,6 +454,27 @@ class Phase3NoteWikiContractTest {
     }
 
     @Test
+    void qaAnswerShouldNotBeSavedAsSource() throws Exception {
+        String workspaceId = createWorkspace();
+        uploadSource(workspaceId);
+        String conversationId = createConversation(workspaceId);
+
+        JsonNode qaMessage = sendMessage(conversationId, "QA", "请总结 NoteWeave 阶段3");
+        String qaAssistantMessageId = qaMessage.path("data").path("assistant_message_id").asText();
+        ChatStreamTestSupport.perform(mockMvc, qaMessage.path("data").path("assistant_request_id").asText())
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/v2/messages/{messageId}/save-as-source", qaAssistantMessageId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "title", "QA 不应入库",
+                                "content", "QA 回答不能进入资料池"
+                        ))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("MESSAGE_NOT_NOTE_ANSWER"));
+    }
+
+    @Test
     void noteModeShouldDemoteStaleJournalHitsAndShowFreshnessStatus() throws Exception {
         String workspaceId = createWorkspace();
         String staleSourceId = uploadSource(workspaceId, "stale-journal.md", """
@@ -434,11 +494,11 @@ class Phase3NoteWikiContractTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.citation")));
 
-        mockMvc.perform(post("/api/v2/messages/{messageId}/save-as-note", staleAssistantMessageId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("title", "A过期资料整理"))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.item_type").value("NOTE"));
+        createJournalNote(workspaceId, "A过期资料整理", """
+                # A过期资料整理
+
+                JournalFreshness staleBranchToken 的历史整理，用于验证来源更新后的 stale journal 降权。
+                """, staleAssistantMessageId);
 
         JsonNode freshQaMessage = sendMessage(conversationId, "QA", "请总结 freshBranchToken");
         String freshAssistantMessageId = freshQaMessage.path("data").path("assistant_message_id").asText();
@@ -446,11 +506,11 @@ class Phase3NoteWikiContractTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.citation")));
 
-        mockMvc.perform(post("/api/v2/messages/{messageId}/save-as-note", freshAssistantMessageId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("title", "Z新鲜资料整理"))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.item_type").value("NOTE"));
+        createJournalNote(workspaceId, "Z新鲜资料整理", """
+                # Z新鲜资料整理
+
+                JournalFreshness freshBranchToken 的历史整理，应优先于过期 Journal。
+                """, freshAssistantMessageId);
 
         jdbcTemplate.update("""
                 update source
@@ -491,11 +551,11 @@ class Phase3NoteWikiContractTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.citation")));
 
-        mockMvc.perform(post("/api/v2/messages/{messageId}/save-as-note", assistantMessageId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("title", "失效来源整理"))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.item_type").value("NOTE"));
+        createJournalNote(workspaceId, "失效来源整理", """
+                # 失效来源整理
+
+                AvailabilityShared deletedOnlyToken 的历史整理，来源删除后只保留审计线索。
+                """, assistantMessageId);
 
         jdbcTemplate.update("""
                 update source
@@ -1470,6 +1530,27 @@ class Phase3NoteWikiContractTest {
                 .andExpect(jsonPath("$.data.item_type").value("WIKI"))
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString());
+    }
+
+    private String createJournalNote(
+            String workspaceId,
+            String title,
+            String content,
+            String sourceMessageId
+    ) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/knowledge-items", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "item_type", "NOTE",
+                                "title", title,
+                                "content", content,
+                                "source_message_id", sourceMessageId
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.item_type").value("NOTE"))
+                .andExpect(jsonPath("$.data.latest_version_no").value(1))
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString()).path("data").path("item_id").asText();
     }
 
     private String createManualWikiPage(String workspaceId, String title, String content) throws Exception {

@@ -232,6 +232,11 @@ public class ConversationTurnModule {
                 """, receipt.messageId(), receipt.assistantMessageId(), receipt.answerRunId(), receipt.researchRunId(),
                 writeReceipt(receipt), preparationJson(command, conversation), submissionId);
         runInputSnapshotService.recordResearchSnapshot(workspaceId, receipt, command);
+        jdbcTemplate.update("""
+                update research_run
+                set agent_execution_mode = 'INCREMENTAL_V1', updated_at = current_timestamp
+                where workspace_id = ? and id = ?
+                """, workspaceId, receipt.researchRunId());
         return receipt;
     }
 
@@ -373,15 +378,21 @@ public class ConversationTurnModule {
                 null,
                 null,
                 null,
+                List.of(),
+                command.sourceScope().isEmpty() ? "WEB_ONLY" : "WEB_PLUS_SEEDS",
                 command.sourceScope()
         ));
-        jdbcTemplate.update("""
+        int linked = jdbcTemplate.update("""
                 update research_run
                 set conversation_id = ?, query_message_id = ?, answer_message_id = ?,
-                    updated_at = current_timestamp
+                    agent_execution_mode = 'INCREMENTAL_V1', updated_at = current_timestamp
                 where workspace_id = ? and id = ?
                 """, command.conversationId(), userMessageId, assistantMessageId,
                 workspaceId, run.researchRunId());
+        if (linked != 1) {
+            throw new BusinessException(
+                    "RESEARCH_CONVERSATION_LINK_FAILED", "Research run could not be linked to its conversation");
+        }
         jdbcTemplate.update("""
                 update conversation
                 set last_active_at = current_timestamp, updated_by = ?, updated_at = current_timestamp

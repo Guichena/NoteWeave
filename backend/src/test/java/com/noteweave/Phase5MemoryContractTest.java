@@ -449,7 +449,6 @@ class Phase5MemoryContractTest {
 
         JsonNode qaMessage = sendMessage(conversationId, "QA", "请总结 AlphaMemory 的关键要求");
         String qaRequestId = qaMessage.path("data").path("assistant_request_id").asText();
-        String qaAssistantMessageId = qaMessage.path("data").path("assistant_message_id").asText();
 
         ChatStreamTestSupport.perform(mockMvc, qaRequestId)
                 .andExpect(status().isOk())
@@ -457,12 +456,6 @@ class Phase5MemoryContractTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("结论先行")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("统一使用研究工作台")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.citation")));
-
-        mockMvc.perform(post("/api/v2/messages/{messageId}/save-as-note", qaAssistantMessageId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("title", "Memory Note"))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.item_type").value("NOTE"));
 
         JsonNode noteMessage = sendMessage(conversationId, "NOTE", "继续整理 AlphaMemory");
         String noteRequestId = noteMessage.path("data").path("assistant_request_id").asText();

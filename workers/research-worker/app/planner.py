@@ -284,7 +284,7 @@ def build_research_plan(task_input: ResearchTaskInput) -> ResearchPlan:
         "target_entity_type": target_entity_type,
         "source_scope_count": len(task_input.source_scope),
         "abandon_conditions": [
-            "NO_SEARCH_HITS_WITHOUT_SOURCE_SCOPE",
+            "NO_SEARCH_HITS_WITHOUT_EVIDENCE",
             "LOOP_BUDGET_EXHAUSTED_WITHOUT_VERIFIED_COVERAGE",
             "WALL_CLOCK_BUDGET_EXHAUSTED_WITHOUT_VERIFIED_COVERAGE",
         ],

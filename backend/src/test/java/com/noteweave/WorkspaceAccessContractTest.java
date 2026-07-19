@@ -123,8 +123,10 @@ class WorkspaceAccessContractTest {
                         .header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ACCESS_DENIED"));
-        mockMvc.perform(post("/api/v2/messages/{messageId}/save-as-note", messageId)
-                        .header("Authorization", "Bearer " + outsiderToken))
+        mockMvc.perform(post("/api/v2/messages/{messageId}/save-as-source", messageId)
+                        .header("Authorization", "Bearer " + outsiderToken)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"denied\",\"content\":\"body\"}"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ACCESS_DENIED"));
         mockMvc.perform(put("/api/v2/uploads/{uploadId}/chunks/0", uploadId)

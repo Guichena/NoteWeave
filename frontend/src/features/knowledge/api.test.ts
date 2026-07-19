@@ -84,7 +84,6 @@ describe("KnowledgeApi", () => {
     await api.appendVersion("item", { content: "新正文", source_message_id: null });
     await api.renameItem("item", "新标题");
     await api.deleteItem("item");
-    await api.saveMessageAsNote("message", "Note");
     await api.rebuildLinks("workspace");
     await api.rebuild("workspace");
     await api.autoFix("workspace");
@@ -96,7 +95,6 @@ describe("KnowledgeApi", () => {
     });
     expect(patch).toHaveBeenCalledWith("/api/v2/knowledge-items/item/title", { title: "新标题" });
     expect(deleteRequest).toHaveBeenCalledWith("/api/v2/knowledge-items/item");
-    expect(post).toHaveBeenCalledWith("/api/v2/messages/message/save-as-note", { title: "Note" });
     expect(post).toHaveBeenCalledWith("/api/v2/workspaces/workspace/wiki/rebuild-links", {});
     expect(post).toHaveBeenCalledWith("/api/v2/workspaces/workspace/wiki/rebuild", {});
     expect(post).toHaveBeenCalledWith("/api/v2/workspaces/workspace/wiki/auto-fix", {});

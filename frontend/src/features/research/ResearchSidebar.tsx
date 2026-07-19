@@ -32,6 +32,7 @@ export function ResearchSidebar(props: ResearchSidebarProps) {
     researchProfile,
     researchDepth,
     researchType,
+    researchRetrievalMode,
     researchScopeCount,
     researchQuestion,
     setResearchQuestion,
@@ -43,6 +44,7 @@ export function ResearchSidebar(props: ResearchSidebarProps) {
     setResearchTimeRange,
     setResearchDepth,
     setResearchType,
+    setResearchRetrievalMode,
     researchConstraintsText,
     setResearchConstraintsText,
     startDeepResearch,
@@ -142,6 +144,29 @@ export function ResearchSidebar(props: ResearchSidebarProps) {
                 <option value="CONCEPT_RESEARCH">CONCEPT_RESEARCH</option>
               </select>
             </label>
+            <div className="rail-field">
+              <span>资料获取模式</span>
+              <div className="research-filter-row" role="group" aria-label="Research retrieval mode">
+                {(["WEB_ONLY", "WEB_PLUS_SEEDS", "SOURCES_ONLY"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={researchRetrievalMode === mode ? "filter-pill active" : "filter-pill"}
+                    onClick={() => setResearchRetrievalMode(mode)}
+                    disabled={isBusy}
+                  >
+                    {mode === "WEB_ONLY" ? "仅网络" : mode === "WEB_PLUS_SEEDS" ? "网络 + 资料" : "仅资料"}
+                  </button>
+                ))}
+              </div>
+              <small>
+                {researchRetrievalMode === "WEB_ONLY"
+                  ? "默认从网络发现并归档证据；Workspace 负责归属和成果沉淀。"
+                  : researchRetrievalMode === "WEB_PLUS_SEEDS"
+                    ? "网络研究会结合下方显式选择的资料作为 seeds。"
+                    : "封闭资料研究，不调用外部网络搜索。"}
+              </small>
+            </div>
             <label className="rail-field">
               <span>显式约束</span>
               <textarea value={researchConstraintsText} onChange={(event) => setResearchConstraintsText(event.target.value)} rows={4} />

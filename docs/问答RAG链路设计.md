@@ -487,16 +487,22 @@ chat.completed
 chat.failed
 ```
 
-### 13.3 保存为结构化笔记
+### 13.3 回答沉淀（现行口径）
+
+QA 链路**不提供**回答直接沉淀接口。
+
+沉淀仅发生在 **Note 模式**：
 
 ```text
-POST /api/v2/messages/{messageId}/save-as-note
+POST /api/v2/messages/{messageId}/source-draft   # 生成中性 Markdown 草稿
+POST /api/v2/messages/{messageId}/save-as-source # 用户确认后写入资料池
 ```
 
 作用：
 
-- 将当前回答、引用和用户可编辑内容保存为工作台内的结构化笔记
-- 保留 `message_citation -> knowledge_version_citation` 的证据链
+- 把 Note 回答整理为中性 Markdown 知识点草稿
+- 用户确认标题/正文后，作为普通 `Source` 进入资料池（parse/index 与上传一致）
+- QA 继续只做聊天 + 资料 RAG，避免把带视角的回答静默灌入检索
 
 ## 14. 后端模块
 

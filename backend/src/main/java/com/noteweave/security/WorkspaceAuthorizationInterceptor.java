@@ -13,7 +13,8 @@ public class WorkspaceAuthorizationInterceptor implements HandlerInterceptor {
 
     private static final Pattern WORKSPACE_PATH = Pattern.compile("^/api/v2/workspaces/([^/]+)(?:/.*)?$");
     private static final Pattern KNOWLEDGE_ITEM_PATH = Pattern.compile("^/api/v2/knowledge-items/([^/]+)(?:/.*)?$");
-    private static final Pattern MESSAGE_PATH = Pattern.compile("^/api/v2/messages/([^/]+)/save-as-note$");
+    private static final Pattern MESSAGE_SOURCE_PATH =
+            Pattern.compile("^/api/v2/messages/([^/]+)/(save-as-source|source-draft)$");
     private static final Pattern TASK_PATH = Pattern.compile("^/api/v2/tasks/([^/]+)(?:/.*)?$");
     private static final Pattern CONVERSATION_PATH = Pattern.compile("^/api/v2/conversations/([^/]+)/messages$");
     private static final Pattern UPLOAD_PATH = Pattern.compile("^/api/v2/uploads/([^/]+)(?:/.*)?$");
@@ -38,8 +39,8 @@ public class WorkspaceAuthorizationInterceptor implements HandlerInterceptor {
             WorkspacePermission permission = HttpMethod.GET.matches(method)
                     ? WorkspacePermission.WORKSPACE_READ : WorkspacePermission.KNOWLEDGE_WRITE;
             guard.requireKnowledgeItemPermission(matcher.group(1), permission);
-        } else if ((matcher = MESSAGE_PATH.matcher(path)).matches()) {
-            guard.requireMessagePermission(matcher.group(1), WorkspacePermission.KNOWLEDGE_WRITE);
+        } else if ((matcher = MESSAGE_SOURCE_PATH.matcher(path)).matches()) {
+            guard.requireMessagePermission(matcher.group(1), WorkspacePermission.SOURCE_WRITE);
         } else if ((matcher = TASK_PATH.matcher(path)).matches()) {
             guard.requireTaskPermission(matcher.group(1), WorkspacePermission.WORKSPACE_READ);
         } else if ((matcher = CONVERSATION_PATH.matcher(path)).matches()) {

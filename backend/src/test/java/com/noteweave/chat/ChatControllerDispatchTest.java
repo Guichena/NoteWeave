@@ -33,6 +33,7 @@ class ChatControllerDispatchTest {
         ChatController controller = new ChatController(
                 chatService,
                 conversationTurnModule,
+                mock(NoteAnswerSourceService.class),
                 direct,
                 direct,
                 answerRunService,

@@ -62,22 +62,6 @@ public class KnowledgeCommandService {
     }
 
     @Transactional
-    public KnowledgeItemResponse saveMessageAsNote(
-            String messageId,
-            SaveNoteRequest request
-    ) {
-        MessageSnapshot message = loadAssistantMessage(messageId);
-        List<String> citationIds = citationIdsForMessage(messageId);
-        return createItemWithVersion(
-                message.workspaceId(),
-                "NOTE",
-                request.title(),
-                message.content(),
-                messageId,
-                citationIds);
-    }
-
-    @Transactional
     public KnowledgeItemResponse renameItem(
             String itemId,
             RenameKnowledgeItemRequest request

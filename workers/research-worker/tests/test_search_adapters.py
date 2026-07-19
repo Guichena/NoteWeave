@@ -17,6 +17,7 @@ from app.search_adapters import (
     HttpJsonSearchTransport,
     SeedSourceSearchAdapter,
     WorkspaceSearchAdapter,
+    build_web_search_adapter,
     build_search_query_plan,
     build_default_search_adapter,
 )
@@ -96,6 +97,14 @@ def test_default_search_adapter_should_use_workspace_only_without_external_key(m
     assert hits[0].source_id == "src-workspace"
     assert hits[0].adapter == "workspace"
     assert hits[0].source_quality == "WORKSPACE_SOURCE"
+
+
+def test_web_search_adapter_should_fail_explicitly_without_external_provider(monkeypatch) -> None:
+    monkeypatch.delenv("NOTEWEAVE_RESEARCH_SEARCH_API_KEY", raising=False)
+    monkeypatch.delenv("SERPER_API_KEY", raising=False)
+
+    with pytest.raises(RuntimeError, match="RESEARCH_WEB_PROVIDER_UNAVAILABLE"):
+        build_web_search_adapter()
 
 
 def test_seed_source_adapter_only_matches_explicitly_selected_seed_snapshots() -> None:

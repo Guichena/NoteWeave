@@ -2,6 +2,7 @@ import { apiClient, type ApiClient } from "../../shared/api";
 import {
   type CreateResearchRunInput,
   type ResearchCheckpoint,
+  type ResearchCollection,
   type ResearchRunDetail,
   type ResearchRunResponse,
   type ResearchRunSummary,
@@ -21,6 +22,13 @@ export class ResearchApi {
 
   getRun(workspaceId: string, researchRunId: string, init?: RequestInit) {
     return this.client.get<ResearchRunDetail>(`${this.runsPath(workspaceId)}/${researchRunId}`, init);
+  }
+
+  getCollection(workspaceId: string, researchRunId: string, init?: RequestInit) {
+    return this.client.get<ResearchCollection>(
+      `${this.runsPath(workspaceId)}/${researchRunId}/collection`,
+      init
+    );
   }
 
   getCheckpoint(workspaceId: string, researchRunId: string, checkpointNo: number, init?: RequestInit) {

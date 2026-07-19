@@ -105,14 +105,14 @@ Note 链路的回答行为绑定 `conversation_id`，因为它发生在某一次
 - 系统读取该会话的近期上下文理解问题，并通过 `Topic-Aware Rolling Context Window` 编译最近相关多轮对话
 - 系统只在当前会话所属工作台内做 Marginalia 式资料级检索
 - 本次回答保存为聊天消息，属于该会话
-- 如果用户点击“保存为 Note”，才会生成工作台级 `KnowledgeItem(type=NOTE)`
+- 如果用户点击“确认入库为资料”，系统会先生成中性 Markdown 草稿（模板优先，LLM 可用时润色），用户确认后写入工作台资料池 `Source`，与上传资料同一检索链路
 
 简单说：
 
 ```text
 Note 回答：conversation_id
 Note 检索资料边界：workspace_id
-保存后的 Note 对象：workspace_id
+确认入库后的资料：workspace Source（非 knowledge NOTE）
 ```
 
 其中连续对话上下文不会直接替代资料检索，而是先被编译成：

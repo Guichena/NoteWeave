@@ -15,9 +15,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class ResearchRunController {
 
     private final ResearchRunService researchRunService;
+    private final ResearchCollectionService researchCollectionService;
 
-    public ResearchRunController(ResearchRunService researchRunService) {
+    public ResearchRunController(
+            ResearchRunService researchRunService,
+            ResearchCollectionService researchCollectionService
+    ) {
         this.researchRunService = researchRunService;
+        this.researchCollectionService = researchCollectionService;
     }
 
     @GetMapping
@@ -47,6 +52,14 @@ public class ResearchRunController {
             @PathVariable String researchRunId
     ) {
         return ApiResponse.success(researchRunService.evidenceManifest(workspaceId, researchRunId));
+    }
+
+    @GetMapping("/{researchRunId}/collection")
+    ApiResponse<ResearchCollectionResponse> getResearchCollection(
+            @PathVariable String workspaceId,
+            @PathVariable String researchRunId
+    ) {
+        return ApiResponse.success(researchCollectionService.get(workspaceId, researchRunId));
     }
 
     @GetMapping("/{researchRunId}/checkpoints")

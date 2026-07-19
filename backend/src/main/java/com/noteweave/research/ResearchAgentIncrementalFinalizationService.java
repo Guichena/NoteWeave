@@ -14,10 +14,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class ResearchAgentIncrementalFinalizationService {
     private final JdbcTemplate jdbcTemplate;
     private final ResearchAgentIncrementalFinalizationFaultInjector faultInjector;
+    private final ResearchCollectionService researchCollectionService;
 
     public ResearchAgentIncrementalFinalizationService(JdbcTemplate jdbcTemplate,
-                                                        ResearchAgentIncrementalFinalizationFaultInjector faultInjector) {
+                                                        ResearchAgentIncrementalFinalizationFaultInjector faultInjector,
+                                                        ResearchCollectionService researchCollectionService) {
         this.jdbcTemplate = jdbcTemplate; this.faultInjector = faultInjector;
+        this.researchCollectionService = researchCollectionService;
     }
 
     @Transactional
@@ -33,6 +36,7 @@ public class ResearchAgentIncrementalFinalizationService {
                 throw new BusinessException("RESEARCH_AGENT_FINALIZATION_INTEGRITY_ERROR", "Final report and artifact digest do not match");
             }
             persistEvidenceManifest(run, run.markdown(), loadVerifiedCells(run.id()));
+            researchCollectionService.materialize(run.id());
             return new FinalizationReceipt(run.id(), artifact.id(), artifact.digest(), run.title(), run.markdown(), true);
         }
         if (!"RUNNING".equals(run.status())) throw new BusinessException("RESEARCH_AGENT_FINALIZATION_GATE_REJECTED", "Run is not finalizable");
@@ -62,6 +66,7 @@ public class ResearchAgentIncrementalFinalizationService {
                 """, artifactId, runId, reportDigest, title, markdown, cells.size());
         jdbcTemplate.update("update research_run set status = 'COMPLETED', final_report_title = ?, final_report_markdown = ?, updated_at = current_timestamp where id = ? and status = 'RUNNING'", title, markdown, runId);
         persistEvidenceManifest(run, markdown, cells);
+        researchCollectionService.materialize(run.id());
         faultInjector.checkpoint(ResearchAgentIncrementalFinalizationFaultInjector.Stage.AFTER_RUN_REPORT_WRITE);
         jdbcTemplate.update("update task set task_status = 'COMPLETED', progress_phase = 'RESEARCH_REPORTED', progress_message = ?, updated_at = current_timestamp where id = ? and task_status not in ('COMPLETED','CANCELLED','FAILED')", title, run.taskId());
         jdbcTemplate.update("insert into research_trace(id, research_run_id, trace_type, trace_message, payload_json) values (?, ?, 'INCREMENTAL_FINALIZED', ?, ?)", Ids.newId(), runId, title, "{\"cell_count\":" + cells.size() + "}");
