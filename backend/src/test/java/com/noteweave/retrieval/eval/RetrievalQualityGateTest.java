@@ -87,28 +87,28 @@ class RetrievalQualityGateTest {
         var snapshot = new RetrievalShadowSnapshot(
                 RetrievalShadowComparator.SHADOW_SCHEMA_VERSION,
                 "v2-profile-shadow",
-                "qa-retrieval-v2",
+                "qa-weknora-hybrid-v1",
                 goldSet.cases().stream().map(goldCase -> {
                     var ranked = baseline.rank(goldCase);
                     return new CaseRanking(goldCase.id(), 1L, ranked.size(), ranked);
                 }).toList());
         var comparison = new RetrievalShadowComparator().compare(goldSet, snapshot);
-        var v2Policy = withStrategyProfile(genericPolicy, "qa-retrieval-v2");
+        var v2Policy = withStrategyProfile(genericPolicy, "qa-weknora-hybrid-v1");
         var legacyPolicy = withStrategyProfile(genericPolicy, "qa-retrieval-legacy-v1");
 
         var result = new RetrievalQualityGate().evaluate(comparison, v2Policy);
 
         assertThat(result.passed()).isTrue();
-        assertThat(result.strategyProfile()).isEqualTo("qa-retrieval-v2");
+        assertThat(result.strategyProfile()).isEqualTo("qa-weknora-hybrid-v1");
         assertThatThrownBy(() -> new RetrievalQualityGate().evaluate(comparison, legacyPolicy))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("strategy profile does not match")
                 .hasMessageContaining("policy=qa-retrieval-legacy-v1")
-                .hasMessageContaining("comparison=qa-retrieval-v2");
+                .hasMessageContaining("comparison=qa-weknora-hybrid-v1");
         assertThatThrownBy(() -> new RetrievalQualityGate().evaluate(comparison, genericPolicy))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("policy=<generic>")
-                .hasMessageContaining("comparison=qa-retrieval-v2");
+                .hasMessageContaining("comparison=qa-weknora-hybrid-v1");
     }
 
     @Test

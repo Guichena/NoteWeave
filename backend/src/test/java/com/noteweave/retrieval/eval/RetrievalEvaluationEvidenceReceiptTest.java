@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class RetrievalEvaluationEvidenceReceiptTest {
-    private static final String PROFILE = "qa-retrieval-v2";
+    private static final String PROFILE = "qa-weknora-hybrid-v1";
     private static final Instant GENERATED_AT = Instant.parse("2026-07-16T00:00:00Z");
 
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();

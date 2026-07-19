@@ -17,7 +17,7 @@ public class NoteRecallRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public List<CandidateSource> findCandidates(String workspaceId) {
+    public List<CandidateSource> findCurrentSources(String workspaceId) {
         return jdbcTemplate.query("""
                 select s.id, s.title, s.source_type, s.updated_at,
                        coalesce(s.generated_by, '') as generated_by,
@@ -29,12 +29,15 @@ public class NoteRecallRepository {
                        count(distinct w.id) as window_count,
                        coalesce(min(c.content), '') as sample_text
                 from source s
-                left join source_chunk c on c.source_id = s.id
+                left join source_snapshot ss on ss.source_id = s.id
+                  and ss.index_status = 'INDEXED'
+                  and ss.version_no = (select max(current_ss.version_no) from source_snapshot current_ss
+                                       where current_ss.source_id = s.id and current_ss.index_status = 'INDEXED')
+                left join source_chunk c on c.source_id = s.id and c.source_snapshot_id = ss.id
                 left join source_window w on w.source_chunk_id = c.id
-                where s.workspace_id = ? and s.status = 'READY'
+                where s.workspace_id = ? and s.status = 'READY' and s.index_status = 'INDEXED'
                 group by s.id, s.title, s.source_type, s.updated_at, s.summary, s.tags_json, s.metadata_json
-                order by s.updated_at desc
-                limit 40
+                order by s.id
                 """, (rs, rowNum) -> new CandidateSource(
                 rs.getString("id"),
                 rs.getString("title"),

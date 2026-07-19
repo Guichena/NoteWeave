@@ -15,8 +15,8 @@ class QaRetrievalStrategyProfileTest {
     @Test
     void shouldExposeTheSingleStableV2Tuple() {
         assertThat(QaRetrievalStrategyProfile.V2)
-                .returns("qa-retrieval-v2", QaRetrievalStrategyProfile::profileVersion)
-                .returns("qa-passage-v2", QaRetrievalStrategyProfile::planVersion)
+                .returns("qa-weknora-hybrid-v1", QaRetrievalStrategyProfile::profileVersion)
+                .returns("qa-weknora-hybrid-v1", QaRetrievalStrategyProfile::planVersion)
                 .returns(QaEvidenceRelevancePolicy.POLICY_VERSION_V2,
                         QaRetrievalStrategyProfile::relevancePolicyVersion)
                 .returns(true, QaRetrievalStrategyProfile::v2Enabled);

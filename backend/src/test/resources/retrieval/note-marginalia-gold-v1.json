@@ -1,0 +1,50 @@
+﻿{
+  "schemaVersion": "retrieval-gold-v1",
+  "datasetVersion": "note-marginalia-gold-v1",
+  "cases": [
+    {
+      "id": "note-semantic-source-recall",
+      "mode": "NOTE",
+      "workspaceId": "workspace-note-gold",
+      "query": "恢复中断的长时研究",
+      "allowedSourceIds": ["source-checkpoint", "source-ui"],
+      "topK": 2,
+      "shouldRefuse": false,
+      "relevantEvidenceIds": ["note-window-checkpoint"],
+      "expectedCitationIds": ["citation-checkpoint"],
+      "candidates": [
+        {"evidenceId":"note-window-checkpoint","sourceId":"source-checkpoint","title":"Durable research checkpoints","content":"The source describes resumable checkpoints and verified continuation windows.","sourceType":"PDF","citationIds":["citation-checkpoint"]},
+        {"evidenceId":"note-window-ui","sourceId":"source-ui","title":"UI colors","content":"The source describes interface colors and typography.","sourceType":"MARKDOWN","citationIds":["citation-ui"]}
+      ]
+    },
+    {
+      "id": "note-journal-assisted",
+      "mode": "NOTE",
+      "workspaceId": "workspace-note-gold",
+      "query": "上次关于检索门禁的笔记引用了哪些资料",
+      "allowedSourceIds": ["source-release-gate", "source-unrelated"],
+      "topK": 2,
+      "shouldRefuse": false,
+      "relevantEvidenceIds": ["note-window-release-gate"],
+      "expectedCitationIds": ["citation-release-gate"],
+      "candidates": [
+        {"evidenceId":"note-window-release-gate","sourceId":"source-release-gate","title":"Retrieval release gate","content":"The journal entry cites this source for dual index coverage and zero degraded gold runs.","sourceType":"MARKDOWN","citationIds":["citation-release-gate"]},
+        {"evidenceId":"note-window-unrelated","sourceId":"source-unrelated","title":"Unrelated note","content":"A generic unrelated note.","sourceType":"MARKDOWN","citationIds":["citation-unrelated"]}
+      ]
+    },
+    {
+      "id": "note-stale-journal-rejection",
+      "mode": "NOTE",
+      "workspaceId": "workspace-note-gold",
+      "query": "已删除资料中的旧笔记结论",
+      "allowedSourceIds": ["source-current"],
+      "topK": 2,
+      "shouldRefuse": true,
+      "relevantEvidenceIds": [],
+      "expectedCitationIds": [],
+      "candidates": [
+        {"evidenceId":"note-window-deleted","sourceId":"source-deleted","title":"Deleted source","content":"Stale journal evidence from a deleted source.","sourceType":"PDF","citationIds":["citation-deleted"]}
+      ]
+    }
+  ]
+}

@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class QaAnswerModeStrategy implements AnswerModeStrategy {
 
-    public static final String V2_PLAN_VERSION = "qa-passage-v2";
+    public static final String V2_PLAN_VERSION = "qa-weknora-hybrid-v1";
     /** All new QA AnswerRuns use this single V2 plan version. */
     public static final String PLAN_VERSION = V2_PLAN_VERSION;
     public static final String ATTRIBUTE_QUESTION_TYPE = "question_type";
@@ -48,6 +48,38 @@ public class QaAnswerModeStrategy implements AnswerModeStrategy {
                 profile.selectionPolicyVersion());
         filters.put(QaRetrievalStrategyProfile.FILTER_V2_ENABLED,
                 Boolean.toString(profile.v2Enabled()));
+        filters.put(QaRetrievalStrategyProfile.FILTER_QUERY_REWRITE_VERSION,
+                QaRetrievalStrategyProfile.QUERY_REWRITE_VERSION);
+        filters.put(QaRetrievalStrategyProfile.FILTER_QUERY_EXPANSION_POLICY,
+                QaRetrievalStrategyProfile.QUERY_EXPANSION_POLICY);
+        filters.put(QaRetrievalStrategyProfile.FILTER_ORIGINAL_QUERY,
+                context.attributes().getOrDefault("request_content", context.query()));
+        filters.put(QaRetrievalStrategyProfile.FILTER_RETRIEVAL_QUERIES, context.query());
+        filters.put(QaRetrievalStrategyProfile.FILTER_MUST_TERMS,
+                context.attributes().getOrDefault("topic_anchor", ""));
+        filters.put(QaRetrievalStrategyProfile.FILTER_PREFERRED_TERMS,
+                preferredTerms(context.attributes().getOrDefault("request_content", context.query())));
+        filters.put(QaRetrievalStrategyProfile.FILTER_LANGUAGE, language(context.query()));
+        filters.put(QaRetrievalStrategyProfile.FILTER_QUESTION_TYPE,
+                context.attributes().getOrDefault("question_type", "definition"));
+        filters.put(QaRetrievalStrategyProfile.FILTER_VECTOR_OVER_RECALL,
+                Integer.toString(QaRetrievalStrategyProfile.RECALL_LIMIT));
+        filters.put(QaRetrievalStrategyProfile.FILTER_KEYWORD_OVER_RECALL,
+                Integer.toString(QaRetrievalStrategyProfile.RECALL_LIMIT));
+        filters.put(QaRetrievalStrategyProfile.FILTER_FUSION_LIMIT,
+                Integer.toString(QaRetrievalStrategyProfile.FUSION_LIMIT));
+        filters.put(QaRetrievalStrategyProfile.FILTER_RERANK_TOP_N,
+                Integer.toString(QaRetrievalStrategyProfile.RERANK_LIMIT));
+        filters.put(QaRetrievalStrategyProfile.FILTER_RRF_K,
+                Integer.toString(QaRetrievalStrategyProfile.RRF_K));
+        filters.put(QaRetrievalStrategyProfile.FILTER_VECTOR_WEIGHT,
+                Double.toString(QaRetrievalStrategyProfile.VECTOR_WEIGHT));
+        filters.put(QaRetrievalStrategyProfile.FILTER_KEYWORD_WEIGHT,
+                Double.toString(QaRetrievalStrategyProfile.KEYWORD_WEIGHT));
+        filters.put(QaRetrievalStrategyProfile.FILTER_VECTOR_THRESHOLD,
+                Double.toString(QaRetrievalStrategyProfile.VECTOR_THRESHOLD));
+        filters.put(QaRetrievalStrategyProfile.FILTER_KEYWORD_THRESHOLD,
+                Double.toString(QaRetrievalStrategyProfile.KEYWORD_THRESHOLD));
         if (!context.sourceScope().isEmpty()) {
             filters.put("source_ids", String.join(",", context.sourceScope().stream().sorted().toList()));
         }
@@ -66,6 +98,21 @@ public class QaAnswerModeStrategy implements AnswerModeStrategy {
                         0,
                         0)
         );
+    }
+
+    private String preferredTerms(String query) {
+        if (query == null || query.isBlank()) return "";
+        return java.util.Arrays.stream(query.trim().split("[^\\p{IsHan}A-Za-z0-9+_./-]+"))
+                .map(String::trim).filter(term -> term.length() >= 2).distinct().limit(12)
+                .collect(java.util.stream.Collectors.joining(","));
+    }
+
+    private String language(String query) {
+        if (query != null && query.codePoints().anyMatch(codePoint ->
+                Character.UnicodeScript.of(codePoint) == Character.UnicodeScript.HAN)) {
+            return "zh";
+        }
+        return "en";
     }
 
     @Override
@@ -120,7 +167,7 @@ public class QaAnswerModeStrategy implements AnswerModeStrategy {
             }
         }
         answer.append("- 检索边界：").append(retrievalBoundary(context)).append("\n")
-                .append("- 检索策略：关键词召回 + 结构化元数据过滤 + 词法充分性校验 + 来源覆盖\n")
+                .append("- 检索策略：Chunk 向量召回 + BM25 关键词召回 + 加权 RRF + 真实 rerank + 来源覆盖\n")
                 .append("- 来源覆盖：").append(sourceTitles.size()).append(" 个资料来源");
         if (!sourceTitles.isEmpty()) {
             answer.append("（").append(String.join("、", sourceTitles)).append("）");

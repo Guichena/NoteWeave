@@ -66,7 +66,7 @@ class QaAnswerPipelineContractTest {
         assertThat(bundle.evidence()).extracting(evidence -> evidence.evidenceId())
                 .containsExactly("passage:selected", "passage:excluded");
         assertThat(bundle.metadata())
-                .containsEntry("strategy_profile", "qa-retrieval-v2")
+                .containsEntry("strategy_profile", "qa-weknora-hybrid-v1")
                 .containsEntry("relevance_policy", "qa-lexical-sufficiency-v2")
                 .containsEntry("selection_policy", "qa-source-diverse-budget-v2");
         assertThat(prompt.referencedEvidenceIds())

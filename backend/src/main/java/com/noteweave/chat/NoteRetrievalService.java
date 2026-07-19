@@ -432,22 +432,44 @@ public class NoteRetrievalService {
             int score,
             String readRole,
             int anchorWindowNo,
-            String readObjective
+            String readObjective,
+            double rawScore,
+            double fusedScore,
+            double rerankScore
     ) {
+        public ReadingWindow(
+                String chunkId, String sourceId, String sourceSnapshotId, int chunkNo,
+                String heading, String title, String generatedBy, String generatedRefId,
+                int windowNo, String content, String locationInfo, int score,
+                String readRole, int anchorWindowNo, String readObjective
+        ) {
+            this(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy,
+                    generatedRefId, windowNo, content, locationInfo, score, readRole,
+                    anchorWindowNo, readObjective, score, score, score);
+        }
+
         ReadingWindow withScore(int nextScore) {
-            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy, generatedRefId, windowNo, content, locationInfo, nextScore, readRole, anchorWindowNo, readObjective);
+            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy, generatedRefId, windowNo, content, locationInfo, nextScore, readRole, anchorWindowNo, readObjective, rawScore, nextScore, rerankScore);
+        }
+
+        ReadingWindow withRawScore(double nextRawScore) {
+            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy, generatedRefId, windowNo, content, locationInfo, score, readRole, anchorWindowNo, readObjective, nextRawScore, fusedScore, rerankScore);
+        }
+
+        ReadingWindow withRerankScore(double nextRerankScore) {
+            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy, generatedRefId, windowNo, content, locationInfo, (int) Math.round(nextRerankScore * 1000), readRole, anchorWindowNo, readObjective, rawScore, fusedScore, nextRerankScore);
         }
 
         ReadingWindow withReadRole(String nextReadRole) {
-            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy, generatedRefId, windowNo, content, locationInfo, score, nextReadRole, anchorWindowNo, readObjective);
+            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy, generatedRefId, windowNo, content, locationInfo, score, nextReadRole, anchorWindowNo, readObjective, rawScore, fusedScore, rerankScore);
         }
 
         ReadingWindow withAnchorWindowNo(int nextAnchorWindowNo) {
-            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy, generatedRefId, windowNo, content, locationInfo, score, readRole, nextAnchorWindowNo, readObjective);
+            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy, generatedRefId, windowNo, content, locationInfo, score, readRole, nextAnchorWindowNo, readObjective, rawScore, fusedScore, rerankScore);
         }
 
         ReadingWindow withReadObjective(String nextReadObjective) {
-            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy, generatedRefId, windowNo, content, locationInfo, score, readRole, anchorWindowNo, nextReadObjective);
+            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy, generatedRefId, windowNo, content, locationInfo, score, readRole, anchorWindowNo, nextReadObjective, rawScore, fusedScore, rerankScore);
         }
 
     }
@@ -518,8 +540,22 @@ public class NoteRetrievalService {
             List<CandidateSource> candidateSources,
             List<CandidateSource> relationExpansionSources,
             List<CandidateSource> verifySources,
-            NoteRecallTrace trace
+            NoteRecallTrace trace,
+            boolean degraded,
+            List<String> degradationReasons,
+            Map<String, Long> measurements
     ) {
+        public NoteRecallPlan(List<NoteJournalHit> journalHits, List<CandidateSource> candidateSources,
+                              List<CandidateSource> relationExpansionSources,
+                              List<CandidateSource> verifySources, NoteRecallTrace trace) {
+            this(journalHits, candidateSources, relationExpansionSources, verifySources,
+                    trace, false, List.of(), Map.of());
+        }
+
+        public NoteRecallPlan {
+            degradationReasons = degradationReasons == null ? List.of() : List.copyOf(degradationReasons);
+            measurements = measurements == null ? Map.of() : Map.copyOf(measurements);
+        }
     }
 
     public record NoteRecallTrace(
@@ -528,10 +564,17 @@ public class NoteRetrievalService {
             int relationExpansionCount,
             int verifyBatchCount,
             int metadataScoreSum,
+            int semanticScoreSum,
             int noteScoreSum,
             int relationScoreSum,
             int readinessScoreSum
     ) {
+        public NoteRecallTrace(int journalHitCount, int candidateCount, int relationExpansionCount,
+                               int verifyBatchCount, int metadataScoreSum, int noteScoreSum,
+                               int relationScoreSum, int readinessScoreSum) {
+            this(journalHitCount, candidateCount, relationExpansionCount, verifyBatchCount,
+                    metadataScoreSum, 0, noteScoreSum, relationScoreSum, readinessScoreSum);
+        }
     }
 
     public record NoteEntryMetadata(

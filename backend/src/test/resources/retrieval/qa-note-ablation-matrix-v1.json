@@ -1,0 +1,7 @@
+﻿{
+  "schemaVersion": "retrieval-ablation-matrix-v1",
+  "reportVersion": "qa-note-final-ablation-v1",
+  "qa": ["keyword-only", "vector-only", "hybrid-rrf", "hybrid-rrf-rerank", "full-pipeline-evidence-budget"],
+  "note": ["metadata-only", "metadata-journal", "metadata-semantic", "metadata-journal-semantic", "full-recall-relations", "full-recall-relations-rerank-quota"],
+  "requiredMetrics": ["recallAtK", "mrr", "ndcgAtK", "citationCoverage", "scopeViolationCount", "p95LatencyMicros"]
+}

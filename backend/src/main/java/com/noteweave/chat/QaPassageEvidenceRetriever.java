@@ -64,7 +64,7 @@ public class QaPassageEvidenceRetriever implements EvidenceRetriever {
         metadata.put("match_reason", text(chunk.matchReason()));
         metadata.put("raw_title", text(chunk.title()));
         metadata.put("freshness_status", "CURRENT_AT_RETRIEVAL");
-        double fusedScore = chunk.score() * weight;
+        double fusedScore = chunk.fusedScore() * weight;
         return new EvidenceBundle.Evidence(
                 "passage:" + chunk.chunkId(),
                 "PASSAGE",
@@ -76,9 +76,9 @@ public class QaPassageEvidenceRetriever implements EvidenceRetriever {
                 displayTitle(chunk.title(), chunk.generatedBy(), chunk.generatedRefId()),
                 chunk.content(),
                 chunk.locationInfo(),
-                chunk.score(),
+                chunk.rawScore(),
                 fusedScore,
-                fusedScore,
+                chunk.rerankScore(),
                 contextScope(chunk.sourceId()),
                 java.time.Instant.now(),
                 chunk.matchReason(),

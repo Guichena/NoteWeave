@@ -281,7 +281,7 @@ class Phase1And2ContractTest {
                         org.hamcrest.Matchers.isOneOf("GENERATING", "FINALIZING", "COMPLETED")))
                 .andExpect(jsonPath("$.data.revision_status").value(
                         org.hamcrest.Matchers.isOneOf("STREAMING", "FINAL")))
-                .andExpect(jsonPath("$.data.retrieval_plan_version").value("qa-passage-v2"))
+                .andExpect(jsonPath("$.data.retrieval_plan_version").value("qa-weknora-hybrid-v1"))
                 .andExpect(jsonPath("$.data.maximum_output_tokens").value(1200))
                 .andExpect(jsonPath("$.data.retrieval_degraded").value(true))
                 .andExpect(jsonPath("$.data.retrieval_degradation_reasons")
@@ -292,7 +292,7 @@ class Phase1And2ContractTest {
                 from message_revision
                 where answer_run_id = ? and revision_no = 1
                 """, answerRunId);
-        assertThat(revisionContract.get("prompt_version")).isEqualTo("qa-passage-v2");
+        assertThat(revisionContract.get("prompt_version")).isEqualTo("qa-weknora-hybrid-v1");
         assertThat(revisionContract.get("evidence_bundle_ref").toString())
                 .startsWith("evidence-bundle:");
 
@@ -305,7 +305,7 @@ class Phase1And2ContractTest {
                 retrievalSnapshots.get("retrieval_plan_json").toString());
         JsonNode persistedBundle = objectMapper.readTree(
                 retrievalSnapshots.get("evidence_bundle_json").toString());
-        assertThat(persistedPlan.path("version").asText()).isEqualTo("qa-passage-v2");
+        assertThat(persistedPlan.path("version").asText()).isEqualTo("qa-weknora-hybrid-v1");
         assertThat(persistedPlan.path("steps").get(0).path("channel").asText())
                 .isEqualTo("QA_PASSAGE");
         assertThat(persistedPlan.path("budget").path("max_evidence").asInt()).isEqualTo(6);
@@ -314,7 +314,7 @@ class Phase1And2ContractTest {
         assertThat(persistedPlan.path("steps").get(0).path("filters")
                 .path("selection_policy").asText()).isEqualTo("qa-source-diverse-budget-v2");
         assertThat(persistedPlan.path("steps").get(0).path("filters")
-                .path("strategy_profile").asText()).isEqualTo("qa-retrieval-v2");
+                .path("strategy_profile").asText()).isEqualTo("qa-weknora-hybrid-v1");
         assertThat(persistedBundle.path("schema_version").asText())
                 .isEqualTo("evidence-bundle-snapshot-v1");
         assertThat(persistedBundle.path("evidence").get(0).path("source_snapshot_id").asText())
@@ -332,8 +332,8 @@ class Phase1And2ContractTest {
         JsonNode retrievalSummary = objectMapper.readTree(retrievalSummaryPayload);
         assertThat(retrievalSummary.path("trace_schema_version").asText())
                 .isEqualTo("retrieval-execution-trace-v1");
-        assertThat(retrievalSummary.path("plan_version").asText()).isEqualTo("qa-passage-v2");
-        assertThat(retrievalSummary.path("strategy_profile").asText()).isEqualTo("qa-retrieval-v2");
+        assertThat(retrievalSummary.path("plan_version").asText()).isEqualTo("qa-weknora-hybrid-v1");
+        assertThat(retrievalSummary.path("strategy_profile").asText()).isEqualTo("qa-weknora-hybrid-v1");
         assertThat(retrievalSummary.path("relevance_policy").asText())
                 .isEqualTo("qa-lexical-sufficiency-v2");
         assertThat(retrievalSummary.path("selection_policy").asText())

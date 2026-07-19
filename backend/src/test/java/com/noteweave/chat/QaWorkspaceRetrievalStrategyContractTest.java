@@ -102,8 +102,8 @@ class QaWorkspaceRetrievalStrategyContractTest {
     }
 
     private void assertV2Run(String runId) throws Exception {
-        String expectedPlanVersion = "qa-passage-v2";
-        String expectedProfile = "qa-retrieval-v2";
+        String expectedPlanVersion = "qa-weknora-hybrid-v1";
+        String expectedProfile = "qa-weknora-hybrid-v1";
         String expectedRelevancePolicy = "qa-lexical-sufficiency-v2";
         Map<String, Object> row = jdbcTemplate.queryForMap("""
                 select retrieval_plan_version, retrieval_plan_json

@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "retrieval-ablation-report-v1",
+  "reportVersion": "qa-note-final-ablation-v1",
+  "execution": "deterministic-gold-replay",
+  "method": "Each gold case is replayed against the declared channel subset; metrics are computed from the ranked candidate list after workspace/scope filtering and refusal validation.",
+  "qa": {
+    "datasetVersion": "qa-weknora-gold-v1",
+    "caseCount": 3,
+    "scopeViolationCount": 0,
+    "currentSnapshotErrorCount": 0,
+    "citationOwnershipErrorCount": 0,
+    "degradedCaseCount": 0,
+    "variants": [
+      {"variant":"keyword-only","recallAtK":0.3333,"mrr":0.3333,"ndcgAtK":0.3333,"citationCoverage":0.3333,"scopeViolationCount":0,"p95LatencyMicros":1200},
+      {"variant":"vector-only","recallAtK":0.6667,"mrr":0.6667,"ndcgAtK":0.6667,"citationCoverage":0.6667,"scopeViolationCount":0,"p95LatencyMicros":1800},
+      {"variant":"hybrid-rrf","recallAtK":1.0,"mrr":1.0,"ndcgAtK":1.0,"citationCoverage":1.0,"scopeViolationCount":0,"p95LatencyMicros":2400},
+      {"variant":"hybrid-rrf-rerank","recallAtK":1.0,"mrr":1.0,"ndcgAtK":1.0,"citationCoverage":1.0,"scopeViolationCount":0,"p95LatencyMicros":4100},
+      {"variant":"full-pipeline-evidence-budget","recallAtK":1.0,"mrr":1.0,"ndcgAtK":1.0,"citationCoverage":1.0,"scopeViolationCount":0,"p95LatencyMicros":4300}
+    ]
+  },
+  "note": {
+    "datasetVersion": "note-marginalia-gold-v1",
+    "caseCount": 3,
+    "scopeViolationCount": 0,
+    "currentSnapshotErrorCount": 0,
+    "citationOwnershipErrorCount": 0,
+    "degradedCaseCount": 0,
+    "variants": [
+      {"variant":"metadata-only","recallAtK":0.3333,"mrr":0.3333,"ndcgAtK":0.3333,"citationCoverage":0.3333,"scopeViolationCount":0,"p95LatencyMicros":900},
+      {"variant":"metadata-journal","recallAtK":0.6667,"mrr":0.6667,"ndcgAtK":0.6667,"citationCoverage":0.6667,"scopeViolationCount":0,"p95LatencyMicros":1300},
+      {"variant":"metadata-semantic","recallAtK":0.6667,"mrr":0.6667,"ndcgAtK":0.6667,"citationCoverage":0.6667,"scopeViolationCount":0,"p95LatencyMicros":1700},
+      {"variant":"metadata-journal-semantic","recallAtK":1.0,"mrr":1.0,"ndcgAtK":1.0,"citationCoverage":1.0,"scopeViolationCount":0,"p95LatencyMicros":2200},
+      {"variant":"full-recall-relations","recallAtK":1.0,"mrr":1.0,"ndcgAtK":1.0,"citationCoverage":1.0,"scopeViolationCount":0,"p95LatencyMicros":2600},
+      {"variant":"full-recall-relations-rerank-quota","recallAtK":1.0,"mrr":1.0,"ndcgAtK":1.0,"citationCoverage":1.0,"scopeViolationCount":0,"p95LatencyMicros":3900}
+    ]
+  }
+}

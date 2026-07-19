@@ -57,8 +57,8 @@ class Phase3NoteWikiContractTest {
                 join message_revision mr on mr.answer_run_id = r.id and mr.revision_no = 1
                 where r.id = ?
                 """, noteAnswerRunId);
-        assertThat(noteRunContract.get("retrieval_plan_version")).isEqualTo("note-marginalia-v1");
-        assertThat(noteRunContract.get("prompt_version")).isEqualTo("note-marginalia-v1");
+        assertThat(noteRunContract.get("retrieval_plan_version")).isEqualTo("note-marginalia-funnel-v1");
+        assertThat(noteRunContract.get("prompt_version")).isEqualTo("note-marginalia-funnel-v1");
         assertThat(noteRunContract.get("evidence_bundle_ref").toString())
                 .startsWith("evidence-bundle:");
 

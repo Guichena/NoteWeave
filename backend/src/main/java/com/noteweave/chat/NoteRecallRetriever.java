@@ -5,6 +5,9 @@ import com.noteweave.chat.NoteRetrievalService.NoteJournalHit;
 import com.noteweave.chat.NoteRetrievalService.NoteRecallPlan;
 import com.noteweave.chat.NoteRetrievalService.NoteRecallTrace;
 import com.noteweave.chat.NoteRetrievalService.NoteRelationSignal;
+import com.noteweave.retrieval.note.NoteSourceRerankService;
+import com.noteweave.retrieval.note.NoteSourceSearchPort;
+import com.noteweave.retrieval.provider.EmbeddingClient;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -14,6 +17,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Component
 public class NoteRecallRetriever {
@@ -21,6 +25,10 @@ public class NoteRecallRetriever {
     private final NoteJournalRetriever journalRetriever;
     private final NoteRelationGraph relationGraph;
     private final NoteRecallRanker ranker;
+    private final EmbeddingClient embeddingClient;
+    private final NoteSourceSearchPort sourceSearchPort;
+    private final NoteSourceRerankService rerankService;
+    private final NoteTagResolver tagResolver;
 
     public NoteRecallRetriever(
             NoteRecallRepository repository,
@@ -28,20 +36,68 @@ public class NoteRecallRetriever {
             NoteRelationGraph relationGraph,
             NoteRecallRanker ranker
     ) {
+        this(repository, journalRetriever, relationGraph, ranker, null, null, null, null);
+    }
+
+    @Autowired
+    public NoteRecallRetriever(
+            NoteRecallRepository repository,
+            NoteJournalRetriever journalRetriever,
+            NoteRelationGraph relationGraph,
+            NoteRecallRanker ranker,
+            EmbeddingClient embeddingClient,
+            NoteSourceSearchPort sourceSearchPort,
+            NoteSourceRerankService rerankService,
+            NoteTagResolver tagResolver
+    ) {
         this.repository = repository;
         this.journalRetriever = journalRetriever;
         this.relationGraph = relationGraph;
         this.ranker = ranker;
+        this.embeddingClient = embeddingClient;
+        this.sourceSearchPort = sourceSearchPort;
+        this.rerankService = rerankService;
+        this.tagResolver = tagResolver;
     }
 
     public NoteRecallPlan retrieve(String workspaceId, String query) {
+        List<String> degradationReasons = new ArrayList<>();
         Set<String> terms = extractTerms(query);
         Map<String, Integer> noteSignals = journalRetriever.sourceSignals(workspaceId, terms);
         List<NoteJournalHit> journalHits = journalRetriever.retrieve(workspaceId, query);
         Map<String, Set<String>> sourceIdsByNote = repository.sourceIdsByNote(workspaceId);
         Map<String, Set<String>> sourceIdsByAnsweredTurn = repository.sourceIdsByAnsweredTurn(workspaceId);
-        List<CandidateSource> candidates = repository.findCandidates(workspaceId);
-        Map<String, NoteRecallRanker.MetadataRank> metadataRanks = ranker.rankMetadata(candidates, terms);
+        List<CandidateSource> candidates = repository.findCurrentSources(workspaceId);
+        NoteTagResolver.Resolution tagResolution = tagResolver == null
+                ? new NoteTagResolver.Resolution(List.of(), List.copyOf(terms), Map.of())
+                : tagResolver.resolve(terms, candidates);
+        Map<String, Integer> tagScores = tagResolution.sourceScores();
+        Map<String, Integer> semanticScores = new HashMap<>();
+        Map<String, Integer> indexedMetadataScores = new HashMap<>();
+        if (embeddingClient != null && sourceSearchPort != null && embeddingClient.isEnabled()) {
+            try {
+                var vector = embeddingClient.embedQuery(query).singleVector();
+                int rank = 0;
+                for (var hit : sourceSearchPort.semanticRetrieve(workspaceId, vector, 80)) {
+                    semanticScores.put(hit.sourceId(), weightedRankScore(++rank, 1.0d));
+                }
+                rank = 0;
+                for (var hit : sourceSearchPort.metadataRetrieve(workspaceId, query, 80)) {
+                    indexedMetadataScores.put(hit.sourceId(), weightedRankScore(++rank, 0.8d));
+                }
+            } catch (RuntimeException ex) {
+                degradationReasons.add("NOTE_SOURCE_RECALL_UNAVAILABLE");
+            }
+        } else {
+            degradationReasons.add("NOTE_SOURCE_RECALL_UNAVAILABLE");
+        }
+        // Test/dev environments may intentionally disable the provider; retain the local
+        // metadata scorer only as an explicit degraded compatibility path. Production with
+        // an enabled provider uses the indexed metadata channel above.
+        boolean indexedRecallAvailable = !semanticScores.isEmpty() || !indexedMetadataScores.isEmpty();
+        Map<String, NoteRecallRanker.MetadataRank> metadataRanks = indexedRecallAvailable
+                ? Map.of()
+                : ranker.rankMetadata(candidates, terms);
 
         Set<String> anchorSourceIds = new LinkedHashSet<>();
         candidates.stream()
@@ -49,8 +105,11 @@ public class NoteRecallRetriever {
                                 source.sourceId(), NoteRecallRanker.MetadataRank.empty()).score() > 0
                         || noteSignals.getOrDefault(source.sourceId(), 0) > 0)
                 .sorted(Comparator.comparingInt((CandidateSource source) ->
-                        metadataRanks.getOrDefault(
+                                metadataRanks.getOrDefault(
                                         source.sourceId(), NoteRecallRanker.MetadataRank.empty()).score()
+                                + indexedMetadataScores.getOrDefault(source.sourceId(), 0)
+                                + tagScores.getOrDefault(source.sourceId(), 0)
+                                + semanticScores.getOrDefault(source.sourceId(), 0)
                                 + noteSignals.getOrDefault(source.sourceId(), 0) * 5).reversed())
                 .limit(8)
                 .forEach(source -> anchorSourceIds.add(source.sourceId()));
@@ -62,8 +121,10 @@ public class NoteRecallRetriever {
                 sourceIdsByAnsweredTurn
         );
         List<NoteRecallRanker.ScoredCandidate> scored = candidates.stream()
-                .map(source -> scoreCandidate(source, metadataRanks, noteSignals, relationSignals))
-                .filter(source -> source.score() > 0 || terms.isEmpty())
+                .map(source -> scoreCandidate(source, metadataRanks, indexedMetadataScores, tagScores,
+                        semanticScores, noteSignals, relationSignals))
+                .filter(source -> source.metadataScore() > 0 || source.semanticScore() > 0
+                        || source.noteScore() > 0 || source.relationScore() > 0 || terms.isEmpty())
                 .sorted(Comparator.comparingInt(NoteRecallRanker.ScoredCandidate::score).reversed())
                 .toList();
         if (scored.isEmpty()) {
@@ -74,10 +135,20 @@ public class NoteRecallRetriever {
                     .toList();
             return new NoteRecallPlan(journalHits, fallback, List.of(), fallback, new NoteRecallTrace(
                     journalHits.size(), fallback.size(), 0, fallback.size(), 0, 0, 0, 0
-            ));
+            ), true, List.copyOf(degradationReasons), Map.of(
+                    "source_candidate_count", (long) candidates.size(),
+                    "resolved_tag_count", (long) tagResolution.resolvedTags().size(),
+                    "semantic_hit_count", (long) semanticScores.size(),
+                    "metadata_index_hit_count", (long) indexedMetadataScores.size()));
         }
 
-        NoteRecallRanker.Selection selection = ranker.select(scored);
+        NoteSourceRerankService.Outcome rerankOutcome = rerankService == null
+                ? new NoteSourceRerankService.Outcome(scored, true,
+                        List.of("NOTE_SOURCE_RERANK_UNAVAILABLE"), "")
+                : rerankService.rerank(query, scored.stream().limit(40).toList(), 16);
+        degradationReasons.addAll(rerankOutcome.degradationReasons());
+        List<NoteRecallRanker.ScoredCandidate> reranked = rerankOutcome.candidates();
+        NoteRecallRanker.Selection selection = ranker.select(reranked);
         List<NoteRecallRanker.ScoredCandidate> selected = selection.candidates();
         List<NoteRecallRanker.ScoredCandidate> expansions = selection.expansions();
         List<CandidateSource> verifySources = selection.verifySources();
@@ -92,33 +163,52 @@ public class NoteRecallRetriever {
                         expansions.size(),
                         verifySources.size(),
                         selected.stream().mapToInt(NoteRecallRanker.ScoredCandidate::metadataScore).sum(),
+                        selected.stream().mapToInt(NoteRecallRanker.ScoredCandidate::semanticScore).sum(),
                         selected.stream().mapToInt(NoteRecallRanker.ScoredCandidate::noteScore).sum(),
                         selected.stream().mapToInt(NoteRecallRanker.ScoredCandidate::relationScore).sum(),
                         selected.stream().mapToInt(NoteRecallRanker.ScoredCandidate::readinessScore).sum()
-                )
+                ),
+                !degradationReasons.isEmpty(),
+                List.copyOf(new LinkedHashSet<>(degradationReasons)),
+                Map.of(
+                        "source_candidate_count", (long) candidates.size(),
+                        "resolved_tag_count", (long) tagResolution.resolvedTags().size(),
+                        "semantic_hit_count", (long) semanticScores.size(),
+                        "metadata_index_hit_count", (long) indexedMetadataScores.size(),
+                        "source_rerank_count", (long) reranked.size(),
+                        "verify_batch_count", (long) verifySources.size())
         );
     }
 
     private NoteRecallRanker.ScoredCandidate scoreCandidate(
             CandidateSource source,
             Map<String, NoteRecallRanker.MetadataRank> metadataRanks,
+            Map<String, Integer> indexedMetadataScores,
+            Map<String, Integer> tagScores,
+            Map<String, Integer> semanticScores,
             Map<String, Integer> noteSignals,
             Map<String, NoteRelationSignal> relationSignals
     ) {
         NoteRecallRanker.MetadataRank metadataRank = metadataRanks.getOrDefault(
                 source.sourceId(), NoteRecallRanker.MetadataRank.empty());
-        int metadataScore = metadataRank.score();
+        int resolvedTagScore = tagScores.getOrDefault(source.sourceId(), 0);
+        int metadataScore = metadataRank.score() + indexedMetadataScores.getOrDefault(source.sourceId(), 0)
+                + resolvedTagScore;
+        int semanticScore = semanticScores.getOrDefault(source.sourceId(), 0);
         int noteScore = noteSignals.getOrDefault(source.sourceId(), 0) * 5;
         NoteRelationSignal relationSignal = relationSignals.getOrDefault(
                 source.sourceId(), NoteRelationSignal.empty(source.sourceId()));
         int relationScore = relationSignal.score();
         int readinessScore = windowReadinessScore(source);
-        CandidateSource scoredSource = source.withScore(metadataScore + noteScore + relationScore + readinessScore)
-                .withRecallSignals(recallSignals(source, metadataRank, noteScore, relationSignal))
+        CandidateSource scoredSource = source.withScore(metadataScore + semanticScore + noteScore + relationScore + readinessScore)
+                .withRecallSignals(recallSignals(source, metadataRank,
+                        indexedMetadataScores.getOrDefault(source.sourceId(), 0),
+                        resolvedTagScore, semanticScore, noteScore, relationSignal))
                 .withMetadataRank(metadataRank.matchedFields(), metadataRank.coverageTerms(),
                         metadataRank.coveredQueryTerms(), metadataRank.totalQueryTerms());
         return new NoteRecallRanker.ScoredCandidate(
-                scoredSource, metadataScore, noteScore, relationScore, readinessScore);
+                scoredSource, metadataScore, semanticScore, noteScore, relationScore, readinessScore,
+                metadataScore + semanticScore + noteScore + relationScore + readinessScore);
     }
 
     private Map<String, NoteRelationSignal> relationSignals(
@@ -193,6 +283,9 @@ public class NoteRecallRetriever {
     private String recallSignals(
             CandidateSource source,
             NoteRecallRanker.MetadataRank metadataRank,
+            int indexedMetadataScore,
+            int resolvedTagScore,
+            int semanticScore,
             int noteScore,
             NoteRelationSignal relationSignal
     ) {
@@ -202,6 +295,15 @@ public class NoteRecallRetriever {
             if (!metadataRank.matchedFields().isEmpty()) {
                 signals.add("fields=" + String.join("/", metadataRank.matchedFields()));
             }
+        }
+        if (indexedMetadataScore > 0) {
+            signals.add("elasticsearch-metadata-recall");
+        }
+        if (resolvedTagScore > 0) {
+            signals.add("resolved-tag");
+        }
+        if (semanticScore > 0) {
+            signals.add("source-semantic-recall");
         }
         if (noteScore > 0) {
             signals.add("journal-note");
@@ -233,6 +335,10 @@ public class NoteRecallRetriever {
             signals.add("workspace-recency");
         }
         return String.join(", ", signals);
+    }
+
+    private int weightedRankScore(int rank, double weight) {
+        return Math.max(1, (int) Math.round(1000.0d * weight / (60 + rank)));
     }
 
     private int windowReadinessScore(CandidateSource source) {

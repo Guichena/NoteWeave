@@ -112,6 +112,7 @@ noteweave:
       source-parse: ${NOTEWEAVE_KAFKA_TOPIC_SOURCE_PARSE:noteweave.source.parse}
       source-chunk: ${NOTEWEAVE_KAFKA_TOPIC_SOURCE_CHUNK:noteweave.source.chunk}
       source-index: ${NOTEWEAVE_KAFKA_TOPIC_SOURCE_INDEX:noteweave.source.index}
+      retrieval-projection: ${NOTEWEAVE_KAFKA_TOPIC_RETRIEVAL_PROJECTION:noteweave.retrieval.projection}
       wiki-ingest: ${NOTEWEAVE_KAFKA_TOPIC_WIKI_INGEST:noteweave.wiki.ingest}
       wiki-retract: ${NOTEWEAVE_KAFKA_TOPIC_WIKI_RETRACT:noteweave.wiki.retract}
       generated-ingest: ${NOTEWEAVE_KAFKA_TOPIC_GENERATED_INGEST:noteweave.generated.ingest}
@@ -123,6 +124,26 @@ noteweave:
     port: ${NOTEWEAVE_ES_PORT:9200}
     scheme: ${NOTEWEAVE_ES_SCHEME:http}
     index-prefix: ${NOTEWEAVE_ES_INDEX_PREFIX:noteweave_chunk}
+  embedding:
+    enabled: ${NOTEWEAVE_EMBEDDING_ENABLED:false}
+    endpoint: ${NOTEWEAVE_EMBEDDING_ENDPOINT:http://localhost:11434/v1/embeddings}
+    model: ${NOTEWEAVE_EMBEDDING_MODEL:noteweave-embedding}
+    api-key: ${NOTEWEAVE_EMBEDDING_API_KEY:}
+    dimensions: ${NOTEWEAVE_EMBEDDING_DIMENSIONS:1024}
+    document-batch-size: ${NOTEWEAVE_EMBEDDING_DOCUMENT_BATCH_SIZE:32}
+    query-timeout-seconds: ${NOTEWEAVE_EMBEDDING_QUERY_TIMEOUT_SECONDS:10}
+    batch-timeout-seconds: ${NOTEWEAVE_EMBEDDING_BATCH_TIMEOUT_SECONDS:60}
+    max-input-characters: ${NOTEWEAVE_EMBEDDING_MAX_INPUT_CHARACTERS:12000}
+    max-attempts: ${NOTEWEAVE_EMBEDDING_MAX_ATTEMPTS:3}
+  rerank:
+    enabled: ${NOTEWEAVE_RERANK_ENABLED:false}
+    endpoint: ${NOTEWEAVE_RERANK_ENDPOINT:http://localhost:11434/v1/rerank}
+    model: ${NOTEWEAVE_RERANK_MODEL:noteweave-rerank}
+    api-key: ${NOTEWEAVE_RERANK_API_KEY:}
+    batch-size: ${NOTEWEAVE_RERANK_BATCH_SIZE:80}
+    max-document-characters: ${NOTEWEAVE_RERANK_MAX_DOCUMENT_CHARACTERS:1800}
+    timeout-seconds: ${NOTEWEAVE_RERANK_TIMEOUT_SECONDS:20}
+    max-attempts: ${NOTEWEAVE_RERANK_MAX_ATTEMPTS:3}
   llm:
     enabled: ${NOTEWEAVE_LLM_ENABLED:false}
     endpoint: ${NOTEWEAVE_LLM_ENDPOINT:http://localhost:11434/v1/chat/completions}

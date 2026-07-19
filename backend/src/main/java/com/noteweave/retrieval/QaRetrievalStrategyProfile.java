@@ -12,8 +12,8 @@ import java.util.Map;
  */
 public enum QaRetrievalStrategyProfile {
     V2(
-            "qa-retrieval-v2",
-            "qa-passage-v2",
+            "qa-weknora-hybrid-v1",
+            "qa-weknora-hybrid-v1",
             QaEvidenceRelevancePolicy.POLICY_VERSION_V2,
             QaEvidenceSelectionPolicy.POLICY_VERSION,
             QaEvidenceSelectionPolicy.DEFAULT_BUNDLE_EVIDENCE_LIMIT,
@@ -23,11 +23,38 @@ public enum QaRetrievalStrategyProfile {
 
     public static final String CHANNEL = "QA_PASSAGE";
     public static final int CANDIDATE_LIMIT = 12;
+    public static final int RECALL_LIMIT = 60;
+    public static final int FUSION_LIMIT = 100;
+    public static final int RERANK_LIMIT = 40;
+    public static final int RRF_K = 60;
+    public static final double VECTOR_WEIGHT = 0.7d;
+    public static final double KEYWORD_WEIGHT = 0.3d;
+    public static final double VECTOR_THRESHOLD = 0.0d;
+    public static final double KEYWORD_THRESHOLD = 0.0d;
+    public static final String QUERY_REWRITE_VERSION = "qa-conversation-rewrite-v1";
+    public static final String QUERY_EXPANSION_POLICY = "qa-low-recall-expansion-v1";
     public static final double STEP_WEIGHT = 1.0d;
     public static final String FILTER_PROFILE = "strategy_profile";
     public static final String FILTER_RELEVANCE_POLICY = "relevance_policy";
     public static final String FILTER_SELECTION_POLICY = "selection_policy";
     public static final String FILTER_V2_ENABLED = "strategy_v2_enabled";
+    public static final String FILTER_QUERY_REWRITE_VERSION = "query_rewrite_version";
+    public static final String FILTER_QUERY_EXPANSION_POLICY = "query_expansion_policy";
+    public static final String FILTER_ORIGINAL_QUERY = "original_query";
+    public static final String FILTER_RETRIEVAL_QUERIES = "retrieval_queries";
+    public static final String FILTER_MUST_TERMS = "must_terms";
+    public static final String FILTER_PREFERRED_TERMS = "preferred_terms";
+    public static final String FILTER_LANGUAGE = "language";
+    public static final String FILTER_QUESTION_TYPE = "question_type";
+    public static final String FILTER_VECTOR_OVER_RECALL = "vector_over_recall";
+    public static final String FILTER_KEYWORD_OVER_RECALL = "keyword_over_recall";
+    public static final String FILTER_FUSION_LIMIT = "fusion_candidate_ceiling";
+    public static final String FILTER_RERANK_TOP_N = "rerank_top_n";
+    public static final String FILTER_RRF_K = "rrf_k";
+    public static final String FILTER_VECTOR_WEIGHT = "vector_weight";
+    public static final String FILTER_KEYWORD_WEIGHT = "keyword_weight";
+    public static final String FILTER_VECTOR_THRESHOLD = "vector_threshold";
+    public static final String FILTER_KEYWORD_THRESHOLD = "keyword_threshold";
 
     private final String profileVersion;
     private final String planVersion;

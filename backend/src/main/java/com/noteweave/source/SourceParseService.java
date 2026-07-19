@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
+import com.noteweave.config.NoteWeaveProperties;
 import com.noteweave.storage.ObjectStorage;
 import com.noteweave.task.TaskCommandPort;
 import com.noteweave.security.AuditActorProvider;
@@ -17,6 +18,7 @@ import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,38 +37,43 @@ public class SourceParseService implements SourceParsePort {
     private final ObjectMapper objectMapper;
     private final ObjectStorage storage;
     private final SourceMessagingMode messagingMode;
+    private final boolean elasticsearchEnabled;
     private final TaskCommandPort taskCommandPort;
     private final TransactionTemplate transactionTemplate;
     private final AuditActorProvider auditActorProvider;
     private final SourceCatalogVersionService sourceCatalogVersionService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public SourceParseService(JdbcTemplate jdbcTemplate, DocumentChunker documentChunker, ObjectMapper objectMapper,
-                              ObjectStorage storage, SourceMessagingMode messagingMode, TaskCommandPort taskCommandPort,
+                              ObjectStorage storage, SourceMessagingMode messagingMode,
+                              NoteWeaveProperties properties, TaskCommandPort taskCommandPort,
                               PlatformTransactionManager transactionManager, AuditActorProvider auditActorProvider,
-                              SourceCatalogVersionService sourceCatalogVersionService) {
+                              SourceCatalogVersionService sourceCatalogVersionService,
+                              ApplicationEventPublisher eventPublisher) {
         this.jdbcTemplate = jdbcTemplate;
         this.documentChunker = documentChunker;
         this.objectMapper = objectMapper;
         this.storage = storage;
         this.messagingMode = messagingMode;
+        this.elasticsearchEnabled = properties.elasticsearch().enabled();
         this.taskCommandPort = taskCommandPort;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.auditActorProvider = auditActorProvider;
         this.sourceCatalogVersionService = sourceCatalogVersionService;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
     public void parseAndIndex(String workspaceId, String sourceId, String snapshotId, byte[] bytes) {
         SourceMeta sourceMeta = loadSourceMetaForProcessing(workspaceId, sourceId, snapshotId);
         if (!sourceMeta.processable()) {
-            log.info("Skip source parse because source/snapshot is no longer processable: sourceId={}, snapshotId={}",
-                    sourceId, snapshotId);
-            return;
+            throw new SourceParseNoLongerProcessableException(sourceId, snapshotId);
         }
         String text = new String(bytes, StandardCharsets.UTF_8);
         String actor = auditActorProvider.currentOrSystem("SOURCE_PARSE");
         String sourceParseTaskId = findSourceParseTaskId(sourceId);
-        if (messagingMode.isAsyncEnabled() && sourceParseTaskId == null) {
+        boolean projectionEnabled = elasticsearchEnabled;
+        if (messagingMode.isAsyncEnabled() && projectionEnabled && sourceParseTaskId == null) {
             sourceParseTaskId = taskCommandPort.createTask(
                     workspaceId, "SOURCE_PARSE", "SOURCE", sourceId, "PARSING", "生成资料解析与索引");
             taskCommandPort.startTask(sourceParseTaskId);
@@ -87,28 +94,6 @@ public class SourceParseService implements SourceParsePort {
                         values (?, ?, ?, ?, ?)
                         """, Ids.newId(), chunkId, windowNo, windows.get(windowNo), "chunk:" + i + "/window:" + windowNo);
             }
-            Map<String, Object> indexPayload = new java.util.LinkedHashMap<>();
-            if (sourceParseTaskId != null) {
-                indexPayload.put("taskId", sourceParseTaskId);
-            }
-            indexPayload.put("workspaceId", workspaceId);
-            indexPayload.put("sourceId", sourceId);
-            indexPayload.put("sourceSnapshotId", snapshotId);
-            indexPayload.put("chunkId", chunkId);
-            indexPayload.put("chunkNo", i);
-            indexPayload.put("title", sourceMeta.title());
-            indexPayload.put("sourceType", sourceMeta.sourceType());
-            indexPayload.put("content", content);
-            if (messagingMode.isAsyncEnabled()) {
-                jdbcTemplate.update("""
-                        insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
-                        values (?, ?, 'noteweave.source.index', ?, ?, 'READY')
-                        """, Ids.newId(), sourceParseTaskId, chunkId, writeJson(indexPayload));
-            } else {
-                jdbcTemplate.update("""
-                        update source_chunk set projection_status = 'PROJECTED', projected_at = current_timestamp where id = ?
-                        """, chunkId);
-            }
         }
 
         List<String> tags = deriveTags(sourceMeta.title(), sourceMeta.sourceType(), text);
@@ -126,10 +111,43 @@ public class SourceParseService implements SourceParsePort {
                     updated_by = ?, updated_at = current_timestamp
                 where id = ? and status <> 'DELETED'
                 """, summarize(text), writeJson(tags), writeJson(metadata),
-                messagingMode.isAsyncEnabled() ? "INDEXING" : "INDEXED",
-                messagingMode.isAsyncEnabled() ? "PROCESSING" : "READY", actor, sourceId);
+                projectionEnabled ? "INDEXING" : "INDEXED",
+                projectionEnabled ? "PROCESSING" : "READY", actor, sourceId);
         jdbcTemplate.update("update source_snapshot set parse_status = 'PARSED', index_status = ? where id = ?",
-                messagingMode.isAsyncEnabled() ? "INDEXING" : "INDEXED", snapshotId);
+                projectionEnabled ? "INDEXING" : "INDEXED", snapshotId);
+        if (!projectionEnabled) {
+            jdbcTemplate.update("""
+                    update source_chunk
+                    set projection_status = 'PROJECTED', projected_at = current_timestamp
+                    where source_snapshot_id = ?
+                    """, snapshotId);
+            if (sourceParseTaskId != null) {
+                taskCommandPort.completeTask(
+                        sourceParseTaskId,
+                        "INDEXED",
+                        "资料解析已完成；Elasticsearch 已禁用，未等待异步投影",
+                        sourceId
+                );
+            }
+            sourceCatalogVersionService.bump(workspaceId);
+            return;
+        }
+        Map<String, Object> projectionPayload = new java.util.LinkedHashMap<>();
+        if (sourceParseTaskId != null) {
+            projectionPayload.put("taskId", sourceParseTaskId);
+        }
+        projectionPayload.put("workspaceId", workspaceId);
+        projectionPayload.put("sourceId", sourceId);
+        projectionPayload.put("sourceSnapshotId", snapshotId);
+        String projectionOutboxId = Ids.newId();
+        jdbcTemplate.update("""
+                insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
+                values (?, ?, 'noteweave.retrieval.projection', ?, ?, 'READY')
+                """, projectionOutboxId, sourceParseTaskId, snapshotId, writeJson(projectionPayload));
+        if (!messagingMode.isAsyncEnabled()) {
+            eventPublisher.publishEvent(new SynchronousRetrievalProjectionRequested(
+                    projectionOutboxId, sourceParseTaskId, workspaceId, sourceId, snapshotId));
+        }
         sourceCatalogVersionService.bump(workspaceId);
     }
 
@@ -138,11 +156,15 @@ public class SourceParseService implements SourceParsePort {
      * 由 KafkaTaskConsumer.onSourceParse 调用。
      */
     public void parseAndIndexAsync(String workspaceId, String sourceId, String snapshotId) {
+        parseAndIndexAsyncIfProcessable(workspaceId, sourceId, snapshotId);
+    }
+
+    public boolean parseAndIndexAsyncIfProcessable(String workspaceId, String sourceId, String snapshotId) {
         try {
             if (!isProcessable(workspaceId, sourceId, snapshotId)) {
                 log.info("Skip async source parse because source/snapshot is no longer processable: sourceId={}, snapshotId={}",
                         sourceId, snapshotId);
-                return;
+                return false;
             }
             String objectKey = jdbcTemplate.queryForObject("""
                     select object_key from source_snapshot where id = ?
@@ -152,6 +174,11 @@ public class SourceParseService implements SourceParsePort {
                     ignored -> parseAndIndex(workspaceId, sourceId, snapshotId, bytes)
             );
             log.info("SourceParseService async parse OK: sourceId={}, snapshotId={}", sourceId, snapshotId);
+            return true;
+        } catch (SourceParseNoLongerProcessableException ex) {
+            log.info("Skip async source parse after concurrent source/snapshot change: sourceId={}, snapshotId={}",
+                    sourceId, snapshotId);
+            return false;
         } catch (Exception ex) {
             log.error("SourceParseService async parse failed for sourceId={}: {}", sourceId, ex.getMessage(), ex);
             throw new IllegalStateException("async source parse failed for sourceId=" + sourceId, ex);
@@ -159,15 +186,37 @@ public class SourceParseService implements SourceParsePort {
     }
 
     public boolean isProcessable(String workspaceId, String sourceId, String snapshotId) {
-        Integer count = jdbcTemplate.queryForObject("""
-                select count(*)
+        return assessProcessability(workspaceId, sourceId, snapshotId).processable();
+    }
+
+    public SourceParseAssessment assessProcessability(String workspaceId, String sourceId, String snapshotId) {
+        return jdbcTemplate.query("""
+                select s.status as source_status, ss.parse_status as snapshot_parse_status
                 from source s
-                join source_snapshot ss on ss.id = ? and ss.source_id = s.id
+                left join source_snapshot ss on ss.id = ? and ss.source_id = s.id
                 where s.id = ? and s.workspace_id = ?
-                  and s.status <> 'DELETED'
-                  and ss.parse_status = 'PENDING'
-                """, Integer.class, snapshotId, sourceId, workspaceId);
-        return count != null && count == 1;
+                """, rs -> {
+            if (!rs.next()) {
+                return new SourceParseAssessment(
+                        SourceParseDisposition.TARGET_MISSING, "MISSING", "MISSING");
+            }
+            String sourceStatus = rs.getString("source_status");
+            String snapshotParseStatus = rs.getString("snapshot_parse_status");
+            if (snapshotParseStatus == null) {
+                return new SourceParseAssessment(
+                        SourceParseDisposition.TARGET_MISSING, sourceStatus, "MISSING");
+            }
+            if ("DELETED".equals(sourceStatus) || "DELETED".equals(snapshotParseStatus)) {
+                return new SourceParseAssessment(
+                        SourceParseDisposition.TARGET_DELETED, sourceStatus, snapshotParseStatus);
+            }
+            if ("PENDING".equals(snapshotParseStatus)) {
+                return new SourceParseAssessment(
+                        SourceParseDisposition.PROCESSABLE, sourceStatus, snapshotParseStatus);
+            }
+            return new SourceParseAssessment(
+                    SourceParseDisposition.ALREADY_HANDLED, sourceStatus, snapshotParseStatus);
+        }, snapshotId, sourceId, workspaceId);
     }
 
     private SourceMeta loadSourceMetaForProcessing(String workspaceId, String sourceId, String snapshotId) {
@@ -261,5 +310,38 @@ public class SourceParseService implements SourceParsePort {
     }
 
     private record SourceMeta(String title, String sourceType, boolean processable) {
+    }
+
+    public record SourceParseAssessment(
+            SourceParseDisposition disposition,
+            String sourceStatus,
+            String snapshotParseStatus
+    ) {
+        public boolean processable() {
+            return disposition == SourceParseDisposition.PROCESSABLE;
+        }
+    }
+
+    public enum SourceParseDisposition {
+        PROCESSABLE,
+        TARGET_DELETED,
+        ALREADY_HANDLED,
+        TARGET_MISSING
+    }
+
+    public record SynchronousRetrievalProjectionRequested(
+            String outboxId,
+            String taskId,
+            String workspaceId,
+            String sourceId,
+            String sourceSnapshotId
+    ) {
+    }
+
+    private static final class SourceParseNoLongerProcessableException extends RuntimeException {
+
+        private SourceParseNoLongerProcessableException(String sourceId, String snapshotId) {
+            super("source/snapshot is no longer processable: sourceId=" + sourceId + ", snapshotId=" + snapshotId);
+        }
     }
 }

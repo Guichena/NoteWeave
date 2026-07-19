@@ -54,11 +54,11 @@ class RetrievalShadowComparatorTest {
         RetrievalShadowSnapshot profiled = new RetrievalShadowSnapshot(
                 fixture.schemaVersion(),
                 fixture.snapshotVersion(),
-                "  qa-retrieval-v2  ",
+                "  qa-weknora-hybrid-v1  ",
                 fixture.cases());
 
         var report = new RetrievalShadowComparator().compare(goldSet, profiled);
 
-        assertThat(report.strategyProfile()).isEqualTo("qa-retrieval-v2");
+        assertThat(report.strategyProfile()).isEqualTo("qa-weknora-hybrid-v1");
     }
 }

@@ -22,7 +22,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class NoteAnswerModeStrategy implements AnswerModeStrategy {
 
-    public static final String PLAN_VERSION = "note-marginalia-v1";
+    public static final String PLAN_VERSION = "note-marginalia-funnel-v1";
     public static final String ATTRIBUTE_CURRENT_QUESTION = "current_question";
     public static final String ATTRIBUTE_REQUEST_CONTENT = "request_content";
     public static final String ATTRIBUTE_QUESTION_TYPE = "question_type";
@@ -204,6 +204,7 @@ public class NoteAnswerModeStrategy implements AnswerModeStrategy {
         builder.append("- candidate_quota_trace: ").append(summarizeCandidateSelection(candidates)).append("\n");
         builder.append("- verify_admission_trace: ").append(summarizeVerifyAdmission(verifySources)).append("\n");
         builder.append("- trace: metadata=").append(recallPlan.trace().metadataScoreSum())
+                .append(", semantic=").append(recallPlan.trace().semanticScoreSum())
                 .append(", journal=").append(recallPlan.trace().noteScoreSum())
                 .append(", relation=").append(recallPlan.trace().relationScoreSum())
                 .append(", readiness=").append(recallPlan.trace().readinessScoreSum()).append("\n");

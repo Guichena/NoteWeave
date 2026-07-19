@@ -1,1 +1,3 @@
 scripts/ma4g/*.sh text eol=lf
+*.sql text eol=lf
+*.sha256 text eol=lf

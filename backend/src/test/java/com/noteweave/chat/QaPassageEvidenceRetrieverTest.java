@@ -56,7 +56,7 @@ class QaPassageEvidenceRetrieverTest {
                 .containsEntry("match_reason", "fulltext:bm25, source-diversity");
         assertThat(result.degraded()).isFalse();
         assertThat(result.metadata())
-                .containsEntry("strategy_profile", "qa-retrieval-v2")
+                .containsEntry("strategy_profile", "qa-weknora-hybrid-v1")
                 .containsEntry("relevance_policy", "qa-lexical-sufficiency-v2")
                 .containsEntry("selection_policy", "qa-source-diverse-budget-v2");
         assertThat(result.measurements()).containsEntry("mysql_fallback_used", 0L);
@@ -110,7 +110,7 @@ class QaPassageEvidenceRetrieverTest {
         var result = retriever.retrieve(context, plan, plan.steps().get(0));
 
         assertThat(result.metadata())
-                .containsEntry("strategy_profile", "qa-retrieval-v2")
+                .containsEntry("strategy_profile", "qa-weknora-hybrid-v1")
                 .containsEntry("relevance_policy", "qa-lexical-sufficiency-v2")
                 .containsEntry("selection_policy", "qa-source-diverse-budget-v2");
         assertThat(result.measurements()).containsEntry("strategy_v2_enabled", 1L);
@@ -128,7 +128,7 @@ class QaPassageEvidenceRetrieverTest {
                 QaPassageEvidenceRetriever.CHANNEL, 12, 1, Map.of(
                 "workspace_id", "workspace", "snapshot_status", "ACTIVE"));
         RetrievalPlan plan = new RetrievalPlan(
-                "qa-passage-v2", AnswerMode.QA, List.of(step),
+                "qa-weknora-hybrid-v1", AnswerMode.QA, List.of(step),
                 new RetrievalPlan.Budget(6, 8_000, 0, 0));
         AnswerContext context = new AnswerContext(
                 "workspace", "conversation", "message", "query",

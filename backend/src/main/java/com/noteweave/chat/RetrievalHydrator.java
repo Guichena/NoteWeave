@@ -60,6 +60,47 @@ public class RetrievalHydrator {
         return Map.copyOf(byChunkId);
     }
 
+    public Map<String, List<AdjacentPassage>> hydrateAdjacentPassages(
+            String workspaceId,
+            List<String> anchorChunkIds
+    ) {
+        List<String> ids = distinctIds(anchorChunkIds);
+        if (ids.isEmpty()) return Map.of();
+        List<Object> parameters = parameters(workspaceId, ids);
+        List<AdjacentPassage> rows = jdbcTemplate.query("""
+                select anchor.id as anchor_chunk_id, anchor.chunk_no as anchor_chunk_no,
+                       neighbor.id as chunk_id, neighbor.chunk_no, coalesce(neighbor.heading, '') as heading,
+                       neighbor.content
+                from source_chunk anchor
+                join source s on s.id = anchor.source_id and s.workspace_id = anchor.workspace_id
+                join source_snapshot ss on ss.id = anchor.source_snapshot_id and ss.source_id = anchor.source_id
+                join source_chunk neighbor on neighbor.workspace_id = anchor.workspace_id
+                  and neighbor.source_id = anchor.source_id
+                  and neighbor.source_snapshot_id = anchor.source_snapshot_id
+                  and neighbor.chunk_no between anchor.chunk_no - 1 and anchor.chunk_no + 1
+                  and neighbor.id <> anchor.id
+                where anchor.workspace_id = ? and anchor.id in (%s)
+                  and s.status = 'READY' and s.index_status = 'INDEXED'
+                  and ss.index_status = 'INDEXED'
+                  and ss.version_no = (
+                    select max(current_ss.version_no) from source_snapshot current_ss
+                    where current_ss.source_id = s.id and current_ss.index_status = 'INDEXED')
+                  and anchor.projection_status = 'PROJECTED'
+                  and neighbor.projection_status = 'PROJECTED'
+                order by anchor.id, neighbor.chunk_no
+                """.formatted(placeholders(ids.size())), (rs, rowNum) -> new AdjacentPassage(
+                rs.getString("anchor_chunk_id"), rs.getInt("anchor_chunk_no"),
+                rs.getString("chunk_id"), rs.getInt("chunk_no"), rs.getString("heading"),
+                rs.getString("content")), parameters.toArray());
+        Map<String, List<AdjacentPassage>> result = new LinkedHashMap<>();
+        for (AdjacentPassage row : rows) {
+            result.computeIfAbsent(row.anchorChunkId(), ignored -> new ArrayList<>()).add(row);
+        }
+        Map<String, List<AdjacentPassage>> immutable = new LinkedHashMap<>();
+        result.forEach((id, passages) -> immutable.put(id, List.copyOf(passages)));
+        return Map.copyOf(immutable);
+    }
+
     public Map<String, List<ReadingWindow>> hydrateNoteWindows(
             String workspaceId,
             List<String> sourceIds
@@ -194,6 +235,16 @@ public class RetrievalHydrator {
             String sourceSnapshotId,
             String generatedBy,
             String generatedRefId
+    ) {
+    }
+
+    public record AdjacentPassage(
+            String anchorChunkId,
+            int anchorChunkNo,
+            String chunkId,
+            int chunkNo,
+            String heading,
+            String content
     ) {
     }
 

@@ -325,7 +325,20 @@ public class NoteRecallRanker {
         }
     }
 
-    public record ScoredCandidate(CandidateSource source, int metadataScore, int noteScore, int relationScore, int readinessScore) {
+    public record ScoredCandidate(
+            CandidateSource source,
+            int metadataScore,
+            int semanticScore,
+            int noteScore,
+            int relationScore,
+            int readinessScore,
+            double rerankScore
+    ) {
+        public ScoredCandidate(CandidateSource source, int metadataScore, int noteScore,
+                               int relationScore, int readinessScore) {
+            this(source, metadataScore, 0, noteScore, relationScore, readinessScore, source.score());
+        }
+
         public int score() {
             return source.score();
         }
@@ -339,7 +352,14 @@ public class NoteRecallRanker {
         }
 
         public ScoredCandidate withSelectionReason(String reason) {
-            return new ScoredCandidate(source.withSelectionReason(reason), metadataScore, noteScore, relationScore, readinessScore);
+            return new ScoredCandidate(source.withSelectionReason(reason), metadataScore, semanticScore,
+                    noteScore, relationScore, readinessScore, rerankScore);
+        }
+
+        public ScoredCandidate withRerankScore(double score) {
+            int normalized = Math.max(source.score(), (int) Math.round(score * 1000));
+            return new ScoredCandidate(source.withScore(normalized), metadataScore, semanticScore,
+                    noteScore, relationScore, readinessScore, score);
         }
     }
 

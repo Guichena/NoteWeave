@@ -60,8 +60,9 @@ public class NoteEvidenceRetriever implements EvidenceRetriever {
         return new EvidenceRetrievalResult(
                 evidence,
                 Map.of(NoteRetrievalSnapshotCodec.METADATA_KEY, snapshotCodec.encode(snapshot)),
-                false,
-                List.of()
+                recallPlan.degraded(),
+                recallPlan.degradationReasons(),
+                recallPlan.measurements()
         );
     }
 
@@ -83,7 +84,7 @@ public class NoteEvidenceRetriever implements EvidenceRetriever {
         metadata.put("anchor_window_no", Integer.toString(window.anchorWindowNo()));
         metadata.put("read_objective", text(window.readObjective()));
         metadata.put("freshness_status", "CURRENT_AT_RETRIEVAL");
-        double orderingScore = (total - index) * weight;
+        double orderingScore = window.fusedScore() * weight;
         return new EvidenceBundle.Evidence(
                 "note-window:" + window.chunkId() + ":" + window.windowNo(),
                 "PASSAGE",
@@ -95,9 +96,9 @@ public class NoteEvidenceRetriever implements EvidenceRetriever {
                 displayTitle(window.title(), window.generatedBy(), window.generatedRefId()),
                 window.content(),
                 window.locationInfo(),
-                window.score(),
+                window.rawScore(),
                 orderingScore,
-                orderingScore,
+                window.rerankScore(),
                 "workspace-source:" + window.sourceId(),
                 java.time.Instant.now(),
                 text(window.readRole()).isBlank() ? "source-window" : window.readRole(),

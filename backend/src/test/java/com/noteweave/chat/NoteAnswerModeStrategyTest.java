@@ -68,7 +68,7 @@ class NoteAnswerModeStrategyTest {
                 .contains("## 摘录证据")
                 .contains("本轮还应用了工作台级 Chat Control Pack。")
                 .contains("## 表达控制\n- 风格约束：简洁");
-        assertThat(strategy.plan(context).version()).isEqualTo("note-marginalia-v1");
+        assertThat(strategy.plan(context).version()).isEqualTo("note-marginalia-funnel-v1");
     }
 
     @Test

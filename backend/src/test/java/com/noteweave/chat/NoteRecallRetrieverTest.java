@@ -21,7 +21,7 @@ class NoteRecallRetrieverTest {
                 "", "", "", "[]", "{}", "",
                 0, "", List.of(), List.of(), 0, 0, "", ""
         );
-        when(repository.findCandidates("workspace")).thenReturn(List.of(source));
+        when(repository.findCurrentSources("workspace")).thenReturn(List.of(source));
         when(repository.sourceIdsByNote("workspace")).thenReturn(Map.of());
         when(repository.sourceIdsByAnsweredTurn("workspace")).thenReturn(Map.of());
         when(journalRetriever.sourceSignals(org.mockito.ArgumentMatchers.eq("workspace"), anySet()))
@@ -42,7 +42,7 @@ class NoteRecallRetrieverTest {
                 .contains("coverage-aware-metadata-rank", "source-window-ready");
         assertThat(plan.trace().candidateCount()).isEqualTo(1);
         assertThat(plan.trace().metadataScoreSum()).isEqualTo(27);
-        verify(repository).findCandidates("workspace");
+        verify(repository).findCurrentSources("workspace");
         verify(repository).sourceIdsByNote("workspace");
         verify(repository).sourceIdsByAnsweredTurn("workspace");
     }

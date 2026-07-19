@@ -3,6 +3,7 @@ package com.noteweave.infra;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.knowledge.WikiIngestService;
+import com.noteweave.retrieval.projection.SourceRetrievalProjectionCoordinator;
 import com.noteweave.source.SourceParseService;
 import com.noteweave.task.TaskService;
 import com.noteweave.common.RequestContext;
@@ -11,6 +12,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
@@ -29,15 +31,26 @@ public class KafkaTaskConsumer {
     private final WikiIngestService wikiIngestService;
     private final TaskService taskService;
     private final ObjectMapper objectMapper;
+    private final SourceRetrievalProjectionCoordinator projectionCoordinator;
 
     public KafkaTaskConsumer(SourceParseService sourceParseService,
                              WikiIngestService wikiIngestService,
                              TaskService taskService,
                              ObjectMapper objectMapper) {
+        this(sourceParseService, wikiIngestService, taskService, objectMapper, null);
+    }
+
+    @Autowired
+    public KafkaTaskConsumer(SourceParseService sourceParseService,
+                             WikiIngestService wikiIngestService,
+                             TaskService taskService,
+                             ObjectMapper objectMapper,
+                             SourceRetrievalProjectionCoordinator projectionCoordinator) {
         this.sourceParseService = sourceParseService;
         this.wikiIngestService = wikiIngestService;
         this.taskService = taskService;
         this.objectMapper = objectMapper;
+        this.projectionCoordinator = projectionCoordinator;
     }
 
     @KafkaListener(topics = "${noteweave.kafka.topics.source-parse}",
@@ -57,12 +70,19 @@ public class KafkaTaskConsumer {
         });
     }
 
-    @KafkaListener(topics = "${noteweave.kafka.topics.source-chunk}",
+    @KafkaListener(topics = "${noteweave.kafka.topics.retrieval-projection}",
                    groupId = "${spring.kafka.consumer.group-id}",
                    containerFactory = "kafkaListenerContainerFactory")
-    public void onSourceChunk(ConsumerRecord<String, String> record) {
-        handle("source.chunk", record, payload -> {
-            log.debug("source.chunk event observed (current code path is in-process after parse)");
+    public void onRetrievalProjection(ConsumerRecord<String, String> record) {
+        handle("retrieval.projection", record, payload -> {
+            String taskId = text(payload.get("taskId"));
+            String workspaceId = requiredText(payload, "workspaceId");
+            String sourceId = requiredText(payload, "sourceId");
+            String snapshotId = requiredText(payload, "sourceSnapshotId");
+            if (projectionCoordinator == null) {
+                throw new IllegalStateException("retrieval projection coordinator is unavailable");
+            }
+            projectionCoordinator.projectAndFinalize(workspaceId, sourceId, snapshotId, taskId);
         });
     }
 
@@ -128,5 +148,17 @@ public class KafkaTaskConsumer {
         if (value != null && !String.valueOf(value).isBlank()) {
             MDC.put(mdcKey, String.valueOf(value));
         }
+    }
+
+    private String requiredText(Map<String, Object> payload, String field) {
+        String value = text(payload.get(field));
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("retrieval.projection payload missing " + field);
+        }
+        return value;
+    }
+
+    private String text(Object value) {
+        return value == null ? null : String.valueOf(value);
     }
 }

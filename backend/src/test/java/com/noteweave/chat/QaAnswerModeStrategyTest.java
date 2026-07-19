@@ -30,10 +30,19 @@ class QaAnswerModeStrategyTest {
         assertThat(plan.steps()).singleElement().satisfies(step -> assertThat(step.filters())
                 .containsEntry("workspace_id", "workspace")
                 .containsEntry("snapshot_status", "ACTIVE")
-                .containsEntry("strategy_profile", "qa-retrieval-v2")
+                .containsEntry("strategy_profile", "qa-weknora-hybrid-v1")
                 .containsEntry("relevance_policy", "qa-lexical-sufficiency-v2")
                 .containsEntry("selection_policy", "qa-source-diverse-budget-v2")
                 .containsEntry("strategy_v2_enabled", "true")
+                .containsEntry("query_rewrite_version", "qa-conversation-rewrite-v1")
+                .containsEntry("query_expansion_policy", "qa-low-recall-expansion-v1")
+                .containsEntry("vector_over_recall", "60")
+                .containsEntry("keyword_over_recall", "60")
+                .containsEntry("fusion_candidate_ceiling", "100")
+                .containsEntry("rerank_top_n", "40")
+                .containsEntry("rrf_k", "60")
+                .containsEntry("vector_weight", "0.7")
+                .containsEntry("keyword_weight", "0.3")
                 .containsEntry("source_ids", "source-a,source-b"));
         assertThat(plan.budget().maxEvidence()).isEqualTo(6);
         assertThat(plan.budget().maxEvidenceCharacters()).isEqualTo(8_000);
@@ -67,7 +76,7 @@ class QaAnswerModeStrategyTest {
                 .contains("本轮已结合最近连续对话窗口理解这次追问。")
                 .contains("本轮还应用了工作台级 Chat Control Pack。")
                 .contains("- 检索边界：当前 workspace 内已解析资料")
-                .contains("- 检索策略：关键词召回 + 结构化元数据过滤 + 词法充分性校验 + 来源覆盖")
+                .contains("- 检索策略：Chunk 向量召回 + BM25 关键词召回 + 加权 RRF + 真实 rerank + 来源覆盖")
                 .contains("- 证据 1《title》：excerpt（chunk:0，score=1，reason=selected）")
                 .contains("## 表达控制\n- 风格约束：简洁")
                 .contains("引用信息会通过 `chat.citation` 事件返回")
@@ -105,7 +114,7 @@ class QaAnswerModeStrategyTest {
 
         assertThat(plan.version()).isEqualTo(QaAnswerModeStrategy.V2_PLAN_VERSION);
         assertThat(plan.steps()).singleElement().satisfies(step -> assertThat(step.filters())
-                .containsEntry("strategy_profile", "qa-retrieval-v2")
+                .containsEntry("strategy_profile", "qa-weknora-hybrid-v1")
                 .containsEntry("relevance_policy", "qa-lexical-sufficiency-v2")
                 .containsEntry("selection_policy", "qa-source-diverse-budget-v2")
                 .containsEntry("strategy_v2_enabled", "true"));

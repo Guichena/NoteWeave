@@ -34,7 +34,10 @@ class MigrationChecksumBaselineTest {
         assertThat(actualPublishedFiles).containsExactlyInAnyOrderElementsOf(expected.keySet());
 
         for (Map.Entry<String, String> entry : expected.entrySet()) {
-            byte[] content = Files.readAllBytes(migrationDirectory.resolve(entry.getKey()));
+            byte[] content = Files.readString(migrationDirectory.resolve(entry.getKey()))
+                    .replace("\r\n", "\n")
+                    .replace('\r', '\n')
+                    .getBytes(java.nio.charset.StandardCharsets.UTF_8);
             String actualHash = java.util.HexFormat.of().formatHex(
                     MessageDigest.getInstance("SHA-256").digest(content));
             assertThat(actualHash)

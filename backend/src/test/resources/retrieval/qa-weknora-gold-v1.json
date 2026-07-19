@@ -1,0 +1,49 @@
+﻿{
+  "schemaVersion": "retrieval-gold-v1",
+  "datasetVersion": "qa-weknora-gold-v1",
+  "cases": [
+    {
+      "id": "qa-semantic-synonym",
+      "mode": "QA",
+      "workspaceId": "workspace-qa-gold",
+      "query": "如何在服务异常后继续之前的研究任务",
+      "allowedSourceIds": ["source-resume", "source-deploy"],
+      "topK": 2,
+      "shouldRefuse": false,
+      "relevantEvidenceIds": ["qa-resume-checkpoint"],
+      "expectedCitationIds": ["citation-resume-checkpoint"],
+      "candidates": [
+        {"evidenceId":"qa-resume-checkpoint","sourceId":"source-resume","title":"Checkpoint recovery","content":"A persisted checkpoint lets an interrupted research run resume from the last verified state.","sourceType":"PDF","citationIds":["citation-resume-checkpoint"]},
+        {"evidenceId":"qa-deployment","sourceId":"source-deploy","title":"Deployment guide","content":"Deploy the service behind a reverse proxy.","sourceType":"MARKDOWN","citationIds":["citation-deployment"]}
+      ]
+    },
+    {
+      "id": "qa-keyword-error-code",
+      "mode": "QA",
+      "workspaceId": "workspace-qa-gold",
+      "query": "EMBEDDING_DIMENSION_MISMATCH",
+      "allowedSourceIds": ["source-errors"],
+      "topK": 1,
+      "shouldRefuse": false,
+      "relevantEvidenceIds": ["qa-error-code"],
+      "expectedCitationIds": ["citation-error-code"],
+      "candidates": [
+        {"evidenceId":"qa-error-code","sourceId":"source-errors","title":"Retrieval error codes","content":"EMBEDDING_DIMENSION_MISMATCH means the provider vector shape differs from the index contract.","sourceType":"MARKDOWN","citationIds":["citation-error-code"]}
+      ]
+    },
+    {
+      "id": "qa-scope-refusal",
+      "mode": "QA",
+      "workspaceId": "workspace-qa-gold",
+      "query": "private finance policy",
+      "allowedSourceIds": ["source-public"],
+      "topK": 2,
+      "shouldRefuse": true,
+      "relevantEvidenceIds": [],
+      "expectedCitationIds": [],
+      "candidates": [
+        {"evidenceId":"qa-private","sourceId":"source-private","title":"Private finance","content":"Restricted finance policy.","sourceType":"PDF","citationIds":["citation-private"]}
+      ]
+    }
+  ]
+}

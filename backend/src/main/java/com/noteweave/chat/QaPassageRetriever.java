@@ -19,6 +19,7 @@ import java.util.stream.IntStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -29,15 +30,27 @@ public class QaPassageRetriever {
     private final JdbcTemplate jdbcTemplate;
     private final ChunkSearchPort chunkSearchPort;
     private final RetrievalHydrator retrievalHydrator;
+    private final QaHybridRetriever hybridRetriever;
 
     public QaPassageRetriever(
             JdbcTemplate jdbcTemplate,
             ChunkSearchPort chunkSearchPort,
             RetrievalHydrator retrievalHydrator
     ) {
+        this(jdbcTemplate, chunkSearchPort, retrievalHydrator, null);
+    }
+
+    @Autowired
+    public QaPassageRetriever(
+            JdbcTemplate jdbcTemplate,
+            ChunkSearchPort chunkSearchPort,
+            RetrievalHydrator retrievalHydrator,
+            QaHybridRetriever hybridRetriever
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.chunkSearchPort = chunkSearchPort;
         this.retrievalHydrator = retrievalHydrator;
+        this.hybridRetriever = hybridRetriever;
     }
 
     public List<RetrievedChunk> retrieve(String workspaceId, String query) {
@@ -78,7 +91,20 @@ public class QaPassageRetriever {
         int relevantPrimaryHitCount = 0;
         int rejectedRelevanceCount = 0;
         int rejectedOwnershipCount = 0;
-        try {
+        if (hybridRetriever != null) {
+            try {
+                QaHybridRetriever.HybridResult hybrid = hybridRetriever.retrieve(
+                        workspaceId, query, allowedSources);
+                return new RetrievalResult(hybrid.chunks(), hybrid.degraded(),
+                        hybrid.degradationReasons(), hybrid.measurements());
+            } catch (Exception ex) {
+                degradationReasons.add("qa_hybrid_retrieval_error");
+                log.warn("QA hybrid retrieval failed; fallback=mysql; errorCode={}",
+                        ex instanceof com.noteweave.retrieval.provider.RetrievalProviderException provider
+                                ? provider.errorCode() : "QA_HYBRID_RETRIEVAL_FAILED");
+            }
+        }
+        if (hybridRetriever == null) try {
             List<ChunkSearchHit> searchHits = chunkSearchPort.search(workspaceId, query, 12);
             primaryHitCount = searchHits.size();
             List<ChunkSearchHit> scopedSearchHits = searchHits.stream()
@@ -378,20 +404,33 @@ public class QaPassageRetriever {
             String generatedBy,
             String generatedRefId,
             int score,
-            String matchReason
+            String matchReason,
+            double rawScore,
+            double fusedScore,
+            double rerankScore
     ) {
+        public RetrievedChunk(
+                String chunkId, String sourceId, String sourceSnapshotId, int chunkNo,
+                String title, String content, String locationInfo, String sourceType,
+                String generatedBy, String generatedRefId, int score, String matchReason
+        ) {
+            this(chunkId, sourceId, sourceSnapshotId, chunkNo, title, content, locationInfo,
+                    sourceType, generatedBy, generatedRefId, score, matchReason,
+                    score, score, score);
+        }
+
         RetrievedChunk withScore(int nextScore) {
             return new RetrievedChunk(
                     chunkId, sourceId, sourceSnapshotId, chunkNo, title, content,
                     locationInfo, sourceType, generatedBy, generatedRefId,
-                    nextScore, matchReason);
+                    nextScore, matchReason, nextScore, nextScore, nextScore);
         }
 
         RetrievedChunk withMatchReason(String nextMatchReason) {
             return new RetrievedChunk(
                     chunkId, sourceId, sourceSnapshotId, chunkNo, title, content,
                     locationInfo, sourceType, generatedBy, generatedRefId,
-                    score, nextMatchReason);
+                    score, nextMatchReason, rawScore, fusedScore, rerankScore);
         }
     }
 
