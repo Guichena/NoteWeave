@@ -128,7 +128,6 @@ public class ResearchAgentTaskCoordinatorService {
         RunScope run = requireIncrementalRunnableRun(command.researchRunId());
         ResearchBriefCompiler.CompiledBrief brief = researchBriefCompiler.compile(run.id(), run.question());
         List<Map<String, Object>> sources = loadTrustedSources(run.workspaceId(), run.sourceScopeJson());
-        if (sources.isEmpty()) throw new BusinessException("RESEARCH_AGENT_COORDINATOR_SOURCE_SCOPE_EMPTY", "Counterfactual repair requires ready workspace sources");
         List<CounterfactualTarget> targets = command.targets().stream()
                 .sorted(java.util.Comparator.comparing(CounterfactualTarget::cellKey).thenComparing(CounterfactualTarget::reasonDigest))
                 .toList();
@@ -143,7 +142,7 @@ public class ResearchAgentTaskCoordinatorService {
             List<Map<String, Object>> independentSources = sources.stream()
                     .filter(source -> !target.excludedSourceIds().contains(String.valueOf(source.get("source_id"))))
                     .toList();
-            if (independentSources.isEmpty()) {
+            if (independentSources.isEmpty() && !run.retrievalMode().usesWeb()) {
                 throw new BusinessException("RESEARCH_AGENT_REPAIR_SOURCE_SCOPE_EMPTY", "Counterfactual repair has no independent source scope");
             }
             String fingerprint = repairFingerprint(run.id(), command.parentCheckpointSeq(), command.waveNo(), cell, target);
@@ -383,6 +382,9 @@ public class ResearchAgentTaskCoordinatorService {
             List<String> excludedSourceIds
     ) {
         Map<String, Object> policy = new LinkedHashMap<>(sourcePolicy(run, sources));
+        if (sources.isEmpty() && run.retrievalMode() == ResearchRetrievalMode.WEB_PLUS_SEEDS) {
+            policy.put("retrieval_mode", ResearchRetrievalMode.WEB_ONLY.name());
+        }
         policy.put("excluded_source_ids", excludedSourceIds);
         return Map.copyOf(policy);
     }

@@ -406,14 +406,33 @@ def build_web_search_adapter() -> SearchAdapter:
     return CompositeSearchAdapter(external_adapters)
 
 
+def build_web_plus_seed_search_adapter() -> SearchAdapter:
+    """Build strict Web + seed search; Web availability is part of the mode contract."""
+    external_adapters = _build_external_search_adapters()
+    if not external_adapters:
+        raise RuntimeError("RESEARCH_WEB_PROVIDER_UNAVAILABLE")
+    return CompositeSearchAdapter([SeedSourceSearchAdapter(), *external_adapters])
+
+
 def run_research_search(
     task_input: ResearchTaskInput,
     plan: ResearchPlan,
     adapter: SearchAdapter | None = None,
     remaining_budget: int | None = None,
 ) -> list[ResearchSearchHit]:
-    search_adapter = adapter or build_default_search_adapter()
+    search_adapter = adapter or _adapter_for_retrieval_mode(task_input.retrieval_mode)
     return search_adapter.search(task_input, plan, remaining_budget=remaining_budget)
+
+
+def _adapter_for_retrieval_mode(retrieval_mode: str) -> SearchAdapter:
+    mode = retrieval_mode.strip().upper()
+    if mode == "WEB_ONLY":
+        return build_web_search_adapter()
+    if mode == "WEB_PLUS_SEEDS":
+        return build_web_plus_seed_search_adapter()
+    if mode == "SOURCES_ONLY":
+        return SeedSourceSearchAdapter()
+    return build_default_search_adapter()
 
 
 def build_search_query_plan(

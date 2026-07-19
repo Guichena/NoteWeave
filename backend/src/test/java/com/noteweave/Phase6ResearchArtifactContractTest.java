@@ -3496,6 +3496,7 @@ class Phase6ResearchArtifactContractTest {
         mockMvc.perform(get("/internal/worker/research-tasks/{taskId}/input", resumedTaskId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.target_id").value(resumedResearchRunId))
+                .andExpect(jsonPath("$.data.retrieval_mode").value("SOURCES_ONLY"))
                 .andExpect(jsonPath("$.data.input_payload.research_intent.research_goal").value("Continue the interrupted checkpoint recovery path."))
                 .andExpect(jsonPath("$.data.input_payload.resume_checkpoint.source_research_run_id").value(researchRunId))
                 .andExpect(jsonPath("$.data.input_payload.resume_checkpoint.checkpoint_no").value(1))
@@ -3666,12 +3667,15 @@ class Phase6ResearchArtifactContractTest {
                 .isEqualTo(resumedResearchRunId);
 
         Map<String, Object> resumedRow = jdbcTemplate.queryForMap("""
-                select resumed_from_research_run_id, resumed_from_checkpoint_no
+                select resumed_from_research_run_id, resumed_from_checkpoint_no,
+                       retrieval_mode, agent_execution_mode
                 from research_run
                 where id = ?
                 """, resumedResearchRunId);
         assertThat(resumedRow.get("resumed_from_research_run_id")).isEqualTo(researchRunId);
         assertThat(((Number) resumedRow.get("resumed_from_checkpoint_no")).intValue()).isEqualTo(1);
+        assertThat(resumedRow.get("retrieval_mode")).isEqualTo("SOURCES_ONLY");
+        assertThat(resumedRow.get("agent_execution_mode")).isEqualTo("SEQUENTIAL_V1");
     }
 
     @Test

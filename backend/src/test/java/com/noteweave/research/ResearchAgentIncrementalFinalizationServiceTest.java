@@ -38,15 +38,40 @@ class ResearchAgentIncrementalFinalizationServiceTest {
     @BeforeEach
     void setUp() {
         workspaceId = Ids.newId(); runId = Ids.newId(); parentTaskId = Ids.newId(); String rowId = Ids.newId();
+        String agentTaskId = Ids.newId();
+        String snapshotKey = "research/external/finalization-test/snapshot-1";
         jdbcTemplate.update("insert into workspace(id, owner_id, name, status) values (?, 'local-user', 'finalization-test', 'ACTIVE')", workspaceId);
         jdbcTemplate.update("insert into workspace_member(id, workspace_id, user_id, role, status) values (?, ?, 'local-user', 'OWNER', 'ACTIVE')", Ids.newId(), workspaceId);
         jdbcTemplate.update("insert into task(id, workspace_id, task_type, task_status, target_type, target_id) values (?, ?, 'RESEARCH_RUN', 'RUNNING', 'RESEARCH_RUN', ?)", parentTaskId, workspaceId, runId);
         jdbcTemplate.update("insert into research_run(id, workspace_id, task_id, question, profile_key, source_scope_json, status, agent_execution_mode) values (?, ?, ?, 'What is verified?', 'DEFAULT', '[]', 'RUNNING', 'INCREMENTAL_V1')", runId, workspaceId, parentTaskId);
+        jdbcTemplate.update("""
+                insert into research_agent_task(
+                    id, research_run_id, task_key, idempotency_key, wave_no, role, entity_id,
+                    branch_id, plan_revision, entity_set_version, target_cells_json, budget_json, status)
+                values (?, ?, 'finalization-test-task', 'finalization-test-task', 1, 'DEEP_CELL',
+                    'entity-1', 'branch-main', 1, 1, '["entity-1:claim"]', '{}', 'SUBMITTED')
+                """, agentTaskId, runId);
+        jdbcTemplate.update("""
+                insert into research_external_snapshot(
+                    id, research_run_id, research_agent_task_id, window_id, source_id, source_title,
+                    source_url, source_domain, provider, adapter, snapshot_key, content_text,
+                    content_sha256, archive_status)
+                values (?, ?, ?, 'external-window-1', 'external:incremental-source', 'Incremental source',
+                    'https://example.com/research', 'example.com', 'search-provider', 'external_url', ?,
+                    'Verified citation excerpt with archived context.', ?, 'ARCHIVED')
+                """, Ids.newId(), runId, agentTaskId, snapshotKey, "c".repeat(64));
         jdbcTemplate.update("insert into research_row(id, research_run_id, row_key, row_status) values (?, ?, 'entity-1', 'CANDIDATE_READY')", rowId, runId);
         String cellId = Ids.newId();
         String sourceEvidenceId = Ids.newId();
         jdbcTemplate.update("insert into research_cell(id, research_run_id, research_row_id, cell_key, column_key, candidate_value, cell_status, evidence_refs_json, repair_count) values (?, ?, ?, 'entity-1:claim', 'claim', 'Verified answer', 'VERIFIED', '[\"evidence-1\"]', 0)", cellId, runId, rowId);
-        jdbcTemplate.update("insert into source_evidence(id, research_run_id, evidence_key, source_id, source_title, quote_text, claim_text) values (?, ?, 'evidence-1', 'external:incremental-source', 'Incremental source', 'Verified citation excerpt', 'Verified claim')", sourceEvidenceId, runId);
+        jdbcTemplate.update("""
+                insert into source_evidence(
+                    id, research_run_id, evidence_key, window_id, source_id, source_title,
+                    source_url, provider, adapter, quote_text, claim_text, snapshot_status, snapshot_key)
+                values (?, ?, 'evidence-1', 'external-window-1', 'external:incremental-source',
+                    'Incremental source', 'https://example.com/research', 'search-provider', 'external_url',
+                    'Verified citation excerpt', 'Verified claim', 'EXTERNAL_ARCHIVED', ?)
+                """, sourceEvidenceId, runId, snapshotKey);
         jdbcTemplate.update("insert into research_cell_evidence(id, research_run_id, research_cell_id, source_evidence_id, evidence_key) values (?, ?, ?, ?, 'evidence-1')", Ids.newId(), runId, cellId, sourceEvidenceId);
     }
 
@@ -89,7 +114,12 @@ class ResearchAgentIncrementalFinalizationServiceTest {
                 .andExpect(jsonPath("$.data.research_run_id").value(runId))
                 .andExpect(jsonPath("$.data.report.markdown", org.hamcrest.Matchers.containsString("Verified answer")))
                 .andExpect(jsonPath("$.data.adopted_sources.length()").value(1))
+                .andExpect(jsonPath("$.data.adopted_sources[0].source_kind").value("WEB"))
                 .andExpect(jsonPath("$.data.adopted_sources[0].source_id").value("external:incremental-source"))
+                .andExpect(jsonPath("$.data.adopted_sources[0].source_snapshot_key").value(
+                        "research/external/finalization-test/snapshot-1"))
+                .andExpect(jsonPath("$.data.adopted_sources[0].source_url").value("https://example.com/research"))
+                .andExpect(jsonPath("$.data.adopted_sources[0].source_domain").value("example.com"))
                 .andExpect(jsonPath("$.data.adopted_sources[0].excerpt").value("Verified citation excerpt"))
                 .andExpect(jsonPath("$.data.notes.length()").value(1))
                 .andExpect(jsonPath("$.data.notes[0].note_type").value("FINDING"))

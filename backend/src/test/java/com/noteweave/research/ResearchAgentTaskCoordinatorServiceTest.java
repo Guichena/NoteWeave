@@ -60,8 +60,11 @@ class ResearchAgentTaskCoordinatorServiceTest {
         jdbcTemplate.update("insert into source_chunk(id, workspace_id, source_id, source_snapshot_id, chunk_no, content, token_estimate) values (?, ?, ?, ?, 1, 'The method is documented.', 5)", chunkId, workspaceId, sourceId, snapshotId);
         jdbcTemplate.update("insert into source_window(id, source_chunk_id, window_no, content) values (?, ?, 1, 'The method is documented.')", Ids.newId(), chunkId);
         jdbcTemplate.update("""
-                insert into research_run(id, workspace_id, task_id, question, profile_key, source_scope_json, status, agent_execution_mode)
-                values (?, ?, ?, 'How does the method work?', 'DEFAULT', ?, 'RUNNING', 'INCREMENTAL_V1')
+                insert into research_run(
+                    id, workspace_id, task_id, question, profile_key, source_scope_json,
+                    retrieval_mode, status, agent_execution_mode)
+                values (?, ?, ?, 'How does the method work?', 'DEFAULT', ?,
+                    'WEB_PLUS_SEEDS', 'RUNNING', 'INCREMENTAL_V1')
                 """, runId, workspaceId, parentTaskId, objectMapper.writeValueAsString(List.of(sourceId)));
         jdbcTemplate.update("insert into research_row(id, research_run_id, row_key, row_status) values (?, ?, 'entity-1', 'CANDIDATE_READY')", rowId, runId);
         insertCell(rowId, "entity-1:method", "method");
@@ -381,6 +384,34 @@ class ResearchAgentTaskCoordinatorServiceTest {
                 .isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_budget_reservation where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_outbox where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
+    }
+
+    @Test
+    void shouldCreateWebOnlyCounterfactualWithoutWorkspaceSources() throws Exception {
+        when(externalEvidencePolicy.enabled()).thenReturn(true);
+        jdbcTemplate.update("""
+                update research_run
+                set source_scope_json = '[]', retrieval_mode = 'WEB_ONLY'
+                where id = ?
+                """, runId);
+        var command = new ResearchAgentTaskCoordinatorService.CounterfactualRepairCommand(
+                runId, 0, 2, List.of(new ResearchAgentTaskCoordinatorService.CounterfactualTarget(
+                        "entity-1:method", "sha256:web-only-repair", List.of("external:prior-evidence"))));
+
+        var receipt = coordinator.planCounterfactualRepairs(command);
+
+        assertThat(receipt.createdTaskCount()).isEqualTo(1);
+        String context = jdbcTemplate.queryForObject("""
+                select execution_context_json from research_agent_task
+                where research_run_id = ? and role = 'COUNTERFACTUAL'
+                """, String.class, runId);
+        var sourcePolicy = objectMapper.readTree(context).path("source_policy");
+        assertThat(sourcePolicy.path("retrieval_mode").asText()).isEqualTo("WEB_ONLY");
+        assertThat(sourcePolicy.path("source_scope")).isEmpty();
+        assertThat(sourcePolicy.path("allow_external_search").asBoolean()).isTrue();
+        assertThat(sourcePolicy.path("allow_external_fetch").asBoolean()).isTrue();
+        assertThat(sourcePolicy.path("excluded_source_ids").get(0).asText())
+                .isEqualTo("external:prior-evidence");
     }
 
     @Test

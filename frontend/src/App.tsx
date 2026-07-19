@@ -57,6 +57,11 @@ import {
   type SaveResearchReportSource
 } from "./features/research/model";
 import { useResearchState } from "./features/research/useResearchState";
+import {
+  buildResearchSourceSelection,
+  DEFAULT_RESEARCH_RETRIEVAL_MODE,
+  researchModeRequiresSeeds
+} from "./features/research/launch";
 
 import {
   buildArtifactJobInputs,
@@ -412,7 +417,9 @@ export function App() {
   const [researchTimeRange, setResearchTimeRange] = useState("");
   const [researchDepth, setResearchDepth] = useState("STANDARD");
   const [researchType, setResearchType] = useState("AUTO");
-  const [researchRetrievalMode, setResearchRetrievalMode] = useState<ResearchRetrievalMode>("WEB_ONLY");
+  const [researchRetrievalMode, setResearchRetrievalMode] = useState<ResearchRetrievalMode>(
+    DEFAULT_RESEARCH_RETRIEVAL_MODE
+  );
   const [selectedResearchSourceIds, setSelectedResearchSourceIds] = useState<string[]>([]);
   const [currentResearchCollection, setCurrentResearchCollection] = useState<ResearchCollection | null>(null);
   const [latestResearchTaskId, setLatestResearchTaskId] = useState("");
@@ -820,7 +827,7 @@ export function App() {
       setStatus("请先填写 Deep Research 问题");
       return;
     }
-    if (researchRetrievalMode !== "WEB_ONLY" && selectedResearchSourceIds.length === 0) {
+    if (researchModeRequiresSeeds(researchRetrievalMode) && selectedResearchSourceIds.length === 0) {
       setStatus(`${researchRetrievalMode} 模式至少需要一份已解析资料`);
       return;
     }
@@ -845,8 +852,7 @@ export function App() {
         depth: nextDepth,
         research_type: nextResearchType,
         retrieval_mode: researchRetrievalMode,
-        seed_source_ids: researchRetrievalMode === "WEB_ONLY" ? [] : selectedResearchSourceIds,
-        source_scope_source_ids: []
+        ...buildResearchSourceSelection(researchRetrievalMode, selectedResearchSourceIds)
       });
       prepareResearchRun(created.research_run_id);
       const refreshed = await refreshResearchTask(created.task_id, created.research_run_id);

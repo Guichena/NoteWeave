@@ -11,6 +11,7 @@ public record ResearchWorkerInputResponse(
         int attemptNo,
         long fencingToken,
         List<WorkerSourceScopeItemResponse> sourceScope,
+        String retrievalMode,
         MemoryControlPackResponse controlPack,
         ResearchWorkerInputPayload inputPayload
 ) {

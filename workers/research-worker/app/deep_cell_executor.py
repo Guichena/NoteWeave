@@ -46,7 +46,7 @@ from app.research_agent_completion_contract import (
 )
 from app.search_adapters import (
     SeedSourceSearchAdapter,
-    build_default_search_adapter,
+    build_web_plus_seed_search_adapter,
     build_web_search_adapter,
     run_research_search,
 )
@@ -87,7 +87,7 @@ class ExistingResearchToolchain:
         if retrieval_mode == "WEB_ONLY":
             adapter = build_web_search_adapter()
         elif retrieval_mode == "WEB_PLUS_SEEDS":
-            adapter = build_default_search_adapter()
+            adapter = build_web_plus_seed_search_adapter()
         else:
             adapter = SeedSourceSearchAdapter()
         return list(run_research_search(task_input, plan, adapter=adapter))

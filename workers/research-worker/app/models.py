@@ -142,6 +142,7 @@ class ResearchTaskInput(BaseModel):
     workspace_id: str
     target_id: str
     source_scope: list[SourceScopeItem] = Field(default_factory=list)
+    retrieval_mode: str = ""
     control_pack: ControlPack
     input_payload: ResearchTaskInputPayload
 

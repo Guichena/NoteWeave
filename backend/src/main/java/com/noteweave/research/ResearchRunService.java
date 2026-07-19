@@ -283,9 +283,9 @@ public class ResearchRunService {
         jdbcTemplate.update("""
                 insert into research_run(
                     id, workspace_id, task_id, question, profile_key,
-                    research_intent_json, source_scope_json, control_pack_json, status,
+                    research_intent_json, source_scope_json, control_pack_json, retrieval_mode, status,
                     resumed_from_research_run_id, resumed_from_checkpoint_no
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, 'QUEUED', ?, ?)
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, 'QUEUED', ?, ?)
                 """,
                 resumedResearchRunId,
                 workspaceId,
@@ -295,6 +295,7 @@ public class ResearchRunService {
                 sourceRun.researchIntentJson(),
                 sourceRun.sourceScopeJson(),
                 sourceRun.controlPackJson(),
+                sourceRun.retrievalMode().name(),
                 researchRunId,
                 checkpointNo
         );
@@ -324,6 +325,7 @@ public class ResearchRunService {
                         }
                 ),
                 "source_scope_count", readSourceScopeIds(sourceRun.sourceScopeJson()).size(),
+                "retrieval_mode", sourceRun.retrievalMode().name(),
                 "resumed_from_research_run_id", researchRunId,
                 "resumed_from_checkpoint_no", checkpointNo
         ));
@@ -356,6 +358,7 @@ public class ResearchRunService {
                 callbackLease.attemptNo(),
                 callbackLease.fencingToken(),
                 loadSourceScopeSnapshot(row.workspaceId(), row.sourceScopeJson()),
+                row.retrievalMode().name(),
                 readControlPack(row.controlPackJson()),
                 new ResearchWorkerInputPayload(
                         row.question(),
@@ -1067,7 +1070,7 @@ public class ResearchRunService {
     private ResumeSourceRunRow loadResumeSourceRun(String workspaceId, String researchRunId) {
         return jdbcTemplate.query("""
                 select id, workspace_id, question, profile_key, research_intent_json,
-                       source_scope_json, control_pack_json
+                       source_scope_json, control_pack_json, retrieval_mode
                 from research_run
                 where workspace_id = ? and id = ?
                 """, rs -> {
@@ -1081,7 +1084,8 @@ public class ResearchRunService {
                     rs.getString("profile_key"),
                     rs.getString("research_intent_json"),
                     rs.getString("source_scope_json"),
-                    rs.getString("control_pack_json")
+                    rs.getString("control_pack_json"),
+                    ResearchRetrievalMode.valueOf(rs.getString("retrieval_mode"))
             );
         }, workspaceId, researchRunId);
     }
@@ -1124,7 +1128,7 @@ public class ResearchRunService {
     private RunRow findByTaskId(String taskId) {
         return jdbcTemplate.query("""
                 select id, workspace_id, task_id, question, profile_key, research_intent_json,
-                       source_scope_json, control_pack_json,
+                       source_scope_json, control_pack_json, retrieval_mode,
                        resumed_from_research_run_id, resumed_from_checkpoint_no
                 from research_run
                 where task_id = ?
@@ -1141,6 +1145,7 @@ public class ResearchRunService {
                     rs.getString("research_intent_json"),
                     rs.getString("source_scope_json"),
                     rs.getString("control_pack_json"),
+                    ResearchRetrievalMode.valueOf(rs.getString("retrieval_mode")),
                     rs.getString("resumed_from_research_run_id"),
                     (Integer) rs.getObject("resumed_from_checkpoint_no")
             );
@@ -4049,6 +4054,7 @@ public class ResearchRunService {
             String researchIntentJson,
             String sourceScopeJson,
             String controlPackJson,
+            ResearchRetrievalMode retrievalMode,
             String resumedFromResearchRunId,
             Integer resumedFromCheckpointNo
     ) {
@@ -4105,7 +4111,8 @@ public class ResearchRunService {
             String profileKey,
             String researchIntentJson,
             String sourceScopeJson,
-            String controlPackJson
+            String controlPackJson,
+            ResearchRetrievalMode retrievalMode
     ) {
     }
 

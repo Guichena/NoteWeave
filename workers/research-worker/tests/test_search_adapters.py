@@ -17,9 +17,11 @@ from app.search_adapters import (
     HttpJsonSearchTransport,
     SeedSourceSearchAdapter,
     WorkspaceSearchAdapter,
+    build_web_plus_seed_search_adapter,
     build_web_search_adapter,
     build_search_query_plan,
     build_default_search_adapter,
+    run_research_search,
 )
 
 
@@ -105,6 +107,35 @@ def test_web_search_adapter_should_fail_explicitly_without_external_provider(mon
 
     with pytest.raises(RuntimeError, match="RESEARCH_WEB_PROVIDER_UNAVAILABLE"):
         build_web_search_adapter()
+
+
+def test_web_plus_seed_search_adapter_should_fail_explicitly_without_external_provider(monkeypatch) -> None:
+    monkeypatch.delenv("NOTEWEAVE_RESEARCH_SEARCH_API_KEY", raising=False)
+    monkeypatch.delenv("SERPER_API_KEY", raising=False)
+
+    with pytest.raises(RuntimeError, match="RESEARCH_WEB_PROVIDER_UNAVAILABLE"):
+        build_web_plus_seed_search_adapter()
+
+
+def test_research_search_should_enforce_web_plus_seed_mode_without_silent_seed_fallback(monkeypatch) -> None:
+    monkeypatch.delenv("NOTEWEAVE_RESEARCH_SEARCH_API_KEY", raising=False)
+    monkeypatch.delenv("SERPER_API_KEY", raising=False)
+    task_input = _build_task_input().model_copy(update={"retrieval_mode": "WEB_PLUS_SEEDS"})
+
+    with pytest.raises(RuntimeError, match="RESEARCH_WEB_PROVIDER_UNAVAILABLE"):
+        run_research_search(task_input, build_research_plan(task_input))
+
+
+def test_research_search_should_keep_sources_only_mode_off_the_external_chain(monkeypatch) -> None:
+    def fail_if_external_is_built():
+        raise AssertionError("SOURCES_ONLY must not inspect or build external providers")
+
+    monkeypatch.setattr("app.search_adapters._build_external_search_adapters", fail_if_external_is_built)
+    task_input = _build_task_input().model_copy(update={"retrieval_mode": "SOURCES_ONLY"})
+
+    hits = run_research_search(task_input, build_research_plan(task_input))
+
+    assert [hit.source_id for hit in hits] == ["src-workspace"]
 
 
 def test_seed_source_adapter_only_matches_explicitly_selected_seed_snapshots() -> None:
