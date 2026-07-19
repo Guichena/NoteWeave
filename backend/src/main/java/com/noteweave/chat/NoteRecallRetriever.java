@@ -103,6 +103,9 @@ public class NoteRecallRetriever {
         candidates.stream()
                 .filter(source -> metadataRanks.getOrDefault(
                                 source.sourceId(), NoteRecallRanker.MetadataRank.empty()).score() > 0
+                        || indexedMetadataScores.getOrDefault(source.sourceId(), 0) > 0
+                        || tagScores.getOrDefault(source.sourceId(), 0) > 0
+                        || semanticScores.getOrDefault(source.sourceId(), 0) > 0
                         || noteSignals.getOrDefault(source.sourceId(), 0) > 0)
                 .sorted(Comparator.comparingInt((CandidateSource source) ->
                                 metadataRanks.getOrDefault(

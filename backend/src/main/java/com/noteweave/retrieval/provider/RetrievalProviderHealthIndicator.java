@@ -9,9 +9,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 @Component("retrievalProviders")
 public class RetrievalProviderHealthIndicator implements HealthIndicator {
+    private static final long CACHE_NANOS = java.time.Duration.ofSeconds(30).toNanos();
     private final EmbeddingClient embeddingClient;
     private final RerankClient rerankClient;
     private final int expectedDimensions;
+    private volatile CachedHealth cachedHealth;
 
     @Autowired
     public RetrievalProviderHealthIndicator(
@@ -32,6 +34,24 @@ public class RetrievalProviderHealthIndicator implements HealthIndicator {
 
     @Override
     public Health health() {
+        long now = System.nanoTime();
+        CachedHealth snapshot = cachedHealth;
+        if (snapshot != null && now - snapshot.createdAtNanos() < CACHE_NANOS) {
+            return snapshot.health();
+        }
+        synchronized (this) {
+            snapshot = cachedHealth;
+            now = System.nanoTime();
+            if (snapshot != null && now - snapshot.createdAtNanos() < CACHE_NANOS) {
+                return snapshot.health();
+            }
+            Health health = probe();
+            cachedHealth = new CachedHealth(now, health);
+            return health;
+        }
+    }
+
+    private Health probe() {
         boolean embeddingEnabled = embeddingClient.isEnabled();
         boolean rerankEnabled = rerankClient.isEnabled();
         boolean embeddingProbe = false;
@@ -63,4 +83,6 @@ public class RetrievalProviderHealthIndicator implements HealthIndicator {
                 .withDetail("probe_error_code", errorCode)
                 .build();
     }
+
+    private record CachedHealth(long createdAtNanos, Health health) { }
 }

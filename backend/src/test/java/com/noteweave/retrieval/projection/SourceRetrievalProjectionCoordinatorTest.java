@@ -53,15 +53,36 @@ class SourceRetrievalProjectionCoordinatorTest {
                         "qa-index");
         when(projectionService.projectSnapshot("workspace-1", "source-1", "snapshot-1"))
                 .thenReturn(result);
-        when(finalizer.staleSnapshots("workspace-1", "source-1", "snapshot-1"))
+        when(finalizer.finalizeReady(
+                "workspace-1", "source-1", "snapshot-1", "task-1", result))
                 .thenReturn(List.of(stale));
 
         coordinator.projectAndFinalize("workspace-1", "source-1", "snapshot-1", "task-1");
 
         InOrder order = inOrder(finalizer, projectionWriter);
+        order.verify(projectionWriter).markSnapshotCurrent("qa-index", "snapshot-1");
+        order.verify(projectionWriter).markSnapshotCurrent("note-index", "snapshot-1");
         order.verify(finalizer).finalizeReady(
                 "workspace-1", "source-1", "snapshot-1", "task-1", result);
         order.verify(projectionWriter).markSnapshotNotCurrent("qa-index", "snapshot-0");
+    }
+
+    @Test
+    void retryShouldReactivateDocumentsBeforeFinalization() {
+        SourceRetrievalProjectionService.ProjectionResult result = completeResult();
+        when(projectionService.projectSnapshot("workspace-1", "source-1", "snapshot-1"))
+                .thenReturn(result);
+        when(finalizer.finalizeReady(
+                "workspace-1", "source-1", "snapshot-1", "task-1", result))
+                .thenReturn(List.of());
+
+        coordinator.projectAndFinalize("workspace-1", "source-1", "snapshot-1", "task-1");
+
+        InOrder order = inOrder(projectionWriter, finalizer);
+        order.verify(projectionWriter).markSnapshotCurrent("qa-index", "snapshot-1");
+        order.verify(projectionWriter).markSnapshotCurrent("note-index", "snapshot-1");
+        order.verify(finalizer).finalizeReady(
+                "workspace-1", "source-1", "snapshot-1", "task-1", result);
     }
 
     private SourceRetrievalProjectionService.ProjectionResult completeResult() {

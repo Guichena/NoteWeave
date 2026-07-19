@@ -6,6 +6,7 @@ import com.noteweave.retrieval.index.RetrievalIndexNames;
 import com.noteweave.retrieval.projection.RetrievalIndexBuildRepository.CreateIndexBuild;
 import com.noteweave.retrieval.projection.RetrievalIndexBuildRepository.IndexBuild;
 import com.noteweave.retrieval.projection.RetrievalProjectionRepository.ProjectionType;
+import com.noteweave.source.SourceCatalogVersionService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -21,23 +22,28 @@ public class RetrievalBackfillService {
     private final RetrievalIndexBuildRepository buildRepository;
     private final SourceRetrievalProjectionService projectionService;
     private final RetrievalIndexManager indexManager;
+    private final SourceCatalogVersionService sourceCatalogVersionService;
 
     public RetrievalBackfillService(
             JdbcTemplate jdbcTemplate,
             NoteWeaveProperties properties,
             RetrievalIndexBuildRepository buildRepository,
             SourceRetrievalProjectionService projectionService,
-            RetrievalIndexManager indexManager
+            RetrievalIndexManager indexManager,
+            SourceCatalogVersionService sourceCatalogVersionService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.properties = properties;
         this.buildRepository = buildRepository;
         this.projectionService = projectionService;
         this.indexManager = indexManager;
+        this.sourceCatalogVersionService = sourceCatalogVersionService;
     }
 
     public BackfillResult rebuildWorkspace(String workspaceId) {
+        long sourceCatalogVersion = sourceCatalogVersionService.current(workspaceId);
         List<SnapshotTarget> targets = currentSnapshots(workspaceId);
+        requireStableCatalog(workspaceId, sourceCatalogVersion);
         long qaExpected = targets.stream().mapToLong(SnapshotTarget::chunkCount).sum();
         long noteExpected = targets.size();
         String model = properties.embedding().model();
@@ -68,6 +74,7 @@ public class RetrievalBackfillService {
                     failedSources.add(target.sourceId());
                 }
             }
+            requireStableCatalog(workspaceId, sourceCatalogVersion);
             long qaReady = readyCount(workspaceId, ProjectionType.QA_CHUNK, qaTarget);
             long noteReady = readyCount(workspaceId, ProjectionType.NOTE_SOURCE, noteTarget);
             long qaFailed = Math.max(0, qaExpected - qaReady);
@@ -157,6 +164,13 @@ public class RetrievalBackfillService {
                 where workspace_id = ? and projection_type = ? and target_index = ? and status = 'READY'
                 """, Long.class, workspaceId, type.name(), targetIndex);
         return count == null ? 0 : count;
+    }
+
+    void requireStableCatalog(String workspaceId, long expectedVersion) {
+        if (sourceCatalogVersionService.current(workspaceId) != expectedVersion) {
+            throw new IllegalStateException(
+                    "Source catalog changed during retrieval backfill; rebuild must be retried");
+        }
     }
 
     private BackfillResult result(String workspaceId, String qaBuildId, String noteBuildId,

@@ -1,6 +1,7 @@
 package com.noteweave.retrieval.index;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch.core.UpdateByQueryResponse;
 import com.noteweave.retrieval.index.RetrievalProjectionWriter.NoteSourceDocument;
 import com.noteweave.retrieval.index.RetrievalProjectionWriter.QaChunkDocument;
 import java.io.IOException;
@@ -30,19 +31,39 @@ public class ElasticsearchRetrievalProjectionWriter implements RetrievalProjecti
 
     @Override
     public void markSnapshotNotCurrent(String targetIndex, String sourceSnapshotId) {
+        updateSnapshotCurrentFlag(targetIndex, sourceSnapshotId, false, false);
+    }
+
+    @Override
+    public void markSnapshotCurrent(String targetIndex, String sourceSnapshotId) {
+        updateSnapshotCurrentFlag(targetIndex, sourceSnapshotId, true, true);
+    }
+
+    private void updateSnapshotCurrentFlag(
+            String targetIndex,
+            String sourceSnapshotId,
+            boolean current,
+            boolean requireMatch
+    ) {
         try {
-            client.updateByQuery(update -> update
+            client.indices().refresh(refresh -> refresh.index(targetIndex));
+            UpdateByQueryResponse response = client.updateByQuery(update -> update
                     .index(targetIndex)
                     .query(query -> query.term(term -> term
                             .field("source_snapshot_id")
                             .value(sourceSnapshotId)))
                     .script(script -> script
                             .lang("painless")
-                            .source("ctx._source.is_current_snapshot = false"))
+                            .source("ctx._source.is_current_snapshot = params.current")
+                            .params("current", co.elastic.clients.json.JsonData.of(current)))
                     .refresh(true));
+            if (requireMatch && response.updated() == 0) {
+                throw new IllegalStateException(
+                        "No retrieval projection found for snapshot activation " + sourceSnapshotId);
+            }
         } catch (IOException ex) {
             throw new IllegalStateException(
-                    "Failed to invalidate retrieval snapshot " + sourceSnapshotId, ex);
+                    "Failed to update retrieval snapshot activation " + sourceSnapshotId, ex);
         }
     }
 

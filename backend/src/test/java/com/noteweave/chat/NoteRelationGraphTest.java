@@ -21,6 +21,15 @@ class NoteRelationGraphTest {
                 .containsEntry("b", 1);
     }
 
+    @Test
+    void structuredTagsShouldUseFacetValueWithoutTreatingJsonKeysAsTags() {
+        NoteRelationGraph graph = new NoteRelationGraph();
+
+        assertThat(graph.tags("[{\"name\":\"RAG\",\"facet\":\"topic\"}]"))
+                .containsExactly("topic:rag")
+                .doesNotContain("name", "facet");
+    }
+
     private CandidateSource source(String id, String title, String tags) {
         return new CandidateSource(id, title, "MARKDOWN", 1, 1, "", "", "summary", tags,
                 "{}", "", 0, "", List.of(), List.of(), 0, 0, "", "");

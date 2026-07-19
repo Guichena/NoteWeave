@@ -1078,3 +1078,24 @@ NoteWeave 的对应实现：
 ### 18.3 不复制的项目特有模型
 
 WeKnora 的 Tenant/KnowledgeBase/Store 绑定、FAQ 专用迭代查询和多模态图片改写，以及 Marginalia 的 SQLite/DuckDB、Catalog/FileEntry/WebDAV 数据模型，不属于 NoteWeave 的 Workspace/Source/SourceSnapshot 边界。这些项目特有模型不复制；其检索职责、生命周期、证据和失败语义映射到 NoteWeave 的 Java 模块与持久化契约。
+
+## 19. 最终态复核补偿
+
+2026-07-20 对提交 `ddc5fb26` 进行独立工作树、真实 Elasticsearch 和 Deep Review 复核后，追加以下必须项；这些修复不是阶段版本，而是最终态发布门禁的一部分：
+
+- 投影文档初次写入固定为 `is_current_snapshot=false`。只有同一 Snapshot 的 QA Chunk 与 Note Source 均完整 READY 后，才激活两类文档；激活前先 refresh 目标索引且必须至少命中一条文档，失败补偿后的重试必须重新激活已 READY 文档。旧 Snapshot 失效保持幂等，允许重复执行时零命中。
+- `SourceRetrievalProjectionFinalizer` 在事务内先冻结旧 Snapshot 的物理索引清单，再把 MySQL 投影标记为 STALE；事务提交后按冻结清单失效 ES 文档，禁止在状态变化后重新查询 READY 集合。
+- 在线投影通过 workspace alias 解析实际 write index。全量回填切换到 generation index 后，新资料必须继续写入当前 generation，不能回落到按配置重新计算但未挂 alias 的物理索引。
+- 全量回填记录 workspace `source_catalog_version`，收集快照后和 alias 切换前均要求版本未变化；检测到并发资料变更时 fail closed，保留旧 alias 并要求重试。
+- QA 低召回 Query Expansion 对普通 query 固定执行停用词删除、引号短语提取、分段和问句清理；`当前问题/主题锚点` 仅作为额外结构化输入，不再是触发扩展的前提。
+- Source 标签统一由 `SourceTagCodec` 解析字符串与 `{name, facet}`。Note Tag Resolver、关系图、Embedding 文本和 ES Metadata 使用同一规范化结果；Semantic/Metadata/Tag 命中均可成为关系扩展锚点。
+- Provider 健康探测结果缓存 30 秒，避免公开健康轮询放大外部调用；非本机 OpenAI-compatible Provider endpoint 强制使用 HTTPS。
+
+本轮复核验证：
+
+- 定向回归：14 tests，0 failures，0 errors，0 skipped。
+- 真实 Elasticsearch 8.15.3：1 test，0 failures，0 errors，0 skipped；覆盖 QA Vector/Keyword、Note Semantic/Metadata、stale snapshot 排除、inactive-to-current 激活、alias v1 到 v2 原子切换和 write-index 解析。
+- 完整后端回归：154 suites，698 tests，0 failures，0 errors，12 skipped。
+- Compose 配置解析：`docker compose config --quiet` 退出码 0。
+
+剩余环境限制：Windows `com.docker.service` 当前无法由本会话启动，因此 Docker Compose 全栈进程级演练仍受本机服务权限阻塞；该限制不影响已使用官方原生 Elasticsearch 8.15.3 执行的真实检索测试。

@@ -43,7 +43,7 @@ public class SourceRetrievalProjectionFinalizer {
     }
 
     @Transactional
-    public void finalizeReady(
+    public List<StaleSnapshot> finalizeReady(
             String workspaceId,
             String sourceId,
             String snapshotId,
@@ -84,7 +84,8 @@ public class SourceRetrievalProjectionFinalizer {
         if (sourceReady != 1) {
             throw new IllegalStateException("Source cannot be finalized as retrieval-ready");
         }
-        for (StaleSnapshot stale : staleSnapshots(workspaceId, sourceId, snapshotId)) {
+        List<StaleSnapshot> staleSnapshots = staleSnapshots(workspaceId, sourceId, snapshotId);
+        for (StaleSnapshot stale : staleSnapshots) {
             projectionRepository.markSnapshotStale(stale.sourceSnapshotId());
         }
         sourceCatalogVersionService.bump(workspaceId);
@@ -92,6 +93,7 @@ public class SourceRetrievalProjectionFinalizer {
             taskService.completeTask(taskId, "INDEXED",
                     "资料的 QA 与 Note 检索投影均已完成", sourceId);
         }
+        return staleSnapshots;
     }
 
     private CurrentSnapshot lockCurrentSnapshot(String workspaceId, String sourceId, String snapshotId) {

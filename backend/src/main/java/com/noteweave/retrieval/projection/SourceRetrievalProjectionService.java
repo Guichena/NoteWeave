@@ -1,7 +1,5 @@
 package com.noteweave.retrieval.projection;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.config.NoteWeaveProperties;
 import com.noteweave.retrieval.index.RetrievalIndexManager;
 import com.noteweave.retrieval.index.RetrievalIndexNames;
@@ -14,6 +12,7 @@ import com.noteweave.retrieval.projection.RetrievalProjectionRepository.Projecti
 import com.noteweave.retrieval.projection.RetrievalProjectionRepository.ProjectionType;
 import com.noteweave.retrieval.provider.EmbeddingClient;
 import com.noteweave.retrieval.provider.RetrievalProviderException;
+import com.noteweave.source.SourceTagCodec;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
@@ -31,29 +30,29 @@ public class SourceRetrievalProjectionService {
     private static final String EMBEDDING_PROVIDER = "openai-compatible";
 
     private final JdbcTemplate jdbcTemplate;
-    private final ObjectMapper objectMapper;
     private final EmbeddingClient embeddingClient;
     private final RetrievalProjectionRepository projectionRepository;
     private final RetrievalIndexManager indexManager;
     private final RetrievalProjectionWriter projectionWriter;
     private final NoteWeaveProperties properties;
+    private final SourceTagCodec sourceTagCodec;
 
     public SourceRetrievalProjectionService(
             JdbcTemplate jdbcTemplate,
-            ObjectMapper objectMapper,
             EmbeddingClient embeddingClient,
             RetrievalProjectionRepository projectionRepository,
             RetrievalIndexManager indexManager,
             RetrievalProjectionWriter projectionWriter,
-            NoteWeaveProperties properties
+            NoteWeaveProperties properties,
+            SourceTagCodec sourceTagCodec
     ) {
         this.jdbcTemplate = jdbcTemplate;
-        this.objectMapper = objectMapper;
         this.embeddingClient = embeddingClient;
         this.projectionRepository = projectionRepository;
         this.indexManager = indexManager;
         this.projectionWriter = projectionWriter;
         this.properties = properties;
+        this.sourceTagCodec = sourceTagCodec;
     }
 
     public ProjectionResult projectSnapshot(String workspaceId, String sourceId, String snapshotId) {
@@ -64,6 +63,10 @@ public class SourceRetrievalProjectionService {
                 ProjectionType.QA_CHUNK, QA_SCHEMA_VERSION, embeddingVersion, workspaceId);
         String noteIndex = RetrievalIndexNames.physical(
                 ProjectionType.NOTE_SOURCE, NOTE_SCHEMA_VERSION, embeddingVersion, workspaceId);
+        qaIndex = indexManager.resolveWriteIndex(
+                RetrievalIndexNames.alias(ProjectionType.QA_CHUNK, workspaceId), qaIndex);
+        noteIndex = indexManager.resolveWriteIndex(
+                RetrievalIndexNames.alias(ProjectionType.NOTE_SOURCE, workspaceId), noteIndex);
         try {
             return projectSnapshotToIndexes(workspaceId, sourceId, snapshotId, qaIndex, noteIndex);
         } catch (RuntimeException ex) {
@@ -131,7 +134,7 @@ public class SourceRetrievalProjectionService {
                         workspaceId, sourceId, snapshotId, chunk.chunkId(), chunk.chunkNo(),
                         chunk.heading(), source.title(), source.sourceType(), chunk.content(),
                         sha256(qaTexts.get(index)), model, dimensions, embeddingVersion,
-                        QA_SCHEMA_VERSION, true, qaEmbeddings.vectors().get(index)));
+                        QA_SCHEMA_VERSION, false, qaEmbeddings.vectors().get(index)));
                 projectionRepository.markReady(projection.id());
                 qaReady++;
             } catch (RuntimeException ex) {
@@ -158,13 +161,17 @@ public class SourceRetrievalProjectionService {
                         source.summary(), tags(source.tagsJson()), source.metadataJson(),
                         headings(chunks), List.of(), chunks.size(), windowCount(snapshotId),
                         sha256(noteText), model, dimensions, embeddingVersion,
-                        NOTE_SCHEMA_VERSION, true, noteEmbedding.singleVector()));
+                        NOTE_SCHEMA_VERSION, false, noteEmbedding.singleVector()));
                 projectionRepository.markReady(noteProjection.id());
                 noteReady = true;
             } catch (RuntimeException ex) {
                 markFailed(noteProjection, ex);
                 throw ex;
             }
+        }
+        if (qaReady == chunks.size() && noteReady) {
+            projectionWriter.markSnapshotCurrent(qaIndex, snapshotId);
+            projectionWriter.markSnapshotCurrent(noteIndex, snapshotId);
         }
         return new ProjectionResult(qaReady, chunks.size(), noteReady, qaIndex, noteIndex, embeddingVersion);
     }
@@ -246,11 +253,7 @@ public class SourceRetrievalProjectionService {
     }
 
     private List<String> tags(String json) {
-        try {
-            return objectMapper.readValue(json == null ? "[]" : json, new TypeReference<List<String>>() {});
-        } catch (Exception ex) {
-            return List.of();
-        }
+        return sourceTagCodec.decode(json);
     }
 
     private List<String> headings(List<ChunkRow> chunks) {

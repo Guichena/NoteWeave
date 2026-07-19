@@ -60,7 +60,9 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
                 && text(config.endpoint()).length() > 0
                 && text(config.model()).length() > 0
                 && config.dimensions() > 0;
-        this.endpoint = URI.create(enabled ? config.endpoint() : "http://localhost/disabled");
+        this.endpoint = enabled
+                ? ProviderEndpointSecurity.requireSecureOrLocal(config.endpoint())
+                : URI.create("http://localhost/disabled");
         this.model = text(config.model());
         this.apiKey = text(config.apiKey());
         this.dimensions = Math.max(1, config.dimensions());

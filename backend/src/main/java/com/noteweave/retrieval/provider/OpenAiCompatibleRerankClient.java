@@ -52,7 +52,9 @@ public class OpenAiCompatibleRerankClient implements RerankClient {
         this.enabled = config.enabled()
                 && !text(config.endpoint()).isBlank()
                 && !text(config.model()).isBlank();
-        this.endpoint = URI.create(enabled ? config.endpoint() : "http://localhost/disabled");
+        this.endpoint = enabled
+                ? ProviderEndpointSecurity.requireSecureOrLocal(config.endpoint())
+                : URI.create("http://localhost/disabled");
         this.model = text(config.model());
         this.apiKey = text(config.apiKey());
         this.batchSize = Math.max(1, config.batchSize());

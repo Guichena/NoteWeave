@@ -41,7 +41,8 @@ class QaHybridRetrieverProviderIntegrationTest {
                         "shared", 1, "neighbor", 0, "intro", "neighbor context"))));
 
         QaHybridRetriever retriever = new QaHybridRetriever(
-                embedding, search, new QaRrfFusionService(), new QaRerankService(rerank), hydrator);
+                embedding, search, new QaRrfFusionService(), new QaRerankService(rerank), hydrator,
+                new QaQueryExpansionService());
         QaHybridRetriever.HybridResult result = retriever.retrieve("workspace", "resume checkpoint", Set.of());
 
         assertThat(result.degraded()).isFalse();

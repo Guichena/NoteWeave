@@ -9,6 +9,8 @@ public interface RetrievalProjectionWriter {
 
     void markSnapshotNotCurrent(String targetIndex, String sourceSnapshotId);
 
+    void markSnapshotCurrent(String targetIndex, String sourceSnapshotId);
+
     record QaChunkDocument(
             String workspaceId,
             String sourceId,

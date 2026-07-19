@@ -3,6 +3,7 @@ package com.noteweave.retrieval.provider;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.actuate.health.Status;
 
@@ -22,7 +23,26 @@ class RetrievalProviderHealthIndicatorTest {
                 .containsEntry("rerank_configured", false);
     }
 
+    @Test
+    void cachesActiveProviderProbesAcrossRepeatedHealthRequests() {
+        AtomicInteger embeddingCalls = new AtomicInteger();
+        AtomicInteger rerankCalls = new AtomicInteger();
+        EmbeddingClient embedding = embedding(true, embeddingCalls);
+        RerankClient rerank = rerank(true, rerankCalls);
+        RetrievalProviderHealthIndicator indicator = new RetrievalProviderHealthIndicator(embedding, rerank);
+
+        indicator.health();
+        indicator.health();
+
+        assertThat(embeddingCalls).hasValue(1);
+        assertThat(rerankCalls).hasValue(1);
+    }
+
     private EmbeddingClient embedding(boolean enabled) {
+        return embedding(enabled, new AtomicInteger());
+    }
+
+    private EmbeddingClient embedding(boolean enabled, AtomicInteger calls) {
         return new EmbeddingClient() {
             @Override
             public boolean isEnabled() {
@@ -31,6 +51,7 @@ class RetrievalProviderHealthIndicatorTest {
 
             @Override
             public EmbeddingResult embedQuery(String text) {
+                calls.incrementAndGet();
                 return new EmbeddingResult(List.of(List.of(1.0f)), "embedding", 1, 0);
             }
 
@@ -42,6 +63,10 @@ class RetrievalProviderHealthIndicatorTest {
     }
 
     private RerankClient rerank(boolean enabled) {
+        return rerank(enabled, new AtomicInteger());
+    }
+
+    private RerankClient rerank(boolean enabled, AtomicInteger calls) {
         return new RerankClient() {
             @Override
             public boolean isEnabled() {
@@ -50,6 +75,7 @@ class RetrievalProviderHealthIndicatorTest {
 
             @Override
             public RerankResult rerank(String query, List<String> documents, int topN) {
+                calls.incrementAndGet();
                 return new RerankResult(List.of(new Hit(0, 1.0d, 1)), "rerank");
             }
         };

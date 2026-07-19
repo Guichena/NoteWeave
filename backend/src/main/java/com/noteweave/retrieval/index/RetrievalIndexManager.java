@@ -7,6 +7,7 @@ import com.noteweave.retrieval.projection.RetrievalProjectionRepository.Projecti
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -72,6 +73,27 @@ public class RetrievalIndexManager {
                     .isWriteIndex(true))));
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to initialize retrieval alias " + alias, ex);
+        }
+    }
+
+    public String resolveWriteIndex(String alias, String defaultIndex) {
+        try {
+            if (!client.indices().existsAlias(exists -> exists.name(alias)).value()) {
+                return defaultIndex;
+            }
+            var aliases = client.indices().getAlias(get -> get.name(alias)).result();
+            return aliases.entrySet().stream()
+                    .filter(entry -> {
+                        var metadata = entry.getValue().aliases().get(alias);
+                        return metadata != null && Objects.equals(Boolean.TRUE, metadata.isWriteIndex());
+                    })
+                    .map(Map.Entry::getKey)
+                    .findFirst()
+                    .orElseGet(() -> aliases.size() == 1
+                            ? aliases.keySet().iterator().next()
+                            : defaultIndex);
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to resolve retrieval alias " + alias, ex);
         }
     }
 

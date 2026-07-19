@@ -1,8 +1,7 @@
 package com.noteweave.chat;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.chat.NoteRetrievalService.CandidateSource;
+import com.noteweave.source.SourceTagCodec;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -15,10 +14,10 @@ import org.springframework.stereotype.Component;
 /** Resolves query tag hints against the current workspace source vocabulary. */
 @Component
 public class NoteTagResolver {
-    private final ObjectMapper objectMapper;
+    private final SourceTagCodec sourceTagCodec;
 
-    public NoteTagResolver(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+    public NoteTagResolver(SourceTagCodec sourceTagCodec) {
+        this.sourceTagCodec = sourceTagCodec;
     }
 
     public Resolution resolve(Set<String> queryTerms, List<CandidateSource> sources) {
@@ -29,7 +28,7 @@ public class NoteTagResolver {
         Map<String, Set<String>> tagsBySource = new LinkedHashMap<>();
         Map<String, String> vocabulary = new LinkedHashMap<>();
         for (CandidateSource source : sources) {
-            Set<String> tags = parse(source.tagsJson());
+            Set<String> tags = new LinkedHashSet<>(sourceTagCodec.decode(source.tagsJson()));
             tagsBySource.put(source.sourceId(), tags);
             for (String tag : tags) {
                 vocabulary.putIfAbsent(normalize(tag), tag);
@@ -57,31 +56,6 @@ public class NoteTagResolver {
             if (score > 0) scores.put(entry.getKey(), score);
         }
         return new Resolution(List.copyOf(resolved), List.copyOf(unresolved), Map.copyOf(scores));
-    }
-
-    private Set<String> parse(String tagsJson) {
-        Set<String> tags = new LinkedHashSet<>();
-        if (tagsJson == null || tagsJson.isBlank()) return tags;
-        try {
-            JsonNode root = objectMapper.readTree(tagsJson);
-            if (!root.isArray()) return tags;
-            for (JsonNode node : root) {
-                if (node.isTextual()) {
-                    add(tags, node.asText());
-                } else if (node.isObject()) {
-                    String name = node.path("name").asText("");
-                    String facet = node.path("facet").asText("");
-                    add(tags, facet.isBlank() ? name : facet + ":" + name);
-                }
-            }
-        } catch (Exception ignored) {
-            // Malformed source metadata should not take down the recall funnel.
-        }
-        return tags;
-    }
-
-    private void add(Set<String> tags, String value) {
-        if (value != null && !value.isBlank()) tags.add(value.trim());
     }
 
     private int facetWeight(String tag) {

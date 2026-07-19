@@ -41,9 +41,12 @@ public class SourceRetrievalProjectionCoordinator {
             indexManager.ensureAlias(
                     RetrievalIndexNames.alias(RetrievalProjectionRepository.ProjectionType.NOTE_SOURCE, workspaceId),
                     result.noteIndex());
-            finalizer.finalizeReady(workspaceId, sourceId, snapshotId, taskId, result);
+            projectionWriter.markSnapshotCurrent(result.qaIndex(), snapshotId);
+            projectionWriter.markSnapshotCurrent(result.noteIndex(), snapshotId);
+            java.util.List<StaleSnapshot> staleSnapshots = finalizer.finalizeReady(
+                    workspaceId, sourceId, snapshotId, taskId, result);
             finalized = true;
-            for (StaleSnapshot stale : finalizer.staleSnapshots(workspaceId, sourceId, snapshotId)) {
+            for (StaleSnapshot stale : staleSnapshots) {
                 projectionWriter.markSnapshotNotCurrent(stale.targetIndex(), stale.sourceSnapshotId());
             }
             return result;

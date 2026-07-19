@@ -1,18 +1,29 @@
 package com.noteweave.chat;
 
 import com.noteweave.chat.NoteRetrievalService.CandidateSource;
+import com.noteweave.source.SourceTagCodec;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
 public class NoteRelationGraph {
+    private final SourceTagCodec sourceTagCodec;
+
+    public NoteRelationGraph() {
+        this(new SourceTagCodec(new com.fasterxml.jackson.databind.ObjectMapper()));
+    }
+
+    @Autowired
+    public NoteRelationGraph(SourceTagCodec sourceTagCodec) {
+        this.sourceTagCodec = sourceTagCodec;
+    }
+
     public Map<String, Integer> coOccurrence(Set<String> anchors, Map<String, Set<String>> groups) {
         if (anchors.isEmpty()) return Map.of();
         Map<String, Integer> result = new HashMap<>();
@@ -73,10 +84,10 @@ public class NoteRelationGraph {
     }
 
     public Set<String> tags(String json) {
-        if (json == null || json.isBlank()) return Set.of();
         Set<String> result = new LinkedHashSet<>();
-        Matcher matcher = Pattern.compile("\"([^\"]{1,80})\"").matcher(json.toLowerCase(Locale.ROOT));
-        while (matcher.find()) result.add(matcher.group(1));
+        sourceTagCodec.decode(json).stream()
+                .map(value -> value.toLowerCase(Locale.ROOT))
+                .forEach(result::add);
         return result;
     }
 

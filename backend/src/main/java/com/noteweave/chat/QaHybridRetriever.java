@@ -27,19 +27,22 @@ public class QaHybridRetriever {
     private final QaRrfFusionService fusionService;
     private final QaRerankService rerankService;
     private final RetrievalHydrator retrievalHydrator;
+    private final QaQueryExpansionService queryExpansionService;
 
     public QaHybridRetriever(
             EmbeddingClient embeddingClient,
             QaHybridSearchPort searchPort,
             QaRrfFusionService fusionService,
             QaRerankService rerankService,
-            RetrievalHydrator retrievalHydrator
+            RetrievalHydrator retrievalHydrator,
+            QaQueryExpansionService queryExpansionService
     ) {
         this.embeddingClient = embeddingClient;
         this.searchPort = searchPort;
         this.fusionService = fusionService;
         this.rerankService = rerankService;
         this.retrievalHydrator = retrievalHydrator;
+        this.queryExpansionService = queryExpansionService;
     }
 
     public HybridResult retrieve(String workspaceId, String query, Set<String> sourceScope) {
@@ -65,7 +68,7 @@ public class QaHybridRetriever {
                 QaRetrievalStrategyProfile.KEYWORD_WEIGHT,
                 QaRetrievalStrategyProfile.FUSION_LIMIT);
         List<String> expansions = primaryFused.size() < LOW_RECALL_EXPANSION_THRESHOLD
-                ? expansionQueries(query) : List.of();
+                ? queryExpansionService.expand(query) : List.of();
         for (String expansion : expansions) {
             try {
                 List<Float> expansionVector = embeddingClient.embedQuery(expansion).singleVector();
@@ -147,21 +150,6 @@ public class QaHybridRetriever {
                 .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
         if (additions == null) return;
         additions.stream().filter(hit -> hit != null && seen.add(hit.chunkId())).forEach(target::add);
-    }
-
-    private List<String> expansionQueries(String query) {
-        if (query == null || query.isBlank()) return List.of();
-        String current = "";
-        String anchor = "";
-        for (String line : query.split("\\R")) {
-            String trimmed = line.trim();
-            if (trimmed.startsWith("当前问题：")) current = trimmed.substring("当前问题：".length()).trim();
-            if (trimmed.startsWith("主题锚点：")) anchor = trimmed.substring("主题锚点：".length()).trim();
-        }
-        java.util.LinkedHashSet<String> expansions = new java.util.LinkedHashSet<>();
-        if (!current.isBlank() && !current.equals(query.trim())) expansions.add(current);
-        if (!anchor.isBlank() && !current.isBlank()) expansions.add(anchor + " " + current);
-        return expansions.stream().filter(item -> !item.equals(query.trim())).limit(3).toList();
     }
 
     private String enrich(String content, List<RetrievalHydrator.AdjacentPassage> adjacent) {
