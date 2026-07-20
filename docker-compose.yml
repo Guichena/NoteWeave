@@ -133,6 +133,7 @@ services:
         condition: service_healthy
     environment:
       SERVER_PORT: 8081
+      MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/noteweave?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
       SPRING_DATASOURCE_USERNAME: noteweave
       SPRING_DATASOURCE_PASSWORD: noteweave123
@@ -191,7 +192,7 @@ services:
     volumes:
       - noteweave_v2_backend_storage:/app/storage
     healthcheck:
-      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8081/actuator/health"]
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8081/actuator/health/liveness"]
       interval: 10s
       timeout: 5s
       retries: 20

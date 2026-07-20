@@ -151,7 +151,11 @@ noteweave:
     api-key: ${NOTEWEAVE_LLM_API_KEY:}
     timeout-seconds: ${NOTEWEAVE_LLM_TIMEOUT_SECONDS:60}
   worker:
+    artifact-callback-secret: ${NOTEWEAVE_ARTIFACT_CALLBACK_SECRET:}
+    research-callback-secret: ${NOTEWEAVE_RESEARCH_CALLBACK_SECRET:}
     artifact-base-url: ${NOTEWEAVE_WORKER_ARTIFACT_BASE_URL:http://localhost:18092}
+    connect-timeout-seconds: ${NOTEWEAVE_WORKER_CONNECT_TIMEOUT_SECONDS:3}
+    read-timeout-seconds: ${NOTEWEAVE_WORKER_READ_TIMEOUT_SECONDS:30}
   executors:
     answer-io:
       core-size: ${NOTEWEAVE_ANSWER_IO_CORE_SIZE:4}
