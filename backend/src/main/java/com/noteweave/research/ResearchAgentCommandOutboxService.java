@@ -46,7 +46,10 @@ public class ResearchAgentCommandOutboxService {
         int nextDelivery = existing.deliveryNo() + 1;
         jdbcTemplate.update("""
                 update research_agent_outbox
-                set payload_json = ?, delivery_no = ?, status = 'READY', sent_at = null, updated_at = current_timestamp
+                set payload_json = ?, delivery_no = ?, status = 'READY', sent_at = null,
+                    attempt_count = 0, lease_owner = null, lease_until = null,
+                    next_attempt_at = null, last_error = null, dead_lettered_at = null,
+                    updated_at = current_timestamp
                 where id = ?
                 """, payload(scope, agentTaskId, existing.id(), nextDelivery), nextDelivery, existing.id());
         return new CommandReceipt(existing.id(), false);

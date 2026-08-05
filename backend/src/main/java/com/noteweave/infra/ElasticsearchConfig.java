@@ -9,6 +9,9 @@ import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.net.URI;
 import org.apache.http.HttpHost;
+import org.apache.http.auth.AuthScope;
+import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.elasticsearch.client.RestClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,7 +37,14 @@ public class ElasticsearchConfig {
         NoteWeaveProperties.Elasticsearch cfg = properties.elasticsearch();
         URI uri = URI.create(cfg.scheme() + "://" + cfg.host() + ":" + cfg.port());
         log.info("Elasticsearch client connecting to {}://{}:{}", cfg.scheme(), cfg.host(), cfg.port());
-        return RestClient.builder(new HttpHost(uri.getHost(), uri.getPort(), uri.getScheme())).build();
+        var builder = RestClient.builder(new HttpHost(uri.getHost(), uri.getPort(), uri.getScheme()));
+        if (cfg.username() != null && !cfg.username().isBlank()) {
+            BasicCredentialsProvider credentials = new BasicCredentialsProvider();
+            credentials.setCredentials(AuthScope.ANY,
+                    new UsernamePasswordCredentials(cfg.username(), cfg.password()));
+            builder.setHttpClientConfigCallback(client -> client.setDefaultCredentialsProvider(credentials));
+        }
+        return builder.build();
     }
 
     @Bean(destroyMethod = "close")

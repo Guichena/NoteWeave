@@ -1,17 +1,13 @@
 import {
   type MemoryReviewDecisionResult,
-  type MemoryReviewItem,
-  type MemoryVersion
+  type MemoryReviewItem
 } from "./model";
 
 export type MemoryReviewState = {
   workspaceId: string;
   queue: MemoryReviewItem[];
-  selectedReviewId: string;
-  versions: MemoryVersion[];
-  selectedVersionId: string;
+  selectedRevisionId: string;
   queueLoading: boolean;
-  versionsLoading: boolean;
   mutating: boolean;
   error: string;
   lastDecision: MemoryReviewDecisionResult | null;
@@ -20,12 +16,9 @@ export type MemoryReviewState = {
 export type MemoryReviewAction =
   | { type: "workspace"; workspaceId: string }
   | { type: "queue-loading"; loading: boolean }
-  | { type: "versions-loading"; loading: boolean }
   | { type: "mutating"; mutating: boolean }
   | { type: "queue"; queue: MemoryReviewItem[] }
-  | { type: "select"; reviewId: string }
-  | { type: "versions"; versions: MemoryVersion[]; preferredVersionId?: string }
-  | { type: "select-version"; versionId: string }
+  | { type: "select"; revisionId: string }
   | { type: "error"; error: string }
   | { type: "decision"; result: MemoryReviewDecisionResult };
 
@@ -33,11 +26,8 @@ export function createMemoryReviewState(workspaceId = ""): MemoryReviewState {
   return {
     workspaceId,
     queue: [],
-    selectedReviewId: "",
-    versions: [],
-    selectedVersionId: "",
+    selectedRevisionId: "",
     queueLoading: false,
-    versionsLoading: false,
     mutating: false,
     error: "",
     lastDecision: null
@@ -55,71 +45,27 @@ export function reduceMemoryReviewState(
         : createMemoryReviewState(action.workspaceId);
     case "queue-loading":
       return { ...state, queueLoading: action.loading };
-    case "versions-loading":
-      return { ...state, versionsLoading: action.loading };
     case "mutating":
       return { ...state, mutating: action.mutating };
     case "queue": {
       const selectedStillExists = action.queue.some(
-        (item) => item.review_id === state.selectedReviewId
+        (item) => item.revision_id === state.selectedRevisionId
       );
       return {
         ...state,
         queue: action.queue,
-        selectedReviewId: selectedStillExists ? state.selectedReviewId : "",
-        versions: selectedStillExists ? state.versions : [],
-        selectedVersionId: selectedStillExists ? state.selectedVersionId : "",
+        selectedRevisionId: selectedStillExists ? state.selectedRevisionId : "",
         queueLoading: false,
         error: ""
       };
     }
     case "select":
-      return {
-        ...state,
-        selectedReviewId: action.reviewId,
-        versions: [],
-        selectedVersionId: "",
-        error: ""
-      };
-    case "versions": {
-      const selectedVersionId = selectVersionId(
-        action.versions,
-        action.preferredVersionId
-      );
-      return {
-        ...state,
-        versions: action.versions,
-        selectedVersionId,
-        versionsLoading: false,
-        error: ""
-      };
-    }
-    case "select-version":
-      return action.versionId === state.selectedVersionId
-        ? state
-        : { ...state, selectedVersionId: action.versionId };
+      return { ...state, selectedRevisionId: action.revisionId, error: "" };
     case "error":
-      return {
-        ...state,
-        queueLoading: false,
-        versionsLoading: false,
-        mutating: false,
-        error: action.error
-      };
+      return { ...state, queueLoading: false, mutating: false, error: action.error };
     case "decision":
       return { ...state, mutating: false, lastDecision: action.result, error: "" };
   }
-}
-
-export function selectVersionId(versions: MemoryVersion[], preferredVersionId?: string) {
-  if (preferredVersionId && versions.some(
-    (version) => version.memory_version_id === preferredVersionId
-  )) {
-    return preferredVersionId;
-  }
-  return versions.reduce<MemoryVersion | null>((latest, version) => (
-    !latest || version.version_no > latest.version_no ? version : latest
-  ), null)?.memory_version_id ?? "";
 }
 
 type RequestLease = {
@@ -133,9 +79,7 @@ export class LatestMemoryRequestGate {
   private readonly controllers = new Map<string, AbortController>();
 
   setWorkspace(workspaceId: string) {
-    if (workspaceId === this.workspaceId) {
-      return;
-    }
+    if (workspaceId === this.workspaceId) return;
     this.workspaceId = workspaceId;
     this.cancelAll();
   }
@@ -146,22 +90,15 @@ export class LatestMemoryRequestGate {
     this.controllers.set(channel, controller);
     return {
       signal: controller.signal,
-      isCurrent: () => (
-        !controller.signal.aborted
+      isCurrent: () => !controller.signal.aborted
         && workspaceId === this.workspaceId
-        && this.controllers.get(channel) === controller
-      ),
+        && this.controllers.get(channel) === controller,
       complete: () => {
         if (this.controllers.get(channel) === controller) {
           this.controllers.delete(channel);
         }
       }
     };
-  }
-
-  cancel(channel: string) {
-    this.controllers.get(channel)?.abort();
-    this.controllers.delete(channel);
   }
 
   cancelAll() {

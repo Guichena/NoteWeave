@@ -13,6 +13,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
+import com.noteweave.security.TokenHasher;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -110,9 +111,9 @@ class WorkspaceRetrievalSettingsContractTest {
     private String createSessionForExistingUser(String userId, String prefix) {
         String token = prefix + "-" + UUID.randomUUID();
         jdbcTemplate.update("""
-                insert into user_session(id, user_id, session_token, status)
-                values (?, ?, ?, 'ACTIVE')
-                """, UUID.randomUUID().toString(), userId, token);
+                insert into user_session(id, user_id, session_token, token_hash, status)
+                values (?, ?, '', ?, 'ACTIVE')
+                """, UUID.randomUUID().toString(), userId, TokenHasher.sha256(token));
         return token;
     }
 

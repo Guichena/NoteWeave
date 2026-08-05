@@ -7,9 +7,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -40,6 +42,19 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiResponse<Void>> handleUnsupportedMediaType(HttpMediaTypeNotSupportedException ex) {
         return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
                 .body(ApiResponse.error("UNSUPPORTED_MEDIA_TYPE", "request content type is not supported"));
+    }
+
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    ResponseEntity<ApiResponse<Void>> handleMissingRequestHeader(MissingRequestHeaderException ex) {
+        return ResponseEntity.badRequest().body(ApiResponse.error(
+                "MISSING_REQUEST_HEADER",
+                "required request header is missing: " + ex.getHeaderName()
+        ));
+    }
+
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    void handleDisconnectedAsyncClient(AsyncRequestNotUsableException ex) {
+        log.debug("Async client disconnected before the response completed: {}", ex.getMessage());
     }
 
     @ExceptionHandler(Exception.class)

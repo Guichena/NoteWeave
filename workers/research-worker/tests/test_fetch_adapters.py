@@ -297,7 +297,7 @@ def test_workspace_fetch_adapter_should_open_workspace_document() -> None:
     assert document.source_quality == "WORKSPACE_SOURCE"
 
 
-def test_url_fetch_adapter_without_transport_should_create_fallback_document() -> None:
+def test_url_fetch_adapter_without_transport_should_not_expose_snippet_as_snapshot() -> None:
     task_input = _build_task_input()
     plan = build_research_plan(task_input)
 
@@ -305,8 +305,7 @@ def test_url_fetch_adapter_without_transport_should_create_fallback_document() -
 
     assert document is not None
     assert document.url == "https://example.com/hit-url"
-    assert "External snippet about verifier loops" in document.snapshot_text
-    assert "https://example.com/hit-url" in document.snapshot_text
+    assert document.snapshot_text == ""
     assert document.adapter == "external_url"
     assert document.snapshot_status == "FALLBACK"
     assert document.fetch_status == "FALLBACK_USED"

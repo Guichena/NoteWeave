@@ -5,7 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
 import com.noteweave.config.NoteWeaveProperties;
+import com.noteweave.common.SensitiveErrorMessageSanitizer;
 import com.noteweave.storage.ObjectStorage;
+import com.noteweave.worker.ArtifactWorkerRestClientFactory;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
@@ -39,16 +41,19 @@ public class ArtifactExportService {
             ObjectMapper objectMapper,
             ObjectStorage objectStorage,
             NoteWeaveProperties properties,
-            @Value("${noteweave.internal.auth-token:}") String internalAuthToken
+            @Value("${noteweave.internal.auth-token:}") String internalAuthToken,
+            @Value("${noteweave.worker.connect-timeout-seconds:3}") long connectTimeoutSeconds,
+            @Value("${noteweave.worker.read-timeout-seconds:30}") long readTimeoutSeconds
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.objectStorage = objectStorage;
-        RestClient.Builder builder = RestClient.builder().baseUrl(properties.worker().artifactBaseUrl());
-        if (internalAuthToken != null && !internalAuthToken.isBlank()) {
-            builder.defaultHeader("X-NoteWeave-Internal-Token", internalAuthToken.trim());
-        }
-        this.artifactWorkerClient = builder.build();
+        this.artifactWorkerClient = ArtifactWorkerRestClientFactory.create(
+                properties.worker().artifactBaseUrl(),
+                internalAuthToken,
+                connectTimeoutSeconds,
+                readTimeoutSeconds
+        );
         this.exportBucket = properties.storage().minio().bucketExport();
     }
 
@@ -152,7 +157,7 @@ public class ArtifactExportService {
         } catch (RuntimeException ex) {
             upsertFileMetadata(
                     row, format, fileName, mediaType, objectKey, 0, "", "FAILED",
-                    abbreviate(ex.getMessage(), 1000)
+                    SensitiveErrorMessageSanitizer.sanitize(ex.getMessage())
             );
             log.warn("Artifact file materialization failed; versionId={}, format={}, error={}",
                     row.versionId(), format, ex.getMessage());
@@ -168,7 +173,7 @@ public class ArtifactExportService {
             );
             upsertFileMetadata(
                     row, PDF, fileName, "application/pdf", objectKey, 0, "", "FAILED",
-                    abbreviate(ex.getMessage(), 1000)
+                    SensitiveErrorMessageSanitizer.sanitize(ex.getMessage())
             );
             log.warn("Artifact PDF acquisition failed; versionId={}, taskId={}, error={}",
                     row.versionId(), row.originTaskId(), ex.getMessage());

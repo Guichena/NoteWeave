@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import re
+from collections.abc import Callable
 
 from app.models import (
     ArtifactExecutionPlan,
@@ -15,7 +16,16 @@ from app.registry import resolve_skill_definition, resolve_style_profile
 def execute_skill_graph(
     task_input: ArtifactTaskInput,
     plan: ArtifactExecutionPlan,
-) -> tuple[list[ArtifactSectionDraft], list[ArtifactSkillNodeTrace]]:
+    section_generator: Callable[
+        [list[ArtifactSectionDraft]],
+        tuple[list[ArtifactSectionDraft], dict[str, object]],
+    ]
+    | None = None,
+) -> tuple[
+    list[ArtifactSectionDraft],
+    list[ArtifactSkillNodeTrace],
+    dict[str, object] | None,
+]:
     style_profile = resolve_style_profile(plan.style_profile_key)
     prompt_recipe = plan.prompt_recipe
     state: dict[str, object] = {
@@ -29,6 +39,7 @@ def execute_skill_graph(
         "resume_verification_report": {},
     }
     traces: list[ArtifactSkillNodeTrace] = []
+    generation_trace: dict[str, object] | None = None
 
     for node_plan in plan.node_sequence:
         skill = resolve_skill_definition(node_plan.skill_key)
@@ -39,6 +50,12 @@ def execute_skill_graph(
             style_profile.format_constraints,
             state,
         )
+        if section_generator is not None and generation_trace is None and "sections" in output:
+            generated_sections, generation_trace = section_generator(
+                _normalize_sections(output.get("sections", []))
+            )
+            output["sections"] = generated_sections
+            summary = f"{summary}; generated draft injected before typed verification"
         (
             verified_output,
             verification_status,
@@ -65,7 +82,7 @@ def execute_skill_graph(
         )
 
     sections = state.get("sections", [])
-    return list(sections), traces
+    return list(sections), traces, generation_trace
 
 
 def _execute_skill(
@@ -236,28 +253,12 @@ def _execute_skill(
             sections,
             plan,
         )
-        repaired_sections, repair_actions = _repair_resume_node_sections(
-            sections,
-            required_phrases=plan.required_phrases,
-            focus_points=plan.execution_spec.focus_points,
-            verifier_report=verification_report,
-        )
-        repaired_sections, evidence_repairs = _repair_evidence_guard_sections(
-            repaired_sections,
-            task_input=task_input,
-        )
-        repair_actions.extend(evidence_repairs)
-        repaired_report = _build_resume_verification_report(repaired_sections, plan)
-        if repair_actions:
-            summary = "closed resume verifier gaps with targeted local repair"
-        else:
-            summary = "resume verifier reported no repairable gaps"
+        summary = "prepared resume verifier gaps for typed repair"
         if node_guidance:
             summary = f"{summary}; node guidance applied"
         return {
-            "sections": repaired_sections,
-            "resume_verification_report": repaired_report,
-            "resume_repair_actions": repair_actions,
+            "sections": sections,
+            "resume_verification_report": verification_report,
         }, summary
 
     if executable_skill_key == "quiz_designer":
@@ -580,17 +581,19 @@ def _verify_and_repair_skill_output(
             verified_output["sections"] = sections
 
         if executable_skill_key == "quiz_designer":
-            sections, quiz_repairs = _repair_quiz_node_sections(sections)
+            sections, quiz_repairs = _repair_quiz_node_sections(sections, plan)
             repair_actions.extend(quiz_repairs)
             verification_checks.append("quiz question contract preserved")
 
         if executable_skill_key == "quiz_difficulty_normalizer":
-            sections, quiz_tier_repairs = _repair_quiz_scoring_node_sections(sections)
+            sections, quiz_tier_repairs = _repair_quiz_scoring_node_sections(sections, plan)
             repair_actions.extend(quiz_tier_repairs)
             verification_checks.append("quiz difficulty tiers preserved")
 
         if executable_skill_key == "wiki_structure_enforcer":
-            sections, wiki_repairs = _repair_wiki_node_sections(sections)
+            sections, wiki_repairs = _repair_wiki_node_sections(
+                sections, plan, task_input
+            )
             repair_actions.extend(wiki_repairs)
             verification_checks.append("wiki structure contract preserved")
 
@@ -741,11 +744,8 @@ def _repair_resume_node_sections(
 ) -> tuple[list[ArtifactSectionDraft], list[str]]:
     repaired_sections: list[ArtifactSectionDraft] = []
     repair_actions: list[str] = []
-    fallback_bullets = [
-        "- 将 Production Action、Style Profile 与 Skill Graph 抽象为统一主链路。",
-        "- 通过 Schema-Gated Skill Graph Runtime 收敛计划校验与节点执行解释。",
-        "- 使用 Capability Union Policy 与 Verifier / Repair 收敛扩展能力风险。",
-    ]
+    repair_topics = _repair_topics(required_phrases, focus_points or [])
+    fallback_bullets = [f"- {topic}" for topic in repair_topics[:3]]
     missing_focus_points = [
         point
         for point in verifier_report.get("missing_focus_points", [])
@@ -793,13 +793,17 @@ def _repair_resume_node_sections(
 
 def _repair_quiz_node_sections(
     sections: list[ArtifactSectionDraft],
+    plan: ArtifactExecutionPlan,
 ) -> tuple[list[ArtifactSectionDraft], list[str]]:
     repaired_sections: list[ArtifactSectionDraft] = []
     repair_actions: list[str] = []
+    topics = _repair_topics(
+        plan.required_phrases, plan.execution_spec.focus_points
+    )
+    tiers = ["基础题", "进阶题", "挑战题"]
     fallback_questions = [
-        "1. [基础题] Production Action、Style Profile、Skill Graph 和 Artifact Runtime 分别负责什么？",
-        "2. [进阶题] Schema-Gated Skill Graph Runtime 如何约束执行计划？",
-        "3. [挑战题] Capability Union Policy 在工作台资料与高风险 external network capability 组合时主要防什么风险？",
+        f"{index + 1}. [{tiers[index]}] 请结合已提供资料说明 {topic}。"
+        for index, topic in enumerate(topics[:3])
     ]
     for section in sections:
         body = section.body
@@ -825,13 +829,19 @@ def _repair_quiz_node_sections(
 
 def _repair_quiz_scoring_node_sections(
     sections: list[ArtifactSectionDraft],
+    plan: ArtifactExecutionPlan,
 ) -> tuple[list[ArtifactSectionDraft], list[str]]:
     repaired_sections: list[ArtifactSectionDraft] = []
     repair_actions: list[str] = []
+    topics = _repair_topics(
+        plan.required_phrases, plan.execution_spec.focus_points
+    )
+    while len(topics) < 3 and topics:
+        topics.append(topics[-1])
     tier_fallbacks = [
-        ("基础", "- 基础：能解释统一主链路与核心对象职责。"),
-        ("进阶", "- 进阶：能说明 schema gate、verifier 和 repair 的协作关系。"),
-        ("挑战", "- 挑战：能识别 Capability Union Policy 的组合权限风险。"),
+        (tier, f"- {tier}：能依据资料解释 {topics[index]}。")
+        for index, tier in enumerate(("基础", "进阶", "挑战"))
+        if index < len(topics)
     ]
     for section in sections:
         body = section.body
@@ -858,14 +868,19 @@ def _repair_quiz_scoring_node_sections(
 
 def _repair_wiki_node_sections(
     sections: list[ArtifactSectionDraft],
+    plan: ArtifactExecutionPlan,
+    task_input: ArtifactTaskInput,
 ) -> tuple[list[ArtifactSectionDraft], list[str]]:
     repaired_sections: list[ArtifactSectionDraft] = []
     repair_actions: list[str] = []
     fallback_lines = [
-        "- 施工文档：产物生成Agent独立模块施工文档",
-        "- 设计文档：受控式异步产物生成Agent编排升级设计",
-        "- 运行时测试：artifact-worker 默认产物与 provider 回归",
+        f"- 资料：{source.title}"
+        for source in task_input.source_scope[:3]
+        if source.title.strip()
     ]
+    mechanism_topics = _repair_topics(
+        plan.required_phrases, plan.execution_spec.focus_points
+    )[:3]
     for section in sections:
         body = section.body
         if section.heading == "概览":
@@ -876,7 +891,7 @@ def _repair_wiki_node_sections(
                 body = f"{body} 本节补充边界说明。".strip()
                 repair_actions.append("wiki overview boundary backfilled at node level")
         if section.heading == "关键机制":
-            for phrase in ("Production Action", "Skill Graph", "Capability Union Policy"):
+            for phrase in mechanism_topics:
                 if phrase not in body:
                     body = f"{body} {phrase}".strip()
                     repair_actions.append(
@@ -897,6 +912,18 @@ def _repair_wiki_node_sections(
             )
         )
     return repaired_sections, repair_actions
+
+
+def _repair_topics(
+    required_phrases: list[str],
+    focus_points: list[str],
+) -> list[str]:
+    topics: list[str] = []
+    for candidate in [*focus_points, *required_phrases]:
+        normalized = str(candidate).strip()
+        if normalized and normalized not in topics:
+            topics.append(normalized)
+    return topics
 
 
 def _repair_evidence_guard_sections(

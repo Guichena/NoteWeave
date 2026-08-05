@@ -1,4 +1,4 @@
-import { inMemoryAccessTokenProvider } from "./auth";
+import { clearAuthSession, inMemoryAccessTokenProvider } from "./auth";
 import { ApiClient } from "./client";
 
 export { setAccessToken, type AccessTokenProvider } from "./auth";
@@ -7,7 +7,10 @@ export { ApiError } from "./error";
 
 export const apiClient = new ApiClient({
   baseUrl: import.meta.env.VITE_API_BASE_URL ?? "",
-  accessTokenProvider: inMemoryAccessTokenProvider
+  accessTokenProvider: inMemoryAccessTokenProvider,
+  onUnauthorized: () => {
+    clearAuthSession();
+  }
 });
 
 export const apiUrl = (path: string) => apiClient.url(path);
@@ -19,3 +22,4 @@ export const del = (path: string, init?: RequestInit) => apiClient.delete(path, 
 export const delJson = <T>(path: string, init?: RequestInit) => apiClient.deleteJson<T>(path, init);
 export const request = (path: string, init?: RequestInit) => apiClient.raw(path, init);
 export const requestText = (path: string, init?: RequestInit) => apiClient.text(path, init);
+export const requestBlob = (path: string, init?: RequestInit) => apiClient.blob(path, init);

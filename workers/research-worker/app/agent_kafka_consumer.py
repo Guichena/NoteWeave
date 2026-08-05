@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
 import signal
+import sys
+import tempfile
 import time
 from hashlib import sha256
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Iterable, Protocol
 
 from pydantic import ValidationError
@@ -34,14 +38,15 @@ from app.research_agent_completion_contract import (
     ResearchAgentCompletionEnvelope,
     serialize_completion_envelope,
 )
-from app.kafka_consumer import (
+from app.kafka_primitives import (
     DeadLetterPublishError,
     DeadLetterSink,
     InMemoryDeadLetterSink,
     KafkaConsumeSummary,
     KafkaDeadLetterSink,
-    _commit_if_supported,
-    _message_value,
+    commit_if_supported as _commit_if_supported,
+    kafka_security_options,
+    message_value as _message_value,
 )
 from app.trace_security import sanitize_error_message, sanitize_trace_payload
 
@@ -351,6 +356,7 @@ def create_research_agent_kafka_consumer() -> object:
         group_id=settings.kafka_research_agent_group_id,
         enable_auto_commit=False,
         auto_offset_reset="earliest",
+        **kafka_security_options(settings),
     )
 
 
@@ -365,6 +371,7 @@ def create_research_agent_kafka_dead_letter_sink() -> KafkaDeadLetterSink:
         acks="all",
         retries=max(1, settings.kafka_consume_max_attempts),
         value_serializer=lambda value: json.dumps(value, ensure_ascii=False).encode("utf-8"),
+        **kafka_security_options(settings),
     )
     return KafkaDeadLetterSink(producer, settings.kafka_research_agent_dlq_topic)
 
@@ -372,7 +379,7 @@ def create_research_agent_kafka_dead_letter_sink() -> KafkaDeadLetterSink:
 def run_research_agent_kafka_consumer_forever(executor: AgentExecutor | None = None) -> None:
     settings = load_settings()
     if not settings.research_agent_consumer_enabled:
-        raise RuntimeError("Research agent Kafka consumer is disabled by configuration")
+        return
     worker_instance_id = settings.research_agent_worker_instance_id
     if not worker_instance_id:
         raise RuntimeError("Research agent Kafka consumer requires NOTEWEAVE_RESEARCH_AGENT_WORKER_INSTANCE_ID")
@@ -416,6 +423,8 @@ def run_research_agent_kafka_consumer_forever(executor: AgentExecutor | None = N
         coordinator,
         getattr(settings, "research_agent_drain_grace_seconds", 30),
     )
+    health_file = _health_file(settings)
+    _write_health_marker(health_file)
     try:
         consume_research_agent_commands(
             messages,
@@ -431,8 +440,38 @@ def run_research_agent_kafka_consumer_forever(executor: AgentExecutor | None = N
             drain_coordinator=coordinator,
         )
     finally:
+        _remove_health_marker(health_file)
         restore_handlers()
         messages.close()
+
+
+def _health_file(settings: object) -> Path:
+    configured = os.environ.get("NOTEWEAVE_RESEARCH_AGENT_HEALTH_FILE", "").strip()
+    return Path(configured or (Path(tempfile.gettempdir()) / "noteweave-research-agent-consumer.ready"))
+
+
+def _write_health_marker(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"pid": os.getpid(), "started_at": time.time()}), encoding="utf-8")
+
+
+def _remove_health_marker(path: Path) -> None:
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def research_agent_healthcheck() -> int:
+    path = Path(os.environ.get("NOTEWEAVE_RESEARCH_AGENT_HEALTH_FILE", "").strip()
+                or (Path(tempfile.gettempdir()) / "noteweave-research-agent-consumer.ready"))
+    try:
+        marker = json.loads(path.read_text(encoding="utf-8"))
+        pid = int(marker["pid"])
+        os.kill(pid, 0)
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        return 1
+    return 0
 
 
 def _install_drain_signal_handlers(coordinator: DrainCoordinator,
@@ -508,6 +547,8 @@ def _report_failure_or_stop(reporter: AgentDeliveryFailureReporter | None, comma
 
 
 def main(executor: AgentExecutor | None = None) -> None:
+    if "--healthcheck" in sys.argv[1:]:
+        raise SystemExit(research_agent_healthcheck())
     try:
         if executor is None:
             run_research_agent_kafka_consumer_forever()

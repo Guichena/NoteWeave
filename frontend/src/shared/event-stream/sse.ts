@@ -24,7 +24,6 @@ function parseBlock(block: string): RawSseEvent | null {
       .filter((line) => line.startsWith("data:"))
       .map((line) => stripOptionalSpace(line.slice("data:".length)))
       .join("\n")
-      .replaceAll("\\n", "\n")
   };
 }
 

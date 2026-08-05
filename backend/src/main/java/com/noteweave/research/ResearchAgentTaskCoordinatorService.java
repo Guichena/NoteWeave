@@ -91,12 +91,12 @@ public class ResearchAgentTaskCoordinatorService {
                         bundle.stream().map(cell -> new ResearchAgentTaskService.TargetCellBinding(cell.cellKey(), cell.version())).toList(),
                         new ResearchAgentTaskService.TaskExecutionContext("research-default",
                                 sourcePolicy(run, slotSources),
-                                brief.queryPolicy())
+                                brief.queryPolicy(), run.researchIntent(), run.controlPack())
                 ));
                 jdbcTemplate.update("""
                         update research_agent_task
                         set logical_task_key = ?, quorum_group_key = ?, candidate_quorum = ?, candidate_slot = ?,
-                            snapshot_schema_version = 'research-agent-task-snapshot.v2', snapshot_digest = null,
+                            snapshot_schema_version = 'research-agent-task-snapshot.v3', snapshot_digest = null,
                             priority_score = ?, priority_reason = ?
                         where id = ?
                         """, "deep-cell:" + logicalFingerprint, quorumGroupKey, candidateQuorum, candidateSlot,
@@ -155,12 +155,13 @@ public class ResearchAgentTaskCoordinatorService {
                     List.of(new ResearchAgentTaskService.TargetCellBinding(cell.cellKey(), cell.version())),
                     new ResearchAgentTaskService.TaskExecutionContext("research-default",
                             repairSourcePolicy(run, independentSources, target.excludedSourceIds()),
-                            repairQueryPolicy(brief, target.reasonDigest(), command.parentCheckpointSeq()))
+                            repairQueryPolicy(brief, target.reasonDigest(), command.parentCheckpointSeq()),
+                            run.researchIntent(), run.controlPack())
             ));
             jdbcTemplate.update("""
                     update research_agent_task
                     set logical_task_key = ?, quorum_group_key = null, candidate_quorum = 1, candidate_slot = 1,
-                        snapshot_schema_version = 'research-agent-task-snapshot.v2', snapshot_digest = null,
+                        snapshot_schema_version = 'research-agent-task-snapshot.v3', snapshot_digest = null,
                         priority_score = ?, priority_reason = ?,
                         updated_at = current_timestamp
                     where id = ?
@@ -186,15 +187,29 @@ public class ResearchAgentTaskCoordinatorService {
 
     private RunScope requireIncrementalRunnableRun(String runId) {
         RunScope run = jdbcTemplate.query("""
-                select id, workspace_id, question, source_scope_json, retrieval_mode, status, agent_execution_mode
+                select id, workspace_id, question, source_scope_json, research_intent_json, control_pack_json,
+                       retrieval_mode, status, agent_execution_mode
                 from research_run where id = ? for update
                 """, rs -> rs.next() ? new RunScope(
                         rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
-                        ResearchRetrievalMode.valueOf(rs.getString(5)), rs.getString(6), rs.getString(7)) : null, runId);
+                        readRequiredMap(rs.getString(5), "research intent"),
+                        readRequiredMap(rs.getString(6), "control pack"),
+                        ResearchRetrievalMode.valueOf(rs.getString(7)), rs.getString(8), rs.getString(9)) : null, runId);
         if (run == null) throw new BusinessException("RESEARCH_AGENT_RUN_NOT_FOUND", "Research run does not exist");
         if (!"INCREMENTAL_V1".equals(run.executionMode())) throw new BusinessException("RESEARCH_AGENT_COORDINATOR_MODE_INVALID", "Task coordinator requires INCREMENTAL_V1");
         if (List.of("COMPLETED", "FAILED", "CANCELLED").contains(run.status())) throw new BusinessException("RESEARCH_AGENT_RUN_TERMINAL", "Cannot taskize terminal run");
         return run;
+    }
+
+    private Map<String, Object> readRequiredMap(String raw, String label) {
+        try {
+            Map<String, Object> value = objectMapper.readValue(raw, new TypeReference<>() { });
+            if (value == null || value.isEmpty()) throw new IllegalArgumentException(label + " is empty");
+            return Map.copyOf(value);
+        } catch (JsonProcessingException | IllegalArgumentException exception) {
+            throw new BusinessException("RESEARCH_AGENT_COORDINATOR_RUN_SCOPE_INVALID",
+                    "Run " + label + " is invalid");
+        }
     }
 
     private CellScope lockRepairableCell(String runId, String cellKey) {
@@ -222,9 +237,18 @@ public class ResearchAgentTaskCoordinatorService {
         for (String sourceId : ids) {
             Map<String, Object> source = jdbcTemplate.query("""
                     select s.id, s.title, s.source_type, coalesce(s.summary, '') as summary,
+                      ss.id as source_snapshot_id,
+                      coalesce((select sw.id from source_chunk sc join source_window sw on sw.source_chunk_id = sc.id
+                        where sc.source_id = s.id and sc.source_snapshot_id = ss.id
+                        order by sc.chunk_no, sw.window_no limit 1), '') as source_window_id,
                       coalesce((select sw.content from source_chunk sc join source_window sw on sw.source_chunk_id = sc.id
-                        where sc.source_id = s.id order by sc.chunk_no, sw.window_no limit 1), '') as sample_text
-                    from source s where s.id = ? and s.workspace_id = ? and s.status = 'READY'
+                        where sc.source_id = s.id and sc.source_snapshot_id = ss.id
+                        order by sc.chunk_no, sw.window_no limit 1), '') as sample_text
+                    from source s
+                    join source_snapshot ss on ss.source_id = s.id
+                      and ss.version_no = (select max(current_ss.version_no)
+                          from source_snapshot current_ss where current_ss.source_id = s.id)
+                    where s.id = ? and s.workspace_id = ? and s.status = 'READY'
                     """, rs -> rs.next() ? sourceMap(rs) : null, sourceId, workspaceId);
             if (source == null || String.valueOf(source.get("sample_text")).isBlank()) {
                 throw new BusinessException("RESEARCH_AGENT_COORDINATOR_SOURCE_SCOPE_INVALID", "Run source scope contains no ready source sample");
@@ -238,6 +262,8 @@ public class ResearchAgentTaskCoordinatorService {
         Map<String, Object> value = new LinkedHashMap<>();
         value.put("source_id", rs.getString("id")); value.put("title", rs.getString("title"));
         value.put("source_type", rs.getString("source_type")); value.put("summary", rs.getString("summary"));
+        value.put("source_snapshot_id", rs.getString("source_snapshot_id"));
+        value.put("source_window_id", rs.getString("source_window_id"));
         value.put("sample_text", rs.getString("sample_text")); return value;
     }
     private List<List<CellScope>> bundles(List<CellScope> cells) {
@@ -405,6 +431,8 @@ public class ResearchAgentTaskCoordinatorService {
             String workspaceId,
             String question,
             String sourceScopeJson,
+            Map<String, Object> researchIntent,
+            Map<String, Object> controlPack,
             ResearchRetrievalMode retrievalMode,
             String status,
             String executionMode

@@ -10,8 +10,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.noteweave.security.TokenHasher;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -42,9 +46,9 @@ class WorkspaceAccessContractTest {
     void workspaceResourcesMustEnforceSessionAndMembership() throws Exception {
         String ownerToken = "owner-" + UUID.randomUUID();
         jdbcTemplate.update("""
-                insert into user_session(id, user_id, session_token, status)
-                values (?, 'local-user', ?, 'ACTIVE')
-                """, UUID.randomUUID().toString(), ownerToken);
+                insert into user_session(id, user_id, session_token, token_hash, status)
+                values (?, 'local-user', '', ?, 'ACTIVE')
+                """, UUID.randomUUID().toString(), TokenHasher.sha256(ownerToken));
 
         String outsiderId = UUID.randomUUID().toString();
         String outsiderToken = "outsider-" + UUID.randomUUID();
@@ -53,9 +57,9 @@ class WorkspaceAccessContractTest {
                 values (?, ?, ?, 'Outsider', 'ACTIVE')
                 """, outsiderId, "outsider-" + outsiderId, outsiderId + "@noteweave.test");
         jdbcTemplate.update("""
-                insert into user_session(id, user_id, session_token, status)
-                values (?, ?, ?, 'ACTIVE')
-                """, UUID.randomUUID().toString(), outsiderId, outsiderToken);
+                insert into user_session(id, user_id, session_token, token_hash, status)
+                values (?, ?, '', ?, 'ACTIVE')
+                """, UUID.randomUUID().toString(), outsiderId, TokenHasher.sha256(outsiderToken));
 
         String createBody = "{\"name\":\"Access Contract\",\"description\":\"guard verification\"}";
         String createJson = mockMvc.perform(post("/api/v2/workspaces")
@@ -154,6 +158,7 @@ class WorkspaceAccessContractTest {
         String signalBody = objectMapper.writeValueAsString(java.util.Map.of(
                 "signal_type", "PREFERENCE",
                 "source_type", "USER_FEEDBACK",
+                "source_id", "forged-feedback-event",
                 "signal_text", "record the authenticated user",
                 "task_neighborhood", "CHAT_QA"
         ));
@@ -167,6 +172,17 @@ class WorkspaceAccessContractTest {
         String storedUserId = jdbcTemplate.queryForObject(
                 "select user_id from memory_signal where id = ?", String.class, signalId);
         assertThat(storedUserId).isEqualTo(outsiderId);
+        assertThat(jdbcTemplate.queryForMap(
+                "select source_type, source_id from memory_signal where id = ?", signalId))
+                .containsEntry("SOURCE_TYPE", "USER_FEEDBACK")
+                .containsEntry("SOURCE_ID", "memory-signal:" + signalId);
+        mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/memory/promotions", workspaceId)
+                        .header("Authorization", "Bearer " + outsiderToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of(
+                                "signal_ids", java.util.List.of(signalId)))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ACCESS_DENIED"));
     }
 
     @Test
@@ -256,12 +272,31 @@ class WorkspaceAccessContractTest {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    void workspaceListMustOnlyExposeActiveMemberships() throws Exception {
+        String ownerToken = createSessionForExistingUser("local-user", "list-owner");
+        String workspaceId = createWorkspace(ownerToken, "Visible Workspace");
+        UserSession member = createUserAndSession("list-member");
+        UserSession outsider = createUserAndSession("list-outsider");
+        addMember(workspaceId, member.userId(), "VIEWER", "ACTIVE");
+
+        assertThat(listWorkspaceIds(ownerToken)).contains(workspaceId);
+        assertThat(listWorkspaceIds(member.token())).contains(workspaceId);
+        assertThat(listWorkspaceIds(outsider.token())).doesNotContain(workspaceId);
+
+        jdbcTemplate.update("""
+                update workspace_member set status = 'SUSPENDED'
+                where workspace_id = ? and user_id = ?
+                """, workspaceId, member.userId());
+        assertThat(listWorkspaceIds(member.token())).doesNotContain(workspaceId);
+    }
+
     private String createSessionForExistingUser(String userId, String prefix) {
         String token = prefix + "-" + UUID.randomUUID();
         jdbcTemplate.update("""
-                insert into user_session(id, user_id, session_token, status)
-                values (?, ?, ?, 'ACTIVE')
-                """, UUID.randomUUID().toString(), userId, token);
+                insert into user_session(id, user_id, session_token, token_hash, status)
+                values (?, ?, '', ?, 'ACTIVE')
+                """, UUID.randomUUID().toString(), userId, TokenHasher.sha256(token));
         return token;
     }
 
@@ -289,6 +324,17 @@ class WorkspaceAccessContractTest {
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(response).path("data").path("workspace_id").asText();
+    }
+
+    private Set<String> listWorkspaceIds(String token) throws Exception {
+        String response = mockMvc.perform(get("/api/v2/workspaces")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andReturn().getResponse().getContentAsString();
+        return StreamSupport.stream(objectMapper.readTree(response).path("data").spliterator(), false)
+                .map(item -> item.path("workspace_id").asText())
+                .collect(Collectors.toSet());
     }
 
     private record UserSession(String userId, String token) {

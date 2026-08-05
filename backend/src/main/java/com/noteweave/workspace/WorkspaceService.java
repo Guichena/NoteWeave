@@ -5,8 +5,8 @@ import com.noteweave.common.BusinessException;
 import com.noteweave.security.CurrentUserProvider;
 import com.noteweave.security.AuditActorProvider;
 import com.noteweave.security.WorkspaceAccessGuard;
-import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,6 +45,24 @@ public class WorkspaceService implements WorkspaceQueryPort {
                 values (?, ?, ?, 'OWNER', ?, ?)
                 """, Ids.newId(), workspaceId, userId, actor, actor);
         return new WorkspaceResponse(workspaceId, request.name(), "ACTIVE", Instant.now());
+    }
+
+    public List<WorkspaceResponse> listWorkspaces() {
+        String userId = currentUserProvider.requireUserId();
+        return jdbcTemplate.query("""
+                select w.id, w.name, w.status, w.created_at
+                from workspace w
+                join workspace_member wm on wm.workspace_id = w.id
+                where wm.user_id = ?
+                  and wm.status = 'ACTIVE'
+                  and w.status = 'ACTIVE'
+                order by w.updated_at desc, w.created_at desc
+                """, (rs, rowNum) -> new WorkspaceResponse(
+                rs.getString("id"),
+                rs.getString("name"),
+                rs.getString("status"),
+                rs.getTimestamp("created_at").toInstant()
+        ), userId);
     }
 
     public boolean exists(String workspaceId) {

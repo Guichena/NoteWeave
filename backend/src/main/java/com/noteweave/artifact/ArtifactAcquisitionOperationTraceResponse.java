@@ -1,8 +1,10 @@
 package com.noteweave.artifact;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record ArtifactAcquisitionOperationTraceResponse(
         String requestId,
         String providerJobId,
@@ -10,7 +12,6 @@ public record ArtifactAcquisitionOperationTraceResponse(
         String providerId,
         String serverId,
         String toolName,
-        String callbackToken,
         @JsonProperty("provider_status")
         String providerStatus,
         @JsonProperty("health_status")

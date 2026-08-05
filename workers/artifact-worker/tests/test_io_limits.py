@@ -42,10 +42,27 @@ def test_llm_client_should_fallback_on_oversized_http_response(monkeypatch) -> N
             assert size == MAX_LLM_RESPONSE_BYTES + 1
             return b"x" * size
 
-    monkeypatch.setattr(llm_client.urllib.request, "urlopen", lambda req, timeout: FakeResponse())
+    monkeypatch.setattr(llm_client, "credential_safe_urlopen", lambda req, timeout: FakeResponse())
     client = OpenAICompatibleLlmClient("api-key", "artifact-model")
 
     assert client.complete_json("artifact.generate", {}) == ""
+
+
+def test_llm_redirect_handler_should_reject_credential_forwarding() -> None:
+    request = llm_client.urllib.request.Request(
+        "https://llm.example/v1/chat/completions",
+        headers={"Authorization": "Bearer secret"},
+    )
+
+    with pytest.raises(llm_client.urllib.error.URLError, match="redirect rejected"):
+        llm_client.RejectCredentialRedirects().redirect_request(
+            request,
+            None,
+            307,
+            "Temporary Redirect",
+            {},
+            "https://other.example/v1/chat/completions",
+        )
 
 
 def test_mcp_executor_should_apply_configured_process_timeout(monkeypatch) -> None:

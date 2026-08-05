@@ -10,6 +10,8 @@ class SourceScopeItem(BaseModel):
     title: str
     summary: str = ""
     sample_text: str = ""
+    source_snapshot_id: str = ""
+    source_window_id: str = ""
     source_type: str = "WORKSPACE_SOURCE"
     author: str = ""
     institution: str = ""
@@ -365,6 +367,9 @@ class ResearchLoopRoundSummary(BaseModel):
 class ResearchSearchHit(BaseModel):
     hit_id: str
     source_id: str
+    source_snapshot_id: str = ""
+    source_window_id: str = ""
+    workspace_window_text: str = ""
     source_title: str
     query: str
     rank: int
@@ -391,6 +396,8 @@ class ResearchFetchedDocument(BaseModel):
     fetch_id: str
     hit_id: str
     source_id: str
+    source_snapshot_id: str = ""
+    source_window_id: str = ""
     source_title: str
     query: str
     rank: int = 0
@@ -432,6 +439,8 @@ class ResearchReadWindow(BaseModel):
     window_id: str
     hit_id: str
     source_id: str
+    source_snapshot_id: str = ""
+    source_window_id: str = ""
     source_title: str
     query: str
     query_family: str = "direct"

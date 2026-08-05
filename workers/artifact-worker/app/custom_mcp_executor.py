@@ -14,6 +14,7 @@ from app.acquisition_runtime import (
 )
 from app.registry import list_custom_mcp_servers
 from app.config import load_settings
+from app.error_sanitizer import sanitize_error_message
 from app.io_limits import validate_json_payload_size
 
 
@@ -75,7 +76,7 @@ def _run_custom_mcp_acquisition_operation(request_id: str) -> None:
             callback_token=callback_token,
             final_status="FAILED",
             error_code="CUSTOM_MCP_EXECUTION_FAILED",
-            error_message=str(exc),
+            error_message=sanitize_error_message(str(exc)),
         )
     finally:
         with _executor_threads_lock:
@@ -125,14 +126,18 @@ def _call_custom_mcp_tool(server: object, operation: dict[str, object]) -> dict[
         cwd=working_directory,
         env=env or None,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         capture_output=True,
         check=False,
         timeout=load_settings().mcp_process_timeout_seconds,
     )
+    stdout = completed.stdout or ""
+    stderr = completed.stderr or ""
     if completed.returncode != 0:
-        raise ValueError(completed.stderr.strip() or completed.stdout.strip() or "custom MCP process failed")
+        raise ValueError(stderr.strip() or stdout.strip() or "custom MCP process failed")
     responses = []
-    for raw_line in completed.stdout.splitlines():
+    for raw_line in stdout.splitlines():
         stripped = raw_line.strip()
         if not stripped:
             continue

@@ -1,11 +1,11 @@
 from app.config import load_settings
-from app.main import app
+from app.agent_kafka_consumer import run_research_agent_kafka_consumer_forever
 
 
 def test_research_worker_imports() -> None:
     settings = load_settings()
     assert settings.worker_type == "research"
-    assert app.title == "NoteWeave Research Worker"
+    assert callable(run_research_agent_kafka_consumer_forever)
 
 
 def test_research_worker_should_use_only_its_namespaced_llm_configuration(monkeypatch) -> None:

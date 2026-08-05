@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -226,34 +227,48 @@ class Phase1And2ContractTest {
 
         MvcResult completeResult = mockMvc.perform(post("/api/v2/uploads/{uploadId}/complete", uploadId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.parse_status").value(org.hamcrest.Matchers.anyOf(org.hamcrest.Matchers.equalTo("PARSED"), org.hamcrest.Matchers.equalTo("PARSING_QUEUED"))))
-                .andExpect(jsonPath("$.data.index_status").value(org.hamcrest.Matchers.anyOf(org.hamcrest.Matchers.equalTo("INDEXED"), org.hamcrest.Matchers.equalTo("INDEX_QUEUED"))))
+                .andExpect(jsonPath("$.data.parse_status").value("PARSED"))
+                .andExpect(jsonPath("$.data.index_status").value("DISABLED"))
                 .andReturn();
 
         JsonNode complete = objectMapper.readTree(completeResult.getResponse().getContentAsString());
         String sourceId = complete.path("data").path("source_id").asText();
         String taskId = complete.path("data").path("task_id").asText();
         assertThat(sourceId).isNotBlank();
+        markSourceProjected(sourceId);
 
         mockMvc.perform(get("/api/v2/tasks/{taskId}", taskId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.task_status").value("COMPLETED"))
                 .andExpect(jsonPath("$.data.result_ref").value(sourceId));
 
-        mockMvc.perform(get("/api/v2/tasks/{taskId}/events", taskId))
+        MvcResult taskEventsResult = mockMvc.perform(get("/api/v2/tasks/{taskId}/events", taskId))
                 .andExpect(status().isOk())
-                .andExpect(header().string("Deprecation", "true"))
-                .andExpect(header().string("Link", org.hamcrest.Matchers.containsString("/event-history")))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.request().asyncStarted())
+                .andReturn();
+        mockMvc.perform(asyncDispatch(taskEventsResult))
                 .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("id: ")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: task.status")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: task.completed")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("id:")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:task.status")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:task.completed")));
 
-        mockMvc.perform(get("/api/v2/tasks/{taskId}/event-history", taskId))
+        MvcResult eventHistoryResult = mockMvc.perform(get("/api/v2/tasks/{taskId}/event-history", taskId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data").isArray())
                 .andExpect(jsonPath("$.data[0].event_id").isNotEmpty())
-                .andExpect(jsonPath("$.data[0].event_type").isNotEmpty());
+                .andExpect(jsonPath("$.data[0].event_type").isNotEmpty())
+                .andReturn();
+        JsonNode eventHistory = objectMapper.readTree(eventHistoryResult.getResponse().getContentAsString());
+        String firstEventId = eventHistory.path("data").path(0).path("event_id").asText();
+        int fullEventCount = eventHistory.path("data").size();
+        mockMvc.perform(get("/api/v2/tasks/{taskId}/event-history", taskId)
+                        .queryParam("afterEventId", firstEventId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isArray())
+                .andExpect(jsonPath("$.data.length()").value(fullEventCount - 1))
+                .andExpect(jsonPath("$.data[0].event_id").value(
+                        org.hamcrest.Matchers.not(firstEventId)
+                ));
 
         String conversationId = createConversation(workspaceId);
         MvcResult messageResult = mockMvc.perform(post("/api/v2/conversations/{conversationId}/messages", conversationId)
@@ -380,8 +395,8 @@ class Phase1And2ContractTest {
 
         ChatStreamTestSupport.perform(mockMvc, assistantRequestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.delta")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.completed")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:answer.delta")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:answer.completed")));
 
         ChatStreamTestSupport.performAnswerRun(mockMvc, workspaceId, answerRunId)
                 .andExpect(status().isOk())
@@ -459,7 +474,7 @@ class Phase1And2ContractTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("来源覆盖")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("RAG 资料 A")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("RAG 资料 B")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.citation")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:citation.upsert")));
 
         Integer distinctSourceCount = jdbcTemplate.queryForObject("""
                 select count(distinct c.source_id)
@@ -555,7 +570,7 @@ class Phase1And2ContractTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("连续对话窗口：最近 2 轮相关对话")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("主题锚点：")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("AlphaSpec")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.citation")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:citation.upsert")));
 
         Integer alphaCitationCount = jdbcTemplate.queryForObject("""
                 select count(*)
@@ -593,7 +608,7 @@ class Phase1And2ContractTest {
     }
 
     @Test
-    void qaModeShouldUseBoundedRecentTailUntilReadySegmentSummaryExists() throws Exception {
+    void qaModeShouldUseReadySegmentSummaryAndContiguousTail() throws Exception {
         String workspaceId = createWorkspace();
         completeSingleChunkUpload(workspaceId, "alpha-summary.md", """
                 AlphaSpec 包含四类连续相关要求：分阶段发布、证据留痕、来源回跳和主题连续推进。
@@ -612,10 +627,9 @@ class Phase1And2ContractTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("会话上下文：已纳入最近连续对话窗口")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("连续对话窗口：最近 3 轮相关对话")))
-                .andExpect(content().string(org.hamcrest.Matchers.not(
-                        org.hamcrest.Matchers.containsString("前序主题摘要："))))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("前序主题摘要：")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("AlphaSpec")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.citation")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:citation.upsert")));
     }
 
     @Test
@@ -638,7 +652,7 @@ class Phase1And2ContractTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("会话上下文：已纳入最近连续对话窗口"))))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("BetaSpec")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.citation")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:citation.upsert")));
 
         Integer betaCitationCount = jdbcTemplate.queryForObject("""
                 select count(*)
@@ -680,9 +694,9 @@ class Phase1And2ContractTest {
 
             ChatStreamTestSupport.perform(mockMvc, assistantRequestId)
                     .andExpect(status().isOk())
-                    .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.failed")))
+                    .andExpect(content().string(org.hamcrest.Matchers.containsString("event:answer.cancelled")))
                     .andExpect(content().string(org.hamcrest.Matchers.not(
-                            org.hamcrest.Matchers.containsString("event:chat.completed"))));
+                            org.hamcrest.Matchers.containsString("event:answer.completed"))));
 
             ChatStreamTestSupport.performAnswerRun(mockMvc, workspaceId, runId)
                     .andExpect(status().isOk())
@@ -815,8 +829,20 @@ class Phase1And2ContractTest {
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/v2/uploads/{uploadId}/complete", uploadId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.parse_status").value(org.hamcrest.Matchers.anyOf(org.hamcrest.Matchers.equalTo("PARSED"), org.hamcrest.Matchers.equalTo("PARSING_QUEUED"))))
-                .andExpect(jsonPath("$.data.index_status").value(org.hamcrest.Matchers.anyOf(org.hamcrest.Matchers.equalTo("INDEXED"), org.hamcrest.Matchers.equalTo("INDEX_QUEUED"))));
+                .andExpect(jsonPath("$.data.parse_status").value("PARSED"))
+                .andExpect(jsonPath("$.data.index_status").value("DISABLED"));
+        String sourceId = jdbcTemplate.queryForObject(
+                "select source_id from document_upload where id = ?",
+                String.class,
+                uploadId
+        );
+        markSourceProjected(sourceId);
+    }
+
+    private void markSourceProjected(String sourceId) {
+        jdbcTemplate.update("update source set status = 'READY', index_status = 'INDEXED' where id = ?", sourceId);
+        jdbcTemplate.update("update source_snapshot set index_status = 'INDEXED' where source_id = ?", sourceId);
+        jdbcTemplate.update("update source_chunk set projection_status = 'PROJECTED', projected_at = current_timestamp where source_id = ?", sourceId);
     }
 
     private String createConversation(String workspaceId) throws Exception {
@@ -859,7 +885,7 @@ class Phase1And2ContractTest {
                         response.path("data").path("assistant_request_id").asText())
                 .andExpect(status().isOk())
                 .andExpect(content().string(
-                        org.hamcrest.Matchers.containsString("event:chat.completed")));
+                        org.hamcrest.Matchers.containsString("event:answer.completed")));
         return response;
     }
 

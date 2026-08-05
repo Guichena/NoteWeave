@@ -14,20 +14,20 @@ MAX_SOURCE_CONTEXT_CHARS = 24_000
 MAX_SOURCE_ITEM_CHARS = 6_000
 
 
+class ArtifactConfigurationRequiredError(RuntimeError):
+    error_code = "CONFIGURATION_REQUIRED"
+
+
 def generate_artifact_sections(
     *,
     task_input: ArtifactTaskInput,
     plan: ArtifactExecutionPlan,
     canonical_content_objects: list[CanonicalContentObject],
-    fallback_sections: list[ArtifactSectionDraft],
     llm_client: LlmClient | None,
 ) -> tuple[list[ArtifactSectionDraft], dict[str, object]]:
     if llm_client is None:
-        return fallback_sections, _trace(
-            mode="DETERMINISTIC_FALLBACK",
-            attempted=False,
-            applied=False,
-            fallback_reason="LLM_NOT_CONFIGURED",
+        raise ArtifactConfigurationRequiredError(
+            "Artifact LLM is not configured; controlled artifact generation cannot start"
         )
 
     source_payload = _build_source_payload(canonical_content_objects)
@@ -44,6 +44,7 @@ def generate_artifact_sections(
             "outline": plan.outline,
             "required_phrases": plan.required_phrases,
             "output_contract": plan.output_contract,
+            "prompt_recipe": plan.prompt_recipe.model_dump(mode="json"),
             "control_pack": {
                 "style_constraints": task_input.control_pack.style_constraints,
                 "structure_constraints": task_input.control_pack.structure_constraints,
@@ -55,15 +56,13 @@ def generate_artifact_sections(
         },
     )
     parsed = parse_json_payload(raw_response)
-    generated_sections = _parse_sections(parsed, allowed_source_titles={item["title"] for item in source_payload})
+    generated_sections = _parse_sections(
+        parsed,
+        allowed_source_titles={item["title"] for item in source_payload},
+    )
     if not generated_sections:
-        return fallback_sections, _trace(
-            mode="DETERMINISTIC_FALLBACK",
-            provider=getattr(llm_client, "provider_name", "unknown"),
-            model=getattr(llm_client, "model_name", "unknown"),
-            attempted=True,
-            applied=False,
-            fallback_reason="INVALID_OR_EMPTY_MODEL_RESPONSE",
+        raise ArtifactConfigurationRequiredError(
+            "Artifact LLM returned no usable content; extractive fallback is disabled"
         )
     return generated_sections, _trace(
         mode="LLM_GENERATION",
@@ -84,17 +83,17 @@ def _build_source_payload(
     for item in canonical_content_objects:
         if remaining <= 0:
             break
-        text = item.plain_text.strip()
-        if not text:
+        content = item.plain_text.strip()
+        if not content:
             continue
-        text = text[: min(MAX_SOURCE_ITEM_CHARS, remaining)]
-        remaining -= len(text)
+        content = content[: min(MAX_SOURCE_ITEM_CHARS, remaining)]
+        remaining -= len(content)
         payload.append(
             {
                 "source_id": _source_id_from_trace(item.source_trace),
                 "title": item.title,
                 "kind": item.kind,
-                "content": text,
+                "content": content,
             }
         )
     return payload
@@ -123,12 +122,22 @@ def _parse_sections(
         if not heading or not body:
             continue
         raw_refs = raw_section.get("source_refs") or []
-        refs = [
-            str(value).strip()
-            for value in raw_refs
-            if str(value).strip() in allowed_source_titles
-        ] if isinstance(raw_refs, list) else []
-        sections.append(ArtifactSectionDraft(heading=heading, body=body, source_refs=list(dict.fromkeys(refs))))
+        refs = (
+            [
+                str(value).strip()
+                for value in raw_refs
+                if str(value).strip() in allowed_source_titles
+            ]
+            if isinstance(raw_refs, list)
+            else []
+        )
+        sections.append(
+            ArtifactSectionDraft(
+                heading=heading,
+                body=body,
+                source_refs=list(dict.fromkeys(refs)),
+            )
+        )
     return sections
 
 

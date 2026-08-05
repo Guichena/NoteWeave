@@ -24,18 +24,15 @@ public class MemoryVersionService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final WorkspaceAccessGuard workspaceAccessGuard;
-    private final LegacyMemoryRuntimeBridge legacyMemoryRuntimeBridge;
 
     public MemoryVersionService(
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
-            WorkspaceAccessGuard workspaceAccessGuard,
-            LegacyMemoryRuntimeBridge legacyMemoryRuntimeBridge
+            WorkspaceAccessGuard workspaceAccessGuard
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.workspaceAccessGuard = workspaceAccessGuard;
-        this.legacyMemoryRuntimeBridge = legacyMemoryRuntimeBridge;
     }
 
     MemoryVersionResponse createInitialVersion(InitialVersionCommand command) {
@@ -92,8 +89,6 @@ public class MemoryVersionService {
                 command.riskScore(),
                 command.scopeStatus()
         );
-        legacyMemoryRuntimeBridge.synchronizeActiveVersion(
-                command.workspaceId(), command.memoryObjectId(), response);
         return response;
     }
 
@@ -186,7 +181,6 @@ public class MemoryVersionService {
                 previous.riskScore(),
                 previous.scopeStatus()
         );
-        legacyMemoryRuntimeBridge.synchronizeActiveVersion(workspaceId, memoryObjectId, response);
         return response;
     }
 
@@ -233,7 +227,6 @@ public class MemoryVersionService {
                 current.riskScore(),
                 current.scopeStatus()
         );
-        legacyMemoryRuntimeBridge.markDeleted(workspaceId, memoryObjectId, current.memoryVersionId());
         return response;
     }
 

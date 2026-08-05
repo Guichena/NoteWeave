@@ -19,8 +19,6 @@ export type WaitProviderJob = {
   provider_job_id?: string;
   provider_receipt_id?: string;
   delivery_id?: string;
-  callback_token?: string;
-  adapter_callback_token?: string;
   callback_status?: string;
   dispatch_count?: number;
   previous_failed_delivery_count?: number;
@@ -34,8 +32,6 @@ export type WaitProviderDeliveryAttempt = {
   deliveryId?: string;
   dispatch_count?: number;
   dispatchCount?: number;
-  callback_token?: string;
-  callbackToken?: string;
   dispatched_at?: string;
   dispatchedAt?: string;
   callback_deadline_at?: string;

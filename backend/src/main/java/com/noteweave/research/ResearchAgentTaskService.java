@@ -29,24 +29,22 @@ public class ResearchAgentTaskService {
     private static final int MAX_LEASE_SECONDS = 300;
     private static final String TASK_SNAPSHOT_SCHEMA = "research-agent-task-snapshot.v1";
     private static final String TASK_SNAPSHOT_SCHEMA_V2 = "research-agent-task-snapshot.v2";
+    private static final String TASK_SNAPSHOT_SCHEMA_V3 = "research-agent-task-snapshot.v3";
     private static final Set<String> SNAPSHOT_ROLES = Set.of(
             "DEEP_CELL", "WIDE_DISCOVERY", "COUNTERFACTUAL", "EVIDENCE_AUDIT", "SYNTHESIS"
     );
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
-    private final ResearchBudgetAndCheckpointService budgetService;
     private final ResearchAgentTaskSnapshotCanonicalizer snapshotCanonicalizer;
 
     public ResearchAgentTaskService(
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
-            ResearchBudgetAndCheckpointService budgetService,
             ResearchAgentTaskSnapshotCanonicalizer snapshotCanonicalizer
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
-        this.budgetService = budgetService;
         this.snapshotCanonicalizer = snapshotCanonicalizer;
     }
 
@@ -177,57 +175,6 @@ public class ResearchAgentTaskService {
         return expired;
     }
 
-    @Deprecated(forRemoval = true)
-    @Transactional
-    public ExecutionReceipt submitExecution(SubmitCommand command) {
-        rejectSplitCompletionIfRequired(command.taskId());
-        ExecutionReceipt replay = findExecution(command.taskId(), command.executionKey());
-        if (replay != null) return replay;
-        TaskRow discovered = requireTask(command.taskId());
-        lockRunAndTask(discovered);
-        int updated = jdbcTemplate.update("""
-                update research_agent_task
-                set status = 'SUBMITTED', terminal_at = current_timestamp, updated_at = current_timestamp
-                where id = ? and status in ('CLAIMED', 'RUNNING')
-                  and worker_instance_id = ? and lease_epoch = ? and fencing_token = ?
-                  and lease_expires_at > current_timestamp
-                  and exists (
-                    select 1 from research_run rr
-                    where rr.id = research_agent_task.research_run_id
-                      and rr.agent_execution_mode = 'INCREMENTAL_V1'
-                      and rr.status not in ('COMPLETED', 'FAILED', 'CANCELLED')
-                  )
-                """, command.taskId(), command.workerInstanceId(), command.leaseEpoch(), command.fencingToken());
-        if (updated != 1) {
-            ExecutionReceipt concurrentReplay = findExecution(command.taskId(), command.executionKey());
-            if (concurrentReplay != null) return concurrentReplay;
-            throw new BusinessException("RESEARCH_AGENT_TASK_STALE_LEASE", "Task execution cannot be submitted with this lease");
-        }
-        TaskRow task = requireTask(command.taskId());
-        String executionId = Ids.newId();
-        try {
-            jdbcTemplate.update("""
-                    insert into research_agent_execution(
-                        id, research_agent_task_id, execution_key, lease_epoch, fencing_token, worker_instance_id,
-                        status, termination_reason, usage_json, trace_digest
-                    ) values (?, ?, ?, ?, ?, ?, 'SUBMITTED', ?, ?, ?)
-                    """, executionId, command.taskId(), command.executionKey(), command.leaseEpoch(), command.fencingToken(),
-                    command.workerInstanceId(), command.terminationReason(), Json.write(objectMapper, command.usage()), command.traceDigest());
-            BudgetSnapshotAdapter.settleIfReserved(budgetService, command.taskId(), command.executionKey(), task.researchRunId(), command.usage());
-            jdbcTemplate.update("""
-                    update research_agent_outbox
-                    set status = 'CANCELLED', updated_at = current_timestamp
-                    where research_agent_task_id = ? and status = 'READY'
-                    """, command.taskId());
-            releaseCellBindings(command.taskId());
-            return new ExecutionReceipt(executionId, false);
-        } catch (DataIntegrityViolationException duplicate) {
-            ExecutionReceipt concurrentReplay = findExecution(command.taskId(), command.executionKey());
-            if (concurrentReplay != null) return concurrentReplay;
-            throw duplicate;
-        }
-    }
-
     private void requireRunnableRun(String runId) {
         String status = jdbcTemplate.query("select status from research_run where id = ?", rs -> rs.next() ? rs.getString(1) : null, runId);
         if (status == null) throw new BusinessException("RESEARCH_AGENT_RUN_NOT_FOUND", "Research run does not exist");
@@ -285,12 +232,6 @@ public class ResearchAgentTaskService {
                  rs.getString("logical_task_key"), rs.getString("quorum_group_key"),
                  rs.getInt("candidate_quorum"), rs.getInt("candidate_slot"), rs.getString("workspace_id"),
                 rs.getBoolean("lease_valid")) : null, runId, idempotencyKey);
-    }
-
-    private ExecutionReceipt findExecution(String taskId, String executionKey) {
-        return jdbcTemplate.query("""
-                select id from research_agent_execution where research_agent_task_id = ? and execution_key = ?
-                """, rs -> rs.next() ? new ExecutionReceipt(rs.getString("id"), true) : null, taskId, executionKey);
     }
 
     private TaskSnapshot snapshot(TaskRow task) {
@@ -353,6 +294,32 @@ public class ResearchAgentTaskService {
     }
 
     private void releaseCellBindings(String taskId) {
+        TaskBindingScope scope = jdbcTemplate.query("""
+                select research_run_id, quorum_group_key, candidate_quorum
+                from research_agent_task where id = ?
+                """, rs -> rs.next()
+                ? new TaskBindingScope(rs.getString(1), rs.getString(2), rs.getInt(3))
+                : null, taskId);
+        if (scope != null && scope.candidateQuorum() == 2 && scope.quorumGroupKey() != null) {
+            Integer activeSiblingCount = jdbcTemplate.queryForObject("""
+                    select count(*) from research_agent_task
+                    where research_run_id = ? and quorum_group_key = ?
+                      and status not in ('SUBMITTED', 'FAILED', 'CANCELLED', 'EXPIRED')
+                    """, Integer.class, scope.runId(), scope.quorumGroupKey());
+            if (activeSiblingCount != null && activeSiblingCount > 0) {
+                return;
+            }
+            jdbcTemplate.query("""
+                    select id from research_cell
+                    where research_run_id = ? and active_task_id = ?
+                    order by cast(cell_key as binary), id for update
+                    """, (rs, rowNum) -> rs.getString(1), scope.runId(), scope.quorumGroupKey());
+            jdbcTemplate.update("""
+                    update research_cell set active_task_id = null, updated_at = current_timestamp
+                    where research_run_id = ? and active_task_id = ?
+                    """, scope.runId(), scope.quorumGroupKey());
+            return;
+        }
         jdbcTemplate.query("""
                 select id from research_cell where active_task_id = ?
                 order by cast(cell_key as binary), id for update
@@ -362,6 +329,9 @@ public class ResearchAgentTaskService {
                 set active_task_id = null, updated_at = current_timestamp
                 where active_task_id = ?
                 """, taskId);
+    }
+
+    private record TaskBindingScope(String runId, String quorumGroupKey, int candidateQuorum) {
     }
 
     private CanonicalSnapshot canonicalSnapshot(TaskRow task) {
@@ -380,6 +350,8 @@ public class ResearchAgentTaskService {
         payload.put("provider_key", context.providerKey());
         payload.put("source_policy", context.sourcePolicy());
         payload.put("query_policy", context.queryPolicy());
+        if (context.researchIntent() != null) payload.put("research_intent", context.researchIntent());
+        if (context.controlPack() != null) payload.put("control_pack", context.controlPack());
         return payload;
     }
 
@@ -396,7 +368,9 @@ public class ResearchAgentTaskService {
     }
 
     private boolean isSnapshotSchema(String value) {
-        return TASK_SNAPSHOT_SCHEMA.equals(value) || TASK_SNAPSHOT_SCHEMA_V2.equals(value);
+        return TASK_SNAPSHOT_SCHEMA.equals(value)
+                || TASK_SNAPSHOT_SCHEMA_V2.equals(value)
+                || TASK_SNAPSHOT_SCHEMA_V3.equals(value);
     }
 
     @SuppressWarnings("unchecked")
@@ -510,23 +484,6 @@ public class ResearchAgentTaskService {
         return run;
     }
 
-    private void rejectSplitCompletionIfRequired(String taskId) {
-        Integer required = jdbcTemplate.queryForObject("""
-                select count(*) from research_agent_task rat
-                join research_run rr on rr.id = rat.research_run_id
-                where rat.id = ?
-                  and ((rat.role = 'DEEP_CELL' and rat.snapshot_schema_version in (
-                          'research-agent-task-snapshot.v1', 'research-agent-task-snapshot.v2'))
-                       or (rat.role = 'COUNTERFACTUAL'
-                           and rat.snapshot_schema_version = 'research-agent-task-snapshot.v2'))
-                  and rr.agent_execution_mode = 'INCREMENTAL_V1'
-                """, Integer.class, taskId);
-        if (required != null && required == 1) {
-            throw new BusinessException("RESEARCH_AGENT_ATOMIC_COMPLETION_REQUIRED",
-                    "Snapshot-ready research agent tasks must use the atomic completion endpoint");
-        }
-    }
-
     public record CreateTaskCommand(
             String researchRunId, String taskKey, String idempotencyKey, int waveNo, String role,
             String entityId, String branchId, int planRevision, int entitySetVersion,
@@ -541,15 +498,26 @@ public class ResearchAgentTaskService {
         }
     }
     public record TargetCellBinding(String cellId, int expectedVersion) { }
-    public record TaskExecutionContext(String providerKey, Map<String, Object> sourcePolicy, Map<String, Object> queryPolicy) { }
+    public record TaskExecutionContext(
+            String providerKey,
+            Map<String, Object> sourcePolicy,
+            Map<String, Object> queryPolicy,
+            Map<String, Object> researchIntent,
+            Map<String, Object> controlPack
+    ) {
+        public TaskExecutionContext(
+                String providerKey,
+                Map<String, Object> sourcePolicy,
+                Map<String, Object> queryPolicy
+        ) {
+            this(providerKey, sourcePolicy, queryPolicy, null, null);
+        }
+    }
     public record TaskSnapshot(String taskId, String status) { }
     public record ClaimCommand(String taskId, String workerInstanceId, int leaseSeconds) { }
     public record LeaseCommand(String taskId, String workerInstanceId, int leaseEpoch, long fencingToken, int leaseSeconds) { }
     public record ClaimedTask(String taskId, int leaseEpoch, long fencingToken, Instant leaseExpiresAt,
                               String targetCellsJson, String budgetJson, String taskSnapshotJson, String snapshotDigest) { }
-    public record SubmitCommand(String taskId, String workerInstanceId, int leaseEpoch, long fencingToken,
-                                String executionKey, String terminationReason, Map<String, Object> usage, String traceDigest) { }
-    public record ExecutionReceipt(String executionId, boolean idempotentReplay) { }
     private record TaskRow(String id, String researchRunId, String taskKey, String idempotencyKey, String status,
                            int leaseEpoch, long fencingToken, String workerInstanceId, Instant leaseExpiresAt,
                            String targetCellsJson, String budgetJson, String role, String entityId, String branchId,
@@ -562,18 +530,6 @@ public class ResearchAgentTaskService {
         boolean runnableIncremental() {
             return "INCREMENTAL_V1".equals(executionMode)
                     && !Set.of("COMPLETED", "FAILED", "CANCELLED").contains(status);
-        }
-    }
-
-    private static final class BudgetSnapshotAdapter {
-        private static void settleIfReserved(ResearchBudgetAndCheckpointService budgetService, String taskId, String executionKey,
-                                             String runId, Map<String, Object> usage) {
-            Map<String, Long> normalized = new java.util.LinkedHashMap<>();
-            usage.forEach((key, value) -> {
-                if (!(value instanceof Number number)) throw new BusinessException("RESEARCH_BUDGET_INVALID", "Execution usage must be numeric");
-                normalized.put(key, number.longValue());
-            });
-            budgetService.settleForExecution(runId, taskId, executionKey, Map.copyOf(normalized));
         }
     }
 }

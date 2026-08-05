@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import urllib.error
 
 import pytest
@@ -15,6 +16,7 @@ from app.search_adapters import (
     ExternalSearchAdapter,
     HttpGetSearchTransport,
     HttpJsonSearchTransport,
+    HttpWikipediaSearchTransport,
     SeedSourceSearchAdapter,
     WorkspaceSearchAdapter,
     build_web_plus_seed_search_adapter,
@@ -102,6 +104,7 @@ def test_default_search_adapter_should_use_workspace_only_without_external_key(m
 
 
 def test_web_search_adapter_should_fail_explicitly_without_external_provider(monkeypatch) -> None:
+    monkeypatch.delenv("NOTEWEAVE_RESEARCH_PUBLIC_SEARCH_ENABLED", raising=False)
     monkeypatch.delenv("NOTEWEAVE_RESEARCH_SEARCH_API_KEY", raising=False)
     monkeypatch.delenv("SERPER_API_KEY", raising=False)
 
@@ -110,6 +113,7 @@ def test_web_search_adapter_should_fail_explicitly_without_external_provider(mon
 
 
 def test_web_plus_seed_search_adapter_should_fail_explicitly_without_external_provider(monkeypatch) -> None:
+    monkeypatch.delenv("NOTEWEAVE_RESEARCH_PUBLIC_SEARCH_ENABLED", raising=False)
     monkeypatch.delenv("NOTEWEAVE_RESEARCH_SEARCH_API_KEY", raising=False)
     monkeypatch.delenv("SERPER_API_KEY", raising=False)
 
@@ -117,7 +121,52 @@ def test_web_plus_seed_search_adapter_should_fail_explicitly_without_external_pr
         build_web_plus_seed_search_adapter()
 
 
+def test_public_wikipedia_search_should_be_available_only_when_explicitly_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_PUBLIC_SEARCH_ENABLED", "true")
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_SEARCH_PROVIDER_CHAIN", "wikipedia")
+
+    adapter = build_web_search_adapter()
+
+    assert isinstance(adapter, CompositeSearchAdapter)
+    assert len(adapter.adapters) == 1
+    assert adapter.adapters[0].provider_name == "wikipedia"
+
+
+def test_wikipedia_transport_should_normalize_public_api_results(monkeypatch) -> None:
+    payload = {
+        "query": {
+            "search": [{
+                "pageid": 42,
+                "title": "Event-driven architecture",
+                "snippet": "An <span class=\"searchmatch\">event</span> flow.",
+            }]
+        }
+    }
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return None
+
+        def read(self):
+            return json.dumps(payload).encode("utf-8")
+
+    monkeypatch.setattr("app.search_adapters.credential_safe_urlopen", lambda *_args, **_kwargs: Response())
+
+    results = HttpWikipediaSearchTransport().search("event flow", 3)
+
+    assert results == [{
+        "title": "Event-driven architecture",
+        "url": "https://en.wikipedia.org/?curid=42",
+        "snippet": "An event flow.",
+        "score": 0.78,
+    }]
+
+
 def test_research_search_should_enforce_web_plus_seed_mode_without_silent_seed_fallback(monkeypatch) -> None:
+    monkeypatch.delenv("NOTEWEAVE_RESEARCH_PUBLIC_SEARCH_ENABLED", raising=False)
     monkeypatch.delenv("NOTEWEAVE_RESEARCH_SEARCH_API_KEY", raising=False)
     monkeypatch.delenv("SERPER_API_KEY", raising=False)
     task_input = _build_task_input().model_copy(update={"retrieval_mode": "WEB_PLUS_SEEDS"})

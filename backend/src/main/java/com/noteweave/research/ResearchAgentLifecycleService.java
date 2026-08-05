@@ -2,6 +2,7 @@ package com.noteweave.research;
 
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
+import com.noteweave.task.TaskService;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -14,12 +15,15 @@ public class ResearchAgentLifecycleService {
     private final JdbcTemplate jdbcTemplate;
     private final ResearchAgentCommandOutboxService outboxService;
     private final ResearchBudgetAndCheckpointService budgetService;
+    private final TaskService taskService;
 
     public ResearchAgentLifecycleService(JdbcTemplate jdbcTemplate, ResearchAgentCommandOutboxService outboxService,
-                                         ResearchBudgetAndCheckpointService budgetService) {
+                                         ResearchBudgetAndCheckpointService budgetService,
+                                         TaskService taskService) {
         this.jdbcTemplate = jdbcTemplate;
         this.outboxService = outboxService;
         this.budgetService = budgetService;
+        this.taskService = taskService;
     }
 
     @Transactional
@@ -79,14 +83,53 @@ public class ResearchAgentLifecycleService {
     }
 
     @Transactional
+    public boolean failCommandDispatchExhausted(String taskId, String outboxId, int attemptNo) {
+        DispatchFailureTask task = jdbcTemplate.query("""
+                select rat.id, rat.research_run_id, rat.status
+                from research_agent_task rat
+                where rat.id = ? for update
+                """, rs -> rs.next() ? new DispatchFailureTask(
+                rs.getString(1), rs.getString(2), rs.getString(3)) : null, taskId);
+        if (task == null) throw new BusinessException("RESEARCH_AGENT_TASK_NOT_FOUND", "Research agent task does not exist");
+        Integer deadLetter = jdbcTemplate.queryForObject("""
+                select count(*) from research_agent_outbox
+                where id = ? and research_agent_task_id = ? and status = 'DEAD_LETTER'
+                  and attempt_count = ?
+                """, Integer.class, outboxId, taskId, Math.max(1, attemptNo));
+        if (deadLetter == null || deadLetter != 1) {
+            throw new BusinessException("RESEARCH_AGENT_OUTBOX_DEAD_LETTER_INVALID",
+                    "Research agent dead letter does not match its task");
+        }
+        if (List.of("SUBMITTED", "FAILED", "CANCELLED").contains(task.status())) {
+            return false;
+        }
+        int updated = jdbcTemplate.update("""
+                update research_agent_task
+                set status = 'FAILED', terminal_reason = 'COMMAND_DISPATCH_EXHAUSTED',
+                    terminal_at = current_timestamp, worker_instance_id = null, lease_expires_at = null,
+                    next_attempt_at = null, updated_at = current_timestamp
+                where id = ? and status not in ('SUBMITTED', 'FAILED', 'CANCELLED')
+                """, taskId);
+        if (updated != 1) return false;
+        releaseReservationsForTask(taskId);
+        releaseCellBindings(taskId);
+        jdbcTemplate.update("""
+                update research_agent_outbox set status = 'CANCELLED', updated_at = current_timestamp
+                where research_agent_task_id = ? and status = 'READY'
+                """, taskId);
+        return true;
+    }
+
+    @Transactional
     public CancelReceipt cancelRun(String runId, String reason) {
-        String status = jdbcTemplate.query("select status from research_run where id = ? for update",
-                rs -> rs.next() ? rs.getString(1) : null, runId);
-        if (status == null) throw new BusinessException("RESEARCH_AGENT_RUN_NOT_FOUND", "Research run does not exist");
-        if ("CANCELLED".equals(status)) return new CancelReceipt(0, true);
-        if ("COMPLETED".equals(status) || "FAILED".equals(status)) {
+        FailedRun run = jdbcTemplate.query("select status, task_id from research_run where id = ? for update",
+                rs -> rs.next() ? new FailedRun(rs.getString(1), rs.getString(2)) : null, runId);
+        if (run == null) throw new BusinessException("RESEARCH_AGENT_RUN_NOT_FOUND", "Research run does not exist");
+        if ("CANCELLED".equals(run.status())) return new CancelReceipt(0, true);
+        if ("COMPLETED".equals(run.status()) || "FAILED".equals(run.status())) {
             throw new BusinessException("RESEARCH_AGENT_RUN_TERMINAL", "Cannot cancel terminal research run");
         }
+        String terminalReason = normalizeReason(reason);
         jdbcTemplate.query("""
                 select id from research_agent_task where research_run_id = ? order by id for update
                 """, (rs, rowNum) -> rs.getString(1), runId);
@@ -95,7 +138,7 @@ public class ResearchAgentLifecycleService {
                 update research_agent_task set status = 'CANCELLED', terminal_reason = ?, cancelled_at = current_timestamp,
                 terminal_at = current_timestamp, worker_instance_id = null, lease_expires_at = null, updated_at = current_timestamp
                 where research_run_id = ? and status not in ('SUBMITTED', 'FAILED', 'CANCELLED')
-                """, normalizeReason(reason), runId);
+                """, terminalReason, runId);
         releaseReservationsForRun(runId);
         jdbcTemplate.query("""
                 select id from research_cell
@@ -110,7 +153,60 @@ public class ResearchAgentLifecycleService {
                 update research_agent_outbox set status = 'CANCELLED', updated_at = current_timestamp
                 where research_run_id = ? and status = 'READY'
                 """, runId);
+        taskService.cancelTask(run.taskId(), "RESEARCH_CANCELLED", terminalReason, runId);
         return new CancelReceipt(cancelled, false);
+    }
+
+    @Transactional
+    public FailReceipt failRun(String runId, String reason) {
+        FailedRun run = jdbcTemplate.query("""
+                select status, task_id from research_run where id = ? for update
+                """, rs -> rs.next() ? new FailedRun(rs.getString(1), rs.getString(2)) : null, runId);
+        if (run == null) {
+            throw new BusinessException("RESEARCH_AGENT_RUN_NOT_FOUND", "Research run does not exist");
+        }
+        if ("FAILED".equals(run.status())) return new FailReceipt(0, true);
+        if ("COMPLETED".equals(run.status()) || "CANCELLED".equals(run.status())) {
+            throw new BusinessException("RESEARCH_AGENT_RUN_TERMINAL", "Cannot fail a terminal research run");
+        }
+        String terminalReason = normalizeReason(reason);
+        jdbcTemplate.query("""
+                select id from research_agent_task where research_run_id = ? order by id for update
+                """, (rs, rowNum) -> rs.getString(1), runId);
+        jdbcTemplate.update("""
+                update research_run set status = 'FAILED', updated_at = current_timestamp where id = ?
+                """, runId);
+        int failed = jdbcTemplate.update("""
+                update research_agent_task
+                set status = 'FAILED', terminal_reason = ?, terminal_at = current_timestamp,
+                    worker_instance_id = null, lease_expires_at = null, next_attempt_at = null,
+                    updated_at = current_timestamp
+                where research_run_id = ? and status not in ('FAILED', 'CANCELLED')
+                  and (status <> 'SUBMITTED' or not exists (
+                      select 1 from research_agent_completion completion
+                      where completion.research_agent_task_id = research_agent_task.id
+                  ))
+                """, terminalReason, runId);
+        releaseReservationsForRun(runId);
+        jdbcTemplate.query("""
+                select id from research_cell
+                where research_run_id = ? and active_task_id is not null
+                order by cast(cell_key as binary), id for update
+                """, (rs, rowNum) -> rs.getString(1), runId);
+        jdbcTemplate.update("""
+                update research_cell set active_task_id = null, updated_at = current_timestamp
+                where research_run_id = ? and active_task_id is not null
+                """, runId);
+        jdbcTemplate.update("""
+                update research_agent_outbox set status = 'CANCELLED', updated_at = current_timestamp
+                where research_run_id = ? and status = 'READY'
+                """, runId);
+        taskService.failTask(run.taskId(), "RESEARCH_FAILED", terminalReason, terminalReason, false);
+        jdbcTemplate.update("""
+                insert into research_trace(id, research_run_id, trace_type, trace_message, payload_json)
+                values (?, ?, 'RUN_FAILED', ?, '{}')
+                """, Ids.newId(), runId, terminalReason);
+        return new FailReceipt(failed, false);
     }
 
     @Transactional
@@ -129,6 +225,9 @@ public class ResearchAgentLifecycleService {
                 ) values (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
                 """, id, command.researchRunId(), command.taskId(), blankToNull(command.outboxId()), command.failureKey(),
                 bounded(command.reasonCode(), 128), bounded(command.traceDigest(), 128), Math.max(1, command.deliveryAttempt()));
+        if ("RESEARCH_WEB_PROVIDER_UNAVAILABLE".equals(command.reasonCode().trim())) {
+            failRun(command.researchRunId(), command.reasonCode());
+        }
         return new DeliveryFailureReceipt(id, false);
     }
 
@@ -229,6 +328,7 @@ public class ResearchAgentLifecycleService {
 
     public record ReapReceipt(int retryWaitingCount, int failedCount) { }
     public record CancelReceipt(int cancelledTaskCount, boolean idempotentReplay) { }
+    public record FailReceipt(int failedTaskCount, boolean idempotentReplay) { }
     public record DeliveryFailureCommand(String researchRunId, String taskId, String outboxId, String failureKey,
                                          String reasonCode, String traceDigest, int deliveryAttempt) { }
     public record DeliveryFailureReceipt(String failureId, boolean idempotentReplay) { }
@@ -237,4 +337,6 @@ public class ResearchAgentLifecycleService {
     private record ReservationScope(String reservationId, String runId, String taskId) { }
     private record TaskBindingScope(String runId, String quorumGroupKey, int candidateQuorum) { }
     private record FailureRow(String id, String taskId, String redriveStatus) { }
+    private record DispatchFailureTask(String taskId, String runId, String status) { }
+    private record FailedRun(String status, String taskId) { }
 }

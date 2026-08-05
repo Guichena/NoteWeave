@@ -79,7 +79,7 @@ class QaAnswerModeStrategyTest {
                 .contains("- 检索策略：Chunk 向量召回 + BM25 关键词召回 + 加权 RRF + 真实 rerank + 来源覆盖")
                 .contains("- 证据 1《title》：excerpt（chunk:0，score=1，reason=selected）")
                 .contains("## 表达控制\n- 风格约束：简洁")
-                .contains("引用信息会通过 `chat.citation` 事件返回")
+                .contains("引用信息会通过 `citation.upsert` 事件返回")
                 .doesNotContain("[passage:one]", "[passage:two]");
         assertThat(strategy.policy().citationRequired()).isTrue();
     }

@@ -80,7 +80,7 @@ class QaEvidenceRelevancePolicyTest {
     }
 
     @Test
-    void shouldChooseOnlyBestLowCoverageFallbackAndKeepRefusalWhenNoAnchorExists() {
+    void shouldRejectLowCoverageCandidatesAndKeepRefusalWhenNoAnchorExists() {
         var artifactCandidates = List.of(
                 candidate("backend", 4, "Artifact Worker network endpoints.", 10.9d),
                 candidate("backend", 0,
@@ -90,7 +90,7 @@ class QaEvidenceRelevancePolicyTest {
         );
         assertThat(QaEvidenceRelevancePolicy.admittedIndexes(
                 "How are Artifact versions saved, regenerated, compared, rolled back, and exported?",
-                artifactCandidates)).containsExactly(1);
+                artifactCandidates)).isEmpty();
 
         var refusalCandidates = List.of(
                 candidate("root", 0, "NoteWeave v2 is a research workspace.", 13.0d),

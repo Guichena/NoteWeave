@@ -184,7 +184,7 @@ public class QaAnswerModeStrategy implements AnswerModeStrategy {
                     .append("，reason=").append(item.selectionReason()).append("）\n");
         }
         answer.append("\n## 引用来源\n")
-                .append("本轮回答的事实依据全部来自当前轮选中的资料片段，引用信息会通过 `chat.citation` 事件返回，可回跳到 source / snapshot / chunk。\n\n")
+                .append("本轮回答的事实依据全部来自当前轮选中的资料片段，引用信息会通过 `citation.upsert` 事件返回，可回跳到 source / snapshot / chunk。\n\n")
                 .append(context.attributes().getOrDefault(ATTRIBUTE_CHAT_CONTROL_SECTION, ""))
                 .append("## 可继续操作\n")
                 .append("- 如果需要逐篇深读和摘录卡片，可以切换到 Note 链路。\n")

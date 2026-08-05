@@ -112,4 +112,13 @@ public class RealtimeExecutorConfig {
             return thread;
         });
     }
+
+    @Bean(destroyMethod = "shutdown", name = "answerLeaseScheduler")
+    public ScheduledExecutorService answerLeaseScheduler() {
+        return Executors.newScheduledThreadPool(4, runnable -> {
+            Thread thread = new Thread(runnable, "answer-lease-renewal");
+            thread.setDaemon(true);
+            return thread;
+        });
+    }
 }

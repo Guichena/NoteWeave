@@ -7,7 +7,7 @@ import com.noteweave.retrieval.projection.RetrievalProjectionRepository.Projecti
 import org.junit.jupiter.api.Test;
 
 class RetrievalIndexManagerMappingTest {
-    private final RetrievalIndexManager manager = new RetrievalIndexManager(null);
+    private final RetrievalIndexManager manager = RetrievalIndexManager.withClient(null);
 
     @Test
     void qaMappingContainsIndexedCosineChunkVectorAndScopeFields() {

@@ -26,15 +26,16 @@ class ResearchAgentLifecycleServiceTest {
 
     private String workspaceId;
     private String runId;
+    private String parentTaskId;
 
     @BeforeEach
     void setUp() {
         workspaceId = Ids.newId();
-        String taskId = Ids.newId();
+        parentTaskId = Ids.newId();
         runId = Ids.newId();
         jdbcTemplate.update("insert into workspace(id, owner_id, name, status) values (?, 'local-user', ?, 'ACTIVE')", workspaceId, "agent-lifecycle-test");
-        jdbcTemplate.update("insert into task(id, workspace_id, task_type, task_status, target_type, target_id) values (?, ?, 'RESEARCH_RUN', 'RUNNING', 'RESEARCH_RUN', ?)", taskId, workspaceId, runId);
-        jdbcTemplate.update("insert into research_run(id, workspace_id, task_id, question, profile_key, source_scope_json, status, agent_execution_mode) values (?, ?, ?, 'test', 'DEFAULT', '[]', 'RUNNING', 'INCREMENTAL_V1')", runId, workspaceId, taskId);
+        jdbcTemplate.update("insert into task(id, workspace_id, task_type, task_status, target_type, target_id) values (?, ?, 'RESEARCH_RUN', 'RUNNING', 'RESEARCH_RUN', ?)", parentTaskId, workspaceId, runId);
+        jdbcTemplate.update("insert into research_run(id, workspace_id, task_id, question, profile_key, source_scope_json, status, agent_execution_mode) values (?, ?, ?, 'test', 'DEFAULT', '[]', 'RUNNING', 'INCREMENTAL_V1')", runId, workspaceId, parentTaskId);
     }
 
     @Test
@@ -58,9 +59,9 @@ class ResearchAgentLifecycleServiceTest {
     }
 
     @Test
-    void shouldFailExpiredLeaseAfterAttemptLimitAndRejectOldFence() {
+    void shouldFailExpiredLeaseAfterAttemptLimitAndReleaseReservation() {
         String taskId = createAndClaim("exhausted-task");
-        ResearchAgentTaskService.ClaimedTask claim = taskService.claimTask(new ResearchAgentTaskService.ClaimCommand(taskId, "worker-a", 30));
+        taskService.claimTask(new ResearchAgentTaskService.ClaimCommand(taskId, "worker-a", 30));
         ResearchBudgetAndCheckpointService budget = new ResearchBudgetAndCheckpointService(jdbcTemplate, new com.fasterxml.jackson.databind.ObjectMapper());
         String reservationId = budget.reserve(new ResearchBudgetAndCheckpointService.ReserveCommand(
                 runId, taskId, "reserve-exhausted", Map.of("llm_calls", 2L)
@@ -75,17 +76,12 @@ class ResearchAgentLifecycleServiceTest {
 
         assertThat(jdbcTemplate.queryForObject("select status from research_agent_task where id = ?", String.class, taskId)).isEqualTo("FAILED");
         assertThat(jdbcTemplate.queryForObject("select state from research_budget_reservation where id = ?", String.class, reservationId)).isEqualTo("RELEASED");
-        assertThatThrownBy(() -> taskService.submitExecution(new ResearchAgentTaskService.SubmitCommand(
-                taskId, "worker-a", claim.leaseEpoch(), claim.fencingToken(), "stale", "DONE", Map.of("llm_calls", 0), ""
-        ))).isInstanceOf(BusinessException.class);
     }
 
     @Test
     void shouldCancelNonTerminalTasksAndReleaseReservations() {
         String taskId = createAndClaim("cancel-task");
-        ResearchAgentTaskService.ClaimedTask claim = taskService.claimTask(
-                new ResearchAgentTaskService.ClaimCommand(taskId, "worker-a", 30)
-        );
+        taskService.claimTask(new ResearchAgentTaskService.ClaimCommand(taskId, "worker-a", 30));
         ResearchBudgetAndCheckpointService budget = new ResearchBudgetAndCheckpointService(jdbcTemplate, new com.fasterxml.jackson.databind.ObjectMapper());
         String reservationId = budget.reserve(new ResearchBudgetAndCheckpointService.ReserveCommand(runId, taskId, "reserve-cancel", Map.of("llm_calls", 2L))).reservationId();
 
@@ -95,9 +91,9 @@ class ResearchAgentLifecycleServiceTest {
         assertThat(jdbcTemplate.queryForObject("select status from research_run where id = ?", String.class, runId)).isEqualTo("CANCELLED");
         assertThat(jdbcTemplate.queryForObject("select status from research_agent_task where id = ?", String.class, taskId)).isEqualTo("CANCELLED");
         assertThat(jdbcTemplate.queryForObject("select state from research_budget_reservation where id = ?", String.class, reservationId)).isEqualTo("RELEASED");
-        assertThatThrownBy(() -> taskService.submitExecution(new ResearchAgentTaskService.SubmitCommand(
-                taskId, "worker-a", claim.leaseEpoch(), claim.fencingToken(), "after-cancel", "DONE", Map.of("llm_calls", 0), ""
-                ))).isInstanceOf(BusinessException.class);
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from task_event where task_id = ? and event_type = 'TASK_CANCELLED'",
+                Integer.class, parentTaskId)).isEqualTo(1);
     }
 
     /** Atomic lifecycle is the only authority allowed to release this reservation. */
@@ -223,13 +219,51 @@ class ResearchAgentLifecycleServiceTest {
                 .isEqualTo("RESEARCH_AGENT_DELIVERY_FAILURE_OUTBOX_INVALID");
     }
 
+    @Test
+    void shouldFailRunImmediatelyWhenRequiredWebProviderIsUnavailable() {
+        String taskId = createTask("web-provider-task");
+        String outboxId = outboxService.enqueue(taskId).outboxId();
+        taskService.claimTask(new ResearchAgentTaskService.ClaimCommand(taskId, "worker-a", 30));
+        String reservationId = budgetService.reserve(new ResearchBudgetAndCheckpointService.ReserveCommand(
+                runId, taskId, "reserve-web-provider", Map.of("search_calls", 1L))).reservationId();
+
+        lifecycleService.recordDeliveryFailure(new ResearchAgentLifecycleService.DeliveryFailureCommand(
+                runId, taskId, outboxId,
+                outboxId + ":delivery:1:RESEARCH_WEB_PROVIDER_UNAVAILABLE",
+                "RESEARCH_WEB_PROVIDER_UNAVAILABLE", "sha256:failure", 1));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from research_run where id = ?", String.class, runId)).isEqualTo("FAILED");
+        assertThat(jdbcTemplate.queryForMap(
+                "select status, terminal_reason from research_agent_task where id = ?", taskId))
+                .containsEntry("status", "FAILED")
+                .containsEntry("terminal_reason", "RESEARCH_WEB_PROVIDER_UNAVAILABLE");
+        assertThat(jdbcTemplate.queryForObject(
+                "select state from research_budget_reservation where id = ?", String.class, reservationId))
+                .isEqualTo("RELEASED");
+        assertThat(jdbcTemplate.queryForMap(
+                "select task_status, progress_phase from task where target_id = ?", runId))
+                .containsEntry("task_status", "FAILED")
+                .containsEntry("progress_phase", "RESEARCH_FAILED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from research_trace where research_run_id = ? and trace_type = 'RUN_FAILED'",
+                Integer.class, runId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from task_event where task_id = ? and event_type = 'TASK_FAILED'",
+                Integer.class, parentTaskId)).isEqualTo(1);
+    }
+
     private String createAndClaim(String taskKey) {
-        String taskId = taskService.createTask(new ResearchAgentTaskService.CreateTaskCommand(
+        String taskId = createTask(taskKey);
+        taskService.claimTask(new ResearchAgentTaskService.ClaimCommand(taskId, "worker-a", 30));
+        return taskId;
+    }
+
+    private String createTask(String taskKey) {
+        return taskService.createTask(new ResearchAgentTaskService.CreateTaskCommand(
                 runId, taskKey, "idem-" + taskKey, 1, "DEEP_CELL", "entity-1", "main", 1, 1,
                 List.of("entity-1:field"), Map.of("llm_calls", 2)
         )).taskId();
-        taskService.claimTask(new ResearchAgentTaskService.ClaimCommand(taskId, "worker-a", 30));
-        return taskId;
     }
 
     private AtomicTask createAtomicAndClaim(String taskKey) {

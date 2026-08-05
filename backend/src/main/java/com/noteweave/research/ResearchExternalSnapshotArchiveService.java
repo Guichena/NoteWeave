@@ -121,14 +121,22 @@ public class ResearchExternalSnapshotArchiveService {
      * but it can still reject localhost and numeric non-public destinations
      * before they become durable provenance metadata.
      */
-    private boolean nonPublicLiteralHost(String rawHost) {
+    boolean nonPublicLiteralHost(String rawHost) {
         String host = rawHost == null ? "" : rawHost.strip();
         if (host.startsWith("[") && host.endsWith("]")) host = host.substring(1, host.length() - 1);
         if (host.equalsIgnoreCase("localhost") || host.equalsIgnoreCase("localhost.localdomain")
                 || host.equalsIgnoreCase("metadata.google.internal")) return true;
-        if (!host.matches("\\d{1,3}(?:\\.\\d{1,3}){3}") && !host.contains(":")) return false;
+        boolean numericIpv4 = host.matches("(?i)(?:0x[0-9a-f]+|[0-9]+)(?:\\.(?:0x[0-9a-f]+|[0-9]+)){0,3}");
+        if (!numericIpv4 && !host.contains(":")) return false;
         try {
-            InetAddress address = InetAddress.getByName(host);
+            InetAddress address;
+            if (numericIpv4) {
+                byte[] bytes = parseIpv4Literal(host);
+                if (bytes == null) return true;
+                address = InetAddress.getByAddress(bytes);
+            } else {
+                address = InetAddress.getByName(host);
+            }
             if (address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()
                     || address.isSiteLocalAddress() || address.isMulticastAddress()) return true;
             byte[] bytes = address.getAddress();
@@ -142,6 +150,61 @@ public class ResearchExternalSnapshotArchiveService {
             // A malformed numeric literal must not be retained as an external authority URL.
             return true;
         }
+    }
+
+    /**
+     * Parses the historical IPv4 literal forms accepted by many HTTP stacks (for example
+     * 2130706433, 0177.0.0.1 and 0x7f.1). Returning {@code null} for an otherwise numeric-looking
+     * host makes validation fail closed instead of letting an alternate loopback spelling through.
+     */
+    private byte[] parseIpv4Literal(String host) {
+        String[] parts = host.split("\\.", -1);
+        if (parts.length == 0 || parts.length > 4) return null;
+        long[] values = new long[parts.length];
+        try {
+            for (int index = 0; index < parts.length; index++) {
+                String part = parts[index];
+                int radix;
+                String digits;
+                if (part.regionMatches(true, 0, "0x", 0, 2)) {
+                    radix = 16;
+                    digits = part.substring(2);
+                } else if (part.length() > 1 && part.startsWith("0")) {
+                    radix = 8;
+                    digits = part.substring(1);
+                } else {
+                    radix = 10;
+                    digits = part;
+                }
+                if (digits.isEmpty()) return null;
+                values[index] = Long.parseUnsignedLong(digits, radix);
+            }
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+
+        long address;
+        if (parts.length == 1) {
+            if (values[0] > 0xFFFF_FFFFL) return null;
+            address = values[0];
+        } else if (parts.length == 2) {
+            if (values[0] > 0xFF || values[1] > 0xFF_FFFFL) return null;
+            address = (values[0] << 24) | values[1];
+        } else if (parts.length == 3) {
+            if (values[0] > 0xFF || values[1] > 0xFF || values[2] > 0xFFFF) return null;
+            address = (values[0] << 24) | (values[1] << 16) | values[2];
+        } else {
+            for (long value : values) {
+                if (value > 0xFF) return null;
+            }
+            address = (values[0] << 24) | (values[1] << 16) | (values[2] << 8) | values[3];
+        }
+        return new byte[]{
+                (byte) (address >>> 24),
+                (byte) (address >>> 16),
+                (byte) (address >>> 8),
+                (byte) address
+        };
     }
 
     private String sha256Hex(String value) {

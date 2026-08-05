@@ -5,14 +5,14 @@ import { ArtifactsApi } from "./api";
 describe("ArtifactsApi", () => {
   it("owns skill, job, version, compare and export paths", async () => {
     const get = vi.fn(async (_path: string, _init?: RequestInit) => ([]));
-    const url = vi.fn((path: string) => `https://example.test${path}`);
-    const api = new ArtifactsApi({ get, url } as unknown as ApiClient);
+    const blob = vi.fn(async (_path: string) => new Blob(["pdf"]));
+    const api = new ArtifactsApi({ get, blob } as unknown as ApiClient);
 
     await api.listSkills();
     await api.listJobs("workspace");
     await api.getVersion("workspace", "job", 3);
     await api.compareVersions("workspace", "job", 2, 3);
-    const exportUrl = api.exportPdfUrl("workspace", "job", 3);
+    await api.exportPdf("workspace", "job", 3);
 
     expect(get.mock.calls.map(([path]) => path)).toEqual([
       "/api/v2/skills",
@@ -20,8 +20,8 @@ describe("ArtifactsApi", () => {
       "/api/v2/workspaces/workspace/artifact-jobs/job/versions/3",
       "/api/v2/workspaces/workspace/artifact-jobs/job/versions/compare?from=2&to=3"
     ]);
-    expect(exportUrl).toBe(
-      "https://example.test/api/v2/workspaces/workspace/artifact-jobs/job/versions/3/export.pdf"
+    expect(blob).toHaveBeenCalledWith(
+      "/api/v2/workspaces/workspace/artifact-jobs/job/versions/3/export.pdf"
     );
   });
 

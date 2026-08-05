@@ -1,6 +1,7 @@
 package com.noteweave.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -12,6 +13,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.noteweave.chat.QaPassageRetriever.RetrievedChunk;
 import com.noteweave.chat.RetrievalHydrator.PassageOwnership;
+import com.noteweave.common.BusinessException;
 import com.noteweave.retrieval.QaRetrievalStrategyProfile;
 import com.noteweave.search.ChunkSearchHit;
 import com.noteweave.search.ChunkSearchPort;
@@ -24,6 +26,43 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 
 class QaPassageRetrieverTest {
+
+    @Test
+    void hybridProviderFailureShouldFailClosedWhenMysqlFallbackIsDisabled() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        QaHybridRetriever hybridRetriever = mock(QaHybridRetriever.class);
+        when(hybridRetriever.retrieve("workspace", "query", Set.of()))
+                .thenThrow(new IllegalStateException("provider unavailable"));
+        QaPassageRetriever retriever = new QaPassageRetriever(
+                jdbcTemplate,
+                mock(ChunkSearchPort.class),
+                mock(RetrievalHydrator.class),
+                hybridRetriever,
+                false
+        );
+
+        assertThatThrownBy(() -> retriever.retrieve("workspace", "query"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(error -> ((BusinessException) error).code())
+                .isEqualTo("QA_RETRIEVAL_PROVIDER_UNAVAILABLE");
+        org.mockito.Mockito.verifyNoInteractions(jdbcTemplate);
+    }
+
+    @Test
+    void primarySearchFailureShouldFailClosedByDefault() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        ChunkSearchPort searchPort = mock(ChunkSearchPort.class);
+        when(searchPort.search("workspace", "query", 12))
+                .thenThrow(new IllegalStateException("provider unavailable"));
+        QaPassageRetriever retriever = new QaPassageRetriever(
+                jdbcTemplate, searchPort, mock(RetrievalHydrator.class));
+
+        assertThatThrownBy(() -> retriever.retrieve("workspace", "query"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(error -> ((BusinessException) error).code())
+                .isEqualTo("QA_RETRIEVAL_PROVIDER_UNAVAILABLE");
+        org.mockito.Mockito.verifyNoInteractions(jdbcTemplate);
+    }
 
     @Test
     void searchHitsShouldApplyExplicitSourceScopeBeforeHydration() {
@@ -114,11 +153,11 @@ class QaPassageRetrieverTest {
         assertThat(result.chunks()).isEmpty();
         assertThat(result.degraded()).isTrue();
         assertThat(result.degradationReasons())
-                .containsExactly("qa_primary_ownership_rejected", "qa_mysql_fallback");
+                .containsExactly("qa_primary_ownership_rejected");
         assertThat(result.measurements())
                 .containsEntry("ownership_rejected_count", 1L)
-                .containsEntry("mysql_fallback_used", 1L);
-        verify(jdbcTemplate).query(anyString(), any(RowMapper.class), any(Object[].class));
+                .containsEntry("mysql_fallback_used", 0L);
+        org.mockito.Mockito.verifyNoInteractions(jdbcTemplate);
     }
 
     @Test
@@ -243,11 +282,13 @@ class QaPassageRetrieverTest {
 
         assertThat(result.chunks()).isEmpty();
         assertThat(result.degradationReasons())
-                .containsExactly("qa_primary_ownership_rejected", "qa_mysql_fallback");
+                .containsExactly("qa_primary_ownership_rejected");
         assertThat(result.measurements())
                 .containsEntry("relevant_primary_hit_count", 0L)
                 .containsEntry("ownership_rejected_count", 1L)
+                .containsEntry("mysql_fallback_used", 0L)
                 .containsEntry("selected_count", 0L);
+        org.mockito.Mockito.verifyNoInteractions(jdbcTemplate);
     }
 
     @Test
@@ -263,7 +304,7 @@ class QaPassageRetrieverTest {
                         chunk("chunk-b1", "source-b", "beta")
                 ));
         QaPassageRetriever retriever = new QaPassageRetriever(
-                jdbcTemplate, searchPort, hydrator);
+                jdbcTemplate, searchPort, hydrator, null, true);
 
         var retrieval = retriever.retrieveWithDiagnostics(
                 "workspace", "alpha beta", Set.of());
@@ -300,7 +341,7 @@ class QaPassageRetrieverTest {
                         chunk("continuation", "source", 1, "structural details only")
                 ));
         QaPassageRetriever retriever = new QaPassageRetriever(
-                jdbcTemplate, searchPort, hydrator);
+                jdbcTemplate, searchPort, hydrator, null, true);
 
         var result = retriever.retrieveWithDiagnostics("workspace", "alpha beta", Set.of());
 
@@ -321,7 +362,7 @@ class QaPassageRetrieverTest {
         when(jdbcTemplate.query(anyString(), any(RowMapper.class), any(Object[].class)))
                 .thenReturn(List.of(chunk("chunk-a", "source-a", "alpha")));
         QaPassageRetriever retriever = new QaPassageRetriever(
-                jdbcTemplate, searchPort, hydrator);
+                jdbcTemplate, searchPort, hydrator, null, true);
         Logger logger = (Logger) LoggerFactory.getLogger(QaPassageRetriever.class);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();
@@ -368,7 +409,7 @@ class QaPassageRetrieverTest {
                         "chunk-generic", "source-allowed",
                         "NoteWeave v2 is a research workspace implemented by Java and Python.")));
         QaPassageRetriever retriever = new QaPassageRetriever(
-                jdbcTemplate, searchPort, hydrator);
+                jdbcTemplate, searchPort, hydrator, null, true);
 
         var result = retriever.retrieveWithDiagnostics(
                 "workspace", query, Set.of("source-allowed"));
@@ -391,7 +432,7 @@ class QaPassageRetrieverTest {
                         "chunk-recent", "source-allowed",
                         "Recent workspace notes about ordinary project planning.")));
         QaPassageRetriever retriever = new QaPassageRetriever(
-                jdbcTemplate, searchPort, hydrator);
+                jdbcTemplate, searchPort, hydrator, null, true);
 
         var result = retriever.retrieveWithDiagnostics(
                 "workspace", "quantum", Set.of("source-allowed"));
@@ -415,7 +456,7 @@ class QaPassageRetrieverTest {
                         chunk("chunk-denied", "source-denied", "alpha")
                 ));
         QaPassageRetriever retriever = new QaPassageRetriever(
-                jdbcTemplate, searchPort, hydrator);
+                jdbcTemplate, searchPort, hydrator, null, true);
 
         var result = retriever.retrieve("workspace", "alpha", Set.of("source-allowed"));
 

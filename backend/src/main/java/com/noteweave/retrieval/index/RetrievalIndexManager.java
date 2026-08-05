@@ -8,14 +8,25 @@ import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
 public class RetrievalIndexManager {
     private final ElasticsearchClient client;
 
-    public RetrievalIndexManager(ElasticsearchClient client) {
+    @Autowired
+    public RetrievalIndexManager(ObjectProvider<ElasticsearchClient> clientProvider) {
+        this.client = clientProvider.getIfAvailable();
+    }
+
+    private RetrievalIndexManager(ElasticsearchClient client) {
         this.client = client;
+    }
+
+    public static RetrievalIndexManager withClient(ElasticsearchClient client) {
+        return new RetrievalIndexManager(client);
     }
 
     public void createIndex(
@@ -23,6 +34,9 @@ public class RetrievalIndexManager {
             String physicalIndex,
             int embeddingDimensions
     ) {
+        if (client == null) {
+            return;
+        }
         if (embeddingDimensions <= 0) {
             throw new IllegalArgumentException("Embedding dimensions must be positive");
         }
@@ -40,6 +54,9 @@ public class RetrievalIndexManager {
     }
 
     public void switchAlias(String alias, String fromIndex, String targetIndex) {
+        if (client == null) {
+            return;
+        }
         try {
             client.indices().updateAliases(update -> {
                 if (fromIndex != null && !fromIndex.isBlank()) {
@@ -63,6 +80,9 @@ public class RetrievalIndexManager {
     }
 
     public void ensureAlias(String alias, String targetIndex) {
+        if (client == null) {
+            return;
+        }
         try {
             if (client.indices().existsAlias(exists -> exists.name(alias)).value()) {
                 return;
@@ -77,6 +97,9 @@ public class RetrievalIndexManager {
     }
 
     public String resolveWriteIndex(String alias, String defaultIndex) {
+        if (client == null) {
+            return defaultIndex;
+        }
         try {
             if (!client.indices().existsAlias(exists -> exists.name(alias)).value()) {
                 return defaultIndex;
@@ -100,6 +123,9 @@ public class RetrievalIndexManager {
     public void switchAliases(Map<String, String> targetsByAlias) {
         if (targetsByAlias == null || targetsByAlias.isEmpty()) {
             throw new IllegalArgumentException("At least one retrieval alias target is required");
+        }
+        if (client == null) {
+            return;
         }
         try {
             client.indices().updateAliases(update -> {

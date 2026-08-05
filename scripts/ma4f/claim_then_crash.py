@@ -12,7 +12,7 @@ from app.agent_command_contract import ResearchAgentCommand
 from app.agent_kafka_consumer import create_research_agent_kafka_consumer
 from app.agent_task_client import JavaResearchAgentTaskClient
 from app.config import load_settings
-from app.kafka_consumer import _message_value
+from app.kafka_primitives import message_value
 from app.task_snapshot_contract import require_trusted_claim_snapshot
 
 
@@ -24,7 +24,7 @@ def main() -> None:
     client = JavaResearchAgentTaskClient(settings.java_base_url, settings.internal_auth_token, worker_id)
     consumer = create_research_agent_kafka_consumer()
     for message in consumer:
-        command = ResearchAgentCommand.model_validate(json.loads(_message_value(message)))
+        command = ResearchAgentCommand.model_validate(json.loads(message_value(message)))
         claim = client.claim(command.agent_task_id, lease_seconds=settings.research_agent_lease_seconds)
         require_trusted_claim_snapshot(claim)
         print(json.dumps({

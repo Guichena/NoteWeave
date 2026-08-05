@@ -171,22 +171,12 @@ class CellVerifier:
             avg_source_quality = self._avg_source_quality(supports)
             # 综合 score = support_score * source_quality_factor
             composite = avg * avg_source_quality
-            if composite >= 0.7:
-                return CellVerdict(
-                    cell_id=cell.cell_id,
-                    status=CellSupportStatus.SUPPORTS,
-                    confidence=round(composite, 3),
-                    reason=f"rule fallback: {len(supports)} SUPPORTS cards, avg score={avg:.2f}, source_quality={avg_source_quality:.2f}",
-                    suggested_revision="",
-                    evidence_ids=[c.evidence_id for c in supports],
-                    used_llm=False,
-                )
             return CellVerdict(
                 cell_id=cell.cell_id,
-                status=CellSupportStatus.PARTIALLY_SUPPORTS,
-                confidence=round(composite, 3),
-                reason=f"rule fallback: {len(supports)} SUPPORTS cards but composite score low ({composite:.2f})",
-                suggested_revision="",
+                status=CellSupportStatus.NOT_ENOUGH_INFO,
+                confidence=min(0.3, round(composite, 3)),
+                reason=f"LLM verifier unavailable; {len(supports)} positive evidence cards remain unverified (composite={composite:.2f})",
+                suggested_revision="retry with the configured LLM verifier",
                 evidence_ids=[c.evidence_id for c in supports],
                 used_llm=False,
             )

@@ -1,9 +1,11 @@
 package com.noteweave.retrieval.projection;
 
+import com.noteweave.common.BusinessException;
 import com.noteweave.retrieval.projection.RetrievalProjectionRepository.ProjectionType;
 import com.noteweave.source.SourceCatalogVersionService;
 import com.noteweave.task.TaskService;
 import java.util.List;
+import java.util.Locale;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -57,6 +59,12 @@ public class SourceRetrievalProjectionFinalizer {
         if (!current.current()) {
             throw new IllegalStateException("Retrieval projection target is not the current source snapshot");
         }
+        if (current.ready()) {
+            return List.of();
+        }
+        if (!current.acceptsReadyTransition()) {
+            throw new IllegalStateException("Source is not awaiting retrieval projection finalization");
+        }
         int expectedChunks = countChunks(workspaceId, sourceId, snapshotId);
         int qaReady = countReady(workspaceId, sourceId, snapshotId, ProjectionType.QA_CHUNK,
                 result.embeddingVersion(), SourceRetrievalProjectionService.QA_SCHEMA_VERSION, result.qaIndex());
@@ -79,7 +87,8 @@ public class SourceRetrievalProjectionFinalizer {
                 update source
                 set index_status = 'INDEXED', status = 'READY',
                     updated_by = 'SYSTEM:RETRIEVAL_PROJECTION', updated_at = current_timestamp
-                where id = ? and workspace_id = ? and status <> 'DELETED'
+                where id = ? and workspace_id = ?
+                  and status = 'PROCESSING' and index_status = 'INDEXING'
                 """, sourceId, workspaceId);
         if (sourceReady != 1) {
             throw new IllegalStateException("Source cannot be finalized as retrieval-ready");
@@ -96,16 +105,117 @@ public class SourceRetrievalProjectionFinalizer {
         return staleSnapshots;
     }
 
+    @Transactional
+    public void finalizeFailed(
+            String workspaceId,
+            String sourceId,
+            String snapshotId,
+            String taskId,
+            String errorCode
+    ) {
+        String normalizedErrorCode = normalizeErrorCode(errorCode);
+        CurrentSnapshot current = lockCurrentSnapshot(workspaceId, sourceId, snapshotId);
+        TaskService.TaskRef task = lockMatchingTask(taskId, workspaceId, sourceId);
+        if (task != null && terminal(task.taskStatus())) {
+            return;
+        }
+        if (current.current() && current.ready()) {
+            return;
+        }
+        if (current.current() && !current.acceptsFailedTransition() && !current.failed()) {
+            throw new IllegalStateException("Source is not awaiting retrieval projection failure finalization");
+        }
+        jdbcTemplate.update("""
+                update source_snapshot
+                set index_status = 'FAILED'
+                where id = ? and source_id = ?
+                  and parse_status = 'PARSED' and index_status = 'INDEXING'
+                """, snapshotId, sourceId);
+        jdbcTemplate.update("""
+                update source_chunk
+                set projection_status = 'FAILED', projected_at = null
+                where workspace_id = ? and source_id = ? and source_snapshot_id = ?
+                  and projection_status <> 'PROJECTED'
+                """, workspaceId, sourceId, snapshotId);
+        int sourceFailed = jdbcTemplate.update("""
+                update source
+                set index_status = 'FAILED', status = 'FAILED',
+                    updated_by = 'SYSTEM:RETRIEVAL_PROJECTION', updated_at = current_timestamp
+                where id = ? and workspace_id = ?
+                  and status = 'PROCESSING' and index_status = 'INDEXING'
+                  and exists (
+                      select 1
+                      from source_snapshot ss
+                      where ss.id = ? and ss.source_id = ?
+                        and ss.version_no = (
+                            select max(current_ss.version_no)
+                            from source_snapshot current_ss
+                            where current_ss.source_id = ?
+                        )
+                  )
+                """, sourceId, workspaceId, snapshotId, sourceId, sourceId);
+        if (sourceFailed == 1) {
+            sourceCatalogVersionService.bump(workspaceId);
+        }
+        if (task != null) {
+            taskService.failTask(
+                    taskId,
+                    "INDEX_FAILED",
+                    "资料解析已完成，但检索索引生成失败",
+                    normalizedErrorCode,
+                    false
+            );
+        }
+    }
+
+    private TaskService.TaskRef lockMatchingTask(
+            String taskId,
+            String workspaceId,
+            String sourceId
+    ) {
+        if (taskId == null || taskId.isBlank()) {
+            return null;
+        }
+        TaskService.TaskRef task = taskService.lockTaskRef(taskId);
+        if (!workspaceId.equals(task.workspaceId())
+                || !"SOURCE_PARSE".equals(task.taskType())
+                || !"SOURCE".equals(task.targetType())
+                || !sourceId.equals(task.targetId())) {
+            throw new BusinessException(
+                    "RETRIEVAL_PROJECTION_TASK_IDENTITY_MISMATCH",
+                    "Retrieval projection failure task identity does not match the source"
+            );
+        }
+        return task;
+    }
+
+    private boolean terminal(String taskStatus) {
+        return "COMPLETED".equals(taskStatus)
+                || "FAILED".equals(taskStatus)
+                || "CANCELLED".equals(taskStatus);
+    }
+
+    private String normalizeErrorCode(String errorCode) {
+        String normalized = errorCode == null ? "" : errorCode.trim().toUpperCase(Locale.ROOT);
+        return normalized.matches("[A-Z0-9_]{1,80}")
+                ? normalized
+                : "RETRIEVAL_PROJECTION_FAILED";
+    }
+
     private CurrentSnapshot lockCurrentSnapshot(String workspaceId, String sourceId, String snapshotId) {
         return jdbcTemplate.queryForObject("""
-                select ss.version_no = max_ss.max_version as is_current
+                select ss.version_no = max_ss.max_version as is_current,
+                       s.status, s.index_status
                 from source s
                 join source_snapshot ss on ss.id = ? and ss.source_id = s.id
                 join (select source_id, max(version_no) max_version from source_snapshot group by source_id) max_ss
                   on max_ss.source_id = s.id
                 where s.workspace_id = ? and s.id = ? and s.status <> 'DELETED'
                 for update
-                """, (rs, rowNum) -> new CurrentSnapshot(rs.getBoolean("is_current")),
+                """, (rs, rowNum) -> new CurrentSnapshot(
+                        rs.getBoolean("is_current"),
+                        rs.getString("status"),
+                        rs.getString("index_status")),
                 snapshotId, workspaceId, sourceId);
     }
 
@@ -131,7 +241,22 @@ public class SourceRetrievalProjectionFinalizer {
         return count == null ? 0 : count;
     }
 
-    private record CurrentSnapshot(boolean current) {
+    private record CurrentSnapshot(boolean current, String sourceStatus, String indexStatus) {
+        private boolean ready() {
+            return "READY".equals(sourceStatus) && "INDEXED".equals(indexStatus);
+        }
+
+        private boolean acceptsReadyTransition() {
+            return "PROCESSING".equals(sourceStatus) && "INDEXING".equals(indexStatus);
+        }
+
+        private boolean acceptsFailedTransition() {
+            return "PROCESSING".equals(sourceStatus) && "INDEXING".equals(indexStatus);
+        }
+
+        private boolean failed() {
+            return "FAILED".equals(sourceStatus) && "FAILED".equals(indexStatus);
+        }
     }
 
     public record StaleSnapshot(String sourceSnapshotId, ProjectionType projectionType, String targetIndex) {

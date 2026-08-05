@@ -38,21 +38,21 @@ class ArchitectureBoundaryTest {
                 .andShould().dependOnClassesThat().haveSimpleName("MemoryStatementMatcher")
                 .check(CLASSES);
         classes()
-                .that().haveSimpleName("MemoryPromotionService")
+                .that().haveSimpleName("CanonicalMemoryReviewService")
                 .should().dependOnClassesThat().haveSimpleName("MemoryStatementMatcher")
                 .check(CLASSES);
     }
 
     @Test
-    void memoryPromotionMustCreateImmutableVersionsThroughVersionOwner() {
+    void memoryPromotionMustCreateCanonicalRevisionsThroughCanonicalOwner() {
         classes()
                 .that().haveSimpleName("MemoryPromotionService")
-                .should().dependOnClassesThat().haveSimpleName("MemoryVersionService")
+                .should().dependOnClassesThat().haveSimpleName("CanonicalMemoryReviewService")
                 .check(CLASSES);
         noClasses()
                 .that().haveSimpleName("MemoryVersionService")
                 .should().dependOnClassesThat().haveSimpleName("MemoryPromotionService")
-                .because("Memory version allocation must remain independently owned")
+                .because("legacy version compatibility must remain outside canonical promotion")
                 .check(CLASSES);
     }
 
@@ -86,7 +86,7 @@ class ArchitectureBoundaryTest {
                 .that().haveSimpleName("MemoryCompiledPackCache")
                 .should().dependOnClassesThat().haveSimpleName("MemoryPromotionService")
                 .orShould().dependOnClassesThat().haveSimpleName("MemoryVersionService")
-                .orShould().dependOnClassesThat().haveSimpleName("MemoryReviewService")
+                .orShould().dependOnClassesThat().haveSimpleName("CanonicalMemoryReviewService")
                 .orShould().dependOnClassesThat().haveSimpleName("MemoryOutcomeService")
                 .because("compiled pack cache is a read adapter and owns no Memory lifecycle writes")
                 .check(CLASSES);
@@ -106,6 +106,335 @@ class ArchitectureBoundaryTest {
                 .doesNotContain("join memory_object")
                 .doesNotContain("from memory_version")
                 .doesNotContain("join memory_version");
+    }
+
+    @Test
+    void kafkaPipelineMustExposeOnlyRealConsumersAndDisableThemWithKafka() throws IOException {
+        String properties = Files.readString(Path.of(
+                "src/main/java/com/noteweave/config/NoteWeaveProperties.java"));
+        String application = Files.readString(Path.of("src/main/resources/application.yml"));
+        String consumer = Files.readString(Path.of(
+                "src/main/java/com/noteweave/infra/KafkaTaskConsumer.java"));
+        String dispatcher = Files.readString(Path.of(
+                "src/main/java/com/noteweave/infra/TaskOutboxDispatcherService.java"));
+
+        assertThat(properties).doesNotContain("noteweave.source.chunk", "noteweave.generated.ingest",
+                "noteweave.source.index");
+        assertThat(application).doesNotContain(
+                "source-chunk:", "generated-ingest:", "source-index:",
+                "legacy-research-outbox-enabled", "noteweave.research.run"
+        );
+        assertThat(dispatcher).doesNotContain("source.index", "sourceIndex");
+        assertThat(consumer)
+                .contains("@ConditionalOnProperty(name = \"noteweave.kafka.enabled\"")
+                .contains("${noteweave.kafka.topics.conversation-summary}")
+                .doesNotContain("onSourceChunk", "onGeneratedIngest");
+        assertThat(CLASSES.stream().map(javaClass -> javaClass.getSimpleName()))
+                .doesNotContain(
+                        "ResearchOutboxDispatchScheduler",
+                        "ResearchOutboxDispatcherService",
+                        "ResearchOutboxDispatcherController",
+                        "KafkaResearchOutboxPublisher",
+                        "ResearchOutboxPublisher"
+                );
+    }
+
+    @Test
+    void elasticsearchHealthMustFollowTheElasticsearchFeatureFlag() throws IOException {
+        String application = Files.readString(Path.of("src/main/resources/application.yml"));
+
+        assertThat(application)
+                .contains("enabled: ${NOTEWEAVE_ES_ENABLED:true}")
+                .contains("management:\n  health:\n    elasticsearch:\n      enabled: ${NOTEWEAVE_ES_ENABLED:true}");
+    }
+
+    @Test
+    void durableOutboxDispatchersMustShareClaimAndRetryPolicy() throws IOException {
+        String durableDispatcher = Files.readString(Path.of(
+                "src/main/java/com/noteweave/infra/outbox/DurableOutboxDispatcher.java"));
+        String taskDispatcher = Files.readString(Path.of(
+                "src/main/java/com/noteweave/infra/TaskOutboxDispatcherService.java"));
+        String artifactDispatcher = Files.readString(Path.of(
+                "src/main/java/com/noteweave/worker/ArtifactOutboxDispatcherService.java"));
+        String agentDispatcher = Files.readString(Path.of(
+                "src/main/java/com/noteweave/research/ResearchAgentCommandDispatcher.java"));
+
+        assertThat(CLASSES.stream().map(javaClass -> javaClass.getSimpleName()))
+                .contains(
+                        "TaskOutboxDispatcherService",
+                        "ArtifactOutboxDispatcherService",
+                        "ResearchAgentCommandDispatcher"
+                )
+                .doesNotContain(
+                        "ResearchOutboxDispatcherService",
+                        "ResearchOutboxDispatchScheduler"
+                );
+        assertThat(java.util.List.of(taskDispatcher, artifactDispatcher, agentDispatcher))
+                .allSatisfy(source -> assertThat(source)
+                        .contains("DurableOutboxDispatcher")
+                        .doesNotContain(
+                                "set status = 'PROCESSING'",
+                                "attempt_count = attempt_count + 1",
+                                "set status = 'DEAD_LETTER'"
+                        ));
+        assertThat(durableDispatcher).contains(
+                "dispatchTaskMessages(",
+                "dispatchAgentCommands(",
+                "acknowledgeTaskMessage(",
+                "renewTaskMessage(",
+                "attempt_count = attempt_count + 1",
+                "where id = ? and attempt_count = ?",
+                "String deliveryToken = dispatcherId + \":\" + UUID.randomUUID()",
+                "where topic = ? and task_id = ? and lease_owner = ?"
+        );
+    }
+
+    @Test
+    void legacyResearchWholeRunWorkerSurfaceMustRemainDeleted() throws IOException {
+        assertThat(Path.of("src/main/java/com/noteweave/research/ResearchWorkerInputController.java"))
+                .doesNotExist();
+        assertThat(Path.of("src/main/java/com/noteweave/research/ResearchWorkerInputResponse.java"))
+                .doesNotExist();
+        assertThat(Path.of("src/main/java/com/noteweave/research/ResearchWorkerInputPayload.java"))
+                .doesNotExist();
+        assertThat(Path.of("src/test/java/com/noteweave/research/ResearchRuntimeCheckpointIntegrationTest.java"))
+                .doesNotExist();
+        assertThat(Path.of("src/test/java/com/noteweave/research/ResearchIncrementalProjectionTest.java"))
+                .doesNotExist();
+
+        String callbackService = Files.readString(
+                Path.of("src/main/java/com/noteweave/worker/WorkerTaskCallbackService.java"));
+        String callbackAuthenticator = Files.readString(
+                Path.of("src/main/java/com/noteweave/worker/WorkerTaskCallbackAuthenticator.java"));
+        String researchRunService = Files.readString(
+                Path.of("src/main/java/com/noteweave/research/ResearchRunService.java"));
+        String application = Files.readString(Path.of("src/main/resources/application.yml"));
+
+        assertThat(callbackService).doesNotContain("RESEARCH_RUN", "validateResearchCallback");
+        assertThat(callbackAuthenticator).doesNotContain("RESEARCH_RUN", "researchSecret");
+        assertThat(researchRunService).doesNotContain(
+                "completeFromWorker(",
+                "persistRuntimeCheckpoint(",
+                "persistClosedLoopTraces(",
+                "persistClosedLoopState(",
+                "persistExecutionCheckpoint(",
+                "public void markRunning(",
+                "public void markWaiting(",
+                "public void markFailed(");
+        assertThat(application).doesNotContain("research-callback-secret", "NOTEWEAVE_RESEARCH_CALLBACK_SECRET");
+    }
+
+    @Test
+    void legacyResearchSplitResultSurfaceMustRemainDeleted() throws IOException {
+        for (String file : new String[] {
+                "ResearchAgentEvidenceInternalController.java",
+                "ResearchAgentCandidateInternalController.java",
+                "ResearchAgentEvidenceIngestionService.java",
+                "ResearchAgentCandidateIngressService.java",
+                "ResearchAgentLegacyResultRawBodyFilter.java",
+                "ResearchAgentLegacyResultRouteGuardInterceptor.java",
+                "ResearchAgentLegacyResultRouteGuardWebConfig.java"
+        }) {
+            assertThat(Path.of("src/main/java/com/noteweave/research", file)).doesNotExist();
+        }
+        assertThat(Path.of("src/test/java/com/noteweave/research/ResearchAgentLegacyResultRouteGuardTest.java"))
+                .doesNotExist();
+        assertThat(Path.of("src/test/java/com/noteweave/research/ResearchAgentCandidateIngressServiceTest.java"))
+                .doesNotExist();
+
+        String taskController = Files.readString(
+                Path.of("src/main/java/com/noteweave/research/ResearchAgentTaskInternalController.java"));
+        String taskService = Files.readString(
+                Path.of("src/main/java/com/noteweave/research/ResearchAgentTaskService.java"));
+        assertThat(taskController).doesNotContain("/{taskId}/submit", "SubmitRequest");
+        assertThat(taskService).doesNotContain("submitExecution(", "SubmitCommand", "ExecutionReceipt");
+
+        Path researchRoot = Path.of("src/main/java/com/noteweave/research");
+        String researchSources;
+        try (java.util.stream.Stream<Path> files = Files.walk(researchRoot)) {
+            researchSources = files.filter(path -> path.toString().endsWith(".java"))
+                    .map(path -> {
+                        try {
+                            return Files.readString(path);
+                        } catch (IOException exception) {
+                            throw new java.io.UncheckedIOException(exception);
+                        }
+                    })
+                    .collect(java.util.stream.Collectors.joining("\n"));
+        }
+        assertThat(researchSources).doesNotContain("workspace-evidence-batches", "candidate-batches");
+    }
+
+    @Test
+    void researchArtifactPersistenceMustStayOutsideTheRunFacade() throws IOException {
+        String runFacade = Files.readString(
+                Path.of("src/main/java/com/noteweave/research/ResearchRunService.java"));
+        String queryService = Files.readString(
+                Path.of("src/main/java/com/noteweave/research/ResearchRunQueryService.java"));
+        String provenanceEnricher = Files.readString(
+                Path.of("src/main/java/com/noteweave/research/ResearchSourceProvenanceEnricher.java"));
+        String sourceScopeLoader = Files.readString(
+                Path.of("src/main/java/com/noteweave/research/ResearchSourceScopeLoader.java"));
+        String artifactService = Files.readString(
+                Path.of("src/main/java/com/noteweave/research/ResearchArtifactService.java"));
+        String readModelMapper = Files.readString(
+                Path.of("src/main/java/com/noteweave/research/ResearchReadModelMapper.java"));
+        String checkpointStore = Files.readString(
+                Path.of("src/main/java/com/noteweave/research/ResearchCheckpointStore.java"));
+        String commandService = Files.readString(
+                Path.of("src/main/java/com/noteweave/research/ResearchRunCommandService.java"));
+
+        assertThat(runFacade).doesNotContain(
+                "insert into source(",
+                "insert into file_object(",
+                "from research_evidence_manifest_item",
+                "SourceParseService",
+                "WikiIngestService"
+        );
+        assertThat(runFacade).contains(
+                "ResearchRunCommandService commandService",
+                "ResearchRunQueryService queryService",
+                "ResearchArtifactService artifactService"
+        );
+        assertThat(runFacade).doesNotContain(
+                "JdbcTemplate",
+                "ObjectMapper",
+                "WorkspaceService",
+                "ObjectStorage",
+                "private ResearchCheckpointSnapshotSummaryResponse readCheckpointSnapshotSummaryResponse(",
+                "private ResearchStateLedgerResponse readStateLedgerResponse(",
+                "private ResearchArtifactCandidateResponse readResearchArtifactCandidateResponse(",
+                "private ResearchCounterfactualSummaryResponse readCounterfactualSummary(",
+                "from research_execution_checkpoint",
+                "join research_run rr on rr.id = rec.research_run_id",
+                "insert into research_run(",
+                "MemoryCompilerService",
+                "ResearchAgentRunBootstrapService",
+                "ResearchAgentExternalEvidencePolicy"
+        );
+        assertThat(queryService).contains(
+                "import static com.noteweave.research.ResearchReadModelMapper.*;",
+                "ResearchCheckpointStore researchCheckpointStore",
+                "ResearchSourceProvenanceEnricher sourceProvenanceEnricher",
+                "ResearchSourceScopeLoader sourceScopeLoader",
+                "List<ResearchRunSummaryResponse> listRuns(",
+                "ResearchRunDetailResponse getRunDetail(",
+                "List<ResearchCheckpointSummaryResponse> listCheckpoints(",
+                "ResearchCheckpointResponse getCheckpoint("
+        ).doesNotContain(
+                "ResearchRunCommandService",
+                "ResearchRunResponse createRun(",
+                "ResearchRunResponse resumeFromCheckpoint(",
+                "void setAgentExecutionMode(",
+                "collectSourceIds(",
+                "loadSourceOrigins(",
+                "enrichResearchSourceProvenance(",
+                "loadSourceScopeItem(",
+                "readSourceScopeIds(",
+                "where s.workspace_id = ? and s.id = ?"
+        );
+        assertThat(provenanceEnricher).contains(
+                "void enrich(Object value)",
+                "collectSourceIds(",
+                "loadSourceOrigins(",
+                "where id in (%s)"
+        );
+        assertThat(sourceScopeLoader).contains(
+                "List<WorkerSourceScopeItemResponse> load(",
+                "int count(",
+                "and s.id in (%s)",
+                "sourceIds.stream().map(itemsById::get)"
+        ).doesNotContain("where s.workspace_id = ? and s.id = ?");
+        assertThat(readModelMapper).contains(
+                "readCheckpointSnapshotSummaryResponse(",
+                "readStateLedgerResponse(",
+                "readResearchArtifactCandidateResponse(",
+                "readCounterfactualSummary("
+        );
+        assertThat(checkpointStore).contains(
+                "List<ResearchCheckpointRecord> findAll(",
+                "ResearchCheckpointRecord get(",
+                "from research_execution_checkpoint",
+                "join research_run rr on rr.id = rec.research_run_id"
+        );
+        assertThat(commandService).contains(
+                "ResearchRunResponse createRun(",
+                "ResearchRunResponse resumeFromCheckpoint(",
+                "void setAgentExecutionMode(",
+                "insert into research_run(",
+                "MemoryCompilerService",
+                "ResearchAgentRunBootstrapService",
+                "ResearchAgentExternalEvidencePolicy"
+        );
+        assertThat(artifactService).contains(
+                "saveReportAsSource(",
+                "evidenceManifest(",
+                "buildResearchArtifact("
+        );
+    }
+
+    @Test
+    void productionQaRetrievalMustRemainFailClosed() throws IOException {
+        String retriever = Files.readString(
+                Path.of("src/main/java/com/noteweave/chat/QaPassageRetriever.java"));
+        String guard = Files.readString(
+                Path.of("src/main/java/com/noteweave/config/ProductionConfigurationGuard.java"));
+
+        assertThat(retriever)
+                .contains("QA_RETRIEVAL_PROVIDER_UNAVAILABLE")
+                .doesNotContain("hybridRetriever, true", "retrievalHydrator, null, true");
+        assertThat(guard)
+                .contains("qaMysqlFallbackEnabled")
+                .contains("Production must disable NOTEWEAVE_QA_MYSQL_FALLBACK_ENABLED");
+    }
+
+    @Test
+    void distributedQuotaAndCancellationMustRemainFailClosed() throws IOException {
+        String quota = Files.readString(
+                Path.of("src/main/java/com/noteweave/quota/WorkloadQuotaService.java"));
+        String realtime = Files.readString(
+                Path.of("src/main/java/com/noteweave/infra/RedisAnswerRealtimeBridge.java"));
+        String guard = Files.readString(
+                Path.of("src/main/java/com/noteweave/config/ProductionConfigurationGuard.java"));
+
+        assertThat(quota)
+                .contains("WORKLOAD_QUOTA_UNAVAILABLE")
+                .doesNotContain("leaseSeconds, true, clock");
+        assertThat(realtime)
+                .contains("Redis cancellation read failed")
+                .contains("return true;");
+        assertThat(guard)
+                .contains("quotaLocalFallbackEnabled")
+                .contains("Production must disable NOTEWEAVE_QUOTA_LOCAL_FALLBACK_ENABLED");
+    }
+
+    @Test
+    void productionAnswerGenerationMustNotReplayTemplatesAsModelOutput() throws IOException {
+        String adapter = Files.readString(
+                Path.of("src/main/java/com/noteweave/chat/ChatAnswerGenerationAdapter.java"));
+        String guard = Files.readString(
+                Path.of("src/main/java/com/noteweave/config/ProductionConfigurationGuard.java"));
+
+        assertThat(adapter)
+                .contains("ANSWER_LLM_CONFIGURATION_REQUIRED")
+                .contains("noteweave.llm.template-fallback-enabled:false");
+        assertThat(guard)
+                .contains("llmTemplateFallbackEnabled")
+                .contains("Production must disable NOTEWEAVE_LLM_TEMPLATE_FALLBACK_ENABLED");
+    }
+
+    @Test
+    void userFacingArtifactAndWaitDtosMustNotExposeCallbackTokens() throws IOException {
+        for (String path : new String[] {
+                "src/main/java/com/noteweave/task/WaitProviderJobResponse.java",
+                "src/main/java/com/noteweave/task/WaitProviderDeliveryAttemptResponse.java",
+                "src/main/java/com/noteweave/artifact/ArtifactAcquisitionCallbackReceiptTraceResponse.java",
+                "src/main/java/com/noteweave/artifact/ArtifactAcquisitionOperationTraceResponse.java",
+                "src/main/java/com/noteweave/artifact/ArtifactAcquisitionDeliveryAttemptTraceResponse.java"
+        }) {
+            assertThat(Files.readString(Path.of(path)))
+                    .doesNotContain("callbackToken", "adapterCallbackToken");
+        }
     }
 
     @Test
@@ -131,22 +460,20 @@ class ArchitectureBoundaryTest {
     }
 
     @Test
-    void memoryReviewMustOrchestrateThroughPromotionAndVersionOwners() {
+    void canonicalMemoryReviewMustOwnPromotionProjectionAndConflictResolution() {
         classes()
-                .that().haveSimpleName("MemoryReviewService")
-                .should().dependOnClassesThat().haveSimpleName("MemoryPromotionService")
-                .andShould().dependOnClassesThat().haveSimpleName("MemoryVersionService")
-                .andShould().dependOnClassesThat().haveSimpleName("MemoryStatementMatcher")
+                .that().haveSimpleName("CanonicalMemoryReviewService")
+                .should().dependOnClassesThat().haveSimpleName("MemoryStatementMatcher")
                 .check(CLASSES);
-        noClasses()
+        classes()
                 .that().haveSimpleName("MemoryPromotionService")
-                .should().dependOnClassesThat().haveSimpleName("MemoryReviewService")
-                .because("Promotion remains the write owner and must not depend on review orchestration")
+                .should().dependOnClassesThat().haveSimpleName("CanonicalMemoryReviewService")
+                .because("candidate promotion must project directly into the canonical runtime")
                 .check(CLASSES);
         noClasses()
                 .that().haveSimpleName("MemoryVersionService")
-                .should().dependOnClassesThat().haveSimpleName("MemoryReviewService")
-                .because("Version lifecycle remains independently owned")
+                .should().dependOnClassesThat().haveSimpleName("CanonicalMemoryReviewService")
+                .because("legacy version compatibility must not own canonical review")
                 .check(CLASSES);
     }
 
@@ -238,8 +565,7 @@ class ArchitectureBoundaryTest {
                                 "SourceParseService",
                                 "GeneratedSourceService",
                                 "UploadService",
-                                "ResearchRunService",
-                                "ElasticsearchIndexer"
+                                "ResearchArtifactService"
                         ).contains(javaClass.getSimpleName());
                     }
                 })

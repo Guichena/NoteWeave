@@ -22,6 +22,8 @@ def resolve_provider_job_status(
         return "FAILED"
     if normalized_callback_status == "DISPATCHED_TO_PROVIDER":
         return "DISPATCHED"
+    if normalized_callback_status == "PROVIDER_OUTCOME_READY":
+        return "CALLBACK_PENDING"
     if normalized_callback_status in {
         "WAITING_FOR_APPROVAL",
         "WAITING_FOR_CAPABILITY",

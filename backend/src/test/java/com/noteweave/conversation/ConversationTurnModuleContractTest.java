@@ -1,6 +1,11 @@
 package com.noteweave.conversation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -10,6 +15,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.chat.ChatService;
+import com.noteweave.common.Ids;
+import com.noteweave.research.ResearchAgentIncrementalFinalizationService;
 import com.noteweave.research.ResearchAgentTaskCoordinatorService;
 import com.noteweave.research.ResearchAgentTaskService;
 import java.nio.charset.StandardCharsets;
@@ -35,7 +42,9 @@ class ConversationTurnModuleContractTest {
     @Autowired JdbcTemplate jdbcTemplate;
     @Autowired ResearchAgentTaskCoordinatorService researchTaskCoordinator;
     @Autowired ResearchAgentTaskService researchAgentTaskService;
+    @Autowired ResearchAgentIncrementalFinalizationService researchFinalizationService;
     @SpyBean ChatService chatService;
+    @SpyBean ConversationContextProjectionService contextProjectionService;
 
     @Test
     void sameAnswerSubmissionReturnsTheOriginalReceipt() throws Exception {
@@ -93,7 +102,33 @@ class ConversationTurnModuleContractTest {
     }
 
     @Test
-    void inputSnapshotUsesABoundedContiguousActiveRawTail() throws Exception {
+    void answerSnapshotPersistsTheProjectionUsedByPromptCompilationWithoutSelectingAgain() throws Exception {
+        String workspaceId = createWorkspace();
+        String conversationId = createConversation(workspaceId);
+        submit(conversationId, Map.of(
+                "content", "context seed",
+                "answer_mode", "QA",
+                "client_request_id", "exact-context-seed"
+        ), 200);
+        clearInvocations(contextProjectionService);
+
+        JsonNode receipt = submit(conversationId, Map.of(
+                "content", "more?",
+                "answer_mode", "QA",
+                "client_request_id", "exact-context-current"
+        ), 200);
+
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/runs/ANSWER/{runId}/input-snapshot",
+                        workspaceId, receipt.path("answer_run_id").asText()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.snapshot.recent_message_refs.length()").value(3))
+                .andExpect(jsonPath("$.data.snapshot.recent_message_refs[2].message_id")
+                        .value(receipt.path("message_id").asText()));
+        verify(contextProjectionService, never()).select(anyString(), anyString(), anyInt());
+    }
+
+    @Test
+    void inputSnapshotKeepsTheEntireContiguousHistoryWhileSummaryBuildLags() throws Exception {
         String workspaceId = createWorkspace();
         String conversationId = createConversation(workspaceId);
         java.util.List<JsonNode> priorTurns = new java.util.ArrayList<>();
@@ -105,7 +140,7 @@ class ConversationTurnModuleContractTest {
             ), 200));
         }
         Map<String, Object> request = Map.of(
-                "content", "raw-tail current turn",
+                "content", "more?",
                 "answer_mode", "QA",
                 "client_request_id", "raw-tail-current-1"
         );
@@ -115,12 +150,14 @@ class ConversationTurnModuleContractTest {
                         workspaceId, receipt.path("answer_run_id").asText()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.snapshot.segment_summary_refs.length()").value(0))
-                .andExpect(jsonPath("$.data.snapshot.recent_message_refs.length()").value(8))
+                .andExpect(jsonPath("$.data.snapshot.recent_message_refs.length()").value(13))
                 .andExpect(jsonPath("$.data.snapshot.recent_message_refs[0].message_id")
-                        .value(priorTurns.get(2).path("assistant_message_id").asText()))
-                .andExpect(jsonPath("$.data.snapshot.recent_message_refs[7].message_id")
+                        .value(priorTurns.get(0).path("message_id").asText()))
+                .andExpect(jsonPath("$.data.snapshot.recent_message_refs[0].message_seq").value(1))
+                .andExpect(jsonPath("$.data.snapshot.recent_message_refs[12].message_id")
                         .value(receipt.path("message_id").asText()))
-                .andExpect(jsonPath("$.data.snapshot.recent_message_refs[7].role").value("USER"));
+                .andExpect(jsonPath("$.data.snapshot.recent_message_refs[12].message_seq").value(13))
+                .andExpect(jsonPath("$.data.snapshot.recent_message_refs[12].role").value("USER"));
 
         JsonNode reused = submit(conversationId, request, 200);
         assertThat(reused.path("answer_run_id").asText()).isEqualTo(receipt.path("answer_run_id").asText());
@@ -191,7 +228,7 @@ class ConversationTurnModuleContractTest {
                 .andExpect(jsonPath("$.data[0].task_status").value("COMPLETED"));
 
         JsonNode next = submit(conversationId, Map.of(
-                "content", "consume the promoted prefix",
+                "content", "more?",
                 "answer_mode", "QA",
                 "client_request_id", "promoted-queued-summary-next"
         ), 200);
@@ -229,7 +266,7 @@ class ConversationTurnModuleContractTest {
                 """, revisionId, segmentId, "a".repeat(64));
 
         JsonNode receipt = submit(conversationId, Map.of(
-                "content", "summary-backed current turn",
+                "content", "more?",
                 "answer_mode", "QA",
                 "client_request_id", "summary-backed-current-1"
         ), 200);
@@ -274,7 +311,7 @@ class ConversationTurnModuleContractTest {
                 """, java.util.UUID.randomUUID().toString(), segmentId);
 
         JsonNode receipt = submit(conversationId, Map.of(
-                "content", "building-summary current turn",
+                "content", "more?",
                 "answer_mode", "QA",
                 "client_request_id", "building-summary-current-1"
         ), 200);
@@ -283,10 +320,10 @@ class ConversationTurnModuleContractTest {
                         workspaceId, receipt.path("answer_run_id").asText()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.snapshot.segment_summary_refs.length()").value(0))
-                .andExpect(jsonPath("$.data.snapshot.recent_message_refs.length()").value(8))
+                .andExpect(jsonPath("$.data.snapshot.recent_message_refs.length()").value(13))
                 .andExpect(jsonPath("$.data.snapshot.recent_message_refs[0].message_id")
-                        .value(priorTurns.get(2).path("assistant_message_id").asText()))
-                .andExpect(jsonPath("$.data.snapshot.recent_message_refs[0].message_seq").value(6));
+                        .value(priorTurns.get(0).path("message_id").asText()))
+                .andExpect(jsonPath("$.data.snapshot.recent_message_refs[0].message_seq").value(1));
     }
 
     @Test
@@ -324,7 +361,7 @@ class ConversationTurnModuleContractTest {
                 .andExpect(jsonPath("$.code").value("SEGMENT_SUMMARY_PROMOTION_STALE"));
 
         JsonNode receipt = submit(conversationId, Map.of(
-                "content", "stale-summary current turn",
+                "content", "more?",
                 "answer_mode", "QA",
                 "client_request_id", "stale-summary-current-1"
         ), 200);
@@ -369,7 +406,7 @@ class ConversationTurnModuleContractTest {
                 .andExpect(jsonPath("$.data.status").value("READY"));
 
         JsonNode receipt = submit(conversationId, Map.of(
-                "content", "current-summary current turn",
+                "content", "more?",
                 "answer_mode", "QA",
                 "client_request_id", "current-summary-current-1"
         ), 200);
@@ -575,6 +612,20 @@ class ConversationTurnModuleContractTest {
         ), 200);
         String runId = receipt.path("research_run_id").asText();
 
+        String segmentId = Ids.newId();
+        String revisionId = Ids.newId();
+        jdbcTemplate.update("""
+                insert into conversation_segment(
+                    id, workspace_id, conversation_id, covered_start_seq, covered_end_seq
+                ) values (?, ?, ?, 1, 2)
+                """, segmentId, workspaceId, conversationId);
+        jdbcTemplate.update("""
+                insert into segment_summary_revision(
+                    id, segment_id, revision_no, status, source_segment_version,
+                    summary_text, content_hash, ready_at
+                ) values (?, ?, 1, 'READY', 0, ?, ?, current_timestamp)
+                """, revisionId, segmentId, "replacement summary promoted after submission", "f".repeat(64));
+
         assertThat(jdbcTemplate.queryForObject(
                 "select agent_execution_mode from research_run where id = ?", String.class, runId))
                 .isEqualTo("INCREMENTAL_V1");
@@ -591,7 +642,8 @@ class ConversationTurnModuleContractTest {
                 .isEqualTo("CONVERSATION");
         assertThat(snapshot.path("query_policy").path("query").asText())
                 .contains("OpenSERP with hosted search providers")
-                .contains("focus on deployment tradeoffs");
+                .contains("focus on deployment tradeoffs")
+                .doesNotContain("replacement summary promoted after submission");
         assertThat(snapshot.path("source_policy").toString())
                 .doesNotContain("OpenSERP with hosted search providers");
     }
@@ -672,26 +724,8 @@ class ConversationTurnModuleContractTest {
                 "client_request_id", "research-completion-1"
         ), 200);
         String researchRunId = receipt.path("research_run_id").asText();
-
-        String taskId = legacyTaskIdForResearchRun(workspaceId, researchRunId);
-
-        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
-                        .header("X-NoteWeave-Idempotency-Key", "research-complete-event-1")
-                        .header("X-NoteWeave-Callback-Event-Id", "research-complete-event-1")
-                        .header("X-NoteWeave-Attempt-No", "1")
-                        .header("X-NoteWeave-Fencing-Token", "1")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "result_type", "RESEARCH_REPORT",
-                                "result_title", "Durable Memory Report",
-                                "result_payload", Map.of(
-                                        "report_markdown", "# Durable Memory Report\nVerified conclusion."
-                                ),
-                                "trace_summary", "completed",
-                                "citations", java.util.List.of()
-                        ))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("COMPLETED"));
+        finalizeResearchRun(researchRunId, "Verified conclusion", "completion-evidence",
+                "external:durable-memory", "Durable Memory Research", "Verified conclusion source.");
 
         mockMvc.perform(get(
                         "/api/v2/workspaces/{workspaceId}/conversations/{conversationId}/messages",
@@ -701,7 +735,7 @@ class ConversationTurnModuleContractTest {
                         .value(receipt.path("assistant_message_id").asText()))
                 .andExpect(jsonPath("$.data[1].context_status").value("CURRENT"))
                 .andExpect(jsonPath("$.data[1].content")
-                        .value(org.hamcrest.Matchers.containsString("Durable Memory Report")));
+                        .value(org.hamcrest.Matchers.containsString("research completion projection")));
     }
 
     @Test
@@ -720,15 +754,8 @@ class ConversationTurnModuleContractTest {
                 "answer_mode", "DEEP_RESEARCH",
                 "client_request_id", "research-summary-prefix-research"
         ), 200);
-        String taskId = legacyTaskIdForResearchRun(workspaceId, receipt.path("research_run_id").asText());
-        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
-                        .header("X-NoteWeave-Idempotency-Key", "research-summary-prefix-complete")
-                        .header("X-NoteWeave-Callback-Event-Id", "research-summary-prefix-complete")
-                        .header("X-NoteWeave-Attempt-No", "1")
-                        .header("X-NoteWeave-Fencing-Token", "1")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(workerCompletion("Research prefix report")))
-                .andExpect(status().isOk());
+        finalizeResearchRun(receipt.path("research_run_id").asText(), "Research prefix report",
+                "prefix-evidence", "external:prefix", "Prefix source", "Prefix evidence quote.");
 
         mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/conversations/{conversationId}/segment-summary-builds",
                         workspaceId, conversationId))
@@ -768,7 +795,7 @@ class ConversationTurnModuleContractTest {
                 .andExpect(jsonPath("$.data[0].content").value(""));
 
         JsonNode next = submit(conversationId, Map.of(
-                "content", "do not substitute the deleted message",
+                "content", "more?",
                 "answer_mode", "QA",
                 "client_request_id", "delete-referenced-message-2"
         ), 200);
@@ -800,7 +827,7 @@ class ConversationTurnModuleContractTest {
                         .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(Map.of(
                                 "summary_text", "erasable summary", "content_hash", "e".repeat(64)))))
                 .andExpect(status().isOk());
-        JsonNode selected = submit(conversationId, Map.of("content", "snapshot selects summary", "answer_mode", "QA",
+        JsonNode selected = submit(conversationId, Map.of("content", "more?", "answer_mode", "QA",
                 "client_request_id", "delete-summary-selected"), 200);
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
                         "/internal/conversation-segments/{segmentId}/summary-revisions/{revisionId}", segmentId, revisionId))
@@ -808,10 +835,68 @@ class ConversationTurnModuleContractTest {
                 .andExpect(jsonPath("$.data.status").value("DELETED"));
         mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/runs/ANSWER/{runId}/input-snapshot", workspaceId, selected.path("answer_run_id").asText()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.replay_availability").value("METADATA_ONLY"));
-        JsonNode next = submit(conversationId, Map.of("content", "do not select deleted summary", "answer_mode", "QA",
+        JsonNode next = submit(conversationId, Map.of("content", "more?", "answer_mode", "QA",
                 "client_request_id", "delete-summary-next"), 200);
         mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/runs/ANSWER/{runId}/input-snapshot", workspaceId, next.path("answer_run_id").asText()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.snapshot.segment_summary_refs.length()").value(0));
+    }
+
+    @Test
+    void deletingAMessageCoveredByAReadySummaryBlanksDerivedTextAndDowngradesReplay() throws Exception {
+        String workspaceId = createWorkspace();
+        String conversationId = createConversation(workspaceId);
+        JsonNode coveredMessage = null;
+        for (int index = 1; index <= 5; index++) {
+            JsonNode receipt = submit(conversationId, Map.of(
+                    "content", "covered-delete turn " + index,
+                    "answer_mode", "QA",
+                    "client_request_id", "covered-delete-turn-" + index
+            ), 200);
+            if (index == 1) {
+                coveredMessage = receipt;
+            }
+        }
+        MvcResult builds = mockMvc.perform(get(
+                        "/api/v2/workspaces/{workspaceId}/conversations/{conversationId}/segment-summary-builds",
+                        workspaceId, conversationId))
+                .andExpect(status().isOk()).andReturn();
+        JsonNode build = objectMapper.readTree(builds.getResponse().getContentAsString()).path("data").get(0);
+        String segmentId = build.path("segment_id").asText();
+        String revisionId = build.path("summary_revision_id").asText();
+        mockMvc.perform(post("/internal/conversation-segments/{segmentId}/summary-revisions/{revisionId}/promote",
+                        segmentId, revisionId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "summary_text", "summary derived from covered-delete turn 1",
+                                "content_hash", "d".repeat(64)))))
+                .andExpect(status().isOk());
+
+        JsonNode selected = submit(conversationId, Map.of(
+                "content", "more?",
+                "answer_mode", "QA",
+                "client_request_id", "covered-delete-selected"
+        ), 200);
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/runs/ANSWER/{runId}/input-snapshot",
+                        workspaceId, selected.path("answer_run_id").asText()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.replay_availability").value("FULL"))
+                .andExpect(jsonPath("$.data.snapshot.segment_summary_refs[0].summary_revision_id").value(revisionId));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
+                        "/api/v2/workspaces/{workspaceId}/conversations/{conversationId}/messages/{messageId}",
+                        workspaceId, conversationId, coveredMessage.path("message_id").asText()))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/runs/ANSWER/{runId}/input-snapshot",
+                        workspaceId, selected.path("answer_run_id").asText()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.replay_availability").value("METADATA_ONLY"));
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from segment_summary_revision where id = ?", String.class, revisionId))
+                .isEqualTo("STALE");
+        assertThat(jdbcTemplate.queryForObject(
+                "select summary_text from segment_summary_revision where id = ?", String.class, revisionId))
+                .isEmpty();
     }
 
     @Test
@@ -824,51 +909,10 @@ class ConversationTurnModuleContractTest {
                 "client_request_id", "research-evidence-manifest-1"
         ), 200);
         String researchRunId = receipt.path("research_run_id").asText();
-        String taskId = legacyTaskIdForResearchRun(workspaceId, researchRunId);
-
-        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
-                        .header("X-NoteWeave-Idempotency-Key", "research-evidence-complete-event-1")
-                        .header("X-NoteWeave-Callback-Event-Id", "research-evidence-complete-event-1")
-                        .header("X-NoteWeave-Attempt-No", "1")
-                        .header("X-NoteWeave-Fencing-Token", "1")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "result_type", "RESEARCH_REPORT",
-                                "result_title", "Final evidence report",
-                                "result_payload", Map.of("report_markdown", "# Final evidence report"),
-                                "trace_summary", "completed",
-                                "citations", java.util.List.of(Map.of(
-                                        "citation_id", "final-evidence-1",
-                                        "source_id", "external:durable-memory",
-                                        "title", "Durable Memory Research",
-                                        "quote_text", "Final research evidence must be frozen with the report.",
-                                        "location", "section:1"
-                                ))
-                        ))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("COMPLETED"));
-
-        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
-                        .header("X-NoteWeave-Idempotency-Key", "research-evidence-complete-event-2")
-                        .header("X-NoteWeave-Callback-Event-Id", "research-evidence-complete-event-2")
-                        .header("X-NoteWeave-Attempt-No", "1")
-                        .header("X-NoteWeave-Fencing-Token", "1")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "result_type", "RESEARCH_REPORT",
-                                "result_title", "Replacement evidence report",
-                                "result_payload", Map.of("report_markdown", "# Replacement evidence report"),
-                                "trace_summary", "late completion",
-                                "citations", java.util.List.of(Map.of(
-                                        "citation_id", "replacement-evidence-2",
-                                        "source_id", "external:replacement",
-                                        "title", "Replacement Research",
-                                        "quote_text", "This replacement must not overwrite frozen evidence.",
-                                        "location", "section:2"
-                                ))
-                        ))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("COMPLETED"));
+        finalizeResearchRun(researchRunId, "Final evidence report", "final-evidence-1",
+                "external:durable-memory", "Durable Memory Research",
+                "Final research evidence must be frozen with the report.");
+        assertThat(researchFinalizationService.finalizeIncrementalRun(researchRunId).idempotentReplay()).isTrue();
 
         mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}/evidence",
                         workspaceId, researchRunId))
@@ -896,28 +940,9 @@ class ConversationTurnModuleContractTest {
                 "client_request_id", "research-evidence-delete-1"
         ), 200);
         String researchRunId = receipt.path("research_run_id").asText();
-        String taskId = legacyTaskIdForResearchRun(workspaceId, researchRunId);
-
-        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
-                        .header("X-NoteWeave-Idempotency-Key", "research-evidence-delete-complete-1")
-                        .header("X-NoteWeave-Callback-Event-Id", "research-evidence-delete-complete-1")
-                        .header("X-NoteWeave-Attempt-No", "1")
-                        .header("X-NoteWeave-Fencing-Token", "1")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "result_type", "RESEARCH_REPORT",
-                                "result_title", "Research deletion report",
-                                "result_payload", Map.of("report_markdown", "# Research deletion report"),
-                                "trace_summary", "completed",
-                                "citations", java.util.List.of(Map.of(
-                                        "citation_id", "research-delete-evidence-1",
-                                        "source_id", sourceId,
-                                        "title", "Research deletion source",
-                                        "quote_text", "ResearchDeleteEvidence must be removed from replay data.",
-                                        "location", "section:1"
-                                ))
-                        ))))
-                .andExpect(status().isOk());
+        finalizeResearchRun(researchRunId, "Research deletion report", "research-delete-evidence-1",
+                sourceId, "Research deletion source",
+                "ResearchDeleteEvidence must be removed from replay data.");
 
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
                         "/api/v2/workspaces/{workspaceId}/sources/{sourceId}", workspaceId, sourceId))
@@ -937,7 +962,7 @@ class ConversationTurnModuleContractTest {
     }
 
     @Test
-    void staleResearchCallbackIsFencedBeforeItCanCompleteThePlaceholder() throws Exception {
+    void genericWorkerCallbackCannotCompleteAResearchPlaceholder() throws Exception {
         String workspaceId = createWorkspace();
         String conversationId = createConversation(workspaceId);
         JsonNode receipt = submit(conversationId, Map.of(
@@ -946,16 +971,24 @@ class ConversationTurnModuleContractTest {
                 "client_request_id", "research-fencing-1"
         ), 200);
         String researchRunId = receipt.path("research_run_id").asText();
-        String taskId = legacyTaskIdForResearchRun(workspaceId, researchRunId);
+        String taskId = jdbcTemplate.queryForObject(
+                "select task_id from research_run where id = ?", String.class, researchRunId);
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "stale-event")
                         .header("X-NoteWeave-Callback-Event-Id", "stale-event")
                         .header("X-NoteWeave-Attempt-No", "0")
                         .header("X-NoteWeave-Fencing-Token", "0")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(workerCompletion("Stale Report")))
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "result_type", "RESEARCH_REPORT",
+                                "result_title", "Stale Report",
+                                "result_payload", Map.of("report_markdown", "# Stale Report"),
+                                "trace_summary", "stale",
+                                "citations", java.util.List.of()
+                        ))))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("RESEARCH_CALLBACK_FENCED"));
+                .andExpect(jsonPath("$.code").value("WORKER_CALLBACK_TASK_TYPE_INVALID"));
 
         mockMvc.perform(get(
                         "/api/v2/workspaces/{workspaceId}/conversations/{conversationId}/messages",
@@ -963,14 +996,14 @@ class ConversationTurnModuleContractTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[1].context_status").value("PENDING"));
 
-        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
-                        .header("X-NoteWeave-Callback-Event-Id", "current-event")
-                        .header("X-NoteWeave-Attempt-No", "1")
-                        .header("X-NoteWeave-Fencing-Token", "1")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(workerCompletion("Current Report")))
+        finalizeResearchRun(researchRunId, "Current report", "current-evidence",
+                "external:current", "Current source", "Current verified evidence.");
+
+        mockMvc.perform(get(
+                        "/api/v2/workspaces/{workspaceId}/conversations/{conversationId}/messages",
+                        workspaceId, conversationId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("COMPLETED"));
+                .andExpect(jsonPath("$.data[1].context_status").value("CURRENT"));
     }
 
     @Test
@@ -1247,31 +1280,61 @@ class ConversationTurnModuleContractTest {
         return objectMapper.readTree(result.getResponse().getContentAsString()).path("data");
     }
 
-    private String workerCompletion(String title) throws Exception {
-        return objectMapper.writeValueAsString(Map.of(
-                "result_type", "RESEARCH_REPORT",
-                "result_title", title,
-                "result_payload", Map.of("report_markdown", "# " + title),
-                "trace_summary", "completed",
-                "citations", java.util.List.of()
-        ));
-    }
-
-    private String legacyTaskIdForResearchRun(String workspaceId, String researchRunId) throws Exception {
-        int updated = jdbcTemplate.update("""
+    private void finalizeResearchRun(
+            String researchRunId,
+            String verifiedValue,
+            String evidenceKey,
+            String sourceId,
+            String sourceTitle,
+            String quote
+    ) throws Exception {
+        String parentTaskId = jdbcTemplate.queryForObject(
+                "select task_id from research_run where id = ?", String.class, researchRunId);
+        jdbcTemplate.update("""
                 update research_run
-                set agent_execution_mode = 'SEQUENTIAL_V1'
-                where id = ? and workspace_id = ?
-                  and not exists (
-                    select 1 from research_agent_task where research_run_id = ?
-                  )
-                """, researchRunId, workspaceId, researchRunId);
-        assertThat(updated).as("legacy callback fixture must switch before incremental taskization").isEqualTo(1);
-        MvcResult detail = mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}",
-                        workspaceId, researchRunId))
-                .andExpect(status().isOk())
-                .andReturn();
-        return objectMapper.readTree(detail.getResponse().getContentAsString()).path("data").path("task_id").asText();
+                set status = 'RUNNING', agent_execution_mode = 'INCREMENTAL_V1'
+                where id = ?
+                """, researchRunId);
+        jdbcTemplate.update("update task set task_status = 'RUNNING' where id = ?", parentTaskId);
+        jdbcTemplate.update("update research_agent_task set status = 'SUBMITTED' where research_run_id = ?",
+                researchRunId);
+        jdbcTemplate.update("delete from research_cell_evidence where research_run_id = ?", researchRunId);
+        jdbcTemplate.update("delete from research_cell_merge where research_run_id = ?", researchRunId);
+        jdbcTemplate.update("delete from source_evidence where research_run_id = ?", researchRunId);
+        jdbcTemplate.update("delete from research_cell where research_run_id = ?", researchRunId);
+        jdbcTemplate.update("delete from research_row where research_run_id = ?", researchRunId);
+        jdbcTemplate.update("delete from research_branch where research_run_id = ?", researchRunId);
+
+        String suffix = Ids.newId();
+        String rowId = Ids.newId();
+        String cellId = Ids.newId();
+        String sourceEvidenceId = Ids.newId();
+        String cellKey = "contract:" + suffix;
+        jdbcTemplate.update("""
+                insert into research_row(id, research_run_id, row_key, row_status)
+                values (?, ?, ?, 'CANDIDATE_READY')
+                """, rowId, researchRunId, "row:" + suffix);
+        jdbcTemplate.update("""
+                insert into research_cell(
+                    id, research_run_id, research_row_id, cell_key, column_key,
+                    candidate_value, cell_status, evidence_refs_json, repair_count
+                ) values (?, ?, ?, ?, 'finding', ?, 'VERIFIED', ?, 0)
+                """, cellId, researchRunId, rowId, cellKey, verifiedValue,
+                objectMapper.writeValueAsString(java.util.List.of(evidenceKey)));
+        jdbcTemplate.update("""
+                insert into source_evidence(
+                    id, research_run_id, evidence_key, window_id, source_id, source_title,
+                    quote_text, claim_text, snapshot_status
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, 'EXTERNAL_ARCHIVED')
+                """, sourceEvidenceId, researchRunId, evidenceKey, "window:" + suffix,
+                sourceId, sourceTitle, quote, verifiedValue);
+        jdbcTemplate.update("""
+                insert into research_cell_evidence(
+                    id, research_run_id, research_cell_id, source_evidence_id, evidence_key
+                ) values (?, ?, ?, ?, ?)
+                """, Ids.newId(), researchRunId, cellId, sourceEvidenceId, evidenceKey);
+
+        assertThat(researchFinalizationService.finalizeIncrementalRun(researchRunId).idempotentReplay()).isFalse();
     }
 
     private JsonNode submit(String conversationId, Map<String, Object> request, int expectedStatus)
@@ -1369,13 +1432,19 @@ class ConversationTurnModuleContractTest {
                         org.hamcrest.Matchers.equalTo("PARSING_QUEUED"))))
                 .andExpect(jsonPath("$.data.index_status", org.hamcrest.Matchers.anyOf(
                         org.hamcrest.Matchers.equalTo("INDEXED"),
-                        org.hamcrest.Matchers.equalTo("INDEX_QUEUED"))));
+                        org.hamcrest.Matchers.equalTo("INDEX_QUEUED"),
+                        org.hamcrest.Matchers.equalTo("DISABLED"))));
         MvcResult sources = mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/sources", workspaceId))
                 .andExpect(status().isOk())
                 .andReturn();
         for (JsonNode source : objectMapper.readTree(sources.getResponse().getContentAsString()).path("data")) {
             if (fileName.equals(source.path("title").asText())) {
-                return source.path("source_id").asText();
+                String sourceId = source.path("source_id").asText();
+                // These evidence contracts exercise the explicit MySQL fallback with a ready projection fixture.
+                jdbcTemplate.update("update source set index_status = 'INDEXED' where id = ?", sourceId);
+                jdbcTemplate.update("update source_snapshot set index_status = 'INDEXED' where source_id = ?", sourceId);
+                jdbcTemplate.update("update source_chunk set projection_status = 'PROJECTED' where source_id = ?", sourceId);
+                return sourceId;
             }
         }
         throw new AssertionError("Uploaded source was not listed: " + fileName);

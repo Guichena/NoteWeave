@@ -263,7 +263,7 @@ def test_cell_verifier_should_emit_contradicts_when_supports_and_conflicts_both_
     assert len(verdicts[0].evidence_ids) == 2  # 两张证据都被引用
 
 
-def test_cell_verifier_should_emit_supports_when_only_strong_supports() -> None:
+def test_cell_verifier_should_not_claim_supports_without_llm_judge() -> None:
     """仅多张高 confidence SUPPORTS 卡片时,verdict 为 SUPPORTS。"""
     from app.models import ResearchEvidenceCard, ResearchStateCell
 
@@ -290,8 +290,9 @@ def test_cell_verifier_should_emit_supports_when_only_strong_supports() -> None:
     updated_cells, verdicts = verifier.verify_cells(
         [cell], {"entity-1:method": cards}
     )
-    assert verdicts[0].status == CellSupportStatus.SUPPORTS
-    assert verdicts[0].confidence > 0.6
+    assert verdicts[0].status == CellSupportStatus.NOT_ENOUGH_INFO
+    assert verdicts[0].used_llm is False
+    assert verdicts[0].confidence <= 0.3
 
 
 def test_cell_verifier_should_use_llm_when_available() -> None:

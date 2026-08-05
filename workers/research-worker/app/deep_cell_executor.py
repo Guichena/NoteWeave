@@ -29,8 +29,10 @@ from app.llm_client import OpenAICompatibleLlmClient
 from app.models import (
     ControlPack,
     ResearchColumn,
+    ResearchIntent,
     ResearchPlan,
     ResearchSchema,
+    ResearchSearchHit,
     ResearchTaskInput,
     ResearchTaskInputPayload,
     SourceScopeItem,
@@ -121,7 +123,7 @@ class DeepCellExecutor:
             raise ValueError("command research run does not match claimed snapshot")
         counterfactual_slot = (
             snapshot.role == "COUNTERFACTUAL"
-            and snapshot.schema_version == "research-agent-task-snapshot.v2"
+            and snapshot.schema_version in {"research-agent-task-snapshot.v2", "research-agent-task-snapshot.v3"}
             and snapshot.candidate_quorum == 2
             and snapshot.candidate_slot == 2
             and snapshot.high_risk is True
@@ -131,7 +133,7 @@ class DeepCellExecutor:
         repair_reason_digest = snapshot.query_policy.get("repair_reason_digest")
         counterfactual_repair = (
             snapshot.role == "COUNTERFACTUAL"
-            and snapshot.schema_version == "research-agent-task-snapshot.v2"
+            and snapshot.schema_version in {"research-agent-task-snapshot.v2", "research-agent-task-snapshot.v3"}
             and snapshot.candidate_quorum == 1
             and snapshot.candidate_slot == 1
             and snapshot.high_risk is False
@@ -162,6 +164,13 @@ class DeepCellExecutor:
         self.permit_client.require_permit(snapshot, "search")
         require_active()
         hits = self.toolchain.search(task_input, plan, allow_external=allow_external)
+        workspace_hits = _search_workspace_windows(snapshot, task_input, plan, self.permit_client)
+        if workspace_hits:
+            hits = workspace_hits + [hit for hit in hits if getattr(hit, "adapter", "") != "workspace"]
+            hits = [
+                hit.model_copy(update={"rank": index}) if hasattr(hit, "model_copy") else hit
+                for index, hit in enumerate(hits[:int(plan.stop_contract.get("global_search_limit", 8))], start=1)
+            ]
         context.usage.add("search_calls")
 
         require_active()
@@ -268,9 +277,21 @@ def _build_task_scope(snapshot: ResearchAgentTaskSnapshot) -> tuple[ResearchTask
         workspace_id=snapshot.workspace_id,
         target_id=snapshot.research_run_id,
         source_scope=source_scope,
-        control_pack=ControlPack(pack_type="RESEARCH_AGENT", target_key=snapshot.research_run_id,
-                                 task_neighborhood="MA4G_DEEP_CELL", evidence_policy=["server-snapshot-only"]),
-        input_payload=ResearchTaskInputPayload(question=raw_query.strip(), profile_key="RESEARCH_AGENT"),
+        control_pack=ControlPack.model_validate(snapshot.control_pack) if snapshot.control_pack is not None else ControlPack(
+            pack_type="RESEARCH_AGENT",
+            target_key=snapshot.research_run_id,
+            task_neighborhood="MA4G_DEEP_CELL",
+            evidence_policy=["server-snapshot-only"],
+        ),
+        input_payload=ResearchTaskInputPayload(
+            question=raw_query.strip(),
+            profile_key="RESEARCH_AGENT",
+            research_intent=(
+                ResearchIntent.model_validate(snapshot.research_intent)
+                if snapshot.research_intent is not None
+                else ResearchIntent()
+            ),
+        ),
     )
     plan = build_research_plan(task_input).model_copy(update={
         "research_schema": ResearchSchema(columns=columns, research_type=snapshot.role, entity_type="TARGET", required_column_count=len(columns)),
@@ -281,6 +302,54 @@ def _build_task_scope(snapshot: ResearchAgentTaskSnapshot) -> tuple[ResearchTask
     plan.stop_contract["deep_cell_entity_id"] = snapshot.entity_id
     plan.stop_contract["retrieval_mode"] = retrieval_mode
     return task_input, plan, allow_external
+
+
+def _search_workspace_windows(
+    snapshot: ResearchAgentTaskSnapshot,
+    task_input: ResearchTaskInput,
+    plan: ResearchPlan,
+    permit_client: PermitClient,
+) -> list[ResearchSearchHit]:
+    if not task_input.source_scope:
+        return []
+    search = getattr(permit_client, "search_workspace_windows", None)
+    if not callable(search):
+        return []
+    limit = max(1, min(16, int(plan.stop_contract.get("global_search_limit", 8))))
+    raw_hits = search(snapshot, queries=list(plan.query_set or [plan.normalized_question]), limit=limit)
+    scope = {(source.source_id, source.source_snapshot_id) for source in task_input.source_scope}
+    result: list[ResearchSearchHit] = []
+    for raw in raw_hits:
+        source_id = str(getattr(raw, "source_id", ""))
+        snapshot_id = str(getattr(raw, "source_snapshot_id", ""))
+        window_id = str(getattr(raw, "source_window_id", ""))
+        window_text = str(getattr(raw, "window_text", ""))
+        if (source_id, snapshot_id) not in scope or not window_id or not window_text:
+            raise ValueError("workspace window search returned evidence outside the task snapshot")
+        score_ppm = int(getattr(raw, "score_ppm", 0))
+        result.append(ResearchSearchHit(
+            hit_id=f"workspace-{window_id}",
+            source_id=source_id,
+            source_snapshot_id=snapshot_id,
+            source_window_id=window_id,
+            workspace_window_text=window_text,
+            source_title=str(getattr(raw, "source_title", "")),
+            query=str(getattr(raw, "query", "")),
+            rank=len(result) + 1,
+            snippet=window_text[:500],
+            confidence_score=max(0.0, min(1.0, score_ppm / 1_000_000)),
+            retrieval_reason="lease-bound search matched a frozen workspace source window",
+            search_angle="source_scoped",
+            matched_fields=["source_window"],
+            coverage_score=max(0.0, min(1.0, score_ppm / 1_000_000)),
+            provider="workspace",
+            adapter="workspace",
+            provider_attempts=["workspace"],
+            provider_resolution="workspace",
+            source_quality="WORKSPACE_SOURCE",
+            source_quality_score=0.98,
+        ))
+    return result
 
 
 def _build_execution_llm(cancellation_checker, profile: RoleProfile):

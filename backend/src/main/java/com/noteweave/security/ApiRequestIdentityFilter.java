@@ -20,7 +20,7 @@ public class ApiRequestIdentityFilter extends OncePerRequestFilter {
 
     public ApiRequestIdentityFilter(
             JdbcTemplate jdbcTemplate,
-            @Value("${noteweave.security.local-user-fallback:true}") boolean localFallbackEnabled
+            @Value("${noteweave.security.local-user-fallback:false}") boolean localFallbackEnabled
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.localFallbackEnabled = localFallbackEnabled;
@@ -29,7 +29,10 @@ public class ApiRequestIdentityFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
-        return !path.startsWith("/api/v2/") || path.startsWith("/api/v2/actuator");
+        return !path.startsWith("/api/v2/")
+                || path.startsWith("/api/v2/actuator")
+                || path.equals("/api/v2/auth/login")
+                || path.equals("/api/v2/auth/refresh");
     }
 
     @Override
@@ -62,9 +65,9 @@ public class ApiRequestIdentityFilter extends OncePerRequestFilter {
                 select s.user_id
                 from user_session s
                 join users u on u.id = s.user_id
-                where s.session_token = ? and s.status = 'ACTIVE' and u.status = 'ACTIVE'
-                  and (s.expires_at is null or s.expires_at > current_timestamp)
-                """, rs -> rs.next() ? rs.getString("user_id") : null, token);
+                where s.token_hash = ? and s.status = 'ACTIVE' and s.revoked_at is null
+                  and u.status = 'ACTIVE' and (s.expires_at is null or s.expires_at > current_timestamp)
+                """, rs -> rs.next() ? rs.getString("user_id") : null, TokenHasher.sha256(token));
     }
 
     private void reject(HttpServletResponse response, String code, String message) throws IOException {

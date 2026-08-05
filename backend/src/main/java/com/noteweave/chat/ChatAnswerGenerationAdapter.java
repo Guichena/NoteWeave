@@ -7,6 +7,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -14,10 +16,16 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
 
     private final JdbcTemplate jdbcTemplate;
     private final ChatLlmClient chatLlmClient;
+    private final boolean templateFallbackEnabled;
 
-    public ChatAnswerGenerationAdapter(JdbcTemplate jdbcTemplate, ChatLlmClient chatLlmClient) {
+    public ChatAnswerGenerationAdapter(
+            JdbcTemplate jdbcTemplate,
+            ChatLlmClient chatLlmClient,
+            @Value("${noteweave.llm.template-fallback-enabled:false}") boolean templateFallbackEnabled
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.chatLlmClient = chatLlmClient;
+        this.templateFallbackEnabled = templateFallbackEnabled;
     }
 
     @Override
@@ -65,6 +73,13 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
             Consumer<String> tokenConsumer
     ) {
         if (chatLlmClient == null || !chatLlmClient.isEnabled()) {
+            if (!templateFallbackEnabled) {
+                throw new BusinessException(
+                        "ANSWER_LLM_CONFIGURATION_REQUIRED",
+                        "Answer LLM is not configured",
+                        HttpStatus.SERVICE_UNAVAILABLE
+                );
+            }
             replayChunks(draft).forEach(tokenConsumer);
             return draft;
         }
@@ -126,7 +141,10 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
 
     @Override
     public String configuredModel() {
-        return chatLlmClient != null && chatLlmClient.isEnabled() ? "configured-llm" : "template-fallback";
+        if (chatLlmClient != null && chatLlmClient.isEnabled()) {
+            return "configured-llm";
+        }
+        return templateFallbackEnabled ? "template-fallback" : "unconfigured";
     }
 
     private List<String> citationLines(String workspaceId, String messageId) {

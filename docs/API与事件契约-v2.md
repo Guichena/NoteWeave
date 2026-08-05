@@ -259,7 +259,7 @@ Redis Streams 只负责跨节点实时转发。重要阶段事件和最终状态
 
 该事件只记录标识符、计数、耗时、rank 与 score，不允许写入 query、title、excerpt、content 或其他资料正文。`selected_evidence_count` 表示最终 EvidenceBundle 大小，不包含 Wiki 复用的既有 citation 数量。
 
-当主检索通道不可用、没有可接纳命中、ownership 校验拒绝命中或使用 MySQL lexical fallback 时，`degraded=true`，稳定原因码写入 `degradation_reasons`；对应 step 还会在 `measurements.mysql_fallback_used` 等安全数值字段中记录实际路径。原因码不得包含异常消息、查询或资源标识符。
+生产环境的 QA 主检索通道不可用时必须 fail closed，并以 `QA_RETRIEVAL_PROVIDER_UNAVAILABLE` / HTTP 503 结束请求；不得切换到 MySQL lexical 检索后继续生成正式答案。主检索正常但没有可接纳命中时返回空 EvidenceBundle；ownership 校验拒绝命中时 `degraded=true`，稳定原因码写入 `degradation_reasons`。`NOTEWEAVE_QA_MYSQL_FALLBACK_ENABLED` 只允许非生产诊断和无 Elasticsearch 的合同测试显式启用，生产启动门禁会拒绝该配置。原因码不得包含异常消息、查询或资源标识符。
 
 所有 channel 进入 EvidenceBundle 前还必须通过数据库 ownership/current-version 复核：Passage 必须属于当前 Workspace、当前可用 Source Snapshot 且 projection 为 PROJECTED；Knowledge Version 必须属于当前 Workspace 的 ACTIVE item，并等于 `latest_version_id`。跨 Workspace、历史版本或已删除对象统一以 `EVIDENCE_SCOPE_VIOLATION` fail closed，不允许仅凭 retriever 返回的 `access_scope` 字符串放行。
 
@@ -280,7 +280,7 @@ Wiki step 的 `measurements` 还会记录 `graph_hops_used`、`graph_nodes_used`
 POST /api/v2/conversations/{conversation_id}/messages
 ```
 
-创建消息后除 `assistant_message_id/assistant_request_id/answer_run_id` 与两个 stream URL 外，还直接返回：
+创建消息后除 `assistant_message_id/assistant_request_id/answer_run_id` 与两个 stream URL 外，还直接返回降级状态。以下含 `qa_mysql_fallback` 的示例只适用于显式开启诊断 fallback 的非生产环境：
 
 ```json
 {
@@ -408,11 +408,10 @@ Idempotency-Key: event_id
 /conversations/{id}/messages
 /chat/requests/{id}/stream
 /tasks/{id}
-/tasks/{id}/events
 /internal/worker/tasks/{id}/*
 ```
 
-任务事件的规范读接口为 `/tasks/{id}/event-history`。旧 `/tasks/{id}/events` 仅返回一次性 SSE 格式历史快照，响应携带 `Deprecation` 与 `Link rel="alternate"`，不应被描述为持续订阅。
+任务实时观测的规范入口为持续订阅 `/tasks/{id}/events`，支持 `Last-Event-ID` 断线续传并在任务终态后关闭。`/tasks/{id}/event-history?afterEventId=...` 保留为首次快照校正、SSE 不可用时的显式恢复路径，不再与健康 SSE 并行轮询。
 
 兼容 Controller 把旧请求转换为新 Command，并在响应中增加 `answer_run_id/execution_id`。
 

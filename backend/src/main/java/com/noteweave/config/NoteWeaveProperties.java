@@ -31,7 +31,7 @@ public record NoteWeaveProperties(
     public NoteWeaveProperties {
         if (storage == null) {
             storage = new Storage("local", Path.of("target/noteweave-storage"),
-                    new Minio("http://localhost:9000", "minioadmin", "minioadmin",
+                    new Minio("http://localhost:9000", "", "",
                             "us-east-1", "noteweave-source", "noteweave-derived", "noteweave-export"));
         }
         if (document == null) {
@@ -44,7 +44,7 @@ public record NoteWeaveProperties(
             kafka = new Kafka(kafka == null || kafka.enabled(), defaultTopics());
         }
         if (elasticsearch == null) {
-            elasticsearch = new Elasticsearch(true, "localhost", 9200, "http", "noteweave_chunk");
+            elasticsearch = new Elasticsearch(true, "localhost", 9200, "http", "noteweave_chunk", "", "");
         }
         if (embedding == null) {
             embedding = new Embedding(false, "", "", "", 1024, 32, 10L, 60L, 12_000, 3);
@@ -60,12 +60,9 @@ public record NoteWeaveProperties(
     private static Topics defaultTopics() {
         return new Topics(
                 "noteweave.source.parse",
-                "noteweave.source.chunk",
-                "noteweave.source.index",
                 "noteweave.retrieval.projection",
                 "noteweave.wiki.ingest",
                 "noteweave.wiki.retract",
-                "noteweave.generated.ingest",
                 "noteweave.conversation.summary");
     }
 
@@ -94,26 +91,11 @@ public record NoteWeaveProperties(
 
     public record Topics(
             String sourceParse,
-            String sourceChunk,
-            String sourceIndex,
             String retrievalProjection,
             String wikiIngest,
             String wikiRetract,
-            String generatedIngest,
             String conversationSummary
     ) {
-        public Topics(
-                String sourceParse,
-                String sourceChunk,
-                String sourceIndex,
-                String wikiIngest,
-                String wikiRetract,
-                String generatedIngest,
-                String conversationSummary
-        ) {
-            this(sourceParse, sourceChunk, sourceIndex, "noteweave.retrieval.projection",
-                    wikiIngest, wikiRetract, generatedIngest, conversationSummary);
-        }
     }
 
     public record Elasticsearch(
@@ -121,8 +103,17 @@ public record NoteWeaveProperties(
             String host,
             int port,
             String scheme,
-            String indexPrefix
+            String indexPrefix,
+            String username,
+            String password
     ) {
+        @ConstructorBinding
+        public Elasticsearch {
+        }
+
+        public Elasticsearch(boolean enabled, String host, int port, String scheme, String indexPrefix) {
+            this(enabled, host, port, scheme, indexPrefix, "", "");
+        }
     }
 
     public record Embedding(

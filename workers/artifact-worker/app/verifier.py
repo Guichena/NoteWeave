@@ -118,10 +118,10 @@ def build_output_contract_trace(
         action_checks,
     )
 
-    status = "PASS" if not failed_checks and not warnings else "WARN"
+    status = "FAIL" if failed_checks else ("WARN" if warnings else "PASS")
     notes: list[str] = []
     if repaired_checks:
-        notes.append("local repair completed before final contract verification")
+        notes.append("typed repair completed before final contract verification")
     repair_summary = _build_repair_summary(result, repaired_checks)
 
     return ArtifactOutputContractTrace(

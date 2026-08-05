@@ -74,6 +74,17 @@ class ExternalSnapshotArchiveReceipt:
     idempotent_replay: bool
 
 
+@dataclass(frozen=True)
+class WorkspaceWindowSearchHit:
+    source_window_id: str
+    source_snapshot_id: str
+    source_id: str
+    source_title: str
+    query: str
+    window_text: str
+    score_ppm: int
+
+
 class JavaResearchAgentTaskClient:
     def __init__(self, java_base_url: str, internal_auth_token: str, worker_instance_id: str,
                  *, completion_max_attempts: int = 3,
@@ -193,6 +204,50 @@ class JavaResearchAgentTaskClient:
                 or data.get("tool_identity") != tool_identity:
             raise AgentTaskProtocolError("Research agent permit response does not match the requested tool")
 
+    def search_workspace_windows(
+        self,
+        snapshot: ResearchAgentTaskSnapshot,
+        *,
+        queries: list[str],
+        limit: int,
+    ) -> list[WorkspaceWindowSearchHit]:
+        """Search only source snapshots already frozen into the authoritative task."""
+        response = self._request(
+            "POST",
+            "/internal/research-agent/workspace-windows/search",
+            {
+                "task_id": snapshot.task_id,
+                "worker_instance_id": self.worker_instance_id,
+                "lease_epoch": snapshot.lease_epoch,
+                "fencing_token": snapshot.fencing_token,
+                "queries": queries,
+                "limit": limit,
+            },
+            idempotency_key=(
+                f"agent-workspace-search:{snapshot.task_id}:{snapshot.lease_epoch}:"
+                f"{snapshot.fencing_token}:{hashlib.sha256(json.dumps(queries).encode('utf-8')).hexdigest()}:{limit}"
+            ),
+        )
+        raw_hits = response.get("data") if isinstance(response, dict) else None
+        if not isinstance(raw_hits, list):
+            raise AgentTaskProtocolError("workspace window search response data must be an array")
+        hits: list[WorkspaceWindowSearchHit] = []
+        expected = {
+            "source_window_id", "source_snapshot_id", "source_id", "source_title",
+            "query", "window_text", "score_ppm",
+        }
+        for raw in raw_hits:
+            if not isinstance(raw, dict) or set(raw) != expected:
+                raise AgentTaskProtocolError("workspace window search hit contains missing or unknown fields")
+            values = {key: raw.get(key) for key in expected - {"score_ppm"}}
+            if any(not isinstance(value, str) or not value.strip() for value in values.values()):
+                raise AgentTaskProtocolError("workspace window search hit has an invalid text field")
+            score = raw.get("score_ppm")
+            if isinstance(score, bool) or not isinstance(score, int) or score < 0 or score > 1_000_000:
+                raise AgentTaskProtocolError("workspace window search hit has an invalid score")
+            hits.append(WorkspaceWindowSearchHit(score_ppm=score, **values))
+        return hits
+
     def archive_external_snapshot(
         self,
         snapshot: ResearchAgentTaskSnapshot,
@@ -237,7 +292,12 @@ class JavaResearchAgentTaskClient:
         return _validated_external_archive_receipt(data, snapshot, window_id, source_id)
 
     def report_delivery_failure(self, command: ResearchAgentCommand, failure: dict[str, object]) -> None:
-        reason_code = str(failure.get("error_type") or "AGENT_COMMAND_FAILURE")[:128]
+        error_message = str(failure.get("error_message") or "").strip()
+        reason_code = (
+            error_message
+            if re.fullmatch(r"[A-Z][A-Z0-9_]{2,127}", error_message)
+            else str(failure.get("error_type") or "AGENT_COMMAND_FAILURE")[:128]
+        )
         digest = str(failure.get("trace_digest") or "")[:128]
         if not digest:
             raise ValueError("delivery failure requires a sanitized trace digest")

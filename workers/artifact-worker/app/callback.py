@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import hashlib
+import hmac
+import base64
 import logging
 from typing import Any, Protocol
 from urllib import error, request
@@ -9,8 +11,11 @@ from urllib import error, request
 from pydantic import BaseModel
 
 from app.config import load_settings
+from app.error_sanitizer import sanitize_error_message
+from app.llm_client import credential_safe_urlopen
 from app.acquisition_runtime import acknowledge_acquisition_operation
 from app.capability_wait_queue import (
+    cache_waiting_task_delivery,
     list_waiting_tasks,
     remove_waiting_task,
     release_waiting_task_claim,
@@ -49,14 +54,29 @@ class ArtifactCallbackClient(Protocol):
     def send_complete(self, task_id: str, result: ArtifactTaskResult) -> None:
         ...
 
-    def send_fail(self, task_id: str, phase: str, error_code: str, error_message: str) -> None:
+    def send_fail(
+        self,
+        task_id: str,
+        phase: str,
+        error_code: str,
+        error_message: str,
+        retryable: bool = False,
+    ) -> None:
         ...
 
 
 class JavaArtifactCallbackClient:
-    def __init__(self, java_base_url: str, internal_auth_token: str = "") -> None:
+    def __init__(
+        self,
+        java_base_url: str,
+        internal_auth_token: str = "",
+        callback_secret: str = "",
+        delivery_token: str = "",
+    ) -> None:
         self.java_base_url = java_base_url.rstrip("/")
         self.internal_auth_token = internal_auth_token.strip()
+        self.callback_secret = callback_secret.strip()
+        self.delivery_token = delivery_token.strip()
 
     def fetch_task_input(self, task_id: str) -> ArtifactTaskInput:
         response = self._request("GET", f"/internal/worker/artifact-tasks/{task_id}/input")
@@ -73,6 +93,7 @@ class JavaArtifactCallbackClient:
                 "progress",
                 event.phase,
             ),
+            task_id=task_id,
         )
 
     def send_complete(self, task_id: str, result: ArtifactTaskResult) -> None:
@@ -81,19 +102,28 @@ class JavaArtifactCallbackClient:
             f"/internal/worker/tasks/{task_id}/complete",
             result.model_dump(mode="json"),
             idempotency_key=_callback_idempotency_key(task_id, "complete"),
+            task_id=task_id,
         )
 
-    def send_fail(self, task_id: str, phase: str, error_code: str, error_message: str) -> None:
+    def send_fail(
+        self,
+        task_id: str,
+        phase: str,
+        error_code: str,
+        error_message: str,
+        retryable: bool = False,
+    ) -> None:
         self._request(
             "POST",
             f"/internal/worker/tasks/{task_id}/fail",
             {
                 "phase": phase,
                 "error_code": error_code,
-                "error_message": error_message,
-                "retryable": True,
+                "error_message": sanitize_error_message(error_message),
+                "retryable": retryable,
             },
             idempotency_key=_callback_idempotency_key(task_id, "fail", phase),
+            task_id=task_id,
         )
 
     def _request(
@@ -103,6 +133,7 @@ class JavaArtifactCallbackClient:
         payload: dict[str, Any] | None = None,
         *,
         idempotency_key: str = "",
+        task_id: str = "",
     ) -> dict[str, Any]:
         body = None if payload is None else json.dumps(payload).encode("utf-8")
         req = request.Request(
@@ -121,27 +152,42 @@ class JavaArtifactCallbackClient:
                     if idempotency_key
                     else {}
                 ),
+                **(
+                    {"X-NoteWeave-Task-Callback-Token": _task_callback_token(
+                        self.callback_secret, "ARTIFACT_JOB", task_id
+                    )}
+                    if self.callback_secret and task_id
+                    else {}
+                ),
+                **(
+                    {"X-NoteWeave-Outbox-Delivery-Token": self.delivery_token}
+                    if self.delivery_token
+                    else {}
+                ),
             },
         )
         try:
-            with request.urlopen(req, timeout=30) as response:
+            with credential_safe_urlopen(req, timeout=30) as response:
                 text = response.read().decode("utf-8")
         except error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
+            detail = sanitize_error_message(exc.read().decode("utf-8", errors="replace"))
             raise RuntimeError(f"Java callback failed: {exc.code} {detail}") from exc
         except error.URLError as exc:
-            raise RuntimeError(f"Java callback unavailable: {exc.reason}") from exc
+            raise RuntimeError(f"Java callback unavailable: {sanitize_error_message(str(exc.reason))}") from exc
         return json.loads(text) if text else {}
 
 
 def run_artifact_task_with_callbacks(
     task_id: str,
     client: ArtifactCallbackClient | None = None,
+    delivery_token: str = "",
 ) -> ArtifactWorkerExecutionResponse:
     settings = load_settings()
     callback_client = client or JavaArtifactCallbackClient(
         settings.java_base_url,
         settings.internal_auth_token,
+        settings.callback_secret,
+        delivery_token,
     )
     task_input = callback_client.fetch_task_input(task_id)
     try:
@@ -159,11 +205,14 @@ def resume_waiting_artifact_task_with_callbacks(
     request_id: str = "",
     callback_receipt: dict[str, object] | None = None,
     callback_operation: dict[str, object] | None = None,
+    delivery_token: str = "",
 ) -> ArtifactWorkerExecutionResponse:
     settings = load_settings()
     callback_client = client or JavaArtifactCallbackClient(
         settings.java_base_url,
         settings.internal_auth_token,
+        settings.callback_secret,
+        delivery_token,
     )
     try:
         events, result = wake_waiting_task(
@@ -179,6 +228,8 @@ def resume_waiting_artifact_task_with_callbacks(
         _report_execution_failure(callback_client, task_id, "WORKER_RESUME", exc)
         raise
     try:
+        if not _is_waiting_status(result.job_snapshot.status):
+            cache_waiting_task_delivery(task_id, events, result)
         response = _emit_callbacks_for_result(task_id, events, result, callback_client)
     except Exception:
         release_waiting_task_claim(task_id)
@@ -202,6 +253,7 @@ def acknowledge_acquisition_operation_with_callbacks(
     callback_client = client or JavaArtifactCallbackClient(
         settings.java_base_url,
         settings.internal_auth_token,
+        settings.callback_secret,
     )
     ack_result = acknowledge_acquisition_operation(
         callback_token=callback_token,
@@ -310,7 +362,7 @@ def _matching_waiting_tasks(
 def _unwrap_api_response(response: dict[str, Any]) -> dict[str, Any]:
     if response.get("success") is False:
         raise RuntimeError(
-            f"Java API returned {response.get('code', 'ERROR')}: {response.get('message', '')}"
+            f"Java API returned {response.get('code', 'ERROR')}: {sanitize_error_message(str(response.get('message', '')))}"
         )
     data = response.get("data")
     if not isinstance(data, dict):
@@ -329,6 +381,15 @@ def _callback_idempotency_key(
     return f"artifact-worker-{callback_type}-{digest}"
 
 
+def _task_callback_token(secret: str, task_type: str, task_id: str) -> str:
+    digest = hmac.new(
+        secret.strip().encode("utf-8"),
+        f"noteweave-worker-callback:v1:{task_type}:{task_id}".encode("utf-8"),
+        hashlib.sha256,
+    ).digest()
+    return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+
+
 def _report_execution_failure(
     callback_client: ArtifactCallbackClient,
     task_id: str,
@@ -336,15 +397,34 @@ def _report_execution_failure(
     exc: Exception,
 ) -> None:
     try:
-        callback_client.send_fail(
-            task_id,
-            phase=phase,
-            error_code=type(exc).__name__.upper(),
-            error_message=str(exc),
-        )
+        error_code = str(getattr(exc, "error_code", type(exc).__name__.upper()))
+        try:
+            callback_client.send_fail(
+                task_id,
+                phase=phase,
+                error_code=error_code,
+                error_message=sanitize_error_message(str(exc)),
+                retryable=is_retryable_failure(exc),
+            )
+        except TypeError:
+            # Keep test doubles and older callback adapters source-compatible.
+            callback_client.send_fail(
+                task_id,
+                phase=phase,
+                error_code=error_code,
+                error_message=sanitize_error_message(str(exc)),
+            )
     except Exception:
         logger.exception(
             "Artifact execution failed and the failure callback could not be delivered: task_id=%s phase=%s",
             task_id,
             phase,
         )
+
+
+def is_retryable_failure(exc: Exception) -> bool:
+    name = type(exc).__name__.upper()
+    message = str(exc).lower()
+    if name in {"ARTIFACTCONFIGURATIONREQUIREDERROR", "VALUEERROR", "JSONDECODEERROR"}:
+        return False
+    return not any(marker in message for marker in ("invalid input", "forbidden", "not configured"))

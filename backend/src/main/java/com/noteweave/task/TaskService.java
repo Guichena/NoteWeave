@@ -14,10 +14,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
+import java.util.Collections;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -31,13 +33,24 @@ public class TaskService implements TaskCommandPort {
     private final MeterRegistry meterRegistry;
     private final AuditActorProvider auditActorProvider;
     private final WorkloadQuotaService workloadQuotaService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public TaskService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
-        this(jdbcTemplate, objectMapper, new SimpleMeterRegistry(), null, null);
+        this(jdbcTemplate, objectMapper, new SimpleMeterRegistry(), null, null, null);
     }
 
     public TaskService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper, MeterRegistry meterRegistry) {
-        this(jdbcTemplate, objectMapper, meterRegistry, null, null);
+        this(jdbcTemplate, objectMapper, meterRegistry, null, null, null);
+    }
+
+    public TaskService(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
+            MeterRegistry meterRegistry,
+            AuditActorProvider auditActorProvider,
+            WorkloadQuotaService workloadQuotaService
+    ) {
+        this(jdbcTemplate, objectMapper, meterRegistry, auditActorProvider, workloadQuotaService, null);
     }
 
     @Autowired
@@ -46,13 +59,15 @@ public class TaskService implements TaskCommandPort {
             ObjectMapper objectMapper,
             MeterRegistry meterRegistry,
             AuditActorProvider auditActorProvider,
-            WorkloadQuotaService workloadQuotaService
+            WorkloadQuotaService workloadQuotaService,
+            ApplicationEventPublisher eventPublisher
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.meterRegistry = meterRegistry;
         this.auditActorProvider = auditActorProvider;
         this.workloadQuotaService = workloadQuotaService;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -271,6 +286,11 @@ public class TaskService implements TaskCommandPort {
                 metrics,
                 payload
         )));
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(new TaskProgressRecordedEvent(
+                    taskId, phase, message, progressPercent, metrics, payload
+            ));
+        }
     }
 
     @Transactional
@@ -419,11 +439,67 @@ public class TaskService implements TaskCommandPort {
         }, taskId);
     }
 
+    public Map<String, WaitContextResponse> loadWaitContexts(Map<String, String> taskStatuses) {
+        if (taskStatuses == null || taskStatuses.isEmpty()) {
+            return Map.of();
+        }
+        List<String> waitingTaskIds = taskStatuses.entrySet().stream()
+                .filter(entry -> isWaitingStatus(
+                        "WAITING".equalsIgnoreCase(blankIfNull(entry.getValue())) ? "WAITING" : "",
+                        blankIfNull(entry.getValue())
+                ))
+                .map(Map.Entry::getKey)
+                .toList();
+        if (waitingTaskIds.isEmpty()) {
+            return Map.of();
+        }
+        LinkedHashMap<String, WaitContextResponse> contexts = new LinkedHashMap<>();
+        jdbcTemplate.query("""
+                select task_id, payload_json
+                from task_event
+                where task_id in (%s) and event_type = 'TASK_PROGRESS'
+                order by task_id, created_at desc, id desc
+                """.formatted(String.join(",", Collections.nCopies(waitingTaskIds.size(), "?"))), rs -> {
+            while (rs.next()) {
+                String taskId = rs.getString("task_id");
+                if (contexts.containsKey(taskId)) {
+                    continue;
+                }
+                Map<String, Object> payload = readPayloadMap(rs.getString("payload_json"));
+                contexts.put(taskId, new WaitContextResponse(
+                        blankIfNull(taskStatuses.get(taskId)),
+                        toWaitProviderJob(payload.get("provider_job")),
+                        toWaitApprovalRequest(payload.get("approval_request")),
+                        toWaitReason(payload.get("wait_reason"))
+                ));
+            }
+            return null;
+        }, waitingTaskIds.toArray());
+        for (String taskId : waitingTaskIds) {
+            contexts.putIfAbsent(taskId, new WaitContextResponse(
+                    blankIfNull(taskStatuses.get(taskId)),
+                    emptyProviderJob(),
+                    emptyApprovalRequest(),
+                    emptyWaitReason()
+            ));
+        }
+        return contexts;
+    }
+
     public TaskRef getTaskRef(String taskId) {
-        return jdbcTemplate.query("""
+        return loadTaskRef(taskId, false);
+    }
+
+    public TaskRef lockTaskRef(String taskId) {
+        return loadTaskRef(taskId, true);
+    }
+
+    private TaskRef loadTaskRef(String taskId, boolean forUpdate) {
+        String sql = """
                 select id, workspace_id, task_type, task_status, target_type, target_id
                 from task where id = ?
-                """, rs -> {
+                """ + (forUpdate ? " for update" : "");
+        return jdbcTemplate.query(sql, rs -> {
             if (!rs.next()) {
                 throw new BusinessException("TASK_NOT_FOUND", "任务不存在");
             }
@@ -438,50 +514,48 @@ public class TaskService implements TaskCommandPort {
         }, taskId);
     }
 
-    public String streamEvents(String taskId) {
-        List<TaskEventResponse> events = listEvents(taskId);
-        StringBuilder builder = new StringBuilder();
-        for (TaskEventResponse event : events) {
-            builder.append("id: ").append(event.eventId()).append("\n");
-            builder.append("event: ").append(toSseEventName(event.eventType())).append("\n");
-            LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
-            payload.put("message", event.message());
-            payload.put("payload", readPayloadMap(event.payloadJson()));
-            payload.put("event_type", event.eventType());
-            payload.put("created_at", event.createdAt().toString());
-            builder.append("data: ").append(escape(Json.write(objectMapper, payload))).append("\n\n");
-        }
-        return builder.toString();
+    public List<TaskEventResponse> listEvents(String taskId) {
+        return listEvents(taskId, null);
     }
 
-    public List<TaskEventResponse> listEvents(String taskId) {
+    public List<TaskEventResponse> listEvents(String taskId, String afterEventId) {
         getTask(taskId);
+        return listEventsForAuthorizedStream(taskId, afterEventId);
+    }
+
+    List<TaskEventResponse> listEventsForAuthorizedStream(String taskId, String afterEventId) {
+        String cursorId = afterEventId == null || afterEventId.isBlank() ? null : afterEventId;
         return jdbcTemplate.query("""
-                select id, event_type, message, payload_json, created_at
-                from task_event
-                where task_id = ?
-                order by created_at asc, id asc
+                select event.id, event.event_type, event.message, event.payload_json, event.created_at
+                from task_event event
+                left join task_event after_event
+                  on after_event.id = ?
+                 and after_event.task_id = event.task_id
+                where event.task_id = ?
+                  and (
+                    ? is null
+                    or event.created_at > after_event.created_at
+                    or (event.created_at = after_event.created_at and event.id > after_event.id)
+                  )
+                order by event.created_at asc, event.id asc
                 """, (rs, rowNum) -> new TaskEventResponse(
                 rs.getString("id"),
                 rs.getString("event_type"),
                 rs.getString("message") == null ? "" : rs.getString("message"),
                 rs.getString("payload_json"),
                 toInstant(rs.getTimestamp("created_at"))
-        ), taskId);
+        ), cursorId, taskId, cursorId);
     }
 
-    private String toSseEventName(String eventType) {
-        return switch (eventType) {
-            case "TASK_CREATED" -> "task.status";
-            case "TASK_COMPLETED" -> "task.completed";
-            case "TASK_FAILED" -> "task.failed";
-            case "TASK_HEARTBEAT" -> "task.heartbeat";
-            default -> "task.progress";
-        };
-    }
-
-    private String escape(String data) {
-        return data.replace("\r", "").replace("\n", "\\n");
+    String currentStatusForAuthorizedStream(String taskId) {
+        return jdbcTemplate.query("""
+                select task_status from task where id = ?
+                """, rs -> {
+            if (!rs.next()) {
+                throw new BusinessException("TASK_NOT_FOUND", "任务不存在");
+            }
+            return rs.getString("task_status");
+        }, taskId);
     }
 
     private Instant toInstant(Timestamp value) {
@@ -597,8 +671,6 @@ public class TaskService implements TaskCommandPort {
                 readText(providerJob, "provider_job_id"),
                 readText(providerJob, "provider_receipt_id"),
                 readText(providerJob, "delivery_id"),
-                readText(providerJob, "callback_token"),
-                readText(providerJob, "adapter_callback_token"),
                 readText(providerJob, "callback_status"),
                 resolveDispatchCount(providerJob),
                 resolvePreviousFailedDeliveryCount(providerJob),
@@ -748,7 +820,6 @@ public class TaskService implements TaskCommandPort {
             attempts.add(new WaitProviderDeliveryAttemptResponse(
                     readText(attempt, "delivery_id"),
                     readInteger(attempt, "dispatch_count"),
-                    readText(attempt, "callback_token"),
                     readText(attempt, "dispatched_at"),
                     readText(attempt, "callback_deadline_at"),
                     readText(attempt, "provider_job_id"),
@@ -782,7 +853,7 @@ public class TaskService implements TaskCommandPort {
         return new WaitProviderJobResponse(
                 null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null,
-                null, null, null, List.of()
+                null, List.of()
         );
     }
 

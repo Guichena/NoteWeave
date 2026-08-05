@@ -1,39 +1,7 @@
-import { type SourceAsset } from "../sources/model";
-import {
-  type ResearchClosedLoopState,
-  type ResearchCollection,
-  type ResearchFinalAnswer,
-  type ResearchIntentCompletionContract,
-  type ResearchRecoveryTargets,
-  type ResearchReportStructure,
-  type ResearchRowSummary,
-  type ResearchRunDetail,
-  type ResearchRunSummary,
-  type ResearchSourceEvidenceSummary,
-  type ResearchTimelinePathSummary,
-  type SaveResearchReportSource
-} from "./model";
+import type { ResearchWorkbenchViewProps } from "./buildResearchWorkbenchProps";
 
-type ResearchReportPanelProps = Record<string, any> & {
-  currentResearchRun: ResearchRunDetail | null;
-  currentResearchCollection: ResearchCollection | null;
-  currentResearchRunSummary: ResearchRunSummary | null;
-  researchReportStructure: ResearchReportStructure | null;
-  researchClosedLoopState: ResearchClosedLoopState | null;
-  currentResearchSourceEvidenceSummary: ResearchSourceEvidenceSummary | null;
-  currentRecoveryTargets: ResearchRecoveryTargets | null;
-  currentRunSummaryRecoveryTargets: ResearchRecoveryTargets | null;
-  currentIntentCompletionContract: ResearchIntentCompletionContract | null;
-  currentFinalAnswer: ResearchFinalAnswer;
-  currentExecutiveSummary: string[];
-  currentKeyTakeaways: string[];
-  currentUncertaintyAndRisks: string[];
-  currentVerifiedFindings: ResearchRowSummary[];
-  currentEvidenceHighlights: ResearchRowSummary[];
-  currentSavedReportSource: SaveResearchReportSource | null;
-  currentSavedReportSourceAsset: SourceAsset | null;
-  sourceById: Map<string, SourceAsset>;
-  researchTimelinePath: ResearchTimelinePathSummary;
+export type ResearchReportPanelProps = ResearchWorkbenchViewProps["report"] & {
+  isBusy: boolean;
 };
 
 export function ResearchReportPanel(props: ResearchReportPanelProps) {
@@ -350,8 +318,10 @@ export function ResearchReportPanel(props: ResearchReportPanelProps) {
               </>
             ) : (
               <div className="wiki-summary">
-                <strong>还没有选中的 Research Run</strong>
-                <span>先在左侧创建或选择一个 Deep Research run。</span>
+                <div className="empty-panel research-empty-panel">
+                  <strong>还没有选中的 Research Run</strong>
+                  <p>在左侧填写问题并启动研究，或从历史列表选择一个 run 查看报告与证据。</p>
+                </div>
                 {researchTimelinePath.stageLabels.length > 0 ? (
                   <>
                     <small>当前路径阶段：{researchTimelinePath.currentStageLabel || "未形成稳定阶段"}</small>

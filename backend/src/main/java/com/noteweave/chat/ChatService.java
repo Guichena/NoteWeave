@@ -104,6 +104,7 @@ public class ChatService {
                 draft.retrievalPlan(),
                 draft.evidenceBundle(),
                 draft.promptSpec(),
+                draft.contextProjection(),
                 draft.maximumOutputTokens()
         );
     }
@@ -258,6 +259,7 @@ public class ChatService {
                 plan,
                 bundle,
                 prompt,
+                conversationContext.inputProjection(),
                 policy.maximumOutputTokens()
         );
     }
@@ -386,7 +388,7 @@ public class ChatService {
             String workspaceId, String conversationId, String currentUserMessageId, String currentQuestion) {
         String trimmedQuestion = currentQuestion == null ? "" : currentQuestion.trim();
         if (!isContextDependentQuestion(trimmedQuestion)) {
-            return new ConversationContext(trimmedQuestion, trimmedQuestion, false, 0, "", "", List.of());
+            return emptyConversationContext(trimmedQuestion);
         }
         Integer cutoffSeq = jdbcTemplate.queryForObject(
                 "select message_seq from conversation_message where id = ?", Integer.class, currentUserMessageId);
@@ -398,11 +400,11 @@ public class ChatService {
                 .toList();
         List<ConversationTurn> turns = buildConversationTurns(history);
         if (turns.isEmpty()) {
-            return new ConversationContext(trimmedQuestion, trimmedQuestion, false, 0, "", "", List.of());
+            return emptyConversationContext(trimmedQuestion);
         }
         List<ConversationTurn> workingTurns = buildWorkingTurns(trimmedQuestion, turns);
         if (workingTurns.isEmpty()) {
-            return new ConversationContext(trimmedQuestion, trimmedQuestion, false, 0, "", "", List.of());
+            return emptyConversationContext(trimmedQuestion);
         }
         String topicAnchor = buildTopicAnchor(trimmedQuestion, workingTurns);
         String topicSummary = projection.summaryText().isBlank()
@@ -430,7 +432,21 @@ public class ChatService {
                 workingTurns.size(),
                 topicAnchor,
                 topicSummary,
-                List.copyOf(workingTurns)
+                List.copyOf(workingTurns),
+                contextProjectionService.toProjection(projection)
+        );
+    }
+
+    private ConversationContext emptyConversationContext(String currentQuestion) {
+        return new ConversationContext(
+                currentQuestion,
+                currentQuestion,
+                false,
+                0,
+                "",
+                "",
+                List.of(),
+                new ConversationContextProjectionService.Projection(List.of(), List.of())
         );
     }
 
@@ -684,6 +700,7 @@ public class ChatService {
             RetrievalPlan retrievalPlan,
             EvidenceBundle evidenceBundle,
             PromptSpec promptSpec,
+            ConversationContextProjectionService.Projection contextProjection,
             int maximumOutputTokens
     ) {
         private String promptVersion() {
@@ -698,10 +715,14 @@ public class ChatService {
             RetrievalPlan retrievalPlan,
             EvidenceBundle evidenceBundle,
             PromptSpec promptSpec,
+            ConversationContextProjectionService.Projection contextProjection,
             int maximumOutputTokens
     ) {
         public PreparedAnswerMaterial {
             existingCitationIds = existingCitationIds == null ? List.of() : List.copyOf(existingCitationIds);
+            contextProjection = contextProjection == null
+                    ? new ConversationContextProjectionService.Projection(List.of(), List.of())
+                    : contextProjection;
         }
 
         public String promptVersion() {
@@ -722,7 +743,8 @@ public class ChatService {
             int windowTurnCount,
             String topicAnchor,
             String topicSummary,
-            List<ConversationTurn> workingTurns
+            List<ConversationTurn> workingTurns,
+            ConversationContextProjectionService.Projection inputProjection
     ) {
     }
 }

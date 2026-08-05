@@ -1,23 +1,7 @@
-import {
-  buildInitialArtifactFormValues,
-  type ArtifactStudioField,
-  type ArtifactStudioSkill
-} from "../../artifactStudio";
-import { type ReactNode } from "react";
-import { type ArtifactSidebarState } from "../../artifactSidebar";
-import { type ArtifactVersionDetail } from "./model";
+import { type ArtifactRailProps } from "./ArtifactRailProps";
+import { ArtifactStudioGrid, selectArtifactSkillDefaults } from "./ArtifactStudioGrid";
 
-type ArtifactRailProps = Record<string, any> & {
-  artifactStudioSkills: ArtifactStudioSkill[];
-  selectedArtifactSkill: ArtifactStudioSkill;
-  artifactFormValues: Record<string, string>;
-  artifactSidebarState: ArtifactSidebarState;
-  latestArtifactVersion: ArtifactVersionDetail | null;
-  artifactHistoryLoadingKey: string;
-  artifactSavedSourceByVersionId: Record<string, string>;
-  artifactWritebackByVersionId: Record<string, string[]>;
-  renderArtifactField: (field: ArtifactStudioField) => ReactNode;
-};
+export type { ArtifactRailProps };
 
 export function ArtifactRail(props: ArtifactRailProps) {
   const {
@@ -70,7 +54,7 @@ export function ArtifactRail(props: ArtifactRailProps) {
   } = props;
   return (
         <aside className="artifact-rail">
-          {artifactComposerOpen ? (
+          {artifactComposerOpen && selectedArtifactSkill ? (
             <div className="artifact-composer-view">
               <div className="artifact-composer-header">
                 <button className="secondary-button" disabled={isBusy} onClick={() => setArtifactComposerOpen(false)}>
@@ -128,31 +112,27 @@ export function ArtifactRail(props: ArtifactRailProps) {
                 <h2>Studio</h2>
               </div>
 
-              <div className="artifact-action-list studio-grid">
-                {artifactStudioSkills.map((skill) => (
-                  <button
-                    key={skill.key}
-                    className={`artifact-action-card tone-${skill.tone}`}
-                    disabled={isBusy}
-                    onClick={() => {
-                      setSelectedArtifactSkillKey(skill.key);
-                      setArtifactFormValues(buildInitialArtifactFormValues(skill));
-                      setArtifactComposerOpen(true);
-                    }}
-                  >
-                    <span className="artifact-action-heading">
-                      <strong>{skill.title}</strong>
-                      <span className="artifact-action-arrow">›</span>
-                    </span>
-                    <span className="artifact-action-summary">{skill.summary}</span>
-                  </button>
-                ))}
-              </div>
+              <ArtifactStudioGrid
+                skills={artifactStudioSkills}
+                isBusy={isBusy}
+                onSelectSkill={(skill) => {
+                  setSelectedArtifactSkillKey(skill.key);
+                  setArtifactFormValues(selectArtifactSkillDefaults(skill));
+                  setArtifactComposerOpen(true);
+                }}
+              />
+              {artifactStudioSkills.length === 0 ? (
+                <p className="phase-note">Skill 目录当前不可用，无法创建 Artifact 任务。</p>
+              ) : null}
 
               <div className="artifact-run-section">
                 <p className="section-label">正在生成</p>
                 {artifactSidebarState.runs.length > 0 ? artifactSidebarState.runs.slice(0, 1).map((run) => (
-                  <div key={run.key} className={`artifact-run-card tone-${run.tone}`}>
+                  <div
+                    key={run.key}
+                    className={`artifact-run-card tone-${run.tone}`}
+                    data-run-key={run.key}
+                  >
                     <div className="artifact-run-row">
                       <span className="artifact-run-icon" aria-hidden="true">R</span>
                       <div>
@@ -460,7 +440,7 @@ export function ArtifactRail(props: ArtifactRailProps) {
                     onClick={() => void saveNoteAnswerAsSource()}
                     disabled={isBusy || !workspace || !lastNoteAssistantMessageId}
                   >
-                    确认入库为资料
+                    保存最新回答为 Note
                   </button>
                 </div>
                 {wikiRebuildAdvice ? <p className="phase-note">{wikiRebuildAdvice.message}</p> : null}

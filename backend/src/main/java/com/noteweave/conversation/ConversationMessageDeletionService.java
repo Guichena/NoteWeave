@@ -1,6 +1,7 @@
 package com.noteweave.conversation;
 
 import com.noteweave.common.BusinessException;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -43,14 +44,26 @@ public class ConversationMessageDeletionService {
                   and covered_start_seq <= (select message_seq from conversation_message where id = ?)
                   and covered_end_seq >= (select message_seq from conversation_message where id = ?)
                 """, workspaceId, conversationId, messageId, messageId);
-        jdbcTemplate.update("""
-                update segment_summary_revision set status = 'STALE'
-                where status in ('BUILDING', 'READY') and segment_id in (
+        // Summary revisions that cover the deleted message carry content derived from it. Marking them
+        // STALE is not enough for privacy: their summary_text still renders on replay, and snapshots that
+        // reference them only by revision id are not caught by the message-id redaction above. Blank the
+        // derived text and redact snapshots per covering revision so deleted content cannot be replayed.
+        List<String> coveringRevisionIds = jdbcTemplate.query("""
+                select revision.id from segment_summary_revision revision
+                where revision.status in ('BUILDING', 'READY') and revision.segment_id in (
                     select id from conversation_segment where workspace_id = ? and conversation_id = ?
                       and covered_start_seq <= (select message_seq from conversation_message where id = ?)
                       and covered_end_seq >= (select message_seq from conversation_message where id = ?)
                 )
-                """, workspaceId, conversationId, messageId, messageId);
+                """, (rs, rowNum) -> rs.getString("id"), workspaceId, conversationId, messageId, messageId);
+        for (String revisionId : coveringRevisionIds) {
+            jdbcTemplate.update("""
+                    update segment_summary_revision
+                    set status = 'STALE', summary_text = '', content_hash = null
+                    where id = ? and status in ('BUILDING', 'READY')
+                    """, revisionId);
+            replayRedactionService.redactDeletedSummaryRevision(revisionId);
+        }
         return new DeletedConversationMessageResponse(messageId, "DELETED");
     }
 }

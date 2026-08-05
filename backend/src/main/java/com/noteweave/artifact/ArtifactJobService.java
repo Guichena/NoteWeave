@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -532,6 +533,18 @@ public class ArtifactJobService {
     @Transactional
     public CompletionOutcome completeFromWorker(String taskId, com.noteweave.worker.WorkerCompleteRequest request) {
         JobRow row = findByTaskId(taskId);
+        int claimed = jdbcTemplate.update("""
+                update artifact_job
+                set status = 'FINALIZING', updated_at = current_timestamp
+                where id = ? and (status in ('QUEUED', 'RUNNING') or status like 'WAITING_FOR_%')
+                """, row.artifactJobId());
+        if (claimed != 1) {
+            throw new BusinessException(
+                    "ARTIFACT_JOB_TERMINAL_CONFLICT",
+                    "Artifact job can no longer accept a completion callback",
+                    HttpStatus.CONFLICT
+            );
+        }
         int nextVersionNo = row.latestVersionNo() + 1;
         String versionId = Ids.newId();
         String markdown = extractMarkdown(request.resultPayload());
@@ -558,18 +571,25 @@ public class ArtifactJobService {
                     result_title = ?,
                     latest_version_no = ?,
                     updated_at = current_timestamp
-                where id = ?
+                where id = ? and status = 'FINALIZING'
                 """, request.resultTitle(), nextVersionNo, row.artifactJobId());
         return new CompletionOutcome("ARTIFACT_VERSIONED", "产物版本已生成：" + request.resultTitle(), versionId);
     }
 
     @Transactional
     public void markFailed(String taskId, WorkerFailRequest request) {
-        jdbcTemplate.update("""
+        int updated = jdbcTemplate.update("""
                 update artifact_job
                 set status = 'FAILED', updated_at = current_timestamp
-                where task_id = ?
+                where task_id = ? and (status in ('QUEUED', 'RUNNING') or status like 'WAITING_FOR_%')
                 """, taskId);
+        if (updated != 1) {
+            throw new BusinessException(
+                    "ARTIFACT_JOB_TERMINAL_CONFLICT",
+                    "Artifact job can no longer accept a failure callback",
+                    HttpStatus.CONFLICT
+            );
+        }
     }
 
     private JobRow findByTaskId(String taskId) {
@@ -752,6 +772,14 @@ public class ArtifactJobService {
                        ss.id as source_snapshot_id, ss.version_no as source_snapshot_version_no,
                        ss.sha256 as source_snapshot_sha256,
                        coalesce((
+                           select sw.id
+                           from source_chunk sc
+                           join source_window sw on sw.source_chunk_id = sc.id
+                           where sc.source_id = s.id and sc.source_snapshot_id = ss.id
+                           order by sc.chunk_no asc, sw.window_no asc
+                           limit 1
+                       ), '') as source_window_id,
+                       coalesce((
                            select sw.content
                            from source_chunk sc
                            join source_window sw on sw.source_chunk_id = sc.id
@@ -772,6 +800,8 @@ public class ArtifactJobService {
                     rs.getString("title"),
                     rs.getString("summary"),
                     rs.getString("sample_text"),
+                    blankIfNull(rs.getString("source_snapshot_id")),
+                    blankIfNull(rs.getString("source_window_id")),
                     generatedBy,
                     generatedRefId,
                     blankIfNull(rs.getString("source_type")),

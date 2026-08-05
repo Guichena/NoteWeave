@@ -36,7 +36,7 @@ class RetrievalLiveElasticsearchIntegrationTest {
         try (RestClient rest = RestClient.builder(new HttpHost("127.0.0.1", 9200, "http")).build();
              RestClientTransport transport = new RestClientTransport(rest, new JacksonJsonpMapper())) {
             ElasticsearchClient client = new ElasticsearchClient(transport);
-            RetrievalIndexManager manager = new RetrievalIndexManager(client);
+            RetrievalIndexManager manager = RetrievalIndexManager.withClient(client);
             ElasticsearchRetrievalProjectionWriter writer = new ElasticsearchRetrievalProjectionWriter(client);
             try {
                 manager.createIndex(ProjectionType.QA_CHUNK, qaV1, 3);

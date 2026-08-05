@@ -20,7 +20,6 @@ class MemoryVersionServiceTest {
     private JdbcTemplate jdbcTemplate;
     private MemoryVersionService versionService;
     private TransactionTemplate transactionTemplate;
-
     @BeforeEach
     void setUp() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
@@ -35,8 +34,7 @@ class MemoryVersionServiceTest {
         versionService = new MemoryVersionService(
                 jdbcTemplate,
                 new ObjectMapper().findAndRegisterModules(),
-                mock(WorkspaceAccessGuard.class),
-                mock(LegacyMemoryRuntimeBridge.class));
+                mock(WorkspaceAccessGuard.class));
     }
 
     @Test

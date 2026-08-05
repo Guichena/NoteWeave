@@ -101,8 +101,11 @@ public class GeneratedSourceService {
                 ) values (?, ?, ?, 1, ?, ?, 'PENDING', 'PENDING')
                 """, snapshotId, sourceId, fileObject.id(), snapshotObjectKey, digest);
         sourceParsePort.parseAndIndex(workspaceId, sourceId, snapshotId, bytes);
-        wikiCommandPort.requestSourceIngest(workspaceId, sourceId);
-        return load(workspaceId, sourceId);
+        GeneratedSourceResult result = load(workspaceId, sourceId);
+        if (!"DISABLED".equals(result.indexStatus())) {
+            wikiCommandPort.requestSourceIngest(workspaceId, sourceId);
+        }
+        return result;
     }
 
     private GeneratedSourceResult load(String workspaceId, String sourceId) {

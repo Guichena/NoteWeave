@@ -20,7 +20,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 class SourceParseProjectionDisabledTest {
 
     @Test
-    void kafkaEnabledAndElasticsearchDisabledShouldMakeParsedSourceReadyImmediately() {
+    void kafkaEnabledAndElasticsearchDisabledShouldExposeLocalOnlyParsedState() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 "jdbc:h2:mem:source-parse-no-projection-" + System.nanoTime()
                         + ";MODE=MySQL;DB_CLOSE_DELAY=-1",
@@ -73,15 +73,15 @@ class SourceParseProjectionDisabledTest {
                 "select status, parse_status, index_status from source where id = 'source-1'"))
                 .containsEntry("STATUS", "READY")
                 .containsEntry("PARSE_STATUS", "PARSED")
-                .containsEntry("INDEX_STATUS", "INDEXED");
+                .containsEntry("INDEX_STATUS", "DISABLED");
         assertThat(jdbcTemplate.queryForMap(
                 "select parse_status, index_status from source_snapshot where id = 'snapshot-1'"))
                 .containsEntry("PARSE_STATUS", "PARSED")
-                .containsEntry("INDEX_STATUS", "INDEXED");
+                .containsEntry("INDEX_STATUS", "DISABLED");
         assertThat(jdbcTemplate.queryForObject(
                 "select projection_status from source_chunk where source_snapshot_id = 'snapshot-1'",
                 String.class
-        )).isEqualTo("PROJECTED");
+        )).isEqualTo("NOT_PROJECTED");
         assertThat(jdbcTemplate.queryForObject("select count(*) from task_outbox", Integer.class)).isZero();
         verifyNoInteractions(taskCommandPort, eventPublisher);
     }

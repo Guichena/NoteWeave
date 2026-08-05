@@ -131,13 +131,9 @@ public class NoteRecallRetriever {
                 .sorted(Comparator.comparingInt(NoteRecallRanker.ScoredCandidate::score).reversed())
                 .toList();
         if (scored.isEmpty()) {
-            List<CandidateSource> fallback = candidates.stream()
-                    .limit(4)
-                    .map(source -> source.withSelectionReason("workspace-recency-fallback")
-                            .withVerifyAdmissionReason("candidate:workspace-recency-fallback"))
-                    .toList();
-            return new NoteRecallPlan(journalHits, fallback, List.of(), fallback, new NoteRecallTrace(
-                    journalHits.size(), fallback.size(), 0, fallback.size(), 0, 0, 0, 0
+            degradationReasons.add("note_no_relevant_candidates");
+            return new NoteRecallPlan(journalHits, List.of(), List.of(), List.of(), new NoteRecallTrace(
+                    journalHits.size(), 0, 0, 0, 0, 0, 0, 0
             ), true, List.copyOf(degradationReasons), Map.of(
                     "source_candidate_count", (long) candidates.size(),
                     "resolved_tag_count", (long) tagResolution.resolvedTags().size(),

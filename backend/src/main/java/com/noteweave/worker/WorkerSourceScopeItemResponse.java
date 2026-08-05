@@ -7,6 +7,8 @@ public record WorkerSourceScopeItemResponse(
         String title,
         String summary,
         String sampleText,
+        String sourceSnapshotId,
+        String sourceWindowId,
         String generatedBy,
         String generatedRefId,
         String sourceType,

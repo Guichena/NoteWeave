@@ -10,17 +10,24 @@ import org.springframework.boot.actuate.health.Status;
 class RetrievalProviderHealthIndicatorTest {
 
     @Test
-    void isReadyOnlyWhenBothProvidersAreConfigured() {
+    void isReadyWhenPrimaryProvidersAreHealthyOrMysqlFallbackIsEnabled() {
         RetrievalProviderHealthIndicator healthy = new RetrievalProviderHealthIndicator(
                 embedding(true), rerank(true));
         RetrievalProviderHealthIndicator missingRerank = new RetrievalProviderHealthIndicator(
                 embedding(true), rerank(false));
+        RetrievalProviderHealthIndicator fallbackOnly = new RetrievalProviderHealthIndicator(
+                embedding(false), rerank(false), true);
 
         assertThat(healthy.health().getStatus()).isEqualTo(Status.UP);
         assertThat(missingRerank.health().getStatus()).isEqualTo(Status.OUT_OF_SERVICE);
         assertThat(missingRerank.health().getDetails())
                 .containsEntry("embedding_configured", true)
                 .containsEntry("rerank_configured", false);
+        assertThat(fallbackOnly.health().getStatus()).isEqualTo(Status.UP);
+        assertThat(fallbackOnly.health().getDetails())
+                .containsEntry("primary_available", false)
+                .containsEntry("mysql_fallback_enabled", true)
+                .containsEntry("degraded", true);
     }
 
     @Test

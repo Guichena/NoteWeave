@@ -18,8 +18,6 @@ public record WaitProviderJobResponse(
         String providerJobId,
         String providerReceiptId,
         String deliveryId,
-        String callbackToken,
-        String adapterCallbackToken,
         String callbackStatus,
         Integer dispatchCount,
         Integer previousFailedDeliveryCount,

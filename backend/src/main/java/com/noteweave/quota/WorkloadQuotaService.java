@@ -8,10 +8,15 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -25,10 +30,11 @@ public class WorkloadQuotaService {
 
     static final String KEY_PREFIX = "noteweave:v1:quota:";
     static final String TOKEN_BUCKET_SCRIPT = """
-            local now = tonumber(ARGV[1])
-            local capacity = tonumber(ARGV[2])
-            local refill_per_ms = tonumber(ARGV[3])
-            local ttl_ms = tonumber(ARGV[4])
+            local redis_time = redis.call('TIME')
+            local now = (tonumber(redis_time[1]) * 1000) + math.floor(tonumber(redis_time[2]) / 1000)
+            local capacity = tonumber(ARGV[1])
+            local refill_per_ms = tonumber(ARGV[2])
+            local ttl_ms = tonumber(ARGV[3])
             local tokens = tonumber(redis.call('HGET', KEYS[1], 'tokens'))
             local updated_at = tonumber(redis.call('HGET', KEYS[1], 'updated_at'))
             if tokens == nil then
@@ -49,32 +55,38 @@ public class WorkloadQuotaService {
             return allowed
             """;
     static final String LEASE_ACQUIRE_SCRIPT = """
-            local now = tonumber(ARGV[1])
-            local expires_at = tonumber(ARGV[2])
-            local limit = tonumber(ARGV[3])
-            local ttl_ms = tonumber(ARGV[4])
+            local redis_time = redis.call('TIME')
+            local now = (tonumber(redis_time[1]) * 1000) + math.floor(tonumber(redis_time[2]) / 1000)
+            local limit = tonumber(ARGV[1])
+            local lease_ms = tonumber(ARGV[2])
+            local ttl_ms = tonumber(ARGV[3])
+            local lease_token = ARGV[4]
+            local expires_at = now + lease_ms
             local recovered = redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now)
-            if redis.call('ZSCORE', KEYS[1], ARGV[5]) then
-              redis.call('ZADD', KEYS[1], expires_at, ARGV[5])
+            if redis.call('ZSCORE', KEYS[1], lease_token) then
+              redis.call('ZADD', KEYS[1], expires_at, lease_token)
               redis.call('PEXPIRE', KEYS[1], ttl_ms)
               return (recovered * 2) + 1
             end
             if redis.call('ZCARD', KEYS[1]) >= limit then
               return recovered * 2
             end
-            redis.call('ZADD', KEYS[1], expires_at, ARGV[5])
+            redis.call('ZADD', KEYS[1], expires_at, lease_token)
             redis.call('PEXPIRE', KEYS[1], ttl_ms)
             return (recovered * 2) + 1
             """;
     static final String LEASE_RENEW_SCRIPT = """
-            local now = tonumber(ARGV[1])
-            local expires_at = tonumber(ARGV[2])
-            local ttl_ms = tonumber(ARGV[3])
+            local redis_time = redis.call('TIME')
+            local now = (tonumber(redis_time[1]) * 1000) + math.floor(tonumber(redis_time[2]) / 1000)
+            local lease_ms = tonumber(ARGV[1])
+            local ttl_ms = tonumber(ARGV[2])
+            local lease_token = ARGV[3]
+            local expires_at = now + lease_ms
             local recovered = redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now)
-            if not redis.call('ZSCORE', KEYS[1], ARGV[4]) then
+            if not redis.call('ZSCORE', KEYS[1], lease_token) then
               return recovered * 2
             end
-            redis.call('ZADD', KEYS[1], expires_at, ARGV[4])
+            redis.call('ZADD', KEYS[1], expires_at, lease_token)
             redis.call('PEXPIRE', KEYS[1], ttl_ms)
             return (recovered * 2) + 1
             """;
@@ -90,6 +102,7 @@ public class WorkloadQuotaService {
             new DefaultRedisScript<>(LEASE_RENEW_SCRIPT, Long.class);
     private static final DefaultRedisScript<Long> LEASE_RELEASE =
             new DefaultRedisScript<>(LEASE_RELEASE_SCRIPT, Long.class);
+    private static final int LOCAL_LEASE_CLEANUP_BATCH_SIZE = 16;
 
     private final StringRedisTemplate redisTemplate;
     private final CurrentUserProvider currentUserProvider;
@@ -103,9 +116,12 @@ public class WorkloadQuotaService {
     private final double localRefillPerMillisecond;
     private final int localConcurrencyLimit;
     private final long leaseMilliseconds;
+    private final boolean localFallbackEnabled;
     private final Clock clock;
     private final Map<String, LocalBucket> localBuckets = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Long>> localLeases = new ConcurrentHashMap<>();
+    private final ConcurrentLinkedQueue<String> localLeaseCleanupQueue = new ConcurrentLinkedQueue<>();
+    private final Set<String> scheduledLocalLeaseKeys = ConcurrentHashMap.newKeySet();
 
     @Autowired
     public WorkloadQuotaService(
@@ -120,12 +136,13 @@ public class WorkloadQuotaService {
             @Value("${noteweave.quota.local.rate.capacity:5}") int localRateCapacity,
             @Value("${noteweave.quota.local.rate.refill-per-minute:5}") double localRefillPerMinute,
             @Value("${noteweave.quota.local.concurrency.limit:1}") int localConcurrencyLimit,
-            @Value("${noteweave.quota.concurrency.lease-seconds:300}") long leaseSeconds
+            @Value("${noteweave.quota.concurrency.lease-seconds:300}") long leaseSeconds,
+            @Value("${noteweave.quota.local-fallback-enabled:false}") boolean localFallbackEnabled
     ) {
         this(redisTemplateProvider.getIfAvailable(), currentUserProvider, meterRegistry, environment, enabled,
                 rateCapacity, refillPerMinute, distributedConcurrencyLimit,
                 localRateCapacity, localRefillPerMinute, localConcurrencyLimit,
-                leaseSeconds, Clock.systemUTC());
+                leaseSeconds, localFallbackEnabled, Clock.systemUTC());
     }
 
     WorkloadQuotaService(
@@ -143,6 +160,28 @@ public class WorkloadQuotaService {
             long leaseSeconds,
             Clock clock
     ) {
+        this(redisTemplate, currentUserProvider, meterRegistry, environment, enabled,
+                rateCapacity, refillPerMinute, distributedConcurrencyLimit,
+                localRateCapacity, localRefillPerMinute, localConcurrencyLimit,
+                leaseSeconds, false, clock);
+    }
+
+    WorkloadQuotaService(
+            StringRedisTemplate redisTemplate,
+            CurrentUserProvider currentUserProvider,
+            MeterRegistry meterRegistry,
+            String environment,
+            boolean enabled,
+            int rateCapacity,
+            double refillPerMinute,
+            int distributedConcurrencyLimit,
+            int localRateCapacity,
+            double localRefillPerMinute,
+            int localConcurrencyLimit,
+            long leaseSeconds,
+            boolean localFallbackEnabled,
+            Clock clock
+    ) {
         this.redisTemplate = redisTemplate;
         this.currentUserProvider = currentUserProvider;
         this.meterRegistry = meterRegistry;
@@ -155,6 +194,7 @@ public class WorkloadQuotaService {
         this.localRefillPerMillisecond = Math.max(0.000001, localRefillPerMinute / 60_000.0);
         this.localConcurrencyLimit = Math.max(1, localConcurrencyLimit);
         this.leaseMilliseconds = Duration.ofSeconds(Math.max(1, leaseSeconds)).toMillis();
+        this.localFallbackEnabled = localFallbackEnabled;
         this.clock = clock;
     }
 
@@ -168,6 +208,7 @@ public class WorkloadQuotaService {
         Decision decision = redisRateDecision(key);
         String backend = "redis";
         if (decision == Decision.UNAVAILABLE) {
+            requireLocalFallbackOrFail("rate", workload);
             decision = localRateDecision(key);
             backend = "local";
             count("rate", workload, decision.result(), backend);
@@ -192,6 +233,7 @@ public class WorkloadQuotaService {
         QuotaDecision outcome = redisLeaseDecision(key, leaseToken, false);
         String backend = "redis";
         if (outcome.decision() == Decision.UNAVAILABLE) {
+            requireLocalFallbackOrFail("concurrency", workload);
             outcome = localLeaseDecision(key, leaseToken, false);
             backend = "local";
             count("concurrency", workload, outcome.decision().result(), backend);
@@ -219,6 +261,7 @@ public class WorkloadQuotaService {
         QuotaDecision outcome = redisLeaseDecision(key, leaseToken, true);
         String backend = "redis";
         if (outcome.decision() == Decision.UNAVAILABLE) {
+            requireLocalFallbackOrFail("renew", workload);
             outcome = localLeaseDecision(key, leaseToken, true);
             backend = "local";
             count("renew", workload, outcome.decision().result(), backend);
@@ -253,10 +296,13 @@ public class WorkloadQuotaService {
                 count("release", workload, "error", "redis");
             }
         }
-        Map<String, Long> leases = localLeases.get(key);
-        if (leases != null) {
-            leases.remove(leaseToken);
-        }
+        long now = clock.millis();
+        localLeases.computeIfPresent(key, (ignored, currentLeases) -> {
+            currentLeases.remove(leaseToken);
+            currentLeases.entrySet().removeIf(entry -> entry.getValue() <= now);
+            return currentLeases.isEmpty() ? null : currentLeases;
+        });
+        pruneExpiredLocalLeases(now);
         if (!redisReleased) {
             count("release", workload, "released", "local");
         }
@@ -267,13 +313,11 @@ public class WorkloadQuotaService {
             return Decision.UNAVAILABLE;
         }
         try {
-            long now = clock.millis();
             long ttl = Math.max(60_000L,
                     Math.round((rateCapacity / refillPerMillisecond) * 2));
             Long result = redisTemplate.execute(
                     TOKEN_BUCKET,
                     List.of(key),
-                    Long.toString(now),
                     Integer.toString(rateCapacity),
                     Double.toString(refillPerMillisecond),
                     Long.toString(ttl));
@@ -284,26 +328,35 @@ public class WorkloadQuotaService {
         }
     }
 
+    private void requireLocalFallbackOrFail(String control, String workload) {
+        if (localFallbackEnabled) {
+            return;
+        }
+        count(control, workload, "unavailable", "redis");
+        throw new BusinessException(
+                "WORKLOAD_QUOTA_UNAVAILABLE",
+                "配额服务暂不可用，请稍后重试",
+                HttpStatus.SERVICE_UNAVAILABLE
+        );
+    }
+
     private QuotaDecision redisLeaseDecision(String key, String leaseToken, boolean renew) {
         if (redisTemplate == null) {
             return QuotaDecision.unavailable();
         }
         try {
-            long now = clock.millis();
             Long result = renew
                     ? redisTemplate.execute(
                             LEASE_RENEW,
                             List.of(key),
-                            Long.toString(now),
-                            Long.toString(now + leaseMilliseconds),
+                            Long.toString(leaseMilliseconds),
                             Long.toString(leaseMilliseconds * 2),
                             leaseToken)
                     : redisTemplate.execute(
                             LEASE_ACQUIRE,
                             List.of(key),
-                            Long.toString(now),
-                            Long.toString(now + leaseMilliseconds),
                             Integer.toString(distributedConcurrencyLimit),
+                            Long.toString(leaseMilliseconds),
                             Long.toString(leaseMilliseconds * 2),
                             leaseToken);
             if (result == null || result < 0) {
@@ -339,27 +392,75 @@ public class WorkloadQuotaService {
 
     private QuotaDecision localLeaseDecision(String key, String leaseToken, boolean renew) {
         long now = clock.millis();
-        Map<String, Long> leases = localLeases.computeIfAbsent(
-                key, ignored -> new ConcurrentHashMap<>());
-        synchronized (leases) {
+        AtomicReference<QuotaDecision> outcome = new AtomicReference<>();
+        localLeases.compute(key, (ignored, currentLeases) -> {
+            Map<String, Long> leases = currentLeases == null
+                    ? new ConcurrentHashMap<>()
+                    : currentLeases;
             int previousSize = leases.size();
             leases.entrySet().removeIf(entry -> entry.getValue() <= now);
             long recovered = previousSize - leases.size();
             if (renew && !leases.containsKey(leaseToken)) {
-                return new QuotaDecision(Decision.REJECTED, recovered);
+                outcome.set(new QuotaDecision(Decision.REJECTED, recovered));
+                return leases.isEmpty() ? null : leases;
             }
             if (!renew && !leases.containsKey(leaseToken) && leases.size() >= localConcurrencyLimit) {
-                return new QuotaDecision(Decision.REJECTED, recovered);
+                outcome.set(new QuotaDecision(Decision.REJECTED, recovered));
+                return leases;
             }
             leases.put(leaseToken, now + leaseMilliseconds);
-            return new QuotaDecision(Decision.GRANTED, recovered);
-        }
+            outcome.set(new QuotaDecision(Decision.GRANTED, recovered));
+            return leases;
+        });
+        scheduleLocalLeaseCleanupIfPresent(key);
+        pruneExpiredLocalLeases(now);
+        return outcome.get();
     }
 
     private void mirrorLocalLease(String key, String leaseToken) {
-        Map<String, Long> leases = localLeases.computeIfAbsent(
-                key, ignored -> new ConcurrentHashMap<>());
-        leases.put(leaseToken, clock.millis() + leaseMilliseconds);
+        long now = clock.millis();
+        localLeases.compute(key, (ignored, currentLeases) -> {
+            Map<String, Long> leases = currentLeases == null
+                    ? new ConcurrentHashMap<>()
+                    : currentLeases;
+            leases.entrySet().removeIf(entry -> entry.getValue() <= now);
+            leases.put(leaseToken, now + leaseMilliseconds);
+            return leases;
+        });
+        scheduleLocalLeaseCleanupIfPresent(key);
+        pruneExpiredLocalLeases(now);
+    }
+
+    private void scheduleLocalLeaseCleanupIfPresent(String key) {
+        if (localLeases.containsKey(key) && scheduledLocalLeaseKeys.add(key)) {
+            localLeaseCleanupQueue.offer(key);
+        }
+    }
+
+    private void pruneExpiredLocalLeases(long now) {
+        List<String> activeKeys = new ArrayList<>(LOCAL_LEASE_CLEANUP_BATCH_SIZE);
+        for (int index = 0; index < LOCAL_LEASE_CLEANUP_BATCH_SIZE; index++) {
+            String key = localLeaseCleanupQueue.poll();
+            if (key == null) {
+                break;
+            }
+            AtomicBoolean active = new AtomicBoolean();
+            localLeases.computeIfPresent(key, (ignored, leases) -> {
+                leases.entrySet().removeIf(entry -> entry.getValue() <= now);
+                if (leases.isEmpty()) {
+                    return null;
+                }
+                active.set(true);
+                return leases;
+            });
+            if (active.get()) {
+                activeKeys.add(key);
+                continue;
+            }
+            scheduledLocalLeaseKeys.remove(key);
+            scheduleLocalLeaseCleanupIfPresent(key);
+        }
+        activeKeys.forEach(localLeaseCleanupQueue::offer);
     }
 
     private String rateKey(String workspaceId, String actorFingerprint, String workload) {

@@ -10,7 +10,6 @@ public enum WorkspaceRole {
             WorkspacePermission.SOURCE_WRITE,
             WorkspacePermission.ANSWER_RUN,
             WorkspacePermission.KNOWLEDGE_WRITE,
-            WorkspacePermission.MEMORY_REVIEW,
             WorkspacePermission.EXECUTION_OPERATE
     )),
     VIEWER(EnumSet.of(WorkspacePermission.WORKSPACE_READ));

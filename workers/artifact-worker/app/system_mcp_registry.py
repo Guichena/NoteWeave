@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from app.config import resolve_mcp_sandbox_root
 from app.models import CustomMcpServerRegistration, CustomMcpToolRegistration
 
 
@@ -21,7 +22,7 @@ def list_system_mcp_servers() -> list[CustomMcpServerRegistration]:
             launch_command=sys.executable,
             launch_args=[str(server_script)],
             working_directory=str(worker_root),
-            launch_env={},
+            launch_env={"NOTEWEAVE_MCP_SANDBOX_ROOT": str(resolve_mcp_sandbox_root())},
             registration_origin="SYSTEM",
             server_notes=[
                 "System-managed MCP provider; not configurable from the product UI.",

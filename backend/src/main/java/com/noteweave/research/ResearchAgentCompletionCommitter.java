@@ -8,6 +8,8 @@ import com.noteweave.common.Ids;
 import com.noteweave.common.Json;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.net.IDN;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -21,6 +23,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -42,6 +45,7 @@ class ResearchAgentCompletionCommitter {
     private static final String CELL_EVIDENCE_DIGEST_DOMAIN = "research-agent-cell-evidence.v1";
     private static final String SNAPSHOT_SCHEMA = "research-agent-task-snapshot.v1";
     private static final String SNAPSHOT_SCHEMA_V2 = "research-agent-task-snapshot.v2";
+    private static final String SNAPSHOT_SCHEMA_V3 = "research-agent-task-snapshot.v3";
     private static final String BLIND_DIGEST_DOMAIN = "research-agent-blind-candidate.v1";
     private static final Set<String> TERMINAL_RUN = Set.of("COMPLETED", "FAILED", "CANCELLED");
     private static final Set<String> SERVER_DERIVED_USAGE = Set.of(
@@ -114,7 +118,7 @@ class ResearchAgentCompletionCommitter {
 
         String executionId = Ids.newId();
         String completionId = Ids.newId();
-        MergeOutcome plannedOutcome = planMergeOutcome(task, envelope, cells);
+        MergeOutcome plannedOutcome = planMergeOutcome(task, envelope, cells, trustedEvidence);
         BudgetLedger ledger = calculateBudget(
                 reservation, envelope.budgetUsage(), envelope.evidence().size(),
                 plannedOutcome.accepted().size(), plannedOutcome.rejected().size());
@@ -337,7 +341,8 @@ class ResearchAgentCompletionCommitter {
             throw new BusinessException("RESEARCH_AGENT_RUN_TERMINAL", "Research run is terminal");
         }
         boolean v1 = SNAPSHOT_SCHEMA.equals(task.snapshotSchemaVersion()) && "DEEP_CELL".equals(task.role());
-        boolean v2 = SNAPSHOT_SCHEMA_V2.equals(task.snapshotSchemaVersion())
+        boolean v2 = (SNAPSHOT_SCHEMA_V2.equals(task.snapshotSchemaVersion())
+                || SNAPSHOT_SCHEMA_V3.equals(task.snapshotSchemaVersion()))
                 && ("DEEP_CELL".equals(task.role())
                 || (task.candidateQuorum() == 2 && "COUNTERFACTUAL".equals(task.role()))
                 || isCounterfactualRepairTask(task));
@@ -416,13 +421,13 @@ class ResearchAgentCompletionCommitter {
                 String title = nfc(stringValue(source.containsKey("source_title")
                         ? source.get("source_title") : source.get("title")));
                 String sample = nfc(stringValue(source.get("sample_text")));
-                if (!id.isBlank() && !title.isBlank() && !sample.isBlank()) {
-                    if (result.putIfAbsent(id, new TrustedSource(id, title, sample)) != null) {
+                String snapshotId = nfc(stringValue(source.get("source_snapshot_id")));
+                if (!id.isBlank() && !title.isBlank() && (!sample.isBlank() || !snapshotId.isBlank())) {
+                    if (result.putIfAbsent(id, new TrustedSource(id, title, sample, snapshotId)) != null) {
                         throw invalidEvidence("Trusted source ids collide after NFC normalization");
                     }
                 }
             }
-            if (result.isEmpty()) throw invalidEvidence("Task has no trusted workspace source sample");
             return Map.copyOf(result);
         } catch (JsonProcessingException exception) {
             throw invalidEvidence("Task trusted source scope is invalid");
@@ -446,19 +451,97 @@ class ResearchAgentCompletionCommitter {
                 }
                 result.put(item.evidenceKey(), new TrustedEvidenceSource(
                         archive.sourceId(), archive.sourceTitle(), archive.sourceUrl(), archive.provider(),
-                        archive.adapter(), "EXTERNAL_ARCHIVED", archive.snapshotKey()));
+                        archive.adapter(), "EXTERNAL_ARCHIVED", archive.snapshotKey(),
+                        normalizeSourceOrigin(archive.sourceUrl(), archive.provider(), archive.sourceId()),
+                        normalizeSourceDomain(archive.sourceUrl(), archive.provider(), archive.sourceId()),
+                        archive.contentSha256().toLowerCase(Locale.ROOT)));
                 continue;
             }
             TrustedSource source = trustedSources.get(item.sourceId());
-            if (source == null || !source.title().equals(item.sourceTitle())
-                    || !source.sampleText().contains(item.quoteText())) {
+            boolean grounded = false;
+            String trustedContent = "";
+            if (source != null && source.title().equals(item.sourceTitle())) {
+                if (!source.snapshotId().isBlank()) {
+                    WorkspaceWindow window = loadWorkspaceWindow(runId, source, item);
+                    grounded = window != null && source.title().equals(window.sourceTitle())
+                            && window.contentText().contains(item.quoteText());
+                    if (grounded) trustedContent = window.contentText();
+                } else {
+                    // Compatibility for v1 task snapshots created before source snapshot identity was frozen.
+                    grounded = source.sampleText().contains(item.quoteText());
+                    if (grounded) trustedContent = source.sampleText();
+                }
+            }
+            if (!grounded) {
                 throw new BusinessException("RESEARCH_AGENT_COMPLETION_EVIDENCE_UNGROUNDED",
                         "Completion evidence is not grounded in the server-persisted source scope");
             }
+            String workspaceOrigin = "workspace-source:" + source.id();
             result.put(item.evidenceKey(), new TrustedEvidenceSource(
-                    source.id(), source.title(), null, "workspace", "workspace", "WORKSPACE", null));
+                    source.id(), source.title(), null, "workspace", "workspace", "WORKSPACE", null,
+                    workspaceOrigin, workspaceOrigin, sha256Hex(trustedContent)));
         }
         return Map.copyOf(result);
+    }
+
+    private String normalizeSourceOrigin(String sourceUrl, String provider, String sourceId) {
+        String value = sourceUrl == null ? "" : sourceUrl.trim();
+        try {
+            URI uri = URI.create(value);
+            String domain = normalizedHost(uri);
+            if (!domain.isBlank()) {
+                String scheme = uri.getScheme() == null ? "https" : uri.getScheme().toLowerCase(Locale.ROOT);
+                String path = uri.getRawPath() == null || uri.getRawPath().isBlank() ? "/" : uri.getRawPath();
+                return scheme + "://" + domain + path;
+            }
+        } catch (IllegalArgumentException ignored) {
+            // Fall through to a server-derived provider identity.
+        }
+        return "external-source:" + nfc(provider).toLowerCase(Locale.ROOT) + ":" + nfc(sourceId);
+    }
+
+    private String normalizeSourceDomain(String sourceUrl, String provider, String sourceId) {
+        try {
+            String domain = normalizedHost(URI.create(sourceUrl == null ? "" : sourceUrl.trim()));
+            if (!domain.isBlank()) return domain;
+        } catch (IllegalArgumentException ignored) {
+            // Fall through to a server-derived provider identity.
+        }
+        return "external-source:" + nfc(provider).toLowerCase(Locale.ROOT) + ":" + nfc(sourceId);
+    }
+
+    private String normalizedHost(URI uri) {
+        String host = uri.getHost();
+        if (host == null || host.isBlank()) return "";
+        String normalized = IDN.toASCII(host).toLowerCase(Locale.ROOT);
+        return normalized.startsWith("www.") ? normalized.substring(4) : normalized;
+    }
+
+    private static List<String> quorumIdentityTokens(String sourceDomain, String lineageDigest) {
+        List<String> identities = new ArrayList<>();
+        if (sourceDomain != null && !sourceDomain.isBlank()) {
+            identities.add("domain:" + sourceDomain);
+        }
+        if (lineageDigest != null && !lineageDigest.isBlank()) {
+            identities.add("lineage:" + lineageDigest);
+        }
+        return List.copyOf(identities);
+    }
+
+    private WorkspaceWindow loadWorkspaceWindow(
+            String runId,
+            TrustedSource source,
+            ResearchAgentCompletionEnvelope.Evidence item
+    ) {
+        return jdbcTemplate.query("""
+                select s.title, sw.content
+                from source_window sw
+                join source_chunk sc on sc.id = sw.source_chunk_id
+                join source s on s.id = sc.source_id
+                join research_run rr on rr.id = ? and rr.workspace_id = s.workspace_id
+                where sw.id = ? and sc.source_id = ? and sc.source_snapshot_id = ?
+                """, rs -> rs.next() ? new WorkspaceWindow(rs.getString(1), rs.getString(2)) : null,
+                runId, item.windowId(), source.id(), source.snapshotId());
     }
 
     private ExternalArchive loadArchivedExternalSnapshot(
@@ -521,6 +604,9 @@ class ResearchAgentCompletionCommitter {
             content.put("source_id", item.sourceId());
             content.put("source_title", authority.sourceTitle());
             content.put("source_url", authority.sourceUrl());
+            content.put("source_origin", authority.sourceOrigin());
+            content.put("source_domain", authority.sourceDomain());
+            content.put("lineage_digest", authority.lineageDigest());
             content.put("provider", authority.provider());
             content.put("adapter", authority.adapter());
             content.put("search_query", item.searchQuery());
@@ -539,12 +625,14 @@ class ResearchAgentCompletionCommitter {
                 jdbcTemplate.update("""
                         insert into source_evidence(
                             id, research_run_id, evidence_key, window_id, source_id, source_title,
-                            source_url, provider, adapter, search_query, read_focus, quote_text, claim_text,
+                            source_url, source_origin, source_domain, lineage_digest,
+                            provider, adapter, search_query, read_focus, quote_text, claim_text,
                             relation_type, support_score, conflict_score, snapshot_status, snapshot_key,
                             agent_completion_id, content_digest, support_score_ppm, conflict_score_ppm
-                        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, evidenceId, runId, item.evidenceKey(), item.windowId(), item.sourceId(),
-                        authority.sourceTitle(), authority.sourceUrl(), authority.provider(), authority.adapter(),
+                        authority.sourceTitle(), authority.sourceUrl(), authority.sourceOrigin(),
+                        authority.sourceDomain(), authority.lineageDigest(), authority.provider(), authority.adapter(),
                         item.searchQuery(), item.readFocus(),
                         item.quoteText(), item.claimText(), item.relationType(), legacySupport, legacyConflict,
                         authority.snapshotStatus(), authority.snapshotKey(), completionId, contentDigest,
@@ -554,7 +642,9 @@ class ResearchAgentCompletionCommitter {
                         "Evidence stable key raced with different content");
             }
             result.put(item.evidenceKey(), new EvidencePersisted(
-                    evidenceId, item.evidenceKey(), item.sourceId(), item.claimText(), item.relationType(), contentDigest));
+                    evidenceId, item.evidenceKey(), item.sourceId(), authority.sourceOrigin(),
+                    authority.sourceDomain(), authority.lineageDigest(), item.claimText(),
+                    item.relationType(), contentDigest));
             checkpoint(ResearchAgentCompletionFaultInjector.Stage.AFTER_NTH_EVIDENCE, ++ordinal);
         }
         return Map.copyOf(result);
@@ -575,7 +665,9 @@ class ResearchAgentCompletionCommitter {
             String candidateId = Ids.newId();
             List<String> evidenceKeys = item.evidenceKeys().stream().sorted().toList();
             List<EvidencePersisted> boundEvidence = evidenceKeys.stream().map(evidenceByKey::get).toList();
-            List<String> sourceDomains = boundEvidence.stream().map(EvidencePersisted::sourceId).distinct().sorted().toList();
+            List<String> sourceDomains = boundEvidence.stream()
+                    .flatMap(itemEvidence -> itemEvidence.quorumIdentities().stream())
+                    .distinct().sorted().toList();
             BigDecimal legacyConfidence = legacyScore(item.confidencePpm());
             Map<String, Object> content = rowContent();
             content.put("id", candidateId);
@@ -638,9 +730,12 @@ class ResearchAgentCompletionCommitter {
     private MergeOutcome planMergeOutcome(
             TaskRow task,
             ResearchAgentCompletionEnvelope envelope,
-            List<CellRow> cells
+            List<CellRow> cells,
+            Map<String, TrustedEvidenceSource> trustedEvidence
     ) {
-        if (task.candidateQuorum() == 2) return planQuorumOutcome(task, envelope);
+        if (task.candidateQuorum() == 2) {
+            return planQuorumOutcome(task, envelope, trustedEvidence);
+        }
         Map<String, ResearchAgentCompletionEnvelope.Evidence> evidenceByKey = new HashMap<>();
         envelope.evidence().forEach(item -> evidenceByKey.put(item.evidenceKey(), item));
         Set<String> lockedCells = new HashSet<>();
@@ -667,7 +762,11 @@ class ResearchAgentCompletionCommitter {
         return new MergeOutcome(List.copyOf(accepted), List.copyOf(rejected));
     }
 
-    private MergeOutcome planQuorumOutcome(TaskRow task, ResearchAgentCompletionEnvelope envelope) {
+    private MergeOutcome planQuorumOutcome(
+            TaskRow task,
+            ResearchAgentCompletionEnvelope envelope,
+            Map<String, TrustedEvidenceSource> trustedEvidence
+    ) {
         List<QuorumCandidate> existing = loadQuorumCandidates(task);
         if (existing.isEmpty()) return new MergeOutcome(List.of(), List.of());
         if (existing.size() != 1 || envelope.candidates().size() != 1) {
@@ -676,8 +775,9 @@ class ResearchAgentCompletionCommitter {
         ResearchAgentCompletionEnvelope.Candidate candidate = envelope.candidates().get(0);
         Map<String, ResearchAgentCompletionEnvelope.Evidence> evidence = new HashMap<>();
         envelope.evidence().forEach(item -> evidence.put(item.evidenceKey(), item));
-        List<String> domains = candidate.evidenceKeys().stream().map(evidence::get)
-                .filter(java.util.Objects::nonNull).map(ResearchAgentCompletionEnvelope.Evidence::sourceId)
+        List<String> domains = candidate.evidenceKeys().stream().map(trustedEvidence::get)
+                .filter(java.util.Objects::nonNull)
+                .flatMap(source -> source.quorumIdentities().stream())
                 .distinct().sorted().toList();
         boolean supported = candidate.evidenceKeys().stream().map(evidence::get).allMatch(item ->
                 item != null && "SUPPORTS".equals(item.relationType())
@@ -701,7 +801,8 @@ class ResearchAgentCompletionCommitter {
         } else if (!nfc(first.value()).equals(nfc(second.value()))) {
             reason = "QUORUM_VALUE_CONFLICT";
         } else if (!first.supported() || !second.supported()
-                || first.domains().isEmpty() || second.domains().isEmpty()) {
+                || !hasStrongSourceIdentity(first.domains())
+                || !hasStrongSourceIdentity(second.domains())) {
             reason = "QUORUM_PROVENANCE_MISSING";
         } else if (!Collections.disjoint(first.domains(), second.domains())) {
             reason = "QUORUM_SOURCE_DOMAIN_NOT_INDEPENDENT";
@@ -711,6 +812,11 @@ class ResearchAgentCompletionCommitter {
                 reason == null ? "ACCEPTED" : "REJECTED",
                 reason == null ? "QUORUM_VERIFIED_AND_VERSION_MATCHED" : reason);
         return reason == null ? new MergeOutcome(List.of(receipt), List.of()) : new MergeOutcome(List.of(), List.of(receipt));
+    }
+
+    private boolean hasStrongSourceIdentity(List<String> identities) {
+        return identities.stream().anyMatch(value -> value.startsWith("domain:"))
+                && identities.stream().anyMatch(value -> value.startsWith("lineage:"));
     }
 
     private List<QuorumCandidate> loadQuorumCandidates(TaskRow task) {
@@ -830,10 +936,12 @@ class ResearchAgentCompletionCommitter {
         String placeholders = String.join(",", Collections.nCopies(keys.size(), "?"));
         List<Object> parameters = new ArrayList<>(); parameters.add(runId); parameters.addAll(keys);
         return jdbcTemplate.query("""
-                select id, evidence_key, source_id, claim_text, relation_type, content_digest
+                select id, evidence_key, source_id, source_origin, source_domain, lineage_digest,
+                       claim_text, relation_type, content_digest
                 from source_evidence where research_run_id = ? and evidence_key in (""" + placeholders + ") order by evidence_key",
                 (rs, rowNum) -> new EvidencePersisted(rs.getString(1), rs.getString(2), rs.getString(3),
-                        rs.getString(4), rs.getString(5), rs.getString(6)), parameters.toArray());
+                        rs.getString(4), rs.getString(5), rs.getString(6), rs.getString(7),
+                        rs.getString(8), rs.getString(9)), parameters.toArray());
     }
 
     private MergeOutcome applyVerdictsAndCas(
@@ -1294,7 +1402,9 @@ class ResearchAgentCompletionCommitter {
             long fencingToken
     ) { }
 
-    private record TrustedSource(String id, String title, String sampleText) { }
+    private record TrustedSource(String id, String title, String sampleText, String snapshotId) { }
+
+    private record WorkspaceWindow(String sourceTitle, String contentText) { }
 
     private record TrustedEvidenceSource(
             String sourceId,
@@ -1303,8 +1413,15 @@ class ResearchAgentCompletionCommitter {
             String provider,
             String adapter,
             String snapshotStatus,
-            String snapshotKey
-    ) { }
+            String snapshotKey,
+            String sourceOrigin,
+            String sourceDomain,
+            String lineageDigest
+    ) {
+        List<String> quorumIdentities() {
+            return quorumIdentityTokens(sourceDomain, lineageDigest);
+        }
+    }
 
     private record ExternalArchive(
             String sourceId,
@@ -1322,10 +1439,17 @@ class ResearchAgentCompletionCommitter {
             String id,
             String evidenceKey,
             String sourceId,
+            String sourceOrigin,
+            String sourceDomain,
+            String lineageDigest,
             String claimText,
             String relationType,
             String contentDigest
-    ) { }
+    ) {
+        List<String> quorumIdentities() {
+            return quorumIdentityTokens(sourceDomain, lineageDigest);
+        }
+    }
 
     private record CandidatePersisted(
             String id,

@@ -10,7 +10,15 @@ type ConversationEventEnvelope = {
 type Waiter = {
   resolve: () => void;
   reject: (error: Error) => void;
+  timeoutId: ReturnType<typeof globalThis.setTimeout>;
 };
+
+export class AnswerRunWaitTimeoutError extends Error {
+  constructor(runId: string, timeoutMs: number) {
+    super(`回答 ${runId} 在 ${timeoutMs}ms 内未收到终态事件`);
+    this.name = "AnswerRunWaitTimeoutError";
+  }
+}
 
 export class AnswerRunStore {
   private readonly states = new Map<string, AnswerRunState>();
@@ -77,10 +85,13 @@ export class AnswerRunStore {
 
   reconcileRun(snapshot: AnswerRunSnapshot) {
     const current = this.states.get(snapshot.id) ?? createAnswerRunState(snapshot.id);
+    const snapshotStatus = snapshot.status || current.status;
     const next: AnswerRunState = {
       ...current,
-      content: snapshot.content ?? current.content,
-      status: snapshot.status || current.status,
+      content: snapshot.content === "" && current.content !== ""
+        ? current.content
+        : snapshot.content,
+      status: snapshotStatus,
       error: snapshot.error_message || snapshot.error_code || ""
     };
     this.states.set(snapshot.id, next);
@@ -88,7 +99,7 @@ export class AnswerRunStore {
     return next;
   }
 
-  waitFor(runId: string) {
+  waitFor(runId: string, timeoutMs = 30_000) {
     const current = this.states.get(runId);
     if (current?.status === "COMPLETED") {
       return Promise.resolve();
@@ -98,13 +109,27 @@ export class AnswerRunStore {
     }
     return new Promise<void>((resolve, reject) => {
       const previous = this.waiters.get(runId);
+      if (previous) {
+        globalThis.clearTimeout(previous.timeoutId);
+      }
       previous?.reject(new Error("回答等待已被新的订阅替换"));
-      this.waiters.set(runId, { resolve, reject });
+      const timeoutId = globalThis.setTimeout(() => {
+        const currentWaiter = this.waiters.get(runId);
+        if (!currentWaiter || currentWaiter.timeoutId !== timeoutId) {
+          return;
+        }
+        this.waiters.delete(runId);
+        reject(new AnswerRunWaitTimeoutError(runId, timeoutMs));
+      }, Math.max(1, timeoutMs));
+      this.waiters.set(runId, { resolve, reject, timeoutId });
     });
   }
 
   clear(reason = "会话已切换") {
-    this.waiters.forEach((waiter) => waiter.reject(new Error(reason)));
+    this.waiters.forEach((waiter) => {
+      globalThis.clearTimeout(waiter.timeoutId);
+      waiter.reject(new Error(reason));
+    });
     this.waiters.clear();
     this.states.clear();
     this.seenEventIds.clear();
@@ -136,9 +161,11 @@ export class AnswerRunStore {
     }
     if (state.status === "COMPLETED") {
       this.waiters.delete(runId);
+      globalThis.clearTimeout(waiter.timeoutId);
       waiter.resolve();
     } else if (isFailedTerminal(state.status)) {
       this.waiters.delete(runId);
+      globalThis.clearTimeout(waiter.timeoutId);
       waiter.reject(terminalError(state));
     }
   }
@@ -171,24 +198,20 @@ export function reduceAnswerRunState(
   };
   switch (eventType) {
     case "answer.delta":
-    case "chat.delta":
       next.content += data;
       return next;
     case "answer.snapshot":
       next.content = data;
       return next;
     case "citation.upsert":
-    case "chat.citation":
       if (!next.citations.includes(data)) {
         next.citations.push(data);
       }
       return next;
     case "answer.completed":
-    case "chat.completed":
       next.status = "COMPLETED";
       return next;
     case "answer.failed":
-    case "chat.failed":
       next.status = "FAILED";
       next.error = data || "回答FAILED";
       return next;

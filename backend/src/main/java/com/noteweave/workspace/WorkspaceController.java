@@ -35,6 +35,11 @@ public class WorkspaceController {
         return ApiResponse.success(workspaceService.createWorkspace(request));
     }
 
+    @GetMapping
+    ApiResponse<List<WorkspaceResponse>> listWorkspaces() {
+        return ApiResponse.success(workspaceService.listWorkspaces());
+    }
+
     @GetMapping("/{workspaceId}/wiki-settings")
     ApiResponse<WorkspaceWikiSettingsResponse> getWikiSettings(@PathVariable String workspaceId) {
         return ApiResponse.success(workspaceService.getWikiSettings(workspaceId));

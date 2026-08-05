@@ -9,10 +9,8 @@ import com.noteweave.common.BusinessException;
 import com.noteweave.security.CurrentUserProvider;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,7 +23,6 @@ class WorkloadQuotaRedisIntegrationTest {
 
     private LettuceConnectionFactory connectionFactory;
     private StringRedisTemplate redisTemplate;
-    private MutableClock clock;
     private WorkloadQuotaService first;
     private WorkloadQuotaService second;
 
@@ -36,7 +33,6 @@ class WorkloadQuotaRedisIntegrationTest {
         connectionFactory.start();
         redisTemplate = new StringRedisTemplate(connectionFactory);
         redisTemplate.afterPropertiesSet();
-        clock = new MutableClock();
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         when(currentUserProvider.requireUserId()).thenReturn("shared-user");
         first = service(currentUserProvider);
@@ -53,7 +49,7 @@ class WorkloadQuotaRedisIntegrationTest {
     }
 
     @Test
-    void shouldShareRateAndLeaseStateAcrossInstancesAndRecoverExpiredLease() {
+    void shouldShareRateAndLeaseStateAcrossInstancesAndRecoverExpiredLease() throws InterruptedException {
         first.requireRate("workspace", "chat");
         second.requireRate("workspace", "chat");
         assertThatThrownBy(() -> first.requireRate("workspace", "chat"))
@@ -67,8 +63,7 @@ class WorkloadQuotaRedisIntegrationTest {
                 .extracting(exception -> ((BusinessException) exception).code())
                 .isEqualTo("WORKLOAD_CONCURRENCY_LIMITED");
 
-        clock.advanceSeconds(6);
-        second.acquireLease("workspace", "research", "task-2");
+        awaitLeaseExpiryAndAcquire();
         assertThatThrownBy(() -> first.renewLease("workspace", "research", "task-1"))
                 .isInstanceOf(BusinessException.class)
                 .extracting(exception -> ((BusinessException) exception).code())
@@ -83,7 +78,23 @@ class WorkloadQuotaRedisIntegrationTest {
         return new WorkloadQuotaService(
                 redisTemplate, currentUserProvider, new SimpleMeterRegistry(),
                 "integration", true, 2, 0.000001, 1,
-                1, 0.000001, 1, 5, clock);
+                1, 0.000001, 1, 1, Clock.systemUTC());
+    }
+
+    private void awaitLeaseExpiryAndAcquire() throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (true) {
+            try {
+                second.acquireLease("workspace", "research", "task-2");
+                return;
+            } catch (BusinessException exception) {
+                assertThat(exception.code()).isEqualTo("WORKLOAD_CONCURRENCY_LIMITED");
+                if (System.nanoTime() >= deadline) {
+                    throw exception;
+                }
+                Thread.sleep(50);
+            }
+        }
     }
 
     private void deleteKeys() {
@@ -96,26 +107,4 @@ class WorkloadQuotaRedisIntegrationTest {
         }
     }
 
-    private static final class MutableClock extends Clock {
-        private Instant instant = Instant.parse("2026-07-14T10:00:00Z");
-
-        @Override
-        public ZoneId getZone() {
-            return ZoneOffset.UTC;
-        }
-
-        @Override
-        public Clock withZone(ZoneId zone) {
-            return this;
-        }
-
-        @Override
-        public Instant instant() {
-            return instant;
-        }
-
-        private void advanceSeconds(long seconds) {
-            instant = instant.plusSeconds(seconds);
-        }
-    }
 }

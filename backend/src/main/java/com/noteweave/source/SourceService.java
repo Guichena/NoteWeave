@@ -8,6 +8,7 @@ import com.noteweave.security.AuditActorProvider;
 import com.noteweave.task.TaskCommandPort;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -103,6 +104,7 @@ public class SourceService {
         workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.SOURCE_WRITE);
         String actor = auditActorProvider.currentOrSystem("SOURCE");
         SourceRef source = loadSource(workspaceId, sourceId);
+        LinkedHashSet<String> cleanupObjectKeys = new LinkedHashSet<>(loadSnapshotObjectKeys(sourceId));
         jdbcTemplate.update("""
                 update source
                 set status = 'DELETED', parse_status = 'DELETED', index_status = 'DELETED',
@@ -116,10 +118,10 @@ public class SourceService {
                 """, sourceId);
         runReplayRedactionService.redactDeletedSource(workspaceId, sourceId);
         cancelPendingSourceTasks(workspaceId, sourceId);
-        String cleanupObjectKey = releaseFileObject(source.fileObjectId()) ? source.objectKey() : "";
+        if (releaseFileObject(source.fileObjectId())) cleanupObjectKeys.add(source.objectKey());
         sourceCatalogVersionService.bump(workspaceId);
         String wikiTaskId = wikiCommandPort.requestSourceRetract(workspaceId, sourceId, source.title());
-        eventPublisher.publishEvent(new SourceDeletedEvent(workspaceId, sourceId, cleanupObjectKey));
+        eventPublisher.publishEvent(new SourceDeletedEvent(workspaceId, sourceId, List.copyOf(cleanupObjectKeys)));
         return new DeleteSourceResponse(sourceId, "DELETED", wikiTaskId);
     }
 
@@ -132,6 +134,14 @@ public class SourceService {
         Integer remaining = jdbcTemplate.queryForObject(
                 "select ref_count from file_object where id = ?", Integer.class, fileObjectId);
         return remaining != null && remaining == 0;
+    }
+
+    private List<String> loadSnapshotObjectKeys(String sourceId) {
+        return jdbcTemplate.queryForList("""
+                select object_key from source_snapshot
+                where source_id = ? and object_key is not null and object_key <> ''
+                order by version_no, id
+                """, String.class, sourceId);
     }
 
     private void cancelPendingSourceTasks(String workspaceId, String sourceId) {

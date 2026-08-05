@@ -41,8 +41,8 @@ class TaskOutboxDispatcherServiceTest {
         kafkaTemplate = mock(KafkaTemplate.class);
         properties = new NoteWeaveProperties(null, null, null,
                 new NoteWeaveProperties.Kafka(true, new NoteWeaveProperties.Topics(
-                        "noteweave.source.parse", "noteweave.source.chunk", "noteweave.source.index",
-                        "noteweave.wiki.ingest", "noteweave.wiki.retract", "noteweave.generated.ingest",
+                        "noteweave.source.parse", "noteweave.retrieval.projection",
+                        "noteweave.wiki.ingest", "noteweave.wiki.retract",
                         "noteweave.conversation.summary")),
                 null, null);
     }

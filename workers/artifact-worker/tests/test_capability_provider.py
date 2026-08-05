@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+import pytest
+
+import app.capability_wait_queue as capability_wait_queue
+
 from app.artifact_repository import clear_artifact_repository, list_artifact_versions
 from app.capability_resolver import resolve_capability_bindings
 from app.capability_provider import (
@@ -27,6 +33,7 @@ from app.capability_approval_queue import (
 )
 from app.capability_wait_queue import (
     clear_waiting_tasks,
+    enqueue_waiting_task,
     get_waiting_task,
     list_waiting_tasks,
     wake_waiting_task,
@@ -379,6 +386,54 @@ def test_waiting_task_should_resume_after_provider_recovers() -> None:
     assert get_waiting_task(waiting_result.job_snapshot.task_id) is None
 
 
+def test_capability_batch_wake_continues_after_concurrent_claim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clear_waiting_tasks()
+    removed_task = _build_media_task_input("course_notes")
+    claimed_task = _build_media_task_input("video_summary")
+    ready_task = _build_media_task_input("audio_minutes")
+    for task_input in (removed_task, claimed_task, ready_task):
+        enqueue_waiting_task(
+            task_input=task_input,
+            unavailable_capabilities=["EXTRACT_TRANSCRIPT"],
+        )
+
+    records = list_waiting_tasks()
+    capability_wait_queue.remove_waiting_task(removed_task.task_id)
+    capability_wait_queue._claim_waiting_task(claimed_task.task_id)
+    original_wake = capability_wait_queue.wake_waiting_task
+    wake_calls: list[str] = []
+
+    monkeypatch.setattr(capability_wait_queue, "list_waiting_tasks", lambda: records)
+
+    def wake(task_id: str) -> tuple[list[object], object]:
+        wake_calls.append(task_id)
+        if task_id in {removed_task.task_id, claimed_task.task_id}:
+            try:
+                return original_wake(task_id)
+            except capability_wait_queue.WaitingTaskClaimConflict:
+                if task_id == claimed_task.task_id:
+                    capability_wait_queue.release_waiting_task_claim(task_id)
+                raise
+        return (
+            [SimpleNamespace(phase="EXPORTING")],
+            SimpleNamespace(job_snapshot=SimpleNamespace(status="COMPLETED")),
+        )
+
+    monkeypatch.setattr(capability_wait_queue, "wake_waiting_task", wake)
+
+    attempts = capability_wait_queue.wake_waiting_tasks_for_capability("EXTRACT_TRANSCRIPT")
+
+    assert wake_calls == [removed_task.task_id, claimed_task.task_id, ready_task.task_id]
+    assert [attempt["task_id"] for attempt in attempts] == [ready_task.task_id]
+    assert attempts[0]["result_status"] == "COMPLETED"
+    claimed_record = get_waiting_task(claimed_task.task_id)
+    assert claimed_record is not None
+    assert claimed_record["status"] == "WAITING_FOR_CAPABILITY"
+    clear_waiting_tasks()
+
+
 def test_waiting_task_debug_views_should_expose_queue_and_wake() -> None:
     clear_artifact_repository()
     clear_waiting_tasks()
@@ -606,6 +661,90 @@ def test_waiting_task_should_stay_queued_if_woken_before_approval() -> None:
         clear_waiting_tasks()
 
 
+def test_waiting_task_resume_should_reuse_compiled_plan_checkpoint(monkeypatch) -> None:
+    clear_artifact_repository()
+    clear_waiting_tasks()
+    clear_approval_requests()
+    reset_capability_provider_status()
+    reset_capability_provider_approval_status()
+    set_capability_provider_approval_status("EXTRACT_TRANSCRIPT", "PENDING")
+
+    try:
+        _, waiting_result = run_artifact_task(_build_media_task_input("video_summary"))
+        waiting_record = get_waiting_task(waiting_result.job_snapshot.task_id)
+        assert waiting_record is not None
+        assert waiting_record["resume_checkpoint"]["stage"] == "CAPABILITY_GATE"
+
+        monkeypatch.setattr(
+            "app.runner.build_execution_plan",
+            lambda task_input: (_ for _ in ()).throw(
+                AssertionError("resume must not recompile the execution plan")
+            ),
+        )
+        set_capability_provider_approval_status("EXTRACT_TRANSCRIPT", "APPROVED")
+        resumed_events, resumed_result = wake_waiting_task(
+            waiting_result.job_snapshot.task_id
+        )
+
+        assert resumed_events[-1].phase == "EXPORTING"
+        assert resumed_result.job_snapshot.status == "COMPLETED"
+    finally:
+        reset_capability_provider_approval_status()
+        clear_approval_requests()
+        clear_waiting_tasks()
+
+
+def test_waiting_task_resume_should_reject_missing_checkpoint_without_restarting() -> None:
+    clear_waiting_tasks()
+    task_input = _build_media_task_input("video_summary")
+    enqueue_waiting_task(
+        task_input=task_input,
+        unavailable_capabilities=["EXTRACT_TRANSCRIPT"],
+        resume_checkpoint={},
+    )
+
+    try:
+        with pytest.raises(ValueError, match="missing resume_checkpoint"):
+            wake_waiting_task(task_input.task_id)
+        waiting_record = get_waiting_task(task_input.task_id)
+        assert waiting_record is not None
+        assert waiting_record["status"] == "REPLAY_REQUIRED"
+        assert "legacy full-task restart is disabled" in waiting_record["resume_error"]
+    finally:
+        clear_waiting_tasks()
+
+
+def test_waiting_task_resume_should_reject_legacy_checkpoint_schema() -> None:
+    clear_waiting_tasks()
+    reset_capability_provider_status()
+    set_capability_provider_status("EXTRACT_TRANSCRIPT", "UNAVAILABLE")
+    task_input = _build_media_task_input("video_summary")
+
+    try:
+        _, waiting_result = run_artifact_task(task_input)
+        waiting_record = get_waiting_task(waiting_result.job_snapshot.task_id)
+        assert waiting_record is not None
+        legacy_checkpoint = dict(waiting_record["resume_checkpoint"])
+        legacy_checkpoint["schema_version"] = 1
+        legacy_checkpoint.pop("canonical_content_objects", None)
+        legacy_checkpoint.pop("context_pack", None)
+
+        clear_waiting_tasks()
+        enqueue_waiting_task(
+            task_input=task_input,
+            unavailable_capabilities=["EXTRACT_TRANSCRIPT"],
+            resume_checkpoint=legacy_checkpoint,
+        )
+        with pytest.raises(ValueError, match="schema v2 is required"):
+            wake_waiting_task(task_input.task_id)
+        waiting_record = get_waiting_task(task_input.task_id)
+        assert waiting_record is not None
+        assert waiting_record["status"] == "REPLAY_REQUIRED"
+    finally:
+        reset_capability_provider_status()
+        clear_waiting_tasks()
+
+
 def test_debug_health_check_and_approval_actions_should_update_runtime_state() -> None:
     clear_artifact_repository()
     clear_waiting_tasks()
@@ -753,8 +892,9 @@ def test_capability_provider_discovery_scan_should_mark_candidates_discovered_an
     assert snapshot["summary"]["discovered_count"] >= len(providers)
 
 
-def test_capability_provider_health_check_should_auto_resume_waiting_task() -> None:
+def test_capability_provider_health_check_should_auto_resume_waiting_task(monkeypatch) -> None:
     clear_artifact_repository()
+    clear_acquisition_runtime()
     clear_waiting_tasks()
     clear_approval_requests()
     reset_capability_provider_status()
@@ -763,6 +903,22 @@ def test_capability_provider_health_check_should_auto_resume_waiting_task() -> N
     try:
         set_capability_provider_status("EXTRACT_TRANSCRIPT", "UNAVAILABLE")
         _, waiting_result = run_artifact_task(_build_media_task_input("video_summary"))
+        waiting_record = get_waiting_task(waiting_result.job_snapshot.task_id)
+        assert waiting_record is not None
+        checkpoint = waiting_record["resume_checkpoint"]
+        assert checkpoint["schema_version"] == 2
+        assert checkpoint["stage"] == "CAPABILITY_GATE"
+        assert checkpoint["canonical_content_objects"]
+        assert checkpoint["context_pack"]
+        assert checkpoint["capability_resolution"]
+        assert checkpoint["acquisition_receipt"]
+
+        def fail_early_stage(*_args, **_kwargs):
+            raise AssertionError("resume re-entered an already checkpointed stage")
+
+        monkeypatch.setattr("app.runner.build_execution_plan", fail_early_stage)
+        monkeypatch.setattr("app.runner.build_canonical_content_objects", fail_early_stage)
+        monkeypatch.setattr("app.runner.build_context_pack", fail_early_stage)
 
         set_capability_provider_probe_result("EXTRACT_TRANSCRIPT", "HEALTHY")
         snapshot = run_capability_provider_health_checks(["EXTRACT_TRANSCRIPT"])
@@ -770,6 +926,7 @@ def test_capability_provider_health_check_should_auto_resume_waiting_task() -> N
         reset_capability_provider_status()
         reset_capability_provider_probe_results()
         clear_approval_requests()
+        clear_acquisition_runtime()
 
     assert snapshot["resumed_tasks"]
     assert snapshot["resumed_tasks"][0]["task_id"] == waiting_result.job_snapshot.task_id

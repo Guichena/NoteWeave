@@ -20,22 +20,49 @@
 2. `Note`：参考 Marginalia 式结构化检索漏斗，展示 Journal 信号、候选资料、关系扩展、原文窗口、摘录证据和带引用回答；回答后自动/可刷新生成中性 Markdown 草稿，确认后入库为普通资料（`source-draft` + `save-as-source`）
 3. `Wiki`：参考 WebKonra / WeKnora 式全量 Wiki 检索，支持 wiki 构建开关、页面 ingest、页面版本、链接/反链、来源回链、搜索、图谱、统计、日志、lint、rebuild links、auto-fix、重命名和软删除；Wiki 知识网络绑定研究工作台，不绑定单次会话
 
+
+## 设计与壳层
+
+- 设计规范（风格源 NoteWeave v1，产品源 v2，非协作）：[docs/frontend/NoteWeave工作台设计规范-风格源v1-产品源v2.md](../docs/frontend/NoteWeave工作台设计规范-风格源v1-产品源v2.md)
+- 代码现实基线：[docs/frontend/前端现实基线-20260721.md](../docs/frontend/前端现实基线-20260721.md)
+- 门禁：pnpm ui:check（与 ChatWorkbench / ResearchWorkbenchView 所有权对齐）
+
 ## 本地运行
 
 ```bash
-npm install
-npm run dev
+corepack enable
+pnpm install --frozen-lockfile
+pnpm dev
 ```
 
 默认请求同源 `/api/v2`。如果后端运行在 `http://localhost:8081`，可以设置：
 
 ```bash
 $env:VITE_API_BASE_URL="http://localhost:8081"
-npm run dev
+pnpm dev
 ```
 
 ## 构建
 
 ```bash
-npm run build
+pnpm build
 ```
+
+## 真实 Playwright E2E
+
+E2E 不启动 mock server，也不拦截 API；它直接访问已经运行的完整项目环境。先在仓库根目录启动 `docker compose --profile app up --build -d`，再执行：
+
+```powershell
+cd frontend
+corepack pnpm exec playwright install chromium
+corepack pnpm e2e
+```
+
+如果本机已安装 Microsoft Edge，也可跳过 Chromium 下载并执行：
+
+```powershell
+$env:NOTEWEAVE_E2E_BROWSER_CHANNEL="msedge"
+corepack pnpm e2e
+```
+
+默认地址为 `http://127.0.0.1:3000`，可用 `NOTEWEAVE_E2E_BASE_URL` 覆盖。登录凭据优先读取 `NOTEWEAVE_E2E_USERNAME / NOTEWEAVE_E2E_PASSWORD`，未设置时读取进程或仓库 `.env` 中的 `NOTEWEAVE_BOOTSTRAP_USERNAME / NOTEWEAVE_BOOTSTRAP_PASSWORD`。用例会创建真实工作台、资料、Research task，并验证 task SSE 驱动终态界面。

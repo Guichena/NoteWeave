@@ -67,6 +67,9 @@ def run_seed_source_search(
             ResearchSearchHit(
                 hit_id=f"hit-{len(hits) + 1}",
                 source_id=source.source_id,
+                source_snapshot_id=source.source_snapshot_id,
+                source_window_id=source.source_window_id,
+                workspace_window_text=source.sample_text,
                 source_title=source.title,
                 query=candidate.query,
                 rank=len(hits) + 1,

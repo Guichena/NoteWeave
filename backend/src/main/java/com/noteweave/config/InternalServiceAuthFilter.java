@@ -44,18 +44,23 @@ public class InternalServiceAuthFilter extends OncePerRequestFilter {
             "127.0.0.1", "0:0:0:0:0:0:0:1", "::1", "localhost"
     );
 
-    private final String expectedToken;
-    private final boolean tokenConfigured;
+    private final String coordinatorToken;
+    private final String researchToken;
+    private final String artifactToken;
 
-    public InternalServiceAuthFilter(@Value("${noteweave.internal.auth-token:}") String expectedToken) {
-        String trimmed = expectedToken == null ? "" : expectedToken.trim();
-        this.expectedToken = trimmed;
-        this.tokenConfigured = !trimmed.isBlank();
+    public InternalServiceAuthFilter(
+            @Value("${noteweave.internal.auth-token:}") String coordinatorToken,
+            @Value("${noteweave.internal.research-auth-token:}") String researchToken,
+            @Value("${noteweave.internal.artifact-auth-token:}") String artifactToken
+    ) {
+        this.coordinatorToken = trimmed(coordinatorToken);
+        this.researchToken = trimmed(researchToken);
+        this.artifactToken = trimmed(artifactToken);
     }
 
     @PostConstruct
     void warnOnUnsetToken() {
-        if (!tokenConfigured) {
+        if (coordinatorToken.isBlank() && researchToken.isBlank() && artifactToken.isBlank()) {
             log.warn("====================================================================");
             log.warn("[InternalServiceAuthFilter] noteweave.internal.auth-token is EMPTY.");
             log.warn("  /internal/* requests will be allowed ONLY from loopback (127.0.0.1 / ::1).");
@@ -76,7 +81,8 @@ public class InternalServiceAuthFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain
     ) throws ServletException, IOException {
-        if (tokenConfigured) {
+        String expectedToken = expectedToken(request.getRequestURI());
+        if (!expectedToken.isBlank()) {
             // 生产 / 配置生效：必须 header 匹配
             String supplied = request.getHeader(HEADER_NAME);
             if (supplied != null && MessageDigest.isEqual(
@@ -100,6 +106,34 @@ public class InternalServiceAuthFilter extends OncePerRequestFilter {
         reject(response, "INTERNAL_AUTH_NOT_CONFIGURED",
                 "internal service authentication is not configured; "
                         + "set noteweave.internal.auth-token or call from loopback");
+    }
+
+    private String expectedToken(String path) {
+        if (isResearchWorkerRoute(path)) {
+            return researchToken.isBlank() ? coordinatorToken : researchToken;
+        }
+        if (isArtifactWorkerRoute(path)) {
+            return artifactToken.isBlank() ? coordinatorToken : artifactToken;
+        }
+        return coordinatorToken;
+    }
+
+    private boolean isResearchWorkerRoute(String path) {
+        return path.startsWith("/internal/research-agent-tasks/")
+                || path.equals("/internal/research-agent/permits")
+                || path.equals("/internal/research-agent/workspace-windows/search")
+                || path.equals("/internal/research-agent/external-snapshots")
+                || path.equals("/internal/research-agent/delivery-failures");
+    }
+
+    private boolean isArtifactWorkerRoute(String path) {
+        return path.startsWith("/internal/worker/artifact-tasks/")
+                || path.startsWith("/internal/worker/tasks/")
+                || path.equals("/internal/worker/artifact-callbacks/acquisition/ack");
+    }
+
+    private static String trimmed(String value) {
+        return value == null ? "" : value.trim();
     }
 
     private void reject(HttpServletResponse response, String code, String message) throws IOException {

@@ -8,8 +8,11 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "test": "vitest run",
+    "e2e": "playwright test",
+    "e2e:headed": "playwright test --headed",
     "preview": "vite preview",
-    "ui:check": "node ./scripts/ui-contract-check.mjs"
+    "ui:check": "node ./scripts/ui-contract-check.mjs",
+    "smoke": "vitest run src/shell.smoke.test.tsx src/features/shell"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.3.4",
@@ -19,8 +22,11 @@
     "vite": "^5.4.11"
   },
   "devDependencies": {
+    "@playwright/test": "1.54.1",
+    "@testing-library/react": "16.1.0",
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.1",
+    "jsdom": "25.0.1",
     "vitest": "^2.1.9"
   }
 }

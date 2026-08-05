@@ -62,10 +62,26 @@ class ResearchAgentTaskCoordinatorServiceTest {
         jdbcTemplate.update("""
                 insert into research_run(
                     id, workspace_id, task_id, question, profile_key, source_scope_json,
-                    retrieval_mode, status, agent_execution_mode)
-                values (?, ?, ?, 'How does the method work?', 'DEFAULT', ?,
+                    research_intent_json, control_pack_json, retrieval_mode, status, agent_execution_mode)
+                values (?, ?, ?, 'How does the method work?', 'DEFAULT', ?, ?, ?,
                     'WEB_PLUS_SEEDS', 'RUNNING', 'INCREMENTAL_V1')
-                """, runId, workspaceId, parentTaskId, objectMapper.writeValueAsString(List.of(sourceId)));
+                """, runId, workspaceId, parentTaskId, objectMapper.writeValueAsString(List.of(sourceId)),
+                objectMapper.writeValueAsString(Map.of(
+                        "research_goal", "Preserve the user's research goal",
+                        "deliverable_format", "decision memo",
+                        "constraints", List.of("Only use auditable evidence"),
+                        "time_range", "2024-2026",
+                        "depth", "DEEP",
+                        "research_type", "TECHNICAL")),
+                objectMapper.writeValueAsString(Map.of(
+                        "pack_type", "RESEARCH_AGENT",
+                        "target_key", "DEFAULT",
+                        "task_neighborhood", "RESEARCH_DEFAULT",
+                        "style_constraints", List.of("concise"),
+                        "structure_constraints", List.of("include limitations"),
+                        "terminology_policy", List.of("use canonical terms"),
+                        "forbidden_patterns", List.of("unsupported certainty"),
+                        "evidence_policy", List.of("server-snapshot-only"))));
         jdbcTemplate.update("insert into research_row(id, research_run_id, row_key, row_status) values (?, ?, 'entity-1', 'CANDIDATE_READY')", rowId, runId);
         insertCell(rowId, "entity-1:method", "method");
         insertCell(rowId, "entity-1:evidence", "evidence");
@@ -186,12 +202,19 @@ class ResearchAgentTaskCoordinatorServiceTest {
                 new ResearchAgentTaskService.ClaimCommand(taskId, "quorum-worker-1", 60));
         var snapshot = objectMapper.readTree(claimed.taskSnapshotJson());
 
-        assertThat(snapshot.path("schema_version").asText()).isEqualTo("research-agent-task-snapshot.v2");
+        assertThat(snapshot.path("schema_version").asText()).isEqualTo("research-agent-task-snapshot.v3");
         assertThat(snapshot.path("logical_task_key").asText()).startsWith("deep-cell:");
         assertThat(snapshot.path("quorum_group_key").asText()).startsWith("quorum:");
         assertThat(snapshot.path("candidate_quorum").asInt()).isEqualTo(2);
         assertThat(snapshot.path("candidate_slot").asInt()).isEqualTo(1);
         assertThat(snapshot.path("high_risk").asBoolean()).isTrue();
+        assertThat(snapshot.path("research_intent").path("research_goal").asText())
+                .isEqualTo("Preserve the user's research goal");
+        assertThat(snapshot.path("research_intent").path("depth").asText()).isEqualTo("DEEP");
+        assertThat(snapshot.path("control_pack").path("style_constraints").get(0).asText())
+                .isEqualTo("concise");
+        assertThat(snapshot.path("control_pack").path("forbidden_patterns").get(0).asText())
+                .isEqualTo("unsupported certainty");
         assertThat(claimed.snapshotDigest()).isEqualTo(snapshot.path("snapshot_digest").asText());
     }
 
@@ -308,11 +331,44 @@ class ResearchAgentTaskCoordinatorServiceTest {
 
         assertThat(first.outcome()).isEqualTo("FAILED_WAVE_REPAIR_TASKIZED");
         assertThat(replay.outcome()).isEqualTo("ACTIVE_NOOP");
-        assertThat(settledRepairWave.outcome()).isEqualTo("TERMINAL_BARRIER_PENDING");
+        assertThat(settledRepairWave.outcome()).isEqualTo("RUN_FAILED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from research_run where id = ?", String.class, runId)).isEqualTo("FAILED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from research_agent_task where research_run_id = ? and status = 'SUBMITTED'",
+                Integer.class, runId)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from research_budget_reservation where research_run_id = ? and state = 'RESERVED'",
+                Integer.class, runId)).isZero();
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_run_advancement where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_checkpoint where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ? and role = 'COUNTERFACTUAL'", Integer.class, runId)).isEqualTo(2);
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_outbox where research_run_id = ?", Integer.class, runId)).isEqualTo(3);
+    }
+
+    @Test
+    void shouldFailRunWhenServerDerivedRepairPolicyHasNoSafeTarget() {
+        coordinator.planAndEnqueueForWave(runId, 1);
+        jdbcTemplate.update("""
+                update research_agent_task
+                set status = 'FAILED', terminal_reason = 'LEASE_RETRY_EXHAUSTED',
+                    terminal_at = current_timestamp
+                where research_run_id = ?
+                """, runId);
+        jdbcTemplate.update("""
+                update research_cell set repair_count = 2, active_task_id = null
+                where research_run_id = ?
+                """, runId);
+
+        var receipt = coordinatorTick.tick(runId, "scheduler-stop");
+
+        assertThat(receipt.outcome()).isEqualTo("FAILED_WAVE_STOPPED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from research_run where id = ?", String.class, runId)).isEqualTo("FAILED");
+        assertThat(jdbcTemplate.queryForMap(
+                "select task_status, progress_phase from task where target_id = ?", runId))
+                .containsEntry("task_status", "FAILED")
+                .containsEntry("progress_phase", "RESEARCH_FAILED");
     }
 
     @Test
@@ -616,21 +672,10 @@ class ResearchAgentTaskCoordinatorServiceTest {
     }
 
     @Test
-    void shouldReserveTenDimensionEnvelopeAndRejectLegacyExecutionSubmit() throws Exception {
+    void shouldReserveTenDimensionEnvelope() throws Exception {
         coordinator.planAndEnqueue(runId);
         String taskId = jdbcTemplate.queryForObject(
                 "select id from research_agent_task where research_run_id = ?", String.class, runId);
-        var claim = jdbcTemplate.queryForObject("select id from research_agent_task where id = ?", String.class, taskId);
-        var claimed = taskService.claimTask(
-                new ResearchAgentTaskService.ClaimCommand(claim, "worker-budget", 30));
-
-        assertThatThrownBy(() -> taskService.submitExecution(new ResearchAgentTaskService.SubmitCommand(
-                        taskId, "worker-budget", claimed.leaseEpoch(), claimed.fencingToken(),
-                        "execution-budget-envelope", "CANDIDATE_BATCH_SUBMITTED",
-                        Map.of("llm_calls", 0), "sha256:test")))
-                .isInstanceOf(com.noteweave.common.BusinessException.class)
-                .extracting(error -> ((com.noteweave.common.BusinessException) error).code())
-                .isEqualTo("RESEARCH_AGENT_ATOMIC_COMPLETION_REQUIRED");
 
         assertThat(jdbcTemplate.queryForObject(
                 "select state from research_budget_reservation where research_agent_task_id = ?", String.class, taskId))

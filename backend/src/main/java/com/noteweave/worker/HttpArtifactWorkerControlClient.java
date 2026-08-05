@@ -3,6 +3,7 @@ package com.noteweave.worker;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.config.NoteWeaveProperties;
+import com.noteweave.infra.outbox.DurableOutboxDispatcher;
 import org.springframework.stereotype.Component;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -18,24 +19,37 @@ public class HttpArtifactWorkerControlClient implements ArtifactWorkerControlCli
     public HttpArtifactWorkerControlClient(
             ObjectMapper objectMapper,
             NoteWeaveProperties properties,
-            @Value("${noteweave.internal.auth-token:}") String internalAuthToken
+            @Value("${noteweave.internal.artifact-auth-token:${noteweave.internal.auth-token:}}") String internalAuthToken,
+            @Value("${noteweave.worker.connect-timeout-seconds:3}") long connectTimeoutSeconds,
+            @Value("${noteweave.worker.read-timeout-seconds:30}") long readTimeoutSeconds
     ) {
         this.objectMapper = objectMapper;
-        RestClient.Builder builder = RestClient.builder().baseUrl(properties.worker().artifactBaseUrl());
-        if (internalAuthToken != null && !internalAuthToken.isBlank()) {
-            builder.defaultHeader("X-NoteWeave-Internal-Token", internalAuthToken.trim());
-        }
-        this.restClient = builder.build();
+        this.restClient = ArtifactWorkerRestClientFactory.create(
+                properties.worker().artifactBaseUrl(),
+                internalAuthToken,
+                connectTimeoutSeconds,
+                readTimeoutSeconds
+        );
     }
 
     public HttpArtifactWorkerControlClient(ObjectMapper objectMapper, NoteWeaveProperties properties) {
-        this(objectMapper, properties, "");
+        this(objectMapper, properties, "", 3, 30);
+    }
+
+    public HttpArtifactWorkerControlClient(
+            ObjectMapper objectMapper,
+            NoteWeaveProperties properties,
+            String internalAuthToken
+    ) {
+        // Compatibility constructor retained for direct tests and non-Spring callers.
+        this(objectMapper, properties, internalAuthToken, 3, 30);
     }
 
     @Override
     public ArtifactWorkerExecutionResponse resumeTask(String taskId, ArtifactWorkerResumeRequest request) {
         String responseBody = restClient.post()
                 .uri("/tasks/{taskId}/resume", taskId)
+                .header(DurableOutboxDispatcher.DELIVERY_TOKEN_HEADER, request.deliveryToken())
                 .body(request)
                 .retrieve()
                 .body(String.class);

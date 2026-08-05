@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import html
 import json
 import os
 import re
@@ -214,6 +215,69 @@ class HttpGetSearchTransport:
         return []
 
 
+class HttpWikipediaSearchTransport:
+    """Credential-free public search used only when explicitly enabled."""
+
+    def __init__(
+        self,
+        base_url: str = "https://en.wikipedia.org/w/api.php",
+        timeout_seconds: int = 20,
+        max_retries: int = 3,
+    ) -> None:
+        self.base_url = base_url.strip() or "https://en.wikipedia.org/w/api.php"
+        self.timeout_seconds = timeout_seconds
+        self.max_retries = max(1, max_retries)
+        self.last_attempt_count = 0
+
+    def search(self, query: str, limit: int, page: int = 1) -> list[dict[str, object]]:
+        if not query.strip() or limit <= 0:
+            return []
+        params = urllib.parse.urlencode({
+            "action": "query",
+            "list": "search",
+            "srsearch": query.strip(),
+            "srlimit": min(50, limit),
+            "sroffset": max(0, page - 1) * min(50, limit),
+            "format": "json",
+            "formatversion": 2,
+            "utf8": 1,
+        })
+        request = urllib.request.Request(
+            f"{self.base_url}?{params}",
+            headers={"User-Agent": "NoteWeaveResearchWorker/0.1 (public-demo-search)"},
+            method="GET",
+        )
+        self.last_attempt_count = 0
+        for attempt in range(1, self.max_retries + 1):
+            self.last_attempt_count = attempt
+            try:
+                with credential_safe_urlopen(request, timeout=self.timeout_seconds) as response:
+                    data = json.loads(response.read().decode("utf-8"))
+                raw_items = data.get("query", {}).get("search", [])
+                return [
+                    {
+                        "title": str(item.get("title") or "").strip(),
+                        "url": f"https://en.wikipedia.org/?curid={int(item.get('pageid'))}",
+                        "snippet": re.sub(
+                            r"\s+",
+                            " ",
+                            html.unescape(re.sub(r"<[^>]+>", " ", str(item.get("snippet") or ""))),
+                        ).strip(),
+                        "score": 0.78,
+                    }
+                    for item in raw_items[:limit]
+                    if isinstance(item, dict) and item.get("pageid") is not None
+                ]
+            except urllib.error.HTTPError as error:
+                if not _is_retryable_search_http_status(error.code):
+                    break
+            except (urllib.error.URLError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
+                pass
+            if attempt < self.max_retries:
+                time.sleep(min(2 ** (attempt - 1), 4))
+        return []
+
+
 class ExternalSearchAdapter:
     def __init__(
         self,
@@ -222,6 +286,7 @@ class ExternalSearchAdapter:
         base_url: str = "",
         transport: ExternalSearchTransport | None = None,
         max_provider_pages: int = 2,
+        requires_api_key: bool = True,
     ) -> None:
         self.provider_name = provider_name.strip() or "serper"
         self.api_key = api_key.strip()
@@ -231,6 +296,7 @@ class ExternalSearchAdapter:
             base_url=base_url,
         )
         self.max_provider_pages = max(1, max_provider_pages)
+        self.requires_api_key = requires_api_key
         self.last_attempt_count = 0
 
     def search(
@@ -240,7 +306,7 @@ class ExternalSearchAdapter:
         remaining_budget: int | None = None,
     ) -> list[ResearchSearchHit]:
         del task_input
-        if not self.api_key:
+        if self.requires_api_key and not self.api_key:
             return []
         budget = _resolve_budget(plan, remaining_budget)
         if budget <= 0:
@@ -789,6 +855,8 @@ def _annotate_provider_orchestration(
 def _default_base_url(provider_name: str) -> str:
     if provider_name.lower() == "serper":
         return "https://google.serper.dev/search"
+    if provider_name.lower() in {"wikipedia", "mediawiki"}:
+        return "https://en.wikipedia.org/w/api.php"
     return provider_name
 
 
@@ -802,6 +870,8 @@ def _build_transport(
     base_url: str,
 ) -> ExternalSearchTransport:
     normalized = provider_name.strip().lower()
+    if normalized in {"wikipedia", "mediawiki"}:
+        return HttpWikipediaSearchTransport(base_url=base_url or _default_base_url(provider_name))
     if normalized in {"serper", "searchapi", "serpapi", "custom_json"}:
         return HttpJsonSearchTransport(
             provider_name=provider_name,
@@ -829,6 +899,18 @@ def _build_external_search_adapters() -> list[ExternalSearchAdapter]:
 
     adapters: list[ExternalSearchAdapter] = []
     for index, provider_name in enumerate(provider_chain):
+        if provider_name.lower() in {"wikipedia", "mediawiki"}:
+            if os.getenv("NOTEWEAVE_RESEARCH_PUBLIC_SEARCH_ENABLED", "").strip().lower() not in {
+                "1", "true", "yes", "on"
+            }:
+                continue
+            adapters.append(ExternalSearchAdapter(
+                provider_name="wikipedia",
+                base_url=_provider_env(provider_name, "BASE_URL") or _default_base_url(provider_name),
+                max_provider_pages=_max_provider_pages(),
+                requires_api_key=False,
+            ))
+            continue
         api_key = _provider_env(
             provider_name,
             "API_KEY",

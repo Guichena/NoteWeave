@@ -110,9 +110,42 @@ class WikiEvidenceRetrieverTest {
         assertThat(snapshot.citationIds()).containsExactly("citation-a");
     }
 
+    @Test
+    void shouldCarryPageRelevanceIntoBudgetRankingScores() {
+        WikiRetrievalQueryPort queryPort = mock(WikiRetrievalQueryPort.class);
+        WikiRetrievalSnapshotCodec codec =
+                new WikiRetrievalSnapshotCodec(new ObjectMapper().findAndRegisterModules());
+        WikiPageContext low = scoredPage("item-low", "version-low", "Low", 1);
+        WikiPageContext high = scoredPage("item-high", "version-high", "High", 9);
+        when(queryPort.findRelevantWikiPageContexts("workspace", "query"))
+                .thenReturn(List.of(low, high));
+        when(queryPort.citationIdsForWikiPages(List.of(low.page(), high.page())))
+                .thenReturn(List.of());
+
+        WikiEvidenceRetriever retriever = new WikiEvidenceRetriever(queryPort, codec);
+        RetrievalPlan.Step step = new RetrievalPlan.Step(
+                WikiEvidenceRetriever.CHANNEL, 5, 2, Map.of());
+        RetrievalPlan plan = new RetrievalPlan(
+                "wiki-test-v1", AnswerMode.WIKI, List.of(step),
+                new RetrievalPlan.Budget(5, 20_000, 1, 30));
+
+        var result = retriever.retrieve(
+                new AnswerContext("workspace", "conversation", "message", "query",
+                        Set.of(), Map.of(), Instant.now()), plan, step);
+
+        assertThat(result.evidence()).extracting(EvidenceBundle.Evidence::fusedScore)
+                .containsExactly(2.0, 18.0);
+        assertThat(result.evidence()).extracting(EvidenceBundle.Evidence::rerankScore)
+                .containsExactly(2.0, 18.0);
+    }
+
     private WikiPageContext page(String itemId, String versionId, String title) {
+        return scoredPage(itemId, versionId, title, 1);
+    }
+
+    private WikiPageContext scoredPage(String itemId, String versionId, String title, int score) {
         return new WikiPageContext(
-                new KnowledgePageHit(itemId, versionId, 1, title, "content", "summary", 1),
+                new KnowledgePageHit(itemId, versionId, 1, title, "content", "summary", score),
                 List.of(), List.of(), List.of());
     }
 }

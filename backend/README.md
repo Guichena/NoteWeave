@@ -20,8 +20,16 @@
 
 ## 本地运行
 
+在仓库根目录执行：
+
+```powershell
+.\mvnw.cmd -f backend\pom.xml spring-boot:run
+```
+
+macOS / Linux：
+
 ```bash
-./mvnw spring-boot:run
+./mvnw -f backend/pom.xml spring-boot:run
 ```
 
 默认连接：

@@ -1,6 +1,5 @@
 package com.noteweave.retrieval;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -25,12 +24,7 @@ public final class QaEvidenceRelevancePolicy {
     private static final String CURRENT_QUESTION_PREFIX = "当前问题：";
     private static final String TOPIC_ANCHOR_PREFIX = "主题锚点：";
     private static final double MINIMUM_QUERY_TERM_COVERAGE = 0.30d;
-    private static final double MINIMUM_FALLBACK_COVERAGE = 0.25d;
     private static final int MINIMUM_MATCHED_TERMS = 2;
-    private static final List<Set<String>> STRONG_ANCHOR_PAIRS = List.of(
-            Set.of("artifact", "version"),
-            Set.of("noteweave", "v2")
-    );
     private static final Set<String> STOP_WORDS = Set.of(
             "a", "an", "the", "and", "or", "of", "to", "in", "on", "for", "with", "from", "by",
             "as", "at", "is", "are", "was", "were", "be", "been", "being", "do", "does", "did",
@@ -109,14 +103,11 @@ public final class QaEvidenceRelevancePolicy {
         if (candidates == null || candidates.isEmpty()) {
             return Set.of();
         }
-        String policyQuery = v2 ? relevanceQuery(query) : text(query);
-        List<Evaluation> evaluations = new ArrayList<>(candidates.size());
         Set<Integer> standardAnchors = new LinkedHashSet<>();
         for (int index = 0; index < candidates.size(); index++) {
             Candidate candidate = candidates.get(index);
             Evaluation evaluation = evaluate(
                     policyVersion, query, candidate.title(), candidate.content());
-            evaluations.add(evaluation);
             if (evaluation.relevant()) {
                 standardAnchors.add(index);
             }
@@ -131,13 +122,6 @@ public final class QaEvidenceRelevancePolicy {
             }
         }
         Set<Integer> continuationAnchors = Set.copyOf(admitted);
-        if (admitted.isEmpty()) {
-            int fallbackIndex = bestFallbackIndex(policyQuery, candidates, evaluations);
-            if (fallbackIndex >= 0) {
-                admitted.add(fallbackIndex);
-            }
-        }
-
         for (int anchorIndex : continuationAnchors) {
             Candidate anchor = candidates.get(anchorIndex);
             if (anchor.chunkNo() != 0) {
@@ -153,35 +137,6 @@ public final class QaEvidenceRelevancePolicy {
             }
         }
         return Collections.unmodifiableSet(admitted);
-    }
-
-    private static int bestFallbackIndex(
-            String query,
-            List<Candidate> candidates,
-            List<Evaluation> evaluations
-    ) {
-        int bestIndex = -1;
-        for (int index = 0; index < evaluations.size(); index++) {
-            Evaluation evaluation = evaluations.get(index);
-            if (evaluation.matchedTermCount() < MINIMUM_MATCHED_TERMS
-                    || evaluation.queryTermCoverage() + 1.0e-9d < MINIMUM_FALLBACK_COVERAGE
-                    || !hasStrongAnchor(query, candidates.get(index))) {
-                continue;
-            }
-            if (bestIndex < 0 || betterFallback(
-                    candidates.get(index), evaluation,
-                    candidates.get(bestIndex), evaluations.get(bestIndex))) {
-                bestIndex = index;
-            }
-        }
-        return bestIndex;
-    }
-
-    private static boolean hasStrongAnchor(String query, Candidate candidate) {
-        Set<String> queryTerms = terms(query, true);
-        Set<String> evidenceTerms = terms(candidate.title() + "\n" + candidate.content(), false);
-        return STRONG_ANCHOR_PAIRS.stream()
-                .anyMatch(pair -> queryTerms.containsAll(pair) && evidenceTerms.containsAll(pair));
     }
 
     private static boolean hasSupportedDistinctiveIdentifier(String query, Candidate candidate) {
@@ -272,23 +227,6 @@ public final class QaEvidenceRelevancePolicy {
             focused.append('\n');
         }
         focused.append(value.trim());
-    }
-
-    private static boolean betterFallback(
-            Candidate candidate,
-            Evaluation evaluation,
-            Candidate current,
-            Evaluation currentEvaluation
-    ) {
-        if (evaluation.matchedTermCount() != currentEvaluation.matchedTermCount()) {
-            return evaluation.matchedTermCount() > currentEvaluation.matchedTermCount();
-        }
-        int coverage = Double.compare(
-                evaluation.queryTermCoverage(), currentEvaluation.queryTermCoverage());
-        if (coverage != 0) {
-            return coverage > 0;
-        }
-        return candidate.score() > current.score();
     }
 
     private static Set<String> terms(String value, boolean removeStopWords) {

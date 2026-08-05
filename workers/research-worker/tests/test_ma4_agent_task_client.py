@@ -216,6 +216,38 @@ def test_client_should_report_delivery_failure_with_outbox_and_delivery_identity
     assert calls[0][3] == "agent-failure:outbox-1:delivery:2:TimeoutError"
 
 
+def test_client_should_promote_stable_business_error_message_to_delivery_reason(monkeypatch) -> None:
+    from app.agent_task_client import JavaResearchAgentTaskClient
+
+    client = JavaResearchAgentTaskClient("http://backend", "token", "worker-a")
+    calls: list[tuple[str, str, dict, str]] = []
+
+    def fake_request(method, path, payload=None, idempotency_key=""):
+        calls.append((method, path, payload or {}, idempotency_key))
+        return {"data": {"failure_id": "failure-1"}}
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    command = ResearchAgentCommand(
+        schema_version="research-agent-command.v1",
+        command_id="outbox-1",
+        research_run_id="run-1",
+        agent_task_id="task-1",
+        idempotency_key="delivery-1",
+        delivery_attempt=1,
+    )
+
+    client.report_delivery_failure(command, {
+        "error_type": "RuntimeError",
+        "error_message": "RESEARCH_WEB_PROVIDER_UNAVAILABLE",
+        "trace_digest": "sha256:failure",
+    })
+
+    assert calls[0][2]["reason_code"] == "RESEARCH_WEB_PROVIDER_UNAVAILABLE"
+    assert calls[0][2]["failure_key"] == (
+        "outbox-1:delivery:1:RESEARCH_WEB_PROVIDER_UNAVAILABLE"
+    )
+
+
 def test_client_permit_should_send_only_lease_identity_and_tool_not_caller_scope(monkeypatch) -> None:
     from app.agent_task_client import JavaResearchAgentTaskClient
 

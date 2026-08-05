@@ -1,3 +1,8 @@
+import os
+import re
+import secrets
+import socket
+
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -5,16 +10,20 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     worker_type: str = "research"
     java_base_url: str = "http://localhost:8081"
-    internal_auth_token: str = ""
+    internal_auth_token: str = Field(
+        default="",
+        validation_alias=AliasChoices("internal_auth_token", "NOTEWEAVE_RESEARCH_INTERNAL_AUTH_TOKEN", "NOTEWEAVE_INTERNAL_AUTH_TOKEN"),
+    )
+    environment: str = "local"
     kafka_bootstrap_servers: str = "localhost:9092"
-    kafka_research_topic: str = "noteweave.research.run"
-    kafka_research_dlq_topic: str = "noteweave.research.run.dlq"
-    kafka_group_id: str = "noteweave-research-worker"
+    kafka_security_protocol: str = "PLAINTEXT"
+    kafka_sasl_mechanism: str = "PLAIN"
+    kafka_sasl_username: str = ""
+    kafka_sasl_password: str = ""
     kafka_research_agent_topic: str = "noteweave.research.agent.command"
     kafka_research_agent_dlq_topic: str = "noteweave.research.agent.command.dlq"
     kafka_research_agent_group_id: str = "noteweave-research-agent-worker"
     kafka_consume_max_attempts: int = 3
-    kafka_consume_raise_on_failure: bool = False
     # INCREMENTAL_V1 is the only automatic runtime mode. Historical local
     # modes remain parseable only for deterministic benchmark replay.
     research_agent_execution_mode: str = "INCREMENTAL_V1"
@@ -23,7 +32,7 @@ class Settings(BaseSettings):
     research_agent_consumer_enabled: bool = True
     research_agent_deep_cell_executor_enabled: bool = True
     research_agent_fake_provider_enabled: bool = False
-    research_agent_worker_instance_id: str = "research-agent-worker-1"
+    research_agent_worker_instance_id: str = Field(default_factory=lambda: _default_worker_instance_id())
     research_agent_lease_seconds: int = Field(default=60, ge=4, le=3600)
     research_agent_heartbeat_interval_seconds: float | None = Field(default=None, gt=0)
     research_agent_heartbeat_failure_budget_seconds: float | None = Field(default=None, gt=0)
@@ -108,8 +117,28 @@ class Settings(BaseSettings):
         )
         if request_timeout >= interval:
             raise ValueError("heartbeat request timeout must be less than heartbeat interval")
+        if self._is_production():
+            if not os.environ.get("NOTEWEAVE_RESEARCH_INTERNAL_AUTH_TOKEN", "").strip():
+                raise ValueError("production requires NOTEWEAVE_RESEARCH_INTERNAL_AUTH_TOKEN")
+            if not self.internal_auth_token.strip() or len(self.internal_auth_token.strip()) < 24:
+                raise ValueError("production requires a dedicated research internal auth token with sufficient entropy")
+            if not self.java_base_url.lower().startswith("https://"):
+                raise ValueError("production requires NOTEWEAVE_JAVA_BASE_URL to use HTTPS")
+            if self.kafka_security_protocol.upper() not in {"SSL", "SASL_SSL"}:
+                raise ValueError("production requires Kafka SSL transport")
         return self
+
+    def _is_production(self) -> bool:
+        return self.environment.strip().lower() in {"prod", "production"}
 
 
 def load_settings() -> Settings:
     return Settings()
+
+
+def _default_worker_instance_id() -> str:
+    configured = os.environ.get("NOTEWEAVE_RESEARCH_AGENT_WORKER_INSTANCE_ID", "").strip()
+    if configured:
+        return configured
+    host = re.sub(r"[^a-z0-9]+", "-", socket.gethostname().lower()).strip("-") or "worker"
+    return f"research-agent-{host}-{os.getpid()}-{secrets.token_hex(4)}"

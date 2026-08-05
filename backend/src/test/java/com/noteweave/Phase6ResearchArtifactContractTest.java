@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -17,8 +18,10 @@ import com.noteweave.answer.ConversationLiveEvent;
 import com.noteweave.infra.LocalObjectStorage;
 import com.noteweave.research.ResearchCheckpointResponse;
 import com.noteweave.research.ResearchCheckpointSummaryResponse;
+import com.noteweave.research.ResearchAgentCoordinatorRunScanner;
 import com.noteweave.research.ResearchRunDetailResponse;
 import com.noteweave.research.ResearchRunService;
+import com.noteweave.task.TaskService;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -64,9 +67,6 @@ class Phase6ResearchArtifactContractTest {
     private LocalObjectStorage storage;
 
     @Autowired
-    private TestResearchOutboxPublisherConfig.RecordingResearchOutboxPublisher recordingResearchOutboxPublisher;
-
-    @Autowired
     private TestResearchOutboxPublisherConfig.RecordingArtifactOutboxPublisher recordingArtifactOutboxPublisher;
 
     @Autowired
@@ -74,6 +74,12 @@ class Phase6ResearchArtifactContractTest {
 
     @Autowired
     private ResearchRunService researchRunService;
+
+    @Autowired
+    private ResearchAgentCoordinatorRunScanner researchAgentCoordinatorRunScanner;
+
+    @Autowired
+    private TaskService taskService;
 
     @Test
     void artifactSkillCatalogShouldExposeBuiltInSkills() throws Exception {
@@ -210,6 +216,7 @@ class Phase6ResearchArtifactContractTest {
                 .andExpect(jsonPath("$.data.status").value("RUNNING"));
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "result_type", "MARKDOWN",
@@ -400,10 +407,13 @@ class Phase6ResearchArtifactContractTest {
                 .andExpect(jsonPath("$.data.task_status").value("COMPLETED"))
                 .andExpect(jsonPath("$.data.progress_phase").value("ARTIFACT_VERSIONED"));
 
-        mockMvc.perform(get("/api/v2/tasks/{taskId}/events", taskId))
+        MvcResult artifactTaskEvents = mockMvc.perform(get("/api/v2/tasks/{taskId}/events", taskId))
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: task.progress")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: task.completed")));
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.request().asyncStarted())
+                .andReturn();
+        mockMvc.perform(asyncDispatch(artifactTaskEvents))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:task.progress")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:task.completed")));
 
         Integer versionCount = jdbcTemplate.queryForObject(
                 "select count(*) from artifact_version where artifact_job_id = ?",
@@ -593,6 +603,8 @@ class Phase6ResearchArtifactContractTest {
                 .andExpect(jsonPath("$.data.input_snapshot_id").isNotEmpty())
                 .andExpect(jsonPath("$.data.source_scope.length()").value(1))
                 .andExpect(jsonPath("$.data.source_scope[0].source_id").value(capturedSourceId))
+                .andExpect(jsonPath("$.data.source_scope[0].source_snapshot_id").value(capturedSourceSnapshotId))
+                .andExpect(jsonPath("$.data.source_scope[0].source_window_id").isNotEmpty())
                 .andExpect(jsonPath("$.data.source_scope[0].source_metadata.source_snapshot_id").isNotEmpty())
                 .andExpect(jsonPath("$.data.upstream_refs[0].ref_type").value("SOURCE_SNAPSHOT"))
                 .andExpect(jsonPath("$.data.upstream_refs[0].revision_id").value(capturedSourceSnapshotId))
@@ -668,32 +680,17 @@ class Phase6ResearchArtifactContractTest {
                 .andReturn();
         JsonNode researchData = objectMapper.readTree(research.getResponse().getContentAsString()).path("data");
         String researchRunId = researchData.path("research_run_id").asText();
-        String researchTaskId = researchData.path("task_id").asText();
         jdbcTemplate.update(
-                "update research_run set agent_execution_mode = 'SEQUENTIAL_V1' where id = ?",
-                researchRunId);
-        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", researchTaskId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "result_type", "RESEARCH_REPORT",
-                                "result_title", "Typed Upstream Report",
-                                "result_payload", Map.of(
-                                        "report_markdown", "# Typed Upstream Report\n\nReportDeleteSecret",
-                                        "report_source_candidate", Map.of(
-                                                "title", "Typed Upstream Report",
-                                                "source_type", "GENERATED_RESEARCH_REPORT",
-                                                "generated_by", "research_agent",
-                                                "content_markdown", "# Typed Upstream Report\n\nReportDeleteSecret"
-                                        ),
-                                        "research_checkpoint_candidate", Map.of(
-                                                "checkpoint_no", 1,
-                                                "snapshot_type", "RESEARCH_LOOP_CHECKPOINT"
-                                        )
-                                ),
-                                "trace_summary", "report completed",
-                                "citations", List.of(Map.of("title", "report-upstream-evidence.md"))
-                        ))))
-                .andExpect(status().isOk());
+                """
+                update research_run
+                set status = 'COMPLETED', final_report_title = ?, final_report_markdown = ?,
+                    updated_at = current_timestamp
+                where id = ?
+                """,
+                "Typed Upstream Report",
+                "# Typed Upstream Report\n\nReportDeleteSecret",
+                researchRunId
+        );
         MvcResult saved = mockMvc.perform(post(
                         "/api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}/save-report-as-source",
                         workspaceId, researchRunId))
@@ -701,6 +698,7 @@ class Phase6ResearchArtifactContractTest {
                 .andReturn();
         String reportSourceId = objectMapper.readTree(saved.getResponse().getContentAsString())
                 .path("data").path("source_id").asText();
+        markSourceProjected(reportSourceId);
         String reportSnapshotId = jdbcTemplate.queryForObject(
                 "select id from source_snapshot where source_id = ? order by version_no desc limit 1",
                 String.class, reportSourceId);
@@ -760,16 +758,14 @@ class Phase6ResearchArtifactContractTest {
                 "select count(*) from conversation_message where conversation_id = ?",
                 Integer.class, conversationId);
 
-        mockMvc.perform(post("/internal/worker/tasks/{taskId}/progress", taskId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "phase", "READING",
-                                "progress_percent", 40,
-                                "message", "Reading selected evidence",
-                                "metrics", Map.of("windows", 3),
-                                "payload", Map.of()
-                        ))))
-                .andExpect(status().isOk());
+        taskService.recordProgress(
+                taskId,
+                "READING",
+                "Reading selected evidence",
+                40,
+                Map.of("windows", 3),
+                Map.of()
+        );
 
         List<ConversationLiveEvent> events = new ArrayList<>();
         conversationEventMux.follow(conversationId, 0, events::add, Duration.ofMillis(100), false);
@@ -857,6 +853,7 @@ class Phase6ResearchArtifactContractTest {
         );
 
         MvcResult firstComplete = mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(completion)))
                 .andExpect(status().isOk())
@@ -866,11 +863,35 @@ class Phase6ResearchArtifactContractTest {
                 .path("data").path("result_ref").asText();
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(completion)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("COMPLETED"))
                 .andExpect(jsonPath("$.data.result_ref").value(firstResultRef));
+
+        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "result_type", "MARKDOWN",
+                                "result_title", "Conflicting Artifact",
+                                "result_payload", Map.of("markdown", "# Different payload"),
+                                "trace_summary", "same key, different payload",
+                                "citations", java.util.List.of()))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("WORKER_CALLBACK_IDEMPOTENCY_CONFLICT"));
+
+        mockMvc.perform(post("/internal/worker/tasks/{taskId}/fail", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "phase", "LATE_FAILURE",
+                                "error_code", "LATE_CALLBACK",
+                                "error_message", "same key, different callback type",
+                                "retryable", false))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("WORKER_CALLBACK_IDEMPOTENCY_CONFLICT"));
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/progress", taskId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -884,6 +905,7 @@ class Phase6ResearchArtifactContractTest {
                 .andExpect(jsonPath("$.data.status").value("COMPLETED"));
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/fail", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "test-fail:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "phase", "LATE_FAILURE",
@@ -927,6 +949,7 @@ class Phase6ResearchArtifactContractTest {
         String taskId = created.path("task_id").asText();
         String artifactJobId = created.path("artifact_job_id").asText();
         MvcResult completeResult = mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "result_type", "MARKDOWN",
@@ -951,7 +974,7 @@ class Phase6ResearchArtifactContractTest {
                 .andExpect(jsonPath("$.data.artifact_version_id").value(versionId))
                 .andExpect(jsonPath("$.data.status").value("READY"))
                 .andExpect(jsonPath("$.data.parse_status").value("PARSED"))
-                .andExpect(jsonPath("$.data.index_status").value("INDEXED"))
+                .andExpect(jsonPath("$.data.index_status").value("DISABLED"))
                 .andExpect(jsonPath("$.data.generated_by").value("artifact_agent"))
                 .andExpect(jsonPath("$.data.generated_ref_id").value(versionId))
                 .andReturn();
@@ -994,6 +1017,7 @@ class Phase6ResearchArtifactContractTest {
         String taskId = created.path("task_id").asText();
         String artifactJobId = created.path("artifact_job_id").asText();
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "result_type", "MARKDOWN",
@@ -1147,6 +1171,7 @@ class Phase6ResearchArtifactContractTest {
         String artifactJobId = created.path("artifact_job_id").asText();
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "result_type", "MARKDOWN",
@@ -1393,7 +1418,7 @@ class Phase6ResearchArtifactContractTest {
                 .andExpect(jsonPath("$.data.wait_context.provider_job.provider_receipt_id").value("provider-receipt-fetch-artifact-task-bili-1"))
                 .andExpect(jsonPath("$.data.wait_context.provider_job.provider_job_id").value("provider-job-builtin-bilibili-mcp-fetch-artifact-task-bili-1"))
                 .andExpect(jsonPath("$.data.wait_context.provider_job.delivery_id").value("acq-delivery-fetch-artifact-task-bili-1-1"))
-                .andExpect(jsonPath("$.data.wait_context.provider_job.adapter_callback_token").value("adapter-callback-fetch-artifact-task-bili-1"))
+                .andExpect(jsonPath("$.data.wait_context.provider_job.adapter_callback_token").doesNotExist())
                 .andExpect(jsonPath("$.data.wait_context.provider_job.provider_status").value("AVAILABLE"))
                 .andExpect(jsonPath("$.data.wait_context.provider_job.health_status").value("HEALTHY"))
                 .andExpect(jsonPath("$.data.wait_context.provider_job.provider_job_status").value("DISPATCHED"))
@@ -1426,7 +1451,7 @@ class Phase6ResearchArtifactContractTest {
                 .andExpect(jsonPath("$.data.wait_context.provider_job.provider_receipt_id").value("provider-receipt-fetch-artifact-task-bili-1"))
                 .andExpect(jsonPath("$.data.wait_context.provider_job.provider_job_id").value("provider-job-builtin-bilibili-mcp-fetch-artifact-task-bili-1"))
                 .andExpect(jsonPath("$.data.wait_context.provider_job.delivery_id").value("acq-delivery-fetch-artifact-task-bili-1-1"))
-                .andExpect(jsonPath("$.data.wait_context.provider_job.adapter_callback_token").value("adapter-callback-fetch-artifact-task-bili-1"))
+                .andExpect(jsonPath("$.data.wait_context.provider_job.adapter_callback_token").doesNotExist())
                 .andExpect(jsonPath("$.data.wait_context.provider_job.provider_status").value("AVAILABLE"))
                 .andExpect(jsonPath("$.data.wait_context.provider_job.health_status").value("HEALTHY"))
                 .andExpect(jsonPath("$.data.wait_context.provider_job.provider_job_status").value("DISPATCHED"))
@@ -1451,7 +1476,7 @@ class Phase6ResearchArtifactContractTest {
                 .andExpect(jsonPath("$.data[0].wait_context.provider_job.request_id").value("fetch-artifact-task-bili-1"))
                 .andExpect(jsonPath("$.data[0].wait_context.provider_job.provider_job_id").value("provider-job-builtin-bilibili-mcp-fetch-artifact-task-bili-1"))
                 .andExpect(jsonPath("$.data[0].wait_context.provider_job.delivery_id").value("acq-delivery-fetch-artifact-task-bili-1-1"))
-                .andExpect(jsonPath("$.data[0].wait_context.provider_job.adapter_callback_token").value("adapter-callback-fetch-artifact-task-bili-1"))
+                .andExpect(jsonPath("$.data[0].wait_context.provider_job.adapter_callback_token").doesNotExist())
                 .andExpect(jsonPath("$.data[0].wait_context.provider_job.provider_status").value("AVAILABLE"))
                 .andExpect(jsonPath("$.data[0].wait_context.provider_job.health_status").value("HEALTHY"))
                 .andExpect(jsonPath("$.data[0].wait_context.provider_job.provider_job_status").value("DISPATCHED"))
@@ -1479,6 +1504,7 @@ class Phase6ResearchArtifactContractTest {
                 .andExpect(jsonPath("$.data.progress_phase").value("COMPOSING"));
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "result_type", "MARKDOWN",
@@ -1775,7 +1801,7 @@ class Phase6ResearchArtifactContractTest {
                 .andExpect(jsonPath("$.data.runtime_trace.acquisition_callback_trace.operation.tool_name")
                         .value("get_bilibili_subtitle"))
                 .andExpect(jsonPath("$.data.runtime_trace.acquisition_callback_trace.operation.callback_token")
-                        .value("artifact-callback-token-bili-ack-1"))
+                        .doesNotExist())
                 .andExpect(jsonPath("$.data.runtime_trace.acquisition_callback_trace.operation.provider_status")
                         .value("AVAILABLE"))
                 .andExpect(jsonPath("$.data.runtime_trace.acquisition_callback_trace.operation.health_status")
@@ -1824,8 +1850,6 @@ class Phase6ResearchArtifactContractTest {
                 .isEqualTo("AVAILABLE");
         assertThat(acknowledgedVersionDetail.runtimeTrace().acquisitionCallbackTrace().operation().healthStatus())
                 .isEqualTo("HEALTHY");
-        assertThat(acknowledgedVersionDetail.runtimeTrace().acquisitionCallbackTrace().operation().callbackToken())
-                .isEqualTo("artifact-callback-token-bili-ack-1");
         assertThat(acknowledgedVersionDetail.runtimeTrace().acquisitionCallbackTrace().operation().callbackStatus())
                 .isEqualTo("ACKNOWLEDGED");
         assertThat(acknowledgedVersionDetail.runtimeTrace().acquisitionCallbackTrace().operation().deliveryId())
@@ -1838,6 +1862,8 @@ class Phase6ResearchArtifactContractTest {
                 .hasSize(1);
         assertThat(acknowledgedVersionDetail.runtimeTrace().acquisitionCallbackTrace().operation().providerDeliveryAttempts().get(0).ackStatus())
                 .isEqualTo("ACKNOWLEDGED");
+        assertThat(objectMapper.writeValueAsString(acknowledgedVersionDetail))
+                .doesNotContain("artifact-callback-token-bili-ack-1", "callbackToken", "callback_token");
 
         Integer versionCount = jdbcTemplate.queryForObject(
                 "select count(*) from artifact_version where artifact_job_id = ?",
@@ -2131,28 +2157,19 @@ class Phase6ResearchArtifactContractTest {
         String taskId = objectMapper.readTree(createResult.getResponse().getContentAsString())
                 .path("data").path("task_id").asText();
 
-        uploadSource(workspaceId, "late-research-input.md", """
+        String lateSourceId = uploadSource(workspaceId, "late-research-input.md", """
                 Late source uploaded after the research run was created.
                 It must not enter the existing run source scope snapshot.
                 """);
 
-        mockMvc.perform(get("/internal/worker/research-tasks/{taskId}/input", taskId))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.workspace_id").value(workspaceId))
-                .andExpect(jsonPath("$.data.target_id").value(researchRunId))
-                .andExpect(jsonPath("$.data.context_snapshot").doesNotExist())
-                .andExpect(jsonPath("$.data.input_payload.profile_key").value("DEFAULT"))
-                .andExpect(jsonPath("$.data.input_payload.context_snapshot_id").doesNotExist())
-                .andExpect(jsonPath("$.data.input_payload.research_intent.research_goal").value("Produce a verifier-approved summary for AlphaResearch."))
-                .andExpect(jsonPath("$.data.input_payload.research_intent.deliverable_format").value("Evidence-backed executive brief"))
-                .andExpect(jsonPath("$.data.input_payload.research_intent.depth").value("DEEP"))
-                .andExpect(jsonPath("$.data.input_payload.research_intent.constraints.length()").value(2))
-                .andExpect(jsonPath("$.data.input_payload.research_intent.time_range").value("Current project cycle"))
-                .andExpect(jsonPath("$.data.control_pack.pack_type").value("research"))
-                .andExpect(jsonPath("$.data.source_scope.length()").value(1))
-                .andExpect(jsonPath("$.data.source_scope[0].title").value("research-input.md"))
-                .andExpect(jsonPath("$.data.source_scope[0].sample_text")
-                        .value(org.hamcrest.Matchers.containsString("Research input source")));
+        String sourceScopeJson = jdbcTemplate.queryForObject(
+                "select source_scope_json from research_run where id = ?",
+                String.class,
+                researchRunId
+        );
+        JsonNode persistedSourceScope = objectMapper.readTree(sourceScopeJson);
+        assertThat(persistedSourceScope).hasSize(1);
+        assertThat(persistedSourceScope.path(0).asText()).isEqualTo(scopedSourceId).isNotEqualTo(lateSourceId);
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/progress", taskId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -2220,7 +2237,7 @@ class Phase6ResearchArtifactContractTest {
                 .andExpect(jsonPath("$.data.wait_context.provider_job.provider_receipt_id").value("provider-receipt-fetch-research-task-read-1"))
                 .andExpect(jsonPath("$.data.wait_context.provider_job.provider_job_id").value("provider-job-builtin-search-provider-fetch-research-task-read-1"))
                 .andExpect(jsonPath("$.data.wait_context.provider_job.delivery_id").value("acq-delivery-fetch-research-task-read-1-2"))
-                .andExpect(jsonPath("$.data.wait_context.provider_job.adapter_callback_token").value("adapter-callback-fetch-research-task-read-1"))
+                .andExpect(jsonPath("$.data.wait_context.provider_job.adapter_callback_token").doesNotExist())
                 .andExpect(jsonPath("$.data.wait_context.provider_job.provider_status").value("AVAILABLE"))
                 .andExpect(jsonPath("$.data.wait_context.provider_job.health_status").value("HEALTHY"))
                 .andExpect(jsonPath("$.data.wait_context.provider_job.provider_job_status").value("DISPATCHED"))
@@ -2246,7 +2263,7 @@ class Phase6ResearchArtifactContractTest {
                 .andExpect(jsonPath("$.data.wait_context.provider_job.provider_receipt_id").value("provider-receipt-fetch-research-task-read-1"))
                 .andExpect(jsonPath("$.data.wait_context.provider_job.provider_job_id").value("provider-job-builtin-search-provider-fetch-research-task-read-1"))
                 .andExpect(jsonPath("$.data.wait_context.provider_job.delivery_id").value("acq-delivery-fetch-research-task-read-1-2"))
-                .andExpect(jsonPath("$.data.wait_context.provider_job.adapter_callback_token").value("adapter-callback-fetch-research-task-read-1"))
+                .andExpect(jsonPath("$.data.wait_context.provider_job.adapter_callback_token").doesNotExist())
                 .andExpect(jsonPath("$.data.wait_context.provider_job.provider_status").value("AVAILABLE"))
                 .andExpect(jsonPath("$.data.wait_context.provider_job.health_status").value("HEALTHY"))
                 .andExpect(jsonPath("$.data.wait_context.provider_job.provider_job_status").value("DISPATCHED"))
@@ -2329,10 +2346,13 @@ class Phase6ResearchArtifactContractTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("HEARTBEAT_RECORDED"));
 
-        mockMvc.perform(get("/api/v2/tasks/{taskId}/events", taskId))
+        MvcResult heartbeatTaskEvents = mockMvc.perform(get("/api/v2/tasks/{taskId}/events", taskId))
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: task.progress")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: task.heartbeat")))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.request().asyncStarted())
+                .andReturn();
+        mockMvc.perform(asyncDispatch(heartbeatTaskEvents))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:task.progress")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:task.heartbeat")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"phase\":\"VERIFYING\"")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"progress_percent\":70")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"verified_cells\":3")))
@@ -2822,6 +2842,7 @@ class Phase6ResearchArtifactContractTest {
         );
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(completeRequest)))
                 .andExpect(status().isOk())
@@ -3251,9 +3272,11 @@ class Phase6ResearchArtifactContractTest {
         String taskId = objectMapper.readTree(createResult.getResponse().getContentAsString())
                 .path("data").path("task_id").asText();
 
-        mockMvc.perform(get("/internal/worker/research-tasks/{taskId}/input", taskId))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.source_scope.length()").value(0));
+        assertThat(jdbcTemplate.queryForObject(
+                "select source_scope_json from research_run where task_id = ?",
+                String.class,
+                taskId
+        )).isEqualTo("[]");
     }
 
     @Test
@@ -3467,6 +3490,7 @@ class Phase6ResearchArtifactContractTest {
         );
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(resumeSeedCompleteRequest)))
                 .andExpect(status().isOk());
@@ -3482,10 +3506,10 @@ class Phase6ResearchArtifactContractTest {
         String resumeSeedReportObjectKey = "workspace/%s/research/%s/report/final.md".formatted(workspaceId, researchRunId);
 
         MvcResult resumeResult = mockMvc.perform(post(
-                        "/api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}/resume-from-checkpoint/{checkpointNo}",
+                "/api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}/resume-from-checkpoint/{checkpointNo}",
                         workspaceId, researchRunId, 1))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("QUEUED"))
+                .andExpect(jsonPath("$.data.status").value("RUNNING"))
                 .andReturn();
 
         String resumedResearchRunId = objectMapper.readTree(resumeResult.getResponse().getContentAsString())
@@ -3493,21 +3517,23 @@ class Phase6ResearchArtifactContractTest {
         String resumedTaskId = objectMapper.readTree(resumeResult.getResponse().getContentAsString())
                 .path("data").path("task_id").asText();
 
-        mockMvc.perform(get("/internal/worker/research-tasks/{taskId}/input", resumedTaskId))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.target_id").value(resumedResearchRunId))
-                .andExpect(jsonPath("$.data.retrieval_mode").value("SOURCES_ONLY"))
-                .andExpect(jsonPath("$.data.input_payload.research_intent.research_goal").value("Continue the interrupted checkpoint recovery path."))
-                .andExpect(jsonPath("$.data.input_payload.resume_checkpoint.source_research_run_id").value(researchRunId))
-                .andExpect(jsonPath("$.data.input_payload.resume_checkpoint.checkpoint_no").value(1))
-                .andExpect(jsonPath("$.data.input_payload.resume_checkpoint.active_branch_id").value("branch-main"))
-                .andExpect(jsonPath("$.data.input_payload.resume_checkpoint.payload.state_ledger.active_branch_id").value("branch-main"))
-                .andExpect(jsonPath("$.data.input_payload.resume_checkpoint.payload.loop_rounds[0].source_samples[0].source_title").value("resume-input.md"))
-                .andExpect(jsonPath("$.data.input_payload.resume_checkpoint.payload.state_ledger.rows[0].source_title").value("resume-input.md"))
-                .andExpect(jsonPath("$.data.input_payload.resume_checkpoint.payload.evidence_cards[0].source_title").value("resume-input.md"))
-                .andExpect(jsonPath("$.data.input_payload.resume_checkpoint.payload.read_windows[0].source_title").value("resume-input.md"))
-                .andExpect(jsonPath("$.data.input_payload.resume_checkpoint.payload.evidence_cards[0].evidence_id").value("ev-resume-1"))
-                .andExpect(jsonPath("$.data.input_payload.resume_checkpoint.payload.loop_decision.decision").value("SYNTHESIZE_REPORT"));
+        assertThat(jdbcTemplate.queryForObject(
+                "select agent_execution_mode from research_run where id = ?",
+                String.class,
+                resumedResearchRunId
+        )).isEqualTo("INCREMENTAL_V1");
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from task_outbox where task_id = ? and topic = 'noteweave.research.run'",
+                Integer.class,
+                resumedTaskId
+        )).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from research_cell where research_run_id = ?",
+                Integer.class,
+                resumedResearchRunId
+        )).isGreaterThan(0);
+        assertThat(researchAgentCoordinatorRunScanner.findEligibleRunIds(100))
+                .contains(resumedResearchRunId);
 
         mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}", workspaceId, resumedResearchRunId))
                 .andExpect(status().isOk())
@@ -3524,7 +3550,7 @@ class Phase6ResearchArtifactContractTest {
                 .andExpect(jsonPath("$.data.resume_checkpoint.research_artifact.saved_report_source.source_id").value(resumeSeedSourceId))
                 .andExpect(jsonPath("$.data.resume_checkpoint.summary.state_ledger.verified_row_count").value(1))
                 .andExpect(jsonPath("$.data.research_intent.research_goal").value("Continue the interrupted checkpoint recovery path."))
-                .andExpect(jsonPath("$.data.status").value("QUEUED"))
+                .andExpect(jsonPath("$.data.status").value("RUNNING"))
                 .andExpect(jsonPath("$.data.counterfactual_summary.has_counterfactual_recheck").value(false))
                 .andExpect(jsonPath("$.data.counterfactual_summary.counterfactual_branch_count").value(0));
 
@@ -3590,6 +3616,7 @@ class Phase6ResearchArtifactContractTest {
         );
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", resumedTaskId)
+                        .header("X-NoteWeave-Idempotency-Key", "test-complete:" + resumedTaskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(resumedCompleteRequest)))
                 .andExpect(status().isOk())
@@ -3870,6 +3897,7 @@ class Phase6ResearchArtifactContractTest {
         );
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "result_type", "RESEARCH_REPORT",
@@ -3952,53 +3980,7 @@ class Phase6ResearchArtifactContractTest {
     }
 
     @Test
-    @Disabled("Legacy research.run outbox was removed; agent command outbox has dedicated coverage")
-    void researchOutboxDispatcherShouldPublishKafkaMessageAndMarkOutboxSent() throws Exception {
-        recordingResearchOutboxPublisher.reset();
-        jdbcTemplate.update("update task_outbox set status = 'SENT', sent_at = current_timestamp where topic = 'noteweave.research.run'");
-        String workspaceId = createWorkspace();
-        String scopedSourceId = uploadSource(workspaceId, "dispatch-research-input.md", """
-                Dispatch source for the research worker.
-                It proves the outbox can publish a Kafka research message.
-                """);
-
-        MvcResult createResult = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/research-runs", workspaceId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "question", "Can the research worker be dispatched?",
-                                "profile", "default",
-                                "source_scope_source_ids", java.util.List.of(scopedSourceId)
-                        ))))
-                .andExpect(status().isOk())
-                .andReturn();
-
-        String taskId = objectMapper.readTree(createResult.getResponse().getContentAsString())
-                .path("data").path("task_id").asText();
-        String researchRunId = objectMapper.readTree(createResult.getResponse().getContentAsString())
-                .path("data").path("research_run_id").asText();
-
-        mockMvc.perform(post("/internal/worker/research-outbox/dispatch")
-                        .param("limit", "1"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.dispatched_count").value(1));
-
-        assertThat(recordingResearchOutboxPublisher.messages()).hasSize(1);
-        TestResearchOutboxPublisherConfig.PublishedMessage message = recordingResearchOutboxPublisher.messages().get(0);
-        assertThat(message.topic()).isEqualTo("noteweave.research.run");
-        assertThat(message.messageKey()).isEqualTo(researchRunId);
-        JsonNode payload = objectMapper.readTree(message.payloadJson());
-        assertThat(payload.path("task_id").asText()).isEqualTo(taskId);
-        assertThat(payload.path("target_id").asText()).isEqualTo(researchRunId);
-        String outboxStatus = jdbcTemplate.queryForObject(
-                "select status from task_outbox where task_id = ? and topic = 'noteweave.research.run'",
-                String.class,
-                taskId
-        );
-        assertThat(outboxStatus).isEqualTo("SENT");
-    }
-
-    @Test
-    void artifactOutboxDispatcherShouldInvokeArtifactWorkerAndMarkOutboxSent() throws Exception {
+    void artifactOutboxDispatcherShouldInvokeArtifactWorkerAndHoldLeaseUntilCallback() throws Exception {
         recordingArtifactOutboxPublisher.reset();
         jdbcTemplate.update("update task_outbox set status = 'SENT', sent_at = current_timestamp where topic = 'noteweave.artifact.job'");
         String workspaceId = createWorkspace();
@@ -4036,12 +4018,18 @@ class Phase6ResearchArtifactContractTest {
         JsonNode payload = objectMapper.readTree(message.payloadJson());
         assertThat(payload.path("task_id").asText()).isEqualTo(taskId);
         assertThat(payload.path("target_id").asText()).isEqualTo(artifactJobId);
+        assertThat(message.deliveryToken()).isNotBlank();
         String outboxStatus = jdbcTemplate.queryForObject(
                 "select status from task_outbox where task_id = ? and topic = 'noteweave.artifact.job'",
                 String.class,
                 taskId
         );
-        assertThat(outboxStatus).isEqualTo("SENT");
+        assertThat(outboxStatus).isEqualTo("PROCESSING");
+        assertThat(jdbcTemplate.queryForObject(
+                "select lease_owner from task_outbox where task_id = ? and topic = 'noteweave.artifact.job'",
+                String.class,
+                taskId
+        )).isEqualTo(message.deliveryToken());
     }
 
     @Test
@@ -4088,11 +4076,11 @@ class Phase6ResearchArtifactContractTest {
                 select status, attempt_count, last_error, next_attempt_at, claimed_at
                 from task_outbox where task_id = ? and topic = 'noteweave.artifact.job'
                 """, taskId);
-        assertThat(successfulRetry.get("status")).isEqualTo("SENT");
+        assertThat(successfulRetry.get("status")).isEqualTo("PROCESSING");
         assertThat(successfulRetry.get("attempt_count")).isEqualTo(2);
         assertThat(successfulRetry.get("last_error")).isNull();
         assertThat(successfulRetry.get("next_attempt_at")).isNull();
-        assertThat(successfulRetry.get("claimed_at")).isNull();
+        assertThat(successfulRetry.get("claimed_at")).isNotNull();
         assertThat(recordingArtifactOutboxPublisher.messages()).hasSize(1);
     }
 
@@ -4186,6 +4174,7 @@ class Phase6ResearchArtifactContractTest {
                 .path("data").path("task_id").asText();
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "result_type", "RESEARCH_REPORT",
@@ -4225,9 +4214,9 @@ class Phase6ResearchArtifactContractTest {
         assertThat(sourceRow.get("source_type")).isEqualTo("GENERATED_RESEARCH_REPORT");
         assertThat(sourceRow.get("generated_by")).isEqualTo("research_agent");
         assertThat(sourceRow.get("generated_ref_id")).isEqualTo(researchRunId);
-        assertThat(sourceRow.get("status")).isEqualTo("READY");
+        assertThat(sourceRow.get("status")).isEqualTo("PARSED");
         assertThat(sourceRow.get("parse_status")).isEqualTo("PARSED");
-        assertThat(sourceRow.get("index_status")).isEqualTo("INDEXED");
+        assertThat(sourceRow.get("index_status")).isEqualTo("DISABLED");
 
         String reportSourceId = jdbcTemplate.queryForObject(
                 "select report_source_id from research_run where id = ?",
@@ -4256,10 +4245,10 @@ class Phase6ResearchArtifactContractTest {
                 .andExpect(jsonPath("$.data.saved_report_source.source_type").value("GENERATED_RESEARCH_REPORT"))
                 .andExpect(jsonPath("$.data.saved_report_source.generated_by").value("research_agent"))
                 .andExpect(jsonPath("$.data.saved_report_source.generated_ref_id").value(researchRunId))
-                .andExpect(jsonPath("$.data.saved_report_source.index_status").value("INDEXED"))
+                .andExpect(jsonPath("$.data.saved_report_source.index_status").value("DISABLED"))
                 .andExpect(jsonPath("$.data.research_artifact.artifact_id").value(researchRunId))
                 .andExpect(jsonPath("$.data.research_artifact.saved_report_source.source_id").value(sourceId))
-                .andExpect(jsonPath("$.data.research_artifact.saved_report_source.index_status").value("INDEXED"));
+                .andExpect(jsonPath("$.data.research_artifact.saved_report_source.index_status").value("DISABLED"));
 
         mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}/checkpoints/{checkpointNo}",
                         workspaceId, researchRunId, 1))
@@ -4315,6 +4304,7 @@ class Phase6ResearchArtifactContractTest {
                 .path("data").path("task_id").asText();
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "result_type", "RESEARCH_REPORT",
@@ -4341,6 +4331,7 @@ class Phase6ResearchArtifactContractTest {
 
         String reportSourceId = objectMapper.readTree(saveReportResult.getResponse().getContentAsString())
                 .path("data").path("source_id").asText();
+        markSourceProjected(reportSourceId);
 
         String conversationId = createConversation(workspaceId);
         JsonNode message = sendMessage(conversationId, "QA", "请总结 ResearchReportCitationToken 的含义");
@@ -4348,7 +4339,7 @@ class Phase6ResearchArtifactContractTest {
 
         ChatStreamTestSupport.perform(mockMvc, requestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:chat.citation")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:citation.upsert")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString(
                         "来源覆盖：1 个资料来源（Citation Origin Research Report · Research Report(" + researchRunId + ")）"
                 )))
@@ -4382,16 +4373,14 @@ class Phase6ResearchArtifactContractTest {
         String downstreamTaskId = objectMapper.readTree(downstreamRunResult.getResponse().getContentAsString())
                 .path("data").path("task_id").asText();
 
-        mockMvc.perform(get("/internal/worker/research-tasks/{taskId}/input", downstreamTaskId))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.source_scope[0].source_id").value(reportSourceId))
-                .andExpect(jsonPath("$.data.source_scope[0].source_type").value("GENERATED_RESEARCH_REPORT"))
-                .andExpect(jsonPath("$.data.source_scope[0].generated_by").value("research_agent"))
-                .andExpect(jsonPath("$.data.source_scope[0].generated_ref_id").value(researchRunId))
-                .andExpect(jsonPath("$.data.source_scope[0].source_metadata.research_artifact.artifact_id").value(researchRunId))
-                .andExpect(jsonPath("$.data.source_scope[0].source_metadata.research_artifact.artifact_type").value("DEEP_RESEARCH_REPORT"));
+        assertThat(jdbcTemplate.queryForObject(
+                "select source_scope_json from research_run where id = ?",
+                String.class,
+                downstreamRunId
+        )).contains(reportSourceId);
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", downstreamTaskId)
+                        .header("X-NoteWeave-Idempotency-Key", "test-complete:" + downstreamTaskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.ofEntries(
                                 Map.entry("result_type", "RESEARCH_REPORT"),
@@ -4605,6 +4594,7 @@ class Phase6ResearchArtifactContractTest {
                 .path("data").path("task_id").asText();
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/fail", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "test-fail:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "phase", "VERIFYING",
@@ -4648,6 +4638,7 @@ class Phase6ResearchArtifactContractTest {
                 .path("data").path("task_id").asText();
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/fail", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "test-fail:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "phase", "VERIFYING",
@@ -4680,6 +4671,8 @@ class Phase6ResearchArtifactContractTest {
 
     private void completeArtifact(String taskId, String title, String markdown) throws Exception {
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Outbox-Delivery-Token", artifactDeliveryToken(taskId))
+                        .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "result_type", "MARKDOWN",
@@ -4689,6 +4682,33 @@ class Phase6ResearchArtifactContractTest {
                                 "citations", java.util.List.of()
                         ))))
                 .andExpect(status().isOk());
+    }
+
+    private String artifactDeliveryToken(String taskId) {
+        List<String> existing = jdbcTemplate.queryForList("""
+                select lease_owner from task_outbox
+                where task_id = ? and topic = 'noteweave.artifact.job'
+                  and status in ('PROCESSING', 'SENT') and lease_owner is not null
+                order by created_at desc, id desc limit 1
+                """, String.class, taskId);
+        if (!existing.isEmpty()) {
+            return existing.get(0);
+        }
+        String token = "test-delivery:" + java.util.UUID.randomUUID();
+        int claimed = jdbcTemplate.update("""
+                update task_outbox
+                set status = 'PROCESSING', claimed_at = current_timestamp,
+                    lease_owner = ?, lease_until = ?, attempt_count = attempt_count + 1
+                where task_id = ? and topic = 'noteweave.artifact.job' and status = 'READY'
+                """,
+                token,
+                java.sql.Timestamp.from(java.time.Instant.now().plus(Duration.ofMinutes(70))),
+                taskId
+        );
+        if (claimed != 1) {
+            throw new IllegalStateException("Artifact test has no claimable outbox delivery: " + taskId);
+        }
+        return token;
     }
 
     private String createWorkspace() throws Exception {
@@ -4740,11 +4760,19 @@ class Phase6ResearchArtifactContractTest {
                 .andExpect(status().isOk());
         MvcResult completeResult = mockMvc.perform(post("/api/v2/uploads/{uploadId}/complete", uploadId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.parse_status").value(org.hamcrest.Matchers.anyOf(org.hamcrest.Matchers.equalTo("PARSED"), org.hamcrest.Matchers.equalTo("PARSING_QUEUED"))))
-                .andExpect(jsonPath("$.data.index_status").value(org.hamcrest.Matchers.anyOf(org.hamcrest.Matchers.equalTo("INDEXED"), org.hamcrest.Matchers.equalTo("INDEX_QUEUED"))))
+                .andExpect(jsonPath("$.data.parse_status").value("PARSED"))
+                .andExpect(jsonPath("$.data.index_status").value("DISABLED"))
                 .andReturn();
-        return objectMapper.readTree(completeResult.getResponse().getContentAsString())
+        String sourceId = objectMapper.readTree(completeResult.getResponse().getContentAsString())
                 .path("data").path("source_id").asText();
+        markSourceProjected(sourceId);
+        return sourceId;
+    }
+
+    private void markSourceProjected(String sourceId) {
+        jdbcTemplate.update("update source set status = 'READY', index_status = 'INDEXED' where id = ?", sourceId);
+        jdbcTemplate.update("update source_snapshot set index_status = 'INDEXED' where source_id = ?", sourceId);
+        jdbcTemplate.update("update source_chunk set projection_status = 'PROJECTED', projected_at = current_timestamp where source_id = ?", sourceId);
     }
 
     private JsonNode sendMessage(String conversationId, String answerMode, String content) throws Exception {

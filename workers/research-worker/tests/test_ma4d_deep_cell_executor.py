@@ -179,6 +179,42 @@ def test_deep_cell_should_permit_each_real_phase_in_order_and_build_no_result_co
     assert completion.envelope_digest.startswith("sha256:")
 
 
+def test_workspace_window_search_should_preserve_frozen_snapshot_and_database_window_identity() -> None:
+    from app.deep_cell_executor import _build_task_scope, _search_workspace_windows
+    from app.task_snapshot_contract import ResearchAgentTaskSnapshot
+
+    raw_snapshot = _snapshot(source_scope=[{
+        "source_id": "source-1",
+        "title": "Trusted note",
+        "sample_text": "Only the first window.",
+        "source_snapshot_id": "snapshot-1",
+        "source_window_id": "window-1",
+    }])
+    snapshot = ResearchAgentTaskSnapshot.model_validate(raw_snapshot)
+    task_input, plan, _allow_external = _build_task_scope(snapshot)
+
+    class WindowPermit(_Permit):
+        def search_workspace_windows(self, _snapshot, *, queries, limit):
+            assert queries
+            assert limit > 0
+            return [SimpleNamespace(
+                source_id="source-1",
+                source_snapshot_id="snapshot-1",
+                source_window_id="window-2",
+                source_title="Trusted note",
+                query=queries[0],
+                window_text="The answer exists only in the second window.",
+                score_ppm=950_000,
+            )]
+
+    hits = _search_workspace_windows(snapshot, task_input, plan, WindowPermit())
+
+    assert len(hits) == 1
+    assert hits[0].source_snapshot_id == "snapshot-1"
+    assert hits[0].source_window_id == "window-2"
+    assert hits[0].workspace_window_text == "The answer exists only in the second window."
+
+
 def test_deep_cell_should_execute_an_authoritative_counterfactual_quorum_slot() -> None:
     from app.deep_cell_executor import DeepCellExecutor
     from app.deterministic_fake_toolchain import DeterministicFakeToolchain
@@ -344,6 +380,8 @@ def test_deep_cell_should_use_real_http_permits_and_archive_before_external_evid
             calls.append((self.path, payload, self.headers.get("X-NoteWeave-Internal-Token", "")))
             if self.path == "/internal/research-agent/permits":
                 data = {"status": "GRANTED", "tool_identity": payload["tool_identity"]}
+            elif self.path == "/internal/research-agent/workspace-windows/search":
+                data = []
             elif self.path == "/internal/research-agent/external-snapshots":
                 content_sha256 = hashlib.sha256(str(payload["content_text"]).encode("utf-8")).hexdigest()
                 data = {
@@ -405,6 +443,7 @@ def test_deep_cell_should_use_real_http_permits_and_archive_before_external_evid
 
     assert [(path, payload.get("tool_identity")) for path, payload, _token in calls] == [
         ("/internal/research-agent/permits", "search"),
+        ("/internal/research-agent/workspace-windows/search", None),
         ("/internal/research-agent/permits", "fetch"),
         ("/internal/research-agent/permits", "read"),
         ("/internal/research-agent/external-snapshots", None),

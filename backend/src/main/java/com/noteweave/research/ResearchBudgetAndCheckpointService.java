@@ -19,6 +19,7 @@ public class ResearchBudgetAndCheckpointService {
 
     private static final String ATOMIC_SNAPSHOT_SCHEMA_V1 = "research-agent-task-snapshot.v1";
     private static final String ATOMIC_SNAPSHOT_SCHEMA_V2 = "research-agent-task-snapshot.v2";
+    private static final String ATOMIC_SNAPSHOT_SCHEMA_V3 = "research-agent-task-snapshot.v3";
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -259,9 +260,11 @@ public class ResearchBudgetAndCheckpointService {
         }
         boolean atomicDeepCell = "DEEP_CELL".equals(task.role())
                 && (ATOMIC_SNAPSHOT_SCHEMA_V1.equals(task.snapshotSchemaVersion())
-                || ATOMIC_SNAPSHOT_SCHEMA_V2.equals(task.snapshotSchemaVersion()));
+                || ATOMIC_SNAPSHOT_SCHEMA_V2.equals(task.snapshotSchemaVersion())
+                || ATOMIC_SNAPSHOT_SCHEMA_V3.equals(task.snapshotSchemaVersion()));
         boolean atomicCounterfactual = "COUNTERFACTUAL".equals(task.role())
-                && ATOMIC_SNAPSHOT_SCHEMA_V2.equals(task.snapshotSchemaVersion());
+                && (ATOMIC_SNAPSHOT_SCHEMA_V2.equals(task.snapshotSchemaVersion())
+                || ATOMIC_SNAPSHOT_SCHEMA_V3.equals(task.snapshotSchemaVersion()));
         if ("INCREMENTAL_V1".equals(executionMode) && (atomicDeepCell || atomicCounterfactual)) {
             throw new BusinessException("RESEARCH_AGENT_ATOMIC_COMPLETION_REQUIRED",
                     "Snapshot-ready research task budget must be finalized by atomic completion");

@@ -21,21 +21,24 @@ final class KnowledgeWikiSearchEngine {
 
     List<WikiSearchRow> search(String workspaceId, String query) {
         Set<String> terms = extractTerms(query);
-        return rank(loadRows(workspaceId), terms).stream()
+        return rank(loadRows(workspaceId, terms), terms).stream()
                 .map(ScoredWikiRow::row)
                 .toList();
     }
 
     List<KnowledgePageHit> findRelevantPages(String workspaceId, String query) {
         Set<String> terms = extractTerms(query);
-        List<WikiSearchRow> rows = loadRows(workspaceId);
+        List<WikiSearchRow> rows = loadRows(workspaceId, terms);
         List<ScoredWikiRow> scored = rank(rows, terms).stream()
                 .limit(5)
                 .toList();
         if (!scored.isEmpty()) {
             return scored.stream().map(row -> row.row().toPageHit(row.score())).toList();
         }
-        return rows.stream().limit(5).map(row -> row.toPageHit(0)).toList();
+        return loadRows(workspaceId).stream()
+                .limit(5)
+                .map(row -> row.toPageHit(0))
+                .toList();
     }
 
     private List<ScoredWikiRow> rank(List<WikiSearchRow> rows, Set<String> terms) {
@@ -53,7 +56,11 @@ final class KnowledgeWikiSearchEngine {
     }
 
     List<WikiSearchRow> loadRows(String workspaceId) {
-        return jdbcTemplate.query("""
+        return loadRows(workspaceId, Set.of());
+    }
+
+    private List<WikiSearchRow> loadRows(String workspaceId, Set<String> terms) {
+        StringBuilder sql = new StringBuilder("""
                 select i.id,
                        i.title,
                        coalesce(i.page_kind, 'TOPIC') as page_kind,
@@ -69,9 +76,28 @@ final class KnowledgeWikiSearchEngine {
                 from knowledge_item i
                 join knowledge_version v on v.id = i.latest_version_id
                 where i.workspace_id = ? and i.item_type = 'WIKI' and i.status = 'ACTIVE'
-                order by i.updated_at desc
-                limit 120
-                """, (rs, rowNum) -> new WikiSearchRow(
+                """);
+        java.util.ArrayList<Object> parameters = new java.util.ArrayList<>();
+        parameters.add(workspaceId);
+        if (!terms.isEmpty()) {
+            sql.append(" and (");
+            int index = 0;
+            for (String term : terms) {
+                if (index++ > 0) {
+                    sql.append(" or ");
+                }
+                sql.append("lower(concat(coalesce(i.title, ''), ' ', coalesce(v.summary, ''), ' ', coalesce(v.content, ''))) like ?");
+                parameters.add("%" + term.toLowerCase(Locale.ROOT) + "%");
+            }
+            sql.append(")");
+        }
+        sql.append(" order by i.updated_at desc");
+        // Browse views remain bounded, but search queries must rank every
+        // matching page so older pages do not become undiscoverable.
+        if (terms.isEmpty()) {
+            sql.append(" limit 120");
+        }
+        return jdbcTemplate.query(sql.toString(), (rs, rowNum) -> new WikiSearchRow(
                 rs.getString("id"),
                 rs.getString("title"),
                 rs.getString("page_kind"),
@@ -84,7 +110,7 @@ final class KnowledgeWikiSearchEngine {
                 rs.getInt("backlink_count"),
                 rs.getInt("citation_count"),
                 rs.getInt("unresolved_count")
-        ), workspaceId);
+        ), parameters.toArray());
     }
 
     private Set<String> extractTerms(String query) {

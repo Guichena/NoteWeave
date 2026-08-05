@@ -1,6 +1,30 @@
 export type Conversation = {
   conversation_id: string;
   title: string;
+  conversation_type?: string;
+  created_at?: string;
+};
+
+export type ConversationSummary = {
+  conversation_id: string;
+  title: string;
+  conversation_type: string;
+  status: string;
+  active_head_message_id: string | null;
+  created_at: string;
+  last_active_at: string;
+};
+
+export type ConversationMessage = {
+  message_id: string;
+  message_seq: number;
+  role: string;
+  requested_turn_mode: string | null;
+  content: string;
+  reply_to_message_id: string | null;
+  context_status: string | null;
+  content_hash: string | null;
+  created_at: string;
 };
 
 export type CreateConversationInput = {

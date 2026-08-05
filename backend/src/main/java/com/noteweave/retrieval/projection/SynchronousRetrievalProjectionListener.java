@@ -13,13 +13,16 @@ public class SynchronousRetrievalProjectionListener {
     private static final Logger log = LoggerFactory.getLogger(SynchronousRetrievalProjectionListener.class);
 
     private final SourceRetrievalProjectionCoordinator coordinator;
+    private final SourceRetrievalProjectionFinalizer finalizer;
     private final JdbcTemplate jdbcTemplate;
 
     public SynchronousRetrievalProjectionListener(
             SourceRetrievalProjectionCoordinator coordinator,
+            SourceRetrievalProjectionFinalizer finalizer,
             JdbcTemplate jdbcTemplate
     ) {
         this.coordinator = coordinator;
+        this.finalizer = finalizer;
         this.jdbcTemplate = jdbcTemplate;
     }
 
@@ -33,8 +36,18 @@ public class SynchronousRetrievalProjectionListener {
                     where id = ? and status = 'READY'
                     """, event.outboxId());
         } catch (RuntimeException ex) {
+            finalizer.finalizeFailed(
+                    event.workspaceId(),
+                    event.sourceId(),
+                    event.sourceSnapshotId(),
+                    event.taskId(),
+                    "RETRIEVAL_PROJECTION_FAILED"
+            );
             jdbcTemplate.update("""
-                    update task_outbox set last_error = ? where id = ? and status = 'READY'
+                    update task_outbox
+                    set status = 'DEAD_LETTER', attempt_count = attempt_count + 1,
+                        last_error = ?, dead_lettered_at = current_timestamp
+                    where id = ? and status = 'READY'
                     """, "RETRIEVAL_PROJECTION_FAILED", event.outboxId());
             log.error("Synchronous retrieval projection failed: sourceId={}, snapshotId={}",
                     event.sourceId(), event.sourceSnapshotId(), ex);

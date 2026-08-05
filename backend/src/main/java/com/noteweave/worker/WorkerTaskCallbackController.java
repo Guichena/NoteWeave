@@ -1,6 +1,7 @@
 package com.noteweave.worker;
 
 import com.noteweave.common.ApiResponse;
+import com.noteweave.infra.outbox.DurableOutboxDispatcher;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -14,48 +15,69 @@ import org.springframework.web.bind.annotation.RestController;
 public class WorkerTaskCallbackController {
 
     private final WorkerTaskCallbackService workerTaskCallbackService;
+    private final WorkerTaskCallbackAuthenticator callbackAuthenticator;
 
-    public WorkerTaskCallbackController(WorkerTaskCallbackService workerTaskCallbackService) {
+    public WorkerTaskCallbackController(
+            WorkerTaskCallbackService workerTaskCallbackService,
+            WorkerTaskCallbackAuthenticator callbackAuthenticator
+    ) {
         this.workerTaskCallbackService = workerTaskCallbackService;
+        this.callbackAuthenticator = callbackAuthenticator;
     }
 
     @PostMapping("/{taskId}/heartbeat")
     ApiResponse<WorkerAckResponse> heartbeat(
             @PathVariable String taskId,
+            @RequestHeader(value = WorkerTaskCallbackAuthenticator.HEADER_NAME, required = false) String callbackToken,
+            @RequestHeader(value = DurableOutboxDispatcher.DELIVERY_TOKEN_HEADER, required = false) String deliveryToken,
             @RequestHeader(value = "X-NoteWeave-Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody WorkerHeartbeatRequest request
     ) {
-        return ApiResponse.success(workerTaskCallbackService.heartbeat(taskId, request, idempotencyKey));
+        callbackAuthenticator.authenticate(taskId, callbackToken);
+        return ApiResponse.success(workerTaskCallbackService.heartbeatFromDelivery(
+                taskId, request, idempotencyKey, deliveryToken
+        ));
     }
 
     @PostMapping("/{taskId}/progress")
     ApiResponse<WorkerAckResponse> progress(
             @PathVariable String taskId,
+            @RequestHeader(value = WorkerTaskCallbackAuthenticator.HEADER_NAME, required = false) String callbackToken,
+            @RequestHeader(value = DurableOutboxDispatcher.DELIVERY_TOKEN_HEADER, required = false) String deliveryToken,
             @RequestHeader(value = "X-NoteWeave-Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody WorkerProgressRequest request
     ) {
-        return ApiResponse.success(workerTaskCallbackService.progress(taskId, request, idempotencyKey));
+        callbackAuthenticator.authenticate(taskId, callbackToken);
+        return ApiResponse.success(workerTaskCallbackService.progressFromDelivery(
+                taskId, request, idempotencyKey, deliveryToken
+        ));
     }
 
     @PostMapping("/{taskId}/complete")
     ApiResponse<WorkerAckResponse> complete(
             @PathVariable String taskId,
+            @RequestHeader(value = WorkerTaskCallbackAuthenticator.HEADER_NAME, required = false) String callbackToken,
+            @RequestHeader(value = DurableOutboxDispatcher.DELIVERY_TOKEN_HEADER, required = false) String deliveryToken,
             @RequestHeader(value = "X-NoteWeave-Idempotency-Key", required = false) String idempotencyKey,
-            @RequestHeader(value = "X-NoteWeave-Callback-Event-Id", required = false) String callbackEventId,
-            @RequestHeader(value = "X-NoteWeave-Attempt-No", required = false) Integer attemptNo,
-            @RequestHeader(value = "X-NoteWeave-Fencing-Token", required = false) Long fencingToken,
             @Valid @RequestBody WorkerCompleteRequest request
     ) {
-        return ApiResponse.success(workerTaskCallbackService.complete(
-                taskId, request, idempotencyKey, callbackEventId, attemptNo, fencingToken));
+        callbackAuthenticator.authenticate(taskId, callbackToken);
+        return ApiResponse.success(workerTaskCallbackService.completeFromDelivery(
+                taskId, request, idempotencyKey, deliveryToken
+        ));
     }
 
     @PostMapping("/{taskId}/fail")
     ApiResponse<WorkerAckResponse> fail(
             @PathVariable String taskId,
+            @RequestHeader(value = WorkerTaskCallbackAuthenticator.HEADER_NAME, required = false) String callbackToken,
+            @RequestHeader(value = DurableOutboxDispatcher.DELIVERY_TOKEN_HEADER, required = false) String deliveryToken,
             @RequestHeader(value = "X-NoteWeave-Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody WorkerFailRequest request
     ) {
-        return ApiResponse.success(workerTaskCallbackService.fail(taskId, request, idempotencyKey));
+        callbackAuthenticator.authenticate(taskId, callbackToken);
+        return ApiResponse.success(workerTaskCallbackService.failFromDelivery(
+                taskId, request, idempotencyKey, deliveryToken
+        ));
     }
 }

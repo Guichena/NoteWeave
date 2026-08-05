@@ -1,4 +1,4 @@
-import { type AccessTokenProvider } from "./auth";
+import { type AccessTokenProvider, refreshAuthSession } from "./auth";
 import { ApiError } from "./error";
 
 export type ApiEnvelope<T> = {
@@ -26,7 +26,7 @@ export class ApiClient {
 
   constructor(options: ApiClientOptions = {}) {
     this.baseUrl = options.baseUrl ?? "";
-    this.fetcher = options.fetcher ?? fetch;
+    this.fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis);
     this.accessTokenProvider = options.accessTokenProvider ?? (() => null);
     this.correlationIdFactory = options.correlationIdFactory ?? createCorrelationId;
     this.onUnauthorized = options.onUnauthorized ?? (() => undefined);
@@ -36,7 +36,7 @@ export class ApiClient {
     return /^https?:\/\//i.test(path) ? path : `${this.baseUrl}${path}`;
   }
 
-  async raw(path: string, init: RequestInit = {}) {
+  async raw(path: string, init: RequestInit = {}, allowRefresh = true): Promise<Response> {
     const headers = new Headers(init.headers);
     if (!headers.has("Accept")) {
       headers.set("Accept", "application/json");
@@ -51,7 +51,25 @@ export class ApiClient {
     const response = await this.fetcher(this.url(path), { ...init, headers });
     if (!response.ok) {
       const error = await toApiError(response);
-      if (response.status === 401) {
+      if (response.status === 401 && allowRefresh && !path.includes("/api/v2/auth/")) {
+        try {
+          const refreshed = await refreshAuthSession();
+          if (refreshed?.access_token) {
+            const retryHeaders = new Headers(init.headers);
+            if (!retryHeaders.has("Accept")) {
+              retryHeaders.set("Accept", "application/json");
+            }
+            if (!retryHeaders.has("X-Correlation-ID")) {
+              retryHeaders.set("X-Correlation-ID", this.correlationIdFactory());
+            }
+            retryHeaders.set("Authorization", `Bearer ${refreshed.access_token}`);
+            return this.raw(path, { ...init, headers: retryHeaders }, false);
+          }
+        } catch {
+          // fall through to unauthorized handling
+        }
+        this.onUnauthorized(error);
+      } else if (response.status === 401) {
         this.onUnauthorized(error);
       }
       throw error;
@@ -97,6 +115,10 @@ export class ApiClient {
 
   async text(path: string, init: RequestInit = {}) {
     return (await this.raw(path, init)).text();
+  }
+
+  async blob(path: string, init: RequestInit = {}) {
+    return (await this.raw(path, init)).blob();
   }
 
   private json<T>(path: string, method: string, body: unknown, init: RequestInit) {

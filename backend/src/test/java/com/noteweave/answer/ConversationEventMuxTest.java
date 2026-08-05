@@ -1,6 +1,7 @@
 package com.noteweave.answer;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
@@ -15,6 +16,47 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 
 class ConversationEventMuxTest {
+
+    @Test
+    void shouldFailClosedWhenConfiguredConversationBridgeCannotAllocateGlobalCursor() {
+        AnswerRealtimeBridge unavailableBridge = new AnswerRealtimeBridge() {
+            @Override
+            public void publish(String runId, AnswerLiveEvent event) {
+            }
+
+            @Override
+            public List<AnswerLiveEvent> readAfter(String runId, long after, Duration blockTimeout) {
+                return List.of();
+            }
+
+            @Override
+            public ConversationLiveEvent publishConversation(
+                    String conversationId,
+                    String runId,
+                    AnswerLiveEvent event
+            ) {
+                throw new AnswerRealtimeBridgeUnavailableException(
+                        "redis unavailable", new IllegalStateException("connection refused"));
+            }
+
+            @Override
+            public void signalCancellation(String runId) {
+            }
+
+            @Override
+            public boolean isCancellationRequested(String runId) {
+                return false;
+            }
+        };
+        ConversationEventMux mux = new ConversationEventMux(
+                unavailableBridge, Runnable::run, Runnable::run,
+                new SimpleMeterRegistry(), 64, 16);
+
+        assertThatThrownBy(() -> mux.publish(
+                "conversation-1", "run-1", runEvent(1, "answer.delta", "value")))
+                .isInstanceOf(AnswerRealtimeBridgeUnavailableException.class)
+                .hasMessageContaining("redis unavailable");
+    }
 
     @Test
     void shouldAggregateMultipleRunsUnderOneConversationCursor() throws Exception {

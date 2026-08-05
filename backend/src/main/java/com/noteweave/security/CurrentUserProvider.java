@@ -17,7 +17,7 @@ public class CurrentUserProvider {
 
     private final boolean localFallbackEnabled;
 
-    public CurrentUserProvider(@Value("${noteweave.security.local-user-fallback:true}") boolean localFallbackEnabled) {
+    public CurrentUserProvider(@Value("${noteweave.security.local-user-fallback:false}") boolean localFallbackEnabled) {
         this.localFallbackEnabled = localFallbackEnabled;
     }
 

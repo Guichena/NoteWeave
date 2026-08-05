@@ -6,6 +6,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.noteweave.common.BusinessException;
@@ -14,9 +16,13 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class WorkloadQuotaServiceTest {
 
@@ -87,6 +93,25 @@ class WorkloadQuotaServiceTest {
     }
 
     @Test
+    void redisScriptsShouldUseRedisTimeWithoutJvmTimestampArguments() {
+        StringRedisTemplate redis = mock(StringRedisTemplate.class);
+        when(redis.execute(any(), anyList(), any(Object[].class))).thenReturn(1L);
+        MutableClock clock = new MutableClock();
+        WorkloadQuotaService service = service(redis, clock, 10, 60, 4, 10, 10, 1, 60);
+
+        service.requireRate("workspace", "chat");
+        service.acquireLease("workspace", "research", "task-1");
+        service.renewLease("workspace", "research", "task-1");
+
+        ArgumentCaptor<Object[]> scriptArguments = ArgumentCaptor.forClass(Object[].class);
+        verify(redis, times(3)).execute(any(), anyList(), scriptArguments.capture());
+        List<Object[]> calls = scriptArguments.getAllValues();
+        assertThat(calls.get(0)).containsExactly("10", "0.001", "60000");
+        assertThat(calls.get(1)).containsExactly("4", "60000", "120000", "task-1");
+        assertThat(calls.get(2)).containsExactly("60000", "120000", "task-1");
+    }
+
+    @Test
     void redisOutageAfterAcquireShouldRenewFromLocalShadowLease() {
         StringRedisTemplate redis = mock(StringRedisTemplate.class);
         when(redis.execute(any(), anyList(), any(Object[].class)))
@@ -124,6 +149,59 @@ class WorkloadQuotaServiceTest {
     }
 
     @Test
+    void productionPolicyShouldFailClosedWhenRedisIsUnavailable() {
+        WorkloadQuotaService service = new WorkloadQuotaService(
+                null, currentUserProvider, meterRegistry, "test", true,
+                10, 10, 4, 1, 1, 1, 60, false, new MutableClock());
+
+        assertThatThrownBy(() -> service.requireRate("workspace", "chat"))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(error -> {
+                    BusinessException exception = (BusinessException) error;
+                    assertThat(exception.code()).isEqualTo("WORKLOAD_QUOTA_UNAVAILABLE");
+                    assertThat(exception.status()).isEqualTo(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE);
+                });
+        assertThatThrownBy(() -> service.acquireLease("workspace", "research", "task-1"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(error -> ((BusinessException) error).code())
+                .isEqualTo("WORKLOAD_QUOTA_UNAVAILABLE");
+    }
+
+    @Test
+    void redisShadowLeasesShouldEventuallyPruneExpiredKeys() {
+        StringRedisTemplate redis = mock(StringRedisTemplate.class);
+        when(redis.execute(any(), anyList(), any(Object[].class))).thenReturn(1L);
+        MutableClock clock = new MutableClock();
+        WorkloadQuotaService service = service(redis, clock, 10, 10, 4, 10, 10, 1, 1);
+
+        for (int index = 0; index < 40; index++) {
+            service.acquireLease("workspace-" + index, "research", "task-" + index);
+        }
+        assertThat(localLeases(service)).hasSize(40);
+
+        clock.advanceSeconds(2);
+        for (int index = 0; index < 4; index++) {
+            service.acquireLease("fresh-workspace-" + index, "research", "fresh-task-" + index);
+        }
+
+        assertThat(localLeases(service)).hasSize(4);
+    }
+
+    @Test
+    void releaseShouldPruneEmptyLocalShadowLeaseKey() {
+        StringRedisTemplate redis = mock(StringRedisTemplate.class);
+        when(redis.execute(any(), anyList(), any(Object[].class))).thenReturn(1L);
+        WorkloadQuotaService service = service(redis, new MutableClock(), 10, 10, 4, 10, 10, 1, 60);
+
+        service.acquireLease("workspace", "research", "task-1");
+        assertThat(localLeases(service)).hasSize(1);
+
+        service.releaseLease("workspace", "research", "task-1");
+
+        assertThat(localLeases(service)).isEmpty();
+    }
+
+    @Test
     void scriptsAndNamespacesShouldExpressAtomicLeaseAndTokenSemantics() {
         WorkloadQuotaService service = service(null, new MutableClock(), 10, 10, 4, 10, 10, 1, 60);
         assertThat(service.keyPrefix("rate"))
@@ -131,11 +209,14 @@ class WorkloadQuotaServiceTest {
         assertThat(service.keyPrefix("concurrency"))
                 .isEqualTo("noteweave:v1:quota:test:concurrency:");
         assertThat(WorkloadQuotaService.TOKEN_BUCKET_SCRIPT)
-                .contains("HGET", "HSET", "PEXPIRE", "tokens", "updated_at");
+                .contains("redis.call('TIME')", "HGET", "HSET", "PEXPIRE", "tokens", "updated_at")
+                .doesNotContain("local now = tonumber(ARGV");
         assertThat(WorkloadQuotaService.LEASE_ACQUIRE_SCRIPT)
-                .contains("ZREMRANGEBYSCORE", "ZCARD", "ZADD", "PEXPIRE");
+                .contains("redis.call('TIME')", "ZREMRANGEBYSCORE", "ZCARD", "ZADD", "PEXPIRE")
+                .doesNotContain("local now = tonumber(ARGV", "local expires_at = tonumber(ARGV");
         assertThat(WorkloadQuotaService.LEASE_RENEW_SCRIPT)
-                .contains("ZREMRANGEBYSCORE", "ZSCORE", "ZADD", "PEXPIRE")
+                .contains("redis.call('TIME')", "ZREMRANGEBYSCORE", "ZSCORE", "ZADD", "PEXPIRE")
+                .doesNotContain("local now = tonumber(ARGV", "local expires_at = tonumber(ARGV")
                 .doesNotContain("ZCARD");
         assertThat(WorkloadQuotaService.LEASE_RELEASE_SCRIPT).contains("ZREM");
     }
@@ -155,7 +236,12 @@ class WorkloadQuotaServiceTest {
                 redis, currentUserProvider, meterRegistry, "test", true,
                 rateCapacity, refillPerMinute, distributedConcurrency,
                 localRateCapacity, localRefillPerMinute, localConcurrency,
-                leaseSeconds, clock);
+                leaseSeconds, true, clock);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Map<String, Long>> localLeases(WorkloadQuotaService service) {
+        return (Map<String, Map<String, Long>>) ReflectionTestUtils.getField(service, "localLeases");
     }
 
     private static final class MutableClock extends Clock {

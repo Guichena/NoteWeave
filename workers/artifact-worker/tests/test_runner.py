@@ -13,6 +13,7 @@ from app.artifact_skill_catalog import list_artifact_skill_definitions, resolve_
 from app.content_runtime import build_canonical_content_objects
 from app.intent_compiler import compile_execution_spec
 from app.llm_client import FakeLlmClient
+from app.generation_runtime import ArtifactConfigurationRequiredError
 from app.registry import resolve_skill_definition
 from app.models import (
     ArtifactExecutionPlan,
@@ -32,7 +33,6 @@ from app.models import (
     SkillGraphTemplate,
     SkillDefinition,
 )
-from app.repair import repair_sections
 from app.runner import run_artifact_task
 from app.skill_graph import _verify_and_repair_skill_output
 from app.verifier import build_output_contract_trace, verify_artifact_output
@@ -210,16 +210,53 @@ def test_run_artifact_task_should_use_configured_llm_and_trace_generation_mode(
     assert fake.calls and fake.calls[0][0] == "artifact.generate"
 
 
-def test_run_artifact_task_should_trace_deterministic_fallback_without_llm(
+def test_run_artifact_task_should_fail_closed_without_llm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(runner_module, "build_default_llm_client", lambda: None)
 
-    _, result = run_artifact_task(_build_resume_task_input())
+    with pytest.raises(ArtifactConfigurationRequiredError) as error:
+        run_artifact_task(_build_resume_task_input())
 
-    assert result.result_payload["generation_trace"]["mode"] == "DETERMINISTIC_FALLBACK"
-    assert result.result_payload["generation_trace"]["fallback_reason"] == "LLM_NOT_CONFIGURED"
-    assert "generation_mode=DETERMINISTIC_FALLBACK" in result.result_payload["lifecycle_trace"]["notes"]
+    assert error.value.error_code == "CONFIGURATION_REQUIRED"
+    assert "not configured" in str(error.value)
+
+
+def test_run_artifact_task_should_fail_closed_on_invalid_llm_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        runner_module,
+        "build_default_llm_client",
+        lambda: FakeLlmClient({"artifact.generate": '{"sections": []}'}),
+    )
+
+    with pytest.raises(ArtifactConfigurationRequiredError) as error:
+        run_artifact_task(_build_resume_task_input())
+
+    assert error.value.error_code == "CONFIGURATION_REQUIRED"
+    assert "no usable content" in str(error.value)
+
+
+def test_run_artifact_task_without_llm_or_source_content_should_be_blocked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(runner_module, "build_default_llm_client", lambda: None)
+    task_input = _build_task_input(
+        task_id="artifact-no-content",
+        target_id="artifact-no-content",
+        action_key="report",
+        skill_key="report_draft",
+        style_profile_key="default",
+        structure_constraints=[],
+        generation_brief="",
+        source_scope=[],
+    )
+
+    with pytest.raises(ArtifactConfigurationRequiredError) as error:
+        run_artifact_task(task_input)
+
+    assert error.value.error_code == "CONFIGURATION_REQUIRED"
 
 
 def _resolve_builtin_skill_key(action_key: str) -> str:
@@ -555,8 +592,10 @@ def test_run_artifact_task_should_apply_execution_spec_focus_points_to_resume_ou
     assert "resume impact statements normalized" in normalizer_trace["verification_checks"]
     assert verifier_trace["verification_status"] == "PASS"
     assert "resume verifier inspected bullet count, focus coverage, and required phrases" in verifier_trace["verification_checks"]
-    assert repair_trace["verification_status"] == "PASS"
+    assert repair_trace["verification_status"] == "PASS_WITH_REPAIR"
     assert "resume local repair confirmed verifier gaps are closed" in repair_trace["verification_checks"]
+    assert repair_trace["repair_actions"]
+    assert repair_trace["repaired"] is True
 
     assert any(
         check["label"] == "resume focus point coverage"
@@ -1064,15 +1103,16 @@ def test_run_artifact_task_should_generate_wiki_page_artifact_with_wiki_structur
     assert "施工文档" in related_pages_section["body"]
     assert "设计文档" in related_pages_section["body"]
     assert result.result_payload["verification"]["status"] == "PASS"
+    assert result.result_payload["verification"]["failed_checks"] == []
     wiki_trace = next(
         trace
         for trace in result.result_payload["node_traces"]
         if trace["skill_key"] == "wiki_structure_enforcer"
     )
-    assert wiki_trace["verification_status"] == "PASS"
+    assert wiki_trace["verification_status"] == "PASS_WITH_REPAIR"
     assert "wiki structure contract preserved" in wiki_trace["verification_checks"]
-    assert wiki_trace["repair_actions"] == []
-    assert wiki_trace["repaired"] is False
+    assert wiki_trace["repair_actions"]
+    assert wiki_trace["repaired"] is True
 
 
 @pytest.mark.parametrize(
@@ -1379,12 +1419,14 @@ def test_run_artifact_task_should_generate_resume_highlight_artifact() -> None:
     assert "resume section draft generated" in bullet_trace["verification_checks"]
     assert verifier_trace["verification_status"] == "PASS"
     assert "resume verifier inspected bullet count, focus coverage, and required phrases" in verifier_trace["verification_checks"]
-    assert repair_trace["verification_status"] == "PASS"
+    assert repair_trace["verification_status"] == "PASS_WITH_REPAIR"
     assert "resume local repair confirmed verifier gaps are closed" in repair_trace["verification_checks"]
     assert all(
         trace["repair_actions"] == []
-        for trace in [digest_trace, highlight_trace, normalizer_trace, bullet_trace, verifier_trace, repair_trace]
+        for trace in [digest_trace, highlight_trace, normalizer_trace, bullet_trace, verifier_trace]
     )
+    assert repair_trace["repair_actions"]
+    assert repair_trace["repaired"] is True
     assert any(
         check["label"] == "一句话定位" and check["status"] == "PASS"
         for check in result.result_payload["output_contract_trace"]["outline_checks"]
@@ -1516,8 +1558,9 @@ def test_run_artifact_task_should_generate_multiple_default_artifacts(
 
     assert result.result_title == expected_title
     assert result.job_snapshot.action_key == action_key.upper()
-    assert result.result_payload["verification"]["status"] == "PASS"
-    assert result.result_payload["output_contract_trace"]["status"] == "PASS"
+    expected_verification_status = "PASS"
+    assert result.result_payload["verification"]["status"] == expected_verification_status
+    assert result.result_payload["output_contract_trace"]["status"] == expected_verification_status
     assert result.result_payload["lifecycle_trace"]["status"] == "COMPLETED"
     assert result.result_payload["artifact_version"]["artifact_type"] == action_key.upper()
     assert len(result.result_payload["canonical_content_objects"]) >= 2
@@ -3296,31 +3339,48 @@ def test_run_artifact_task_should_dynamically_select_bilibili_subtitle_provider(
     assert selected_binding["selection_reason"] == "preferred_bilibili_subtitle_provider"
 
 
-def test_repair_should_backfill_missing_resume_sections_and_keywords() -> None:
+def test_final_contract_should_reject_missing_resume_sections_and_keywords() -> None:
     task_input = _build_resume_task_input()
     plan = build_execution_plan(task_input)
-
-    repaired_sections, repaired_checks = repair_sections(
-        [
-            ArtifactSectionDraft(
-                heading="简历亮点",
-                body="- 设计并实现受控式异步产物生成 Agent 主链路。",
-                source_refs=["产物生成 Agent 编排升级设计"],
-            )
-        ],
+    sections = [
+        ArtifactSectionDraft(
+            heading="简历亮点",
+            body="- 设计并实现受控式异步产物生成 Agent 主链路。",
+            source_refs=["产物生成 Agent 编排升级设计"],
+        )
+    ]
+    verification = verify_artifact_output(
+        ArtifactTaskResult(
+            result_title=plan.action_display_name,
+            result_payload={
+                "markdown": "### 简历亮点\n- 设计并实现受控式异步产物生成 Agent 主链路。",
+                "sections": [section.model_dump(mode="json") for section in sections],
+            },
+            trace_summary="resume final-contract rejection test",
+            citations=[],
+            job_snapshot=ArtifactJobSnapshot(
+                task_id=task_input.task_id,
+                workspace_id=task_input.workspace_id,
+                target_id=task_input.target_id,
+                action_key=plan.action_key,
+                status="COMPLETED",
+            ),
+            version_snapshot=ArtifactVersionSnapshot(
+                version_id="artifact-resume-invalid-v1",
+                artifact_type=plan.artifact_type,
+                title=plan.action_display_name,
+                status="DRAFT",
+                summary="resume final-contract rejection test",
+            ),
+        ),
         plan,
-        task_input.control_pack.forbidden_patterns,
+        [],
     )
 
-    headings = [section.heading for section in repaired_sections]
-    keyword_section = next(section for section in repaired_sections if section.heading == "关键词")
-
-    assert "一句话定位" in headings
-    assert "关键词" in headings
-    assert "missing section repaired: 一句话定位" in repaired_checks
-    assert "missing section repaired: 关键词" in repaired_checks
-    assert "Controlled Agentic Graph Harness" in keyword_section.body
-    assert "Capability Union Policy" in keyword_section.body
+    assert verification.status == "FAIL"
+    assert "section missing after repair: 一句话定位" in verification.failed_checks
+    assert "section missing after repair: 关键词" in verification.failed_checks
+    assert "required phrase missing after repair: Controlled Agentic Graph Harness" in verification.failed_checks
 
 
 def test_node_level_verifier_should_repair_quiz_node_output() -> None:
@@ -3376,54 +3436,24 @@ def test_node_level_verifier_should_repair_quiz_node_output() -> None:
     ) >= 3
 
 
-def test_repair_should_backfill_quiz_questions_and_scoring_tiers() -> None:
+def test_final_contract_should_reject_incomplete_quiz_structure() -> None:
     task_input = _build_generic_task_input("quiz", style_profile_key="teaching")
     plan = build_execution_plan(task_input)
-
-    repaired_sections, repaired_checks = repair_sections(
-        [
-            ArtifactSectionDraft(
-                heading=plan.outline[0],
-                body="验证对受控式产物生成主链路的理解。",
-                source_refs=["产物模块总设计"],
+    sections = [
+        ArtifactSectionDraft(
+            heading=heading,
+            body=(
+                "1. [基础题] Production Action 负责什么？"
+                if heading == plan.outline[1]
+                else "- 基础：只检查对象定义。"
             ),
-            ArtifactSectionDraft(
-                heading=plan.outline[1],
-                body="1. [基础题] Production Action 负责什么？",
-                source_refs=["产物模块总设计"],
-            ),
-            ArtifactSectionDraft(
-                heading=plan.outline[2],
-                body="- 基础题：它定义生成目标。",
-                source_refs=["产物模块总设计"],
-            ),
-            ArtifactSectionDraft(
-                heading=plan.outline[3],
-                body="- 基础：只检查对象定义。",
-                source_refs=["产物模块总设计"],
-            ),
-        ],
-        plan,
-        task_input.control_pack.forbidden_patterns,
-    )
-
-    question_section = next(section for section in repaired_sections if section.heading == plan.outline[1])
-    scoring_section = next(section for section in repaired_sections if section.heading == plan.outline[3])
-
-    assert sum(
-        1
-        for line in question_section.body.splitlines()
-        if line.lstrip().startswith(("1.", "2.", "3.", "4.", "5."))
-    ) >= 3
-    assert "基础" in scoring_section.body
-    assert "进阶" in scoring_section.body
-    assert "挑战" in scoring_section.body
-    assert repaired_checks.count("quiz question repaired") >= 2
-    assert "quiz scoring tier repaired: 进阶" in repaired_checks
-    assert "quiz scoring tier repaired: 挑战" in repaired_checks
+            source_refs=["产物模块总设计"],
+        )
+        for heading in plan.outline
+    ]
 
     quiz_markdown = "\n\n".join(
-        [f"### {section.heading}\n{section.body}" for section in repaired_sections]
+        [f"### {section.heading}\n{section.body}" for section in sections]
         + ["\n".join(plan.required_phrases)]
     )
     verification = verify_artifact_output(
@@ -3431,7 +3461,7 @@ def test_repair_should_backfill_quiz_questions_and_scoring_tiers() -> None:
             result_title=plan.action_display_name,
             result_payload={
                 "markdown": quiz_markdown,
-                "sections": [section.model_dump(mode="json") for section in repaired_sections],
+                "sections": [section.model_dump(mode="json") for section in sections],
                 "evidence_coverage": {
                     "status": "PASS",
                     "required_citation_density": "MEDIUM",
@@ -3442,7 +3472,7 @@ def test_repair_should_backfill_quiz_questions_and_scoring_tiers() -> None:
                     "sections_missing_evidence": [],
                 },
             },
-            trace_summary="quiz repair verification test",
+            trace_summary="quiz final-contract rejection test",
             citations=[{"title": "产物模块总设计", "source_id": "src-1"}],
             job_snapshot=ArtifactJobSnapshot(
                 task_id=task_input.task_id,
@@ -3456,66 +3486,41 @@ def test_repair_should_backfill_quiz_questions_and_scoring_tiers() -> None:
                 artifact_type=plan.artifact_type,
                 title=plan.action_display_name,
                 status="DRAFT",
-                summary="quiz repair verification version",
+                summary="quiz final-contract rejection test",
             ),
         ),
         plan,
-        repaired_checks,
+        [],
     )
 
-    assert verification.status == "PASS"
-    assert "quiz question count satisfied" in verification.passed_checks
-    assert "quiz scoring tiers satisfied" in verification.passed_checks
+    assert verification.status == "FAIL"
+    assert "quiz question count below minimum" in verification.failed_checks
+    assert "quiz scoring tiers missing" in verification.failed_checks
 
 
-def test_repair_should_backfill_wiki_structure_and_related_pages() -> None:
+def test_final_contract_should_reject_incomplete_wiki_structure() -> None:
     task_input = _build_generic_task_input("wiki_page", style_profile_key="wiki")
     plan = build_execution_plan(task_input)
-
-    repaired_sections, repaired_checks = repair_sections(
-        [
-            ArtifactSectionDraft(
-                heading=plan.outline[0],
-                body="这是一个受控产物模块的简介。",
-                source_refs=["产物模块总设计"],
-            ),
-            ArtifactSectionDraft(
-                heading=plan.outline[1],
-                body="Skill Graph 用于组织执行步骤。",
-                source_refs=["产物模块总设计"],
-            ),
-            ArtifactSectionDraft(
-                heading=plan.outline[2],
-                body="- 延伸阅读：运行时草图",
-                source_refs=["产物模块总设计"],
-            ),
-        ],
-        plan,
-        task_input.control_pack.forbidden_patterns,
-    )
-
-    overview_section = next(section for section in repaired_sections if section.heading == plan.outline[0])
-    mechanism_section = next(section for section in repaired_sections if section.heading == plan.outline[1])
-    related_pages_section = next(section for section in repaired_sections if section.heading == plan.outline[2])
-
-    assert "定义" in overview_section.body
-    assert "边界" in overview_section.body
-    assert "Production Action" in mechanism_section.body
-    assert "Skill Graph" in mechanism_section.body
-    assert "Capability Union Policy" in mechanism_section.body
-    assert sum(
-        1
-        for line in related_pages_section.body.splitlines()
-        if line.lstrip().startswith("- ")
-    ) >= 3
-    assert "wiki overview repaired: definition" in repaired_checks
-    assert "wiki overview repaired: boundary" in repaired_checks
-    assert "wiki mechanism repaired: Production Action" in repaired_checks
-    assert "wiki mechanism repaired: Capability Union Policy" in repaired_checks
-    assert repaired_checks.count("wiki related page repaired") >= 3
+    sections = [
+        ArtifactSectionDraft(
+            heading=plan.outline[0],
+            body="这是一个受控产物模块的简介。",
+            source_refs=["产物模块总设计"],
+        ),
+        ArtifactSectionDraft(
+            heading=plan.outline[1],
+            body="Skill Graph 用于组织执行步骤。",
+            source_refs=["产物模块总设计"],
+        ),
+        ArtifactSectionDraft(
+            heading=plan.outline[2],
+            body="- 延伸阅读：运行时草图",
+            source_refs=["产物模块总设计"],
+        ),
+    ]
 
     wiki_markdown = "\n\n".join(
-        [f"### {section.heading}\n{section.body}" for section in repaired_sections]
+        [f"### {section.heading}\n{section.body}" for section in sections]
         + ["\n".join(plan.required_phrases)]
     )
     verification = verify_artifact_output(
@@ -3523,7 +3528,7 @@ def test_repair_should_backfill_wiki_structure_and_related_pages() -> None:
             result_title=plan.action_display_name,
             result_payload={
                 "markdown": wiki_markdown,
-                "sections": [section.model_dump(mode="json") for section in repaired_sections],
+                "sections": [section.model_dump(mode="json") for section in sections],
                 "evidence_coverage": {
                     "status": "PASS",
                     "required_citation_density": "MEDIUM",
@@ -3534,7 +3539,7 @@ def test_repair_should_backfill_wiki_structure_and_related_pages() -> None:
                     "sections_missing_evidence": [],
                 },
             },
-            trace_summary="wiki repair verification test",
+            trace_summary="wiki final-contract rejection test",
             citations=[{"title": "产物模块总设计", "source_id": "src-1"}],
             job_snapshot=ArtifactJobSnapshot(
                 task_id=task_input.task_id,
@@ -3548,20 +3553,20 @@ def test_repair_should_backfill_wiki_structure_and_related_pages() -> None:
                 artifact_type=plan.artifact_type,
                 title=plan.action_display_name,
                 status="DRAFT",
-                summary="wiki repair verification version",
+                summary="wiki final-contract rejection test",
             ),
         ),
         plan,
-        repaired_checks,
+        [],
     )
 
-    assert verification.status == "PASS"
-    assert "wiki overview definition and boundary satisfied" in verification.passed_checks
-    assert "wiki key mechanisms satisfied" in verification.passed_checks
-    assert "wiki related page count satisfied" in verification.passed_checks
+    assert verification.status == "FAIL"
+    assert "wiki overview definition or boundary missing" in verification.failed_checks
+    assert "wiki key mechanisms missing" in verification.failed_checks
+    assert "wiki related page count below minimum" in verification.failed_checks
 
 
-def test_verify_artifact_output_should_warn_when_evidence_coverage_is_unsatisfied() -> None:
+def test_verify_artifact_output_should_fail_when_evidence_coverage_is_unsatisfied() -> None:
     task_input = _build_generic_task_input("report")
     plan = build_execution_plan(task_input)
     result = ArtifactTaskResult(
@@ -3621,10 +3626,10 @@ def test_verify_artifact_output_should_warn_when_evidence_coverage_is_unsatisfie
     verification = verify_artifact_output(result, plan, [])
     contract_trace = build_output_contract_trace(result, plan, [])
 
-    assert verification.status == "WARN"
+    assert verification.status == "FAIL"
     assert "evidence coverage unsatisfied: MEDIUM" in verification.failed_checks
     assert "sections missing evidence: 证据综述, 建议方案" in verification.failed_checks
-    assert contract_trace.status == "WARN"
+    assert contract_trace.status == "FAIL"
     assert any(
         check["label"] == "evidence coverage" and check["status"] == "FAIL"
         for check in contract_trace.model_dump(mode="json")["evidence_checks"]

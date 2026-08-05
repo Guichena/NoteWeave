@@ -6,6 +6,15 @@ from pathlib import Path
 from mcp.bilibili_render_pdf_server import BilibiliRenderPdfServer
 
 
+def _sandboxed_server(root: Path) -> BilibiliRenderPdfServer:
+    server = BilibiliRenderPdfServer()
+    server.allow_portable_pdf_fallback = True
+    server.sandbox_root = root.resolve()
+    server.input_root = server.sandbox_root
+    server.output_root = server.sandbox_root
+    return server
+
+
 def test_initialize_should_expose_mcp_server_info() -> None:
     server = BilibiliRenderPdfServer()
 
@@ -45,7 +54,7 @@ def test_tools_list_should_expose_expected_skill_surface() -> None:
 
 
 def test_get_bilibili_subtitle_should_fetch_remote_subtitle_artifact(tmp_path: Path) -> None:
-    server = BilibiliRenderPdfServer()
+    server = _sandboxed_server(tmp_path)
     subtitle_dir = tmp_path / "manual"
     subtitle_dir.mkdir(parents=True, exist_ok=True)
     subtitle_path = subtitle_dir / "BV1NoteWeaveDemo.zh-Hans.srt"
@@ -99,7 +108,7 @@ def test_get_bilibili_subtitle_should_fetch_remote_subtitle_artifact(tmp_path: P
 def test_get_bilibili_subtitle_should_fallback_to_transcription_when_subtitles_missing(
     tmp_path: Path,
 ) -> None:
-    server = BilibiliRenderPdfServer()
+    server = _sandboxed_server(tmp_path)
     audio_path = tmp_path / "audio" / "audio.wav"
     audio_path.parent.mkdir(parents=True, exist_ok=True)
     audio_path.write_bytes(b"fake-audio")
@@ -186,7 +195,7 @@ def test_get_bilibili_subtitle_should_fallback_to_transcription_when_subtitles_m
 
 
 def test_render_latex_pdf_should_write_tex_and_real_pdf_artifacts(tmp_path: Path) -> None:
-    server = BilibiliRenderPdfServer()
+    server = _sandboxed_server(tmp_path)
 
     response = server.handle_message(
         {
@@ -222,13 +231,21 @@ def test_render_latex_pdf_should_write_tex_and_real_pdf_artifacts(tmp_path: Path
     assert pdf_path.read_bytes().startswith(b"%PDF-1.")
 
 
-def test_transcribe_local_audio_should_fail_cleanly_when_skill_env_missing(tmp_path: Path) -> None:
-    server = BilibiliRenderPdfServer()
+def test_transcribe_local_audio_should_fail_cleanly_when_skill_env_missing(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    server = _sandboxed_server(tmp_path)
     audio_path = tmp_path / "sample.mp3"
     audio_path.write_bytes(b"fake-audio")
 
     original_python = server.transcribe_venv_python
     server.transcribe_venv_python = tmp_path / "missing-python.exe"
+    monkeypatch.setattr(
+        "mcp.bilibili_render_pdf_server.importlib.util.find_spec",
+        lambda _name: None,
+    )
+    monkeypatch.setattr(server, "_looks_like_conda_env", lambda _path: False)
     try:
         response = server.handle_message(
             {
@@ -256,7 +273,7 @@ def test_transcribe_local_audio_should_use_bundled_runtime_without_codex_skill(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    server = BilibiliRenderPdfServer()
+    server = _sandboxed_server(tmp_path)
     audio_path = tmp_path / "sample.mp3"
     audio_path.write_bytes(b"fake-audio")
     server.transcribe_script = tmp_path / "missing-codex-skill-script.py"
@@ -291,3 +308,23 @@ def test_handle_line_should_support_json_array_batch() -> None:
     assert len(responses) == 2
     assert responses[0]["result"] == {}
     assert "tools" in responses[1]["result"]
+
+
+def test_local_paths_outside_mcp_sandbox_should_be_rejected(tmp_path: Path) -> None:
+    server = _sandboxed_server(tmp_path / "sandbox")
+    outside = tmp_path / "outside.mp3"
+    outside.write_bytes(b"fake-audio")
+
+    response = server.handle_message({
+        "jsonrpc": "2.0",
+        "id": "outside",
+        "method": "tools/call",
+        "params": {
+            "name": "transcribe_local_audio",
+            "arguments": {"input_path": str(outside.resolve())},
+        },
+    })
+
+    assert response is not None
+    assert response["error"]["code"] == -32602
+    assert "must stay inside" in response["error"]["message"]

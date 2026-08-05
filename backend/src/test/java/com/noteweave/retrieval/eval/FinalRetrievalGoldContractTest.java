@@ -41,6 +41,10 @@ class FinalRetrievalGoldContractTest {
     void ablationReportContainsMeasuredResultsForEveryFinalVariant() throws Exception {
         JsonNode root = mapper.readTree(resource("qa-note-ablation-report-v1.json"));
         assertThat(root.path("execution").asText()).isEqualTo("deterministic-gold-replay");
+        assertThat(root.path("evidenceLevel").asText()).isEqualTo("fixture-replay");
+        assertThat(root.path("providerKind").asText()).isEqualTo("deterministic-fixture");
+        assertThat(root.path("claimBoundary").asText()).contains("not a live Elasticsearch");
+        assertThat(root.path("replayCommand").asText()).contains("FinalRetrievalGoldContractTest");
         assertMeasuredVariants(root.path("qa"), Set.of(
                 "keyword-only", "vector-only", "hybrid-rrf", "hybrid-rrf-rerank",
                 "full-pipeline-evidence-budget"));

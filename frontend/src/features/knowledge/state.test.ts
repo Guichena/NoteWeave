@@ -88,6 +88,19 @@ describe("LatestKnowledgeRequestGate", () => {
     expect(search.isCurrent()).toBe(false);
     expect(snapshot.isCurrent()).toBe(false);
   });
+
+  it("synchronizes a newly rendered workspace before its first request", () => {
+    const gate = new LatestKnowledgeRequestGate();
+    gate.setWorkspace("previous");
+    const previous = gate.begin("graph");
+
+    const home = gate.begin("home", "current");
+    gate.setWorkspace("current");
+
+    expect(previous.signal.aborted).toBe(true);
+    expect(home.signal.aborted).toBe(false);
+    expect(home.isCurrent()).toBe(true);
+  });
 });
 
 function knowledgeDetail(): KnowledgeItemDetail {

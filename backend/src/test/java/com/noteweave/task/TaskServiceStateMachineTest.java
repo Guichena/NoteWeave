@@ -102,6 +102,20 @@ class TaskServiceStateMachineTest {
     }
 
     @Test
+    void lockedTaskReferenceReturnsTrustedIdentityAndStatus() {
+        String taskId = createRunningTask();
+
+        TaskService.TaskRef task = taskService.lockTaskRef(taskId);
+
+        assertThat(task.taskId()).isEqualTo(taskId);
+        assertThat(task.workspaceId()).isEqualTo("workspace-1");
+        assertThat(task.taskType()).isEqualTo("TEST");
+        assertThat(task.taskStatus()).isEqualTo("RUNNING");
+        assertThat(task.targetType()).isEqualTo("SOURCE");
+        assertThat(task.targetId()).isEqualTo("source-1");
+    }
+
+    @Test
     void duplicateCompletionIsIdempotentAndDoesNotDuplicateEvent() {
         String taskId = createRunningTask();
 

@@ -11,7 +11,7 @@ from app.agent_task_client import (
     AgentTaskClaim,
     AgentTaskNotClaimableError,
 )
-from app.kafka_consumer import DeadLetterPublishError
+from app.kafka_primitives import DeadLetterPublishError
 from app.research_agent_completion_contract import build_completion_envelope
 
 _TASK_ID = "00000000-0000-0000-0000-000000000001"
@@ -604,6 +604,25 @@ def test_agent_consumer_factory_should_use_dedicated_topic_and_group(monkeypatch
     assert captured["kwargs"]["enable_auto_commit"] is False
 
 
+def test_agent_consumer_factory_should_fail_closed_when_sasl_credentials_are_missing(monkeypatch) -> None:
+    import sys
+    import types
+    from app import agent_kafka_consumer as module
+
+    class FakeSettings:
+        kafka_research_agent_topic = "research.agent.command"
+        kafka_bootstrap_servers = "kafka:9092"
+        kafka_research_agent_group_id = "research-agent-worker"
+        kafka_security_protocol = "SASL_PLAINTEXT"
+        kafka_sasl_username = ""
+        kafka_sasl_password = ""
+
+    monkeypatch.setattr(module, "load_settings", lambda: FakeSettings())
+    monkeypatch.setitem(sys.modules, "kafka", types.SimpleNamespace(KafkaConsumer=object))
+    with pytest.raises(RuntimeError, match="SASL Kafka requires"):
+        module.create_research_agent_kafka_consumer()
+
+
 def test_agent_dead_letter_factory_should_use_dedicated_dlq_topic(monkeypatch) -> None:
     import sys
     import types
@@ -629,15 +648,14 @@ def test_agent_dead_letter_factory_should_use_dedicated_dlq_topic(monkeypatch) -
     assert captured["kwargs"]["retries"] == 5
 
 
-def test_agent_consumer_forever_should_fail_closed_when_disabled(monkeypatch) -> None:
+def test_agent_consumer_forever_should_exit_cleanly_when_disabled(monkeypatch) -> None:
     from app import agent_kafka_consumer as module
 
     class FakeSettings:
         research_agent_consumer_enabled = False
 
     monkeypatch.setattr(module, "load_settings", lambda: FakeSettings())
-    with pytest.raises(RuntimeError, match="disabled"):
-        module.run_research_agent_kafka_consumer_forever(lambda *_: None)
+    assert module.run_research_agent_kafka_consumer_forever(lambda *_: None) is None
 
 
 def test_agent_consumer_should_not_create_default_deep_cell_executor_without_explicit_flag(monkeypatch) -> None:
@@ -667,6 +685,29 @@ def test_completion_retry_setting_should_be_bounded_and_worker_scoped(monkeypatc
         Settings(research_agent_completion_max_attempts=0)
     with pytest.raises(ValidationError):
         Settings(research_agent_completion_max_attempts=11)
+
+
+def test_worker_instance_id_should_be_unique_when_not_explicit(monkeypatch) -> None:
+    from app.config import Settings
+
+    monkeypatch.delenv("NOTEWEAVE_RESEARCH_AGENT_WORKER_INSTANCE_ID", raising=False)
+    first = Settings().research_agent_worker_instance_id
+    second = Settings().research_agent_worker_instance_id
+    assert first != second
+    assert first.startswith("research-agent-")
+    assert second.startswith("research-agent-")
+
+
+def test_production_worker_settings_should_require_secure_transports(monkeypatch) -> None:
+    from pydantic import ValidationError
+    from app.config import Settings
+
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_INTERNAL_AUTH_TOKEN", "x" * 32)
+    with pytest.raises(ValidationError, match="HTTPS"):
+        Settings(environment="production", java_base_url="http://backend", internal_auth_token="x" * 32)
+    with pytest.raises(ValidationError, match="Kafka SSL"):
+        Settings(environment="production", java_base_url="https://backend", internal_auth_token="x" * 32,
+                 kafka_security_protocol="SASL_PLAINTEXT")
 
 
 def test_heartbeat_settings_should_preserve_lease_safety_margin() -> None:

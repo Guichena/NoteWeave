@@ -68,6 +68,14 @@ docker compose --profile app ps
 
 不带 `--profile app` 的 `docker compose up -d` 只启动基础设施。当前 Compose 用于本机开发/演示，不等同于生产部署；生产差异见 [Docker 全容器运行与交付基线](D:/java-projects/NoteWeave-v2/改造计划/主项目重构/阶段0A-Docker全容器运行与交付基线.md)。
 
+标准 `.env.example` 默认关闭 Chat LLM、Embedding、Rerank、Research LLM 和 Artifact LLM，因此它只能证明基础设施、上传解析、受控降级和无 provider 时的 fail-closed 行为；不能把它描述成完整的 RAG / Deep Research / Artifact 简历演示链路。完整演示前先填充 provider 配置，并运行：
+
+```powershell
+.\scripts\smoke-compose-provider-readiness.ps1 -EnvFile .env -RequireFullDemo
+```
+
+只需要验证 Compose 配置可解析时，可以不带 `-RequireFullDemo` 运行同一脚本。
+
 ## 历史设计输入
 
 以下文档只保留为早期设计来源，不再覆盖当前目标架构：

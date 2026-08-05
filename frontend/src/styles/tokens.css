@@ -1,0 +1,44 @@
+:root {
+  --nw-font-ui: "Aptos", "Segoe UI", system-ui, sans-serif;
+  --nw-font-display: "Georgia", "Times New Roman", serif;
+
+  --nw-color-ink: #1c2420;
+  --nw-color-ink-soft: #3d4a43;
+  --nw-color-muted: #667169;
+  --nw-color-canvas: #f4f2ec;
+  --nw-color-canvas-deep: #ebe7de;
+  --nw-color-surface: #fffcf7;
+  --nw-color-surface-alt: #f3efe6;
+  --nw-color-border: #ddd4c6;
+  --nw-color-border-soft: #e7e1d6;
+  --nw-color-primary: #176b4d;
+  --nw-color-primary-deep: #0f5139;
+  --nw-color-primary-soft: #e5f2eb;
+  --nw-color-accent: #c4783a;
+  --nw-color-accent-soft: #f7ecdf;
+  --nw-color-danger: #9b3f2f;
+  --nw-color-danger-soft: #f7e8e5;
+  --nw-color-signal: #2f5bd1;
+  --nw-color-signal-soft: #e8eefc;
+
+  --nw-shadow-1: 0 1px 2px rgb(28 36 32 / 4%);
+  --nw-shadow-2: 0 8px 24px rgb(28 36 32 / 6%);
+  --nw-shadow-3: 0 18px 48px rgb(28 36 32 / 10%);
+
+  --nw-space-1: 4px;
+  --nw-space-2: 8px;
+  --nw-space-3: 12px;
+  --nw-space-4: 16px;
+  --nw-space-5: 20px;
+  --nw-space-6: 24px;
+  --nw-space-8: 32px;
+
+  --nw-radius-control: 10px;
+  --nw-radius-card: 14px;
+  --nw-radius-panel: 18px;
+  --nw-radius-pill: 999px;
+
+  --nw-rail-width: 76px;
+  --nw-sources-width: 260px;
+  --nw-inspector-width: 320px;
+}

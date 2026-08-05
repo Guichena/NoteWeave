@@ -21,10 +21,14 @@ public class RedisConfig {
     RedisConnectionFactory redisConnectionFactory(
             @Value("${spring.data.redis.host:localhost}") String host,
             @Value("${spring.data.redis.port:6379}") int port,
+            @Value("${spring.data.redis.password:}") String password,
             @Value("${noteweave.redis.connect-timeout-ms:500}") long connectTimeoutMs,
             @Value("${noteweave.redis.command-timeout-ms:750}") long commandTimeoutMs
     ) {
         RedisStandaloneConfiguration standalone = new RedisStandaloneConfiguration(host, port);
+        if (password != null && !password.isBlank()) {
+            standalone.setPassword(password);
+        }
         SocketOptions socketOptions = SocketOptions.builder()
                 .connectTimeout(Duration.ofMillis(connectTimeoutMs))
                 .build();

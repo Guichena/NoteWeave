@@ -19,6 +19,7 @@ import org.springframework.stereotype.Component;
 class ResearchAgentTaskSnapshotCanonicalizer {
     static final String SCHEMA_V1 = "research-agent-task-snapshot.v1";
     static final String SCHEMA_V2 = "research-agent-task-snapshot.v2";
+    static final String SCHEMA_V3 = "research-agent-task-snapshot.v3";
     static final String SCHEMA_VERSION = SCHEMA_V1;
 
     private final ObjectMapper objectMapper;
@@ -28,7 +29,9 @@ class ResearchAgentTaskSnapshotCanonicalizer {
     }
 
     CanonicalSnapshot canonicalize(SnapshotInput input) {
-        if (!SCHEMA_V1.equals(input.schemaVersion()) && !SCHEMA_V2.equals(input.schemaVersion())) throw invalid();
+        if (!SCHEMA_V1.equals(input.schemaVersion())
+                && !SCHEMA_V2.equals(input.schemaVersion())
+                && !SCHEMA_V3.equals(input.schemaVersion())) throw invalid();
         List<Map<String, Object>> targetBindings = readList(input.targetBindingsJson());
         Map<String, Object> budget = readMap(input.budgetJson());
         Map<String, Object> context = readMap(input.executionContextJson());
@@ -57,7 +60,17 @@ class ResearchAgentTaskSnapshotCanonicalizer {
         snapshot.put("provider_key", providerKey);
         snapshot.put("source_policy", sourcePolicy);
         snapshot.put("query_policy", queryPolicy);
-        if (SCHEMA_V2.equals(input.schemaVersion())) {
+        if (SCHEMA_V3.equals(input.schemaVersion())) {
+            Object researchIntent = context.get("research_intent");
+            Object controlPack = context.get("control_pack");
+            if (!(researchIntent instanceof Map<?, ?> intent && !intent.isEmpty())
+                    || !(controlPack instanceof Map<?, ?> controls && !controls.isEmpty())) {
+                throw invalid();
+            }
+            snapshot.put("research_intent", researchIntent);
+            snapshot.put("control_pack", controlPack);
+        }
+        if (SCHEMA_V2.equals(input.schemaVersion()) || SCHEMA_V3.equals(input.schemaVersion())) {
             if (input.logicalTaskKey() == null || input.logicalTaskKey().isBlank()
                     || input.candidateQuorum() < 1 || input.candidateQuorum() > 2
                     || input.candidateSlot() < 1 || input.candidateSlot() > input.candidateQuorum()
@@ -66,7 +79,9 @@ class ResearchAgentTaskSnapshotCanonicalizer {
                 throw invalid();
             }
             snapshot.put("logical_task_key", input.logicalTaskKey());
-            snapshot.put("quorum_group_key", input.quorumGroupKey());
+            if (input.quorumGroupKey() != null) {
+                snapshot.put("quorum_group_key", input.quorumGroupKey());
+            }
             snapshot.put("candidate_quorum", input.candidateQuorum());
             snapshot.put("candidate_slot", input.candidateSlot());
             snapshot.put("high_risk", input.highRisk());

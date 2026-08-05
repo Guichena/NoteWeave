@@ -9,6 +9,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.models import ControlPack, ResearchIntent
+
 
 class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
@@ -24,7 +26,11 @@ class TaskSnapshotTrustError(RuntimeError):
 
 
 class ResearchAgentTaskSnapshot(_Strict):
-    schema_version: Literal["research-agent-task-snapshot.v1", "research-agent-task-snapshot.v2"]
+    schema_version: Literal[
+        "research-agent-task-snapshot.v1",
+        "research-agent-task-snapshot.v2",
+        "research-agent-task-snapshot.v3",
+    ]
     task_id: str = Field(min_length=1, max_length=64)
     research_run_id: str = Field(min_length=1, max_length=64)
     workspace_id: str = Field(min_length=1, max_length=64)
@@ -45,13 +51,15 @@ class ResearchAgentTaskSnapshot(_Strict):
     candidate_quorum: int | None = Field(default=None, ge=1, le=2)
     candidate_slot: int | None = Field(default=None, ge=1, le=2)
     high_risk: bool | None = None
+    research_intent: dict[str, object] | None = None
+    control_pack: dict[str, object] | None = None
     snapshot_digest: str = Field(min_length=8, max_length=128)
 
     @model_validator(mode="after")
     def validate_quorum_scope(self) -> "ResearchAgentTaskSnapshot":
         values = (self.logical_task_key, self.quorum_group_key, self.candidate_quorum, self.candidate_slot, self.high_risk)
         if self.schema_version == "research-agent-task-snapshot.v1":
-            if any(value is not None for value in values):
+            if any(value is not None for value in values) or self.research_intent is not None or self.control_pack is not None:
                 raise ValueError("v1 task snapshot cannot carry quorum scope")
             return self
         if self.logical_task_key is None or self.candidate_quorum is None or self.candidate_slot is None or self.high_risk is None:
@@ -62,6 +70,14 @@ class ResearchAgentTaskSnapshot(_Strict):
             raise ValueError("quorum task requires high-risk group scope")
         if self.candidate_quorum == 1 and self.high_risk:
             raise ValueError("high-risk task requires quorum")
+        if self.schema_version == "research-agent-task-snapshot.v2":
+            if self.research_intent is not None or self.control_pack is not None:
+                raise ValueError("v2 task snapshot cannot carry v3 execution controls")
+        elif self.research_intent is None or self.control_pack is None:
+            raise ValueError("v3 task snapshot requires frozen research intent and control pack")
+        else:
+            ResearchIntent.model_validate(self.research_intent)
+            ControlPack.model_validate(self.control_pack)
         return self
 
     def require_valid_digest(self) -> None:

@@ -11,6 +11,8 @@ public interface RetrievalProjectionWriter {
 
     void markSnapshotCurrent(String targetIndex, String sourceSnapshotId);
 
+    void deleteSource(String targetIndex, String sourceId);
+
     record QaChunkDocument(
             String workspaceId,
             String sourceId,

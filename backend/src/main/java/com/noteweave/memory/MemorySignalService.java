@@ -11,11 +11,15 @@ import com.noteweave.security.WorkspaceAccessGuard;
 import com.noteweave.security.WorkspacePermission;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 @Service
 public class MemorySignalService {
+
+    private static final Set<String> PUBLIC_SOURCE_TYPES = Set.of("USER_FEEDBACK", "MODEL_INFERENCE");
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -51,6 +55,13 @@ public class MemorySignalService {
         String signalId = Ids.newId();
         String signalType = normalizeToken(request.signalType());
         String sourceType = normalizeToken(request.sourceType());
+        if (!PUBLIC_SOURCE_TYPES.contains(sourceType)) {
+            throw new BusinessException(
+                    "MEMORY_SIGNAL_SOURCE_FORBIDDEN",
+                    "Public memory signals cannot assert this provenance type",
+                    HttpStatus.BAD_REQUEST);
+        }
+        String sourceId = "memory-signal:" + signalId;
         String taskNeighborhood = normalizeToken(request.taskNeighborhood());
         double confidenceScore = candidatePolicy.confidenceForSource(sourceType);
         jdbcTemplate.update("""
@@ -63,7 +74,7 @@ public class MemorySignalService {
                 workspaceId,
                 userId,
                 sourceType,
-                blankToNull(request.sourceId()),
+                sourceId,
                 signalType,
                 request.signalText().trim(),
                 taskNeighborhood,
@@ -76,7 +87,7 @@ public class MemorySignalService {
                 workspaceId,
                 signalType,
                 sourceType,
-                blankToNull(request.sourceId()),
+                sourceId,
                 request.signalText().trim(),
                 taskNeighborhood,
                 confidenceScore,

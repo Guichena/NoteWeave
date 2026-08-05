@@ -169,6 +169,43 @@ def test_acquisition_ack_should_be_idempotent_for_same_token_and_terminal_status
     assert duplicate["resume_attempts"] == []
 
 
+def test_acquisition_failure_should_redact_secrets_before_runtime_persistence() -> None:
+    clear_acquisition_runtime()
+    clear_waiting_tasks()
+    clear_approval_requests()
+    reset_capability_provider_approval_status()
+    set_capability_provider_approval_status("EXTRACT_TRANSCRIPT", "PENDING")
+
+    try:
+        _, result = run_artifact_task(_build_media_task_input("video_summary"))
+        operation = debug_list_acquisition_operations(
+            task_id=result.job_snapshot.task_id,
+            capability_name="EXTRACT_TRANSCRIPT",
+        ).operations[0]
+        dispatch = dispatch_acquisition_operation(operation["request_id"])
+        failed = acknowledge_acquisition_operation(
+            callback_token=dispatch["operation"]["callback_token"],
+            final_status="FAILED",
+            error_code="PROVIDER_FAILED",
+            error_message="Authorization: Bearer top-secret at C:\\private\\provider.log",
+            auto_resume=False,
+        )
+    finally:
+        reset_capability_provider_discovery_status()
+        reset_capability_provider_health_status()
+        reset_capability_provider_approval_status()
+        reset_capability_provider_status()
+        clear_approval_requests()
+        clear_waiting_tasks()
+        clear_acquisition_runtime()
+
+    assert "top-secret" not in failed["operation"]["error_message"]
+    assert "top-secret" not in failed["receipt"]["error_message"]
+    assert "[REDACTED]" in failed["operation"]["error_message"]
+    assert "[PATH_REDACTED]" in failed["operation"]["error_message"]
+    assert failed["operation"]["provider_delivery_attempts"][-1]["error_message"] == failed["operation"]["error_message"]
+
+
 def test_debug_dispatch_and_ack_acquisition_operation_should_complete_callback_protocol() -> None:
     clear_artifact_repository()
     clear_acquisition_runtime()

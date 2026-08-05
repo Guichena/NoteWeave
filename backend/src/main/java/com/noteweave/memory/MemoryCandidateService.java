@@ -2,6 +2,7 @@ package com.noteweave.memory;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
@@ -168,14 +169,15 @@ public class MemoryCandidateService {
             String taskNeighborhood
     ) {
         List<ObjectRow> rows = jdbcTemplate.query("""
-                select id, memory_type, task_neighborhood_json, canonical_statement
-                from memory_object
-                where workspace_id = ? and status = 'ACTIVE'
-                """, (rs, rowNum) -> new ObjectRow(
+                select i.id, r.display_text, r.normalized_value_json
+                from memory_item i
+                join memory_runtime_revision r
+                  on r.id = i.current_revision_id and r.memory_item_id = i.id
+                where i.workspace_id = ? and i.status = 'ACTIVE' and r.status = 'ACTIVE'
+                """, (rs, rowNum) -> readCanonicalObjectRow(
                 rs.getString("id"),
-                rs.getString("memory_type"),
-                readStringList(rs.getString("task_neighborhood_json")),
-                rs.getString("canonical_statement")
+                rs.getString("display_text"),
+                rs.getString("normalized_value_json")
         ), workspaceId);
         List<ObjectMatch> matches = new ArrayList<>();
         for (ObjectRow row : rows) {
@@ -187,6 +189,25 @@ public class MemoryCandidateService {
             }
         }
         return matches;
+    }
+
+    private ObjectRow readCanonicalObjectRow(String id, String displayText, String payload) {
+        if (payload == null || payload.isBlank()) {
+            return new ObjectRow(id, "UNKNOWN", List.of("COMMON"), displayText);
+        }
+        try {
+            JsonNode root = objectMapper.readTree(payload);
+            List<String> neighborhoods = root.path("task_neighborhoods").isArray()
+                    ? objectMapper.treeToValue(root.path("task_neighborhoods"), new TypeReference<>() { })
+                    : List.of("COMMON");
+            return new ObjectRow(
+                    id,
+                    root.path("candidate_type").asText("UNKNOWN"),
+                    neighborhoods.isEmpty() ? List.of("COMMON") : neighborhoods,
+                    root.path("statement").asText(displayText));
+        } catch (JsonProcessingException exception) {
+            throw new BusinessException("MEMORY_CANONICAL_PAYLOAD_PARSE_FAILED", "Canonical Memory payload parse failed");
+        }
     }
 
     private String normalizeStatement(String statement) {

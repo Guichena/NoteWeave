@@ -1,7 +1,9 @@
 package com.noteweave.conversation;
 
+import com.noteweave.common.BusinessException;
 import java.util.ArrayList;
 import java.util.List;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -9,7 +11,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class ConversationContextProjectionService {
 
-    static final int RAW_TAIL_MESSAGE_LIMIT = 8;
+    static final int MAX_UNSUMMARIZED_MESSAGES = 256;
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -18,7 +20,10 @@ public class ConversationContextProjectionService {
     }
 
     public Projection select(String workspaceId, String conversationId, int cutoffSeq) {
-        CompilationProjection compilation = compile(workspaceId, conversationId, cutoffSeq);
+        return toProjection(compile(workspaceId, conversationId, cutoffSeq));
+    }
+
+    public Projection toProjection(CompilationProjection compilation) {
         return new Projection(
                 compilation.summary() == null ? List.of() : List.of(compilation.summary()),
                 compilation.rawMessages().stream()
@@ -40,7 +45,14 @@ public class ConversationContextProjectionService {
                 """, (rs, rowNum) -> new RawMessage(
                 rs.getString("id"), rs.getInt("message_seq"), rs.getString("role"),
                 rs.getString("content"), rs.getString("content_hash")
-        ), workspaceId, conversationId, rawTailStartSeq, cutoffSeq, RAW_TAIL_MESSAGE_LIMIT);
+        ), workspaceId, conversationId, rawTailStartSeq, cutoffSeq, MAX_UNSUMMARIZED_MESSAGES + 1);
+        if (newestFirst.size() > MAX_UNSUMMARIZED_MESSAGES) {
+            throw new BusinessException(
+                    "CONVERSATION_CONTEXT_SUMMARY_LAGGING",
+                    "Conversation summary is too far behind to compile a complete context",
+                    HttpStatus.SERVICE_UNAVAILABLE
+            );
+        }
         List<RawMessage> oldestFirst = new ArrayList<>(newestFirst);
         java.util.Collections.reverse(oldestFirst);
         String summaryText = summary == null ? "" : jdbcTemplate.queryForObject(
@@ -60,17 +72,21 @@ public class ConversationContextProjectionService {
                 where segment.workspace_id = ? and segment.conversation_id = ?
                   and segment.covered_start_seq = 1
                   and segment.covered_end_seq < ?
-                  and segment.covered_end_seq >= ?
                   and revision.status = 'READY'
                 order by segment.covered_end_seq desc, revision.revision_no desc
                 limit 1
                 """, (rs, rowNum) -> new SegmentSummaryRef(
                 rs.getString(1), rs.getString(2), rs.getInt(3), rs.getInt(4), rs.getString(5)
-        ), workspaceId, conversationId, cutoffSeq, Math.max(0, cutoffSeq - RAW_TAIL_MESSAGE_LIMIT));
+        ), workspaceId, conversationId, cutoffSeq);
         return summaries.isEmpty() ? null : summaries.get(0);
     }
 
-    public record Projection(List<SegmentSummaryRef> segmentSummaryRefs, List<MessageRef> recentMessageRefs) { }
+    public record Projection(List<SegmentSummaryRef> segmentSummaryRefs, List<MessageRef> recentMessageRefs) {
+        public Projection {
+            segmentSummaryRefs = segmentSummaryRefs == null ? List.of() : List.copyOf(segmentSummaryRefs);
+            recentMessageRefs = recentMessageRefs == null ? List.of() : List.copyOf(recentMessageRefs);
+        }
+    }
 
     public record SegmentSummaryRef(
             String segmentId,

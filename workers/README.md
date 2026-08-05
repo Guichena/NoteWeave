@@ -5,13 +5,11 @@ Python Worker 分别承接 Research 与 Artifact 的独立执行运行时：
 - `research-worker`：承接 Deep Research
 - `artifact-worker`：承接右侧 Skill-first 产物生成
 
-worker 不直写 Java 业务真源。两类 Worker 均按 `task_id` 拉取 Java 输入并回调进度/完成/失败；Artifact Worker 另具备 run/resume/provider-ack、Skill Graph、Verifier/Repair、可选 LLM、系统 MCP、等待恢复和 PDF 导出链路。正式契约见 `docs/最小接口契约.md`。
+worker 不直写 Java 业务真源。Research Worker 只消费 canonical agent-command，并通过 claim、heartbeat、completion envelope 与 Java 协调；Artifact Worker 按 `task_id` 拉取输入并回调进度/完成/失败，另具备 run/resume/provider-ack、Skill Graph、Verifier/Repair、可选 LLM、系统 MCP、等待恢复和 PDF 导出链路。正式契约见 `docs/最小接口契约.md`。
 
 当前 Java 主系统已经落下第一批内部承接接口：
 
-- `GET /internal/worker/research-tasks/{taskId}/input`
 - `GET /internal/worker/artifact-tasks/{taskId}/input`
-- `POST /internal/worker/research-outbox/dispatch`
 - `POST /internal/worker/artifact-outbox/dispatch`（保留人工运维入口，正常路径自动调度）
 - `POST /internal/worker/tasks/{taskId}/heartbeat`
 - `POST /internal/worker/tasks/{taskId}/progress`
@@ -31,7 +29,8 @@ worker 不直写 Java 业务真源。两类 Worker 均按 `task_id` 拉取 Java 
   - `app/verifier.py`
   - `app/reporter.py`
   - `app/runner.py`
-  - `app/callback.py`
+  - `app/agent_kafka_consumer.py`
+  - `app/agent_task_client.py`
 
 - `artifact-worker`
   - `app/models.py`
@@ -45,17 +44,13 @@ worker 不直写 Java 业务真源。两类 Worker 均按 `task_id` 拉取 Java 
   - `app/verifier.py`
   - `app/runner.py`
 
-Research Worker 当前已经具备 `Search / Read / Extract / Verify / Branch / Write` 的轻量闭环，并提供：
+Research Worker 当前已经具备 `Search / Read / Extract / Verify / Branch / Write` 的轻量闭环，并提供 canonical agent-command consumer：
 
-- `POST /debug/run-task`：直接提交完整 worker input，用于本地调试。
-- `POST /tasks/{task_id}/run`：按 `task_id` 从 Java 拉取 input，执行后依次回调 `progress` 和 `complete`；失败时回调 `fail`。
-- `python -m app.kafka_consumer`：消费 `noteweave.research.run` Kafka 消息，按 `task_id` 执行 Research Worker。
+- `python -m app.agent_kafka_consumer`：消费 `noteweave.research.agent.command`，按 lease/fencing 契约执行增量 cell task。
 
-Artifact Job 使用 Java 自动调度的 HTTP outbox publisher 调用 `POST /tasks/{task_id}/run`。Worker 在外部 provider 阻塞时进入 waiting，并通过系统 MCP 执行、Java host ack 和 `POST /tasks/{task_id}/resume` 自动恢复。运行态落盘，`/debug/*` 默认关闭。配置 `NOTEWEAVE_INTERNAL_AUTH_TOKEN` 后，Java 与 Worker 双向请求都必须携带 `X-NoteWeave-Internal-Token`；Artifact Worker 的 run/resume/ack/export/internal/debug 控制面均受保护，`/health` 除外。
+Artifact Job 使用 Java 自动调度的 HTTP outbox publisher 调用 `POST /tasks/{task_id}/run`。Worker 在外部 provider 阻塞时进入 waiting，并通过系统 MCP 执行、Java host ack 和 `POST /tasks/{task_id}/resume` 自动恢复。运行态落盘，`/debug/*` 默认关闭。生产环境使用 `NOTEWEAVE_INTERNAL_AUTH_TOKEN`、`NOTEWEAVE_RESEARCH_INTERNAL_AUTH_TOKEN` 和 `NOTEWEAVE_ARTIFACT_INTERNAL_AUTH_TOKEN` 分域认证；Java 与 Worker 双向请求都必须携带 `X-NoteWeave-Internal-Token`，Artifact Worker 的 run/resume/ack/export/internal/debug 控制面均受保护，`/health` 除外。
 
-当前 Research 异步链路为：Java 创建 `research_run` 和 `task`，把待发送消息写入 `task_outbox`；Java 侧 publisher 将 `noteweave.research.run` 消息发布到 Kafka 并标记 `SENT`；Python Research Worker 作为 Kafka consumer 拉取 `task_id`，再通过 Java worker input 接口读取完整输入并回调进度、完成或失败。
-
-Research Kafka consumer 采用手动 offset commit：任务成功后提交 offset；poison message 会按 `NOTEWEAVE_KAFKA_CONSUME_MAX_ATTEMPTS` 有限重试，耗尽后提交 offset 并跳过，避免单条坏消息卡死整个 consumer。调试时可设置 `NOTEWEAVE_KAFKA_CONSUME_RAISE_ON_FAILURE=true` 在提交后抛出错误。
+当前 Research 异步链路为：Java coordinator 创建 agent task 与 command outbox，dispatcher 发布 `noteweave.research.agent.command`；Python consumer claim task、续约 heartbeat，并用 completion envelope 原子提交结果。consumer 手动提交 offset，poison message 按 `NOTEWEAVE_KAFKA_CONSUME_MAX_ATTEMPTS` 有限重试后进入专用 DLQ。
 
 ## Python 环境
 
@@ -86,9 +81,7 @@ Python worker 统一优先使用 `conda`，两个 worker 共用一个环境，�
 ## 本地启动
 
 ```powershell
-conda run -n noteweave-workers uvicorn app.main:app --reload --port 18091 --app-dir workers/research-worker
-
-conda run -n noteweave-workers python -m app.kafka_consumer
+conda run -n noteweave-workers python -m app.agent_kafka_consumer
 
 conda run -n noteweave-workers uvicorn app.main:app --reload --port 18092 --app-dir workers/artifact-worker
 ```
@@ -97,7 +90,7 @@ conda run -n noteweave-workers uvicorn app.main:app --reload --port 18092 --app-
 
 默认 `docker compose up -d` 只启动 MySQL / Redis / Kafka / MinIO / Elasticsearch。
 
-全容器模式启动 Java Backend、Research Worker API、Research Kafka Consumer 和 Artifact Worker API：
+全容器模式启动 Java Backend、Research Agent Consumer 和 Artifact Worker API：
 
 ```powershell
 docker compose --profile app up --build
@@ -107,10 +100,12 @@ Research Worker 容器默认配置：
 
 - `NOTEWEAVE_JAVA_BASE_URL=http://backend:8081`
 - `NOTEWEAVE_KAFKA_BOOTSTRAP_SERVERS=kafka:9092`
-- `NOTEWEAVE_KAFKA_RESEARCH_TOPIC=noteweave.research.run`
+- `NOTEWEAVE_KAFKA_RESEARCH_AGENT_TOPIC=noteweave.research.agent.command`
+- `NOTEWEAVE_KAFKA_RESEARCH_AGENT_DLQ_TOPIC=noteweave.research.agent.command.dlq`
 - `NOTEWEAVE_KAFKA_CONSUME_MAX_ATTEMPTS=3`
-- `NOTEWEAVE_KAFKA_CONSUME_RAISE_ON_FAILURE=false`
-- `NOTEWEAVE_INTERNAL_AUTH_TOKEN=<与 Backend/Artifact Worker 相同的共享 secret>`
+- `NOTEWEAVE_RESEARCH_INTERNAL_AUTH_TOKEN=<Research Worker 专用 secret>`
+- `NOTEWEAVE_ARTIFACT_INTERNAL_AUTH_TOKEN=<Artifact Worker 专用 secret>`
+- `NOTEWEAVE_INTERNAL_AUTH_TOKEN=<Backend coordinator secret>`
 
 三条 LLM 配置链路彼此隔离：Backend 使用 `NOTEWEAVE_LLM_*`，Research Worker 只使用 `NOTEWEAVE_RESEARCH_LLM_*`，Artifact Worker 只使用 `NOTEWEAVE_ARTIFACT_LLM_*`。Worker 不再读取通用 `NOTEWEAVE_LLM_*`。
 

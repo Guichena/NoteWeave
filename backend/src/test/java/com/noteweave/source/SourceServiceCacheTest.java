@@ -121,6 +121,8 @@ class SourceServiceCacheTest {
                 create table source_snapshot(
                     id varchar(36) primary key,
                     source_id varchar(36) not null,
+                    version_no int not null,
+                    object_key varchar(500) not null,
                     parse_status varchar(32) not null,
                     index_status varchar(32) not null
                 )
@@ -141,7 +143,11 @@ class SourceServiceCacheTest {
                     'source-1', 'workspace-1', 'file-1', 'Source',
                     'READY', 'PARSED', 'INDEXED', 'SYSTEM:TEST', current_timestamp)
                 """);
-        jdbcTemplate.update("insert into source_snapshot values ('snapshot-1', 'source-1', 'PARSED', 'INDEXED')");
+        jdbcTemplate.update("""
+                insert into source_snapshot values (
+                    'snapshot-1', 'source-1', 1, 'workspace/workspace-1/source/source-1/snapshot/1/original/file.txt',
+                    'PARSED', 'INDEXED')
+                """);
         when(wikiCommandPort.requestSourceRetract("workspace-1", "source-1", "Source"))
                 .thenReturn("wiki-task-1");
 
@@ -151,7 +157,9 @@ class SourceServiceCacheTest {
         assertThat(jdbcTemplate.queryForObject("select ref_count from file_object where id = 'file-1'", Integer.class))
                 .isZero();
         verify(eventPublisher).publishEvent(new SourceDeletedEvent(
-                "workspace-1", "source-1", "workspace/workspace-1/file.txt"));
+                "workspace-1", "source-1", List.of(
+                        "workspace/workspace-1/source/source-1/snapshot/1/original/file.txt",
+                        "workspace/workspace-1/file.txt")));
     }
 
     private SourceResponse source(String sourceId) {

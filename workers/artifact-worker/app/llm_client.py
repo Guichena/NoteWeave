@@ -13,6 +13,26 @@ from app.io_limits import MAX_LLM_RESPONSE_BYTES
 logger = logging.getLogger(__name__)
 
 
+class RejectCredentialRedirects(urllib.request.HTTPRedirectHandler):
+    """Never forward provider or internal-service credentials across a redirect."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        credential_headers = {
+            "authorization",
+            "x-noteweave-internal-token",
+            "x-noteweave-callback-secret",
+            "x-noteweave-outbox-delivery-token",
+        }
+        if any(name.lower() in credential_headers and value for name, value in req.header_items()):
+            raise urllib.error.URLError("redirect rejected for credential-bearing request")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def credential_safe_urlopen(request: urllib.request.Request, *, timeout: float):
+    opener = urllib.request.build_opener(RejectCredentialRedirects())
+    return opener.open(request, timeout=timeout)
+
+
 class LlmClient(Protocol):
     provider_name: str
     model_name: str
@@ -83,7 +103,7 @@ class OpenAICompatibleLlmClient:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+            with credential_safe_urlopen(request, timeout=self.timeout_seconds) as response:
                 response_body = response.read(MAX_LLM_RESPONSE_BYTES + 1)
                 if len(response_body) > MAX_LLM_RESPONSE_BYTES:
                     raise ValueError(

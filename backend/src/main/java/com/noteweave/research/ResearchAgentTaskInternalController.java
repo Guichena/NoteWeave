@@ -61,18 +61,6 @@ public class ResearchAgentTaskInternalController {
         )));
     }
 
-    @Deprecated(forRemoval = true)
-    @PostMapping("/{taskId}/submit")
-    ApiResponse<ResearchAgentTaskService.ExecutionReceipt> submit(
-            @PathVariable String taskId,
-            @Valid @RequestBody SubmitRequest request
-    ) {
-        return ApiResponse.success(taskService.submitExecution(new ResearchAgentTaskService.SubmitCommand(
-                taskId, request.workerInstanceId(), request.leaseEpoch(), request.fencingToken(), request.executionKey(),
-                request.terminationReason(), request.usage(), request.traceDigest()
-        )));
-    }
-
     @PostMapping("/expire")
     ApiResponse<Integer> expire(HttpServletRequest request) {
         rejectCallerSuppliedLeaseClock(request);
@@ -105,7 +93,4 @@ public class ResearchAgentTaskInternalController {
                                               Map<String, Object> queryPolicy) { }
     public record ClaimRequest(@NotBlank String workerInstanceId, int leaseSeconds) { }
     public record LeaseRequest(@NotBlank String workerInstanceId, int leaseEpoch, long fencingToken, int leaseSeconds) { }
-    public record SubmitRequest(@NotBlank String workerInstanceId, int leaseEpoch, long fencingToken,
-                                @NotBlank String executionKey, @NotBlank String terminationReason,
-                                Map<String, Object> usage, String traceDigest) { }
 }

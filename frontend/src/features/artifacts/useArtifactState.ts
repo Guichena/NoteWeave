@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef } from "react";
-import { resolveLatestArtifactVersionRequest } from "../../artifactHistorySelection";
+import { resolveLatestArtifactVersionRequest } from "./artifactHistorySelection";
 import { artifactsApi, type ArtifactsApi } from "./api";
 import { type ArtifactVersionDetail } from "./model";
 import {

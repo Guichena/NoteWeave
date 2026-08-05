@@ -6,7 +6,9 @@ import {
   type NoteSourceDraftInput,
   type SaveAnswerAsSourceInput,
   type SavedAnswerSource,
-  type SourceAsset
+  type SourceAsset,
+  type RetrievalIndexStatus,
+  type RetrievalBackfillResult
 } from "./model";
 
 export class SourcesApi {
@@ -50,6 +52,18 @@ export class SourcesApi {
   remove(workspaceId: string, sourceId: string) {
     return this.client.deleteJson<DeletedSource>(
       `/api/v2/workspaces/${workspaceId}/sources/${sourceId}`
+    );
+  }
+
+  retrievalStatus(workspaceId: string) {
+    return this.client.get<RetrievalIndexStatus>(
+      `/api/v2/workspaces/${workspaceId}/retrieval-indexes`
+    );
+  }
+
+  rebuildRetrievalIndexes(workspaceId: string) {
+    return this.client.post<RetrievalBackfillResult>(
+      `/api/v2/workspaces/${workspaceId}/retrieval-indexes/rebuild`, {}
     );
   }
 }

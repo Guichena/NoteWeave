@@ -3,46 +3,32 @@ import { decisionOptions } from "./MemoryReviewWorkbench";
 import {
   createMemoryReviewState,
   LatestMemoryRequestGate,
-  reduceMemoryReviewState,
-  selectVersionId
+  reduceMemoryReviewState
 } from "./state";
-import { type MemoryReviewItem, type MemoryVersion } from "./model";
+import { type MemoryReviewItem } from "./model";
 
 describe("Memory review state", () => {
-  it("resets queue, selection and versions on workspace change", () => {
+  it("resets queue and selection on workspace change", () => {
     const loaded = {
       ...createMemoryReviewState("first"),
       queue: [reviewItem()],
-      selectedReviewId: "review",
-      versions: [memoryVersion(1)],
-      selectedVersionId: "version-1"
+      selectedRevisionId: "revision"
     };
 
     expect(reduceMemoryReviewState(loaded, { type: "workspace", workspaceId: "second" }))
       .toEqual(createMemoryReviewState("second"));
   });
 
-  it("clears selection when a decided item leaves the queue", () => {
+  it("clears selection when a decided revision leaves the queue", () => {
     const selected = {
       ...createMemoryReviewState("workspace"),
       queue: [reviewItem()],
-      selectedReviewId: "review",
-      versions: [memoryVersion(1)],
-      selectedVersionId: "version-1"
+      selectedRevisionId: "revision"
     };
 
     const next = reduceMemoryReviewState(selected, { type: "queue", queue: [] });
 
-    expect(next.selectedReviewId).toBe("");
-    expect(next.versions).toEqual([]);
-    expect(next.selectedVersionId).toBe("");
-  });
-
-  it("selects a preferred immutable version or the highest version number", () => {
-    const versions = [memoryVersion(1), memoryVersion(3), memoryVersion(2)];
-
-    expect(selectVersionId(versions)).toBe("version-3");
-    expect(selectVersionId(versions, "version-2")).toBe("version-2");
+    expect(next.selectedRevisionId).toBe("");
   });
 });
 
@@ -61,79 +47,34 @@ describe("Memory request and decision policy", () => {
     expect(second.isCurrent()).toBe(false);
   });
 
-  it("cancels an object version request when selection moves to a candidate", () => {
-    const gate = new LatestMemoryRequestGate();
-    gate.setWorkspace("workspace");
-    const versions = gate.begin("versions");
-
-    gate.cancel("versions");
-
-    expect(versions.signal.aborted).toBe(true);
-    expect(versions.isCurrent()).toBe(false);
-  });
-
-  it("requires explicit replacement or rejection for conflicting candidates", () => {
+  it("requires explicit replacement or rejection for conflicting proposals", () => {
     const decisions = decisionOptions({
       ...reviewItem(),
       conflict_status: "CONFLICTING_ACTIVE_MEMORY"
     }).map((option) => option.decision);
 
     expect(decisions).toEqual(["REPLACE_EXISTING", "REJECT"]);
-    expect(decisions).not.toContain("APPROVE");
+    expect(decisions).not.toContain("ACCEPT");
   });
 
-  it("limits object decisions to approve or revoke", () => {
-    expect(decisionOptions({ ...reviewItem(), review_kind: "OBJECT" })
+  it("limits active review to accept or revoke", () => {
+    expect(decisionOptions({ ...reviewItem(), review_kind: "ACTIVE" })
       .map((option) => option.decision))
-      .toEqual(["APPROVE", "REVOKE"]);
+      .toEqual(["ACCEPT", "REVOKE"]);
   });
 });
 
 function reviewItem(): MemoryReviewItem {
   return {
-    review_kind: "CANDIDATE",
-    review_id: "review",
-    workspace_id: "workspace",
-    statement: "statement",
-    task_neighborhoods: ["CHAT_QA"],
-    review_status: "NEEDS_REVIEW",
-    lifecycle_status: "ACTIVE",
-    conflict_status: "NONE",
-    evidence_gate_status: "NEEDS_REVIEW",
-    risk_score: 0.7,
+    revision_id: "revision",
+    memory_item_id: "item",
+    review_kind: "PROPOSAL",
+    status: "PROPOSED",
+    display_text: "statement",
+    provenance_ref: "candidate",
+    conflict_status: "NO_CONFLICT",
     utility_score: 0.5,
-    policy_version: "memory-candidate-policy-v1",
-    latest_version_id: null,
-    priority: 70,
-    created_at: "2026-07-15T00:00:00Z",
-    updated_at: "2026-07-15T00:00:00Z"
-  };
-}
-
-function memoryVersion(versionNo: number): MemoryVersion {
-  return {
-    memory_version_id: `version-${versionNo}`,
-    memory_object_id: "object",
-    workspace_id: "workspace",
-    version_no: versionNo,
-    canonical_statement: `statement ${versionNo}`,
-    task_neighborhoods: ["CHAT_QA"],
-    compile_hints: {
-      style_constraints: [],
-      structure_constraints: [],
-      terminology_policy: [],
-      forbidden_patterns: [],
-      interaction_policy: [],
-      review_checklist: []
-    },
-    forbidden_patterns: [],
-    status: "ACTIVE",
-    supersedes_version_id: versionNo > 1 ? `version-${versionNo - 1}` : null,
-    valid_from: "2026-07-15T00:00:00Z",
-    valid_to: null,
-    created_from_candidate_id: null,
-    policy_version: "memory-lifecycle-policy-v1",
-    risk_score: 0.2,
-    scope_status: "VALID"
+    review_status: "REVIEW_REQUIRED",
+    lifecycle_status: "EMPTY"
   };
 }

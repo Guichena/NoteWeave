@@ -1,9 +1,11 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse
 from pathlib import Path
 import re
 import hmac
+import logging
+from threading import Lock
 from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 
@@ -38,7 +40,8 @@ from app.capability_wait_queue import (
     list_waiting_tasks,
     wake_waiting_task,
 )
-from app.config import load_settings
+from app.config import load_settings, resolve_mcp_sandbox_root
+from app.error_sanitizer import sanitize_error_message
 from app.callback import (
     ArtifactAcquisitionAckExecutionResponse,
     ArtifactWorkerExecutionResponse,
@@ -120,6 +123,9 @@ async def artifact_worker_lifespan(_: FastAPI):
 
 
 app = FastAPI(title="NoteWeave Artifact Worker", lifespan=artifact_worker_lifespan)
+logger = logging.getLogger(__name__)
+_dispatched_task_lock = Lock()
+_dispatched_task_ids: set[str] = set()
 
 
 @app.middleware("http")
@@ -127,7 +133,12 @@ async def protect_debug_routes(request: Request, call_next):
     if request.url.path.startswith("/debug") and not settings.debug_routes_enabled:
         return JSONResponse(status_code=404, content={"detail": "Not Found"})
     protected_prefixes = ("/tasks/", "/callbacks/", "/internal/", "/debug/")
-    if settings.internal_auth_token and request.url.path.startswith(protected_prefixes):
+    if request.url.path.startswith(protected_prefixes) and not settings.internal_auth_token:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "internal service authentication is not configured"},
+        )
+    if request.url.path.startswith(protected_prefixes):
         supplied_token = request.headers.get("X-NoteWeave-Internal-Token", "")
         if not hmac.compare_digest(supplied_token, settings.internal_auth_token):
             return JSONResponse(
@@ -149,7 +160,10 @@ def download_task_export(task_id: str, file_name: str) -> FileResponse:
     if not re.fullmatch(r"[^/\\]{1,160}\.pdf", file_name):
         raise HTTPException(status_code=404, detail="artifact export not found")
     export_root = (
-        Path(settings.artifact_runtime_state_file_path).resolve().parent / "exports" / task_id
+        resolve_mcp_sandbox_root(settings)
+        / "bilibili-render-pdf"
+        / "exports"
+        / task_id
     ).resolve()
     export_path = (export_root / file_name).resolve()
     if not export_path.is_relative_to(export_root) or not export_path.is_file():
@@ -160,6 +174,11 @@ def download_task_export(task_id: str, file_name: str) -> FileResponse:
 class DebugArtifactRunResponse(BaseModel):
     events: list[dict[str, object]]
     result: dict[str, object]
+
+
+class ArtifactTaskDispatchResponse(BaseModel):
+    task_id: str
+    status: str
 
 
 class DebugDefaultActionCatalogResponse(BaseModel):
@@ -589,19 +608,48 @@ def debug_run_task(task_input: ArtifactTaskInput) -> DebugArtifactRunResponse:
     )
 
 
-@app.post("/tasks/{task_id}/run", response_model=ArtifactWorkerExecutionResponse)
-def run_task_from_java(task_id: str) -> ArtifactWorkerExecutionResponse:
-    return run_artifact_task_with_callbacks(task_id)
+@app.post(
+    "/tasks/{task_id}/run",
+    response_model=ArtifactTaskDispatchResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def run_task_from_java(
+    task_id: str,
+    background_tasks: BackgroundTasks,
+    delivery_token: str = Header(default="", alias="X-NoteWeave-Outbox-Delivery-Token"),
+) -> ArtifactTaskDispatchResponse:
+    with _dispatched_task_lock:
+        if task_id in _dispatched_task_ids:
+            return ArtifactTaskDispatchResponse(task_id=task_id, status="ALREADY_ACCEPTED")
+        _dispatched_task_ids.add(task_id)
+    background_tasks.add_task(_run_dispatched_artifact_task, task_id, delivery_token)
+    return ArtifactTaskDispatchResponse(task_id=task_id, status="ACCEPTED")
+
+
+def _run_dispatched_artifact_task(task_id: str, delivery_token: str = "") -> None:
+    try:
+        run_artifact_task_with_callbacks(task_id, delivery_token=delivery_token)
+    except Exception as exc:
+        logger.warning(
+            "Artifact task reached a reported failure terminal state: task_id=%s error=%s",
+            task_id,
+            sanitize_error_message(str(exc)),
+        )
+    finally:
+        with _dispatched_task_lock:
+            _dispatched_task_ids.discard(task_id)
 
 
 @app.post("/tasks/{task_id}/resume", response_model=ArtifactWorkerExecutionResponse)
 def resume_task_from_java(
     task_id: str,
     request: ArtifactWaitingTaskResumeRequest,
+    delivery_token: str = Header(default="", alias="X-NoteWeave-Outbox-Delivery-Token"),
 ) -> ArtifactWorkerExecutionResponse:
     return resume_waiting_artifact_task_with_callbacks(
         task_id,
         request_id=request.request_id,
+        delivery_token=delivery_token,
     )
 
 

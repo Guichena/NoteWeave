@@ -1,11 +1,21 @@
 from __future__ import annotations
 
 from app.cell_task_planner import plan_cell_task_bundles
+from app.llm_client import FakeLlmClient
 from app.models import ResearchEvidenceCard, ResearchStateCell, ResearchStateLedger
 from app.planner import build_research_plan
 from app.research_tools import ResearchToolbox, _merge_ledger_history, _seed_cell_history
 from app.sequential_candidate_executor import execute_sequential_bundle
 from app.models import ResearchTaskInput
+
+
+def _supporting_llm() -> FakeLlmClient:
+    return FakeLlmClient({
+        "research.verify.cell": (
+            '{"status":"SUPPORTS","confidence":0.9,'
+            '"reason":"the quoted evidence directly supports the candidate","suggested_revision":""}'
+        )
+    })
 
 
 def _cell(column_key: str, *, value: str, evidence_refs: list[str]) -> ResearchStateCell:
@@ -109,7 +119,7 @@ def test_sequential_v2_should_merge_supported_candidate_through_task_contract(mo
     )
     ledger = ResearchStateLedger(entity_set_status="FROZEN", entity_set_version=1, cells=[cell])
 
-    updated, trace = ResearchToolbox().verify_cells(
+    updated, trace = ResearchToolbox(llm_client=_supporting_llm()).verify_cells(
         ledger,
         [evidence],
         plan=plan,
@@ -143,7 +153,7 @@ def test_v1_should_preserve_legacy_cell_version_without_merge_audit(monkeypatch)
         column_key="method",
     )
 
-    updated, _trace = ResearchToolbox().verify_cells(
+    updated, _trace = ResearchToolbox(llm_client=_supporting_llm()).verify_cells(
         ResearchStateLedger(entity_set_status="FROZEN", entity_set_version=1, cells=[cell]),
         [evidence],
         round_no=1,

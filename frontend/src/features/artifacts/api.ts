@@ -1,4 +1,4 @@
-import { type ArtifactSkillSummary } from "../../artifactStudio";
+import { type ArtifactSkillSummary } from "./artifactStudio";
 import { apiClient, type ApiClient } from "../../shared/api";
 import {
   type ArtifactJobCreateResponse,
@@ -72,8 +72,8 @@ export class ArtifactsApi {
     );
   }
 
-  exportPdfUrl(workspaceId: string, artifactJobId: string, versionNo: number) {
-    return this.client.url(`${this.versionPath(workspaceId, artifactJobId, versionNo)}/export.pdf`);
+  exportPdf(workspaceId: string, artifactJobId: string, versionNo: number) {
+    return this.client.blob(`${this.versionPath(workspaceId, artifactJobId, versionNo)}/export.pdf`);
   }
 
   private versionPath(workspaceId: string, artifactJobId: string, versionNo: number) {

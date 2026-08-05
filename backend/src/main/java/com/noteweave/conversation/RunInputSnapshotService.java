@@ -6,8 +6,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.chat.ChatService;
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
-import com.noteweave.memory.MemoryRuntime;
-import com.noteweave.memory.MemoryRuntimeQuery;
+import com.noteweave.memory.MemoryControlPackResponse;
+import com.noteweave.memory.MemoryReferenceResponse;
 import com.noteweave.security.WorkspaceAccessGuard;
 import com.noteweave.security.WorkspacePermission;
 import java.time.Instant;
@@ -28,20 +28,17 @@ public class RunInputSnapshotService {
     private final ObjectMapper objectMapper;
     private final WorkspaceAccessGuard workspaceAccessGuard;
     private final ConversationContextProjectionService contextProjectionService;
-    private final MemoryRuntime memoryRuntime;
 
     public RunInputSnapshotService(
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
             WorkspaceAccessGuard workspaceAccessGuard,
-            ConversationContextProjectionService contextProjectionService,
-            MemoryRuntime memoryRuntime
+            ConversationContextProjectionService contextProjectionService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.workspaceAccessGuard = workspaceAccessGuard;
         this.contextProjectionService = contextProjectionService;
-        this.memoryRuntime = memoryRuntime;
     }
 
     public void recordAnswerSnapshot(
@@ -68,7 +65,13 @@ public class RunInputSnapshotService {
         snapshot.put("expected_history_head_message_id", nullableText(frozen, "expected_history_head_message_id"));
         snapshot.put("retrieval_plan_version", material.retrievalPlan().version());
         snapshot.put("retrieval_plan", material.retrievalPlan());
-        appendContextProjection(snapshot, workspaceId, command.conversationId(), cutoff);
+        appendContextProjection(
+                snapshot,
+                material.contextProjection(),
+                material.chatControlPack() == null
+                        ? List.of()
+                        : material.chatControlPack().memoryReferences()
+        );
         try {
             jdbcTemplate.update("""
                     insert into run_input_snapshot(
@@ -112,7 +115,11 @@ public class RunInputSnapshotService {
         snapshot.put("conversation_lock_version", frozen.path("conversation_lock_version").asInt());
         snapshot.put("expected_history_head_message_id", nullableText(frozen, "expected_history_head_message_id"));
         snapshot.put("research_profile", "balanced");
-        appendContextProjection(snapshot, workspaceId, command.conversationId(), cutoff);
+        appendContextProjection(
+                snapshot,
+                contextProjectionService.select(workspaceId, command.conversationId(), cutoff),
+                researchMemoryReferences(workspaceId, receipt.researchRunId())
+        );
         try {
             jdbcTemplate.update("""
                     insert into run_input_snapshot(
@@ -173,16 +180,28 @@ public class RunInputSnapshotService {
 
     private void appendContextProjection(
             Map<String, Object> snapshot,
-            String workspaceId,
-            String conversationId,
-            int cutoffSeq
+            ConversationContextProjectionService.Projection projection,
+            List<MemoryReferenceResponse> memoryReferences
     ) {
-        ConversationContextProjectionService.Projection projection = contextProjectionService.select(
-                workspaceId, conversationId, cutoffSeq);
         snapshot.put("segment_summary_refs", projection.segmentSummaryRefs());
         snapshot.put("recent_message_refs", projection.recentMessageRefs());
-        snapshot.put("memory_revision_refs", memoryRuntime.recall(
-                new MemoryRuntimeQuery(workspaceId)).memoryReferences());
+        snapshot.put("memory_revision_refs", memoryReferences == null ? List.of() : List.copyOf(memoryReferences));
+    }
+
+    private List<MemoryReferenceResponse> researchMemoryReferences(String workspaceId, String researchRunId) {
+        String controlPackJson = jdbcTemplate.queryForObject("""
+                select control_pack_json
+                from research_run
+                where workspace_id = ? and id = ?
+                """, String.class, workspaceId, researchRunId);
+        if (controlPackJson == null || controlPackJson.isBlank()) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(controlPackJson, MemoryControlPackResponse.class).memoryReferences();
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("Stored research control pack JSON is invalid", ex);
+        }
     }
 
     private JsonNode frozenPreparation(String submissionId) {

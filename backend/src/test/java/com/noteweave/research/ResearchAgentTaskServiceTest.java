@@ -34,13 +34,7 @@ class ResearchAgentTaskServiceTest {
     private ResearchAgentTaskService taskService;
 
     @Autowired
-    private ResearchBudgetAndCheckpointService budgetService;
-
-    @Autowired
     private ResearchAgentExecutionModeService executionModeService;
-
-    @Autowired
-    private ResearchAgentCommandOutboxService outboxService;
 
     @Autowired
     private MockMvc mockMvc;
@@ -189,32 +183,6 @@ class ResearchAgentTaskServiceTest {
     }
 
     @Test
-    void shouldAppendExecutionOnceAndMakeTaskTerminal() {
-        ResearchAgentTaskService.TaskSnapshot task = taskService.createTask(command("task-key-2", "idem-2"));
-        ResearchAgentTaskService.ClaimedTask claimed = taskService.claimTask(
-                new ResearchAgentTaskService.ClaimCommand(task.taskId(), "worker-a", 30)
-        );
-        ResearchAgentTaskService.ExecutionReceipt first = taskService.submitExecution(new ResearchAgentTaskService.SubmitCommand(
-                task.taskId(), "worker-a", claimed.leaseEpoch(), claimed.fencingToken(),
-                "execution-1", "TASK_CONTRACT_SATISFIED", Map.of("llm_calls", 0), "trace-1"
-        ));
-        ResearchAgentTaskService.ExecutionReceipt replay = taskService.submitExecution(new ResearchAgentTaskService.SubmitCommand(
-                task.taskId(), "worker-a", claimed.leaseEpoch(), claimed.fencingToken(),
-                "execution-1", "TASK_CONTRACT_SATISFIED", Map.of("llm_calls", 0), "trace-1"
-        ));
-
-        assertThat(first.executionId()).isEqualTo(replay.executionId());
-        assertThat(jdbcTemplate.queryForObject(
-                "select count(*) from research_agent_execution where research_agent_task_id = ?",
-                Integer.class, task.taskId())).isEqualTo(1);
-        assertThatThrownBy(() -> taskService.claimTask(
-                new ResearchAgentTaskService.ClaimCommand(task.taskId(), "worker-b", 30)
-        )).isInstanceOf(BusinessException.class)
-                .extracting(error -> ((BusinessException) error).code())
-                .isEqualTo("RESEARCH_AGENT_TASK_NOT_CLAIMABLE");
-    }
-
-    @Test
     void shouldReplayClaimForSameWorkerWithoutAdvancingLeaseOrFencing() {
         ResearchAgentTaskService.TaskSnapshot task = taskService.createTask(command("task-key-3", "idem-3"));
         ResearchAgentTaskService.ClaimedTask first = taskService.claimTask(
@@ -261,7 +229,7 @@ class ResearchAgentTaskServiceTest {
     }
 
     @Test
-    void shouldRejectHeartbeatAndNewSubmissionAfterRunBecomesTerminal() {
+    void shouldRejectClaimAndHeartbeatAfterRunBecomesTerminal() {
         ResearchAgentTaskService.TaskSnapshot task = taskService.createTask(command("task-key-terminal", "idem-terminal"));
         ResearchAgentTaskService.ClaimedTask claim = taskService.claimTask(
                 new ResearchAgentTaskService.ClaimCommand(task.taskId(), "worker-a", 30));
@@ -277,14 +245,6 @@ class ResearchAgentTaskServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(error -> ((BusinessException) error).code())
                 .isEqualTo("RESEARCH_AGENT_TASK_STALE_LEASE");
-        assertThatThrownBy(() -> taskService.submitExecution(new ResearchAgentTaskService.SubmitCommand(
-                task.taskId(), "worker-a", claim.leaseEpoch(), claim.fencingToken(),
-                "execution-terminal", "DONE", Map.of("llm_calls", 0), "trace")))
-                .isInstanceOf(BusinessException.class)
-                .extracting(error -> ((BusinessException) error).code())
-                .isEqualTo("RESEARCH_AGENT_TASK_STALE_LEASE");
-        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_execution where research_agent_task_id = ?", Integer.class, task.taskId()))
-                .isZero();
     }
 
     @Test
@@ -318,60 +278,6 @@ class ResearchAgentTaskServiceTest {
         assertThat(jdbcTemplate.queryForObject(
                 "select agent_execution_mode from research_run where id = ?", String.class, runId))
                 .isEqualTo("SEQUENTIAL_V1");
-    }
-
-    @Test
-    void shouldCancelUnpublishedRetryDeliveryWhenReplayCompletesTask() {
-        ResearchAgentTaskService.TaskSnapshot task = taskService.createTask(command("task-key-retry-race", "idem-retry-race"));
-        outboxService.enqueue(task.taskId());
-        jdbcTemplate.update("update research_agent_outbox set status = 'SENT' where research_agent_task_id = ?", task.taskId());
-        taskService.claimTask(
-                new ResearchAgentTaskService.ClaimCommand(task.taskId(), "worker-a", 30));
-        jdbcTemplate.update("""
-                update research_agent_task
-                set status = 'RETRY_WAIT', worker_instance_id = null, lease_expires_at = null,
-                    next_attempt_at = current_timestamp
-                where id = ?
-                """, task.taskId());
-        outboxService.enqueueRetry(task.taskId());
-        ResearchAgentTaskService.ClaimedTask claim = taskService.claimTask(
-                new ResearchAgentTaskService.ClaimCommand(task.taskId(), "worker-b", 30));
-
-        taskService.submitExecution(new ResearchAgentTaskService.SubmitCommand(
-                task.taskId(), "worker-b", claim.leaseEpoch(), claim.fencingToken(),
-                "execution-retry-race", "DONE", Map.of("llm_calls", 0), "trace"));
-
-        assertThat(jdbcTemplate.queryForObject(
-                "select status from research_agent_outbox where research_agent_task_id = ?",
-                String.class, task.taskId())).isEqualTo("CANCELLED");
-        assertThat(jdbcTemplate.queryForObject(
-                "select delivery_no from research_agent_outbox where research_agent_task_id = ?",
-                Integer.class, task.taskId())).isEqualTo(2);
-    }
-
-    @Test
-    void shouldSettleExistingReservationOnceWhenExecutionIsSubmitted() {
-        ResearchAgentTaskService.TaskSnapshot task = taskService.createTask(command("task-key-4", "idem-4"));
-        budgetService.reserve(new ResearchBudgetAndCheckpointService.ReserveCommand(
-                runId, task.taskId(), "reserve-4", Map.of("llm_calls", 2L)
-        ));
-        ResearchAgentTaskService.ClaimedTask claim = taskService.claimTask(
-                new ResearchAgentTaskService.ClaimCommand(task.taskId(), "worker-a", 30)
-        );
-
-        taskService.submitExecution(new ResearchAgentTaskService.SubmitCommand(
-                task.taskId(), "worker-a", claim.leaseEpoch(), claim.fencingToken(),
-                "execution-budget-1", "DONE", Map.of("llm_calls", 1), "trace"
-        ));
-        taskService.submitExecution(new ResearchAgentTaskService.SubmitCommand(
-                task.taskId(), "worker-a", claim.leaseEpoch(), claim.fencingToken(),
-                "execution-budget-1", "DONE", Map.of("llm_calls", 1), "trace"
-        ));
-
-        assertThat(jdbcTemplate.queryForObject("select state from research_budget_reservation where research_agent_task_id = ?", String.class, task.taskId()))
-                .isEqualTo("SETTLED");
-        assertThat(jdbcTemplate.queryForObject("select consumed_json from research_budget_reservation where research_agent_task_id = ?", String.class, task.taskId()))
-                .contains("\"llm_calls\":1");
     }
 
     @Test
@@ -420,6 +326,62 @@ class ResearchAgentTaskServiceTest {
                 .isEqualTo(first.leaseEpoch());
         assertThat(jdbcTemplate.queryForObject("select fencing_token from research_cell where id = ?", Long.class, cellId))
                 .isEqualTo(first.fencingToken());
+    }
+
+    @Test
+    void quorumCellBindingShouldReleaseOnlyAfterEveryCandidateLeaseExpires() {
+        String rowId = Ids.newId();
+        String cellId = Ids.newId();
+        jdbcTemplate.update(
+                "insert into research_row(id, research_run_id, row_key, row_status) values (?, ?, 'entity-1', 'CANDIDATE_READY')",
+                rowId, runId);
+        jdbcTemplate.update("""
+                insert into research_cell(id, research_run_id, research_row_id, cell_key, column_key, candidate_value,
+                    cell_status, repair_count, cell_version, plan_revision, entity_set_version)
+                values (?, ?, ?, 'entity-1:method', 'method', 'old', 'CANDIDATE_READY', 0, 3, 2, 3)
+                """, cellId, runId, rowId);
+        ResearchAgentTaskService.CreateTaskCommand firstCommand = versionedCommand("quorum-1", "quorum-idem-1");
+        ResearchAgentTaskService.CreateTaskCommand secondCommand = versionedCommand("quorum-2", "quorum-idem-2");
+        String firstTaskId = taskService.createTask(firstCommand).taskId();
+        String secondTaskId = taskService.createTask(secondCommand).taskId();
+        jdbcTemplate.update("""
+                update research_agent_task
+                set logical_task_key = 'logical-quorum', quorum_group_key = 'quorum-group',
+                    candidate_quorum = 2, candidate_slot = case when id = ? then 1 else 2 end
+                where id in (?, ?)
+                """, firstTaskId, firstTaskId, secondTaskId);
+
+        taskService.claimTask(new ResearchAgentTaskService.ClaimCommand(firstTaskId, "worker-1", 30));
+        taskService.claimTask(new ResearchAgentTaskService.ClaimCommand(secondTaskId, "worker-2", 30));
+        assertThat(jdbcTemplate.queryForObject(
+                "select active_task_id from research_cell where id = ?", String.class, cellId))
+                .isEqualTo("quorum-group");
+
+        jdbcTemplate.update(
+                "update research_agent_task set lease_expires_at = timestampadd(second, -1, current_timestamp) where id = ?",
+                firstTaskId);
+        taskService.expireLeases();
+        assertThat(jdbcTemplate.queryForObject(
+                "select active_task_id from research_cell where id = ?", String.class, cellId))
+                .isEqualTo("quorum-group");
+
+        jdbcTemplate.update(
+                "update research_agent_task set lease_expires_at = timestampadd(second, -1, current_timestamp) where id = ?",
+                secondTaskId);
+        taskService.expireLeases();
+        assertThat(jdbcTemplate.queryForObject(
+                "select active_task_id from research_cell where id = ?", String.class, cellId))
+                .isNull();
+    }
+
+    private ResearchAgentTaskService.CreateTaskCommand versionedCommand(String taskKey, String idempotencyKey) {
+        return new ResearchAgentTaskService.CreateTaskCommand(
+                runId, taskKey, idempotencyKey, 1, "DEEP_CELL", "entity-1", "branch-main", 2, 3,
+                List.of("entity-1:method"), Map.of("llm_calls", 2),
+                List.of(new ResearchAgentTaskService.TargetCellBinding("entity-1:method", 3)),
+                new ResearchAgentTaskService.TaskExecutionContext(
+                        "research-default", Map.of("allow_workspace_sources", true), Map.of("query", "test question"))
+        );
     }
 
     private ResearchAgentTaskService.CreateTaskCommand command(String taskKey, String idempotencyKey) {

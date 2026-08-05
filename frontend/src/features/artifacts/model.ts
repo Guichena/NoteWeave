@@ -1,4 +1,4 @@
-import { type ArtifactRuntimeTrace } from "../../artifactRuntimeTrace";
+import { type ArtifactRuntimeTrace } from "./artifactRuntimeTrace";
 import { type WaitContext } from "../executions/model";
 
 export type ArtifactJobCreateResponse = {

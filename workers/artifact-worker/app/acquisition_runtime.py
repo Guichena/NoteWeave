@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Lock
+
+from app.error_sanitizer import sanitize_error_fields, sanitize_error_message
 
 from app.models import (
     AcquisitionReceipt,
@@ -15,6 +18,7 @@ from app.models import (
 )
 from app.provider_job_status import resolve_provider_job_status
 from app.io_limits import ContentSizeLimitError, read_text_file_limited, validate_json_payload_size
+from app.file_store_lease import FileStoreLease
 
 
 _acquisition_lock = Lock()
@@ -22,17 +26,30 @@ _acquisition_operations: dict[str, dict[str, object]] = {}
 _acquisition_callback_receipts: dict[str, dict[str, object]] = {}
 _acquisition_result_payloads: dict[str, dict[str, object]] = {}
 _acquisition_storage_path: Path | None = None
+_acquisition_store_lease: FileStoreLease | None = None
+logger = logging.getLogger(__name__)
 
 
 def configure_acquisition_runtime_store(storage_path: str | Path | None) -> None:
-    global _acquisition_storage_path
+    global _acquisition_storage_path, _acquisition_store_lease
     with _acquisition_lock:
+        if _acquisition_store_lease is not None:
+            _acquisition_store_lease.release()
+            _acquisition_store_lease = None
         _acquisition_storage_path = Path(storage_path) if storage_path else None
+        if _acquisition_storage_path is not None:
+            _acquisition_store_lease = FileStoreLease(_acquisition_storage_path)
+            _acquisition_store_lease.acquire()
         _acquisition_operations.clear()
         _acquisition_callback_receipts.clear()
         _acquisition_result_payloads.clear()
         if _acquisition_storage_path and _acquisition_storage_path.exists():
-            payload = json.loads(_acquisition_storage_path.read_text(encoding="utf-8"))
+            try:
+                payload = json.loads(_acquisition_storage_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.error("Ignoring corrupt artifact acquisition runtime file: path=%s error=%s", _acquisition_storage_path, exc)
+                _quarantine_corrupt_file(_acquisition_storage_path)
+                payload = {}
             if isinstance(payload, dict):
                 _restore_mapping(_acquisition_operations, payload.get("operations"))
                 _restore_mapping(_acquisition_callback_receipts, payload.get("callback_receipts"))
@@ -42,9 +59,13 @@ def configure_acquisition_runtime_store(storage_path: str | Path | None) -> None
 def _restore_mapping(target: dict[str, dict[str, object]], value: object) -> None:
     if not isinstance(value, dict):
         return
-    target.update(
-        {str(key): dict(item) for key, item in value.items() if isinstance(item, dict)}
-    )
+    target.update({
+        str(key): dict(sanitized)
+        for key, item in value.items()
+        if isinstance(item, dict)
+        for sanitized in [sanitize_error_fields(item)]
+        if isinstance(sanitized, dict)
+    })
 
 
 def _persist_acquisition_runtime_locked() -> None:
@@ -67,8 +88,18 @@ def _persist_acquisition_runtime_locked() -> None:
     try:
         os.replace(temporary_path, _acquisition_storage_path)
     except PermissionError:
-        _acquisition_storage_path.write_text(serialized, encoding="utf-8")
-        temporary_path.unlink(missing_ok=True)
+        logger.exception(
+            "Could not atomically replace artifact acquisition runtime: path=%s",
+            _acquisition_storage_path,
+        )
+        raise
+
+
+def _quarantine_corrupt_file(path: Path) -> None:
+    try:
+        os.replace(path, path.with_suffix(f"{path.suffix}.corrupt"))
+    except OSError:
+        logger.exception("Could not quarantine corrupt artifact acquisition runtime: path=%s", path)
 
 
 def clear_acquisition_runtime() -> None:
@@ -152,11 +183,13 @@ def register_acquisition_runtime(
                     notes=list(operation.notes),
                 )
                 existing_operation = _acquisition_operations.get(operation.request_id)
-                runtime_operation_payload = runtime_operation.model_dump(mode="json")
+                runtime_operation_payload = sanitize_error_fields(
+                    runtime_operation.model_dump(mode="json")
+                )
                 if existing_operation is not None and _should_preserve_existing_runtime_operation(
                     existing_operation
                 ):
-                    preserved_operation = dict(existing_operation)
+                    preserved_operation = dict(sanitize_error_fields(existing_operation))
                     preserved_operation["notes"] = list(
                         dict.fromkeys(
                             [*list(preserved_operation.get("notes", [])), *list(operation.notes)]
@@ -221,6 +254,68 @@ def get_acquisition_result_payload(request_id: str) -> dict[str, object] | None:
     with _acquisition_lock:
         payload = _acquisition_result_payloads.get(request_id)
     return dict(payload) if payload is not None else None
+
+
+def record_acquisition_provider_outcome(
+    *,
+    request_id: str,
+    final_status: str,
+    result_locator: str = "",
+    error_code: str = "",
+    error_message: str = "",
+    provider_payload: dict[str, object] | None = None,
+) -> dict[str, object]:
+    normalized_status = final_status.strip().upper()
+    if normalized_status not in {"ACKNOWLEDGED", "FAILED"}:
+        raise ValueError(f"unsupported provider outcome status: {final_status}")
+    normalized_payload = dict(provider_payload or {})
+    if normalized_payload:
+        validate_json_payload_size(
+            normalized_payload, label="acquisition provider outcome payload"
+        )
+    outcome = {
+        "final_status": normalized_status,
+        "result_locator": result_locator.strip(),
+        "error_code": error_code.strip(),
+        "error_message": sanitize_error_message(error_message),
+    }
+
+    with _acquisition_lock:
+        operation = _acquisition_operations.get(request_id)
+        if operation is None:
+            raise ValueError(f"acquisition operation not found: {request_id}")
+        callback_status = str(operation.get("callback_status", "")).upper()
+        if callback_status == "PROVIDER_OUTCOME_READY":
+            existing = {
+                "final_status": str(operation.get("provider_outcome_status", "")),
+                "result_locator": str(operation.get("provider_outcome_result_locator", "")),
+                "error_code": str(operation.get("provider_outcome_error_code", "")),
+                "error_message": str(operation.get("provider_outcome_error_message", "")),
+            }
+            existing_payload = _acquisition_result_payloads.get(request_id, {})
+            if existing != outcome or existing_payload != normalized_payload:
+                raise ValueError(
+                    f"provider outcome conflicts with persisted outcome: {request_id}"
+                )
+            return dict(operation)
+        if callback_status != "DISPATCHED_TO_PROVIDER":
+            raise ValueError(
+                f"acquisition operation cannot record provider outcome: {request_id}"
+            )
+
+        operation["callback_status"] = "PROVIDER_OUTCOME_READY"
+        operation["provider_job_status"] = "CALLBACK_PENDING"
+        operation["provider_outcome_status"] = normalized_status
+        operation["provider_outcome_result_locator"] = outcome["result_locator"]
+        operation["provider_outcome_error_code"] = outcome["error_code"]
+        operation["provider_outcome_error_message"] = outcome["error_message"]
+        operation["provider_outcome_recorded_at"] = _utc_now()
+        operation["notes"] = list(operation.get("notes", [])) + [
+            f"provider_outcome_persisted:{normalized_status.lower()}"
+        ]
+        _acquisition_result_payloads[request_id] = normalized_payload
+        _persist_acquisition_runtime_locked()
+        return dict(operation)
 
 
 def list_acquisition_operations(
@@ -360,6 +455,7 @@ def acknowledge_acquisition_operation(
         raise ValueError(f"unsupported acquisition ack status: {final_status}")
     if provider_payload:
         validate_json_payload_size(provider_payload, label="acquisition provider payload")
+    safe_error_message = sanitize_error_message(error_message)
 
     with _acquisition_lock:
         operation = next(
@@ -371,7 +467,7 @@ def acknowledge_acquisition_operation(
             None,
         )
         if operation is None:
-            raise ValueError(f"acquisition callback token not found: {callback_token}")
+            raise ValueError("acquisition callback token not found")
         current_callback_status = str(operation.get("callback_status", "")).upper()
         if current_callback_status in {"ACKNOWLEDGED", "FAILED"}:
             if current_callback_status != normalized_status:
@@ -390,7 +486,10 @@ def acknowledge_acquisition_operation(
                 "receipt": dict(existing_receipt),
                 "resume_attempts": [],
             }
-        if operation.get("callback_status") != "DISPATCHED_TO_PROVIDER":
+        if operation.get("callback_status") not in {
+            "DISPATCHED_TO_PROVIDER",
+            "PROVIDER_OUTCOME_READY",
+        }:
             raise ValueError(
                 f"acquisition operation is not awaiting provider ack: {operation['request_id']}"
             )
@@ -424,7 +523,7 @@ def acknowledge_acquisition_operation(
         else:
             operation["status"] = "FAILED"
             operation["error_code"] = error_code or "PROVIDER_CALLBACK_FAILED"
-            operation["error_message"] = error_message or "provider callback reported failure"
+            operation["error_message"] = safe_error_message or "provider callback reported failure"
             operation["last_error_code"] = operation["error_code"]
             operation["last_error_message"] = operation["error_message"]
         operation["provider_job_status"] = resolve_provider_job_status(
@@ -607,6 +706,7 @@ def _should_preserve_existing_runtime_operation(existing_operation: dict[str, ob
     status = str(existing_operation.get("status", "")).strip().upper()
     return callback_status in {
         "DISPATCHED_TO_PROVIDER",
+        "PROVIDER_OUTCOME_READY",
         "ACKNOWLEDGED",
         "FAILED",
     } or status in {"RUNNING", "COMPLETED", "FAILED"}

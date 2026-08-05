@@ -7,7 +7,7 @@ import java.util.function.Consumer;
  * 统一聊天链路的 LLM 流式调用接口。
  * <p>
  * 由 ChatService.stream 在服务端 SSE 输出过程中按 token 消费，
- * 把模型生成内容转成 {@code chat.delta} 事件推给前端。
+ * 把模型生成内容转成 {@code answer.delta} 事件推给前端。
  */
 public interface ChatLlmClient {
 

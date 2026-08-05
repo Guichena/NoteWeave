@@ -50,3 +50,35 @@ export type SavedAnswerSource = {
   generated_by: string;
   generated_ref_id: string;
 };
+
+export type RetrievalCoverage = {
+  sourceCount: number;
+  readySourceCount: number;
+  qaReadySourceCount: number;
+  noteReadySourceCount: number;
+};
+
+export type RetrievalIndexBuild = {
+  id: string;
+  projectionType: "QA_CHUNK" | "NOTE_SOURCE";
+  targetIndex: string;
+  status: string;
+  expectedCount: number;
+  readyCount: number;
+  failedCount: number;
+  lastErrorCode?: string;
+};
+
+export type RetrievalIndexStatus = {
+  workspaceId: string;
+  coverage: RetrievalCoverage;
+  builds: RetrievalIndexBuild[];
+  projections: Array<{ projectionType: string; status: string; count: number }>;
+};
+
+export type RetrievalBackfillResult = {
+  workspaceId: string;
+  qaBuild: RetrievalIndexBuild;
+  noteBuild: RetrievalIndexBuild;
+  failedSourceIds: string[];
+};

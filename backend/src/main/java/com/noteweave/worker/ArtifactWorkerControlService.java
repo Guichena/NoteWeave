@@ -1,6 +1,8 @@
 package com.noteweave.worker;
 
 import java.util.Map;
+import com.noteweave.common.SensitiveErrorMessageSanitizer;
+import com.noteweave.infra.outbox.DurableOutboxDispatcher;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -8,19 +10,24 @@ public class ArtifactWorkerControlService {
 
     private final ArtifactWorkerControlClient artifactWorkerControlClient;
     private final WorkerTaskCallbackService workerTaskCallbackService;
+    private final DurableOutboxDispatcher outboxDispatcher;
 
     public ArtifactWorkerControlService(
             ArtifactWorkerControlClient artifactWorkerControlClient,
-            WorkerTaskCallbackService workerTaskCallbackService
+            WorkerTaskCallbackService workerTaskCallbackService,
+            DurableOutboxDispatcher outboxDispatcher
     ) {
         this.artifactWorkerControlClient = artifactWorkerControlClient;
         this.workerTaskCallbackService = workerTaskCallbackService;
+        this.outboxDispatcher = outboxDispatcher;
     }
 
     public ArtifactWorkerExecutionResponse resumeTask(String taskId, ArtifactWorkerResumeRequest request) {
         ArtifactWorkerResumeRequest normalizedRequest = request == null
-                ? new ArtifactWorkerResumeRequest("")
-                : new ArtifactWorkerResumeRequest(blankIfNull(request.requestId()));
+                ? new ArtifactWorkerResumeRequest("", activeDeliveryToken(taskId))
+                : new ArtifactWorkerResumeRequest(
+                        blankIfNull(request.requestId()), activeDeliveryToken(taskId)
+                );
         return artifactWorkerControlClient.resumeTask(taskId, normalizedRequest);
     }
 
@@ -73,14 +80,21 @@ public class ArtifactWorkerControlService {
         if (errorMessage.isBlank()) {
             errorMessage = "provider callback reported acquisition failure";
         }
-        workerTaskCallbackService.fail(
+        errorMessage = SensitiveErrorMessageSanitizer.sanitize(errorMessage);
+        workerTaskCallbackService.failFromDelivery(
                 taskId,
                 new WorkerFailRequest(
                         "WAITING_FOR_PROVIDER",
                         errorCode,
                         errorMessage,
                         true
-                )
+                ),
+                "artifact-provider-fail:" + taskId + ":" + blankIfNull(request.callbackToken()),
+                activeDeliveryToken(taskId)
         );
+    }
+
+    private String activeDeliveryToken(String taskId) {
+        return outboxDispatcher.activeTaskDeliveryToken("noteweave.artifact.job", taskId);
     }
 }

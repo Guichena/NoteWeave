@@ -2,6 +2,7 @@ package com.noteweave.infra;
 
 import com.noteweave.answer.AnswerLiveEvent;
 import com.noteweave.answer.AnswerRealtimeBridge;
+import com.noteweave.answer.AnswerRealtimeBridgeUnavailableException;
 import com.noteweave.answer.ConversationLiveEvent;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
@@ -19,12 +20,15 @@ import org.springframework.data.redis.connection.stream.StreamReadOptions;
 import org.springframework.data.redis.connection.stream.StreamRecords;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Component
 @ConditionalOnBean(StringRedisTemplate.class)
 public class RedisAnswerRealtimeBridge implements AnswerRealtimeBridge {
 
     private static final String CANCELLED = "1";
+    private static final Logger log = LoggerFactory.getLogger(RedisAnswerRealtimeBridge.class);
 
     private final StringRedisTemplate redisTemplate;
     private final MeterRegistry meterRegistry;
@@ -62,13 +66,12 @@ public class RedisAnswerRealtimeBridge implements AnswerRealtimeBridge {
         } catch (RuntimeException ex) {
             // A duplicate custom ID means this event is already bridged; other errors degrade to local mux.
             String message = ex.getMessage() == null ? "" : ex.getMessage().toLowerCase();
-            meterRegistry.counter(
-                    message.contains("equal or smaller")
-                            ? "noteweave.answer.redis.duplicate"
-                            : "noteweave.answer.redis.error",
-                    "operation",
-                    "publish"
-            ).increment();
+            if (message.contains("equal or smaller")) {
+                meterRegistry.counter("noteweave.answer.redis.duplicate", "operation", "publish").increment();
+                return;
+            }
+            meterRegistry.counter("noteweave.answer.redis.error", "operation", "publish").increment();
+            throw unavailable("answer publish", ex);
         }
     }
 
@@ -86,7 +89,7 @@ public class RedisAnswerRealtimeBridge implements AnswerRealtimeBridge {
             return records.stream().map(this::toEvent).toList();
         } catch (RuntimeException ex) {
             meterRegistry.counter("noteweave.answer.redis.error", "operation", "read").increment();
-            return List.of();
+            throw unavailable("answer read", ex);
         }
     }
 
@@ -101,7 +104,7 @@ public class RedisAnswerRealtimeBridge implements AnswerRealtimeBridge {
         try {
             Long sequence = redisTemplate.opsForValue().increment(sequenceKey);
             if (sequence == null) {
-                return null;
+                throw new IllegalStateException("Redis did not return a conversation sequence");
             }
             Map<String, String> fields = new LinkedHashMap<>();
             fields.put("sequence", Long.toString(sequence));
@@ -121,7 +124,7 @@ public class RedisAnswerRealtimeBridge implements AnswerRealtimeBridge {
                     sequence, runId, event.sequence(), event.eventType(), event.data(), event.occurredAt());
         } catch (RuntimeException ex) {
             meterRegistry.counter("noteweave.conversation.redis.error", "operation", "publish").increment();
-            return null;
+            throw unavailable("conversation publish", ex);
         }
     }
 
@@ -145,7 +148,7 @@ public class RedisAnswerRealtimeBridge implements AnswerRealtimeBridge {
             return records.stream().map(this::toConversationEvent).toList();
         } catch (RuntimeException ex) {
             meterRegistry.counter("noteweave.conversation.redis.error", "operation", "read").increment();
-            return List.of();
+            throw unavailable("conversation read", ex);
         }
     }
 
@@ -156,6 +159,7 @@ public class RedisAnswerRealtimeBridge implements AnswerRealtimeBridge {
             meterRegistry.counter("noteweave.answer.redis.cancel.publish").increment();
         } catch (RuntimeException ex) {
             meterRegistry.counter("noteweave.answer.redis.error", "operation", "cancel_publish").increment();
+            log.error("Redis cancellation publish failed for answer run {}; DB cancellation remains authoritative", runId, ex);
         }
     }
 
@@ -169,7 +173,8 @@ public class RedisAnswerRealtimeBridge implements AnswerRealtimeBridge {
             return cancelled;
         } catch (RuntimeException ex) {
             meterRegistry.counter("noteweave.answer.redis.error", "operation", "cancel_read").increment();
-            return false;
+            log.error("Redis cancellation read failed for answer run {}; failing closed", runId, ex);
+            return true;
         }
     }
 
@@ -197,18 +202,22 @@ public class RedisAnswerRealtimeBridge implements AnswerRealtimeBridge {
     }
 
     private String streamKey(String runId) {
-        return "stream:answer:" + runId;
+        return "noteweave:v1:stream:answer:" + runId;
     }
 
     private String cancelKey(String runId) {
-        return "cancel:answer:" + runId;
+        return "noteweave:v1:cancel:answer:" + runId;
     }
 
     private String conversationStreamKey(String conversationId) {
-        return "stream:conversation:" + conversationId;
+        return "noteweave:v1:stream:conversation:" + conversationId;
     }
 
     private String conversationSequenceKey(String conversationId) {
-        return "seq:conversation:" + conversationId;
+        return "noteweave:v1:seq:conversation:" + conversationId;
+    }
+
+    private AnswerRealtimeBridgeUnavailableException unavailable(String operation, RuntimeException cause) {
+        return new AnswerRealtimeBridgeUnavailableException(operation, cause);
     }
 }

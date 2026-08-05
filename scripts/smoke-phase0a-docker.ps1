@@ -50,7 +50,7 @@ try {
     foreach ($container in @(
         "noteweave-v2-mysql", "noteweave-v2-redis", "noteweave-v2-kafka", "noteweave-v2-minio",
         "noteweave-v2-elasticsearch", "noteweave-v2-backend", "noteweave-v2-frontend",
-        "noteweave-v2-research-worker-api", "noteweave-v2-artifact-worker-api"
+        "noteweave-v2-research-worker-consumer", "noteweave-v2-artifact-worker-api"
     )) {
         Wait-Healthy $container
     }

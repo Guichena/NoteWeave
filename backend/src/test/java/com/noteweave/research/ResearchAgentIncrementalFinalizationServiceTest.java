@@ -86,6 +86,9 @@ class ResearchAgentIncrementalFinalizationServiceTest {
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_report_artifact where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("select status from research_run where id = ?", String.class, runId)).isEqualTo("COMPLETED");
         assertThat(jdbcTemplate.queryForObject("select task_status from task where id = ?", String.class, parentTaskId)).isEqualTo("COMPLETED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from task_event where task_id = ? and event_type = 'TASK_COMPLETED'",
+                Integer.class, parentTaskId)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_trace where research_run_id = ? and trace_type = 'INCREMENTAL_FINALIZED'", Integer.class, runId)).isEqualTo(1);
     }
 

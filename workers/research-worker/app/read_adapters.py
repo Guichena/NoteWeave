@@ -46,9 +46,11 @@ class WorkspaceReadAdapter:
         transport_attempt_count = _transport_attempt_count(document)
         snapshot_archive_ready = _snapshot_archive_ready(document)
         return ResearchReadWindow(
-            window_id=f"window-{window_index}",
+            window_id=document.source_window_id or f"window-{window_index}",
             hit_id=document.hit_id,
             source_id=document.source_id,
+            source_snapshot_id=document.source_snapshot_id,
+            source_window_id=document.source_window_id,
             source_title=document.source_title,
             query=document.query,
             query_family=requirement_targets["query_family"],
@@ -106,7 +108,13 @@ class WorkspaceReadAdapter:
 class UrlReadAdapter:
     def can_read(self, task_input: ResearchTaskInput, document: ResearchFetchedDocument) -> bool:
         del task_input
-        return bool(document.url.strip()) and document.adapter != "workspace"
+        return (
+            bool(document.url.strip())
+            and document.adapter != "workspace"
+            and document.fetch_status == "FETCHED"
+            and document.content_origin == "FETCHED_SNAPSHOT"
+            and bool(document.snapshot_text.strip())
+        )
 
     def read_hit(
         self,
@@ -115,8 +123,7 @@ class UrlReadAdapter:
         document: ResearchFetchedDocument,
         window_index: int,
     ) -> ResearchReadWindow | None:
-        del task_input
-        if not document.url.strip():
+        if not self.can_read(task_input, document):
             return None
         read_strategy = infer_read_strategy(plan, _as_search_hit(document))
         fetched = document.fetch_status == "FETCHED" or document.content_origin == "FETCHED_SNAPSHOT"
@@ -433,6 +440,9 @@ def _as_search_hit(document: ResearchFetchedDocument) -> ResearchSearchHit:
     return ResearchSearchHit(
         hit_id=document.hit_id,
         source_id=document.source_id,
+        source_snapshot_id=document.source_snapshot_id,
+        source_window_id=document.source_window_id,
+        workspace_window_text=document.snapshot_text if document.adapter == "workspace" else "",
         source_title=document.source_title,
         query=document.query,
         rank=document.rank,

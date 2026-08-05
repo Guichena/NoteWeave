@@ -121,7 +121,7 @@ public class ChatController {
                 }
             });
         } catch (RejectedExecutionException ex) {
-            send(emitter, new ChatStreamEvent("0", "chat.failed", "回答队列已满，请稍后重试"));
+            send(emitter, new ChatStreamEvent("0", "answer.failed", "回答队列已满，请稍后重试"));
             emitter.complete();
         }
         return emitter;
@@ -237,16 +237,6 @@ public class ChatController {
             emitter.complete();
         }
         return emitter;
-    }
-
-    private String canonicalEvent(String legacyEvent) {
-        return switch (legacyEvent) {
-            case "chat.delta" -> "answer.delta";
-            case "chat.citation" -> "citation.upsert";
-            case "chat.completed" -> "answer.completed";
-            case "chat.failed" -> "answer.failed";
-            default -> legacyEvent;
-        };
     }
 
     private boolean isTerminalEvent(String eventType) {

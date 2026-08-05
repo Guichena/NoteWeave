@@ -4,14 +4,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.elasticsearch.core.search.HitsMetadata;
+import co.elastic.clients.util.ObjectBuilder;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
@@ -49,6 +53,14 @@ class ElasticsearchChunkSearchAdapterTest {
                 provider, properties(true));
 
         var result = adapter.search("Workspace-A", "query", 12);
+
+        var requestCaptor = forClass(java.util.function.Function.class);
+        verify(client).search(requestCaptor.capture(), eq(Map.class));
+        @SuppressWarnings("unchecked")
+        ObjectBuilder<SearchRequest> requestBuilder = (ObjectBuilder<SearchRequest>)
+                requestCaptor.getValue().apply(new SearchRequest.Builder());
+        assertThat(requestBuilder.build().query().multiMatch().fields())
+                .containsExactly("content^3", "title^2");
 
         assertThat(adapter.indexName("Workspace-A")).isEqualTo("noteweave_chunk_workspace-a");
         assertThat(result).singleElement().satisfies(item -> {

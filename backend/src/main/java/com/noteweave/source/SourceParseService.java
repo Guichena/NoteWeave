@@ -111,21 +111,21 @@ public class SourceParseService implements SourceParsePort {
                     updated_by = ?, updated_at = current_timestamp
                 where id = ? and status <> 'DELETED'
                 """, summarize(text), writeJson(tags), writeJson(metadata),
-                projectionEnabled ? "INDEXING" : "INDEXED",
+                projectionEnabled ? "INDEXING" : "DISABLED",
                 projectionEnabled ? "PROCESSING" : "READY", actor, sourceId);
         jdbcTemplate.update("update source_snapshot set parse_status = 'PARSED', index_status = ? where id = ?",
-                projectionEnabled ? "INDEXING" : "INDEXED", snapshotId);
+                projectionEnabled ? "INDEXING" : "DISABLED", snapshotId);
         if (!projectionEnabled) {
             jdbcTemplate.update("""
                     update source_chunk
-                    set projection_status = 'PROJECTED', projected_at = current_timestamp
+                    set projection_status = 'NOT_PROJECTED', projected_at = null
                     where source_snapshot_id = ?
                     """, snapshotId);
             if (sourceParseTaskId != null) {
                 taskCommandPort.completeTask(
                         sourceParseTaskId,
-                        "INDEXED",
-                        "资料解析已完成；Elasticsearch 已禁用，未等待异步投影",
+                        "PARSED_LOCAL_ONLY",
+                        "资料解析已完成；Elasticsearch 已禁用，本地可读，未写入检索投影",
                         sourceId
                 );
             }

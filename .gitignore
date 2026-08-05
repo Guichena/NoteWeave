@@ -29,6 +29,9 @@ frontend/vite.config.js
 frontend/vite.config.d.ts
 workers/**/.venv/
 workers/**/.artifact-worker-*.json
+workers/**/.artifact-worker-*.json.lock
+.artifact-worker-*.json
+.artifact-worker-*.json.lock
 workers/**/runtime/
 workers/**/exports/
 

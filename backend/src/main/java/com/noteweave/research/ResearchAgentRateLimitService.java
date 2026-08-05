@@ -2,7 +2,6 @@ package com.noteweave.research;
 
 import com.noteweave.common.BusinessException;
 import io.micrometer.core.instrument.MeterRegistry;
-import java.time.Clock;
 import java.util.List;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,9 +14,11 @@ import org.springframework.stereotype.Service;
 /** MA4C independent, fail-closed multi-worker permit service for Research tools. */
 @Service
 public class ResearchAgentRateLimitService {
-    private static final String SCRIPT = """
-            local now = tonumber(ARGV[1]); local capacity = tonumber(ARGV[2]);
-            local refill = tonumber(ARGV[3]); local ttl = tonumber(ARGV[4]);
+    static final String PERMIT_SCRIPT = """
+            local redis_time = redis.call('TIME')
+            local now = (tonumber(redis_time[1]) * 1000) + math.floor(tonumber(redis_time[2]) / 1000)
+            local capacity = tonumber(ARGV[1]); local refill = tonumber(ARGV[2]);
+            local ttl = tonumber(ARGV[3]);
             local values = {}
             for i,key in ipairs(KEYS) do
               local tokens = tonumber(redis.call('HGET', key, 'tokens'))
@@ -33,7 +34,7 @@ public class ResearchAgentRateLimitService {
             end
             return 1
             """;
-    private static final DefaultRedisScript<Long> PERMIT = new DefaultRedisScript<>(SCRIPT, Long.class);
+    private static final DefaultRedisScript<Long> PERMIT = new DefaultRedisScript<>(PERMIT_SCRIPT, Long.class);
 
     private final StringRedisTemplate redis;
     private final MeterRegistry meters;
@@ -41,7 +42,6 @@ public class ResearchAgentRateLimitService {
     private final boolean allowLocalFallback;
     private final int capacity;
     private final double refillPerMs;
-    private final Clock clock;
 
     @Autowired
     public ResearchAgentRateLimitService(ObjectProvider<StringRedisTemplate> redis, MeterRegistry meters,
@@ -49,18 +49,13 @@ public class ResearchAgentRateLimitService {
                                          @Value("${noteweave.research.agent.rate-limit.allow-local-fallback:false}") boolean allowLocalFallback,
                                          @Value("${noteweave.research.agent.rate-limit.capacity:10}") int capacity,
                                          @Value("${noteweave.research.agent.rate-limit.refill-per-minute:10}") double refillPerMinute) {
-        this(redis.getIfAvailable(), meters, enabled, allowLocalFallback, capacity, refillPerMinute, Clock.systemUTC());
+        this(redis.getIfAvailable(), meters, enabled, allowLocalFallback, capacity, refillPerMinute);
     }
 
     ResearchAgentRateLimitService(StringRedisTemplate redis, MeterRegistry meters, boolean enabled, boolean allowLocalFallback,
                                   int capacity, double refillPerMinute) {
-        this(redis, meters, enabled, allowLocalFallback, capacity, refillPerMinute, Clock.systemUTC());
-    }
-
-    private ResearchAgentRateLimitService(StringRedisTemplate redis, MeterRegistry meters, boolean enabled, boolean allowLocalFallback,
-                                          int capacity, double refillPerMinute, Clock clock) {
         this.redis = redis; this.meters = meters; this.enabled = enabled; this.allowLocalFallback = allowLocalFallback;
-        this.capacity = Math.max(1, capacity); this.refillPerMs = Math.max(0.000001, refillPerMinute / 60_000.0); this.clock = clock;
+        this.capacity = Math.max(1, capacity); this.refillPerMs = Math.max(0.000001, refillPerMinute / 60_000.0);
     }
 
     public void requirePermit(PermitRequest request) {
@@ -69,7 +64,7 @@ public class ResearchAgentRateLimitService {
         if (redis == null) { unavailable(request); return; }
         try {
             long ttl = Math.max(60_000L, Math.round(capacity / refillPerMs * 2));
-            Long result = redis.execute(PERMIT, keys(request), Long.toString(clock.millis()), Integer.toString(capacity),
+            Long result = redis.execute(PERMIT, keys(request), Integer.toString(capacity),
                     Double.toString(refillPerMs), Long.toString(ttl));
             if (Long.valueOf(1).equals(result)) { meters.counter("noteweave.research.agent.permit", "result", "granted").increment(); return; }
             if (Long.valueOf(0).equals(result)) {

@@ -23,6 +23,7 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -128,11 +129,18 @@ public class UploadService {
 
     @Transactional
     public CompleteUploadResponse completeUpload(String uploadId) {
-        UploadRow upload = findUpload(uploadId);
+        UploadRow upload = findUploadForUpdate(uploadId);
         workspaceAccessGuard.requirePermission(upload.workspaceId(), WorkspacePermission.SOURCE_WRITE);
         String actor = auditActorProvider.currentOrSystem("UPLOAD");
         if ("COMPLETED".equals(upload.status()) && upload.sourceId() != null && upload.taskId() != null) {
             return sourceResult(upload.workspaceId(), upload.sourceId(), upload.taskId());
+        }
+        if (!"UPLOADING".equals(upload.status())) {
+            throw new BusinessException(
+                    "UPLOAD_NOT_COMPLETABLE",
+                    "Upload transaction can no longer be completed",
+                    HttpStatus.CONFLICT
+            );
         }
         List<Map<String, Object>> chunkRows = jdbcTemplate.queryForList("""
                 select c.chunk_index, c.object_key
@@ -171,33 +179,48 @@ public class UploadService {
                 "snapshotId", snapshotId,
                 "workspaceId", upload.workspaceId()
         );
-        jdbcTemplate.update("""
-                insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
-                values (?, ?, 'noteweave.source.parse', ?, ?, 'READY')
-                """, Ids.newId(), taskId, sourceId, Json.write(objectMapper, payload));
-
         // 当 Kafka 关闭时（开发/测试场景），同步执行解析以保证上传后立刻可用。
         // 生产环境（Docker / 启用 Kafka）下，异步消费会接管，状态会从 PARSING_QUEUED 推进到 PARSED。
         boolean kafkaEnabled = messagingMode.isAsyncEnabled();
         String finalParseStatus = "PARSING_QUEUED";
         String finalIndexStatus = "INDEX_QUEUED";
-        if (!kafkaEnabled) {
+        if (kafkaEnabled) {
+            jdbcTemplate.update("""
+                    insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
+                    values (?, ?, 'noteweave.source.parse', ?, ?, 'READY')
+                    """, Ids.newId(), taskId, sourceId, Json.write(objectMapper, payload));
+        } else {
             taskCommandPort.startTask(taskId);
             sourceParsePort.parseAndIndex(upload.workspaceId(), sourceId, snapshotId, merged);
-            taskCommandPort.completeTask(taskId, "INDEXED", "资料已经解析并写入本地检索切片", sourceId);
-            finalParseStatus = "PARSED";
-            finalIndexStatus = "INDEXED";
+            Map<String, String> sourceState = jdbcTemplate.queryForObject("""
+                    select parse_status, index_status from source
+                    where workspace_id = ? and id = ?
+                    """, (rs, rowNum) -> Map.of(
+                    "parse_status", rs.getString("parse_status"),
+                    "index_status", rs.getString("index_status")), upload.workspaceId(), sourceId);
+            finalParseStatus = sourceState.get("parse_status");
+            finalIndexStatus = sourceState.get("index_status");
         }
 
-        // WikiIngestService 统一负责 outbox、Kafka 投递以及 Kafka 关闭时的同步降级，
-        // 避免这里二次发布同一 ingest 消息。
-        wikiCommandPort.requestSourceIngest(upload.workspaceId(), sourceId);
+        // Wiki ingest only accepts a source that can enter the indexed READY lifecycle.
+        // A local-only parse must remain usable as PARSED/DISABLED without turning upload
+        // completion into a false 500 or fabricating an indexed state.
+        if (!"DISABLED".equals(finalIndexStatus)) {
+            wikiCommandPort.requestSourceIngest(upload.workspaceId(), sourceId);
+        }
 
-        jdbcTemplate.update("""
+        int completed = jdbcTemplate.update("""
                 update document_upload
                 set status = 'COMPLETED', source_id = ?, task_id = ?, updated_by = ?, updated_at = current_timestamp
-                where workspace_id = ? and id = ?
+                where workspace_id = ? and id = ? and status = 'UPLOADING'
                 """, sourceId, taskId, actor, upload.workspaceId(), uploadId);
+        if (completed != 1) {
+            throw new BusinessException(
+                    "UPLOAD_COMPLETION_CONFLICT",
+                    "Upload transaction was completed concurrently",
+                    HttpStatus.CONFLICT
+            );
+        }
         return new CompleteUploadResponse(sourceId, taskId, finalParseStatus, finalIndexStatus);
     }
 
@@ -256,6 +279,29 @@ public class UploadService {
         return jdbcTemplate.query("""
                 select id, workspace_id, file_name, file_size, mime_type, chunk_size, total_chunks, status, source_id, task_id
                 from document_upload where id = ?
+                """, rs -> {
+            if (!rs.next()) {
+                throw new BusinessException("UPLOAD_NOT_FOUND", "上传事务不存在");
+            }
+            return new UploadRow(
+                    rs.getString("id"),
+                    rs.getString("workspace_id"),
+                    rs.getString("file_name"),
+                    rs.getLong("file_size"),
+                    rs.getString("mime_type"),
+                    rs.getInt("chunk_size"),
+                    rs.getInt("total_chunks"),
+                    rs.getString("status"),
+                    rs.getString("source_id"),
+                    rs.getString("task_id")
+            );
+        }, uploadId);
+    }
+
+    private UploadRow findUploadForUpdate(String uploadId) {
+        return jdbcTemplate.query("""
+                select id, workspace_id, file_name, file_size, mime_type, chunk_size, total_chunks, status, source_id, task_id
+                from document_upload where id = ? for update
                 """, rs -> {
             if (!rs.next()) {
                 throw new BusinessException("UPLOAD_NOT_FOUND", "上传事务不存在");

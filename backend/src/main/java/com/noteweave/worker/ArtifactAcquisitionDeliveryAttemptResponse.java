@@ -1,5 +1,6 @@
 package com.noteweave.worker;
 
+
 public record ArtifactAcquisitionDeliveryAttemptResponse(
         String deliveryId,
         Integer dispatchCount,

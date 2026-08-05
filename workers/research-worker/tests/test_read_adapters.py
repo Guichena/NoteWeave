@@ -117,6 +117,46 @@ def test_workspace_read_adapter_should_open_workspace_window_from_fetched_docume
     assert window.token_estimate > 0
 
 
+def test_workspace_fetch_and_read_should_use_the_server_selected_window_not_the_seed_sample() -> None:
+    task_input = ResearchTaskInput.model_validate({
+        **_build_task_input().model_dump(mode="json"),
+        "source_scope": [{
+            "source_id": "src-workspace",
+            "title": "Workspace Evidence",
+            "sample_text": "First window sample.",
+            "source_snapshot_id": "snapshot-1",
+            "source_window_id": "window-1",
+        }],
+    })
+    plan = build_research_plan(task_input)
+    hit = ResearchSearchHit(
+        hit_id="workspace-window-2",
+        source_id="src-workspace",
+        source_snapshot_id="snapshot-1",
+        source_window_id="window-2",
+        workspace_window_text="Second window contains the grounded answer.",
+        source_title="Workspace Evidence",
+        query="grounded answer",
+        rank=1,
+        snippet="Second window contains the grounded answer.",
+        confidence_score=0.95,
+        retrieval_reason="lease-bound workspace search",
+        adapter="workspace",
+        provider="workspace",
+    )
+
+    document = WorkspaceFetchAdapter().fetch_hit(task_input, plan, hit, fetch_index=1)
+    assert document is not None
+    window = WorkspaceReadAdapter().read_hit(task_input, plan, document, window_index=1)
+
+    assert document.snapshot_text == "Second window contains the grounded answer."
+    assert document.source_snapshot_id == "snapshot-1"
+    assert window is not None
+    assert window.window_id == "window-2"
+    assert window.source_window_id == "window-2"
+    assert window.source_snapshot_id == "snapshot-1"
+
+
 def test_url_read_adapter_should_preserve_fetched_document_metadata() -> None:
     task_input = _build_task_input()
     plan = build_research_plan(task_input)
@@ -144,7 +184,7 @@ def test_url_read_adapter_should_preserve_fetched_document_metadata() -> None:
     assert "after url snapshot fetch" in window.retention_reason
 
 
-def test_url_read_adapter_should_preserve_structured_failure_classification() -> None:
+def test_url_read_adapter_should_reject_fallback_document_as_evidence() -> None:
     task_input = _build_task_input()
     plan = build_research_plan(task_input)
     document = _fetched_url_document().model_copy(
@@ -162,14 +202,7 @@ def test_url_read_adapter_should_preserve_structured_failure_classification() ->
 
     window = UrlReadAdapter().read_hit(task_input, plan, document, window_index=1)
 
-    assert window is not None
-    assert window.fetch_status == "FALLBACK_USED"
-    assert window.content_origin == "SEARCH_SNIPPET_FALLBACK"
-    assert window.content_type_label == "PDF"
-    assert window.fetch_failure_code == "UNSUPPORTED_CONTENT_TYPE"
-    assert window.transport_fallback_code == "UNSUPPORTED_CONTENT_TYPE"
-    assert window.transport_attempt_count == 1
-    assert window.snapshot_archive_ready is False
+    assert window is None
 
 
 def test_composite_read_adapter_should_preserve_document_order() -> None:

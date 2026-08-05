@@ -27,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class AnswerRunService {
 
     private static final String PLAN_VERSION = "legacy-adapter-v1";
+    private static final long STREAM_LEASE_SECONDS = 150;
 
     private final JdbcTemplate jdbcTemplate;
     private final AuditActorProvider auditActorProvider;
@@ -180,14 +181,14 @@ public class AnswerRunService {
             return null;
         }
         String owner = Ids.newId();
-        Timestamp leaseUntil = Timestamp.from(Instant.now().plusSeconds(150));
         int updated = jdbcTemplate.update("""
                 update answer_run
-                set stream_owner = ?, stream_lease_until = ?,
+                set stream_owner = ?,
+                    stream_lease_until = timestampadd(second, ?, current_timestamp),
                     updated_by = ?, updated_at = current_timestamp
                 where workspace_id = ? and id = ? and status = 'GENERATING'
                   and (stream_lease_until is null or stream_lease_until < current_timestamp)
-                """, owner, leaseUntil, actor(), workspaceId, runId);
+                """, owner, STREAM_LEASE_SECONDS, actor(), workspaceId, runId);
         if (updated == 0) {
             throw new BusinessException(
                     "ANSWER_RUN_ALREADY_STREAMING",
@@ -196,6 +197,18 @@ public class AnswerRunService {
             );
         }
         return owner;
+    }
+
+    @Transactional
+    public boolean renewStreamLease(String workspaceId, String runId, String streamOwner) {
+        int updated = jdbcTemplate.update("""
+                update answer_run
+                set stream_lease_until = timestampadd(second, ?, current_timestamp),
+                    updated_by = ?, updated_at = current_timestamp
+                where workspace_id = ? and id = ? and status = 'GENERATING'
+                  and stream_owner = ? and stream_lease_until >= current_timestamp
+                """, STREAM_LEASE_SECONDS, actor(), workspaceId, runId, streamOwner);
+        return updated == 1;
     }
 
     @Transactional
@@ -209,7 +222,7 @@ public class AnswerRunService {
     }
 
     @Transactional
-    public void complete(
+    public CompletionOutcome complete(
             String workspaceId,
             String runId,
             String streamOwner,
@@ -218,7 +231,13 @@ public class AnswerRunService {
     ) {
         AnswerRunRef current = requireRef(workspaceId, runId);
         if ("COMPLETED".equals(current.status())) {
-            return;
+            return CompletionOutcome.COMPLETED;
+        }
+        if ("CANCELLED".equals(current.status())) {
+            return CompletionOutcome.CANCELLED;
+        }
+        if ("FAILED".equals(current.status())) {
+            return CompletionOutcome.FAILED;
         }
         String actor = actor();
         int finalizing = jdbcTemplate.update("""
@@ -226,7 +245,19 @@ public class AnswerRunService {
                 set status = 'FINALIZING', version = version + 1, updated_by = ?, updated_at = current_timestamp
                 where workspace_id = ? and id = ? and status = 'GENERATING' and stream_owner = ?
                 """, actor, workspaceId, runId, streamOwner);
-        requireTransition(finalizing, runId, "FINALIZING");
+        if (finalizing == 0) {
+            AnswerRunRef latest = requireRef(workspaceId, runId);
+            if ("COMPLETED".equals(latest.status())) {
+                return CompletionOutcome.COMPLETED;
+            }
+            if ("CANCELLED".equals(latest.status())) {
+                return CompletionOutcome.CANCELLED;
+            }
+            if ("FAILED".equals(latest.status())) {
+                return CompletionOutcome.FAILED;
+            }
+            requireTransition(finalizing, runId, "FINALIZING");
+        }
         appendEvent(runId, workspaceId, "answer.status", Map.of("status", "FINALIZING"));
         jdbcTemplate.update("""
                 update message_revision
@@ -238,14 +269,15 @@ public class AnswerRunService {
                 set status = 'COMPLETED', finished_at = current_timestamp,
                     stream_owner = null, stream_lease_until = null,
                     version = version + 1, updated_by = ?, updated_at = current_timestamp
-                where workspace_id = ? and id = ? and status = 'FINALIZING'
-                """, actor, workspaceId, runId);
+                where workspace_id = ? and id = ? and status = 'FINALIZING' and stream_owner = ?
+                """, actor, workspaceId, runId, streamOwner);
         requireTransition(completed, runId, "COMPLETED");
         appendEvent(runId, workspaceId, "answer.completed", Map.of(
                 "status", "COMPLETED",
                 "answer_message_id", current.answerMessageId()
         ));
         meterRegistry.counter("noteweave.answer.run.completed").increment();
+        return CompletionOutcome.COMPLETED;
     }
 
     @Transactional
@@ -313,6 +345,33 @@ public class AnswerRunService {
             }
         }
         requireTransition(updated, runId, "CANCELLED");
+        jdbcTemplate.update("""
+                update message_revision set status = 'PARTIAL', updated_at = current_timestamp
+                where workspace_id = ? and answer_run_id = ? and status = 'STREAMING'
+                """, workspaceId, runId);
+        appendEvent(runId, workspaceId, "answer.cancelled", Map.of("status", "CANCELLED"));
+        meterRegistry.counter("noteweave.answer.run.cancelled").increment();
+        return get(workspaceId, runId);
+    }
+
+    @Transactional
+    public AnswerRunResponse cancelFromStream(String workspaceId, String runId, String streamOwner) {
+        int updated = jdbcTemplate.update("""
+                update answer_run
+                set status = 'CANCELLED', finished_at = current_timestamp,
+                    stream_owner = null, stream_lease_until = null,
+                    version = version + 1, updated_by = ?, updated_at = current_timestamp
+                where workspace_id = ? and id = ? and status = 'GENERATING' and stream_owner = ?
+                """, actor(), workspaceId, runId, streamOwner);
+        if (updated == 0) {
+            AnswerRunRef latest = requireRef(workspaceId, runId);
+            if ("CANCELLED".equals(latest.status())
+                    || "COMPLETED".equals(latest.status())
+                    || "FAILED".equals(latest.status())) {
+                return get(workspaceId, runId);
+            }
+            requireTransition(updated, runId, "CANCELLED");
+        }
         jdbcTemplate.update("""
                 update message_revision set status = 'PARTIAL', updated_at = current_timestamp
                 where workspace_id = ? and answer_run_id = ? and status = 'STREAMING'
@@ -605,5 +664,11 @@ public class AnswerRunService {
     }
 
     private record RetrievalStatus(Boolean degraded, List<String> reasons) {
+    }
+
+    public enum CompletionOutcome {
+        COMPLETED,
+        CANCELLED,
+        FAILED
     }
 }

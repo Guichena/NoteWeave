@@ -3,7 +3,6 @@ package com.noteweave.task;
 public record WaitProviderDeliveryAttemptResponse(
         String deliveryId,
         Integer dispatchCount,
-        String callbackToken,
         String dispatchedAt,
         String callbackDeadlineAt,
         String providerJobId,

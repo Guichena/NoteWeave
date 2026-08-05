@@ -1,8 +1,18 @@
 from __future__ import annotations
 
 from app.models import ResearchEvidenceCard, ResearchStateCell, ResearchStateLedger, ResearchTaskInput
+from app.llm_client import FakeLlmClient
 from app.planner import build_research_plan
 from app.research_tools import ResearchToolbox
+
+
+def _supporting_llm() -> FakeLlmClient:
+    return FakeLlmClient({
+        "research.verify.cell": (
+            '{"status":"SUPPORTS","confidence":0.9,'
+            '"reason":"the quoted evidence directly supports the candidate","suggested_revision":""}'
+        )
+    })
 
 
 def _task_input() -> ResearchTaskInput:
@@ -53,7 +63,7 @@ def test_local_parallel_should_use_ma1_merge_semantics_with_bounded_scheduler(mo
     plan = build_research_plan(task_input)
     cells = [_cell("entity-a", "retrieval"), _cell("entity-b", "generation")]
 
-    updated, trace = ResearchToolbox().verify_cells(
+    updated, trace = ResearchToolbox(llm_client=_supporting_llm()).verify_cells(
         ResearchStateLedger(entity_set_status="FROZEN", entity_set_version=1, cells=cells),
         [_evidence("entity-a", "retrieval"), _evidence("entity-b", "generation")],
         plan=plan,

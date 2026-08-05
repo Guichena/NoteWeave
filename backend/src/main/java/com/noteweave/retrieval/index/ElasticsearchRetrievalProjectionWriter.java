@@ -7,9 +7,11 @@ import com.noteweave.retrieval.index.RetrievalProjectionWriter.QaChunkDocument;
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 @Component
+@ConditionalOnProperty(name = "noteweave.elasticsearch.enabled", havingValue = "true", matchIfMissing = true)
 public class ElasticsearchRetrievalProjectionWriter implements RetrievalProjectionWriter {
     private final ElasticsearchClient client;
 
@@ -37,6 +39,23 @@ public class ElasticsearchRetrievalProjectionWriter implements RetrievalProjecti
     @Override
     public void markSnapshotCurrent(String targetIndex, String sourceSnapshotId) {
         updateSnapshotCurrentFlag(targetIndex, sourceSnapshotId, true, true);
+    }
+
+    @Override
+    public void deleteSource(String targetIndex, String sourceId) {
+        try {
+            client.deleteByQuery(delete -> delete
+                    .index(targetIndex)
+                    .allowNoIndices(true)
+                    .ignoreUnavailable(true)
+                    .query(query -> query.term(term -> term
+                            .field("source_id")
+                            .value(sourceId)))
+                    .refresh(true));
+        } catch (IOException ex) {
+            throw new IllegalStateException(
+                    "Failed to delete retrieval projections for source " + sourceId, ex);
+        }
     }
 
     private void updateSnapshotCurrentFlag(

@@ -41,6 +41,34 @@ def _quorum_snapshot() -> dict[str, object]:
     return {**payload, "snapshot_digest": snapshot_digest(payload)}
 
 
+def _v3_snapshot() -> dict[str, object]:
+    payload = {**_quorum_snapshot()}
+    payload.pop("snapshot_digest")
+    payload.update(
+        schema_version="research-agent-task-snapshot.v3",
+        research_intent={
+            "research_goal": "Preserve the user's research goal",
+            "deliverable_format": "decision memo",
+            "constraints": ["Only use auditable evidence"],
+            "time_range": "2024-2026",
+            "depth": "DEEP",
+            "research_type": "TECHNICAL",
+        },
+        control_pack={
+            "pack_type": "RESEARCH_AGENT",
+            "target_key": "DEFAULT",
+            "task_neighborhood": "RESEARCH_DEFAULT",
+            "style_constraints": ["concise"],
+            "structure_constraints": ["include limitations"],
+            "terminology_policy": ["use canonical terms"],
+            "forbidden_patterns": ["unsupported certainty"],
+            "evidence_policy": ["server-snapshot-only"],
+        },
+    )
+    from app.task_snapshot_contract import snapshot_digest
+    return {**payload, "snapshot_digest": snapshot_digest(payload)}
+
+
 def test_task_snapshot_should_require_authoritative_scope_before_executor_creation() -> None:
     from app.task_snapshot_contract import ResearchAgentTaskSnapshot
 
@@ -62,6 +90,23 @@ def test_task_snapshot_v2_should_bind_a_high_risk_candidate_slot_to_its_quorum_g
     assert snapshot.candidate_slot == 2
     assert snapshot.high_risk is True
     snapshot.require_valid_digest()
+
+
+def test_task_snapshot_v3_should_require_frozen_intent_and_control_pack() -> None:
+    from app.task_snapshot_contract import ResearchAgentTaskSnapshot
+
+    snapshot = ResearchAgentTaskSnapshot.model_validate(_v3_snapshot())
+
+    assert snapshot.research_intent is not None
+    assert snapshot.research_intent["depth"] == "DEEP"
+    assert snapshot.control_pack is not None
+    assert snapshot.control_pack["style_constraints"] == ["concise"]
+    snapshot.require_valid_digest()
+
+    missing_intent = _v3_snapshot()
+    missing_intent.pop("research_intent")
+    with pytest.raises(Exception):
+        ResearchAgentTaskSnapshot.model_validate(missing_intent)
 
 
 @pytest.mark.parametrize("field", ["workspace_id", "role", "target_cells", "budget", "provider_key", "snapshot_digest"])

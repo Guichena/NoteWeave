@@ -9,10 +9,16 @@ spring:
   application:
     name: noteweave-v2-backend
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/noteweave?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/noteweave?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true}
     username: ${SPRING_DATASOURCE_USERNAME:noteweave}
-    password: ${SPRING_DATASOURCE_PASSWORD:noteweave123}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
     driver-class-name: ${SPRING_DATASOURCE_DRIVER:com.mysql.cj.jdbc.Driver}
+    hikari:
+      maximum-pool-size: ${SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE:20}
+      minimum-idle: ${SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE:4}
+      connection-timeout: ${SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT_MS:30000}
+      validation-timeout: ${SPRING_DATASOURCE_HIKARI_VALIDATION_TIMEOUT_MS:5000}
+      max-lifetime: ${SPRING_DATASOURCE_HIKARI_MAX_LIFETIME_MS:1800000}
   flyway:
     enabled: true
     locations: classpath:db/migration
@@ -26,8 +32,12 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    properties:
+      security.protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
+      sasl.mechanism: ${KAFKA_SASL_MECHANISM:PLAIN}
     consumer:
       group-id: ${KAFKA_CONSUMER_GROUP_ID:noteweave-backend}
       auto-offset-reset: earliest
@@ -53,8 +63,23 @@ noteweave:
       rollout-max-delivery-failure-rate: ${NOTEWEAVE_RESEARCH_AGENT_ROLLOUT_MAX_DELIVERY_FAILURE_RATE:0.20}
       rollout-max-rejected-merge-rate: ${NOTEWEAVE_RESEARCH_AGENT_ROLLOUT_MAX_REJECTED_MERGE_RATE:0.30}
   environment: ${NOTEWEAVE_ENVIRONMENT:local}
+  retrieval:
+    qa:
+      mysql-fallback-enabled: ${NOTEWEAVE_QA_MYSQL_FALLBACK_ENABLED:false}
+  worker:
+    artifact-callback-secret: ${NOTEWEAVE_ARTIFACT_CALLBACK_SECRET:}
+    artifact-base-url: ${NOTEWEAVE_WORKER_ARTIFACT_BASE_URL:http://localhost:18092}
+    connect-timeout-seconds: ${NOTEWEAVE_WORKER_CONNECT_TIMEOUT_SECONDS:3}
+    read-timeout-seconds: ${NOTEWEAVE_WORKER_READ_TIMEOUT_SECONDS:30}
   security:
-    local-user-fallback: ${NOTEWEAVE_LOCAL_USER_FALLBACK:true}
+    local-user-fallback: ${NOTEWEAVE_LOCAL_USER_FALLBACK:false}
+    access-token-minutes: ${NOTEWEAVE_ACCESS_TOKEN_MINUTES:15}
+    refresh-token-days: ${NOTEWEAVE_REFRESH_TOKEN_DAYS:30}
+    bootstrap:
+      username: ${NOTEWEAVE_BOOTSTRAP_USERNAME:}
+      email: ${NOTEWEAVE_BOOTSTRAP_EMAIL:}
+      display-name: ${NOTEWEAVE_BOOTSTRAP_DISPLAY_NAME:NoteWeave Admin}
+      password: ${NOTEWEAVE_BOOTSTRAP_PASSWORD:}
     acl-cache-enabled: ${NOTEWEAVE_ACL_CACHE_ENABLED:true}
     acl-cache-ttl-seconds: ${NOTEWEAVE_ACL_CACHE_TTL_SECONDS:300}
     acl-negative-cache-ttl-seconds: ${NOTEWEAVE_ACL_NEGATIVE_CACHE_TTL_SECONDS:30}
@@ -74,6 +99,7 @@ noteweave:
       jitter-seconds: ${NOTEWEAVE_MEMORY_COMPILED_PACK_CACHE_JITTER_SECONDS:30}
   quota:
     enabled: ${NOTEWEAVE_QUOTA_ENABLED:true}
+    local-fallback-enabled: ${NOTEWEAVE_QUOTA_LOCAL_FALLBACK_ENABLED:false}
     rate:
       capacity: ${NOTEWEAVE_QUOTA_RATE_CAPACITY:20}
       refill-per-minute: ${NOTEWEAVE_QUOTA_RATE_REFILL_PER_MINUTE:20}
@@ -92,13 +118,15 @@ noteweave:
     command-timeout-ms: ${NOTEWEAVE_REDIS_COMMAND_TIMEOUT_MS:750}
   internal:
     auth-token: ${NOTEWEAVE_INTERNAL_AUTH_TOKEN:}
+    research-auth-token: ${NOTEWEAVE_RESEARCH_INTERNAL_AUTH_TOKEN:}
+    artifact-auth-token: ${NOTEWEAVE_ARTIFACT_INTERNAL_AUTH_TOKEN:}
   storage:
     backend: ${NOTEWEAVE_STORAGE_BACKEND:minio}
     local-root: ${NOTEWEAVE_STORAGE_LOCAL_ROOT:target/noteweave-storage}
     minio:
       endpoint: ${NOTEWEAVE_MINIO_ENDPOINT:http://localhost:9000}
-      access-key: ${NOTEWEAVE_MINIO_ACCESS_KEY:minioadmin}
-      secret-key: ${NOTEWEAVE_MINIO_SECRET_KEY:minioadmin}
+      access-key: ${NOTEWEAVE_MINIO_ACCESS_KEY:}
+      secret-key: ${NOTEWEAVE_MINIO_SECRET_KEY:}
       region: ${NOTEWEAVE_MINIO_REGION:us-east-1}
       bucket-source: ${NOTEWEAVE_MINIO_BUCKET_SOURCE:noteweave-source}
       bucket-derived: ${NOTEWEAVE_MINIO_BUCKET_DERIVED:noteweave-derived}
@@ -110,12 +138,9 @@ noteweave:
     enabled: ${NOTEWEAVE_KAFKA_ENABLED:true}
     topics:
       source-parse: ${NOTEWEAVE_KAFKA_TOPIC_SOURCE_PARSE:noteweave.source.parse}
-      source-chunk: ${NOTEWEAVE_KAFKA_TOPIC_SOURCE_CHUNK:noteweave.source.chunk}
-      source-index: ${NOTEWEAVE_KAFKA_TOPIC_SOURCE_INDEX:noteweave.source.index}
       retrieval-projection: ${NOTEWEAVE_KAFKA_TOPIC_RETRIEVAL_PROJECTION:noteweave.retrieval.projection}
       wiki-ingest: ${NOTEWEAVE_KAFKA_TOPIC_WIKI_INGEST:noteweave.wiki.ingest}
       wiki-retract: ${NOTEWEAVE_KAFKA_TOPIC_WIKI_RETRACT:noteweave.wiki.retract}
-      generated-ingest: ${NOTEWEAVE_KAFKA_TOPIC_GENERATED_INGEST:noteweave.generated.ingest}
       conversation-summary: ${NOTEWEAVE_KAFKA_TOPIC_CONVERSATION_SUMMARY:noteweave.conversation.summary}
       research-agent-command: ${NOTEWEAVE_KAFKA_RESEARCH_AGENT_TOPIC:noteweave.research.agent.command}
   elasticsearch:
@@ -124,6 +149,8 @@ noteweave:
     port: ${NOTEWEAVE_ES_PORT:9200}
     scheme: ${NOTEWEAVE_ES_SCHEME:http}
     index-prefix: ${NOTEWEAVE_ES_INDEX_PREFIX:noteweave_chunk}
+    username: ${NOTEWEAVE_ES_USERNAME:}
+    password: ${NOTEWEAVE_ES_PASSWORD:}
   embedding:
     enabled: ${NOTEWEAVE_EMBEDDING_ENABLED:false}
     endpoint: ${NOTEWEAVE_EMBEDDING_ENDPOINT:http://localhost:11434/v1/embeddings}
@@ -146,23 +173,23 @@ noteweave:
     max-attempts: ${NOTEWEAVE_RERANK_MAX_ATTEMPTS:3}
   llm:
     enabled: ${NOTEWEAVE_LLM_ENABLED:false}
+    template-fallback-enabled: ${NOTEWEAVE_LLM_TEMPLATE_FALLBACK_ENABLED:false}
     endpoint: ${NOTEWEAVE_LLM_ENDPOINT:http://localhost:11434/v1/chat/completions}
     model: ${NOTEWEAVE_LLM_MODEL:noteweave-chat}
     api-key: ${NOTEWEAVE_LLM_API_KEY:}
     timeout-seconds: ${NOTEWEAVE_LLM_TIMEOUT_SECONDS:60}
-  worker:
-    artifact-callback-secret: ${NOTEWEAVE_ARTIFACT_CALLBACK_SECRET:}
-    research-callback-secret: ${NOTEWEAVE_RESEARCH_CALLBACK_SECRET:}
-    artifact-base-url: ${NOTEWEAVE_WORKER_ARTIFACT_BASE_URL:http://localhost:18092}
-    connect-timeout-seconds: ${NOTEWEAVE_WORKER_CONNECT_TIMEOUT_SECONDS:3}
-    read-timeout-seconds: ${NOTEWEAVE_WORKER_READ_TIMEOUT_SECONDS:30}
   executors:
+    scheduling:
+      pool-size: ${NOTEWEAVE_SCHEDULING_POOL_SIZE:4}
     answer-io:
       core-size: ${NOTEWEAVE_ANSWER_IO_CORE_SIZE:4}
       max-size: ${NOTEWEAVE_ANSWER_IO_MAX_SIZE:16}
       queue-capacity: ${NOTEWEAVE_ANSWER_IO_QUEUE_CAPACITY:64}
 
 management:
+  health:
+    elasticsearch:
+      enabled: ${NOTEWEAVE_ES_ENABLED:true}
   endpoints:
     web:
       exposure:

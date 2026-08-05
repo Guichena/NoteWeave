@@ -17,6 +17,8 @@ from app.models import (
     AcquisitionReceipt,
     ArtifactCommitReceipt,
     ArtifactCapabilityResolution,
+    CanonicalContentObject,
+    ArtifactExecutionPlan,
     ArtifactJobSnapshot,
     ArtifactLifecycleStepTrace,
     ArtifactLifecycleTrace,
@@ -26,15 +28,16 @@ from app.models import (
     ArtifactVersionSnapshot,
     ApprovalRuntimeTrace,
     CapabilityUnionRuntimeTrace,
+    ContextPack,
     EvidenceCoverageReport,
     MemoryPromotionPreview,
     RetrievalFeedback,
     WritebackPreview,
 )
-from app.repair import repair_sections
 from app.skill_graph import execute_skill_graph
+from app.error_sanitizer import sanitize_error_message
 from app.custom_mcp_executor import submit_custom_mcp_acquisition_operation
-from app.generation_runtime import generate_artifact_sections
+from app.generation_runtime import ArtifactConfigurationRequiredError, generate_artifact_sections
 from app.export_runtime import export_artifact_if_required
 from app.llm_client import build_default_llm_client
 from app.verifier import build_output_contract_trace, verify_artifact_output
@@ -51,9 +54,72 @@ PHASE_SEQUENCE = [
 
 
 def run_artifact_task(task_input: ArtifactTaskInput) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
-    plan = build_execution_plan(task_input)
-    canonical_content_objects = build_canonical_content_objects(task_input)
-    context_pack = build_context_pack(task_input, plan, canonical_content_objects)
+    return _run_artifact_task(task_input)
+
+
+def resume_artifact_task(
+    task_input: ArtifactTaskInput,
+    resume_checkpoint: dict[str, object],
+) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
+    try:
+        schema_version = int(resume_checkpoint.get("schema_version", 0))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("artifact resume checkpoint has an invalid schema_version") from exc
+    if schema_version < 2:
+        raise ValueError(
+            "artifact resume checkpoint schema v2 is required; legacy full-task restart is disabled"
+        )
+    checkpoint_stage = str(resume_checkpoint.get("stage", "")).strip().upper()
+    if checkpoint_stage != "CAPABILITY_GATE":
+        raise ValueError(f"unsupported artifact resume checkpoint stage: {checkpoint_stage}")
+    raw_plan = resume_checkpoint.get("execution_plan")
+    if not isinstance(raw_plan, dict):
+        raise ValueError("artifact resume checkpoint is missing execution_plan")
+    validated_plan = ArtifactExecutionPlan.model_validate(raw_plan)
+    raw_content_objects = resume_checkpoint.get("canonical_content_objects")
+    raw_context_pack = resume_checkpoint.get("context_pack")
+    if not isinstance(raw_content_objects, list) or not isinstance(raw_context_pack, dict):
+        raise ValueError("artifact resume checkpoint is missing staged content state")
+    raw_capability_resolution = resume_checkpoint.get("capability_resolution")
+    raw_acquisition_receipt = resume_checkpoint.get("acquisition_receipt")
+    if not isinstance(raw_capability_resolution, dict) or not isinstance(raw_acquisition_receipt, dict):
+        raise ValueError("artifact resume checkpoint is missing capability gate state")
+    ArtifactCapabilityResolution.model_validate(raw_capability_resolution)
+    AcquisitionReceipt.model_validate(raw_acquisition_receipt)
+    return _run_artifact_task(
+        task_input,
+        compiled_plan=validated_plan,
+        checkpoint_content_objects=[
+            CanonicalContentObject.model_validate(item) for item in raw_content_objects
+        ],
+        checkpoint_context_pack=ContextPack.model_validate(raw_context_pack),
+        resume_stage=checkpoint_stage,
+    )
+
+
+def _run_artifact_task(
+    task_input: ArtifactTaskInput,
+    *,
+    compiled_plan: ArtifactExecutionPlan | None = None,
+    checkpoint_content_objects: list[CanonicalContentObject] | None = None,
+    checkpoint_context_pack: ContextPack | None = None,
+    resume_stage: str = "",
+) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
+    llm_client = build_default_llm_client()
+    has_direct_input = any(str(value).strip() for value in task_input.input_payload.inputs.values())
+    if llm_client is None and not task_input.source_scope and not has_direct_input:
+        raise ArtifactConfigurationRequiredError(
+            "Artifact LLM is not configured and the task has no source content to extract"
+        )
+    plan = compiled_plan or build_execution_plan(task_input)
+    canonical_content_objects = (
+        list(checkpoint_content_objects)
+        if checkpoint_content_objects is not None
+        else build_canonical_content_objects(task_input)
+    )
+    context_pack = checkpoint_context_pack or build_context_pack(
+        task_input, plan, canonical_content_objects
+    )
     resolved_bindings = resolve_capability_bindings(
         plan.lazy_loaded_capabilities,
         task_input=task_input,
@@ -128,19 +194,26 @@ def run_artifact_task(task_input: ArtifactTaskInput) -> tuple[list[ArtifactProgr
             wait_status="WAITING_FOR_PROVIDER",
             wait_message="artifact task is waiting for async provider execution to finish",
         )
-    drafted_sections, node_traces = execute_skill_graph(task_input, plan)
-    drafted_sections, generation_trace = generate_artifact_sections(
-        task_input=task_input,
-        plan=plan,
-        canonical_content_objects=canonical_content_objects,
-        fallback_sections=drafted_sections,
-        llm_client=build_default_llm_client(),
-    )
-    repaired_sections, repaired_checks = repair_sections(
-        drafted_sections,
+    completed_acquisition_request_ids = _completed_acquisition_request_ids(task_input, plan)
+    if resume_stage and completed_acquisition_request_ids:
+        # Provider callbacks may add content after the checkpoint was written.
+        # Re-materialize only the acquired content layer; planning and the
+        # already-completed external operation remain checkpointed/durable.
+        canonical_content_objects = build_canonical_content_objects(task_input)
+        context_pack = build_context_pack(task_input, plan, canonical_content_objects)
+    repaired_sections, node_traces, generation_trace = execute_skill_graph(
+        task_input,
         plan,
-        task_input.control_pack.forbidden_patterns,
+        section_generator=lambda _fallback_sections: generate_artifact_sections(
+            task_input=task_input,
+            plan=plan,
+            canonical_content_objects=canonical_content_objects,
+            llm_client=llm_client,
+        ),
     )
+    if generation_trace is None:
+        raise RuntimeError("artifact skill graph did not produce a section draft")
+    repaired_checks: list[str] = []
     rendered_markdown = render_markdown(task_input, plan, repaired_sections)
     export_trace = export_artifact_if_required(
         task_input=task_input,
@@ -221,6 +294,12 @@ def run_artifact_task(task_input: ArtifactTaskInput) -> tuple[list[ArtifactProgr
             "acquisition_receipt": acquisition_receipt.model_dump(mode="json"),
             "acquisition_runtime_snapshot": acquisition_runtime_snapshot,
             "acquisition_runtime_dispatches": acquisition_runtime_dispatches,
+            "resume_checkpoint": {
+                "resumed_from_stage": resume_stage,
+                "completed_acquisition_request_ids": completed_acquisition_request_ids,
+            }
+            if resume_stage
+            else {},
             "capability_union_trace": capability_union_trace.model_dump(mode="json"),
             "approval_trace": approval_trace.model_dump(mode="json"),
             "writeback_preview": writeback_preview.model_dump(mode="json"),
@@ -261,6 +340,8 @@ def run_artifact_task(task_input: ArtifactTaskInput) -> tuple[list[ArtifactProgr
     result.result_payload["output_contract_trace"] = output_contract_trace.model_dump(mode="json")
     verification = verify_artifact_output(result, plan, repaired_checks)
     result.result_payload["verification"] = verification.model_dump(mode="json")
+    if verification.status == "FAIL":
+        raise ArtifactOutputContractViolationError(verification.failed_checks)
     result.result_payload["lifecycle_trace"] = _build_lifecycle_trace(
         events=events,
         status="COMPLETED",
@@ -297,6 +378,14 @@ def run_artifact_task(task_input: ArtifactTaskInput) -> tuple[list[ArtifactProgr
     return events, result
 
 
+class ArtifactOutputContractViolationError(RuntimeError):
+    error_code = "ARTIFACT_OUTPUT_CONTRACT_FAILED"
+
+    def __init__(self, failed_checks: list[str]) -> None:
+        self.failed_checks = list(failed_checks)
+        super().__init__("Artifact output contract failed: " + "; ".join(self.failed_checks))
+
+
 def _build_waiting_result(
     task_input: ArtifactTaskInput,
     plan: object,
@@ -322,6 +411,17 @@ def _build_waiting_result(
         status=wait_status,
         approval_request=approval_request,
         blocked_operations=_extract_blocked_operations(acquisition_receipt),
+        resume_checkpoint={
+            "schema_version": 2,
+            "stage": "CAPABILITY_GATE",
+            "execution_plan": plan.model_dump(mode="json"),
+            "canonical_content_objects": [
+                cco.model_dump(mode="json") for cco in canonical_content_objects
+            ],
+            "context_pack": context_pack.model_dump(mode="json"),
+            "capability_resolution": capability_resolution.model_dump(mode="json"),
+            "acquisition_receipt": acquisition_receipt.model_dump(mode="json"),
+        },
     )
     wait_event = ArtifactProgressEvent(
         phase=wait_phase,
@@ -562,7 +662,7 @@ def _submit_async_custom_mcp_operations(
                         {
                             "request_id": operation.request_id,
                             "status": "DISPATCH_FAILED",
-                            "error_message": str(exc),
+                            "error_message": sanitize_error_message(str(exc)),
                         }
                     )
     return dispatches
@@ -871,6 +971,21 @@ def _resolve_async_provider_capabilities(
             if capability_name not in pending_capabilities:
                 pending_capabilities.append(capability_name)
     return pending_capabilities
+
+
+def _completed_acquisition_request_ids(
+    task_input: ArtifactTaskInput,
+    plan: ArtifactExecutionPlan,
+) -> list[str]:
+    completed: list[str] = []
+    for source_plan in plan.content_acquisition_plan.source_plans:
+        for operation_key in source_plan.planned_operations:
+            request_id = (
+                f"fetch-{task_input.task_id}-{source_plan.source_id}-{operation_key.lower()}"
+            )
+            if get_acquisition_result_payload(request_id):
+                completed.append(request_id)
+    return completed
 
 
 def _build_retrieval_feedback(

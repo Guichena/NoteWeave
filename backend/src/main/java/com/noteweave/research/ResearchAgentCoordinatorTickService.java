@@ -13,19 +13,22 @@ public class ResearchAgentCoordinatorTickService {
     private final ResearchAgentCoordinatorTickFaultInjector faultInjector;
     private final ResearchAgentIncrementalFinalizationService finalization;
     private final ResearchAgentRolloutGuard rolloutGuard;
+    private final ResearchAgentLifecycleService lifecycle;
 
     public ResearchAgentCoordinatorTickService(ResearchAgentCoordinatorSnapshotService snapshots,
                                                ResearchAgentTaskCoordinatorService coordinator,
                                                ResearchAgentCoordinatorRecoveryService recovery,
                                                ResearchAgentCoordinatorTickFaultInjector faultInjector,
                                                ResearchAgentIncrementalFinalizationService finalization,
-                                               ResearchAgentRolloutGuard rolloutGuard) {
+                                               ResearchAgentRolloutGuard rolloutGuard,
+                                               ResearchAgentLifecycleService lifecycle) {
         this.snapshots = snapshots;
         this.coordinator = coordinator;
         this.recovery = recovery;
         this.faultInjector = faultInjector;
         this.finalization = finalization;
         this.rolloutGuard = rolloutGuard;
+        this.lifecycle = lifecycle;
     }
 
     @Transactional
@@ -52,11 +55,20 @@ public class ResearchAgentCoordinatorTickService {
             String outcome = snapshot.failedTaskCount() > 0
                     ? (taskized ? "FAILED_WAVE_REPAIR_TASKIZED" : "FAILED_WAVE_STOPPED")
                     : (taskized ? "VERIFIER_REPAIR_TASKIZED" : "VERIFIER_REPAIR_STOPPED");
+            if (!taskized && receipt.decisionKind() != ResearchAgentRepairStopPolicy.DecisionKind.COUNTERFACTUAL) {
+                lifecycle.failRun(runId, "RESEARCH_AGENT_" + receipt.decisionKind().name());
+            }
             return new TickReceipt(outcome, snapshot, receipt.taskization());
         }
         if (snapshot.readyForFinalization()) {
             finalization.finalizeIncrementalRun(runId);
             return new TickReceipt("RUN_FINALIZED", snapshot, null);
+        }
+        if (snapshot.taskCount() > 0
+                && snapshot.activeTaskCount() == 0
+                && snapshot.nonFinalizableCellCount() > 0) {
+            lifecycle.failRun(runId, "RESEARCH_AGENT_TERMINAL_BARRIER_UNSATISFIED");
+            return new TickReceipt("RUN_FAILED", snapshot, null);
         }
         return new TickReceipt("TERMINAL_BARRIER_PENDING", snapshot, null);
     }

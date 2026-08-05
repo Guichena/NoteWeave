@@ -1,5 +1,14 @@
-import { describe, expect, it } from "vitest";
-import { AnswerRunStore, createAnswerRunState, reduceAnswerRunState } from "./store";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  AnswerRunStore,
+  AnswerRunWaitTimeoutError,
+  createAnswerRunState,
+  reduceAnswerRunState
+} from "./store";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("AnswerRunStore", () => {
   it("deduplicates conversation event ids and rejects out-of-order run sequences", () => {
@@ -75,6 +84,36 @@ describe("AnswerRunStore", () => {
     });
   });
 
+  it("preserves streamed content when a generating snapshot has empty content", () => {
+    const store = new AnswerRunStore();
+    store.applyConversationEvent(event("1", "answer.delta", 1, "streamed answer"));
+
+    const state = store.reconcileRun({
+      id: "run",
+      status: "GENERATING",
+      content: "",
+      error_message: ""
+    });
+
+    expect(state.content).toBe("streamed answer");
+    expect(state.status).toBe("GENERATING");
+  });
+
+  it("preserves streamed content when a completed snapshot is temporarily empty", () => {
+    const store = new AnswerRunStore();
+    store.applyConversationEvent(event("1", "answer.delta", 1, "streamed answer"));
+
+    const state = store.reconcileRun({
+      id: "run",
+      status: "COMPLETED",
+      content: "",
+      error_message: ""
+    });
+
+    expect(state.content).toBe("streamed answer");
+    expect(state.status).toBe("COMPLETED");
+  });
+
   it("settles waiters on terminal and rejects them when conversation changes", async () => {
     const completedStore = new AnswerRunStore();
     const completed = completedStore.waitFor("run");
@@ -91,14 +130,25 @@ describe("AnswerRunStore", () => {
     clearedStore.clear("conversation changed");
     await expect(cleared).rejects.toThrow("conversation changed");
   });
+
+  it("times out a missing terminal event so callers can reconcile from the API", async () => {
+    vi.useFakeTimers();
+    const store = new AnswerRunStore();
+    const waiting = store.waitFor("run", 1_000);
+    const assertion = expect(waiting).rejects.toBeInstanceOf(AnswerRunWaitTimeoutError);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    await assertion;
+  });
 });
 
 describe("reduceAnswerRunState", () => {
-  it("supports canonical and compatibility stream event names", () => {
+  it("supports the canonical answer stream event names", () => {
     let state = createAnswerRunState("run");
-    state = reduceAnswerRunState(state, "chat.delta", "answer", 1);
-    state = reduceAnswerRunState(state, "chat.citation", "citation", 2);
-    state = reduceAnswerRunState(state, "chat.completed", "", 3);
+    state = reduceAnswerRunState(state, "answer.delta", "answer", 1);
+    state = reduceAnswerRunState(state, "citation.upsert", "citation", 2);
+    state = reduceAnswerRunState(state, "answer.completed", "", 3);
 
     expect(state).toMatchObject({
       content: "answer",

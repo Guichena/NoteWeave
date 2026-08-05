@@ -48,7 +48,7 @@ class HttpArtifactWorkerControlClientTest {
 
             ArtifactWorkerExecutionResponse response = client.resumeTask(
                     "task-1",
-                    new ArtifactWorkerResumeRequest("request-1")
+                    new ArtifactWorkerResumeRequest("request-1", "delivery-1")
             );
 
             assertThat(response.taskId()).isEqualTo("task-1");

@@ -63,9 +63,9 @@ Research Run 的资料范围按创建任务时的 `source_scope_json` 固化为 
 
 Research Run 详情接口会返回最终报告、source scope 快照、Research Control Pack 和 `research_trace` 列表。Worker 完成回调时，`FINAL_REPORT` trace 会保存 `result_payload`，因此 `search_hits`、`read_windows`、`evidence_cards`、`branch_decisions`、`state_ledger`、verifier 结果可以通过详情接口回看。
 
-Research Worker 现在提供 `callback.py`、`POST /tasks/{taskId}/run` 和 Kafka consumer 执行入口。HTTP 入口用于本地调试和复用执行逻辑；正式异步路径由 worker 消费 `noteweave.research.run` Kafka 消息，按 `task_id` 拉取 Java worker input，运行研究 loop，逐阶段回调 progress，最终回调 complete；异常时回调 fail。
+Research Worker 的正式异步入口是 `app.agent_kafka_consumer`：消费 `noteweave.research.agent.command`，按 agent task claim / heartbeat / completion envelope 契约执行 `INCREMENTAL_V1`。旧 `callback.py`、`POST /tasks/{taskId}/run` 与 `noteweave.research.run` 顶层 run 消费链路已经删除。
 
-Java 侧已经提供最小 Kafka publisher：扫描 `noteweave.research.run` 的 READY 消息，发布到 Kafka，成功后把消息标记为 `SENT`。当前闭环是 `Research Run -> task_outbox -> Kafka -> Python Research Worker -> Java callback -> research_trace`。
+Java 侧由 coordinator 写入 `research_agent_outbox`，dispatcher 将 ready command 发布到 `noteweave.research.agent.command`，Worker claim 后执行并用 completion envelope 原子提交。当前闭环是 `Research Run -> canonical matrix/coordinator -> research_agent_outbox -> Kafka agent command -> Python Agent Worker -> completion commit`。
 
 ### 2.3 Research Worker 当前内部设计
 

@@ -15,7 +15,7 @@ function Assert-LastExitCode {
 Write-Host "[P5-A] Running frontend export contract..."
 Push-Location (Join-Path $repoRoot "frontend")
 try {
-    npm run test -- src/researchReportDelivery.test.ts
+    pnpm test -- src/researchReportDelivery.test.ts
     Assert-LastExitCode "P5-A frontend export contract"
 } finally {
     Pop-Location

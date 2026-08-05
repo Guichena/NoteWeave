@@ -122,7 +122,9 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
         metadata.put("citation_ids", context.citations().stream()
                 .map(citation -> citation.citationId()).collect(java.util.stream.Collectors.joining(",")));
         metadata.put("freshness_status", "CURRENT_AT_RETRIEVAL");
-        double orderingScore = (total - index) * weight;
+        // The shared evidence budgeter ranks by fusedScore. Preserve the query
+        // adapter's relevance score instead of replacing it with list position.
+        double orderingScore = page.score() * weight;
         return new EvidenceBundle.Evidence(
                 "knowledge-version:" + page.versionId(),
                 "KNOWLEDGE_VERSION",

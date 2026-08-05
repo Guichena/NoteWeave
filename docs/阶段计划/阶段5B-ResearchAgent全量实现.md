@@ -7,7 +7,7 @@
 当前已完成的是：
 
 1. Java 创建 `research_run / task / task_outbox`。
-2. Research 任务通过 `noteweave.research.run` Kafka 下发。
+2. Research 的 `INCREMENTAL_V1` agent task 通过唯一正式 topic `noteweave.research.agent.command` 下发；旧 `noteweave.research.run` 链路已删除。
 3. Python Research Worker 能消费 Kafka、拉取 Java 输入、回调 progress / complete / fail。
 4. Worker 内部已有轻量 `Plan -> Search -> Read -> Extract -> Verify -> Branch -> Report` 闭环。
 5. Search 命中已具备 `search_angles / matched_fields / coverage_score`。
@@ -552,23 +552,21 @@ CompositeSearchAdapter.search(...)
 
 状态：已完成第一阶段实现。
 
-### 10.1 新增脚本
+### 10.1 当前脚本
 
-1. `workers/scripts/start-research-api.ps1`
-2. `workers/scripts/start-research-consumer.ps1`
+1. `workers/scripts/start-research-consumer.ps1`
 
 ### 10.2 已落地行为
 
 1. `setup-workers-conda.ps1` 负责创建/更新 `noteweave-workers` conda 环境。
-2. `start-research-api.ps1` 进入 `workers/research-worker` 并通过 conda 运行 `uvicorn app.main:app`。
-3. `start-research-consumer.ps1` 进入 `workers/research-worker` 并通过 conda 运行 `python -m app.kafka_consumer`。
-4. Kafka consumer 支持 `NOTEWEAVE_KAFKA_BOOTSTRAP_SERVERS` 覆盖。
-5. smoke test 覆盖 health、consumer import、Kafka 配置读取。
+2. `start-research-consumer.ps1` 进入 `workers/research-worker` 并通过 conda 运行唯一正式入口 `python -m app.agent_kafka_consumer`。
+3. Kafka consumer 支持 `NOTEWEAVE_KAFKA_BOOTSTRAP_SERVERS` 覆盖。
+4. 仅 health 的 Research HTTP API 已退出部署并删除，smoke test 覆盖 consumer import、Kafka 配置读取与该删除边界。
 
 ### 10.3 TDD / Smoke
 
-1. `python -m app.kafka_consumer` import 成功。
-2. `/health` 返回 worker_type。
+1. `python -m app.agent_kafka_consumer` import 成功。
+2. Research Worker 不再暴露无业务用途的 HTTP health/API 进程。
 3. `NOTEWEAVE_KAFKA_BOOTSTRAP_SERVERS` 能覆盖默认值。
 
 ## 11. 当前下一步

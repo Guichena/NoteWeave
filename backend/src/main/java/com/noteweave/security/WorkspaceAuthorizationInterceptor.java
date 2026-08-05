@@ -66,6 +66,9 @@ public class WorkspaceAuthorizationInterceptor implements HandlerInterceptor {
         if (path.contains("/uploads") || path.contains("/sources")) {
             return WorkspacePermission.SOURCE_WRITE;
         }
+        if (path.contains("/answer-runs")) {
+            return WorkspacePermission.ANSWER_RUN;
+        }
         if (path.contains("/conversations")) {
             return WorkspacePermission.ANSWER_RUN;
         }

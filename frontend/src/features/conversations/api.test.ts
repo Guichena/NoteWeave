@@ -15,4 +15,18 @@ describe("ConversationsApi", () => {
       input
     );
   });
+
+  it("owns conversation recovery endpoints", async () => {
+    const get = vi.fn(async () => []);
+    const api = new ConversationsApi({ get } as unknown as ApiClient);
+
+    await api.list("workspace");
+    await api.listMessages("workspace", "conversation", 12, 50);
+
+    expect(get).toHaveBeenNthCalledWith(1, "/api/v2/workspaces/workspace/conversations");
+    expect(get).toHaveBeenNthCalledWith(
+      2,
+      "/api/v2/workspaces/workspace/conversations/conversation/messages?after_seq=12&limit=50"
+    );
+  });
 });

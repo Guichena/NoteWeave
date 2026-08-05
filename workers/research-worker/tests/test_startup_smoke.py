@@ -2,17 +2,9 @@ import importlib
 from pathlib import Path
 
 from app.config import load_settings
-from app.main import health
 
 
 ROOT = Path(__file__).resolve().parents[3]
-
-
-def test_health_should_return_research_worker_type() -> None:
-    response = health()
-
-    assert response["status"] == "ok"
-    assert response["worker_type"] == "research"
 
 
 def test_agent_kafka_consumer_module_should_import() -> None:
@@ -38,9 +30,25 @@ def test_kafka_bootstrap_servers_should_be_overridable(monkeypatch) -> None:
 
 def test_kafka_consume_retry_settings_should_be_overridable(monkeypatch) -> None:
     monkeypatch.setenv("NOTEWEAVE_KAFKA_CONSUME_MAX_ATTEMPTS", "5")
-    monkeypatch.setenv("NOTEWEAVE_KAFKA_CONSUME_RAISE_ON_FAILURE", "true")
 
     settings = load_settings()
 
     assert settings.kafka_consume_max_attempts == 5
-    assert settings.kafka_consume_raise_on_failure is True
+
+
+def test_legacy_whole_run_consumer_should_remain_deleted() -> None:
+    assert not (ROOT / "workers" / "research-worker" / "app" / "kafka_consumer.py").exists()
+    assert not (ROOT / "workers" / "research-worker" / "app" / "callback.py").exists()
+
+
+def test_health_only_http_worker_surface_should_remain_deleted() -> None:
+    worker_root = ROOT / "workers" / "research-worker"
+    dockerfile = (worker_root / "Dockerfile").read_text(encoding="utf-8")
+    pyproject = (worker_root / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert not (worker_root / "app" / "main.py").exists()
+    assert not (ROOT / "workers" / "scripts" / "start-research-api.ps1").exists()
+    assert 'CMD ["python", "-m", "app.agent_kafka_consumer"]' in dockerfile
+    assert "uvicorn" not in dockerfile
+    assert "fastapi" not in pyproject
+    assert "uvicorn" not in pyproject

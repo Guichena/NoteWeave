@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-from app.config import load_settings
+from app.config import resolve_mcp_sandbox_root
 from app.custom_mcp_executor import _call_custom_mcp_tool
 from app.models import ArtifactTaskInput
 from app.system_mcp_registry import SYSTEM_BILIBILI_SERVER_ID, resolve_system_mcp_server
@@ -24,8 +22,8 @@ def export_artifact_if_required(
             "notes": ["The selected skill does not require a binary PDF export."],
         }
 
-    runtime_root = Path(load_settings().artifact_runtime_state_file_path).resolve().parent
-    output_dir = runtime_root / "exports" / task_input.task_id
+    sandbox_root = resolve_mcp_sandbox_root()
+    output_dir = sandbox_root / "bilibili-render-pdf" / "exports" / task_input.task_id
     output_stem = _safe_file_stem(title or task_input.target_id)
     server = resolve_system_mcp_server(SYSTEM_BILIBILI_SERVER_ID)
     result = _call_custom_mcp_tool(

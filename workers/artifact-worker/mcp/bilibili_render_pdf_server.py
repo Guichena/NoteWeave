@@ -30,7 +30,16 @@ class BilibiliRenderPdfServer:
         self.skill_requirements = self.skill_root / "scripts" / "requirements-audio.txt"
         self.transcribe_venv_python = self.skill_root / ".venv" / "Scripts" / "python.exe"
         self.model_cache_dir = self.skill_root / ".cache" / "faster-whisper"
-        self.output_root = self.repo_root / "runtime" / "bilibili-render-pdf"
+        self.sandbox_root = Path(
+            os.environ.get("NOTEWEAVE_MCP_SANDBOX_ROOT", str(self.repo_root / "runtime"))
+        ).expanduser().resolve()
+        self.allow_portable_pdf_fallback = (
+            os.environ.get("NOTEWEAVE_ALLOW_PORTABLE_PDF_FALLBACK", "false").strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
+        self.input_root = self.sandbox_root / "inputs"
+        self.output_root = self.sandbox_root / "bilibili-render-pdf"
+        self.input_root.mkdir(parents=True, exist_ok=True)
         self.output_root.mkdir(parents=True, exist_ok=True)
 
     def serve_stdio(self) -> int:
@@ -205,7 +214,10 @@ class BilibiliRenderPdfServer:
         fallback_to_transcription = bool(arguments.get("fallback_to_transcription", True))
         transcription_model = str(arguments.get("transcription_model") or "small")
         language = str(arguments.get("language") or "zh")
-        cookies_file = str(arguments.get("cookies_file") or "").strip()
+        cookies_path = self._resolve_optional_input_file(
+            str(arguments.get("cookies_file") or ""), "cookies_file"
+        )
+        cookies_file = str(cookies_path) if cookies_path else ""
         output_dir = self._resolve_output_dir(
             str(arguments.get("output_dir") or ""),
             bucket="subtitles",
@@ -339,14 +351,14 @@ class BilibiliRenderPdfServer:
         }
 
     def _transcribe_local_audio(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        input_path = Path(_required_string(arguments, "input_path")).expanduser().resolve()
+        input_path = self._resolve_input_path(_required_string(arguments, "input_path"), "input_path")
         if not input_path.exists():
             raise ValueError(f"input_path does not exist: {input_path}")
         if importlib.util.find_spec("faster_whisper") is None and not self.transcribe_script.exists():
             raise ValueError(f"transcribe script not found: {self.transcribe_script}")
 
         output_dir = (
-            Path(str(arguments.get("output_dir"))).expanduser().resolve()
+            self._resolve_output_path(str(arguments.get("output_dir")), "output_dir")
             if arguments.get("output_dir")
             else self.output_root / "transcripts"
         )
@@ -377,7 +389,7 @@ class BilibiliRenderPdfServer:
             raise ValueError("sections is required")
 
         output_dir = (
-            Path(str(arguments.get("output_dir"))).expanduser().resolve()
+            self._resolve_output_path(str(arguments.get("output_dir")), "output_dir")
             if arguments.get("output_dir")
             else self.output_root / "exports"
         )
@@ -392,7 +404,9 @@ class BilibiliRenderPdfServer:
             video_channel=str(arguments.get("video_channel") or ""),
             video_publish_date=str(arguments.get("video_publish_date") or ""),
             video_duration=str(arguments.get("video_duration") or ""),
-            cover_image_path=str(arguments.get("cover_image_path") or ""),
+            cover_image_path=str(self._resolve_optional_input_file(
+                str(arguments.get("cover_image_path") or ""), "cover_image_path"
+            ) or ""),
             sections=sections,
         )
         tex_path.write_text(latex, encoding="utf-8")
@@ -418,6 +432,11 @@ class BilibiliRenderPdfServer:
                 else "portable_cjk_pdf_fallback"
             )
         if not xelatex_succeeded:
+            if not self.allow_portable_pdf_fallback:
+                raise RuntimeError(
+                    "controlled XeLaTeX rendering is unavailable or failed; "
+                    "portable PDF fallback is disabled"
+                )
             _render_portable_cjk_pdf(
                 pdf_path=pdf_path,
                 title=title,
@@ -435,7 +454,7 @@ class BilibiliRenderPdfServer:
             "compile_message": compile_message,
             "notes": [
                 "The system MCP emitted a deterministic LaTeX source package.",
-                "XeLaTeX is preferred; a dependency-free CJK PDF renderer guarantees a real PDF fallback.",
+                "Portable CJK fallback was explicitly enabled for this runtime.",
             ],
         }
 
@@ -524,11 +543,48 @@ class BilibiliRenderPdfServer:
 
     def _resolve_output_dir(self, requested_output_dir: str, *, bucket: str, stem: str) -> Path:
         if requested_output_dir.strip():
-            output_dir = Path(requested_output_dir).expanduser().resolve()
+            output_dir = self._resolve_output_path(requested_output_dir, "output_dir")
         else:
             output_dir = self.output_root / bucket / _sanitize_stem(stem)
         output_dir.mkdir(parents=True, exist_ok=True)
         return output_dir
+
+    def _resolve_input_path(self, value: str, field_name: str) -> Path:
+        path = Path(value).expanduser()
+        if not path.is_absolute() or ".." in path.parts:
+            raise ValueError(f"{field_name} must be an absolute path inside the MCP sandbox")
+        self._reject_symlink_components(path, field_name)
+        resolved = path.resolve()
+        if not resolved.is_relative_to(self.input_root):
+            raise ValueError(f"{field_name} must stay inside {self.input_root}")
+        return resolved
+
+    def _resolve_optional_input_file(self, value: str, field_name: str) -> Path | None:
+        if not value.strip():
+            return None
+        path = self._resolve_input_path(value, field_name)
+        if not path.is_file():
+            raise ValueError(f"{field_name} does not exist: {path}")
+        return path
+
+    def _resolve_output_path(self, value: str, field_name: str) -> Path:
+        path = Path(value).expanduser()
+        if not path.is_absolute() or ".." in path.parts:
+            raise ValueError(f"{field_name} must be an absolute path inside the MCP sandbox")
+        self._reject_symlink_components(path, field_name)
+        resolved = path.resolve()
+        if not resolved.is_relative_to(self.output_root):
+            raise ValueError(f"{field_name} must stay inside {self.output_root}")
+        return resolved
+
+    @staticmethod
+    def _reject_symlink_components(path: Path, field_name: str) -> None:
+        """Reject existing symlink components to prevent sandbox escapes."""
+        current = path.anchor and Path(path.anchor) or Path()
+        for component in path.parts[1:] if path.is_absolute() else path.parts:
+            current = current / component
+            if current.exists() and current.is_symlink():
+                raise ValueError(f"{field_name} cannot traverse symlink components")
 
     def _fetch_video_metadata(self, video_url: str, *, cookies_file: str = "") -> dict[str, Any]:
         command = self._build_yt_dlp_command(
@@ -691,6 +747,9 @@ class BilibiliRenderPdfServer:
             command.append("--json")
 
         completed = self._run_subprocess(command, cwd=self.skill_root)
+        if completed.returncode != 0:
+            detail = completed.stderr or completed.stdout or "no subprocess output"
+            raise ValueError(f"audio transcription failed: {detail}")
         transcript_files = sorted(output_dir.rglob("*.srt"))
         text_files = sorted(output_dir.rglob("*.txt"))
         json_files = sorted(output_dir.rglob("*.json"))
@@ -708,7 +767,7 @@ class BilibiliRenderPdfServer:
                 "json_files": [str(path) for path in json_files],
             },
             "environment_notes": environment_notes,
-            "ok": completed.returncode == 0,
+            "ok": True,
         }
 
     def _run_bundled_faster_whisper(

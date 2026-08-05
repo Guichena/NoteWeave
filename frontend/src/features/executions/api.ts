@@ -15,20 +15,63 @@ export class ExecutionsApi {
       : this.client.get<ExecutionTask>(`/api/v2/tasks/${taskId}`);
   }
 
-  async getEvents(taskId: string, init?: RequestInit) {
-    const stream = await this.client.text(`/api/v2/tasks/${taskId}/events`, init);
-    return parseExecutionEvents(stream);
+  async getEvents(taskId: string, init?: RequestInit, afterEventId = "") {
+    const cursor = afterEventId
+      ? `?afterEventId=${encodeURIComponent(afterEventId)}`
+      : "";
+    const path = `/api/v2/tasks/${taskId}/event-history${cursor}`;
+    const events = init
+      ? await this.client.get<TaskEventHistoryItem[]>(path, init)
+      : await this.client.get<TaskEventHistoryItem[]>(path);
+    return events.map(mapHistoryEvent);
   }
 
-  async load(taskId: string, init?: RequestInit): Promise<ExecutionSnapshot> {
+  async load(taskId: string, init?: RequestInit, afterEventId = ""): Promise<ExecutionSnapshot> {
     let task = await this.getTask(taskId, init);
-    const events = await this.getEvents(taskId, init);
+    const events = await this.getEvents(taskId, init, afterEventId);
     const terminalRefetched = isExecutionTerminal(task.task_status)
       || events.some((event) => isTerminalEvent(event.event));
     if (terminalRefetched) {
       task = await this.getTask(taskId, init);
     }
     return { task, events, terminalRefetched };
+  }
+}
+
+type TaskEventHistoryItem = {
+  event_id: string;
+  event_type: string;
+  message: string;
+  payload_json: string;
+  created_at: string;
+};
+
+function mapHistoryEvent(item: TaskEventHistoryItem): ExecutionEvent {
+  const payload = parseEventData(item.payload_json);
+  const event = taskEventName(item.event_type);
+  return {
+    id: item.event_id,
+    event,
+    data: JSON.stringify({
+      message: item.message,
+      payload,
+      event_type: item.event_type,
+      created_at: item.created_at
+    }),
+    message: item.message,
+    payload,
+    eventType: item.event_type,
+    createdAt: item.created_at
+  };
+}
+
+function taskEventName(eventType: string) {
+  switch (eventType) {
+    case "TASK_CREATED": return "task.status";
+    case "TASK_COMPLETED": return "task.completed";
+    case "TASK_FAILED": return "task.failed";
+    case "TASK_HEARTBEAT": return "task.heartbeat";
+    default: return "task.progress";
   }
 }
 

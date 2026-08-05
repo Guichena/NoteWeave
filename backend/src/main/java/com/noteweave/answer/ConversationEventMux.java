@@ -74,9 +74,7 @@ public class ConversationEventMux {
 
     public ConversationLiveEvent publish(String conversationId, String runId, AnswerLiveEvent runEvent) {
         Channel channel = channels.computeIfAbsent(conversationId, ignored -> new Channel());
-        ConversationLiveEvent event = bridge == null
-                ? null
-                : bridge.publishConversation(conversationId, runId, runEvent);
+        ConversationLiveEvent event = publishToBridge(conversationId, runId, runEvent);
         List<Subscriber> subscribers;
         synchronized (channel) {
             if (event == null) {
@@ -167,8 +165,18 @@ public class ConversationEventMux {
                         return;
                     }
                 }
-                List<ConversationLiveEvent> events = bridge.readConversationAfter(
-                        conversationId, cursor, Duration.ofSeconds(1));
+                List<ConversationLiveEvent> events;
+                try {
+                    events = bridge.readConversationAfter(conversationId, cursor, Duration.ofSeconds(1));
+                } catch (AnswerRealtimeBridgeUnavailableException ex) {
+                    meterRegistry.counter("noteweave.conversation.events.bridge_unavailable", "operation", "read")
+                            .increment();
+                    LockSupport.parkNanos(Duration.ofSeconds(1).toNanos());
+                    if (Thread.currentThread().isInterrupted()) {
+                        return;
+                    }
+                    continue;
+                }
                 if (events.isEmpty()) {
                     LockSupport.parkNanos(Duration.ofMillis(250).toNanos());
                     if (Thread.currentThread().isInterrupted()) {
@@ -184,6 +192,23 @@ public class ConversationEventMux {
             synchronized (channel) {
                 channel.bridgePumpRunning = false;
             }
+        }
+    }
+
+    private ConversationLiveEvent publishToBridge(
+            String conversationId,
+            String runId,
+            AnswerLiveEvent runEvent
+    ) {
+        if (bridge == null) {
+            return null;
+        }
+        try {
+            return bridge.publishConversation(conversationId, runId, runEvent);
+        } catch (AnswerRealtimeBridgeUnavailableException ex) {
+            meterRegistry.counter("noteweave.conversation.events.bridge_unavailable", "operation", "publish")
+                    .increment();
+            throw ex;
         }
     }
 

@@ -88,6 +88,53 @@ class KnowledgeQueryServiceTest {
     }
 
     @Test
+    void queryFilteringShouldHappenBeforeTheRecentPageLimit() {
+        for (int index = 0; index < 121; index++) {
+            String itemId = "noise-item-" + index;
+            String versionId = "noise-version-" + index;
+            jdbcTemplate.update("""
+                    insert into knowledge_item(
+                        id, workspace_id, item_type, page_kind, title, status, latest_version_id, updated_at
+                    ) values (?, 'workspace', 'WIKI', 'TOPIC', ?, 'ACTIVE', ?, timestamp '2026-07-15 10:00:00')
+                    """, itemId, "Unrelated page " + index, versionId);
+            jdbcTemplate.update("""
+                    insert into knowledge_version(
+                        id, item_id, version_no, content, summary, source_message_id, created_at
+                    ) values (?, ?, 1, 'unrelated content', 'unrelated summary', null,
+                              timestamp '2026-07-15 10:00:00')
+                    """, versionId, itemId);
+        }
+
+        assertThat(queryService.searchWikiPages("workspace", "alpha architecture"))
+                .extracting(KnowledgeItemResponse::itemId)
+                .contains("item-a");
+    }
+
+    @Test
+    void olderMatchingPagesMustRemainSearchableAfterWorkspaceGrowth() {
+        for (int index = 0; index < 121; index++) {
+            String itemId = "matching-item-" + index;
+            String versionId = "matching-version-" + index;
+            jdbcTemplate.update("""
+                    insert into knowledge_item(
+                        id, workspace_id, item_type, page_kind, title, status, latest_version_id, updated_at
+                    ) values (?, 'workspace', 'WIKI', 'TOPIC', ?, 'ACTIVE', ?, timestamp '2026-07-15 10:00:00')
+                    """, itemId, "Architecture note " + index, versionId);
+            jdbcTemplate.update("""
+                    insert into knowledge_version(
+                        id, item_id, version_no, content, summary, source_message_id, created_at
+                    ) values (?, ?, 1, 'architecture guidance', 'architecture summary', null,
+                              timestamp '2026-07-15 10:00:00')
+                    """, versionId, itemId);
+        }
+
+        assertThat(queryService.searchWikiPages("workspace", "architecture"))
+                .extracting(KnowledgeItemResponse::itemId)
+                .hasSize(122)
+                .contains("matching-item-0");
+    }
+
+    @Test
     void shouldLoadOneHopRelationsAndCitationOrderForAnswerRetrieval() {
         List<WikiPageContext> contexts = queryService.findRelevantWikiPageContexts(
                 "workspace", "alpha beta");

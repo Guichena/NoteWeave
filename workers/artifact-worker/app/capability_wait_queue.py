@@ -1,26 +1,65 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 from threading import Lock
 
-from app.models import ArtifactTaskInput
+from app.models import ArtifactProgressEvent, ArtifactTaskInput, ArtifactTaskResult
 from app.artifact_repository import sync_artifact_runtime_trace
+from app.file_store_lease import FileStoreLease
 
 
 _waiting_tasks_lock = Lock()
 _waiting_tasks: dict[str, dict[str, object]] = {}
 _waiting_tasks_storage_path: Path | None = None
+_waiting_tasks_store_lease: FileStoreLease | None = None
+logger = logging.getLogger(__name__)
+
+
+class WaitingTaskClaimConflict(ValueError):
+    def __init__(self, task_id: str, claim_status: str) -> None:
+        self.task_id = task_id
+        self.claim_status = claim_status
+        message = (
+            f"waiting task not found: {task_id}"
+            if claim_status == "NOT_FOUND"
+            else f"waiting task is already being resumed: {task_id}"
+        )
+        super().__init__(message)
+
+
+class WaitingTaskReplayRequired(ValueError):
+    def __init__(
+        self,
+        task_id: str,
+        reason: str,
+        replay_record: dict[str, object],
+    ) -> None:
+        self.task_id = task_id
+        self.replay_record = dict(replay_record)
+        super().__init__(reason)
 
 
 def configure_waiting_task_store(storage_path: str | Path | None) -> None:
-    global _waiting_tasks_storage_path
+    global _waiting_tasks_storage_path, _waiting_tasks_store_lease
     with _waiting_tasks_lock:
+        if _waiting_tasks_store_lease is not None:
+            _waiting_tasks_store_lease.release()
+            _waiting_tasks_store_lease = None
         _waiting_tasks_storage_path = Path(storage_path) if storage_path else None
+        if _waiting_tasks_storage_path is not None:
+            _waiting_tasks_store_lease = FileStoreLease(_waiting_tasks_storage_path)
+            _waiting_tasks_store_lease.acquire()
         _waiting_tasks.clear()
         if _waiting_tasks_storage_path and _waiting_tasks_storage_path.exists():
-            payload = json.loads(_waiting_tasks_storage_path.read_text(encoding="utf-8"))
+            try:
+                payload = json.loads(_waiting_tasks_storage_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.error("Ignoring corrupt artifact wait queue file: path=%s error=%s", _waiting_tasks_storage_path, exc)
+                _quarantine_corrupt_file(_waiting_tasks_storage_path)
+                payload = {}
             records = payload.get("waiting_tasks", {}) if isinstance(payload, dict) else {}
             if isinstance(records, dict):
                 _waiting_tasks.update(
@@ -52,9 +91,21 @@ def _persist_waiting_tasks_locked() -> None:
     try:
         os.replace(temporary_path, _waiting_tasks_storage_path)
     except PermissionError:
-        # Windows may briefly lock the destination while a file watcher scans it.
-        _waiting_tasks_storage_path.write_text(serialized, encoding="utf-8")
-        temporary_path.unlink(missing_ok=True)
+        # Preserve the complete temporary file. A non-atomic overwrite can corrupt
+        # the queue and is worse than retrying persistence on the next mutation.
+        logger.exception(
+            "Could not atomically replace artifact wait queue: path=%s",
+            _waiting_tasks_storage_path,
+        )
+        raise
+
+
+def _quarantine_corrupt_file(path: Path) -> None:
+    try:
+        quarantine = path.with_suffix(f"{path.suffix}.corrupt")
+        os.replace(path, quarantine)
+    except OSError:
+        logger.exception("Could not quarantine corrupt artifact wait queue: path=%s", path)
 
 
 def clear_waiting_tasks() -> None:
@@ -70,6 +121,7 @@ def enqueue_waiting_task(
     status: str = "WAITING_FOR_CAPABILITY",
     approval_request: dict[str, object] | None = None,
     blocked_operations: list[dict[str, object]] | None = None,
+    resume_checkpoint: dict[str, object] | None = None,
 ) -> dict[str, object]:
     record = {
         "task_id": task_input.task_id,
@@ -79,6 +131,7 @@ def enqueue_waiting_task(
         "unavailable_capabilities": unavailable_capabilities,
         "approval_request": approval_request or {},
         "blocked_operations": blocked_operations or [],
+        "resume_checkpoint": resume_checkpoint or {},
         "task_input": task_input.model_dump(mode="json"),
     }
     with _waiting_tasks_lock:
@@ -104,6 +157,24 @@ def remove_waiting_task(task_id: str) -> None:
         _persist_waiting_tasks_locked()
 
 
+def cache_waiting_task_delivery(
+    task_id: str,
+    events: list[ArtifactProgressEvent],
+    result: ArtifactTaskResult,
+) -> None:
+    with _waiting_tasks_lock:
+        record = _waiting_tasks.get(task_id)
+        if record is None or str(record.get("status", "")).upper() != "RESUMING":
+            raise ValueError(f"waiting task is not claimed for delivery: {task_id}")
+        cached_record = dict(record)
+        cached_record["resume_delivery"] = {
+            "events": [event.model_dump(mode="json") for event in events],
+            "result": result.model_dump(mode="json"),
+        }
+        _waiting_tasks[task_id] = cached_record
+        _persist_waiting_tasks_locked()
+
+
 def release_waiting_task_claim(task_id: str) -> None:
     with _waiting_tasks_lock:
         record = _waiting_tasks.get(task_id)
@@ -117,14 +188,31 @@ def release_waiting_task_claim(task_id: str) -> None:
         _persist_waiting_tasks_locked()
 
 
+def mark_waiting_task_replay_required(
+    task_id: str,
+    reason: str,
+) -> dict[str, object] | None:
+    with _waiting_tasks_lock:
+        record = _waiting_tasks.get(task_id)
+        if record is None or str(record.get("status", "")).upper() != "RESUMING":
+            return None
+        replay_record = dict(record)
+        replay_record.pop("resume_from_status", None)
+        replay_record["status"] = "REPLAY_REQUIRED"
+        replay_record["resume_error"] = str(reason)[:1000]
+        _waiting_tasks[task_id] = replay_record
+        _persist_waiting_tasks_locked()
+        return dict(replay_record)
+
+
 def _claim_waiting_task(task_id: str) -> dict[str, object]:
     with _waiting_tasks_lock:
         record = _waiting_tasks.get(task_id)
         if record is None:
-            raise ValueError(f"waiting task not found: {task_id}")
+            raise WaitingTaskClaimConflict(task_id, "NOT_FOUND")
         current_status = str(record.get("status", ""))
         if current_status.upper() == "RESUMING":
-            raise ValueError(f"waiting task is already being resumed: {task_id}")
+            raise WaitingTaskClaimConflict(task_id, "ALREADY_RESUMING")
         claimed_record = dict(record)
         claimed_record["resume_from_status"] = current_status or "WAITING_FOR_PROVIDER"
         claimed_record["status"] = "RESUMING"
@@ -163,11 +251,32 @@ def _wake_waiting_task(
         release_waiting_task_claim(task_id)
         raise ValueError(f"waiting task does not contain blocked operation: {request_id}")
 
-    from app.runner import run_artifact_task
+    cached_delivery = record.get("resume_delivery")
+    if isinstance(cached_delivery, dict):
+        raw_events = cached_delivery.get("events", [])
+        raw_result = cached_delivery.get("result")
+        if isinstance(raw_events, list) and isinstance(raw_result, dict):
+            events = [ArtifactProgressEvent.model_validate(event) for event in raw_events]
+            result = ArtifactTaskResult.model_validate(raw_result)
+            if remove_on_success:
+                remove_waiting_task(task_id)
+            return events, result
+
+    from app.runner import resume_artifact_task
 
     try:
         task_input = ArtifactTaskInput.model_validate(record["task_input"])
-        events, result = run_artifact_task(task_input)
+        resume_checkpoint = record.get("resume_checkpoint")
+        if not isinstance(resume_checkpoint, dict) or not resume_checkpoint:
+            raise ValueError(
+                "artifact waiting record is missing resume_checkpoint; legacy full-task restart is disabled"
+            )
+        events, result = resume_artifact_task(task_input, resume_checkpoint)
+    except ValueError as exc:
+        replay_record = mark_waiting_task_replay_required(task_id, str(exc))
+        if replay_record is None:
+            raise
+        raise WaitingTaskReplayRequired(task_id, str(exc), replay_record) from exc
     except Exception:
         release_waiting_task_claim(task_id)
         raise
@@ -211,6 +320,8 @@ def wake_waiting_tasks_for_capability(capability_name: str) -> list[dict[str, ob
     resume_attempts: list[dict[str, object]] = []
 
     for record in list_waiting_tasks():
+        if not str(record.get("status", "")).upper().startswith("WAITING_FOR_"):
+            continue
         approval_request = record.get("approval_request") or {}
         unavailable_capabilities = [
             str(item).strip().upper()
@@ -227,7 +338,14 @@ def wake_waiting_tasks_for_capability(capability_name: str) -> list[dict[str, ob
         if normalized_capability_name not in unavailable_capabilities and normalized_capability_name != approval_capability_name:
             continue
 
-        events, result = wake_waiting_task(str(record["task_id"]))
+        try:
+            events, result = wake_waiting_task(str(record["task_id"]))
+        except WaitingTaskClaimConflict as exc:
+            _log_batch_claim_conflict(exc)
+            continue
+        except WaitingTaskReplayRequired as exc:
+            resume_attempts.append(_build_replay_required_attempt(record, exc.replay_record))
+            continue
         resume_attempts.append(
             _build_resume_attempt(
                 record=record,
@@ -281,6 +399,8 @@ def wake_waiting_tasks_for_acquisition_request(
     resume_attempts: list[dict[str, object]] = []
 
     for record in list_waiting_tasks():
+        if not str(record.get("status", "")).upper().startswith("WAITING_FOR_"):
+            continue
         blocked_operations = [dict(item) for item in record.get("blocked_operations", [])]
         matched_operation = _match_blocked_operation(record, request_id=normalized_request_id)
         if not matched_operation:
@@ -290,12 +410,19 @@ def wake_waiting_tasks_for_acquisition_request(
             if matched_capability_name and matched_capability_name != normalized_capability_name:
                 continue
 
-        events, result = _wake_waiting_task(
-            str(record["task_id"]),
-            request_id=normalized_request_id,
-            callback_receipt=callback_receipt,
-            callback_operation=callback_operation,
-        )
+        try:
+            events, result = _wake_waiting_task(
+                str(record["task_id"]),
+                request_id=normalized_request_id,
+                callback_receipt=callback_receipt,
+                callback_operation=callback_operation,
+            )
+        except WaitingTaskClaimConflict as exc:
+            _log_batch_claim_conflict(exc)
+            continue
+        except WaitingTaskReplayRequired as exc:
+            resume_attempts.append(_build_replay_required_attempt(record, exc.replay_record))
+            continue
         resume_attempts.append(
             _build_resume_attempt(
                 record=record,
@@ -306,6 +433,19 @@ def wake_waiting_tasks_for_acquisition_request(
         )
 
     return resume_attempts
+
+
+def _log_batch_claim_conflict(conflict: WaitingTaskClaimConflict) -> None:
+    if conflict.claim_status == "NOT_FOUND":
+        logger.info(
+            "Skipping waiting task already resumed by another worker: task_id=%s",
+            conflict.task_id,
+        )
+        return
+    logger.info(
+        "Skipping waiting task claimed by another worker: task_id=%s",
+        conflict.task_id,
+    )
 
 
 def _build_resume_attempt(
@@ -324,6 +464,23 @@ def _build_resume_attempt(
         "matched_request_id": str(matched_operation.get("request_id", "")),
         "matched_source_id": str(matched_operation.get("source_id", "")),
         "matched_operation_key": str(matched_operation.get("operation_key", "")),
+    }
+
+
+def _build_replay_required_attempt(
+    record: dict[str, object],
+    replay_record: dict[str, object],
+) -> dict[str, object]:
+    return {
+        "task_id": record["task_id"],
+        "previous_status": record["status"],
+        "result_status": "REPLAY_REQUIRED",
+        "last_phase": "",
+        "still_waiting": False,
+        "matched_request_id": "",
+        "matched_source_id": "",
+        "matched_operation_key": "",
+        "resume_error": str(replay_record.get("resume_error", "")),
     }
 
 

@@ -1,72 +1,62 @@
 package com.noteweave.research;
 
-import com.noteweave.worker.ResearchOutboxPublisher;
-import java.util.List;
+import com.noteweave.infra.KafkaMessagePublisher;
+import com.noteweave.infra.outbox.DurableOutboxDispatcher;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /** Publishes MA4 agent command outbox rows with at-least-once delivery semantics. */
 @Service
+@ConditionalOnProperty(name = "noteweave.kafka.enabled", havingValue = "true", matchIfMissing = true)
 public class ResearchAgentCommandDispatcher {
 
-    private final JdbcTemplate jdbcTemplate;
-    private final ResearchOutboxPublisher publisher;
+    private final DurableOutboxDispatcher outboxDispatcher;
+    private final KafkaMessagePublisher publisher;
+    private final ResearchAgentLifecycleService lifecycleService;
 
-    public ResearchAgentCommandDispatcher(JdbcTemplate jdbcTemplate, ResearchOutboxPublisher publisher) {
-        this.jdbcTemplate = jdbcTemplate;
+    public ResearchAgentCommandDispatcher(JdbcTemplate jdbcTemplate, KafkaMessagePublisher publisher) {
+        this(new DurableOutboxDispatcher(jdbcTemplate, new SimpleMeterRegistry()), publisher, null);
+    }
+
+    @Autowired
+    public ResearchAgentCommandDispatcher(
+            DurableOutboxDispatcher outboxDispatcher,
+            KafkaMessagePublisher publisher,
+            ResearchAgentLifecycleService lifecycleService
+    ) {
+        this.outboxDispatcher = outboxDispatcher;
         this.publisher = publisher;
+        this.lifecycleService = lifecycleService;
     }
 
     public DispatchResponse dispatchReady(int limit) {
-        int safeLimit = Math.max(1, Math.min(limit, 100));
-        List<OutboxRow> rows = jdbcTemplate.query("""
-                select rao.id, rao.delivery_no, rao.topic, rao.message_key, rao.payload_json
-                from research_agent_outbox rao
-                join research_run rr on rr.id = rao.research_run_id
-                join research_agent_task rat on rat.id = rao.research_agent_task_id
-                where rao.status = 'READY'
-                  and rr.agent_execution_mode = 'INCREMENTAL_V1'
-                  and rr.status not in ('COMPLETED', 'FAILED', 'CANCELLED')
-                  and (rat.status in ('PENDING', 'EXPIRED')
-                    or (rat.status = 'RETRY_WAIT' and (rat.next_attempt_at is null or rat.next_attempt_at <= current_timestamp)))
-                order by rat.priority_score desc, rat.wave_no, rao.created_at, rao.id limit ?
-                """, (rs, rowNum) -> new OutboxRow(rs.getString(1), rs.getInt(2), rs.getString(3), rs.getString(4), rs.getString(5)), safeLimit);
-        return publish(rows);
+        return dispatch(null, limit);
     }
 
     /** Canary-safe dispatch boundary: never publishes READY rows owned by another run. */
     public DispatchResponse dispatchReadyForRun(String runId, int limit) {
-        int safeLimit = Math.max(1, Math.min(limit, 100));
-        List<OutboxRow> rows = jdbcTemplate.query("""
-                select rao.id, rao.delivery_no, rao.topic, rao.message_key, rao.payload_json
-                from research_agent_outbox rao
-                join research_run rr on rr.id = rao.research_run_id
-                join research_agent_task rat on rat.id = rao.research_agent_task_id
-                where rao.research_run_id = ? and rao.status = 'READY'
-                  and rr.agent_execution_mode = 'INCREMENTAL_V1'
-                  and rr.status not in ('COMPLETED', 'FAILED', 'CANCELLED')
-                  and (rat.status in ('PENDING', 'EXPIRED')
-                    or (rat.status = 'RETRY_WAIT' and (rat.next_attempt_at is null or rat.next_attempt_at <= current_timestamp)))
-                order by rat.priority_score desc, rat.wave_no, rao.created_at, rao.id limit ?
-                """, (rs, rowNum) -> new OutboxRow(rs.getString(1), rs.getInt(2), rs.getString(3), rs.getString(4), rs.getString(5)),
-                runId, safeLimit);
-        return publish(rows);
+        return dispatch(runId, limit);
     }
 
-    private DispatchResponse publish(List<OutboxRow> rows) {
-        int dispatched = 0;
-        for (OutboxRow row : rows) {
-            publisher.publish(row.topic(), row.messageKey(), row.payloadJson());
-            int marked = jdbcTemplate.update("""
-                    update research_agent_outbox
-                    set status = 'SENT', sent_at = current_timestamp, updated_at = current_timestamp
-                    where id = ? and delivery_no = ? and status = 'READY'
-                    """, row.id(), row.deliveryNo());
-            dispatched += marked;
-        }
-        return new DispatchResponse(dispatched);
+    private DispatchResponse dispatch(String runId, int limit) {
+        DurableOutboxDispatcher.DispatchResult result = outboxDispatcher.dispatchAgentCommands(
+                runId,
+                limit,
+                message -> publisher.publish(
+                        message.topic(), message.messageKey(), message.payloadJson()
+                ),
+                message -> {
+                    if (lifecycleService != null && message.taskId() != null) {
+                        lifecycleService.failCommandDispatchExhausted(
+                                message.taskId(), message.outboxId(), message.attemptNo());
+                    }
+                }
+        );
+        return new DispatchResponse(result.publishedCount());
     }
 
     public record DispatchResponse(int dispatchedCount) { }
-    private record OutboxRow(String id, int deliveryNo, String topic, String messageKey, String payloadJson) { }
 }

@@ -2,6 +2,8 @@ package com.noteweave.research;
 
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
+import com.noteweave.conversation.ConversationResearchProjectionService;
+import com.noteweave.task.TaskService;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.List;
@@ -15,20 +17,30 @@ public class ResearchAgentIncrementalFinalizationService {
     private final JdbcTemplate jdbcTemplate;
     private final ResearchAgentIncrementalFinalizationFaultInjector faultInjector;
     private final ResearchCollectionService researchCollectionService;
+    private final ConversationResearchProjectionService conversationResearchProjectionService;
+    private final TaskService taskService;
 
     public ResearchAgentIncrementalFinalizationService(JdbcTemplate jdbcTemplate,
-                                                        ResearchAgentIncrementalFinalizationFaultInjector faultInjector,
-                                                        ResearchCollectionService researchCollectionService) {
+                                                         ResearchAgentIncrementalFinalizationFaultInjector faultInjector,
+                                                         ResearchCollectionService researchCollectionService,
+                                                         ConversationResearchProjectionService conversationResearchProjectionService,
+                                                         TaskService taskService) {
         this.jdbcTemplate = jdbcTemplate; this.faultInjector = faultInjector;
         this.researchCollectionService = researchCollectionService;
+        this.conversationResearchProjectionService = conversationResearchProjectionService;
+        this.taskService = taskService;
     }
 
     @Transactional
     public FinalizationReceipt finalizeIncrementalRun(String runId) {
         RunRow run = jdbcTemplate.query("""
-                select id, workspace_id, task_id, question, status, agent_execution_mode, final_report_title, final_report_markdown
+                select id, workspace_id, task_id, question, status, agent_execution_mode,
+                       final_report_title, final_report_markdown, conversation_id, answer_message_id
                 from research_run where id = ? for update
-                """, rs -> rs.next() ? new RunRow(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5), rs.getString(6), rs.getString(7), rs.getString(8)) : null, runId);
+                """, rs -> rs.next() ? new RunRow(
+                rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
+                rs.getString(5), rs.getString(6), rs.getString(7), rs.getString(8),
+                rs.getString(9), rs.getString(10)) : null, runId);
         if (run == null || !"INCREMENTAL_V1".equals(run.mode())) throw new BusinessException("RESEARCH_AGENT_FINALIZATION_GATE_REJECTED", "Incremental finalization requires an incremental run");
         if ("COMPLETED".equals(run.status())) {
             Artifact artifact = requireArtifact(run.id());
@@ -37,6 +49,7 @@ public class ResearchAgentIncrementalFinalizationService {
             }
             persistEvidenceManifest(run, run.markdown(), loadVerifiedCells(run.id()));
             researchCollectionService.materialize(run.id());
+            projectConversationReport(run, run.title());
             return new FinalizationReceipt(run.id(), artifact.id(), artifact.digest(), run.title(), run.markdown(), true);
         }
         if (!"RUNNING".equals(run.status())) throw new BusinessException("RESEARCH_AGENT_FINALIZATION_GATE_REJECTED", "Run is not finalizable");
@@ -67,8 +80,9 @@ public class ResearchAgentIncrementalFinalizationService {
         jdbcTemplate.update("update research_run set status = 'COMPLETED', final_report_title = ?, final_report_markdown = ?, updated_at = current_timestamp where id = ? and status = 'RUNNING'", title, markdown, runId);
         persistEvidenceManifest(run, markdown, cells);
         researchCollectionService.materialize(run.id());
+        projectConversationReport(run, title);
         faultInjector.checkpoint(ResearchAgentIncrementalFinalizationFaultInjector.Stage.AFTER_RUN_REPORT_WRITE);
-        jdbcTemplate.update("update task set task_status = 'COMPLETED', progress_phase = 'RESEARCH_REPORTED', progress_message = ?, updated_at = current_timestamp where id = ? and task_status not in ('COMPLETED','CANCELLED','FAILED')", title, run.taskId());
+        taskService.completeTask(run.taskId(), "RESEARCH_REPORTED", title, runId);
         jdbcTemplate.update("insert into research_trace(id, research_run_id, trace_type, trace_message, payload_json) values (?, ?, 'INCREMENTAL_FINALIZED', ?, ?)", Ids.newId(), runId, title, "{\"cell_count\":" + cells.size() + "}");
         return new FinalizationReceipt(run.id(), artifactId, reportDigest, title, markdown, false);
     }
@@ -81,6 +95,11 @@ public class ResearchAgentIncrementalFinalizationService {
             throw new BusinessException("RESEARCH_AGENT_FINALIZATION_INTEGRITY_ERROR", "Completed incremental run has no report artifact");
         }
         return artifact;
+    }
+
+    private void projectConversationReport(RunRow run, String title) {
+        conversationResearchProjectionService.projectCompletedReport(
+                run.workspaceId(), run.conversationId(), run.answerMessageId(), run.id(), title);
     }
 
     private String sha256(String value) {
@@ -166,7 +185,18 @@ public class ResearchAgentIncrementalFinalizationService {
     }
     public record FinalizationReceipt(String runId, String artifactId, String reportDigest,
                                       String reportTitle, String reportMarkdown, boolean idempotentReplay) { }
-    private record RunRow(String id, String workspaceId, String taskId, String question, String status, String mode, String title, String markdown) { }
+    private record RunRow(
+            String id,
+            String workspaceId,
+            String taskId,
+            String question,
+            String status,
+            String mode,
+            String title,
+            String markdown,
+            String conversationId,
+            String answerMessageId
+    ) { }
     private record Cell(String id, String key, String value, String evidence) { }
     private record Evidence(String key, String sourceId, String title, String quote, String claim, String snapshotKey, String windowId) { }
     private record Artifact(String id, String digest) { }

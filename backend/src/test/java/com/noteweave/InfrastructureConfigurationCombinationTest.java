@@ -6,19 +6,48 @@ import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import com.noteweave.config.NoteWeaveProperties;
 import com.noteweave.infra.ElasticsearchConfig;
 import com.noteweave.infra.KafkaConfig;
+import com.noteweave.infra.KafkaMessagePublisher;
+import com.noteweave.infra.KafkaTaskConsumer;
 import com.noteweave.infra.LocalObjectStorage;
 import com.noteweave.infra.MinioObjectStorage;
 import com.noteweave.storage.ObjectStorage;
 import com.noteweave.infra.RedisConfig;
 import java.nio.file.Path;
+import java.util.Map;
 import org.elasticsearch.client.RestClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 class InfrastructureConfigurationCombinationTest {
+
+    @Test
+    void elasticsearchPropertiesShouldBindFalseAndCredentialsThroughCanonicalConstructor() {
+        MapConfigurationPropertySource source = new MapConfigurationPropertySource(Map.of(
+                "noteweave.elasticsearch.enabled", "false",
+                "noteweave.elasticsearch.host", "search.internal",
+                "noteweave.elasticsearch.port", "9443",
+                "noteweave.elasticsearch.scheme", "https",
+                "noteweave.elasticsearch.index-prefix", "nw",
+                "noteweave.elasticsearch.username", "reader",
+                "noteweave.elasticsearch.password", "secret"
+        ));
+
+        NoteWeaveProperties properties = new Binder(source)
+                .bind("noteweave", Bindable.of(NoteWeaveProperties.class))
+                .orElseThrow(() -> new AssertionError("NoteWeave properties did not bind"));
+
+        assertThat(properties.elasticsearch().enabled()).isFalse();
+        assertThat(properties.elasticsearch().host()).isEqualTo("search.internal");
+        assertThat(properties.elasticsearch().port()).isEqualTo(9443);
+        assertThat(properties.elasticsearch().username()).isEqualTo("reader");
+        assertThat(properties.elasticsearch().password()).isEqualTo("secret");
+    }
 
     @Test
     void kafkaDisabledShouldNotCreateKafkaInfrastructure() {
@@ -34,6 +63,17 @@ class InfrastructureConfigurationCombinationTest {
     }
 
     @Test
+    void kafkaDisabledShouldNotCreateTaskConsumers() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(KafkaTaskConsumer.class)
+                .withPropertyValues("noteweave.kafka.enabled=false")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).doesNotHaveBean(KafkaTaskConsumer.class);
+                });
+    }
+
+    @Test
     void kafkaEnabledShouldCreateKafkaInfrastructureWithoutConnectingAtStartup() {
         new ApplicationContextRunner()
                 .withUserConfiguration(KafkaConfig.class)
@@ -43,6 +83,7 @@ class InfrastructureConfigurationCombinationTest {
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context).hasSingleBean(KafkaTemplate.class);
+                    assertThat(context).hasSingleBean(KafkaMessagePublisher.class);
                 });
     }
 

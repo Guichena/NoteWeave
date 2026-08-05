@@ -13,7 +13,6 @@ import java.util.Map;
 import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class WikiIngestService {
@@ -26,6 +25,7 @@ public class WikiIngestService {
     private final TaskCommandPort taskCommandPort;
     private final ObjectMapper objectMapper;
     private final SourceMessagingMode messagingMode;
+    private final WikiIngestTransactionExecutor transactionExecutor;
 
     public WikiIngestService(
             JdbcTemplate jdbcTemplate,
@@ -35,7 +35,8 @@ public class WikiIngestService {
             KnowledgeGovernanceService knowledgeGovernanceService,
             TaskCommandPort taskCommandPort,
             ObjectMapper objectMapper,
-            SourceMessagingMode messagingMode
+            SourceMessagingMode messagingMode,
+            WikiIngestTransactionExecutor transactionExecutor
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.workspaceQueryPort = workspaceQueryPort;
@@ -45,9 +46,9 @@ public class WikiIngestService {
         this.taskCommandPort = taskCommandPort;
         this.objectMapper = objectMapper;
         this.messagingMode = messagingMode;
+        this.transactionExecutor = transactionExecutor;
     }
 
-    @Transactional
     public String enqueueAndRunSourceIngestIfEnabled(String workspaceId, String sourceId) {
         if (!workspaceQueryPort.isWikiEnabled(workspaceId)) {
             return "";
@@ -58,7 +59,6 @@ public class WikiIngestService {
     /**
      * Kafka 消费者回调入口：直接执行 source ingest。
      */
-    @Transactional
     public void runSourceIngestNow(String taskId, String workspaceId, String sourceId) {
         if (!workspaceQueryPort.isWikiEnabled(workspaceId)) {
             taskCommandPort.cancelTask(taskId, "WIKI_DISABLED", "Wiki 构建已关闭，跳过资料 ingest", sourceId);
@@ -66,18 +66,22 @@ public class WikiIngestService {
         }
         taskCommandPort.startTask(taskId);
         try {
-            KnowledgeItemResponse page = ingestSource(workspaceId, sourceId);
-            taskCommandPort.completeTask(taskId, "WIKI_INDEXED", "Wiki ingest 已生成或更新工作台级页面", page.itemId());
+            transactionExecutor.execute(() -> {
+                KnowledgeItemResponse page = ingestSource(workspaceId, sourceId);
+                taskCommandPort.completeTask(taskId, "WIKI_INDEXED",
+                        "Wiki ingest 已生成或更新工作台级页面", page.itemId());
+                return null;
+            });
         } catch (RuntimeException ex) {
-            taskCommandPort.completeTask(taskId, "WIKI_INDEXED_FAILED", "Wiki ingest 失败：" + ex.getMessage(), sourceId);
-            throw ex;
+            taskCommandPort.failTask(taskId, "WIKI_INDEXED_FAILED",
+                    "Wiki ingest 失败：" + failureMessage(ex), "WIKI_INGEST_FAILED", true);
+            // Do not rethrow: task is already FAILED; Kafka redelivery would only create noise.
         }
     }
 
     /**
      * Kafka 消费者回调入口：直接执行 source retract。
      */
-    @Transactional
     public void runSourceRetractNow(String taskId, String workspaceId, String sourceId) {
         if (!workspaceQueryPort.isWikiEnabled(workspaceId)) {
             taskCommandPort.cancelTask(taskId, "WIKI_DISABLED", "Wiki 构建已关闭，跳过资料 retract", sourceId);
@@ -85,25 +89,30 @@ public class WikiIngestService {
         }
         taskCommandPort.startTask(taskId);
         try {
-            List<String> itemIds = knowledgeQueryService.findSourceBackedWikiItemIds(
-                    workspaceId, sourceId);
-            for (String itemId : itemIds) {
-                knowledgeCommandService.deleteItem(itemId);
-            }
-            List<String> remainingSourceIds = readySourceIds(workspaceId);
-            for (String remainingSourceId : remainingSourceIds) {
-                ingestSource(workspaceId, remainingSourceId);
-            }
-            refreshWorkspaceIndexPage(workspaceId, "source_retract");
-            taskCommandPort.completeTask(taskId, "WIKI_RETRACTED",
-                    "Wiki retract 已清理资料删除影响的页面：" + itemIds.size() + " 个", sourceId);
+            transactionExecutor.execute(() -> {
+                List<String> itemIds = knowledgeQueryService.findSourceBackedWikiItemIds(
+                        workspaceId, sourceId);
+                for (String itemId : itemIds) {
+                    knowledgeCommandService.deleteItem(itemId);
+                }
+                List<String> remainingSourceIds = readySourceIds(workspaceId);
+                if (!remainingSourceIds.isEmpty()) {
+                    for (String remainingSourceId : remainingSourceIds) {
+                        ingestSource(workspaceId, remainingSourceId);
+                    }
+                    refreshWorkspaceIndexPage(workspaceId, "source_retract");
+                }
+                taskCommandPort.completeTask(taskId, "WIKI_RETRACTED",
+                        "Wiki retract 已清理资料删除影响的页面：" + itemIds.size() + " 个", sourceId);
+                return null;
+            });
         } catch (RuntimeException ex) {
-            taskCommandPort.completeTask(taskId, "WIKI_RETRACTED_FAILED", "Wiki retract 失败：" + ex.getMessage(), sourceId);
-            throw ex;
+            taskCommandPort.failTask(taskId, "WIKI_RETRACTED_FAILED",
+                    "Wiki retract 失败：" + failureMessage(ex), "WIKI_RETRACT_FAILED", true);
+            // Do not rethrow: task is already FAILED; Kafka redelivery would only create noise.
         }
     }
 
-    @Transactional
     public WikiRebuildResponse enqueueAndRunWorkspaceIngestIfEnabled(String workspaceId, String trigger) {
         if (!workspaceQueryPort.isWikiEnabled(workspaceId)) {
             return new WikiRebuildResponse(workspaceId, 0, 0, List.of());
@@ -115,11 +124,46 @@ public class WikiIngestService {
         return new WikiRebuildResponse(workspaceId, sourceIds.size(), taskIds.size(), taskIds);
     }
 
-    @Transactional
     public String enqueueAndRunSourceRetractIfEnabled(String workspaceId, String sourceId, String sourceTitle) {
         if (!workspaceQueryPort.isWikiEnabled(workspaceId)) {
             return "";
         }
+        String taskId = transactionExecutor.execute(() -> enqueueSourceRetract(
+                workspaceId, sourceId));
+        if (messagingMode.isAsyncEnabled()) {
+            return taskId;
+        }
+        runSourceRetractNow(taskId, workspaceId, sourceId);
+        markOutboxSent(taskId);
+        return taskId;
+    }
+
+    private String enqueueAndRunSourceIngest(String workspaceId, String sourceId, String operation, String message) {
+        String taskId = transactionExecutor.execute(() -> enqueueSourceIngest(
+                workspaceId, sourceId, operation, message));
+        if (!messagingMode.isAsyncEnabled()) {
+            runSourceIngestNow(taskId, workspaceId, sourceId);
+            markOutboxSent(taskId);
+        }
+        return taskId;
+    }
+
+    private String enqueueSourceIngest(String workspaceId, String sourceId, String operation, String message) {
+        String taskId = taskCommandPort.createTask(workspaceId, "WIKI_INGEST", "SOURCE", sourceId, "QUEUED", message);
+        Map<String, Object> payload = Map.of(
+                "taskId", taskId,
+                "sourceId", sourceId,
+                "workspaceId", workspaceId,
+                "operation", operation
+        );
+        jdbcTemplate.update("""
+                insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
+                values (?, ?, 'noteweave.wiki.ingest', ?, ?, 'READY')
+                """, Ids.newId(), taskId, sourceId, Json.write(objectMapper, payload));
+        return taskId;
+    }
+
+    private String enqueueSourceRetract(String workspaceId, String sourceId) {
         String taskId = taskCommandPort.createTask(
                 workspaceId,
                 "WIKI_RETRACT",
@@ -137,47 +181,23 @@ public class WikiIngestService {
                 "workspaceId", workspaceId,
                 "operation", "retract"
         )));
-        if (messagingMode.isAsyncEnabled()) {
-            return taskId;
-        }
-        taskCommandPort.startTask(taskId);
-        List<String> itemIds = knowledgeQueryService.findSourceBackedWikiItemIds(
-                workspaceId, sourceId);
-        for (String itemId : itemIds) {
-            knowledgeCommandService.deleteItem(itemId);
-        }
-        List<String> remainingSourceIds = readySourceIds(workspaceId);
-        if (!remainingSourceIds.isEmpty()) {
-            for (String remainingSourceId : remainingSourceIds) {
-                ingestSource(workspaceId, remainingSourceId);
-            }
-            refreshWorkspaceIndexPage(workspaceId, "source_retract");
-        }
-        jdbcTemplate.update("update task_outbox set status = 'SENT', sent_at = current_timestamp where task_id = ?", taskId);
-        taskCommandPort.completeTask(taskId, "WIKI_RETRACTED", "Wiki retract 已清理资料删除影响的页面：" + itemIds.size() + " 个", sourceId);
         return taskId;
     }
 
-    private String enqueueAndRunSourceIngest(String workspaceId, String sourceId, String operation, String message) {
-        String taskId = taskCommandPort.createTask(workspaceId, "WIKI_INGEST", "SOURCE", sourceId, "QUEUED", message);
-        Map<String, Object> payload = Map.of(
-                "taskId", taskId,
-                "sourceId", sourceId,
-                "workspaceId", workspaceId,
-                "operation", operation
-        );
-        jdbcTemplate.update("""
-                insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
-                values (?, ?, 'noteweave.wiki.ingest', ?, ?, 'READY')
-                """, Ids.newId(), taskId, sourceId, Json.write(objectMapper, payload));
-        if (!messagingMode.isAsyncEnabled()) {
-            runSourceIngestNow(taskId, workspaceId, sourceId);
+    private void markOutboxSent(String taskId) {
+        transactionExecutor.execute(() -> {
             jdbcTemplate.update(
                     "update task_outbox set status = 'SENT', sent_at = current_timestamp where task_id = ?",
                     taskId
             );
-        }
-        return taskId;
+            return null;
+        });
+    }
+
+    private String failureMessage(RuntimeException ex) {
+        return ex.getMessage() == null || ex.getMessage().isBlank()
+                ? ex.getClass().getSimpleName()
+                : ex.getMessage();
     }
 
     private KnowledgeItemResponse ingestSource(String workspaceId, String sourceId) {

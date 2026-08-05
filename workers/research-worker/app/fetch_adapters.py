@@ -67,6 +67,8 @@ class WorkspaceFetchAdapter:
         source = _find_source(task_input.source_scope, hit.source_id)
         if source is None:
             return None
+        if hit.source_snapshot_id and source.source_snapshot_id != hit.source_snapshot_id:
+            return None
         snapshot_text = _workspace_snapshot_text(source, hit)
         source_domain = hit.source_domain or infer_source_domain(hit.url)
         if hit.source_quality and hit.source_quality != "GENERAL_WEB":
@@ -79,6 +81,8 @@ class WorkspaceFetchAdapter:
             fetch_id=f"fetch-{fetch_index}",
             hit_id=hit.hit_id,
             source_id=hit.source_id,
+            source_snapshot_id=hit.source_snapshot_id or source.source_snapshot_id,
+            source_window_id=hit.source_window_id or source.source_window_id,
             source_title=hit.source_title,
             query=hit.query,
             rank=hit.rank,
@@ -152,7 +156,10 @@ class UrlFetchAdapter:
         transport_resolution = "NO_TRANSPORT"
         transport_fallback_reason = fetch_error_reason
         transport_fallback_code = "NO_TRANSPORT"
-        snapshot_text = _fallback_url_text(hit)
+        # Search-provider snippets are discovery metadata, not fetched evidence.
+        # Keep the failed fetch record for observability, but never expose the
+        # snippet as snapshot text that downstream extractors can cite.
+        snapshot_text = ""
         untrusted_content = bool(hit.url)
         prompt_injection_detected = False
         prompt_injection_signals: list[str] = []
@@ -732,16 +739,13 @@ def _find_source(source_scope: list[SourceScopeItem], source_id: str) -> SourceS
 
 def _workspace_snapshot_text(source: SourceScopeItem, hit: ResearchSearchHit) -> str:
     return (
+        hit.workspace_window_text.strip()
+        or
         source.sample_text.strip()
         or hit.snippet.strip()
         or source.summary.strip()
         or f"{source.title} is available in the workspace but has no parsed text window."
     )
-
-
-def _fallback_url_text(hit: ResearchSearchHit) -> str:
-    snippet = hit.snippet.strip() or "No snippet was returned by the external search provider."
-    return f"{snippet}\n\nURL: {hit.url}"
 
 
 def _read_response_bytes(response: object, token_budget: int) -> bytes:

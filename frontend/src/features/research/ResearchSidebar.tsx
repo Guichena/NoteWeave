@@ -1,27 +1,10 @@
-import { type SourceAsset } from "../sources/model";
-import {
-  type ResearchHistoryFilter,
-  type ResearchRecoveryTargets,
-  type ResearchRunSummary,
-  type ResearchTimelineMilestone,
-  type ResearchTimelinePathSummary,
-  type SignalChip,
-  type SignalTone
-} from "./model";
+import type { SourceAsset } from "../sources/model";
+import type { ResearchHistoryFilter, ResearchRunSummary, SignalChip } from "./model";
+import type { ResearchWorkbenchViewProps } from "./buildResearchWorkbenchProps";
+import { isResearchSourceReady } from "./launch";
 
-type ResearchSidebarProps = Record<string, any> & {
-  sources: SourceAsset[];
-  researchScopeSources: SourceAsset[];
-  researchRuns: ResearchRunSummary[];
-  filteredResearchRuns: ResearchRunSummary[];
-  researchHistoryFilter: ResearchHistoryFilter;
-  researchTimelineMilestones: ResearchTimelineMilestone[];
-  researchTimelinePath: ResearchTimelinePathSummary;
-  currentResearchRunSummary: ResearchRunSummary | null;
-  currentResearchRunId: string;
-  buildRunSignalChips: (run: ResearchRunSummary) => SignalChip[];
-  buildRunPrimaryTone: (run: ResearchRunSummary) => SignalTone;
-  readRecoveryTargets: (value: unknown) => ResearchRecoveryTargets | null;
+export type ResearchSidebarProps = ResearchWorkbenchViewProps["sidebar"] & {
+  isBusy: boolean;
 };
 
 export function ResearchSidebar(props: ResearchSidebarProps) {
@@ -86,32 +69,49 @@ export function ResearchSidebar(props: ResearchSidebarProps) {
     formatRecoveryTargetColumns,
     buildCurrentRecoveryNarrative
   } = props;
+  const readySourceCount = sources.filter(isResearchSourceReady).length;
   return (
           <aside className="research-index">
             <p className="section-label">Deep Research</p>
             <h2>独立研究工作台</h2>
             <p className="phase-note">
-              Deep Research 已提升为工作台内独立视图。Deep Research 只读取你在这里显式填写的问题和显式勾选的资料范围，不从聊天上下文隐式升级。
+              只读取此处显式填写的问题与勾选资料范围，不会从聊天上下文隐式升级。
             </p>
-            <div className="task-card">
-              <strong>Snapshot Research Question</strong>
+            <div className="task-card research-snapshot-card">
+              <strong>当前研究快照</strong>
               <span>{summarizedResearchQuestion}</span>
-              <small>goal={summarizedResearchGoal}</small>
-              <small>deliverable={researchDeliverableFormat.trim() || "Evidence-backed research report"}</small>
-              <small>profile={researchProfile.trim() || "default"} · depth={researchDepth.trim() || "STANDARD"} · type={researchType.trim() || "AUTO"} · source_scope={researchScopeCount}</small>
+              <small>目标：{summarizedResearchGoal}</small>
+              <small>交付：{researchDeliverableFormat.trim() || "Evidence-backed research report"}</small>
               <small>
+                profile={researchProfile.trim() || "default"}
+                {" · "}
+                depth={researchDepth.trim() || "STANDARD"}
+                {" · "}
+                type={researchType.trim() || "AUTO"}
+              </small>
+              <small className={researchScopeCount > 0 ? "tone-ok" : ""}>
                 {researchScopeCount > 0
-                  ? `当前将携带 ${researchScopeCount} 份显式资料进入 Deep Research。`
-                  : "当前将以显式问题直接发起 Deep Research，不默认继承工作台资料。"}
+                  ? `将携带 ${researchScopeCount} 份显式资料进入研究。`
+                  : "未勾选资料时，将以问题直接发起（取决于获取模式）。"}
               </small>
             </div>
             <label className="rail-field">
               <span>研究问题</span>
-              <textarea value={researchQuestion} onChange={(event) => setResearchQuestion(event.target.value)} rows={5} />
+              <textarea
+                value={researchQuestion}
+                onChange={(event) => setResearchQuestion(event.target.value)}
+                rows={5}
+                placeholder="写清楚要验证的问题、范围与成功标准。"
+              />
             </label>
             <label className="rail-field">
               <span>研究目标</span>
-              <textarea value={researchGoal} onChange={(event) => setResearchGoal(event.target.value)} rows={3} />
+              <textarea
+                value={researchGoal}
+                onChange={(event) => setResearchGoal(event.target.value)}
+                rows={3}
+                placeholder="例如：输出可验证结论、冲突点与后续恢复建议。"
+              />
             </label>
             <label className="rail-field">
               <span>研究 Profile</span>
@@ -191,29 +191,33 @@ export function ResearchSidebar(props: ResearchSidebarProps) {
               {sources.length > 0 ? (
                 <>
                   <div className="research-scope">
-                    {sources.map((source) => (
-                      <button
+                    {sources.map((source) => {
+                      const sourceReady = isResearchSourceReady(source);
+                      return <button
                         key={`research-scope-workbench-${source.source_id}`}
                         id={`research-source-scope-${source.source_id}`}
                         type="button"
                         className={[
                           selectedResearchSourceIds.includes(source.source_id) ? "active" : "",
                           currentSavedReportSource?.source_id === source.source_id ? "generated-source" : "",
-                          focusedResearchSourceId === source.source_id ? "scope-focus" : ""
+                          focusedResearchSourceId === source.source_id ? "scope-focus" : "",
+                          sourceReady ? "" : "unavailable"
                         ].filter(Boolean).join(" ")}
                         onClick={() => {
                           toggleResearchScope(source.source_id);
                           setFocusedResearchSourceId(source.source_id);
                         }}
-                        disabled={isBusy}
+                        disabled={isBusy || !sourceReady}
+                        title={sourceReady ? "加入或移出 Research source scope" : `资料尚未就绪：${source.status}`}
                       >
                         {source.title}
+                        {!sourceReady ? ` · ${source.status}` : ""}
                         {currentSavedReportSource?.source_id === source.source_id ? " · 当前报告" : ""}
                         {source.generated_by === "research_agent" && currentSavedReportSource?.source_id !== source.source_id
                           ? ` · ${buildSourceOriginBadge(source)}`
                           : ""}
                       </button>
-                    ))}
+                    })}
                   </div>
                   <span>
                     {researchScopeSources.length > 0
@@ -226,6 +230,9 @@ export function ResearchSidebar(props: ResearchSidebarProps) {
                         ? "闭环回流：当前报告 source 已纳入显式 source scope。"
                         : "闭环回流：当前报告 source 已写回资料池，但尚未纳入显式 source scope。"}
                     </small>
+                  ) : null}
+                  {readySourceCount === 0 ? (
+                    <small>当前没有 READY 资料；未就绪条目仅供查看，仍可使用“仅网络”发起研究。</small>
                   ) : null}
                 </>
               ) : (
@@ -394,7 +401,12 @@ export function ResearchSidebar(props: ResearchSidebarProps) {
                     ) : null}
                   </button>
                 );
-              }) : <p className="empty-state">当前筛选下没有匹配的 Deep Research run。</p>}
+              }) : (
+                <div className="empty-panel">
+                  <strong>没有匹配的 run</strong>
+                  <p>调整历史筛选，或新建一次 Deep Research。</p>
+                </div>
+              )}
             </div>
           </aside>
   );

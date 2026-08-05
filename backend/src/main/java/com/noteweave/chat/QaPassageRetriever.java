@@ -1,6 +1,7 @@
 package com.noteweave.chat;
 
 import com.noteweave.chat.RetrievalHydrator.PassageOwnership;
+import com.noteweave.common.BusinessException;
 import com.noteweave.retrieval.QaEvidenceRelevancePolicy;
 import com.noteweave.retrieval.QaEvidenceSelectionPolicy;
 import com.noteweave.retrieval.QaRetrievalStrategyProfile;
@@ -20,6 +21,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -31,13 +34,23 @@ public class QaPassageRetriever {
     private final ChunkSearchPort chunkSearchPort;
     private final RetrievalHydrator retrievalHydrator;
     private final QaHybridRetriever hybridRetriever;
+    private final boolean mysqlFallbackEnabled;
 
     public QaPassageRetriever(
             JdbcTemplate jdbcTemplate,
             ChunkSearchPort chunkSearchPort,
             RetrievalHydrator retrievalHydrator
     ) {
-        this(jdbcTemplate, chunkSearchPort, retrievalHydrator, null);
+        this(jdbcTemplate, chunkSearchPort, retrievalHydrator, null, false);
+    }
+
+    public QaPassageRetriever(
+            JdbcTemplate jdbcTemplate,
+            ChunkSearchPort chunkSearchPort,
+            RetrievalHydrator retrievalHydrator,
+            QaHybridRetriever hybridRetriever
+    ) {
+        this(jdbcTemplate, chunkSearchPort, retrievalHydrator, hybridRetriever, false);
     }
 
     @Autowired
@@ -45,12 +58,14 @@ public class QaPassageRetriever {
             JdbcTemplate jdbcTemplate,
             ChunkSearchPort chunkSearchPort,
             RetrievalHydrator retrievalHydrator,
-            QaHybridRetriever hybridRetriever
+            QaHybridRetriever hybridRetriever,
+            @Value("${noteweave.retrieval.qa.mysql-fallback-enabled:false}") boolean mysqlFallbackEnabled
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.chunkSearchPort = chunkSearchPort;
         this.retrievalHydrator = retrievalHydrator;
         this.hybridRetriever = hybridRetriever;
+        this.mysqlFallbackEnabled = mysqlFallbackEnabled;
     }
 
     public List<RetrievedChunk> retrieve(String workspaceId, String query) {
@@ -99,9 +114,17 @@ public class QaPassageRetriever {
                         hybrid.degradationReasons(), hybrid.measurements());
             } catch (Exception ex) {
                 degradationReasons.add("qa_hybrid_retrieval_error");
-                log.warn("QA hybrid retrieval failed; fallback=mysql; errorCode={}",
-                        ex instanceof com.noteweave.retrieval.provider.RetrievalProviderException provider
-                                ? provider.errorCode() : "QA_HYBRID_RETRIEVAL_FAILED");
+                String errorCode = ex instanceof com.noteweave.retrieval.provider.RetrievalProviderException provider
+                        ? provider.errorCode() : "QA_HYBRID_RETRIEVAL_FAILED";
+                if (!mysqlFallbackEnabled) {
+                    log.error("QA hybrid retrieval failed; fallback=disabled; errorCode={}", errorCode);
+                    throw new BusinessException(
+                            "QA_RETRIEVAL_PROVIDER_UNAVAILABLE",
+                            "QA retrieval provider is unavailable",
+                            HttpStatus.SERVICE_UNAVAILABLE
+                    );
+                }
+                log.warn("QA hybrid retrieval failed; fallback=mysql; errorCode={}", errorCode);
             }
         }
         if (hybridRetriever == null) try {
@@ -179,12 +202,35 @@ public class QaPassageRetriever {
             }
         } catch (Exception ex) {
             degradationReasons.add("qa_primary_search_error");
+            if (!mysqlFallbackEnabled) {
+                log.error("Primary QA retrieval failed; fallback=disabled; reason=qa_primary_search_error");
+                throw new BusinessException(
+                        "QA_RETRIEVAL_PROVIDER_UNAVAILABLE",
+                        "QA retrieval provider is unavailable",
+                        HttpStatus.SERVICE_UNAVAILABLE
+                );
+            }
             log.warn("Primary QA retrieval failed; fallback=mysql; reason=qa_primary_search_error");
         }
 
         if (relevantPrimaryHitCount > 0 && rejectedOwnershipCount == relevantPrimaryHitCount
                 && !degradationReasons.contains("qa_primary_ownership_rejected")) {
             degradationReasons.add("qa_primary_ownership_rejected");
+        }
+        if (!mysqlFallbackEnabled) {
+            measurements.put("primary_hit_count", (long) primaryHitCount);
+            measurements.put("scoped_primary_hit_count", (long) scopedPrimaryHitCount);
+            measurements.put("relevant_primary_hit_count", (long) relevantPrimaryHitCount);
+            measurements.put("relevance_rejected_count", (long) rejectedRelevanceCount);
+            measurements.put("ownership_rejected_count", (long) rejectedOwnershipCount);
+            measurements.put("mysql_fallback_used", 0L);
+            measurements.put("selected_count", 0L);
+            return new RetrievalResult(
+                    List.of(),
+                    !degradationReasons.isEmpty(),
+                    degradationReasons,
+                    measurements
+            );
         }
         degradationReasons.add("qa_mysql_fallback");
 

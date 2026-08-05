@@ -1,7 +1,6 @@
 package com.noteweave.research;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.Ids;
@@ -26,6 +25,8 @@ class ResearchAgentCommandOutboxServiceTest {
     @Autowired private ObjectMapper objectMapper;
     @Autowired private ResearchAgentTaskService taskService;
     @Autowired private ResearchAgentCommandOutboxService outboxService;
+    @Autowired private com.noteweave.infra.outbox.DurableOutboxDispatcher durableOutboxDispatcher;
+    @Autowired private ResearchAgentLifecycleService lifecycleService;
 
     private String runId;
     private String agentTaskId;
@@ -125,10 +126,84 @@ class ResearchAgentCommandOutboxServiceTest {
         ResearchAgentCommandDispatcher dispatcher = new ResearchAgentCommandDispatcher(
                 jdbcTemplate, (topic, messageKey, payloadJson) -> { throw new IllegalStateException("injected publish failure"); });
 
-        assertThatThrownBy(() -> dispatcher.dispatchReadyForRun(runId, 10))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("injected publish failure");
+        assertThat(dispatcher.dispatchReadyForRun(runId, 10).dispatchedCount()).isZero();
         assertThat(jdbcTemplate.queryForObject("select status from research_agent_outbox where research_agent_task_id = ?", String.class, agentTaskId)).isEqualTo("READY");
+        Map<String, Object> failedDelivery = jdbcTemplate.queryForMap("""
+                select attempt_count, lease_owner, lease_until, next_attempt_at, last_error
+                from research_agent_outbox where research_agent_task_id = ?
+                """, agentTaskId);
+        assertThat(((Number) failedDelivery.get("attempt_count")).intValue()).isEqualTo(1);
+        assertThat(failedDelivery.get("lease_owner")).isNull();
+        assertThat(failedDelivery.get("lease_until")).isNull();
+        assertThat(failedDelivery.get("next_attempt_at")).isNotNull();
+        assertThat(failedDelivery.get("last_error")).isEqualTo("injected publish failure");
+    }
+
+    @Test
+    void shouldDeadLetterExhaustedAgentCommandWithSharedStatus() {
+        outboxService.enqueue(agentTaskId);
+        jdbcTemplate.update("""
+                update research_agent_outbox set attempt_count = 4
+                where research_agent_task_id = ?
+                """, agentTaskId);
+        var result = durableOutboxDispatcher.dispatchAgentCommands(
+                runId, 10,
+                message -> { throw new IllegalStateException("injected final publish failure"); },
+                message -> lifecycleService.failCommandDispatchExhausted(
+                        message.taskId(), message.outboxId(), message.attemptNo()));
+
+        assertThat(result.publishedCount()).isZero();
+        assertThat(result.deadLetteredCount()).isEqualTo(1);
+        Map<String, Object> deadLetter = jdbcTemplate.queryForMap("""
+                select status, attempt_count, lease_owner, lease_until, dead_lettered_at
+                from research_agent_outbox where research_agent_task_id = ?
+                """, agentTaskId);
+        assertThat(deadLetter.get("status")).isEqualTo("DEAD_LETTER");
+        assertThat(((Number) deadLetter.get("attempt_count")).intValue()).isEqualTo(5);
+        assertThat(deadLetter.get("lease_owner")).isNull();
+        assertThat(deadLetter.get("lease_until")).isNull();
+        assertThat(deadLetter.get("dead_lettered_at")).isNotNull();
+        assertThat(jdbcTemplate.queryForMap("""
+                select status, terminal_reason, terminal_at from research_agent_task where id = ?
+                """, agentTaskId))
+                .containsEntry("status", "FAILED")
+                .containsEntry("terminal_reason", "COMMAND_DISPATCH_EXHAUSTED");
+    }
+
+    @Test
+    void shouldContinueDispatchingBatchAfterOnePublisherFailure() {
+        outboxService.enqueue(agentTaskId);
+        String followingTaskId = taskService.createTask(new ResearchAgentTaskService.CreateTaskCommand(
+                runId, "following-agent-task", "following-agent-idem", 1,
+                "DEEP_CELL", "entity-2", "branch-main", 0, 1,
+                List.of("entity-2:method"), Map.of("llm_calls", 1)
+        )).taskId();
+        outboxService.enqueue(followingTaskId);
+        jdbcTemplate.update("update research_agent_task set priority_score = 100 where id = ?", agentTaskId);
+        jdbcTemplate.update("update research_agent_task set priority_score = 10 where id = ?", followingTaskId);
+        java.util.List<String> published = new java.util.ArrayList<>();
+        ResearchAgentCommandDispatcher dispatcher = new ResearchAgentCommandDispatcher(
+                jdbcTemplate,
+                (topic, messageKey, payloadJson) -> {
+                    if (messageKey.equals(agentTaskId)) {
+                        throw new IllegalStateException("injected first-row failure");
+                    }
+                    published.add(messageKey);
+                }
+        );
+
+        assertThat(dispatcher.dispatchReadyForRun(runId, 10).dispatchedCount()).isEqualTo(1);
+        assertThat(published).containsExactly(followingTaskId);
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from research_agent_outbox where research_agent_task_id = ?",
+                String.class,
+                agentTaskId
+        )).isEqualTo("READY");
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from research_agent_outbox where research_agent_task_id = ?",
+                String.class,
+                followingTaskId
+        )).isEqualTo("SENT");
     }
 
     @Test

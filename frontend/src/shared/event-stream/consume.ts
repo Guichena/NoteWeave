@@ -11,27 +11,41 @@ export async function consumeSse(
     headers: { Accept: "text/event-stream" },
     signal
   });
-  if (!response.body) {
-    throw new Error("浏览器不支持流式响应");
+  await consumeSseResponse(response, onEvent, signal);
+}
+
+export async function consumeSseResponse(
+  response: Response,
+  onEvent: (event: RawSseEvent) => void,
+  signal?: AbortSignal
+) {
+  if (!response.ok || !response.body) {
+    throw new Error(`Event stream failed: ${response.status}`);
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done }).replaceAll("\r\n", "\n");
-    let boundary = buffer.indexOf("\n\n");
-    while (boundary >= 0) {
-      emitBlock(buffer.slice(0, boundary), onEvent);
-      buffer = buffer.slice(boundary + 2);
-      boundary = buffer.indexOf("\n\n");
-    }
-    if (done) {
-      if (buffer.trim()) {
-        emitBlock(buffer, onEvent);
+  const cancelReader = () => void reader.cancel();
+  signal?.addEventListener("abort", cancelReader, { once: true });
+  try {
+    while (!signal?.aborted) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done }).replaceAll("\r\n", "\n");
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary >= 0 && !signal?.aborted) {
+        emitBlock(buffer.slice(0, boundary), onEvent);
+        buffer = buffer.slice(boundary + 2);
+        boundary = buffer.indexOf("\n\n");
       }
-      return;
+      if (done) {
+        if (buffer.trim() && !signal?.aborted) {
+          emitBlock(buffer, onEvent);
+        }
+        return;
+      }
     }
+  } finally {
+    signal?.removeEventListener("abort", cancelReader);
   }
 }
 

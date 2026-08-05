@@ -19,6 +19,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -36,6 +37,9 @@ class MemoryRuntimeContractTest {
 
     @Autowired
     private MemoryRuntime memoryRuntime;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Test
     void shadowRecallShouldReturnEmptyRuntimePackAndPreserveEmptyLegacyPack() throws Exception {
@@ -73,27 +77,61 @@ class MemoryRuntimeContractTest {
         String memoryObjectId = objectMapper.readTree(promotion.getResponse().getContentAsString())
                 .path("data").path("memory_objects").get(0).path("memory_object_id").asText();
 
-        MvcResult appended = mockMvc.perform(post(
-                        "/api/v2/workspaces/{workspaceId}/memory/objects/{memoryObjectId}/versions",
-                        workspaceId, memoryObjectId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "canonical_statement", "Prefer concise answers in the current response",
-                                "task_neighborhoods", java.util.List.of("CHAT_QA"),
-                                "style_constraints", java.util.List.of("Concise answers")
-                        ))))
-                .andExpect(status().isOk())
-                .andReturn();
-        String activeVersionId = objectMapper.readTree(appended.getResponse().getContentAsString())
-                .path("data").path("memory_version_id").asText();
-
         mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/memory/shadow-recall", workspaceId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.runtime.memory_references.length()").value(1))
                 .andExpect(jsonPath("$.data.runtime.memory_references[0].memory_object_id")
                         .value(memoryObjectId))
                 .andExpect(jsonPath("$.data.runtime.memory_references[0].memory_version_id")
-                        .value(activeVersionId));
+                        .value(memoryObjectId));
+    }
+
+    @Test
+    void runtimeRecallMustExposePersistedUtilityScoreInsteadOfRevisionConfidence() throws Exception {
+        String workspaceId = createWorkspace();
+        MemoryObservationResult accepted = memoryRuntime.observe(new ExecutionObservation(
+                "runtime-utility-" + System.nanoTime(), workspaceId, "WORKSPACE",
+                "preference:runtime-utility", "Prefer the highest utility memory",
+                "USER_FEEDBACK", "feedback-runtime-utility"));
+        acceptRevision(workspaceId, accepted.revisionId());
+        jdbcTemplate.update("update memory_item set utility_score = 0.73 where id = ?", accepted.memoryItemId());
+        jdbcTemplate.update("update memory_runtime_revision set confidence = 0.11 where id = ?", accepted.revisionId());
+
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/memory/shadow-recall", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.runtime.memory_references[0].memory_version_id")
+                        .value(accepted.revisionId()))
+                .andExpect(jsonPath("$.data.runtime.memory_references[0].utility_score").value(0.73));
+    }
+
+    @Test
+    void observationApiShouldWriteCanonicalProposalWithServerTrustedProvenanceHash() throws Exception {
+        String workspaceId = createWorkspace();
+        String observationId = "api-observation-" + System.nanoTime();
+
+        MvcResult created = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/memory/observations", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "observation_id", observationId,
+                                "scope", "WORKSPACE",
+                                "slot_key", "preference:api-observation",
+                                "display_text", "Prefer source-grounded short answers"
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn();
+        String revisionId = objectMapper.readTree(created.getResponse().getContentAsString())
+                .path("data").path("revision_id").asText();
+
+        Map<String, Object> row = jdbcTemplate.queryForMap("""
+                select provenance_type, provenance_ref, content_hash
+                from memory_runtime_revision
+                where id = ?
+                """, revisionId);
+        org.assertj.core.api.Assertions.assertThat(row.get("provenance_type")).isEqualTo("USER_FEEDBACK");
+        org.assertj.core.api.Assertions.assertThat(row.get("provenance_ref")).isEqualTo("memory-observation:" + observationId);
+        org.assertj.core.api.Assertions.assertThat((String) row.get("content_hash"))
+                .matches("[0-9a-f]{64}")
+                .isNotEqualTo(revisionId);
     }
 
     @Test
@@ -278,6 +316,104 @@ class MemoryRuntimeContractTest {
     }
 
     @Test
+    void answerSnapshotMustFreezeOnlyMemoryActuallyCompiledIntoThePrompt() throws Exception {
+        String workspaceId = createWorkspace();
+        MemoryObservationResult accepted = memoryRuntime.observe(new ExecutionObservation(
+                "snapshot-accepted-" + System.nanoTime(), workspaceId, "WORKSPACE",
+                "preference:snapshot-accepted", "Use the approved snapshot preference",
+                "USER_FEEDBACK", "feedback-snapshot-accepted"));
+        mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/memory/revisions/{revisionId}/review",
+                        workspaceId, accepted.revisionId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("decision", "ACCEPT"))))
+                .andExpect(status().isOk());
+        MemoryObservationResult reviewRequired = memoryRuntime.observe(new ExecutionObservation(
+                "snapshot-review-required-" + System.nanoTime(), workspaceId, "WORKSPACE",
+                "preference:snapshot-review-required", "Never freeze this review-required preference",
+                "USER_FEEDBACK", "feedback-snapshot-review-required"));
+        mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/memory/revisions/{revisionId}/review",
+                        workspaceId, reviewRequired.revisionId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("decision", "ACCEPT"))))
+                .andExpect(status().isOk());
+        jdbcTemplate.update("""
+                update memory_item
+                set review_status = 'REVIEW_REQUIRED'
+                where id = ?
+                """, reviewRequired.memoryItemId());
+
+        String conversationId = createConversation(workspaceId);
+        MvcResult submission = mockMvc.perform(post("/api/v2/conversations/{conversationId}/messages", conversationId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "content", "Freeze the exact compiled memory pack",
+                                "answer_mode", "QA",
+                                "client_request_id", "snapshot-memory-" + System.nanoTime()
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn();
+        String answerRunId = objectMapper.readTree(submission.getResponse().getContentAsString())
+                .path("data").path("answer_run_id").asText();
+
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/runs/ANSWER/{runId}/input-snapshot",
+                        workspaceId, answerRunId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.snapshot.memory_revision_refs.length()").value(1))
+                .andExpect(jsonPath("$.data.snapshot.memory_revision_refs[0].memory_version_id")
+                        .value(accepted.revisionId()))
+                .andExpect(jsonPath("$.data.snapshot.memory_revision_refs[0].memory_version_id")
+                        .value(org.hamcrest.Matchers.not(reviewRequired.revisionId())));
+    }
+
+    @Test
+    void researchSnapshotMustFreezeTheControlPackStoredForThatRun() throws Exception {
+        String workspaceId = createWorkspace();
+        MemoryObservationResult accepted = memoryRuntime.observe(new ExecutionObservation(
+                "research-snapshot-accepted-" + System.nanoTime(), workspaceId, "WORKSPACE",
+                "preference:research-snapshot-accepted", "Use the approved research preference",
+                "USER_FEEDBACK", "feedback-research-snapshot-accepted"));
+        acceptRevision(workspaceId, accepted.revisionId());
+        MemoryObservationResult reviewRequired = memoryRuntime.observe(new ExecutionObservation(
+                "research-snapshot-review-required-" + System.nanoTime(), workspaceId, "WORKSPACE",
+                "preference:research-snapshot-review-required", "Never freeze this research preference",
+                "USER_FEEDBACK", "feedback-research-snapshot-review-required"));
+        acceptRevision(workspaceId, reviewRequired.revisionId());
+        jdbcTemplate.update("""
+                update memory_item
+                set review_status = 'REVIEW_REQUIRED'
+                where id = ?
+                """, reviewRequired.memoryItemId());
+
+        String conversationId = createConversation(workspaceId);
+        MvcResult submission = mockMvc.perform(post("/api/v2/conversations/{conversationId}/messages", conversationId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "content", "Freeze the exact research memory pack",
+                                "answer_mode", "DEEP_RESEARCH",
+                                "client_request_id", "research-snapshot-memory-" + System.nanoTime()
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn();
+        String researchRunId = objectMapper.readTree(submission.getResponse().getContentAsString())
+                .path("data").path("research_run_id").asText();
+        JsonNode storedControlPack = objectMapper.readTree(jdbcTemplate.queryForObject("""
+                select control_pack_json from research_run where workspace_id = ? and id = ?
+                """, String.class, workspaceId, researchRunId));
+        org.assertj.core.api.Assertions.assertThat(storedControlPack.path("memory_references").size()).isEqualTo(1);
+        org.assertj.core.api.Assertions.assertThat(storedControlPack.path("memory_references").get(0)
+                .path("memory_version_id").asText()).isEqualTo(accepted.revisionId());
+
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/runs/RESEARCH/{runId}/input-snapshot",
+                        workspaceId, researchRunId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.snapshot.memory_revision_refs.length()").value(1))
+                .andExpect(jsonPath("$.data.snapshot.memory_revision_refs[0].memory_version_id")
+                        .value(accepted.revisionId()))
+                .andExpect(jsonPath("$.data.snapshot.memory_revision_refs[0].memory_version_id")
+                        .value(org.hamcrest.Matchers.not(reviewRequired.revisionId())));
+    }
+
+    @Test
     void canonicalOnlyMemoryUsageMustAcceptOutcomeFeedback() throws Exception {
         String workspaceId = createWorkspace();
         MemoryObservationResult proposal = memoryRuntime.observe(new ExecutionObservation(
@@ -377,6 +513,14 @@ class MemoryRuntimeContractTest {
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString())
                 .path("data").path("signal_id").asText();
+    }
+
+    private void acceptRevision(String workspaceId, String revisionId) throws Exception {
+        mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/memory/revisions/{revisionId}/review",
+                        workspaceId, revisionId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("decision", "ACCEPT"))))
+                .andExpect(status().isOk());
     }
 
     private String createConversation(String workspaceId) throws Exception {

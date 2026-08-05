@@ -2,6 +2,10 @@
   "schemaVersion": "retrieval-ablation-report-v1",
   "reportVersion": "qa-note-final-ablation-v1",
   "execution": "deterministic-gold-replay",
+  "evidenceLevel": "fixture-replay",
+  "providerKind": "deterministic-fixture",
+  "replayCommand": ".\\mvnw.cmd -f backend\\pom.xml -Dtest=FinalRetrievalGoldContractTest test",
+  "claimBoundary": "Small fixed QA/Note fixture replay for regression and resume wording only; it is not a live Elasticsearch, embedding, rerank, or LLM provider benchmark.",
   "method": "Each gold case is replayed against the declared channel subset; metrics are computed from the ranked candidate list after workspace/scope filtering and refusal validation.",
   "qa": {
     "datasetVersion": "qa-weknora-gold-v1",

@@ -45,7 +45,7 @@ public class ElasticsearchChunkSearchAdapter implements ChunkSearchPort {
                     .size(topK)
                     .query(q -> q.multiMatch(m -> m
                             .query(query)
-                            .fields("content^3", "title^2", "source_type")
+                            .fields("content^3", "title^2")
                             .type(co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType.BestFields)
                             .fuzziness("AUTO"))), Map.class);
 

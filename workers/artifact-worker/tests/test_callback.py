@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import pytest
 
 import app.callback as callback_module
@@ -8,8 +9,10 @@ from app.callback import (
     _dispatch_system_provider_operations,
     acknowledge_acquisition_operation_with_callbacks,
     run_artifact_task_with_callbacks,
+    sanitize_error_message,
 )
 from app.acquisition_runtime import clear_acquisition_runtime, dispatch_acquisition_operation, list_acquisition_operations
+from app.error_sanitizer import sanitize_error_fields
 from app.artifact_repository import clear_artifact_repository, get_artifact_version_detail
 from app.capability_approval_queue import clear_approval_requests
 from app.capability_provider import (
@@ -167,8 +170,13 @@ def test_java_artifact_callback_client_should_send_internal_auth_token(monkeypat
         captured_headers.update({key.lower(): value for key, value in req.header_items()})
         return FakeResponse()
 
-    monkeypatch.setattr(callback_module.request, "urlopen", fake_urlopen)
-    client = JavaArtifactCallbackClient("http://java-host:8081", "shared-secret")
+    monkeypatch.setattr(callback_module, "credential_safe_urlopen", fake_urlopen)
+    client = JavaArtifactCallbackClient(
+        "http://java-host:8081",
+        "shared-secret",
+        "artifact-callback-secret",
+        "delivery-token-1",
+    )
 
     client._request("GET", "/internal/worker/artifact-outbox/metrics")
 
@@ -194,8 +202,13 @@ def test_java_artifact_callback_client_should_send_stable_callback_idempotency_k
         captured_headers.append({key.lower(): value for key, value in req.header_items()})
         return FakeResponse()
 
-    monkeypatch.setattr(callback_module.request, "urlopen", fake_urlopen)
-    client = JavaArtifactCallbackClient("http://java-host:8081", "shared-secret")
+    monkeypatch.setattr(callback_module, "credential_safe_urlopen", fake_urlopen)
+    client = JavaArtifactCallbackClient(
+        "http://java-host:8081",
+        "shared-secret",
+        "artifact-callback-secret",
+        "delivery-token-1",
+    )
     event = ArtifactProgressEvent(
         phase="COMPOSING",
         progress_percent=60,
@@ -212,6 +225,63 @@ def test_java_artifact_callback_client_should_send_stable_callback_idempotency_k
     assert keys[0] == keys[1]
     assert len(set(keys[1:])) == 3
     assert all(key.startswith("artifact-worker-") for key in keys)
+    assert all(
+        headers["x-noteweave-outbox-delivery-token"] == "delivery-token-1"
+        for headers in captured_headers
+    )
+    callback_tokens = [
+        headers["x-noteweave-task-callback-token"] for headers in captured_headers
+    ]
+    assert len(set(callback_tokens)) == 1
+
+
+def test_failure_callback_should_redact_secrets_and_classify_retryability(monkeypatch) -> None:
+    captured_payload: dict[str, object] = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def read(self) -> bytes:
+            return b'{"success":true,"data":{}}'
+
+    def fake_urlopen(req, timeout):
+        captured_payload.update(json.loads(req.data.decode("utf-8")))
+        return FakeResponse()
+
+    monkeypatch.setattr(callback_module, "credential_safe_urlopen", fake_urlopen)
+    client = JavaArtifactCallbackClient("http://java-host:8081", "shared-secret")
+    client.send_fail(
+        "task-a-callback",
+        "WORKER_EXECUTION",
+        "VALUEERROR",
+        "Authorization: Bearer secret-value",
+        retryable=False,
+    )
+
+    assert captured_payload["retryable"] is False
+    assert captured_payload["error_message"] == "Authorization: Bearer [REDACTED]"
+    assert sanitize_error_message("api_key=abc token=xyz") == "api_key=[REDACTED] token=[REDACTED]"
+    header_message = sanitize_error_message(
+        "Authorization: Basic dXNlcjpwYXNz\n"
+        "Proxy-Authorization: Digest private-response\n"
+        "Cookie: session=private-cookie; Path=/\n"
+        "Set-Cookie: refresh=private-refresh; HttpOnly"
+    )
+    assert "dXNlcjpwYXNz" not in header_message
+    assert "private-response" not in header_message
+    assert "private-cookie" not in header_message
+    assert "private-refresh" not in header_message
+    assert header_message.count("[REDACTED]") == 4
+    nested = sanitize_error_fields({
+        "error_message": "password=secret at C:\\private\\worker.log",
+        "attempts": [{"last_error_message": "token=another-secret"}],
+    })
+    assert "secret" not in str(nested)
+    assert "[PATH_REDACTED]" in str(nested)
 
 
 def test_run_artifact_task_with_callbacks_should_fetch_emit_progress_and_complete() -> None:
@@ -234,7 +304,10 @@ def test_run_artifact_task_with_callbacks_should_fetch_emit_progress_and_complet
     assert client.failures == []
 
 
-def test_duplicate_acquisition_ack_should_retry_complete_delivery_after_transport_failure() -> None:
+def test_duplicate_acquisition_ack_should_retry_complete_delivery_after_transport_failure(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("NOTEWEAVE_ALLOW_PORTABLE_PDF_FALLBACK", "true")
     clear_artifact_repository()
     clear_acquisition_runtime()
     clear_waiting_tasks()
@@ -271,7 +344,10 @@ def test_duplicate_acquisition_ack_should_retry_complete_delivery_after_transpor
                 client=client,
             )
 
-        assert get_waiting_task("task-a-waiting") is not None
+        waiting_record = get_waiting_task("task-a-waiting")
+        assert waiting_record is not None
+        cached_delivery = waiting_record["resume_delivery"]
+        cached_version_id = cached_delivery["result"]["version_snapshot"]["version_id"]
         client.should_fail_complete = False
         retry_response = acknowledge_acquisition_operation_with_callbacks(
             callback_token=callback_token,
@@ -292,6 +368,7 @@ def test_duplicate_acquisition_ack_should_retry_complete_delivery_after_transpor
     assert len(retry_response.resumed_tasks) == 1
     assert retry_response.resumed_tasks[0].status == "COMPLETED"
     assert len(client.completed_results) == 1
+    assert client.completed_results[0].version_snapshot.version_id == cached_version_id
     assert client.failures == []
 
 
@@ -397,7 +474,10 @@ def test_run_artifact_task_with_callbacks_should_not_turn_callback_delivery_fail
     assert client.failures == []
 
 
-def test_acquisition_ack_with_callbacks_should_resume_waiting_task_and_complete_to_java() -> None:
+def test_acquisition_ack_with_callbacks_should_resume_waiting_task_and_complete_to_java(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("NOTEWEAVE_ALLOW_PORTABLE_PDF_FALLBACK", "true")
     clear_artifact_repository()
     clear_acquisition_runtime()
     clear_waiting_tasks()

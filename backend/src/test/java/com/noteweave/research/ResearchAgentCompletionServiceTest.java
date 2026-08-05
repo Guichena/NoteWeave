@@ -40,8 +40,6 @@ class ResearchAgentCompletionServiceTest {
     @Autowired private ResearchAgentCompletionService completionService;
     @Autowired private ResearchAgentCompletionCanonicalizer canonicalizer;
     @Autowired private ResearchAgentLifecycleService lifecycleService;
-    @Autowired private ResearchAgentEvidenceIngestionService evidenceIngestionService;
-    @Autowired private ResearchAgentCandidateIngressService candidateIngressService;
     @Autowired private MeterRegistry meterRegistry;
 
     @MockBean private ResearchAgentCompletionFaultInjector faultInjector;
@@ -204,6 +202,27 @@ class ResearchAgentCompletionServiceTest {
                 where research_run_id = ? and decision_type = 'QUORUM_REPAIR_REQUIRED'
                   and reason_code = 'QUORUM_SOURCE_DOMAIN_NOT_INDEPENDENT'
                 """, Integer.class, pair.first().runId())).isEqualTo(1);
+    }
+
+    @Test
+    void shouldRejectDifferentSourceIdsWithTheSamePersistedContentLineage() {
+        QuorumPair pair = quorumPair(
+                "source-mirror", "Mirrored Source", "prefix trusted quote 0 suffix");
+        completionService.complete(
+                pair.first().taskId(),
+                envelopeForSource(
+                        pair.first(), "worker-a", "source-0", "Source 0", "trusted quote 0"));
+
+        ResearchAgentCompletionReceipt receipt = completionService.complete(
+                pair.second().taskId(),
+                envelopeForSource(
+                        pair.second(), "worker-b", "source-mirror", "Mirrored Source", "trusted quote 0"));
+
+        assertThat(receipt.outcome()).isEqualTo("QUORUM_REPAIR_REQUIRED");
+        assertThat(receipt.rejectedMerges()).containsExactly(
+                new ResearchAgentCompletionReceipt.MergeReceipt(
+                        pair.first().cellKeys().get(0), 0, 0, "REJECTED",
+                        "QUORUM_SOURCE_DOMAIN_NOT_INDEPENDENT"));
     }
 
     @Test
@@ -883,6 +902,27 @@ class ResearchAgentCompletionServiceTest {
     }
 
     @Test
+    void shouldAcceptOnlyWindowsFromTheFrozenWorkspaceSnapshot() {
+        WorkspaceSnapshotFixture accepted = workspaceSnapshotFixture();
+        ResearchAgentCompletionEnvelope acceptedBase = envelope(accepted.fixture(), true);
+        ResearchAgentCompletionEnvelope acceptedEnvelope = withWorkspaceEvidence(
+                acceptedBase, accepted.sourceId(), accepted.secondFrozenWindowId(), "second frozen quote");
+
+        assertThat(completionService.complete(accepted.fixture().taskId(), acceptedEnvelope).evidenceAppended())
+                .isEqualTo(1);
+
+        WorkspaceSnapshotFixture forged = workspaceSnapshotFixture();
+        ResearchAgentCompletionEnvelope forgedBase = envelope(forged.fixture(), true);
+        ResearchAgentCompletionEnvelope forgedEnvelope = withWorkspaceEvidence(
+                forgedBase, forged.sourceId(), forged.otherSnapshotWindowId(), "forged snapshot quote");
+        String before = state(forged.fixture());
+
+        assertCode(() -> completionService.complete(forged.fixture().taskId(), forgedEnvelope),
+                "RESEARCH_AGENT_COMPLETION_EVIDENCE_UNGROUNDED");
+        assertThat(state(forged.fixture())).isEqualTo(before);
+    }
+
+    @Test
     void shouldRequireAServerArchivedSnapshotBeforeAcceptingExternalEvidence() {
         Fixture fixture = fixture(1);
         ResearchAgentCompletionEnvelope base = envelope(fixture, true);
@@ -907,6 +947,16 @@ class ResearchAgentCompletionServiceTest {
     @Test
     void shouldAtomicallyAcceptExternalEvidenceOnlyWhenItMatchesTheServerArchive() {
         Fixture fixture = fixture(1);
+        String webOnlyContext = com.noteweave.common.Json.write(new com.fasterxml.jackson.databind.ObjectMapper(), Map.of(
+                "provider_key", "research-fake",
+                "source_policy", Map.of("source_scope", List.of()),
+                "query_policy", Map.of("query", "ma4g question")));
+        jdbcTemplate.update("update research_agent_task set execution_context_json = ?, snapshot_digest = null where id = ?",
+                webOnlyContext, fixture.taskId());
+        ResearchAgentTaskService.ClaimedTask webOnlyClaim = taskService.claimTask(
+                new ResearchAgentTaskService.ClaimCommand(fixture.taskId(), "worker-a", 300));
+        fixture = new Fixture(fixture.runId(), fixture.taskId(), fixture.cellKeys(), webOnlyClaim.leaseEpoch(),
+                webOnlyClaim.fencingToken(), webOnlyClaim.snapshotDigest(), fixture.executionKey());
         String content = "Header. Archived external quote. Footer.";
         jdbcTemplate.update("""
                 insert into research_external_snapshot(
@@ -942,36 +992,6 @@ class ResearchAgentCompletionServiceTest {
                 .containsEntry("adapter", "external_url")
                 .containsEntry("snapshot_status", "EXTERNAL_ARCHIVED")
                 .containsEntry("snapshot_key", "research/external/snapshot-1");
-    }
-
-    @Test
-    void shouldFailClosedAllLegacySplitWritesForSnapshotReadyDeepCell() {
-        Fixture fixture = fixture(1);
-        ResearchAgentCompletionEnvelope envelope = envelope(fixture, true);
-        String before = state(fixture);
-        ResearchAgentCompletionEnvelope.Evidence evidence = envelope.evidence().get(0);
-
-        assertCode(() -> evidenceIngestionService.appendWorkspaceEvidence(
-                        new ResearchAgentEvidenceIngestionService.EvidenceBatchCommand(
-                                fixture.taskId(), "worker-a", fixture.leaseEpoch(), fixture.fencingToken(),
-                                List.of(new ResearchAgentEvidenceIngestionService.WorkspaceEvidence(
-                                        evidence.evidenceKey(), evidence.windowId(), evidence.sourceId(), evidence.sourceTitle(),
-                                        evidence.searchQuery(), evidence.readFocus(), evidence.quoteText(), evidence.claimText(),
-                                        evidence.relationType(), 0.9, 0.0, "WORKSPACE")))) ,
-                "RESEARCH_AGENT_ATOMIC_COMPLETION_REQUIRED");
-        ResearchAgentCompletionEnvelope.Candidate candidate = envelope.candidates().get(0);
-        assertCode(() -> candidateIngressService.appendAndVerify(
-                        new ResearchAgentCandidateIngressService.CandidateBatchCommand(
-                                fixture.taskId(), "worker-a", fixture.leaseEpoch(), fixture.fencingToken(),
-                                fixture.executionKey(), List.of(new ResearchAgentCandidateIngressService.CandidateProposal(
-                                candidate.candidateKey(), candidate.candidateKey(), candidate.cellKey(),
-                                candidate.baseCellVersion(), candidate.candidateValue(), candidate.evidenceKeys(), 0.9)))) ,
-                "RESEARCH_AGENT_ATOMIC_COMPLETION_REQUIRED");
-        assertCode(() -> taskService.submitExecution(new ResearchAgentTaskService.SubmitCommand(
-                        fixture.taskId(), "worker-a", fixture.leaseEpoch(), fixture.fencingToken(),
-                        fixture.executionKey(), "DONE", Map.of("search_calls", 1), envelope.traceDigest())),
-                "RESEARCH_AGENT_ATOMIC_COMPLETION_REQUIRED");
-        assertThat(state(fixture)).isEqualTo(before);
     }
 
     @Test
@@ -1340,6 +1360,80 @@ class ResearchAgentCompletionServiceTest {
                 claim.snapshotDigest(), "deep-cell:" + taskId + ":" + claim.leaseEpoch() + ":" + claim.fencingToken());
     }
 
+    private WorkspaceSnapshotFixture workspaceSnapshotFixture() {
+        Fixture raw = fixture(1);
+        String workspaceId = jdbcTemplate.queryForObject(
+                "select workspace_id from research_run where id = ?", String.class, raw.runId());
+        String fileId = Ids.newId();
+        String sourceId = Ids.newId();
+        String frozenSnapshotId = Ids.newId();
+        String otherSnapshotId = Ids.newId();
+        String frozenChunkId = Ids.newId();
+        String otherChunkId = Ids.newId();
+        String firstWindowId = Ids.newId();
+        String secondFrozenWindowId = Ids.newId();
+        String otherSnapshotWindowId = Ids.newId();
+        String objectKey = "test/completion-window-" + fileId;
+        jdbcTemplate.update("""
+                insert into file_object(id, workspace_id, object_key, sha256, file_size, ref_count)
+                values (?, ?, ?, ?, 10, 1)
+                """, fileId, workspaceId, objectKey, "a".repeat(64));
+        jdbcTemplate.update("""
+                insert into source(id, workspace_id, file_object_id, title, source_type, status, parse_status, index_status)
+                values (?, ?, ?, 'Frozen source', 'UPLOAD', 'READY', 'PARSED', 'INDEXED')
+                """, sourceId, workspaceId, fileId);
+        jdbcTemplate.update("""
+                insert into source_snapshot(id, source_id, file_object_id, version_no, object_key, sha256, parse_status, index_status)
+                values (?, ?, ?, 1, ?, ?, 'PARSED', 'INDEXED')
+                """, frozenSnapshotId, sourceId, fileId, objectKey, "a".repeat(64));
+        jdbcTemplate.update("""
+                insert into source_snapshot(id, source_id, file_object_id, version_no, object_key, sha256, parse_status, index_status)
+                values (?, ?, ?, 2, ?, ?, 'PARSED', 'INDEXED')
+                """, otherSnapshotId, sourceId, fileId, objectKey, "b".repeat(64));
+        jdbcTemplate.update("""
+                insert into source_chunk(id, workspace_id, source_id, source_snapshot_id, chunk_no, content, token_estimate)
+                values (?, ?, ?, ?, 1, 'frozen combined text', 10)
+                """, frozenChunkId, workspaceId, sourceId, frozenSnapshotId);
+        jdbcTemplate.update("""
+                insert into source_chunk(id, workspace_id, source_id, source_snapshot_id, chunk_no, content, token_estimate)
+                values (?, ?, ?, ?, 1, 'other combined text', 10)
+                """, otherChunkId, workspaceId, sourceId, otherSnapshotId);
+        jdbcTemplate.update("insert into source_window(id, source_chunk_id, window_no, content) values (?, ?, 1, 'first frozen window')",
+                firstWindowId, frozenChunkId);
+        jdbcTemplate.update("insert into source_window(id, source_chunk_id, window_no, content) values (?, ?, 2, 'second frozen quote')",
+                secondFrozenWindowId, frozenChunkId);
+        jdbcTemplate.update("insert into source_window(id, source_chunk_id, window_no, content) values (?, ?, 1, 'forged snapshot quote')",
+                otherSnapshotWindowId, otherChunkId);
+        String context = com.noteweave.common.Json.write(new com.fasterxml.jackson.databind.ObjectMapper(), Map.of(
+                "provider_key", "research-fake",
+                "source_policy", Map.of("source_scope", List.of(Map.of(
+                        "source_id", sourceId, "source_title", "Frozen source",
+                        "source_snapshot_id", frozenSnapshotId, "source_window_id", firstWindowId,
+                        "sample_text", "first frozen window"))),
+                "query_policy", Map.of("query", "ma4g question")));
+        jdbcTemplate.update("update research_agent_task set execution_context_json = ?, snapshot_digest = null where id = ?",
+                context, raw.taskId());
+        ResearchAgentTaskService.ClaimedTask claim = taskService.claimTask(
+                new ResearchAgentTaskService.ClaimCommand(raw.taskId(), "worker-a", 300));
+        Fixture refreshed = new Fixture(raw.runId(), raw.taskId(), raw.cellKeys(), claim.leaseEpoch(),
+                claim.fencingToken(), claim.snapshotDigest(), raw.executionKey());
+        return new WorkspaceSnapshotFixture(refreshed, sourceId, secondFrozenWindowId, otherSnapshotWindowId);
+    }
+
+    private ResearchAgentCompletionEnvelope withWorkspaceEvidence(
+            ResearchAgentCompletionEnvelope base, String sourceId, String windowId, String quote
+    ) {
+        ResearchAgentCompletionEnvelope.Evidence original = base.evidence().get(0);
+        ResearchAgentCompletionEnvelope.Evidence evidence = new ResearchAgentCompletionEnvelope.Evidence(
+                original.evidenceKey(), windowId, sourceId, "Frozen source", original.searchQuery(),
+                original.readFocus(), quote, original.claimText(), original.relationType(),
+                original.supportScorePpm(), original.conflictScorePpm(), original.snapshotStatus());
+        return signed(new ResearchAgentCompletionEnvelope(
+                base.schemaVersion(), base.taskId(), base.workerInstanceId(), base.leaseEpoch(), base.fencingToken(),
+                base.executionKey(), base.taskSnapshotDigest(), base.terminationReason(), base.budgetUsage(),
+                base.telemetry(), base.traceDigest(), List.of(evidence), base.candidates(), null));
+    }
+
     private Fixture quorumFixture() {
         Fixture fixture = fixture(1);
         String group = "quorum:" + fixture.runId();
@@ -1590,14 +1684,16 @@ class ResearchAgentCompletionServiceTest {
     ) {
         Map<String, Object> evidence = jdbcTemplate.queryForMap("""
                 select id, research_run_id, agent_completion_id, evidence_key, window_id, source_id, source_title,
-                       source_url, provider, adapter, search_query, read_focus, quote_text, claim_text, relation_type,
+                       source_url, source_origin, source_domain, lineage_digest,
+                       provider, adapter, search_query, read_focus, quote_text, claim_text, relation_type,
                        support_score, conflict_score, support_score_ppm, conflict_score_ppm,
                        snapshot_status, snapshot_key, content_digest
                 from source_evidence where agent_completion_id = ?
                 """, receipt.completionId());
         Map<String, Object> evidenceContent = new java.util.LinkedHashMap<>();
         copy(evidence, evidenceContent, "id", "research_run_id", "agent_completion_id", "evidence_key",
-                "window_id", "source_id", "source_title", "source_url", "provider", "adapter", "search_query",
+                "window_id", "source_id", "source_title", "source_url", "source_origin", "source_domain",
+                "lineage_digest", "provider", "adapter", "search_query",
                 "read_focus", "quote_text", "claim_text", "relation_type");
         evidenceContent.put("support_score", decimal(evidence.get("support_score")));
         evidenceContent.put("conflict_score", decimal(evidence.get("conflict_score")));
@@ -1746,4 +1842,7 @@ class ResearchAgentCompletionServiceTest {
             String executionKey
     ) { }
     private record QuorumPair(Fixture first, Fixture second) { }
+    private record WorkspaceSnapshotFixture(
+            Fixture fixture, String sourceId, String secondFrozenWindowId, String otherSnapshotWindowId
+    ) { }
 }

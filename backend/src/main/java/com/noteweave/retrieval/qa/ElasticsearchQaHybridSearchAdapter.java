@@ -17,9 +17,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 @Component
+@ConditionalOnProperty(name = "noteweave.elasticsearch.enabled", havingValue = "true", matchIfMissing = true)
 public class ElasticsearchQaHybridSearchAdapter implements QaHybridSearchPort {
     private final ElasticsearchClient client;
 
@@ -57,7 +59,7 @@ public class ElasticsearchQaHybridSearchAdapter implements QaHybridSearchPort {
         BoolQuery.Builder bool = new BoolQuery.Builder()
                 .must(must -> must.multiMatch(multi -> multi
                         .query(query.query())
-                        .fields("content^3", "title^2", "heading^2", "source_type")
+                        .fields("title^3", "heading^3", "content^2")
                         .type(co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType.BestFields)
                         .fuzziness("AUTO")))
                 .filter(scopeFilter(query.workspaceId(), query.sourceScope()));

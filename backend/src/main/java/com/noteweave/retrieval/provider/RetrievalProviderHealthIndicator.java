@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import com.noteweave.config.NoteWeaveProperties;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 
 @Component("retrievalProviders")
 public class RetrievalProviderHealthIndicator implements HealthIndicator {
@@ -13,23 +14,35 @@ public class RetrievalProviderHealthIndicator implements HealthIndicator {
     private final EmbeddingClient embeddingClient;
     private final RerankClient rerankClient;
     private final int expectedDimensions;
+    private final boolean mysqlFallbackEnabled;
     private volatile CachedHealth cachedHealth;
 
     @Autowired
     public RetrievalProviderHealthIndicator(
             EmbeddingClient embeddingClient,
             RerankClient rerankClient,
-            NoteWeaveProperties properties
+            NoteWeaveProperties properties,
+            @Value("${noteweave.retrieval.qa.mysql-fallback-enabled:false}") boolean mysqlFallbackEnabled
     ) {
         this.embeddingClient = embeddingClient;
         this.rerankClient = rerankClient;
         this.expectedDimensions = properties.embedding().dimensions();
+        this.mysqlFallbackEnabled = mysqlFallbackEnabled;
     }
 
     public RetrievalProviderHealthIndicator(EmbeddingClient embeddingClient, RerankClient rerankClient) {
+        this(embeddingClient, rerankClient, false);
+    }
+
+    public RetrievalProviderHealthIndicator(
+            EmbeddingClient embeddingClient,
+            RerankClient rerankClient,
+            boolean mysqlFallbackEnabled
+    ) {
         this.embeddingClient = embeddingClient;
         this.rerankClient = rerankClient;
         this.expectedDimensions = -1;
+        this.mysqlFallbackEnabled = mysqlFallbackEnabled;
     }
 
     @Override
@@ -73,13 +86,17 @@ public class RetrievalProviderHealthIndicator implements HealthIndicator {
                         ? provider.errorCode() : "RETRIEVAL_PROVIDER_PROBE_FAILED";
             }
         }
-        Health.Builder builder = embeddingEnabled && rerankEnabled && embeddingProbe && rerankProbe
-                ? Health.up() : Health.outOfService();
+        boolean primaryAvailable = embeddingEnabled && rerankEnabled && embeddingProbe && rerankProbe;
+        boolean retrievalAvailable = primaryAvailable || mysqlFallbackEnabled;
+        Health.Builder builder = retrievalAvailable ? Health.up() : Health.outOfService();
         return builder
                 .withDetail("embedding_configured", embeddingEnabled)
                 .withDetail("rerank_configured", rerankEnabled)
                 .withDetail("embedding_probe", embeddingProbe)
                 .withDetail("rerank_probe", rerankProbe)
+                .withDetail("primary_available", primaryAvailable)
+                .withDetail("mysql_fallback_enabled", mysqlFallbackEnabled)
+                .withDetail("degraded", !primaryAvailable && mysqlFallbackEnabled)
                 .withDetail("probe_error_code", errorCode)
                 .build();
     }

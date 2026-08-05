@@ -4,6 +4,9 @@ import com.noteweave.security.CurrentUserProvider;
 import com.noteweave.common.Ids;
 import com.noteweave.common.BusinessException;
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Comparator;
 import java.util.List;
 import org.springframework.dao.DuplicateKeyException;
@@ -34,7 +37,7 @@ public class CanonicalMemoryRuntime implements MemoryRuntime {
         List<RuntimeRow> rows = jdbcTemplate.query("""
                 select i.id,
                        r.id as memory_revision_id,
-                       r.confidence,
+                       i.utility_score,
                        i.memory_scope,
                        i.owner_user_id,
                        i.updated_at
@@ -50,7 +53,7 @@ public class CanonicalMemoryRuntime implements MemoryRuntime {
                 """, (rs, rowNum) -> new RuntimeRow(
                 rs.getString("id"),
                 rs.getString("memory_revision_id"),
-                rs.getDouble("confidence"),
+                rs.getDouble("utility_score"),
                 rs.getString("memory_scope"),
                 rs.getString("owner_user_id"),
                 rs.getTimestamp("updated_at").toInstant()
@@ -108,8 +111,24 @@ public class CanonicalMemoryRuntime implements MemoryRuntime {
         }
         Integer lastVersion = jdbcTemplate.queryForObject("select coalesce(max(version_no), 0) from memory_runtime_revision where memory_item_id = ?", Integer.class, itemId);
         String revisionId = Ids.newId();
-        jdbcTemplate.update("insert into memory_runtime_revision(id,memory_item_id,workspace_id,version_no,status,display_text,provenance_type,provenance_ref,observation_id,content_hash) values (?,?,?,?, 'PROPOSED',?,?,?,?,?)", revisionId,itemId,observation.workspaceId(), lastVersion + 1, observation.displayText(),observation.provenanceType(),observation.provenanceRef(),observation.observationId(),revisionId);
+        String contentHash = contentHash(observation);
+        jdbcTemplate.update("insert into memory_runtime_revision(id,memory_item_id,workspace_id,version_no,status,display_text,provenance_type,provenance_ref,observation_id,content_hash) values (?,?,?,?, 'PROPOSED',?,?,?,?,?)", revisionId,itemId,observation.workspaceId(), lastVersion + 1, observation.displayText(),observation.provenanceType(),observation.provenanceRef(),observation.observationId(),contentHash);
         return new MemoryObservationResult(itemId, revisionId, false);
+    }
+
+    private String contentHash(ExecutionObservation observation) {
+        String canonical = String.join("\n",
+                observation.displayText().strip(),
+                observation.provenanceType().strip().toUpperCase(java.util.Locale.ROOT),
+                observation.provenanceRef().strip());
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8));
+            StringBuilder result = new StringBuilder(64);
+            for (byte value : digest) result.append(String.format("%02x", value));
+            return result.toString();
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is required by the memory revision contract", exception);
+        }
     }
 
     private List<String> findItems(ExecutionObservation observation, String owner, String scope, String scopeRef) {

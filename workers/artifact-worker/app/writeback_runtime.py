@@ -5,6 +5,8 @@ from datetime import timedelta
 from datetime import datetime, timezone
 from threading import Lock
 
+from app.error_sanitizer import sanitize_error_message
+
 from app.models import (
     ArtifactExecutionPlan,
     ArtifactTaskInput,
@@ -235,6 +237,7 @@ def acknowledge_writeback_request(
     normalized_status = final_status.strip().upper()
     if normalized_status not in {"ACKNOWLEDGED", "FAILED"}:
         raise ValueError(f"unsupported writeback ack status: {final_status}")
+    safe_error_message = sanitize_error_message(error_message)
 
     with _writeback_lock:
         request = next(
@@ -246,7 +249,7 @@ def acknowledge_writeback_request(
             None,
         )
         if request is None:
-            raise ValueError(f"writeback callback token not found: {callback_token}")
+            raise ValueError("writeback callback token not found")
         if request["status"] != "DISPATCHED_TO_HOST":
             raise ValueError(
                 f"writeback request is not awaiting host ack: {request['request_id']}"
@@ -256,7 +259,7 @@ def acknowledge_writeback_request(
         request["status"] = normalized_status
         request["acked_at"] = acked_at
         request["last_error_code"] = error_code if normalized_status == "FAILED" else ""
-        request["last_error_message"] = error_message if normalized_status == "FAILED" else ""
+        request["last_error_message"] = safe_error_message if normalized_status == "FAILED" else ""
         delivery_id = str(request.get("delivery_id", ""))
         delivery_attempts = list(request.get("delivery_attempts", []))
         if delivery_attempts:
@@ -270,7 +273,7 @@ def acknowledge_writeback_request(
                 error_code if normalized_status == "FAILED" else ""
             )
             delivery_attempt["error_message"] = (
-                error_message if normalized_status == "FAILED" else ""
+                safe_error_message if normalized_status == "FAILED" else ""
             )
             delivery_attempts[-1] = delivery_attempt
             request["delivery_attempts"] = delivery_attempts
@@ -294,7 +297,7 @@ def acknowledge_writeback_request(
             payload_digest=str(request.get("payload_digest", "")),
             dispatch_count=int(request.get("dispatch_count", 0)),
             error_code=error_code if normalized_status == "FAILED" else "",
-            error_message=error_message if normalized_status == "FAILED" else "",
+            error_message=safe_error_message if normalized_status == "FAILED" else "",
             notes=[
                 "writeback status acknowledged through simulated host callback protocol",
             ],

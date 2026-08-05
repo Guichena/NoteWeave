@@ -14,14 +14,21 @@ spring:
       port: 6379
 
 noteweave:
+  retrieval:
+    qa:
+      mysql-fallback-enabled: true
+  llm:
+    template-fallback-enabled: true
   quota:
     enabled: false
   security:
+    local-user-fallback: true
     acl-cache-enabled: false
   redis:
     enabled: false
   worker:
     artifact-auto-dispatch-enabled: false
+    artifact-callback-secret: test-artifact-callback-secret
   storage:
     backend: local
     local-root: target/test-noteweave-storage

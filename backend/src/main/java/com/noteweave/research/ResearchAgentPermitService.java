@@ -17,7 +17,8 @@ public class ResearchAgentPermitService {
 
     private static final Set<String> SNAPSHOT_SCHEMAS = Set.of(
             ResearchAgentTaskSnapshotCanonicalizer.SCHEMA_V1,
-            ResearchAgentTaskSnapshotCanonicalizer.SCHEMA_V2);
+            ResearchAgentTaskSnapshotCanonicalizer.SCHEMA_V2,
+            ResearchAgentTaskSnapshotCanonicalizer.SCHEMA_V3);
     private static final Map<String, Set<String>> ROLE_TOOLS = Map.of(
             "DEEP_CELL", Set.of("search", "fetch", "read", "extract", "archive"),
             "WIDE_DISCOVERY", Set.of("search", "fetch", "read", "extract", "archive"),

@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - run: mvn --batch-mode --no-transfer-progress clean test
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm ui:check
+
+  research-worker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workers/research-worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e .
+      - run: python -m pytest -q
+
+  artifact-worker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workers/artifact-worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install test dependencies without optional transcription runtime
+        run: |
+          python -m pip install -e . --no-deps
+          python -m pip install "fastapi>=0.115,<1" "pydantic-settings>=2.6,<3" "pytest>=9,<10" "reportlab>=4.2,<5" "uvicorn>=0.32,<1" "yt-dlp>=2025.6.30,<2027"
+      - run: python -m pytest -q
+
+  compose-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose --env-file .env.example --profile app config --quiet
+
+  docker-fail-closed-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare CI environment
+        shell: bash
+        run: |
+          cp .env.example .env.ci
+          sed -i 's/^NOTEWEAVE_LOCAL_USER_FALLBACK=.*/NOTEWEAVE_LOCAL_USER_FALLBACK=true/' .env.ci
+          sed -i 's/^NOTEWEAVE_BOOTSTRAP_PASSWORD=.*/NOTEWEAVE_BOOTSTRAP_PASSWORD=ci-bootstrap-password/' .env.ci
+          sed -i 's/^MYSQL_ROOT_PASSWORD=.*/MYSQL_ROOT_PASSWORD=ci-root-password/' .env.ci
+          sed -i 's/^MYSQL_PASSWORD=.*/MYSQL_PASSWORD=ci-mysql-password/' .env.ci
+          sed -i 's/^REDIS_PASSWORD=.*/REDIS_PASSWORD=ci-redis-password/' .env.ci
+          sed -i 's/^KAFKA_CLIENT_PASSWORD=.*/KAFKA_CLIENT_PASSWORD=ci-kafka-password/' .env.ci
+          sed -i 's/^ELASTIC_PASSWORD=.*/ELASTIC_PASSWORD=ci-elastic-password/' .env.ci
+          sed -i 's/^MINIO_ROOT_PASSWORD=.*/MINIO_ROOT_PASSWORD=ci-minio-password/' .env.ci
+      - name: Start Compose application
+        run: docker compose --env-file .env.ci --profile app up --build -d --wait --wait-timeout 180
+      - name: Run provider-disabled vertical smoke
+        shell: pwsh
+        run: ./scripts/smoke-provider-disabled.ps1 -BaseUrl http://localhost:3000 -BackendUrl http://localhost:8081
+      - name: Collect Compose logs
+        if: always()
+        run: docker compose --env-file .env.ci --profile app logs --no-color > target-ci-compose.log 2>&1 || true
+      - name: Tear down Compose
+        if: always()
+        run: docker compose --env-file .env.ci --profile app down -v --remove-orphans

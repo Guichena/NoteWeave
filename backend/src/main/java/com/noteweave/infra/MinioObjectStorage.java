@@ -57,7 +57,7 @@ public class MinioObjectStorage implements ObjectStorage {
                     log.info("MinIO bucket created: {}", bucket);
                 }
             } catch (Exception ex) {
-                log.warn("Failed to ensure MinIO bucket {}: {}", bucket, ex.getMessage());
+                throw new IllegalStateException("Failed to ensure MinIO bucket " + bucket, ex);
             }
         }
     }

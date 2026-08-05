@@ -82,7 +82,7 @@ public class SessionEventMux {
         meterRegistry.counter("noteweave.answer.events.published", "type", eventType).increment();
         subscribers.forEach(subscriber -> subscriber.enqueue(event));
         if (realtimeBridge != null) {
-            realtimeBridge.publish(runId, event);
+            publishToBridge(runId, event);
         }
         return event;
     }
@@ -104,7 +104,7 @@ public class SessionEventMux {
         meterRegistry.counter("noteweave.answer.events.published", "type", eventType).increment();
         subscribers.forEach(subscriber -> subscriber.enqueue(event));
         if (realtimeBridge != null) {
-            realtimeBridge.publish(runId, event);
+            publishToBridge(runId, event);
         }
         return event;
     }
@@ -212,7 +212,18 @@ public class SessionEventMux {
                         return;
                     }
                 }
-                List<AnswerLiveEvent> events = realtimeBridge.readAfter(runId, cursor, Duration.ofSeconds(1));
+                List<AnswerLiveEvent> events;
+                try {
+                    events = realtimeBridge.readAfter(runId, cursor, Duration.ofSeconds(1));
+                } catch (AnswerRealtimeBridgeUnavailableException ex) {
+                    meterRegistry.counter("noteweave.answer.events.bridge_unavailable", "operation", "read")
+                            .increment();
+                    LockSupport.parkNanos(Duration.ofSeconds(1).toNanos());
+                    if (Thread.currentThread().isInterrupted()) {
+                        return;
+                    }
+                    continue;
+                }
                 if (events.isEmpty()) {
                     LockSupport.parkNanos(Duration.ofMillis(250).toNanos());
                     if (Thread.currentThread().isInterrupted()) {
@@ -228,6 +239,15 @@ public class SessionEventMux {
             synchronized (channel) {
                 channel.bridgePumpRunning = false;
             }
+        }
+    }
+
+    private void publishToBridge(String runId, AnswerLiveEvent event) {
+        try {
+            realtimeBridge.publish(runId, event);
+        } catch (AnswerRealtimeBridgeUnavailableException ex) {
+            meterRegistry.counter("noteweave.answer.events.bridge_unavailable", "operation", "publish")
+                    .increment();
         }
     }
 

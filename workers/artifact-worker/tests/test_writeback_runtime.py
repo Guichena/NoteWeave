@@ -137,7 +137,7 @@ def test_debug_ack_writeback_request_should_support_failed_host_callback() -> No
             final_status="FAILED",
             target_locator="",
             error_code="HOST_WRITE_TIMEOUT",
-            error_message="host callback timed out while saving workspace source",
+            error_message="host callback token=top-secret failed at C:\\private\\writeback.log",
         )
         requests = debug_list_writeback_requests(version_id=result.version_snapshot.version_id)
     finally:
@@ -145,9 +145,12 @@ def test_debug_ack_writeback_request_should_support_failed_host_callback() -> No
 
     assert ack_response.request["status"] == "FAILED"
     assert ack_response.request["last_error_code"] == "HOST_WRITE_TIMEOUT"
-    assert "timed out" in ack_response.request["last_error_message"]
+    assert "top-secret" not in ack_response.request["last_error_message"]
+    assert "[REDACTED]" in ack_response.request["last_error_message"]
+    assert "[PATH_REDACTED]" in ack_response.request["last_error_message"]
     assert ack_response.receipt["status"] == "FAILED"
     assert ack_response.receipt["error_code"] == "HOST_WRITE_TIMEOUT"
+    assert ack_response.receipt["error_message"] == ack_response.request["last_error_message"]
     assert ack_response.request["delivery_attempts"][0]["ack_status"] == "FAILED"
     assert requests.requests[0]["status"] == "FAILED"
 
