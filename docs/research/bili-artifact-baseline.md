@@ -527,3 +527,7 @@ Source 身份批量复核加入 QA 本地回退与 NOTE 候选池，QA/NOTE Hydr
 ## C3 派生 Research Source 的 Artifact 输入门禁
 
 Artifact 新 Job 捕获来源时校验上游 Research Run；既有 Run 的 Worker 输入、Source 分窗及 Candidate 提交均复核冻结 Source 与上游引用。因而撤销的 Research 来源不会再通过已冻结的 `sample_text` 或分窗送给 Worker，损坏摘要也直接拒绝。`ContextV2ResearchContractTest` 使用同一派生 Source 先创建 Artifact Job，再破坏摘要及撤销来源，验证 Worker 输入拒绝和新 Job 不可创建。联跑 `ContextV2ResearchContractTest` **7**、`ArtifactWorkerControlServiceTest` **4**、`ArtifactCandidateTest` **6**、`ArtifactRollbackGateTest` **2**，共 **19 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。历史 Artifact Version 的已发布正文/文件读取是否随来源撤销而阻断，仍须与 Research 已发布内容的保留/删除策略一起确定。
+
+## P1.5 实际长文档后段事实回放
+
+Worker 将仓库的 `docs/Artifact-Skill执行架构.md`（约 25 KB 文件）按真实段落切为约 420 字符的连续窗口，每页取 4 个窗口；“Workflow History 兼容”位于第 12 个窗口之后。以“Workflow History 兼容 Activity 幂等”为查询，6 窗口/5 KB 选择预算仍取到该后段窗口，`material_resolution.selected_window_ids` 与产物 Citation 都保留其 ID，预算缺口标为 `SELECTION_BUDGET_REACHED`。`tests/test_material_resolver.py` **3 passed，0 failed**（1.79 秒）。这是对仓库真实长文档的确定性 Worker 回放，Host 的冻结 Snapshot 分页和撤销合同在既有 `artifactWindowPagesMustUseFrozenSnapshotAndRejectRevokedSource` 中覆盖；尚未用真实用户资料做人工质量评估，也未量测线上 Provider 生成质量。

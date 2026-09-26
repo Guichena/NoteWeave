@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 
 import pytest
 
@@ -56,3 +57,42 @@ def test_changed_window_content_is_rejected_before_generation() -> None:
         select_frozen_windows(query="changed", fetch_page=lambda cursor: {
             "windows": [tampered], "next_cursor": "",
         })
+
+
+def test_real_architecture_document_late_fact_reaches_frozen_artifact_citation() -> None:
+    document = (Path(__file__).resolve().parents[3] / "docs" / "Artifact-Skill执行架构.md").read_text(
+        encoding="utf-8"
+    )
+    paragraphs = document.splitlines(keepends=True)
+    chunks: list[str] = []
+    current = ""
+    for paragraph in paragraphs:
+        if current and len(current) + len(paragraph) > 420:
+            chunks.append(current)
+            current = ""
+        current += paragraph
+    if current:
+        chunks.append(current)
+    windows = [_window(index, content) for index, content in enumerate(chunks)]
+    late = next(window for window in windows if "Workflow History 兼容" in str(window["content"]))
+    assert int(late["chunk_no"]) > 12
+
+    def fetch(cursor: str) -> dict[str, object]:
+        start = int(cursor) if cursor else 0
+        end = min(start + 4, len(windows))
+        return {"windows": windows[start:end], "next_cursor": str(end) if end < len(windows) else ""}
+
+    selected, gap, cursor = select_frozen_windows(
+        query="Workflow History 兼容 Activity 幂等", fetch_page=fetch,
+        max_selected_windows=6, max_selected_bytes=5_000,
+    )
+    assert late["window_id"] in [window["window_id"] for window in selected]
+    assert gap == "SELECTION_BUDGET_REACHED"
+    assert cursor == ""
+
+    task = _build_resume_task_input()
+    task.source_scope[0].material_windows = selected
+    task.source_scope[0].material_gap = gap
+    _, result = run_artifact_task(task)
+    assert late["window_id"] in result.result_payload["material_resolution"][0]["selected_window_ids"]
+    assert late["window_id"] in result.citations[0]["source_window_ids"]
