@@ -143,4 +143,3 @@ final class VideoKnowledgePlanValidator {
         return new BusinessException("VIDEO_KNOWLEDGE_PLAN_INVALID", message, HttpStatus.CONFLICT);
     }
 }
-

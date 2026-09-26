@@ -191,3 +191,9 @@ Host 对带发布 Catalog 摘要的新 Run，要求 Candidate 同时携带 `arti
 新增 `artifact_video_knowledge_plan` 表，每个已冻结 Bundle 只允许一个不可变规划版本；同摘要重试返回原回执，不同内容冲突。Host 独立复核规划的 Bundle 摘要、分集、时间、树层级、字幕/画面覆盖和逐字证据，拒绝伪造 OCR 主张。Worker API 的提交与读取受 Outbox 投递令牌保护；跨任务读取沿用 Bundle 对 Workspace、视频、分 P 和冻结输入的约束。Worker 回调客户端已提供提交和读取适配方法，现有 PDF 默认运行尚不生成此规划。
 
 Host 编译通过；`Phase6ResearchArtifactContractTest` **52 个用例，44 执行通过、8 个既有跳过**，`ArtifactWorkerInputControllerTest` **5 passed**；新增错误分集读取门禁定向 **1 passed**。Worker 全套 **324 passed，33.65 秒**。当前缺自动规划任务的调用和失败恢复，也没有供博客/问答/PPTX 共同消费的发布路径；本批只闭合独立存储与访问契约。
+
+## P2 本地证据索引的运行时冻结
+
+视频自动采集在 Bundle 冻结后，用本地确定性代码建立 `TOPIC` 根节点和按画面、字幕分组的 `EVIDENCE_WINDOW`；节点只索引时间和引用，不产术语、语义断言或画面解释，因此不能称为类型化语义知识树。Worker 先读取已有 Host 规划，重试时复用并复核 Bundle 摘要；首次运行将本地索引提交到 Host。超过节点上限或规划服务暂不可用时记录 `knowledge_plan_gap`，保留旧 PDF 发布路径。此步骤没有把字幕或 OCR 送到外部模型。
+
+第一次 Callback 定向测试有 3 项模拟 Host 未实现新读取端点，夹具补齐后 Callback + 规划契约 **38 passed**；最终 Worker 全套 **328 passed，35.85 秒**。自动审批明确拒绝了把冻结字幕和 OCR 资料接入外部 LLM 规划的运行时改动，理由是外部接收方及资料外发范围尚未获明确授权；因此外部语义规划保持未接通，后续若需要该能力必须先获得授权。P3/P4 仍未实现，当前本地索引不能替代语义树。

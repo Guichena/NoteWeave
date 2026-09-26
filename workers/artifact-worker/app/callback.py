@@ -33,7 +33,7 @@ from app.models import ArtifactProgressEvent, ArtifactTaskInput, ArtifactTaskRes
 from app.candidate_file_manifest import build_required_files
 from app.export_runtime import export_artifact_if_required, validate_frozen_video_scope
 from app.video_material_bundle import VideoMaterialBundleV1
-from app.video_knowledge_plan import VideoKnowledgePlanV1
+from app.video_knowledge_plan import VideoKnowledgePlanV1, build_local_evidence_plan
 from app.video_subtitle_material import subtitle_bundle_from_provider
 from app.video_visual_material import merge_captured_video_frames
 from app.video_frame_observation import verify_frame_observation_batch
@@ -550,6 +550,7 @@ def _attach_frozen_video_material(
     candidate = result.result_payload.get("candidate")
     if not isinstance(candidate, dict):
         raise ValueError("video material requires a Worker Candidate")
+    _freeze_local_evidence_plan(task_id, result, callback_client, bundle, str(receipt["id"]))
     if bundle.frames:
         root = resolve_mcp_sandbox_root() / "bilibili-render-pdf" / "exports" / task_id
         frame_paths = {file.file_id: root / f"{file.file_id}.png" for file in bundle.files}
@@ -558,6 +559,45 @@ def _attach_frozen_video_material(
         "id": receipt["id"], "bundle_id": receipt["bundle_id"],
         "bundle_version": receipt["bundle_version"],
         "content_digest": receipt["content_digest"],
+    }
+
+
+def _freeze_local_evidence_plan(
+    task_id: str, result: ArtifactTaskResult, callback_client: ArtifactCallbackClient,
+    bundle: VideoMaterialBundleV1, bundle_row_id: str,
+) -> None:
+    try:
+        plan = callback_client.fetch_video_knowledge_plan(task_id, bundle_row_id)
+    except ArtifactCallbackHttpError as exc:
+        if exc.status_code != 404:
+            logger.warning("Knowledge plan lookup failed for task %s: %s", task_id,
+                           sanitize_error_message(str(exc)))
+            result.result_payload["knowledge_plan_gap"] = "HOST_PLAN_LOOKUP_UNAVAILABLE"
+            return
+        try:
+            plan = build_local_evidence_plan(bundle)
+        except ValueError:
+            result.result_payload["knowledge_plan_gap"] = "EVIDENCE_WINDOW_LIMIT"
+            return
+        try:
+            frozen = callback_client.publish_video_knowledge_plan(task_id, bundle_row_id, plan)
+        except ArtifactCallbackHttpError as exc:
+            logger.warning("Knowledge plan freeze failed for task %s: %s", task_id,
+                           sanitize_error_message(str(exc)))
+            result.result_payload["knowledge_plan_gap"] = "HOST_PLAN_FREEZE_UNAVAILABLE"
+            return
+        plan_id = str(frozen["id"])
+    else:
+        plan.verify_against_bundle(bundle)
+        plan_id = ""
+    result.result_payload["knowledge_plan"] = {
+        "schema_version": plan.schema_version,
+        "bundle_content_digest": plan.bundle_content_digest,
+        "content_digest": plan.content_digest(),
+        "plan_id": plan_id,
+        "mode": "LOCAL_EVIDENCE_INDEX" if all(
+            node.kind in {"TOPIC", "EVIDENCE_WINDOW"} for node in plan.nodes
+        ) else "FROZEN_PLAN",
     }
 
 

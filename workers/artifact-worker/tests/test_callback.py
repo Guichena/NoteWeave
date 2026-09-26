@@ -388,12 +388,21 @@ def test_verified_provider_material_is_bound_to_candidate(tmp_path, monkeypatch,
                     "bundle_version": bundle.bundle_version,
                     "content_digest": bundle.content_digest()}
 
+        def fetch_video_knowledge_plan(self, task_id, bundle_row_id):
+            raise callback_module.ArtifactCallbackHttpError(404, "not frozen")
+
+        def publish_video_knowledge_plan(self, task_id, bundle_row_id, plan):
+            plan.verify_against_bundle(published[-1])
+            return {"id": "plan-1", "bundle_row_id": bundle_row_id,
+                    "content_digest": plan.content_digest()}
+
     result = SimpleNamespace(result_payload={"candidate": {}})
     callback_module._attach_frozen_video_material(
         task.task_id, task, result, FakeJavaClient("http://java-host:8081"))
 
     assert len(published) == 1
     assert published[0].part == 2
+    assert result.result_payload["knowledge_plan"]["mode"] == "LOCAL_EVIDENCE_INDEX"
     assert result.result_payload["candidate"]["video_material"] == {
         "id": "material-1", "bundle_id": "video-material-task-a-waiting",
         "bundle_version": 1, "content_digest": published[0].content_digest(),
@@ -843,6 +852,14 @@ def test_resumed_video_worker_publishes_full_subtitle_before_candidate_callback(
             return {"id": "material-1", "task_id": task_id, "workspace_id": bundle.workspace_id,
                     "bundle_id": bundle.bundle_id, "bundle_version": bundle.bundle_version,
                     "content_digest": bundle.content_digest()}
+
+        def fetch_video_knowledge_plan(self, task_id, bundle_row_id):
+            raise callback_module.ArtifactCallbackHttpError(404, "not frozen")
+
+        def publish_video_knowledge_plan(self, task_id, bundle_row_id, plan):
+            plan.verify_against_bundle(self.material)
+            return {"id": "plan-1", "bundle_row_id": bundle_row_id,
+                    "content_digest": plan.content_digest()}
 
         def send_complete(self, task_id, result):
             self.completed = result

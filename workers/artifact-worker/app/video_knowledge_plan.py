@@ -183,3 +183,42 @@ def plan_video_knowledge(
     plan = VideoKnowledgePlanV1.model_validate(candidate)
     plan.verify_against_bundle(bundle)
     return plan
+
+
+def build_local_evidence_plan(bundle: VideoMaterialBundleV1) -> VideoKnowledgePlanV1:
+    """Freeze a complete evidence index without interpreting subtitle or image meaning."""
+    nodes: list[dict[str, object]] = [{
+        "node_id": "source", "parent_id": "", "kind": "TOPIC",
+        "title": "Video source evidence", "start_ms": 0, "end_ms": bundle.duration_ms,
+        "missing": list(bundle.coverage_gaps) if not bundle.frames
+        and not bundle.transcript_segments else [],
+    }]
+    for index, frame in enumerate(bundle.frames, start=1):
+        nodes.append({
+            "node_id": f"frame-window-{index:03d}", "parent_id": "source",
+            "kind": "EVIDENCE_WINDOW", "title": f"Frame at {frame.at_ms} ms",
+            "start_ms": frame.at_ms,
+            "end_ms": min(bundle.duration_ms, frame.at_ms + 1),
+            "frame_ids": [frame.frame_id],
+            "missing": ["VISUAL_SEMANTICS_UNVERIFIED"],
+        })
+    segments = bundle.transcript_segments
+    for offset in range(0, len(segments), 128):
+        group = segments[offset:offset + 128]
+        nodes.append({
+            "node_id": f"subtitle-window-{offset // 128 + 1:03d}",
+            "parent_id": "source", "kind": "EVIDENCE_WINDOW",
+            "title": f"Subtitle cues {offset + 1}–{offset + len(group)}",
+            "start_ms": min(item.start_ms for item in group),
+            "end_ms": max(item.end_ms for item in group),
+            "transcript_segment_ids": [item.segment_id for item in group],
+        })
+    if len(nodes) > 128:
+        raise ValueError("video evidence exceeds knowledge plan window limit")
+    plan = VideoKnowledgePlanV1.model_validate({
+        "bundle_content_digest": bundle.content_digest(),
+        "bvid": bundle.bvid, "part": bundle.part,
+        "duration_ms": bundle.duration_ms, "nodes": nodes,
+    })
+    plan.verify_against_bundle(bundle)
+    return plan

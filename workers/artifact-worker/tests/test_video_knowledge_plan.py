@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from copy import deepcopy
 import json
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
 
 from app.llm_client import FakeLlmClient
-from app.video_knowledge_plan import VideoKnowledgePlanV1, plan_video_knowledge
+from app.callback import ArtifactCallbackHttpError, _freeze_local_evidence_plan
+from app.video_knowledge_plan import (
+    VideoKnowledgePlanV1, build_local_evidence_plan, plan_video_knowledge,
+)
 from app.video_material_bundle import VideoMaterialBundleV1
 
 
@@ -134,3 +138,63 @@ def test_planner_rejects_unusable_response() -> None:
         plan_video_knowledge(bundle, FakeLlmClient({"video_knowledge_plan": ""}))
     with pytest.raises(ValueError, match="invalid JSON"):
         plan_video_knowledge(bundle, FakeLlmClient({"video_knowledge_plan": "{"}))
+
+
+def test_local_evidence_plan_covers_frozen_material_without_semantic_claims() -> None:
+    bundle = _bundle()
+    plan = build_local_evidence_plan(bundle)
+
+    assert [node.kind for node in plan.nodes] == [
+        "TOPIC", "EVIDENCE_WINDOW", "EVIDENCE_WINDOW"]
+    assert plan.nodes[1].frame_ids == ["f1"]
+    assert plan.nodes[2].transcript_segment_ids == ["s1"]
+    assert all(not node.claims and not node.terms for node in plan.nodes)
+    assert plan.content_digest() == build_local_evidence_plan(bundle).content_digest()
+
+
+def test_local_evidence_plan_marks_empty_bundle_coverage() -> None:
+    value = _bundle().model_dump(mode="json")
+    value.update(subtitle_source="NONE", transcript_original="", transcript_corrected="",
+                 transcript_segments=[], frames=[], files=[], frame_observations=None,
+                 knowledge_nodes=[], coverage_gaps=["NO_SUBTITLE", "NO_FRAMES"])
+    plan = build_local_evidence_plan(VideoMaterialBundleV1.model_validate(value))
+    assert plan.nodes[0].missing == ["NO_SUBTITLE", "NO_FRAMES"]
+
+
+def test_local_plan_freeze_reuses_host_plan_after_retry() -> None:
+    bundle = _bundle()
+
+    class Store:
+        plan = None
+        submissions = 0
+
+        def fetch_video_knowledge_plan(self, task_id, bundle_row_id):
+            if self.plan is None:
+                raise ArtifactCallbackHttpError(404, "not frozen")
+            return self.plan
+
+        def publish_video_knowledge_plan(self, task_id, bundle_row_id, plan):
+            self.submissions += 1
+            self.plan = plan
+            return {"id": "plan-1", "bundle_row_id": bundle_row_id,
+                    "content_digest": plan.content_digest()}
+
+    store = Store()
+    first = SimpleNamespace(result_payload={})
+    second = SimpleNamespace(result_payload={})
+    _freeze_local_evidence_plan("task-1", first, store, bundle, "row-1")
+    _freeze_local_evidence_plan("task-1", second, store, bundle, "row-1")
+
+    assert store.submissions == 1
+    assert second.result_payload["knowledge_plan"]["content_digest"] == \
+        first.result_payload["knowledge_plan"]["content_digest"]
+
+
+def test_local_plan_freeze_failure_keeps_pdf_path_available() -> None:
+    class Store:
+        def fetch_video_knowledge_plan(self, task_id, bundle_row_id):
+            raise ArtifactCallbackHttpError(503, "temporary unavailable")
+
+    result = SimpleNamespace(result_payload={})
+    _freeze_local_evidence_plan("task-1", result, Store(), _bundle(), "row-1")
+    assert result.result_payload["knowledge_plan_gap"] == "HOST_PLAN_LOOKUP_UNAVAILABLE"
