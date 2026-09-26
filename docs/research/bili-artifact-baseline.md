@@ -301,3 +301,9 @@ Host 集成回放创建两个独立 Job，引同一个 PDF Job 冻结的素材�
 ## P4 逐页预览的转换与故障门禁
 
 新增隔离 LibreOffice Profile 的 PPTX→PDF 转换入口，并使用 Poppler 检查 PDF 页数、逐页输出 PNG、重新解码图片、核对最低尺寸；转换器失败、缺页、多页或损坏页均拒绝。当前开发机没有 LibreOffice，所以自动测试使用生成的 PDF 验证逐页栅格化及多页拒绝，定向 **5 passed，1.64 秒**；Worker 全套 **346 passed，33.88 秒**。另外用本机 PowerPoint 对相同的合成 PPTX 实际转成 PDF，再走相同栅格化入口得到一张 PNG，人工查看标题、原画面、主张和页脚均可见且无明显溢出。PowerPoint 冒烟验证不能替代部署环境的 LibreOffice 回归；上线还需固定真实视频样本与逐页视觉验收。
+
+## P4 冻结资料到 PPTX Candidate 的 Worker 路径
+
+新增 `video_learning_deck` 专用 Worker 入口，从 Host 冻结 Bundle/Plan 生成通用内容 IR、页清单和 Markdown；回调前按受控文件 ID 读取画面并与冻结摘要核对，渲染原图 PPTX 及逐页预览，最后把 Markdown、PPTX 与每页 PNG 的角色、序号、MIME、大小和摘要写入同一个 Candidate。清单在 Worker 侧打开 ZIP 和 PNG、检查每页对应的文件数与路径。若预览转换失败，不发送完成回调。这里的测试用合成 PDF/PNG 代替缺失的 LibreOffice，明确只覆盖 Candidate 组装；实际转换另由上一批的 PowerPoint 冒烟记录覆盖。
+
+定向 **7 passed，0.79 秒**；Worker 全套 **348 passed，33.42 秒**。Host 对页清单的专用验证、发布目录注册、真实视频与部署转换器验收仍待完成，因此这批尚未开放生产 Skill。

@@ -30,10 +30,13 @@ from app.capability_wait_queue import (
     wake_waiting_task,
 )
 from app.models import ArtifactProgressEvent, ArtifactTaskInput, ArtifactTaskResult, ArtifactSectionDraft
-from app.candidate_file_manifest import build_required_files
+from app.candidate_file_manifest import build_required_files, build_video_deck_required_files
 from app.export_runtime import export_artifact_if_required, validate_frozen_video_scope
 from app.video_material_bundle import VideoMaterialBundleV1
 from app.video_knowledge_plan import VideoKnowledgePlanV1, build_local_evidence_plan
+from app.video_deck_ir import VideoDeckIRV1
+from app.video_deck_render import render_original_video_deck
+from app.video_deck_preview import render_original_video_deck_previews
 from app.video_subtitle_material import subtitle_bundle_from_provider
 from app.video_visual_material import merge_captured_video_frames
 from app.video_frame_observation import verify_frame_observation_batch
@@ -354,7 +357,8 @@ def run_artifact_task_with_callbacks(
             bundle = callback_client.fetch_video_material(task_id, referenced_id)
             validate_frozen_video_scope(task_input, bundle)
             task_input.frozen_video_material = bundle.model_dump(mode="json")
-            if task_input.input_payload.skill_key in {"knowledge_blog", "interview_qa"}:
+            if task_input.input_payload.skill_key in {
+                    "knowledge_blog", "interview_qa", "video_learning_deck"}:
                 plan = callback_client.fetch_video_knowledge_plan(
                     task_id, referenced_id, referenced=True)
                 plan.verify_against_bundle(bundle)
@@ -505,6 +509,21 @@ def _attach_frozen_video_material(
             contents = callback_client.fetch_video_material_files(task_id, bundle, referenced_id)
             frame_paths = _stage_frozen_video_frames(task_id, referenced_id, bundle, contents)
             _rerender_pdf_with_frozen_frames(task_input, result, bundle, frame_paths)
+        if task_input.input_payload.skill_key == "video_learning_deck":
+            frozen = VideoMaterialBundleV1.model_validate(task_input.frozen_video_material)
+            plan = VideoKnowledgePlanV1.model_validate(task_input.frozen_video_knowledge_plan)
+            if frozen.content_digest() != bundle.content_digest():
+                raise ValueError("frozen deck material differs from the referenced Host bundle")
+            contents = callback_client.fetch_video_material_files(task_id, bundle, referenced_id)
+            ir = VideoDeckIRV1.model_validate(result.result_payload["video_deck_ir"])
+            pptx = render_original_video_deck(task_id, ir, bundle, plan, contents.__getitem__)
+            previews = render_original_video_deck_previews(pptx, ir)
+            candidate["required_files"] = build_video_deck_required_files(
+                str(result.result_payload["markdown"]), pptx, previews)
+            result.result_payload["export_trace"] = {
+                "status": "COMPILED", "format": "PPTX",
+                "file_name": pptx.name, "preview_count": len(previews),
+            }
         candidate["video_material"] = {
             "id": referenced_id, "bundle_id": bundle.bundle_id,
             "bundle_version": bundle.bundle_version,

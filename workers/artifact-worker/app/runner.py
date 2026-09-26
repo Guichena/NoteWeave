@@ -47,6 +47,7 @@ from app.llm_client import build_default_llm_client
 from app.verifier import build_output_contract_trace, verify_artifact_output
 from app.writeback_runtime import register_writeback_request
 from app.video_derived_runtime import run_video_derived_text_task
+from app.video_deck_runtime import run_video_deck_task
 
 
 PHASE_SEQUENCE = [
@@ -67,6 +68,8 @@ def run_artifact_task(task_input: ArtifactTaskInput) -> tuple[list[ArtifactProgr
     _require_published_catalog(task_input)
     if task_input.input_payload.skill_key in {"knowledge_blog", "interview_qa"}:
         return run_video_derived_text_task(task_input)
+    if task_input.input_payload.skill_key == "video_learning_deck":
+        return run_video_deck_task(task_input)
     return _run_artifact_task(task_input)
 
 

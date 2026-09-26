@@ -57,4 +57,4 @@ def render_original_video_deck_previews(pptx: Path, ir: VideoDeckIRV1) -> list[P
         pdf = temporary / f"{pptx.stem}.pdf"
         if not pdf.is_file() or pdf.stat().st_size == 0:
             raise ValueError("video deck converter did not produce a PDF")
-        return rasterize_deck_pdf(pdf, ir, pptx.parent / "previews")
+        return rasterize_deck_pdf(pdf, ir, pptx.parent)

@@ -11,6 +11,11 @@ from reportlab.pdfgen import canvas
 from app.video_deck_ir import VideoDeckIRV1, build_video_deck_ir
 from app.video_deck_render import render_original_video_deck, verify_original_video_deck
 from app.video_deck_preview import rasterize_deck_pdf
+from app.video_deck_runtime import run_video_deck_task
+from app.candidate_file_manifest import build_video_deck_required_files
+from app.artifact_skill_catalog import CATALOG_DIGEST
+from app.models import ArtifactTaskInput
+from app.callback import JavaArtifactCallbackClient, run_artifact_task_with_callbacks
 from app.video_knowledge_plan import VideoKnowledgePlanV1, build_local_evidence_plan
 from app.video_material_bundle import VideoMaterialBundleV1
 
@@ -123,3 +128,100 @@ def test_deck_pdf_rasterizer_checks_every_page(tmp_path) -> None:
     document.save()
     with pytest.raises(ValueError, match="page count"):
         rasterize_deck_pdf(two_pages, ir, tmp_path / "other-previews")
+
+
+def test_frozen_deck_candidate_and_required_file_manifest(tmp_path, monkeypatch) -> None:
+    output = BytesIO()
+    Image.new("RGB", (640, 360), "navy").save(output, format="PNG")
+    frame_bytes = output.getvalue()
+    bundle, plan = _frozen_source(frame_bytes)
+    task = ArtifactTaskInput.model_validate({
+        "task_id": "task-deck", "workspace_id": bundle.workspace_id,
+        "target_id": "job-deck", "input_snapshot_id": "snapshot-deck",
+        "catalog_digest": CATALOG_DIGEST,
+        "control_pack": {"pack_type": "ARTIFACT", "target_key": "video_learning_deck",
+                         "task_neighborhood": "ARTIFACT"},
+        "input_payload": {"skill_key": "video_learning_deck", "inputs": {
+            "url": "https://www.bilibili.com/video/BV1234567890",
+            "video_material_bundle_id": "bundle-row-1"}},
+        "frozen_video_material": bundle.model_dump(mode="json"),
+        "frozen_video_knowledge_plan": plan.model_dump(mode="json"),
+    })
+    _, result = run_video_deck_task(task)
+    assert result.result_payload["content_ir"]["artifact_type"] == "SLIDE_DECK"
+    assert result.result_payload["export_trace"]["status"] == "PENDING"
+    ir = VideoDeckIRV1.model_validate(result.result_payload["video_deck_ir"])
+    monkeypatch.setenv("NOTEWEAVE_MCP_SANDBOX_ROOT", str(tmp_path))
+    pptx = render_original_video_deck(task.task_id, ir, bundle, plan,
+                                      lambda _: frame_bytes)
+    preview = pptx.parent / "slide-001.png"
+    Image.new("RGB", (1600, 900), "white").save(preview)
+    files = build_video_deck_required_files(
+        result.result_payload["markdown"], pptx, [preview])
+    assert [item["role"] for item in files] == [
+        "PRIMARY_MARKDOWN", "PRIMARY_PPTX", "SLIDE_PREVIEW"]
+    assert files[1]["checksum_sha256"] == hashlib.sha256(pptx.read_bytes()).hexdigest()
+    with pytest.raises(ValueError, match="path or order"):
+        build_video_deck_required_files(result.result_payload["markdown"], pptx,
+                                        [pptx.parent / "slide-002.png"])
+
+
+def test_callback_attaches_complete_deck_files_from_frozen_host_material(
+        tmp_path, monkeypatch) -> None:
+    output = BytesIO()
+    Image.new("RGB", (640, 360), "navy").save(output, format="PNG")
+    frame_bytes = output.getvalue()
+    bundle, plan = _frozen_source(frame_bytes)
+    task = ArtifactTaskInput.model_validate({
+        "task_id": "task-deck-callback", "workspace_id": bundle.workspace_id,
+        "target_id": "job-deck", "input_snapshot_id": "snapshot-deck",
+        "catalog_digest": CATALOG_DIGEST,
+        "control_pack": {"pack_type": "ARTIFACT", "target_key": "video_learning_deck",
+                         "task_neighborhood": "ARTIFACT"},
+        "input_payload": {"skill_key": "video_learning_deck", "inputs": {
+            "url": "https://www.bilibili.com/video/BV1234567890?p=2",
+            "video_material_bundle_id": "bundle-row-1"}},
+    })
+
+    class Host(JavaArtifactCallbackClient):
+        def __init__(self):
+            super().__init__("http://host.local")
+            self.completed = []
+
+        def fetch_task_input(self, task_id):
+            return task
+
+        def fetch_video_material(self, task_id, bundle_row_id=""):
+            return bundle
+
+        def fetch_video_knowledge_plan(self, task_id, bundle_row_id, *, referenced=False):
+            assert referenced
+            return plan
+
+        def fetch_video_material_files(self, task_id, material, bundle_row_id=""):
+            assert material == bundle and bundle_row_id == "bundle-row-1"
+            return {"file-1": frame_bytes}
+
+        def send_progress(self, task_id, event):
+            pass
+
+        def send_complete(self, task_id, result):
+            self.completed.append(result)
+
+    def preview_stub(pptx, ir):
+        path = pptx.parent / "slide-001.png"
+        Image.new("RGB", (1600, 900), "white").save(path)
+        return [path]
+
+    monkeypatch.setenv("NOTEWEAVE_MCP_SANDBOX_ROOT", str(tmp_path))
+    monkeypatch.setattr("app.callback.render_original_video_deck_previews", preview_stub)
+    host = Host()
+    response = run_artifact_task_with_callbacks(task.task_id, host)
+    assert response.status == "COMPLETED"
+    assert len(host.completed) == 1
+    payload = host.completed[0].result_payload
+    assert payload["export_trace"]["preview_count"] == 1
+    assert [file["role"] for file in payload["candidate"]["required_files"]] == [
+        "PRIMARY_MARKDOWN", "PRIMARY_PPTX", "SLIDE_PREVIEW"]
+    assert payload["candidate"]["video_material"]["content_digest"] == \
+        bundle.content_digest()
