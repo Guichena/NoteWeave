@@ -207,3 +207,9 @@ Host 编译通过；`Phase6ResearchArtifactContractTest` **52 个用例，44 执
 Host 原本只校验通用 `artifact-content-v1` 的内容摘要、Markdown 摘要和章节，却不检查 `artifact_type` 是否属于当前 Skill。现在对 Run 快照中记录的 Catalog 摘要与当前发布目录一致的任务，在 Candidate 提交和回放两条路径上，用目录中的 Action Key 校验 `artifact_type`；旧目录摘要不一致的历史 Run 继续按原有内容门禁回放。现有 `artifact_job.action_key` 在 Skill 创建路径为空，不能作为该门禁的依据；首次测试据此修正为读取已冻结 Catalog 摘要并查对应目录绑定。
 
 新增摘要正确但 `artifact_type` 错误的完成回调，确认 Host 返回 `ARTIFACT_CONTENT_IR_INVALID` 且没有产生 Version；同时修正 B 站 PDF 测试夹具，使其使用目录定义的 `COURSE_NOTES`。首轮 Host 全批因测试夹具将类型写成旧内部名有 1 项失败，修正后 `Phase6ResearchArtifactContractTest` **52 个用例，44 执行通过、8 个既有跳过**，`ArtifactCandidateTest` **6 passed**。P3/P4 的专用内容字段、章节结构和文件契约仍须另行实现；此批只锁定当前通用 IR 的 Skill 身份。
+
+## P1 章节证据引用必须对应本次资料
+
+Worker 原先把任何非空 `source_refs` 都统计为已覆盖，即使引用标题不在本次取得的资料中。现在覆盖统计只接受本次 Canonical Content Object 的标题，且该 CCO 必须带 `source:` 来源 trace；未知标题标为 `INVALID_REF`，章节计入缺证据。合并 CCO 可作为引用标题，但必须能追溯到其组成来源，不能把没有来源的任意合并标题当作证据。外部来源与已入库 Source 使用同一检查。
+
+首轮 Runner 105 项中 14 项失败，原因是现有生成节点合法引用了 `Mixed Context Bundle`；核对运行时 CCO 的来源 trace 后补充该允许条件。最终 Runner **105 passed**，Worker 全套 **329 passed，36.24 秒**。此检查证明引用标识存在于本次 Worker 已取得的资料，不证明正文所有事实正确；P3/P4 仍需逐条主张与具体证据的专用校验。

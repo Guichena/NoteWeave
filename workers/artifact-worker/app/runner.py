@@ -358,6 +358,7 @@ def _run_artifact_task(
         task_input=task_input,
         plan=plan,
         sections=repaired_sections,
+        content_objects=canonical_content_objects,
     )
     result.result_payload["evidence_coverage"] = evidence_coverage.model_dump(mode="json")
     output_contract_trace = build_output_contract_trace(result, plan, repaired_checks)
@@ -1104,23 +1105,27 @@ def _build_evidence_coverage(
     task_input: ArtifactTaskInput,
     plan: object,
     sections: list[object],
+    content_objects: list[CanonicalContentObject],
 ) -> EvidenceCoverageReport:
-    source_title_to_id = {
-        source.title: source.source_id
-        for source in task_input.source_scope
-    }
+    source_title_to_ids: dict[str, list[str]] = {}
+    for item in content_objects:
+        ids = [trace.removeprefix("source:") for trace in item.source_trace
+               if trace.startswith("source:") and trace != "source:"]
+        if ids:
+            source_title_to_ids.setdefault(item.title, []).extend(ids)
     section_evidence: list[dict[str, object]] = []
     sections_missing_evidence: list[str] = []
     supporting_source_ids: list[str] = []
 
     for section in sections:
         source_refs = list(section.source_refs)
+        invalid_refs = [ref for ref in source_refs if ref not in source_title_to_ids]
         source_ids = [
-            source_title_to_id[source_ref]
+            source_id
             for source_ref in source_refs
-            if source_ref in source_title_to_id
+            for source_id in source_title_to_ids.get(source_ref, [])
         ]
-        if source_refs:
+        if source_refs and not invalid_refs:
             supporting_source_ids.extend(source_ids)
         else:
             sections_missing_evidence.append(section.heading)
@@ -1129,7 +1134,9 @@ def _build_evidence_coverage(
                 "section_heading": section.heading,
                 "source_refs": source_refs,
                 "source_ids": source_ids,
-                "evidence_status": "COVERED" if source_refs else "MISSING",
+                "evidence_status": "INVALID_REF" if invalid_refs else
+                    ("COVERED" if source_refs else "MISSING"),
+                "invalid_refs": invalid_refs,
             }
         )
 
@@ -1153,13 +1160,13 @@ def _build_evidence_coverage(
     ]
     if required_density == "HIGH":
         minimum_covered_sections = section_count
-        minimum_unique_sources = min(2, len(task_input.source_scope))
+        minimum_unique_sources = min(2, len(source_title_to_ids))
     elif required_density == "MEDIUM":
         minimum_covered_sections = section_count
-        minimum_unique_sources = 1 if task_input.source_scope else 0
+        minimum_unique_sources = 1 if source_title_to_ids else 0
     else:
         minimum_covered_sections = 1 if section_count else 0
-        minimum_unique_sources = 1 if task_input.source_scope else 0
+        minimum_unique_sources = 1 if source_title_to_ids else 0
 
     if covered_section_count < minimum_covered_sections:
         status = "FAIL"

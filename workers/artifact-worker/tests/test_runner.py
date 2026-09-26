@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from types import SimpleNamespace
 
 import app.action_compat as action_compat_module
 import app.compiler as compiler_module
@@ -23,6 +24,7 @@ from app.models import (
     ArtifactSkillDefinition,
     ArtifactTaskInput,
     ArtifactTaskResult,
+    CanonicalContentObject,
     ArtifactVersionSnapshot,
     ArtifactVerificationResult,
     CustomProductionActionRegistration,
@@ -3986,3 +3988,28 @@ def test_run_artifact_task_should_emit_writeback_preview_for_allowed_mode() -> N
     assert preview["target_locator_preview"].startswith("workspace-source://")
     assert result.result_payload["writeback_request"]["request_id"] == preview["request_id"]
     assert "- Writeback gate: ALLOW (SAVE_AS_SOURCE)" in result.result_payload["markdown"]
+
+
+def test_evidence_coverage_rejects_unknown_source_reference() -> None:
+    task_input = _build_resume_task_input()
+    material = CanonicalContentObject(
+        cco_id="cco-1", kind="WORKSPACE_SOURCE", title="Verified source",
+        plain_text="verified text", source_trace=["workspace:ws-artifact-1", "source:src-1"],
+    )
+    plan = SimpleNamespace(evidence_gate=SimpleNamespace(required_citation_density="HIGH"))
+    sections = [ArtifactSectionDraft(
+        heading="Claim", body="A factual claim", source_refs=["Invented source"])]
+
+    report = runner_module._build_evidence_coverage(
+        task_input=task_input, plan=plan, sections=sections, content_objects=[material])
+
+    assert report.status == "FAIL"
+    assert report.covered_section_count == 0
+    assert report.sections_missing_evidence == ["Claim"]
+    assert report.section_evidence[0]["invalid_refs"] == ["Invented source"]
+
+    sections[0].source_refs = ["Verified source"]
+    valid = runner_module._build_evidence_coverage(
+        task_input=task_input, plan=plan, sections=sections, content_objects=[material])
+    assert valid.status == "PASS"
+    assert valid.supporting_source_ids == ["src-1"]
