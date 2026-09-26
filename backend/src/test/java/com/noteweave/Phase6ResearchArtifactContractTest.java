@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.artifact.ArtifactJobService;
 import com.noteweave.artifact.ArtifactExportService;
+import com.noteweave.artifact.ArtifactWorkerExportClient;
 import com.noteweave.artifact.ArtifactVersionDetailResponse;
 import com.noteweave.answer.ConversationEventMux;
 import com.noteweave.answer.ConversationLiveEvent;
@@ -63,6 +64,9 @@ class Phase6ResearchArtifactContractTest {
 
     @Autowired
     private ArtifactExportService artifactExportService;
+
+    @Autowired
+    private ArtifactWorkerExportClient artifactWorkerExportClient;
 
     @Autowired
     private org.springframework.transaction.PlatformTransactionManager transactionManager;
@@ -1223,6 +1227,58 @@ class Phase6ResearchArtifactContractTest {
         artifactExportService.reconcileDegradedFiles();
         assertThat(jdbcTemplate.queryForObject("select delivery_status from artifact_version where id = ?",
                 String.class, versionId)).isEqualTo("READY");
+    }
+
+    @Test
+    void pdfCandidateManifestMustMatchFetchedPdfBytesBeforeVersionPublication() throws Exception {
+        String workspaceId = createWorkspace();
+        MvcResult create = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "bilibili_course_note_pdf",
+                                "user_requirement", "Verify the PDF manifest",
+                                "inputs", Map.of("language", "zh-CN",
+                                        "url", "https://www.bilibili.com/video/BV1NoteWeaveDemo")
+                        ))))
+                .andExpect(status().isOk()).andReturn();
+        JsonNode created = objectMapper.readTree(create.getResponse().getContentAsString()).path("data");
+        String taskId = created.path("task_id").asText();
+        String snapshotId = objectMapper.readTree(mockMvc.perform(get(
+                        "/internal/worker/artifact-tasks/{taskId}/input", taskId))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString())
+                .path("data").path("input_snapshot_id").asText();
+        String markdown = "# PDF manifest check";
+        String markdownHash = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest(markdown.getBytes(StandardCharsets.UTF_8)));
+        String candidateId = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest((taskId + ":" + snapshotId + ":" + markdownHash)
+                        .getBytes(StandardCharsets.UTF_8)));
+        byte[] pdf = artifactWorkerExportClient.fetch(taskId, "course-notes.pdf");
+        Map<String, Object> candidate = Map.of(
+                "task_id", taskId, "input_snapshot_id", snapshotId,
+                "content_sha256", markdownHash, "candidate_id", candidateId,
+                "required_files", List.of(
+                        Map.of("role", "PRIMARY_MARKDOWN", "variant", "", "sequence_no", 0,
+                                "file_name", "content.md", "media_type", "text/markdown; charset=UTF-8",
+                                "size_bytes", markdown.getBytes(StandardCharsets.UTF_8).length,
+                                "checksum_sha256", markdownHash),
+                        Map.of("role", "PRIMARY_PDF", "variant", "", "sequence_no", 0,
+                                "file_name", "course-notes.pdf", "media_type", "application/pdf",
+                                "size_bytes", pdf.length, "checksum_sha256", "0".repeat(64))));
+        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "pdf-manifest-invalid:" + taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "result_type", "MARKDOWN", "result_title", "PDF manifest check",
+                                "result_payload", Map.of("markdown", markdown, "candidate", candidate,
+                                        "verification", Map.of("status", "PASS"),
+                                        "export_trace", Map.of("status", "COMPILED",
+                                                "file_name", "course-notes.pdf")),
+                                "trace_summary", "PDF manifest mismatch test", "citations", List.of()))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ARTIFACT_FILE_MANIFEST_INVALID"));
+        assertThat(jdbcTemplate.queryForObject("select count(*) from artifact_version where artifact_job_id = ?",
+                Integer.class, created.path("artifact_job_id").asText())).isZero();
     }
 
     @Test
