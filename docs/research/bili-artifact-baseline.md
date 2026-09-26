@@ -387,3 +387,9 @@ V123 给 `artifact_video_material_bundle` 增加互斥来源：保留旧 `artifa
 首次定向测试在嵌套 JDBC lambda 中复用了变量名，**编译失败**；修正后 V123 在 H2 成功应用。`VideoLearningRequestRepositoryContractTest` **6 passed**，覆盖无占位 PDF Job 冻结、相同内容重放、不同内容冲突、Plan 重放、Task 未完成时 READY 拒绝、完成后 READY、取消后保持 READY；旧 PDF Bundle 的 `Phase6ResearchArtifactContractTest#observedVideoMaterialBindsOcrEvidenceToFrozenFrameBytes` **1 passed**。新父资料入口目前仅是内部 Service；专用 Worker 命令、回调、对外创建 API 和子 Job 协调尚未实现。
 
 随后给父资料 Bundle/Plan 写入和父 READY 晋升增加创建者当前权限复核：Workspace、用户及成员必须 ACTIVE，角色仍为 OWNER/EDITOR。契约在 Bundle 已冻结后暂停成员权限，Plan 提交被拒；恢复后 Plan 成功；Task 完成后再次暂停，READY 晋升被拒，恢复后才成功。`VideoLearningRequestRepositoryContractTest` **6 passed，0 failed/0 error/0 skipped**。
+
+## P6 父请求创建事务与命令区分
+
+新增显式四选父请求 POST、幂等客户端请求 ID、同事务 `VIDEO_MATERIAL` Task 与 Outbox，素材任务占用 Artifact 工作量配额；子 Artifact Job 仍须等待资料 READY。Outbox Kafka 发布器给资料任务发 `video-material-command.v1`，旧命令继续发 `artifact-command.v1`，命令只含 Task ID 与投递令牌，不带 URL 或用户正文。创建入口由 `noteweave.video-learning.enabled` 控制，默认 **false**，因为 Worker 尚未消费资料任务命令，当前不能对用户开放功能。
+
+`VideoLearningRequestCreationContractTest` **1 passed**（父请求/Task/Outbox 同事务、重复请求不重建、未创建占位 PDF Job）；`KafkaArtifactOutboxPublisherTest` **3 passed**（旧协议兼容、新协议和隐私字段不外泄）；`VideoLearningRequestRepositoryContractTest` **6 passed**。尚需 Worker 专用采集执行、回调终态和子 Job 协调，再开启入口灰度。

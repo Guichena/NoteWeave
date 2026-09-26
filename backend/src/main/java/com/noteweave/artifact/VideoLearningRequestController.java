@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 /** Read and cancellation surface for the parent request; creation waits for material dispatch. */
@@ -15,15 +16,25 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v2/workspaces/{workspaceId}/video-learning-bundles")
 public class VideoLearningRequestController {
     private final VideoLearningRequestRepository requests;
+    private final VideoLearningRequestService service;
     private final WorkspaceAccessGuard access;
     private final CurrentUserProvider users;
 
     public VideoLearningRequestController(VideoLearningRequestRepository requests,
+                                          VideoLearningRequestService service,
                                           WorkspaceAccessGuard access,
                                           CurrentUserProvider users) {
         this.requests = requests;
+        this.service = service;
         this.access = access;
         this.users = users;
+    }
+
+    @PostMapping
+    ApiResponse<VideoLearningRequestRepository.ParentView> create(
+            @PathVariable String workspaceId,
+            @RequestBody CreateVideoLearningBundleRequest request) {
+        return ApiResponse.success(service.create(workspaceId, request));
     }
 
     @GetMapping("/{requestId}")
