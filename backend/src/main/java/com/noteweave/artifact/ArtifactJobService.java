@@ -47,6 +47,7 @@ public class ArtifactJobService {
     private final ArtifactContextV2ShadowSnapshotService contextV2ShadowSnapshots;
     private final ArtifactMemoryRevisionGuard memoryRevisionGuard;
     private final ResearchGeneratedSourceReadGate generatedSourceGate;
+    private final ArtifactExportService exportService;
 
     public ArtifactJobService(
             JdbcTemplate jdbcTemplate,
@@ -63,7 +64,8 @@ public class ArtifactJobService {
             KnowledgeCommandService knowledgeCommandService,
             ArtifactContextV2ShadowSnapshotService contextV2ShadowSnapshots,
             ArtifactMemoryRevisionGuard memoryRevisionGuard,
-            ResearchGeneratedSourceReadGate generatedSourceGate
+            ResearchGeneratedSourceReadGate generatedSourceGate,
+            ArtifactExportService exportService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -80,6 +82,7 @@ public class ArtifactJobService {
         this.contextV2ShadowSnapshots = contextV2ShadowSnapshots;
         this.memoryRevisionGuard = memoryRevisionGuard;
         this.generatedSourceGate = generatedSourceGate;
+        this.exportService = exportService;
     }
 
     @Transactional
@@ -278,6 +281,7 @@ public class ArtifactJobService {
             RollbackArtifactVersionRequest request
     ) {
         requireWorkspace(workspaceId);
+        exportService.requireVersionReadable(workspaceId, artifactJobId, sourceVersionNo);
         ArtifactRollbackRow source = loadRollbackRow(workspaceId, artifactJobId, sourceVersionNo);
         int nextVersionNo = artifactJobWriteRepository.lockNextVersionNo(workspaceId, artifactJobId);
         String versionId = Ids.newId();
@@ -399,6 +403,7 @@ public class ArtifactJobService {
     ) {
         requireWorkspace(workspaceId);
         requireArtifactJob(workspaceId, artifactJobId);
+        exportService.requireVersionReadable(workspaceId, artifactJobId, versionNo);
         ArtifactVersionDetailRow row = artifactJobReadRepository.getVersionDetail(
                 workspaceId, artifactJobId, versionNo);
         return new ArtifactVersionDetailResponse(
@@ -423,6 +428,7 @@ public class ArtifactJobService {
             int versionNo
     ) {
         requireWorkspace(workspaceId);
+        exportService.requireVersionReadable(workspaceId, artifactJobId, versionNo);
         ArtifactVersionSourceRow row = loadVersionForSource(workspaceId, artifactJobId, versionNo);
         if (row.contentMarkdown().isBlank()) {
             throw new BusinessException("ARTIFACT_VERSION_CONTENT_EMPTY", "产物版本正文为空，不能保存为资料");
@@ -455,6 +461,7 @@ public class ArtifactJobService {
             ArtifactKnowledgeWritebackRequest request
     ) {
         requireWorkspace(workspaceId);
+        exportService.requireVersionReadable(workspaceId, artifactJobId, versionNo);
         ArtifactVersionSourceRow row = loadVersionForSource(workspaceId, artifactJobId, versionNo);
         if (row.contentMarkdown().isBlank()) {
             throw new BusinessException("ARTIFACT_VERSION_CONTENT_EMPTY", "产物版本正文为空，不能写回知识库");

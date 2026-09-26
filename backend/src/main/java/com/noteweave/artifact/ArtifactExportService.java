@@ -7,6 +7,7 @@ import com.noteweave.common.Ids;
 import com.noteweave.common.Json;
 import com.noteweave.common.SensitiveErrorMessageSanitizer;
 import com.noteweave.storage.ObjectStorage;
+import com.noteweave.research.ResearchGeneratedSourceReadGate;
 import com.noteweave.worker.WorkerCompleteRequest;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -40,6 +41,7 @@ public class ArtifactExportService {
     private final ArtifactSkillCatalogService skillCatalog;
     private final ArtifactMemoryRevisionGuard memoryRevisionGuard;
     private final ArtifactContextV2ShadowSnapshotService contextV2Snapshots;
+    private final ResearchGeneratedSourceReadGate generatedSourceGate;
     private final String exportBucket;
     private String orphanScanCursor = "";
 
@@ -51,6 +53,7 @@ public class ArtifactExportService {
             ArtifactSkillCatalogService skillCatalog,
             ArtifactMemoryRevisionGuard memoryRevisionGuard,
             ArtifactContextV2ShadowSnapshotService contextV2Snapshots,
+            ResearchGeneratedSourceReadGate generatedSourceGate,
             com.noteweave.config.NoteWeaveProperties properties
     ) {
         this.jdbcTemplate = jdbcTemplate;
@@ -60,6 +63,7 @@ public class ArtifactExportService {
         this.skillCatalog = skillCatalog;
         this.memoryRevisionGuard = memoryRevisionGuard;
         this.contextV2Snapshots = contextV2Snapshots;
+        this.generatedSourceGate = generatedSourceGate;
         this.exportBucket = properties.storage().minio().bucketExport();
     }
 
@@ -539,16 +543,21 @@ public class ArtifactExportService {
         }
     }
 
+    public void requireVersionReadable(String workspaceId, String artifactJobId, int versionNo) {
+        requireVersionSourcesVisible(loadVersion(workspaceId, artifactJobId, versionNo));
+    }
+
     private void requireVersionSourcesVisible(ExportRow version) {
         if (version.originTaskId() == null || version.originTaskId().isBlank()) return;
         memoryRevisionGuard.requireActive(version.originTaskId());
         List<VersionInput> inputs = jdbcTemplate.query("""
-                select s.id, s.workspace_id, s.user_requirement, s.source_scope_snapshot_json
+                select s.id, s.workspace_id, s.user_requirement,
+                       s.source_scope_snapshot_json, s.upstream_refs_json
                 from artifact_job_run r
                 join artifact_run_input_snapshot s on s.id = r.input_snapshot_id
                 where r.task_id = ?
                 """, (rs, index) -> new VersionInput(rs.getString(1), rs.getString(2),
-                rs.getString(3), rs.getString(4)), version.originTaskId());
+                rs.getString(3), rs.getString(4), rs.getString(5)), version.originTaskId());
         if (inputs.isEmpty()) return; // Historical versions predate frozen input snapshots.
         VersionInput input = inputs.get(0);
         contextV2Snapshots.activeRequirement(version.originTaskId(), input.workspaceId(),
@@ -570,6 +579,29 @@ public class ArtifactExportService {
                     throw new BusinessException("ARTIFACT_SOURCE_REVOKED",
                             "产物来源已删除、撤权或不可用", HttpStatus.CONFLICT);
                 }
+                requireGeneratedSourceReadable(input.workspaceId(), sourceId);
+            }
+            JsonNode upstream = objectMapper.readTree(input.upstreamRefsJson());
+            if (!upstream.isArray()) throw new IllegalArgumentException("upstream refs must be an array");
+            for (JsonNode ref : upstream) {
+                String refType = ref.path("ref_type").asText();
+                if ("RESEARCH_REPORT".equals(refType)) {
+                    Integer readableReport = jdbcTemplate.queryForObject("""
+                            select count(*) from source s
+                            join source_snapshot ss on ss.source_id = s.id
+                            where s.workspace_id = ? and s.generated_by = 'research_agent'
+                              and s.generated_ref_id = ? and s.status = 'READY' and ss.id = ?
+                            """, Integer.class, input.workspaceId(), ref.path("ref_id").asText(),
+                            ref.path("revision_id").asText());
+                    if (readableReport == null || readableReport == 0) {
+                        throw new BusinessException("ARTIFACT_SOURCE_REVOKED",
+                                "产物来源已删除、撤权或不可用", HttpStatus.CONFLICT);
+                    }
+                    generatedSourceGate.requireReadable(input.workspaceId(), "research_agent",
+                            ref.path("ref_id").asText());
+                } else if ("SOURCE_SNAPSHOT".equals(refType)) {
+                    requireGeneratedSourceReadable(input.workspaceId(), ref.path("ref_id").asText());
+                }
             }
         } catch (BusinessException ex) {
             throw ex;
@@ -579,8 +611,27 @@ public class ArtifactExportService {
         }
     }
 
+    private void requireGeneratedSourceReadable(String workspaceId, String sourceId) {
+        if (sourceId.isBlank()) throw new BusinessException("ARTIFACT_SOURCE_SCOPE_INVALID",
+                "产物来源快照无法校验", HttpStatus.CONFLICT);
+        List<SourceOrigin> origins = jdbcTemplate.query("""
+                select coalesce(generated_by, ''), coalesce(generated_ref_id, '')
+                from source where workspace_id = ? and id = ? and status = 'READY'
+                """, (rs, rowNum) -> new SourceOrigin(rs.getString(1), rs.getString(2)),
+                workspaceId, sourceId);
+        if (origins.size() != 1) {
+            throw new BusinessException("ARTIFACT_SOURCE_REVOKED",
+                    "产物来源已删除、撤权或不可用", HttpStatus.CONFLICT);
+        }
+        SourceOrigin origin = origins.get(0);
+        generatedSourceGate.requireReadable(workspaceId, origin.generatedBy(), origin.generatedRefId());
+    }
+
+    private record SourceOrigin(String generatedBy, String generatedRefId) {}
+
     private record VersionInput(String snapshotId, String workspaceId,
-                                String requirement, String sourceScopeJson) {}
+                                String requirement, String sourceScopeJson,
+                                String upstreamRefsJson) {}
 
     public List<ArtifactFileMetadataResponse> listFiles(String artifactVersionId) {
         return jdbcTemplate.query("""

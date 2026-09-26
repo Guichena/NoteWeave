@@ -23,6 +23,8 @@ import com.noteweave.research.ResearchSourceScopeLoader;
 import com.noteweave.chat.RetrievalHydrator;
 import com.noteweave.chat.NoteRecallRepository;
 import com.noteweave.artifact.ArtifactJobService;
+import com.noteweave.artifact.ArtifactExportService;
+import com.noteweave.artifact.ArtifactKnowledgeWritebackRequest;
 import com.noteweave.storage.ObjectStorage;
 import com.noteweave.memory.ExecutionObservation;
 import com.noteweave.memory.MemoryRuntime;
@@ -58,6 +60,7 @@ class ContextV2ResearchContractTest {
     @Autowired RetrievalHydrator retrievalHydrator;
     @Autowired NoteRecallRepository noteRecallRepository;
     @Autowired ArtifactJobService artifactJobs;
+    @Autowired ArtifactExportService artifactExports;
     @Autowired ObjectStorage storage;
     @Autowired MemoryRuntime memory;
     @SpyBean ConversationContextCompilerV2Service compiler;
@@ -256,6 +259,16 @@ class ContextV2ResearchContractTest {
         assertThat(artifactJobs.getWorkerInput(artifactTaskId).sourceScope())
                 .extracting(com.noteweave.worker.WorkerSourceScopeItemResponse::sourceId)
                 .containsExactly(sourceId);
+        String artifactJobId = jdbc.queryForObject("""
+                select artifact_job_id from artifact_job_run where task_id = ?
+                """, String.class, artifactTaskId);
+        jdbc.update("""
+                insert into artifact_version(id, artifact_job_id, skill_key, version_no, title,
+                                             content_markdown, origin_task_id)
+                values (?, ?, 'resume_highlight', 1, 'Derived version', '# Derived report', ?)
+                """, Ids.newId(), artifactJobId, artifactTaskId);
+        assertThat(artifactJobs.getVersionDetail(workspace, artifactJobId, 1).contentMarkdown())
+                .contains("Derived report");
 
         String originalSnapshot = jdbc.queryForObject("""
                 select snapshot_json from run_input_snapshot where research_run_id = ?
@@ -278,6 +291,9 @@ class ContextV2ResearchContractTest {
         assertThatThrownBy(() -> artifactJobs.getWorkerInput(artifactTaskId))
                 .isInstanceOfSatisfying(BusinessException.class,
                         failure -> assertThat(failure.code()).isEqualTo("RESEARCH_CONTEXT_SNAPSHOT_MISMATCH"));
+        assertThatThrownBy(() -> artifactJobs.getVersionDetail(workspace, artifactJobId, 1))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("RESEARCH_CONTEXT_SNAPSHOT_MISMATCH"));
         jdbc.update("update run_input_snapshot set snapshot_json = ? where research_run_id = ?",
                 originalSnapshot, runId);
 
@@ -298,6 +314,19 @@ class ContextV2ResearchContractTest {
                 .extracting(com.noteweave.chat.NoteRetrievalService.CandidateSource::sourceId)
                 .doesNotContain(sourceId);
         assertThatThrownBy(() -> artifactJobs.getWorkerInput(artifactTaskId))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("RESEARCH_SOURCE_CONTEXT_REDACTED"));
+        assertThatThrownBy(() -> artifactJobs.getVersionDetail(workspace, artifactJobId, 1))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("RESEARCH_SOURCE_CONTEXT_REDACTED"));
+        assertThatThrownBy(() -> artifactExports.downloadFile(workspace, artifactJobId, 1, "no-file"))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("RESEARCH_SOURCE_CONTEXT_REDACTED"));
+        assertThatThrownBy(() -> artifactJobs.saveVersionAsSource(workspace, artifactJobId, 1))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("RESEARCH_SOURCE_CONTEXT_REDACTED"));
+        assertThatThrownBy(() -> artifactJobs.writeVersionToKnowledge(workspace, artifactJobId, 1,
+                new ArtifactKnowledgeWritebackRequest("NOTE", null)))
                 .isInstanceOfSatisfying(BusinessException.class,
                         failure -> assertThat(failure.code()).isEqualTo("RESEARCH_SOURCE_CONTEXT_REDACTED"));
         mvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspace)

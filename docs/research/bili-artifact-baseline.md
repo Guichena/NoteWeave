@@ -531,3 +531,9 @@ Artifact 新 Job 捕获来源时校验上游 Research Run；既有 Run 的 Worke
 ## P1.5 实际长文档后段事实回放
 
 Worker 将仓库的 `docs/Artifact-Skill执行架构.md`（约 25 KB 文件）按真实段落切为约 420 字符的连续窗口，每页取 4 个窗口；“Workflow History 兼容”位于第 12 个窗口之后。以“Workflow History 兼容 Activity 幂等”为查询，6 窗口/5 KB 选择预算仍取到该后段窗口，`material_resolution.selected_window_ids` 与产物 Citation 都保留其 ID，预算缺口标为 `SELECTION_BUDGET_REACHED`。`tests/test_material_resolver.py` **3 passed，0 failed**（1.79 秒）。这是对仓库真实长文档的确定性 Worker 回放，Host 的冻结 Snapshot 分页和撤销合同在既有 `artifactWindowPagesMustUseFrozenSnapshotAndRejectRevokedSource` 中覆盖；尚未用真实用户资料做人工质量评估，也未量测线上 Provider 生成质量。
+
+## C3 已发布 Artifact Version 的派生 Research 来源门禁
+
+Version 详情、PDF/文件下载、回滚、保存为 Source 与知识库写回，在读取或复制正文前，沿 `origin_task_id` 复核冻结的 Artifact 输入、Source Snapshot 与上游 Research Run。已撤销消息或 Memory 会阻断旧 Version 的这些入口；摘要损坏仍返回原 Research 快照错误。无冻结输入快照的旧 Version 保持历史兼容，不伪称已完成该类版本的撤销传播。
+
+首次定向联跑 10 项中 **1 failed**：派生 Source 的目录过滤把 Research 撤销错误折叠为通用 Source 错误。改为从 Source 持久化身份直接调用原 Run 门禁；随后一次编译因当前 Java 不支持 `List.getFirst()` 失败，改用 `get(0)` 后重跑 `ContextV2ResearchContractTest` **7**、`ArtifactContextV2ActiveContractTest` **1**、`ArtifactRollbackGateTest` **2**，共 **10 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。合同中的 Version 为数据库构造的旧 Version，文件下载断言验证在查找文件前阻断；尚未使用真实对象存储字节及浏览器保存流程。
