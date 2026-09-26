@@ -24,6 +24,7 @@ from app.models import (
     ArtifactTaskInput,
     ArtifactTaskResult,
     ArtifactVersionSnapshot,
+    ArtifactVerificationResult,
     CustomProductionActionRegistration,
     CustomPromptRecipeRegistration,
     CustomSkillDefinitionRegistration,
@@ -237,6 +238,36 @@ def test_run_artifact_task_should_fail_closed_on_invalid_llm_output(
 
     assert error.value.error_code == "CONFIGURATION_REQUIRED"
     assert "no usable content" in str(error.value)
+
+
+def test_failed_final_content_gate_never_invokes_renderer(monkeypatch: pytest.MonkeyPatch) -> None:
+    task_input = _build_resume_task_input()
+    render_calls: list[str] = []
+    monkeypatch.setattr(runner_module, "export_artifact_if_required",
+                        lambda **kwargs: render_calls.append("render"))
+    monkeypatch.setattr(runner_module, "verify_artifact_output",
+                        lambda *args: ArtifactVerificationResult(
+                            status="FAIL", failed_checks=["missing evidence"]))
+
+    with pytest.raises(runner_module.ArtifactOutputContractViolationError):
+        run_artifact_task(task_input)
+
+    assert render_calls == []
+
+
+def test_candidate_is_bound_to_task_snapshot_and_markdown() -> None:
+    task_input = _build_resume_task_input()
+    task_input.input_snapshot_id = "snapshot-fixed"
+    _, result = run_artifact_task(task_input)
+    candidate = result.result_payload["candidate"]
+
+    assert candidate["task_id"] == task_input.task_id
+    assert candidate["input_snapshot_id"] == "snapshot-fixed"
+    assert candidate["content_sha256"]
+    assert candidate["candidate_id"]
+    assert result.version_snapshot.version_id == ""
+    assert result.result_payload["artifact_commit"]["commit_status"] == "DEFERRED_TO_HOST"
+    assert "writeback_request" not in result.result_payload
 
 
 def test_run_artifact_task_without_llm_or_source_content_should_be_blocked(

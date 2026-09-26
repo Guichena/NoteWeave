@@ -32,6 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ArtifactJobService {
 
     private final ObjectMapper objectMapper;
+    private final JdbcTemplate jdbcTemplate;
     private final WorkspaceService workspaceService;
     private final TaskService taskService;
     private final ArtifactJobReadRepository artifactJobReadRepository;
@@ -55,6 +56,7 @@ public class ArtifactJobService {
             GeneratedSourceService generatedSourceService,
             KnowledgeCommandService knowledgeCommandService
     ) {
+        this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.workspaceService = workspaceService;
         this.taskService = taskService;
@@ -420,7 +422,11 @@ public class ArtifactJobService {
     @Transactional
     public CompletionOutcome completeFromWorker(String taskId, com.noteweave.worker.WorkerCompleteRequest request) {
         ArtifactJobTaskRow row = findByTaskId(taskId);
-        int claimed = artifactJobWriteRepository.claimCompletion(row.artifactJobId());
+        String markdown = extractMarkdown(request.resultPayload());
+        requireVerifiedCandidate(request);
+        requireFrozenSourcesVisible(row);
+        ArtifactCandidate candidate = ArtifactCandidate.from(taskId, row.inputSnapshotId(), request, markdown);
+        int claimed = artifactJobWriteRepository.claimCompletion(row.artifactJobId(), taskId);
         if (claimed != 1) {
             throw new BusinessException(
                     "ARTIFACT_JOB_TERMINAL_CONFLICT",
@@ -428,9 +434,10 @@ public class ArtifactJobService {
                     HttpStatus.CONFLICT
             );
         }
-        int nextVersionNo = row.latestVersionNo() + 1;
-        String markdown = extractMarkdown(request.resultPayload());
-        String versionId = artifactJobWriteRepository.appendCompletedVersion(
+        int nextVersionNo = artifactJobWriteRepository.lockNextVersionNo(row.workspaceId(), row.artifactJobId());
+        String versionId = artifactJobWriteRepository.reservedVersionId(taskId);
+        artifactJobWriteRepository.appendCompletedVersion(
+                versionId,
                 row.artifactJobId(),
                 row.skillKey(),
                 nextVersionNo,
@@ -441,8 +448,67 @@ public class ArtifactJobService {
                 Json.write(objectMapper, request.citations() == null ? List.of() : request.citations()),
                 taskId
         );
+        artifactJobWriteRepository.recordCandidateReceipt(taskId, candidate.candidateId(),
+                candidate.digest(), versionId, row.inputSnapshotId());
         artifactJobWriteRepository.completeJob(row.artifactJobId(), request.resultTitle(), nextVersionNo);
         return new CompletionOutcome("ARTIFACT_VERSIONED", "产物版本已生成：" + request.resultTitle(), versionId);
+    }
+
+    public void validateCandidateReplay(String taskId, com.noteweave.worker.WorkerCompleteRequest request) {
+        ArtifactJobTaskRow row = findByTaskId(taskId);
+        ArtifactCandidate candidate = ArtifactCandidate.from(taskId, row.inputSnapshotId(), request,
+                extractMarkdown(request.resultPayload()));
+        List<Map<String, Object>> receipts = jdbcTemplate.query("""
+                select candidate_id, candidate_digest from artifact_candidate_receipt where task_id = ?
+                """, (rs, index) -> Map.<String, Object>of(
+                "candidate_id", rs.getString("candidate_id"),
+                "candidate_digest", rs.getString("candidate_digest")), taskId);
+        if (receipts.size() != 1 || !candidate.candidateId().equals(receipts.get(0).get("candidate_id"))
+                || !candidate.digest().equals(receipts.get(0).get("candidate_digest"))) {
+            throw new BusinessException("ARTIFACT_CANDIDATE_CONFLICT",
+                    "Task already committed a different candidate", HttpStatus.CONFLICT);
+        }
+    }
+
+    private void requireVerifiedCandidate(com.noteweave.worker.WorkerCompleteRequest request) {
+        if (request.resultPayload() == null || !request.resultPayload().containsKey("candidate")) {
+            return; // Legacy Worker callbacks remain readable during rollout.
+        }
+        Object raw = request.resultPayload().get("verification");
+        if (!(raw instanceof Map<?, ?> verification)
+                || !("PASS".equals(verification.get("status"))
+                || "WARN".equals(verification.get("status")))) {
+            throw new BusinessException("ARTIFACT_CONTENT_NOT_VERIFIED",
+                    "Candidate content did not pass final verification", HttpStatus.CONFLICT);
+        }
+    }
+
+    private void requireFrozenSourcesVisible(ArtifactJobTaskRow row) {
+        for (WorkerSourceScopeItemResponse source : readCapturedSourceScope(
+                row.workspaceId(), row.sourceScopeJson())) {
+            if (source.sourceSnapshotId() == null || source.sourceSnapshotId().isBlank()) {
+                throw new BusinessException("ARTIFACT_SOURCE_SNAPSHOT_MISSING",
+                        "产物输入缺少冻结 Source Snapshot", HttpStatus.CONFLICT);
+            }
+            Integer visible = jdbcTemplate.queryForObject("""
+                    select count(*) from source s
+                    join source_snapshot ss on ss.source_id = s.id
+                    where s.workspace_id = ? and s.id = ? and s.status = 'READY'
+                      and ss.id = ? and ss.parse_status = 'PARSED'
+                      and ss.index_status in ('INDEXED', 'DISABLED')
+                    """, Integer.class, row.workspaceId(), source.sourceId(), source.sourceSnapshotId());
+            if (visible == null || visible != 1) {
+                throw new BusinessException("ARTIFACT_SOURCE_REVOKED",
+                        "冻结资料已删除、撤权或不可用", HttpStatus.CONFLICT);
+            }
+        }
+        for (ArtifactUpstreamRefRequest ref : readUpstreamRefs(row.upstreamRefsJson())) {
+            if (!artifactJobReadRepository.validUpstreamRef(
+                    row.workspaceId(), ref.refType(), ref.refId(), ref.revisionId())) {
+                throw new BusinessException("ARTIFACT_UPSTREAM_REVOKED",
+                        "上游引用已删除、撤权或不可用", HttpStatus.CONFLICT);
+            }
+        }
     }
 
     @Transactional

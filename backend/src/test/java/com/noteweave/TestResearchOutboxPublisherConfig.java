@@ -12,6 +12,7 @@ import com.noteweave.worker.ArtifactAcquisitionReceiptResponse;
 import com.noteweave.worker.WorkerCompleteRequest;
 import com.noteweave.worker.WorkerProgressRequest;
 import com.noteweave.worker.WorkerTaskCallbackService;
+import com.noteweave.artifact.ArtifactWorkerExportClient;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
@@ -34,6 +35,27 @@ import java.io.IOException;
 
 @TestConfiguration
 class TestResearchOutboxPublisherConfig {
+
+    @Bean
+    @Primary
+    ArtifactWorkerExportClient artifactWorkerExportClient() {
+        return (taskId, fileName) -> {
+            if (fileName.startsWith("missing-")) {
+                throw new com.noteweave.common.BusinessException(
+                        "ARTIFACT_EXPORT_FETCH_FAILED", "worker export unavailable",
+                        org.springframework.http.HttpStatus.BAD_GATEWAY);
+            }
+            try (org.apache.pdfbox.pdmodel.PDDocument document =
+                         new org.apache.pdfbox.pdmodel.PDDocument();
+                 java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream()) {
+                document.addPage(new org.apache.pdfbox.pdmodel.PDPage());
+                document.save(output);
+                return output.toByteArray();
+            } catch (java.io.IOException ex) {
+                throw new IllegalStateException("test PDF generation failed", ex);
+            }
+        };
+    }
 
     @Bean
     OncePerRequestFilter artifactWorkerCallbackHeaders(JdbcTemplate jdbcTemplate) {
@@ -210,6 +232,8 @@ class TestResearchOutboxPublisherConfig {
             }
             Map<String, Object> resultPayload = new LinkedHashMap<>();
             resultPayload.put("markdown", stub.markdown());
+            resultPayload.put("export_trace", Map.of(
+                    "status", "COMPILED", "file_name", "worker-course-notes.pdf"));
             Map<String, Object> pendingRuntimeTrace = pendingRuntimeTraceByTaskId.remove(taskId);
             if (pendingRuntimeTrace != null && !pendingRuntimeTrace.isEmpty()) {
                 resultPayload.putAll(pendingRuntimeTrace);

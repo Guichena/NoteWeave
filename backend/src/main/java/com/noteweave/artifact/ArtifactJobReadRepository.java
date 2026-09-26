@@ -156,10 +156,10 @@ class ArtifactJobReadRepository {
         return jdbcTemplate.query("""
                 select id, file_format, file_name, media_type, storage_backend, bucket_name,
                        object_key, size_bytes, checksum_sha256, status, created_at
-                       , coalesce(error_message, '') as error_message
+                       , coalesce(error_message, '') as error_message, file_role, variant, sequence_no
                 from artifact_file
                 where artifact_version_id = ?
-                order by file_format asc, created_at asc
+                order by file_role asc, variant asc, sequence_no asc
                 """, (rs, rowNum) -> new ArtifactFileMetadataResponse(
                 rs.getString("id"),
                 rs.getString("file_format"),
@@ -172,7 +172,8 @@ class ArtifactJobReadRepository {
                 rs.getString("checksum_sha256"),
                 rs.getString("status"),
                 rs.getString("error_message"),
-                instant(rs.getTimestamp("created_at"))
+                instant(rs.getTimestamp("created_at")),
+                rs.getString("file_role"), rs.getString("variant"), rs.getInt("sequence_no")
         ), artifactVersionId);
     }
 

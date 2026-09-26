@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.acquisition_runtime import get_acquisition_result_payload, register_acquisition_runtime
 from app.artifact_repository import commit_artifact_result, reserve_next_artifact_version
+import hashlib
 from app.capability_approval_queue import create_capability_request
 from app.capability_resolver import resolve_capability_bindings, resolve_capability_providers
 from app.capability_wait_queue import enqueue_waiting_task
@@ -216,11 +217,9 @@ def _run_artifact_task(
     repaired_checks: list[str] = []
     artifact_title = resolve_artifact_title(task_input, plan)
     rendered_markdown = render_markdown(task_input, plan, repaired_sections)
-    export_trace = export_artifact_if_required(
-        task_input=task_input,
-        title=artifact_title,
-        sections=repaired_sections,
-    )
+    # Render only after the content and its evidence have passed the final gate.
+    # A failed candidate must never create a user-facing export.
+    export_trace = {"status": "PENDING_VALIDATION", "format": "PDF", "file_name": ""}
 
     events = [
         ArtifactProgressEvent(
@@ -243,7 +242,12 @@ def _run_artifact_task(
         action_key=plan.action_key,
         status="COMPLETED",
     )
-    version_id, parent_version_id = reserve_next_artifact_version(task_input.target_id)
+    # The local version store is only a debug projection. A Host-created Run
+    # carries a frozen input snapshot and receives its Version ID from Host.
+    version_id, parent_version_id = (
+        ("", "") if task_input.input_snapshot_id
+        else reserve_next_artifact_version(task_input.target_id)
+    )
     version_snapshot = ArtifactVersionSnapshot(
         version_id=version_id,
         artifact_type=plan.artifact_type,
@@ -318,19 +322,6 @@ def _run_artifact_task(
         job_snapshot=job_snapshot,
         version_snapshot=version_snapshot,
     )
-    writeback_request = register_writeback_request(
-        task_input=task_input,
-        plan=plan,
-        result=result,
-        version_snapshot=version_snapshot,
-        writeback_preview=writeback_preview,
-    )
-    if writeback_request is not None:
-        result.result_payload["writeback_request"] = writeback_request.model_dump(mode="json")
-        result.result_payload["writeback_preview"]["request_id"] = writeback_request.request_id
-        result.result_payload["writeback_preview"]["target_locator_preview"] = (
-            writeback_request.target_locator_preview
-        )
     evidence_coverage = _build_evidence_coverage(
         task_input=task_input,
         plan=plan,
@@ -343,6 +334,40 @@ def _run_artifact_task(
     result.result_payload["verification"] = verification.model_dump(mode="json")
     if verification.status == "FAIL":
         raise ArtifactOutputContractViolationError(verification.failed_checks)
+    content_sha256 = hashlib.sha256(rendered_markdown.encode("utf-8")).hexdigest()
+    candidate_id = hashlib.sha256(
+        f"{task_input.task_id}:{task_input.input_snapshot_id}:{content_sha256}".encode("utf-8")
+    ).hexdigest()
+    result.result_payload["candidate"] = {
+        "candidate_id": candidate_id,
+        "task_id": task_input.task_id,
+        "input_snapshot_id": task_input.input_snapshot_id,
+        "content_sha256": content_sha256,
+    }
+    export_trace = export_artifact_if_required(
+        task_input=task_input,
+        title=artifact_title,
+        sections=repaired_sections,
+    )
+    result.result_payload["export_trace"] = export_trace
+    if task_input.input_payload.skill_key.strip().lower() == "bilibili_course_note_pdf":
+        if export_trace["status"] != "COMPILED":
+            raise ArtifactOutputContractViolationError(["required PDF export did not compile"])
+    writeback_request = (
+        None if task_input.input_snapshot_id else register_writeback_request(
+            task_input=task_input,
+            plan=plan,
+            result=result,
+            version_snapshot=version_snapshot,
+            writeback_preview=writeback_preview,
+        )
+    )
+    if writeback_request is not None:
+        result.result_payload["writeback_request"] = writeback_request.model_dump(mode="json")
+        result.result_payload["writeback_preview"]["request_id"] = writeback_request.request_id
+        result.result_payload["writeback_preview"]["target_locator_preview"] = (
+            writeback_request.target_locator_preview
+        )
     result.result_payload["lifecycle_trace"] = _build_lifecycle_trace(
         events=events,
         status="COMPLETED",
@@ -368,12 +393,18 @@ def _run_artifact_task(
     )
     result.result_payload["retrieval_feedback"] = retrieval_feedback.model_dump(mode="json")
     result.result_payload["memory_promotion_preview"] = memory_promotion_preview.model_dump(mode="json")
-    commit_receipt = commit_artifact_result(
-        task_id=task_input.task_id,
-        workspace_id=task_input.workspace_id,
-        target_id=task_input.target_id,
-        result=result,
-        retrieval_feedback=retrieval_feedback,
+    commit_receipt = (
+        ArtifactCommitReceipt(
+            commit_status="DEFERRED_TO_HOST", version_id="", retrieval_entry_id="",
+            persisted_version_count=0, persisted_retrieval_count=0,
+        )
+        if task_input.input_snapshot_id else commit_artifact_result(
+            task_id=task_input.task_id,
+            workspace_id=task_input.workspace_id,
+            target_id=task_input.target_id,
+            result=result,
+            retrieval_feedback=retrieval_feedback,
+        )
     )
     result.result_payload["artifact_commit"] = commit_receipt.model_dump(mode="json")
     return events, result

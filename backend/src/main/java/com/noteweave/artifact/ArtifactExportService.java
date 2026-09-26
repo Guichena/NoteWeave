@@ -4,22 +4,24 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
-import com.noteweave.config.NoteWeaveProperties;
+import com.noteweave.common.Json;
 import com.noteweave.common.SensitiveErrorMessageSanitizer;
 import com.noteweave.storage.ObjectStorage;
-import com.noteweave.worker.ArtifactWorkerRestClientFactory;
+import com.noteweave.worker.WorkerCompleteRequest;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.rendering.PDFRenderer;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientException;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,27 +35,20 @@ public class ArtifactExportService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final ObjectStorage objectStorage;
-    private final RestClient artifactWorkerClient;
+    private final ArtifactWorkerExportClient artifactWorkerClient;
     private final String exportBucket;
 
     public ArtifactExportService(
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
             ObjectStorage objectStorage,
-            NoteWeaveProperties properties,
-            @Value("${noteweave.internal.auth-token:}") String internalAuthToken,
-            @Value("${noteweave.worker.connect-timeout-seconds:3}") long connectTimeoutSeconds,
-            @Value("${noteweave.worker.read-timeout-seconds:30}") long readTimeoutSeconds
+            ArtifactWorkerExportClient artifactWorkerClient,
+            com.noteweave.config.NoteWeaveProperties properties
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.objectStorage = objectStorage;
-        this.artifactWorkerClient = ArtifactWorkerRestClientFactory.create(
-                properties.worker().artifactBaseUrl(),
-                internalAuthToken,
-                connectTimeoutSeconds,
-                readTimeoutSeconds
-        );
+        this.artifactWorkerClient = artifactWorkerClient;
         this.exportBucket = properties.storage().minio().bucketExport();
     }
 
@@ -76,24 +71,201 @@ public class ArtifactExportService {
 
     public ArtifactExportFile downloadPdf(String workspaceId, String artifactJobId, int versionNo) {
         ExportRow row = loadVersion(workspaceId, artifactJobId, versionNo);
+        requireReadyDelivery(row.versionId());
         if (!hasFile(row.versionId(), PDF)) {
-            materializeExports(row.versionId());
+            Integer published = jdbcTemplate.queryForObject(
+                    "select count(*) from artifact_candidate_receipt where artifact_version_id = ?",
+                    Integer.class, row.versionId());
+            if (published != null && published > 0) {
+                throw new BusinessException("ARTIFACT_EXPORT_NOT_READY", "已发布版本缺少 PDF 文件", HttpStatus.CONFLICT);
+            }
+            materializeExports(row.versionId()); // historical compatibility only
         }
         StoredFile file = loadStoredFile(row.versionId(), PDF);
-        byte[] content = objectStorage.read(file.bucketName(), file.objectKey());
-        if (content.length == 0) {
-            throw new BusinessException("ARTIFACT_EXPORT_EMPTY", "产物 PDF 文件为空");
+        byte[] content;
+        try {
+            content = objectStorage.read(file.bucketName(), file.objectKey());
+        } catch (RuntimeException ex) {
+            jdbcTemplate.update("update artifact_version set delivery_status = 'DEGRADED' where id = ?",
+                    row.versionId());
+            throw new BusinessException("ARTIFACT_EXPORT_DEGRADED", "产物 PDF 文件暂不可用", HttpStatus.CONFLICT);
+        }
+        if (content.length == 0 || !sha256(content).equals(file.checksum())) {
+            jdbcTemplate.update("update artifact_version set delivery_status = 'DEGRADED' where id = ?",
+                    row.versionId());
+            throw new BusinessException("ARTIFACT_EXPORT_DEGRADED", "产物 PDF 文件摘要不匹配", HttpStatus.CONFLICT);
         }
         return new ArtifactExportFile(file.fileName(), content);
+    }
+
+    /** Fetches and checks every required payload before the Version transaction publishes it. */
+    public List<PreparedFile> prepareForCompletion(String taskId, WorkerCompleteRequest request) {
+        String markdown = request.resultPayload() == null ? ""
+                : String.valueOf(request.resultPayload().getOrDefault("markdown", ""));
+        if (markdown.isBlank()) {
+            throw new BusinessException("ARTIFACT_CONTENT_EMPTY", "产物正文为空", HttpStatus.CONFLICT);
+        }
+        java.util.ArrayList<PreparedFile> files = new java.util.ArrayList<>();
+        byte[] markdownBytes = markdown.getBytes(StandardCharsets.UTF_8);
+        files.add(new PreparedFile(MARKDOWN, safeStem(request.resultTitle()) + ".md",
+                "text/markdown; charset=UTF-8", markdownBytes, sha256(markdownBytes)));
+        String skillKey = jdbcTemplate.queryForObject("""
+                select aj.skill_key from artifact_job_run r
+                join artifact_job aj on aj.id = r.artifact_job_id
+                where r.task_id = ?
+                """, String.class, taskId);
+        String payloadJson = Json.write(objectMapper, request.resultPayload());
+        String pdfFileName = readCompiledFileNameIfPresent(payloadJson);
+        if ("bilibili_course_note_pdf".equals(skillKey) && pdfFileName.isBlank()) {
+            throw new BusinessException("ARTIFACT_REQUIRED_FILE_MISSING",
+                    "PDF 讲义缺少已编译文件", HttpStatus.CONFLICT);
+        }
+        if (!pdfFileName.isBlank()) {
+            byte[] pdf = fetchWorkerExport(taskId, pdfFileName);
+            verifyPdf(pdf);
+            files.add(new PreparedFile(PDF, pdfFileName, "application/pdf", pdf, sha256(pdf)));
+        }
+        return List.copyOf(files);
+    }
+
+    public List<PreparedFile> prepareRollbackFiles(String sourceVersionId) {
+        materializeExports(sourceVersionId); // lazily archive historical files before copying
+        ExportRow source = loadVersionById(sourceVersionId);
+        List<PreparedFile> files = jdbcTemplate.query("""
+                select file_format, file_name, media_type, bucket_name, object_key, checksum_sha256
+                from artifact_file where artifact_version_id = ? and status = 'READY'
+                order by file_format
+                """, (rs, index) -> {
+            byte[] bytes = objectStorage.read(rs.getString("bucket_name"), rs.getString("object_key"));
+            String checksum = sha256(bytes);
+            if (bytes.length == 0 || !checksum.equals(rs.getString("checksum_sha256"))) {
+                throw new BusinessException("ARTIFACT_SOURCE_FILE_INVALID",
+                        "回滚源文件摘要不匹配", HttpStatus.CONFLICT);
+            }
+            if (PDF.equals(rs.getString("file_format"))) verifyPdf(bytes);
+            return new PreparedFile(rs.getString("file_format"), rs.getString("file_name"),
+                    rs.getString("media_type"), bytes, checksum);
+        }, sourceVersionId);
+        boolean markdownReady = files.stream().anyMatch(file -> MARKDOWN.equals(file.format()));
+        boolean pdfRequired = !readCompiledFileNameIfPresent(source.resultPayloadJson()).isBlank();
+        boolean pdfReady = files.stream().anyMatch(file -> PDF.equals(file.format()));
+        if (!markdownReady || (pdfRequired && !pdfReady)) {
+            throw new BusinessException("ARTIFACT_SOURCE_FILE_MISSING",
+                    "回滚源版本缺少必需文件", HttpStatus.CONFLICT);
+        }
+        return files;
+    }
+
+    public void publishPreparedFiles(String versionId, List<PreparedFile> files) {
+        if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+            throw new IllegalStateException("Artifact files must publish in the Version transaction");
+        }
+        ExportRow row = loadVersionById(versionId);
+        for (PreparedFile file : files) {
+            if (file.content().length == 0 || !sha256(file.content()).equals(file.checksum())) {
+                throw new BusinessException("ARTIFACT_FILE_INVALID", "发布文件摘要不匹配", HttpStatus.CONFLICT);
+            }
+            String objectKey = "artifacts/staged/%s/%s/%s".formatted(
+                    row.originTaskId(), versionId, safeFileName(file.fileName()));
+            objectStorage.write(exportBucket, objectKey, file.content());
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCompletion(int status) {
+                    if (status != STATUS_COMMITTED) {
+                        try {
+                            objectStorage.delete(exportBucket, objectKey);
+                        } catch (RuntimeException ex) {
+                            log.warn("Artifact staged file cleanup failed; key={}", objectKey, ex);
+                        }
+                    }
+                }
+            });
+            byte[] stored = objectStorage.read(exportBucket, objectKey);
+            if (!file.checksum().equals(sha256(stored))) {
+                throw new BusinessException("ARTIFACT_FILE_STORE_MISMATCH",
+                        "暂存文件写入后摘要不匹配", HttpStatus.CONFLICT);
+            }
+            upsertFileMetadata(row, file.format(), file.fileName(), file.mediaType(), objectKey,
+                    file.content().length, file.checksum(), "READY", "");
+        }
+    }
+
+    private void verifyPdf(byte[] pdf) {
+        if (pdf.length < 16 || pdf.length > 100_000_000
+                || !new String(pdf, 0, Math.min(pdf.length, 8), StandardCharsets.US_ASCII).startsWith("%PDF-")
+                || !new String(pdf, Math.max(0, pdf.length - 2048), Math.min(pdf.length, 2048),
+                    StandardCharsets.US_ASCII).contains("%%EOF")) {
+            throw new BusinessException("ARTIFACT_PDF_INVALID", "PDF 文件签名或结尾无效", HttpStatus.CONFLICT);
+        }
+        try (PDDocument document = PDDocument.load(pdf)) {
+            int pages = document.getNumberOfPages();
+            if (pages < 1 || pages > 500) {
+                throw new BusinessException("ARTIFACT_PDF_INVALID", "PDF 页数无效", HttpStatus.CONFLICT);
+            }
+            PDFRenderer renderer = new PDFRenderer(document);
+            renderer.renderImageWithDPI(0, 36);
+            if (pages > 1) renderer.renderImageWithDPI(pages - 1, 36);
+        } catch (java.io.IOException ex) {
+            throw new BusinessException("ARTIFACT_PDF_INVALID", "PDF 无法打开或渲染", HttpStatus.CONFLICT);
+        }
+    }
+
+    public record PreparedFile(String format, String fileName, String mediaType,
+                               byte[] content, String checksum) { }
+
+    @Scheduled(fixedDelayString = "${noteweave.artifact.file-reconcile-delay-ms:60000}")
+    public void reconcileDegradedFiles() {
+        List<String> versionIds = jdbcTemplate.queryForList("""
+                select id from artifact_version where delivery_status = 'DEGRADED'
+                order by created_at asc limit 10
+                """, String.class);
+        for (String versionId : versionIds) {
+            try {
+                ExportRow version = loadVersionById(versionId);
+                List<ArtifactFileMetadataResponse> files = listFiles(versionId);
+                if (files.isEmpty()) continue;
+                for (ArtifactFileMetadataResponse file : files) {
+                    byte[] existing;
+                    try {
+                        existing = objectStorage.read(file.bucketName(), file.objectKey());
+                    } catch (RuntimeException ex) {
+                        existing = new byte[0];
+                    }
+                    if (sha256(existing).equals(file.checksumSha256())) continue;
+                    byte[] recovered = MARKDOWN.equals(file.fileFormat())
+                            ? version.contentMarkdown().getBytes(StandardCharsets.UTF_8)
+                            : PDF.equals(file.fileFormat())
+                                    ? fetchWorkerExport(version.originTaskId(), file.fileName())
+                                    : new byte[0];
+                    if (!sha256(recovered).equals(file.checksumSha256())) {
+                        throw new BusinessException("ARTIFACT_FILE_RECONCILE_MISMATCH",
+                                "恢复文件与已提交摘要不匹配", HttpStatus.CONFLICT);
+                    }
+                    objectStorage.write(file.bucketName(), file.objectKey(), recovered);
+                }
+                jdbcTemplate.update("update artifact_version set delivery_status = 'READY' where id = ?",
+                        versionId);
+            } catch (RuntimeException ex) {
+                log.warn("Artifact file reconciliation deferred; versionId={}", versionId, ex);
+            }
+        }
+    }
+
+    private void requireReadyDelivery(String versionId) {
+        String status = jdbcTemplate.queryForObject(
+                "select delivery_status from artifact_version where id = ?", String.class, versionId);
+        if (!"READY".equals(status)) {
+            throw new BusinessException("ARTIFACT_FILE_DEGRADED", "产物文件暂不可用", HttpStatus.CONFLICT);
+        }
     }
 
     public List<ArtifactFileMetadataResponse> listFiles(String artifactVersionId) {
         return jdbcTemplate.query("""
                 select id, file_format, file_name, media_type, storage_backend, bucket_name,
                        object_key, size_bytes, checksum_sha256, status, created_at
-                       , coalesce(error_message, '') as error_message
+                       , coalesce(error_message, '') as error_message, file_role, variant, sequence_no
                 from artifact_file where artifact_version_id = ?
-                order by file_format asc, created_at asc
+                order by file_role asc, variant asc, sequence_no asc
                 """, (rs, rowNum) -> new ArtifactFileMetadataResponse(
                 rs.getString("id"),
                 rs.getString("file_format"),
@@ -106,8 +278,38 @@ public class ArtifactExportService {
                 rs.getString("checksum_sha256"),
                 rs.getString("status"),
                 rs.getString("error_message"),
-                rs.getTimestamp("created_at").toInstant()
+                rs.getTimestamp("created_at").toInstant(),
+                rs.getString("file_role"), rs.getString("variant"), rs.getInt("sequence_no")
         ), artifactVersionId);
+    }
+
+    public List<ArtifactFileMetadataResponse> listVersionFiles(
+            String workspaceId, String artifactJobId, int versionNo) {
+        return listFiles(loadVersion(workspaceId, artifactJobId, versionNo).versionId());
+    }
+
+    public ArtifactDownloadFile downloadFile(String workspaceId, String artifactJobId,
+                                             int versionNo, String fileId) {
+        ExportRow version = loadVersion(workspaceId, artifactJobId, versionNo);
+        requireReadyDelivery(version.versionId());
+        List<ArtifactFileMetadataResponse> matches = listFiles(version.versionId()).stream()
+                .filter(file -> fileId.equals(file.fileId()))
+                .toList();
+        if (matches.size() != 1 || !"READY".equals(matches.get(0).status())) {
+            throw new BusinessException("ARTIFACT_FILE_NOT_READY", "产物文件不可下载", HttpStatus.CONFLICT);
+        }
+        ArtifactFileMetadataResponse file = matches.get(0);
+        try {
+            byte[] bytes = objectStorage.read(file.bucketName(), file.objectKey());
+            if (bytes.length == 0 || !sha256(bytes).equals(file.checksumSha256())) {
+                throw new IllegalStateException("artifact file checksum mismatch");
+            }
+            return new ArtifactDownloadFile(file.fileName(), file.mediaType(), bytes);
+        } catch (RuntimeException ex) {
+            jdbcTemplate.update("update artifact_version set delivery_status = 'DEGRADED' where id = ?",
+                    version.versionId());
+            throw new BusinessException("ARTIFACT_FILE_DEGRADED", "产物文件暂不可用", HttpStatus.CONFLICT);
+        }
     }
 
     @Transactional
@@ -195,42 +397,34 @@ public class ArtifactExportService {
                 update artifact_file
                 set file_name = ?, media_type = ?, storage_backend = ?, bucket_name = ?, object_key = ?,
                     size_bytes = ?, checksum_sha256 = ?, status = ?, error_message = ?
-                where artifact_version_id = ? and file_format = ?
+                where artifact_version_id = ? and file_role = ? and variant = '' and sequence_no = 0
                 """,
                 fileName, mediaType, objectStorage.backendName(), exportBucket, objectKey,
-                sizeBytes, checksum, status, errorMessage, row.versionId(), format);
+                sizeBytes, checksum, status, errorMessage, row.versionId(), primaryRole(format));
         if (updated == 0) {
             jdbcTemplate.update("""
                     insert into artifact_file(
-                        id, artifact_version_id, file_format, file_name, media_type, storage_backend,
+                        id, artifact_version_id, file_format, file_role, variant, sequence_no,
+                        file_name, media_type, storage_backend,
                         bucket_name, object_key, size_bytes, checksum_sha256, status, error_message
-                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) values (?, ?, ?, ?, '', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    Ids.newId(), row.versionId(), format, fileName, mediaType, objectStorage.backendName(),
+                    Ids.newId(), row.versionId(), format, primaryRole(format),
+                    fileName, mediaType, objectStorage.backendName(),
                     exportBucket, objectKey, sizeBytes, checksum, status, errorMessage);
         }
+    }
+
+    private String primaryRole(String format) {
+        return MARKDOWN.equals(format) ? "PRIMARY_MARKDOWN" :
+                PDF.equals(format) ? "PRIMARY_PDF" : "LEGACY_" + format;
     }
 
     private byte[] fetchWorkerExport(String taskId, String fileName) {
         if (taskId == null || taskId.isBlank()) {
             throw new BusinessException("ARTIFACT_EXPORT_TASK_MISSING", "产物版本缺少来源任务，无法归档 PDF");
         }
-        try {
-            byte[] content = artifactWorkerClient.get()
-                    .uri("/tasks/{taskId}/exports/{fileName}", taskId, fileName)
-                    .retrieve()
-                    .body(byte[].class);
-            if (content == null || content.length == 0) {
-                throw new BusinessException("ARTIFACT_EXPORT_EMPTY", "Artifact Worker 返回空 PDF");
-            }
-            return content;
-        } catch (RestClientException ex) {
-            throw new BusinessException(
-                    "ARTIFACT_EXPORT_FETCH_FAILED",
-                    "无法从 Artifact Worker 获取 PDF 文件",
-                    HttpStatus.BAD_GATEWAY
-            );
-        }
+        return artifactWorkerClient.fetch(taskId, fileName);
     }
 
     private ExportRow loadVersion(String workspaceId, String artifactJobId, int versionNo) {
@@ -285,11 +479,12 @@ public class ArtifactExportService {
 
     private StoredFile loadStoredFile(String versionId, String format) {
         List<StoredFile> rows = jdbcTemplate.query("""
-                select file_name, bucket_name, object_key
+                select file_name, bucket_name, object_key, checksum_sha256
                 from artifact_file
                 where artifact_version_id = ? and file_format = ? and status = 'READY'
                 """, (rs, rowNum) -> new StoredFile(
-                rs.getString("file_name"), rs.getString("bucket_name"), rs.getString("object_key")
+                rs.getString("file_name"), rs.getString("bucket_name"), rs.getString("object_key"),
+                rs.getString("checksum_sha256")
         ), versionId, format);
         if (rows.isEmpty()) {
             throw new BusinessException("ARTIFACT_EXPORT_NOT_READY", "该产物版本没有可下载的 PDF", HttpStatus.CONFLICT);
@@ -353,7 +548,7 @@ public class ArtifactExportService {
     ) {
     }
 
-    private record StoredFile(String fileName, String bucketName, String objectKey) {
+    private record StoredFile(String fileName, String bucketName, String objectKey, String checksum) {
     }
 
     private record StoredSourceFile(

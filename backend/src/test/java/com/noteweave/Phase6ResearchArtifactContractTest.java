@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.artifact.ArtifactJobService;
+import com.noteweave.artifact.ArtifactExportService;
 import com.noteweave.artifact.ArtifactVersionDetailResponse;
 import com.noteweave.answer.ConversationEventMux;
 import com.noteweave.answer.ConversationLiveEvent;
@@ -59,6 +60,9 @@ class Phase6ResearchArtifactContractTest {
 
     @Autowired
     private ArtifactJobService artifactJobService;
+
+    @Autowired
+    private ArtifactExportService artifactExportService;
 
     @Autowired
     private ConversationEventMux conversationEventMux;
@@ -701,6 +705,16 @@ class Phase6ResearchArtifactContractTest {
                 .andExpect(jsonPath("$.data.source_scope[0].source_id").value(sourceId))
                 .andExpect(jsonPath("$.data.source_scope[0].sample_text").value(""))
                 .andExpect(jsonPath("$.data.source_scope[0].summary").value(""));
+
+        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "revoked-source:" + taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "result_type", "MARKDOWN", "result_title", "Revoked source output",
+                                "result_payload", Map.of("markdown", "# Secret from stale run"),
+                                "trace_summary", "stale run", "citations", List.of()))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ARTIFACT_SOURCE_REVOKED"));
     }
 
     @Test
@@ -908,6 +922,24 @@ class Phase6ResearchArtifactContractTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("COMPLETED"))
                 .andExpect(jsonPath("$.data.result_ref").value(firstResultRef));
+
+        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "replayed-with-new-key:" + taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(completion)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.result_ref").value(firstResultRef));
+
+        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "conflicting-new-key:" + taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "result_type", "MARKDOWN",
+                                "result_title", "Conflicting Artifact",
+                                "result_payload", Map.of("markdown", "# Different payload"),
+                                "trace_summary", "different candidate", "citations", List.of()))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ARTIFACT_CANDIDATE_CONFLICT"));
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
                         .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
@@ -1129,6 +1161,35 @@ class Phase6ResearchArtifactContractTest {
                 .path("data").path("input_snapshot_id").asText();
         completeArtifact(firstTaskId, "Guide v1", "# Guide\n\nOriginal line.");
 
+        MvcResult fileList = mockMvc.perform(get(
+                        "/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}/versions/1/files",
+                        workspaceId, artifactJobId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].file_role").value("PRIMARY_MARKDOWN"))
+                .andReturn();
+        String markdownFileId = objectMapper.readTree(fileList.getResponse().getContentAsString())
+                .path("data").get(0).path("file_id").asText();
+        mockMvc.perform(get(
+                        "/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}/versions/1/files/{fileId}",
+                        workspaceId, artifactJobId, markdownFileId))
+                .andExpect(status().isOk())
+                .andExpect(content().string("# Guide\n\nOriginal line."));
+        JsonNode markdownFile = objectMapper.readTree(fileList.getResponse().getContentAsString())
+                .path("data").get(0);
+        storage.delete(markdownFile.path("bucket_name").asText(),
+                markdownFile.path("object_key").asText());
+        mockMvc.perform(get(
+                        "/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}/versions/1/files/{fileId}",
+                        workspaceId, artifactJobId, markdownFileId))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ARTIFACT_FILE_DEGRADED"));
+        artifactExportService.reconcileDegradedFiles();
+        mockMvc.perform(get(
+                        "/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}/versions/1/files/{fileId}",
+                        workspaceId, artifactJobId, markdownFileId))
+                .andExpect(status().isOk())
+                .andExpect(content().string("# Guide\n\nOriginal line."));
+
         mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}/versions/1", workspaceId, artifactJobId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.files[0].file_format").value("MARKDOWN"))
@@ -1154,7 +1215,8 @@ class Phase6ResearchArtifactContractTest {
         )).isEqualTo(2);
         mockMvc.perform(get("/internal/worker/artifact-tasks/{taskId}/input", secondTaskId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.input_snapshot_id").value(firstInputSnapshotId))
+                .andExpect(jsonPath("$.data.input_snapshot_id").value(
+                        org.hamcrest.Matchers.not(firstInputSnapshotId)))
                 .andExpect(jsonPath("$.data.input_payload.user_requirement").value("Create version one"));
         completeArtifact(secondTaskId, "Guide v2", "# Guide\n\nOriginal line.\nAdded line.");
 
@@ -1191,7 +1253,7 @@ class Phase6ResearchArtifactContractTest {
     }
 
     @Test
-    void artifactVersionShouldRemainCompletedWhenPdfArchivalTemporarilyFails() throws Exception {
+    void artifactVersionMustNotPublishWhenPdfArchivalFails() throws Exception {
         String workspaceId = createWorkspace();
         MvcResult createResult = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -1225,24 +1287,13 @@ class Phase6ResearchArtifactContractTest {
                                 "trace_summary", "pdf archive compensation test",
                                 "citations", java.util.List.of()
                         ))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("COMPLETED"));
-
-        mockMvc.perform(get(
-                        "/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}/versions/1",
-                        workspaceId,
-                        artifactJobId
-                ))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.content_markdown").value(org.hamcrest.Matchers.containsString("remains durable")))
-                .andExpect(jsonPath("$.data.files[?(@.file_format == 'MARKDOWN')].status")
-                        .value(org.hamcrest.Matchers.hasItem("READY")))
-                .andExpect(jsonPath("$.data.files[?(@.file_format == 'PDF')].status")
-                        .value(org.hamcrest.Matchers.hasItem("FAILED")))
-                .andExpect(jsonPath("$.data.files[?(@.file_format == 'PDF')].error_message").isNotEmpty());
+                .andExpect(status().isBadGateway());
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from artifact_version where artifact_job_id = ?", Integer.class, artifactJobId
+        )).isZero();
         assertThat(jdbcTemplate.queryForObject(
                 "select task_status from task where id = ?", String.class, taskId
-        )).isEqualTo("COMPLETED");
+        )).isNotEqualTo("COMPLETED");
     }
 
     @Test
@@ -1549,7 +1600,9 @@ class Phase6ResearchArtifactContractTest {
                                 "result_type", "MARKDOWN",
                                 "result_title", "B站讲义 PDF 任务结果",
                                 "result_payload", Map.of(
-                                        "markdown", "## B站讲义 PDF 任务结果\n\n字幕与 PDF 编译均已完成。"
+                                        "markdown", "## B站讲义 PDF 任务结果\n\n字幕与 PDF 编译均已完成。",
+                                        "export_trace", Map.of("status", "COMPILED",
+                                                "file_name", "worker-course-notes.pdf")
                                 ),
                                 "trace_summary", "artifact waiting job resumed and finalized",
                                 "citations", java.util.List.of(Map.of("title", "BV1NoteWeaveDemo"))
@@ -1567,6 +1620,12 @@ class Phase6ResearchArtifactContractTest {
                 .andExpect(jsonPath("$.data.status").value("COMPLETED"))
                 .andExpect(jsonPath("$.data.task_status").value("COMPLETED"))
                 .andExpect(jsonPath("$.data.latest_version_no").value(1));
+
+        mockMvc.perform(get(
+                        "/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}/versions/1/export.pdf",
+                        workspaceId, artifactJobId))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_PDF));
     }
 
     @Test

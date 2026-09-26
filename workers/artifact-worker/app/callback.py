@@ -103,10 +103,23 @@ class JavaArtifactCallbackClient:
         )
 
     def send_complete(self, task_id: str, result: ArtifactTaskResult) -> None:
+        payload = {
+            "result_type": result.result_type,
+            "result_title": result.result_title,
+            "result_payload": {
+                key: value for key, value in result.result_payload.items()
+                if key not in {"artifact_version", "artifact_commit", "writeback_request"}
+            },
+            "trace_summary": result.trace_summary,
+            "citations": result.citations,
+        }
+        preview = payload["result_payload"].get("writeback_preview")
+        if isinstance(preview, dict):
+            payload["result_payload"]["writeback_preview"] = {**preview, "version_id": ""}
         self._request(
             "POST",
             f"/internal/worker/tasks/{task_id}/complete",
-            result.model_dump(mode="json"),
+            payload,
             idempotency_key=_callback_idempotency_key(task_id, "complete"),
             task_id=task_id,
         )
