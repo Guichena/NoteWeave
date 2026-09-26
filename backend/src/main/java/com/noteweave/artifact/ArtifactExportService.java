@@ -818,6 +818,9 @@ public class ArtifactExportService {
             if (!"COMPILED".equals(exportTrace.path("status").asText())) {
                 return "";
             }
+            if ("PPTX".equals(exportTrace.path("format").asText())) {
+                return ""; // PPTX is fetched through the Candidate's PRIMARY_PPTX role.
+            }
             String fileName = exportTrace.path("file_name").asText().trim();
             if (fileName.isEmpty() || !fileName.toLowerCase().endsWith(".pdf")
                     || fileName.contains("/") || fileName.contains("\\")) {

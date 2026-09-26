@@ -31,6 +31,8 @@ class ArtifactSkillCatalogPublicationTest {
                 .containsExactly("PRIMARY_MARKDOWN", "PRIMARY_PDF");
         assertThat(catalog.requiredFileRoles("study_guide"))
                 .containsExactly("PRIMARY_MARKDOWN");
+        assertThat(catalog.requiredFileRoles("video_learning_deck"))
+                .containsExactly("PRIMARY_MARKDOWN", "PRIMARY_PPTX", "SLIDE_PREVIEW");
     }
 
     @Test

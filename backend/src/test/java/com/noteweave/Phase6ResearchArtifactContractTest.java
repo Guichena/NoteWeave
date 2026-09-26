@@ -178,7 +178,7 @@ class Phase6ResearchArtifactContractTest {
             ));
         });
         assertThat(actualContract.keySet()).containsAll(expectedContract.keySet())
-                .contains("knowledge_blog", "interview_qa");
+                .contains("knowledge_blog", "interview_qa", "video_learning_deck");
         expectedContract.forEach((key, legacy) -> {
             assertThat(actualContract.get(key).get("properties"))
                     .containsAll(legacy.get("properties"));
@@ -5862,6 +5862,152 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
         jdbcTemplate.update("update artifact_video_material_bundle set material_json = ? where id = ?",
                 objectMapper.writeValueAsString(bundle), receipt.id());
         assertThat(videoMaterialService.read(taskId)).isEqualTo(bundle);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void originalVideoDeckPublishesItsOwnVersionWithPptxAndPreview() throws Exception {
+        ObjectMapper canonical = new ObjectMapper().configure(
+                com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
+        Map<String, Object> fixture;
+        try (var input = getClass().getResourceAsStream("/video-deck-v1-cross-language.json")) {
+            fixture = objectMapper.readValue(input, new com.fasterxml.jackson.core.type.TypeReference<>() {});
+        }
+        String workspaceId = createWorkspace();
+        String url = "https://www.bilibili.com/video/BV1234567890?p=2";
+        MvcResult parentCreated = mockMvc.perform(post(
+                        "/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "bilibili_course_note_pdf",
+                                "user_requirement", "freeze source material",
+                                "inputs", Map.of("url", url)))))
+                .andExpect(status().isOk()).andReturn();
+        String parentTask = objectMapper.readTree(parentCreated.getResponse().getContentAsString())
+                .path("data").path("task_id").asText();
+        String parentSnapshot = jdbcTemplate.queryForObject(
+                "select input_snapshot_id from artifact_job_run where task_id = ?",
+                String.class, parentTask);
+        String inputsJson = jdbcTemplate.queryForObject(
+                "select inputs_json from artifact_run_input_snapshot where id = ?",
+                String.class, parentSnapshot);
+        String inputDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest((parentSnapshot + ":" + canonical.writeValueAsString(
+                        objectMapper.readValue(inputsJson, Map.class))).getBytes(StandardCharsets.UTF_8)));
+        Map<String, Object> bundle = new LinkedHashMap<>((Map<String, Object>) fixture.get("bundle"));
+        bundle.put("workspace_id", workspaceId);
+        bundle.put("bundle_id", "bundle-" + parentTask);
+        bundle.put("input_digest", inputDigest);
+        bundle.remove("frame_observations"); // Fixture has no OCR stage; legacy Bundle omits the optional field.
+        String bundleDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest(canonical.writeValueAsBytes(bundle)));
+        ArtifactVideoMaterialService.Receipt material = videoMaterialService.submit(parentTask,
+                new ArtifactVideoMaterialService.Submission(bundle, bundleDigest));
+        Map<String, Object> plan = new LinkedHashMap<>((Map<String, Object>) fixture.get("plan"));
+        plan.put("bundle_content_digest", bundleDigest);
+        String planDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest(canonical.writeValueAsBytes(plan)));
+        videoMaterialService.submitKnowledgePlan(parentTask,
+                new ArtifactVideoMaterialService.KnowledgeSubmission(material.id(), plan, planDigest));
+
+        MvcResult deckCreated = mockMvc.perform(post(
+                        "/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "video_learning_deck",
+                                "user_requirement", "make original-image slides",
+                                "inputs", Map.of("url", url,
+                                        "video_material_bundle_id", material.id())))))
+                .andExpect(status().isOk()).andReturn();
+        JsonNode created = objectMapper.readTree(deckCreated.getResponse().getContentAsString()).path("data");
+        String deckTask = created.path("task_id").asText();
+        String deckJob = created.path("artifact_job_id").asText();
+        assertThat(videoMaterialService.readReferenced(deckTask, material.id())).isEqualTo(bundle);
+        Map<String, Object> payload = objectMapper.readValue(objectMapper.writeValueAsString(
+                fixture.get("payload")), new com.fasterxml.jackson.core.type.TypeReference<>() {});
+        Map<String, Object> ir = (Map<String, Object>) payload.get("video_deck_ir");
+        ir.put("bundle_content_digest", bundleDigest);
+        ir.put("plan_content_digest", planDigest);
+        ir.remove("content_digest");
+        ir.put("content_digest", java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest(canonical.writeValueAsBytes(ir))));
+        Map<String, Object> planTrace = (Map<String, Object>) payload.get("knowledge_plan");
+        planTrace.put("bundle_content_digest", bundleDigest);
+        planTrace.put("content_digest", planDigest);
+        String markdown = String.valueOf(payload.get("markdown"));
+        Map<String, Object> candidate = new LinkedHashMap<>(artifactCandidate(deckTask, markdown, ""));
+        candidate.put("content_ir_digest",
+                ((Map<?, ?>) payload.get("content_ir")).get("content_digest"));
+        candidate.put("video_material", Map.of("id", material.id(),
+                "bundle_id", material.bundleId(), "bundle_version", material.bundleVersion(),
+                "content_digest", bundleDigest));
+        List<Map<String, Object>> files = new ArrayList<>((List<Map<String, Object>>) candidate.get("required_files"));
+        Map<String, Object> fixturePayload = (Map<String, Object>) fixture.get("payload");
+        Map<String, Object> fixtureCandidate = (Map<String, Object>) fixturePayload.get("candidate");
+        for (Map<String, Object> declared : (List<Map<String, Object>>)
+                fixtureCandidate.get("required_files")) {
+            if ("PRIMARY_MARKDOWN".equals(declared.get("role"))) continue;
+            String name = String.valueOf(declared.get("file_name"));
+            byte[] content = artifactWorkerExportClient.fetch(deckTask, name);
+            Map<String, Object> file = new LinkedHashMap<>(declared);
+            file.put("size_bytes", content.length);
+            file.put("checksum_sha256", java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                    .getInstance("SHA-256").digest(content)));
+            files.add(file);
+        }
+        candidate.put("required_files", files);
+        payload.put("candidate", candidate);
+        Map<String, Object> completion = Map.of("result_type", "MARKDOWN", "result_title", "Cache",
+                "result_payload", payload, "trace_summary", "verified original-image deck",
+                "citations", List.of());
+        Map<String, Object> forged = objectMapper.readValue(objectMapper.writeValueAsString(completion),
+                new com.fasterxml.jackson.core.type.TypeReference<>() {});
+        Map<String, Object> forgedPayload = (Map<String, Object>) forged.get("result_payload");
+        Map<String, Object> forgedIr = (Map<String, Object>) forgedPayload.get("video_deck_ir");
+        ((Map<String, Object>) ((List<?>) forgedIr.get("slides")).get(0)).put("file_id", "foreign-frame");
+        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", deckTask)
+                        .header("X-NoteWeave-Idempotency-Key", "deck-forged:" + deckTask)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(forged)))
+                .andExpect(status().isConflict());
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from artifact_version where artifact_job_id = ?",
+                Integer.class, deckJob)).isZero();
+        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", deckTask)
+                        .header("X-NoteWeave-Idempotency-Key", "deck-valid:" + deckTask)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(completion)))
+                .andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject(
+                "select delivery_status from artifact_version where origin_task_id = ?",
+                String.class, deckTask)).isEqualTo("READY");
+        assertThat(jdbcTemplate.queryForList("""
+                select file_role from artifact_file f join artifact_version v
+                on v.id = f.artifact_version_id where v.origin_task_id = ? and f.status = 'READY'
+                """, String.class, deckTask)).containsExactlyInAnyOrder(
+                        "PRIMARY_MARKDOWN", "PRIMARY_PPTX", "SLIDE_PREVIEW");
+        MvcResult version = mockMvc.perform(get(
+                        "/api/v2/workspaces/{workspaceId}/artifact-jobs/{jobId}/versions/1",
+                        workspaceId, deckJob))
+                .andExpect(status().isOk()).andReturn();
+        JsonNode publishedFiles = objectMapper.readTree(version.getResponse().getContentAsString())
+                .path("data").path("files");
+        for (JsonNode file : publishedFiles) {
+            if (!"PRIMARY_PPTX".equals(file.path("file_role").asText())) continue;
+            mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/artifact-jobs/{jobId}/versions/1/files/{fileId}",
+                            workspaceId, deckJob, file.path("file_id").asText()))
+                    .andExpect(status().isOk());
+        }
+        mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs/{jobId}/versions/1/rollback",
+                        workspaceId, deckJob).contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.version_no").value(2));
+        assertThat(jdbcTemplate.queryForList("""
+                select file_role from artifact_file f join artifact_version v
+                on v.id = f.artifact_version_id where v.artifact_job_id = ?
+                  and v.version_no = 2 and f.status = 'READY'
+                """, String.class, deckJob)).containsExactlyInAnyOrder(
+                        "PRIMARY_MARKDOWN", "PRIMARY_PPTX", "SLIDE_PREVIEW");
     }
 
     @Test

@@ -317,6 +317,27 @@
       "action_key": "COURSE_NOTES"
     },
     {
+      "skill_key": "video_learning_deck",
+      "version": "1.0.0",
+      "display_name": "视频学习 PPTX",
+      "description": "从冻结的视频资料和知识规划生成原画面学习演示文稿与逐页预览",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string" },
+          "language": { "type": "string", "default": "zh-CN", "enum": ["zh-CN", "en", "zh-EN"] },
+          "video_material_bundle_id": { "type": "string" }
+        },
+        "required": ["url", "video_material_bundle_id"]
+      },
+      "output_schema_ref": "artifact-content-v1",
+      "graph_key": "video_deck_v1",
+      "prompt_recipe_id": "video_deck_frozen_v1",
+      "required_file_roles": ["PRIMARY_MARKDOWN", "PRIMARY_PPTX", "SLIDE_PREVIEW"],
+      "capability_allowlist": ["VERIFY_OUTPUT"],
+      "action_key": "SLIDE_DECK"
+    },
+    {
       "skill_key": "knowledge_blog",
       "version": "1.0.0",
       "display_name": "视频知识博客",

@@ -483,7 +483,7 @@ public class ArtifactVideoMaterialService {
         } else if ("video_learning_deck".equals(run.skillKey())) {
             Map<String, Object> plan = readPlanByBundleId(receipt.id());
             VideoDeckValidator.validate(resultPayload, readBundleById(receipt.id()), plan,
-                    receipt.contentDigest(), digest(plan));
+                    receipt.contentDigest(), digest(plan), string(inputs.get("language")));
         }
     }
 

@@ -11,7 +11,7 @@ from reportlab.pdfgen import canvas
 from app.video_deck_ir import VideoDeckIRV1, build_video_deck_ir
 from app.video_deck_render import render_original_video_deck, verify_original_video_deck
 from app.video_deck_preview import rasterize_deck_pdf
-from app.video_deck_runtime import run_video_deck_task
+from app.video_deck_runtime import run_video_deck_task, render_video_deck_markdown
 from app.candidate_file_manifest import build_video_deck_required_files
 from app.artifact_skill_catalog import CATALOG_DIGEST
 from app.models import ArtifactTaskInput
@@ -86,6 +86,19 @@ def test_evidence_window_only_plan_cannot_publish_learning_deck() -> None:
     bundle, _ = _frozen_source()
     with pytest.raises(ValueError, match="verified semantic claims"):
         build_video_deck_ir(bundle, build_local_evidence_plan(bundle))
+
+
+@pytest.mark.parametrize("language,label", [
+    ("zh-CN", "- 原画面:"), ("en", "- Original frame:"),
+    ("zh-EN", "- 原画面 / Original frame:"),
+])
+def test_deck_template_labels_follow_frozen_language(language, label) -> None:
+    bundle, plan = _frozen_source()
+    ir = build_video_deck_ir(bundle, plan, language)
+    assert ir.language == language
+    assert label in render_video_deck_markdown(ir)
+    with pytest.raises(ValueError, match="unsupported video deck language"):
+        build_video_deck_ir(bundle, plan, "fr")
 
 
 def test_original_image_deck_opens_and_preserves_complete_frame(

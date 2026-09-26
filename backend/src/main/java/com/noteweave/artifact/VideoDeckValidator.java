@@ -20,7 +20,8 @@ import org.springframework.http.HttpStatus;
 final class VideoDeckValidator {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final Set<String> IR_FIELDS = Set.of("schema_version", "bundle_content_digest",
-            "plan_content_digest", "bvid", "part", "title", "slides", "content_digest");
+            "plan_content_digest", "bvid", "part", "title", "language", "slides",
+            "content_digest");
     private static final Set<String> SLIDE_FIELDS = Set.of("sequence_no", "node_id", "title",
             "frame_id", "file_id", "image_checksum_sha256", "at_ms", "part", "claims",
             "evidence_refs", "coverage_gaps");
@@ -28,10 +29,13 @@ final class VideoDeckValidator {
     private VideoDeckValidator() {}
 
     static void validate(Map<String, Object> payload, Map<String, Object> bundle,
-                         Map<String, Object> plan, String bundleDigest, String planDigest) {
+                         Map<String, Object> plan, String bundleDigest, String planDigest,
+                         String expectedLanguage) {
         VideoKnowledgePlanValidator.validate(plan, bundle, bundleDigest);
         Map<?, ?> ir = map(payload.get("video_deck_ir"));
         if (!ir.keySet().equals(IR_FIELDS) || !"video-deck-ir-v1".equals(ir.get("schema_version"))
+                || !Set.of("zh-CN", "en", "zh-EN").contains(ir.get("language"))
+                || !expectedLanguage.equals(ir.get("language"))
                 || !bundleDigest.equals(ir.get("bundle_content_digest"))
                 || !planDigest.equals(ir.get("plan_content_digest"))
                 || !bundle.get("bvid").equals(ir.get("bvid"))
@@ -98,7 +102,7 @@ final class VideoDeckValidator {
             if (!"content_digest".equals(key)) unsigned.put(String.valueOf(key), value);
         });
         if (!hashJson(unsigned).equals(ir.get("content_digest"))) throw invalid();
-        String markdown = markdown(title, text(ir.get("bvid")), expected);
+        String markdown = markdown(title, text(ir.get("bvid")), expected, expectedLanguage);
         if (!markdown.equals(payload.get("markdown"))) throw invalid();
         List<?> sections = list(payload.get("sections"));
         if (sections.size() != expected.size()) throw invalid();
@@ -113,7 +117,7 @@ final class VideoDeckValidator {
             Map<?, ?> section = map(sections.get(index));
             if (!section.keySet().equals(Set.of("heading", "body", "source_refs"))
                     || !slide.get("title").equals(section.get("heading"))
-                    || !(claims.isEmpty() ? "Visual evidence only; meaning remains unverified."
+                    || !(claims.isEmpty() ? labels(expectedLanguage)[4]
                         : String.join("\n\n", claims)).equals(section.get("body"))
                     || !sourceRefs.equals(section.get("source_refs"))) throw invalid();
         }
@@ -147,21 +151,38 @@ final class VideoDeckValidator {
         }
     }
 
-    private static String markdown(String title, String bvid, List<Map<String, Object>> slides) {
+    private static String markdown(String title, String bvid, List<Map<String, Object>> slides,
+                                   String language) {
+        String[] labels = labels(language);
         List<String> lines = new ArrayList<>(List.of("# " + title, ""));
         for (Map<String, Object> slide : slides) {
             lines.add("## " + slide.get("sequence_no") + ". " + slide.get("title"));
             lines.add("");
-            lines.add("- Video: " + bvid + " P" + slide.get("part") + " @ "
+            lines.add("- " + labels[0] + ": " + bvid + " P" + slide.get("part") + " @ "
                     + String.format(Locale.ROOT, "%.1f", number(slide.get("at_ms")) / 1000.0) + "s");
-            lines.add("- Original frame: " + slide.get("frame_id") + " ("
+            lines.add("- " + labels[1] + ": " + slide.get("frame_id") + " ("
                     + slide.get("image_checksum_sha256") + ")");
             for (Object claim : list(slide.get("claims"))) lines.add("- " + claim);
-            for (Object ref : list(slide.get("evidence_refs"))) lines.add("- Evidence: " + ref);
-            for (Object gap : list(slide.get("coverage_gaps"))) lines.add("- Gap: " + gap);
+            for (Object ref : list(slide.get("evidence_refs")))
+                lines.add("- " + labels[2] + ": " + ref);
+            for (Object gap : list(slide.get("coverage_gaps")))
+                lines.add("- " + labels[3] + ": " + gap);
             lines.add("");
         }
         return String.join("\n", lines).stripTrailing() + "\n";
+    }
+
+    private static String[] labels(String language) {
+        return switch (language) {
+            case "zh-CN" -> new String[] {"视频", "原画面", "证据", "缺口",
+                    "仅有画面证据；含义未经核实。"};
+            case "en" -> new String[] {"Video", "Original frame", "Evidence", "Gap",
+                    "Visual evidence only; meaning remains unverified."};
+            case "zh-EN" -> new String[] {"视频 / Video", "原画面 / Original frame",
+                    "证据 / Evidence", "缺口 / Gap",
+                    "仅有画面证据；含义未经核实。 / Visual meaning unverified."};
+            default -> throw invalid();
+        };
     }
 
     private static String hashJson(Object value) {

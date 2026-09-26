@@ -319,3 +319,11 @@ Host 集成回放创建两个独立 Job，引同一个 PDF Job 冻结的素材�
 Host 在 Candidate 文件预检中解析受限 OOXML ZIP，要求 PPTX 页数等于冻结页清单，每页只有一张原画面，图片关系指向内嵌媒体，媒体 SHA-256 等于对应冻结画面摘要，无裁切参数，并含页标题和已抽取主张的可编辑文字。ZIP 条目数量、展开大小和 XML 外部实体均受限。用 Python 实际渲染的固定 PPTX 验证通过，改写 PPTX 内图片字节后即使外层文件可重新计算摘要也被拒绝。Worker 镜像定义补入 `python-pptx`、LibreOffice Impress 和 Poppler。
 
 `VideoDeckFileVerifierTest` **1 passed**，`VideoDeckValidatorTest` **1 passed**；Artifact 完成契约 **52 用例，44 执行通过、8 个既有跳过**，Candidate **6 passed**，回滚 **2 passed**。本机 Docker daemon 未运行，未构建或验证更新后的 Worker 镜像；当前开发机也未装 LibreOffice。PNG 预览是否忠实对应 PPTX 仍需实际转换和视觉验收，固定真实视频样本未取得，生产 Skill 暂未注册。
+
+## P4 生产目录与独立版本发布回放
+
+在三份逐字节相同的 v2 发布目录中注册 `video_learning_deck`，要求 URL、语言和受控 `video_material_bundle_id`，声明 Markdown、原图 PPTX 与逐页 PNG 角色。Worker 生产 Action/Graph/Recipe 走冻结资料的专用分支，IR 现显式冻结 `zh-CN | en | zh-EN`，中文/英文/双语的时间、原画面、证据、缺口标签和无语义主张提示相应本地化；Host 核对 IR 语言与 Run 输入相同。修复 Host 旧导出解析把任意 `COMPILED` 都当成 PDF 的冲突：PPTX 从 Candidate 的 `PRIMARY_PPTX` 角色读取，旧 PDF 文件名路径保持原语义。
+
+Host 集成回放从一份冻结 Bundle 与含语义主张的 Plan 创建独立 PPTX Job：伪造画面文件 ID 的回调返回冲突且未生成版本；合法回调生成 READY Version，Markdown/PPTX/预览三个文件角色都为 READY，PPTX 可按 file ID 下载，回滚后第二版仍保留三类文件。首轮端到端测试因 Python 固定 Bundle 把未执行 OCR 的 `frame_observations` 写成 `null`，而 Host 要求该可选字段缺席或完整覆盖全部帧，出现 **1 error**；修正夹具后定向回放通过。Worker 目录/页清单首轮因旧精确 Skill 数量断言出现 **1 failed、16 passed**；更新发布目录契约后定向 **17 passed**，Worker 全套 **351 passed，45.34 秒**。Host 最终 Artifact 完成契约 **53 用例，45 执行通过、8 个既有跳过**，目录 **2 passed**、页清单 **1 passed**、PPTX 内部文件 **1 passed**、Candidate **6 passed**、回滚 **2 passed**、Worker 输入 **5 passed**。
+
+发布目录已能接受该独立 Skill，但普通视频的本地知识计划仍只有证据窗口、没有可发布的语义主张；自动成稿会在内容门禁失败。当前机器没有 LibreOffice，Docker daemon 未运行，故未验证更新后容器中的 PPTX→PDF→PNG 转换。固定真实视频的逐页可读性、字体和预览与 PPTX 的视觉一致性尚未验收；不能把本次合成回放视为 P4 全部完成。

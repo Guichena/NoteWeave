@@ -110,7 +110,7 @@
   "bundle_digest": "ea1941e500091bde3d122413db5fbb0a1c4af31c4ecd8d68580bd09763b98dcc",
   "plan_digest": "190e2e22b173f8fb02da90a10e196924178527c727ad7925198d20a4807a0fbf",
   "payload": {
-    "markdown": "# Cache\n\n## 1. Consistency\n\n- Video: BV1234567890 P2 @ 2.5s\n- Original frame: f1 (4d4f2f2007ab4513985f6dfe814b9f96d57917359418711d3733892941e1d83a)\n- cache consistency\n- Evidence: segment:s1\n",
+    "markdown": "# Cache\n\n## 1. Consistency\n\n- 视频: BV1234567890 P2 @ 2.5s\n- 原画面: f1 (4d4f2f2007ab4513985f6dfe814b9f96d57917359418711d3733892941e1d83a)\n- cache consistency\n- 证据: segment:s1\n",
     "sections": [
       {
         "heading": "Consistency",
@@ -123,6 +123,7 @@
     ],
     "video_deck_ir": {
       "schema_version": "video-deck-ir-v1",
+      "language": "zh-CN",
       "bundle_content_digest": "ea1941e500091bde3d122413db5fbb0a1c4af31c4ecd8d68580bd09763b98dcc",
       "plan_content_digest": "190e2e22b173f8fb02da90a10e196924178527c727ad7925198d20a4807a0fbf",
       "bvid": "BV1234567890",
@@ -147,7 +148,7 @@
           "coverage_gaps": []
         }
       ],
-      "content_digest": "89d0484a336fb6307602ce277182f2a8c6b6d25b93baf81669962b17f09ea4a2"
+      "content_digest": "e20d948631e5901702e58e1b19d472030fa14a8e473edc333b21f75e41ea743a"
     },
     "content_ir": {
       "schema_version": "artifact-content-v1",
@@ -163,8 +164,8 @@
           ]
         }
       ],
-      "markdown_sha256": "27fc6f985a2b722fd2d4d635d4ec8e858da032e09cd6a97ba314320f54fd2a19",
-      "content_digest": "4ea6a93b19e84047850db3d2875881dbfcb96da0e0a57b02d462b76a127ddbe5"
+      "markdown_sha256": "356ad956e449cc5e47d3a8cc4e31ed4912acc141f41d573756e189680c623bda",
+      "content_digest": "12582da0786432fb5b353bfd22f678ec5d15993ca2ecab07efd317158e1057b3"
     },
     "verification": {
       "status": "PASS",
@@ -183,12 +184,12 @@
       "mode": "FROZEN_PLAN"
     },
     "candidate": {
-      "candidate_id": "fa0b2e3663bd9bd1c1624de36e553d2571bacab04543d51e27612861f3cd01c0",
+      "candidate_id": "08f83dfb496d7b0befb59be2c77918016dda2a58e65ab0af320b1d8f2b57151a",
       "task_id": "task-deck-fixture",
       "input_snapshot_id": "snapshot-deck-fixture",
       "catalog_digest": "b4a00c680a857f2696e9bdde1bc06d9f9f847456adb9f8bcc5f6f45303f16b94",
-      "content_sha256": "27fc6f985a2b722fd2d4d635d4ec8e858da032e09cd6a97ba314320f54fd2a19",
-      "content_ir_digest": "4ea6a93b19e84047850db3d2875881dbfcb96da0e0a57b02d462b76a127ddbe5",
+      "content_sha256": "356ad956e449cc5e47d3a8cc4e31ed4912acc141f41d573756e189680c623bda",
+      "content_ir_digest": "12582da0786432fb5b353bfd22f678ec5d15993ca2ecab07efd317158e1057b3",
       "required_files": [
         {
           "role": "PRIMARY_MARKDOWN",
@@ -196,8 +197,8 @@
           "sequence_no": 0,
           "file_name": "content.md",
           "media_type": "text/markdown; charset=UTF-8",
-          "size_bytes": 191,
-          "checksum_sha256": "27fc6f985a2b722fd2d4d635d4ec8e858da032e09cd6a97ba314320f54fd2a19"
+          "size_bytes": 185,
+          "checksum_sha256": "356ad956e449cc5e47d3a8cc4e31ed4912acc141f41d573756e189680c623bda"
         },
         {
           "role": "PRIMARY_PPTX",
@@ -206,7 +207,7 @@
           "file_name": "learning-deck.pptx",
           "media_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
           "size_bytes": 33688,
-          "checksum_sha256": "d4d8bbffd42b12e0a7356ccd107d046e6e5f64f55f2b27588545a3dd769c14d4"
+          "checksum_sha256": "ea8ff384b0391cd47b6e2d97c34f5a53cf381edc5296465d3aca16a3b83e32e6"
         },
         {
           "role": "SLIDE_PREVIEW",

@@ -26,7 +26,10 @@ class VideoDeckValidatorTest {
             Map<String, Object> payload = (Map<String, Object>) fixture.get("payload");
             String bundleDigest = String.valueOf(fixture.get("bundle_digest"));
             String planDigest = String.valueOf(fixture.get("plan_digest"));
-            VideoDeckValidator.validate(payload, bundle, plan, bundleDigest, planDigest);
+            VideoDeckValidator.validate(payload, bundle, plan, bundleDigest, planDigest, "zh-CN");
+            assertThatThrownBy(() -> VideoDeckValidator.validate(
+                    payload, bundle, plan, bundleDigest, planDigest, "en"))
+                    .isInstanceOf(BusinessException.class).hasMessageContaining("冻结视频证据");
 
             @SuppressWarnings("unchecked")
             Map<String, Object> originalIr = (Map<String, Object>) payload.get("video_deck_ir");
@@ -39,7 +42,7 @@ class VideoDeckValidatorTest {
             forgedIr.put("slides", List.of(forgedSlide));
             payload.put("video_deck_ir", forgedIr);
             assertThatThrownBy(() -> VideoDeckValidator.validate(
-                    payload, bundle, plan, bundleDigest, planDigest))
+                    payload, bundle, plan, bundleDigest, planDigest, "zh-CN"))
                     .isInstanceOf(BusinessException.class).hasMessageContaining("冻结视频证据");
             payload.put("video_deck_ir", originalIr);
 
@@ -49,7 +52,7 @@ class VideoDeckValidatorTest {
             List<Map<String, Object>> files = (List<Map<String, Object>>) candidate.get("required_files");
             candidate.put("required_files", files.subList(0, 2));
             assertThatThrownBy(() -> VideoDeckValidator.validate(
-                    payload, bundle, plan, bundleDigest, planDigest))
+                    payload, bundle, plan, bundleDigest, planDigest, "zh-CN"))
                     .isInstanceOf(BusinessException.class).hasMessageContaining("逐页交付清单");
         }
     }

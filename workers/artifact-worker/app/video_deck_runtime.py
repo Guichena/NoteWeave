@@ -13,18 +13,28 @@ from app.video_knowledge_plan import VideoKnowledgePlanV1
 from app.video_material_bundle import VideoMaterialBundleV1
 
 
+DECK_LABELS = {
+    "zh-CN": ("视频", "原画面", "证据", "缺口", "仅有画面证据；含义未经核实。"),
+    "en": ("Video", "Original frame", "Evidence", "Gap",
+           "Visual evidence only; meaning remains unverified."),
+    "zh-EN": ("视频 / Video", "原画面 / Original frame", "证据 / Evidence",
+              "缺口 / Gap", "仅有画面证据；含义未经核实。 / Visual meaning unverified."),
+}
+
+
 def render_video_deck_markdown(ir: VideoDeckIRV1) -> str:
+    video, frame, evidence, gap_label, _ = DECK_LABELS[ir.language]
     lines = [f"# {ir.title}", ""]
     for slide in ir.slides:
         lines += [f"## {slide.sequence_no}. {slide.title}", "",
-                  f"- Video: {ir.bvid} P{slide.part} @ {slide.at_ms / 1000:.1f}s",
-                  f"- Original frame: {slide.frame_id} ({slide.image_checksum_sha256})"]
+                  f"- {video}: {ir.bvid} P{slide.part} @ {slide.at_ms / 1000:.1f}s",
+                  f"- {frame}: {slide.frame_id} ({slide.image_checksum_sha256})"]
         for claim in slide.claims:
             lines.append(f"- {claim}")
         for ref in slide.evidence_refs:
-            lines.append(f"- Evidence: {ref}")
+            lines.append(f"- {evidence}: {ref}")
         for gap in slide.coverage_gaps:
-            lines.append(f"- Gap: {gap}")
+            lines.append(f"- {gap_label}: {gap}")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
@@ -40,12 +50,13 @@ def run_video_deck_task(task_input: ArtifactTaskInput) -> tuple[
         raise ValueError("video deck requires a published Skill and frozen video inputs")
     bundle = VideoMaterialBundleV1.model_validate(task_input.frozen_video_material)
     plan = VideoKnowledgePlanV1.model_validate(task_input.frozen_video_knowledge_plan)
-    ir = build_video_deck_ir(bundle, plan)
+    language = str(task_input.input_payload.inputs.get("language") or "zh-CN")
+    ir = build_video_deck_ir(bundle, plan, language)
     markdown = render_video_deck_markdown(ir)
     sections = [ArtifactSectionDraft(
         heading=slide.title,
         body="\n\n".join(slide.claims) if slide.claims else
-             "Visual evidence only; meaning remains unverified.",
+             DECK_LABELS[language][4],
         source_refs=slide.evidence_refs + [f"frame:{slide.frame_id}"],
     ) for slide in ir.slides]
     content_ir = build_content_ir(artifact_type="SLIDE_DECK", title=ir.title,

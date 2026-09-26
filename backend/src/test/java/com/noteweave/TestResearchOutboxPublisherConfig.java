@@ -47,6 +47,16 @@ class TestResearchOutboxPublisherConfig {
                         org.springframework.http.HttpStatus.BAD_GATEWAY);
             }
             return exports.computeIfAbsent(taskId + ":" + fileName, key -> {
+                if ("learning-deck.pptx".equals(fileName) || "file-1.png".equals(fileName)) {
+                    String resource = "learning-deck.pptx".equals(fileName)
+                            ? "/video-deck-v1.pptx" : "/video-deck-frame-v1.png";
+                    try (var input = getClass().getResourceAsStream(resource)) {
+                        if (input == null) throw new IllegalStateException("deck fixture is missing");
+                        return input.readAllBytes();
+                    } catch (java.io.IOException ex) {
+                        throw new IllegalStateException("test deck fixture cannot be read", ex);
+                    }
+                }
                 if (fileName.endsWith(".png")) {
                     try (java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream()) {
                         java.awt.image.BufferedImage image = new java.awt.image.BufferedImage(

@@ -30,6 +30,7 @@ class DeckSlideV1(DeckRecord):
 
 class VideoDeckIRV1(DeckRecord):
     schema_version: Literal["video-deck-ir-v1"] = "video-deck-ir-v1"
+    language: Literal["zh-CN", "en", "zh-EN"]
     bundle_content_digest: str
     plan_content_digest: str
     bvid: str
@@ -52,7 +53,7 @@ class VideoDeckIRV1(DeckRecord):
 
     def verify_against(self, bundle: VideoMaterialBundleV1,
                        plan: VideoKnowledgePlanV1) -> None:
-        if self != build_video_deck_ir(bundle, plan):
+        if self != build_video_deck_ir(bundle, plan, self.language):
             raise ValueError("video deck IR does not match frozen picture and knowledge evidence")
 
 
@@ -63,9 +64,12 @@ def _digest(data: dict[str, object]) -> str:
 
 
 def build_video_deck_ir(bundle: VideoMaterialBundleV1,
-                        plan: VideoKnowledgePlanV1) -> VideoDeckIRV1:
+                        plan: VideoKnowledgePlanV1,
+                        language: str = "zh-CN") -> VideoDeckIRV1:
     """Map each original frame to one ordered slide without inventing visual facts."""
     plan.verify_against_bundle(bundle)
+    if language not in {"zh-CN", "en", "zh-EN"}:
+        raise ValueError("unsupported video deck language")
     if not bundle.frames:
         raise ValueError("original-image deck requires frozen video frames")
     if not any(node.kind in {"CONCEPT", "EXAMPLE"} and any(
@@ -100,6 +104,7 @@ def build_video_deck_ir(bundle: VideoMaterialBundleV1,
               for index, (_, _, fields) in enumerate(pending, start=1)]
     data: dict[str, object] = {
         "schema_version": "video-deck-ir-v1",
+        "language": language,
         "bundle_content_digest": bundle.content_digest(),
         "plan_content_digest": plan.content_digest(),
         "bvid": bundle.bvid,

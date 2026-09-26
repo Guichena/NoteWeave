@@ -14,6 +14,7 @@ from pptx.util import Inches, Pt
 
 from app.config import resolve_mcp_sandbox_root
 from app.video_deck_ir import VideoDeckIRV1
+from app.video_deck_runtime import DECK_LABELS
 from app.video_knowledge_plan import VideoKnowledgePlanV1
 from app.video_material_bundle import VideoMaterialBundleV1
 
@@ -73,7 +74,7 @@ def render_original_video_deck(
         body = slide.shapes.add_textbox(*TEXT_BOX)
         body.text_frame.word_wrap = True
         body.text_frame.text = "\n\n".join(slide_ir.claims) if slide_ir.claims else \
-            "Visual evidence only; meaning remains unverified."
+            DECK_LABELS[ir.language][4]
         for paragraph in body.text_frame.paragraphs:
             paragraph.font.name = "Aptos"
             paragraph.font.size = Pt(18)
