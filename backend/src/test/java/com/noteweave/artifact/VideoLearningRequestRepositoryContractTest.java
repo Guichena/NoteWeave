@@ -3,6 +3,7 @@ package com.noteweave.artifact;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -87,6 +88,68 @@ class VideoLearningRequestRepositoryContractTest {
                 "https://www.bilibili.com/video/BV1234567890", 1, null,
                 "STANDARD", "ALLOW", "original-v1", "study", List.of("knowledge_blog")))
                 .hasMessageContaining("视频学习请求");
+    }
+
+    @Test
+    void projectsChoicesAndCancelsOnlyUndeliveredMaterialWork() throws Exception {
+        String workspaceId = workspace();
+        var parent = requests.createOrReplay(workspaceId, "local-user", "client-cancel",
+                draft(List.of("knowledge_blog", "video_learning_deck")));
+        String taskId = tasks.createTask(workspaceId, "VIDEO_MATERIAL",
+                "VIDEO_LEARNING_REQUEST", parent.requestId(), "QUEUED", "素材采集已创建");
+        requests.attachMaterialTask(workspaceId, parent.requestId(), taskId);
+        jdbc.update("""
+                insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
+                values (?, ?, 'noteweave.video.material', ?, '{}', 'READY')
+                """, java.util.UUID.randomUUID().toString(), taskId, taskId);
+
+        String response = mvc.perform(get("/api/v2/workspaces/{workspaceId}/video-learning-bundles/{requestId}",
+                        workspaceId, parent.requestId()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        var data = mapper.readTree(response).path("data");
+        assertThat(data.path("material_state").asText()).isEqualTo("QUEUED");
+        assertThat(data.path("choices")).hasSize(2);
+        assertThat(data.path("choices").get(0).path("status").asText())
+                .isEqualTo("NOT_STARTED");
+
+        String cancelResponse = mvc.perform(post(
+                        "/api/v2/workspaces/{workspaceId}/video-learning-bundles/{requestId}/cancel",
+                        workspaceId, parent.requestId()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        var cancelled = mapper.readTree(cancelResponse).path("data");
+        assertThat(cancelled.path("cancellation_requested").asBoolean()).isTrue();
+        assertThat(cancelled.path("material_state").asText()).isEqualTo("CANCELLED");
+        assertThat(jdbc.queryForObject("select status from task_outbox where task_id = ?",
+                String.class, taskId)).isEqualTo("CANCELLED");
+        assertThat(jdbc.queryForObject("select task_status from task where id = ?",
+                String.class, taskId)).isEqualTo("CANCELLED");
+        assertThat(requests.requestCancellation(workspaceId, parent.requestId(), "local-user")
+                .cancellationRequested()).isTrue();
+        assertThatThrownBy(() -> requests.requestCancellation(workspaceId,
+                parent.requestId(), "another-user")).hasMessageContaining("actor");
+    }
+
+    @Test
+    void cancellationRetainsAlreadyDispatchedTaskAsIntent() throws Exception {
+        String workspaceId = workspace();
+        var parent = requests.createOrReplay(workspaceId, "local-user", "client-running",
+                draft(List.of("knowledge_blog")));
+        String taskId = tasks.createTask(workspaceId, "VIDEO_MATERIAL",
+                "VIDEO_LEARNING_REQUEST", parent.requestId(), "QUEUED", "素材采集已创建");
+        requests.attachMaterialTask(workspaceId, parent.requestId(), taskId);
+        tasks.startTask(taskId);
+        jdbc.update("""
+                insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
+                values (?, ?, 'noteweave.video.material', ?, '{}', 'PROCESSING')
+                """, java.util.UUID.randomUUID().toString(), taskId, taskId);
+
+        var cancelled = requests.requestCancellation(workspaceId, parent.requestId(), "local-user");
+        assertThat(cancelled.cancellationRequested()).isTrue();
+        assertThat(cancelled.materialState()).isEqualTo("RUNNING");
+        assertThat(jdbc.queryForObject("select task_status from task where id = ?",
+                String.class, taskId)).isEqualTo("RUNNING");
+        assertThat(jdbc.queryForObject("select status from task_outbox where task_id = ?",
+                String.class, taskId)).isEqualTo("PROCESSING");
     }
 
     private VideoLearningRequestDraft draft(List<String> skills) {

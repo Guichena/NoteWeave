@@ -2,7 +2,9 @@ package com.noteweave.artifact;
 
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
+import com.noteweave.task.TaskService;
 import java.util.List;
+import java.util.ArrayList;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -14,11 +16,14 @@ import org.springframework.transaction.annotation.Transactional;
 public class VideoLearningRequestRepository {
     private final JdbcTemplate jdbc;
     private final ArtifactVideoMaterialService videoMaterials;
+    private final TaskService tasks;
 
     public VideoLearningRequestRepository(JdbcTemplate jdbc,
-                                          ArtifactVideoMaterialService videoMaterials) {
+                                          ArtifactVideoMaterialService videoMaterials,
+                                          TaskService tasks) {
         this.jdbc = jdbc;
         this.videoMaterials = videoMaterials;
+        this.tasks = tasks;
     }
 
     @Transactional
@@ -154,12 +159,107 @@ public class VideoLearningRequestRepository {
         if (updated != 1) throw invalid("child Job is missing, mismatched or already linked");
     }
 
+    /** The parent status is a projection; child terminal states remain independent. */
+    public ParentView view(String workspaceId, String requestId) {
+        List<ParentView> parents = jdbc.query("""
+                select r.id, r.material_state, r.material_task_id, r.material_bundle_id,
+                       r.knowledge_plan_id, r.cancellation_requested, t.task_status
+                from video_learning_request r
+                left join task t on t.id = r.material_task_id
+                where r.id = ? and r.workspace_id = ?
+                """, (rs, index) -> new ParentView(rs.getString(1),
+                projectedMaterialState(rs.getString(2), rs.getString(7)),
+                rs.getString(3), rs.getString(4), rs.getString(5),
+                rs.getBoolean(6), List.of()), requestId, workspaceId);
+        if (parents.size() != 1) throw invalid("parent request does not belong to Workspace");
+        ParentView parent = parents.get(0);
+        List<ChoiceView> choices = jdbc.query("""
+                select c.skill_key, c.artifact_job_id, j.status, j.task_id, t.task_status
+                from video_learning_request_choice c
+                left join artifact_job j on j.id = c.artifact_job_id
+                left join task t on t.id = j.task_id
+                where c.request_id = ? order by c.skill_key
+                """, (rs, index) -> new ChoiceView(rs.getString(1), rs.getString(2),
+                projectedChildState(rs.getString(3), rs.getString(5)), rs.getString(4)),
+                requestId);
+        return new ParentView(parent.requestId(), parent.materialState(), parent.materialTaskId(),
+                parent.materialBundleId(), parent.knowledgePlanId(),
+                parent.cancellationRequested(), choices);
+    }
+
+    /** Stop undelivered work and record an intent for already dispatched work. */
+    @Transactional
+    public ParentView requestCancellation(String workspaceId, String requestId, String actorId) {
+        List<String> materialTasks = jdbc.query("""
+                select material_task_id from video_learning_request
+                where id = ? and workspace_id = ? and actor_user_id = ? for update
+                """, (rs, index) -> rs.getString(1), requestId, workspaceId, actorId);
+        if (materialTasks.size() != 1) throw invalid("parent request does not belong to actor");
+        jdbc.update("""
+                update video_learning_request
+                set cancellation_requested = true, updated_at = current_timestamp
+                where id = ? and workspace_id = ? and cancellation_requested = false
+                """, requestId, workspaceId);
+        List<String> taskIds = new ArrayList<>();
+        if (materialTasks.get(0) != null) taskIds.add(materialTasks.get(0));
+        taskIds.addAll(jdbc.query("""
+                select j.task_id from video_learning_request_choice c
+                join artifact_job j on j.id = c.artifact_job_id
+                where c.request_id = ? and j.workspace_id = ?
+                """, (rs, index) -> rs.getString(1), requestId, workspaceId));
+        for (String taskId : taskIds) {
+            // Only a READY outbox proves the Worker has not taken this task.
+            jdbc.update("""
+                    update task_outbox set status = 'CANCELLED'
+                    where task_id = ? and status in ('READY', 'DEAD_LETTER')
+                    """, taskId);
+            Integer inFlight = jdbc.queryForObject("""
+                    select count(*) from task_outbox
+                    where task_id = ? and status in ('PROCESSING', 'SENT')
+                    """, Integer.class, taskId);
+            if (inFlight != null && inFlight == 0) {
+                List<String> pending = jdbc.query("""
+                        select id from task where id = ? and task_status = 'PENDING' for update
+                        """, (rs, index) -> rs.getString(1), taskId);
+                if (!pending.isEmpty()) {
+                    tasks.cancelTask(taskId, "CANCELLED", "父请求已取消", "");
+                    jdbc.update("""
+                            update artifact_job set status = 'CANCELLED', updated_at = current_timestamp
+                            where task_id = ? and status = 'QUEUED' and latest_version_no = 0
+                            """, taskId);
+                }
+            }
+        }
+        return view(workspaceId, requestId);
+    }
+
+    private static String projectedMaterialState(String state, String taskState) {
+        if ("READY".equals(state) || "FAILED".equals(state)
+                || "CANCELLED".equals(state) || "DEGRADED".equals(state)) return state;
+        if ("FAILED".equals(taskState)) return "FAILED";
+        if ("CANCELLED".equals(taskState)) return "CANCELLED";
+        if ("RUNNING".equals(taskState) || "WAITING".equals(taskState)) return "RUNNING";
+        return state;
+    }
+
+    private static String projectedChildState(String jobState, String taskState) {
+        if (jobState == null) return "NOT_STARTED";
+        if ("CANCELLED".equals(taskState)) return "CANCELLED";
+        if ("FAILED".equals(taskState)) return "FAILED";
+        return jobState;
+    }
+
     private static BusinessException invalid(String detail) {
         return new BusinessException("VIDEO_LEARNING_STATE_INVALID", detail, HttpStatus.CONFLICT);
     }
 
     public record ParentReceipt(String requestId, String actorId, String requestDigest,
                                 String materialState, boolean replayed) {}
+    public record ParentView(String requestId, String materialState, String materialTaskId,
+                             String materialBundleId, String knowledgePlanId,
+                             boolean cancellationRequested, List<ChoiceView> choices) {}
+    public record ChoiceView(String skillKey, String artifactJobId, String status,
+                             String taskId) {}
     private record ParentInput(String videoUrl, int part, String frameDensity,
                                String asrFallback) {}
 }
