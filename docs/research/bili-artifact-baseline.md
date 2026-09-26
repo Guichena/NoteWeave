@@ -485,3 +485,7 @@ V126 为 Artifact 的已冻结 Context 投影增加按 Run 固定的 `consumptio
 ## C4 老会话按需回填合同
 
 在 Workspace 为 OFF 时先创建一轮 QA，随后切至 SHADOW 并提交新问题；原有影子合同现在读取第二轮冻结投影，确认第一轮用户消息仍在有序 Raw Tail、本轮 cutoff 为 3、选中预算未超额。再切回 OFF，后续新 Run 不创建 v2 影子快照；已有冻结投影仍保留。定向 `ContextV2ShadowSnapshotContractTest#workspaceModeCanOptIntoShadowAndTurnItOffWithoutEnablingActive` **1 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。此处证明本地旧会话在下一轮输入时回填；尚无批量历史回填、真实用户标注或灰度误选率统计。
+
+## P6 四选提交前资源提示
+
+父请求创建表单按当前选择显示一次资料采集及独立产物任务数，明确画面采集密度、会使用原画面的交付种类，以及无字幕时是否可能增加 ASR 工作。具体费用与耗时仍随视频长度、字幕状态和 Provider 变化，界面不展示虚构金额。新增 DOM 合同覆盖选择 PPTX、丰富抽帧及禁用 ASR 后的提示更新；前端全套 **254 passed/254**，`pnpm build` 与 `pnpm ui:check` 均通过。此项只验证文案和 DOM，尚未在真实父请求或浏览器保存文件流程中联调。

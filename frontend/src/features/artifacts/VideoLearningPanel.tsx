@@ -48,6 +48,9 @@ export function VideoLearningPanel({ workspaceId, onJobsChanged, onOpenVersion, 
   const requestId = useRef(crypto.randomUUID());
   const available = overview?.available_skills ?? OUTPUTS.map((output) => output.key);
   const effectiveSelected = selected.filter((key) => available.includes(key));
+  const visualOutputs = effectiveSelected.filter((key) =>
+    key === "video_learning_deck" || key === "bilibili_course_note_pdf");
+  const densityLabel = { LOW: "精简", STANDARD: "标准", HIGH: "丰富" }[density];
 
   useEffect(() => {
     if (!workspaceId) {
@@ -213,7 +216,14 @@ export function VideoLearningPanel({ workspaceId, onJobsChanged, onOpenVersion, 
                   placeholder="写下希望重点理解或练习的内容"
                   onChange={(event) => changed(() => setRequirement(event.target.value))} />
               </label>
-              <p className="video-learning-cost">一次资料采集，加上 {effectiveSelected.length} 个独立产物任务。</p>
+              <p className="video-learning-cost" aria-live="polite">
+                资源预估：1 次资料采集，加上 {effectiveSelected.length} 个独立产物任务。<br />
+                画面按{densityLabel}密度采集；{visualOutputs.length > 0
+                  ? `${visualOutputs.length} 种产物会使用原画面。`
+                  : "当前选择以文字内容为主。"}<br />
+                {asr === "ALLOW" ? "缺少字幕时可能增加语音转录。" : "缺少字幕时不转录，可能留下资料缺口。"}
+                具体耗时与调用费用取决于视频长度及字幕状态。
+              </p>
               <button type="submit" disabled={busy || effectiveSelected.length === 0 || !requirement.trim()}>
                 {busy ? "正在创建" : `创建 ${effectiveSelected.length} 种产物`}
               </button>

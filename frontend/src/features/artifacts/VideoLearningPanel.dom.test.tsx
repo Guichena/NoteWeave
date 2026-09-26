@@ -48,6 +48,20 @@ describe("VideoLearningPanel", () => {
     expect(screen.getByText("资料 排队中")).toBeTruthy();
   });
 
+  it("updates collection and output cost factors before submission", async () => {
+    const api = { listVideoLearning: vi.fn(async () => ({ enabled: true, requests: [] })) };
+    render(<VideoLearningPanel workspaceId="workspace" api={api as unknown as ArtifactsApi} />);
+    fireEvent.click(await screen.findByRole("button", { name: /一个视频，生成多种产物/ }));
+    expect(screen.getByText(/1 次资料采集，加上 1 个独立产物任务/)).toBeTruthy();
+    expect(screen.getByText(/当前选择以文字内容为主/)).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(/学习演示文稿/));
+    fireEvent.change(screen.getByLabelText("画面密度"), { target: { value: "HIGH" } });
+    fireEvent.change(screen.getByLabelText("无字幕时"), { target: { value: "DENY" } });
+    expect(screen.getByText(/2 个独立产物任务/)).toBeTruthy();
+    expect(screen.getByText(/画面按丰富密度采集；1 种产物会使用原画面/)).toBeTruthy();
+    expect(screen.getByText(/缺少字幕时不转录，可能留下资料缺口/)).toBeTruthy();
+  });
+
   it("keeps accepted parents visible after creation is disabled", async () => {
     const api = {
       listVideoLearning: vi.fn(async () => ({ enabled: false, requests: [parent] })),
