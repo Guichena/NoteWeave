@@ -58,6 +58,7 @@ type BuildArtifactRailPropsInput = {
     compareArtifactWithPreviousVersion: ArtifactRailProps["compareArtifactWithPreviousVersion"];
     rollbackArtifactVersion: ArtifactRailProps["rollbackArtifactVersion"];
     downloadArtifactVersionPdf: ArtifactRailProps["downloadArtifactVersionPdf"];
+    downloadArtifactVersionFile: ArtifactRailProps["downloadArtifactVersionFile"];
   };
   researchSummary: ArtifactSidebarResearchRunSummary | null | undefined;
   latestTask: ArtifactSidebarWorkspaceTask | null | undefined;
@@ -165,6 +166,7 @@ export function buildArtifactRailProps(input: BuildArtifactRailPropsInput): Arti
     compareArtifactWithPreviousVersion: artifactWorkspace.compareArtifactWithPreviousVersion,
     rollbackArtifactVersion: artifactWorkspace.rollbackArtifactVersion,
     downloadArtifactVersionPdf: artifactWorkspace.downloadArtifactVersionPdf,
+    downloadArtifactVersionFile: artifactWorkspace.downloadArtifactVersionFile,
     resolveArtifactSkillTitle: (skillKey: string) => resolveArtifactSkillTitle(skillKey, catalog.skills),
     summarizeRunStatus,
     openArtifactHistoryVersion: artifactWorkspace.openArtifactHistoryVersion,

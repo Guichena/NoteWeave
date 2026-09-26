@@ -4,10 +4,15 @@ import type {
   ArtifactVersionAuditViewVersion
 } from "./artifactVersionAudit";
 import { ArtifactMindMapPreview, isMindMapArtifact } from "./ArtifactMindMapPreview";
+import type { ArtifactFileMetadata } from "./model";
 
 type ArtifactVersionActionTarget = ArtifactVersionAuditViewVersion & {
   artifact_job_id: string;
 };
+
+function downloadableFile(file: NonNullable<ArtifactVersionAuditViewVersion["files"]>[number]): file is ArtifactFileMetadata {
+  return file.status === "READY" && "file_id" in file && "file_name" in file;
+}
 
 type ArtifactVersionActionsProps = Pick<
   ArtifactRailProps,
@@ -22,6 +27,7 @@ type ArtifactVersionActionsProps = Pick<
   | "compareArtifactWithPreviousVersion"
   | "rollbackArtifactVersion"
   | "downloadArtifactVersionPdf"
+  | "downloadArtifactVersionFile"
 > & {
   version: ArtifactVersionActionTarget;
   auditView: Pick<
@@ -45,7 +51,8 @@ export function ArtifactVersionActions({
   regenerateArtifactVersion,
   compareArtifactWithPreviousVersion,
   rollbackArtifactVersion,
-  downloadArtifactVersionPdf
+  downloadArtifactVersionPdf,
+  downloadArtifactVersionFile
 }: ArtifactVersionActionsProps) {
   const saveKey = artifactVersionSaveKey(version);
   const canCompare = version.version_no > 1;
@@ -102,6 +109,12 @@ export function ArtifactVersionActions({
           下载 PDF
         </button>
       ) : null}
+      {version.files?.filter(downloadableFile).map((file) => (
+        <button key={file.file_id} className="secondary-button"
+          onClick={() => void downloadArtifactVersionFile(version, file)} disabled={isBusy}>
+          下载 {file.file_format}{file.file_format === "PNG" ? ` · ${file.file_name}` : ""}
+        </button>
+      ))}
       {auditView.runtimeSummary.length > 0 ? (
         <div className="artifact-runtime-trace">
           {auditView.runtimeSummary.map((item) => (

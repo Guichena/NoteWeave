@@ -433,3 +433,7 @@ Host `VideoLearningRequestRepositoryContractTest` **7 passed，0 failed/0 error/
 ## P6 Skill Version 新建门禁
 
 Host 从已发布 Skill Catalog 读取实际版本，新增 `noteweave.video-learning.blocked-skill-versions` 配置（逗号分隔 `skill_key@version`）。父请求创建事务拒绝包含被关闭版本的选择，拒绝时不创建父记录、Task 或 Outbox；列表返回当前 Workspace 可新建的 Skill，前端禁用相应勾选项。该开关只管新请求，协调器仍处理已接受父请求。现有发布目录的四个视频产物版本均为 `1.0.0`；配置不存在时保持全开放（仍受全局和 Workspace 门禁）。Host 定向 `VideoLearningRolloutPolicyTest`、`VideoLearningSkillVersionRolloutContractTest`、`VideoLearningRequestCreationContractTest` **4 passed，0 failed/0 error/0 skipped**，Maven BUILD SUCCESS（1:01）；前端 `VideoLearningPanel.dom.test.tsx` **4 passed**，`pnpm build` 通过。
+
+## P6 各类型 Version 文件的前端下载
+
+产物记录现在列出每个 `READY` 文件的下载动作，调用既有 Host `versions/{versionNo}/files/{fileId}` 校验端点；PPTX、Markdown、逐页 PNG 等可从最新或历史版本取回，`DEGRADED` 文件不显示下载按钮。保留原 `export.pdf` 调用和 PDF 按钮。首次定向前端测试 **11 passed**，但 TypeScript 构建发现审计视图只要求精简文件元数据、且独立动作测试缺新回调；增加完整文件元数据类型守卫并补测试夹具后，生产构建通过，定向 **12 passed**。Host 文件端点已由 P1 文件门禁覆盖；本批未做真实浏览器文件保存或 PPTX/PNG 人工预览。

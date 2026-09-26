@@ -39,6 +39,7 @@ describe("ArtifactVersionActions", () => {
         compareArtifactWithPreviousVersion={vi.fn()}
         rollbackArtifactVersion={vi.fn()}
         downloadArtifactVersionPdf={vi.fn()}
+        downloadArtifactVersionFile={vi.fn()}
       />
     );
 

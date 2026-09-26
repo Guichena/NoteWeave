@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { buildArtifactHistoryVersionKey } from "./artifactHistory";
@@ -71,6 +71,7 @@ function activityProps(
     compareArtifactWithPreviousVersion: vi.fn(),
     rollbackArtifactVersion: vi.fn(),
     downloadArtifactVersionPdf: vi.fn(),
+    downloadArtifactVersionFile: vi.fn(),
     resolveArtifactSkillTitle: () => "结构化报告",
     summarizeRunStatus: (status) => status,
     openArtifactHistoryVersion: vi.fn(),
@@ -80,6 +81,18 @@ function activityProps(
 }
 
 describe("ArtifactStudioActivity", () => {
+  it("offers each READY version file and excludes degraded files", () => {
+    const props = activityProps();
+    props.latestArtifactVersion!.files = [
+      { file_id: "pptx-1", file_format: "PPTX", file_name: "slides.pptx", media_type: "application/vnd.openxmlformats-officedocument.presentationml.presentation", storage_backend: "local", bucket_name: "", object_key: "", size_bytes: 1024, checksum_sha256: "a".repeat(64), status: "READY", error_message: "", created_at: "2026-08-02T00:00:00Z" },
+      { file_id: "preview-1", file_format: "PNG", file_name: "slide-01.png", media_type: "image/png", storage_backend: "local", bucket_name: "", object_key: "", size_bytes: 512, checksum_sha256: "b".repeat(64), status: "DEGRADED", error_message: "", created_at: "2026-08-02T00:00:00Z" }
+    ];
+    render(<ArtifactStudioActivity {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "下载 PPTX" }));
+    expect(props.downloadArtifactVersionFile).toHaveBeenCalledWith(
+      expect.objectContaining({ version_no: 2 }), expect.objectContaining({ file_id: "pptx-1" }));
+    expect(screen.queryByRole("button", { name: /slide-01.png/ })).toBeNull();
+  });
   it("renders the latest version once when the history viewer defaults to that version", () => {
     const { container } = render(<ArtifactStudioActivity {...activityProps()} />);
 

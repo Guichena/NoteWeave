@@ -94,6 +94,10 @@ export class ArtifactsApi {
     return this.client.blob(`${this.versionPath(workspaceId, artifactJobId, versionNo)}/export.pdf`);
   }
 
+  downloadFile(workspaceId: string, artifactJobId: string, versionNo: number, fileId: string) {
+    return this.client.blob(`${this.versionPath(workspaceId, artifactJobId, versionNo)}/files/${encodeURIComponent(fileId)}`);
+  }
+
   private versionPath(workspaceId: string, artifactJobId: string, versionNo: number) {
     return `/api/v2/workspaces/${workspaceId}/artifact-jobs/${artifactJobId}/versions/${versionNo}`;
   }

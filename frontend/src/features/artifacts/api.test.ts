@@ -13,6 +13,7 @@ describe("ArtifactsApi", () => {
     await api.getVersion("workspace", "job", 3);
     await api.compareVersions("workspace", "job", 2, 3);
     await api.exportPdf("workspace", "job", 3);
+    await api.downloadFile("workspace", "job", 3, "file-1");
 
     expect(get.mock.calls.map(([path]) => path)).toEqual([
       "/api/v2/skills",
@@ -22,6 +23,9 @@ describe("ArtifactsApi", () => {
     ]);
     expect(blob).toHaveBeenCalledWith(
       "/api/v2/workspaces/workspace/artifact-jobs/job/versions/3/export.pdf"
+    );
+    expect(blob).toHaveBeenCalledWith(
+      "/api/v2/workspaces/workspace/artifact-jobs/job/versions/3/files/file-1"
     );
   });
 

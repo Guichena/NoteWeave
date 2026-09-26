@@ -53,6 +53,10 @@ export type ArtifactRailProps = {
     runtime_trace?: unknown;
     files?: Array<{ file_format: string; status: string }>;
   }) => void | Promise<void>;
+  downloadArtifactVersionFile: (version: {
+    artifact_job_id: string;
+    version_no: number;
+  }, file: import("./model").ArtifactFileMetadata) => void | Promise<void>;
   resolveArtifactSkillTitle: (skillKey: string, skills?: ArtifactStudioSkill[]) => string;
   summarizeRunStatus: (status: string) => string;
   openArtifactHistoryVersion: (item: import("./artifactHistory").ArtifactHistoryItem) => void | Promise<void>;

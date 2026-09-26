@@ -26,6 +26,7 @@ type ArtifactStudioActivityProps = Pick<
   | "compareArtifactWithPreviousVersion"
   | "rollbackArtifactVersion"
   | "downloadArtifactVersionPdf"
+  | "downloadArtifactVersionFile"
   | "resolveArtifactSkillTitle"
   | "summarizeRunStatus"
   | "openArtifactHistoryVersion"
@@ -119,6 +120,7 @@ export function ArtifactStudioActivity(props: ArtifactStudioActivityProps) {
                   compareArtifactWithPreviousVersion={props.compareArtifactWithPreviousVersion}
                   rollbackArtifactVersion={props.rollbackArtifactVersion}
                   downloadArtifactVersionPdf={props.downloadArtifactVersionPdf}
+                  downloadArtifactVersionFile={props.downloadArtifactVersionFile}
                 />
               </div>
             </div>
@@ -177,6 +179,7 @@ export function ArtifactStudioActivity(props: ArtifactStudioActivityProps) {
                   compareArtifactWithPreviousVersion={props.compareArtifactWithPreviousVersion}
                   rollbackArtifactVersion={props.rollbackArtifactVersion}
                   downloadArtifactVersionPdf={props.downloadArtifactVersionPdf}
+                  downloadArtifactVersionFile={props.downloadArtifactVersionFile}
                 />
               </div>
             </div>

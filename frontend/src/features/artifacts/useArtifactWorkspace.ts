@@ -6,7 +6,7 @@ import type { ShellRun } from "../shell/useShellBusy";
 import { sourcesApi, type SourcesApi } from "../sources/api";
 import { type SourceAsset } from "../sources/model";
 import { artifactsApi, type ArtifactsApi } from "./api";
-import { type ArtifactJobSummary } from "./model";
+import { type ArtifactFileMetadata, type ArtifactJobSummary } from "./model";
 import { useArtifactState } from "./useArtifactState";
 import { artifactVersionSaveKey } from "./versionKey";
 
@@ -219,6 +219,25 @@ export function useArtifactWorkspace({
     }
   }, [workspaceId, api, setStatus]);
 
+  const downloadArtifactVersionFile = useCallback(async (
+    version: ArtifactVersionRef, file: ArtifactFileMetadata
+  ) => {
+    if (!workspaceId || file.status !== "READY") {
+      setStatus("该文件尚不可下载");
+      return;
+    }
+    try {
+      const blob = await api.downloadFile(workspaceId, version.artifact_job_id,
+        version.version_no, file.file_id);
+      const safeName = file.file_name.split(/[\\/]/).pop() ||
+        `artifact-${version.artifact_job_id}-v${version.version_no}`;
+      downloadBlob(blob, safeName);
+      setStatus(`${file.file_format} 已开始下载`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "产物文件下载失败");
+    }
+  }, [workspaceId, api, setStatus]);
+
   return {
     ...state,
     loadJobs,
@@ -228,7 +247,8 @@ export function useArtifactWorkspace({
     regenerateArtifactVersion,
     rollbackArtifactVersion,
     compareArtifactWithPreviousVersion,
-    downloadArtifactVersionPdf
+    downloadArtifactVersionPdf,
+    downloadArtifactVersionFile
   };
 }
 
