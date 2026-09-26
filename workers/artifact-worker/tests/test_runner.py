@@ -9,7 +9,7 @@ import app.registry as registry_module
 import app.runner as runner_module
 from app.action_compat import resolve_action_compatibility, resolve_action_key_from_skill_key
 from app.compiler import build_execution_plan
-from app.artifact_skill_catalog import list_artifact_skill_definitions, resolve_artifact_skill_definition
+from app.artifact_skill_catalog import CATALOG_DIGEST, list_artifact_skill_definitions, resolve_artifact_skill_definition
 from app.content_runtime import build_canonical_content_objects
 from app.composer import render_markdown, resolve_artifact_title
 from app.intent_compiler import compile_execution_spec
@@ -258,11 +258,13 @@ def test_failed_final_content_gate_never_invokes_renderer(monkeypatch: pytest.Mo
 def test_candidate_is_bound_to_task_snapshot_and_markdown() -> None:
     task_input = _build_resume_task_input()
     task_input.input_snapshot_id = "snapshot-fixed"
+    task_input.catalog_digest = CATALOG_DIGEST
     _, result = run_artifact_task(task_input)
     candidate = result.result_payload["candidate"]
 
     assert candidate["task_id"] == task_input.task_id
     assert candidate["input_snapshot_id"] == "snapshot-fixed"
+    assert candidate["catalog_digest"] == CATALOG_DIGEST
     assert candidate["content_sha256"]
     assert candidate["candidate_id"]
     assert result.version_snapshot.version_id == ""

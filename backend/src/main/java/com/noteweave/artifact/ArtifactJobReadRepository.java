@@ -180,7 +180,7 @@ class ArtifactJobReadRepository {
     ArtifactJobTaskRow findByTaskId(String taskId) {
         return jdbcTemplate.query("""
                 select aj.id, aj.workspace_id, r.task_id, aj.skill_key, aj.style_profile_key, aj.context_snapshot_id,
-                       s.id as input_snapshot_id, s.user_requirement, s.inputs_json,
+                       s.id as input_snapshot_id, s.compiler_version, s.user_requirement, s.inputs_json,
                        s.source_scope_snapshot_json, s.upstream_refs_json, s.control_pack_json,
                        s.replay_availability, aj.latest_version_no
                 from artifact_job_run r
@@ -199,6 +199,7 @@ class ArtifactJobReadRepository {
                     rs.getString("style_profile_key"),
                     rs.getString("context_snapshot_id"),
                     rs.getString("input_snapshot_id"),
+                    rs.getString("compiler_version"),
                     blank(rs.getString("user_requirement")),
                     blank(rs.getString("inputs_json")),
                     blank(rs.getString("source_scope_snapshot_json")),
@@ -431,6 +432,7 @@ record ArtifactJobTaskRow(
         String styleProfileKey,
         String contextSnapshotId,
         String inputSnapshotId,
+        String compilerVersion,
         String userRequirement,
         String inputsJson,
         String sourceScopeJson,

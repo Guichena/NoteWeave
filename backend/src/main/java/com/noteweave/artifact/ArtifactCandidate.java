@@ -15,6 +15,11 @@ import org.springframework.http.HttpStatus;
 record ArtifactCandidate(String candidateId, String digest, String contentSha256) {
     static ArtifactCandidate from(String taskId, String inputSnapshotId, WorkerCompleteRequest request,
                                   String markdown) {
+        return from(taskId, inputSnapshotId, "", request, markdown);
+    }
+
+    static ArtifactCandidate from(String taskId, String inputSnapshotId, String expectedCatalogDigest,
+                                  WorkerCompleteRequest request, String markdown) {
         String contentSha256 = sha256(markdown);
         String candidateId = sha256(taskId + ":" + inputSnapshotId + ":" + contentSha256);
         Object raw = request.resultPayload() == null ? null : request.resultPayload().get("candidate");
@@ -22,6 +27,8 @@ record ArtifactCandidate(String candidateId, String digest, String contentSha256
             if (!(raw instanceof Map<?, ?> value)
                     || !taskId.equals(value.get("task_id"))
                     || !inputSnapshotId.equals(value.get("input_snapshot_id"))
+                    || (!expectedCatalogDigest.isBlank()
+                            && !expectedCatalogDigest.equals(value.get("catalog_digest")))
                     || !contentSha256.equals(value.get("content_sha256"))
                     || !candidateId.equals(value.get("candidate_id"))) {
                 throw new BusinessException("ARTIFACT_CANDIDATE_INVALID",

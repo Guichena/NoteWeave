@@ -1187,6 +1187,10 @@ class Phase6ResearchArtifactContractTest {
                         "/internal/worker/artifact-tasks/{taskId}/input", taskId))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString())
                 .path("data").path("input_snapshot_id").asText();
+        assertThat(jdbcTemplate.queryForObject("""
+                select compiler_version from artifact_run_input_snapshot where id = ?
+                """, String.class, snapshotId)).isEqualTo("artifact-input-v1@sha256:"
+                + new com.noteweave.artifact.ArtifactSkillCatalogService().catalogDigest());
         String markdown = "# Manifest gated content";
         String contentHash = java.util.HexFormat.of().formatHex(java.security.MessageDigest
                 .getInstance("SHA-256").digest(markdown.getBytes(StandardCharsets.UTF_8)));
@@ -1195,6 +1199,7 @@ class Phase6ResearchArtifactContractTest {
                         .getBytes(StandardCharsets.UTF_8)));
         Map<String, Object> candidate = new LinkedHashMap<>(Map.of(
                 "task_id", taskId, "input_snapshot_id", snapshotId,
+                "catalog_digest", new com.noteweave.artifact.ArtifactSkillCatalogService().catalogDigest(),
                 "content_sha256", contentHash, "candidate_id", candidateId));
         candidate.put("required_files", List.of(Map.of(
                 "role", "PRIMARY_MARKDOWN", "variant", "", "sequence_no", 0,
@@ -1289,6 +1294,7 @@ class Phase6ResearchArtifactContractTest {
         byte[] pdf = artifactWorkerExportClient.fetch(taskId, "course-notes.pdf");
         Map<String, Object> candidate = Map.of(
                 "task_id", taskId, "input_snapshot_id", snapshotId,
+                "catalog_digest", new com.noteweave.artifact.ArtifactSkillCatalogService().catalogDigest(),
                 "content_sha256", markdownHash, "candidate_id", candidateId,
                 "required_files", List.of(
                         Map.of("role", "PRIMARY_MARKDOWN", "variant", "", "sequence_no", 0,

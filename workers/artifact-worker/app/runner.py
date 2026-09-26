@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.acquisition_runtime import get_acquisition_result_payload, register_acquisition_runtime
 from app.artifact_repository import commit_artifact_result, reserve_next_artifact_version
+from app.artifact_skill_catalog import CATALOG_DIGEST
 import hashlib
 from app.capability_approval_queue import create_capability_request
 from app.capability_resolver import resolve_capability_bindings, resolve_capability_providers
@@ -55,7 +56,13 @@ PHASE_SEQUENCE = [
 ]
 
 
+def _require_published_catalog(task_input: ArtifactTaskInput) -> None:
+    if task_input.catalog_digest and task_input.catalog_digest != CATALOG_DIGEST:
+        raise ValueError("artifact Skill catalog digest does not match the frozen Run")
+
+
 def run_artifact_task(task_input: ArtifactTaskInput) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
+    _require_published_catalog(task_input)
     return _run_artifact_task(task_input)
 
 
@@ -63,6 +70,7 @@ def resume_artifact_task(
     task_input: ArtifactTaskInput,
     resume_checkpoint: dict[str, object],
 ) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
+    _require_published_catalog(task_input)
     try:
         schema_version = int(resume_checkpoint.get("schema_version", 0))
     except (TypeError, ValueError) as exc:
@@ -375,9 +383,11 @@ def _run_artifact_task(
         "candidate_id": candidate_id,
         "task_id": task_input.task_id,
         "input_snapshot_id": task_input.input_snapshot_id,
+        "catalog_digest": task_input.catalog_digest,
         "content_sha256": content_sha256,
         "required_files": required_files,
     }
+
     writeback_request = (
         None if task_input.input_snapshot_id else register_writeback_request(
             task_input=task_input,

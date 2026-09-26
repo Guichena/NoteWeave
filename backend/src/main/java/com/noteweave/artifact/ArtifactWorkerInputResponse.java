@@ -10,6 +10,7 @@ public record ArtifactWorkerInputResponse(
         String workspaceId,
         String targetId,
         String inputSnapshotId,
+        String catalogDigest,
         String replayAvailability,
         List<WorkerSourceScopeItemResponse> sourceScope,
         List<ArtifactUpstreamRefRequest> upstreamRefs,

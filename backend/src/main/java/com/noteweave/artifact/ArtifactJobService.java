@@ -116,7 +116,8 @@ public class ArtifactJobService {
                         "payload_version", "v1",
                         "trace_id", artifactJobId,
                         "created_at", System.currentTimeMillis()
-                ))
+                )),
+                artifactSkillCatalogService.catalogDigest()
         );
         memoryCompilerService.logPackUsage(
                 workspaceId,
@@ -174,7 +175,8 @@ public class ArtifactJobService {
                         "payload_version", "v1",
                         "trace_id", artifactJobId + ":regenerate-v" + sourceVersionNo,
                         "created_at", System.currentTimeMillis()
-                ))
+                )),
+                artifactSkillCatalogService.catalogDigest()
         );
         memoryCompilerService.logPackUsage(
                 workspaceId,
@@ -390,6 +392,7 @@ public class ArtifactJobService {
                 row.workspaceId(),
                 row.artifactJobId(),
                 row.inputSnapshotId(),
+                catalogDigestFrom(row.compilerVersion()),
                 row.replayAvailability(),
                 readCapturedSourceScope(row.workspaceId(), row.sourceScopeJson()),
                 readUpstreamRefs(row.upstreamRefsJson()),
@@ -425,7 +428,8 @@ public class ArtifactJobService {
         String markdown = extractMarkdown(request.resultPayload());
         requireVerifiedCandidate(request);
         requireFrozenSourcesVisible(row);
-        ArtifactCandidate candidate = ArtifactCandidate.from(taskId, row.inputSnapshotId(), request, markdown);
+        ArtifactCandidate candidate = ArtifactCandidate.from(taskId, row.inputSnapshotId(),
+                catalogDigestFrom(row.compilerVersion()), request, markdown);
         int claimed = artifactJobWriteRepository.claimCompletion(row.artifactJobId(), taskId);
         if (claimed != 1) {
             throw new BusinessException(
@@ -521,7 +525,8 @@ public class ArtifactJobService {
 
     public void validateCandidateReplay(String taskId, com.noteweave.worker.WorkerCompleteRequest request) {
         ArtifactJobTaskRow row = findByTaskId(taskId);
-        ArtifactCandidate candidate = ArtifactCandidate.from(taskId, row.inputSnapshotId(), request,
+        ArtifactCandidate candidate = ArtifactCandidate.from(taskId, row.inputSnapshotId(),
+                catalogDigestFrom(row.compilerVersion()), request,
                 extractMarkdown(request.resultPayload()));
         List<Map<String, Object>> receipts = jdbcTemplate.query("""
                 select candidate_id, candidate_digest from artifact_candidate_receipt where task_id = ?
@@ -766,6 +771,12 @@ public class ArtifactJobService {
 
     private static String blankIfNull(String value) {
         return value == null ? "" : value;
+    }
+
+    private static String catalogDigestFrom(String compilerVersion) {
+        String prefix = "artifact-input-v1@sha256:";
+        return compilerVersion != null && compilerVersion.startsWith(prefix)
+                ? compilerVersion.substring(prefix.length()) : "";
     }
 
 }

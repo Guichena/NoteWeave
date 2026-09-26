@@ -79,6 +79,7 @@ class ArtifactTaskInput(BaseModel):
     workspace_id: str
     target_id: str
     input_snapshot_id: str = ""
+    catalog_digest: str = ""
     replay_availability: str = "FULL"
     source_scope: list[SourceScopeItem] = Field(default_factory=list)
     upstream_refs: list[ArtifactUpstreamRef] = Field(default_factory=list)

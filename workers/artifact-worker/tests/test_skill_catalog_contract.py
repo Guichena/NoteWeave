@@ -7,6 +7,9 @@ from pathlib import Path
 from app.artifact_skill_catalog import CATALOG_DIGEST, list_artifact_skill_definitions
 from app.main import _to_public_input_schema
 from app.registry import PRODUCTION_ACTIONS
+from app.models import ArtifactTaskInput
+from app.runner import run_artifact_task
+import pytest
 
 
 def test_worker_public_skill_catalog_should_match_cross_language_contract() -> None:
@@ -46,3 +49,15 @@ def test_published_skill_catalog_matches_both_runtime_copies_and_action_registry
         assert entry["graph_key"] == action.default_skill_graph_key
         assert entry["prompt_recipe_id"] == action.default_prompt_recipe_id
         assert entry["capability_allowlist"] == action.supported_capabilities
+
+
+def test_worker_rejects_run_frozen_against_another_catalog_before_execution() -> None:
+    task = ArtifactTaskInput.model_validate({
+        "task_id": "catalog-mismatch", "workspace_id": "workspace", "target_id": "target",
+        "input_snapshot_id": "snapshot", "catalog_digest": "0" * 64,
+        "control_pack": {"pack_type": "artifact", "target_key": "study_guide",
+                         "task_neighborhood": "ARTIFACT_SKILL_STUDY_GUIDE"},
+        "input_payload": {"skill_key": "study_guide"},
+    })
+    with pytest.raises(ValueError, match="catalog digest"):
+        run_artifact_task(task)

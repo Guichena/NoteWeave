@@ -24,7 +24,8 @@ class ArtifactJobWriteRepository {
             String controlPackJson,
             String sourceScopeSnapshotJson,
             String upstreamRefsJson,
-            String taskPayloadJson
+            String taskPayloadJson,
+            String catalogDigest
     ) {
         jdbcTemplate.update("""
                 insert into artifact_job(
@@ -49,7 +50,7 @@ class ArtifactJobWriteRepository {
                 insert into artifact_run_input_snapshot(
                     id, workspace_id, artifact_job_id, user_requirement, inputs_json,
                     source_scope_snapshot_json, upstream_refs_json, control_pack_json, compiler_version
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, 'artifact-input-v1')
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 inputSnapshotId,
                 workspaceId,
@@ -58,7 +59,8 @@ class ArtifactJobWriteRepository {
                 inputsJson,
                 sourceScopeSnapshotJson,
                 upstreamRefsJson,
-                controlPackJson
+                controlPackJson,
+                "artifact-input-v1@sha256:" + catalogDigest
         );
         jdbcTemplate.update("""
                 insert into artifact_job_run(
@@ -90,7 +92,8 @@ class ArtifactJobWriteRepository {
             String controlPackJson,
             String inputSnapshotId,
             String workspaceId,
-            String taskPayloadJson
+            String taskPayloadJson,
+            String catalogDigest
     ) {
         String regeneratedSnapshotId = Ids.newId();
         jdbcTemplate.update("""
@@ -99,11 +102,11 @@ class ArtifactJobWriteRepository {
                     source_scope_snapshot_json, upstream_refs_json, control_pack_json, compiler_version
                 )
                 select ?, workspace_id, artifact_job_id, ?, ?,
-                       source_scope_snapshot_json, upstream_refs_json, control_pack_json, compiler_version
+                       source_scope_snapshot_json, upstream_refs_json, control_pack_json, ?
                 from artifact_run_input_snapshot
                 where id = ? and workspace_id = ? and artifact_job_id = ?
                 """, regeneratedSnapshotId, userRequirement, inputsJson,
-                inputSnapshotId, workspaceId, artifactJobId);
+                "artifact-input-v1@sha256:" + catalogDigest, inputSnapshotId, workspaceId, artifactJobId);
         jdbcTemplate.update("""
                 insert into artifact_job_run(
                     task_id, artifact_job_id, run_no, trigger_type, source_version_no,

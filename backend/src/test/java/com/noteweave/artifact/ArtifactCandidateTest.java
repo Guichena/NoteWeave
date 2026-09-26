@@ -40,6 +40,21 @@ class ArtifactCandidateTest {
                 .hasMessageContaining("frozen Run input");
     }
 
+    @Test
+    void candidateCannotClaimDifferentPublishedCatalog() {
+        ArtifactCandidate expected = ArtifactCandidate.from(
+                "task-1", "snapshot-1", request(Map.of("markdown", MARKDOWN)), MARKDOWN);
+        Map<String, Object> envelope = Map.of(
+                "task_id", "task-1",
+                "input_snapshot_id", "snapshot-1",
+                "catalog_digest", "different",
+                "content_sha256", expected.contentSha256(),
+                "candidate_id", expected.candidateId());
+        assertThatThrownBy(() -> ArtifactCandidate.from("task-1", "snapshot-1", "expected",
+                request(Map.of("markdown", MARKDOWN, "candidate", envelope)), MARKDOWN))
+                .isInstanceOf(BusinessException.class);
+    }
+
     private WorkerCompleteRequest request(Map<String, Object> payload) {
         return new WorkerCompleteRequest("MARKDOWN", "Artifact", payload, "", List.of());
     }
