@@ -14,6 +14,37 @@ import org.junit.jupiter.api.Test;
 class HttpArtifactWorkerControlClientTest {
 
     @Test
+    void providerAckRequestsHostOwnedResumeInsteadOfWorkerAutoResume() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        AtomicReference<String> deferResume = new AtomicReference<>("");
+        server.createContext("/callbacks/acquisition/ack", exchange -> {
+            deferResume.set(exchange.getRequestHeaders().getFirst("X-NoteWeave-Defer-Resume"));
+            byte[] body = """
+                    {"operation":null,"receipt":null,"resumed_tasks":[]}
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            mapper.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
+            NoteWeaveProperties properties = new NoteWeaveProperties(null, null,
+                    new NoteWeaveProperties.Worker("http://127.0.0.1:" + server.getAddress().getPort()),
+                    null, null, null);
+            HttpArtifactWorkerControlClient client = new HttpArtifactWorkerControlClient(
+                    mapper, properties, "worker-shared-secret");
+            client.acknowledgeAcquisition(new ArtifactAcquisitionAckRequest(
+                    "provider-token", "ACKNOWLEDGED", "", "", "", java.util.Map.of()));
+            assertThat(deferResume.get()).isEqualTo("true");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void shouldParseDirectFastApiControlResponseWithoutJavaApiEnvelope() throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
         AtomicReference<String> receivedToken = new AtomicReference<>("");

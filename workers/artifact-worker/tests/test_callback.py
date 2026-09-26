@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 import pytest
 
 import app.callback as callback_module
@@ -8,6 +9,7 @@ from app.callback import (
     JavaArtifactCallbackClient,
     _dispatch_system_provider_operations,
     acknowledge_acquisition_operation_with_callbacks,
+    resume_waiting_artifact_task_with_callbacks,
     run_artifact_task_with_callbacks,
     sanitize_error_message,
 )
@@ -196,6 +198,46 @@ def test_video_material_client_publishes_and_reads_frozen_bundle(monkeypatch) ->
     assert all(req.get_header("X-noteweave-outbox-delivery-token") == "delivery-1"
                for req in requests)
     assert json.loads(requests[0].data)["content_digest"] == bundle.content_digest()
+
+
+def test_verified_provider_material_is_bound_to_candidate(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("NOTEWEAVE_MCP_SANDBOX_ROOT", str(tmp_path))
+    subtitle = tmp_path / "part-2.srt"
+    subtitle.write_text("1\n00:00:00,000 --> 00:00:02,000\nverified subtitle", encoding="utf-8")
+    task = _build_waiting_task_input()
+    task.input_snapshot_id = "snapshot-1"
+    task.input_payload.inputs = {
+        "url": "https://www.bilibili.com/video/BV1234567890?p=2", "language": "zh-CN",
+    }
+    payload = {"normalized_video_id": "BV1234567890", "metadata": {"duration": 5,
+               "webpage_url": "https://www.bilibili.com/video/BV1234567890?p=2"},
+               "acquisition_mode": "remote_cc_subtitle_fetch",
+               "selected_subtitle_path": str(subtitle)}
+    monkeypatch.setattr(callback_module, "list_acquisition_operations", lambda **_: [{
+        "server_id": "builtin-bilibili-mcp", "operation_key": "EXTRACT_TRANSCRIPT",
+        "request_id": "request-1",
+    }])
+    monkeypatch.setattr(callback_module, "get_acquisition_result_payload", lambda _: payload)
+    published = []
+
+    class FakeJavaClient(JavaArtifactCallbackClient):
+        def publish_video_material(self, task_id, bundle):
+            published.append(bundle)
+            return {"id": "material-1", "task_id": task_id,
+                    "workspace_id": bundle.workspace_id, "bundle_id": bundle.bundle_id,
+                    "bundle_version": bundle.bundle_version,
+                    "content_digest": bundle.content_digest()}
+
+    result = SimpleNamespace(result_payload={"candidate": {}})
+    callback_module._attach_frozen_video_material(
+        task.task_id, task, result, FakeJavaClient("http://java-host:8081"))
+
+    assert len(published) == 1
+    assert published[0].part == 2
+    assert result.result_payload["candidate"]["video_material"] == {
+        "id": "material-1", "bundle_id": "video-material-task-a-waiting",
+        "bundle_version": 1, "content_digest": published[0].content_digest(),
+    }
 
 
 def test_java_artifact_callback_client_should_send_internal_auth_token(monkeypatch) -> None:
@@ -415,6 +457,122 @@ def test_duplicate_acquisition_ack_should_retry_complete_delivery_after_transpor
     assert len(client.completed_results) == 1
     assert client.completed_results[0].version_snapshot.version_id == cached_version_id
     assert client.failures == []
+
+
+def test_host_deferred_provider_ack_resumes_only_after_fenced_resume(monkeypatch) -> None:
+    monkeypatch.setenv("NOTEWEAVE_ALLOW_PORTABLE_PDF_FALLBACK", "true")
+    clear_artifact_repository()
+    clear_acquisition_runtime()
+    clear_waiting_tasks()
+    clear_approval_requests()
+    reset_capability_provider_discovery_status()
+    reset_capability_provider_health_status()
+    reset_capability_provider_approval_status()
+    reset_capability_provider_status()
+    try:
+        client = FakeCallbackClient(_build_waiting_task_input())
+        waiting = run_artifact_task_with_callbacks("task-a-waiting", client)
+        operation = next(op for op in list_acquisition_operations(task_id="task-a-waiting")
+                         if op["operation_key"] == "EXTRACT_TRANSCRIPT")
+        token = dispatch_acquisition_operation(operation["request_id"])["operation"]["callback_token"]
+        ack = acknowledge_acquisition_operation_with_callbacks(
+            callback_token=token, final_status="ACKNOWLEDGED",
+            provider_payload={"subtitle_preview": ["frozen provider result"]},
+            client=client, defer_resume=True,
+        )
+        assert waiting.status == "WAITING_FOR_PROVIDER"
+        assert ack.resumed_tasks == []
+        assert get_waiting_task("task-a-waiting") is not None
+        assert client.completed_results == []
+
+        resumed = resume_waiting_artifact_task_with_callbacks(
+            "task-a-waiting", client=client, request_id=operation["request_id"])
+        assert resumed.status == "COMPLETED"
+        assert len(client.completed_results) == 1
+    finally:
+        clear_artifact_repository()
+        clear_acquisition_runtime()
+        clear_waiting_tasks()
+        clear_approval_requests()
+        reset_capability_provider_discovery_status()
+        reset_capability_provider_health_status()
+        reset_capability_provider_approval_status()
+        reset_capability_provider_status()
+
+
+def test_resumed_video_worker_publishes_full_subtitle_before_candidate_callback(
+    tmp_path, monkeypatch,
+) -> None:
+    monkeypatch.setenv("NOTEWEAVE_ALLOW_PORTABLE_PDF_FALLBACK", "true")
+    monkeypatch.setenv("NOTEWEAVE_MCP_SANDBOX_ROOT", str(tmp_path))
+    monkeypatch.setattr(callback_module, "_dispatch_system_provider_operations", lambda *_: [])
+    clear_artifact_repository()
+    clear_acquisition_runtime()
+    clear_waiting_tasks()
+    clear_approval_requests()
+    reset_capability_provider_discovery_status()
+    reset_capability_provider_health_status()
+    reset_capability_provider_approval_status()
+    reset_capability_provider_status()
+    subtitle = tmp_path / "part-2.srt"
+    subtitle.write_text("1\n00:00:00,000 --> 00:00:02,000\ncontrolled transcript", encoding="utf-8")
+    task = _build_waiting_task_input()
+    task.input_snapshot_id = "snapshot-1"
+    task.input_payload.inputs = {
+        "url": "https://www.bilibili.com/video/BV1234567890?p=2", "language": "zh-CN",
+    }
+
+    class FakeJavaClient(JavaArtifactCallbackClient):
+        def __init__(self):
+            super().__init__("http://java-host:8081", delivery_token="delivery-1")
+            self.material = None
+            self.completed = None
+
+        def fetch_task_input(self, task_id):
+            return task
+
+        def send_progress(self, task_id, event):
+            pass
+
+        def publish_video_material(self, task_id, bundle):
+            self.material = bundle
+            return {"id": "material-1", "task_id": task_id, "workspace_id": bundle.workspace_id,
+                    "bundle_id": bundle.bundle_id, "bundle_version": bundle.bundle_version,
+                    "content_digest": bundle.content_digest()}
+
+        def send_complete(self, task_id, result):
+            self.completed = result
+
+    try:
+        client = FakeJavaClient()
+        assert run_artifact_task_with_callbacks(task.task_id, client).status == "WAITING_FOR_PROVIDER"
+        operation = next(op for op in list_acquisition_operations(task_id=task.task_id)
+                         if op["operation_key"] == "EXTRACT_TRANSCRIPT")
+        token = dispatch_acquisition_operation(operation["request_id"])["operation"]["callback_token"]
+        acknowledge_acquisition_operation_with_callbacks(
+            callback_token=token, final_status="ACKNOWLEDGED", defer_resume=True,
+            provider_payload={"normalized_video_id": "BV1234567890",
+                              "metadata": {"duration": 5,
+                                           "webpage_url": "https://www.bilibili.com/video/BV1234567890?p=2"},
+                              "acquisition_mode": "remote_cc_subtitle_fetch",
+                              "selected_subtitle_path": str(subtitle)},
+            client=client,
+        )
+        assert resume_waiting_artifact_task_with_callbacks(
+            task.task_id, client=client, request_id=operation["request_id"]
+        ).status == "COMPLETED"
+        assert client.material is not None
+        assert client.material.part == 2
+        assert client.completed.result_payload["candidate"]["video_material"]["id"] == "material-1"
+    finally:
+        clear_artifact_repository()
+        clear_acquisition_runtime()
+        clear_waiting_tasks()
+        clear_approval_requests()
+        reset_capability_provider_discovery_status()
+        reset_capability_provider_health_status()
+        reset_capability_provider_approval_status()
+        reset_capability_provider_status()
 
 
 def test_run_artifact_task_with_callbacks_should_stop_at_waiting_progress_without_completing() -> None:

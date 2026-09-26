@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import pytest
+from types import SimpleNamespace
 
-from app.video_subtitle_material import parse_srt_segments, subtitle_only_bundle
+from app.video_subtitle_material import (
+    parse_srt_segments, subtitle_only_bundle, subtitle_bundle_from_provider,
+)
 from app.video_material_bundle import frozen_video_input_digest
 from app.content_runtime import _build_text_from_acquisition_payload
 from app.acquisition_runtime import _extract_provider_payload_text
@@ -26,6 +29,35 @@ def test_frozen_video_input_digest_uses_snapshot_and_canonical_inputs() -> None:
     assert digest != frozen_video_input_digest("snapshot-1", {**inputs, "language": "en"})
     with pytest.raises(ValueError, match="frozen input snapshot"):
         frozen_video_input_digest("", inputs)
+
+
+def test_full_provider_subtitle_can_be_frozen_for_selected_part(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("NOTEWEAVE_MCP_SANDBOX_ROOT", str(tmp_path))
+    subtitle = tmp_path / "part-2.srt"
+    subtitle.write_text(SRT, encoding="utf-8")
+    inputs = {"url": "https://www.bilibili.com/video/BV1234567890?p=2", "language": "zh-CN"}
+    task = SimpleNamespace(task_id="task-1", workspace_id="ws-1", input_snapshot_id="snapshot-1",
+                           input_payload=SimpleNamespace(skill_key="bilibili_course_note_pdf", inputs=inputs))
+    provider = {
+        "normalized_video_id": "BV1234567890", "metadata": {"duration": 5,
+            "webpage_url": "https://www.bilibili.com/video/BV1234567890?p=2"},
+        "acquisition_mode": "remote_cc_subtitle_fetch",
+        "selected_subtitle_path": str(subtitle), "subtitle_preview": ["only one line"],
+    }
+
+    bundle = subtitle_bundle_from_provider(task, provider)
+    assert bundle is not None
+    assert bundle.part == 2
+    assert bundle.duration_ms == 5000
+    assert len(bundle.transcript_segments) == 2
+    assert bundle.transcript_original == "cache yizhi\nwrite ordering"
+    assert bundle.input_digest == frozen_video_input_digest("snapshot-1", inputs)
+    assert bundle.coverage_gaps == ["NO_FRAMES"]
+    assert subtitle_bundle_from_provider(task, {**provider, "metadata": {}}) is None
+    assert subtitle_bundle_from_provider(task, {**provider, "metadata": {
+        "duration": 5, "webpage_url": "https://www.bilibili.com/video/BV1234567890?p=1"}}) is None
+    assert subtitle_bundle_from_provider(task, {**provider, "selected_subtitle_path": ""}) is None
+    assert subtitle_bundle_from_provider(task, {**provider, "normalized_video_id": "BV9999999999"}) is None
 
 
 def _bundle(**changes):

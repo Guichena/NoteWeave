@@ -629,6 +629,7 @@ def resume_task_from_java(
 @app.post("/callbacks/acquisition/ack", response_model=ArtifactAcquisitionAckExecutionResponse)
 def ack_acquisition_callback(
     request: ArtifactAcquisitionAckRequest,
+    defer_resume: bool = Header(default=False, alias="X-NoteWeave-Defer-Resume"),
 ) -> ArtifactAcquisitionAckExecutionResponse:
     return acknowledge_acquisition_operation_with_callbacks(
         callback_token=request.callback_token,
@@ -637,6 +638,7 @@ def ack_acquisition_callback(
         error_code=request.error_code,
         error_message=request.error_message,
         provider_payload=request.provider_payload,
+        defer_resume=defer_resume,
     )
 
 

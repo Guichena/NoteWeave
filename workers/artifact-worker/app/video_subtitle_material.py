@@ -1,15 +1,89 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import re
+from urllib.parse import parse_qs, urlparse
 
-from app.video_material_bundle import TranscriptSegment, VideoMaterialBundleV1
+from app.io_limits import ContentSizeLimitError, read_provider_text_in_sandbox
+from app.models import ArtifactTaskInput
+from app.video_material_bundle import (
+    TranscriptSegment, VideoMaterialBundleV1, frozen_video_input_digest,
+)
 
 
 TIMECODE = re.compile(
     r"^(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*"
     r"(\d{2}):(\d{2}):(\d{2})[,.](\d{3})(?:\s+.*)?$"
 )
+VIDEO_PATH = re.compile(r"^/video/(BV[0-9A-Za-z]{10})(?:/)?$")
+
+
+def subtitle_bundle_from_provider(
+    task_input: ArtifactTaskInput, provider_payload: dict[str, object],
+) -> VideoMaterialBundleV1 | None:
+    """Freeze only a complete sandbox subtitle with verified video metadata."""
+    if task_input.input_payload.skill_key != "bilibili_course_note_pdf":
+        return None
+    url = str(task_input.input_payload.inputs.get("url", ""))
+    parsed = urlparse(url)
+    video = VIDEO_PATH.fullmatch(parsed.path)
+    if parsed.scheme not in {"http", "https"} or parsed.hostname not in {
+            "bilibili.com", "www.bilibili.com"} or video is None:
+        return None
+    if provider_payload.get("normalized_video_id") != video.group(1):
+        return None
+    parts = parse_qs(parsed.query).get("p", ["1"])
+    if len(parts) != 1 or not parts[0].isdigit():
+        return None
+    part = int(parts[0])
+    if part < 1 or part > 1000:
+        return None
+    metadata = provider_payload.get("metadata")
+    if not isinstance(metadata, dict):
+        return None
+    if part > 1:
+        observed_url = urlparse(str(metadata.get("webpage_url", "")))
+        observed_video = VIDEO_PATH.fullmatch(observed_url.path)
+        observed_parts = parse_qs(observed_url.query).get("p", [])
+        if (observed_url.hostname not in {"bilibili.com", "www.bilibili.com"}
+                or observed_video is None or observed_video.group(1) != video.group(1)
+                or observed_parts != [str(part)]):
+            return None
+    duration = metadata.get("duration")
+    if isinstance(duration, bool) or not isinstance(duration, (int, float)) \
+            or not math.isfinite(duration) or duration <= 0:
+        return None
+    duration_ms = round(duration * 1000)
+    if duration_ms < 1 or duration_ms > 86_400_000 or not task_input.input_snapshot_id:
+        return None
+    mode = str(provider_payload.get("acquisition_mode", ""))
+    source = {
+        "remote_cc_subtitle_fetch": "MANUAL",
+        "remote_auto_subtitle_fetch": "AI_CAPTION",
+        "remote_audio_transcription_fallback": "ASR",
+        "no_subtitle_available": "NONE",
+    }.get(mode)
+    if source is None:
+        return None
+    if source == "NONE":
+        srt = ""
+    else:
+        path = str(provider_payload.get("selected_subtitle_path", ""))
+        if not path:
+            return None
+        try:
+            srt = read_provider_text_in_sandbox(path)
+        except (OSError, ContentSizeLimitError, ValueError):
+            return None
+    return subtitle_only_bundle(
+        bundle_id=f"video-material-{task_input.task_id}", bundle_version=1,
+        workspace_id=task_input.workspace_id, bvid=video.group(1), part=part,
+        duration_ms=duration_ms,
+        input_digest=frozen_video_input_digest(
+            task_input.input_snapshot_id, task_input.input_payload.inputs),
+        subtitle_source=source, srt_text=srt,
+    )
 
 
 def parse_srt_segments(srt_text: str, *, part: int, duration_ms: int) -> list[TranscriptSegment]:

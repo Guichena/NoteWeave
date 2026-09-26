@@ -60,6 +60,7 @@ public class HttpArtifactWorkerControlClient implements ArtifactWorkerControlCli
     public ArtifactAcquisitionAckResponse acknowledgeAcquisition(ArtifactAcquisitionAckRequest request) {
         String responseBody = restClient.post()
                 .uri("/callbacks/acquisition/ack")
+                .header("X-NoteWeave-Defer-Resume", "true")
                 .body(request)
                 .retrieve()
                 .body(String.class);

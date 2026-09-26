@@ -14,9 +14,13 @@ from pydantic import BaseModel
 from app.config import load_settings
 from app.error_sanitizer import sanitize_error_message
 from app.llm_client import credential_safe_urlopen
-from app.acquisition_runtime import acknowledge_acquisition_operation
+from app.acquisition_runtime import (
+    acknowledge_acquisition_operation, get_acquisition_result_payload,
+    list_acquisition_operations,
+)
 from app.capability_wait_queue import (
     cache_waiting_task_delivery,
+    get_waiting_task,
     list_waiting_tasks,
     remove_waiting_task,
     release_waiting_task_claim,
@@ -25,6 +29,7 @@ from app.capability_wait_queue import (
 )
 from app.models import ArtifactProgressEvent, ArtifactTaskInput, ArtifactTaskResult
 from app.video_material_bundle import VideoMaterialBundleV1
+from app.video_subtitle_material import subtitle_bundle_from_provider
 from app.material_resolver import select_frozen_windows
 from app.runner import run_artifact_task
 from app.system_mcp_executor import submit_system_mcp_acquisition_operation
@@ -276,7 +281,7 @@ def run_artifact_task_with_callbacks(
         if _report_execution_failure(callback_client, task_id, "WORKER_EXECUTION", exc):
             setattr(exc, "artifact_failure_reported", True)
         raise
-    return _emit_callbacks_for_result(task_id, events, result, callback_client)
+    return _emit_callbacks_for_result(task_id, events, result, callback_client, task_input)
 
 
 def resume_waiting_artifact_task_with_callbacks(
@@ -295,6 +300,9 @@ def resume_waiting_artifact_task_with_callbacks(
         settings.callback_secret,
         delivery_token,
     )
+    waiting_record = get_waiting_task(task_id)
+    task_input = (ArtifactTaskInput.model_validate(waiting_record["task_input"])
+                  if waiting_record is not None else None)
     try:
         events, result = wake_waiting_task(
             task_id,
@@ -311,7 +319,7 @@ def resume_waiting_artifact_task_with_callbacks(
     try:
         if not _is_waiting_status(result.job_snapshot.status):
             cache_waiting_task_delivery(task_id, events, result)
-        response = _emit_callbacks_for_result(task_id, events, result, callback_client)
+        response = _emit_callbacks_for_result(task_id, events, result, callback_client, task_input)
     except Exception:
         release_waiting_task_claim(task_id)
         raise
@@ -329,6 +337,7 @@ def acknowledge_acquisition_operation_with_callbacks(
     error_message: str = "",
     provider_payload: dict[str, object] | None = None,
     client: ArtifactCallbackClient | None = None,
+    defer_resume: bool = False,
 ) -> ArtifactAcquisitionAckExecutionResponse:
     settings = load_settings()
     callback_client = client or JavaArtifactCallbackClient(
@@ -346,7 +355,7 @@ def acknowledge_acquisition_operation_with_callbacks(
         auto_resume=False,
     )
     resumed_tasks: list[ArtifactWorkerExecutionResponse] = []
-    if str(ack_result["receipt"].get("callback_status", "")).upper() == "ACKNOWLEDGED":
+    if not defer_resume and str(ack_result["receipt"].get("callback_status", "")).upper() == "ACKNOWLEDGED":
         request_id = str(ack_result["operation"].get("request_id", ""))
         capability_name = str(ack_result["operation"].get("capability_name", "")).strip().upper()
         for record in _matching_waiting_tasks(request_id=request_id, capability_name=capability_name):
@@ -375,6 +384,7 @@ def _emit_callbacks_for_result(
     events: list[ArtifactProgressEvent],
     result: ArtifactTaskResult,
     callback_client: ArtifactCallbackClient,
+    task_input: ArtifactTaskInput | None = None,
 ) -> ArtifactWorkerExecutionResponse:
     for event in events:
         callback_client.send_progress(task_id, event)
@@ -382,6 +392,7 @@ def _emit_callbacks_for_result(
         if isinstance(callback_client, JavaArtifactCallbackClient):
             _dispatch_system_provider_operations(result, callback_client.java_base_url)
     else:
+        _attach_frozen_video_material(task_id, task_input, result, callback_client)
         callback_client.send_complete(task_id, result)
     return ArtifactWorkerExecutionResponse(
         task_id=task_id,
@@ -389,6 +400,34 @@ def _emit_callbacks_for_result(
         progress_events=len(events),
         result_title=result.result_title,
     )
+
+
+def _attach_frozen_video_material(
+    task_id: str, task_input: ArtifactTaskInput | None,
+    result: ArtifactTaskResult, callback_client: ArtifactCallbackClient,
+) -> None:
+    if task_input is None or not isinstance(callback_client, JavaArtifactCallbackClient):
+        return
+    for operation in list_acquisition_operations(task_id=task_id):
+        if (operation.get("server_id") != SYSTEM_BILIBILI_SERVER_ID
+                or operation.get("operation_key") != "EXTRACT_TRANSCRIPT"):
+            continue
+        payload = get_acquisition_result_payload(str(operation.get("request_id", "")))
+        if not isinstance(payload, dict):
+            continue
+        bundle = subtitle_bundle_from_provider(task_input, payload)
+        if bundle is None:
+            continue
+        receipt = callback_client.publish_video_material(task_id, bundle)
+        candidate = result.result_payload.get("candidate")
+        if not isinstance(candidate, dict):
+            raise ValueError("video material requires a Worker Candidate")
+        candidate["video_material"] = {
+            "id": receipt["id"], "bundle_id": receipt["bundle_id"],
+            "bundle_version": receipt["bundle_version"],
+            "content_digest": receipt["content_digest"],
+        }
+        return
 
 
 def _dispatch_system_provider_operations(

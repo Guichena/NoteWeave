@@ -1,8 +1,11 @@
 package com.noteweave.worker;
 
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import com.noteweave.common.SensitiveErrorMessageSanitizer;
 import com.noteweave.infra.outbox.DurableOutboxDispatcher;
+import com.noteweave.task.TaskService;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -11,15 +14,18 @@ public class ArtifactWorkerControlService {
     private final ArtifactWorkerControlClient artifactWorkerControlClient;
     private final WorkerTaskCallbackService workerTaskCallbackService;
     private final DurableOutboxDispatcher outboxDispatcher;
+    private final TaskService taskService;
 
     public ArtifactWorkerControlService(
             ArtifactWorkerControlClient artifactWorkerControlClient,
             WorkerTaskCallbackService workerTaskCallbackService,
-            DurableOutboxDispatcher outboxDispatcher
+            DurableOutboxDispatcher outboxDispatcher,
+            TaskService taskService
     ) {
         this.artifactWorkerControlClient = artifactWorkerControlClient;
         this.workerTaskCallbackService = workerTaskCallbackService;
         this.outboxDispatcher = outboxDispatcher;
+        this.taskService = taskService;
     }
 
     public ArtifactWorkerExecutionResponse resumeTask(String taskId, ArtifactWorkerResumeRequest request) {
@@ -44,6 +50,23 @@ public class ArtifactWorkerControlService {
                 );
         ArtifactAcquisitionAckResponse response = artifactWorkerControlClient.acknowledgeAcquisition(normalizedRequest);
         propagateProviderFailureIfNeeded(response, normalizedRequest);
+        if (response != null && response.receipt() != null && response.operation() != null
+                && "ACKNOWLEDGED".equalsIgnoreCase(blankIfNull(response.receipt().callbackStatus()))
+                && (response.resumedTasks() == null || response.resumedTasks().isEmpty())
+                && !blankIfNull(response.operation().taskId()).isBlank()) {
+            String taskId = response.operation().taskId();
+            if (Set.of("COMPLETED", "FAILED", "CANCELLED")
+                    .contains(taskService.getTaskRef(taskId).taskStatus().toUpperCase())) {
+                return response;
+            }
+            String deliveryToken = activeDeliveryToken(taskId);
+            if (deliveryToken == null || deliveryToken.isBlank()) {
+                throw new IllegalStateException("provider callback cannot resume without an active artifact delivery");
+            }
+            ArtifactWorkerExecutionResponse resumed = artifactWorkerControlClient.resumeTask(taskId,
+                    new ArtifactWorkerResumeRequest(response.operation().requestId(), deliveryToken));
+            return new ArtifactAcquisitionAckResponse(response.operation(), response.receipt(), List.of(resumed));
+        }
         return response;
     }
 
