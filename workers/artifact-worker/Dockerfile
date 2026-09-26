@@ -10,6 +10,8 @@ RUN cp /etc/apt/sources.list.d/debian.sources /tmp/debian.sources \
     && apt-get -o Acquire::Retries=5 install --no-install-recommends -y \
         fonts-arphic-gbsn00lp \
         ffmpeg \
+        tesseract-ocr \
+        tesseract-ocr-chi-sim \
         texlive-lang-chinese \
         texlive-latex-extra \
         texlive-pictures \

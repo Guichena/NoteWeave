@@ -155,3 +155,9 @@ PDF Skill 发布输入新增 `frame_density`（LOW/STANDARD/HIGH，默认 STANDA
 PDF Skill 新增可选字符串 `part`，Host 仅接受 1–1000 的规范十进制值，并核对 B 站视频链接中已有的 `p` 参数。链接未带 `p` 且 `part>1` 时，Host 把该参数写进冻结 URL，让现有字幕/抽帧 Provider 读取同一分集；相互冲突的分集在创建 Run 前拒绝。资料包复用比较将与 URL 分集一致的显式 `part` 视为同一采集输入，使旧无 `part` 的冻结资料包可被新 Run 引用。
 
 首次 Host 定向测试用了非 10 位 BVID 的旧演示字符串，被新增的真实 URL 校验拒绝；换为有效格式后通过。最终 Host `Phase6ResearchArtifactContractTest` **50 个用例，42 执行通过、8 个既有跳过**，`ArtifactSkillCatalogPublicationTest` **2 passed**；Worker Catalog **7 passed**，全套 **303 passed，46.20 秒**。三份发布 Catalog SHA-256 均为 `9C0CEE6E5928C36B60F539326B1D6D261A391D0F06836481C345FD9E6092E8C1`。尚未用真实多分集视频验证 Provider 回执与分集元数据。
+
+## P2 受控画面文字观察工具与采集隔离
+
+系统 MCP 增加 `analyze_frame` 工具入口，按 Task ID、画面 File ID 和冻结 SHA-256 读取 Worker 沙箱中的已暂存 PNG/JPEG；限制路径、符号链接、大小、像素和 OCR 输出。Tesseract 只产实际识别出的文字行、置信度和不确定标记；没有文字时记录 `NO_READABLE_TEXT`，始终记录 `VISUAL_SEMANTICS_UNVERIFIED`，不把 OCR 结果冒充代码、表格或图表的语义理解。Docker Worker 依赖增加 Tesseract 英文和简体中文包。另将抽帧 MCP 输出目录绑定 Task ID，避免同视频并发任务共享默认 BVID 目录。
+
+定向合成测试验证正确摘要、错误摘要、越界标识、无文字、OCR 失败、MCP 调用参数及双任务目录隔离，**40 passed**；Worker 全套 **307 passed，39.36 秒**。Windows 测试使用注入式 OCR 回执，未运行真实 Tesseract；Docker 镜像也未构建。`analyze_frame` 尚未加入自动采集计划、独立 Operation Receipt 或冻结 Bundle，因此本批只是 P2 观察工具与隔离基础，不代表视觉观察链路已完成。

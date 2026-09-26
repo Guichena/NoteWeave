@@ -227,6 +227,15 @@ def test_video_acquisition_policy_is_persisted_on_operations() -> None:
         assert transcript["tool_arguments"]["allow_auto_subtitles"] is True
         assert frames["tool_arguments"]["interval_ms"] == 15_000
         assert frames["tool_arguments"]["max_frames"] == 32
+        assert frames["tool_arguments"]["output_dir"].replace("\\", "/").endswith(
+            "frames/task-a-waiting")
+        second = _build_waiting_task_input()
+        second.task_id = "task-b-waiting"
+        _, second_result = run_artifact_task(second)
+        assert second_result.job_snapshot.status == "WAITING_FOR_PROVIDER"
+        second_frames = next(op for op in list_acquisition_operations(task_id=second.task_id)
+                             if op["operation_key"] == "CAPTURE_FRAMES")
+        assert second_frames["tool_arguments"]["output_dir"] != frames["tool_arguments"]["output_dir"]
     finally:
         clear_acquisition_runtime()
         clear_waiting_tasks()

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime, timezone
 import hashlib
+import re
 
 from app.action_compat import resolve_action_compatibility
 from app.io_limits import ContentSizeLimitError, read_provider_text_in_sandbox
@@ -14,6 +15,7 @@ from app.capability_provider import (
     list_capability_provider_candidates,
 )
 from app.artifact_skill_catalog import try_resolve_artifact_skill_definition
+from app.config import resolve_mcp_sandbox_root
 from app.models import (
     AcquisitionOperationReceipt,
     AcquisitionProviderAttempt,
@@ -1074,8 +1076,13 @@ def _video_operation_arguments(
         if density not in policy:
             raise ValueError("unsupported frozen frame density")
         interval_ms, max_frames = policy[density]
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", task_input.task_id):
+            raise ValueError("video capture requires a safe frozen task ID")
+        output_dir = (resolve_mcp_sandbox_root() / "bilibili-render-pdf"
+                      / "frames" / task_input.task_id)
         return {"video_url": _resolve_input_locator(descriptor),
-                "interval_ms": interval_ms, "max_frames": max_frames}
+                "interval_ms": interval_ms, "max_frames": max_frames,
+                "output_dir": str(output_dir)}
     return {}
 
 

@@ -18,6 +18,7 @@ if str(WORKER_ROOT) not in sys.path:
     sys.path.insert(0, str(WORKER_ROOT))
 
 from app.video_frame_capture import capture_local_video
+from app.video_frame_observation import observe_staged_frame
 from PIL import Image
 
 
@@ -177,6 +178,15 @@ class BilibiliRenderPdfServer:
                 }, required=["video_url"]),
             },
             {
+                "name": "analyze_frame",
+                "description": "OCR one digest-verified staged video frame; report visible text and uncertainty without claiming visual semantics.",
+                "inputSchema": _object_schema({
+                    "task_id": _string_schema("Host-controlled Artifact task ID."),
+                    "file_id": _string_schema("Frozen video frame file ID."),
+                    "checksum_sha256": _string_schema("SHA-256 from the frozen frame manifest."),
+                }, required=["task_id", "file_id", "checksum_sha256"]),
+            },
+            {
                 "name": "render_latex_pdf",
                 "description": "Render a controlled LaTeX note package from structured course-note content.",
                 "inputSchema": _object_schema(
@@ -231,9 +241,19 @@ class BilibiliRenderPdfServer:
             return _tool_result(self._transcribe_local_audio(arguments))
         if tool_name == "capture_bilibili_frames":
             return _tool_result(self._capture_bilibili_frames(arguments))
+        if tool_name == "analyze_frame":
+            return _tool_result(self._analyze_frame(arguments))
         if tool_name == "render_latex_pdf":
             return _tool_result(self._render_latex_pdf(arguments))
         raise ValueError(f"Unknown tool: {tool_name}")
+
+    def _analyze_frame(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        return observe_staged_frame(
+            sandbox_root=self.sandbox_root,
+            task_id=_required_string(arguments, "task_id"),
+            file_id=_required_string(arguments, "file_id"),
+            checksum_sha256=_required_string(arguments, "checksum_sha256"),
+        )
 
     def _get_bilibili_subtitle(self, arguments: dict[str, Any]) -> dict[str, Any]:
         video_url = _required_string(arguments, "video_url")

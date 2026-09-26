@@ -60,6 +60,29 @@ def test_tools_list_should_expose_expected_skill_surface() -> None:
     assert "transcribe_local_audio" in names
     assert "render_latex_pdf" in names
     assert "capture_bilibili_frames" in names
+    assert "analyze_frame" in names
+
+
+def test_analyze_frame_mcp_passes_only_frozen_frame_identity(tmp_path, monkeypatch) -> None:
+    server = _sandboxed_server(tmp_path)
+    observed = {}
+
+    def fake_observe(**kwargs):
+        observed.update(kwargs)
+        return {"schema_version": "frame-observation-v1", "observations": []}
+
+    monkeypatch.setattr(mcp_module, "observe_staged_frame", fake_observe)
+    response = server.handle_message({
+        "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+        "params": {"name": "analyze_frame", "arguments": {
+            "task_id": "task-1", "file_id": "frame-1", "checksum_sha256": "a" * 64,
+        }},
+    })
+    assert response["result"]["isError"] is False
+    assert observed == {
+        "sandbox_root": tmp_path.resolve(), "task_id": "task-1",
+        "file_id": "frame-1", "checksum_sha256": "a" * 64,
+    }
 
 
 def test_capture_bilibili_frames_keeps_part_identity_and_file_manifest(
