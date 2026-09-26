@@ -107,6 +107,31 @@ class ContextWindowPlannerV2Test {
         assertThat(result.topicSummaries()).containsExactly(complete);
     }
 
+    @Test
+    void currentTopicCorrectionSurvivesReturnButOtherTopicRuleDoesNot() {
+        List<ContextProjectionV2.RawMessage> messages = java.util.stream.IntStream.rangeClosed(1, 10)
+                .mapToObj(seq -> message(seq, "message " + seq)).toList();
+        List<TopicSegmenterV2.Segment> segments = List.of(
+                segment("A1", "A", 1, 2, "CONFIDENT"),
+                segment("B1", "B", 3, 8, "CONFIDENT"),
+                segment("A2", "A", 9, 10, "CONFIDENT"));
+        var aRule = new ContextProjectionV2.UserConstraint("a-rule", "message-1", "USER",
+                "LANGUAGE", "CURRENT_TOPIC", "中文", 1, null, "ACTIVE");
+        var bRule = new ContextProjectionV2.UserConstraint("b-rule", "message-3", "USER",
+                "FORMAT", "CURRENT_TOPIC", "表格", 3, null, "ACTIVE");
+        var conversationRule = new ContextProjectionV2.UserConstraint("conversation-rule", "message-4", "USER",
+                "FORMAT", "CONVERSATION", "先给结论", 4, null, "ACTIVE");
+        ContextProjectionV2 result = planner.compile(new ContextWindowPlannerV2.Input(
+                "workspace", "actor", "conversation", 10, "回到 A", "QA", 500,
+                messages, segments, List.of(), List.of(aRule, bRule, conversationRule), List.of()));
+
+        assertThat(result.constraints()).containsExactly(aRule, conversationRule);
+        assertThat(result.decisions()).anySatisfy(decision -> {
+            assertThat(decision.refId()).isEqualTo("b-rule");
+            assertThat(decision.action()).isEqualTo("EXCLUDE");
+        });
+    }
+
     private static ContextProjectionV2.RawMessage message(int seq, String text) {
         return new ContextProjectionV2.RawMessage("message-" + seq, seq, "USER", text, digest(text));
     }

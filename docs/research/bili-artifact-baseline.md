@@ -225,3 +225,7 @@ Worker 原先把任何非空 `source_refs` 都统计为已覆盖，即使引用�
 新增只读 `ConversationContextCompilerV2Service`，以 Workspace 成员权限和当前登录执行者校验为入口，仅允许在当前消息 Head 冻结完整、无删除/待处理消息的 Ledger 前缀。它读取 v2 主题片段、READY 摘要、用户约束和 Runtime Memory 当前有效修订，再调用纯窗口选择器；无会话的独立请求只带当前输入和有效 Memory。片段缺口、陈旧投影、旧 cutoff 和已删除消息显式失败，防止从后来扩展的主题投影重建旧 Run 的历史上下文。契约在 A→B→A 样本上验证 8 条连续 Raw Tail、早期同主题摘要、执行者不匹配、旧 cutoff 和删除后的拒绝。
 
 定向契约 **1 passed**；完整 `ConversationTurnModuleContractTest` **38 passed**、`ContextWindowPlannerV2Test` **5 passed**、`ContextProjectionV2ContractTest` **3 passed**，合计 **46 passed**。结果仍仅是影子编译，没有持久化 v2 Run 输入快照或切换生产 QA/Note/Wiki/Research/Artifact；Memory 撤销后的新编译由 Runtime 当前状态过滤，已冻结任务的撤销传播需在 C3 单独验收。
+
+## C2 用户约束的主题作用域
+
+核对投影器发现它生成的 `CURRENT_TOPIC` 约束原先不会被窗口选择器纳入，导致“改用中文”等明确更正在同主题回跳时漏失。选择器现按来源消息所在 Segment 与当前 Segment 的可信主题 ID 比较；`GLOBAL`、`CONVERSATION` 和与任务目的显式相同的作用域分别处理，不把另一主题的格式要求误带入。A→B→A 测试验证 A 的规则被保留、B 的规则被排除、会话级规则被保留。`ContextWindowPlannerV2Test` **6 passed**，数据库影子编译定向契约 **1 passed**。更宽的 `TECHNICAL_ANSWERS` 等语义作用域仍要求调用者明确提供相同任务目的；尚未做自然语言适用性推断。

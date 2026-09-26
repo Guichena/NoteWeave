@@ -32,11 +32,15 @@ public final class ContextWindowPlannerV2 {
             if (message.seq() <= lastSeq) throw new IllegalArgumentException("duplicate message sequence");
             lastSeq = message.seq();
         }
+        TopicSegmenterV2.Segment active = input.segments().stream()
+                .filter(segment -> segment.startSeq() <= input.cutoffSeq()
+                        && segment.endSeq() >= input.cutoffSeq())
+                .findFirst().orElse(null);
         List<ContextProjectionV2.UserConstraint> constraints = input.constraints().stream()
                 .filter(item -> "ACTIVE".equals(item.status())
                         && item.validFromSeq() <= input.cutoffSeq()
                         && (item.invalidAfterSeq() == null || item.invalidAfterSeq() > input.cutoffSeq())
-                        && ("GLOBAL".equals(item.scope()) || input.taskPurpose().equals(item.scope())))
+                        && applies(item, input.taskPurpose(), active, input.segments(), messages))
                 .toList();
         List<ContextProjectionV2.MemoryRevision> memories = List.copyOf(input.memoryRevisions());
         ArrayList<ContextProjectionV2.Decision> decisions = new ArrayList<>();
@@ -52,10 +56,6 @@ public final class ContextWindowPlannerV2 {
         int firstTail = Math.max(0, messages.size() - TARGET_RAW_TAIL);
         List<ContextProjectionV2.RawMessage> raw = messages.subList(firstTail, messages.size());
         List<String> degradation = new ArrayList<>();
-        TopicSegmenterV2.Segment active = input.segments().stream()
-                .filter(segment -> segment.startSeq() <= input.cutoffSeq()
-                        && segment.endSeq() >= input.cutoffSeq())
-                .findFirst().orElse(null);
         if (active != null && !raw.isEmpty() && active.startSeq() < raw.get(0).seq()) {
             int initialRawStart = raw.get(0).seq();
             boolean hasCurrentSummary = input.readySummaries().stream().anyMatch(summary ->
@@ -120,6 +120,22 @@ public final class ContextWindowPlannerV2 {
     /** UTF-8 byte count is a conservative budget unit until a model tokenizer is pinned. */
     private static int tokens(String value) {
         return value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+    }
+
+    private static boolean applies(ContextProjectionV2.UserConstraint constraint, String taskPurpose,
+                                   TopicSegmenterV2.Segment active,
+                                   List<TopicSegmenterV2.Segment> segments,
+                                   List<ContextProjectionV2.RawMessage> messages) {
+        if ("GLOBAL".equals(constraint.scope()) || "CONVERSATION".equals(constraint.scope())
+                || constraint.scope().equals(taskPurpose)) return true;
+        if (!"CURRENT_TOPIC".equals(constraint.scope()) || active == null
+                || !"CONFIDENT".equals(active.status())) return false;
+        int sourceSeq = messages.stream()
+                .filter(message -> message.messageId().equals(constraint.sourceMessageId()))
+                .mapToInt(ContextProjectionV2.RawMessage::seq).findFirst().orElse(-1);
+        return segments.stream().anyMatch(segment -> segment.startSeq() <= sourceSeq
+                && segment.endSeq() >= sourceSeq && "CONFIDENT".equals(segment.status())
+                && segment.topicId().equals(active.topicId()));
     }
 
     private static BusinessException budgetExceeded(String reason) {
