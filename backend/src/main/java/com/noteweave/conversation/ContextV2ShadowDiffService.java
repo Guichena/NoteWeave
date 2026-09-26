@@ -9,7 +9,9 @@ import com.noteweave.security.WorkspacePermission;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import org.springframework.http.HttpStatus;
@@ -84,6 +86,55 @@ public class ContextV2ShadowDiffService {
                 v2.constraints().size(), "GOLD_LABELS_UNAVAILABLE");
     }
 
+    public ShadowCohort recent(String workspaceId, int limit) {
+        access.requirePermission(workspaceId, WorkspacePermission.WORKSPACE_ADMIN);
+        if (limit < 1 || limit > 100) {
+            throw new BusinessException("CONTEXT_V2_COHORT_LIMIT_INVALID",
+                    "Context cohort limit must be between 1 and 100", HttpStatus.BAD_REQUEST);
+        }
+        List<String> runIds = jdbc.queryForList("""
+                select id from answer_run where workspace_id = ?
+                order by created_at desc, id desc limit ?
+                """, String.class, workspaceId, limit);
+        int ready = 0;
+        int redacted = 0;
+        int failed = 0;
+        int notRecorded = 0;
+        int runsWithReferenceDifference = 0;
+        int onlyV1Messages = 0;
+        int onlyV2Messages = 0;
+        int onlyV1Summaries = 0;
+        int onlyV2Summaries = 0;
+        int onlyV1Memories = 0;
+        int onlyV2Memories = 0;
+        Map<String, Integer> gapCounts = new LinkedHashMap<>();
+        for (String runId : runIds) {
+            ShadowDiff diff = get(workspaceId, runId);
+            switch (diff.shadowStatus()) {
+                case "READY" -> ready++;
+                case "REDACTED" -> redacted++;
+                case "FAILED" -> failed++;
+                default -> notRecorded++;
+            }
+            if (!diff.gapCode().isBlank()) gapCounts.merge(diff.gapCode(), 1, Integer::sum);
+            onlyV1Messages += diff.messages().onlyV1().size();
+            onlyV2Messages += diff.messages().onlyV2().size();
+            onlyV1Summaries += diff.summaries().onlyV1().size();
+            onlyV2Summaries += diff.summaries().onlyV2().size();
+            onlyV1Memories += diff.memories().onlyV1().size();
+            onlyV2Memories += diff.memories().onlyV2().size();
+            if (!diff.messages().onlyV1().isEmpty() || !diff.messages().onlyV2().isEmpty()
+                    || !diff.summaries().onlyV1().isEmpty() || !diff.summaries().onlyV2().isEmpty()
+                    || !diff.memories().onlyV1().isEmpty() || !diff.memories().onlyV2().isEmpty()) {
+                runsWithReferenceDifference++;
+            }
+        }
+        return new ShadowCohort(runIds.size(), ready, redacted, failed, notRecorded,
+                runsWithReferenceDifference, onlyV1Messages, onlyV2Messages,
+                onlyV1Summaries, onlyV2Summaries, onlyV1Memories, onlyV2Memories,
+                Map.copyOf(gapCounts), "GOLD_LABELS_UNAVAILABLE");
+    }
+
     private static Set<String> refs(JsonNode array, String field) {
         Set<String> ids = new TreeSet<>();
         if (array.isArray()) for (JsonNode item : array) {
@@ -122,6 +173,13 @@ public class ContextV2ShadowDiffService {
                              String v1ReplayAvailability, String v2ReplayAvailability,
                              RefDiff messages, RefDiff summaries, RefDiff memories,
                              int v2ConstraintCount, String accuracyStatus) {}
+
+    public record ShadowCohort(int sampledRuns, int ready, int redacted, int failed,
+                               int notRecorded, int runsWithReferenceDifference,
+                               int onlyV1Messages, int onlyV2Messages,
+                               int onlyV1Summaries, int onlyV2Summaries,
+                               int onlyV1Memories, int onlyV2Memories,
+                               Map<String, Integer> gapCounts, String accuracyStatus) {}
 
     private record V1Row(String compilerVersion, String snapshotJson, String replayAvailability) {}
     private record ShadowRow(String status, String json, String sha256, String failureCode) {}

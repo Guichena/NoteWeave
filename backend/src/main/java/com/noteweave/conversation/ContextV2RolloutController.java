@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -39,5 +40,11 @@ public class ContextV2RolloutController {
     ApiResponse<ContextV2ShadowDiffService.ShadowDiff> diff(@PathVariable String workspaceId,
                                                               @PathVariable String answerRunId) {
         return ApiResponse.success(diffs.get(workspaceId, answerRunId));
+    }
+
+    @GetMapping("/cohort")
+    ApiResponse<ContextV2ShadowDiffService.ShadowCohort> cohort(
+            @PathVariable String workspaceId, @RequestParam(defaultValue = "50") int limit) {
+        return ApiResponse.success(diffs.recent(workspaceId, limit));
     }
 }

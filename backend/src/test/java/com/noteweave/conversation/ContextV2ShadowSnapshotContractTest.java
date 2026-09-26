@@ -83,6 +83,17 @@ class ContextV2ShadowSnapshotContractTest {
                 .content(mapper.writeValueAsString(Map.of("content", "Mode off again",
                         "answer_mode", "QA", "client_request_id", "rollout-off-3"))));
         assertThat(shadowCount(after.path("answer_run_id").asText())).isZero();
+        JsonNode cohort = data(get("/api/v2/workspaces/{workspaceId}/context-v2-rollout/cohort",
+                workspaceId).param("limit", "3"));
+        assertThat(cohort.path("sampled_runs").asInt()).isEqualTo(3);
+        assertThat(cohort.path("ready").asInt()).isEqualTo(1);
+        assertThat(cohort.path("not_recorded").asInt()).isEqualTo(2);
+        assertThat(cohort.path("gap_counts").path("SHADOW_NOT_RECORDED").asInt()).isEqualTo(2);
+        assertThat(cohort.path("accuracy_status").asText()).isEqualTo("GOLD_LABELS_UNAVAILABLE");
+        mvc.perform(get("/api/v2/workspaces/{workspaceId}/context-v2-rollout/cohort", workspaceId)
+                        .param("limit", "101"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("CONTEXT_V2_COHORT_LIMIT_INVALID"));
         mvc.perform(put("/api/v2/workspaces/{workspaceId}/context-v2-rollout", workspaceId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(Map.of("mode", "ACTIVE"))))

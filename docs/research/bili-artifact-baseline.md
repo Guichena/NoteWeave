@@ -486,6 +486,10 @@ V126 为 Artifact 的已冻结 Context 投影增加按 Run 固定的 `consumptio
 
 将双页合成场景固化为 Worker 回归：横版与竖版原画面分别绑定 `f1`、`f2`，PPTX 验证两页图片摘要及无裁边，文件 Manifest 含顺序为 1、2 的两张预览。`test_video_deck_ir.py` **12 passed，0 failed**。预览 PNG 在此合同中仍是合成占位文件，实际部署转换器的逐页视觉一致性尚未验证。
 
+## C4 管理员灰度样本汇总
+
+新增只读 `/context-v2-rollout/cohort?limit=...`，对当前 Workspace 最近最多 100 个 Answer Run 汇总影子 READY/FAILED/REDACTED/未记录数、缺口码及 v1/v2 消息/摘要/Memory 引用差异计数。逐条沿用 SHA-256 核验，响应不携带正文或引用 ID；`accuracy_status` 仍为 `GOLD_LABELS_UNAVAILABLE`，差异数量不被误报为错误率。OFF→SHADOW→OFF 合同验证 3 个 Run 中 1 个 READY、2 个未记录及限额拒绝；`ContextV2ShadowSnapshotContractTest` **5 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。这是小范围运维观测，仍需人工标签与真实样本才能设灰度正确率门禁。
+
 ## C4 老会话按需回填合同
 
 在 Workspace 为 OFF 时先创建一轮 QA，随后切至 SHADOW 并提交新问题；原有影子合同现在读取第二轮冻结投影，确认第一轮用户消息仍在有序 Raw Tail、本轮 cutoff 为 3、选中预算未超额。再切回 OFF，后续新 Run 不创建 v2 影子快照；已有冻结投影仍保留。定向 `ContextV2ShadowSnapshotContractTest#workspaceModeCanOptIntoShadowAndTurnItOffWithoutEnablingActive` **1 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。此处证明本地旧会话在下一轮输入时回填；尚无批量历史回填、真实用户标注或灰度误选率统计。
