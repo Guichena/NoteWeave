@@ -60,7 +60,8 @@ public final class ContextWindowPlannerV2 {
             int initialRawStart = raw.get(0).seq();
             boolean hasCurrentSummary = input.readySummaries().stream().anyMatch(summary ->
                     summary.segmentId().equals(active.segmentId())
-                            && summary.endSeq() < initialRawStart);
+                            && summary.startSeq() == active.startSeq()
+                            && summary.endSeq() == initialRawStart - 1);
             if (!hasCurrentSummary) {
                 int expandedStart = 0;
                 while (expandedStart < messages.size()

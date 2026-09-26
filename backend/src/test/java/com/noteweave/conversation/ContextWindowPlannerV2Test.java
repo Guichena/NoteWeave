@@ -77,6 +77,36 @@ class ContextWindowPlannerV2Test {
         });
     }
 
+    @Test
+    void partialCurrentSummaryCannotHideMessagesBetweenSummaryAndRawTail() {
+        List<ContextProjectionV2.RawMessage> messages = java.util.stream.IntStream.rangeClosed(1, 20)
+                .mapToObj(seq -> message(seq, "message " + seq)).toList();
+        var active = segment("A1", "A", 1, 20, "CONFIDENT");
+        var partial = summary("A1", "A", 1, 5, "only first five messages");
+        ContextProjectionV2 result = planner.compile(new ContextWindowPlannerV2.Input(
+                "workspace", "actor", "conversation", 20, "question", "QA", 500,
+                messages, List.of(active), List.of(partial), List.of(), List.of()));
+
+        assertThat(result.rawTail()).hasSize(20);
+        assertThat(result.degradationReasons()).contains("CURRENT_SUMMARY_NOT_READY_RAW_EXPANDED");
+        assertThat(result.topicSummaries()).isEmpty();
+    }
+
+    @Test
+    void contiguousCurrentSummaryKeepsEightMessageRawTail() {
+        List<ContextProjectionV2.RawMessage> messages = java.util.stream.IntStream.rangeClosed(1, 20)
+                .mapToObj(seq -> message(seq, "message " + seq)).toList();
+        var active = segment("A1", "A", 1, 20, "CONFIDENT");
+        var complete = summary("A1", "A", 1, 12, "first twelve messages");
+        ContextProjectionV2 result = planner.compile(new ContextWindowPlannerV2.Input(
+                "workspace", "actor", "conversation", 20, "question", "QA", 500,
+                messages, List.of(active), List.of(complete), List.of(), List.of()));
+
+        assertThat(result.rawTail()).extracting(ContextProjectionV2.RawMessage::seq)
+                .containsExactly(13, 14, 15, 16, 17, 18, 19, 20);
+        assertThat(result.topicSummaries()).containsExactly(complete);
+    }
+
     private static ContextProjectionV2.RawMessage message(int seq, String text) {
         return new ContextProjectionV2.RawMessage("message-" + seq, seq, "USER", text, digest(text));
     }

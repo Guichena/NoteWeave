@@ -197,3 +197,7 @@ Host 编译通过；`Phase6ResearchArtifactContractTest` **52 个用例，44 执
 视频自动采集在 Bundle 冻结后，用本地确定性代码建立 `TOPIC` 根节点和按画面、字幕分组的 `EVIDENCE_WINDOW`；节点只索引时间和引用，不产术语、语义断言或画面解释，因此不能称为类型化语义知识树。Worker 先读取已有 Host 规划，重试时复用并复核 Bundle 摘要；首次运行将本地索引提交到 Host。超过节点上限或规划服务暂不可用时记录 `knowledge_plan_gap`，保留旧 PDF 发布路径。此步骤没有把字幕或 OCR 送到外部模型。
 
 第一次 Callback 定向测试有 3 项模拟 Host 未实现新读取端点，夹具补齐后 Callback + 规划契约 **38 passed**；最终 Worker 全套 **328 passed，35.85 秒**。自动审批明确拒绝了把冻结字幕和 OCR 资料接入外部 LLM 规划的运行时改动，理由是外部接收方及资料外发范围尚未获明确授权；因此外部语义规划保持未接通，后续若需要该能力必须先获得授权。P3/P4 仍未实现，当前本地索引不能替代语义树。
+
+## C2 影子窗口的连续覆盖修正
+
+影子编译器原先只要求当前主题摘要结束于 Raw Tail 之前，可能在摘要末尾与最近 8 条原文开头之间漏掉未总结的消息。现在要求当前主题摘要从活动 Segment 起点开始、恰好覆盖到 Raw Tail 前一条；否则从活动 Segment 起点扩展原文，仍受 256 条和必需信息预算门禁约束。回归分别验证有缺口时扩展，以及摘要连续时维持 8 条 Raw Tail。`ContextWindowPlannerV2Test` **5 passed**，`ContextProjectionV2ContractTest` **3 passed**，`TopicSegmenterV2Test` **5 passed**。这仍是 C2 影子选择器，尚未接入 QA/Note/Wiki 或任何 Run 快照。
