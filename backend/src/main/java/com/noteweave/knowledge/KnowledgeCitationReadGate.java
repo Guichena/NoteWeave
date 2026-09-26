@@ -62,4 +62,28 @@ public class KnowledgeCitationReadGate {
         }
         return Set.copyOf(readableVersions);
     }
+
+    public Set<String> readableWikiItemIds(String workspaceId, List<String> itemIds) {
+        List<String> ids = itemIds.stream().filter(id -> id != null && !id.isBlank())
+                .distinct().toList();
+        if (ids.isEmpty()) return Set.of();
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(workspaceId);
+        parameters.addAll(ids);
+        Map<String, String> versionsByItem = new LinkedHashMap<>();
+        jdbc.query("""
+                select id, latest_version_id from knowledge_item
+                where workspace_id = ? and item_type = 'WIKI' and status = 'ACTIVE'
+                  and id in (%s)
+                """.formatted(String.join(",", Collections.nCopies(ids.size(), "?"))),
+                (RowCallbackHandler) rs -> versionsByItem.put(rs.getString(1), rs.getString(2)),
+                parameters.toArray());
+        Set<String> readableVersions = readableVersionIds(workspaceId,
+                versionsByItem.values().stream().filter(id -> id != null && !id.isBlank()).toList());
+        LinkedHashSet<String> readableItems = new LinkedHashSet<>();
+        versionsByItem.forEach((itemId, versionId) -> {
+            if (readableVersions.contains(versionId)) readableItems.add(itemId);
+        });
+        return Set.copyOf(readableItems);
+    }
 }

@@ -48,6 +48,9 @@ class KnowledgeQueryServiceTest {
         governanceService = mock(KnowledgeGovernanceService.class);
         pageVersionCache = mock(WikiPageVersionCache.class);
         generatedSourceGate = mock(ResearchGeneratedSourceReadGate.class);
+        when(generatedSourceGate.visible(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(true);
         when(generatedSourceGate.readableSourceIds(eq("workspace"), org.mockito.ArgumentMatchers.anyList()))
                 .thenAnswer(invocation -> Set.copyOf(invocation.getArgument(1)));
         when(pageVersionCache.get(anyString(), anyString(), anyString()))
@@ -66,7 +69,8 @@ class KnowledgeQueryServiceTest {
                 governanceService,
                 pageVersionCache,
                 new SimpleMeterRegistry(),
-                new KnowledgeCitationReadGate(jdbcTemplate, generatedSourceGate));
+                new KnowledgeCitationReadGate(jdbcTemplate, generatedSourceGate),
+                generatedSourceGate);
     }
 
     @AfterEach
@@ -223,6 +227,19 @@ class KnowledgeQueryServiceTest {
     @Test
     void revokedCitedSourceMustHideWikiPageEvenWhenVersionWasCached() {
         queryService.getItemDetail("item-a");
+        List<KnowledgeItemResponse> recentPages = queryService.listItems("workspace", "WIKI");
+        WikiStatsResponse baseStats = governanceService.getWikiStats("workspace");
+        when(governanceService.getWikiStats("workspace")).thenReturn(new WikiStatsResponse(
+                baseStats.workspaceId(), baseStats.pageCount(), baseStats.linkCount(),
+                baseStats.resolvedLinkCount(), baseStats.unresolvedLinkCount(),
+                baseStats.citationCount(), baseStats.issueCount(), baseStats.autoFixableIssueCount(),
+                baseStats.manualReviewIssueCount(), baseStats.pagesByKind(), recentPages,
+                List.of(new WikiTaskSummaryResponse("task", "WIKI_INGEST", "COMPLETED", "DONE", "",
+                        "WIKI", "item-a", "Alpha Overview", List.of(), java.time.Instant.now())),
+                baseStats.pendingTaskCount(), baseStats.wikiEnabled()));
+        when(governanceService.lintWiki("workspace")).thenReturn(List.of(
+                new WikiIssueResponse("CONTENT_STALE", "MEDIUM", "item-a", "Alpha Overview",
+                        "stale", "rebuild", false, "REBUILD_WIKI")));
         ArgumentCaptor<KnowledgePageVersionSnapshot> snapshot =
                 ArgumentCaptor.forClass(KnowledgePageVersionSnapshot.class);
         verify(pageVersionCache).put(eq("workspace"), snapshot.capture());
@@ -237,9 +254,30 @@ class KnowledgeQueryServiceTest {
                 .extracting(KnowledgeItemResponse::itemId).containsExactly("item-b");
         assertThat(queryService.findRelevantWikiPages("workspace", "alpha"))
                 .extracting(KnowledgePageHit::itemId).containsExactly("item-b");
+        assertThat(queryService.getWikiHome("workspace").links()).isEmpty();
+        WikiIndexResponse index = queryService.getWikiIndex("workspace");
+        assertThat(index.recentUpdates()).extracting(KnowledgeItemResponse::itemId)
+                .containsExactly("item-b");
+        assertThat(index.recentTasks()).isEmpty();
+        assertThat(index.topIssues()).isEmpty();
         assertThatThrownBy(() -> queryService.getItemDetail("item-a"))
                 .isInstanceOfSatisfying(com.noteweave.common.BusinessException.class,
                         failure -> assertThat(failure.code()).isEqualTo("KNOWLEDGE_SOURCE_REVOKED"));
+    }
+
+    @Test
+    void wikiIndexMustHideRevokedResearchSourceTitle() {
+        jdbcTemplate.update("""
+                insert into source(id, workspace_id, title, status, index_status,
+                                   generated_by, generated_ref_id, updated_at)
+                values ('research-source', 'workspace', 'Revoked report', 'READY', 'INDEXED',
+                        'research_agent', 'run', timestamp '2026-07-16 12:00:00')
+                """);
+        when(generatedSourceGate.visible("workspace", "research_agent", "run"))
+                .thenReturn(false);
+
+        assertThat(queryService.getWikiIndex("workspace").recentSources())
+                .extracting(WikiIndexSourceResponse::sourceId).containsExactly("source");
     }
 
     private void createSchema(DataSource dataSource) {
