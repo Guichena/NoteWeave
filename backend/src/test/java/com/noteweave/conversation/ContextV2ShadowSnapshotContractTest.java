@@ -10,6 +10,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.noteweave.memory.ExecutionObservation;
+import com.noteweave.memory.MemoryRuntime;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,6 +30,9 @@ class ContextV2ShadowSnapshotContractTest {
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper mapper;
     @Autowired JdbcTemplate jdbc;
+    @Autowired MemoryRuntime memoryRuntime;
+    @Autowired ConversationTopicProjectionV2Service topics;
+    @Autowired ConversationTopicSummaryV2Service summaries;
     @SpyBean ConversationContextCompilerV2Service compiler;
 
     @Test
@@ -117,6 +122,125 @@ class ContextV2ShadowSnapshotContractTest {
         assertThat(jdbc.queryForObject("""
                 select count(*) from run_input_snapshot where answer_run_id = ?
                 """, Integer.class, receipt.path("answer_run_id").asText())).isEqualTo(1);
+    }
+
+    @Test
+    void revokingFrozenMemoryRevisionRedactsTheAnswerShadow() throws Exception {
+        String workspaceId = data(post("/api/v2/workspaces")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of("name", "shadow-memory-revoke",
+                        "description", "revocation contract")))).path("workspace_id").asText();
+        var proposal = memoryRuntime.observe(new ExecutionObservation(
+                "shadow-revoke-" + System.nanoTime(), workspaceId, "WORKSPACE",
+                "preference:shadow-revoke", "Private memory sentinel for shadow",
+                "USER_FEEDBACK", "shadow-review"));
+        data(post("/api/v2/workspaces/{workspaceId}/memory/revisions/{revisionId}/review",
+                workspaceId, proposal.revisionId())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of("decision", "ACCEPT"))));
+        String conversationId = data(post("/api/v2/workspaces/{workspaceId}/conversations", workspaceId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of("title", "shadow-memory-revoke",
+                        "conversation_type", "WORKSPACE_CHAT")))).path("conversation_id").asText();
+        JsonNode receipt = data(post("/api/v2/conversations/{conversationId}/messages", conversationId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of("content", "Use the approved preference",
+                        "answer_mode", "QA", "client_request_id", "shadow-memory-revoke-1"))));
+        String runId = receipt.path("answer_run_id").asText();
+        String before = jdbc.queryForObject("""
+                select projection_json from context_v2_shadow_snapshot where answer_run_id = ?
+                """, String.class, runId);
+        ContextProjectionV2 frozen = mapper.readValue(before, ContextProjectionV2.class);
+        assertThat(frozen.memoryRevisions())
+                .extracting(ContextProjectionV2.MemoryRevision::revisionId)
+                .contains(proposal.revisionId());
+        jdbc.update("""
+                update memory_item set review_status = 'REVIEW_REQUIRED' where id = ?
+                """, proposal.memoryItemId());
+
+        data(post("/api/v2/workspaces/{workspaceId}/memory/revisions/{revisionId}/review",
+                workspaceId, proposal.revisionId())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of("decision", "REVOKE"))));
+
+        String after = jdbc.queryForObject("""
+                select projection_json from context_v2_shadow_snapshot where answer_run_id = ?
+                """, String.class, runId);
+        assertThat(jdbc.queryForObject("""
+                select status from context_v2_shadow_snapshot where answer_run_id = ?
+                """, String.class, runId)).isEqualTo("REDACTED");
+        assertThat(after).doesNotContain("Private memory sentinel for shadow");
+        ContextProjectionV2 redacted = mapper.readValue(after, ContextProjectionV2.class);
+        assertThat(redacted.memoryRevisions())
+                .extracting(ContextProjectionV2.MemoryRevision::revisionId)
+                .contains(proposal.revisionId());
+        assertThat(redacted.memoryRevisions().get(0).text()).isEmpty();
+    }
+
+    @Test
+    void deletingAnOldSummarizedMessageRedactsARecalledShadowRevision() throws Exception {
+        String workspaceId = data(post("/api/v2/workspaces")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of("name", "shadow-summary-delete",
+                        "description", "summary redaction contract")))).path("workspace_id").asText();
+        String conversationId = data(post("/api/v2/workspaces/{workspaceId}/conversations", workspaceId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of("title", "shadow-summary-delete",
+                        "conversation_type", "WORKSPACE_CHAT")))).path("conversation_id").asText();
+        String firstMessageId = null;
+        String[] turns = {"解释缓存一致性。", "重点是写入顺序。", "改聊台南旅行。",
+                "住两晚。", "第一天看古迹。", "第二天吃小吃。"};
+        for (int index = 0; index < turns.length; index++) {
+            JsonNode receipt = data(post("/api/v2/conversations/{conversationId}/messages", conversationId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(mapper.writeValueAsString(Map.of("content", turns[index],
+                            "answer_mode", "QA", "client_request_id", "shadow-summary-" + index))));
+            if (index == 0) firstMessageId = receipt.path("message_id").asText();
+        }
+        var projection = topics.refresh(workspaceId, conversationId);
+        String firstSegmentId = projection.segments().get(0).segmentId();
+        String revisionId = jdbc.queryForObject("""
+                select id from conversation_topic_summary_revision_v2
+                where segment_id = ? and end_seq = 4 and status = 'BUILDING'
+                """, String.class, firstSegmentId);
+        String summary = jdbc.query("""
+                select role, content from conversation_message
+                where conversation_id = ? and message_seq between 1 and 4 order by message_seq
+                """, (rs, index) -> ConversationTopicSummaryV2Service.summarizeMessage(
+                rs.getString(1), rs.getString(2)), conversationId).stream()
+                .filter(value -> !value.isBlank())
+                .collect(java.util.stream.Collectors.joining("\n"));
+        summaries.promote(firstSegmentId, revisionId,
+                new PromoteSegmentSummaryRequest(summary, sha256(summary)));
+
+        JsonNode recalled = data(post("/api/v2/conversations/{conversationId}/messages", conversationId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of(
+                        "content", "回到缓存一致性，第二种写入顺序呢？",
+                        "answer_mode", "QA", "client_request_id", "shadow-summary-return"))));
+        String runId = recalled.path("answer_run_id").asText();
+        String frozenJson = jdbc.queryForObject("""
+                select projection_json from context_v2_shadow_snapshot where answer_run_id = ?
+                """, String.class, runId);
+        ContextProjectionV2 frozen = mapper.readValue(frozenJson, ContextProjectionV2.class);
+        assertThat(frozen.topicSummaries())
+                .extracting(ContextProjectionV2.TopicSummary::revisionId).contains(revisionId);
+
+        mvc.perform(delete("/api/v2/workspaces/{workspaceId}/conversations/{conversationId}/messages/{messageId}",
+                workspaceId, conversationId, firstMessageId)).andExpect(status().isOk());
+
+        assertThat(jdbc.queryForObject("""
+                select status from conversation_topic_summary_revision_v2 where id = ?
+                """, String.class, revisionId)).isEqualTo("STALE");
+        String redactedJson = jdbc.queryForObject("""
+                select projection_json from context_v2_shadow_snapshot where answer_run_id = ?
+                """, String.class, runId);
+        assertThat(jdbc.queryForObject("""
+                select status from context_v2_shadow_snapshot where answer_run_id = ?
+                """, String.class, runId)).isEqualTo("REDACTED");
+        assertThat(redactedJson).doesNotContain(summary);
+        assertThat(mapper.readValue(redactedJson, ContextProjectionV2.class)
+                .topicSummaries().get(0).text()).isEmpty();
     }
 
     private JsonNode data(org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request)

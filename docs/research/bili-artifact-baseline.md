@@ -247,3 +247,9 @@ Worker 原先把任何非空 `source_refs` 都统计为已覆盖，即使引用�
 新增 `context_v2_shadow_snapshot` 与引用索引表，开关 `noteweave.context.v2.shadow-enabled` 默认关闭。启用后，Answer 准备事务提交、助手生成前冻结 USER Query 截止的 v2 Context，记录编译器版本、完整 JSON、SHA-256 和消息/摘要/Memory 修订引用。影子编译失败由独立事务记为 FAILED，原 Answer 继续使用 v1；默认关闭时不创建影子记录。消息删除会与冻结共用 Conversation 行锁，对命中的影子快照写回无正文的 `METADATA_ONLY` 投影；Memory 选中修订在写入前重新加锁校验，撤销和 Summary 失效通过精确引用索引触发同一脱敏过程。没有把影子投影交给生成模型或 Worker。
 
 定向契约验证正常冻结、SHA-256、助手占位排除、Query 删除后正文清空与重新计算 SHA-256，以及模拟预算错误时 Answer 的 v1 快照仍写入。最终 `ContextV2ShadowSnapshotContractTest` **2 passed**、`ConversationTurnModuleContractTest` **39 passed**、构造/命令测试 **3 passed**、`RunReplayRedactionServiceTest` **3 passed**、窗口选择器 **6 passed**、v2 投影契约 **4 passed**，合计 **57 passed**。尚未验证真实 MySQL 并发撤销与 MinIO/Kafka 跨进程时序，未开启 Workspace 粒度灰度；QA/Note/Wiki 的生产上下文仍是 v1，Research/Artifact 的 v2 冻结仍未接入。
+
+## C3 Memory 撤销与旧主题摘要删除传播
+
+沿实际 Memory 审核 API 验证 ACTIVE 修订进入 Answer 影子快照后，复审 REVOKE 会保留 Revision 标识并清空快照里的 Memory 文本；沿 A→B→A 会话验证 READY 的早期 A 摘要被回跳 Answer 选中后，删除摘要覆盖的旧消息会使修订 STALE、快照 REDACTED，且冻结摘要正文无法再回放。首轮 Memory 测试返回 `MEMORY_RUNTIME_REVISION_NOT_REVIEWABLE`：当前审核规则只接受 `REVIEW_REQUIRED` 或 `STALE` 的 ACTIVE 修订复审；测试先置入合法复审状态再撤销，没有放宽产品门禁。冻结与删除共用 Conversation 锁，Memory 修订在影子快照提交前加锁复核，减少撤销和冻结交错时的敏感文本残留风险。
+
+定向 Memory 撤销 **3 passed**，旧摘要删除 **1 passed**；最终 `ContextV2ShadowSnapshotContractTest` **4 passed**、`ConversationTurnModuleContractTest` **39 passed**、`MemoryRuntimeContractTest` **16 passed**、`RunReplayRedactionServiceTest` **3 passed**，合计 **62 passed**。真实 MySQL 多进程竞态仍需故障注入验证；影子投影尚未用于回答生成或 Worker。
