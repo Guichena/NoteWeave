@@ -280,6 +280,9 @@
           "video_material_bundle_id": {
             "type": "string"
           },
+          "part": {
+            "type": "string"
+          },
           "frame_density": {
             "type": "string",
             "default": "STANDARD",

@@ -149,3 +149,9 @@ PDF Skill 发布输入新增 `frame_density`（LOW/STANDARD/HIGH，默认 STANDA
 自动视频采集完成时，若字幕 Operation 没有实际 Provider 回执，或回执只有预览、缺少可验证的完整字幕文件与视频元数据，Worker 会拒绝 Candidate 完成并向 Host 发送非重试任务失败。原先这两种情况会跳过素材冻结，仍可能发布没有 Bundle 引用的 PDF。明确返回 `no_subtitle_available` 且元数据完整的回执仍可冻结为带 `NO_SUBTITLE` 缺口的资料包；此门禁针对不完整或无法验证的回执。
 
 合成测试覆盖预览、空回执、失败回调及既有异步恢复：Worker Callback **23 passed**，全套 **303 passed，40.45 秒**。本批未更改 Host 协议；真实 Provider 的 ASR 失败路径仍需有凭据的视频回放验证。
+
+## P2 显式视频分集输入
+
+PDF Skill 新增可选字符串 `part`，Host 仅接受 1–1000 的规范十进制值，并核对 B 站视频链接中已有的 `p` 参数。链接未带 `p` 且 `part>1` 时，Host 把该参数写进冻结 URL，让现有字幕/抽帧 Provider 读取同一分集；相互冲突的分集在创建 Run 前拒绝。资料包复用比较将与 URL 分集一致的显式 `part` 视为同一采集输入，使旧无 `part` 的冻结资料包可被新 Run 引用。
+
+首次 Host 定向测试用了非 10 位 BVID 的旧演示字符串，被新增的真实 URL 校验拒绝；换为有效格式后通过。最终 Host `Phase6ResearchArtifactContractTest` **50 个用例，42 执行通过、8 个既有跳过**，`ArtifactSkillCatalogPublicationTest` **2 passed**；Worker Catalog **7 passed**，全套 **303 passed，46.20 秒**。三份发布 Catalog SHA-256 均为 `9C0CEE6E5928C36B60F539326B1D6D261A391D0F06836481C345FD9E6092E8C1`。尚未用真实多分集视频验证 Provider 回执与分集元数据。

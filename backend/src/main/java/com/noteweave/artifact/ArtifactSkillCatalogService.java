@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.capability.CapabilityCatalogPort;
 import com.noteweave.common.BusinessException;
 import java.io.InputStream;
+import java.net.URI;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.ArrayList;
@@ -14,6 +15,8 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -186,6 +189,9 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
                 }
                 canonicalUrl = aliasUrl;
             }
+            if ("bilibili_course_note_pdf".equals(skill.skillKey()) && normalized.containsKey("part")) {
+                canonicalUrl = resolveVideoPart(canonicalUrl, String.valueOf(normalized.get("part")));
+            }
             if (!canonicalUrl.isEmpty()) normalized.put("url", canonicalUrl);
         }
 
@@ -200,6 +206,37 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         }
 
         return Map.copyOf(normalized);
+    }
+
+    private static String resolveVideoPart(String url, String requestedPart) {
+        if (!requestedPart.matches("[1-9][0-9]{0,3}") || Integer.parseInt(requestedPart) > 1_000) {
+            throw new BusinessException("ARTIFACT_SKILL_INPUT_PART_INVALID", "视频分集必须为 1–1000");
+        }
+        URI parsed;
+        try { parsed = URI.create(url); }
+        catch (IllegalArgumentException ex) {
+            throw new BusinessException("ARTIFACT_SKILL_INPUT_PART_INVALID", "视频链接格式不正确");
+        }
+        if (!("http".equals(parsed.getScheme()) || "https".equals(parsed.getScheme()))
+                || !("bilibili.com".equals(parsed.getHost())
+                        || "www.bilibili.com".equals(parsed.getHost()))
+                || parsed.getPath() == null
+                || !parsed.getPath().matches("/video/BV[0-9A-Za-z]{10}/?")
+                || parsed.getRawFragment() != null) {
+            throw new BusinessException("ARTIFACT_SKILL_INPUT_PART_INVALID", "分集只适用于 B 站视频链接");
+        }
+        Matcher existing = Pattern.compile("(?:^|&)p=([^&]*)")
+                .matcher(parsed.getRawQuery() == null ? "" : parsed.getRawQuery());
+        if (existing.find()) {
+            String value = existing.group(1);
+            if (!value.matches("[1-9][0-9]{0,3}") || Integer.parseInt(value) > 1_000
+                    || Integer.parseInt(value) != Integer.parseInt(requestedPart) || existing.find()) {
+                throw new BusinessException("ARTIFACT_SKILL_INPUT_CONFLICT", "视频链接分集与 part 输入不一致");
+            }
+            return url;
+        }
+        if ("1".equals(requestedPart)) return url;
+        return url + (parsed.getRawQuery() == null ? "?" : "&") + "p=" + requestedPart;
     }
 
     public List<ArtifactSkillSummaryResponse> listSkills() {

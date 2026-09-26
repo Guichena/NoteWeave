@@ -199,6 +199,10 @@ public class ArtifactVideoMaterialService {
     private static Map<String, Object> acquisitionInputs(Map<String, Object> inputs) {
         Map<String, Object> acquisition = new TreeMap<>(inputs);
         acquisition.remove("video_material_bundle_id");
+        String url = string(acquisition.get("url"));
+        Matcher partInUrl = Pattern.compile("[?&]p=([0-9]+)(?:&|$)").matcher(url);
+        String effectivePart = partInUrl.find() ? partInUrl.group(1) : "1";
+        if (effectivePart.equals(acquisition.get("part"))) acquisition.remove("part");
         // Earlier frozen Runs predate these explicit defaults; preserve their reuse identity.
         if ("STANDARD".equals(acquisition.get("frame_density"))) acquisition.remove("frame_density");
         if ("ALLOW".equals(acquisition.get("asr_fallback"))) acquisition.remove("asr_fallback");

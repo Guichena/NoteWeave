@@ -739,6 +739,47 @@ void artifactJobShouldCreateTaskExposeWorkerInputAndPersistVersion() throws Exce
     }
 
     @Test
+    void explicitVideoPartNormalizesUrlAndRejectsConflicts() throws Exception {
+        String workspaceId = createWorkspace();
+        String url = "https://www.bilibili.com/video/BV1234567890";
+        MvcResult create = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "bilibili_course_note_pdf",
+                                "user_requirement", "Use the second video part",
+                                "inputs", Map.of("url", url, "part", "2")
+                        ))))
+                .andExpect(status().isOk()).andReturn();
+        String taskId = objectMapper.readTree(create.getResponse().getContentAsString())
+                .path("data").path("task_id").asText();
+        mockMvc.perform(get("/internal/worker/artifact-tasks/{taskId}/input", taskId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.input_payload.inputs.url").value(url + "?p=2"))
+                .andExpect(jsonPath("$.data.input_payload.inputs.part").value("2"));
+
+        for (String invalidPart : List.of("0", "1001", "02", "abc")) {
+            mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of(
+                                    "skill_key", "bilibili_course_note_pdf",
+                                    "user_requirement", "Reject an invalid part",
+                                    "inputs", Map.of("url", url, "part", invalidPart)
+                            ))))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("ARTIFACT_SKILL_INPUT_PART_INVALID"));
+        }
+        mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "bilibili_course_note_pdf",
+                                "user_requirement", "Reject a conflicting part",
+                                "inputs", Map.of("url", url + "?p=3", "part", "2")
+                        ))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ARTIFACT_SKILL_INPUT_CONFLICT"));
+    }
+
+    @Test
     void artifactWindowPagesMustUseFrozenSnapshotAndRejectRevokedSource() throws Exception {
         String workspaceId = createWorkspace();
         String sourceId = uploadSource(workspaceId, "paged-source.md", "Opening fact in first window.");
@@ -5391,6 +5432,19 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
         String childTaskId = objectMapper.readTree(childCreated.getResponse().getContentAsString())
                 .path("data").path("task_id").asText();
         assertThat(videoMaterialService.readReferenced(childTaskId, id).get("bundle_id"))
+                .isEqualTo(bundle.get("bundle_id"));
+        MvcResult explicitPartChild = mockMvc.perform(post(
+                        "/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "bilibili_course_note_pdf",
+                                "user_requirement", "reuse with explicit part",
+                                "inputs", Map.of("url", "https://www.bilibili.com/video/BV1234567890?p=2",
+                                        "part", "2", "video_material_bundle_id", id)))))
+                .andExpect(status().isOk()).andReturn();
+        String explicitPartTaskId = objectMapper.readTree(
+                explicitPartChild.getResponse().getContentAsString()).path("data").path("task_id").asText();
+        assertThat(videoMaterialService.readReferenced(explicitPartTaskId, id).get("bundle_id"))
                 .isEqualTo(bundle.get("bundle_id"));
         MvcResult differentLanguage = mockMvc.perform(post(
                         "/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
