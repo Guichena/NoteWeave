@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
 public class RunReplayRedactionService {
@@ -19,10 +20,18 @@ public class RunReplayRedactionService {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final ContextV2ShadowSnapshotService shadowSnapshots;
 
     public RunReplayRedactionService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+        this(jdbcTemplate, objectMapper, null);
+    }
+
+    @Autowired
+    public RunReplayRedactionService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
+                                     ContextV2ShadowSnapshotService shadowSnapshots) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.shadowSnapshots = shadowSnapshots;
     }
 
     public void redactDeletedSource(String workspaceId, String sourceId) {
@@ -72,6 +81,7 @@ public class RunReplayRedactionService {
                 where workspace_id = ? and replay_availability = 'FULL'
                   and (query_message_id = ? or assistant_message_id = ? or snapshot_json like ?)
                 """, workspaceId, messageId, messageId, reference);
+        if (shadowSnapshots != null) shadowSnapshots.redactReference("MESSAGE", messageId);
     }
 
     public void redactDeletedSummaryRevision(String revisionId) {
@@ -79,6 +89,7 @@ public class RunReplayRedactionService {
                 update run_input_snapshot set replay_availability = 'METADATA_ONLY'
                 where replay_availability = 'FULL' and snapshot_json like ?
                 """, "%" + revisionId + "%");
+        if (shadowSnapshots != null) shadowSnapshots.redactReference("TOPIC_SUMMARY", revisionId);
     }
 
     public void redactDeletedMemoryRevision(String revisionId) {
@@ -86,6 +97,7 @@ public class RunReplayRedactionService {
                 update run_input_snapshot set replay_availability = 'METADATA_ONLY'
                 where replay_availability = 'FULL' and snapshot_json like ?
                 """, "%" + revisionId + "%");
+        if (shadowSnapshots != null) shadowSnapshots.redactReference("MEMORY_REVISION", revisionId);
     }
 
     private void redactArtifactSnapshots(String workspaceId, String sourceId) {

@@ -21,6 +21,9 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.noteweave.security.WorkspaceAccessGuard;
 import com.noteweave.security.WorkspacePermission;
 
@@ -28,6 +31,7 @@ import com.noteweave.security.WorkspacePermission;
 public class ConversationTurnModule {
 
     private static final int RECOVERY_LEASE_SECONDS = 60;
+    private static final Logger log = LoggerFactory.getLogger(ConversationTurnModule.class);
 
     private final JdbcTemplate jdbcTemplate;
     private final ConversationTurnPayloadCodec payloadCodec;
@@ -39,6 +43,7 @@ public class ConversationTurnModule {
     private final WorkspaceAccessGuard workspaceAccessGuard;
     private final RunInputSnapshotService runInputSnapshotService;
     private final ConversationSegmentBuildService conversationSegmentBuildService;
+    private final ContextV2ShadowSnapshotService shadowSnapshots;
     private final TransactionTemplate transactionTemplate;
 
     public ConversationTurnModule(
@@ -54,6 +59,26 @@ public class ConversationTurnModule {
             ConversationSegmentBuildService conversationSegmentBuildService,
             PlatformTransactionManager transactionManager
     ) {
+        this(jdbcTemplate, objectMapper, chatService, researchRunService, messageSequence,
+                auditActorProvider, answerRunService, workspaceAccessGuard, runInputSnapshotService,
+                conversationSegmentBuildService, transactionManager, null);
+    }
+
+    @Autowired
+    public ConversationTurnModule(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
+            ChatService chatService,
+            ResearchRunService researchRunService,
+            ConversationMessageSequence messageSequence,
+            AuditActorProvider auditActorProvider,
+            AnswerRunService answerRunService,
+            WorkspaceAccessGuard workspaceAccessGuard,
+            RunInputSnapshotService runInputSnapshotService,
+            ConversationSegmentBuildService conversationSegmentBuildService,
+            PlatformTransactionManager transactionManager,
+            ContextV2ShadowSnapshotService shadowSnapshots
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.payloadCodec = new ConversationTurnPayloadCodec(objectMapper);
         this.chatService = chatService;
@@ -64,6 +89,7 @@ public class ConversationTurnModule {
         this.workspaceAccessGuard = workspaceAccessGuard;
         this.runInputSnapshotService = runInputSnapshotService;
         this.conversationSegmentBuildService = conversationSegmentBuildService;
+        this.shadowSnapshots = shadowSnapshots;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -112,6 +138,7 @@ public class ConversationTurnModule {
         } catch (DuplicateKeyException duplicate) {
             return awaitWinner(actor, command, requestHash);
         }
+        freezeShadowAnswer(command, actor, prepared);
         try {
             ChatService.PreparedAnswerMaterial material = chatService.compilePreparedAnswer(
                     command.conversationId(),
@@ -124,6 +151,28 @@ public class ConversationTurnModule {
         } catch (RuntimeException failure) {
             transactionTemplate.executeWithoutResult(status -> failAnswerPreparation(prepared, failure, null));
             throw failure;
+        }
+    }
+
+    private void freezeShadowAnswer(SubmitTurnCommand command, String actor,
+                                    PreparedAnswerTurn prepared) {
+        if (shadowSnapshots == null) return;
+        TurnReceipt receipt = prepared.receipt();
+        try {
+            shadowSnapshots.freezeAnswer(prepared.workspaceId(), actor, command.conversationId(),
+                    receipt.messageId(), receipt.answerRunId(), command.content(),
+                    command.requestedTurnMode());
+        } catch (RuntimeException failure) {
+            String code = failure instanceof BusinessException business
+                    ? business.code() : "CONTEXT_V2_SHADOW_FAILURE";
+            log.warn("Shadow Context freeze failed; runId={}, code={}", receipt.answerRunId(), code);
+            try {
+                shadowSnapshots.recordFailure(prepared.workspaceId(), command.conversationId(),
+                        receipt.messageId(), receipt.answerRunId(), code);
+            } catch (RuntimeException recordFailure) {
+                log.warn("Shadow Context failure receipt could not be recorded; runId={}",
+                        receipt.answerRunId(), recordFailure);
+            }
         }
     }
 

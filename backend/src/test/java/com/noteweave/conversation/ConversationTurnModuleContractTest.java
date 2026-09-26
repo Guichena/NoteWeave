@@ -73,6 +73,9 @@ class ConversationTurnModuleContractTest {
         assertThat(first.path("execution_kind").asText()).isEqualTo("ANSWER");
         assertThat(first.path("reused").asBoolean()).isFalse();
         assertThat(second.path("reused").asBoolean()).isTrue();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from context_v2_shadow_snapshot where answer_run_id = ?
+                """, Integer.class, first.path("answer_run_id").asText())).isZero();
     }
 
     @Test

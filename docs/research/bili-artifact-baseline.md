@@ -241,3 +241,9 @@ Worker 原先把任何非空 `source_refs` 都统计为已覆盖，即使引用�
 ## C3 v2 冻结视图的确定性脱敏
 
 `ContextProjectionV2.redacted()` 保留消息、摘要、约束、Memory 和决策的结构化标识，同时清空当前输入、原文、摘要、规则及 Memory 正文，更新文本摘要，移除可能携带敏感词的决策原因与降级详情，并转成 `METADATA_ONLY`。重复脱敏幂等。`ContextProjectionV2ContractTest` **4 passed**、窗口选择器 **6 passed**、固定样本回放 **1 passed**，合计 **11 passed**。这只是未来持久化快照可复用的脱敏函数；v2 Run 快照表和实际删除传播尚未接入，不能把它当成已完成的 C3 回放门禁。
+
+## C3 Answer 影子 Run 快照与精确引用脱敏
+
+新增 `context_v2_shadow_snapshot` 与引用索引表，开关 `noteweave.context.v2.shadow-enabled` 默认关闭。启用后，Answer 准备事务提交、助手生成前冻结 USER Query 截止的 v2 Context，记录编译器版本、完整 JSON、SHA-256 和消息/摘要/Memory 修订引用。影子编译失败由独立事务记为 FAILED，原 Answer 继续使用 v1；默认关闭时不创建影子记录。消息删除会与冻结共用 Conversation 行锁，对命中的影子快照写回无正文的 `METADATA_ONLY` 投影；Memory 选中修订在写入前重新加锁校验，撤销和 Summary 失效通过精确引用索引触发同一脱敏过程。没有把影子投影交给生成模型或 Worker。
+
+定向契约验证正常冻结、SHA-256、助手占位排除、Query 删除后正文清空与重新计算 SHA-256，以及模拟预算错误时 Answer 的 v1 快照仍写入。最终 `ContextV2ShadowSnapshotContractTest` **2 passed**、`ConversationTurnModuleContractTest` **39 passed**、构造/命令测试 **3 passed**、`RunReplayRedactionServiceTest` **3 passed**、窗口选择器 **6 passed**、v2 投影契约 **4 passed**，合计 **57 passed**。尚未验证真实 MySQL 并发撤销与 MinIO/Kafka 跨进程时序，未开启 Workspace 粒度灰度；QA/Note/Wiki 的生产上下文仍是 v1，Research/Artifact 的 v2 冻结仍未接入。

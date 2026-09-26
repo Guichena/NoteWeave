@@ -25,6 +25,11 @@ public class ConversationMessageDeletionService {
     @Transactional
     public DeletedConversationMessageResponse delete(String workspaceId, String conversationId, String messageId) {
         conversationService.requireConversation(workspaceId, conversationId);
+        // Shadow freezing takes the same conversation lock before reading the ledger. Serializing
+        // deletion prevents a frozen FULL snapshot from committing after its redaction scan.
+        jdbcTemplate.queryForObject("""
+                select id from conversation where id = ? and workspace_id = ? for update
+                """, String.class, conversationId, workspaceId);
         int changed = jdbcTemplate.update("""
                 update conversation_message set content = '', content_hash = ?, context_status = 'DELETED'
                 where id = ? and workspace_id = ? and conversation_id = ? and context_status <> 'DELETED'
