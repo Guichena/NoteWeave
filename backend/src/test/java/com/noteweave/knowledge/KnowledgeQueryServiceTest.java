@@ -162,7 +162,7 @@ class KnowledgeQueryServiceTest {
         assertThat(alpha.citations())
                 .extracting(KnowledgeCitationResponse::citationId)
                 .containsExactly("citation-a", "citation-b");
-        assertThat(queryService.citationIdsForWikiPages(List.of(alpha.page())))
+        assertThat(queryService.citationIdsForWikiPages("workspace", List.of(alpha.page())))
                 .containsExactly("citation-a", "citation-b");
     }
 
@@ -254,6 +254,11 @@ class KnowledgeQueryServiceTest {
                 .extracting(KnowledgeItemResponse::itemId).containsExactly("item-b");
         assertThat(queryService.findRelevantWikiPages("workspace", "alpha"))
                 .extracting(KnowledgePageHit::itemId).containsExactly("item-b");
+        assertThatThrownBy(() -> queryService.citationIdsForWikiPages("workspace", List.of(
+                new KnowledgePageHit("item-a", "version-a", 2, "Alpha Overview",
+                        "stale content", "stale summary", 1))))
+                .isInstanceOfSatisfying(com.noteweave.common.BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("KNOWLEDGE_SOURCE_REVOKED"));
         assertThat(queryService.getWikiHome("workspace").links()).isEmpty();
         WikiIndexResponse index = queryService.getWikiIndex("workspace");
         assertThat(index.recentUpdates()).extracting(KnowledgeItemResponse::itemId)

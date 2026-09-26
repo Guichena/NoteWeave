@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -340,11 +341,15 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
     }
 
     @Override
-    public List<String> citationIdsForWikiPages(List<KnowledgePageHit> pages) {
+    public List<String> citationIdsForWikiPages(String workspaceId, List<KnowledgePageHit> pages) {
         if (pages == null || pages.isEmpty()) {
             return List.of();
         }
-        List<String> versionIds = pages.stream().map(KnowledgePageHit::versionId).toList();
+        List<String> versionIds = pages.stream().map(KnowledgePageHit::versionId).distinct().toList();
+        if (citationReadGate.readableVersionIds(workspaceId, versionIds).size() != versionIds.size()) {
+            throw new BusinessException("KNOWLEDGE_SOURCE_REVOKED",
+                    "Wiki 引用的资料或版本已撤销", HttpStatus.CONFLICT);
+        }
         String placeholders = String.join(",", versionIds.stream().map(v -> "?").toList());
         return jdbcTemplate.queryForList("""
                 select citation_id from knowledge_version_citation

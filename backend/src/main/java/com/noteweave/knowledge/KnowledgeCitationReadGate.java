@@ -40,6 +40,12 @@ public class KnowledgeCitationReadGate {
         List<Object> parameters = new ArrayList<>();
         parameters.add(workspaceId);
         parameters.addAll(ids);
+        List<String> ownedIds = jdbc.queryForList("""
+                select v.id from knowledge_version v
+                join knowledge_item i on i.id = v.item_id
+                where i.workspace_id = ? and v.id in (%s)
+                """.formatted(String.join(",", Collections.nCopies(ids.size(), "?"))),
+                String.class, parameters.toArray());
         jdbc.query("""
                 select kvc.knowledge_version_id, c.source_id
                 from knowledge_version_citation kvc
@@ -55,7 +61,7 @@ public class KnowledgeCitationReadGate {
                 .filter(id -> id != null && !id.isBlank()).distinct().toList();
         Set<String> readableSources = generatedSourceGate.readableSourceIds(workspaceId, sourceIds);
         LinkedHashSet<String> readableVersions = new LinkedHashSet<>();
-        for (String versionId : ids) {
+        for (String versionId : ownedIds) {
             if (readableSources.containsAll(sourcesByVersion.getOrDefault(versionId, Set.of()))) {
                 readableVersions.add(versionId);
             }

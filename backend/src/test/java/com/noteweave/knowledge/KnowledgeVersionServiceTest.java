@@ -93,6 +93,9 @@ class KnowledgeVersionServiceTest {
         assertThatThrownBy(() -> versionService.getItemVersionDetail("item-note", 2))
                 .isInstanceOfSatisfying(com.noteweave.common.BusinessException.class,
                         failure -> assertThat(failure.code()).isEqualTo("KNOWLEDGE_SOURCE_REVOKED"));
+        assertThatThrownBy(() -> versionService.citationIdsForVersion(appended.latestVersionId()))
+                .isInstanceOfSatisfying(com.noteweave.common.BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("KNOWLEDGE_SOURCE_REVOKED"));
         assertThat(jdbcTemplate.queryForObject(
                 "select content from knowledge_version where id = ?", String.class,
                 appended.latestVersionId())).isEqualTo("derived content");

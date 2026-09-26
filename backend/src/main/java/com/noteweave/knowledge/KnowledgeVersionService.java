@@ -142,6 +142,15 @@ public class KnowledgeVersionService {
     }
 
     public List<String> citationIdsForVersion(String versionId) {
+        List<String> workspaces = jdbcTemplate.queryForList("""
+                select i.workspace_id from knowledge_version v
+                join knowledge_item i on i.id = v.item_id
+                where v.id = ? and i.status = 'ACTIVE'
+                """, String.class, versionId);
+        if (workspaces.size() != 1) {
+            throw new BusinessException("KNOWLEDGE_VERSION_NOT_FOUND", "知识版本不存在");
+        }
+        citationReadGate.requireReadable(workspaces.get(0), versionId);
         return jdbcTemplate.queryForList("""
                 select citation_id
                 from knowledge_version_citation

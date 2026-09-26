@@ -68,7 +68,7 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
                 .toList();
         WikiGraphBudgeter.Result graph = graphBudgeter.apply(candidateContexts, plan.budget());
         List<WikiPageContext> contexts = graph.contexts();
-        List<String> citationIds = wikiRetrievalQueryPort.citationIdsForWikiPages(
+        List<String> citationIds = wikiRetrievalQueryPort.citationIdsForWikiPages(context.workspaceId(),
                 contexts.stream().map(WikiPageContext::page).toList());
         WikiRetrievalSnapshot snapshot = new WikiRetrievalSnapshot(contexts, citationIds);
         List<EvidenceBundle.Evidence> evidence = java.util.stream.IntStream.range(0, contexts.size())

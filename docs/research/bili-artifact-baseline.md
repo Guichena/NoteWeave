@@ -553,3 +553,7 @@ Wiki 当前版本的列表、搜索、相关页和详情，按当前引用的 So
 ## C3 Wiki 首页与索引元数据读取门禁
 
 Wiki 首页及相关页的链接须两端页面当前版本可读；索引“最近资料”重新核对 Research Source 原 Run，再计算推荐页面。索引最近更新、任务和问题条目若指向撤销页面或资料，过滤其标题与进度文本。合同覆盖页面缓存命中后撤销、首页链接、索引最近更新/任务/问题，以及独立派生 Research Source 的最近资料标题。`KnowledgeQueryServiceTest` **8**、`ContextV2ResearchContractTest` **7**，共 **15 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。索引聚合计数仍来自持久化行，表示历史/运行数据量，不可解释为当前可读对象数；对来源关联不完整的旧页面也不能证明全面脱敏。
+
+## C3 Wiki 检索与 Citation ID 提取之间的撤销门禁
+
+Wiki Evidence Retriever 向 Citation ID 查询传入 Workspace；查询在返回 ID 前重新验证每个版本的归属与来源可读性。已选页面若在检索后撤销，拒绝整个证据组装，避免把旧页面正文与 Citation ID 带入答案。历史版本改写复制 Citation ID 的入口也复核原 Version，阻止已撤销引用继续传播。首次联跑 **32 项中 1 error**：`KnowledgeCommandServiceTest` 的简化 H2 Schema 缺少 `citation` 表；补齐夹具后 `KnowledgeQueryServiceTest` **8**、`KnowledgeVersionServiceTest` **4**、`WikiEvidenceRetrieverTest` **3**、`KnowledgeGovernanceServiceTest` **6**、`KnowledgeCommandServiceTest` **4**、`ContextV2ResearchContractTest` **7**，共 **32 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。该测试覆盖同步读取边界，不等于生产级并发隔离证明。

@@ -215,6 +215,12 @@ class KnowledgeCommandServiceTest {
                 )
                 """);
         jdbcTemplate.execute("""
+                create table citation(
+                    id varchar(36) primary key,
+                    source_id varchar(36) not null
+                )
+                """);
+        jdbcTemplate.execute("""
                 create table conversation_message(
                     id varchar(36) primary key,
                     workspace_id varchar(36) not null,

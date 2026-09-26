@@ -30,7 +30,7 @@ class WikiEvidenceRetrieverTest {
                 List.of(), List.of(), List.of());
         when(queryPort.findRelevantWikiPageContexts("workspace", "query"))
                 .thenReturn(List.of(page));
-        when(queryPort.citationIdsForWikiPages(List.of(page.page())))
+        when(queryPort.citationIdsForWikiPages("workspace", List.of(page.page())))
                 .thenReturn(List.of("citation-a", "citation-b", "citation-a"));
         WikiEvidenceRetriever retriever = new WikiEvidenceRetriever(queryPort, codec);
 
@@ -85,7 +85,7 @@ class WikiEvidenceRetrieverTest {
         WikiPageContext second = page("item-b", "version-b", "B");
         when(queryPort.findRelevantWikiPageContexts("workspace", "query"))
                 .thenReturn(List.of(first, second));
-        when(queryPort.citationIdsForWikiPages(List.of(first.page())))
+        when(queryPort.citationIdsForWikiPages("workspace", List.of(first.page())))
                 .thenReturn(List.of("citation-a"));
         WikiEvidenceRetriever retriever = new WikiEvidenceRetriever(queryPort, codec);
 
@@ -119,7 +119,7 @@ class WikiEvidenceRetrieverTest {
         WikiPageContext high = scoredPage("item-high", "version-high", "High", 9);
         when(queryPort.findRelevantWikiPageContexts("workspace", "query"))
                 .thenReturn(List.of(low, high));
-        when(queryPort.citationIdsForWikiPages(List.of(low.page(), high.page())))
+        when(queryPort.citationIdsForWikiPages("workspace", List.of(low.page(), high.page())))
                 .thenReturn(List.of());
 
         WikiEvidenceRetriever retriever = new WikiEvidenceRetriever(queryPort, codec);
