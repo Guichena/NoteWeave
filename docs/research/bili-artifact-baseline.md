@@ -489,3 +489,7 @@ V126 为 Artifact 的已冻结 Context 投影增加按 Run 固定的 `consumptio
 ## P6 四选提交前资源提示
 
 父请求创建表单按当前选择显示一次资料采集及独立产物任务数，明确画面采集密度、会使用原画面的交付种类，以及无字幕时是否可能增加 ASR 工作。具体费用与耗时仍随视频长度、字幕状态和 Provider 变化，界面不展示虚构金额。新增 DOM 合同覆盖选择 PPTX、丰富抽帧及禁用 ASR 后的提示更新；前端全套 **254 passed/254**，`pnpm build` 与 `pnpm ui:check` 均通过。此项只验证文案和 DOM，尚未在真实父请求或浏览器保存文件流程中联调。
+
+## C3 Research 列表的损坏快照门禁
+
+Research 列表仍由 SQL 排除已降为 `METADATA_ONLY` 的 v2 Run；对余下带 v2 快照 ID 的行，在报告摘要装配前重新验证冻结投影、SHA-256 与执行问题。损坏快照现在让列表返回冲突，避免只在详情/Worker 入口阻断。v1 行不额外触发 v2 编译。`ContextV2ResearchContractTest` **6 passed**、`ResearchRunListQueryCountTest` **3 passed**，合计 **9 passed，0 failed/0 error/0 skipped**；Maven 退出码 0。此门禁仍未覆盖已派生 Source 的所有通用检索入口。

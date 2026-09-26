@@ -143,6 +143,11 @@ public class ResearchRunQueryService {
                 Math.min(limit, MAX_RUN_LIST_LIMIT),
                 offset
         );
+        if (contextGate != null) {
+            for (ResearchRunListRow row : rows) {
+                if (row.contextSnapshotId() != null) contextGate.requireReadable(row.researchRunId());
+            }
+        }
         ResearchRunListReadModel readModel = loadResearchRunListReadModel(workspaceId, rows);
         return rows.stream().map(row -> {
             String researchRunId = row.researchRunId();

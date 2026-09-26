@@ -145,6 +145,8 @@ class ContextV2ResearchContractTest {
         assertThatThrownBy(() -> briefs.compile(runId, executionQuestion))
                 .isInstanceOfSatisfying(BusinessException.class,
                         failure -> assertThat(failure.code()).isEqualTo("RESEARCH_CONTEXT_SNAPSHOT_MISMATCH"));
+        mvc.perform(get("/api/v2/workspaces/{workspaceId}/research-runs", workspace))
+                .andExpect(status().isConflict());
     }
 
     @Test

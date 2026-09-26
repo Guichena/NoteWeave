@@ -39,7 +39,8 @@ public class ResearchRunReadRepository {
         return jdbcTemplate.query("""
                 select id, workspace_id, task_id, question, profile_key, source_scope_json,
                        resumed_from_research_run_id, resumed_from_checkpoint_no, status,
-                       final_report_title, final_report_markdown, report_source_id, created_at, updated_at
+                       final_report_title, final_report_markdown, report_source_id, created_at,
+                       updated_at, context_snapshot_id
                 from research_run
                 where workspace_id = ?
                   and (context_snapshot_id is null or exists (
@@ -64,7 +65,8 @@ public class ResearchRunReadRepository {
                 rs.getString("final_report_markdown"),
                 blank(rs.getString("report_source_id")),
                 instant(rs.getTimestamp("created_at")),
-                instant(rs.getTimestamp("updated_at"))
+                instant(rs.getTimestamp("updated_at")),
+                rs.getString("context_snapshot_id")
         ), workspaceId, limit, offset);
     }
 
