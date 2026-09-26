@@ -347,3 +347,9 @@ Worker 在 LibreOffice 将 PPTX 转成 PDF 后，使用 `pypdf` 逐页提取实�
 `ArtifactContextV2ShadowSnapshotContractTest` **2 passed**，其中撤销测试确认 Worker 输入被拒、v1 控制包清空及 v2 投影脱敏；`RunReplayRedactionServiceTest` **3 passed**。Artifact/Research 集成回归 `Phase6ResearchArtifactContractTest` **53 个用例，45 执行通过、8 个既有跳过**。下载边界代码共用同一门禁，但尚未有真实 READY 文件在 Memory 撤销前后的专用下载故障测试；这项仍需补足。
 
 补充 READY 文件故障用例 `Phase6ResearchArtifactContractTest#revokingFrozenMemoryMustBlockPreviouslyPublishedArtifactDownload` **1 passed**：发布前引用被记录，文件首次下载成功，撤销后同一文件下载返回 HTTP 409 / `ARTIFACT_MEMORY_REVOKED`。这是 H2 与本地对象存储契约，未覆盖跨进程 Worker 已缓存控制包、MinIO 或用户已下载文件。
+
+## C3 Artifact Worker 输入的 v2 影子身份合同
+
+Worker 输入现在可选携带 `context_v2_shadow`，包括与当前 `input_snapshot_id` 绑定的影子快照 ID、完整投影 SHA-256、编译器版本、所选 Memory Revision ID 和回放可用性。Host 取出时重新计算投影摘要；篡改后拒绝提供 Worker 输入。关闭影子模式的旧 Run 返回空字段，Worker 继续使用 v1 `input_payload` 和控制包生成，影子字段仅供诊断，不替代生产 Context。Python 输入模型显式解析该字段。
+
+Host `ArtifactContextV2ShadowSnapshotContractTest` **2 passed**（含影子关闭、冻结身份和摘要篡改），`ArtifactWorkerInputControllerTest` **5 passed**。Worker 首轮新用例因夹具省略既有控制包必填字段而 **1 failed**；补齐后新用例 **1 passed**，与 callback 兼容批合跑 **24 passed，39.74 秒**。这仍不是 C3 的 v2 生成接入；Worker 不消费影子文字，Artifact 也尚无会话来源的冻结主题引用。

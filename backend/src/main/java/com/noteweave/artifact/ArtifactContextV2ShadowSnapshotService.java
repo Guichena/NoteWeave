@@ -104,6 +104,34 @@ public class ArtifactContextV2ShadowSnapshotService {
         return redacted;
     }
 
+    public ArtifactContextV2ShadowInputResponse readForWorker(String taskId) {
+        List<Snapshot> snapshots = jdbc.query("""
+                select s.id, s.projection_json from artifact_context_v2_shadow_snapshot s
+                join artifact_job_run r on r.input_snapshot_id = s.input_snapshot_id
+                where r.task_id = ? and s.status = 'READY'
+                """, (rs, index) -> new Snapshot(rs.getString(1), rs.getString(2)), taskId);
+        if (snapshots.isEmpty()) return null;
+        if (snapshots.size() != 1) {
+            throw new IllegalStateException("Artifact Context shadow identity is duplicated");
+        }
+        Snapshot snapshot = snapshots.get(0);
+        String storedSha = jdbc.queryForObject("""
+                select projection_sha256 from artifact_context_v2_shadow_snapshot where id = ?
+                """, String.class, snapshot.id());
+        if (!sha256(snapshot.json()).equals(storedSha)) {
+            throw new IllegalStateException("Artifact Context shadow digest mismatch");
+        }
+        try {
+            ContextProjectionV2 projection = mapper.readValue(snapshot.json(), ContextProjectionV2.class);
+            return new ArtifactContextV2ShadowInputResponse(snapshot.id(), storedSha,
+                    projection.compilerVersion(), projection.memoryRevisions().stream()
+                    .map(ContextProjectionV2.MemoryRevision::revisionId).toList(),
+                    projection.replayAvailability());
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("Stored Artifact Context projection is invalid", ex);
+        }
+    }
+
     private String write(ContextProjectionV2 projection) {
         try {
             return mapper.writeValueAsString(projection);

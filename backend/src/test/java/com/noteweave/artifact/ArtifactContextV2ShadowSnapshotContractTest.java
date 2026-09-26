@@ -42,6 +42,7 @@ class ArtifactContextV2ShadowSnapshotContractTest {
                         "description", "Artifact Context freeze")))).path("workspace_id").asText();
         String offTask = createJob(workspaceId, "before shadow");
         assertThat(count(offTask)).isZero();
+        assertThat(jobs.getWorkerInput(offTask).contextV2Shadow()).isNull();
 
         data(put("/api/v2/workspaces/{workspaceId}/context-v2-rollout", workspaceId)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -52,6 +53,12 @@ class ArtifactContextV2ShadowSnapshotContractTest {
         assertThat(count(secondTask)).isEqualTo(1);
         assertFrozen(firstTask, workspaceId, "first frozen request");
         assertFrozen(secondTask, workspaceId, "second frozen request");
+        jdbc.update("""
+                update artifact_context_v2_shadow_snapshot set projection_sha256 = ?
+                where input_snapshot_id = (select input_snapshot_id from artifact_job_run where task_id = ?)
+                """, "0".repeat(64), firstTask);
+        assertThatThrownBy(() -> jobs.getWorkerInput(firstTask))
+                .hasMessageContaining("digest mismatch");
     }
 
     @Test
@@ -137,6 +144,15 @@ class ArtifactContextV2ShadowSnapshotContractTest {
         assertThat(projection.cutoffSeq()).isZero();
         assertThat(projection.currentInput()).isEqualTo(requirement);
         assertThat(projection.rawTail()).isEmpty();
+        ArtifactContextV2ShadowInputResponse workerShadow =
+                jobs.getWorkerInput(taskId).contextV2Shadow();
+        assertThat(workerShadow).isNotNull();
+        assertThat(workerShadow.snapshotId()).isNotBlank();
+        assertThat(workerShadow.projectionSha256()).isEqualTo(row.get("projection_sha256"));
+        assertThat(workerShadow.compilerVersion()).isEqualTo(projection.compilerVersion());
+        assertThat(workerShadow.memoryRevisionIds()).containsExactlyElementsOf(
+                projection.memoryRevisions().stream()
+                        .map(ContextProjectionV2.MemoryRevision::revisionId).toList());
     }
 
     private int count(String taskId) {

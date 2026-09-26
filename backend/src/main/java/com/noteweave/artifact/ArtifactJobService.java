@@ -417,7 +417,8 @@ public class ArtifactJobService {
                         row.userRequirement(),
                         row.userRequirement(),
                         inputs
-                )
+                ),
+                contextV2ShadowSnapshots.readForWorker(taskId)
         );
     }
 
