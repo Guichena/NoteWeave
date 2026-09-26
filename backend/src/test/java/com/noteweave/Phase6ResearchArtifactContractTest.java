@@ -5159,6 +5159,44 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
         return objectMapper.writeValueAsString(updated);
     }
 
+    @Test
+    void orphanCleanupDeletesOnlyOldUnreferencedStagedObjects() throws Exception {
+        String workspaceId = createWorkspace();
+        MvcResult created = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "study_guide", "user_requirement", "orphan cleanup fixture",
+                                "inputs", Map.of("language", "en")))))
+                .andExpect(status().isOk()).andReturn();
+        String taskId = objectMapper.readTree(created.getResponse().getContentAsString())
+                .path("data").path("task_id").asText();
+        completeArtifact(taskId, "Referenced artifact", "# Referenced artifact");
+        String referencedKey = jdbcTemplate.queryForObject("""
+                select f.object_key from artifact_file f
+                join artifact_version v on v.id = f.artifact_version_id
+                where v.origin_task_id = ? and f.file_role = 'PRIMARY_MARKDOWN'
+                """, String.class, taskId);
+        String suffix = java.util.UUID.randomUUID().toString();
+        Path orphan = storage.write("noteweave-export", "artifacts/staged/orphan-" + suffix + "/file.md",
+                "orphan".getBytes(StandardCharsets.UTF_8));
+        Path recent = storage.write("noteweave-export", "artifacts/staged/recent-" + suffix + "/file.md",
+                "recent".getBytes(StandardCharsets.UTF_8));
+        Path outside = storage.write("noteweave-export", "artifacts/other/old-" + suffix + ".md",
+                "outside".getBytes(StandardCharsets.UTF_8));
+        Path referenced = Path.of("target/test-noteweave-storage/noteweave-export").resolve(referencedKey);
+        java.nio.file.attribute.FileTime old = java.nio.file.attribute.FileTime.from(
+                java.time.Instant.now().minus(Duration.ofHours(48)));
+        Files.setLastModifiedTime(orphan, old);
+        Files.setLastModifiedTime(outside, old);
+        Files.setLastModifiedTime(referenced, old);
+
+        artifactExportService.cleanupOrphanedStagedFiles();
+        assertThat(Files.exists(orphan)).isFalse();
+        assertThat(Files.exists(recent)).isTrue();
+        assertThat(Files.exists(outside)).isTrue();
+        assertThat(Files.exists(referenced)).isTrue();
+    }
+
     private void completeArtifact(String taskId, String title, String markdown) throws Exception {
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
                         .header("X-NoteWeave-Outbox-Delivery-Token", artifactDeliveryToken(taskId))

@@ -5,6 +5,8 @@ import com.noteweave.storage.ObjectStorage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.LinkOption;
+import java.util.List;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -55,6 +57,33 @@ public class LocalObjectStorage implements ObjectStorage {
             Files.deleteIfExists(target);
         } catch (IOException ex) {
             throw new IllegalStateException("delete object failed: " + bucket + "/" + objectKey, ex);
+        }
+    }
+
+    @Override
+    public List<StoredObject> list(String bucket, String prefix, String afterKey, int limit) {
+        if (limit < 1 || limit > 10_000 || !prefix.endsWith("/") || prefix.contains("..")) {
+            throw new IllegalArgumentException("invalid object inventory prefix or limit");
+        }
+        Path bucketRoot = resolveTarget(bucket, "");
+        Path directory = resolveTarget(bucket, prefix);
+        if (!Files.exists(directory, LinkOption.NOFOLLOW_LINKS)) return List.of();
+        try (var paths = Files.walk(directory)) {
+            return paths.filter(path -> Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
+                    .map(path -> {
+                        try {
+                            String key = bucketRoot.relativize(path).toString().replace('\\', '/');
+                            return new StoredObject(key, Files.getLastModifiedTime(
+                                    path, LinkOption.NOFOLLOW_LINKS).toInstant());
+                        } catch (IOException ex) {
+                            throw new IllegalStateException("read object inventory failed", ex);
+                        }
+                    })
+                    .sorted(java.util.Comparator.comparing(StoredObject::key))
+                    .filter(object -> object.key().compareTo(afterKey == null ? "" : afterKey) > 0)
+                    .limit(limit).toList();
+        } catch (IOException ex) {
+            throw new IllegalStateException("list object inventory failed", ex);
         }
     }
 

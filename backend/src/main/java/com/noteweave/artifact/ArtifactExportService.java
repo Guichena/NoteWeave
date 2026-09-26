@@ -39,6 +39,7 @@ public class ArtifactExportService {
     private final ArtifactWorkerExportClient artifactWorkerClient;
     private final ArtifactSkillCatalogService skillCatalog;
     private final String exportBucket;
+    private String orphanScanCursor = "";
 
     public ArtifactExportService(
             JdbcTemplate jdbcTemplate,
@@ -346,6 +347,43 @@ public class ArtifactExportService {
                             byte[] content, String checksum) {
             this(format, primaryRole(format), "", 0, fileName, mediaType, content, checksum);
         }
+    }
+
+    /** Reclaims only old staged objects that no committed file metadata references. */
+    @Scheduled(fixedDelayString = "${noteweave.artifact.orphan-cleanup-delay-ms:3600000}")
+    public synchronized int cleanupOrphanedStagedFiles() {
+        String prefix = "artifacts/staged/";
+        Instant cutoff = Instant.now().minus(java.time.Duration.ofHours(24));
+        int removed = 0;
+        int visited = 0;
+        while (visited < 1_000) {
+            List<ObjectStorage.StoredObject> page = objectStorage.list(exportBucket, prefix, orphanScanCursor, 100);
+            if (page.isEmpty()) {
+                orphanScanCursor = "";
+                break;
+            }
+            for (ObjectStorage.StoredObject object : page) {
+                orphanScanCursor = object.key();
+                visited++;
+                if (!object.key().startsWith(prefix) || object.lastModified() == null
+                        || !object.lastModified().isBefore(cutoff)) continue;
+                Integer references = jdbcTemplate.queryForObject("""
+                        select count(*) from artifact_file where bucket_name = ? and object_key = ?
+                        """, Integer.class, exportBucket, object.key());
+                if (references != null && references > 0) continue;
+                try {
+                    objectStorage.delete(exportBucket, object.key());
+                    removed++;
+                } catch (RuntimeException ex) {
+                    log.warn("Artifact orphan cleanup failed; key={}", object.key(), ex);
+                }
+            }
+            if (page.size() < 100) {
+                orphanScanCursor = "";
+                break;
+            }
+        }
+        return removed;
     }
 
     @Scheduled(fixedDelayString = "${noteweave.artifact.file-reconcile-delay-ms:60000}")
