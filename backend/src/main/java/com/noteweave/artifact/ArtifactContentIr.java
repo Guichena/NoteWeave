@@ -22,6 +22,11 @@ final class ArtifactContentIr {
 
     static void validate(WorkerCompleteRequest request, String markdown, Map<?, ?> candidate,
                          boolean required) {
+        validate(request, markdown, candidate, required, "");
+    }
+
+    static void validate(WorkerCompleteRequest request, String markdown, Map<?, ?> candidate,
+                         boolean required, String expectedArtifactType) {
         Map<String, Object> payload = request.resultPayload();
         Object raw = payload == null ? null : payload.get("content_ir");
         Object claimedDigest = candidate == null ? null : candidate.get("content_ir_digest");
@@ -33,6 +38,8 @@ final class ArtifactContentIr {
         if (!(raw instanceof Map<?, ?> ir) || !ir.keySet().equals(FIELDS)
                 || !"artifact-content-v1".equals(ir.get("schema_version"))
                 || !(ir.get("artifact_type") instanceof String type) || type.isBlank()
+                || (required && !expectedArtifactType.isBlank()
+                        && !type.equals(expectedArtifactType))
                 || !request.resultTitle().equals(ir.get("title"))
                 || !sha256(markdown).equals(ir.get("markdown_sha256"))
                 || !(ir.get("sections") instanceof List<?> sections) || sections.isEmpty()

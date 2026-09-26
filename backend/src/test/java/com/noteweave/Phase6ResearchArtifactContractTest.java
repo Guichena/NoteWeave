@@ -772,6 +772,33 @@ void artifactJobShouldCreateTaskExposeWorkerInputAndPersistVersion() throws Exce
                 select count(*) from artifact_version where artifact_job_id =
                 (select artifact_job_id from artifact_job_run where task_id = ?)
                 """, Integer.class, taskId)).isZero();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> wrongType = objectMapper.readValue(validJson, Map.class);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> wrongPayload = (Map<String, Object>) wrongType.get("result_payload");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> wrongIr = (Map<String, Object>) wrongPayload.get("content_ir");
+        wrongIr.put("artifact_type", "REPORT");
+        Map<String, Object> digestFields = new LinkedHashMap<>(wrongIr);
+        digestFields.remove("content_digest");
+        String wrongDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest(new ObjectMapper()
+                        .configure(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+                        .writeValueAsBytes(digestFields)));
+        wrongIr.put("content_digest", wrongDigest);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> wrongCandidate = (Map<String, Object>) wrongPayload.get("candidate");
+        wrongCandidate.put("content_ir_digest", wrongDigest);
+        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "wrong-type:" + taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(wrongType)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ARTIFACT_CONTENT_IR_INVALID"));
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from artifact_version where artifact_job_id =
+                (select artifact_job_id from artifact_job_run where task_id = ?)
+                """, Integer.class, taskId)).isZero();
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
                         .header("X-NoteWeave-Idempotency-Key", "valid-ir:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -5318,8 +5345,13 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
         payload.put("sections", sections);
         String markdownDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest
                 .getInstance("SHA-256").digest(markdown.getBytes(StandardCharsets.UTF_8)));
+        String skillKey = jdbcTemplate.queryForObject(
+                "select skill_key from artifact_job where task_id = ?", String.class,
+                candidate.get("task_id"));
+        String actionKey = new com.noteweave.artifact.ArtifactSkillCatalogService()
+                .resolveActionKey(skillKey);
         Map<String, Object> ir = new LinkedHashMap<>(Map.of(
-                "schema_version", "artifact-content-v1", "artifact_type", "TEST_ARTIFACT",
+                "schema_version", "artifact-content-v1", "artifact_type", actionKey,
                 "title", title, "sections", sections, "markdown_sha256", markdownDigest));
         String irDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest
                 .getInstance("SHA-256").digest(new ObjectMapper()
@@ -5474,7 +5506,7 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
         List<Map<String, Object>> sections = List.of(Map.of("heading", "Notes",
                 "body", "Frozen subtitle notes", "source_refs", List.of()));
         Map<String, Object> ir = new LinkedHashMap<>(Map.of(
-                "schema_version", "artifact-content-v1", "artifact_type", "BILIBILI_COURSE_NOTE_PDF",
+                "schema_version", "artifact-content-v1", "artifact_type", "COURSE_NOTES",
                 "title", "Frozen subtitle notes", "sections", sections,
                 "markdown_sha256", markdownDigest));
         String irDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest

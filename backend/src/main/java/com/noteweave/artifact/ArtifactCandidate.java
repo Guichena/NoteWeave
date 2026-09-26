@@ -20,6 +20,11 @@ record ArtifactCandidate(String candidateId, String digest, String contentSha256
 
     static ArtifactCandidate from(String taskId, String inputSnapshotId, String expectedCatalogDigest,
                                   WorkerCompleteRequest request, String markdown) {
+        return from(taskId, inputSnapshotId, expectedCatalogDigest, "", request, markdown);
+    }
+
+    static ArtifactCandidate from(String taskId, String inputSnapshotId, String expectedCatalogDigest,
+                                  String expectedArtifactType, WorkerCompleteRequest request, String markdown) {
         String contentSha256 = sha256(markdown);
         String candidateId = sha256(taskId + ":" + inputSnapshotId + ":" + contentSha256);
         Object raw = request.resultPayload() == null ? null : request.resultPayload().get("candidate");
@@ -40,7 +45,7 @@ record ArtifactCandidate(String candidateId, String digest, String contentSha256
             }
         }
         ArtifactContentIr.validate(request, markdown, raw instanceof Map<?, ?> map ? map : null,
-                !expectedCatalogDigest.isBlank());
+                !expectedCatalogDigest.isBlank(), expectedArtifactType);
         try {
             Object canonical = canonicalValue(Map.of(
                     "result_type", request.resultType(),

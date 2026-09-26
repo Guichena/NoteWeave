@@ -102,6 +102,17 @@ class ArtifactCandidateTest {
 
         assertThat(ArtifactCandidate.from("task-1", "snapshot-1", request(payload), MARKDOWN)
                 .candidateId()).isEqualTo(base.candidateId());
+        Map<String, Object> publishedCandidate = new LinkedHashMap<>(candidate);
+        publishedCandidate.put("catalog_digest", "published-digest");
+        assertThat(ArtifactCandidate.from("task-1", "snapshot-1", "published-digest",
+                "STUDY_GUIDE", request(Map.of("markdown", MARKDOWN, "sections", List.of(section),
+                        "content_ir", ir, "candidate", publishedCandidate)), MARKDOWN)
+                .candidateId()).isEqualTo(base.candidateId());
+        assertThatThrownBy(() -> ArtifactCandidate.from("task-1", "snapshot-1", "published-digest",
+                "REPORT", request(Map.of("markdown", MARKDOWN, "sections", List.of(section),
+                        "content_ir", ir, "candidate", publishedCandidate)), MARKDOWN))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Typed artifact content");
         Map<String, Object> forged = new LinkedHashMap<>(ir);
         forged.put("markdown_sha256", "0".repeat(64));
         assertThatThrownBy(() -> ArtifactCandidate.from("task-1", "snapshot-1",

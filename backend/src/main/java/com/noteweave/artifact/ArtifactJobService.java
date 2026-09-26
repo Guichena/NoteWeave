@@ -433,7 +433,7 @@ public class ArtifactJobService {
         requireFrozenSourcesVisible(row);
         videoMaterialService.validateCandidateReference(taskId, request.resultPayload());
         ArtifactCandidate candidate = ArtifactCandidate.from(taskId, row.inputSnapshotId(),
-                catalogDigestFrom(row.compilerVersion()), request, markdown);
+                catalogDigestFrom(row.compilerVersion()), expectedArtifactType(row), request, markdown);
         int claimed = artifactJobWriteRepository.claimCompletion(row.artifactJobId(), taskId);
         if (claimed != 1) {
             throw new BusinessException(
@@ -530,7 +530,7 @@ public class ArtifactJobService {
     public void validateCandidateReplay(String taskId, com.noteweave.worker.WorkerCompleteRequest request) {
         ArtifactJobTaskRow row = findByTaskId(taskId);
         ArtifactCandidate candidate = ArtifactCandidate.from(taskId, row.inputSnapshotId(),
-                catalogDigestFrom(row.compilerVersion()), request,
+                catalogDigestFrom(row.compilerVersion()), expectedArtifactType(row), request,
                 extractMarkdown(request.resultPayload()));
         List<Map<String, Object>> receipts = jdbcTemplate.query("""
                 select candidate_id, candidate_digest from artifact_candidate_receipt where task_id = ?
@@ -775,6 +775,12 @@ public class ArtifactJobService {
 
     private static String blankIfNull(String value) {
         return value == null ? "" : value;
+    }
+
+    private String expectedArtifactType(ArtifactJobTaskRow row) {
+        String frozenDigest = catalogDigestFrom(row.compilerVersion());
+        return frozenDigest.equals(artifactSkillCatalogService.catalogDigest())
+                ? artifactSkillCatalogService.resolveActionKey(row.skillKey()) : "";
     }
 
     private static String catalogDigestFrom(String compilerVersion) {

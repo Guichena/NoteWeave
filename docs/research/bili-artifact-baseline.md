@@ -201,3 +201,9 @@ Host 编译通过；`Phase6ResearchArtifactContractTest` **52 个用例，44 执
 ## C2 影子窗口的连续覆盖修正
 
 影子编译器原先只要求当前主题摘要结束于 Raw Tail 之前，可能在摘要末尾与最近 8 条原文开头之间漏掉未总结的消息。现在要求当前主题摘要从活动 Segment 起点开始、恰好覆盖到 Raw Tail 前一条；否则从活动 Segment 起点扩展原文，仍受 256 条和必需信息预算门禁约束。回归分别验证有缺口时扩展，以及摘要连续时维持 8 条 Raw Tail。`ContextWindowPlannerV2Test` **5 passed**，`ContextProjectionV2ContractTest` **3 passed**，`TopicSegmenterV2Test` **5 passed**。这仍是 C2 影子选择器，尚未接入 QA/Note/Wiki 或任何 Run 快照。
+
+## P1 内容 IR 与冻结 Skill Action 的一致性
+
+Host 原本只校验通用 `artifact-content-v1` 的内容摘要、Markdown 摘要和章节，却不检查 `artifact_type` 是否属于当前 Skill。现在对 Run 快照中记录的 Catalog 摘要与当前发布目录一致的任务，在 Candidate 提交和回放两条路径上，用目录中的 Action Key 校验 `artifact_type`；旧目录摘要不一致的历史 Run 继续按原有内容门禁回放。现有 `artifact_job.action_key` 在 Skill 创建路径为空，不能作为该门禁的依据；首次测试据此修正为读取已冻结 Catalog 摘要并查对应目录绑定。
+
+新增摘要正确但 `artifact_type` 错误的完成回调，确认 Host 返回 `ARTIFACT_CONTENT_IR_INVALID` 且没有产生 Version；同时修正 B 站 PDF 测试夹具，使其使用目录定义的 `COURSE_NOTES`。首轮 Host 全批因测试夹具将类型写成旧内部名有 1 项失败，修正后 `Phase6ResearchArtifactContractTest` **52 个用例，44 执行通过、8 个既有跳过**，`ArtifactCandidateTest` **6 passed**。P3/P4 的专用内容字段、章节结构和文件契约仍须另行实现；此批只锁定当前通用 IR 的 Skill 身份。
