@@ -33,6 +33,7 @@ from app.models import ArtifactProgressEvent, ArtifactTaskInput, ArtifactTaskRes
 from app.candidate_file_manifest import build_required_files
 from app.export_runtime import export_artifact_if_required, validate_frozen_video_scope
 from app.video_material_bundle import VideoMaterialBundleV1
+from app.video_knowledge_plan import VideoKnowledgePlanV1
 from app.video_subtitle_material import subtitle_bundle_from_provider
 from app.video_visual_material import merge_captured_video_frames
 from app.video_frame_observation import verify_frame_observation_batch
@@ -162,6 +163,30 @@ class JavaArtifactCallbackClient:
             "GET", path
         ))
         return VideoMaterialBundleV1.model_validate(material)
+
+    def publish_video_knowledge_plan(
+        self, task_id: str, bundle_row_id: str, plan: VideoKnowledgePlanV1,
+    ) -> dict[str, object]:
+        receipt = _unwrap_api_response(self._request(
+            "POST", f"/internal/worker/artifact-tasks/{quote(task_id, safe='')}/video-material/knowledge-plan",
+            {"bundle_row_id": bundle_row_id,
+             "plan": plan.model_dump(mode="json"), "content_digest": plan.content_digest()},
+        ))
+        if receipt.get("bundle_row_id") != bundle_row_id \
+                or receipt.get("content_digest") != plan.content_digest() \
+                or not receipt.get("id"):
+            raise ValueError("Host knowledge plan receipt does not match the submitted plan")
+        return receipt
+
+    def fetch_video_knowledge_plan(
+        self, task_id: str, bundle_row_id: str, *, referenced: bool = False,
+    ) -> VideoKnowledgePlanV1:
+        path = f"/internal/worker/artifact-tasks/{quote(task_id, safe='')}/video-material"
+        if referenced:
+            path += f"/references/{quote(bundle_row_id, safe='')}/knowledge-plan"
+        else:
+            path += f"/knowledge-plan/{quote(bundle_row_id, safe='')}"
+        return VideoKnowledgePlanV1.model_validate(_unwrap_api_response(self._request("GET", path)))
 
     def fetch_video_material_files(
         self, task_id: str, bundle: VideoMaterialBundleV1, bundle_row_id: str = "",

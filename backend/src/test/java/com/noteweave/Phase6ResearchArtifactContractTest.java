@@ -5641,6 +5641,45 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
                 new ArtifactVideoMaterialService.Submission(bundle, digest));
         assertThat(videoMaterialService.read(taskId).get("frame_observations")).isEqualTo(List.of(observation));
         assertThat(receipt.contentDigest()).isEqualTo(digest);
+        Map<String, Object> root = Map.ofEntries(
+                Map.entry("node_id", "topic"), Map.entry("parent_id", ""),
+                Map.entry("kind", "TOPIC"), Map.entry("title", "Visible material"),
+                Map.entry("start_ms", 0), Map.entry("end_ms", 5000),
+                Map.entry("transcript_segment_ids", List.of()), Map.entry("frame_ids", List.of()),
+                Map.entry("terms", List.of()), Map.entry("claims", List.of()),
+                Map.entry("missing", List.of()));
+        Map<String, Object> child = new LinkedHashMap<>(Map.ofEntries(
+                Map.entry("node_id", "concept"), Map.entry("parent_id", "topic"),
+                Map.entry("kind", "CONCEPT"), Map.entry("title", "Observed heading"),
+                Map.entry("start_ms", 0), Map.entry("end_ms", 2000),
+                Map.entry("transcript_segment_ids", List.of()), Map.entry("frame_ids", List.of("f1")),
+                Map.entry("terms", List.of("Visible")),
+                Map.entry("claims", List.of(Map.of("text", "Visible heading", "status", "EXTRACTED",
+                        "evidence_refs", List.of("frame:f1")))),
+                Map.entry("missing", List.of())));
+        Map<String, Object> plan = new LinkedHashMap<>(Map.of(
+                "schema_version", "video-knowledge-plan-v1", "bundle_content_digest", digest,
+                "bvid", "BV1234567890", "part", 2, "duration_ms", 5000,
+                "nodes", List.of(root, child)));
+        String planDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest(canonicalMapper.writeValueAsBytes(plan)));
+        ArtifactVideoMaterialService.KnowledgeSubmission submission =
+                new ArtifactVideoMaterialService.KnowledgeSubmission(receipt.id(), plan, planDigest);
+        ArtifactVideoMaterialService.KnowledgeReceipt frozen =
+                videoMaterialService.submitKnowledgePlan(taskId, submission);
+        assertThat(videoMaterialService.submitKnowledgePlan(taskId, submission).id()).isEqualTo(frozen.id());
+        assertThat(videoMaterialService.readKnowledgePlan(taskId, receipt.id())).isEqualTo(plan);
+        Map<String, Object> badChild = new LinkedHashMap<>(child);
+        badChild.put("claims", List.of(Map.of("text", "Invisible theorem", "status", "EXTRACTED",
+                "evidence_refs", List.of("frame:f1"))));
+        Map<String, Object> badPlan = new LinkedHashMap<>(plan);
+        badPlan.put("nodes", List.of(root, badChild));
+        String badDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest(canonicalMapper.writeValueAsBytes(badPlan)));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> videoMaterialService.submitKnowledgePlan(
+                taskId, new ArtifactVideoMaterialService.KnowledgeSubmission(receipt.id(), badPlan, badDigest)))
+                .isInstanceOf(com.noteweave.common.BusinessException.class)
+                .hasMessageContaining("extracted claim");
     }
 
     @Test
@@ -5780,6 +5819,10 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
                 .path("data").path("task_id").asText();
         org.assertj.core.api.Assertions.assertThatThrownBy(() ->
                         videoMaterialService.readReferencedFile(wrongPartTaskId, receipt.id(), "frame1"))
+                .isInstanceOf(com.noteweave.common.BusinessException.class)
+                .hasMessageContaining("Workspace");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        videoMaterialService.readReferencedKnowledgePlan(wrongPartTaskId, receipt.id()))
                 .isInstanceOf(com.noteweave.common.BusinessException.class)
                 .hasMessageContaining("Workspace");
     }

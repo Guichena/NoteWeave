@@ -185,3 +185,9 @@ Host 对带发布 Catalog 摘要的新 Run，要求 Candidate 同时携带 `arti
 新增独立的 `video-knowledge-plan-v1` 模型和生成入口，规划对象以冻结 Bundle 内容摘要、BVID、分 P 和时长绑定素材，避免把知识计划嵌入 Bundle 后形成循环摘要。模型要求唯一主题根节点、合法父子层级与时间包含关系，全部字幕与画面被引用，画面只归一个节点。术语必须出现在所引纠错字幕或 OCR 文字中；`EXTRACTED` 主张须逐字落在合法引用中；没有证据的主张须标记 `UNVERIFIED` 和显式缺口。LLM 返回 JSON 后再做本地校验；空响应、越界响应、错误摘要与跨分集引用不进入知识规划。画面 OCR 仍只代表文字观察，不证明图表或代码语义。
 
 定向 Worker **13 passed**；Worker 全套 **324 passed，35.43 秒**。目前这是独立的 Worker 规划契约，尚未由 Host 保存/发布不可变规划版本，也未接入现有 PDF 或 P3/P4 生成链；因此不能称为已完成的共享语义知识树。真实模型、B 站与视觉观察回放仍待验收。
+
+## P2 知识规划的 Host 冻结与读取门禁
+
+新增 `artifact_video_knowledge_plan` 表，每个已冻结 Bundle 只允许一个不可变规划版本；同摘要重试返回原回执，不同内容冲突。Host 独立复核规划的 Bundle 摘要、分集、时间、树层级、字幕/画面覆盖和逐字证据，拒绝伪造 OCR 主张。Worker API 的提交与读取受 Outbox 投递令牌保护；跨任务读取沿用 Bundle 对 Workspace、视频、分 P 和冻结输入的约束。Worker 回调客户端已提供提交和读取适配方法，现有 PDF 默认运行尚不生成此规划。
+
+Host 编译通过；`Phase6ResearchArtifactContractTest` **52 个用例，44 执行通过、8 个既有跳过**，`ArtifactWorkerInputControllerTest` **5 passed**；新增错误分集读取门禁定向 **1 passed**。Worker 全套 **324 passed，33.65 秒**。当前缺自动规划任务的调用和失败恢复，也没有供博客/问答/PPTX 共同消费的发布路径；本批只闭合独立存储与访问契约。

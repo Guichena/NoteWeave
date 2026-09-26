@@ -129,6 +129,78 @@ public class ArtifactVideoMaterialService {
         }
     }
 
+    /** A semantic plan is immutable and bound to one already-frozen Bundle digest. */
+    @Transactional
+    public KnowledgeReceipt submitKnowledgePlan(String taskId, KnowledgeSubmission submission) {
+        ArtifactJobTaskRow run = jobs.findByTaskId(taskId);
+        if (!"bilibili_course_note_pdf".equals(run.skillKey())
+                || submission == null || submission.plan() == null) {
+            throw invalid("knowledge plan source task or body is invalid");
+        }
+        List<Receipt> bundles = jdbc.query("""
+                select id, bundle_id, bundle_version, content_digest, workspace_id, task_id
+                from artifact_video_material_bundle where task_id = ? and bundle_version = 1
+                """, (rs, index) -> new Receipt(rs.getString("id"), rs.getString("bundle_id"),
+                rs.getInt("bundle_version"), rs.getString("content_digest"),
+                rs.getString("workspace_id"), rs.getString("task_id")), taskId);
+        if (bundles.size() != 1 || !bundles.get(0).id().equals(submission.bundleRowId())) {
+            throw invalid("knowledge plan has no frozen source Bundle");
+        }
+        Receipt source = bundles.get(0);
+        Map<String, Object> bundle = read(taskId);
+        VideoKnowledgePlanValidator.validate(submission.plan(), bundle, source.contentDigest());
+        String planDigest = digest(submission.plan());
+        if (!planDigest.equals(submission.contentDigest())) {
+            throw invalid("knowledge plan digest does not match its content");
+        }
+        jdbc.queryForObject("select id from artifact_job where id = ? for update",
+                String.class, run.artifactJobId());
+        List<KnowledgeReceipt> previous = jdbc.query("""
+                select id, bundle_id, content_digest from artifact_video_knowledge_plan
+                where bundle_id = ?
+                """, (rs, index) -> new KnowledgeReceipt(rs.getString("id"),
+                rs.getString("bundle_id"), rs.getString("content_digest")), source.id());
+        if (!previous.isEmpty()) {
+            if (previous.get(0).contentDigest().equals(planDigest)) return previous.get(0);
+            throw new BusinessException("VIDEO_KNOWLEDGE_PLAN_CONFLICT",
+                    "同一素材包已冻结不同的知识规划", HttpStatus.CONFLICT);
+        }
+        String id = Ids.newId();
+        jdbc.update("""
+                insert into artifact_video_knowledge_plan(id, bundle_id, content_digest, plan_json)
+                values (?, ?, ?, ?)
+                """, id, source.id(), planDigest, json(submission.plan()));
+        return new KnowledgeReceipt(id, source.id(), planDigest);
+    }
+
+    public Map<String, Object> readKnowledgePlan(String taskId, String bundleRowId) {
+        jobs.findByTaskId(taskId);
+        List<String> sources = jdbc.query("""
+                select id from artifact_video_material_bundle
+                where task_id = ? and bundle_version = 1 and id = ?
+                """, (rs, index) -> rs.getString("id"), taskId, bundleRowId);
+        if (sources.size() != 1) throw scopeInvalid();
+        return readPlanByBundleId(bundleRowId);
+    }
+
+    public Map<String, Object> readReferencedKnowledgePlan(String taskId, String bundleRowId) {
+        resolveReferenced(taskId, bundleRowId);
+        return readPlanByBundleId(bundleRowId);
+    }
+
+    private Map<String, Object> readPlanByBundleId(String bundleRowId) {
+        List<String> plans = jdbc.query("""
+                select plan_json from artifact_video_knowledge_plan where bundle_id = ?
+                """, (rs, index) -> rs.getString("plan_json"), bundleRowId);
+        if (plans.size() != 1) throw new BusinessException("VIDEO_KNOWLEDGE_PLAN_NOT_FOUND",
+                "知识规划尚未冻结", HttpStatus.NOT_FOUND);
+        try {
+            return mapper.readValue(plans.get(0), new com.fasterxml.jackson.core.type.TypeReference<>() {});
+        } catch (Exception ex) {
+            throw new IllegalStateException("stored knowledge plan is invalid", ex);
+        }
+    }
+
     public MaterialBytes readReferencedFile(String taskId, String bundleRowId, String fileId) {
         resolveReferenced(taskId, bundleRowId);
         List<MaterialBytes> rows = jdbc.query("""
@@ -662,6 +734,9 @@ public class ArtifactVideoMaterialService {
     }
 
     public record Submission(Map<String, Object> bundle, String contentDigest) {}
+    public record KnowledgeSubmission(String bundleRowId, Map<String, Object> plan,
+                                      String contentDigest) {}
+    public record KnowledgeReceipt(String id, String bundleRowId, String contentDigest) {}
     public record MaterialBytes(String mediaType, byte[] bytes) {}
     public record Receipt(String id, String bundleId, int bundleVersion, String contentDigest,
                           String workspaceId, String taskId) {}

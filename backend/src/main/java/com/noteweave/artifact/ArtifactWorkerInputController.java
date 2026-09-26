@@ -77,6 +77,37 @@ public class ArtifactWorkerInputController {
         return ApiResponse.success(videoMaterials.read(taskId));
     }
 
+    @PostMapping("/{taskId}/video-material/knowledge-plan")
+    ApiResponse<ArtifactVideoMaterialService.KnowledgeReceipt> submitVideoKnowledgePlan(
+            @PathVariable String taskId,
+            @RequestBody ArtifactVideoMaterialService.KnowledgeSubmission submission,
+            @RequestHeader(value = DurableOutboxDispatcher.DELIVERY_TOKEN_HEADER,
+                    defaultValue = "") String deliveryToken
+    ) {
+        requireDelivery(taskId, deliveryToken);
+        return ApiResponse.success(videoMaterials.submitKnowledgePlan(taskId, submission));
+    }
+
+    @GetMapping("/{taskId}/video-material/knowledge-plan/{bundleId}")
+    ApiResponse<Map<String, Object>> getVideoKnowledgePlan(
+            @PathVariable String taskId, @PathVariable String bundleId,
+            @RequestHeader(value = DurableOutboxDispatcher.DELIVERY_TOKEN_HEADER,
+                    defaultValue = "") String deliveryToken
+    ) {
+        requireDelivery(taskId, deliveryToken);
+        return ApiResponse.success(videoMaterials.readKnowledgePlan(taskId, bundleId));
+    }
+
+    @GetMapping("/{taskId}/video-material/references/{bundleId}/knowledge-plan")
+    ApiResponse<Map<String, Object>> getReferencedVideoKnowledgePlan(
+            @PathVariable String taskId, @PathVariable String bundleId,
+            @RequestHeader(value = DurableOutboxDispatcher.DELIVERY_TOKEN_HEADER,
+                    defaultValue = "") String deliveryToken
+    ) {
+        requireDelivery(taskId, deliveryToken);
+        return ApiResponse.success(videoMaterials.readReferencedKnowledgePlan(taskId, bundleId));
+    }
+
     @GetMapping("/{taskId}/video-material/files/{fileId}")
     ResponseEntity<byte[]> getVideoMaterialFile(
             @PathVariable String taskId, @PathVariable String fileId,
