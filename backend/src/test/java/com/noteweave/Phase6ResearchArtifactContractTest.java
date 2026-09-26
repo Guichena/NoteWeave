@@ -662,6 +662,39 @@ class Phase6ResearchArtifactContractTest {
     }
 
     @Test
+    void videoUrlAliasesNormalizeToOneFrozenUrlAndRejectConflicts() throws Exception {
+        String workspaceId = createWorkspace();
+        String url = "https://www.bilibili.com/video/BV1NoteWeaveDemo";
+        for (String alias : List.of("video_url", "bilibili_url")) {
+            MvcResult create = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of(
+                                    "skill_key", "bilibili_course_note_pdf",
+                                    "user_requirement", "Use a legacy video URL alias",
+                                    "inputs", Map.of(alias, url)
+                            ))))
+                    .andExpect(status().isOk()).andReturn();
+            String taskId = objectMapper.readTree(create.getResponse().getContentAsString())
+                    .path("data").path("task_id").asText();
+            mockMvc.perform(get("/internal/worker/artifact-tasks/{taskId}/input", taskId))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.input_payload.inputs.url").value(url))
+                    .andExpect(jsonPath("$.data.input_payload.inputs.video_url").doesNotExist())
+                    .andExpect(jsonPath("$.data.input_payload.inputs.bilibili_url").doesNotExist());
+        }
+        mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "bilibili_course_note_pdf",
+                                "user_requirement", "Reject conflicting video URLs",
+                                "inputs", Map.of("url", url,
+                                        "video_url", "https://www.bilibili.com/video/BV1DifferentVid")
+                        ))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ARTIFACT_SKILL_INPUT_CONFLICT"));
+    }
+
+    @Test
     void artifactWindowPagesMustUseFrozenSnapshotAndRejectRevokedSource() throws Exception {
         String workspaceId = createWorkspace();
         String sourceId = uploadSource(workspaceId, "paged-source.md", "Opening fact in first window.");

@@ -31,13 +31,16 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         register(skills, new ArtifactSkillDefinition("quiz_pack", "测验题集", languageOnlySchema()));
         register(skills, new ArtifactSkillDefinition("wiki_page", "Wiki 页面", languageOnlySchema()));
         register(skills, new ArtifactSkillDefinition("mindmap_from_workspace", "思维导图", mindMapSchema()));
-        register(skills, new ArtifactSkillDefinition("bilibili_course_note_pdf", "B站讲义 PDF", languageAndUrlSchema(true)));
+        register(skills, new ArtifactSkillDefinition("bilibili_course_note_pdf", "B站讲义 PDF",
+                languageAndUrlSchema(true, List.of("video_url", "bilibili_url"))));
         register(skills, new ArtifactSkillDefinition("report_draft", "结构化报告", languageOnlySchema()));
         register(skills, new ArtifactSkillDefinition("faq_draft", "FAQ 草稿", languageOnlySchema()));
         register(skills, new ArtifactSkillDefinition("structured_note", "结构化笔记", languageOnlySchema()));
-        register(skills, new ArtifactSkillDefinition("video_summary", "视频总结", languageAndUrlSchema(true)));
+        register(skills, new ArtifactSkillDefinition("video_summary", "视频总结",
+                languageAndUrlSchema(true, List.of("video_url"))));
         register(skills, new ArtifactSkillDefinition("audio_minutes", "音频纪要", languageOnlySchema()));
-        register(skills, new ArtifactSkillDefinition("course_notes", "课程笔记", languageAndUrlSchema(false)));
+        register(skills, new ArtifactSkillDefinition("course_notes", "课程笔记",
+                languageAndUrlSchema(false, List.of("video_url"))));
         this.skillsByKey = Map.copyOf(skills);
         this.aliases = Map.of(
                 "resume_highlights", "resume_highlight",
@@ -114,6 +117,21 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
             if (normalizedValue != null) {
                 normalized.put(key, normalizedValue);
             }
+        }
+        if (schemaProperties.containsKey("url")) {
+            String canonicalUrl = String.valueOf(normalized.getOrDefault("url", "")).trim();
+            for (String alias : List.of("video_url", "bilibili_url")) {
+                Object rawAlias = normalized.remove(alias);
+                if (rawAlias == null) continue;
+                String aliasUrl = String.valueOf(rawAlias).trim();
+                if (aliasUrl.isEmpty()) continue;
+                if (!canonicalUrl.isEmpty() && !canonicalUrl.equals(aliasUrl)) {
+                    throw new BusinessException("ARTIFACT_SKILL_INPUT_CONFLICT",
+                            "产物视频链接字段不一致：url 与 " + alias);
+                }
+                canonicalUrl = aliasUrl;
+            }
+            if (!canonicalUrl.isEmpty()) normalized.put("url", canonicalUrl);
         }
 
         List<String> missingRequiredKeys = readRequiredInputKeys(skill.inputSchema()).stream()
@@ -327,10 +345,11 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         return Map.of("type", "object", "properties", Map.copyOf(properties));
     }
 
-    private Map<String, Object> languageAndUrlSchema(boolean required) {
+    private Map<String, Object> languageAndUrlSchema(boolean required, List<String> aliases) {
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put("language", languageSchema());
         properties.put("url", Map.of("type", "string"));
+        for (String alias : aliases) properties.put(alias, Map.of("type", "string"));
         Map<String, Object> schema = new LinkedHashMap<>();
         schema.put("type", "object");
         schema.put("properties", properties);
