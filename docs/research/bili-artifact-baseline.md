@@ -105,3 +105,9 @@ Worker 新增按 Bundle 文件清单从 Host 受控端点读取画面的客户�
 新增受控本地抽帧模块与 `capture_bilibili_frames` MCP 工具：输入仅接受单一 BVID/分集 URL，先校验实际元数据的 BVID、分集与时长，再限制下载流大小、抽帧数、输出文件大小和沙箱路径。抽样覆盖开头及近结尾，`ffmpeg showinfo` 给出实际帧时间；只有像素完全相同才去重，保留重复关系、文件摘要和缺口。Worker Dockerfile 补 `ffmpeg` 与 Pillow。合成视频及模拟 ffmpeg/yt-dlp 的定向测试 **15 passed**；MCP 脚本 stdio `tools/list` 启动成功；Worker 全套 **285 passed，44.85 秒**。
 
 这一批尚未接入系统 Capability 注册、独立可恢复 Operation Receipt、字幕素材合并、真实 B 站下载或 PDF 画面渲染。当前 Windows 回放环境没有 ffmpeg，因此抽帧测试使用受控假执行器；Docker 镜像依赖已补但尚未构建验收。不能据此声称 P2 视觉链路完成。
+
+## P2 PDF 冻结画面输入与真实文件嵌入
+
+PDF MCP 渲染输入扩展 `video_part`、`video_duration_ms` 与逐章节 `image_refs`。每个画面必须带 File ID、沙箱路径、SHA-256、分集和实际时间；渲染前验证权限边界内的文件、摘要、可解码 PNG/JPEG、分集/时间和大小，再复制到受控导出目录并复核摘要。XeLaTeX 路径生成 `\includegraphics`，ReportLab 路径实际绘图；无 ReportLab 时若有图则明确失败，不能输出伪称含图的 PDF。Worker 的 `export_artifact_if_required` 增加冻结 Bundle 输入分支，将标题一致的知识节点画面分配到章节，要求所有冻结帧均有章节归属并再次验证 Bundle 文件字节。
+
+合成画面测试检查生成 PDF 中的 `/Subtype /Image`、TeX 图片命令、错误分集/摘要拒绝与 Bundle 输入映射；定向 **16 passed**，Worker 全套 **287 passed，32.74 秒**。当前主运行路径尚未从 Host 读取并传入冻结 Bundle，真实 B 站视频及 XeLaTeX 含图页尚未实测；不能把这一批等同于 PDF 生产链已接通。
