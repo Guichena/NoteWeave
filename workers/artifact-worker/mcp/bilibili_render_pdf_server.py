@@ -10,6 +10,13 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlparse
+
+WORKER_ROOT = Path(__file__).resolve().parents[1]
+if str(WORKER_ROOT) not in sys.path:
+    sys.path.insert(0, str(WORKER_ROOT))
+
+from app.video_frame_capture import capture_local_video
 
 
 MCP_PROTOCOL_VERSION = "2025-06-18"
@@ -157,6 +164,17 @@ class BilibiliRenderPdfServer:
                 ),
             },
             {
+                "name": "capture_bilibili_frames",
+                "description": "Capture bounded, timestamped PNG frames from one Bilibili video part into the controlled sandbox.",
+                "inputSchema": _object_schema({
+                    "video_url": _string_schema("Bilibili BV video URL, optionally with one ?p=N part."),
+                    "output_dir": _string_schema("Optional sandbox output directory."),
+                    "cookies_file": _string_schema("Optional sandbox Netscape cookies file."),
+                    "interval_ms": {"type": "integer", "minimum": 1000, "default": 30000},
+                    "max_frames": {"type": "integer", "minimum": 1, "maximum": 32, "default": 32},
+                }, required=["video_url"]),
+            },
+            {
                 "name": "render_latex_pdf",
                 "description": "Render a controlled LaTeX note package from structured course-note content.",
                 "inputSchema": _object_schema(
@@ -198,6 +216,8 @@ class BilibiliRenderPdfServer:
             return _tool_result(self._get_bilibili_subtitle(arguments))
         if tool_name == "transcribe_local_audio":
             return _tool_result(self._transcribe_local_audio(arguments))
+        if tool_name == "capture_bilibili_frames":
+            return _tool_result(self._capture_bilibili_frames(arguments))
         if tool_name == "render_latex_pdf":
             return _tool_result(self._render_latex_pdf(arguments))
         raise ValueError(f"Unknown tool: {tool_name}")
@@ -348,6 +368,84 @@ class BilibiliRenderPdfServer:
             "notes": [
                 "No remote subtitle files were available, so the MCP server downloaded remote audio and transcribed it locally.",
             ],
+        }
+
+    def _capture_bilibili_frames(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        raw_url = _required_string(arguments, "video_url")
+        parsed = urlparse(raw_url)
+        match = re.fullmatch(r"/video/(BV[0-9A-Za-z]{10})/?", parsed.path)
+        parts = parse_qs(parsed.query).get("p", ["1"])
+        if (parsed.scheme not in {"https", "http"}
+                or parsed.hostname not in {"bilibili.com", "www.bilibili.com"}
+                or match is None or len(parts) != 1 or not parts[0].isdigit()
+                or int(parts[0]) < 1 or int(parts[0]) > 1000):
+            raise ValueError("capture requires one Bilibili BV video and part")
+        part = int(parts[0])
+        bvid = match.group(1)
+        interval_ms = arguments.get("interval_ms", 30_000)
+        max_frames = arguments.get("max_frames", 32)
+        if isinstance(interval_ms, bool) or not isinstance(interval_ms, int) \
+                or isinstance(max_frames, bool) or not isinstance(max_frames, int):
+            raise ValueError("frame capture policy must use integers")
+        cookies = self._resolve_optional_input_file(
+            str(arguments.get("cookies_file") or ""), "cookies_file")
+        cookies_file = str(cookies) if cookies else ""
+        output_dir = self._resolve_output_dir(
+            str(arguments.get("output_dir") or ""), bucket="frames", stem=f"{bvid}-p{part}")
+        self._ensure_yt_dlp_available()
+        metadata = self._fetch_video_metadata(raw_url, cookies_file=cookies_file)
+        observed = urlparse(str(metadata.get("webpage_url", "")))
+        observed_parts = parse_qs(observed.query).get("p", ["1"])
+        duration = metadata.get("duration")
+        if (metadata.get("id") != bvid or observed.hostname not in {
+                "bilibili.com", "www.bilibili.com"}
+                or not re.fullmatch(rf"/video/{bvid}/?", observed.path)
+                or observed_parts != [str(part)]
+                or isinstance(duration, bool) or not isinstance(duration, (int, float))
+                or not (0 < duration <= 86_400)):
+            raise ValueError("video metadata does not match the requested part and duration")
+        duration_ms = round(duration * 1000)
+        video_dir = output_dir / "video"
+        video_dir.mkdir(parents=True, exist_ok=True)
+        command = self._build_yt_dlp_command(
+            "--no-playlist", "--max-filesize", "1G", "--socket-timeout", "20",
+            "--retries", "2", "-f", "bestvideo[height<=1080]/best[height<=1080]",
+            "-o", str(video_dir / "video.%(ext)s"), raw_url,
+            cookies_file=cookies_file,
+        )
+        completed = subprocess.run(
+            command, cwd=str(video_dir), capture_output=True, text=True,
+            timeout=600, check=False,
+        )
+        videos = [path for path in video_dir.iterdir()
+                  if path.is_file() and not path.is_symlink()
+                  and path.name.startswith("video.") and path.suffix.lower() in {
+                      ".mp4", ".webm", ".mkv"}]
+        if completed.returncode != 0 or len(videos) != 1 \
+                or not 0 < videos[0].stat().st_size <= 1_000_000_000:
+            raise ValueError("video stream download failed or exceeded the capture limit")
+        captured = capture_local_video(
+            video_path=videos[0], output_dir=output_dir / "images",
+            sandbox_root=self.sandbox_root, part=part, duration_ms=duration_ms,
+            interval_ms=interval_ms, max_frames=max_frames,
+        )
+        files = {frame.file_id: {
+            "file_id": frame.file_id, "role": "VIDEO_FRAME", "media_type": "image/png",
+            "size_bytes": frame.size_bytes, "checksum_sha256": frame.checksum_sha256,
+            "path": str(frame.path),
+        } for frame in captured.frames}
+        return {
+            "normalized_video_id": bvid, "part": part, "duration_ms": duration_ms,
+            "metadata": metadata,
+            "frames": [{
+                "frame_id": frame.frame_id, "part": frame.part, "at_ms": frame.at_ms,
+                "file_id": frame.file_id, "checksum_sha256": frame.checksum_sha256,
+                "dedupe_of": frame.dedupe_of,
+            } for frame in captured.frames],
+            "files": list(files.values()),
+            "coverage_gaps": (["NO_FRAMES"] if not captured.frames else [])
+                + (["FRAME_CAPTURE_PARTIAL"] if captured.missing_requested_ms else []),
+            "missing_requested_ms": list(captured.missing_requested_ms),
         }
 
     def _transcribe_local_audio(self, arguments: dict[str, Any]) -> dict[str, Any]:

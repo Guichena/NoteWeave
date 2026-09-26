@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+from PIL import Image
+
+import mcp.bilibili_render_pdf_server as mcp_module
 from mcp.bilibili_render_pdf_server import BilibiliRenderPdfServer
+from app.video_frame_capture import CapturedFrame, CaptureResult
 
 
 def _sandboxed_server(root: Path) -> BilibiliRenderPdfServer:
@@ -52,6 +59,57 @@ def test_tools_list_should_expose_expected_skill_surface() -> None:
     assert "get_bilibili_subtitle" in names
     assert "transcribe_local_audio" in names
     assert "render_latex_pdf" in names
+    assert "capture_bilibili_frames" in names
+
+
+def test_capture_bilibili_frames_keeps_part_identity_and_file_manifest(
+        tmp_path: Path, monkeypatch) -> None:
+    server = _sandboxed_server(tmp_path)
+    server._ensure_yt_dlp_available = lambda: None
+    server._fetch_video_metadata = lambda url, cookies_file="": {
+        "id": "BV1234567890", "webpage_url": "https://www.bilibili.com/video/BV1234567890?p=2",
+        "duration": 60,
+    }
+    observed = {}
+
+    def fake_download(command, **kwargs):
+        observed["command"] = command
+        (Path(kwargs["cwd"]) / "video.mp4").write_bytes(b"local test video")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    def fake_capture(**kwargs):
+        observed["capture"] = kwargs
+        path = kwargs["output_dir"] / "frame-2-000.png"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (2, 2), "red").save(path, format="PNG")
+        content = path.read_bytes()
+        return CaptureResult((CapturedFrame(
+            "f-2-000", 2, 1000, "frame-2-000", hashlib.sha256(content).hexdigest(),
+            len(content), path,
+        ),), (30_000,))
+
+    monkeypatch.setattr(mcp_module.subprocess, "run", fake_download)
+    monkeypatch.setattr(mcp_module, "capture_local_video", fake_capture)
+    result = server._capture_bilibili_frames({
+        "video_url": "https://www.bilibili.com/video/BV1234567890?p=2",
+        "interval_ms": 30_000, "max_frames": 4,
+    })
+    assert result["normalized_video_id"] == "BV1234567890"
+    assert result["part"] == 2
+    assert result["frames"][0]["at_ms"] == 1000
+    assert result["files"][0]["checksum_sha256"] == result["frames"][0]["checksum_sha256"]
+    assert result["coverage_gaps"] == ["FRAME_CAPTURE_PARTIAL"]
+    assert observed["capture"]["sandbox_root"] == tmp_path.resolve()
+    assert "--no-playlist" in observed["command"]
+
+    server._fetch_video_metadata = lambda url, cookies_file="": {
+        "id": "BV1234567890", "webpage_url": "https://www.bilibili.com/video/BV1234567890?p=1",
+        "duration": 60,
+    }
+    with pytest.raises(ValueError, match="requested part"):
+        server._capture_bilibili_frames({
+            "video_url": "https://www.bilibili.com/video/BV1234567890?p=2",
+        })
 
 
 def test_get_bilibili_subtitle_should_fetch_remote_subtitle_artifact(tmp_path: Path) -> None:
