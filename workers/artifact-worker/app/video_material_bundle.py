@@ -63,6 +63,25 @@ class KnowledgeNode(BundleRecord):
     missing: list[str] = Field(default_factory=list)
 
 
+class FrameObservationText(BundleRecord):
+    kind: str
+    text: str
+    confidence: float = Field(ge=0, le=100)
+    uncertain: bool
+
+
+class FrameObservation(BundleRecord):
+    schema_version: str
+    task_id: str
+    file_id: str
+    checksum_sha256: str
+    media_type: str
+    width: int = Field(ge=1)
+    height: int = Field(ge=1)
+    observations: list[FrameObservationText]
+    coverage_gaps: list[str]
+
+
 class VideoMaterialBundleV1(BundleRecord):
     schema_version: str = "video-material-v1"
     bundle_id: str
@@ -78,6 +97,7 @@ class VideoMaterialBundleV1(BundleRecord):
     transcript_segments: list[TranscriptSegment] = Field(default_factory=list)
     frames: list[VideoFrame] = Field(default_factory=list)
     knowledge_nodes: list[KnowledgeNode] = Field(default_factory=list)
+    frame_observations: list[FrameObservation] | None = None
     files: list[MaterialFile] = Field(default_factory=list)
     coverage_gaps: list[str] = Field(default_factory=list)
 
@@ -165,11 +185,34 @@ class VideoMaterialBundleV1(BundleRecord):
                 raise ValueError("knowledge node without evidence needs an explicit gap")
         if assigned_frames != set(frames):
             raise ValueError("every video frame must belong to one knowledge node")
+        if self.frame_observations is not None:
+            observed = unique(self.frame_observations, "file_id")
+            if set(observed) != set(files):
+                raise ValueError("frame observations must cover every material file")
+            for observation in self.frame_observations:
+                file = files[observation.file_id]
+                if observation.schema_version != "frame-observation-v1" \
+                        or not observation.task_id.strip() \
+                        or observation.checksum_sha256 != file.checksum_sha256 \
+                        or observation.media_type != file.media_type \
+                        or observation.width * observation.height > 50_000_000 \
+                        or len(observation.observations) > 64 \
+                        or "VISUAL_SEMANTICS_UNVERIFIED" not in observation.coverage_gaps \
+                        or len(observation.coverage_gaps) != len(set(observation.coverage_gaps)) \
+                        or not set(observation.coverage_gaps) <= {
+                            "NO_READABLE_TEXT", "VISUAL_SEMANTICS_UNVERIFIED"} \
+                        or (not observation.observations) != (
+                            "NO_READABLE_TEXT" in observation.coverage_gaps):
+                    raise ValueError("frame observation does not match its frozen file")
+                for text in observation.observations:
+                    if text.kind != "TEXT" or not 0 < len(text.text) <= 1_000 \
+                            or text.uncertain != (text.confidence < 80):
+                        raise ValueError("frame observation contains ungrounded text")
         return self
 
     def content_digest(self) -> str:
         encoded = json.dumps(
-            self.model_dump(mode="json"), ensure_ascii=False, sort_keys=True,
+            self.model_dump(mode="json", exclude_none=True), ensure_ascii=False, sort_keys=True,
             separators=(",", ":"),
         ).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()

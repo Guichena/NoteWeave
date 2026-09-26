@@ -5496,6 +5496,81 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
     }
 
     @Test
+    void observedVideoMaterialBindsOcrEvidenceToFrozenFrameBytes() throws Exception {
+        String workspaceId = createWorkspace();
+        MvcResult created = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "bilibili_course_note_pdf", "user_requirement", "freeze OCR evidence",
+                                "inputs", Map.of("url", "https://www.bilibili.com/video/BV1234567890?p=2")))))
+                .andExpect(status().isOk()).andReturn();
+        String taskId = objectMapper.readTree(created.getResponse().getContentAsString())
+                .path("data").path("task_id").asText();
+        String snapshotId = jdbcTemplate.queryForObject(
+                "select input_snapshot_id from artifact_job_run where task_id = ?", String.class, taskId);
+        String inputsJson = jdbcTemplate.queryForObject(
+                "select inputs_json from artifact_run_input_snapshot where id = ?", String.class, snapshotId);
+        ObjectMapper canonicalMapper = new ObjectMapper()
+                .configure(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
+        String canonicalInputs = canonicalMapper.writeValueAsString(objectMapper.readValue(inputsJson, Map.class));
+        String inputDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest((snapshotId + ":" + canonicalInputs).getBytes(StandardCharsets.UTF_8)));
+        byte[] image = artifactWorkerExportClient.fetch(taskId, "frame1.png");
+        String imageDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(image));
+        Map<String, Object> file = Map.of("file_id", "frame1", "role", "VIDEO_FRAME",
+                "media_type", "image/png", "size_bytes", image.length, "checksum_sha256", imageDigest);
+        Map<String, Object> observation = Map.of(
+                "schema_version", "frame-observation-v1", "task_id", taskId,
+                "file_id", "frame1", "checksum_sha256", imageDigest,
+                "media_type", "image/png", "width", 2, "height", 2,
+                "observations", List.of(Map.of("kind", "TEXT", "text", "Visible heading",
+                        "confidence", 90.0, "uncertain", false)),
+                "coverage_gaps", List.of("VISUAL_SEMANTICS_UNVERIFIED"));
+        Map<String, Object> bundle = new LinkedHashMap<>(Map.ofEntries(
+                Map.entry("schema_version", "video-material-v1"), Map.entry("bundle_id", "bundle-" + taskId),
+                Map.entry("bundle_version", 1), Map.entry("workspace_id", workspaceId),
+                Map.entry("bvid", "BV1234567890"), Map.entry("part", 2), Map.entry("duration_ms", 5000),
+                Map.entry("input_digest", inputDigest), Map.entry("subtitle_source", "NONE"),
+                Map.entry("transcript_original", ""), Map.entry("transcript_corrected", ""),
+                Map.entry("transcript_segments", List.of()), Map.entry("files", List.of(file)),
+                Map.entry("frames", List.of(Map.of("frame_id", "f1", "part", 2, "at_ms", 1000,
+                        "file_id", "frame1", "checksum_sha256", imageDigest, "dedupe_of", ""))),
+                Map.entry("knowledge_nodes", List.of(Map.of("node_id", "n1", "title", "Frame evidence",
+                        "start_ms", 0, "end_ms", 2000, "transcript_segment_ids", List.of(),
+                        "frame_ids", List.of("f1"), "missing", List.of()))),
+                Map.entry("coverage_gaps", List.of("NO_SUBTITLE")),
+                Map.entry("frame_observations", List.of(observation))));
+        Map<String, Object> invalid = new LinkedHashMap<>(bundle);
+        Map<String, Object> wrongObservation = new LinkedHashMap<>(observation);
+        wrongObservation.put("checksum_sha256", "a".repeat(64));
+        invalid.put("frame_observations", List.of(wrongObservation));
+        String invalidDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(canonicalMapper.writeValueAsBytes(invalid)));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> videoMaterialService.submit(taskId,
+                new ArtifactVideoMaterialService.Submission(invalid, invalidDigest)))
+                .isInstanceOf(com.noteweave.common.BusinessException.class)
+                .hasMessageContaining("frame observation");
+        Map<String, Object> wrongDimensions = new LinkedHashMap<>(bundle);
+        Map<String, Object> wrongSizeObservation = new LinkedHashMap<>(observation);
+        wrongSizeObservation.put("width", 3);
+        wrongDimensions.put("frame_observations", List.of(wrongSizeObservation));
+        String wrongDimensionsDigest = java.util.HexFormat.of().formatHex(
+                java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(canonicalMapper.writeValueAsBytes(wrongDimensions)));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> videoMaterialService.submit(taskId,
+                new ArtifactVideoMaterialService.Submission(wrongDimensions, wrongDimensionsDigest)))
+                .isInstanceOf(com.noteweave.common.BusinessException.class)
+                .hasMessageContaining("valid image");
+        String digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(canonicalMapper.writeValueAsBytes(bundle)));
+        ArtifactVideoMaterialService.Receipt receipt = videoMaterialService.submit(taskId,
+                new ArtifactVideoMaterialService.Submission(bundle, digest));
+        assertThat(videoMaterialService.read(taskId).get("frame_observations")).isEqualTo(List.of(observation));
+        assertThat(receipt.contentDigest()).isEqualTo(digest);
+    }
+
+    @Test
     void frameMaterialStoresVerifiedBytesAndRejectsCrossPartReferences() throws Exception {
         String workspaceId = createWorkspace();
         MvcResult created = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)

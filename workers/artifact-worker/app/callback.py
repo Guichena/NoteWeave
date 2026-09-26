@@ -145,7 +145,7 @@ class JavaArtifactCallbackClient:
         digest = bundle.content_digest()
         receipt = _unwrap_api_response(self._request(
             "POST", f"/internal/worker/artifact-tasks/{quote(task_id, safe='')}/video-material",
-            {"bundle": bundle.model_dump(mode="json"), "content_digest": digest},
+            {"bundle": bundle.model_dump(mode="json", exclude_none=True), "content_digest": digest},
         ))
         if (receipt.get("task_id") != task_id or receipt.get("bundle_id") != bundle.bundle_id
                 or receipt.get("workspace_id") != bundle.workspace_id
@@ -517,6 +517,10 @@ def _attach_frozen_video_material(
             raise ValueError("frame observation stage is missing its acknowledged receipt")
         result.result_payload["frame_observation_digest"] = verify_frame_observation_batch(
             task_id=task_id, files=bundle.files, payload=observation_payload)
+        bundle = VideoMaterialBundleV1.model_validate({
+            **bundle.model_dump(mode="json", exclude_none=True),
+            "frame_observations": observation_payload["frames"],
+        })
     receipt = callback_client.publish_video_material(task_id, bundle)
     candidate = result.result_payload.get("candidate")
     if not isinstance(candidate, dict):

@@ -167,3 +167,9 @@ PDF Skill 新增可选字符串 `part`，Host 仅接受 1–1000 的规范十进
 PDF 的视频 URL 采集顺序现为 `EXTRACT_TRANSCRIPT` → `CAPTURE_FRAMES` → `ANALYZE_FRAMES`，三阶段各有独立的持久化请求、回调令牌和等待/恢复边界。`ANALYZE_FRAME` 能力绑定系统 MCP 的 `analyze_frames`，仅把已确认的抽帧文件 ID、SHA-256 和 Task ID 传给工具；工具从该 Task 的捕获目录读取，不接受回执提供的任意路径。Worker 完成 Candidate 前要求观察 ACK，逐项核对任务、文件全集、摘要、MIME、文字置信度、不确定标记及覆盖缺口，并把规范化观察回执摘要放入结果载荷。观察只是 OCR 文字证据；没有图表、代码或表格的可信语义判断。
 
 首轮定向测试有 4 项仍以抽帧 ACK 作为完成点；改为观察 ACK 后提交，并核对观察 Operation 的工具参数与 Trace。首次 Worker 全套又有 2 个旧阶段断言失败；更新后全套 **310 passed，56.70 秒**。其后加强观察回执的字段、MIME 与低置信度校验，相关定向 **7 passed**。Host `Phase6ResearchArtifactContractTest` **50 个用例，42 执行通过、8 个既有跳过**，`ArtifactSkillCatalogPublicationTest` **2 passed**。三份发布 Catalog SHA-256 均为 `B16402352C2839CA29FF1535DBE4BD41E5B397C37335742C148A2B717581D186`。观察结果目前在 Operation Receipt/结果 Trace 中，尚未作为不可变 Bundle 的类型化字段、与字幕生成语义知识树或通过真实 Tesseract/Docker 视频回放；这些 P2 门禁仍未完成。
+
+## P2 冻结资料包中的画面观察引用
+
+在既有 `video-material-v1` 上增加可选 `frame_observations`；旧 Bundle 省略该字段，Worker 摘要仍按旧字段计算，保留历史资料包的内容身份。新自动采集任务在观察 ACK 校验后把每张画面的 OCR 文字、置信度、显式不确定与覆盖缺口写进一次性提交的 Bundle。Worker 与 Host 都要求观察文件集合恰好等于画面文件集合，并核对 Task、File ID、摘要、MIME、字段与文字类型；Host 在读取 Worker PNG/JPEG 时还将观察宽高与实际解码图像比较。新字段进入 Bundle 内容摘要，Candidate 仍引用整个冻结 Bundle 的准确摘要。
+
+定向 Worker Callback/Bundle **40 passed**；Host 新契约验证错误画面摘要和伪造尺寸拒绝、有效观察随 Bundle 冻结。最终 Worker 全套 **311 passed，60.86 秒**；Host `Phase6ResearchArtifactContractTest` **51 个用例，43 执行通过、8 个既有跳过**、`ArtifactSkillCatalogPublicationTest` **2 passed**、`ArtifactWorkerInputControllerTest` **5 passed**。旧无观察字段的合成资料包合同仍通过。此字段只保存实际 OCR 文字证据，尚无可验收的图表/代码/表格理解或语义知识树；真实 Tesseract 与 Docker/MinIO 端到端仍未验收。

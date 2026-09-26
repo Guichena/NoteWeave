@@ -904,6 +904,8 @@ def test_resumed_video_worker_publishes_full_subtitle_before_candidate_callback(
         assert client.material is not None
         assert client.material.part == 2
         assert client.material.frames[0].at_ms == 1000
+        assert client.material.frame_observations[0].file_id == "frame1"
+        assert client.material.frame_observations[0].checksum_sha256 == image_digest
         assert (tmp_path / "bilibili-render-pdf" / "exports" / task.task_id
                 / "frame1.png").read_bytes() == image_bytes
         assert client.completed.result_payload["export_trace"]["frame_file_ids"] == ["frame1"]

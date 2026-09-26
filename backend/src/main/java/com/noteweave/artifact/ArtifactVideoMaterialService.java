@@ -250,6 +250,13 @@ public class ArtifactVideoMaterialService {
     private void storeFrameFiles(String taskId, String bundleRowId, Map<String, Object> bundle) {
         @SuppressWarnings("unchecked") List<Map<String, Object>> files =
                 (List<Map<String, Object>>) bundle.get("files");
+        Map<String, Map<?, ?>> observations = new java.util.HashMap<>();
+        if (bundle.get("frame_observations") instanceof List<?> observed) {
+            for (Object raw : observed) {
+                Map<?, ?> item = (Map<?, ?>) raw;
+                observations.put(string(item.get("file_id")), item);
+            }
+        }
         for (Map<String, Object> file : files) {
             String fileId = string(file.get("file_id"));
             String mediaType = string(file.get("media_type"));
@@ -268,8 +275,11 @@ public class ArtifactVideoMaterialService {
                 var reader = readers.next();
                 try {
                     reader.setInput(input);
+                    Map<?, ?> observation = observations.get(fileId);
                     if ((long) reader.getWidth(0) * reader.getHeight(0) > 50_000_000
                             || reader.getWidth(0) < 1 || reader.getHeight(0) < 1
+                            || (observation != null && (reader.getWidth(0) != number(observation.get("width"))
+                                    || reader.getHeight(0) != number(observation.get("height"))))
                             || !("image/png".equals(mediaType) ? "png" : "jpeg")
                                     .equalsIgnoreCase(reader.getFormatName())
                             || reader.read(0) == null) {
@@ -375,11 +385,15 @@ public class ArtifactVideoMaterialService {
     }
 
     private void validateBundle(ArtifactJobTaskRow run, Map<String, Object> bundle) {
-        if (bundle == null || !bundle.keySet().equals(Set.of(
+        Set<String> legacyFields = Set.of(
                 "schema_version", "bundle_id", "bundle_version", "workspace_id", "bvid", "part",
                 "duration_ms", "input_digest", "subtitle_source", "transcript_original",
                 "transcript_corrected", "transcript_segments", "frames", "knowledge_nodes",
-                "files", "coverage_gaps"))
+                "files", "coverage_gaps");
+        Set<String> fields = bundle == null ? Set.of() : bundle.keySet();
+        if (bundle == null || !(fields.equals(legacyFields)
+                || (fields.size() == legacyFields.size() + 1
+                    && fields.containsAll(legacyFields) && fields.contains("frame_observations")))
                 || !"video-material-v1".equals(bundle.get("schema_version"))
                 || number(bundle.get("bundle_version")) != 1
                 || !run.workspaceId().equals(bundle.get("workspace_id"))
@@ -427,7 +441,7 @@ public class ArtifactVideoMaterialService {
                     || !string(bundle.get("transcript_corrected")).isBlank()) {
                 throw invalid("subtitle-free material must declare a gap and contain no transcript");
             }
-            validateVisuals(bundle, frames, files, nodes, gaps);
+            validateVisuals(run.taskId(), bundle, frames, files, nodes, gaps);
             return;
         }
         if (rawSegments.isEmpty() || gaps.contains("NO_SUBTITLE")) throw invalid("subtitle coverage contradicts cues");
@@ -455,10 +469,10 @@ public class ArtifactVideoMaterialService {
                 || !String.join("\n", corrected).equals(bundle.get("transcript_corrected"))) {
             throw invalid("full transcript does not match its timed cues");
         }
-        validateVisuals(bundle, frames, files, nodes, gaps);
+        validateVisuals(run.taskId(), bundle, frames, files, nodes, gaps);
     }
 
-    private void validateVisuals(Map<String, Object> bundle, List<?> frames, List<?> files,
+    private void validateVisuals(String taskId, Map<String, Object> bundle, List<?> frames, List<?> files,
                                  List<?> nodes, List<?> gaps) {
         if (files.size() > 32 || frames.size() > 32 || nodes.size() > 128
                 || (frames.isEmpty() != gaps.contains("NO_FRAMES")))
@@ -548,6 +562,59 @@ public class ArtifactVideoMaterialService {
             }
         }
         if (!assignedFrames.equals(frameById.keySet())) throw invalid("video frame has no knowledge node");
+        if (bundle.containsKey("frame_observations")) {
+            validateFrameObservations(taskId, bundle.get("frame_observations"), fileById);
+        }
+    }
+
+    private void validateFrameObservations(String taskId, Object rawObservations,
+                                           Map<String, Map<?, ?>> files) {
+        if (!(rawObservations instanceof List<?> observations)
+                || observations.size() != files.size()) {
+            throw invalid("frame observations do not cover the material files");
+        }
+        Set<String> seen = new HashSet<>();
+        for (Object raw : observations) {
+            if (!(raw instanceof Map<?, ?> item)
+                    || !item.keySet().equals(Set.of("schema_version", "task_id", "file_id",
+                            "checksum_sha256", "media_type", "width", "height",
+                            "observations", "coverage_gaps"))
+                    || !"frame-observation-v1".equals(item.get("schema_version"))
+                    || !taskId.equals(item.get("task_id"))
+                    || !seen.add(string(item.get("file_id")))
+                    || !files.containsKey(string(item.get("file_id")))
+                    || !files.get(string(item.get("file_id"))).get("checksum_sha256")
+                            .equals(item.get("checksum_sha256"))
+                    || !files.get(string(item.get("file_id"))).get("media_type")
+                            .equals(item.get("media_type"))
+                    || number(item.get("width")) < 1 || number(item.get("height")) < 1
+                    || (long) number(item.get("width")) * number(item.get("height")) > 50_000_000
+                    || !(item.get("observations") instanceof List<?> texts)
+                    || texts.size() > 64
+                    || !(item.get("coverage_gaps") instanceof List<?> gaps)
+                    || gaps.stream().anyMatch(gap -> !(gap instanceof String))
+                    || gaps.size() != Set.copyOf(gaps).size()
+                    || !gaps.contains("VISUAL_SEMANTICS_UNVERIFIED")
+                    || !Set.of("NO_READABLE_TEXT", "VISUAL_SEMANTICS_UNVERIFIED").containsAll(gaps)
+                    || (texts.isEmpty() != gaps.contains("NO_READABLE_TEXT"))) {
+                throw invalid("frame observation identity or coverage is invalid");
+            }
+            for (Object rawText : texts) {
+                if (!(rawText instanceof Map<?, ?> text)
+                        || !text.keySet().equals(Set.of("kind", "text", "confidence", "uncertain"))
+                        || !"TEXT".equals(text.get("kind"))
+                        || string(text.get("text")).isBlank()
+                        || string(text.get("text")).length() > 1_000
+                        || !(text.get("confidence") instanceof Number score)
+                        || !Double.isFinite(score.doubleValue())
+                        || score.doubleValue() < 0 || score.doubleValue() > 100
+                        || !(text.get("uncertain") instanceof Boolean uncertain)
+                        || uncertain != (score.doubleValue() < 80)) {
+                    throw invalid("frame observation text is invalid");
+                }
+            }
+        }
+        if (!seen.equals(files.keySet())) throw invalid("frame observation file set is incomplete");
     }
 
     private String digest(Map<String, Object> bundle) {

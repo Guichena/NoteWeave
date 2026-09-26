@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import hashlib
+import json
 from io import BytesIO
 
 import pytest
@@ -53,6 +54,31 @@ def test_bundle_keeps_original_corrected_and_evidence_digest() -> None:
     assert first.transcript_segments[0].original_text != first.transcript_segments[0].corrected_text
     assert first.content_digest() == replay.content_digest()
     assert len(first.content_digest()) == 64
+
+
+def test_optional_frame_observations_preserve_legacy_digest_and_bind_file() -> None:
+    legacy = VideoMaterialBundleV1.model_validate(_bundle())
+    wire = legacy.model_dump(mode="json", exclude_none=True)
+    assert "frame_observations" not in wire
+    expected = hashlib.sha256(json.dumps(
+        wire, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")).hexdigest()
+    assert legacy.content_digest() == expected
+
+    value = legacy.model_dump(mode="json", exclude_none=True)
+    value["frame_observations"] = [{
+        "schema_version": "frame-observation-v1", "task_id": "task-1",
+        "file_id": "frame-file-1", "checksum_sha256": "b" * 64,
+        "media_type": "image/png", "width": 4, "height": 3,
+        "observations": [{"kind": "TEXT", "text": "Cache",
+                          "confidence": 91, "uncertain": False}],
+        "coverage_gaps": ["VISUAL_SEMANTICS_UNVERIFIED"],
+    }]
+    observed = VideoMaterialBundleV1.model_validate(value)
+    assert observed.content_digest() != legacy.content_digest()
+    value["frame_observations"][0]["checksum_sha256"] = "c" * 64
+    with pytest.raises(ValidationError, match="frozen file"):
+        VideoMaterialBundleV1.model_validate(value)
 
 
 @pytest.mark.parametrize("change,expected", [
