@@ -1,6 +1,10 @@
 package com.noteweave.research;
 
 import com.noteweave.common.BusinessException;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -48,5 +52,28 @@ public class ResearchGeneratedSourceReadGate {
         }
     }
 
+    public Set<String> readableSourceIds(String workspaceId, List<String> sourceIds) {
+        List<String> ids = sourceIds.stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
+        if (ids.isEmpty()) return Set.of();
+        Object[] parameters = new Object[ids.size() + 1];
+        parameters[0] = workspaceId;
+        for (int i = 0; i < ids.size(); i++) parameters[i + 1] = ids.get(i);
+        List<SourceOrigin> sources = jdbc.query("""
+                select id, coalesce(generated_by, '') as generated_by,
+                       coalesce(generated_ref_id, '') as generated_ref_id
+                from source where workspace_id = ? and status = 'READY' and id in (%s)
+                """.formatted(String.join(",", Collections.nCopies(ids.size(), "?"))),
+                (rs, rowNum) -> new SourceOrigin(rs.getString(1), rs.getString(2), rs.getString(3)),
+                parameters);
+        LinkedHashSet<String> readable = new LinkedHashSet<>();
+        for (SourceOrigin source : sources) {
+            if (visible(workspaceId, source.generatedBy(), source.generatedRefId())) {
+                readable.add(source.sourceId());
+            }
+        }
+        return Set.copyOf(readable);
+    }
+
     private record Origin(String snapshotId, String replayAvailability) {}
+    private record SourceOrigin(String sourceId, String generatedBy, String generatedRefId) {}
 }

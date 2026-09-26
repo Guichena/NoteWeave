@@ -2,10 +2,12 @@ package com.noteweave.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import org.mockito.ArgumentCaptor;
 
 import com.noteweave.chat.RetrievalHydrator.PassageOwnership;
 import com.noteweave.retrieval.provider.EmbeddingClient;
@@ -58,6 +60,33 @@ class QaHybridRetrieverProviderIntegrationTest {
                 .containsEntry("mysql_fallback_used", 0L);
         verify(search).vectorRetrieve(any());
         verify(search).keywordRetrieve(any());
+    }
+
+    @Test
+    void rejectedSourceContentNeverReachesExternalReranker() {
+        QaHybridSearchPort search = mock(QaHybridSearchPort.class);
+        when(search.vectorRetrieve(any())).thenReturn(List.of(hit("allowed", 0.98), hit("revoked", 0.90)));
+        when(search.keywordRetrieve(any())).thenReturn(List.of());
+        RetrievalHydrator hydrator = mock(RetrievalHydrator.class);
+        when(hydrator.hydratePassageOwnership(eq("workspace"), any())).thenReturn(Map.of(
+                "allowed", new PassageOwnership("allowed", "source-allowed", "snapshot-allowed", "", "")));
+        when(hydrator.hydrateAdjacentPassages(eq("workspace"), any())).thenReturn(Map.of());
+        RerankClient rerank = mock(RerankClient.class);
+        when(rerank.isEnabled()).thenReturn(true);
+        when(rerank.rerank(any(), any(), anyInt())).thenReturn(new RerankClient.RerankResult(
+                List.of(new RerankClient.Hit(0, 0.9, 1)), "stub-rerank"));
+
+        QaHybridRetriever retriever = new QaHybridRetriever(
+                new StubEmbeddingClient(), search, new QaRrfFusionService(),
+                new QaRerankService(rerank), hydrator, new QaQueryExpansionService());
+        QaHybridRetriever.HybridResult result = retriever.retrieve("workspace", "question", Set.of());
+
+        ArgumentCaptor<List<String>> documents = ArgumentCaptor.forClass(List.class);
+        verify(rerank).rerank(eq("question"), documents.capture(), eq(1));
+        assertThat(documents.getValue()).hasSize(1).allMatch(text -> text.contains("allowed"))
+                .allMatch(text -> !text.contains("revoked"));
+        assertThat(result.chunks()).extracting(QaPassageRetriever.RetrievedChunk::chunkId)
+                .containsExactly("allowed");
     }
 
     private QaSearchHit hit(String id, double score) {

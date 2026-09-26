@@ -20,6 +20,8 @@ import com.noteweave.research.ResearchAgentTaskCoordinatorService;
 import com.noteweave.research.ResearchAgentTaskService;
 import com.noteweave.research.ResearchRunCommandService;
 import com.noteweave.research.ResearchSourceScopeLoader;
+import com.noteweave.chat.RetrievalHydrator;
+import com.noteweave.chat.NoteRecallRepository;
 import com.noteweave.storage.ObjectStorage;
 import com.noteweave.memory.ExecutionObservation;
 import com.noteweave.memory.MemoryRuntime;
@@ -52,6 +54,8 @@ class ContextV2ResearchContractTest {
     @Autowired ResearchAgentTaskService tasks;
     @Autowired ResearchRunCommandService researchRuns;
     @Autowired ResearchSourceScopeLoader researchSourceScope;
+    @Autowired RetrievalHydrator retrievalHydrator;
+    @Autowired NoteRecallRepository noteRecallRepository;
     @Autowired ObjectStorage storage;
     @Autowired MemoryRuntime memory;
     @SpyBean ConversationContextCompilerV2Service compiler;
@@ -202,6 +206,8 @@ class ContextV2ResearchContractTest {
         String runId = receipt.path("research_run_id").asText();
         String sourceId = Ids.newId();
         String fileId = Ids.newId();
+        String sourceSnapshotId = Ids.newId();
+        String chunkId = Ids.newId();
         jdbc.update("""
                 insert into file_object(id, workspace_id, object_key, sha256, file_size, mime_type)
                 values (?, ?, ?, ?, 1, 'text/markdown')
@@ -212,12 +218,32 @@ class ContextV2ResearchContractTest {
                 values (?, ?, ?, 'Frozen report', 'GENERATED_RESEARCH_REPORT',
                         'READY', 'PARSED', 'INDEXED', 'research_agent', ?)
                 """, sourceId, workspace, fileId, runId);
+        jdbc.update("""
+                insert into source_snapshot(id, source_id, file_object_id, version_no, object_key,
+                                            sha256, parse_status, index_status)
+                values (?, ?, ?, 1, ?, ?, 'PARSED', 'INDEXED')
+                """, sourceSnapshotId, sourceId, fileId, "test/research/" + sourceId,
+                "0".repeat(64));
+        jdbc.update("""
+                insert into source_chunk(id, workspace_id, source_id, source_snapshot_id,
+                                         chunk_no, content, token_estimate, projection_status)
+                values (?, ?, ?, ?, 0, 'Frozen report body', 4, 'PROJECTED')
+                """, chunkId, workspace, sourceId, sourceSnapshotId);
+        jdbc.update("""
+                insert into source_window(id, source_chunk_id, window_no, content)
+                values (?, ?, 0, 'Frozen report body')
+                """, Ids.newId(), chunkId);
         jdbc.update("update workspace set source_catalog_version = source_catalog_version + 1 where id = ?",
                 workspace);
         assertThat(data(get("/api/v2/workspaces/{workspaceId}/sources", workspace)).toString())
                 .contains(sourceId);
         assertThat(researchSourceScope.load(workspace, mapper.writeValueAsString(java.util.List.of(sourceId))))
                 .hasSize(1);
+        assertThat(retrievalHydrator.hydratePassageOwnership(workspace, java.util.List.of(chunkId)))
+                .containsKey(chunkId);
+        assertThat(noteRecallRepository.findCurrentSources(workspace))
+                .extracting(com.noteweave.chat.NoteRetrievalService.CandidateSource::sourceId)
+                .contains(sourceId);
 
         String originalSnapshot = jdbc.queryForObject("""
                 select snapshot_json from run_input_snapshot where research_run_id = ?
@@ -233,6 +259,10 @@ class ContextV2ResearchContractTest {
                 mapper.writeValueAsString(java.util.List.of(sourceId))))
                 .isInstanceOfSatisfying(BusinessException.class,
                         failure -> assertThat(failure.code()).isEqualTo("RESEARCH_CONTEXT_SNAPSHOT_MISMATCH"));
+        assertThatThrownBy(() -> retrievalHydrator.hydratePassageOwnership(
+                workspace, java.util.List.of(chunkId)))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("RESEARCH_CONTEXT_SNAPSHOT_MISMATCH"));
         jdbc.update("update run_input_snapshot set snapshot_json = ? where research_run_id = ?",
                 originalSnapshot, runId);
 
@@ -245,6 +275,13 @@ class ContextV2ResearchContractTest {
                 mapper.writeValueAsString(java.util.List.of(sourceId))))
                 .isInstanceOfSatisfying(BusinessException.class,
                         failure -> assertThat(failure.code()).isEqualTo("RESEARCH_SOURCE_CONTEXT_REDACTED"));
+        assertThat(retrievalHydrator.hydratePassageOwnership(workspace, java.util.List.of(chunkId)))
+                .isEmpty();
+        assertThat(retrievalHydrator.hydrateNoteWindows(workspace, java.util.List.of(sourceId)))
+                .isEmpty();
+        assertThat(noteRecallRepository.findCurrentSources(workspace))
+                .extracting(com.noteweave.chat.NoteRetrievalService.CandidateSource::sourceId)
+                .doesNotContain(sourceId);
     }
 
     @Test

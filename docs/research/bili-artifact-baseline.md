@@ -509,3 +509,9 @@ Research 列表仍由 SQL 排除已降为 `METADATA_ONLY` 的 v2 Run；对余下
 ## C3 派生 Research Source 资料范围消费门禁
 
 Research Worker 的 Source Scope 装载复用同一原 Run 门禁。已撤销的 v2 来源返回 `RESEARCH_SOURCE_CONTEXT_REDACTED`，摘要损坏返回 `RESEARCH_CONTEXT_SNAPSHOT_MISMATCH`，不再把原文件摘要或样本文本交给后续 Research。集成合同在可读、损坏和撤销三种状态下检查同一 Source；`ContextV2ResearchContractTest` **7 passed**、`ResearchPersistenceJsonBoundaryTest` **4 passed**、`ResearchRunListQueryCountTest` **3 passed**，共 **14 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。此处仍未覆盖 Answer、Artifact 及通用检索对该派生 Source 的全部读取路径。
+
+## C3 派生 Research Source 的 Answer 检索门禁
+
+Source 身份批量复核加入 QA 本地回退与 NOTE 候选池，QA/NOTE Hydrator 在返回 Passage 所属及阅读窗口前过滤撤销来源。混合 QA 在外部 Rerank 调用前先用数据库所属关系及冻结 Context 校验候选，避免把已撤销来源的正文送往重排器；摘要损坏会明确失败而不是走 MySQL 回退。集成合同用同一派生 Source 验证可读、摘要损坏和消息撤销后的 Hydrator/NOTE 候选行为；模拟 Provider 合同确认被拒正文未到达重排调用。首次定向测试有 **6 failed**：旧 MySQL 回退单测使用全模拟 Hydrator，没有设置新增的来源可读集合，候选被清空；补齐测试夹具后复跑 `ContextV2ResearchContractTest` **7**、`QaHybridRetrieverProviderIntegrationTest` **2**、`QaPassageRetrieverTest` **15**、`RetrievalHydratorTest` **3**、`NoteRecallRepositoryQueryTest` **1**，共 **28 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。仍需审计直接读取 Source/文件、Artifact、派生 Wiki、既有答案引用及索引清理/跨进程撤销传播。
+
+补跑 NOTE/QA 邻接消费合同：`NoteRetrievalServiceHydrationTest` **2**、`NoteRecallRetrieverTest` **4**、`NoteReadingRetrieverTest` **2**、`NoteEvidenceRetrieverTest` **3**、`QaPassageEvidenceRetrieverTest` **4**，共 **15 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。

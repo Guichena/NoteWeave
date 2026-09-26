@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -296,6 +297,7 @@ class QaPassageRetrieverTest {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         ChunkSearchPort searchPort = mock(ChunkSearchPort.class);
         RetrievalHydrator hydrator = mock(RetrievalHydrator.class);
+        allowMockedSourceReads(hydrator);
         when(searchPort.search("workspace", "alpha beta", 12)).thenReturn(List.of());
         when(jdbcTemplate.query(anyString(), any(RowMapper.class), any(Object[].class)))
                 .thenReturn(List.of(
@@ -334,6 +336,7 @@ class QaPassageRetrieverTest {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         ChunkSearchPort searchPort = mock(ChunkSearchPort.class);
         RetrievalHydrator hydrator = mock(RetrievalHydrator.class);
+        allowMockedSourceReads(hydrator);
         when(searchPort.search("workspace", "alpha beta", 12)).thenReturn(List.of());
         when(jdbcTemplate.query(anyString(), any(RowMapper.class), any(Object[].class)))
                 .thenReturn(List.of(
@@ -356,6 +359,7 @@ class QaPassageRetrieverTest {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         ChunkSearchPort searchPort = mock(ChunkSearchPort.class);
         RetrievalHydrator hydrator = mock(RetrievalHydrator.class);
+        allowMockedSourceReads(hydrator);
         when(searchPort.search("workspace", "alpha", 12))
                 .thenThrow(new IllegalStateException(
                         "workspace-sensitive-id alpha chunk-sensitive-id"));
@@ -402,6 +406,7 @@ class QaPassageRetrieverTest {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         ChunkSearchPort searchPort = mock(ChunkSearchPort.class);
         RetrievalHydrator hydrator = mock(RetrievalHydrator.class);
+        allowMockedSourceReads(hydrator);
         String query = "How does NoteWeave implement quantum banana theorem proof generation?";
         when(searchPort.search("workspace", query, 12)).thenReturn(List.of());
         when(jdbcTemplate.query(anyString(), any(RowMapper.class), any(Object[].class)))
@@ -426,6 +431,7 @@ class QaPassageRetrieverTest {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         ChunkSearchPort searchPort = mock(ChunkSearchPort.class);
         RetrievalHydrator hydrator = mock(RetrievalHydrator.class);
+        allowMockedSourceReads(hydrator);
         when(searchPort.search("workspace", "quantum", 12)).thenReturn(List.of());
         when(jdbcTemplate.query(anyString(), any(RowMapper.class), any(Object[].class)))
                 .thenReturn(List.of(chunk(
@@ -449,6 +455,7 @@ class QaPassageRetrieverTest {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         ChunkSearchPort searchPort = mock(ChunkSearchPort.class);
         RetrievalHydrator hydrator = mock(RetrievalHydrator.class);
+        allowMockedSourceReads(hydrator);
         when(searchPort.search("workspace", "alpha", 12)).thenReturn(List.of());
         when(jdbcTemplate.query(anyString(), any(RowMapper.class), any(Object[].class)))
                 .thenReturn(List.of(
@@ -470,6 +477,14 @@ class QaPassageRetrieverTest {
     private ChunkSearchHit hit(String chunkId, String sourceId) {
         return new ChunkSearchHit(
                 chunkId, sourceId, "snapshot", "0", "Title", "MARKDOWN", "query content", 1.0d);
+    }
+
+    private void allowMockedSourceReads(RetrievalHydrator hydrator) {
+        when(hydrator.readableSourceIds(eq("workspace"), any()))
+                .thenAnswer(invocation -> {
+                    List<String> ids = invocation.getArgument(1);
+                    return Set.copyOf(ids);
+                });
     }
 
     private RetrievedChunk chunk(String chunkId, String sourceId, String content) {
