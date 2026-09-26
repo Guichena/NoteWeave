@@ -41,7 +41,7 @@ public class VideoLearningRequestController {
     @GetMapping
     ApiResponse<Overview> list(@PathVariable String workspaceId) {
         access.requirePermission(workspaceId, WorkspacePermission.WORKSPACE_READ);
-        return ApiResponse.success(new Overview(service.isEnabled(),
+        return ApiResponse.success(new Overview(service.isEnabled(workspaceId),
                 requests.recentForActor(workspaceId, users.requireUserId())));
     }
 

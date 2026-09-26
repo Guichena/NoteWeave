@@ -9,7 +9,6 @@ import com.noteweave.security.WorkspaceAccessGuard;
 import com.noteweave.security.WorkspacePermission;
 import com.noteweave.task.TaskService;
 import java.util.Map;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -23,29 +22,29 @@ public class VideoLearningRequestService {
     private final ObjectMapper mapper;
     private final WorkspaceAccessGuard access;
     private final CurrentUserProvider users;
-    private final boolean enabled;
+    private final VideoLearningRolloutPolicy rollout;
 
     public VideoLearningRequestService(VideoLearningRequestRepository requests,
                                        TaskService tasks, JdbcTemplate jdbc, ObjectMapper mapper,
                                        WorkspaceAccessGuard access, CurrentUserProvider users,
-                                       @Value("${noteweave.video-learning.enabled:false}") boolean enabled) {
+                                       VideoLearningRolloutPolicy rollout) {
         this.requests = requests;
         this.tasks = tasks;
         this.jdbc = jdbc;
         this.mapper = mapper;
         this.access = access;
         this.users = users;
-        this.enabled = enabled;
+        this.rollout = rollout;
     }
 
-    public boolean isEnabled() {
-        return enabled;
+    public boolean isEnabled(String workspaceId) {
+        return rollout.allows(workspaceId);
     }
 
     @Transactional
     public VideoLearningRequestRepository.ParentView create(String workspaceId,
                                                              CreateVideoLearningBundleRequest request) {
-        if (!enabled) {
+        if (!rollout.allows(workspaceId)) {
             throw new BusinessException("VIDEO_LEARNING_NOT_ENABLED",
                     "视频学习聚合入口尚未开放", HttpStatus.SERVICE_UNAVAILABLE);
         }

@@ -174,6 +174,7 @@ public class VideoLearningRequestRepository {
                   and r.cancellation_requested = false
                   and w.status = 'ACTIVE' and u.status = 'ACTIVE'
                   and m.status = 'ACTIVE' and m.role in ('OWNER', 'EDITOR')
+                for update
                 """, (rs, index) -> rs.getString(1), requestId, workspaceId);
         if (actors.size() != 1) {
             throw new BusinessException("VIDEO_LEARNING_ACTOR_REVOKED",

@@ -421,3 +421,7 @@ Host `VideoLearningRequestRepositoryContractTest` **7 passed，0 failed/0 error/
 ## P6 素材文件丢失的下载故障门禁
 
 冻结素材文件的普通读取和子 Run 复用读取现在共用对象字节校验；对象缺失或存储读取故障统一返回 HTTP 409 / `VIDEO_MATERIAL_FILE_DEGRADED`，不把对象 Key 路径异常暴露给客户端。故障用例在已可读取的测试帧上删除本地对象，验证两条读取路径拒绝、DB 素材引用仍保留。`Phase6ResearchArtifactContractTest#frameMaterialStoresVerifiedBytesAndRejectsCrossPartReferences` **1 passed**，`ArtifactVideoMaterialCleanupTest` **1 passed**，合计 **2 passed，0 failed/0 error/0 skipped**。现有孤儿清理只删除超过 24 小时且不在 `artifact_video_material_file` 引用表中的对象；对于已入库但父请求失败或取消的素材，尚无能证明所有子 Run/Version 引用均已解除的归一化持有记录，因此没有实施按父状态直接删除。
+
+## P6 Workspace 灰度开关
+
+新建父请求同时受全局 `noteweave.video-learning.enabled`（默认 `false`）与 `noteweave.video-learning.workspace-allowlist`（逗号分隔，空值表示全部 Workspace）控制。列表中的 `enabled` 与创建事务使用同一 Workspace 判定；关闭入口不会阻断已接受请求的后台协调。子 Job 创建前锁定原创建者权限读，避免权限撤销与创建事务交错。`VideoLearningRolloutPolicyTest`、`VideoLearningRequestRepositoryContractTest`、`VideoLearningRequestCreationContractTest` 联跑 **9 passed，0 failed/0 error/0 skipped**，Maven BUILD SUCCESS（55.573 秒）。
