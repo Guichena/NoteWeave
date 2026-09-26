@@ -12,6 +12,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +23,7 @@ import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import com.noteweave.workspace.WorkspaceQueryPort;
+import com.noteweave.research.ResearchGeneratedSourceReadGate;
 
 class KnowledgeQueryServiceTest {
 
@@ -31,6 +33,7 @@ class KnowledgeQueryServiceTest {
     private WorkspaceQueryPort workspaceQueryPort;
     private KnowledgeGovernanceService governanceService;
     private WikiPageVersionCache pageVersionCache;
+    private ResearchGeneratedSourceReadGate generatedSourceGate;
 
     @BeforeEach
     void setUp() {
@@ -44,6 +47,9 @@ class KnowledgeQueryServiceTest {
         workspaceQueryPort = mock(WorkspaceQueryPort.class);
         governanceService = mock(KnowledgeGovernanceService.class);
         pageVersionCache = mock(WikiPageVersionCache.class);
+        generatedSourceGate = mock(ResearchGeneratedSourceReadGate.class);
+        when(generatedSourceGate.readableSourceIds(eq("workspace"), org.mockito.ArgumentMatchers.anyList()))
+                .thenAnswer(invocation -> Set.copyOf(invocation.getArgument(1)));
         when(pageVersionCache.get(anyString(), anyString(), anyString()))
                 .thenReturn(Optional.empty());
         when(workspaceQueryPort.exists("workspace")).thenReturn(true);
@@ -59,7 +65,7 @@ class KnowledgeQueryServiceTest {
                 workspaceQueryPort,
                 governanceService,
                 pageVersionCache,
-                new SimpleMeterRegistry());
+                new SimpleMeterRegistry(), generatedSourceGate);
     }
 
     @AfterEach
@@ -211,6 +217,28 @@ class KnowledgeQueryServiceTest {
         jdbcTemplate.update("update knowledge_item set status = 'DELETED' where id = 'item-a'");
         assertThatThrownBy(() -> queryService.getItemDetail("item-a"))
                 .hasMessageContaining("知识对象不可读取");
+    }
+
+    @Test
+    void revokedCitedSourceMustHideWikiPageEvenWhenVersionWasCached() {
+        queryService.getItemDetail("item-a");
+        ArgumentCaptor<KnowledgePageVersionSnapshot> snapshot =
+                ArgumentCaptor.forClass(KnowledgePageVersionSnapshot.class);
+        verify(pageVersionCache).put(eq("workspace"), snapshot.capture());
+        when(pageVersionCache.get("workspace", "item-a", "version-a"))
+                .thenReturn(Optional.of(snapshot.getValue()));
+        when(generatedSourceGate.readableSourceIds(eq("workspace"), org.mockito.ArgumentMatchers.anyList()))
+                .thenReturn(Set.of());
+
+        assertThat(queryService.listItems("workspace", "WIKI"))
+                .extracting(KnowledgeItemResponse::itemId).containsExactly("item-b");
+        assertThat(queryService.searchWikiPages("workspace", "alpha"))
+                .extracting(KnowledgeItemResponse::itemId).containsExactly("item-b");
+        assertThat(queryService.findRelevantWikiPages("workspace", "alpha"))
+                .extracting(KnowledgePageHit::itemId).containsExactly("item-b");
+        assertThatThrownBy(() -> queryService.getItemDetail("item-a"))
+                .isInstanceOfSatisfying(com.noteweave.common.BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("KNOWLEDGE_SOURCE_REVOKED"));
     }
 
     private void createSchema(DataSource dataSource) {

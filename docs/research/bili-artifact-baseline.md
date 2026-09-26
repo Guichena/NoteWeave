@@ -537,3 +537,7 @@ Worker 将仓库的 `docs/Artifact-Skill执行架构.md`（约 25 KB 文件）�
 Version 详情、PDF/文件下载、回滚、保存为 Source 与知识库写回，在读取或复制正文前，沿 `origin_task_id` 复核冻结的 Artifact 输入、Source Snapshot 与上游 Research Run。已撤销消息或 Memory 会阻断旧 Version 的这些入口；摘要损坏仍返回原 Research 快照错误。无冻结输入快照的旧 Version 保持历史兼容，不伪称已完成该类版本的撤销传播。
 
 首次定向联跑 10 项中 **1 failed**：派生 Source 的目录过滤把 Research 撤销错误折叠为通用 Source 错误。改为从 Source 持久化身份直接调用原 Run 门禁；随后一次编译因当前 Java 不支持 `List.getFirst()` 失败，改用 `get(0)` 后重跑 `ContextV2ResearchContractTest` **7**、`ArtifactContextV2ActiveContractTest` **1**、`ArtifactRollbackGateTest` **2**，共 **10 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。合同中的 Version 为数据库构造的旧 Version，文件下载断言验证在查找文件前阻断；尚未使用真实对象存储字节及浏览器保存流程。
+
+## C3 派生 Research Source 的 Wiki 当前版本读取门禁
+
+Wiki 当前版本的列表、搜索、相关页和详情，按当前引用的 Source ID 批量复核可读性；详情即使命中页面内容缓存也重新验证来源。混合来源页面只要有一项撤销就不返回，相关页的 5 条限制在过滤后执行。`KnowledgeQueryServiceTest` 增加缓存命中后撤销的回归合同；首次编译因 Spring JDBC `query` 回调重载不明确而失败，指定 `RowCallbackHandler` 后复跑通过。最终联跑 `KnowledgeQueryServiceTest` **7**、`ContextV2ResearchContractTest` **7**，共 **14 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。独立的历史 Wiki Version 服务、Wiki 首页索引统计和既有答案引用仍未覆盖；本合同的 Wiki 来源可读性为模拟门禁，真实 Research Run 门禁由 Research 合同覆盖。
