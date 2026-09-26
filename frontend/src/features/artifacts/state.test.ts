@@ -26,6 +26,19 @@ describe("Artifact server state", () => {
     expect(deduplicated.artifactWritebackByVersionId).toEqual({ "job:1": ["WIKI"] });
   });
 
+  it("keeps the previous artifact snapshot visible while jobs refresh", () => {
+    const initial = createArtifactServerState("workspace");
+    const loaded = reduceArtifactServerState(initial, {
+      type: "jobs-snapshot",
+      jobs: [{ artifact_job_id: "job-1" }] as any,
+      latestVersion: null
+    });
+    const refreshing = reduceArtifactServerState(loaded, { type: "jobs-loading" });
+
+    expect(refreshing.jobsLoading).toBe(true);
+    expect(refreshing.artifactJobs).toHaveLength(1);
+  });
+
   it("aborts stale history requests and all requests on workspace replacement", () => {
     const gate = new LatestArtifactRequestGate();
     gate.setWorkspace("workspace-a");

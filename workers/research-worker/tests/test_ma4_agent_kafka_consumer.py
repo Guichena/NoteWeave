@@ -123,8 +123,12 @@ def test_consumer_should_reject_missing_or_mismatched_snapshot_before_executor()
 
 
 class _FakeKafkaMessage:
-    def __init__(self, value: object) -> None:
+    def __init__(self, value: object, *, topic: str | None = None,
+                 partition: int | None = None, offset: int | None = None) -> None:
         self.value = value
+        self.topic = topic
+        self.partition = partition
+        self.offset = offset
 
 
 class _FakeKafkaConsumer:
@@ -135,8 +139,49 @@ class _FakeKafkaConsumer:
     def __iter__(self):
         return iter(self.messages)
 
-    def commit(self) -> None:
+    def commit(self, offsets=None) -> None:
         self.commit_count += 1
+
+
+def test_consumer_commits_only_the_processed_record_offset(monkeypatch) -> None:
+    import sys
+    import types
+    from collections import namedtuple
+
+    monkeypatch.setitem(sys.modules, "kafka", types.SimpleNamespace(
+        TopicPartition=namedtuple("TopicPartition", "topic partition"),
+        OffsetAndMetadata=namedtuple("OffsetAndMetadata", "offset metadata"),
+    ))
+    from app.agent_kafka_consumer import consume_research_agent_commands
+
+    class OffsetRecordingConsumer(_FakeKafkaConsumer):
+        def __init__(self, messages):
+            super().__init__(messages)
+            self.committed_offsets = []
+
+        def commit(self, offsets=None) -> None:
+            super().commit(offsets)
+            self.committed_offsets.append(offsets)
+
+    first = _FakeKafkaMessage(_command(), topic="research", partition=2, offset=10)
+    second = _FakeKafkaMessage(_command(), topic="research", partition=2, offset=11)
+    consumer = OffsetRecordingConsumer([first, second])
+    client = FakeAgentClient()
+
+    summary = consume_research_agent_commands(
+        consumer,
+        client,
+        lambda _command, claim: _completion(claim),
+        worker_instance_id="worker-a",
+        max_messages=1,
+    )
+
+    assert summary.completed_count == 1
+    assert len(consumer.committed_offsets) == 1
+    [(topic_partition, offset_metadata)] = consumer.committed_offsets[0].items()
+    assert topic_partition.topic == "research"
+    assert topic_partition.partition == 2
+    assert offset_metadata.offset == 11
 
 
 class _RecordingDlq:
@@ -708,6 +753,21 @@ def test_production_worker_settings_should_require_secure_transports(monkeypatch
     with pytest.raises(ValidationError, match="Kafka SSL"):
         Settings(environment="production", java_base_url="https://backend", internal_auth_token="x" * 32,
                  kafka_security_protocol="SASL_PLAINTEXT")
+
+
+def test_production_worker_settings_should_reject_fake_provider(monkeypatch) -> None:
+    from pydantic import ValidationError
+    from app.config import Settings
+
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_INTERNAL_AUTH_TOKEN", "x" * 32)
+    with pytest.raises(ValidationError, match="fake research provider"):
+        Settings(
+            environment="production",
+            java_base_url="https://backend",
+            internal_auth_token="x" * 32,
+            kafka_security_protocol="SSL",
+            research_agent_fake_provider_enabled=True,
+        )
 
 
 def test_heartbeat_settings_should_preserve_lease_safety_margin() -> None:

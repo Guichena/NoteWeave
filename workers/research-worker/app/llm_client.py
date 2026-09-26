@@ -10,6 +10,7 @@ from typing import Callable, Protocol
 
 from app.config import load_settings
 from app.http_security import credential_safe_urlopen
+from app.json_repair import parse_json_payload
 
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,55 @@ class FakeLlmClient:
     def complete_json(self, purpose: str, payload: dict[str, object]) -> str:
         self.calls.append((purpose, payload))
         return self.responses_by_purpose.get(purpose, "")
+
+
+class InvalidJsonFaultLlmClient:
+    """Explicit local-eval fault: provider call succeeds but violates the JSON contract."""
+
+    model = "fault-invalid-json"
+
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    def set_cancellation_checker(self, _checker: Callable[[], None] | None) -> None:
+        return None
+
+    def complete_json(self, purpose: str, payload: dict[str, object]) -> str:
+        del purpose, payload
+        self.call_count += 1
+        return "{invalid-json"
+
+    def usage_summary(self) -> dict[str, object]:
+        return {"provider_call_count": self.call_count, "call_count": self.call_count, "calls": []}
+
+
+class QuoteTamperFaultLlmClient:
+    """Wrap a real provider and replace returned quotes with text absent from every source."""
+
+    def __init__(self, delegate: LlmClient) -> None:
+        self.delegate = delegate
+        self.model = str(getattr(delegate, "model", "fault-quote-tamper"))
+
+    def set_cancellation_checker(self, checker: Callable[[], None] | None) -> None:
+        setter = getattr(self.delegate, "set_cancellation_checker", None)
+        if callable(setter):
+            setter(checker)
+
+    def complete_json(self, purpose: str, payload: dict[str, object]) -> str:
+        response = self.delegate.complete_json(purpose, payload)
+        parsed = parse_json_payload(response)
+        cards = parsed.get("evidence_cards") if isinstance(parsed, dict) else None
+        if not isinstance(cards, list):
+            return response
+        for card in cards:
+            if isinstance(card, dict):
+                card["quote_text"] = "__NOTEWEAVE_TAMPERED_QUOTE_NOT_IN_SOURCE__"
+                card["claim_text"] = "__NOTEWEAVE_TAMPERED_QUOTE_NOT_IN_SOURCE__"
+        return json.dumps(parsed, ensure_ascii=False)
+
+    def usage_summary(self) -> dict[str, object]:
+        summary = getattr(self.delegate, "usage_summary", None)
+        return summary() if callable(summary) else {"provider_call_count": 1, "call_count": 1, "calls": []}
 
 
 class OpenAICompatibleLlmClient:
@@ -94,6 +144,8 @@ class OpenAICompatibleLlmClient:
             ],
             "response_format": {"type": "json_object"},
         }
+        if model.lower().startswith("glm-5"):
+            request_payload["thinking"] = {"type": "disabled"}
         if "temperature" in purpose_config:
             request_payload["temperature"] = float(purpose_config["temperature"])
         if "seed" in purpose_config:

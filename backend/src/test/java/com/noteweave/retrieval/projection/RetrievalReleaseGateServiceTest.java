@@ -72,6 +72,29 @@ class RetrievalReleaseGateServiceTest {
                 "QUALITY_GATE_RECEIPT_MISSING_OR_FAILED:note-marginalia-funnel-v1");
     }
 
+    @Test
+    void disabledElasticsearchBlocksReleaseEvenWhenHistoricalBuildsAreComplete() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        RetrievalBackfillService backfill = mock(RetrievalBackfillService.class);
+        EmbeddingClient embedding = mock(EmbeddingClient.class);
+        RerankClient rerank = mock(RerankClient.class);
+        RetrievalQualityReceiptService receipts = mock(RetrievalQualityReceiptService.class);
+        when(embedding.isEnabled()).thenReturn(true);
+        when(rerank.isEnabled()).thenReturn(true);
+        when(jdbc.queryForObject(anyString(), eq(Long.class), eq("workspace"))).thenReturn(0L);
+        when(backfill.status("workspace")).thenReturn(new RetrievalStatus(
+                "workspace", new Coverage(3, 3, 3, 3),
+                List.of(build(ProjectionType.QA_CHUNK), build(ProjectionType.NOTE_SOURCE)), List.of()));
+        when(receipts.latestFinalPlanReceipts("workspace")).thenReturn(List.of(
+                receipt("qa-weknora-hybrid-v1"), receipt("note-marginalia-funnel-v1")));
+
+        var result = new RetrievalReleaseGateService(jdbc, backfill, embedding, rerank, receipts, false)
+                .evaluate("workspace");
+
+        assertThat(result.releasable()).isFalse();
+        assertThat(result.violations()).containsExactly("ELASTICSEARCH_PROVIDER_NOT_READY");
+    }
+
     private IndexBuild build(ProjectionType type) {
         Instant now = Instant.now();
         return new IndexBuild(type.name(), "workspace", type, null, "index-" + type.name(),

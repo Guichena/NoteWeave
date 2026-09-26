@@ -15,7 +15,6 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -118,6 +117,9 @@ public class HttpChatLlmClient implements ChatLlmClient {
         body.put("model", model);
         body.put("stream", true);
         body.put("max_tokens", Math.max(1, maximumOutputTokens));
+        if (model.toLowerCase(java.util.Locale.ROOT).startsWith("glm-5")) {
+            body.put("thinking", Map.of("type", "disabled"));
+        }
         body.put("messages", List.of(
                 Map.of("role", "system", "content", systemPrompt),
                 Map.of("role", "user", "content", userPrompt)
@@ -125,9 +127,9 @@ public class HttpChatLlmClient implements ChatLlmClient {
         return body;
     }
 
-    private String consumeStream(InputStream stream, Consumer<String> onToken) throws IOException {
+    String consumeStream(InputStream stream, Consumer<String> onToken) throws IOException {
         StringBuilder accumulated = new StringBuilder();
-        AtomicReference<String> lineRef = new AtomicReference<>();
+        boolean done = false;
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
@@ -139,6 +141,7 @@ public class HttpChatLlmClient implements ChatLlmClient {
                 }
                 String payload = line.substring(5).trim();
                 if ("[DONE]".equals(payload)) {
+                    done = true;
                     break;
                 }
                 String token = extractDelta(payload);
@@ -146,16 +149,21 @@ public class HttpChatLlmClient implements ChatLlmClient {
                     accumulated.append(token);
                     onToken.accept(token);
                 }
-                lineRef.set(payload);
             }
         } catch (IOException ex) {
             log.warn("LLM stream read interrupted: {}", ex.getMessage());
             throw ex;
         }
+        if (!done) {
+            throw new IOException("LLM stream completed without [DONE] marker");
+        }
+        if (accumulated.toString().isBlank()) {
+            throw new IOException("LLM stream completed without content");
+        }
         return accumulated.toString();
     }
 
-    private String extractDelta(String payload) {
+    private String extractDelta(String payload) throws IOException {
         try {
             Map<String, Object> json = objectMapper.readValue(payload, new TypeReference<>() {});
             Object choices = json.get("choices");
@@ -180,8 +188,8 @@ public class HttpChatLlmClient implements ChatLlmClient {
                     return s;
                 }
             }
-        } catch (Exception ex) {
-            log.debug("LLM SSE line not parseable as delta: {}", ex.getMessage());
+        } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+            throw new IOException("LLM SSE payload is not valid JSON", ex);
         }
         return null;
     }

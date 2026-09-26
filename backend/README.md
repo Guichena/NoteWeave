@@ -2,12 +2,12 @@
 
 后端采用 `Java 17 + Spring Boot 3.3.x`，是 NoteWeave 的业务真源与主协调层。
 
-## 本阶段已覆盖
+## 当前能力
 
-1. `V001-V046` Flyway 迁移
+1. Flyway `V001` 到 `V104`（版本号存在跳号，以迁移目录为准；具体环境版本以 `flyway_schema_history` 为准）
 2. 创建工作台
 3. 创建上传事务、上传分片、完成上传
-4. 同步解析文本资料并生成 `source_chunk`
+4. 解析资料并生成 `source_chunk`，解析和投影状态由任务/数据库记录推进
 5. 创建会话、发送 QA 消息、生成 citation
 6. `NOTE` 链路：参考 Marginalia 的资料级检索方式，先定位候选资料，再打开原文窗口生成摘录证据和带引用回答；`source-draft` 生成中性 Markdown 草稿，用户确认后 `save-as-source` 写入资料池
 7. `WIKI` 链路：参考 WebKonra / WeKnora 的全量 Wiki 形态，支持工作台级 wiki 构建开关、资料变更 ingest、页面版本、链接/反链、来源回链、搜索、图谱、统计、日志、lint、rebuild links 和 auto-fix

@@ -93,7 +93,7 @@ class ResearchAgentCompletionReplayRepository {
                     embeddedDigest.getBytes(StandardCharsets.US_ASCII))) {
                 throw new IllegalStateException("Committed research-agent receipt metadata is inconsistent");
             }
-            ReceiptBudget receiptBudget = validateNestedReceipt(storedPayload, envelope);
+            ReceiptBudget receiptBudget = validateNestedReceipt(storedPayload, envelope, row.id());
             storedPayload.remove("receipt_digest");
             String recomputed = canonicalizer.domainSeparatedDigest(RECEIPT_DIGEST_DOMAIN, storedPayload);
             if (!MessageDigest.isEqual(row.receiptDigest().getBytes(StandardCharsets.US_ASCII),
@@ -121,7 +121,8 @@ class ResearchAgentCompletionReplayRepository {
 
     private ReceiptBudget validateNestedReceipt(
             Map<String, Object> payload,
-            ResearchAgentCompletionEnvelope envelope
+            ResearchAgentCompletionEnvelope envelope,
+            String completionId
     ) {
         int evidenceCount = nonNegativeInt(payload.get("evidence_appended"), "evidence_appended");
         int candidateCount = nonNegativeInt(payload.get("candidate_count"), "candidate_count");
@@ -136,7 +137,7 @@ class ResearchAgentCompletionReplayRepository {
         String outcome = payload.get("outcome") instanceof String value ? value : "";
         boolean quorumPending = "QUORUM_PENDING".equals(outcome);
         if ((!quorumPending && candidateCount != accepted + rejected)
-                || (quorumPending && (candidateCount < 1 || accepted != 0 || rejected != 0))) {
+                || (quorumPending && (accepted != 0 || rejected != 0))) {
             throw corrupt("Committed research-agent receipt candidate count is inconsistent");
         }
         if (evidenceCount != envelope.evidence().size() || candidateCount != envelope.candidates().size()) {
@@ -182,7 +183,7 @@ class ResearchAgentCompletionReplayRepository {
                 throw corrupt("Committed research-agent quorum repair outcome is invalid");
             }
         } else if (!quorumPending) {
-            validateMergeOutcomes(envelope, storedMerges);
+            validateMergeOutcomes(envelope, storedMerges, completionId);
         }
         return new ReceiptBudget(reserved, consumed, released);
     }
@@ -285,30 +286,55 @@ class ResearchAgentCompletionReplayRepository {
 
     private void validateMergeOutcomes(
             ResearchAgentCompletionEnvelope envelope,
-            Map<String, StoredMerge> storedMerges
+            Map<String, StoredMerge> storedMerges,
+            String completionId
     ) {
         Map<String, ResearchAgentCompletionEnvelope.Evidence> evidenceByKey = new LinkedHashMap<>();
         envelope.evidence().forEach(item -> evidenceByKey.put(item.evidenceKey(), item));
+        Set<String> qualificationRejected = qualificationRejectedCandidateKeys(completionId);
         if (storedMerges.size() != envelope.candidates().size()) {
             throw corrupt("Committed research-agent receipt merge cells disagree with its completion envelope");
         }
         for (ResearchAgentCompletionEnvelope.Candidate candidate : envelope.candidates()) {
             StoredMerge merge = storedMerges.get(candidate.cellKey());
-            boolean supported = candidate.evidenceKeys().stream().allMatch(key -> {
+            boolean literalSupport = candidate.evidenceKeys().stream().allMatch(key -> {
                 ResearchAgentCompletionEnvelope.Evidence evidence = evidenceByKey.get(key);
                 return evidence != null && "SUPPORTS".equals(evidence.relationType())
                         && evidence.quoteText() != null && !evidence.quoteText().isBlank()
                         && candidate.candidateValue().equals(evidence.claimText());
             });
+            boolean qualificationRejectedCandidate = qualificationRejected.contains(candidate.candidateKey());
+            boolean supported = literalSupport && !qualificationRejectedCandidate;
             String decision = supported ? "ACCEPTED" : "REJECTED";
-            String reason = supported ? "VERIFIED_AND_VERSION_MATCHED" : "NOT_ENOUGH_INFO";
+            String reason = supported ? "VERIFIED_AND_VERSION_MATCHED"
+                    : literalSupport ? "EVIDENCE_QUALIFICATION_REJECTED" : "NOT_ENOUGH_INFO";
             int expectedTo = candidate.baseCellVersion() + (supported ? 1 : 0);
             if (merge == null || merge.fromVersion() != candidate.baseCellVersion()
                     || merge.toVersion() != expectedTo || !decision.equals(merge.decision())
                     || !reason.equals(merge.reasonCode())) {
+                if (literalSupport && qualificationRejectedCandidate && merge != null
+                        && "ACCEPTED".equals(merge.decision())) {
+                    // DR-301 keeps the hard candidate gate honest for completions that were
+                    // committed before it existed: a stored promotion of a candidate that the
+                    // persisted canonical qualification rejects is reported as a typed,
+                    // explainable business conflict instead of an unclassified internal error.
+                    throw new BusinessException("RESEARCH_AGENT_COMPLETION_QUALIFICATION_STALE",
+                            "Committed completion promoted a candidate that canonical evidence qualification rejects");
+                }
                 throw corrupt("Committed research-agent receipt merge outcome disagrees with its completion envelope");
             }
         }
+    }
+
+    /** Reads the candidate-level canonical qualification verdict persisted with this completion. */
+    private Set<String> qualificationRejectedCandidateKeys(String completionId) {
+        List<String> keys = jdbcTemplate.query("""
+                select c.idempotency_key
+                from research_evidence_validation v
+                join research_agent_candidate c on c.id = v.candidate_id
+                where v.completion_id = ? and v.final_status = 'REJECTED'
+                """, (rs, rowNum) -> rs.getString(1), completionId);
+        return new HashSet<>(keys);
     }
 
     private Map<String, Long> exactBudgetMap(Object raw, String field) {

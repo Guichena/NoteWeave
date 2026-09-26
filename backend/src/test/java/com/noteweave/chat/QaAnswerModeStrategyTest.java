@@ -46,11 +46,11 @@ class QaAnswerModeStrategyTest {
                 .containsEntry("source_ids", "source-a,source-b"));
         assertThat(plan.budget().maxEvidence()).isEqualTo(6);
         assertThat(plan.budget().maxEvidenceCharacters()).isEqualTo(8_000);
-        assertThat(prompt.userPrompt()).contains("- 检索边界：用户显式选择的 2 份资料");
+        assertThat(prompt.userPrompt()).contains("内部检索边界：用户显式选择的 2 份资料。不要在回答中提及。");
     }
 
     @Test
-    void shouldPreserveLegacyQaAnswerWhileDeclaringBundleEvidenceIds() {
+    void shouldKeepQaAnswerUserFacingWhileDeclaringBundleEvidenceIds() {
         QaAnswerModeStrategy strategy = new QaAnswerModeStrategy();
         AnswerContext context = new AnswerContext(
                 "workspace", "conversation", "message", "compare",
@@ -73,14 +73,12 @@ class QaAnswerModeStrategyTest {
 
         assertThat(prompt.referencedEvidenceIds()).containsExactly("passage:one", "passage:two");
         assertThat(prompt.userPrompt())
-                .contains("本轮已结合最近连续对话窗口理解这次追问。")
-                .contains("本轮还应用了工作台级 Chat Control Pack。")
-                .contains("- 检索边界：当前 workspace 内已解析资料")
-                .contains("- 检索策略：Chunk 向量召回 + BM25 关键词召回 + 加权 RRF + 真实 rerank + 来源覆盖")
-                .contains("- 证据 1《title》：excerpt（chunk:0，score=1，reason=selected）")
+                .contains("将最近连续对话仅用于理解追问语境")
+                .contains("遵循下方表达控制，但不要提及 Chat Control Pack")
+                .contains("内部检索边界：当前 workspace 内已解析资料。不要在回答中提及。")
+                .contains("- 《title》：excerpt")
                 .contains("## 表达控制\n- 风格约束：简洁")
-                .contains("引用信息会通过 `citation.upsert` 事件返回")
-                .doesNotContain("[passage:one]", "[passage:two]");
+                .doesNotContain("score=", "reason=", "weighted-rrf", "citation.upsert", "[passage:one]", "[passage:two]");
         assertThat(strategy.policy().citationRequired()).isTrue();
     }
 

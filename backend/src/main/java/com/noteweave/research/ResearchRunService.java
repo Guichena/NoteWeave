@@ -34,6 +34,10 @@ public class ResearchRunService {
         return queryService.listRuns(workspaceId);
     }
 
+    public List<ResearchRunSummaryResponse> listRuns(String workspaceId, int limit, int offset) {
+        return queryService.listRuns(workspaceId, limit, offset);
+    }
+
     public ResearchRunDetailResponse getRunDetail(String workspaceId, String researchRunId) {
         return queryService.getRunDetail(workspaceId, researchRunId);
     }
@@ -49,6 +53,16 @@ public class ResearchRunService {
     @Transactional
     public ResearchRunResponse resumeFromCheckpoint(String workspaceId, String researchRunId, int checkpointNo) {
         return commandService.resumeFromCheckpoint(workspaceId, researchRunId, checkpointNo);
+    }
+
+    @Transactional
+    public ResearchRunResponse resumeFromCheckpoint(
+            String workspaceId,
+            String researchRunId,
+            int checkpointNo,
+            String resumeMode
+    ) {
+        return commandService.resumeFromCheckpoint(workspaceId, researchRunId, checkpointNo, resumeMode);
     }
 
     @Transactional

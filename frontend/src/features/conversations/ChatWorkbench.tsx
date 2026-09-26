@@ -1,5 +1,8 @@
 import { lazy, memo, Suspense, useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { routes, type AnswerMode } from "../../routes";
+import { createPortal } from "react-dom";
+import { ArrowRight, LibraryBig, MessageSquareText, PanelRightOpen, Send } from "lucide-react";
+import { isSourceReadableOnly, isSourceSearchable } from "../sources/model";
+import { type AnswerMode } from "../../routes";
 import {
   modeContextLine,
   modeExamplePrompts,
@@ -8,17 +11,9 @@ import {
 import { MessageBubble } from "../answers/MessageBubble";
 import { type Message } from "../answers/messageTypes";
 import { type SourceAsset } from "../sources/model";
-import {
-  type ExecutionEvent as StreamEvent,
-  type ExecutionTask as TaskStatus
-} from "../executions/model";
 import { type Workspace } from "../workspace/model";
-import {
-  buildWaitContextNarrative,
-  summarizeRunStatus,
-  type WaitContextDetailLine
-} from "../../runStatus";
-import { type SignalChip } from "../research/model";
+import { AnswerModeSelector } from "./AnswerModeSelector";
+import { ChatSourcesPane } from "./ChatSourcesPane";
 
 const LazyArtifactRail = lazy(() => import("../artifacts/ArtifactRail").then((module) => ({
   default: module.ArtifactRail
@@ -28,24 +23,8 @@ export type ChatWorkbenchProps = {
   mode: AnswerMode;
   setMode: (mode: AnswerMode) => void;
   sources: SourceAsset[];
-  sourceText: string;
-  setSourceText: (value: string) => void;
-  uploadSource: () => void;
   chatBusy: boolean;
-  uploadBusy: boolean;
   workspace: Workspace | null;
-  latestTask: TaskStatus | null;
-  latestWorkspaceTaskWaitSignals: SignalChip[];
-  latestWorkspaceTaskWaitDetails: WaitContextDetailLine[];
-  latestWorkspaceProgressEvent: StreamEvent | null;
-  taskEvents: StreamEvent[];
-  deleteSource: (source: SourceAsset) => void;
-  buildSourceOriginBadge: (source: SourceAsset) => string;
-  buildGenericTaskRuntimeSnapshot: (
-    event: StreamEvent | null,
-    task: TaskStatus | null
-  ) => string;
-  buildTaskEventNarrative: (event: StreamEvent, task: TaskStatus | null) => string;
   messages: Message[];
   question: string;
   setQuestion: (value: string) => void;
@@ -54,31 +33,21 @@ export type ChatWorkbenchProps = {
   setSelectedQaSourceIds: (value: string[] | ((current: string[]) => string[])) => void;
   toggleQaScope: (sourceId: string) => void;
   sendMessage: () => void;
-  conversation: { conversation_id: string } | null;
+  conversation: { conversation_id: string; title: string } | null;
+  conversationCount: number;
   setArtifactComposerOpen: (open: boolean) => void;
   artifactComposerOpen: boolean;
   artifactRailProps: import("../artifacts/ArtifactRailProps").ArtifactRailProps;
+  onOpenSourceLibrary: () => void;
 };
 
-export const ChatWorkbench = memo(function ChatWorkbench({
+export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchProps) {
+  const {
   mode,
   setMode,
   sources,
-  sourceText,
-  setSourceText,
-  uploadSource,
   chatBusy,
-  uploadBusy,
   workspace,
-  latestTask,
-  latestWorkspaceTaskWaitSignals,
-  latestWorkspaceTaskWaitDetails,
-  latestWorkspaceProgressEvent,
-  taskEvents,
-  deleteSource,
-  buildSourceOriginBadge,
-  buildGenericTaskRuntimeSnapshot,
-  buildTaskEventNarrative,
   messages,
   question,
   setQuestion,
@@ -88,23 +57,51 @@ export const ChatWorkbench = memo(function ChatWorkbench({
   toggleQaScope,
   sendMessage,
   conversation,
+  conversationCount,
   setArtifactComposerOpen,
   artifactComposerOpen,
-  artifactRailProps
-}: ChatWorkbenchProps) {
-  const sourcesBusy = uploadBusy;
+  artifactRailProps,
+  onOpenSourceLibrary
+
+  } = props;
   const composerBusy = chatBusy;
   const [artifactRailOpen, setArtifactRailOpen] = useState(false);
   const conversationRef = useRef<HTMLDivElement | null>(null);
+  const artifactTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const artifactModalRef = useRef<HTMLDivElement | null>(null);
   const examples = modeExamplePrompts(mode);
-  const readySources = sources.filter(
-    (source) => source.status === "READY"
-      && (source.index_status === "INDEXED" || source.index_status === "DISABLED")
-  );
+  const searchableSources = sources.filter(isSourceSearchable);
+  const readableOnlySourceCount = sources.filter(isSourceReadableOnly).length;
+  const workspaceSummary = workspace?.name || "未选择工作台";
+  const qaAvailabilitySummary = searchableSources.length > 0
+    ? `${searchableSources.length} / ${sources.length} 份可检索${readableOnlySourceCount > 0 ? ` · ${readableOnlySourceCount} 份仅可阅读` : ""}`
+    : readableOnlySourceCount > 0
+      ? `${readableOnlySourceCount} 份仅可阅读 · 无检索索引`
+      : sources.length > 0
+        ? `0 / ${sources.length} 份可检索`
+        : "等待上传资料";
+  const scopeSummary = selectedQaSourceIds.length > 0
+    ? `已限定 ${selectedQaSourceIds.length} 份资料`
+    : qaAvailabilitySummary;
+  const qaUnavailable = mode === "qa" && searchableSources.length === 0;
+  const composerActionLabel = qaUnavailable
+    ? "等待可检索资料"
+    : composerBusy
+      ? "回答中…"
+      : `发送到 ${currentRouteLabel}`;
+  const qaScopeNarrative = selectedQaSourceIds.length > 0
+    ? `当前问答已限定 ${selectedQaSourceIds.length} 份可检索资料，回答会附带对应来源引用。`
+    : searchableSources.length > 0
+      ? `当前使用此 Workspace 的 ${searchableSources.length} 份可检索资料，回答会附带对应来源引用。`
+      : readableOnlySourceCount > 0
+        ? `当前无可检索资料；${readableOnlySourceCount} 份资料仅可阅读，建立索引后才能参与 RAG。`
+        : sources.length > 0
+          ? "资料仍在处理，检索索引建立后即可开始基于证据的问答。"
+          : "当前 Workspace 暂无资料，上传并完成检索索引后即可开始基于证据的问答。";
 
   useEffect(() => {
     const node = conversationRef.current;
-    if (!node) {
+    if (!node || (messages.length === 0 && !chatBusy)) {
       return;
     }
     node.scrollTop = node.scrollHeight;
@@ -113,142 +110,129 @@ export const ChatWorkbench = memo(function ChatWorkbench({
   function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      if (!composerBusy && conversation && question.trim()) {
+      if (!composerBusy && !qaUnavailable && conversation && question.trim()) {
         sendMessage();
       }
     }
   }
 
+  useEffect(() => {
+    if (!artifactRailOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    artifactModalRef.current?.focus();
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented) {
+        setArtifactRailOpen(false);
+        setArtifactComposerOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      artifactTriggerRef.current?.focus();
+    };
+  }, [artifactRailOpen]);
+
   function toggleArtifactRail() {
     const nextOpen = !artifactRailOpen;
     setArtifactRailOpen(nextOpen);
-    setArtifactComposerOpen(nextOpen);
+    setArtifactComposerOpen(false);
   }
 
   return (
-    <section className={artifactRailOpen ? "layout layout-with-inspector" : "layout"}>
-      <aside className="sources-pane source-drawer" aria-label="资料库">
-        <div className="sources-pane-header">
-          <p className="section-label">Sources</p>
-          <small>{sources.length} 份资料</small>
-        </div>
-        <div className="source-drawer-body">
-          <label className="input-block">
-            <span>粘贴文本资料</span>
-            <textarea
-              value={sourceText}
-              onChange={(event) => setSourceText(event.target.value)}
-              rows={4}
-              placeholder="把要分析的文本粘贴到这里，然后点击上传并解析。"
-            />
-          </label>
-          <button onClick={uploadSource} disabled={sourcesBusy || !workspace || !sourceText.trim()}>
-            {sourcesBusy ? "上传中…" : "上传并解析"}
-          </button>
-          {!workspace ? (
-            <p className="phase-note">请先创建或选择工作台，再上传资料。</p>
-          ) : null}
-          {latestTask && (
-            <div className="task-card source-task-card">
-              <strong>资料处理任务</strong>
-              <span>{latestTask.task_type} · {summarizeRunStatus(latestTask.task_status)} · {latestTask.progress_phase}</span>
-              <span>{latestTask.progress_message}</span>
-              {buildWaitContextNarrative(latestTask.wait_context) ? (
-                <small>{buildWaitContextNarrative(latestTask.wait_context)}</small>
-              ) : null}
-              {latestWorkspaceTaskWaitSignals.length > 0 ? (
-                <div className="signal-chip-row artifact-wait-signal-row">
-                  {latestWorkspaceTaskWaitSignals.map((chip, index) => (
-                    <span key={`workspace-task-wait-signal-${index}`} className={`signal-chip tone-${chip.tone}`}>
-                      {chip.label}: {chip.value}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-              {latestWorkspaceTaskWaitDetails.length > 0 ? (
-                <div className="artifact-runtime-trace">
-                  {latestWorkspaceTaskWaitDetails.map((line, index) => (
-                    <small key={`workspace-task-wait-detail-${index}`} className="artifact-runtime-trace-line">
-                      <strong>{line.label}</strong> · {line.value}
-                    </small>
-                  ))}
-                </div>
-              ) : null}
-              {buildGenericTaskRuntimeSnapshot(latestWorkspaceProgressEvent, latestTask) ? (
-                <small>{buildGenericTaskRuntimeSnapshot(latestWorkspaceProgressEvent, latestTask)}</small>
-              ) : null}
-              {taskEvents.slice(-4).map((event, index) => (
-                <small key={`${event.event}-${index}`}>{buildTaskEventNarrative(event, latestTask)}</small>
-              ))}
-            </div>
-          )}
-          {sources.length > 0 ? (
-            <div className="source-list">
-              <strong className="source-list-title">工作台资料</strong>
-              {sources.map((source) => (
-                <div key={source.source_id} className="source-list-item">
-                  <div className="source-list-copy">
-                    <strong>{source.title}</strong>
-                    <small>
-                      {source.status} · {source.index_status}
-                      {source.generated_by === "research_agent" ? ` · ${buildSourceOriginBadge(source)}` : ""}
-                    </small>
-                  </div>
-                  <button
-                    type="button"
-                    className="inline-action secondary-button"
-                    onClick={() => void deleteSource(source)}
-                    disabled={sourcesBusy}
-                  >
-                    删除
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="empty-state source-empty">
-              还没有资料。上传后即可在 QA / Note / Wiki 中检索回答。
-            </p>
-          )}
-        </div>
-      </aside>
+    <section className="layout">
+      <ChatSourcesPane
+        sources={sources}
+        workspace={workspace}
+        conversationCount={conversationCount}
+        onOpenSourceLibrary={onOpenSourceLibrary}
+      />
 
       <div className="chat-panel">
-        <div className="mode-tabs" role="tablist" aria-label="回答模式">
-          {routes.map((route) => (
+        <header className="chat-session-header">
+          <div className="chat-session-identity">
+            <span className="chat-session-mark" aria-hidden="true"><MessageSquareText size={19} /></span>
+            <div className="chat-session-copy">
+              <p className="section-label">Current conversation</p>
+              <h2>{conversation?.title || "等待会话"}</h2>
+              <p className="chat-session-meta">
+                <span title={workspaceSummary}>{workspaceSummary}</span>
+                <span aria-hidden="true">·</span>
+                <span>{sources.length} 份工作台资料</span>
+                <span aria-hidden="true">·</span>
+                <span>{conversationCount} 个会话</span>
+              </p>
+            </div>
+          </div>
+          <div className="chat-header-bar">
             <button
-              key={route.key}
               type="button"
-              role="tab"
-              aria-selected={route.key === mode}
-              className={route.key === mode ? "active" : ""}
-              title={route.description}
-              onClick={() => setMode(route.key)}
+              className="mobile-sources-toggle secondary-button"
+              aria-label="打开资料库"
+              title="打开资料库"
+              onClick={onOpenSourceLibrary}
             >
-              {route.label}
+              <LibraryBig size={15} aria-hidden="true" />
+              资料 {sources.length}
             </button>
-          ))}
-        </div>
-        <p className="mode-context-line">{modeContextLine(mode)}</p>
+          </div>
+        </header>
+        <p className="mode-context-line">
+          <span className="mode-context-copy">{modeContextLine(mode)}</span>
+          <span className="mode-context-metric">{scopeSummary}</span>
+        </p>
 
         <div className="conversation" ref={conversationRef} aria-live="polite">
           {messages.length === 0 ? (
             <div className="chat-welcome">
-              <strong>开始一次研究对话</strong>
-              <p>切换模式后点选示例问题，或直接在下方输入。Enter 发送，Shift+Enter 换行。</p>
-              <div className="chat-example-row">
-                {examples.map((example) => (
-                  <button
-                    key={example}
-                    type="button"
-                    className="chat-example-chip secondary-button"
-                    disabled={!conversation || composerBusy}
-                    onClick={() => setQuestion(example)}
-                  >
-                    {example}
-                  </button>
-                ))}
+              <div className="chat-welcome-heading">
+                <span className="chat-welcome-icon" aria-hidden="true"><MessageSquareText size={22} /></span>
+                <div>
+                  <strong>从工作台资料开始提问</strong>
+                  <p>当前会话独立保存，回答会保留来源与证据位置。</p>
+                </div>
               </div>
+              <div className="chat-knowledge-path" aria-label="工作台资料与当前会话的关系">
+                <div className="chat-knowledge-node is-library">
+                  <LibraryBig size={18} aria-hidden="true" />
+                  <span>
+                    <small>共享资料库</small>
+                    <strong>{sources.length} 份资料 · {conversationCount} 个会话共用</strong>
+                  </span>
+                </div>
+                <ArrowRight className="chat-knowledge-arrow" size={16} aria-hidden="true" />
+                <div className="chat-knowledge-node is-conversation">
+                  <MessageSquareText size={18} aria-hidden="true" />
+                  <span>
+                    <small>当前独立会话</small>
+                    <strong title={conversation?.title}>{conversation?.title || "等待会话"}</strong>
+                  </span>
+                </div>
+              </div>
+              {sources.length > 0 ? (
+                <div className="chat-example-row">
+                  {examples.map((example) => (
+                    <button
+                      key={example}
+                      type="button"
+                      className="chat-example-chip secondary-button"
+                      disabled={!conversation || composerBusy}
+                      onClick={() => setQuestion(example)}
+                    >
+                      <span>{example}</span>
+                      <ArrowRight size={14} aria-hidden="true" />
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <button type="button" className="chat-empty-library-action" onClick={onOpenSourceLibrary}>
+                  <LibraryBig size={16} aria-hidden="true" />
+                  前往资料库添加资料
+                  <ArrowRight size={14} aria-hidden="true" />
+                </button>
+              )}
             </div>
           ) : null}
           {messages.map((message, index) => (
@@ -273,22 +257,19 @@ export const ChatWorkbench = memo(function ChatWorkbench({
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
               onKeyDown={handleComposerKeyDown}
-              rows={3}
+              rows={1}
               placeholder={modeQuestionPlaceholder(mode)}
               disabled={!conversation}
             />
           </label>
           {mode === "qa" ? (
             <div className="qa-scope-hint">
-              当前问答范围：{sources.length > 0 ? `此 Workspace 的 ${sources.length} 份资料` : "暂未上传资料"}。
-              {selectedQaSourceIds.length > 0
-                ? ` 已显式限定 ${selectedQaSourceIds.length} 份资料。`
-                : " 回答会附带对应来源引用。"}
-              {readySources.length > 0 ? (
+              <span>{qaScopeNarrative}</span>
+              {searchableSources.length > 0 ? (
                 <details>
                   <summary>指定本次 QA 的资料范围（可选）</summary>
                   <div className="qa-scope-options">
-                    {readySources.map((source) => (
+                    {searchableSources.map((source) => (
                       <button
                         type="button"
                         key={source.source_id}
@@ -306,38 +287,72 @@ export const ChatWorkbench = memo(function ChatWorkbench({
                     ) : null}
                   </div>
                 </details>
-              ) : " 先上传资料后即可开始基于证据的问答。"}
+              ) : null}
             </div>
           ) : null}
           <div className="composer-actions">
+            <AnswerModeSelector mode={mode} setMode={setMode} disabled={composerBusy} />
             <small className="composer-hint">Enter 发送 · Shift+Enter 换行</small>
             <button
               type="button"
+              className="primary-action composer-send-button"
+              aria-label={composerActionLabel}
+              title={composerActionLabel}
               onClick={sendMessage}
-              disabled={composerBusy || !conversation || !question.trim()}
+              disabled={composerBusy || qaUnavailable || !conversation || !question.trim()}
             >
-              {composerBusy ? "回答中…" : `发送到 ${currentRouteLabel}`}
+              <Send size={16} aria-hidden="true" />
             </button>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={toggleArtifactRail}
-              disabled={!workspace}
-            >
-              {artifactRailOpen ? "关闭产物" : "打开产物"}
-            </button>
+            {!artifactRailOpen ? (
+              <button
+                type="button"
+                className="secondary-button artifact-rail-trigger"
+                aria-label="打开产物"
+                title="打开产物工作台"
+                onClick={toggleArtifactRail}
+                disabled={!workspace}
+                ref={artifactTriggerRef}
+              >
+                <PanelRightOpen size={16} aria-hidden="true" />
+                产物
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
 
-      {artifactRailOpen ? <Suspense fallback={(
-        <aside className="artifact-rail artifact-rail-loading">
-          <p className="section-label">Artifact Studio</p>
-          <span>正在加载产物控制台…</span>
-        </aside>
-      )}>
-        <LazyArtifactRail {...artifactRailProps} />
-      </Suspense> : null}
+      {artifactRailOpen ? createPortal((
+        <div
+          className="artifact-modal-backdrop"
+          role="presentation"
+          onClick={toggleArtifactRail}
+        >
+          <div
+            ref={artifactModalRef}
+            className="artifact-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="产物工作台"
+            tabIndex={-1}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <Suspense fallback={(
+              <div className="artifact-rail artifact-rail-loading">
+                <p className="section-label">Artifact Studio</p>
+                <span>正在加载产物控制台…</span>
+              </div>
+            )}>
+              <LazyArtifactRail
+                {...artifactRailProps}
+                onCloseArtifactRail={() => {
+                  setArtifactRailOpen(false);
+                  setArtifactComposerOpen(false);
+                }}
+              />
+            </Suspense>
+          </div>
+        </div>
+      ), document.body) : null}
     </section>
   );
 });

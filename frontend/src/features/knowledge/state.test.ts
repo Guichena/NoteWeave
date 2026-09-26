@@ -61,6 +61,34 @@ describe("Knowledge server state", () => {
     expect(next.wikiGraph).toBe(graph);
     expect(next.revision).toBe(1);
   });
+
+  it("resets local selection without discarding the loaded workspace graph", () => {
+    const detail = knowledgeDetail();
+    const graph = {
+      nodes: [],
+      edges: [],
+      meta: {
+        mode: "ego" as const,
+        center_item_id: "item",
+        depth: 1,
+        total_nodes: 0,
+        returned_nodes: 0,
+        truncated: false
+      }
+    };
+    const selected = reduceKnowledgeServerState(createKnowledgeServerState("workspace"), {
+      type: "selection",
+      snapshot: { itemId: "item", detail, versions: [], graph }
+    });
+
+    const reset = reduceKnowledgeServerState(selected, { type: "reset-selection" });
+
+    expect(reset.selectedWikiItemId).toBe("");
+    expect(reset.selectedWikiDetail).toBeNull();
+    expect(reset.selectedWikiVersionDetail).toBeNull();
+    expect(reset.wikiGraph).toBe(graph);
+    expect(reset.revision).toBe(2);
+  });
 });
 
 describe("LatestKnowledgeRequestGate", () => {

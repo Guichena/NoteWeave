@@ -446,6 +446,7 @@ export type ResearchRunDetail = {
   resumed_from_research_run_id: string;
   resumed_from_checkpoint_no: number | null;
   status: string;
+  completion_terminal_state: string;
   final_report_title: string;
   final_report_markdown: string;
   report_structure: ResearchReportStructure | null;

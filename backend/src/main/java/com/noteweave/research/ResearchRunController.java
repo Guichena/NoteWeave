@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -26,8 +27,12 @@ public class ResearchRunController {
     }
 
     @GetMapping
-    ApiResponse<List<ResearchRunSummaryResponse>> listResearchRuns(@PathVariable String workspaceId) {
-        return ApiResponse.success(researchRunService.listRuns(workspaceId));
+    ApiResponse<List<ResearchRunSummaryResponse>> listResearchRuns(
+            @PathVariable String workspaceId,
+            @RequestParam(defaultValue = "50") int limit,
+            @RequestParam(defaultValue = "0") int offset
+    ) {
+        return ApiResponse.success(researchRunService.listRuns(workspaceId, limit, offset));
     }
 
     @PostMapping
@@ -83,9 +88,11 @@ public class ResearchRunController {
     ApiResponse<ResearchRunResponse> resumeResearchRunFromCheckpoint(
             @PathVariable String workspaceId,
             @PathVariable String researchRunId,
-            @PathVariable int checkpointNo
+            @PathVariable int checkpointNo,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "AUTO") String resumeMode
     ) {
-        return ApiResponse.success(researchRunService.resumeFromCheckpoint(workspaceId, researchRunId, checkpointNo));
+        return ApiResponse.success(researchRunService.resumeFromCheckpoint(
+                workspaceId, researchRunId, checkpointNo, resumeMode));
     }
 
     @PostMapping("/{researchRunId}/save-report-as-source")

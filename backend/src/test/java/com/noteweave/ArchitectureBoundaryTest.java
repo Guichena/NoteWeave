@@ -149,6 +149,19 @@ class ArchitectureBoundaryTest {
     }
 
     @Test
+    void retrievalAndChatProvidersMustDefaultOnWithEmptyCredentials() throws IOException {
+        String application = Files.readString(Path.of("src/main/resources/application.yml"));
+
+        assertThat(application)
+                .contains("enabled: ${NOTEWEAVE_EMBEDDING_ENABLED:true}")
+                .contains("api-key: ${NOTEWEAVE_EMBEDDING_API_KEY:}")
+                .contains("enabled: ${NOTEWEAVE_RERANK_ENABLED:true}")
+                .contains("api-key: ${NOTEWEAVE_RERANK_API_KEY:}")
+                .contains("enabled: ${NOTEWEAVE_LLM_ENABLED:true}")
+                .contains("api-key: ${NOTEWEAVE_LLM_API_KEY:}");
+    }
+
+    @Test
     void durableOutboxDispatchersMustShareClaimAndRetryPolicy() throws IOException {
         String durableDispatcher = Files.readString(Path.of(
                 "src/main/java/com/noteweave/infra/outbox/DurableOutboxDispatcher.java"));
@@ -374,6 +387,204 @@ class ArchitectureBoundaryTest {
     }
 
     @Test
+    void largeServiceReadAndEventSqlMustStayBehindDedicatedPersistenceSeams() throws IOException {
+        String researchFacade = Files.readString(
+                Path.of("src/main/java/com/noteweave/research/ResearchRunQueryService.java"));
+        String researchReadRepository = Files.readString(
+                Path.of("src/main/java/com/noteweave/research/ResearchRunReadRepository.java"));
+        String researchClosedLoopAssembler = Files.readString(
+                Path.of("src/main/java/com/noteweave/research/ResearchClosedLoopStateAssembler.java"));
+        String researchCounterfactualAssembler = Files.readString(
+                Path.of("src/main/java/com/noteweave/research/ResearchCounterfactualSummaryAssembler.java"));
+        String researchCheckpointProcessAssembler = Files.readString(
+                Path.of("src/main/java/com/noteweave/research/ResearchCheckpointProcessAssembler.java"));
+        String researchVerifierGatedAssembler = Files.readString(
+                Path.of("src/main/java/com/noteweave/research/ResearchVerifierGatedSummaryAssembler.java"));
+        String researchReportAssembler = Files.readString(
+                Path.of("src/main/java/com/noteweave/research/ResearchReportReadModelAssembler.java"));
+        String researchPayloadReader = Files.readString(
+                Path.of("src/main/java/com/noteweave/research/ResearchRunQueryPayloadReader.java"));
+        String artifactFacade = Files.readString(
+                Path.of("src/main/java/com/noteweave/artifact/ArtifactJobService.java"));
+        String artifactReadRepository = Files.readString(
+                Path.of("src/main/java/com/noteweave/artifact/ArtifactJobReadRepository.java"));
+        String artifactWriteRepository = Files.readString(
+                Path.of("src/main/java/com/noteweave/artifact/ArtifactJobWriteRepository.java"));
+        String artifactPayloadAssembler = Files.readString(
+                Path.of("src/main/java/com/noteweave/artifact/ArtifactPayloadReadModelAssembler.java"));
+        String taskService = Files.readString(
+                Path.of("src/main/java/com/noteweave/task/TaskService.java"));
+        String taskReadRepository = Files.readString(
+                Path.of("src/main/java/com/noteweave/task/TaskReadRepository.java"));
+        String taskStateRepository = Files.readString(
+                Path.of("src/main/java/com/noteweave/task/TaskStateRepository.java"));
+        String taskEventRepository = Files.readString(
+                Path.of("src/main/java/com/noteweave/task/TaskEventRepository.java"));
+        String taskWaitAssembler = Files.readString(
+                Path.of("src/main/java/com/noteweave/task/TaskWaitContextAssembler.java"));
+        String completionCommitter = Files.readString(
+                Path.of("src/main/java/com/noteweave/research/ResearchAgentCompletionCommitter.java"));
+        String completionWriteRepository = Files.readString(
+                Path.of("src/main/java/com/noteweave/research/ResearchAgentCompletionWriteRepository.java"));
+        String completionMergePlanner = Files.readString(
+                Path.of("src/main/java/com/noteweave/research/ResearchAgentCompletionMergePlanner.java"));
+        String completionReceiptBuilder = Files.readString(
+                Path.of("src/main/java/com/noteweave/research/ResearchAgentCompletionReceiptPayloadBuilder.java"));
+
+        assertThat(researchFacade)
+                .doesNotContain(
+                        "where se.research_run_id in (%s)",
+                        "where rce.research_run_id in (%s)",
+                        "jdbcTemplate.query",
+                        "jdbcTemplate.queryForObject",
+                        "jdbcTemplate.update"
+                );
+        assertThat(researchReadRepository)
+                .contains("ResearchRunReadBundle loadBatch(", "where research_run_id in (%s)", "void requireRun(");
+        assertThat(researchFacade)
+                .doesNotContain("new ResearchClosedLoopStateResponse(", "private Map<String, Object> mergeStateLedgerSnapshot(")
+                .contains("researchClosedLoopStateAssembler.build(");
+        assertThat(researchClosedLoopAssembler)
+                .contains("ResearchClosedLoopStateResponse build(", "mergeStateLedgerSnapshot(", "readStateLedgerResponse(");
+        assertThat(researchCounterfactualAssembler)
+                .contains("ResearchCounterfactualSummaryResponse build(", "COUNTERFACTUAL_RECHECK");
+        assertThat(researchFacade)
+                .doesNotContain(
+                        "private ResearchProcessSummaryResponse buildCheckpointProcessSummary(",
+                        "private Map<String, Object> buildVerifierGatedSummary(",
+                        "private List<Map<String, Object>> buildCheckpointRowsByPredicate("
+                );
+        assertThat(researchCheckpointProcessAssembler)
+                .contains("ResearchProcessSummaryResponse buildProcessSummary(", "buildAuditSummary(")
+                .contains("buildCounterfactualSummary(", "buildRecoveryTargetsFromStopContract(");
+        assertThat(researchVerifierGatedAssembler)
+                .contains("Map<String, Object> build(", "matchesRecoveryTargets(", "blocked_row_samples");
+        assertThat(researchFacade)
+                .doesNotContain(
+                        "private ResearchReportStructureResponse buildReportStructure(",
+                        "private ResearchArtifactCandidateResponse buildResearchArtifactCandidate(",
+                        "private ResearchResumeContextSummaryResponse buildResumeContextSummary(",
+                        "JsonProcessingException",
+                        "TypeReference<",
+                        "private Map<String, Object> extractTracePayload(",
+                        "private Map<String, Object> extractRecoveryTargets("
+                );
+        assertThat(researchFacade).contains("ResearchRunQueryPayloadReader", "payloadReader.readPayloadMap(");
+        assertThat(researchPayloadReader)
+                .contains(
+                        "readPayloadMap(",
+                        "extractTracePayload(",
+                        "extractRecoveryTargets(",
+                        "RESEARCH_TRACE_PAYLOAD_PARSE_FAILED"
+                );
+        assertThat(researchReportAssembler)
+                .contains(
+                        "ResearchReportStructureResponse buildReportStructure(",
+                        "ResearchArtifactCandidateResponse buildResearchArtifactCandidate(",
+                        "ResearchResumeContextSummaryResponse buildResumeContextSummary("
+                );
+        assertThat(artifactFacade)
+                .doesNotContain(
+                        "join task t on t.id = aj.task_id",
+                        "coalesce(av.result_payload_json",
+                        "insert into artifact_job(",
+                        "update artifact_job",
+                        "insert into artifact_version(",
+                        "insert into task_outbox(",
+                        "jdbcTemplate.query",
+                        "jdbcTemplate.queryForObject",
+                        "jdbcTemplate.update"
+                );
+        assertThat(artifactReadRepository)
+                .contains(
+                        "List<ArtifactJobSummaryRow> listJobs(",
+                        "ArtifactVersionDetailRow getVersionDetail(",
+                        "ArtifactJobTaskRow findByTaskId(",
+                        "ArtifactRegenerationRow loadRegenerationRow(",
+                        "ArtifactRollbackRow loadRollbackRow(",
+                        "boolean validUpstreamRef(",
+                        "loadSourceScopeItem(",
+                        "loadVersionForSource("
+                );
+        assertThat(artifactFacade)
+                .doesNotContain(
+                        "private ArtifactRuntimeTraceResponse readRuntimeTrace(",
+                        "private <T> T convertTraceValue(",
+                        "private Map<String, Object> normalizeAndStripLegacyActionKeys("
+                );
+        assertThat(artifactPayloadAssembler)
+                .contains(
+                        "ArtifactRuntimeTraceResponse readRuntimeTrace(",
+                        "MemoryControlPackResponse readControlPack(",
+                        "ARTIFACT_RUNTIME_OUTPUT_CONTRACT_PARSE_FAILED"
+                );
+        assertThat(artifactWriteRepository)
+                .contains("persistInitialJob(", "persistRegeneration(", "appendCompletedVersion(", "insert into task_outbox(");
+        assertThat(taskService).doesNotContain("insert into task_event", "insert into task(", "update task");
+        assertThat(taskService)
+                .contains("TaskWaitContextAssembler waitContextAssembler", "waitContextAssembler.build(")
+                .doesNotContain(
+                        "private WaitProviderJobResponse toWaitProviderJob(",
+                        "private WaitApprovalRequestResponse toWaitApprovalRequest(",
+                        "private WaitReasonResponse toWaitReason(",
+                        "private List<WaitProviderDeliveryAttemptResponse> readProviderDeliveryAttempts("
+                );
+        assertThat(taskWaitAssembler)
+                .contains(
+                        "WaitContextResponse build(",
+                        "Map<String, WaitContextResponse> buildAll(",
+                        "TASK_EVENT_PAYLOAD_PARSE_FAILED"
+                );
+        assertThat(taskReadRepository).contains("TaskService.TaskStreamPoll poll(", "from task_event");
+        assertThat(taskEventRepository).contains("insert into task_event");
+        assertThat(taskStateRepository).contains("insert into task(", "update task", "int redrive(");
+        assertThat(completionCommitter).doesNotContain("insert into source_evidence(", "insert into research_agent_candidate(");
+        assertThat(completionCommitter)
+                .contains("ResearchAgentCompletionMergePlanner mergePlanner", "mergePlanner.planSingle(", "mergePlanner.planQuorum(")
+                .contains("receiptPayloadBuilder.build(")
+                .doesNotContain(
+                        "private MergeOutcome planQuorumOutcome(",
+                        "private MergeOutcome quorumOutcome(",
+                        "private Map<String, Object> receiptPayload(",
+                        "private Map<String, Object> mergeReceiptPayload("
+                );
+        assertThat(completionMergePlanner)
+                .contains("MergeOutcome planSingle(", "MergeOutcome planQuorum(", "MergeOutcome quorumOutcome(")
+                .doesNotContain("JdbcTemplate", "jdbcTemplate.");
+        assertThat(completionReceiptBuilder)
+                .contains("Map<String, Object> build(", "receipt_digest", "accepted_merges");
+        assertThat(completionWriteRepository)
+                .contains("insert into source_evidence(", "insert into research_agent_candidate(");
+    }
+
+    @Test
+    void conversationTurnPayloadMustStayOutsideSubmissionTransactionFacade() throws IOException {
+        String turnModule = Files.readString(
+                Path.of("src/main/java/com/noteweave/conversation/ConversationTurnModule.java"));
+        String payloadCodec = Files.readString(
+                Path.of("src/main/java/com/noteweave/conversation/ConversationTurnPayloadCodec.java"));
+
+        assertThat(turnModule)
+                .contains("ConversationTurnPayloadCodec payloadCodec")
+                .doesNotContain(
+                        "private String requestHash(",
+                        "private String preparationJson(",
+                        "private String writeReceipt(",
+                        "private TurnReceipt readReceipt(",
+                        "objectMapper.writeValueAsString(",
+                        "objectMapper.readValue("
+                );
+        assertThat(payloadCodec)
+                .contains(
+                        "String requestHash(",
+                        "String preparationJson(",
+                        "SubmitTurnCommand readFrozenCommand(",
+                        "String writeReceipt(",
+                        "TurnReceipt readReceipt("
+                );
+    }
+
+    @Test
     void productionQaRetrievalMustRemainFailClosed() throws IOException {
         String retriever = Files.readString(
                 Path.of("src/main/java/com/noteweave/chat/QaPassageRetriever.java"));
@@ -386,6 +597,16 @@ class ArchitectureBoundaryTest {
         assertThat(guard)
                 .contains("qaMysqlFallbackEnabled")
                 .contains("Production must disable NOTEWEAVE_QA_MYSQL_FALLBACK_ENABLED");
+    }
+
+    @Test
+    void disabledRetrievalProjectionMustRemainFailClosed() throws IOException {
+        String writer = Files.readString(Path.of(
+                "src/main/java/com/noteweave/retrieval/index/NoOpRetrievalProjectionWriter.java"));
+
+        assertThat(writer)
+                .contains("RETRIEVAL_PROJECTION_PROVIDER_DISABLED")
+                .doesNotContain("/** No-op projection writer", "{\n    }", "{\r\n    }");
     }
 
     @Test
@@ -676,6 +897,19 @@ class ArchitectureBoundaryTest {
     }
 
     @Test
+    void chatConversationContextHeuristicsMustStayOutsideFacadeAndInfrastructure() {
+        classes()
+                .that().haveSimpleName("ChatService")
+                .should().dependOnClassesThat().haveSimpleName("ConversationRetrievalContextAssembler")
+                .check(CLASSES);
+        noClasses()
+                .that().haveSimpleName("ConversationRetrievalContextAssembler")
+                .should().dependOnClassesThat().haveSimpleName("JdbcTemplate")
+                .because("conversation retrieval context assembly is deterministic projection logic")
+                .check(CLASSES);
+    }
+
+    @Test
     void qaEvidenceAdapterMustUseDedicatedRetriever() {
         noClasses()
                 .that().haveSimpleName("QaPassageEvidenceRetriever")
@@ -746,5 +980,53 @@ class ArchitectureBoundaryTest {
                 .should().dependOnClassesThat().haveSimpleName("JdbcTemplate")
                 .because("NoteRecallRetriever must orchestrate through NoteRecallRepository")
                 .check(CLASSES);
+    }
+
+    @Test
+    void qaShadowExportMustKeepReadAndArtifactValidationBehindDedicatedSeams() throws IOException {
+        String exportService = Files.readString(
+                Path.of("src/main/java/com/noteweave/retrieval/eval/QaAnswerRunShadowExportService.java"));
+        String readRepository = Files.readString(
+                Path.of("src/main/java/com/noteweave/retrieval/eval/QaAnswerRunShadowExportReadRepository.java"));
+        String artifactValidator = Files.readString(
+                Path.of("src/main/java/com/noteweave/retrieval/eval/QaAnswerRunShadowArtifactValidator.java"));
+
+        assertThat(exportService)
+                .doesNotContain("JdbcTemplate", "jdbcTemplate.", "select ")
+                .contains("readRepository.loadRuns(", "artifactValidator.readBundle(");
+        assertThat(readRepository)
+                .contains("Map<String, RunRow> loadRuns(", "select r.id", "loadCitations(");
+        assertThat(artifactValidator)
+                .contains("readBundle(", "readSummary(", "validateBundleShape(", "validateTraceShape(");
+    }
+
+    @Test
+    void noteMetadataFacadeMustKeepRelationQueriesBehindDedicatedService() throws IOException {
+        String noteFacade = Files.readString(
+                Path.of("src/main/java/com/noteweave/chat/NoteRetrievalService.java"));
+        String relationService = Files.readString(
+                Path.of("src/main/java/com/noteweave/chat/NoteRelatedEntryService.java"));
+
+        assertThat(noteFacade)
+                .doesNotContain("jdbcTemplate.query", "select s.id", "select c1.source_id")
+                .contains("relatedEntryService.relatedEntriesForSources(");
+        assertThat(relationService)
+                .contains("Map<String, List<RelatedEntryPreview>> relatedEntriesForSources(")
+                .contains("select s.id", "select c1.source_id", "relatedReason(");
+    }
+
+    @Test
+    void memoryCompilerMustKeepPersistedReadModelBehindRepository() throws IOException {
+        String compilerService = Files.readString(
+                Path.of("src/main/java/com/noteweave/memory/MemoryCompilerService.java"));
+        String readRepository = Files.readString(
+                Path.of("src/main/java/com/noteweave/memory/MemoryCompilerReadRepository.java"));
+
+        assertThat(compilerService)
+                .doesNotContain("r.normalized_value_json", "r.valid_from <= current_timestamp")
+                .contains("readRepository.loadStateRows(", "readRepository.loadObjectRows(");
+        assertThat(readRepository)
+                .contains("List<StateRow> loadStateRows(", "List<ObjectRow> loadObjectRows(")
+                .contains("readCanonicalPayload(", "hydrateReferences(");
     }
 }

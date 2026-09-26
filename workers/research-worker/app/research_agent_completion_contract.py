@@ -16,6 +16,7 @@ from collections.abc import Mapping
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from app.extraction_result import ExtractionFailureReason, ExtractionTerminationReason
 from app.unicode_contract import (
     UNICODE_WHITE_SPACE_CODEPOINTS,
     has_unicode_boundary_whitespace,
@@ -30,6 +31,21 @@ _MAX_COUNTER = 1_000_000
 _MAX_ENVELOPE_BYTES = 256 * 1024
 _MISSING = object()
 _STABLE_KEY_RE = re.compile(_STABLE_KEY_PATTERN)
+_DIGEST_RE = re.compile(_DIGEST_PATTERN)
+
+# DR-102: fixed vocabulary mirrored from app.extraction_result; the enums are
+# reused verbatim so a Python-side rename can never silently widen the contract.
+_EXTRACTION_DIAGNOSTICS_SCHEMA = "research-extraction-diagnostics.v1"
+_EXTRACTION_ACCEPTED_REASON = ExtractionTerminationReason.ACCEPTED_CARDS.value
+_EXTRACTION_TERMINATION_REASONS = frozenset(item.value for item in ExtractionTerminationReason)
+_EXTRACTION_FAILURE_REASONS = frozenset(item.value for item in ExtractionFailureReason)
+_MAX_EXTRACTION_DIAGNOSTICS_BYTES = 8_192
+_MAX_EXTRACTION_MODEL_CHARS = 128
+_MAX_EXTRACTION_WINDOW_CHARS = 64
+_MAX_EXTRACTION_COLUMN_CHARS = 64
+_MAX_EXTRACTION_DETAIL_CHARS = 240
+_MAX_EXTRACTION_RESPONSE_CHARS = 100_000_000
+_MAX_REJECTION_SAMPLES = 8
 
 
 def _normalize_unicode(value: object) -> object:
@@ -89,6 +105,13 @@ def _require_nonblank_text(value: str) -> str:
     return value
 
 
+def _require_unpadded(value: str) -> str:
+    """Diagnostics text must be NFC (applied globally) and free of boundary whitespace."""
+    if has_unicode_boundary_whitespace(value):
+        raise ValueError("diagnostics text must not have Unicode White_Space at its boundary")
+    return value
+
+
 class ResearchAgentBudgetUsage(_FrozenStrictContract):
     """Worker-observable usage only; merge/release amounts remain server-owned."""
 
@@ -112,6 +135,98 @@ class ResearchAgentCompletionTelemetry(_FrozenStrictContract):
     search_hits: int = Field(ge=0, le=_MAX_COUNTER)
     documents: int = Field(ge=0, le=_MAX_COUNTER)
     windows: int = Field(ge=0, le=_MAX_COUNTER)
+
+
+class ResearchAgentExtractionProviderReceipt(_FrozenStrictContract):
+    """Provider call receipt: identity, counts and response digest, never the raw text."""
+
+    purpose: Literal["research.extract"]
+    transport: Literal["openai-compatible"]
+    model: str = Field(max_length=_MAX_EXTRACTION_MODEL_CHARS)
+    call_count: int = Field(ge=0, le=_MAX_COUNTER)
+    response_digest: str
+    response_chars: int = Field(ge=0, le=_MAX_EXTRACTION_RESPONSE_CHARS)
+
+    @field_validator("model")
+    @classmethod
+    def model_is_unpadded(cls, value: str) -> str:
+        return _require_unpadded(value)
+
+    @field_validator("response_digest")
+    @classmethod
+    def digest_is_absent_or_canonical(cls, value: str) -> str:
+        if value and _DIGEST_RE.fullmatch(value) is None:
+            raise ValueError("provider response_digest must be empty or a canonical sha256 digest")
+        return value
+
+
+class ResearchAgentRejectionSample(_FrozenStrictContract):
+    """One bounded rejection witness; only locating fields, never model-authored text."""
+
+    reason: str
+    window_id: str = Field(max_length=_MAX_EXTRACTION_WINDOW_CHARS)
+    column_key: str = Field(max_length=_MAX_EXTRACTION_COLUMN_CHARS)
+    detail: str = Field(max_length=_MAX_EXTRACTION_DETAIL_CHARS)
+
+    @field_validator("reason")
+    @classmethod
+    def reason_is_known(cls, value: str) -> str:
+        if value not in _EXTRACTION_FAILURE_REASONS:
+            raise ValueError("rejection sample reason is not an ExtractionFailureReason")
+        return value
+
+    @field_validator("window_id", "column_key", "detail")
+    @classmethod
+    def sample_text_is_unpadded(cls, value: str) -> str:
+        return _require_unpadded(value)
+
+
+class ResearchAgentExtractionDiagnostics(_FrozenStrictContract):
+    """DR-102 explainable extraction outcome: why zero cards were accepted."""
+
+    schema_version: Literal["research-extraction-diagnostics.v1"]
+    termination_reason: str
+    accepted_count: int = Field(ge=0, le=_MAX_COUNTER)
+    rejected_count: int = Field(ge=0, le=_MAX_COUNTER)
+    rejection_counts: dict[str, int]
+    provider_receipt: ResearchAgentExtractionProviderReceipt
+    rejection_samples: tuple[ResearchAgentRejectionSample, ...] = Field(
+        default_factory=tuple, max_length=_MAX_REJECTION_SAMPLES
+    )
+
+    @field_validator("termination_reason")
+    @classmethod
+    def termination_reason_is_known(cls, value: str) -> str:
+        if value not in _EXTRACTION_TERMINATION_REASONS:
+            raise ValueError("extraction termination_reason is not an ExtractionTerminationReason")
+        return value
+
+    @field_validator("rejection_counts")
+    @classmethod
+    def rejection_counts_are_known(cls, value: dict[str, int]) -> dict[str, int]:
+        for reason, count in value.items():
+            if reason not in _EXTRACTION_FAILURE_REASONS:
+                raise ValueError(f"rejection_counts key is not an ExtractionFailureReason: {reason!r}")
+            if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= _MAX_COUNTER:
+                raise ValueError(f"rejection_counts value must be a 1..{_MAX_COUNTER} integer: {reason!r}")
+        return value
+
+    @field_validator("rejection_samples", mode="before")
+    @classmethod
+    def freeze_rejection_samples(cls, value: object) -> object:
+        return tuple(value) if isinstance(value, list) else value
+
+    @model_validator(mode="after")
+    def validate_diagnostics(self) -> "ResearchAgentExtractionDiagnostics":
+        if sum(self.rejection_counts.values()) != self.rejected_count:
+            raise ValueError("extraction rejection_counts must sum to rejected_count")
+        if self.accepted_count == 0 and self.termination_reason == _EXTRACTION_ACCEPTED_REASON:
+            raise ValueError("zero accepted cards cannot terminate as ACCEPTED_CARDS")
+        if self.accepted_count >= 1 and self.termination_reason != _EXTRACTION_ACCEPTED_REASON:
+            raise ValueError("accepted cards must terminate as ACCEPTED_CARDS")
+        if len(self.rejection_samples) > self.rejected_count:
+            raise ValueError("extraction rejection_samples must not exceed rejected_count")
+        return self
 
 
 class ResearchAgentCompletionEvidence(_FrozenStrictContract):
@@ -176,19 +291,21 @@ class ResearchAgentCompletionCandidate(_FrozenStrictContract):
 
 
 class _ResearchAgentCompletionContent(_FrozenStrictContract):
-    schema_version: Literal["research-agent-completion.v1"]
+    schema_version: Literal["research-agent-completion.v1", "research-agent-completion.v2"]
     task_id: str = Field(min_length=36, max_length=36, pattern=_TASK_ID_PATTERN)
     worker_instance_id: str = Field(min_length=1, max_length=128, pattern=_STABLE_KEY_PATTERN)
     lease_epoch: int = Field(ge=1, le=2_147_483_647)
     fencing_token: int = Field(ge=1, le=9_223_372_036_854_775_807)
     execution_key: str = Field(min_length=1, max_length=160, pattern=_STABLE_KEY_PATTERN)
     task_snapshot_digest: str = Field(pattern=_DIGEST_PATTERN)
-    termination_reason: Literal["CANDIDATES_PROPOSED", "EVIDENCE_ONLY", "NO_SUPPORTED_CANDIDATE"]
+    termination_reason: Literal["CANDIDATES_PROPOSED", "EVIDENCE_ONLY", "NO_SUPPORTED_CANDIDATE", "ROLE_RESULT"]
     budget_usage: ResearchAgentBudgetUsage
     telemetry: ResearchAgentCompletionTelemetry
     trace_digest: str = Field(pattern=_DIGEST_PATTERN)
     evidence: tuple[ResearchAgentCompletionEvidence, ...] = Field(default_factory=tuple, max_length=12)
     candidates: tuple[ResearchAgentCompletionCandidate, ...] = Field(default_factory=tuple, max_length=3)
+    role_result: dict[str, object] | None = None
+    extraction_diagnostics: ResearchAgentExtractionDiagnostics | None = None
 
     @field_validator("task_id", "worker_instance_id", "execution_key", "task_snapshot_digest", "trace_digest")
     @classmethod
@@ -221,6 +338,32 @@ class _ResearchAgentCompletionContent(_FrozenStrictContract):
             raise ValueError("EVIDENCE_ONLY requires evidence and no candidates")
         if self.termination_reason == "NO_SUPPORTED_CANDIDATE" and (self.evidence or self.candidates):
             raise ValueError("NO_SUPPORTED_CANDIDATE must not contain evidence or candidates")
+        if self.schema_version == "research-agent-completion.v1":
+            if self.role_result is not None:
+                raise ValueError("v1 completion cannot contain role_result")
+            if self.extraction_diagnostics is not None:
+                raise ValueError("v1 completion cannot contain extraction_diagnostics")
+        if self.termination_reason == "ROLE_RESULT":
+            if self.schema_version != "research-agent-completion.v2" or self.role_result is None:
+                raise ValueError("ROLE_RESULT requires v2 completion role_result")
+            if self.evidence or self.candidates:
+                raise ValueError("ROLE_RESULT must not contain evidence or candidates")
+            if self.extraction_diagnostics is not None:
+                raise ValueError("ROLE_RESULT must not contain extraction_diagnostics")
+        else:
+            if self.role_result is not None:
+                raise ValueError("role_result requires ROLE_RESULT termination")
+            if (
+                self.schema_version == "research-agent-completion.v2"
+                and self.extraction_diagnostics is None
+            ):
+                raise ValueError("v2 non-ROLE_RESULT completion requires extraction_diagnostics")
+        if self.extraction_diagnostics is not None:
+            diagnostics_bytes = _compact_json_bytes(
+                self.extraction_diagnostics.model_dump(mode="json", exclude_none=True)
+            )
+            if len(diagnostics_bytes) > _MAX_EXTRACTION_DIAGNOSTICS_BYTES:
+                raise ValueError("extraction diagnostics exceed the maximum canonical payload size")
         if self.budget_usage.evidence_cards != len(self.evidence):
             raise ValueError("budget_usage.evidence_cards must equal envelope evidence count")
         if self.budget_usage.candidates_submitted != len(self.candidates):

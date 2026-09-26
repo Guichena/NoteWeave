@@ -123,7 +123,9 @@ public class InternalServiceAuthFilter extends OncePerRequestFilter {
                 || path.equals("/internal/research-agent/permits")
                 || path.equals("/internal/research-agent/workspace-windows/search")
                 || path.equals("/internal/research-agent/external-snapshots")
-                || path.equals("/internal/research-agent/delivery-failures");
+                || path.equals("/internal/research-agent/external-snapshots/archived")
+                || path.equals("/internal/research-agent/delivery-failures")
+                || path.startsWith("/internal/research-agent/distributed-replay/");
     }
 
     private boolean isArtifactWorkerRoute(String path) {

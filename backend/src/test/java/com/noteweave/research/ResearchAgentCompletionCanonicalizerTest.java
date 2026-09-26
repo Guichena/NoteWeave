@@ -2,6 +2,7 @@ package com.noteweave.research;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.noteweave.common.BusinessException;
 import java.nio.charset.StandardCharsets;
@@ -286,6 +287,133 @@ class ResearchAgentCompletionCanonicalizerTest {
         assertInvalidEnvelope(signed);
     }
 
+    @Test
+    void shouldMatchSharedPythonExtractionDiagnosticsGoldenVector() {
+        ResearchAgentCompletionEnvelope envelope = extractionEnvelope(diagnostics());
+
+        // Shared with workers/research-worker/tests/test_ma4g_completion_contract.py.
+        assertThat(canonicalizer.digest(envelope))
+                .isEqualTo("sha256:3307022eef5d046b75c609e8dba679017cd5ddcfa670b5f5170861769821aa44");
+        String canonical = new String(canonicalizer.canonicalBytes(envelope), StandardCharsets.UTF_8);
+        assertThat(canonical).contains("\"extraction_diagnostics\"").doesNotContain("\"role_result\"");
+        assertThat(canonicalizer.validateAndVerify(envelope).digest()).isEqualTo(envelope.envelopeDigest());
+    }
+
+    @Test
+    void shouldParseExtractionDiagnosticsShapeAndRejectShapeMismatches() {
+        ResearchAgentCompletionEnvelope envelope = extractionEnvelope(diagnostics());
+        String v2Extraction = canonicalizer.canonicalJson(envelope, true);
+
+        ResearchAgentCompletionEnvelope parsed = parser.parse(v2Extraction.getBytes(StandardCharsets.UTF_8));
+        assertThat(canonicalizer.validateAndVerify(parsed).digest()).isEqualTo(envelope.envelopeDigest());
+        assertThat(parsed.extractionDiagnostics()).containsEntry("accepted_count", 0);
+
+        // The same diagnostics object must never appear inside a v1 envelope.
+        assertInvalid(v2Extraction.replace("research-agent-completion.v2", "research-agent-completion.v1"));
+
+        String v1 = canonicalizer.canonicalJson(envelope(goldenPayloadEvidence(), goldenPayloadCandidates()), true);
+        // A v2 candidate envelope without extraction_diagnostics is rejected.
+        assertInvalid(v1.replace("research-agent-completion.v1", "research-agent-completion.v2"));
+    }
+
+    @Test
+    void shouldRejectExtractionDiagnosticsInV1AndInconsistentZeroCardGates() {
+        ResearchAgentCompletionEnvelope v1WithDiagnostics =
+                envelope(goldenPayloadEvidence(), goldenPayloadCandidates()).withExtractionDiagnostics(diagnostics());
+        assertInvalidEnvelope(v1WithDiagnostics);
+
+        Map<String, Object> zeroAcceptedButAcceptedReason = diagnostics();
+        zeroAcceptedButAcceptedReason.put("termination_reason", "ACCEPTED_CARDS");
+        zeroAcceptedButAcceptedReason.put("rejected_count", 0);
+        zeroAcceptedButAcceptedReason.put("rejection_counts", Map.of());
+        zeroAcceptedButAcceptedReason.remove("rejection_samples");
+        assertInvalidEnvelope(extractionEnvelope(zeroAcceptedButAcceptedReason));
+
+        Map<String, Object> acceptedButRejectedReason = diagnostics();
+        acceptedButRejectedReason.put("accepted_count", 1);
+        assertInvalidEnvelope(extractionEnvelope(acceptedButRejectedReason));
+
+        Map<String, Object> sumMismatch = diagnostics();
+        sumMismatch.put("rejection_counts", Map.of("NON_EXACT_QUOTE", 1));
+        assertInvalidEnvelope(extractionEnvelope(sumMismatch));
+
+        Map<String, Object> unknownReason = diagnostics();
+        unknownReason.put("rejection_counts", Map.of("NOT_A_REASON", 2));
+        assertInvalidEnvelope(extractionEnvelope(unknownReason));
+
+        Map<String, Object> tooManySamples = diagnostics();
+        tooManySamples.put("rejection_samples", List.of(
+                Map.of("reason", "NON_EXACT_QUOTE", "window_id", "w0", "column_key", "c", "detail", ""),
+                Map.of("reason", "NON_EXACT_QUOTE", "window_id", "w1", "column_key", "c", "detail", ""),
+                Map.of("reason", "NON_EXACT_QUOTE", "window_id", "w2", "column_key", "c", "detail", "")));
+        assertInvalidEnvelope(extractionEnvelope(tooManySamples));
+    }
+
+    @Test
+    void shouldKeepExtractionDiagnosticsImmutableAndCanonical() {
+        Map<String, Object> diagnostics = diagnostics();
+        ResearchAgentCompletionEnvelope envelope = extractionEnvelope(diagnostics);
+        String before = canonicalizer.canonicalJson(envelope, true);
+
+        diagnostics.clear();
+
+        assertThat(envelope.extractionDiagnostics()).containsEntry("accepted_count", 0);
+        assertThat(canonicalizer.canonicalJson(envelope, true)).isEqualTo(before);
+    }
+
+    private ResearchAgentCompletionEnvelope extractionEnvelope(Map<String, Object> diagnostics) {
+        Map<String, Long> budget = new LinkedHashMap<>();
+        budget.put("llm_calls", 1L);
+        budget.put("search_calls", 1L);
+        budget.put("fetch_calls", 1L);
+        budget.put("read_calls", 1L);
+        budget.put("extract_calls", 1L);
+        budget.put("evidence_cards", 0L);
+        budget.put("candidates_submitted", 0L);
+        Map<String, Long> telemetry = new LinkedHashMap<>();
+        telemetry.put("search_hits", 2L);
+        telemetry.put("documents", 1L);
+        telemetry.put("windows", 2L);
+        ResearchAgentCompletionEnvelope unsigned = new ResearchAgentCompletionEnvelope(
+                "research-agent-completion.v2", "00000000-0000-0000-0000-000000000001", "worker-a", 2, 7,
+                "deep-cell:00000000-0000-0000-0000-000000000001:2:7",
+                "sha256:" + "1".repeat(64), "NO_SUPPORTED_CANDIDATE", budget, telemetry,
+                "sha256:" + "2".repeat(64), List.of(), List.of(), null, diagnostics, null);
+        return unsigned.withEnvelopeDigest(canonicalizer.digest(unsigned));
+    }
+
+    private Map<String, Object> diagnostics() {
+        Map<String, Object> receipt = new LinkedHashMap<>();
+        receipt.put("purpose", "research.extract");
+        receipt.put("transport", "openai-compatible");
+        receipt.put("model", "gpt-test");
+        receipt.put("call_count", 1);
+        receipt.put("response_digest", "sha256:" + "a".repeat(64));
+        receipt.put("response_chars", 1234);
+        Map<String, Object> sampleA = new LinkedHashMap<>();
+        sampleA.put("reason", "NON_EXACT_QUOTE");
+        sampleA.put("window_id", "window-a");
+        sampleA.put("column_key", "method");
+        sampleA.put("detail", "window_id=window-a column_key=method quote_len=12");
+        Map<String, Object> sampleB = new LinkedHashMap<>();
+        sampleB.put("reason", "WRONG_COLUMN");
+        sampleB.put("window_id", "window-b");
+        sampleB.put("column_key", "unknown");
+        sampleB.put("detail", "window_id=window-b column_key=unknown");
+        Map<String, Object> counts = new LinkedHashMap<>();
+        counts.put("NON_EXACT_QUOTE", 1);
+        counts.put("WRONG_COLUMN", 1);
+        Map<String, Object> diagnostics = new LinkedHashMap<>();
+        diagnostics.put("schema_version", "research-extraction-diagnostics.v1");
+        diagnostics.put("termination_reason", "ALL_CARDS_REJECTED");
+        diagnostics.put("accepted_count", 0);
+        diagnostics.put("rejected_count", 2);
+        diagnostics.put("rejection_counts", counts);
+        diagnostics.put("provider_receipt", receipt);
+        diagnostics.put("rejection_samples", List.of(sampleA, sampleB));
+        return diagnostics;
+    }
+
     private void assertInvalid(String raw) {
         assertThatThrownBy(() -> parser.parse(raw.getBytes(StandardCharsets.UTF_8)))
                 .isInstanceOf(BusinessException.class)
@@ -370,5 +498,16 @@ class ResearchAgentCompletionCanonicalizerTest {
         Map<String, Long> result = new LinkedHashMap<>();
         entries.forEach(entry -> result.put(entry.getKey(), entry.getValue()));
         return result;
+    }
+    @Test
+    void shouldRejectNestedNfcEquivalentMapKeysInsteadOfOverwriting() {
+        Map<String, Object> nested = new LinkedHashMap<>();
+        nested.put("\u00e9", "composed");
+        nested.put("e\u0301", "decomposed");
+
+        assertThatThrownBy(() -> canonicalizer.canonicalJsonValue(Map.of("nested", nested)))
+                .isInstanceOf(com.noteweave.common.BusinessException.class)
+                .extracting(error -> ((com.noteweave.common.BusinessException) error).code())
+                .isEqualTo(ResearchCanonicalJson.KEY_COLLISION_CODE);
     }
 }

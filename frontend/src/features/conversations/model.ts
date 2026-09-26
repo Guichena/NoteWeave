@@ -24,6 +24,8 @@ export type ConversationMessage = {
   reply_to_message_id: string | null;
   context_status: string | null;
   content_hash: string | null;
+  answer_status?: string | null;
+  answer_error?: string | null;
   created_at: string;
 };
 

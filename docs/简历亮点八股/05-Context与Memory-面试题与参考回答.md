@@ -1,6 +1,12 @@
 # Context Engineering 与 Memory：面试题与参考回答
 
+> 当前默认入口是[Context 与 Memory 一体化面试手册](34-Context与Memory一体化面试手册.md)。A 档先讲其中 4 分钟主回答；B 档选择 Summary Promotion、RunInputSnapshot、Memory Revision、Evidence Isolation、撤销传播或 Replay Redaction 独立展开；普通概念区分属于 C 档 30 到 90 秒速查。只有时间事实、污染、删除和并发版本问题需要继续进入二阶状态机。
+
 > 阅读说明：前面的短问答用于面试官打断时快速回应。本章末尾的“八维度母题长回答”才是默认准备材料，每题应讲 3 到 5 分钟，并主动覆盖问题来源、实现机制、失败窗口、方案取舍、验证证据和当前边界。
+
+> 证据边界：Memory 的 Signal、Candidate、Review、Revision、Control Pack、Outcome 与 Revoke 以 [Memory 机制详细设计](../Memory机制详细设计.md)为准。面试推荐将 Session、Explicit 和 Derived Memory 分流，统一裁决见[面试推荐架构与规模化演进裁决](43-面试推荐架构与规模化演进裁决.md)。Memory 与 Evidence 属于不同信任域；真实采纳、Token 收益和长期污染均为 `[生产待验证]`。
+
+> 深挖入口：[演进、完整案例、消融与 Ownership 答辩](22-Context与Memory演进案例消融与Ownership答辩.md)。
 
 ## 0. 脑图主干
 
@@ -21,7 +27,7 @@
 
 我们先引入摘要。全量摘要一致性直观但成本持续增长，滚动覆盖便宜却会累计误差并破坏历史。因此系统保存 Raw Message Ledger，用 Segment 表示连续主题，用 Summary Revision 做版本化增量压缩，同时保留连续 Raw Tail。异步摘要只有在 Segment Version 未变化时才能 Promotion，旧构建标 Stale，不覆盖新消息。
 
-长期 Memory 也比较过自动写入、全人工确认和纯向量记忆。自动写入个性化快，但会把幻觉和注入长期放大；全人工最安全，审核负担太重；纯向量相似度无法表达 Scope、有效期和确认强度。当前执行只产生 Candidate，Java Memory Runtime 做类型、范围、敏感性、重复与冲突门控，再按风险审核或晋升。Memory 使用 Revision，不原地覆盖。
+长期 Memory 也比较过自动写入、全人工确认和纯向量记忆。自动写入个性化快，但会把幻觉和注入长期放大；全人工最安全，审核负担太重；纯向量相似度无法表达 Scope、有效期和确认强度。推荐按来源分流：用户通过可信动作明确保存的低风险偏好，可在窄 Scope 校验后直接创建可撤销 Revision；模型推断、行为信号和外部内容只能形成 Derived Candidate，再由 Java Memory Runtime 做门控和审核。Memory 使用 Revision，不原地覆盖。
 
 Context Compiler 把当前问题、Raw Tail、Summary、Memory 和 Evidence 分区预算，并冻结 RunInputSnapshot。Memory 可以影响偏好和约束，但不进入 Source Recall、Citation 或 Evidence Rerank，避免系统以前生成的内容反过来自证。代价是版本、缓存和隐私删除语义更复杂，收益是长会话可连续、输入可回放、事实链不被个性化污染。
 
@@ -35,7 +41,7 @@ Context Compiler 把当前问题、Raw Tail、Summary、Memory 和 Evidence 分�
 
 Context Compiler 不等于拼字符串。它根据当前 Mode、Conversation Cutoff、活动主题和 Token Budget，选择相关 Segment Summary、近期原文、显式固定内容和长期 Memory，生成带 Section 和来源引用的 RunInputSnapshot。这样一次回答、Research 或 Artifact 都能回放当时实际看到的输入。
 
-长期 Memory 与聊天摘要分开。摘要描述“这段对话发生过什么”，Memory 保存跨任务仍有价值的偏好、规范、已确认决策和负向约束。执行结果先产生 Candidate，经过重复、冲突、范围和人工确认门禁后，才晋升为 Canonical Memory；后续修改生成新 Revision，不覆盖历史。
+长期 Memory 与聊天摘要分开。摘要描述“这段对话发生过什么”，Memory 保存跨任务仍有价值的偏好、规范、已确认决策和负向约束。显式低风险偏好可按窄 Scope 立即生效并支持撤销；执行结果和行为信号先产生 Derived Candidate，经过重复、冲突、范围和审核门禁后才晋升。后续修改生成新 Revision，不覆盖历史。
 
 最重要的边界是 Evidence Isolation。Memory 可以告诉模型用户偏好什么格式，但不能作为“某个事实正确”的来源，也不参加资料召回和 Citation 排序。事实问题仍由 Workspace 资料和检索证据回答。
 
@@ -81,7 +87,7 @@ RAG 查找外部或 Workspace 资料，用于回答事实并提供 Citation；Me
 
 ### 门控晋升怎么做？
 
-Candidate 先检查类型、Scope、来源、稳定性、重复和冲突，再进入 Review。只有明确确认或符合受控策略的内容形成 Canonical Memory。Artifact 生成可以给出 Memory Promotion Preview，但不能自行写入长期真源。
+显式与推断走两条路径。可信用户动作明确保存的低风险偏好，检查类型、Scope、敏感性、重复和冲突后可直接形成可撤销 Active Revision；模型推断和行为信号先成为 Derived Candidate，再进入 Review 或受控 Promotion。Artifact 生成只能给出 Memory Promotion Preview，不能自行写入长期真源。
 
 ### Memory 冲突怎么办？
 
@@ -225,15 +231,15 @@ Prompt Injection 是输入试图改变模型指令；Memory Poisoning 是恶意�
 
 这可以联系 MVCC 和乐观并发，但要说清楚是业务层版本可见性，不是自己实现数据库事务隔离。
 
-### 面试官问：哪些 Memory 可以自动晋升？
+### 面试官问：哪些 Memory 可以立即生效？
 
-弱推断默认 Hold，冲突 Active Memory 必须 Review。低风险且用户明确表达的负向偏好可以按策略通过，因为“不做某事”通常比“以后永久做某事”的污染风险低。等价表达先规则归一化去重，模型只能辅助判断，不能直接 Update Canonical Memory。
+通过可信用户动作明确保存、低风险、窄 Scope、可撤销且不与 Active Memory 冲突的偏好可以立即创建 Active Revision，比如“这个 Workspace 的讲义使用三级标题”。跨 Workspace 传播、安全规则、敏感信息和高风险事实必须确认。模型推断、网页内容、工具输出以及保存、导出、重试等行为信号只能形成 Derived Candidate，不能伪装成显式指令。
 
 回答重点是风险分层，不是给所有 Candidate 一个统一置信度阈值。
 
 ### 面试官问：Memory 的 Utility 是固定分数吗？
 
-不是。应用结果会反馈到 Utility：接受提高，负向结果降低并触发 Review，重复不良结果标记 Stale。更新采用平滑策略，避免一次偶然反馈让记忆从高权重瞬间归零。Utility 变化会改变 Pack Fingerprint，使缓存自然失效。
+不是。应用结果可以平滑调整 Derived Memory 的排序先验，负向结果触发 Review。Utility 低不能自动把 Canonical Memory 标成 Stale，也不能撤销 Explicit Memory；保存、导出、重试和编辑都只是弱信号。明确纠正、用户撤销、到期、来源失效或人工复核结论才推进状态。Utility 变化会改变 Pack Fingerprint，使缓存自然失效。
 
 ### 面试官问：Token 超限时为什么不能截断 Memory 文本？
 
@@ -265,9 +271,9 @@ Conversation Cursor 可以聚合同一会话的多个 Run，消息序号通过�
 
 Context Compiler 不是把所有内容拼接起来。它先放系统规则和当前问题，再选择主题相关 Summary、近期原文、显式 Pin 和 Memory Pack，Evidence 使用独立区域。Token 超限时按完整对象截断，不能把一条 Memory 从中间切断，因为否定词、Scope 或例外可能在后半段。排序看 Scope Specificity、Utility、Freshness 和 Neighborhood。
 
-长期 Memory 的写入使用 Candidate Promotion。Answer、Research 和 Artifact 只能提交 Observation 或 Promotion Preview，不能直接更新 Canonical Memory。Candidate 先做类型、来源、Scope、规则归一化、重复和冲突判断。弱推断默认 Hold，冲突 Active Memory 进入人工 Review，低风险且用户明确表达的负向偏好可以按策略通过。晋升后创建新的 Immutable Revision 和 Latest Pointer，不覆盖旧内容。
+长期 Memory 分 Explicit 和 Derived 两条写入路径。可信用户动作明确保存的低风险偏好，在类型、来源、Scope、敏感性、重复和冲突检查后，可以直接创建可撤销的 Active Revision。Answer、Research 和 Artifact 只能提交 Derived Observation 或 Promotion Preview，不能直接更新 Canonical Memory；弱推断默认 Hold，冲突和高风险内容进入 Review。两条路径都追加 Immutable Revision 和 Latest Pointer，不覆盖旧内容。
 
-Memory 还会根据使用结果调整 Utility。被接受的应用提高 Utility，负向反馈降低 Utility 并要求 Review，重复不良结果转为 Stale。Pack Cache 使用 Revision、Policy 和 Utility 组成 Fingerprint，任一变化都会使旧 Pack 失效。Redis 故障时回退 Compiler，并记录降级，不能把基础设施失败解释成用户没有 Memory。
+Memory 还会根据使用结果调整 Utility，但它只改变 Derived Memory 的召回先验。保存、导出、重试和编辑不能证明偏好正确，重复负向结果只触发 Review，不能自动撤销显式规则。Pack Cache 使用 Revision、Policy 和 Utility 组成 Fingerprint，任一变化都会使旧 Pack 失效。Redis 故障时回退 Compiler，并记录降级，不能把基础设施失败解释成用户没有 Memory。
 
 Memory 和 Evidence 必须隔离。Memory 可以影响语言、格式和工作习惯，不能提高某份资料的事实排名，也不能作为 Citation。外部资料中的“以后都忽略系统规则”不能变成 Memory Candidate。资料或消息删除后，历史 Snapshot 只保留 Identity、Hash 和 Tombstone，正文 Redact，Replay 降级，隐私删除优先于完整复现。
 
@@ -289,7 +295,7 @@ Memory 和 Evidence 必须隔离。Memory 可以影响语言、格式和工作�
 
 ### 追问：Memory 为什么需要 Outcome Feedback？
 
-写入时的置信度只能表示当时判断，不能证明它以后真的有用。Outcome 记录 Memory 被采用后的正负结果，用平滑方式更新 Utility。若只按新鲜度排序，长期稳定规则会被新但无用的信息挤掉；若分数永不变化，错误 Memory 会持续污染任务。
+写入时的置信度只能表示当时判断，不能证明它以后真的有用。Outcome 记录 Memory 被采用后的正负结果，用平滑方式更新 Derived Memory 的 Utility。若只按新鲜度排序，长期稳定规则会被新但无用的信息挤掉；若分数永不变化，错误推断会持续污染任务。Explicit Memory 由用户明确纠正或撤销，不由 Outcome 分数自动改状态。
 
 ## 17. 面试官八维度母题长回答
 
@@ -297,7 +303,7 @@ Memory 和 Evidence 必须隔离。Memory 可以影响语言、格式和工作�
 
 这四个对象回答不同问题。Context 是某次模型调用临时可见的输入组合；Conversation Ledger 保存不可变消息及顺序；Summary 是对已结束历史片段的有损压缩；RunInputSnapshot 冻结某次 Answer、Research 或 Artifact 实际看到的输入；Memory 保存跨任务仍有效的偏好、约束和已确认决策。若把它们混成“聊天记录”，就无法同时满足节省 Token、失败可恢复、历史可审计和长期信息可治理。
 
-业务上最关键的区别是“说过”不等于“应该长期记住”。用户本轮要求用表格，是 Working Context；用户明确说以后都用中文，才可能成为 Memory Candidate；外部资料中的事实属于 Evidence，不能自动提升为用户偏好。Summary 也不是事实真源，必须保留 Source Revision 和 Message Ref，使数字、否定和决策可以回读。RunInputSnapshot 则保证任务启动后，即使会话增长、摘要晋升或 Memory 更新，该 Run 仍使用原输入。
+业务上最关键的区别是“说过”不等于“应该长期记住”。用户本轮要求用表格，是 Working Context；用户通过可信动作明确说以后都用中文，可以按窄 Scope 创建可撤销的 Explicit Memory；模型从普通对话推断偏好时只能生成 Derived Candidate。外部资料中的事实属于 Evidence，不能自动提升为用户偏好。Summary 也不是事实真源，必须保留 Source Revision 和 Message Ref，使数字、否定和决策可以回读。RunInputSnapshot 则保证任务启动后，即使会话增长、摘要晋升或 Memory 更新，该 Run 仍使用原输入。
 
 拆分的代价是 Ledger、Revision、Pointer、Candidate 和 Snapshot 增加了表与状态。短对话只保留近期消息即可，少量固定设置用配置表更简单。当前项目有长会话、多种异步 Agent 和 Workspace 知识，需要回答“这次模型看见什么”“为什么记住这条”“删除后哪些副本失效”，因此需要分层。面试时应从对象的所有权、生命周期和失败语义解释，而不是只背 Working、Episodic、Semantic Memory 名词。
 
@@ -325,7 +331,7 @@ Memory 同样采用稳定对象、不可变 Revision 和 Latest Pointer。Candid
 
 第一层是来源与用途隔离。System Policy、用户消息、Workspace Memory 和外部 Evidence 放在不同区域并带来源标签。外部资料中的“忽略规则”只是被检索文本，不能成为 Memory Candidate，也不能改变工具权限。Memory 可以影响语言、格式和工作习惯，不能进入 Evidence Rerank、提高某来源的事实权重或作为 Citation。恶意文档即使进入 RAG，也不能借 Memory 跨任务持久化。
 
-第二层是 Candidate Promotion。只有允许类型和受信任信号才能候选化，记录 Actor、Source Message、Scope、置信度和规则版本。弱推断默认 Hold，与 Active Memory 冲突进入 Review；用户明确表达的低风险负向偏好可按策略通过。模型只能提交 Observation 或 Preview，不能直接更新 Canonical Memory。读取前再做 Status、Scope、有效期和冲突过滤，语义相似度不能绕过 User、Workspace 和 Target 边界。
+第二层是 Memory 写入治理。可信用户动作明确保存的低风险偏好，经过窄 Scope、敏感性、重复和冲突校验后可直接追加 Active Revision；涉及事实、权限、身份和跨 Workspace 规则时仍需确认。模型推断和行为信号记录 Actor、Source Message、Scope、置信度和规则版本，只能形成 Derived Candidate；弱推断默认 Hold，与 Active Memory 冲突进入 Review。模型只能提交 Observation 或 Preview，不能直接更新 Canonical Memory。读取前再做 Status、Scope、有效期和冲突过滤，语义相似度不能绕过 User、Workspace 和 Target 边界。
 
 第三层是删除与隐私。删除消息、资料或 Memory 后，新 Snapshot 不再选择它，Pack Cache 和派生 Summary 失效或重建。审计只保留必要的 Tombstone、Hash 和删除事件，不能以可回放为由保存正文副本，日志也不记录完整 Memory 和 Prompt。当前实现控制应用层晋升、Scope 与删除传播，不等于完整 DLP、内容分类或法规认证；严格场景还需要加密分域、保留策略、导出删除证明和独立安全评估。
 
@@ -337,7 +343,7 @@ Memory 同样采用稳定对象、不可变 Revision 和 Latest Pointer。Candid
 
 指标按编译漏斗观察。输入侧看 Ledger 增长、Segment 大小和 Token 分布；摘要侧看 Build 时长、Promotion、Stale 比例、压缩率和关键约束保留率；Memory 侧看 Candidate 来源、Hold/Review/Active 分布、冲突、删除传播、命中与负反馈；缓存侧看 Hit、Miss、Fallback、Schema/Fingerprint Mismatch；运行侧看各区域 Token、截断率、首 Token 延迟和断线重放。单看缓存命中或模型错误率无法定位根因。
 
-具体错误使用 Replay 与 Ablation：先用原 Snapshot 重放，再分别移除某条 Memory、替换为原始消息、禁用 Summary 或固定 Evidence，观察结果变化，区分摘要丢失否定、Memory 污染、检索不足或模型随机性。可以定义 Snapshot 可重放率、关键约束保留率、Stale 阻断率等 SLI，但没有线上样本就不编造准确率。当前能记录版本与降级，跨模型调用的完整 Trace 和自动根因归因仍是演进项。
+具体错误使用 Replay 与 Ablation：先用原 Snapshot 重放，再分别移除某条 Memory、替换为原始消息、禁用 Summary 或固定 Evidence，观察结果变化，区分摘要丢失否定、Memory 污染、检索不足或模型随机性。可以定义 Snapshot 可重放率、关键约束保留率、Stale 阻断率等 SLI，但没有线上样本就不编造准确率。当前能记录版本与降级；当会话长度、模型调用次数或排查成本增长时，再增加跨阶段关联和自动归因。
 
 项目现在能查看的证据来自 `RunInputSnapshotService.get()`、`MemoryCompilerService` 的编译结果与 `MemoryCompiledPackCache` 的 Hit、Miss、Invalid、Error 指标。排查时先读取固定 Snapshot，再比较 Memory Revision、Policy Version 和 State Fingerprint；若当前数据库内容不同，也不能改写历史 Run 的输入解释。`MemoryCompilerServiceTest` 能验证确定性选择，尚没有自动执行所有 Ablation 并给出根因概率的线上系统。
 
@@ -365,7 +371,7 @@ Memory 也有提取、Review、存储、缓存失效和错误污染成本。只�
 
 向量 Memory 适合 Memory 数量大、关键词不稳定且跨时间语义召回确实成为瓶颈时，但它只能做候选召回。召回后仍检查 User/Workspace Scope、Status、Revision、有效期、冲突和类型，不能让相似度成为授权。结构化偏好和明确规则继续用数据库字段更可靠。向量库还增加 Embedding 版本、删除传播、重建和成本，只有离线 Recall 与线上收益证明价值后才引入。
 
-自动晋升应按风险开放。先只做 Candidate 和人工 Review，积累误晋升、冲突与负反馈数据；再对来源明确、类型受限、可撤销的低风险偏好灰度通过；涉及事实、权限、身份或跨 Workspace 规则仍不自动化。阈值与规则版本化，旧 Memory 可追溯当时策略。错误 Memory 连续产生负结果时要降权、Stale 并触发 Review，不能只依赖固定置信分。
+自动晋升只针对 Derived Candidate，并按风险开放。Explicit Memory 来自可信用户动作，低风险、窄 Scope、可撤销且无冲突时可以直接生效；涉及事实、权限、身份或跨 Workspace 规则仍需确认。Derived 路径先积累误晋升、冲突与负反馈数据，再对来源明确、类型受限的候选灰度。阈值与规则版本化，旧 Memory 可追溯当时策略。连续负结果只能降权并触发 Review，不能仅凭 Utility 将 Canonical Memory 标成 Stale；明确纠正、撤销、到期、来源失效或复核结论才推进状态。
 
 长上下文模型可以提高 Raw Tail 和 Evidence 预算，减少摘要频率，但不会替代 RunInputSnapshot、Memory 治理和删除语义。只有实测表明全量历史在延迟、成本和质量上都优于压缩，且业务不要求稳定回放时，才简化 Summary。长期保持 Ledger 真源、输入快照、来源隔离、Scope 过滤和可删除这些不变量，Summary 模型、缓存、向量库和 Context Window 都可按数据替换。
 
@@ -383,3 +389,19 @@ Memory 也有提取、Review、存储、缓存失效和错误污染成本。只�
 | 成本 | Summary 用一次压缩换后续多次 Token 节省，Memory Pack 只选择与当前任务相关的条目 | 成本比较应计算 Summary 调用、缓存命中、后续 Prompt Token 与质量回退，不只看单次请求 | Compiler、Cache、Outcome Policy Test；尚无真实用户长期会话的盈亏平衡数据 |
 | 测试证据 | 覆盖摘要晋升冲突、Memory 版本、缓存 Key、删除回放、Scope 和确定性编译 | 相同 Snapshot 与 Policy 应得到相同输入；旧 Revision、跨 Workspace 与删除来源不得泄漏 | 对应单元和集成测试存在，尚未形成大规模人工摘要质量集 |
 | 演进边界 | `MemoryShadowRecallService.recall()` 先 Shadow 评估候选，自动晋升先记录建议和接受率 | 新召回不直接进 Prompt；保持 Ledger、Snapshot、Scope、Revision 和删除语义不变 | `MemoryRuntimeContractTest`、`Phase5MemoryContractTest`；当前没有独立向量 Memory 库 |
+
+## 当前运行时核对
+
+Memory API 位于 `/api/v2/workspaces/{workspaceId}/memory`，提供 signal、review、revision、control-pack、revoke 和 outcome。`V080` 创建 canonical runtime，`V082` 完成 compiler cutover；当前文档不能只把 `memory_object` 当唯一真源。Memory 不参与资料 Citation/Evidence Rerank，control-pack 按 chat、artifact、research scope 编译。
+
+## 19. 面试版上下游链路与技术取舍长回答
+
+Context 和 Memory 的链路要从消息真源讲起。用户消息先追加到 Conversation Ledger 并获得单调序号，旧的 Active Prefix 在达到条件后异步生成 Segment Summary，最近一段 Raw Tail 保留连续原文。用户提交 Answer、Research 或 Artifact 时，Java 主服务会把 History Head、Summary Revision、Raw Tail、Retrieval Plan、Evidence 身份和可见 Memory Pack 固定成 RunInputSnapshot。普通新消息、Summary 晋升和偏好新 Revision 不改变当前 Run，恢复时也不会因为重新读取“现在的会话”产生另一份答案；隐私删除、成员撤权、Source 安全封禁或高风险 Memory 撤销则推进输入有效性 Epoch。推荐设计在外部工具调用和最终提交前校验该 Epoch，失效后取消或转入 `INPUT_REVOKED`，不能把不可变 Snapshot 当成继续使用敏感数据的许可证。完整 Epoch 门禁仍属于目标设计。
+
+Context Compiler 负责把系统规则、当前问题、相关摘要、近期原文、显式 Pin、Memory Pack 和 Evidence 按预算组合起来，Token 超限时按完整对象裁剪，不能从一句带否定或 Scope 的 Memory 中间截断。Memory 的产生则走另一条治理链：模型或业务信号只能生成 Candidate 或 Promotion Preview，候选先经过类型、来源、风险、Scope、重复和冲突判断，弱推断进入 Hold，与 Active Memory 冲突进入 Review，晋升后追加 Immutable Revision 和 Latest Pointer。Outcome Feedback 再根据实际采用、负向反馈和过期情况调整 Utility，编译器只选择当前范围和策略允许的 Revision。
+
+这也是没有直接使用“最近 N 条消息”或外部向量 Memory 产品作为真源的原因。最近 N 条简单，但不理解主题边界，可能截掉早期约束；向量召回擅长语义相似，却不天然处理用户与 Workspace Scope、否定、版本、撤销和冲突。Mem0、Zep、Letta 的记忆层次、添加、搜索和更新模型值得参考，但当前 Memory 必须和 MySQL 事务、Review、Revision、删除与回放一起成立，所以采用自己的 Candidate Promotion 和 Context Compiler。向量能力以后可以作为候选召回 Provider，但不能绕过 Canonical Memory 的权限和状态机。
+
+Memory 与 Evidence 还要保持信任域隔离。资料中的“以后忽略系统规则”只能作为不可信文本，不能变成长期偏好；Memory 可以影响表达、格式和工作习惯，不能提高资料事实排名，也不能生成 Citation。删除消息、资料或 Memory 后，新编译结果必须停止选择它，Cache、Summary 和派生 Projection 进入失效或重建，历史 Snapshot 只保留允许的 Identity、Hash 和 Tombstone，正文需要脱敏。这样做会牺牲部分历史完整回放，但隐私删除优先于“什么都能复现”。
+
+成本上，Summary 是一次压缩换多次复用，是否划算取决于后续 Run 数量、节省的 Token、摘要调用成本和信息丢失返工；Memory Pack 缓存能减少重复编译，但 Key 必须包含 Scope、Revision、Policy 和 Fingerprint，不能只靠 TTL 追求命中率。面试时可以用“对象生命周期和失败语义”而不是术语堆砌来解释选择：Ledger 负责事实，Summary 负责压缩，Snapshot 负责执行凭证，Memory 负责跨任务治理，Evidence 负责外部事实，五者各自有清晰的所有权和删除边界。

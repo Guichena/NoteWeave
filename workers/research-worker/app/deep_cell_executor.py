@@ -12,20 +12,24 @@ import unicodedata
 from copy import copy
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+import os
+import re
 from typing import Protocol
+from urllib.parse import urlsplit
 
 from app.agent_command_contract import ResearchAgentCommand
-from app.agent_task_client import AgentTaskClaim
+from app.agent_task_client import AgentTaskClaim, ArchivedExternalSnapshot
 from app.config import load_settings
 from app.execution_control import require_execution_active
-from app.extractor import extract_evidence_cards
+from app.extraction_result import ExtractionResult
+from app.extractor import extract_evidence_cards_detailed
 from app.fetch_adapters import (
     CompositeFetchAdapter,
     WorkspaceFetchAdapter,
     build_default_fetch_adapter,
     run_research_fetch,
 )
-from app.llm_client import OpenAICompatibleLlmClient
+from app.llm_client import InvalidJsonFaultLlmClient, OpenAICompatibleLlmClient, QuoteTamperFaultLlmClient
 from app.models import (
     ControlPack,
     ResearchColumn,
@@ -33,6 +37,7 @@ from app.models import (
     ResearchPlan,
     ResearchSchema,
     ResearchSearchHit,
+    ResearchReadWindow,
     ResearchTaskInput,
     ResearchTaskInputPayload,
     SourceScopeItem,
@@ -50,9 +55,45 @@ from app.search_adapters import (
     SeedSourceSearchAdapter,
     build_web_plus_seed_search_adapter,
     build_web_search_adapter,
+    build_search_query_plan,
     run_research_search,
 )
 from app.task_snapshot_contract import ResearchAgentTaskSnapshot, require_trusted_claim_snapshot
+
+
+# Keep completion usage inside the coordinator's frozen per-cell reservation.
+# Extraction may return more cards, but the agent boundary deliberately admits
+# only the six strongest deterministic cards for a single target cell.
+MAX_EVIDENCE_CARDS_PER_CELL = 6
+
+_OFFICIAL_PRODUCT_DOMAINS: dict[str, tuple[str, ...]] = {
+    "postgresql": ("postgresql.org",),
+    "mysql": ("dev.mysql.com", "docs.oracle.com"),
+    "openai": ("platform.openai.com",),
+    "anthropic": ("docs.anthropic.com",),
+    "mongodb": ("mongodb.com",),
+    "redis": ("redis.io",),
+}
+
+_OFFICIAL_PRODUCT_QUERY_HINTS = {
+    "postgresql": "JSONB GIN jsonb_ops jsonb_path_ops operators indexing",
+    "mysql": "JSON generated column multi-valued index JSON_TABLE indexing",
+}
+_OFFICIAL_PRODUCT_SEED_URLS = {
+    "postgresql": (
+        "https://www.postgresql.org/docs/17/datatype-json.html#JSON-INDEXING",
+        "https://www.postgresql.org/docs/17/gin.html",
+    ),
+    "mysql": (
+        "https://docs.oracle.com/cd/E17952_01/mysql-8.4-en/json.html",
+        "https://docs.oracle.com/cd/E17952_01/mysql-8.4-en/create-index.html",
+    ),
+}
+
+_OFFICIAL_SOURCE_MARKERS = (
+    "official", "documentation", "docs", "primary source",
+    "官方", "官方文档", "一手资料", "原始文档",
+)
 
 
 class PermitClient(Protocol):
@@ -76,7 +117,7 @@ class DeepCellToolchain(Protocol):
     def read(self, task_input: ResearchTaskInput, plan: ResearchPlan, documents: list[object], *, allow_external: bool) -> list[object]:
         ...
 
-    def extract(self, task_input: ResearchTaskInput, plan: ResearchPlan, windows: list[object], *, llm_client: object | None) -> list[object]:
+    def extract(self, task_input: ResearchTaskInput, plan: ResearchPlan, windows: list[object], *, llm_client: object | None) -> ExtractionResult:
         ...
 
 
@@ -102,8 +143,8 @@ class ExistingResearchToolchain:
         adapter = build_default_read_adapter() if allow_external else CompositeReadAdapter([WorkspaceReadAdapter()])
         return list(run_research_read(task_input, plan, fetched_documents=list(documents), adapter=adapter))
 
-    def extract(self, task_input: ResearchTaskInput, plan: ResearchPlan, windows: list[object], *, llm_client: object | None) -> list[object]:
-        return list(extract_evidence_cards(task_input, plan, list(windows), llm_client=llm_client))
+    def extract(self, task_input: ResearchTaskInput, plan: ResearchPlan, windows: list[object], *, llm_client: object | None) -> ExtractionResult:
+        return extract_evidence_cards_detailed(task_input, plan, list(windows), llm_client=llm_client)
 
 
 class DeepCellExecutor:
@@ -131,6 +172,16 @@ class DeepCellExecutor:
         )
         excluded_source_ids = snapshot.source_policy.get("excluded_source_ids")
         repair_reason_digest = snapshot.query_policy.get("repair_reason_digest")
+        web_only_repair = (
+            snapshot.source_policy.get("retrieval_mode") == "WEB_ONLY"
+            and snapshot.source_policy.get("allow_external_search") is True
+            and snapshot.source_policy.get("allow_external_fetch") is True
+        )
+        authoritative_repair_exclusions = (
+            isinstance(excluded_source_ids, list)
+            and all(isinstance(source_id, str) and bool(source_id.strip()) for source_id in excluded_source_ids)
+            and (bool(excluded_source_ids) or web_only_repair)
+        )
         counterfactual_repair = (
             snapshot.role == "COUNTERFACTUAL"
             and snapshot.schema_version in {"research-agent-task-snapshot.v2", "research-agent-task-snapshot.v3"}
@@ -140,18 +191,17 @@ class DeepCellExecutor:
             and snapshot.quorum_group_key is None
             and snapshot.branch_id == "branch-counterfactual"
             and snapshot.logical_task_key is not None
-            and snapshot.logical_task_key.startswith("counterfactual:")
+            and snapshot.logical_task_key.startswith(("counterfactual:", "conflict-counterfactual:"))
             and isinstance(repair_reason_digest, str)
             and bool(repair_reason_digest.strip())
-            and isinstance(excluded_source_ids, list)
-            and bool(excluded_source_ids)
-            and all(isinstance(source_id, str) and bool(source_id.strip()) for source_id in excluded_source_ids)
+            and authoritative_repair_exclusions
         )
         if snapshot.role != "DEEP_CELL" and not counterfactual_slot and not counterfactual_repair:
             raise ValueError(
                 "atomic DeepCellExecutor requires DEEP_CELL or an authoritative counterfactual quorum/repair task"
             )
         task_input, plan, allow_external = _build_task_scope(snapshot)
+        plan = _scope_search_plan_to_domains(snapshot, plan)
         context = self.role_factory.create(snapshot.role, _execution_key(claim))
         def require_active() -> None:
             context.cancel_token.require_active()
@@ -159,48 +209,81 @@ class DeepCellExecutor:
 
         llm_client = _build_execution_llm(require_active, context.profile) if self.enable_llm else None
 
+        # Recovery inventory must be consulted before any provider permit. A prior lease may
+        # already have spent the single search/fetch/read rounds reserved for this task.
+        reused = _recoverable_external_windows(snapshot, self.permit_client)
+        reuse_focus = _reuse_read_focus(snapshot)
         require_active()
-        context.toolbox.require("search")
-        self.permit_client.require_permit(snapshot, "search")
-        require_active()
-        hits = self.toolchain.search(task_input, plan, allow_external=allow_external)
-        workspace_hits = _search_workspace_windows(snapshot, task_input, plan, self.permit_client)
-        if workspace_hits:
-            hits = workspace_hits + [hit for hit in hits if getattr(hit, "adapter", "") != "workspace"]
-            hits = [
-                hit.model_copy(update={"rank": index}) if hasattr(hit, "model_copy") else hit
-                for index, hit in enumerate(hits[:int(plan.stop_contract.get("global_search_limit", 8))], start=1)
-            ]
-        context.usage.add("search_calls")
 
-        require_active()
-        context.toolbox.require("fetch")
-        self.permit_client.require_permit(snapshot, "fetch")
-        require_active()
-        documents = self.toolchain.fetch(task_input, plan, hits, allow_external=allow_external)
-        context.usage.add("fetch_calls")
+        if not reused:
+            context.toolbox.require("search")
+            self.permit_client.require_permit(snapshot, "search")
+            require_active()
+            hits = self.toolchain.search(task_input, plan, allow_external=allow_external)
+            hits = _prepend_explicit_allowed_urls(snapshot, plan, hits)
+            hits = _filter_external_hits_by_domain(snapshot, hits, plan)
+            hits = _interleave_hits_by_domain(hits)
+            workspace_hits = _search_workspace_windows(snapshot, task_input, plan, self.permit_client)
+            if workspace_hits:
+                hits = workspace_hits + [hit for hit in hits if getattr(hit, "adapter", "") != "workspace"]
+                hits = [
+                    hit.model_copy(update={"rank": index}) if hasattr(hit, "model_copy") else hit
+                    for index, hit in enumerate(hits[:int(plan.stop_contract.get("global_search_limit", 8))], start=1)
+                ]
+            context.usage.add("search_calls")
 
-        require_active()
-        context.toolbox.require("read")
-        self.permit_client.require_permit(snapshot, "read")
-        require_active()
-        windows = self.toolchain.read(task_input, plan, documents, allow_external=allow_external)
-        context.usage.add("read_calls")
+            require_active()
+            context.toolbox.require("fetch")
+            self.permit_client.require_permit(snapshot, "fetch")
+            require_active()
+            documents = self.toolchain.fetch(task_input, plan, hits, allow_external=allow_external)
+            context.usage.add("fetch_calls")
+
+            require_active()
+            context.toolbox.require("read")
+            self.permit_client.require_permit(snapshot, "read")
+            require_active()
+            windows = self.toolchain.read(task_input, plan, documents, allow_external=allow_external)
+            context.usage.add("read_calls")
+            reused_count = 0
+        else:
+            # Once this task owns an archived external snapshot, recovery is replay-only.
+            # It performs no new search/fetch/read and therefore consumes no second provider
+            # round or grant; extraction resumes from the immutable archived state.
+            hits: list[object] = []
+            documents: list[object] = []
+            windows = [_recovered_window(snapshot, item, reuse_focus) for item in reused]
+            reused_count = len(windows)
 
         require_active()
         windows, archived_external_windows = _archive_external_windows(snapshot, windows, self.permit_client)
+
+        # Explicit local-eval crash point: all external content is already in the
+        # server-owned archive, while extraction and completion have not started.
+        # os._exit deliberately bypasses finally/consumer commit to exercise real
+        # Kafka redelivery, lease reclaim, archive reuse and execution fencing.
+        _maybe_crash_after_archive(
+            archived_external_windows,
+            enabled=(
+                archived_external_windows > 0
+                and load_settings().research_agent_fault_crash_after_archive
+            ),
+        )
 
         require_active()
         context.toolbox.require("extract")
         self.permit_client.require_permit(snapshot, "extract")
         require_active()
-        cards = self.toolchain.extract(task_input, plan, windows, llm_client=llm_client)
+        extraction = self.toolchain.extract(task_input, plan, windows, llm_client=llm_client)
+        cards = list(extraction.accepted_cards)
         context.usage.add("extract_calls")
         require_active()
 
-        trusted_evidence = _trusted_evidence_payload(snapshot, cards, windows)
+        trusted_evidence = _trusted_evidence_payload(snapshot, cards, windows)[:MAX_EVIDENCE_CARDS_PER_CELL]
         candidates = _candidate_payload(snapshot, cards, trusted_evidence)
         termination = "CANDIDATES_PROPOSED" if candidates else "EVIDENCE_ONLY" if trusted_evidence else "NO_SUPPORTED_CANDIDATE"
+        # DR-102: keep the reproducibility-safe extraction outcome in the trace
+        # digest (reason codes and counts only, never the model response text).
         trace = {
             "schema_version": "research-agent-deep-cell-trace.v1",
             "task_id": snapshot.task_id,
@@ -212,9 +295,15 @@ class DeepCellExecutor:
                 "documents": len(documents),
                 "windows": len(windows),
                 "extracted_cards": len(cards),
+                "rejected_cards": extraction.rejected_count,
                 "trusted_evidence": len(trusted_evidence),
                 "external_archived_windows": archived_external_windows,
+                "reused_external_windows": reused_count,
                 "candidates": len(candidates),
+            },
+            "extraction": {
+                "termination_reason": extraction.termination_reason.value,
+                "rejection_counts": extraction.rejection_counts(),
             },
             "termination": termination,
         }
@@ -228,7 +317,7 @@ class DeepCellExecutor:
         }
         budget_usage["llm_calls"] = _llm_provider_call_count(llm_client)
         return build_completion_envelope({
-            "schema_version": "research-agent-completion.v1",
+            "schema_version": "research-agent-completion.v2",
             "task_id": claim.agent_task_id,
             "worker_instance_id": self.worker_instance_id,
             "lease_epoch": claim.lease_epoch,
@@ -241,6 +330,7 @@ class DeepCellExecutor:
             "trace_digest": canonical_json_digest(trace),
             "evidence": trusted_evidence,
             "candidates": candidates,
+            "extraction_diagnostics": extraction.diagnostics(),
         })
 def _build_task_scope(snapshot: ResearchAgentTaskSnapshot) -> tuple[ResearchTaskInput, ResearchPlan, bool]:
     raw_query = snapshot.query_policy.get("query")
@@ -272,6 +362,14 @@ def _build_task_scope(snapshot: ResearchAgentTaskSnapshot) -> tuple[ResearchTask
             raise ValueError("DEEP_CELL target cell is outside the snapshot entity scope")
         if column not in {item.key for item in columns}:
             columns.append(ResearchColumn(key=column, label=column, required=True))
+    entity_label = str(snapshot.query_policy.get("entity_label") or "").strip()
+    scoped_query = raw_query.strip()
+    if entity_label:
+        scoped_query = (
+            f"{scoped_query}\n\nCurrent Table-as-State entity: {entity_label}. "
+            "Extract claims and evidence only for this entity; do not use another compared entity's "
+            "evidence to fill this entity's cells."
+        )
     task_input = ResearchTaskInput(
         task_id=snapshot.task_id,
         workspace_id=snapshot.workspace_id,
@@ -284,7 +382,7 @@ def _build_task_scope(snapshot: ResearchAgentTaskSnapshot) -> tuple[ResearchTask
             evidence_policy=["server-snapshot-only"],
         ),
         input_payload=ResearchTaskInputPayload(
-            question=raw_query.strip(),
+            question=scoped_query,
             profile_key="RESEARCH_AGENT",
             research_intent=(
                 ResearchIntent.model_validate(snapshot.research_intent)
@@ -304,6 +402,195 @@ def _build_task_scope(snapshot: ResearchAgentTaskSnapshot) -> tuple[ResearchTask
     return task_input, plan, allow_external
 
 
+def _maybe_crash_after_archive(
+    archived_external_windows: int, *, enabled: bool, exit_fn=None
+) -> None:
+    if not enabled or archived_external_windows <= 0:
+        return
+    (exit_fn or os._exit)(86)
+
+
+def _filter_external_hits_by_domain(
+    snapshot: ResearchAgentTaskSnapshot, hits: list[object], plan: ResearchPlan | None = None
+) -> list[object]:
+    allowed = _effective_allowed_external_domains(snapshot, plan)
+    if not allowed:
+        return list(hits)
+    filtered: list[object] = []
+    for hit in hits:
+        if str(getattr(hit, "adapter", "")) == "workspace":
+            filtered.append(hit)
+            continue
+        host = str(getattr(hit, "source_domain", "") or "").strip().lower().rstrip(".")
+        if not host:
+            host = (urlsplit(str(getattr(hit, "url", "") or "")).hostname or "").lower().rstrip(".")
+        if any(host == domain or host.endswith("." + domain) for domain in allowed):
+            filtered.append(hit)
+    return filtered
+
+
+def _interleave_hits_by_domain(hits: list[object]) -> list[object]:
+    """Keep one publisher from monopolizing the bounded fetch/read context."""
+    workspace_hits = [hit for hit in hits if str(getattr(hit, "adapter", "")) == "workspace"]
+    buckets: dict[str, list[object]] = {}
+    domain_order: list[str] = []
+    for hit in hits:
+        if str(getattr(hit, "adapter", "")) == "workspace":
+            continue
+        domain = str(getattr(hit, "source_domain", "") or "").strip().lower().rstrip(".")
+        if not domain:
+            domain = (urlsplit(str(getattr(hit, "url", "") or "")).hostname or "").lower().rstrip(".")
+        key = domain or "unknown"
+        if key not in buckets:
+            buckets[key] = []
+            domain_order.append(key)
+        buckets[key].append(hit)
+    interleaved: list[object] = []
+    while any(buckets.values()):
+        for domain in domain_order:
+            if buckets[domain]:
+                interleaved.append(buckets[domain].pop(0))
+    combined = [*workspace_hits, *interleaved]
+    return [
+        hit.model_copy(update={"rank": index}) if hasattr(hit, "model_copy") else hit
+        for index, hit in enumerate(combined, start=1)
+    ]
+
+
+def _prepend_explicit_allowed_urls(
+    snapshot: ResearchAgentTaskSnapshot, plan: ResearchPlan, hits: list[object]
+) -> list[object]:
+    allowed = _effective_allowed_external_domains(snapshot, plan)
+    if not allowed:
+        return list(hits)
+    explicit: list[ResearchSearchHit] = []
+    seen = {str(getattr(hit, "url", "")) for hit in hits}
+    raw_urls = list(re.findall(r"https?://[^\s)'\"]+", plan.normalized_question))
+    entity_label = str(snapshot.query_policy.get("entity_label") or "").casefold()
+    for product, urls in _OFFICIAL_PRODUCT_SEED_URLS.items():
+        if product in entity_label:
+            raw_urls.extend(urls)
+    for raw_url in raw_urls:
+        url = raw_url.rstrip(".,;:]")
+        host = (urlsplit(url).hostname or "").lower().rstrip(".")
+        if not any(host == domain or host.endswith("." + domain) for domain in allowed) or url in seen:
+            continue
+        seen.add(url)
+        digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:24]
+        explicit.append(ResearchSearchHit(
+            hit_id=f"explicit-url-{digest}", source_id=f"web-{digest}",
+            source_title=host, query=plan.normalized_question, rank=len(explicit) + 1,
+            snippet="Authoritative primary-source URL", confidence_score=1.0,
+            retrieval_reason="explicit or entity-scoped official URL", search_angle="source_scoped",
+            matched_fields=["url"], coverage_score=1.0, url=url,
+            provider="user_supplied", adapter="external_url", source_domain=host,
+            source_quality="PRIMARY", source_quality_score=1.0,
+        ))
+    combined = [*explicit, *hits]
+    return [
+        hit.model_copy(update={"rank": index}) if hasattr(hit, "model_copy") else hit
+        for index, hit in enumerate(combined, start=1)
+    ]
+
+
+def _scope_search_plan_to_domains(
+    snapshot: ResearchAgentTaskSnapshot, plan: ResearchPlan
+) -> ResearchPlan:
+    domains = sorted(_effective_allowed_external_domains(snapshot, plan))
+    if not domains:
+        return plan
+    base_queries = list(plan.query_set) or [plan.normalized_question]
+    scoped = [
+        f"{_domain_focused_query(query, domain)} site:{domain}"
+        for query in base_queries
+        for domain in domains
+    ]
+    stop_contract = dict(plan.stop_contract)
+    execution_profile = dict(stop_contract.get("execution_profile", {}))
+    execution_profile["search_query_budget"] = max(
+        len(domains), int(execution_profile.get("search_query_budget", 4))
+    )
+    family_budgets = dict(execution_profile.get("query_family_budgets", {}))
+    for family in (
+        "direct", "intent", "deliverable", "time_range", "constraints",
+        "deep_focus", "triangulation", "source_scoped",
+    ):
+        family_budgets[family] = max(len(domains), int(family_budgets.get(family, 0)))
+    execution_profile["query_family_budgets"] = family_budgets
+    stop_contract["execution_profile"] = execution_profile
+    return plan.model_copy(update={"query_set": scoped, "stop_contract": stop_contract})
+
+
+def _effective_allowed_external_domains(
+    snapshot: ResearchAgentTaskSnapshot, plan: ResearchPlan | None = None
+) -> set[str]:
+    raw = snapshot.source_policy.get("allowed_external_domains")
+    explicit = {
+        str(value).strip().lower().rstrip(".")
+        for value in raw
+        if isinstance(value, str) and value.strip()
+    } if isinstance(raw, list) else set()
+    if explicit:
+        return explicit
+
+    query = str(snapshot.query_policy.get("query") or "")
+    entity_label = str(snapshot.query_policy.get("entity_label") or "").casefold()
+    intent = snapshot.research_intent if isinstance(snapshot.research_intent, dict) else {}
+    intent_text = " ".join([
+        str(intent.get("research_goal") or ""),
+        " ".join(str(item) for item in intent.get("constraints", []) if str(item).strip()),
+    ])
+    haystack = f"{query} {intent_text}".casefold()
+    if not any(marker.casefold() in haystack for marker in _OFFICIAL_SOURCE_MARKERS):
+        return set()
+    inferred: set[str] = set()
+    if entity_label:
+        for product, domains in _OFFICIAL_PRODUCT_DOMAINS.items():
+            if product in entity_label:
+                inferred.update(domains)
+        if inferred:
+            return inferred
+    for product, domains in _OFFICIAL_PRODUCT_DOMAINS.items():
+        if product in haystack:
+            inferred.update(domains)
+    return inferred
+
+
+def _domain_focused_query(query: str, domain: str) -> str:
+    """Prefer the comparison clause naming the allowlisted publisher."""
+    labels = {
+        part for part in domain.casefold().split(".")
+        if part and part not in {"com", "org", "net", "www", "docs", "platform"}
+    }
+    clauses = [
+        clause.strip(" ,")
+        for clause in re.split(r"\s+(?:and|versus|vs\.?)\s+|[;；]", query, flags=re.IGNORECASE)
+        if clause.strip(" ,")
+    ]
+    matches = [clause for clause in clauses if any(label in clause.casefold() for label in labels)]
+    if matches:
+        focused = max(matches, key=len)
+        return focused if "official documentation" in focused.casefold() else f"{focused} official documentation"
+    product = next((name for name, domains in _OFFICIAL_PRODUCT_DOMAINS.items() if domain in domains), "")
+    if not product or product not in query.casefold():
+        return query
+    version_match = re.search(rf"\b{re.escape(product)}\s+([0-9]+(?:\.[0-9]+)*)", query, re.IGNORECASE)
+    technical_terms = list(dict.fromkeys(re.findall(
+        r"\b(?:JSON_TABLE|JSONB?|GIN|GiST|BTREE|multi-valued|generated columns?)\b",
+        query,
+        re.IGNORECASE,
+    )))
+    version = version_match.group(1) if version_match else ""
+    focus = " ".join([
+        product,
+        version,
+        *technical_terms,
+        _OFFICIAL_PRODUCT_QUERY_HINTS.get(product, "index query"),
+        "official documentation",
+    ])
+    return " ".join(focus.split())
+
+
 def _search_workspace_windows(
     snapshot: ResearchAgentTaskSnapshot,
     task_input: ResearchTaskInput,
@@ -316,7 +603,9 @@ def _search_workspace_windows(
     if not callable(search):
         return []
     limit = max(1, min(16, int(plan.stop_contract.get("global_search_limit", 8))))
-    raw_hits = search(snapshot, queries=list(plan.query_set or [plan.normalized_question]), limit=limit)
+    query_plan = build_search_query_plan(plan, remaining_budget=8)
+    queries = [item.query for item in query_plan[:8]] or [plan.normalized_question]
+    raw_hits = search(snapshot, queries=queries, limit=limit)
     scope = {(source.source_id, source.source_snapshot_id) for source in task_input.source_scope}
     result: list[ResearchSearchHit] = []
     for raw in raw_hits:
@@ -354,6 +643,10 @@ def _search_workspace_windows(
 
 def _build_execution_llm(cancellation_checker, profile: RoleProfile):
     settings = load_settings()
+    if settings.research_agent_fault_invalid_json:
+        client = InvalidJsonFaultLlmClient()
+        client.set_cancellation_checker(cancellation_checker)
+        return client
     if not settings.llm_api_key.strip() or not settings.llm_model.strip():
         return None
     purpose_options = {
@@ -373,12 +666,85 @@ def _build_execution_llm(cancellation_checker, profile: RoleProfile):
         output_cost_per_million=settings.llm_output_cost_per_million, purpose_options=purpose_options,
         max_input_chars=settings.llm_max_input_chars, context_safety_buffer_chars=settings.llm_context_safety_buffer_chars,
     )
+    if settings.research_agent_fault_tamper_quote:
+        client = QuoteTamperFaultLlmClient(client)
     client.set_cancellation_checker(cancellation_checker)
     return client
 
 
 def _execution_key(claim: AgentTaskClaim) -> str:
     return f"deep-cell:{claim.agent_task_id}:{claim.lease_epoch}:{claim.fencing_token}"
+
+
+def _recoverable_external_windows(
+    snapshot: ResearchAgentTaskSnapshot, permit_client: PermitClient
+) -> list[ArchivedExternalSnapshot]:
+    """Ask the server for the external pages this task already archived before re-fetching them.
+
+    The inventory is an optional permit-client capability: deployments without the recovery
+    endpoint keep paying for a full re-fetch instead of silently claiming reuse they cannot
+    prove. An empty archive is indistinguishable from "nothing was saved yet", so the normal
+    first-execution path never changes shape.
+    """
+    inventory = getattr(permit_client, "archived_external_snapshot_inventory", None)
+    if not callable(inventory):
+        return []
+    rows = inventory(snapshot)
+    if not isinstance(rows, list):
+        raise ValueError("external archive inventory must be a list")
+    return [
+        row for row in rows
+        if isinstance(row, ArchivedExternalSnapshot)
+        and str(row.source_url).strip()
+        and str(row.content_text).strip()
+        and str(row.snapshot_key).strip()
+    ]
+
+
+def _reuse_read_focus(snapshot: ResearchAgentTaskSnapshot) -> str:
+    """Derive a deterministic, non-empty read focus for a recovered window.
+
+    Recovered provenance must be reproducible: it is re-derived from the frozen task snapshot
+    (column targets only) instead of being invented per execution, so two workers recovering
+    the same task reach byte-identical evidence keys.
+    """
+    columns = sorted({
+        target.cell_id.partition(":")[2].strip()
+        for target in snapshot.target_cells
+        if target.cell_id.partition(":")[2].strip()
+    }) or ["recovery"]
+    return "archive-reuse:" + "/".join(columns)[:120]
+
+
+def _recovered_window(
+    snapshot: ResearchAgentTaskSnapshot, item: ArchivedExternalSnapshot, focus: str
+) -> ResearchReadWindow:
+    """Rebuild the read window from the server-owned archive instead of paying for it again."""
+    content = str(item.content_text)
+    query = str(snapshot.query_policy.get("query", "")).strip()
+    return ResearchReadWindow(
+        window_id=str(item.window_id),
+        hit_id="archive-reuse:" + str(item.window_id),
+        source_id=str(item.source_id),
+        source_title=str(item.source_title),
+        query=query or "archive reuse",
+        read_focus=focus,
+        window_text=content,
+        retention_reason="recovered from this task's server-archived external snapshot",
+        token_estimate=max(1, len(content) // 4),
+        url=str(item.source_url),
+        provider=str(item.provider),
+        adapter=str(item.adapter),
+        snapshot_status="EXTERNAL_ARCHIVED",
+        snapshot_key=str(item.snapshot_key),
+        fetch_status="ARCHIVE_REUSE",
+        fetch_method="ARCHIVE_REUSE",
+        content_origin="EXTERNAL_TEXT",
+        content_type_label="EXTERNAL_TEXT",
+        transport_chain=["archive-reuse"],
+        transport_resolution=str(item.provider),
+        snapshot_archive_ready=True,
+    )
 
 
 def _archive_external_windows(
@@ -415,7 +781,7 @@ def _archive_external_windows(
 def _external_archive_candidate(window: object) -> bool:
     return bool(
         getattr(window, "adapter", "") == "external_url"
-        and getattr(window, "snapshot_status", "") != "WORKSPACE"
+        and getattr(window, "snapshot_status", "") not in {"WORKSPACE", "EXTERNAL_ARCHIVED"}
         and bool(getattr(window, "snapshot_archive_ready", False))
         and str(getattr(window, "window_id", "")).strip()
         and str(getattr(window, "source_id", "")).strip()
@@ -497,7 +863,13 @@ def _candidate_payload(snapshot: ResearchAgentTaskSnapshot, cards: list[object],
         value, group = sorted(
             by_cell[cell_id], key=lambda item: (-int(item[1]["confidence_ppm"]), item[0])
         )[0]
-        candidate_evidence = sorted(str(item) for item in group["evidence_keys"])  # type: ignore[union-attr]
+        # A canonical candidate may only bind evidence whose claim_text is exactly
+        # the selected candidate value. Other Evidence from the same Cell remains
+        # available to conflict detection, but binding it here makes Java's
+        # qualification gate correctly reject the candidate as a claim mismatch.
+        candidate_evidence = sorted(
+            {str(item) for item in group["evidence_keys"]}  # type: ignore[union-attr]
+        )
         stable = _stable_hex(snapshot.task_id, str(snapshot.lease_epoch), str(snapshot.fencing_token),
                              cell_id, str(targets[cell_id]), value, *candidate_evidence)
         proposals.append({

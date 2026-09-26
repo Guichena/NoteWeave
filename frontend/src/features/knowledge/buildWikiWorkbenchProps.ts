@@ -11,10 +11,6 @@ export function buildWikiWorkbenchProps(
   workspace: Workspace | null,
   isBusy: boolean
 ) {
-  if (!wiki.wikiHome) {
-    return null;
-  }
-
   return {
     isBusy,
     workspace,
@@ -40,6 +36,7 @@ export function buildWikiWorkbenchProps(
       filteredWikiIssues: wiki.filteredWikiIssues
     },
     actions: {
+      refreshWikiFromServer: wiki.refreshWikiFromServer,
       openWikiIndex: wiki.openWikiIndex,
       selectWikiPage: wiki.selectWikiPage,
       createWikiPage: wiki.createWikiPage,

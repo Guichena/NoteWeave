@@ -5,7 +5,7 @@ import { useWorkbenchNavigation } from "./features/shell/useWorkbenchNavigation"
 import { type AppView, parseAppLocation } from "./features/shell/viewRoute";
 import { useWorkspaceSession } from "./features/workspace/useWorkspaceSession";
 import { WorkspaceSettingsPanel } from "./features/workspace/WorkspaceSettingsPanel";
-import { type SourceAsset } from "./features/sources/model";
+import { isSourceReady, type SourceAsset } from "./features/sources/model";
 import { useChatSessionController } from "./features/conversations/useChatSessionController";
 import { buildChatWorkbenchProps } from "./features/conversations/buildChatWorkbenchProps";
 import { useWikiWorkbenchController } from "./features/knowledge/useWikiWorkbenchController";
@@ -13,6 +13,7 @@ import { buildWikiWorkbenchProps } from "./features/knowledge/buildWikiWorkbench
 import { useResearchWorkbenchController } from "./features/research/useResearchWorkbenchController";
 import { buildResearchWorkbenchProps } from "./features/research/buildResearchWorkbenchProps";
 import { useExecutionRegistry } from "./features/executions/useExecutionRegistry";
+import { isExecutionTerminal } from "./features/executions/api";
 import { buildTaskWaitPresentation } from "./features/executions/taskPresentation";
 import { useArtifactWorkspace } from "./features/artifacts/useArtifactWorkspace";
 import { useArtifactStudioCatalog } from "./features/artifacts/useArtifactStudioCatalog";
@@ -23,6 +24,9 @@ import {
   ARTIFACT_STUDIO_SKILL_ORDER
 } from "./features/artifacts/skillCatalog";
 import { type Message } from "./features/answers/messageTypes";
+import { ChunkLoadBoundary } from "./ChunkLoadBoundary";
+import { buildSourceLibraryWorkbenchProps } from "./features/sources/buildSourceLibraryWorkbenchProps";
+import { sourcesApi } from "./features/sources/api";
 
 const LazyChatWorkbench = lazy(() =>
   import("./features/conversations/ChatWorkbench").then((m) => ({ default: m.ChatWorkbench }))
@@ -35,6 +39,9 @@ const LazyResearchWorkbenchView = lazy(() =>
 );
 const LazyMemoryReviewWorkbench = lazy(() =>
   import("./features/memory/MemoryReviewWorkbench").then((m) => ({ default: m.MemoryReviewWorkbench }))
+);
+const LazySourceLibraryWorkbench = lazy(() =>
+  import("./features/sources/SourceLibraryWorkbench").then((m) => ({ default: m.SourceLibraryWorkbench }))
 );
 
 function ViewFallback({ label }: { label: string }) {
@@ -74,21 +81,17 @@ export function App() {
   const [sources, setSources] = useState<SourceAsset[]>([]);
   const [latestTaskId, setLatestTaskId] = useState("");
   const [latestResearchTaskId, setLatestResearchTaskId] = useState("");
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "assistant",
-      content: "先创建工作台并上传一段资料，然后就可以在同一个聊天框里切换问答、Note、Wiki 三种链路。"
-    }
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
 
   const scopeResetRef = useRef({
     resetResearch: () => undefined as void,
-    clearWiki: async () => undefined as void,
+    clearWiki: () => undefined as void,
     clearArtifact: () => undefined as void,
     clearQaScope: () => undefined as void,
     clearResearchScope: () => undefined as void
   });
   const researchHydratedRef = useRef(false);
+  const sourceParseSyncKeysRef = useRef(new Set<string>());
 
   const appendSystemMessage = useCallback((content: string) => {
     setMessages((current) => [...current, { role: "system", content }]);
@@ -116,16 +119,28 @@ export function App() {
       setLatestTaskId("");
       setLatestResearchTaskId("");
       scopeResetRef.current.clearArtifact();
-      void scopeResetRef.current.clearWiki();
+      scopeResetRef.current.clearWiki();
     }
   });
 
-  const { getExecution, loadExecution } = useExecutionRegistry(workspace?.workspace_id ?? "");
+  const {
+    records: executionRecords,
+    trackedTaskIds,
+    getExecution,
+    loadExecution
+  } = useExecutionRegistry(workspace?.workspace_id ?? "");
   const latestTaskExecution = getExecution(latestTaskId);
   const latestTask = latestTaskExecution?.task ?? null;
   const taskEvents = latestTaskExecution?.events ?? [];
+  const terminalSourceParseTasks = trackedTaskIds
+    .map((taskId) => executionRecords[taskId]?.task)
+    .filter((task) => task?.task_type === "SOURCE_PARSE" && isExecutionTerminal(task.task_status));
+  const terminalSourceParseKey = terminalSourceParseTasks
+    .map((task) => `${task.task_id}:${task.task_status}`)
+    .sort()
+    .join("|");
   // Only active view builds heavy props (avoids fake useMemo on unstable controller objects).
-  const taskPresentation = view === "chat"
+  const taskPresentation = view === "chat" || view === "library"
     ? buildTaskWaitPresentation(latestTask, taskEvents)
     : null;
 
@@ -140,9 +155,52 @@ export function App() {
     appendSystemMessage
   });
 
+  useEffect(() => {
+    sourceParseSyncKeysRef.current.clear();
+  }, [workspace?.workspace_id]);
+
+  useEffect(() => {
+    if (!workspace || !terminalSourceParseKey) return;
+
+    const syncKeys = terminalSourceParseTasks.map(
+      (task) => `${workspace.workspace_id}:${task.task_id}:${task.task_status}`
+    );
+    if (syncKeys.every((key) => sourceParseSyncKeysRef.current.has(key))) return;
+    syncKeys.forEach((key) => sourceParseSyncKeysRef.current.add(key));
+
+    let active = true;
+    let retryTimer = 0;
+    const refreshParsedSources = async () => {
+      try {
+        const nextSources = await sourcesApi.list(workspace.workspace_id);
+        if (!active) return;
+        setSources(nextSources);
+        await wiki.refreshWikiHome();
+      } catch (error) {
+        if (active && !isAbortError(error)) {
+          setStatus(error instanceof Error ? error.message : "资料处理状态刷新失败");
+        }
+      }
+    };
+    void refreshParsedSources();
+    retryTimer = window.setTimeout(() => {
+      void refreshParsedSources();
+    }, 1_500);
+    return () => {
+      active = false;
+      window.clearTimeout(retryTimer);
+    };
+  }, [
+    workspace?.workspace_id,
+    terminalSourceParseKey,
+    wiki.refreshWikiHome,
+    setStatus
+  ]);
+
   const chat = useChatSessionController({
     workspace,
     conversation,
+    statusActive: view === "chat",
     run,
     setStatus,
     sources,
@@ -162,6 +220,7 @@ export function App() {
   const research = useResearchWorkbenchController({
     workspace,
     sources,
+    replaceSources: setSources,
     setView,
     run,
     setStatus,
@@ -184,8 +243,12 @@ export function App() {
       return;
     }
     researchHydratedRef.current = true;
-    void loadResearchHistory();
-  }, [view, workspace?.workspace_id, loadResearchHistory]);
+    void loadResearchHistory().catch((error) => {
+      if (!isAbortError(error)) {
+        setStatus(error instanceof Error ? error.message : "Research 工作台加载失败");
+      }
+    });
+  }, [view, workspace?.workspace_id, loadResearchHistory, setStatus]);
 
   const artifactWorkspace = useArtifactWorkspace({
     workspaceId: workspace?.workspace_id ?? "",
@@ -195,6 +258,8 @@ export function App() {
     replaceSources: setSources
   });
 
+  const artifactReadySources = sources.filter(isSourceReady);
+
   const catalog = useArtifactStudioCatalog(
     ARTIFACT_STUDIO_PRESENTATION,
     ARTIFACT_STUDIO_SKILL_ORDER,
@@ -203,6 +268,7 @@ export function App() {
 
   const artifactComposer = useArtifactComposerActions({
     workspaceId: workspace?.workspace_id ?? "",
+    sourceIds: artifactReadySources.map((source) => source.source_id),
     run,
     setStatus,
     setView,
@@ -224,9 +290,7 @@ export function App() {
 
   scopeResetRef.current = {
     resetResearch: research.resetResearchState,
-    clearWiki: async () => {
-      await wiki.clearWikiSelection({ mode: "overview", graphKinds: [] });
-    },
+    clearWiki: wiki.resetWikiSelection,
     clearArtifact: artifactWorkspace.clear,
     clearQaScope: () => chat.setSelectedQaSourceIds([]),
     clearResearchScope: () => research.setSelectedResearchSourceIds([])
@@ -244,7 +308,7 @@ export function App() {
     ? buildWikiWorkbenchProps(wiki, workspace, wikiBusy || isBusy)
     : null;
   const researchProps = view === "research"
-    ? buildResearchWorkbenchProps(research, workspace, sources, researchBusy || isBusy)
+    ? buildResearchWorkbenchProps(research, workspace, sources, researchBusy || isBusy, () => navigateWorkbenchView("library"))
     : null;
   const artifactRailProps = view === "chat"
     ? buildArtifactRailProps({
@@ -255,7 +319,7 @@ export function App() {
       artifactWorkspace: artifactWorkspace as Parameters<typeof buildArtifactRailProps>[0]["artifactWorkspace"],
       researchSummary: research.currentResearchRunSummary,
       latestTask,
-      sourcesCount: sources.length,
+      sourcesCount: artifactReadySources.length,
       wiki: {
         wikiEnabled: wiki.wikiEnabled,
         wikiIndex: wiki.wikiIndex,
@@ -278,20 +342,30 @@ export function App() {
       openMemoryWorkbench
     })
     : null;
-  const chatProps = view === "chat" && taskPresentation && artifactRailProps
+  const chatProps = view === "chat" && artifactRailProps
     ? buildChatWorkbenchProps({
       chat,
       sources,
       workspace,
       conversation,
+      conversationCount: conversations.length,
       chatBusy,
+      artifactComposerOpen: catalog.composerOpen,
+      setArtifactComposerOpen: catalog.setComposerOpen,
+      artifactRailProps,
+      onOpenSourceLibrary: () => navigateWorkbenchView("library")
+    })
+    : null;
+  const sourceLibraryProps = view === "library" && taskPresentation
+    ? buildSourceLibraryWorkbenchProps({
+      chat,
+      sources,
+      workspace,
+      conversationCount: conversations.length,
       uploadBusy,
       latestTask,
       taskEvents,
-      taskPresentation,
-      artifactComposerOpen: catalog.composerOpen,
-      setArtifactComposerOpen: catalog.setComposerOpen,
-      artifactRailProps
+      taskPresentation
     })
     : null;
 
@@ -306,12 +380,13 @@ export function App() {
       conversations={conversations}
       workspaceId={workspace?.workspace_id ?? ""}
       conversationId={conversation?.conversation_id ?? ""}
+      sourceCount={sources.length}
       shellBusy={shellBusy}
       onNavigate={navigateWorkbenchView}
       onSwitchWorkspace={(workspaceId) => void switchWorkspace(workspaceId)}
       onSwitchConversation={(conversationId) => void switchConversation(conversationId)}
-      onCreateWorkspace={() => void createWorkspace()}
-      onCreateConversation={() => void createConversation()}
+      onCreateWorkspace={createWorkspace}
+      onCreateConversation={createConversation}
       onToggleSettings={() => setWorkspaceSettingsOpen((current) => !current)}
       settingsOpen={workspaceSettingsOpen}
       settingsPanel={workspace && workspaceSettingsOpen ? (
@@ -322,21 +397,31 @@ export function App() {
         />
       ) : null}
     >
-      <Suspense fallback={<ViewFallback label={view} />}>
-        {view === "wiki" && wikiProps ? (
-          <LazyWikiWorkbench {...wikiProps} />
-        ) : view === "memory" ? (
-          <LazyMemoryReviewWorkbench workspaceId={workspace?.workspace_id ?? ""} />
-        ) : view === "research" && researchProps ? (
-          <div className="workbench-page research-page-shell">
-            <LazyResearchWorkbenchView {...researchProps} />
-          </div>
-        ) : chatProps ? (
-          <LazyChatWorkbench {...chatProps} />
-        ) : (
-          <ViewFallback label="chat" />
-        )}
-      </Suspense>
+      <ChunkLoadBoundary label={view}>
+        <Suspense fallback={<ViewFallback label={view} />}>
+          {view === "wiki" && wikiProps ? (
+            <LazyWikiWorkbench {...wikiProps} />
+          ) : view === "library" && sourceLibraryProps ? (
+            <LazySourceLibraryWorkbench {...sourceLibraryProps} />
+          ) : view === "memory" ? (
+            <LazyMemoryReviewWorkbench workspaceId={workspace?.workspace_id ?? ""} />
+          ) : view === "research" && researchProps ? (
+            <div className="workbench-page research-page-shell">
+              <LazyResearchWorkbenchView {...researchProps} />
+            </div>
+          ) : chatProps ? (
+            <LazyChatWorkbench {...chatProps} />
+          ) : (
+            <ViewFallback label="chat" />
+          )}
+        </Suspense>
+      </ChunkLoadBoundary>
     </WorkbenchShell>
   );
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException
+    ? error.name === "AbortError"
+    : error instanceof Error && error.name === "AbortError";
 }

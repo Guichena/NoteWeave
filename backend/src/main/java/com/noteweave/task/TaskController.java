@@ -3,6 +3,8 @@ package com.noteweave.task;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.ApiResponse;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Metrics;
 import java.util.List;
 import java.io.IOException;
 import java.time.Duration;
@@ -12,7 +14,10 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.LockSupport;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -26,18 +31,32 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @RequestMapping("/api/v2/tasks")
 public class TaskController {
 
+    private static final Logger log = LoggerFactory.getLogger(TaskController.class);
+
     private final TaskService taskService;
     private final Executor sseConnectionExecutor;
     private final ObjectMapper objectMapper;
+    private final MeterRegistry meterRegistry;
 
     public TaskController(
             TaskService taskService,
             @Qualifier("sseConnectionExecutor") Executor sseConnectionExecutor,
             ObjectMapper objectMapper
     ) {
+        this(taskService, sseConnectionExecutor, objectMapper, Metrics.globalRegistry);
+    }
+
+    @Autowired
+    public TaskController(
+            TaskService taskService,
+            @Qualifier("sseConnectionExecutor") Executor sseConnectionExecutor,
+            ObjectMapper objectMapper,
+            MeterRegistry meterRegistry
+    ) {
         this.taskService = taskService;
         this.sseConnectionExecutor = sseConnectionExecutor;
         this.objectMapper = objectMapper;
+        this.meterRegistry = meterRegistry;
     }
 
     @GetMapping("/{taskId}")
@@ -70,9 +89,10 @@ public class TaskController {
     @GetMapping("/{taskId}/event-history")
     ApiResponse<List<TaskEventResponse>> getTaskEventHistory(
             @PathVariable String taskId,
-            @RequestParam(required = false) String afterEventId
+            @RequestParam(required = false) String afterEventId,
+            @RequestParam(required = false) Integer limit
     ) {
-        return ApiResponse.success(taskService.listEvents(taskId, afterEventId));
+        return ApiResponse.success(taskService.listEvents(taskId, afterEventId, limit));
     }
 
     private void followTaskEvents(
@@ -85,9 +105,12 @@ public class TaskController {
         String cursor = initialCursor;
         boolean terminal = isTerminalStatus(initialStatus);
         long deadline = System.nanoTime() + Duration.ofSeconds(115).toNanos();
+        long pollDelayMillis = 500;
+        long nextHeartbeat = System.nanoTime() + Duration.ofSeconds(15).toNanos();
         try {
             while (open.get() && System.nanoTime() < deadline) {
-                List<TaskEventResponse> events = taskService.listEventsForAuthorizedStream(taskId, cursor);
+                TaskService.TaskStreamPoll poll = taskService.pollAuthorizedStream(taskId, cursor);
+                List<TaskEventResponse> events = poll.events();
                 for (TaskEventResponse event : events) {
                     send(emitter, event);
                     cursor = event.eventId();
@@ -97,13 +120,19 @@ public class TaskController {
                     emitter.complete();
                     return;
                 }
-                String currentStatus = taskService.currentStatusForAuthorizedStream(taskId);
-                if (isTerminalStatus(currentStatus)) {
-                    sendTerminalSnapshot(emitter, currentStatus);
+                if (isTerminalStatus(poll.currentStatus())) {
+                    sendTerminalSnapshot(emitter, poll.currentStatus());
                     emitter.complete();
                     return;
                 }
-                LockSupport.parkNanos(Duration.ofMillis(500).toNanos());
+                if (events.isEmpty() && System.nanoTime() >= nextHeartbeat) {
+                    sendHeartbeat(emitter);
+                    nextHeartbeat = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+                }
+                pollDelayMillis = events.isEmpty()
+                        ? Math.min(2_000, pollDelayMillis * 2)
+                        : 500;
+                LockSupport.parkNanos(Duration.ofMillis(pollDelayMillis).toNanos());
                 if (Thread.currentThread().isInterrupted()) {
                     emitter.complete();
                     return;
@@ -144,6 +173,17 @@ public class TaskController {
                 )));
     }
 
+    private void sendHeartbeat(SseEmitter emitter) throws IOException {
+        emitter.send(SseEmitter.event()
+                .name("task.heartbeat")
+                .data(Map.of(
+                        "message", "task stream heartbeat",
+                        "payload", Map.of("heartbeat", true),
+                        "event_type", "TASK_HEARTBEAT",
+                        "created_at", Instant.now().toString()
+                )));
+    }
+
     private Map<String, Object> readPayload(String payloadJson) {
         if (payloadJson == null || payloadJson.isBlank()) {
             return Map.of();
@@ -151,7 +191,12 @@ public class TaskController {
         try {
             return objectMapper.readValue(payloadJson, new TypeReference<>() { });
         } catch (Exception ex) {
-            return Map.of();
+            meterRegistry.counter("noteweave.task.event.payload.parse_error").increment();
+            log.warn("Task event payload is not valid JSON; returning an explicit parse-error marker");
+            return Map.of(
+                    "payload_parse_error", true,
+                    "payload_error_code", "TASK_EVENT_PAYLOAD_INVALID"
+            );
         }
     }
 

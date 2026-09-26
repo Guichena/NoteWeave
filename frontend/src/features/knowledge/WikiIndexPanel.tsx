@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { PanelRightOpen } from "lucide-react";
 
 type WikiIndexPanelProps = {
   isBusy: boolean;
@@ -8,7 +9,8 @@ type WikiIndexPanelProps = {
     auto_fixable_issue_count?: number;
     manual_review_issue_count?: number;
   } | null;
-  wikiUrl?: string;
+  relationsOpen?: boolean;
+  onOpenRelations?: () => void;
   wikiSearch: string;
   setWikiSearch: (value: string) => void;
   wikiKindFilter: string;
@@ -41,8 +43,21 @@ export const WikiIndexPanel = memo(function WikiIndexPanel(props: WikiIndexPanel
     <aside className="wiki-index">
       <div className="wiki-index-header">
         <p className="section-label">Wiki Index</p>
-        <h2 className="wiki-index-title">知识网络</h2>
-        {props.wikiUrl ? <p className="wiki-url" title={props.wikiUrl}>{props.wikiUrl}</p> : null}
+        <div className="wiki-index-title-row">
+          <h2 className="wiki-index-title">知识网络</h2>
+          <button
+            type="button"
+            className="wiki-relations-toggle secondary-button"
+            aria-label="打开关系面板"
+            aria-controls="wiki-relations-panel"
+            aria-expanded={props.relationsOpen}
+            title="打开关系面板"
+            onClick={props.onOpenRelations}
+          >
+            <PanelRightOpen size={17} aria-hidden="true" />
+          </button>
+        </div>
+        <p className="wiki-index-scope">当前工作台 · 独立知识索引</p>
       </div>
       <div className="wiki-inline-pills">
         <span className={`status-chip${pending > 0 ? " tone-waiting" : ""}`}>待处理 {pending}</span>

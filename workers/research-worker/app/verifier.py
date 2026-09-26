@@ -589,157 +589,174 @@ def run_global_verifier(
     local_result: LocalVerifierResult,
     ledger: ResearchStateLedger,
     branch_decisions: list[ResearchBranchDecision],
+    evidence_cards: list[ResearchEvidenceCard] | None = None,
 ) -> GlobalVerifierResult:
     counterfactual_checks = [
         "Would the conclusion change if the strongest source were removed?",
         "Is every key finding backed by an opened source window rather than style memory?",
         "Did the branch controller avoid synthesis when search/read/extract objects are missing?",
     ]
-    recovery_actions: list[str] = []
-    for branch_decision in branch_decisions:
-        recovery_actions.extend(branch_decision.recovery_actions)
-
-    has_recovery_branch = any(
-        branch_decision.decision != "NO_BRANCH"
-        and branch_decision.branch_status in {"ACTIVE", "ACTIVE_BRANCH"}
-        for branch_decision in branch_decisions
-    )
-    unresolved_penalty = min(0.5, len(ledger.unresolved_questions) * 0.15)
-    conflict_penalty = min(0.35, ledger.conflicted_row_count * 0.2)
-    fetch_penalty = 0.0
-    if any(
-        record.reason_code == "EXTERNAL_FETCH_FALLBACK_HEAVY"
-        for record in local_result.decision_records
-    ):
-        fetch_penalty = 0.25
-    orchestration_penalty = 0.0
-    if any(
-        record.reason_code == "EXTERNAL_PROVIDER_FALLBACK_HEAVY"
-        for record in local_result.decision_records
-    ):
-        orchestration_penalty += 0.1
-    if any(
-        record.reason_code == "EXTERNAL_TRANSPORT_FALLBACK_HEAVY"
-        for record in local_result.decision_records
-    ):
-        orchestration_penalty += 0.1
-    archive_penalty = 0.0
-    if any(
-        record.reason_code == "EXTERNAL_SNAPSHOT_ARCHIVE_NOT_READY"
-        for record in local_result.decision_records
-    ):
-        archive_penalty += 0.1
-    completion_score = round(
-        max(
-            0.0,
-            min(
-                1.0,
-                ledger.coverage_score - unresolved_penalty - conflict_penalty - fetch_penalty - orchestration_penalty - archive_penalty,
-            ),
-        ),
-        4,
-    )
-    decision_records: list[ResearchVerifierDecision] = []
-    intent_completion_contract, research_intent_alignment = _build_global_intent_state(ledger)
-    quality_reason_codes = {
-        record.reason_code
-        for record in local_result.decision_records
-    }
-    global_blockers = quality_reason_codes.intersection(
-        {
-            "FORBIDDEN_PATTERN_FOUND",
-            "PROMPT_INJECTION_DETECTED",
-            "SINGLE_SOURCE_DOMINANCE",
-            "LOW_TRUST_SOURCE_FOUNDATION",
-            "EXTERNAL_FETCH_FALLBACK_HEAVY",
-            "EXTERNAL_PROVIDER_FALLBACK_HEAVY",
-            "EXTERNAL_TRANSPORT_FALLBACK_HEAVY",
-            "EXTERNAL_SNAPSHOT_ARCHIVE_NOT_READY",
-            "REQUIRED_FINDINGS_PARTIAL",
-        }
-    )
-    has_verified_coverage = ledger.verified_row_count > 0 or any(
-        row.row_status == "VERIFIED" for row in ledger.rows
-    )
-    if (
-        has_verified_coverage
-        and research_intent_alignment.status == "PASS"
-        and not ledger.unresolved_questions
-        and not has_recovery_branch
-        and not global_blockers
-        and ledger.conflicted_row_count == 0
-    ):
-        decision_records.append(
-            _decision(
-                scope="GLOBAL",
-                decision_type="READY_TO_WRITE",
-                reason_code="STOP_CONTRACT_SATISFIED",
-                action="allow verifier-gated synthesis",
-                status="PASS",
-                notes=[f"completion_score={completion_score:.2f}"],
-            )
+    cards = list(evidence_cards or [])
+    card_by_id = {card.evidence_id: card for card in cards}
+    active_branches = [
+        item for item in branch_decisions
+        if item.decision != "NO_BRANCH" and item.branch_status in {"ACTIVE", "ACTIVE_BRANCH"}
+    ]
+    verified_cells = [
+        cell for cell in ledger.cells
+        if cell.status == "VERIFIED" or str(cell.verdict) in {"SUPPORTED", "CellSupportStatus.SUPPORTED"}
+    ]
+    unsupported_cells = [
+        cell.cell_id for cell in ledger.cells
+        if str(cell.verdict).split(".")[-1] in {"CONTRADICTED", "NOT_ENOUGH_INFO"}
+        and (cell.status == "VERIFIED" or cell.is_required)
+    ]
+    missing_evidence_cells = [cell.cell_id for cell in verified_cells if not cell.evidence_refs]
+    unknown_evidence_refs = sorted({
+        evidence_id for cell in verified_cells for evidence_id in cell.evidence_refs
+        if cards and evidence_id not in card_by_id
+    })
+    incomplete_provenance = sorted({
+        card.evidence_id for card in cards
+        if not card.lineage_digest.strip()
+        or (
+            bool(card.source_url.strip())
+            and not card.source_domain.strip()
         )
-        return GlobalVerifierResult(
-            status="PASS",
-            decision="READY_TO_WRITE",
-            summary=(
-                "The research loop has search hits, read windows, evidence cards, "
-                "and a populated Table-as-State ledger."
-            ),
-            counterfactual_checks=counterfactual_checks,
-            recovery_actions=recovery_actions,
-            completion_score=completion_score,
-            decision_records=decision_records,
-            intent_completion_contract=intent_completion_contract,
-            research_intent_alignment=research_intent_alignment,
-        )
-
+    })
+    unarchived_external = sorted({
+        card.evidence_id for card in cards
+        if card.source_url and card.snapshot_status != "EXTERNAL_ARCHIVED"
+    })
+    missing_requirements = [
+        item.requirement_id for item in ledger.required_finding_progress if item.status != "READY"
+    ]
+    blockers: set[str] = set()
+    if not verified_cells and ledger.verified_row_count <= 0:
+        blockers.add("NO_VERIFIED_CANONICAL_COVERAGE")
     if ledger.unresolved_questions:
-        recovery_actions.append("mark unresolved questions explicitly in the report")
-    if research_intent_alignment.status != "PASS":
-        recovery_actions.append("keep missing research-intent requirements explicit in the report")
-    if global_blockers:
-        recovery_actions.append(
-            "resolve global quality blockers before unguarded synthesis: "
-            + ", ".join(sorted(global_blockers))
-        )
-    decision_records.append(
-        _decision(
-            scope="GLOBAL",
-            decision_type="WRITE_WITH_GUARDRAILS",
-            reason_code=(
-                "RESEARCH_INTENT_PARTIAL"
-                if research_intent_alignment.status != "PASS"
-                else
-                "UNRESOLVED_QUESTIONS"
-                if ledger.unresolved_questions
-                else "COUNTERFACTUAL_OR_LOW_CONFIDENCE"
-            ),
-            action=(
-                "keep missing research-intent requirements explicit in the report"
-                if research_intent_alignment.status != "PASS"
-                else "mark unresolved questions explicitly in the report"
-            ),
-            status="WARN",
-            notes=[f"completion_score={completion_score:.2f}"]
-            + research_intent_alignment.missing_requirements[:3]
-            + sorted(global_blockers)[:3],
-        )
-    )
+        blockers.add("UNRESOLVED_REQUIREMENTS")
+    if ledger.conflicted_row_count > 0:
+        blockers.add("CANONICAL_CONFLICT_OPEN")
+    if missing_requirements:
+        blockers.add("REQUIRED_FINDINGS_PARTIAL")
+    if active_branches:
+        blockers.add("OPEN_RECOVERY_BRANCH")
+    if missing_evidence_cells or unknown_evidence_refs:
+        blockers.add("CANONICAL_EVIDENCE_BINDING_INCOMPLETE")
+    if unsupported_cells:
+        blockers.add("CANONICAL_CELL_UNSUPPORTED")
+    if incomplete_provenance:
+        blockers.add("EVIDENCE_PROVENANCE_INCOMPLETE")
+    if unarchived_external:
+        blockers.add("EXTERNAL_SNAPSHOT_ARCHIVE_NOT_READY")
 
+    facts = {
+        "verified_cell_ids": sorted(cell.cell_id for cell in verified_cells),
+        "unsupported_cell_ids": sorted(unsupported_cells),
+        "missing_evidence_cell_ids": sorted(missing_evidence_cells),
+        "unknown_evidence_refs": unknown_evidence_refs,
+        "incomplete_provenance_evidence_ids": incomplete_provenance,
+        "unarchived_external_evidence_ids": unarchived_external,
+        "missing_requirement_ids": sorted(missing_requirements),
+        "unresolved_questions": list(ledger.unresolved_questions),
+        "conflicted_row_count": ledger.conflicted_row_count,
+        "active_branch_ids": sorted(item.branch_id for item in active_branches),
+        "blocker_reason_codes": sorted(blockers),
+    }
+    local_ready = local_result.status == "PASS"
+    global_ready_before_comparison = not blockers
+    verifier_disagreement = local_ready != global_ready_before_comparison
+    if verifier_disagreement:
+        blockers.add("VERIFIER_DISAGREEMENT")
+        facts["blocker_reason_codes"] = sorted(blockers)
+
+    counterfactual_results = _run_global_counterfactual_predicates(verified_cells, card_by_id, active_branches)
+    recovery_actions = [
+        action
+        for branch_decision in branch_decisions
+        for action in branch_decision.recovery_actions
+    ]
+    if blockers:
+        recovery_actions.append(
+            "resolve global quality blockers before unguarded synthesis: " + ", ".join(sorted(blockers))
+        )
+    completion_score = round(max(0.0, min(1.0, ledger.coverage_score - 0.1 * len(blockers))), 4)
+    intent_completion_contract, research_intent_alignment = _build_global_intent_state(ledger)
+    decision_records: list[ResearchVerifierDecision] = []
+    if verifier_disagreement:
+        decision_records.append(_decision(
+            scope="GLOBAL",
+            decision_type="VERIFIER_DISAGREEMENT",
+            reason_code="VERIFIER_DISAGREEMENT",
+            action="block unguarded synthesis and retain both verifier outcomes",
+            status="FAIL",
+            notes=[f"local_status={local_result.status}", f"global_blockers={','.join(sorted(blockers))}"],
+        ))
+    ready = not blockers and research_intent_alignment.status == "PASS"
+    decision_records.append(_decision(
+        scope="GLOBAL",
+        decision_type="READY_TO_WRITE" if ready else "WRITE_WITH_GUARDRAILS",
+        reason_code="STOP_CONTRACT_SATISFIED" if ready else sorted(blockers)[0] if blockers else "RESEARCH_INTENT_PARTIAL",
+        action="allow verifier-gated synthesis" if ready else "retain blockers and guarded wording",
+        status="PASS" if ready else "WARN",
+        notes=[f"completion_score={completion_score:.2f}"] + sorted(blockers)[:3],
+    ))
     return GlobalVerifierResult(
-        status="WARN",
-        decision="WRITE_WITH_GUARDRAILS",
+        status="PASS" if ready else "WARN",
+        decision="READY_TO_WRITE" if ready else "WRITE_WITH_GUARDRAILS",
         summary=(
-            "The report can be written, but uncertainty and missing evidence must stay visible."
+            "Canonical global facts satisfy the write barrier."
+            if ready else "Canonical global facts require guarded writing or repair."
         ),
         counterfactual_checks=counterfactual_checks,
-        recovery_actions=recovery_actions,
+        counterfactual_results=counterfactual_results,
+        verification_facts=facts,
+        verifier_disagreement=verifier_disagreement,
+        recovery_actions=list(dict.fromkeys(recovery_actions)),
         completion_score=completion_score,
         decision_records=decision_records,
         intent_completion_contract=intent_completion_contract,
         research_intent_alignment=research_intent_alignment,
     )
+
+
+def _run_global_counterfactual_predicates(
+    verified_cells: list[object],
+    evidence_by_id: dict[str, ResearchEvidenceCard],
+    active_branches: list[ResearchBranchDecision],
+) -> list[dict[str, object]]:
+    reference_counts: dict[str, int] = {}
+    for cell in verified_cells:
+        for evidence_id in getattr(cell, "evidence_refs", []):
+            reference_counts[evidence_id] = reference_counts.get(evidence_id, 0) + 1
+    strongest = sorted(reference_counts, key=lambda item: (-reference_counts[item], item))[:1]
+    cells_after_removal = [
+        getattr(cell, "cell_id", "") for cell in verified_cells
+        if not [item for item in getattr(cell, "evidence_refs", []) if item not in strongest]
+    ]
+    unopened = sorted({
+        evidence_id for evidence_id in reference_counts
+        if evidence_id not in evidence_by_id or not evidence_by_id[evidence_id].window_id
+    })
+    return [
+        {
+            "predicate": "REMOVE_STRONGEST_SOURCE",
+            "status": "PASS" if not cells_after_removal else "FAIL",
+            "removed_evidence_ids": strongest,
+            "unsupported_cell_ids": cells_after_removal,
+        },
+        {
+            "predicate": "ALL_FINDINGS_OPENED_SOURCE_WINDOW",
+            "status": "PASS" if not unopened else "FAIL",
+            "unopened_evidence_ids": unopened,
+        },
+        {
+            "predicate": "NO_ACTIVE_RECOVERY_BRANCH_AT_SYNTHESIS",
+            "status": "PASS" if not active_branches else "FAIL",
+            "active_branch_ids": sorted(item.branch_id for item in active_branches),
+        },
+    ]
 
 
 def _build_global_intent_state(

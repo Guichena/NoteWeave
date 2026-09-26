@@ -1,0 +1,395 @@
+{
+  "dataset_key": "research-eval-v1",
+  "dataset_version": "1.0.0",
+  "frozen_at": "2026-09-18",
+  "schema_version": "research-eval-dataset.v1",
+  "purpose": "第 5 节完成定义与第 9 节验收矩阵的固定输入；按类别分层，禁止只保留成功样本。",
+  "acceptance_environment": {
+    "advanced_features_disabled": true,
+    "worker_replicas": 1,
+    "concurrency": 1,
+    "provider": "REAL",
+    "search_chain": ["serper", "wikipedia"],
+    "fetch": "jina-or-workspace",
+    "llm": "openai-compatible"
+  },
+  "machine_check_vocabulary": [
+    "TERMINAL_STATE",
+    "EXPLAINABLE_TERMINATION",
+    "NO_UNSUPPORTED_CLAIM",
+    "CITATION_TRACEABLE",
+    "CELL_NO_REGRESSION",
+    "REPLAN_LOCAL_ONLY",
+    "EXTRACTION_REASON_CODE",
+    "COUNTEREVIDENCE_BOUNDED",
+    "NO_DUPLICATE_EXTERNAL_CALL",
+    "STALE_CALLBACK_REJECTED",
+    "INFRA_FAILURE_CLASSIFIED"
+  ],
+  "categories": {
+    "NORMAL": "证据充分、来源可核验的正常问题；期望形成已验证结论。",
+    "MISSING": "预算内无法获得合格证据的问题；期望诚实进入 COMPLETED_WITH_LIMITATIONS 或 INSUFFICIENT_EVIDENCE。",
+    "CONFLICT": "可信来源结论相反的问题；期望显式保留冲突并按预算触发受限反证。",
+    "FAULT": "证据本身正常，但注入 Provider、Worker、消息或回调故障；期望分类准确、不重复外部调用。"
+  },
+  "cases": [
+    {
+      "case_key": "normal-openai-responses-vs-anthropic-messages",
+      "category": "NORMAL",
+      "title": "两家官方 API 的工具调用与流式事件差异",
+      "question": "比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用与流式事件设计上的主要差异。必须引用两家公司官方文档并给出可核验 URL。",
+      "schema_columns": ["answer", "key_evidence", "limitations", "implications"],
+      "expected": {
+        "terminal_state": "COMPLETED_VERIFIED",
+        "required_column_keys": ["answer", "key_evidence"],
+        "required_row_labels": ["OpenAI Responses API", "Anthropic Messages API"],
+        "machine_checks": ["TERMINAL_STATE", "CITATION_TRACEABLE", "NO_UNSUPPORTED_CLAIM"],
+        "reason_codes": []
+      }
+    },
+    {
+      "case_key": "normal-postgres17-vs-mysql84-json",
+      "category": "NORMAL",
+      "title": "PostgreSQL 17 与 MySQL 8.4 的 JSON 索引能力",
+      "question": "比较 PostgreSQL 17 与 MySQL 8.4 在 JSON 数据索引与查询能力上的差异，并引用各自官方文档。",
+      "schema_columns": ["answer", "key_evidence", "limitations", "implications"],
+      "expected": {
+        "terminal_state": "COMPLETED_VERIFIED",
+        "required_column_keys": ["answer", "key_evidence"],
+        "required_row_labels": ["PostgreSQL 17", "MySQL 8.4"],
+        "machine_checks": ["TERMINAL_STATE", "CITATION_TRACEABLE"],
+        "reason_codes": []
+      }
+    },
+    {
+      "case_key": "normal-rust-edition-2024-vs-2021",
+      "category": "NORMAL",
+      "title": "Rust 2024 edition 的破坏性变更",
+      "question": "Rust 2024 edition 相对 2021 edition 有哪些破坏性变更？请引用 Rust 官方 edition 指南。",
+      "schema_columns": ["answer", "key_evidence", "limitations"],
+      "expected": {
+        "terminal_state": "COMPLETED_VERIFIED",
+        "required_column_keys": ["answer", "key_evidence"],
+        "machine_checks": ["TERMINAL_STATE", "CITATION_TRACEABLE"],
+        "reason_codes": []
+      }
+    },
+    {
+      "case_key": "normal-http3-vs-http2-congestion",
+      "category": "NORMAL",
+      "title": "HTTP/3 与 HTTP/2 拥塞控制差异",
+      "question": "HTTP/3 与 HTTP/2 在拥塞控制与丢包恢复上的实现差异是什么？引用 RFC 与官方实现文档。",
+      "schema_columns": ["answer", "key_evidence", "limitations", "implications"],
+      "expected": {
+        "terminal_state": "COMPLETED_VERIFIED",
+        "required_column_keys": ["answer", "key_evidence"],
+        "machine_checks": ["TERMINAL_STATE", "CITATION_TRACEABLE"],
+        "reason_codes": []
+      }
+    },
+    {
+      "case_key": "normal-terraform-vs-pulumi-state",
+      "category": "NORMAL",
+      "title": "Terraform 与 Pulumi 的状态管理模型",
+      "question": "比较 Terraform 与 Pulumi 的状态管理模型与并发锁机制，引用各自官方文档。",
+      "schema_columns": ["answer", "key_evidence", "limitations", "implications"],
+      "expected": {
+        "terminal_state": "COMPLETED_VERIFIED",
+        "required_column_keys": ["answer", "key_evidence"],
+        "required_row_labels": ["Terraform", "Pulumi"],
+        "machine_checks": ["TERMINAL_STATE", "CITATION_TRACEABLE"],
+        "reason_codes": []
+      }
+    },
+    {
+      "case_key": "normal-kafka-vs-pulsar-ordering",
+      "category": "NORMAL",
+      "title": "Kafka 与 Pulsar 的顺序保证",
+      "question": "Kafka 与 Apache Pulsar 在消息顺序保证与消费模型上的差异是什么？引用官方文档。",
+      "schema_columns": ["answer", "key_evidence", "limitations"],
+      "expected": {
+        "terminal_state": "COMPLETED_VERIFIED",
+        "required_column_keys": ["answer", "key_evidence"],
+        "machine_checks": ["TERMINAL_STATE", "CITATION_TRACEABLE"],
+        "reason_codes": []
+      }
+    },
+
+    {
+      "case_key": "missing-private-vendor-rate-limit",
+      "category": "MISSING",
+      "title": "未公开厂商的内部限流阈值",
+      "question": "某未公开商业产品在 2026 年 8 月对单租户请求设置的内部限流阈值与突发桶容量是多少？给出精确数值。",
+      "schema_columns": ["answer", "key_evidence", "limitations"],
+      "expected": {
+        "terminal_state": "INSUFFICIENT_EVIDENCE",
+        "required_column_keys": ["limitations"],
+        "machine_checks": [
+          "TERMINAL_STATE",
+          "EXPLAINABLE_TERMINATION",
+          "NO_UNSUPPORTED_CLAIM",
+          "INFRA_FAILURE_CLASSIFIED"
+        ],
+        "reason_codes": ["INSUFFICIENT_EVIDENCE"]
+      }
+    },
+    {
+      "case_key": "missing-internal-board-minutes",
+      "category": "MISSING",
+      "title": "未公开的内部会议决议",
+      "question": "某公司 2026 年 7 月董事会对下一代产品路线图的内部决议原文是什么？请给出逐字引文与链接。",
+      "schema_columns": ["answer", "key_evidence", "limitations"],
+      "expected": {
+        "terminal_state": "INSUFFICIENT_EVIDENCE",
+        "required_column_keys": ["limitations"],
+        "machine_checks": ["TERMINAL_STATE", "NO_UNSUPPORTED_CLAIM", "EXPLAINABLE_TERMINATION"],
+        "reason_codes": ["INSUFFICIENT_EVIDENCE"]
+      }
+    },
+    {
+      "case_key": "missing-unpublished-sdk-error-codes",
+      "category": "MISSING",
+      "title": "未发布 SDK 的完整错误码表",
+      "question": "某尚未公开发布的 SDK 的全部错误码与重试语义清单是什么？请逐条列出。",
+      "schema_columns": ["answer", "key_evidence", "limitations"],
+      "expected": {
+        "terminal_state": "INSUFFICIENT_EVIDENCE",
+        "required_column_keys": ["limitations"],
+        "machine_checks": ["TERMINAL_STATE", "NO_UNSUPPORTED_CLAIM"],
+        "reason_codes": ["INSUFFICIENT_EVIDENCE"]
+      }
+    },
+    {
+      "case_key": "missing-datacenter-energy",
+      "category": "MISSING",
+      "title": "未披露数据中心的精确能耗",
+      "question": "某未披露名称的数据中心在 2025 年全年逐月 PUE 与总用电量精确值是多少？",
+      "schema_columns": ["answer", "key_evidence", "limitations"],
+      "expected": {
+        "terminal_state": "COMPLETED_WITH_LIMITATIONS",
+        "required_column_keys": ["limitations"],
+        "machine_checks": ["TERMINAL_STATE", "NO_UNSUPPORTED_CLAIM", "EXPLAINABLE_TERMINATION"],
+        "reason_codes": ["UNRESOLVED_CELL"]
+      }
+    },
+    {
+      "case_key": "missing-private-dataset-labels",
+      "category": "MISSING",
+      "title": "私有数据集的标签分布",
+      "question": "某未公开数据集的各类别标签数量与标注者间一致性系数是多少？",
+      "schema_columns": ["answer", "key_evidence", "limitations"],
+      "expected": {
+        "terminal_state": "INSUFFICIENT_EVIDENCE",
+        "required_column_keys": ["limitations"],
+        "machine_checks": ["TERMINAL_STATE", "NO_UNSUPPORTED_CLAIM"],
+        "reason_codes": ["INSUFFICIENT_EVIDENCE"]
+      }
+    },
+    {
+      "case_key": "missing-future-protocol-draft",
+      "category": "MISSING",
+      "title": "尚未定稿的协议草案最终字段",
+      "question": "某协议草案的最终定稿字段清单是什么？请给出 RFC 编号与逐字字段定义。",
+      "schema_columns": ["answer", "key_evidence", "limitations"],
+      "expected": {
+        "terminal_state": "INSUFFICIENT_EVIDENCE",
+        "required_column_keys": ["limitations"],
+        "machine_checks": ["TERMINAL_STATE", "NO_UNSUPPORTED_CLAIM", "EXPLAINABLE_TERMINATION"],
+        "reason_codes": ["INSUFFICIENT_EVIDENCE"]
+      }
+    },
+
+    {
+      "case_key": "conflict-microservice-delivery-speed",
+      "category": "CONFLICT",
+      "title": "微服务是否提升长期交付速度",
+      "question": "微服务架构是否提升大型团队的长期交付速度？请比较支持与反对的实证研究并说明分歧来源。",
+      "schema_columns": ["answer", "key_evidence", "limitations", "implications"],
+      "expected": {
+        "terminal_state": "COMPLETED_WITH_LIMITATIONS",
+        "required_column_keys": ["answer", "key_evidence", "limitations"],
+        "machine_checks": [
+          "TERMINAL_STATE",
+          "NO_UNSUPPORTED_CLAIM",
+          "COUNTEREVIDENCE_BOUNDED",
+          "CITATION_TRACEABLE"
+        ],
+        "reason_codes": ["CONFLICT", "COUNTEREVIDENCE_BUDGET_STOP"]
+      }
+    },
+    {
+      "case_key": "conflict-remote-work-productivity",
+      "category": "CONFLICT",
+      "title": "远程办公对生产率的影响",
+      "question": "Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+      "schema_columns": ["answer", "key_evidence", "limitations", "implications"],
+      "expected": {
+        "terminal_state": "COMPLETED_WITH_LIMITATIONS",
+        "required_column_keys": ["answer", "key_evidence", "limitations"],
+        "machine_checks": ["TERMINAL_STATE", "COUNTEREVIDENCE_BOUNDED", "NO_UNSUPPORTED_CLAIM"],
+        "reason_codes": ["CONFLICT"]
+      }
+    },
+    {
+      "case_key": "conflict-static-typing-defect-rate",
+      "category": "CONFLICT",
+      "title": "静态类型是否降低生产缺陷率",
+      "question": "为 JavaScript 项目引入 TypeScript 静态类型是否降低生产环境缺陷率？请比较不同研究结论。",
+      "schema_columns": ["answer", "key_evidence", "limitations", "implications"],
+      "expected": {
+        "terminal_state": "COMPLETED_WITH_LIMITATIONS",
+        "required_column_keys": ["answer", "key_evidence", "limitations"],
+        "machine_checks": ["TERMINAL_STATE", "COUNTEREVIDENCE_BOUNDED", "NO_UNSUPPORTED_CLAIM"],
+        "reason_codes": ["CONFLICT"]
+      }
+    },
+    {
+      "case_key": "conflict-ssr-vs-csr-web-vitals",
+      "category": "CONFLICT",
+      "title": "SSR 是否必然改善核心网页指标",
+      "question": "服务端渲染是否必然改善 Core Web Vitals？请给出结论不一致的测量结果与适用条件。",
+      "schema_columns": ["answer", "key_evidence", "limitations", "implications"],
+      "expected": {
+        "terminal_state": "COMPLETED_WITH_LIMITATIONS",
+        "required_column_keys": ["answer", "key_evidence", "limitations"],
+        "machine_checks": ["TERMINAL_STATE", "COUNTEREVIDENCE_BOUNDED"],
+        "reason_codes": ["CONFLICT"]
+      }
+    },
+    {
+      "case_key": "conflict-orm-maintenance-cost",
+      "category": "CONFLICT",
+      "title": "ORM 对长期维护成本的影响",
+      "question": "使用 ORM 会提高还是降低长期维护成本？请对比正反两方证据并说明前提差异。",
+      "schema_columns": ["answer", "key_evidence", "limitations", "implications"],
+      "expected": {
+        "terminal_state": "COMPLETED_WITH_LIMITATIONS",
+        "required_column_keys": ["answer", "key_evidence", "limitations"],
+        "machine_checks": ["TERMINAL_STATE", "COUNTEREVIDENCE_BOUNDED", "NO_UNSUPPORTED_CLAIM"],
+        "reason_codes": ["CONFLICT"]
+      }
+    },
+    {
+      "case_key": "conflict-coverage-threshold-defect-escape",
+      "category": "CONFLICT",
+      "title": "覆盖率门禁是否降低缺陷逃逸率",
+      "question": "提高测试覆盖率门禁是否降低缺陷逃逸率？请比较不同组织的实证结果。",
+      "schema_columns": ["answer", "key_evidence", "limitations", "implications"],
+      "expected": {
+        "terminal_state": "COMPLETED_WITH_LIMITATIONS",
+        "required_column_keys": ["answer", "key_evidence", "limitations"],
+        "machine_checks": ["TERMINAL_STATE", "COUNTEREVIDENCE_BOUNDED"],
+        "reason_codes": ["CONFLICT"]
+      }
+    },
+
+    {
+      "case_key": "fault-search-provider-timeout-after-confirm",
+      "category": "FAULT",
+      "title": "搜索已确认后 Provider 超时",
+      "question": "比较 Redis 7.4 与 Valkey 8 在持久化选项上的差异，引用官方文档。",
+      "fault_injection": {
+        "point": "AFTER_SEARCH_CONFIRMED",
+        "detail": "搜索收据已确认后让后续 Serper 调用超时",
+        "expected_behavior": "复用已确认搜索收据，不重复计费；本轮以基础设施原因分类而非证据不足"
+      },
+      "schema_columns": ["answer", "key_evidence", "limitations"],
+      "expected": {
+        "terminal_state": "INFRASTRUCTURE_FAILURE",
+        "required_column_keys": ["answer"],
+        "machine_checks": ["INFRA_FAILURE_CLASSIFIED", "NO_DUPLICATE_EXTERNAL_CALL", "EXPLAINABLE_TERMINATION"],
+        "reason_codes": ["PROVIDER_TIMEOUT"]
+      }
+    },
+    {
+      "case_key": "fault-fetch-provider-5xx",
+      "category": "FAULT",
+      "title": "抓取 Provider 返回 5xx",
+      "question": "比较 OpenTelemetry 与 Prometheus 在指标模型上的差异，引用官方文档。",
+      "fault_injection": {
+        "point": "FETCH_PROVIDER_5XX",
+        "detail": "Jina Reader 连续返回 502",
+        "expected_behavior": "按收据状态安全重试，超限后归类为基础设施失败，不写入脏 Evidence"
+      },
+      "schema_columns": ["answer", "key_evidence", "limitations"],
+      "expected": {
+        "terminal_state": "INFRASTRUCTURE_FAILURE",
+        "required_column_keys": ["answer"],
+        "machine_checks": ["INFRA_FAILURE_CLASSIFIED", "NO_DUPLICATE_EXTERNAL_CALL"],
+        "reason_codes": ["PROVIDER_5XX"]
+      }
+    },
+    {
+      "case_key": "fault-llm-invalid-json",
+      "category": "FAULT",
+      "title": "抽取阶段模型返回非法 JSON",
+      "question": "比较 gRPC 与 GraphQL 在服务间通信上的取舍，引用官方文档。",
+      "fault_injection": {
+        "point": "EXTRACT_LLM_INVALID_JSON",
+        "detail": "research.extract 返回被截断的 JSON",
+        "expected_behavior": "拒绝该次抽取并记录 INVALID_JSON，不生成脏 Candidate；Run 可诊断地继续修复"
+      },
+      "schema_columns": ["answer", "key_evidence", "limitations"],
+      "expected": {
+        "terminal_state": "COMPLETED_WITH_LIMITATIONS",
+        "required_column_keys": ["answer", "limitations"],
+        "machine_checks": ["EXTRACTION_REASON_CODE", "NO_UNSUPPORTED_CLAIM", "EXPLAINABLE_TERMINATION"],
+        "reason_codes": ["INVALID_JSON"]
+      }
+    },
+    {
+      "case_key": "fault-worker-crash-after-fetch",
+      "category": "FAULT",
+      "title": "网页归档后 Worker 退出",
+      "question": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档；在网页已归档、抽取未开始时终止 Worker，并由新 Execution 接管。",
+      "fault_injection": {
+        "point": "AFTER_FETCH_BEFORE_EXTRACT",
+        "detail": "抓取收据写入 Checkpoint 后立即终止 Worker 进程",
+        "expected_behavior": "新 Attempt 复用抓取收据并从后续阶段恢复，不重复抓取，预算账本守恒"
+      },
+      "schema_columns": ["answer", "key_evidence", "limitations"],
+      "expected": {
+        "terminal_state": "COMPLETED_VERIFIED",
+        "required_column_keys": ["answer", "key_evidence"],
+        "machine_checks": ["NO_DUPLICATE_EXTERNAL_CALL", "CELL_NO_REGRESSION", "TERMINAL_STATE"],
+        "reason_codes": []
+      }
+    },
+    {
+      "case_key": "fault-kafka-duplicate-command",
+      "category": "FAULT",
+      "title": "Kafka 重复投递研究命令",
+      "question": "比较 S3 与 GCS 在一致性模型上的差异，引用官方文档。",
+      "fault_injection": {
+        "point": "DUPLICATE_COMMAND_DELIVERY",
+        "detail": "同一 task key 的 Research Agent Command 重复投递两次",
+        "expected_behavior": "同一 Run/Attempt 幂等，不重复推进状态，不产生第二个 Canonical 结果"
+      },
+      "schema_columns": ["answer", "key_evidence", "limitations"],
+      "expected": {
+        "terminal_state": "COMPLETED_VERIFIED",
+        "required_column_keys": ["answer"],
+        "machine_checks": ["NO_DUPLICATE_EXTERNAL_CALL", "CELL_NO_REGRESSION"],
+        "reason_codes": []
+      }
+    },
+    {
+      "case_key": "fault-stale-callback-after-takeover",
+      "category": "FAULT",
+      "title": "租约接管后旧 Attempt 延迟回调",
+      "question": "比较 OAuth 2.1 与 OIDC 在授权流程上的差异，引用官方文档。",
+      "fault_injection": {
+        "point": "STALE_CALLBACK_AFTER_TAKEOVER",
+        "detail": "新 Attempt 接管后，旧 Attempt 用过期 fencing token 提交完成回调",
+        "expected_behavior": "回调被拒绝，不改变 canonical state，不覆盖新结果"
+      },
+      "schema_columns": ["answer", "key_evidence", "limitations"],
+      "expected": {
+        "terminal_state": "COMPLETED_VERIFIED",
+        "required_column_keys": ["answer"],
+        "machine_checks": ["STALE_CALLBACK_REJECTED", "CELL_NO_REGRESSION"],
+        "reason_codes": ["STALE_FENCE_REJECTED"]
+      }
+    }
+  ]
+}

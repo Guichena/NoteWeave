@@ -122,6 +122,12 @@ function buildFieldLabel(skillKey: string, fieldKey: string): string {
   if (fieldKey === "language") {
     return "选择语言";
   }
+  if (fieldKey === "layout") {
+    return "导图布局";
+  }
+  if (fieldKey === "depth") {
+    return "内容层级";
+  }
   if (isUrlFieldKey(fieldKey)) {
     return skillKey.includes("bilibili") ? "B站链接" : "链接";
   }
@@ -133,7 +139,7 @@ function buildFieldLabel(skillKey: string, fieldKey: string): string {
 }
 
 function buildFieldPlaceholder(skillKey: string, fieldKey: string): string {
-  if (fieldKey === "language") {
+  if (fieldKey === "language" || fieldKey === "layout" || fieldKey === "depth") {
     return "";
   }
   if (fieldKey === "url") {
@@ -160,7 +166,13 @@ function buildFieldKind(fieldKey: string): ArtifactStudioFieldKind {
 function buildInputFields(skillKey: string, inputSchema: Record<string, unknown> | undefined): ArtifactStudioField[] {
   const properties = readSchemaProperties(inputSchema);
   const requiredKeys = readRequiredKeys(inputSchema);
-  const fieldKeys = Object.keys(properties);
+  const preferredFieldOrder = ["language", "purpose", "depth", "layout", "url", "video_url", "bilibili_url"];
+  const fieldOrder = new Map(preferredFieldOrder.map((key, index) => [key, index]));
+  const fieldKeys = Object.keys(properties).sort((left, right) => {
+    const leftOrder = fieldOrder.get(left) ?? Number.MAX_SAFE_INTEGER;
+    const rightOrder = fieldOrder.get(right) ?? Number.MAX_SAFE_INTEGER;
+    return leftOrder === rightOrder ? left.localeCompare(right) : leftOrder - rightOrder;
+  });
 
   return fieldKeys.map((fieldKey) => {
     const propertySchema = properties[fieldKey];
@@ -204,8 +216,9 @@ export function buildInitialArtifactFormValues(
   skill: ArtifactStudioSkill,
   currentValues: Record<string, string> = {}
 ): Record<string, string> {
-  return Object.fromEntries(
-    skill.inputFields.map((field) => {
+  return {
+    ...currentValues,
+    ...Object.fromEntries(skill.inputFields.map((field) => {
       const currentValue = currentValues[field.key];
       if (typeof currentValue === "string" && currentValue.length > 0) {
         return [field.key, currentValue];
@@ -219,8 +232,8 @@ export function buildInitialArtifactFormValues(
         return [field.key, field.options[0].value];
       }
       return [field.key, ""];
-    })
-  );
+    }))
+  };
 }
 
 export function buildArtifactJobInputs(skill: ArtifactStudioSkill, formValues: Record<string, string>): Record<string, string> {

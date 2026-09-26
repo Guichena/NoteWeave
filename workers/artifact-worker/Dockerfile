@@ -7,11 +7,23 @@ WORKDIR /app
 RUN cp /etc/apt/sources.list.d/debian.sources /tmp/debian.sources \
     && awk 'BEGIN { RS=""; ORS="\n\n" } $0 !~ /debian-security/' /tmp/debian.sources > /etc/apt/sources.list.d/debian.sources \
     && apt-get -o Acquire::Retries=5 update \
-    && apt-get -o Acquire::Retries=5 install --no-install-recommends -y fonts-arphic-gbsn00lp \
+    && apt-get -o Acquire::Retries=5 install --no-install-recommends -y \
+        fonts-arphic-gbsn00lp \
+        texlive-lang-chinese \
+        texlive-latex-extra \
+        texlive-pictures \
+        texlive-xetex \
+    && mv /tmp/debian.sources /etc/apt/sources.list.d/debian.sources \
+    && rm -rf /var/lib/apt/lists/*
+RUN cp /etc/apt/sources.list.d/debian.sources /tmp/debian.sources \
+    && awk 'BEGIN { RS=""; ORS="\n\n" } $0 !~ /debian-security/' /tmp/debian.sources > /etc/apt/sources.list.d/debian.sources \
+    && apt-get -o Acquire::Retries=5 update \
+    && apt-get -o Acquire::Retries=5 install --no-install-recommends -y texlive-fonts-recommended \
     && mv /tmp/debian.sources /etc/apt/sources.list.d/debian.sources \
     && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir \
     "fastapi>=0.115.0,<1" \
+    "kafka-python>=2.0.2,<4" \
     "pydantic-settings>=2.6.0,<3" \
     "faster-whisper>=1.2.1,<2" \
     "reportlab>=4.2.0,<5" \

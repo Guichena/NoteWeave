@@ -6,11 +6,15 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.source.SourceMessagingMode;
 import com.noteweave.task.TaskCommandPort;
 import com.noteweave.workspace.WorkspaceQueryPort;
+import java.util.List;
+import java.sql.Timestamp;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -38,29 +42,32 @@ class WikiIngestServiceTest {
 
     @Test
     void disabledWikiShouldCancelIngestTaskWithoutStartingWork() {
-        when(workspaceQueryPort.isWikiEnabled("workspace-1")).thenReturn(false);
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq("workspace-1")))
+                .thenReturn(0);
 
         service.runSourceIngestNow("task-1", "workspace-1", "source-1");
 
         verify(taskCommandPort).cancelTask(
                 "task-1", "WIKI_DISABLED", "Wiki 构建已关闭，跳过资料 ingest", "source-1");
-        verifyNoInteractions(jdbcTemplate, knowledgeQueryService, knowledgeCommandService, knowledgeGovernanceService);
+        verifyNoInteractions(workspaceQueryPort, knowledgeQueryService, knowledgeCommandService, knowledgeGovernanceService);
     }
 
     @Test
     void disabledWikiShouldCancelRetractTaskWithoutStartingWork() {
-        when(workspaceQueryPort.isWikiEnabled("workspace-1")).thenReturn(false);
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq("workspace-1")))
+                .thenReturn(0);
 
         service.runSourceRetractNow("task-2", "workspace-1", "source-1");
 
         verify(taskCommandPort).cancelTask(
                 "task-2", "WIKI_DISABLED", "Wiki 构建已关闭，跳过资料 retract", "source-1");
-        verifyNoInteractions(jdbcTemplate, knowledgeQueryService, knowledgeCommandService, knowledgeGovernanceService);
+        verifyNoInteractions(workspaceQueryPort, knowledgeQueryService, knowledgeCommandService, knowledgeGovernanceService);
     }
 
     @Test
     void failedIngestShouldRecordFailedTerminalStateWithoutKafkaRedelivery() {
-        when(workspaceQueryPort.isWikiEnabled("workspace-1")).thenReturn(true);
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq("workspace-1")))
+                .thenReturn(1);
         when(transactionExecutor.execute(any()))
                 .thenThrow(new IllegalStateException("source unavailable"));
 
@@ -75,11 +82,13 @@ class WikiIngestServiceTest {
                 org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.anyString());
+        verifyNoInteractions(workspaceQueryPort);
     }
 
     @Test
     void failedRetractShouldRecordFailedTerminalStateWithoutKafkaRedelivery() {
-        when(workspaceQueryPort.isWikiEnabled("workspace-1")).thenReturn(true);
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq("workspace-1")))
+                .thenReturn(1);
         when(transactionExecutor.execute(any()))
                 .thenThrow(new IllegalStateException("retract unavailable"));
 
@@ -94,5 +103,47 @@ class WikiIngestServiceTest {
                 org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.anyString());
+        verifyNoInteractions(workspaceQueryPort);
+    }
+
+    @Test
+    void newerIngestShouldCancelSupersededPendingTaskBeforeStarting() {
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq("workspace-1")))
+                .thenReturn(1);
+        when(jdbcTemplate.queryForList(
+                anyString(),
+                eq(String.class),
+                eq("task-current"),
+                eq("workspace-1"),
+                eq("source-1"),
+                eq("WIKI_INGEST")))
+                .thenReturn(List.of("task-stale"));
+        when(transactionExecutor.execute(any()))
+                .thenThrow(new IllegalStateException("source unavailable"));
+
+        service.runSourceIngestNow("task-current", "workspace-1", "source-1");
+
+        verify(taskCommandPort).cancelTask(
+                "task-stale",
+                "WIKI_SUPERSEDED",
+                "较新的 Wiki ingest 任务已接管同一资料，取消旧的待处理任务",
+                "source-1");
+        verify(taskCommandPort).startTask("task-current");
+    }
+
+    @Test
+    void orphanedSentWikiTaskShouldBeCancelledByBackgroundReconciliation() {
+        when(jdbcTemplate.queryForList(
+                anyString(), eq(String.class), any(Timestamp.class)))
+                .thenReturn(List.of("task-orphaned"));
+
+        int reconciled = service.reconcileOrphanedPendingWikiTasks();
+
+        org.assertj.core.api.Assertions.assertThat(reconciled).isEqualTo(1);
+        verify(taskCommandPort).cancelTask(
+                "task-orphaned",
+                "WIKI_DELIVERY_ORPHANED",
+                "Wiki 消息已发送但消费者长时间未接管，任务已安全取消，可通过资料重建重新执行",
+                "");
     }
 }

@@ -1,37 +1,20 @@
-import {
-  buildSourceOriginBadge,
-  buildGenericTaskRuntimeSnapshot,
-  buildTaskEventNarrative
-} from "../research/presentation";
 import type { SourceAsset } from "../sources/model";
 import type { Workspace } from "../workspace/model";
 import type { Conversation } from "./model";
 import type { ChatSessionController } from "./useChatSessionController";
 import type { ChatWorkbenchProps } from "./ChatWorkbench";
-import type {
-  ExecutionEvent as StreamEvent,
-  ExecutionTask as TaskStatus
-} from "../executions/model";
-import type { SignalChip } from "../research/model";
-import type { WaitContextDetailLine } from "../../runStatus";
 
 type BuildChatWorkbenchPropsInput = {
   chat: ChatSessionController;
   sources: SourceAsset[];
   workspace: Workspace | null;
   conversation: Conversation | null;
+  conversationCount: number;
   chatBusy: boolean;
-  uploadBusy: boolean;
-  latestTask: TaskStatus | null;
-  taskEvents: StreamEvent[];
-  taskPresentation: {
-    waitSignals: SignalChip[];
-    waitDetails: WaitContextDetailLine[];
-    progressEvent: StreamEvent | null;
-  };
   artifactComposerOpen: boolean;
   setArtifactComposerOpen: (open: boolean) => void;
   artifactRailProps: import("../artifacts/ArtifactRailProps").ArtifactRailProps;
+  onOpenSourceLibrary: () => void;
 };
 
 export function buildChatWorkbenchProps(input: BuildChatWorkbenchPropsInput): ChatWorkbenchProps {
@@ -40,35 +23,20 @@ export function buildChatWorkbenchProps(input: BuildChatWorkbenchPropsInput): Ch
     sources,
     workspace,
     conversation,
+    conversationCount,
     chatBusy,
-    uploadBusy,
-    latestTask,
-    taskEvents,
-    taskPresentation,
     artifactComposerOpen,
     setArtifactComposerOpen,
-    artifactRailProps
+    artifactRailProps,
+    onOpenSourceLibrary
   } = input;
 
   return {
     mode: chat.mode,
     setMode: chat.setMode,
     sources,
-    sourceText: chat.sourceText,
-    setSourceText: chat.setSourceText,
-    uploadSource: () => void chat.uploadSource(),
     chatBusy,
-    uploadBusy,
     workspace,
-    latestTask,
-    latestWorkspaceTaskWaitSignals: taskPresentation.waitSignals,
-    latestWorkspaceTaskWaitDetails: taskPresentation.waitDetails,
-    latestWorkspaceProgressEvent: taskPresentation.progressEvent,
-    taskEvents,
-    deleteSource: (source: SourceAsset) => void chat.deleteSource(source),
-    buildSourceOriginBadge,
-    buildGenericTaskRuntimeSnapshot,
-    buildTaskEventNarrative,
     messages: chat.messages,
     question: chat.question,
     setQuestion: chat.setQuestion,
@@ -78,8 +46,10 @@ export function buildChatWorkbenchProps(input: BuildChatWorkbenchPropsInput): Ch
     toggleQaScope: chat.toggleQaScope,
     sendMessage: () => void chat.sendMessage(),
     conversation,
+    conversationCount,
     setArtifactComposerOpen,
     artifactComposerOpen,
-    artifactRailProps
+    artifactRailProps,
+    onOpenSourceLibrary
   };
 }

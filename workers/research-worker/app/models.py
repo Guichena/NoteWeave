@@ -624,7 +624,10 @@ class ResearchEvidenceCard(BaseModel):
     quote_start: int = -1
     quote_end: int = -1
     snapshot_key: str = ""
+    snapshot_status: str = ""
     content_sha256: str = ""
+    source_domain: str = ""
+    lineage_digest: str = ""
     source_type: str = "UNKNOWN"
     author: str = ""
     institution: str = ""
@@ -871,6 +874,9 @@ class GlobalVerifierResult(BaseModel):
     decision: str
     summary: str
     counterfactual_checks: list[str] = Field(default_factory=list)
+    counterfactual_results: list[dict[str, object]] = Field(default_factory=list)
+    verification_facts: dict[str, object] = Field(default_factory=dict)
+    verifier_disagreement: bool = False
     recovery_actions: list[str] = Field(default_factory=list)
     completion_score: float = 0.0
     decision_records: list[ResearchVerifierDecision] = Field(default_factory=list)

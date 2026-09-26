@@ -16,6 +16,7 @@ import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from typing import Protocol
 
+from app.http_security import resolve_public_http_addresses
 from app.models import (
     ResearchFetchedDocument,
     ResearchPlan,
@@ -322,7 +323,6 @@ class HttpUrlSnapshotTransport:
         self.rate_limiter = FixedIntervalRateLimiter(requests_per_second)
 
     def read(self, url: str, query: str, token_budget: int) -> dict[str, object]:
-        del query
         try:
             validate_public_http_url(url)
         except ValueError as exc:
@@ -420,7 +420,7 @@ class HttpUrlSnapshotTransport:
                 "transport_fallback_code": failure_code,
             }
         text = _decode_response(raw, content_type)
-        cleaned_text = _truncate_text(_strip_html(text), token_budget)
+        cleaned_text = _select_query_relevant_text(_strip_html(text), query, token_budget)
         if not cleaned_text:
             return {
                 "snapshot_status": "FETCH_FAILED",
@@ -478,7 +478,6 @@ class JinaUrlSnapshotTransport:
     def read(self, url: str, query: str, token_budget: int) -> dict[str, object]:
         if not self.api_key:
             return {}
-        del query
         try:
             validate_public_http_url(url)
             validate_public_http_url(self.base_url)
@@ -500,7 +499,7 @@ class JinaUrlSnapshotTransport:
                 )
                 content_type = response_headers.get("Content-Type", "")
                 text = _decode_response(raw, content_type)
-                cleaned_text = _truncate_text(_strip_jina_wrapper(text), token_budget)
+                cleaned_text = _select_query_relevant_text(_strip_jina_wrapper(text), query, token_budget)
                 if cleaned_text:
                     injection_signals = detect_prompt_injection(cleaned_text)
                     return {
@@ -800,29 +799,7 @@ def validate_public_http_url(url: str) -> None:
 def _resolve_public_addresses(
     parsed: urllib.parse.SplitResult,
 ) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
-    hostname = (parsed.hostname or "").strip().rstrip(".")
-    try:
-        direct_ip = ipaddress.ip_address(hostname)
-    except ValueError:
-        direct_ip = None
-    addresses: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
-    if direct_ip is not None:
-        addresses.append(direct_ip)
-    else:
-        try:
-            for info in socket.getaddrinfo(
-                hostname,
-                parsed.port or (443 if parsed.scheme == "https" else 80),
-                type=socket.SOCK_STREAM,
-            ):
-                address = ipaddress.ip_address(info[4][0])
-                if address not in addresses:
-                    addresses.append(address)
-        except (socket.gaierror, ValueError) as exc:
-            raise ValueError("URL_BLOCKED_DNS_RESOLUTION") from exc
-    if not addresses or any(not address.is_global for address in addresses):
-        raise ValueError("URL_BLOCKED_NON_PUBLIC_ADDRESS")
-    return addresses
+    return resolve_public_http_addresses(parsed)
 
 
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
@@ -1035,6 +1012,65 @@ def _strip_html(text: str) -> str:
 def _truncate_text(text: str, token_budget: int) -> str:
     max_chars = max(500, token_budget * 6)
     return text[:max_chars].strip()
+
+
+def _select_query_relevant_text(text: str, query: str, token_budget: int) -> str:
+    max_chars = max(500, token_budget * 6)
+    if len(text) <= max_chars:
+        return text.strip()
+    folded = text.casefold()
+    # URLs in a source-scoped question are repeated throughout Markdown navigation
+    # and reference links.  Treating their host/path fragments as research terms
+    # makes a link-heavy page header outscore the article body.
+    query_without_urls = re.sub(r"https?://\S+", " ", query.casefold())
+    stop = {
+        "and", "articles", "compare", "content", "from", "http", "https",
+        "primary", "reports", "sources", "the", "uploads", "using", "which",
+        "with", "www",
+    }
+    terms = {
+        term for term in re.findall(r"[a-z0-9][a-z0-9._-]{2,}", query_without_urls)
+        if term not in stop and not term.startswith("www.") and not any(char.isdigit() for char in term)
+    }
+    starts = {0}
+    # Keep candidate generation deterministic and fair across terms.  The old
+    # global 160-start cutoff depended on set iteration order and could exhaust
+    # itself on one common word before considering a distinctive research term.
+    for term in sorted(terms, key=lambda item: (-len(item), item)):
+        offset = 0
+        term_matches = 0
+        while term_matches < 32 and len(starts) < 512:
+            index = folded.find(term, offset)
+            if index < 0:
+                break
+            starts.add(max(0, min(len(text) - max_chars, index - max_chars // 4)))
+            offset = index + len(term)
+            term_matches += 1
+    if len(starts) == 1:
+        return _truncate_text(text, token_budget)
+
+    boilerplate = ("cookie", "privacy", "advertisement", "manage preferences", "search articles")
+
+    def score(start: int) -> tuple[int, int, int, int]:
+        candidate = folded[start:start + max_chars]
+        coverage = sum(term in candidate for term in terms)
+        # Cap repetition so menus and reference lists cannot win merely by
+        # repeating the article title or host in dozens of links.
+        relevance = coverage * 120 + sum(
+            min(candidate.count(term), 2) * min(len(term), 16) for term in terms
+        )
+        link_count = candidate.count("](") + candidate.count("http://") + candidate.count("https://")
+        reference_count = candidate.count("#ref-") + candidate.count("references")
+        penalty = (
+            sum(candidate.count(term) * 30 for term in boilerplate)
+            + link_count * 30
+            + reference_count * 40
+        )
+        prose_chars = len(re.findall(r"[a-z\u4e00-\u9fff]", candidate))
+        return relevance - penalty, coverage, prose_chars, -start
+
+    best_start = max(starts, key=score)
+    return text[best_start:best_start + max_chars].strip()
 
 
 def _strip_jina_wrapper(text: str) -> str:

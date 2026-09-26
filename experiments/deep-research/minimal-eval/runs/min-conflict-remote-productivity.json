@@ -1,0 +1,1389 @@
+{
+  "schema_version": "deep-research-minimal-eval-public-evidence.v1",
+  "case_key": "min-conflict-remote-productivity",
+  "run_id": "6577fda7-5a7d-4432-aad4-2cc615e8a05b",
+  "workspace_id": "0bc4aaad-297a-4930-a978-a73e1b42f24e",
+  "captured_at": "2026-09-20T12:15:52.753392+00:00",
+  "truth_label": "生产待验证",
+  "note": "公开 API 原始证据已采集；仍须按 manifest required_checks 审计后才能标记 PASSED。",
+  "run_detail": {
+    "research_run_id": "6577fda7-5a7d-4432-aad4-2cc615e8a05b",
+    "workspace_id": "0bc4aaad-297a-4930-a978-a73e1b42f24e",
+    "task_id": "e41a8762-eb44-421e-9270-516879afebdf",
+    "question": "Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用、证据不足时诚实降级的研究报告",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL",
+        "SOURCE_DOMAIN_ALLOWLIST: nature.com,bfi.uchicago.edu"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "final_report_title": "Research report: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2)",
+    "final_report_markdown": "# Research report\n\nCompare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.\n\n**Outcome:** `INSUFFICIENT_EVIDENCE`\n\n## Limitations\n\n- `subject:implications`: REQUIRED_CELL_UNRESOLVED (`GAP`)\n- `subject:key_evidence`: CONFLICT_REPAIR_EXHAUSTED (`CONFLICT_EXHAUSTED`)\n- `subject:limitations`: REQUIRED_CELL_UNRESOLVED (`GAP`)\n- EVIDENCE_CONFLICT\n- CONFLICTED_CELL\n- CONFLICT_REPAIR_EXHAUSTED\n\n## Completion reasons\n\n- INSUFFICIENT_EVIDENCE\n- EVIDENCE_CONFLICT\n- CONFLICTED_CELL\n- CONFLICT_REPAIR_EXHAUSTED",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/0bc4aaad-297a-4930-a978-a73e1b42f24e/research/6577fda7-5a7d-4432-aad4-2cc615e8a05b/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 1039,
+      "sha256": "c2f209ccd44b5f7310417cd89031aa5627917536130c98d3c6d49ad5158c00a8"
+    },
+    "research_artifact": {
+      "artifact_id": "6577fda7-5a7d-4432-aad4-2cc615e8a05b",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "Research report: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2)",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "6577fda7-5a7d-4432-aad4-2cc615e8a05b",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/0bc4aaad-297a-4930-a978-a73e1b42f24e/research/6577fda7-5a7d-4432-aad4-2cc615e8a05b/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 1039,
+        "sha256": "c2f209ccd44b5f7310417cd89031aa5627917536130c98d3c6d49ad5158c00a8"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 0,
+        "blocked_row_count": 1,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 1,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 1,
+        "guardrailed_row_count": 1,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 1,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [
+          {
+            "row_id": "subject",
+            "source_id": "",
+            "source_title": "Subject",
+            "evidence_id": "",
+            "search_query": "Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "guardrailed_row_samples": [
+          {
+            "row_id": "subject",
+            "source_id": "",
+            "source_title": "Subject",
+            "evidence_id": "",
+            "search_query": "Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v1",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 1,
+      "branch_count": 1,
+      "verifier_decision_count": 4,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Subject",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+            "read_focus": "形成可逐项引用、证据不足时诚实降级的研究报告",
+            "evidence_id": "",
+            "row_status": "DISCOVERED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "subject:limitations",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "limitations",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "subject:answer",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "answer",
+            "candidate_value": "productivity fell 8-19%.",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:920de955e31979adfb951cf3e89d06392240d73489e00192"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "subject:key_evidence",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "key_evidence",
+            "candidate_value": "",
+            "status": "CONFLICT_EXHAUSTED",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "GLOBAL_CONFLICT:CONFLICTS_RELATION_WITH_SUPPORT",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "subject:implications",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "implications",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [
+          {
+            "decision_id": "c413b161-2762-495e-b399-971c08804de5",
+            "branch_id": "branch-main",
+            "decision_scope": "CELL",
+            "decision_type": "QUORUM_REPAIR_REQUIRED",
+            "reason_code": "QUORUM_VALUE_CONFLICT",
+            "target_id": "subject:answer",
+            "evidence_ids": [
+              "evidence:6235a7c91a7a39696e05a611165261c8f3b2c5a7c3aee217",
+              "evidence:ac31770159e9ff681ef61ef63a3eef562f0871f90dd059ae"
+            ],
+            "action": "COUNTERFACTUAL_REPAIR",
+            "status": "RESOLVED",
+            "notes": {
+              "quorum_group_key": "quorum:1c4312275bcec8fef270822c0493183c",
+              "completion_id": "f7ab51d7-4bc2-474e-b150-8a95f21419f4",
+              "candidate_slots": [
+                1,
+                2
+              ]
+            },
+            "source_samples": [
+              {
+                "evidence_id": "evidence:6235a7c91a7a39696e05a611165261c8f3b2c5a7c3aee217",
+                "source_id": "web-11fdc3889f8c82ee",
+                "source_title": "Hybrid working from home improves retention without damaging ...",
+                "generated_by": "",
+                "generated_ref_id": "",
+                "search_query": "Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage site:nature.com",
+                "read_focus": "Read external URL Hybrid working from home improves retention without damaging ... for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+                "relation_type": "SUPPORTS"
+              },
+              {
+                "evidence_id": "evidence:ac31770159e9ff681ef61ef63a3eef562f0871f90dd059ae",
+                "source_id": "web-d1be0b01247dc34a",
+                "source_title": "[PDF] Evidence from Personnel & Analytics Data on IT Professionals",
+                "generated_by": "",
+                "generated_ref_id": "",
+                "search_query": "Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict site:bfi.uchicago.edu",
+                "read_focus": "Read external URL [PDF] Evidence from Personnel & Analytics Data on IT Professionals for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+                "relation_type": "SUPPORTS"
+              }
+            ],
+            "source_sample_count": 2
+          },
+          {
+            "decision_id": "5e1c95e8-ce39-4b61-b075-f5dfea82a839",
+            "branch_id": "branch-main",
+            "decision_scope": "CELL",
+            "decision_type": "QUORUM_REPAIR_REQUIRED",
+            "reason_code": "QUORUM_VALUE_CONFLICT",
+            "target_id": "subject:key_evidence",
+            "evidence_ids": [
+              "evidence:042324551091ffdea6767172c705d6eac6ad7614c6342d89",
+              "evidence:af126854002340f26a8c82439cf16a61bdc77a7bbeba6f7b",
+              "evidence:afbc1939772a8642a55574beff332242c315a819c0f74841"
+            ],
+            "action": "COUNTERFACTUAL_REPAIR",
+            "status": "OPEN",
+            "notes": {
+              "quorum_group_key": "quorum:7ebe6d97b88168bb746d7f03f97de277",
+              "completion_id": "f49ad727-fac0-4b9e-a833-2256361edf55",
+              "candidate_slots": [
+                1,
+                2
+              ]
+            },
+            "source_samples": [
+              {
+                "evidence_id": "evidence:042324551091ffdea6767172c705d6eac6ad7614c6342d89",
+                "source_id": "web-11fdc3889f8c82ee",
+                "source_title": "Hybrid working from home improves retention without damaging ...",
+                "generated_by": "",
+                "generated_ref_id": "",
+                "search_query": "Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage site:nature.com",
+                "read_focus": "Read external URL Hybrid working from home improves retention without damaging ... for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+                "relation_type": "SUPPORTS"
+              },
+              {
+                "evidence_id": "evidence:af126854002340f26a8c82439cf16a61bdc77a7bbeba6f7b",
+                "source_id": "web-d1be0b01247dc34a",
+                "source_title": "[PDF] Evidence from Personnel & Analytics Data on IT Professionals",
+                "generated_by": "",
+                "generated_ref_id": "",
+                "search_query": "Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict site:bfi.uchicago.edu",
+                "read_focus": "Read external URL [PDF] Evidence from Personnel & Analytics Data on IT Professionals for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+                "relation_type": "SUPPORTS"
+              }
+            ],
+            "source_sample_count": 2
+          },
+          {
+            "decision_id": "c053f7ff-0498-46cc-a3bd-11d4e6a9985e",
+            "branch_id": "",
+            "decision_scope": "CELL",
+            "decision_type": "GLOBAL_CONFLICT",
+            "reason_code": "CONFLICTS_RELATION_WITH_SUPPORT",
+            "target_id": "subject:key_evidence",
+            "evidence_ids": [
+              "evidence:042324551091ffdea6767172c705d6eac6ad7614c6342d89",
+              "evidence:afbc1939772a8642a55574beff332242c315a819c0f74841"
+            ],
+            "action": "CONFLICTS_RELATION_WITH_SUPPORT:evidence=evidence:042324551091ffdea6767172c705d6eac6ad7614c6342d89,evidence:afbc1939772a8642a55574beff332242c315a819c0f74841",
+            "status": "EXHAUSTED",
+            "notes": {
+              "cell_key": "subject:key_evidence",
+              "conflict_kind": "CONFLICTS_RELATION_WITH_SUPPORT",
+              "evidence_count": 2
+            },
+            "source_samples": [
+              {
+                "evidence_id": "evidence:042324551091ffdea6767172c705d6eac6ad7614c6342d89",
+                "source_id": "web-11fdc3889f8c82ee",
+                "source_title": "Hybrid working from home improves retention without damaging ...",
+                "generated_by": "",
+                "generated_ref_id": "",
+                "search_query": "Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage site:nature.com",
+                "read_focus": "Read external URL Hybrid working from home improves retention without damaging ... for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+                "relation_type": "SUPPORTS"
+              },
+              {
+                "evidence_id": "evidence:afbc1939772a8642a55574beff332242c315a819c0f74841",
+                "source_id": "web-d1be0b01247dc34a",
+                "source_title": "[PDF] Evidence from Personnel & Analytics Data on IT Professionals",
+                "generated_by": "",
+                "generated_ref_id": "",
+                "search_query": "Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict site:bfi.uchicago.edu",
+                "read_focus": "Read external URL [PDF] Evidence from Personnel & Analytics Data on IT Professionals for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+                "relation_type": "CONFLICTS"
+              }
+            ],
+            "source_sample_count": 2
+          },
+          {
+            "decision_id": "9b83eefa-115c-4ccb-b303-4d0d764cd9e9",
+            "branch_id": "",
+            "decision_scope": "CELL",
+            "decision_type": "GLOBAL_CONFLICT_REPAIR_EXHAUSTED",
+            "reason_code": "CONFLICT_REPAIR_EXHAUSTED",
+            "target_id": "subject:key_evidence",
+            "evidence_ids": [
+              "evidence:042324551091ffdea6767172c705d6eac6ad7614c6342d89",
+              "evidence:afbc1939772a8642a55574beff332242c315a819c0f74841"
+            ],
+            "action": "conflict_repair_attempts=1:upper_bound=1",
+            "status": "EXHAUSTED",
+            "notes": {
+              "cell_key": "subject:key_evidence",
+              "attempts": 1,
+              "attempt_upper_bound": 1,
+              "conflict_trace_id": "c053f7ff-0498-46cc-a3bd-11d4e6a9985e"
+            },
+            "source_samples": [
+              {
+                "evidence_id": "evidence:042324551091ffdea6767172c705d6eac6ad7614c6342d89",
+                "source_id": "web-11fdc3889f8c82ee",
+                "source_title": "Hybrid working from home improves retention without damaging ...",
+                "generated_by": "",
+                "generated_ref_id": "",
+                "search_query": "Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage site:nature.com",
+                "read_focus": "Read external URL Hybrid working from home improves retention without damaging ... for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+                "relation_type": "SUPPORTS"
+              },
+              {
+                "evidence_id": "evidence:afbc1939772a8642a55574beff332242c315a819c0f74841",
+                "source_id": "web-d1be0b01247dc34a",
+                "source_title": "[PDF] Evidence from Personnel & Analytics Data on IT Professionals",
+                "generated_by": "",
+                "generated_ref_id": "",
+                "search_query": "Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict site:bfi.uchicago.edu",
+                "read_focus": "Read external URL [PDF] Evidence from Personnel & Analytics Data on IT Professionals for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+                "relation_type": "CONFLICTS"
+              }
+            ],
+            "source_sample_count": 2
+          }
+        ],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 0,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Subject",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+          "read_focus": "形成可逐项引用、证据不足时诚实降级的研究报告",
+          "evidence_id": "",
+          "row_status": "DISCOVERED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "subject:limitations",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "limitations",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "subject:answer",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "answer",
+          "candidate_value": "productivity fell 8-19%.",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:920de955e31979adfb951cf3e89d06392240d73489e00192"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "subject:key_evidence",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "key_evidence",
+          "candidate_value": "",
+          "status": "CONFLICT_EXHAUSTED",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "GLOBAL_CONFLICT:CONFLICTS_RELATION_WITH_SUPPORT",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "subject:implications",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "implications",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [
+        {
+          "decision_id": "c413b161-2762-495e-b399-971c08804de5",
+          "branch_id": "branch-main",
+          "decision_scope": "CELL",
+          "decision_type": "QUORUM_REPAIR_REQUIRED",
+          "reason_code": "QUORUM_VALUE_CONFLICT",
+          "target_id": "subject:answer",
+          "evidence_ids": [
+            "evidence:6235a7c91a7a39696e05a611165261c8f3b2c5a7c3aee217",
+            "evidence:ac31770159e9ff681ef61ef63a3eef562f0871f90dd059ae"
+          ],
+          "action": "COUNTERFACTUAL_REPAIR",
+          "status": "RESOLVED",
+          "notes": {
+            "quorum_group_key": "quorum:1c4312275bcec8fef270822c0493183c",
+            "completion_id": "f7ab51d7-4bc2-474e-b150-8a95f21419f4",
+            "candidate_slots": [
+              1,
+              2
+            ]
+          },
+          "source_samples": [
+            {
+              "evidence_id": "evidence:6235a7c91a7a39696e05a611165261c8f3b2c5a7c3aee217",
+              "source_id": "web-11fdc3889f8c82ee",
+              "source_title": "Hybrid working from home improves retention without damaging ...",
+              "generated_by": "",
+              "generated_ref_id": "",
+              "search_query": "Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage site:nature.com",
+              "read_focus": "Read external URL Hybrid working from home improves retention without damaging ... for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+              "relation_type": "SUPPORTS"
+            },
+            {
+              "evidence_id": "evidence:ac31770159e9ff681ef61ef63a3eef562f0871f90dd059ae",
+              "source_id": "web-d1be0b01247dc34a",
+              "source_title": "[PDF] Evidence from Personnel & Analytics Data on IT Professionals",
+              "generated_by": "",
+              "generated_ref_id": "",
+              "search_query": "Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict site:bfi.uchicago.edu",
+              "read_focus": "Read external URL [PDF] Evidence from Personnel & Analytics Data on IT Professionals for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+              "relation_type": "SUPPORTS"
+            }
+          ],
+          "source_sample_count": 2
+        },
+        {
+          "decision_id": "5e1c95e8-ce39-4b61-b075-f5dfea82a839",
+          "branch_id": "branch-main",
+          "decision_scope": "CELL",
+          "decision_type": "QUORUM_REPAIR_REQUIRED",
+          "reason_code": "QUORUM_VALUE_CONFLICT",
+          "target_id": "subject:key_evidence",
+          "evidence_ids": [
+            "evidence:042324551091ffdea6767172c705d6eac6ad7614c6342d89",
+            "evidence:af126854002340f26a8c82439cf16a61bdc77a7bbeba6f7b",
+            "evidence:afbc1939772a8642a55574beff332242c315a819c0f74841"
+          ],
+          "action": "COUNTERFACTUAL_REPAIR",
+          "status": "OPEN",
+          "notes": {
+            "quorum_group_key": "quorum:7ebe6d97b88168bb746d7f03f97de277",
+            "completion_id": "f49ad727-fac0-4b9e-a833-2256361edf55",
+            "candidate_slots": [
+              1,
+              2
+            ]
+          },
+          "source_samples": [
+            {
+              "evidence_id": "evidence:042324551091ffdea6767172c705d6eac6ad7614c6342d89",
+              "source_id": "web-11fdc3889f8c82ee",
+              "source_title": "Hybrid working from home improves retention without damaging ...",
+              "generated_by": "",
+              "generated_ref_id": "",
+              "search_query": "Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage site:nature.com",
+              "read_focus": "Read external URL Hybrid working from home improves retention without damaging ... for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+              "relation_type": "SUPPORTS"
+            },
+            {
+              "evidence_id": "evidence:af126854002340f26a8c82439cf16a61bdc77a7bbeba6f7b",
+              "source_id": "web-d1be0b01247dc34a",
+              "source_title": "[PDF] Evidence from Personnel & Analytics Data on IT Professionals",
+              "generated_by": "",
+              "generated_ref_id": "",
+              "search_query": "Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict site:bfi.uchicago.edu",
+              "read_focus": "Read external URL [PDF] Evidence from Personnel & Analytics Data on IT Professionals for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+              "relation_type": "SUPPORTS"
+            }
+          ],
+          "source_sample_count": 2
+        },
+        {
+          "decision_id": "c053f7ff-0498-46cc-a3bd-11d4e6a9985e",
+          "branch_id": "",
+          "decision_scope": "CELL",
+          "decision_type": "GLOBAL_CONFLICT",
+          "reason_code": "CONFLICTS_RELATION_WITH_SUPPORT",
+          "target_id": "subject:key_evidence",
+          "evidence_ids": [
+            "evidence:042324551091ffdea6767172c705d6eac6ad7614c6342d89",
+            "evidence:afbc1939772a8642a55574beff332242c315a819c0f74841"
+          ],
+          "action": "CONFLICTS_RELATION_WITH_SUPPORT:evidence=evidence:042324551091ffdea6767172c705d6eac6ad7614c6342d89,evidence:afbc1939772a8642a55574beff332242c315a819c0f74841",
+          "status": "EXHAUSTED",
+          "notes": {
+            "cell_key": "subject:key_evidence",
+            "conflict_kind": "CONFLICTS_RELATION_WITH_SUPPORT",
+            "evidence_count": 2
+          },
+          "source_samples": [
+            {
+              "evidence_id": "evidence:042324551091ffdea6767172c705d6eac6ad7614c6342d89",
+              "source_id": "web-11fdc3889f8c82ee",
+              "source_title": "Hybrid working from home improves retention without damaging ...",
+              "generated_by": "",
+              "generated_ref_id": "",
+              "search_query": "Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage site:nature.com",
+              "read_focus": "Read external URL Hybrid working from home improves retention without damaging ... for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+              "relation_type": "SUPPORTS"
+            },
+            {
+              "evidence_id": "evidence:afbc1939772a8642a55574beff332242c315a819c0f74841",
+              "source_id": "web-d1be0b01247dc34a",
+              "source_title": "[PDF] Evidence from Personnel & Analytics Data on IT Professionals",
+              "generated_by": "",
+              "generated_ref_id": "",
+              "search_query": "Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict site:bfi.uchicago.edu",
+              "read_focus": "Read external URL [PDF] Evidence from Personnel & Analytics Data on IT Professionals for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+              "relation_type": "CONFLICTS"
+            }
+          ],
+          "source_sample_count": 2
+        },
+        {
+          "decision_id": "9b83eefa-115c-4ccb-b303-4d0d764cd9e9",
+          "branch_id": "",
+          "decision_scope": "CELL",
+          "decision_type": "GLOBAL_CONFLICT_REPAIR_EXHAUSTED",
+          "reason_code": "CONFLICT_REPAIR_EXHAUSTED",
+          "target_id": "subject:key_evidence",
+          "evidence_ids": [
+            "evidence:042324551091ffdea6767172c705d6eac6ad7614c6342d89",
+            "evidence:afbc1939772a8642a55574beff332242c315a819c0f74841"
+          ],
+          "action": "conflict_repair_attempts=1:upper_bound=1",
+          "status": "EXHAUSTED",
+          "notes": {
+            "cell_key": "subject:key_evidence",
+            "attempts": 1,
+            "attempt_upper_bound": 1,
+            "conflict_trace_id": "c053f7ff-0498-46cc-a3bd-11d4e6a9985e"
+          },
+          "source_samples": [
+            {
+              "evidence_id": "evidence:042324551091ffdea6767172c705d6eac6ad7614c6342d89",
+              "source_id": "web-11fdc3889f8c82ee",
+              "source_title": "Hybrid working from home improves retention without damaging ...",
+              "generated_by": "",
+              "generated_ref_id": "",
+              "search_query": "Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage site:nature.com",
+              "read_focus": "Read external URL Hybrid working from home improves retention without damaging ... for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+              "relation_type": "SUPPORTS"
+            },
+            {
+              "evidence_id": "evidence:afbc1939772a8642a55574beff332242c315a819c0f74841",
+              "source_id": "web-d1be0b01247dc34a",
+              "source_title": "[PDF] Evidence from Personnel & Analytics Data on IT Professionals",
+              "generated_by": "",
+              "generated_ref_id": "",
+              "search_query": "Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict site:bfi.uchicago.edu",
+              "read_focus": "Read external URL [PDF] Evidence from Personnel & Analytics Data on IT Professionals for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+              "relation_type": "CONFLICTS"
+            }
+          ],
+          "source_sample_count": 2
+        }
+      ],
+      "checkpoints": [],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:6235a7c91a7a39696e05a611165261c8f3b2c5a7c3aee217",
+          "window_id": "window-1",
+          "source_id": "web-11fdc3889f8c82ee",
+          "source_title": "Hybrid working from home improves retention without damaging ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.nature.com/articles/s41586-024-07500-2",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage site:nature.com",
+          "read_focus": "Read external URL Hybrid working from home improves retention without damaging ... for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+          "quote_text": "ed employees with odd birthdays—those born on the first, third, fifth and so on of the month—into eligibility for the hybrid WFH scheme starting on the week of 9 August.",
+          "claim_text": "ed employees with odd birthdays—those born on the first, third, fifth and so on of the month—into eligibility for the hybrid WFH scheme starting on the week of 9 August.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/96ba76b6-b7ec-4a5a-96b0-b1619041813b/1617cc699016d7134fc608f64b4940a569ad55f8b184e21ba25b700bc50b6d9d"
+        },
+        {
+          "evidence_id": "evidence:ac31770159e9ff681ef61ef63a3eef562f0871f90dd059ae",
+          "window_id": "window-1",
+          "source_id": "web-d1be0b01247dc34a",
+          "source_title": "[PDF] Evidence from Personnel & Analytics Data on IT Professionals",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict site:bfi.uchicago.edu",
+          "read_focus": "Read external URL [PDF] Evidence from Personnel & Analytics Data on IT Professionals for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+          "quote_text": "productivity fell 8-19%.",
+          "claim_text": "productivity fell 8-19%.",
+          "relation_type": "SUPPORTS",
+          "support_score": 1.0,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/ad9ebd2e-d101-4557-ac8d-6c732291e83c/fbf4d65753241f21284a26a1617c77054c05663a26eca7643a92817c59d71f30"
+        },
+        {
+          "evidence_id": "evidence:af126854002340f26a8c82439cf16a61bdc77a7bbeba6f7b",
+          "window_id": "window-1",
+          "source_id": "web-d1be0b01247dc34a",
+          "source_title": "[PDF] Evidence from Personnel & Analytics Data on IT Professionals",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict site:bfi.uchicago.edu",
+          "read_focus": "Read external URL [PDF] Evidence from Personnel & Analytics Data on IT Professionals for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+          "quote_text": "productivity fell 8-19%.",
+          "claim_text": "productivity fell 8-19%.",
+          "relation_type": "SUPPORTS",
+          "support_score": 1.0,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/593e55b1-c8ca-4b19-8b5f-1b650b63e395/fbf4d65753241f21284a26a1617c77054c05663a26eca7643a92817c59d71f30"
+        },
+        {
+          "evidence_id": "evidence:afbc1939772a8642a55574beff332242c315a819c0f74841",
+          "window_id": "window-1",
+          "source_id": "web-d1be0b01247dc34a",
+          "source_title": "[PDF] Evidence from Personnel & Analytics Data on IT Professionals",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict site:bfi.uchicago.edu",
+          "read_focus": "Read external URL [PDF] Evidence from Personnel & Analytics Data on IT Professionals for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+          "quote_text": "productivity fell 8-19%.",
+          "claim_text": "productivity fell 8-19%.",
+          "relation_type": "CONFLICTS",
+          "support_score": 0.0,
+          "conflict_score": 1.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/593e55b1-c8ca-4b19-8b5f-1b650b63e395/fbf4d65753241f21284a26a1617c77054c05663a26eca7643a92817c59d71f30"
+        },
+        {
+          "evidence_id": "evidence:042324551091ffdea6767172c705d6eac6ad7614c6342d89",
+          "window_id": "window-1",
+          "source_id": "web-11fdc3889f8c82ee",
+          "source_title": "Hybrid working from home improves retention without damaging ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.nature.com/articles/s41586-024-07500-2",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage site:nature.com",
+          "read_focus": "Read external URL Hybrid working from home improves retention without damaging ... for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+          "quote_text": "The top management at the firm was surprised at the low volunteer rate for the optional hybrid WFH scheme.",
+          "claim_text": "The top management at the firm was surprised at the low volunteer rate for the optional hybrid WFH scheme.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/f2ce4f11-8245-45bd-85a8-7c5315bd3e78/1617cc699016d7134fc608f64b4940a569ad55f8b184e21ba25b700bc50b6d9d"
+        },
+        {
+          "evidence_id": "evidence:3766f88951cd1565a0019c227691f4692aa95261ac4131fd",
+          "window_id": "window-1",
+          "source_id": "web-d1be0b01247dc34a",
+          "source_title": "[PDF] Evidence from Personnel & Analytics Data on IT Professionals",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict site:bfi.uchicago.edu",
+          "read_focus": "Read external URL [PDF] Evidence from Personnel & Analytics Data on IT Professionals for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+          "quote_text": "Average output declined slightly, thus productivity fell 8-19%.",
+          "claim_text": "Average output declined slightly, thus productivity fell 8-19%.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/67665a3e-6bc0-4a97-b81a-8fac06d4d72c/fbf4d65753241f21284a26a1617c77054c05663a26eca7643a92817c59d71f30"
+        },
+        {
+          "evidence_id": "evidence:687d748282d21c73104aebade924274d6c338ffaccf3bde7",
+          "window_id": "window-1",
+          "source_id": "web-d1be0b01247dc34a",
+          "source_title": "[PDF] Evidence from Personnel & Analytics Data on IT Professionals",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict site:bfi.uchicago.edu",
+          "read_focus": "Read external URL [PDF] Evidence from Personnel & Analytics Data on IT Professionals for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+          "quote_text": "Average output declined slightly, thus productivity fell 8-19%.",
+          "claim_text": "Average output declined slightly, thus productivity fell 8-19%.",
+          "relation_type": "CONFLICTS",
+          "support_score": 0.0,
+          "conflict_score": 0.95,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/67665a3e-6bc0-4a97-b81a-8fac06d4d72c/fbf4d65753241f21284a26a1617c77054c05663a26eca7643a92817c59d71f30"
+        },
+        {
+          "evidence_id": "evidence:f5c25295fd2ed67e079dd6bdcaf39c43f5609b5dff73f1dc",
+          "window_id": "window-1",
+          "source_id": "web-d1be0b01247dc34a",
+          "source_title": "[PDF] Evidence from Personnel & Analytics Data on IT Professionals",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict site:bfi.uchicago.edu",
+          "read_focus": "Read external URL [PDF] Evidence from Personnel & Analytics Data on IT Professionals for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+          "quote_text": "productivity fell 8-19%.",
+          "claim_text": "productivity fell 8-19%.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/50e86a1d-78a8-49be-bb96-1d03dff649a2/fbf4d65753241f21284a26a1617c77054c05663a26eca7643a92817c59d71f30"
+        },
+        {
+          "evidence_id": "evidence:9758948a91fd7861d077758117ae91b24d6c5f2ecbace7c2",
+          "window_id": "window-1",
+          "source_id": "web-d1be0b01247dc34a",
+          "source_title": "[PDF] Evidence from Personnel & Analytics Data on IT Professionals",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict site:bfi.uchicago.edu",
+          "read_focus": "Read external URL [PDF] Evidence from Personnel & Analytics Data on IT Professionals for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+          "quote_text": "productivity fell 8-19%.",
+          "claim_text": "productivity fell 8-19%.",
+          "relation_type": "CONFLICTS",
+          "support_score": 0.0,
+          "conflict_score": 0.95,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/50e86a1d-78a8-49be-bb96-1d03dff649a2/fbf4d65753241f21284a26a1617c77054c05663a26eca7643a92817c59d71f30"
+        },
+        {
+          "evidence_id": "evidence:39e21314843e82f3c70c26481de919f36facc894f27bcd8a",
+          "window_id": "window-1",
+          "source_id": "web-d1be0b01247dc34a",
+          "source_title": "[PDF] Evidence from Personnel & Analytics Data on IT Professionals",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict site:bfi.uchicago.edu",
+          "read_focus": "Read external URL [PDF] Evidence from Personnel & Analytics Data on IT Professionals for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+          "quote_text": "productivity fell 8-19%.",
+          "claim_text": "productivity fell 8-19%.",
+          "relation_type": "SUPPORTS",
+          "support_score": 1.0,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/4ff66c12-2d4f-47ce-9e87-542675ec33ca/fbf4d65753241f21284a26a1617c77054c05663a26eca7643a92817c59d71f30"
+        },
+        {
+          "evidence_id": "evidence:83508d88f16048d11c88e7f283ec9418638048dd62ab3eb0",
+          "window_id": "window-1",
+          "source_id": "web-d1be0b01247dc34a",
+          "source_title": "[PDF] Evidence from Personnel & Analytics Data on IT Professionals",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict site:bfi.uchicago.edu",
+          "read_focus": "Read external URL [PDF] Evidence from Personnel & Analytics Data on IT Professionals for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+          "quote_text": "productivity fell 8-19%.",
+          "claim_text": "productivity fell 8-19%.",
+          "relation_type": "CONFLICTS",
+          "support_score": 0.0,
+          "conflict_score": 1.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/4ff66c12-2d4f-47ce-9e87-542675ec33ca/fbf4d65753241f21284a26a1617c77054c05663a26eca7643a92817c59d71f30"
+        },
+        {
+          "evidence_id": "evidence:920de955e31979adfb951cf3e89d06392240d73489e00192",
+          "window_id": "window-1",
+          "source_id": "web-d1be0b01247dc34a",
+          "source_title": "[PDF] Evidence from Personnel & Analytics Data on IT Professionals",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict site:bfi.uchicago.edu",
+          "read_focus": "Read external URL [PDF] Evidence from Personnel & Analytics Data on IT Professionals for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+          "quote_text": "productivity fell 8-19%.",
+          "claim_text": "productivity fell 8-19%.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/60dacdb9-a5dd-4f04-ae9d-53e197ebcaef/fbf4d65753241f21284a26a1617c77054c05663a26eca7643a92817c59d71f30"
+        },
+        {
+          "evidence_id": "evidence:8aaf9cf29506e2c5b93890d308a11e4aa03df29126048eb9",
+          "window_id": "window-1",
+          "source_id": "web-d1be0b01247dc34a",
+          "source_title": "[PDF] Evidence from Personnel & Analytics Data on IT Professionals",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict site:bfi.uchicago.edu",
+          "read_focus": "Read external URL [PDF] Evidence from Personnel & Analytics Data on IT Professionals for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+          "quote_text": "productivity fell 8-19%.",
+          "claim_text": "productivity fell 8-19%.",
+          "relation_type": "CONFLICTS",
+          "support_score": 0.0,
+          "conflict_score": 1.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/4fbea10f-ce19-47a8-9ca9-e2836d0d1f84/fbf4d65753241f21284a26a1617c77054c05663a26eca7643a92817c59d71f30"
+        },
+        {
+          "evidence_id": "evidence:dd6c5dc3c4a3506c0a50c6ece086f2f2472472ee7c5f25a3",
+          "window_id": "window-1",
+          "source_id": "web-d1be0b01247dc34a",
+          "source_title": "[PDF] Evidence from Personnel & Analytics Data on IT Professionals",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict site:bfi.uchicago.edu",
+          "read_focus": "Read external URL [PDF] Evidence from Personnel & Analytics Data on IT Professionals for claims that answer: Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+          "quote_text": "productivity fell 8-19%.",
+          "claim_text": "productivity fell 8-19%.",
+          "relation_type": "SUPPORTS",
+          "support_score": 1.0,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/4fbea10f-ce19-47a8-9ca9-e2836d0d1f84/fbf4d65753241f21284a26a1617c77054c05663a26eca7643a92817c59d71f30"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "subject:answer",
+          "row_id": "subject",
+          "evidence_id": "evidence:920de955e31979adfb951cf3e89d06392240d73489e00192",
+          "source_id": "web-d1be0b01247dc34a",
+          "source_title": "[PDF] Evidence from Personnel & Analytics Data on IT Professionals",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "ae6663ad-3cfa-497b-a76e-dfe972312f32",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "retrieval_mode": "WEB_ONLY",
+          "research_intent": {
+            "research_goal": "形成可逐项引用、证据不足时诚实降级的研究报告",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL",
+              "SOURCE_DOMAIN_ALLOWLIST: nature.com,bfi.uchicago.edu"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "profile_key": "DEFAULT",
+          "question": "Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+          "source_scope_count": 0
+        },
+        "created_at": "2026-09-20T12:11:06Z"
+      },
+      {
+        "trace_id": "84cb11ee-5e69-4bff-9f5f-fce0ebb3e871",
+        "trace_type": "RUN_BUSINESS_COMPLETED",
+        "trace_message": "INSUFFICIENT_EVIDENCE",
+        "payload": {},
+        "created_at": "2026-09-20T12:15:51Z"
+      }
+    ],
+    "created_at": "2026-09-20T12:11:05Z",
+    "updated_at": "2026-09-20T12:15:50Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "task_count": 9,
+      "candidate_count": 9,
+      "candidates": [
+        {
+          "confidence": 0.95,
+          "base_cell_version": 0,
+          "task_id": "96ba76b6-b7ec-4a5a-96b0-b1619041813b",
+          "cell_key": "subject:answer",
+          "candidate_id": "c56f7319-a5d5-4b8d-bd4a-048b4ef0c1a3"
+        },
+        {
+          "confidence": 1.0,
+          "base_cell_version": 0,
+          "task_id": "ad9ebd2e-d101-4557-ac8d-6c732291e83c",
+          "cell_key": "subject:answer",
+          "candidate_id": "42bc4d4c-68b7-4f35-92e7-56bf893e4c43"
+        },
+        {
+          "confidence": 1.0,
+          "base_cell_version": 0,
+          "task_id": "593e55b1-c8ca-4b19-8b5f-1b650b63e395",
+          "cell_key": "subject:key_evidence",
+          "candidate_id": "8185eb9c-dbf3-445c-9d1c-78cd88cde52a"
+        },
+        {
+          "confidence": 0.9,
+          "base_cell_version": 0,
+          "task_id": "f2ce4f11-8245-45bd-85a8-7c5315bd3e78",
+          "cell_key": "subject:key_evidence",
+          "candidate_id": "5e13b94d-a63e-402f-a7cd-d995b958abc1"
+        },
+        {
+          "confidence": 0.95,
+          "base_cell_version": 0,
+          "task_id": "67665a3e-6bc0-4a97-b81a-8fac06d4d72c",
+          "cell_key": "subject:limitations",
+          "candidate_id": "e715eba0-0982-46e9-af11-1229be5e8b25"
+        },
+        {
+          "confidence": 0.95,
+          "base_cell_version": 0,
+          "task_id": "50e86a1d-78a8-49be-bb96-1d03dff649a2",
+          "cell_key": "subject:implications",
+          "candidate_id": "fd2f915a-3ead-43f9-964b-ca0eaae160b5"
+        },
+        {
+          "confidence": 1.0,
+          "base_cell_version": 0,
+          "task_id": "4ff66c12-2d4f-47ce-9e87-542675ec33ca",
+          "cell_key": "subject:key_evidence",
+          "candidate_id": "c43b5949-2dbc-4738-bef1-a22c0bd09205"
+        },
+        {
+          "confidence": 0.95,
+          "base_cell_version": 0,
+          "task_id": "60dacdb9-a5dd-4f04-ae9d-53e197ebcaef",
+          "cell_key": "subject:answer",
+          "candidate_id": "900b6797-7b06-4710-96dc-37019ab66e70"
+        },
+        {
+          "confidence": 1.0,
+          "base_cell_version": 0,
+          "task_id": "4fbea10f-ce19-47a8-9ca9-e2836d0d1f84",
+          "cell_key": "subject:key_evidence",
+          "candidate_id": "756de058-1376-41a0-b103-16ad998317fa"
+        }
+      ],
+      "tasks": [
+        {
+          "task_id": "50e86a1d-78a8-49be-bb96-1d03dff649a2",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-09-20T12:14:48Z",
+          "status": "SUBMITTED",
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1",
+          "task_key": "deep-cell:2ee31a674b25b3102824aec1e867b0f3"
+        },
+        {
+          "task_id": "593e55b1-c8ca-4b19-8b5f-1b650b63e395",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-09-20T12:13:11Z",
+          "status": "SUBMITTED",
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1",
+          "task_key": "deep-cell:7ebe6d97b88168bb746d7f03f97de277:slot:1"
+        },
+        {
+          "task_id": "67665a3e-6bc0-4a97-b81a-8fac06d4d72c",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-09-20T12:14:24Z",
+          "status": "SUBMITTED",
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1",
+          "task_key": "deep-cell:4adda52503044f2976e5f3eb57adfd2e"
+        },
+        {
+          "task_id": "96ba76b6-b7ec-4a5a-96b0-b1619041813b",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-09-20T12:12:30Z",
+          "status": "SUBMITTED",
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1",
+          "task_key": "deep-cell:1c4312275bcec8fef270822c0493183c:slot:2"
+        },
+        {
+          "task_id": "ad9ebd2e-d101-4557-ac8d-6c732291e83c",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-09-20T12:12:46Z",
+          "status": "SUBMITTED",
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1",
+          "task_key": "deep-cell:1c4312275bcec8fef270822c0493183c:slot:1"
+        },
+        {
+          "task_id": "f2ce4f11-8245-45bd-85a8-7c5315bd3e78",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-09-20T12:13:38Z",
+          "status": "SUBMITTED",
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1",
+          "task_key": "deep-cell:7ebe6d97b88168bb746d7f03f97de277:slot:2"
+        },
+        {
+          "task_id": "4ff66c12-2d4f-47ce-9e87-542675ec33ca",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-09-20T12:15:30Z",
+          "status": "SUBMITTED",
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1",
+          "task_key": "conflict-counterfactual:b31785c73f45f479dc4c2d8b9a3e6a2e"
+        },
+        {
+          "task_id": "4fbea10f-ce19-47a8-9ca9-e2836d0d1f84",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-09-20T12:16:40Z",
+          "status": "SUBMITTED",
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1",
+          "task_key": "counterfactual:884070a7c9e49bd701f41a975b70e12b"
+        },
+        {
+          "task_id": "60dacdb9-a5dd-4f04-ae9d-53e197ebcaef",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-09-20T12:15:52Z",
+          "status": "SUBMITTED",
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1",
+          "task_key": "counterfactual:d5bfdcbd448dc8ed83fc08f65641e985"
+        }
+      ],
+      "checkpoints": [
+        {
+          "task_high_water_mark": 7,
+          "checkpoint_seq": 1,
+          "candidate_high_water_mark": 7,
+          "merge_high_water_mark": 5
+        },
+        {
+          "task_high_water_mark": 9,
+          "checkpoint_seq": 2,
+          "candidate_high_water_mark": 9,
+          "merge_high_water_mark": 7
+        }
+      ],
+      "merges": [
+        {
+          "decision": "REJECTED",
+          "candidate_id": "42bc4d4c-68b7-4f35-92e7-56bf893e4c43",
+          "merge_id": "quorum-merge:dbfc7ad1c3a876c43a2abea519a1ec5e19875fc24bece9665e7abc689cfb0f42",
+          "cell_key": "subject:answer",
+          "result_cell_version": 0,
+          "expected_cell_version": 0,
+          "reason_code": "QUORUM_VALUE_CONFLICT"
+        },
+        {
+          "decision": "REJECTED",
+          "candidate_id": "8185eb9c-dbf3-445c-9d1c-78cd88cde52a",
+          "merge_id": "quorum-merge:4491ceb45fec1506c946855f47a4f04ee67bc78394868abbfb5daac3b5af08e7",
+          "cell_key": "subject:key_evidence",
+          "result_cell_version": 0,
+          "expected_cell_version": 0,
+          "reason_code": "QUORUM_VALUE_CONFLICT"
+        },
+        {
+          "decision": "REJECTED",
+          "candidate_id": "e715eba0-0982-46e9-af11-1229be5e8b25",
+          "merge_id": "merge:81ee2a5d09c17a68efd48e83db5451efa95d141c0ff92a43058fb6bd6bd2a13a",
+          "cell_key": "subject:limitations",
+          "result_cell_version": 0,
+          "expected_cell_version": 0,
+          "reason_code": "NOT_ENOUGH_INFO"
+        },
+        {
+          "decision": "REJECTED",
+          "candidate_id": "fd2f915a-3ead-43f9-964b-ca0eaae160b5",
+          "merge_id": "merge:d6876437e4759698aabe9012411dfab9e877f6e00be1ef927b2f01a4086d0735",
+          "cell_key": "subject:implications",
+          "result_cell_version": 0,
+          "expected_cell_version": 0,
+          "reason_code": "NOT_ENOUGH_INFO"
+        },
+        {
+          "decision": "REJECTED",
+          "candidate_id": "c43b5949-2dbc-4738-bef1-a22c0bd09205",
+          "merge_id": "merge:df7899b28fb497331ab226dbb962345734092e2194f071ed2ed1ac2f6a987ef7",
+          "cell_key": "subject:key_evidence",
+          "result_cell_version": 0,
+          "expected_cell_version": 0,
+          "reason_code": "NOT_ENOUGH_INFO"
+        },
+        {
+          "decision": "ACCEPTED",
+          "candidate_id": "900b6797-7b06-4710-96dc-37019ab66e70",
+          "merge_id": "merge:a2e109d97f349395046a895efad3a182e8bb1f02384f083bad680a7647857fd3",
+          "cell_key": "subject:answer",
+          "result_cell_version": 1,
+          "expected_cell_version": 0,
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED"
+        },
+        {
+          "decision": "REJECTED",
+          "candidate_id": "756de058-1376-41a0-b103-16ad998317fa",
+          "merge_id": "merge:7d5fba1380a9f2417a7a0a1a14c24b63ed5084e718db02606abaa027888cca4c",
+          "cell_key": "subject:key_evidence",
+          "result_cell_version": 0,
+          "expected_cell_version": 0,
+          "reason_code": "NOT_ENOUGH_INFO"
+        }
+      ],
+      "execution_mode": "INCREMENTAL_V1",
+      "merge_count": 7
+    }
+  },
+  "evidence_manifest_capture": {
+    "available": false,
+    "error": "GET /api/v2/workspaces/0bc4aaad-297a-4930-a978-a73e1b42f24e/research-runs/6577fda7-5a7d-4432-aad4-2cc615e8a05b/evidence failed (400): {\"success\":false,\"code\":\"RESEARCH_EVIDENCE_MANIFEST_NOT_FOUND\",\"message\":\"Research evidence manifest does not exist\",\"data\":null,\"request_id\":\"b3907fbd-1d07-4b9f-a66b-de8fa2bbff3f\"}"
+  },
+  "collection_capture": {
+    "available": false,
+    "error": "GET /api/v2/workspaces/0bc4aaad-297a-4930-a978-a73e1b42f24e/research-runs/6577fda7-5a7d-4432-aad4-2cc615e8a05b/collection failed (400): {\"success\":false,\"code\":\"RESEARCH_COLLECTION_NOT_FOUND\",\"message\":\"Research Collection does not exist\",\"data\":null,\"request_id\":\"478ad2b3-0739-4dc1-8590-1f02c22a52cd\"}"
+  }
+}

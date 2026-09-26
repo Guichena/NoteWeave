@@ -13,6 +13,7 @@ export function useArtifactStudioCatalog(
   api: ArtifactsApi = artifactsApi
 ) {
   const [skills, setSkills] = useState<ArtifactStudioSkill[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedSkillKey, setSelectedSkillKey] = useState("");
   const [composerOpen, setComposerOpen] = useState(false);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
@@ -27,6 +28,7 @@ export function useArtifactStudioCatalog(
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
     void api.listSkills()
       .then((summaries) => {
         if (cancelled) {
@@ -45,6 +47,7 @@ export function useArtifactStudioCatalog(
               : leftOrder - rightOrder;
           });
         setSkills(loadedSkills);
+        setLoading(false);
         if (loadedSkills.length === 0) {
           setComposerOpen(false);
           onStatus("Skill 目录为空，当前不能创建 Artifact 任务。");
@@ -58,6 +61,7 @@ export function useArtifactStudioCatalog(
           return;
         }
         setSkills([]);
+        setLoading(false);
         setSelectedSkillKey("");
         setComposerOpen(false);
         onStatus("Skill 目录加载失败，请检查 Artifact Worker 后重试。");
@@ -75,6 +79,7 @@ export function useArtifactStudioCatalog(
 
   return {
     skills,
+    loading,
     selectedSkill,
     selectedSkillKey,
     setSelectedSkillKey,

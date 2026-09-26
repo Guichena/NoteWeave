@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { parseAppLocation, pathForView } from "./viewRoute";
 
 describe("viewRoute", () => {
-  it("maps research and memory paths", () => {
+  it("maps library, research and memory paths", () => {
+    expect(parseAppLocation("/library").view).toBe("library");
     expect(parseAppLocation("/research").view).toBe("research");
     expect(parseAppLocation("/memory/reviews").view).toBe("memory");
     expect(pathForView("research")).toBe("/research");
@@ -19,3 +20,4 @@ describe("viewRoute", () => {
     expect(pathForView("wiki", "/wiki/ws-1")).toBe("/wiki/ws-1");
   });
 });
+    expect(pathForView("library")).toBe("/library");

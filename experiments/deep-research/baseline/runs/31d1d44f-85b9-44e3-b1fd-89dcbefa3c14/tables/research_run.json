@@ -1,0 +1,43 @@
+[
+  {
+    "agent_execution_mode": "INCREMENTAL_V1",
+    "agent_feature_flags_json": {
+      "checkpoint_hydration_v2": false,
+      "evidence_audit_v1": true,
+      "intent_matrix_v2": false,
+      "runnable_work_v2": false,
+      "strict_research_evidence_validation": false,
+      "wide_discovery_accepted_precision": 0.0,
+      "wide_discovery_auto_accept": false,
+      "wide_discovery_precision_threshold": 0.9,
+      "wide_discovery_v1": false,
+      "worker_synthesis_v1": true
+    },
+    "answer_message_id": null,
+    "attempt_no": 1,
+    "context_snapshot_id": null,
+    "control_pack_json": "{\"pack_type\":\"research\",\"target_key\":\"DEEP\",\"task_neighborhood\":\"RESEARCH_DEEP\",\"style_constraints\":[],\"structure_constraints\":[],\"terminology_policy\":[],\"forbidden_patterns\":[],\"evidence_policy\":[\"Memory 不作为研究证据\",\"研究结论必须由搜索结果、工作台资料或验证证据支持\"],\"interaction_policy\":[],\"review_checklist\":[],\"memory_object_ids\":[],\"memory_references\":[],\"compilation_trace\":{\"policy_version\":\"memory-compiler-policy-v1\",\"maximum_tokens\":480,\"selected_tokens\":35,\"candidate_count\":0,\"selected_count\":0,\"dropped_count\":0,\"truncated\":false,\"degraded\":false,\"degradation_reasons\":[]}}",
+    "conversation_id": null,
+    "created_at": "2026-09-18 08:12:38.000000",
+    "fencing_token": 1,
+    "final_report_markdown": null,
+    "final_report_title": null,
+    "id": "31d1d44f-85b9-44e3-b1fd-89dcbefa3c14",
+    "profile_key": "DEEP",
+    "query_message_id": null,
+    "question": "截至 2026 年 9 月，比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的主要差异。必须引用两家公司官方文档，并给出可核验 URL。验收标记：NW-E2E-2026-09-18 16:12:37",
+    "report_source_id": null,
+    "research_intent_json": "{\"research_goal\":\"验证真实联网检索、网页读取、证据抽取、Table-as-State、Verifier 与最终报告链路\",\"deliverable_format\":\"中文对比报告，包含结论、证据引用、URL 和不确定性\",\"constraints\":[\"仅使用 OpenAI 与 Anthropic 官方文档作为核心证据\",\"每个核心结论必须关联可核验 URL\",\"明确标注无法确认的信息\"],\"time_range\":\"截至 2026-09\",\"depth\":\"DEEP\",\"research_type\":\"COMPARATIVE\"}",
+    "resume_mode": null,
+    "resumed_from_checkpoint_no": null,
+    "resumed_from_research_run_id": null,
+    "retrieval_mode": "WEB_ONLY",
+    "run_version": 0,
+    "source_scope_json": "[]",
+    "status": "FAILED",
+    "task_id": "e035c6b2-9947-49d3-ae98-2f56d2c07bc2",
+    "trace_summary": null,
+    "updated_at": "2026-09-18 08:15:42.000000",
+    "workspace_id": "46ed460c-c240-42c9-8152-2595cdc21ef4"
+  }
+]

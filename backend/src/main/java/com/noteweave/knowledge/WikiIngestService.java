@@ -10,8 +10,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
+import java.sql.Timestamp;
+import java.time.Duration;
+import java.time.Instant;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -26,6 +29,8 @@ public class WikiIngestService {
     private final ObjectMapper objectMapper;
     private final SourceMessagingMode messagingMode;
     private final WikiIngestTransactionExecutor transactionExecutor;
+
+    private static final Duration ORPHANED_PENDING_TASK_AGE = Duration.ofMinutes(10);
 
     public WikiIngestService(
             JdbcTemplate jdbcTemplate,
@@ -60,10 +65,12 @@ public class WikiIngestService {
      * Kafka 消费者回调入口：直接执行 source ingest。
      */
     public void runSourceIngestNow(String taskId, String workspaceId, String sourceId) {
-        if (!workspaceQueryPort.isWikiEnabled(workspaceId)) {
+        if (!isWikiEnabledForInternalExecution(workspaceId)) {
             taskCommandPort.cancelTask(taskId, "WIKI_DISABLED", "Wiki 构建已关闭，跳过资料 ingest", sourceId);
             return;
         }
+        cancelSupersededPendingTasks(
+                taskId, workspaceId, sourceId, "WIKI_INGEST", "ingest");
         taskCommandPort.startTask(taskId);
         try {
             transactionExecutor.execute(() -> {
@@ -83,10 +90,12 @@ public class WikiIngestService {
      * Kafka 消费者回调入口：直接执行 source retract。
      */
     public void runSourceRetractNow(String taskId, String workspaceId, String sourceId) {
-        if (!workspaceQueryPort.isWikiEnabled(workspaceId)) {
+        if (!isWikiEnabledForInternalExecution(workspaceId)) {
             taskCommandPort.cancelTask(taskId, "WIKI_DISABLED", "Wiki 构建已关闭，跳过资料 retract", sourceId);
             return;
         }
+        cancelSupersededPendingTasks(
+                taskId, workspaceId, sourceId, "WIKI_RETRACT", "retract");
         taskCommandPort.startTask(taskId);
         try {
             transactionExecutor.execute(() -> {
@@ -122,6 +131,34 @@ public class WikiIngestService {
                 .map(sourceId -> enqueueAndRunSourceIngest(workspaceId, sourceId, trigger, "Wiki 工作台级回补/重建已入队"))
                 .toList();
         return new WikiRebuildResponse(workspaceId, sourceIds.size(), taskIds.size(), taskIds);
+    }
+
+    @Scheduled(
+            fixedDelayString = "${noteweave.wiki.task-reconcile-ms:60000}",
+            initialDelayString = "${noteweave.wiki.task-reconcile-initial-delay-ms:5000}"
+    )
+    public int reconcileOrphanedPendingWikiTasks() {
+        Timestamp cutoff = Timestamp.from(
+                Instant.now().minus(ORPHANED_PENDING_TASK_AGE));
+        List<String> orphanedTaskIds = jdbcTemplate.queryForList("""
+                select distinct t.id
+                from task t
+                join task_outbox o on o.task_id = t.id
+                where t.task_type in ('WIKI_INGEST', 'WIKI_RETRACT')
+                  and t.task_status = 'PENDING'
+                  and o.status = 'SENT'
+                  and t.updated_at < ?
+                order by t.id asc
+                limit 100
+                """, String.class, cutoff);
+        for (String taskId : orphanedTaskIds) {
+            taskCommandPort.cancelTask(
+                    taskId,
+                    "WIKI_DELIVERY_ORPHANED",
+                    "Wiki 消息已发送但消费者长时间未接管，任务已安全取消，可通过资料重建重新执行",
+                    "");
+        }
+        return orphanedTaskIds.size();
     }
 
     public String enqueueAndRunSourceRetractIfEnabled(String workspaceId, String sourceId, String sourceTitle) {
@@ -194,6 +231,41 @@ public class WikiIngestService {
         });
     }
 
+    /**
+     * Kafka callbacks have no servlet request identity. Their task payload is already scoped to a
+     * workspace, so the worker only needs the persisted workspace state instead of the
+     * user-authorized {@link WorkspaceQueryPort} used by request-facing enqueue operations.
+     */
+    private boolean isWikiEnabledForInternalExecution(String workspaceId) {
+        Integer enabledWorkspaceCount = jdbcTemplate.queryForObject("""
+                select count(*) from workspace
+                where id = ? and status = 'ACTIVE' and wiki_enabled = true
+                """, Integer.class, workspaceId);
+        return enabledWorkspaceCount != null && enabledWorkspaceCount > 0;
+    }
+
+    private void cancelSupersededPendingTasks(
+            String currentTaskId,
+            String workspaceId,
+            String sourceId,
+            String taskType,
+            String operation
+    ) {
+        List<String> staleTaskIds = jdbcTemplate.queryForList("""
+                select id from task
+                where id <> ? and workspace_id = ? and target_id = ?
+                  and task_type = ? and task_status = 'PENDING'
+                order by created_at asc, id asc
+                """, String.class, currentTaskId, workspaceId, sourceId, taskType);
+        for (String staleTaskId : staleTaskIds) {
+            taskCommandPort.cancelTask(
+                    staleTaskId,
+                    "WIKI_SUPERSEDED",
+                    "较新的 Wiki " + operation + " 任务已接管同一资料，取消旧的待处理任务",
+                    sourceId);
+        }
+    }
+
     private String failureMessage(RuntimeException ex) {
         return ex.getMessage() == null || ex.getMessage().isBlank()
                 ? ex.getClass().getSimpleName()
@@ -204,13 +276,13 @@ public class WikiIngestService {
         SourceForWiki source = loadSource(workspaceId, sourceId);
         List<ChunkForWiki> chunks = loadChunks(workspaceId, sourceId);
         List<String> citationIds = createCitations(workspaceId, chunks, 3);
-        KnowledgeItemResponse sourcePage = knowledgeCommandService.upsertWikiPage(
+        KnowledgeItemResponse sourcePage = knowledgeCommandService.upsertWikiPageForInternalExecution(
                 workspaceId,
                 source.title(),
                 buildSourcePageContent(source, chunks),
                 citationIds
         );
-        for (String concept : wikiConcepts(source)) {
+        for (String concept : WikiConceptExtractor.extract(source.title(), source.tagsJson())) {
             List<SourceForWiki> relatedSources = loadRelatedSourcesForConcept(workspaceId, concept, 4);
             if (relatedSources.isEmpty()) {
                 relatedSources = List.of(source);
@@ -221,7 +293,7 @@ public class WikiIngestService {
                     6
             );
             List<String> conceptCitationIds = createCitations(workspaceId, relatedChunks, 4);
-            knowledgeCommandService.upsertWikiPage(
+            knowledgeCommandService.upsertWikiPageForInternalExecution(
                     workspaceId,
                     concept,
                     buildConceptPageContent(concept, relatedSources, relatedChunks, source),
@@ -328,7 +400,7 @@ public class WikiIngestService {
         builder.append("# ").append(source.title()).append("\n\n");
         builder.append("## 资料摘要\n\n");
         builder.append(source.summary().isBlank() ? "该页面由 Wiki ingest 根据资料内容生成，可通过 Wiki 工作台继续维护。" : source.summary()).append("\n\n");
-        List<String> concepts = wikiConcepts(source);
+        List<String> concepts = WikiConceptExtractor.extract(source.title(), source.tagsJson());
         builder.append("## 页面导航\n\n");
         builder.append("- [[Wiki Index]]\n");
         if (!concepts.isEmpty()) {
@@ -382,7 +454,7 @@ public class WikiIngestService {
             }
         }
         builder.append("\n## 相邻概念\n\n");
-        for (String sibling : wikiConcepts(triggerSource)) {
+        for (String sibling : WikiConceptExtractor.extract(triggerSource.title(), triggerSource.tagsJson())) {
             if (!sibling.equalsIgnoreCase(concept)) {
                 builder.append("- [[").append(sibling).append("]]\n");
             }
@@ -397,7 +469,7 @@ public class WikiIngestService {
         List<ChunkForWiki> overviewChunks = loadRecentWorkspaceChunks(workspaceId, 4);
         List<String> citationIds = createCitations(workspaceId, overviewChunks, 4);
         String content = buildWorkspaceIndexPageContent(workspaceId, triggerTitle, pages);
-        knowledgeCommandService.upsertWikiPage(
+        knowledgeCommandService.upsertWikiPageForInternalExecution(
                 workspaceId, "Wiki Index", content, citationIds);
     }
 
@@ -405,7 +477,8 @@ public class WikiIngestService {
         List<SimpleWikiPage> visiblePages = pages.stream()
                 .filter(page -> !"Wiki Index".equalsIgnoreCase(page.title()))
                 .toList();
-        WikiStatsResponse stats = knowledgeGovernanceService.getWikiStats(workspaceId);
+        WikiStatsResponse stats = knowledgeGovernanceService
+                .getWikiStatsForInternalExecution(workspaceId);
         List<WikiIssueResponse> topIssues = knowledgeGovernanceService
                 .listWikiIssues(workspaceId, null, null, null, null).stream()
                 .limit(4)
@@ -488,36 +561,6 @@ public class WikiIngestService {
                 .filter(entry -> !orderedKinds.contains(entry.getKey()) && entry.getValue() != null && entry.getValue() > 0)
                 .sorted(Map.Entry.comparingByKey())
                 .forEach(entry -> builder.append("- ").append(entry.getKey()).append(": ").append(entry.getValue()).append("\n"));
-    }
-
-    private List<String> wikiConcepts(SourceForWiki source) {
-        List<String> concepts = new ArrayList<>();
-        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\"([^\"]{2,40})\"").matcher(source.tagsJson());
-        while (matcher.find() && concepts.size() < 6) {
-            addConcept(concepts, matcher.group(1));
-        }
-        for (String part : source.title().replaceAll("\\.[a-zA-Z0-9]{1,8}$", "").split("[\\s_\\-]+")) {
-            if (concepts.size() >= 6) {
-                break;
-            }
-            addConcept(concepts, part);
-        }
-        return concepts;
-    }
-
-    private void addConcept(List<String> concepts, String value) {
-        String normalized = value == null ? "" : value.trim();
-        if (normalized.length() < 2 || normalized.length() > 40) {
-            return;
-        }
-        String lowered = normalized.toLowerCase(Locale.ROOT);
-        if (Set.of("markdown", "pdf", "txt", "text", "doc", "docx", "md").contains(lowered)) {
-            return;
-        }
-        boolean exists = concepts.stream().anyMatch(item -> item.equalsIgnoreCase(normalized));
-        if (!exists) {
-            concepts.add(normalized);
-        }
     }
 
     private List<SimpleWikiPage> loadActiveWikiPages(String workspaceId) {

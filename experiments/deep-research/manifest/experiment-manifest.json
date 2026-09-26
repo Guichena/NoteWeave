@@ -1,0 +1,282 @@
+{
+  "acceptance_environment_declared": {
+    "advanced_features_disabled": true,
+    "concurrency": 1,
+    "note": "第 2.2 节：验收环境固定为高级特性关闭、单 Worker、并发度 1。",
+    "worker_replicas": 1
+  },
+  "code": {
+    "branch": "feature/noteweave-v2-rebuild",
+    "changed_path_count": 756,
+    "commit": "fd60682ad4e9568798488aa1485d0a68d582c414",
+    "database_migration": {
+      "count": 88,
+      "file": "V105__add_research_agent_extraction_diagnostics.sql",
+      "version": "V105"
+    },
+    "dirty": true
+  },
+  "effective_environment": {
+    "acceptance_compliance": {
+      "compliant": false,
+      "flags": {
+        "NOTEWEAVE_RESEARCH_AGENT_EVIDENCE_AUDIT_ENABLED": {
+          "state": "SET",
+          "value": true
+        },
+        "NOTEWEAVE_RESEARCH_AGENT_SYNTHESIS_ENABLED": {
+          "state": "SET",
+          "value": true
+        },
+        "NOTEWEAVE_RESEARCH_AGENT_WIDE_DISCOVERY_ENABLED": {
+          "state": "SET",
+          "value": false
+        },
+        "NOTEWEAVE_RESEARCH_CHECKPOINT_HYDRATION_V2": {
+          "state": "SET",
+          "value": false
+        },
+        "NOTEWEAVE_RESEARCH_ENABLE_URL_READER": {
+          "state": "SET",
+          "value": true
+        },
+        "NOTEWEAVE_RESEARCH_EVIDENCE_AUDIT_V1": {
+          "state": "SET",
+          "value": true
+        },
+        "NOTEWEAVE_RESEARCH_INTENT_MATRIX_V2": {
+          "state": "SET",
+          "value": false
+        },
+        "NOTEWEAVE_RESEARCH_RUNNABLE_WORK_V2": {
+          "state": "SET",
+          "value": false
+        },
+        "NOTEWEAVE_RESEARCH_WIDE_DISCOVERY_V1": {
+          "state": "SET",
+          "value": false
+        },
+        "NOTEWEAVE_RESEARCH_WORKER_SYNTHESIS_V1": {
+          "state": "SET",
+          "value": true
+        }
+      },
+      "requirement": "第 2.2 节：验收环境固定为高级特性关闭",
+      "violations": [
+        "NOTEWEAVE_RESEARCH_AGENT_EVIDENCE_AUDIT_ENABLED",
+        "NOTEWEAVE_RESEARCH_AGENT_SYNTHESIS_ENABLED",
+        "NOTEWEAVE_RESEARCH_ENABLE_URL_READER",
+        "NOTEWEAVE_RESEARCH_EVIDENCE_AUDIT_V1",
+        "NOTEWEAVE_RESEARCH_WORKER_SYNTHESIS_V1"
+      ]
+    },
+    "available": true,
+    "containers": {
+      "backend": {
+        "available": true,
+        "container": "noteweave-v2-backend",
+        "digest": "sha256:21ce362c90352cfe10fabdeb9f0c7f3276b7f81bb883900002743f019cd27d55",
+        "source": "docker exec noteweave-v2-backend printenv",
+        "values": {
+          "NOTEWEAVE_RESEARCH_AGENT_COMMAND_DISPATCH_BATCH_SIZE": "25",
+          "NOTEWEAVE_RESEARCH_AGENT_COMMAND_DISPATCH_DELAY_MS": "1000",
+          "NOTEWEAVE_RESEARCH_AGENT_ROLLOUT_GUARD_ENABLED": "false",
+          "NOTEWEAVE_RESEARCH_CHECKPOINT_HYDRATION_V2": "false",
+          "NOTEWEAVE_RESEARCH_DISTRIBUTED_REPLAY_OBSERVATION": "false",
+          "NOTEWEAVE_RESEARCH_EVIDENCE_AUDIT_V1": "true",
+          "NOTEWEAVE_RESEARCH_INTENT_MATRIX_V2": "false",
+          "NOTEWEAVE_RESEARCH_INTERNAL_AUTH_TOKEN": "SET",
+          "NOTEWEAVE_RESEARCH_RUNNABLE_WORK_V2": "false",
+          "NOTEWEAVE_RESEARCH_STRICT_EVIDENCE_VALIDATION": "false",
+          "NOTEWEAVE_RESEARCH_WIDE_DISCOVERY_AUTO_ACCEPT": "false",
+          "NOTEWEAVE_RESEARCH_WIDE_DISCOVERY_V1": "false",
+          "NOTEWEAVE_RESEARCH_WORKER_SYNTHESIS_V1": "true"
+        }
+      },
+      "worker": {
+        "available": true,
+        "container": "noteweave-v2-research-worker-consumer",
+        "digest": "sha256:ba4104465770d8f4c1682daa15417bf7b9b81be4de1429e03a7239ff33a27746",
+        "drift_vs_declared": {
+          "declared_only_keys": [],
+          "differences": [
+            {
+              "declared": "false",
+              "effective": "true",
+              "key": "NOTEWEAVE_RESEARCH_AGENT_EVIDENCE_AUDIT_ENABLED"
+            },
+            {
+              "declared": "false",
+              "effective": "true",
+              "key": "NOTEWEAVE_RESEARCH_AGENT_SYNTHESIS_ENABLED"
+            },
+            {
+              "declared": "false",
+              "effective": "true",
+              "key": "NOTEWEAVE_RESEARCH_ENABLE_URL_READER"
+            },
+            {
+              "declared": "UNSET",
+              "effective": "SET",
+              "key": "NOTEWEAVE_RESEARCH_JINA_API_KEY"
+            },
+            {
+              "declared": "UNSET",
+              "effective": "SET",
+              "key": "NOTEWEAVE_RESEARCH_LLM_API_KEY"
+            },
+            {
+              "declared": "",
+              "effective": "https://api.zetatechs.com/v1",
+              "key": "NOTEWEAVE_RESEARCH_LLM_BASE_URL"
+            },
+            {
+              "declared": "",
+              "effective": "glm-5.3-flash",
+              "key": "NOTEWEAVE_RESEARCH_LLM_MODEL"
+            },
+            {
+              "declared": "UNSET",
+              "effective": "SET",
+              "key": "NOTEWEAVE_RESEARCH_SEARCH_API_KEY"
+            },
+            {
+              "declared": "",
+              "effective": "https://google.serper.dev/search",
+              "key": "NOTEWEAVE_RESEARCH_SEARCH_BASE_URL"
+            }
+          ],
+          "effective_only_keys": [],
+          "unresolved_template_keys": [
+            "NOTEWEAVE_RESEARCH_LLM_PURPOSE_OPTIONS"
+          ]
+        },
+        "source": "docker exec noteweave-v2-research-worker-consumer printenv",
+        "values": {
+          "NOTEWEAVE_RESEARCH_AGENT_BUNDLE_MAX_CELLS": "3",
+          "NOTEWEAVE_RESEARCH_AGENT_COMPLETION_MAX_ATTEMPTS": "3",
+          "NOTEWEAVE_RESEARCH_AGENT_CONSUMER_ENABLED": "true",
+          "NOTEWEAVE_RESEARCH_AGENT_DEEP_CELL_EXECUTOR_ENABLED": "true",
+          "NOTEWEAVE_RESEARCH_AGENT_DRAIN_GRACE_SECONDS": "30",
+          "NOTEWEAVE_RESEARCH_AGENT_DRAIN_POLL_TIMEOUT_MS": "500",
+          "NOTEWEAVE_RESEARCH_AGENT_EVIDENCE_AUDIT_ENABLED": "true",
+          "NOTEWEAVE_RESEARCH_AGENT_EXECUTION_MODE": "INCREMENTAL_V1",
+          "NOTEWEAVE_RESEARCH_AGENT_FAKE_PROVIDER_ENABLED": "false",
+          "NOTEWEAVE_RESEARCH_AGENT_HEARTBEAT_FAILURE_BUDGET_SECONDS": "30",
+          "NOTEWEAVE_RESEARCH_AGENT_HEARTBEAT_INTERVAL_SECONDS": "15",
+          "NOTEWEAVE_RESEARCH_AGENT_HEARTBEAT_REQUEST_TIMEOUT_SECONDS": "5",
+          "NOTEWEAVE_RESEARCH_AGENT_LEASE_SECONDS": "60",
+          "NOTEWEAVE_RESEARCH_AGENT_MAX_CONCURRENCY": "1",
+          "NOTEWEAVE_RESEARCH_AGENT_SYNTHESIS_ENABLED": "true",
+          "NOTEWEAVE_RESEARCH_AGENT_WIDE_DISCOVERY_ENABLED": "false",
+          "NOTEWEAVE_RESEARCH_AGENT_WORKER_INSTANCE_ID": "research-agent-worker-1",
+          "NOTEWEAVE_RESEARCH_ENABLE_URL_READER": "true",
+          "NOTEWEAVE_RESEARCH_INTERNAL_AUTH_TOKEN": "SET",
+          "NOTEWEAVE_RESEARCH_JINA_API_KEY": "SET",
+          "NOTEWEAVE_RESEARCH_JINA_BASE_URL": "https://r.jina.ai/",
+          "NOTEWEAVE_RESEARCH_LLM_API_KEY": "SET",
+          "NOTEWEAVE_RESEARCH_LLM_BASE_URL": "https://api.zetatechs.com/v1",
+          "NOTEWEAVE_RESEARCH_LLM_CONTEXT_SAFETY_BUFFER_CHARS": "8000",
+          "NOTEWEAVE_RESEARCH_LLM_INPUT_COST_PER_MILLION": "0",
+          "NOTEWEAVE_RESEARCH_LLM_MAX_ATTEMPTS": "3",
+          "NOTEWEAVE_RESEARCH_LLM_MAX_INPUT_CHARS": "120000",
+          "NOTEWEAVE_RESEARCH_LLM_MAX_TOTAL_CALLS": "64",
+          "NOTEWEAVE_RESEARCH_LLM_MODEL": "glm-5.3-flash",
+          "NOTEWEAVE_RESEARCH_LLM_OUTPUT_COST_PER_MILLION": "0",
+          "NOTEWEAVE_RESEARCH_LLM_PURPOSE_OPTIONS": "{\"research.extract\":{\"model\":\"deepseek-v4-flash\",\"max_tokens\":1600}}",
+          "NOTEWEAVE_RESEARCH_LLM_TIMEOUT_SECONDS": "60",
+          "NOTEWEAVE_RESEARCH_PUBLIC_SEARCH_ENABLED": "true",
+          "NOTEWEAVE_RESEARCH_SEARCH_API_KEY": "SET",
+          "NOTEWEAVE_RESEARCH_SEARCH_BASE_URL": "https://google.serper.dev/search",
+          "NOTEWEAVE_RESEARCH_SEARCH_MAX_PAGES": "2",
+          "NOTEWEAVE_RESEARCH_SEARCH_PROVIDER_CHAIN": "serper,wikipedia",
+          "NOTEWEAVE_RESEARCH_SERPER_API_KEY": "UNSET",
+          "NOTEWEAVE_RESEARCH_SERPER_BASE_URL": "https://google.serper.dev/search"
+        }
+      }
+    }
+  },
+  "feature_flags": {
+    "agent": {
+      "command-dispatch-batch-size": "25",
+      "command-dispatch-delay-ms": "1000",
+      "external-evidence-enabled": "true",
+      "lifecycle-reaper-delay-ms": "1000",
+      "lifecycle-reaper-enabled": "false",
+      "rate-limit": {
+        "allow-local-fallback": "false",
+        "capacity": "10",
+        "enabled": "true",
+        "refill-per-minute": "10"
+      },
+      "rollout-guard-enabled": "true",
+      "rollout-max-delivery-failure-rate": "0.20",
+      "rollout-max-rejected-merge-rate": "0.30",
+      "rollout-max-terminal-failure-rate": "0.20",
+      "rollout-minimum-task-sample": "10",
+      "rollout-window-minutes": "15"
+    },
+    "checkpoint-hydration-v2": "false",
+    "distributed-replay-observation": "false",
+    "evidence-audit-v1": "false",
+    "intent-matrix-v2": "false",
+    "runnable-work-v2": "false",
+    "strict-research-evidence-validation": "false",
+    "wide-discovery-accepted-precision": "0.0",
+    "wide-discovery-auto-accept": "false",
+    "wide-discovery-precision-threshold": "0.90",
+    "wide-discovery-v1": "false",
+    "worker-synthesis-v1": "false"
+  },
+  "manifest_digest": "sha256:bb9e3d1439cee14aa8c39c32320cdc35cbfda0612a189225b9c8ecbe57dcff98",
+  "manifest_schema": "research-experiment-manifest.v2",
+  "toolchain": {
+    "java": "UNKNOWN",
+    "node": "v24.16.0",
+    "os": "Windows 11",
+    "python": "3.12.10"
+  },
+  "worker_provider_environment_declared": {
+    "research-worker-consumer": {
+      "NOTEWEAVE_RESEARCH_AGENT_BUNDLE_MAX_CELLS": "3",
+      "NOTEWEAVE_RESEARCH_AGENT_COMPLETION_MAX_ATTEMPTS": "3",
+      "NOTEWEAVE_RESEARCH_AGENT_CONSUMER_ENABLED": "true",
+      "NOTEWEAVE_RESEARCH_AGENT_DEEP_CELL_EXECUTOR_ENABLED": "true",
+      "NOTEWEAVE_RESEARCH_AGENT_DRAIN_GRACE_SECONDS": "30",
+      "NOTEWEAVE_RESEARCH_AGENT_DRAIN_POLL_TIMEOUT_MS": "500",
+      "NOTEWEAVE_RESEARCH_AGENT_EVIDENCE_AUDIT_ENABLED": "false",
+      "NOTEWEAVE_RESEARCH_AGENT_EXECUTION_MODE": "INCREMENTAL_V1",
+      "NOTEWEAVE_RESEARCH_AGENT_FAKE_PROVIDER_ENABLED": "false",
+      "NOTEWEAVE_RESEARCH_AGENT_HEARTBEAT_FAILURE_BUDGET_SECONDS": "30",
+      "NOTEWEAVE_RESEARCH_AGENT_HEARTBEAT_INTERVAL_SECONDS": "15",
+      "NOTEWEAVE_RESEARCH_AGENT_HEARTBEAT_REQUEST_TIMEOUT_SECONDS": "5",
+      "NOTEWEAVE_RESEARCH_AGENT_LEASE_SECONDS": "60",
+      "NOTEWEAVE_RESEARCH_AGENT_MAX_CONCURRENCY": "1",
+      "NOTEWEAVE_RESEARCH_AGENT_SYNTHESIS_ENABLED": "false",
+      "NOTEWEAVE_RESEARCH_AGENT_WIDE_DISCOVERY_ENABLED": "false",
+      "NOTEWEAVE_RESEARCH_AGENT_WORKER_INSTANCE_ID": "research-agent-worker-1",
+      "NOTEWEAVE_RESEARCH_ENABLE_URL_READER": "false",
+      "NOTEWEAVE_RESEARCH_INTERNAL_AUTH_TOKEN": "SET",
+      "NOTEWEAVE_RESEARCH_JINA_API_KEY": "UNSET",
+      "NOTEWEAVE_RESEARCH_JINA_BASE_URL": "https://r.jina.ai/",
+      "NOTEWEAVE_RESEARCH_LLM_API_KEY": "UNSET",
+      "NOTEWEAVE_RESEARCH_LLM_BASE_URL": "",
+      "NOTEWEAVE_RESEARCH_LLM_CONTEXT_SAFETY_BUFFER_CHARS": "8000",
+      "NOTEWEAVE_RESEARCH_LLM_INPUT_COST_PER_MILLION": "0",
+      "NOTEWEAVE_RESEARCH_LLM_MAX_ATTEMPTS": "3",
+      "NOTEWEAVE_RESEARCH_LLM_MAX_INPUT_CHARS": "120000",
+      "NOTEWEAVE_RESEARCH_LLM_MAX_TOTAL_CALLS": "64",
+      "NOTEWEAVE_RESEARCH_LLM_MODEL": "",
+      "NOTEWEAVE_RESEARCH_LLM_OUTPUT_COST_PER_MILLION": "0",
+      "NOTEWEAVE_RESEARCH_LLM_PURPOSE_OPTIONS": "${NOTEWEAVE_RESEARCH_LLM_PURPOSE_OPTIONS:-{}}",
+      "NOTEWEAVE_RESEARCH_LLM_TIMEOUT_SECONDS": "60",
+      "NOTEWEAVE_RESEARCH_PUBLIC_SEARCH_ENABLED": "true",
+      "NOTEWEAVE_RESEARCH_SEARCH_API_KEY": "UNSET",
+      "NOTEWEAVE_RESEARCH_SEARCH_BASE_URL": "",
+      "NOTEWEAVE_RESEARCH_SEARCH_MAX_PAGES": "2",
+      "NOTEWEAVE_RESEARCH_SEARCH_PROVIDER_CHAIN": "serper,wikipedia",
+      "NOTEWEAVE_RESEARCH_SERPER_API_KEY": "UNSET",
+      "NOTEWEAVE_RESEARCH_SERPER_BASE_URL": "https://google.serper.dev/search"
+    }
+  }
+}

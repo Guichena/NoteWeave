@@ -37,8 +37,8 @@ class NoteEvidenceRetrieverTest {
         when(recallRetriever.retrieve("workspace", "query")).thenReturn(plan);
         when(retrievalService.readEntriesMetadataForNote("workspace", plan.verifySources(), "query"))
                 .thenReturn(List.of());
-        when(readingRetriever.retrieve("workspace", plan.verifySources(), "query"))
-                .thenReturn(List.of(first, second));
+        when(readingRetriever.retrieveWithDiagnostics("workspace", plan.verifySources(), "query"))
+                .thenReturn(readingResult(List.of(first, second)));
         NoteEvidenceRetriever retriever = new NoteEvidenceRetriever(
                 recallRetriever, retrievalService, readingRetriever, codec);
 
@@ -78,10 +78,10 @@ class NoteEvidenceRetrieverTest {
         when(recallRetriever.retrieve("workspace", "query")).thenReturn(plan);
         when(retrievalService.readEntriesMetadataForNote("workspace", plan.verifySources(), "query"))
                 .thenReturn(List.of());
-        when(readingRetriever.retrieve("workspace", plan.verifySources(), "query"))
-                .thenReturn(List.of(
+        when(readingRetriever.retrieveWithDiagnostics("workspace", plan.verifySources(), "query"))
+                .thenReturn(readingResult(List.of(
                         window("chunk-a", 2, "anchor-window", "A", "", ""),
-                        window("chunk-b", 1, "continuation-window", "B", "", "")));
+                        window("chunk-b", 1, "continuation-window", "B", "", ""))));
         NoteEvidenceRetriever retriever = new NoteEvidenceRetriever(
                 recallRetriever, retrievalService, readingRetriever, codec);
 
@@ -103,6 +103,53 @@ class NoteEvidenceRetrieverTest {
                 result.metadata().get(NoteRetrievalSnapshotCodec.METADATA_KEY));
         assertThat(snapshot.windows()).extracting(ReadingWindow::chunkId)
                 .containsExactly("chunk-a");
+    }
+
+    @Test
+    void shouldPropagateReadingDegradationIntoEvidenceResult() {
+        NoteRecallRetriever recallRetriever = mock(NoteRecallRetriever.class);
+        NoteRetrievalService retrievalService = mock(NoteRetrievalService.class);
+        NoteReadingRetriever readingRetriever = mock(NoteReadingRetriever.class);
+        NoteRetrievalSnapshotCodec codec =
+                new NoteRetrievalSnapshotCodec(new ObjectMapper().findAndRegisterModules());
+        CandidateSource candidate = candidate();
+        NoteRecallPlan plan = new NoteRecallPlan(
+                List.of(), List.of(candidate), List.of(), List.of(candidate),
+                new NoteRecallTrace(0, 1, 0, 1, 1, 0, 0, 1));
+        when(recallRetriever.retrieve("workspace", "query")).thenReturn(plan);
+        when(retrievalService.readEntriesMetadataForNote("workspace", plan.verifySources(), "query"))
+                .thenReturn(List.of());
+        when(readingRetriever.retrieveWithDiagnostics("workspace", plan.verifySources(), "query"))
+                .thenReturn(new NoteReadingRetriever.ReadingResult(
+                        List.of(window("chunk-a", 2, "anchor-window", "A", "", "")),
+                        true,
+                        List.of("NOTE_WINDOW_RERANK_UNAVAILABLE"),
+                        Map.of("note_window_rerank_count", 0L)
+                ));
+        NoteEvidenceRetriever retriever = new NoteEvidenceRetriever(
+                recallRetriever, retrievalService, readingRetriever, codec);
+        RetrievalPlan.Step step = new RetrievalPlan.Step(
+                NoteEvidenceRetriever.CHANNEL, 1, 1, Map.of());
+
+        var result = retriever.retrieve(
+                new AnswerContext("workspace", "conversation", "message", "query",
+                        Set.of(), Map.of(), Instant.now()),
+                new RetrievalPlan("note-test-v1", AnswerMode.NOTE, List.of(step),
+                        new RetrievalPlan.Budget(1, 24_000, 0, 0)),
+                step
+        );
+
+        assertThat(result.degraded()).isTrue();
+        assertThat(result.degradationReasons()).containsExactly("NOTE_WINDOW_RERANK_UNAVAILABLE");
+        assertThat(result.measurements()).containsEntry("note_window_rerank_count", 0L);
+    }
+
+    private NoteReadingRetriever.ReadingResult readingResult(List<ReadingWindow> windows) {
+        return new NoteReadingRetriever.ReadingResult(
+                windows, false, List.of(), Map.of(
+                "note_window_candidate_count", (long) windows.size(),
+                "note_window_semantic_hit_count", 0L,
+                "note_window_rerank_count", 0L));
     }
 
     private CandidateSource candidate() {

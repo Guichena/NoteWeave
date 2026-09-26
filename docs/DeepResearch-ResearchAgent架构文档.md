@@ -1,954 +1,228 @@
-# Deep Research Research Agent 架构文档
+# Deep Research：可恢复的证据生产线
 
-> **实现状态声明（最终复审，2026-07-12）**：本文主体目标已在当前代码中按单进程、有界顺序执行边界落地，包括 schema-first `Table-as-State`、独立 Local/Global Verifier、可执行/可裁决反证恢复、运行中 durable checkpoint/resume 与混合 citation support 审核。不得扩写为真正并行 branch runtime、通用 NLI 或 DeepWideSearch 官方成绩；能力事实以 `ResearchAgent-Capability-Coverage.md` 和 `ResearchWorker-Repair-Plan.md` 为准。
+## 业务问题与非目标
 
-## 1. 文档定位
+Deep Research 处理开放式问题，需要搜索、读取、抽取、比较、验证冲突、补查并生成带引用报告。单次模型调用或无限 ReAct Loop 无法稳定说明做过哪些步骤、哪些证据已经确认、何时停止、崩溃后从哪里继续。
 
-这份文档只回答 `Research Agent` 本身的问题，不讨论泛工作台总架构，也不重复阶段计划里的过程记录。
+Research 不追求角色数量，也不让 Worker 直接决定业务终态。多 Agent 只有在并行探索、独立候选或审计能带来可测收益时才启用；模型不能自行扩大 Workspace、来源、工具、预算或发布权限。
 
-它的用途有四个：
+## 用户操作与最终产物
 
-1. 作为 `Deep Research` 的正式架构说明书
-2. 作为后续实现和展示层迭代的边界约束
-3. 作为项目讲解、简历亮点、答辩口径的统一底稿
-4. 作为成本评估与产品定价建议的设计依据
+用户提交研究问题、资料范围、来源策略、输出规格和预算，看到 Plan、Stage、进度、证据、冲突、Checkpoint 与最终报告。报告关联 Research Artifact、Claim-Evidence Manifest、运行版本和限制说明，可以保存为 Source 或交给 Artifact 继续加工。
 
-这份文档以当前已经落地的真实实现为准，核心证据来自：
-
-- `workers/research-worker/app/harness.py`
-- `workers/research-worker/app/loop_runtime.py`
-- `workers/research-worker/app/state.py`
-- `workers/research-worker/app/verifier.py`
-- `workers/research-worker/app/search_adapters.py`
-- `workers/research-worker/app/fetch_adapters.py`
-- `workers/research-worker/app/reporter.py`
-- `backend/src/main/java/com/noteweave/research/ResearchRunController.java`
-- `backend/src/main/java/com/noteweave/research/ResearchRunService.java`
-- `frontend/src/App.tsx`
-
----
-
-## 2. 产品边界
-
-### 2.1 功能定位
-
-`Deep Research` 是与工作台绑定的独立研究功能，不是聊天、Note、Wiki 的升级模式。
-
-它解决的是复杂开放式研究任务里的三个核心问题：
-
-1. 状态易漂移
-2. 路径易跑偏
-3. 结果难验证
-
-因此它的交付物不是“一段长回答”，而是一个可验证、可展示、可回流的正式研究成果包：
-
-1. `final_report_markdown`
-2. `report_structure`
-3. `citations / provenance_bindings`
-4. `process summary`
-5. `audit summary`
-6. `research_artifact_candidate`
-7. 可选写回工作台的研究报告来源
-
-### 2.2 唯一任务入口
-
-研究任务只由用户显式输入发起，和上下文无关。
-
-允许用户提供的输入包括：
-
-1. `question`
-2. `research_goal`
-3. `deliverable_format`
-4. `time_range`
-5. `constraints`
-6. `depth`
-7. `source_scope`
-8. 是否启用外部搜索
-
-不再采用以下入口定义：
-
-1. 从 `Ask` 升级
-2. 从 `Note` 上下文隐式发起
-3. 从 `Wiki` 上下文隐式发起
-4. 自动继承聊天历史作为研究输入
-
-### 2.3 与工作台的关系
-
-工作台只承担三类职责：
-
-1. 作为 `Research Run` 的承载容器
-2. 作为报告、来源、过程和审计的展示层
-3. 作为研究成果回流资料池的落点
-
-也就是说，工作台绑定的是 `run` 和 `artifact`，不是研究输入来源本身。
-
----
-
-## 3. 设计目标与非目标
-
-### 3.1 设计目标
-
-1. 把开放式研究组织成受控的 `Closed-Loop Research`
-2. 让研究状态从“隐式 prompt 记忆”迁移到显式结构化状态
-3. 让系统在发现证据冲突时具备可解释的纠偏能力
-4. 让输出天然带来源基础，而不是后补 citation
-5. 让最终结果既能前端展示，也能导出为 `md`，还能回流为工作台资料
-
-### 3.2 核心设计轴：研究深度与研究宽度
-
-对于复杂开放式研究任务，系统不是只追求“答得更长”，而是要同时把研究做深、做宽。
-
-这里的 `宽度` 指的是：
-
-1. 候选查询不能只有一条问法，而要形成 `query family`
-2. 候选来源不能只押注单一路径，而要允许不同来源类型并存
-3. 系统要能在发现 coverage 不足时扩 `source_scope`
-4. 系统要能在冲突出现时挑战已有路径，而不是只会顺着当前证据继续写
-
-这里的 `深度` 指的是：
-
-1. 命中结果后不能直接写答案，而要继续 `Fetch -> Read -> Extract`
-2. 证据不能只停留在文本印象，而要落到 `evidence / row / cell / requirement`
-3. 写作资格不能靠模型主观感觉，而要通过 `Dual Verifier` 判定
-4. 即使允许收口，也要区分正式收口和 `WRITE_WITH_GUARDRAILS`
-
-两者缺一不可：
-
-1. 只有宽度没有深度，系统会“搜很多、看起来很全”，但证据基础不稳
-2. 只有深度没有宽度，系统会“读得很细”，但容易过早锁死在错误路径
-3. 真正的 Deep Research 不是单纯扩搜索，也不是单纯深挖单页，而是受控地同时做宽度探索和深度收敛
-
-本系统对应的落点是：
-
-1. `Research Harness` 负责把“先扩、再收、必要时纠偏”的主链稳定组织起来
-2. `Table-as-State` 负责把宽度覆盖和深度完成度都沉淀成显式状态
-3. `Dual Verifier` 负责决定当前是继续扩、继续深挖，还是允许收口
-4. `反证分支` 负责在宽度探索失真或深度收敛偏航时做有界纠偏
-
-### 3.3 非目标
-
-1. 不做重型通用多智能体平台
-2. 不做过度复杂的过程回放播放器
-3. 不追求无限长链路自治，而是追求可控和可讲清
-4. 不把主界面做成 verifier 字段堆叠页
-5. 不为了显得更复杂而复制超出当前边界的系统复杂度
-
----
-
-## 4. 总体架构
-
-### 4.1 分层
-
-系统可以拆成五层：
-
-1. `Task Entry Layer`
-2. `Research Harness Layer`
-3. `Tool Orchestration Layer`
-4. `State / Verification Layer`
-5. `Report / Delivery Layer`
-
-```mermaid
-flowchart TD
-    A["User Input<br/>question + source_scope + depth + constraints"] --> B["Java ResearchRunService<br/>create run / persist / callback"]
-    B --> C["Python Research Worker"]
-    C --> D["Research Harness"]
-    D --> E["Planner"]
-    E --> F["Search / Fetch / Read / Extract"]
-    F --> G["Table-as-State<br/>rows / cells / evidence / requirements"]
-    G --> H["Dual Verifier"]
-    H --> I{"Need Recovery?"}
-    I -- "Yes" --> J["Counterfactual Branch / Read More / Extract Again"]
-    J --> F
-    I -- "No" --> K["Report Builder"]
-    K --> L["report_structure + markdown + citations + audit"]
-    L --> B
-    B --> M["Workbench UI<br/>Result / Sources / Process / Audit"]
-    L --> N["Export md / Save as Source"]
+```text
+Brief and Scope
+  -> Intent / Matrix Plan
+  -> Discovery
+  -> Cell Task Scheduling
+  -> Search / Read / Extract
+  -> Candidate and Evidence Qualification
+  -> Local / Global Verification
+  -> Conflict / Repair / Replan
+  -> Synthesis Candidate
+  -> Backend Validation and Artifact Promotion
 ```
 
-### 4.2 运行边界
+`[当前实现]` Java 保存 Research Run、Matrix/Row/Cell、Task、Evidence、Candidate、Budget、Checkpoint、Stage、Role Result、Discovery Proposal、Artifact 与 Completion Replay Observation；Kafka 分发 Research Agent Command；Python Worker 按不可变 Task Snapshot 执行并回调。
 
-前端不直接编排研究主链。
+## 演化与 Bad Case
 
-前端负责：
+| 阶段 | 方案 | Bad Case | 修复与新问题 |
+| --- | --- | --- | --- |
+| V0 单次生成 | Prompt 问题并要求长文 | 引用伪造、无法补查、超时后结果未知 | 显式 Search/Read/Evidence；步骤和成本增加 |
+| V1 ReAct Loop | 模型循环选工具 | 状态藏在对话里，停止漂移，恢复会重复调用 | Plan/Cell/Checkpoint；Schema 兼容变复杂 |
+| V2 固定四格研究表 | Subject + Answer/Evidence/Limitation/Implication | 比较、时间线、多实体问题表达僵硬 | Intent Matrix v2 与 80 Cell 上限；Planner 需要评测 |
+| V3 全 Run 屏障 | 任一 Active Task 时不调度新任务 | 慢 Cell 阻塞独立工作 | Runnable Work Refill + Stage Barrier；并发竞争增多 |
+| V4 词面 Evidence 校验 | Citation Span + Lexical Overlap | 数字、单位、年份和比较方向矛盾仍可能通过 | Typed Claim Validator + Evidence Qualification |
+| V5 Context Restart | 从旧 Checkpoint 新建 Run 并重新 Bootstrap | 已完成搜索和 Cell 重做，恢复卖点被高估 | Hydrated Ledger Resume + 外部 Receipt；快照更大 |
+| V6 Backend Renderer | 确定性表格成文 | 表达有限，但证据可控 | 受控 Synthesis Candidate + Backend Guard；新增模型成本 |
+| 目标系统 | 版本化角色、工具、证据、评测、灰度和反馈闭环 | 运维与策略面扩大 | Feature Flag Snapshot、Bundle、Shadow 和自动回滚 |
 
-1. 创建任务
-2. 拉取列表和详情
-3. 展示主结果
-4. 打开详情弹窗
-5. 导出报告
-6. 执行 `save-report-as-source`
+`[行业参考]` OpenAI Deep Research 强调异步研究、可干预和引用；LangGraph 把 Checkpointer 与跨 Thread Store 分开；Temporal 以历史重放承载持久执行；AutoGen/CrewAI 提供多 Agent 或 Flow 抽象。NoteWeave 采用可恢复和显式工作流思想，但保留 MySQL Canonical Ledger、Workspace/Evidence 与自己的业务状态机。
 
-Java backend 负责：
+## 领域对象与状态
 
-1. `Research Run` 生命周期
-2. `task / checkpoint / detail / history` 契约
-3. 持久化 worker 回调结果
-4. 向前端提供结构化响应
+### 为什么 Research 不复用聊天状态
 
-Python worker 负责：
+AnswerRun 只需管理检索、生成、事件和终态；Research 还要管理 Matrix Revision、Cell 状态、来源范围、证据充分性、候选仲裁、Stage Barrier、Budget、Checkpoint、Repair 和 Synthesis。将这些塞进 `RUNNING/FAILED/COMPLETED` 会丢掉可恢复决策。
 
-1. 真正的研究编排
-2. 工具调用
-3. 状态沉淀
-4. verifier 闭环
-5. 报告生成
+```mermaid
+stateDiagram-v2
+    [*] --> PLANNING
+    PLANNING --> DISCOVERING
+    DISCOVERING --> EXECUTING
+    EXECUTING --> VERIFYING: stage settled
+    VERIFYING --> REPAIRING: gaps or conflicts
+    REPAIRING --> EXECUTING
+    VERIFYING --> SYNTHESIZING: evidence gate passed
+    SYNTHESIZING --> COMPLETED: backend promotes artifact
+    EXECUTING --> PAUSED: budget, approval, cancellation boundary
+    PAUSED --> EXECUTING: resume
+    EXECUTING --> FAILED: terminal infrastructure or policy failure
+    VERIFYING --> BLOCKED: insufficient evidence
+```
 
----
+Cell 语义状态至少区分 GAP、候选存在、验证通过、冲突、需修复、冻结和 Stale；Task 状态仍使用 Claim/Lease/Fencing 的公共模型。Run 终态不能抹平 Cell 与 Evidence 的最终状态。
 
-## 5. 端到端主链路
+### Canonical Ledger 与 Worker 候选
 
-### 5.1 创建研究任务
+Java 主服务拥有 Canonical Ledger。Worker 输出 Candidate、Evidence、Audit Result 或 Synthesis Candidate，不直接更新 Cell Current Value。Completion Committer 校验 Task、Lease Epoch、Fencing Token、Snapshot Digest、Cell Expected Version、Evidence Scope 和 Payload Digest，再原子保存业务结果、预算结算、Receipt 与 Task 终态。
 
-入口在 backend 的：
+`[当前实现]` Java/Python 使用 Canonical JSON、NFC Key Collision 拒绝和 Digest 契约；跨语言相同输入需要得到相同字节与摘要。
 
-- `ResearchRunController#createResearchRun`
-- `ResearchRunService#createRun`
+## Matrix、计划与有界调度
 
-创建时冻结：
+`[当前实现]` Intent Matrix v2 可以按研究意图生成稳定 Row/Column/Cell、Plan Revision 与 Digest，限制 1 到 20 行、2 到 8 列、默认最多 80 Cell。旧 Static v1 仍可通过 Feature Flag 保留。
 
-1. `question`
-2. `research_intent`
-3. `source_scope`
-4. `profile_key`
-5. 控制包
+Planner 只定义要验证的单元，不写事实答案。超出上限产生 `PLAN_BOUNDED`，不能静默裁剪。Wide Discovery 只提交 Entity/Dimension/Query/Source Lead Proposal，Backend 按 Scope、Lineage、Budget、Plan Revision 与 Entity Set Version 接受或拒绝。
 
-### 5.2 Worker 主循环
+Runnable Work Refill 在 Run Lock 和 Stage Barrier 下只为依赖满足、未绑定的 GAP/STALE Cell 创建 Task。稳定 Task Key、Budget Reservation 和 Outbox 唯一键防止两个 Coordinator 重复调度。最终化前确认 Required Stage Settled、无 Active Required Task、无 Open Blocker。
 
-worker 主链当前是：
+### Plan 与 Replan 的可验证合同
 
-`Planner -> Search -> Fetch -> Read -> Extract -> Table-as-State -> Verify -> Branch -> Report`
+`[当前实现]` Research 已有结构化 `ResearchIntent`、确定性 Matrix Plan、Plan Revision、Plan Digest、80 Cell 上限、深度档位和搜索/循环预算。Planner 可以把目标、约束、时间范围与交付格式编译成 Row、Column、Required Finding 和 Stop Contract。当前证据不足以说明所有 Replan 都已按统一偏差类型、回滚范围和质量指标持久化，因此以下完整合同属于 `[目标设计]`。
 
-其中关键组织器是：
+Plan 不是自然语言步骤列表，而是 `Goal + Frozen Context + Constraints + Dependency + Step + Checkpoint + Stop Contract`。Replan 只能修改完成路径，不能暗中降低 Research Intent 的必填字段、来源边界、时间范围或交付标准。每次 Replan 先把偏差归入可审计原因：输入理解错误、上下文变化、约束冲突、策略边际收益耗尽、工具或 Provider 失败、证据冲突。没有可观测偏差时不允许仅因模型“想换一种方式”而重规划。
 
-- `harness.py`
-- `loop_runtime.py`
-- `research_tools.py`
+回滚按影响范围选择当前步骤、当前 Stage、局部依赖子图或全局重编译。新 Plan Revision 生效时，旧 Revision 尚未 Claim 的 Task 取消，正在执行的 Task 由 Plan Revision 与 Fencing 拒绝晚到写回；与失效假设无关且已通过验证的 Evidence 保留，只撤销受影响 Cell、派生 Claim 和下游 Synthesis。全局重启是最后选项，不能用来掩盖依赖建模不完整。
 
-### 5.3 结束条件
+持久化内容只保存决策摘要，不保存完整 Chain-of-Thought：观察到的事实、偏差类型、Evidence/Receipt 引用、候选修复、选择理由、受影响 Cell、预算变化和新 Plan Digest。计划质量至少看必填目标覆盖率、依赖合法率、Checkpoint 完整率、有效 Replan 率、回滚距离、重复外部动作率，以及 Replan 前后的完成率、单位成功成本和尾延迟。单看 Replan 次数无法判断系统是否更聪明，次数下降也可能是失去纠偏能力。
 
-循环并不是“搜完就写”，而是受 `LoopDecision` 控制：
+## 搜索、读取与证据归档
 
-1. `SYNTHESIZE_REPORT`
-2. `WRITE_WITH_GUARDRAILS`
-3. `COUNTERFACTUAL_RECHECK`
-4. `READ_MORE`
-5. `EXTRACT_AGAIN`
-6. `EXPAND_SOURCE_SCOPE`
+外部搜索结果、网页、Workspace Window 和 Tool Output 都是不可信输入。工具调用前使用服务端 Permit 固化 Workspace、Run、Task、Lease、Role、Source Policy、域名和预算；网络层限制协议、域名、重定向、私网/Loopback、DNS Rebinding、响应大小、媒体类型和凭据转发。
 
-这正是 `Closed-Loop Research` 的核心。
+`[当前实现]` External Snapshot Archive、Source Identity、Content Digest 和 Evidence Manifest 提供归档边界；Worker 的 Search/Read Adapter、SSRF/HTTP Security 测试和 Claim Fact Validator 提供受控执行面。
 
-### 5.4 研究成果交付
+`[目标设计]` 网页每次读取保存 URL Canonical Form、Fetch Time、HTTP Metadata、Content Digest、提取器版本和不可变文本快照。报告引用 Snapshot，不引用一份会变化的在线正文。链接失效时，历史报告仍能按保留政策展示归档摘要；新研究重新抓取并标记内容变化。
 
-worker 结束后输出的核心对象包括：
+## Evidence Qualification 与冲突处理
 
-1. `report_structure`
-2. `final_report_markdown`
-3. `citations`
-4. `research_artifact_candidate`
-5. `research_checkpoint_candidate`
-6. `audit_summaries`
-7. `toolbox_summary`
-8. `counterfactual_summary`
+Evidence Qualification 分三层：
 
-backend 将这些对象透传并重组为：
+1. 身份与范围：Evidence 属于 Run/Cell，Source Snapshot 在允许 Workspace/Source Policy 中，Archive 和 Digest 有效。
+2. 语义支持：Citation Span 与 Claim 关系明确，空 Quote、未知 Provenance 和错误 Relation 拒绝。
+3. 来源独立性：高风险 Claim 需要多个独立来源；同注册域、同 Lineage 或同上游转载不能重复计数。
 
-1. `ResearchRunSummaryResponse`
-2. `ResearchRunDetailResponse`
-3. `ResearchCheckpointResponse`
-4. `SaveResearchReportSourceResponse`
+`[当前实现]` `V097` 建立 Research Evidence Validation；Typed Claim Validator 检查数字、百分比、常见单位、年份/日期、比较方向和否定。确定性矛盾不能被 LLM 判断覆盖。Global Verifier 从 Canonical Facts 独立重算，不复制 Local Result；两者不一致保留 `VERIFIER_DISAGREEMENT` 并阻止无条件成文。
 
----
+### 来源冲突
 
-## 6. 五个核心架构抽象
-
-### 6.1 Research Harness
-
-`Research Harness` 是整个研究系统的组织器，不是单纯 trace 容器。
-
-它负责：
-
-1. 编译研究计划
-2. 组织循环轮次
-3. 汇总控制态
-4. 生成 `audit_summaries`
-5. 生成 `toolbox_summary`
-6. 统一产出可消费的运行摘要
-
-它对应的真实实现中心在：
-
-- `workers/research-worker/app/harness.py`
-
-这部分是项目亮点的第一层，因为它把一个“可能失控的开放式任务”收束成了一个可控的运行框架。
-
-### 6.2 Closed-Loop Research
-
-`Closed-Loop Research` 的含义是：
-
-1. 搜索不是一次性的
-2. 阅读不是一次性的
-3. 验证失败不会直接硬写报告
-4. 系统会根据 verifier 的结论继续补证、纠偏或带护栏收口
-
-关键实现中心在：
-
-- `workers/research-worker/app/loop_runtime.py`
-
-闭环的价值不是“多循环”本身，而是让研究、读取、验证、修正形成因果链。
-
-### 6.3 Table-as-State
-
-`Table-as-State` 是本系统最关键的内核抽象。
-
-系统没有把状态托管给 prompt 和记忆，而是显式沉淀为研究表状态，包括：
-
-1. row
-2. cell
-3. evidence
-4. requirement progress
-5. verifier decision
-6. branch state
-
-对应实现中心在：
-
-- `workers/research-worker/app/state.py`
-- `workers/research-worker/app/models.py`
-
-这让研究任务的状态具有三个优势：
-
-1. 可累积
-2. 可验证
-3. 可恢复
-
-### 6.4 Dual Verifier
-
-`Dual Verifier` 是这套系统的第二个关键内核。
-
-它分为两层：
-
-1. `Local Verifier`
-2. `Global Verifier`
-
-职责分工是：
-
-1. `Local Verifier` 检查当前 search/read/evidence/ledger 是否成立
-2. `Global Verifier` 决定是否允许 final write，还是只能 guarded write，或必须继续 recovery
-
-对应实现中心在：
-
-- `workers/research-worker/app/verifier.py`
-- `workers/research-worker/app/verifier_gate_policy.py`
-
-这层设计直接解决“结果难验证”的问题，因为系统最终不是“模型觉得差不多”，而是“verifier 判定允许收口”。
-
-### 6.5 反证分支
-
-`反证分支` 不是为了让系统看起来更智能，而是为了处理真正的冲突证据。
-
-当系统遇到以下情况时，会优先考虑开启 `COUNTERFACTUAL_RECHECK`：
-
-1. evidence 明确冲突
-2. 冲突型 requirement 未完成
-3. 当前路径存在明显偏航风险
-
-对应实现中心在：
-
-- `workers/research-worker/app/branch.py`
-- `workers/research-worker/app/loop_runtime.py`
-- `workers/research-worker/app/search_adapters.py`
-- `workers/research-worker/app/fetch_adapters.py`
-
-这让系统具备“反证驱动纠偏”能力，而不是在冲突面前做平均化总结。
-
----
-
-## 7. 工具层设计
-
-### 7.1 Search
-
-搜索层不是简单单查询，而是按 `query family` 编排。
-
-当前已经落地的族包括：
-
-1. `direct`
-2. `source_scoped`
-3. `intent`
-4. `deliverable`
-5. `time_range`
-6. `constraints`
-7. `coverage_gap`
-8. `deep_focus`
-9. `triangulation`
-10. `verified_evidence`
-11. `direct_evidence`
-12. `counterfactual`
-
-对应实现中心：
-
-- `workers/research-worker/app/planner.py`
-- `workers/research-worker/app/search_adapters.py`
-
-### 7.2 Fetch
-
-抓取层采用统一归一化，而不是让前端或报告层直接面对不同来源的原始数据。
-
-当前已落地两类 adapter：
-
-1. `WorkspaceFetchAdapter`
-2. `UrlFetchAdapter`
-
-抓取对象会统一沉淀：
-
-1. `fetch_status`
-2. `fetch_method`
-3. `content_origin`
-4. `transport_chain`
-5. `transport_resolution`
-6. `snapshot_archive_ready`
-
-对应实现中心：
-
-- `workers/research-worker/app/fetch_adapters.py`
-
-### 7.3 Read
-
-读取层的目标不是“读全文”，而是“打开 verifier 可消费的 read window”。
-
-所以 read 输出强调：
-
-1. `read_focus`
-2. `read_strategy`
-3. `target_requirement_ids`
-4. `target_columns`
-5. `snapshot_status`
-
-这让后续 extract 和 verify 有明确输入边界。
-
-### 7.4 Extract
-
-抽取层把搜索命中和读窗整理成 evidence cards，再沉淀为 ledger rows。
-
-抽取失败并不会直接终止任务，而会进入：
-
-1. `EXTRACT_AGAIN`
-2. `READ_MORE`
-
-### 7.5 Verify
-
-验证层不是“给个分数”，而是输出：
-
-1. decision records
-2. warnings
-3. recovery actions
-4. intent completion contract
-5. research intent alignment
-
-这使 verifier 不只是判定器，还是 recovery 的驱动器。
-
----
-
-## 8. 状态层与数据契约
-
-### 8.1 运行态真源
-
-当前系统的运行态真源已经不是一段 markdown，而是结构化对象组合：
-
-1. `state_ledger`
-2. `branch_decisions`
-3. `local_verifier`
-4. `global_verifier`
-5. `loop_rounds`
-6. `loop_decision`
-7. `counterfactual_summary`
-
-### 8.2 报告态真源
-
-报告态真源是：
-
-1. `report_structure`
-2. `research_artifact_candidate`
-3. `final_report_markdown`
-
-其中 `report_structure` 已经覆盖：
-
-1. `research_question`
-2. `research_intent`
-3. `verified_findings`
-4. `source_foundation`
-5. `closed_loop_state`
-6. `conflict_and_counterfactual_review`
-7. `recovery_status`
-8. `next_actions`
-9. `intent_completion_contract`
-10. `research_intent_alignment`
-11. `provenance_bindings`
-
-对应实现中心：
-
-- `workers/research-worker/app/reporter.py`
-
-### 8.3 后端 API 契约
-
-backend 目前已提供明确的 `Research Run` 契约：
-
-1. `GET /api/v2/workspaces/{workspaceId}/research-runs`
-2. `POST /api/v2/workspaces/{workspaceId}/research-runs`
-3. `GET /api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}`
-4. `GET /api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}/checkpoints`
-5. `GET /api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}/checkpoints/{checkpointNo}`
-6. `POST /api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}/resume-from-checkpoint/{checkpointNo}`
-7. `POST /api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}/save-report-as-source`
-
-这说明 `Research Agent` 已经不是一次性后端调用，而是显式对象化的 run 系统。
-
----
-
-## 9. Research Report 设计
-
-### 9.1 报告不是普通答案
-
-我们的 `Deep Research` 输出目标是研究报告，而不是单段 answer。
-
-因此报告设计强调四件事：
-
-1. 明确研究问题
-2. 明确已验证发现
-3. 明确来源基础
-4. 明确冲突与纠偏过程
-
-### 9.2 来源优先
-
-报告里最重要的不是“风险和后续动作”，而是来源基础。
-
-所以 `reporter.py` 里专门构建了：
-
-1. `source_foundation`
-2. `provenance_bindings`
-3. `source_refs`
-4. `quality_mix_label`
-5. `fetch_foundation_label`
-6. `orchestration_foundation_label`
-
-这和用户强调的“重点是来源”完全一致。
-
-### 9.3 Artifact 设计
-
-研究成果最终会同时落两种形态：
-
-1. 前端展示对象
-2. 可导出 / 可回流对象
-
-统一通过：
-
-- `build_research_artifact_candidate`
-
-来组织。
-
-这一步把 `report_structure`、`closed_loop_state`、`citations`、`markdown` 统一打包，保证展示和写回不是两套逻辑。
-
----
-
-## 10. 展示层设计
-
-### 10.1 展示原则
-
-展示层不应该把复杂性平铺到主界面，而应该把复杂性压到详情层。
-
-当前展示原则固定为：
-
-1. 主界面先展示结论、报告、来源
-2. 详情弹窗第一层展示 `process`
-3. 详情弹窗第二层展示 `audit`
-
-### 10.2 主界面
-
-主界面聚焦：
-
-1. `Research Report`
-2. `Workspace Sources`
-3. 导出 `md`
-4. `save-report-as-source`
-
-### 10.3 Process 层
-
-`process` 层展示的是研究推进链：
-
-1. search timeline
-2. fetch timeline
-3. read timeline
-4. source evidence summary
-5. round 级过程摘要
-
-这对应用户希望“过程中来展示检索过程”的要求。
-
-### 10.4 Audit 层
-
-`audit` 层展示的是闭环控制链：
-
-1. verifier gate / final loop decision
-2. counterfactual branch summary
-3. checkpoint / resume summary
-4. harness control state
-
-这里的价值不在于炫技，而在于证明系统确实做了 verifier-gated 研究闭环。
-
-### 10.5 为什么不把 verifier-gated 摘要放主界面
-
-因为主界面要服务“结果交付”，不是“内部运行解释”。
-
-`verifier-gated` 摘要在这里的正确位置是：
-
-1. 详情层的 `audit`
-2. 报告中的 `closed_loop_state`
-3. Demo 讲解中的亮点证据
-
-而不是首页堆字段。
-
----
-
-## 11. 成本与价格设计
-
-这一部分分成两层：
-
-1. 内部运行成本模型
-2. 产品化定价建议
-
-### 11.1 内部运行成本模型
-
-对 `Research Agent` 来说，单次运行成本主要来自五项：
-
-1. 搜索成本
-2. 抓取成本
-3. 读取与保留成本
-4. LLM 抽取与验证成本
-5. 报告生成成本
-
-可以抽象为：
-
-`Run Cost = Search + Fetch + Read Retention + Verify + Report + Recovery Overhead`
-
-### 11.2 成本驱动项
-
-最影响成本的不是“问题有多长”，而是下面这些结构化变量：
-
-1. `depth`
-2. `search_query_budget`
-3. `global_search_limit`
-4. `per_query_result_limit`
-5. `tool_response_retention_budget`
-6. `max_loop_rounds`
-7. `branch_budget`
-8. 是否启用外部搜索
-9. 是否触发 `COUNTERFACTUAL_RECHECK`
-
-这些变量已经真实存在于：
-
-- `workers/research-worker/app/planner.py`
-
-### 11.3 当前三档运行画像
-
-为了避免把成本写死在某一家模型或搜索服务的实时单价上，建议内部统一使用 `cost points` 做运行预算核算。
-
-可以把一次运行理解为：
-
-- `1 search point` = 一组 query family 搜索与结果归一化
-- `1 fetch point` = 一次可追踪 fetch / transport 尝试
-- `1 verify point` = 一轮 extract + verifier 判定
-
-在这个抽象下，当前三档运行画像可以写成：
-
-| 档位 | 目标 | 搜索预算 | 结果保留 | 最大轮次 | 分支预算 | 内部成本画像 | 成本特征 |
-| --- | --- | ---: | ---: | ---: | ---: | --- |
-| `QUICK` | 快速受控结论 | 2 | 3 | 1 | 0 | `3 - 5 cost points` | 便宜、快、几乎不做反证 |
-| `STANDARD` | 平衡覆盖与验证 | 5 | 5 | 2 | 1 | `8 - 14 cost points` | 默认档，兼顾展示与质量 |
-| `DEEP` | 复杂开放式研究 | 8 | 7 | 3 | 2 | `16 - 28 cost points` | 成本最高，但最能体现 agent 亮点 |
-
-### 11.4 成本控制策略
-
-系统当前最有价值的地方，不是“能花很多资源”，而是“知道在哪里收预算”。
-
-核心控费点有六个：
-
-1. `source_scope` 优先
-2. `query family budget` 限流
-3. `per_query_result_limit` 限流
-4. `max_loop_rounds` 限流
-5. `branch_budget` 限流
-6. `WRITE_WITH_GUARDRAILS` 收口
-
-也就是说，`Dual Verifier` 不只是质量控制器，也是成本闸门。
-
-### 11.5 为什么这套设计比“无限搜到满意”为好
-
-因为开放式研究任务最容易出现两个成本黑洞：
-
-1. 宽搜无限扩张
-2. 冲突后无限反复补证
-
-我们通过：
-
-1. `Table-as-State`
-2. `Dual Verifier`
-3. `bounded counterfactual branch`
-4. `checkpoint / resume`
-
-把这两个黑洞都变成了有限状态问题。
-
-### 11.6 产品化定价建议
-
-如果后续要把 `Deep Research` 做成正式产品能力，建议不要直接按 token 对用户售卖，而是按“研究档位 + 可解释预算”售卖。
-
-建议给用户看的价格层分两种：
-
-1. `credits`
-2. 人民币档位
-
-建议口径：
-
-| 产品档位 | 对应运行档位 | 适用场景 | 建议 credits | 建议单次售价 | 定价解释 |
-| --- | --- | --- | ---: | ---: | --- |
-| `Research Quick` | `QUICK` | 快速定向核查 | 1 | `¥3 - ¥9` | 适合轻量调研、事实核查、范围小 |
-| `Research Standard` | `STANDARD` | 默认深度研究 | 3 | `¥15 - ¥39` | 适合大多数可展示研究任务 |
-| `Research Deep` | `DEEP` | 复杂开放式课题 | 6 - 8 | `¥49 - ¥99` | 适合高价值、强验证、强来源要求的任务 |
-
-这里的价格不是在反映“生成了多少字”，而是在反映：
-
-1. 检索与抓取开销
-2. verifier 闭环强度
-3. 反证分支机会成本
-4. 报告可交付程度
-
-### 11.7 内部成本与售价的关系
-
-建议内部采用下面这条简单规则：
-
-`售价 = 基础运行成本 × 风险系数 × 交付价值系数`
-
-其中：
-
-1. `基础运行成本` 对应 `cost points`
-2. `风险系数` 主要由外部搜索、抓取复杂度、反证分支概率决定
-3. `交付价值系数` 主要由是否需要正式报告、可追溯来源、资料池回流决定
-
-### 11.8 为什么定价按档位而不是按字数
-
-因为真正贵的不是生成字数，而是：
-
-1. 搜索和抓取次数
-2. 读取保留窗口
-3. verifier 循环次数
-4. counterfactual branch 开销
-
-所以对外讲“研究深度”和“验证强度”比讲“回答长度”更合理。
-
----
-
-## 12. 与简历亮点和项目亮点的对齐
-
-### 12.1 一句话亮点
-
-可以把本项目压缩成一句话：
-
-设计并实现面向复杂开放式任务的验证驱动 `Deep Research Agent`，通过 `Research Harness + Closed-Loop Research + Table-as-State + Dual Verifier + 反证分支` 将研究、读取、验证与修正组织成受控闭环，并交付可展示、可导出、可回流的正式研究报告。
-
-### 12.2 五个关键词如何对应真实能力
-
-| 关键词 | 架构含义 | 真实落点 |
+| 情况 | 状态 | 动作 |
 | --- | --- | --- |
-| `Research Harness` | 研究主链组织器 | `harness.py`、Gate1、worker regression |
-| `Closed-Loop Research` | 研究不是一次写完，而是验证驱动循环 | `loop_runtime.py`、`runner.py` |
-| `Table-as-State` | 状态真源从 prompt 迁到结构化表状态 | `state.py`、`models.py` |
-| `Dual Verifier` | 本地和全局双层 gate 控制收口 | `verifier.py`、`verifier_gate_policy.py` |
-| `反证分支` | 冲突证据触发有界纠偏 | `branch.py`、`search_adapters.py`、`fetch_adapters.py` |
+| 两个高质量独立来源结论相反 | `CONFLICT` | 保留双方 Claim/Evidence，补查时间、定义、范围和权威性 |
+| 单一低质量来源反对多个权威来源 | `QUALIFIED_WITH_DISSENT` | 报告异议和来源等级，不做简单投票 |
+| 证据不足 | `GAP` / `BLOCKED` | 扩 Evidence Horizon 或拒绝结论 |
+| 网页内容变化 | `STALE_EVIDENCE` | 新 Snapshot 与旧 Digest 对比，重新验证受影响 Claim |
+| Citation 失效但归档存在 | `LINK_DEGRADED` | 保留归档引用，标记在线链接失效 |
+| Claim 与 Citation 数字/单位矛盾 | `CONTRADICTED` | 阻止合并，创建定向 Repair |
 
-### 12.3 面试讲解时最值得强调的三点
+候选仲裁按 Authority、独立来源、Lineage、时效、直接性和冲突状态判断，不用 Last Write Wins 或简单多数票。高风险 Cell 可以要求独立 Candidate Quorum；Quorum 分歧生成有限 Counterfactual Repair，不无限自我辩论。
 
-1. 这不是普通 RAG 问答，而是验证驱动研究闭环
-2. 状态不是靠 prompt 记忆，而是靠 `Table-as-State`
-3. 冲突不是靠语言平滑，而是靠 `反证分支` 纠偏
+## Checkpoint Hydration 与避免重复外部调用
 
-### 12.4 对项目展示最有价值的成果点
+`[当前实现]` `V100` 引入 Hydration。Checkpoint Snapshot 包含 Matrix Plan/Digest、Row/Cell 状态与版本、Accepted Evidence Digest/Lineage、Open Verification/Repair、Stage/Barrier、Budget Summary 和 Task/Candidate/Merge High-water Mark。旧恢复入口会创建 Descendant Run，复制不可变语义状态，不复制 Active Lease、Task、Outbox、Execution、Reservation 和 Receipt；这能实现恢复，却会把基础设施故障误计为新的业务 Run，因此不能作为推荐口径。
 
-1. 独立 `Deep Research` 入口
-2. 研究报告与来源优先展示
-3. 过程层可看检索、抓取、读取
-4. 审计层可看 verifier gate 与反证分支
-5. 结果可导出 `md`
-6. 结果可写回资料池并复用
+`[目标设计]` ResearchRun 保持用户意图身份稳定，Plan 使用 Run 级 Revision 链。Worker 接管、进程重启和 Provider 故障恢复只从 Checkpoint 创建新的 ExecutionAttempt，记录恢复来源、本代配置和新增消费，不自动重编译 Plan，也不重置 Run 总预算。用户改变目标、资料范围、交付标准或主动 Fork 时才创建新 ResearchRun。
 
----
+只为 GAP、STALE 和 Open Repair 生成新 Fenced Task。旧格式保留 `CONTEXT_RESTART` 语义；要求 Hydration 遇到旧格式时必须失败，不能静默降级。
 
-## 13. 调研后做出的取舍
+`[目标设计]` 每个 Search/Read/Model/Tool Step 使用 Operation Key 和外部 Receipt。Checkpoint 恢复先复用已确认 Receipt，`IN_FLIGHT` 先查询 Provider；支持幂等键时用同一键重试；非幂等且不可查询时进入 Unknown Outcome 和人工对账。
 
-### 13.1 为什么不是普通 RAG
+Checkpoint 太频繁会放大数据库写、快照大小和兼容成本；太稀疏会重复昂贵调用。边界放在外部调用回执后、Wave/Stage 结束、预算结算和人工暂停点。
 
-调研时我们优先对比过最直接的路线，也就是 `retrieve -> stuff context -> generate`。
+## Role、能力与 Synthesis
 
-它的优点是：
+Profile 存在不代表角色可运行。权威 Role Registry 记录 Schedulable、Executor、Snapshot Schema、Completion Handler、Mutation Authority、Tool Set 和 Feature Flag。
 
-1. 实现快
-2. 成本低
-3. 对收敛型问题很有效
+| Role | 当前边界 | 写权限 |
+| --- | --- | --- |
+| `DEEP_CELL` | 主 Cell 搜索、读取和候选 | 只提交 Candidate |
+| `COUNTERFACTUAL` | 受限反证或 Repair | 只提交 Repair Candidate |
+| `EVIDENCE_AUDIT` | Feature-gated | 只提交 Audit Result |
+| `SYNTHESIS` | Feature-gated | 只提交 Artifact Candidate |
+| `WIDE_DISCOVERY` | Shadow/Proposal | 只提交 Scope Proposal |
+| Local/Global Verifier | 内部组件 | 无直接业务写权限 |
 
-它的缺点是：
+Worker Router 只按已 Claim 且 Digest 校验通过的 Snapshot Role 选择 Executor，Kafka Payload 中 Role 仅作诊断。Role Tool Set 与 Snapshot Policy 取交集，未知角色在任何 Provider 调用前失败。
 
-1. 研究状态主要藏在上下文里
-2. 对冲突证据和路径纠偏支持不强
-3. 很容易退化成“搜完就写”
+Synthesis 只在 Stage Settled、Evidence Audit 通过、无 Open Repair 且 Ledger Digest 固定时执行。Worker 禁止新增搜索和修改 Cell，只输出 Claim 到 Cell、Citation 到 Evidence、Limitations 和 Input Digest。Backend 再校验所有事实句和 Citation，通过后 Promote Artifact；确定性 Renderer 保留为失败降级和最低 Citation Completeness Oracle。
 
-所以最终没有采用普通 RAG 作为主架构，而是选择了 `Closed-Loop Research`。
+## 幂等、并发、乱序和结果未知
 
-### 13.2 为什么不是纯“边想边调工具”或纯“先规划后执行”
+Task Snapshot 不可变，Task Key、Idempotency Key、Lease Epoch、Fencing Token、Cell Expected Version 和 Completion Digest 共同防止重复结果。Completion Response 丢失时 Worker 重放同 Payload，服务端返回原 Receipt；不同 Payload 使用同 Completion Key 被拒绝。
 
-调研时也对比过：
+Kafka 只保证分区内顺序。Task 和 Completion 到达顺序由数据库状态机判断；旧 Plan Revision、Entity Set Version、Checkpoint Seq 或 Fencing Token 不能覆盖新状态。Candidate Merge 使用 Cell CAS，失败后重新读取 Canonical Ledger，不盲目覆盖。
 
-1. 纯“边推理边调工具”
-2. 纯“先规划后执行”
+Provider 超时、限流、配额耗尽和部分流结果分别记录。Search、Read 和 LLM 的 Retry Budget 在 Run 级汇总，防止 Adapter、Worker、Task 和 Kafka 重试相乘。
 
-这类方案的优点是：
+## 参数与容量
 
-1. 分步推进自然
-2. 工程落地成本较低
-3. 对中短链任务比较友好
+| 参数 | 初始约束 | 过小 | 过大 | 观察指标 |
+| --- | --- | --- | --- | --- |
+| Max Steps / Waves | 输出复杂度与预算 | 证据缺口未补齐 | 成本、循环和长尾 | Field Coverage、Marginal Gain、Cost |
+| Search/Read Budget | 来源广度与 Provider 配额 | 冲突/多样性不足 | 重复来源和限流 | Diversity、Conflict Discovery、429 |
+| Matrix Cell Limit | 计划表达能力 | 问题被过度压缩 | Task 爆炸 | Required Coverage、Task Count |
+| Replan Count / Accepted Rate | 应对可观测偏差 | 无法纠偏 | 目标漂移或无效改计划 | Reason、Accepted Plan Change、Cost |
+| Rollback Distance | 清除失效依赖 | 保留错误下游 | 大范围重做已验证工作 | Invalidated Cell/Stage、Recovery Cost |
+| Duplicate External Action Rate | 避免重复搜索和 Provider 调用 | 可能漏掉必要重试 | 重复计费与长尾放大 | Operation Receipt、Input Digest |
+| Candidate Quorum | 高风险独立性 | 单点误判 | 成本和无法收敛 | Disagreement、Merge Pass |
+| Lease / Heartbeat | Provider P99 与恢复时间 | 误接管 | 故障恢复慢 | Takeover Time、Stale Reject |
+| Checkpoint Interval | 可接受重复工作 | 恢复重复调用 | 写放大和快照大 | Recovery Cost、DB Write |
+| Synthesis Token | 报告规格 | 结论缺失 | 成本和无依据扩写 | Claim Coverage、Unsupported Rate |
 
-这类方案的问题是：
+`[当前实现]` Research Command Dispatch 调度批次为 25；Rollout Window 15 分钟，最小 Task 样本 10，Terminal/Delivery Failure 上限各 0.20，Rejected Merge 上限 0.30；Wide Discovery Precision Threshold 0.90；Research Tool Permit 限流桶容量为 10，补充速率为 10/分钟，并在 Provider、Workspace、Run + Role 三个维度同时扣减。这里的限流与 WorkloadQuota 的 20/分钟入口速率是两套不同保护，不能合并成一个“Research 并发”数字。它们是配置保护值，不是生产最优。
 
-1. 长任务里的状态还是容易漂移
-2. 计划在开放式研究中容易中途失效
-3. 没有天然的 run 级完成度控制
+`[目标设计]` 参数实验固定 Gold Set、Provider/Mock、Bundle、Source Snapshot 和故障脚本。边际 Evidence Gain 低于阈值、预算耗尽、Required WorkItem 通过类型化验收或风险门禁触发时停止；比较型任务中的 WorkItem 才对应 Required Cell。失败率、拒绝合并、未知结果、成本或 P99 超阈值停止灰度；连续滞回窗口和回放通过后恢复。
 
-所以最终采取的是：
+## 评测指标
 
-1. 保留 `planning`
-2. 保留工具驱动
-3. 但把状态真源迁移到 `Table-as-State`
-4. 把收口控制迁移到 `Dual Verifier`
+| 指标 | 分子 / 分母 | 说明 |
+| --- | --- | --- |
+| Required WorkItem Completion | 通过类型化验收的 Required WorkItem / Required WorkItem | 全 Research 的计划完成度，按类型宏平均 |
+| Matrix Cell Coverage | 通过最终校验的 Required Cell / Required Cell | 只用于比较型任务的结构完整性 |
+| Citation Support | 有直接合格 Evidence 支持、且已经带引用的可核验 Claim / 带引用的可核验 Claim | 引用支撑；全部应引用 Claim 的覆盖率另称 Citation Completeness |
+| Conflict Evidence Discovery | 正确识别的冲突样本 / Gold 冲突样本 | 是否主动发现冲突 |
+| Source Quality / Diversity / Freshness | 按来源评分、独立域/Lineage 与年龄统计 | 不合成无解释总分 |
+| Unsupported Conclusion Rate | 无合格 Evidence 的结论 / 可核验结论 | 硬门禁 |
+| Strict Accepted Run Completion Rate | 统一观察截止前产生合格终态的 ResearchRun / 固定已接纳 ResearchRun Cohort | 取消、失败和超期未完成留在分母并分列，按任务类型和风险切片 |
+| Recovery Success Rate | 故障后 Canonical State 与期望一致的恢复 / 注入恢复 | 不只看进程重启 |
+| Duplicate External Call Rate | 恢复后重复昂贵调用 / 已有成功 Receipt 调用 | Checkpoint 质量 |
+| Verifier Disagreement | Local/Global 不一致 Cell / 双重验证 Cell | 审计与阈值调优 |
+| Cost per Successful Research | 固定 Cohort 的模型、搜索、抓取、重试和失败成本 / 同 Cohort 成功 ResearchRun | 失败成本也分摊，避免只统计成功路径 |
 
-### 13.3 为什么不是大规模搜索树或重型多 agent
+评测还需 Bootstrap 置信区间、双人标注分歧与 Cohen's Kappa、LLM Judge 与人工金标一致率、近重复泄漏和输入/模型/检索/知识新鲜度漂移。完整口径见 [评测文档](./测试与评测/NoteWeave-评测指标报告.md)。
 
-调研时还对比过：
+## 安全与权限
 
-1. 大规模分支搜索
-2. 更重的多 agent 协作
+直接/间接 Prompt Injection、恶意网页、附件、搜索摘要、Tool Result 和 Role/Skill Metadata 都不能改变系统权限。模型提出 Intent，服务端执行时重验 User、Workspace、Run、Task、Lease、Role、Tool Version、Source Policy、URL、预算和 Approval。
 
-这些方案的优点是：
+审批绑定精确 Plan/Artifact Version、工具、参数摘要、Scope 和过期时间。API Key、Token、Cookie 不进入 Prompt、Trace 或 Baggage。高风险写回和外部副作用在 ACL/Policy 不可用时 Fail Closed。Synthesis 与 Discovery 默认没有业务写权限。
 
-1. 探索空间更大
-2. 角色分工更细
-3. 理论上更接近通用复杂任务框架
+## 为什么不用相近技术
 
-但问题也很明显：
+| 方案 | 当前没有直接采用 | 迁移条件 |
+| --- | --- | --- |
+| LangGraph 全量持久化 | 仍需 Workspace/Evidence/MySQL 账本，双状态源增加一致性 | 图频繁变化、子图复用收益可测且能统一迁移历史 |
+| Temporal | 当前已有状态机、Outbox、Lease、Checkpoint；引入需活动幂等和运维平台 | 跨天 Timer/HITL/补偿数量显著增加，现有编排维护成本过高 |
+| 自主多 Agent | 角色越多越难控制成本、权限、停止和候选合并 | 独立评测证明并行/仲裁净收益，Sandbox 与责任边界成熟 |
+| Event Sourcing 全量重放 | 外部 Provider 不可纯重放，事件 Schema 长期兼容成本高 | 审计/时间旅行成为主要需求且能治理 Event Evolution |
+| Last Write Wins / Majority Vote | 无法处理来源权威、转载和时间范围 | 不采用；继续使用 Evidence-aware 仲裁 |
 
-1. 成本快速上升
-2. 状态同步复杂
-3. 展示和讲解难度更大
-4. 容易为了复杂而复杂
+## 测试、灰度与回滚
 
-因此最终只保留了其中最有价值的一部分：
+- Canonical JSON、Typed Claim、Evidence Qualification、Matrix、Runnable Refill、Stage Barrier、Hydration、Role Router 和 Synthesis Guard 单测。
+- 状态机/Property 测试生成 Claim、Lease Expire、Duplicate Delivery、CAS Conflict 和 Cancellation 序列，验证终态与 Fence 不变量。
+- Kafka/Outbox/Callback 集成测试覆盖 Crash、Lease Expiry、Completion Response Loss、Poison Message 和 DLQ。
+- 固定 Gold 测试覆盖证据不足、数字/单位/日期矛盾、来源冲突、网页变化和 Citation 失效。
+- `DISTRIBUTED_DETERMINISTIC` 走真实 Run API、MySQL、Outbox、Kafka、Worker 与持久化观察；真实 Provider 结果单独分类。
+- Feature Flag 对新 Run 固化 Snapshot；先 Shadow，再小流量 Gating；关闭开关后停止创建新角色任务，旧任务排空。
+- 回滚切旧 Bundle/Flag，历史 Completion、Evidence、Digest、Checkpoint 和 Artifact 不回写。
 
-1. 在必要时做 `bounded counterfactual branch`
-2. 而不是无边界扩展搜索树
-3. 把复杂度收束在最能体现研究价值的闭环主链里
+`[已测-模拟]` 历史测试计数、确定性回放与 `NO_SUPPORTED_CANDIDATE` 失败屏障见 [质量、测试与发布门禁](./测试与评测/NoteWeave-评测指标报告.md)。Fault Harness 覆盖 Worker Crash、Lease Expiry、Duplicate Delivery、Completion Response Loss、Quorum Disagreement、Audit Blocker 和 Hydrated Resume，只有注入命令成功才可记为已应用。
 
-### 13.4 为什么不是图结构优先
+`[生产待验证]` Real Provider Benchmark、真实来源覆盖、长期成本、持续 SLO、公网 Live Canary 和生产安全红队尚未完成。
 
-调研时也考虑过用图结构做第一真源。
+## 面试入口
 
-图结构的优点是：
-
-1. 关系表达强
-2. 适合 entity / citation / lineage 连接
-3. 适合复杂多跳关系推理
-
-但当前阶段我们更优先解决的是：
-
-1. finding 是否 ready
-2. requirement 是否完成
-3. verifier 是否允许收口
-4. checkpoint 是否可恢复
-
-对于这些问题，表状态比图结构更直接。
-
-所以最终选择是：
-
-1. 先用 `Table-as-State` 做第一真源
-2. 如后续需要更复杂的 source graph / citation graph，再叠加图结构
-
-### 13.5 为什么工具层要分 Search / Fetch / Read
-
-调研时也可以把网页能力做成一个大工具。
-
-那样的优点是：
-
-1. 开发更快
-2. 调用更简单
-
-但问题是：
-
-1. 无法清晰做 query budget
-2. 无法细粒度做 fetch fallback
-3. 无法把 read focus 显式化
-4. 过程展示会很弱
-
-所以最终采取的是分层工具设计：
-
-1. `Search` 负责去哪找
-2. `Fetch` 负责怎么稳定拿
-3. `Read` 负责围绕什么目标读
-
-### 13.6 总体取舍原则
-
-一句话概括：
-
-不是追求最复杂的方法组合，而是围绕当前产品边界，选择最适合做成“可运行、可验证、可展示、可回流”的研究系统的方案。
-
----
-
-## 14. 当前落地状态
-
-截至 `2026-07-07`，这套架构不是停留在设计层，而是已经有完整落地证据：
-
-1. Worker / Agent
-   - `workers/scripts/run-gate1-smoke.ps1`
-   - `workers/research-worker/tests/test_harness.py`
-2. Backend
-   - `Phase6ResearchArtifactContractTest`
-3. Frontend
-   - `npm --prefix frontend run build`
-   - `npm --prefix frontend run ui:check`
-4. Demo / Delivery Pack
-   - `DeepResearch-P5B-demo-suite`
-   - `DeepResearch-P5C-项目讲解稿`
-   - `DeepResearch-P5C-亮点证据映射.json`
-5. Final Aggregate
-   - `scripts/verify-deepresearch-final-delivery.ps1`
-
-这意味着它已经具备：
-
-1. 可运行性
-2. 可验证性
-3. 可展示性
-4. 可讲解性
-5. 可交付性
-
----
-
-## 15. 后续迭代纪律
-
-后续任何继续完善 `Research Agent` 的实现，都应遵守以下顺序：
-
-1. 先更新 `docs/阶段计划/阶段5B-ResearchAgent全量实现.md`
-2. 再改代码或补文档
-3. 始终优先保持五个关键词主线稳定
-4. 展示层继续服从“结果优先，过程下沉，审计更下沉”
-5. 工具层增强只围绕真实缺口，不为了炫技扩复杂度
-
----
-
-## 16. 结论
-
-`NoteWeave Deep Research` 的真正价值，不在于“也能回答复杂问题”，而在于把复杂开放式研究任务做成了一个有状态、有验证、有纠偏、有来源基础、可回流工作台的正式研究系统。
-
-如果用一句更工程化的话总结：
-
-`Deep Research` 的核心不是更长的答案，而是一个由 `Research Harness` 驱动、以 `Table-as-State` 为真源、由 `Dual Verifier` 控制闭环、并通过 `反证分支` 完成路径纠偏的 `Closed-Loop Research Agent`。
+面试主回答与追问见 [Research Agent 一体化手册](./简历亮点八股/30-Research-Agent一体化面试手册.md)。

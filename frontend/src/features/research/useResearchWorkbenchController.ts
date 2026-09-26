@@ -1,37 +1,27 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { isExecutionTerminal } from "../executions/api";
+import { useMemo, useState } from "react";
 import type { ShellRun } from "../shell/useShellBusy";
 import type { AppView } from "../shell/viewRoute";
-import { navigateAppView } from "../shell/viewRoute";
 import type { SourceAsset } from "../sources/model";
 import type { Workspace } from "../workspace/model";
-import { researchApi } from "./api";
 import { buildResearchDerivedModel } from "./derived";
 import {
-  buildResearchSourceSelection,
-  DEFAULT_RESEARCH_RETRIEVAL_MODE,
-  isResearchSourceReady,
-  researchModeRequiresSeeds
+  DEFAULT_RESEARCH_RETRIEVAL_MODE
 } from "./launch";
 import {
-  type ResearchCollection,
   type ResearchHistoryFilter,
-  type ResearchRetrievalMode,
-  type ResearchRunSummary
+  type ResearchRetrievalMode
 } from "./model";
 import {
-  buildArtifactRecoveryNarrative,
-  buildLifecycleCreationNarrative,
-  buildRunContinuityBaselineLabel,
-  buildRunContinuityNarrative,
-  extractRunSummarySnapshot,
-  findRunContinuityBaseline
+  extractRunSummarySnapshot
 } from "./presentation";
 import { useResearchState } from "./useResearchState";
+import { useResearchReportActions } from "./useResearchReportActions";
+import { useResearchRunActions } from "./useResearchRunActions";
 import {
-  buildResearchReportExportArtifact,
-  buildResearchReportExportStatusMessage
-} from "./researchReportDelivery";
+  type ResearchExecutionSnapshot,
+  useResearchRunLifecycle
+} from "./useResearchRunLifecycle";
+import { useResearchSourceScope } from "./useResearchSourceScope";
 import {
   buildWaitContextDetailLines,
   buildWaitContextSignalChips,
@@ -45,26 +35,16 @@ function asWaitContext(value: unknown): WaitContext | null {
   return value as WaitContext;
 }
 
-type ExecutionSnapshot = {
-  task: {
-    task_id?: string;
-    task_status?: string;
-    result_ref?: string;
-    wait_context?: unknown;
-    [key: string]: unknown;
-  };
-  events: Array<{ event: string; [key: string]: unknown }>;
-};
-
 type UseResearchWorkbenchControllerInput = {
   workspace: Workspace | null;
   sources: SourceAsset[];
+  replaceSources: (sources: SourceAsset[]) => void;
   setView: (view: AppView) => void;
   run: ShellRun;
   setStatus: (status: string) => void;
   appendSystemMessage: (content: string) => void;
-  loadExecution: (taskId: string) => Promise<ExecutionSnapshot>;
-  getExecution: (taskId: string) => ExecutionSnapshot | undefined;
+  loadExecution: (taskId: string) => Promise<ResearchExecutionSnapshot>;
+  getExecution: (taskId: string) => ResearchExecutionSnapshot | undefined;
   latestResearchTaskId: string;
   setLatestResearchTaskId: (id: string) => void;
 };
@@ -72,6 +52,7 @@ type UseResearchWorkbenchControllerInput = {
 export function useResearchWorkbenchController({
   workspace,
   sources,
+  replaceSources,
   setView,
   run,
   setStatus,
@@ -81,11 +62,9 @@ export function useResearchWorkbenchController({
   latestResearchTaskId,
   setLatestResearchTaskId
 }: UseResearchWorkbenchControllerInput) {
-  const [researchQuestion, setResearchQuestion] = useState(
-    "请围绕当前主题开展 Deep Research，并明确给出已验证结论、冲突点和后续恢复建议。"
-  );
+  const [researchQuestion, setResearchQuestion] = useState("");
   const [researchProfile, setResearchProfile] = useState("default");
-  const [researchGoal, setResearchGoal] = useState("沉淀一份可验证、可恢复的研究结论摘要。");
+  const [researchGoal, setResearchGoal] = useState("");
   const [researchDeliverableFormat, setResearchDeliverableFormat] = useState(
     "Evidence-backed research report"
   );
@@ -98,11 +77,18 @@ export function useResearchWorkbenchController({
   const [researchRetrievalMode, setResearchRetrievalMode] = useState<ResearchRetrievalMode>(
     DEFAULT_RESEARCH_RETRIEVAL_MODE
   );
-  const [selectedResearchSourceIds, setSelectedResearchSourceIds] = useState<string[]>([]);
-  const [currentResearchCollection, setCurrentResearchCollection] = useState<ResearchCollection | null>(null);
   const [researchHistoryFilter, setResearchHistoryFilter] = useState<ResearchHistoryFilter>("ALL");
-  const [focusedResearchSourceId, setFocusedResearchSourceId] = useState("");
   const [researchDetailOpen, setResearchDetailOpen] = useState(false);
+
+  const {
+    selectedResearchSourceIds,
+    setSelectedResearchSourceIds,
+    focusedResearchSourceId,
+    setFocusedResearchSourceId,
+    toggleResearchScope,
+    addResearchSourceToScope,
+    removeResearchSourceFromScope
+  } = useResearchSourceScope({ sources });
 
   const {
     researchRuns,
@@ -125,270 +111,22 @@ export function useResearchWorkbenchController({
   const latestResearchTaskExecution = getExecution(latestResearchTaskId);
   const latestResearchTask = latestResearchTaskExecution?.task ?? null;
   const researchTaskEvents = latestResearchTaskExecution?.events ?? [];
-  const terminalResearchRefreshRef = useRef("");
 
-  useEffect(() => {
-    setSelectedResearchSourceIds((current) =>
-      current.filter((sourceId) => sources.some((source) =>
-        source.source_id === sourceId && isResearchSourceReady(source)))
-    );
-  }, [sources]);
-
-  useEffect(() => {
-    if (!focusedResearchSourceId) {
-      return;
-    }
-    const timeoutId = window.setTimeout(() => {
-      const target = document.getElementById(`research-source-scope-${focusedResearchSourceId}`);
-      if (target) {
-        target.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    }, 0);
-    return () => window.clearTimeout(timeoutId);
-  }, [focusedResearchSourceId, sources.length]);
-
-  function toggleResearchScope(sourceId: string) {
-    if (!sources.some((source) => source.source_id === sourceId && isResearchSourceReady(source))) {
-      return;
-    }
-    setSelectedResearchSourceIds((current) => (
-      current.includes(sourceId)
-        ? current.filter((entry) => entry !== sourceId)
-        : [...current, sourceId]
-    ));
-  }
-
-  function addResearchSourceToScope(sourceId: string) {
-    if (!sources.some((source) => source.source_id === sourceId && isResearchSourceReady(source))) {
-      return;
-    }
-    setSelectedResearchSourceIds((current) => (
-      current.includes(sourceId) ? current : [...current, sourceId]
-    ));
-    setFocusedResearchSourceId(sourceId);
-  }
-
-  function removeResearchSourceFromScope(sourceId: string) {
-    setSelectedResearchSourceIds((current) => current.filter((entry) => entry !== sourceId));
-    setFocusedResearchSourceId(sourceId);
-  }
-
-  const loadResearchRunDetail = useCallback(async (researchRunId: string, checkpointNo?: number | null) => {
-    if (!workspace) {
-      return null;
-    }
-    const detail = await fetchResearchRunDetail(researchRunId, checkpointNo);
-    if (detail?.status === "COMPLETED") {
-      try {
-        setCurrentResearchCollection(await researchApi.getCollection(workspace.workspace_id, researchRunId));
-      } catch {
-        setCurrentResearchCollection(null);
-      }
-    } else {
-      setCurrentResearchCollection(null);
-    }
-    return detail;
-  }, [workspace, fetchResearchRunDetail]);
-
-  const loadResearchRunHistory = useCallback(async (preferredRunId?: string) => {
-    if (!workspace) {
-      return [];
-    }
-    const runs = await fetchResearchRunHistory();
-    const nextRunId = preferredRunId || currentResearchRunId || runs[0]?.research_run_id || "";
-    if (nextRunId) {
-      prepareResearchRun(nextRunId);
-      const selected = runs.find((run) => run.research_run_id === nextRunId) ?? runs[0];
-      if (selected?.task_id) {
-        await loadExecution(selected.task_id);
-        setLatestResearchTaskId(selected.task_id);
-      }
-      await loadResearchRunDetail(nextRunId);
-    }
-    return runs;
-  }, [
+  const {
+    currentResearchCollection,
+    loadResearchRunDetail,
+    loadResearchRunHistory,
+    refreshResearchTask
+  } = useResearchRunLifecycle({
     workspace,
-    fetchResearchRunHistory,
     currentResearchRunId,
+    latestResearchTask,
+    fetchResearchRunHistory,
+    fetchResearchRunDetail,
     prepareResearchRun,
     loadExecution,
-    setLatestResearchTaskId,
-    loadResearchRunDetail
-  ]);
-
-  useEffect(() => {
-    const taskId = latestResearchTask?.task_id || "";
-    const taskStatus = latestResearchTask?.task_status || "";
-    const runId = latestResearchTask?.result_ref || currentResearchRunId;
-    if (!workspace || !taskId || !runId || !isExecutionTerminal(taskStatus)) {
-      return;
-    }
-    const refreshKey = `${taskId}:${taskStatus}`;
-    if (terminalResearchRefreshRef.current === refreshKey) {
-      return;
-    }
-    terminalResearchRefreshRef.current = refreshKey;
-    void (async () => {
-      try {
-        await loadResearchRunHistory(runId);
-        await loadResearchRunDetail(runId);
-      } catch {
-        terminalResearchRefreshRef.current = "";
-      }
-    })();
-  }, [
-    workspace,
-    latestResearchTask?.task_id,
-    latestResearchTask?.task_status,
-    latestResearchTask?.result_ref,
-    currentResearchRunId,
-    loadResearchRunHistory,
-    loadResearchRunDetail
-  ]);
-
-  async function refreshResearchTask(taskId: string, researchRunId: string) {
-    const execution = await loadExecution(taskId);
-    const task = execution.task;
-    setLatestResearchTaskId(taskId);
-    const runs = await loadResearchRunHistory(task.result_ref || researchRunId);
-    const detail = await loadResearchRunDetail(task.result_ref || researchRunId);
-    return { task, runs, detail };
-  }
-
-  async function startDeepResearch() {
-    if (!workspace) {
-      setStatus("请先创建工作台");
-      return;
-    }
-    const nextQuestion = researchQuestion.trim();
-    if (!nextQuestion) {
-      setStatus("请先填写 Deep Research 问题");
-      return;
-    }
-    const readySourceIds = derived.researchScopeSources.map((source) => source.source_id);
-    if (researchModeRequiresSeeds(researchRetrievalMode) && readySourceIds.length === 0) {
-      setStatus(`${researchRetrievalMode} 模式至少需要一份已解析资料`);
-      return;
-    }
-    const nextProfile = researchProfile.trim() || "default";
-    const nextGoal = researchGoal.trim();
-    const nextDeliverableFormat = researchDeliverableFormat.trim();
-    const nextConstraints = researchConstraintsText
-      .split(/\r?\n/)
-      .map((item) => item.trim())
-      .filter(Boolean);
-    const nextTimeRange = researchTimeRange.trim();
-    const nextDepth = researchDepth.trim() || "STANDARD";
-    const nextResearchType = researchType.trim() || "AUTO";
-    await run("启动 Deep Research", async () => {
-      const created = await researchApi.createRun(workspace.workspace_id, {
-        question: nextQuestion,
-        profile: nextProfile,
-        research_goal: nextGoal,
-        deliverable_format: nextDeliverableFormat,
-        constraints: nextConstraints,
-        time_range: nextTimeRange,
-        depth: nextDepth,
-        research_type: nextResearchType,
-        retrieval_mode: researchRetrievalMode,
-        ...buildResearchSourceSelection(researchRetrievalMode, readySourceIds)
-      });
-      prepareResearchRun(created.research_run_id);
-      const refreshed = await refreshResearchTask(created.task_id, created.research_run_id);
-      const createdRunSummary = refreshed.runs.find((item) => item.research_run_id === created.research_run_id) ?? null;
-      const createdRunBaseline = findRunContinuityBaseline(refreshed.runs, createdRunSummary);
-      const createdRunBaselineLabel = createdRunSummary
-        ? buildRunContinuityBaselineLabel(createdRunBaseline, createdRunSummary)
-        : "";
-      const createdRunContinuityNarrative = createdRunSummary
-        ? buildRunContinuityNarrative(createdRunBaseline, createdRunSummary)
-        : "";
-      appendSystemMessage(
-        `已创建 Deep Research：run=${created.research_run_id}，profile=${nextProfile}，depth=${nextDepth}，显式资料范围 ${readySourceIds.length} 份。${buildLifecycleCreationNarrative(
-          nextQuestion,
-          nextGoal,
-          nextDepth,
-          readySourceIds.length
-        )}${createdRunBaselineLabel ? ` continuity baseline=${createdRunBaselineLabel}。` : ""}${createdRunContinuityNarrative ? ` ${createdRunContinuityNarrative}` : ""}`
-      );
-    }, "research");
-  }
-
-  async function refreshCurrentResearchRun() {
-    if (!workspace || !currentResearchRunId) {
-      setStatus("当前还没有可刷新的 Deep Research run");
-      return;
-    }
-    await run("刷新 Deep Research", async () => {
-      if (latestResearchTask?.task_id) {
-        await refreshResearchTask(latestResearchTask.task_id, currentResearchRunId);
-      } else {
-        await loadResearchRunHistory(currentResearchRunId);
-        await loadResearchRunDetail(currentResearchRunId);
-      }
-    }, "research");
-  }
-
-  async function openResearchRunHistoryItem(runSummary: ResearchRunSummary) {
-    if (!workspace) {
-      return;
-    }
-    await run(`打开 Research Run ${runSummary.research_run_id}`, async () => {
-      prepareResearchRun(runSummary.research_run_id);
-      if (runSummary.task_id) {
-        await loadExecution(runSummary.task_id);
-        setLatestResearchTaskId(runSummary.task_id);
-      }
-      await loadResearchRunDetail(runSummary.research_run_id);
-    }, "research");
-  }
-
-  async function openResearchWorkbench() {
-    if (!workspace) {
-      setStatus("请先创建工作台");
-      return;
-    }
-    setView("research");
-    navigateAppView("research");
-    await run("打开 Deep Research 工作台", async () => {
-      const runs = await loadResearchRunHistory();
-      if (!currentResearchRunId && runs.length === 0) {
-        resetResearchState();
-      }
-    }, "research");
-  }
-
-  async function openResearchCheckpoint(checkpointNo: number, comparisonNo: number | null) {
-    if (!currentResearchRunId) {
-      return;
-    }
-    await selectResearchCheckpoint(currentResearchRunId, checkpointNo, comparisonNo);
-    setResearchDetailOpen(true);
-  }
-
-  async function updateResearchCheckpointComparison(checkpointNo: number | null) {
-    if (!currentResearchRunId) {
-      return;
-    }
-    await selectResearchComparison(currentResearchRunId, checkpointNo);
-  }
-
-  async function resumeResearchFromCheckpoint(checkpointNo: number) {
-    if (!workspace || !currentResearchRunId) {
-      setStatus("当前没有可恢复的 Research run");
-      return;
-    }
-    await run(`从 checkpoint #${checkpointNo} 恢复研究`, async () => {
-      const created = await researchApi.resumeFromCheckpoint(
-        workspace.workspace_id,
-        currentResearchRunId,
-        checkpointNo
-      );
-      prepareResearchRun(created.research_run_id);
-      await refreshResearchTask(created.task_id, created.research_run_id);
-      setResearchDetailOpen(true);
-    }, "research");
-  }
+    setLatestResearchTaskId
+  });
 
   const derived = useMemo(() => buildResearchDerivedModel({
     sources,
@@ -440,61 +178,57 @@ export function useResearchWorkbenchController({
     .find((event) => event.event === "task.progress")
     ?? null;
 
-  async function saveResearchReportAsSource() {
-    if (!workspace || !currentResearchRunId) {
-      setStatus("当前没有可写回的 Deep Research 报告");
-      return;
-    }
-    await run("保存 Deep Research 报告到资料池", async () => {
-      const saved = await researchApi.saveReportAsSource(
-        workspace.workspace_id,
-        currentResearchRunId
-      );
-      await loadResearchRunDetail(currentResearchRunId);
-      const runs = await loadResearchRunHistory(currentResearchRunId);
-      const savedRunSummary = runs.find((item) => item.research_run_id === currentResearchRunId) ?? null;
-      const savedRunBaseline = findRunContinuityBaseline(runs, savedRunSummary);
-      const savedRunBaselineLabel = savedRunSummary
-        ? buildRunContinuityBaselineLabel(savedRunBaseline, savedRunSummary)
-        : "";
-      const savedRunContinuityNarrative = savedRunSummary
-        ? buildRunContinuityNarrative(savedRunBaseline, savedRunSummary)
-        : "";
-      appendSystemMessage(
-        `Deep Research 报告已写回资料池：source=${saved.source_id}，status=${saved.status}，index=${saved.index_status}。${
-          buildArtifactRecoveryNarrative(
-            derived.currentResearchRunSummary?.recovery_mode
-              || currentResearchRun?.report_structure?.recovery_status.active_recovery_strategy
-              || currentResearchRun?.report_structure?.recovery_mode
-              || "",
-            currentRunSummaryRecoveryTargets
-          ) || ""
-        }${savedRunBaselineLabel ? ` continuity baseline=${savedRunBaselineLabel}。` : ""}${savedRunContinuityNarrative ? ` ${savedRunContinuityNarrative}` : ""}`
-      );
-    }, "research");
-  }
+  const {
+    startDeepResearch,
+    refreshCurrentResearchRun,
+    openResearchRunHistoryItem,
+    openResearchWorkbench,
+    openResearchCheckpoint,
+    updateResearchCheckpointComparison,
+    resumeResearchFromCheckpoint
+  } = useResearchRunActions({
+    workspace,
+    researchQuestion,
+    researchProfile,
+    researchGoal,
+    researchDeliverableFormat,
+    researchConstraintsText,
+    researchTimeRange,
+    researchDepth,
+    researchType,
+    researchRetrievalMode,
+    researchScopeSources: derived.researchScopeSources,
+    currentResearchRunId,
+    latestResearchTask,
+    run,
+    setStatus,
+    appendSystemMessage,
+    setView,
+    prepareResearchRun,
+    resetResearchState,
+    loadExecution,
+    setLatestResearchTaskId,
+    loadResearchRunHistory,
+    loadResearchRunDetail,
+    refreshResearchTask,
+    selectResearchCheckpoint,
+    selectResearchComparison,
+    setResearchDetailOpen
+  });
 
-  function exportResearchReportMarkdown() {
-    const exportArtifact = buildResearchReportExportArtifact({
-      final_report_markdown: currentResearchRun?.final_report_markdown,
-      final_report_title: currentResearchRun?.final_report_title,
-      question: currentResearchRun?.question
-    });
-    if (!exportArtifact) {
-      setStatus("当前没有可导出的 Deep Research Markdown 报告");
-      return;
-    }
-    const blob = new Blob([exportArtifact.content], { type: exportArtifact.mimeType });
-    const objectUrl = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = objectUrl;
-    link.download = exportArtifact.fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(objectUrl);
-    setStatus(buildResearchReportExportStatusMessage(exportArtifact.fileName));
-  }
+  const { saveResearchReportAsSource, exportResearchReportMarkdown } = useResearchReportActions({
+    workspace,
+    currentResearchRunId,
+    currentResearchRun,
+    currentResearchRunSummary: derived.currentResearchRunSummary,
+    currentRunSummaryRecoveryTargets,
+    run,
+    setStatus,
+    appendSystemMessage,
+    replaceSources,
+    loadResearchRunDetail,
+    loadResearchRunHistory
+  });
 
   return {
     resetResearchState,

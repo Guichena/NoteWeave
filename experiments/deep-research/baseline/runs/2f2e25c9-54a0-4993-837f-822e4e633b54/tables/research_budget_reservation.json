@@ -1,0 +1,34 @@
+[
+  {
+    "agent_completion_id": "cf3c4b17-c2d7-415a-b437-e952766b6123",
+    "consumed_json": "{\"extract_calls\":1,\"evidence_appended\":3,\"read_calls\":1,\"llm_calls\":1,\"search_calls\":1,\"fetch_calls\":1,\"evidence_cards\":3,\"candidates_submitted\":3,\"candidate_merges_accepted\":3,\"candidate_merges_rejected\":0}",
+    "created_at": "2026-09-18 08:32:54.000000",
+    "finalized_at": "2026-09-18 08:34:19.000000",
+    "id": "18bbdffc-548b-4eaa-850a-811e8c90c9c6",
+    "idempotency_key": "reserve:03e2426f96627426dd703d77d64cc6e7",
+    "released_json": "{\"extract_calls\":0,\"evidence_appended\":9,\"read_calls\":0,\"llm_calls\":0,\"search_calls\":0,\"fetch_calls\":0,\"evidence_cards\":9,\"candidates_submitted\":0,\"candidate_merges_accepted\":0,\"candidate_merges_rejected\":3}",
+    "research_agent_task_id": "93c629ef-24e3-4f35-a93b-8681122c74a5",
+    "research_run_id": "2f2e25c9-54a0-4993-837f-822e4e633b54",
+    "reserved_json": "{\"extract_calls\":1,\"evidence_appended\":12,\"read_calls\":1,\"llm_calls\":1,\"search_calls\":1,\"evidence_cards\":12,\"fetch_calls\":1,\"candidates_submitted\":3,\"candidate_merges_accepted\":3,\"candidate_merges_rejected\":3}",
+    "settled_at": "2026-09-18 08:34:19.000000",
+    "settlement_key": "deep-cell:93c629ef-24e3-4f35-a93b-8681122c74a5:1:1",
+    "state": "SETTLED",
+    "updated_at": "2026-09-18 08:34:19.000000"
+  },
+  {
+    "agent_completion_id": "b565e2b1-cc12-4ec6-962c-ef1b63b7854a",
+    "consumed_json": "{\"extract_calls\":1,\"evidence_appended\":0,\"read_calls\":1,\"llm_calls\":1,\"search_calls\":1,\"fetch_calls\":1,\"evidence_cards\":0,\"candidates_submitted\":0,\"candidate_merges_accepted\":0,\"candidate_merges_rejected\":0}",
+    "created_at": "2026-09-18 08:32:54.000000",
+    "finalized_at": "2026-09-18 08:35:44.000000",
+    "id": "fc7730c0-4013-4d4b-9ec6-d97595b30d17",
+    "idempotency_key": "reserve:ad6c920619d961dd64e3a4719aba8c46",
+    "released_json": "{\"extract_calls\":0,\"evidence_appended\":4,\"read_calls\":0,\"llm_calls\":0,\"search_calls\":0,\"fetch_calls\":0,\"evidence_cards\":4,\"candidates_submitted\":1,\"candidate_merges_accepted\":1,\"candidate_merges_rejected\":1}",
+    "research_agent_task_id": "46b120a0-28b3-4440-9d19-1a1e938f491a",
+    "research_run_id": "2f2e25c9-54a0-4993-837f-822e4e633b54",
+    "reserved_json": "{\"extract_calls\":1,\"evidence_appended\":4,\"read_calls\":1,\"llm_calls\":1,\"search_calls\":1,\"evidence_cards\":4,\"fetch_calls\":1,\"candidates_submitted\":1,\"candidate_merges_accepted\":1,\"candidate_merges_rejected\":1}",
+    "settled_at": "2026-09-18 08:35:44.000000",
+    "settlement_key": "deep-cell:46b120a0-28b3-4440-9d19-1a1e938f491a:1:1",
+    "state": "SETTLED",
+    "updated_at": "2026-09-18 08:35:44.000000"
+  }
+]

@@ -80,6 +80,13 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
                         HttpStatus.SERVICE_UNAVAILABLE
                 );
             }
+            if (draft == null || draft.isBlank()) {
+                throw new BusinessException(
+                        "ANSWER_TEMPLATE_EMPTY_RESPONSE",
+                        "Template fallback has no answer content",
+                        HttpStatus.BAD_GATEWAY
+                );
+            }
             replayChunks(draft).forEach(tokenConsumer);
             return draft;
         }
@@ -103,13 +110,21 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
                             ? token : streamedBuffer[0] + token;
                     tokenConsumer.accept(token);
                 });
-        return streamed == null || streamed.isEmpty() ? streamedBuffer[0] : streamed;
+        String generated = streamed == null || streamed.isEmpty() ? streamedBuffer[0] : streamed;
+        if (generated == null || generated.isBlank()) {
+            throw new BusinessException(
+                    "ANSWER_LLM_EMPTY_RESPONSE",
+                    "Answer LLM returned no content",
+                    HttpStatus.BAD_GATEWAY
+            );
+        }
+        return generated;
     }
 
     @Override
     public List<String> replayChunks(String content) {
-        if (content == null || content.isEmpty()) {
-            return List.of("");
+        if (content == null || content.isBlank()) {
+            return List.of();
         }
         String[] lines = content.split("\n", -1);
         int linesPerChunk = Math.max(1, (lines.length + 5) / 6);

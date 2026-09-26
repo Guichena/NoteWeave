@@ -1,0 +1,36 @@
+{
+  "fixture_schema": "research-extraction-replay.v1",
+  "fixture_key": "extract-unknown-window-v1",
+  "fixture_version": 1,
+  "desensitized": true,
+  "provider": {
+    "model": "desensitized-model",
+    "purpose": "research.extract"
+  },
+  "question": "Which rollout safeguards apply to regional failover?",
+  "schema_columns": [
+    "answer",
+    "key_evidence"
+  ],
+  "stop_contract": {},
+  "windows": [
+    {
+      "window_id": "w-1",
+      "source_id": "s-1",
+      "source_title": "Regional Rollout Notes",
+      "query": "regional failover safeguards",
+      "read_focus": "Extract rollout safeguards for regional failover",
+      "window_text": "Regional rollout notes.\n- Failover to the standby region is triggered after two consecutive health check failures.\n- The write path keeps a retry budget of three attempts per request.",
+      "adapter": "workspace",
+      "snapshot_status": "WORKSPACE"
+    }
+  ],
+  "provider_response_raw": "{\"evidence_cards\":[{\"window_id\":\"w-404\",\"column_key\":\"answer\",\"claim_text\":\"Failover requires two consecutive health check failures.\",\"quote_text\":\"Failover to the standby region is triggered after two consecutive health check failures.\",\"relation_type\":\"SUPPORTS\",\"support_score\":0.9,\"conflict_score\":0.0}]}",
+  "expected": {
+    "termination_reason": "ALL_CARDS_REJECTED",
+    "accepted_count": 0,
+    "rejection_counts": {
+      "UNKNOWN_WINDOW": 1
+    }
+  }
+}

@@ -4,6 +4,7 @@ import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
 import java.net.InetAddress;
 import java.net.URI;
+import java.util.List;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.nio.charset.StandardCharsets;
@@ -72,6 +73,43 @@ public class ResearchExternalSnapshotArchiveService {
                 command.contentText(), contentSha256, command.taskId());
         return new ArchiveReceipt(archiveId, command.taskId(), command.windowId(), command.sourceId(),
                 "EXTERNAL_ARCHIVED", snapshotKey, contentSha256, false);
+    }
+
+    /**
+     * D-39 task-level recovery inventory. A DEEP_CELL task whose lease expired is re-claimed
+     * under a new lease; every external page its abandoned attempt already pushed through the
+     * immutable archive is returned here so the re-execution skips the paid fetch instead of
+     * re-buying the same bytes. The authoritative lease check is identical to {@code archive},
+     * so only the current lease holder may read another attempt's archive, and no permit quota
+     * is consumed because no provider is invoked.
+     */
+    @Transactional
+    public List<ReusableWindow> reusableWindows(ReuseCommand command) {
+        validateIdentity(command.taskId(), command.workerInstanceId(), command.leaseEpoch(), command.fencingToken());
+        permitService.requirePermit(new ResearchAgentPermitService.PermitCommand(
+                command.taskId(), command.workerInstanceId(), command.leaseEpoch(), command.fencingToken(), "archive"));
+        String runId = jdbcTemplate.query("""
+                select research_run_id from research_agent_task where id = ?
+                """, rs -> rs.next() ? rs.getString(1) : null, command.taskId());
+        if (runId == null) throw conflict();
+        return List.copyOf(jdbcTemplate.query("""
+                select window_id, source_id, source_title, source_url, provider, adapter,
+                       snapshot_key, content_text, content_sha256
+                from research_external_snapshot
+                where research_run_id = ? and research_agent_task_id = ? and archive_status = 'ARCHIVED'
+                order by window_id, source_id
+                """, (rs, rowNum) -> new ReusableWindow(
+                rs.getString("window_id"), rs.getString("source_id"), rs.getString("source_title"),
+                rs.getString("source_url"), rs.getString("provider"), rs.getString("adapter"),
+                rs.getString("snapshot_key"), rs.getString("content_text"), rs.getString("content_sha256")),
+                runId, command.taskId()));
+    }
+
+    private void validateIdentity(String taskId, String workerInstanceId, int leaseEpoch, long fencingToken) {
+        if (invalid(taskId, 160) || invalid(workerInstanceId, 160) || leaseEpoch < 1 || fencingToken < 1) {
+            throw new BusinessException("RESEARCH_AGENT_EXTERNAL_ARCHIVE_INVALID",
+                    "External snapshot reuse request is invalid");
+        }
     }
 
     private boolean sameArchive(ArchiveRow existing, ArchiveCommand command, String digest, String snapshotKey) {
@@ -225,6 +263,25 @@ public class ResearchExternalSnapshotArchiveService {
         return new BusinessException("RESEARCH_AGENT_EXTERNAL_ARCHIVE_CONFLICT",
                 "External snapshot identity already belongs to different immutable content");
     }
+
+    public record ReuseCommand(
+            String taskId,
+            String workerInstanceId,
+            int leaseEpoch,
+            long fencingToken
+    ) { }
+
+    public record ReusableWindow(
+            String windowId,
+            String sourceId,
+            String sourceTitle,
+            String sourceUrl,
+            String provider,
+            String adapter,
+            String snapshotKey,
+            String contentText,
+            String contentSha256
+    ) { }
 
     public record ArchiveCommand(
             String taskId,

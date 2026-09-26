@@ -30,7 +30,7 @@ public class ApiRequestIdentityFilter extends OncePerRequestFilter {
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
         return !path.startsWith("/api/v2/")
-                || path.startsWith("/api/v2/actuator")
+                || path.equals("/api/v2/auth/register")
                 || path.equals("/api/v2/auth/login")
                 || path.equals("/api/v2/auth/refresh");
     }

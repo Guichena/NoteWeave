@@ -620,8 +620,10 @@ def test_global_verifier_should_not_depend_on_local_pass_for_ready_decision() ->
 
     result = run_global_verifier(local_result, ledger, [])
 
-    assert result.status == "PASS"
-    assert result.decision == "READY_TO_WRITE"
+    assert result.status == "WARN"
+    assert result.decision == "WRITE_WITH_GUARDRAILS"
+    assert result.verifier_disagreement is True
+    assert "VERIFIER_DISAGREEMENT" in result.verification_facts["blocker_reason_codes"]
 
 
 def test_entity_candidate_set_should_freeze_after_wide_discovery() -> None:

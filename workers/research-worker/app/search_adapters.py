@@ -125,7 +125,7 @@ class HttpJsonSearchTransport:
                     break
                 if attempt < self.max_retries:
                     time.sleep(min(2 ** (attempt - 1), 4))
-            except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as error:
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError) as error:
                 last_error = error
                 if attempt < self.max_retries:
                     time.sleep(min(2 ** (attempt - 1), 4))
@@ -207,7 +207,7 @@ class HttpGetSearchTransport:
                     break
                 if attempt < self.max_retries:
                     time.sleep(min(2 ** (attempt - 1), 4))
-            except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as error:
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError) as error:
                 last_error = error
                 if attempt < self.max_retries:
                     time.sleep(min(2 ** (attempt - 1), 4))
@@ -271,7 +271,7 @@ class HttpWikipediaSearchTransport:
             except urllib.error.HTTPError as error:
                 if not _is_retryable_search_http_status(error.code):
                     break
-            except (urllib.error.URLError, TimeoutError, ValueError, TypeError, json.JSONDecodeError):
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError, TypeError, json.JSONDecodeError):
                 pass
             if attempt < self.max_retries:
                 time.sleep(min(2 ** (attempt - 1), 4))
@@ -898,7 +898,8 @@ def _build_external_search_adapters() -> list[ExternalSearchAdapter]:
         provider_chain = ["serper"]
 
     adapters: list[ExternalSearchAdapter] = []
-    for index, provider_name in enumerate(provider_chain):
+    authenticated_provider_index = 0
+    for provider_name in provider_chain:
         if provider_name.lower() in {"wikipedia", "mediawiki"}:
             if os.getenv("NOTEWEAVE_RESEARCH_PUBLIC_SEARCH_ENABLED", "").strip().lower() not in {
                 "1", "true", "yes", "on"
@@ -911,6 +912,8 @@ def _build_external_search_adapters() -> list[ExternalSearchAdapter]:
                 requires_api_key=False,
             ))
             continue
+        use_generic_search_settings = authenticated_provider_index == 0
+        authenticated_provider_index += 1
         api_key = _provider_env(
             provider_name,
             "API_KEY",
@@ -918,7 +921,7 @@ def _build_external_search_adapters() -> list[ExternalSearchAdapter]:
                 "NOTEWEAVE_RESEARCH_SEARCH_API_KEY",
                 "SERPER_API_KEY",
                 "SEARCH_API_KEY",
-            ] if index == 0 else [],
+            ] if use_generic_search_settings else [],
         )
         if not api_key:
             continue
@@ -929,7 +932,7 @@ def _build_external_search_adapters() -> list[ExternalSearchAdapter]:
                 "NOTEWEAVE_RESEARCH_SEARCH_BASE_URL",
                 "SERPER_BASE_URL",
                 "SEARCH_API_BASE",
-            ] if index == 0 else [],
+            ] if use_generic_search_settings else [],
         )
         adapters.append(
             ExternalSearchAdapter(

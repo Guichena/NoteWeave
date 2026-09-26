@@ -1,6 +1,7 @@
 package com.noteweave.upload;
 
 import com.noteweave.common.ApiResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -33,8 +34,9 @@ public class UploadController {
             @PathVariable String uploadId,
             @PathVariable int chunkIndex,
             @RequestHeader(value = "Content-MD5", required = false) String contentMd5,
-            @RequestBody byte[] content
+            HttpServletRequest request
     ) {
+        byte[] content = UploadRequestBodyReader.read(request);
         return ApiResponse.success(uploadService.acceptChunk(uploadId, chunkIndex, contentMd5, content));
     }
 

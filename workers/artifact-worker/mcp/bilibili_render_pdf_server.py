@@ -412,20 +412,28 @@ class BilibiliRenderPdfServer:
         tex_path.write_text(latex, encoding="utf-8")
 
         xelatex = shutil.which("xelatex")
+        pdf_path.unlink(missing_ok=True)
         pdf_status = "COMPILED"
         compile_message = "portable CJK PDF renderer used because xelatex is not installed"
         execution_mode = "portable_cjk_pdf_fallback"
         xelatex_succeeded = False
         if xelatex:
-            completed = subprocess.run(
-                [xelatex, "-interaction=nonstopmode", "-halt-on-error", tex_path.name],
-                cwd=str(output_dir),
-                text=True,
-                capture_output=True,
-                check=False,
+            completed = None
+            for _ in range(2):
+                completed = subprocess.run(
+                    [xelatex, "-interaction=nonstopmode", "-halt-on-error", tex_path.name],
+                    cwd=str(output_dir),
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                if completed.returncode != 0:
+                    break
+            xelatex_succeeded = (
+                completed is not None and completed.returncode == 0 and pdf_path.exists()
             )
-            xelatex_succeeded = completed.returncode == 0 and pdf_path.exists()
-            compile_message = (completed.stderr or completed.stdout)[-2000:]
+            if completed is not None:
+                compile_message = (completed.stderr or completed.stdout)[-2000:]
             execution_mode = (
                 "controlled_xelatex_render"
                 if xelatex_succeeded
@@ -444,6 +452,12 @@ class BilibiliRenderPdfServer:
                 video_url=str(arguments.get("video_url") or ""),
             )
 
+        notes = ["The system MCP emitted a deterministic LaTeX source package."]
+        if execution_mode == "controlled_xelatex_render":
+            notes.append("The PDF was compiled by the controlled XeLaTeX runtime.")
+        else:
+            notes.append("Portable CJK fallback was explicitly enabled for this runtime.")
+
         return {
             "title": title,
             "output_dir": str(output_dir),
@@ -452,10 +466,7 @@ class BilibiliRenderPdfServer:
             "pdf_status": pdf_status,
             "execution_mode": execution_mode,
             "compile_message": compile_message,
-            "notes": [
-                "The system MCP emitted a deterministic LaTeX source package.",
-                "Portable CJK fallback was explicitly enabled for this runtime.",
-            ],
+            "notes": notes,
         }
 
     def _build_latex_document(
@@ -482,15 +493,17 @@ class BilibiliRenderPdfServer:
         body_text = "\n".join(body).strip() + "\n"
 
         replacements = {
-            r"\newcommand{\notetitle}{[^\n]*": f"\\newcommand{{\\notetitle}}{{{_latex_escape(title)}}}",
-            r"\newcommand{\videochannel}{[^\n]*": f"\\newcommand{{\\videochannel}}{{{_latex_escape(video_channel or '[待补充]')}}}",
-            r"\newcommand{\videopublishdate}{[^\n]*": f"\\newcommand{{\\videopublishdate}}{{{_latex_escape(video_publish_date or '[待补充]')}}}",
-            r"\newcommand{\videoduration}{[^\n]*": f"\\newcommand{{\\videoduration}}{{{_latex_escape(video_duration or '[待补充]')}}}",
-            r"\newcommand{\videourl}{[^\n]*": f"\\newcommand{{\\videourl}}{{{_latex_escape(video_url)}}}",
-            r"\newcommand{\videocoverpath}{[^\n]*": f"\\newcommand{{\\videocoverpath}}{{{_latex_escape(cover_image_path)}}}",
+            "notetitle": _latex_escape(title),
+            "videochannel": _latex_escape(video_channel or "[待补充]"),
+            "videopublishdate": _latex_escape(video_publish_date or "[待补充]"),
+            "videoduration": _latex_escape(video_duration or "[待补充]"),
+            "videourl": _latex_escape(video_url),
+            "videocoverpath": _latex_escape(cover_image_path),
         }
-        for pattern, replacement in replacements.items():
-            template = re.sub(pattern, replacement, template, count=1)
+        for command, value in replacements.items():
+            pattern = rf"\\newcommand\{{\\{command}\}}\{{[^\n]*"
+            replacement = f"\\newcommand{{\\{command}}}{{{value}}}"
+            template = re.sub(pattern, lambda _: replacement, template, count=1)
 
         marker_start = "%% ---"
         marker_end = r"\end{document}"
@@ -1040,7 +1053,13 @@ def _fallback_template() -> str:
         "\\newcommand{\\videourl}{}\n"
         "\\newcommand{\\videocoverpath}{}\n"
         "\\begin{document}\n"
-        "\\section{Generated Notes}\n"
+        "\\title{\\notetitle}\n"
+        "\\author{\\videochannel}\n"
+        "\\date{\\videopublishdate}\n"
+        "\\maketitle\n"
+        "\\tableofcontents\n"
+        "\\newpage\n"
+        "%% --- NOTE CONTENT START --- %%\n"
         "\\end{document}\n"
     )
 

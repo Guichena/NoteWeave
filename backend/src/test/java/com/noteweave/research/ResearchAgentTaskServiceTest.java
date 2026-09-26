@@ -329,6 +329,38 @@ class ResearchAgentTaskServiceTest {
     }
 
     @Test
+    void auditClaimShouldAllowUnchangedCellsFromAnEarlierLocalPlanRevision() {
+        String rowId = Ids.newId();
+        jdbcTemplate.update(
+                "insert into research_row(id, research_run_id, row_key, row_status) values (?, ?, 'entity-1', 'CANDIDATE_READY')",
+                rowId, runId);
+        jdbcTemplate.update("""
+                insert into research_cell(id, research_run_id, research_row_id, cell_key, column_key, candidate_value,
+                    cell_status, repair_count, cell_version, plan_revision, entity_set_version)
+                values (?, ?, ?, 'entity-1:answer', 'answer', 'repaired', 'VERIFIED', 1, 2, 2, 1),
+                       (?, ?, ?, 'entity-1:limitations', 'limitations', 'unchanged', 'VERIFIED', 0, 1, 1, 1)
+                """, Ids.newId(), runId, rowId, Ids.newId(), runId, rowId);
+        ResearchAgentTaskService.CreateTaskCommand audit = new ResearchAgentTaskService.CreateTaskCommand(
+                runId, "audit-mixed-revisions", "audit-mixed-revisions-idem", 2, "DEEP_CELL",
+                "entity-1", "branch-main", 2, 1,
+                List.of("entity-1:answer", "entity-1:limitations"), Map.of("llm_calls", 1),
+                List.of(
+                        new ResearchAgentTaskService.TargetCellBinding("entity-1:answer", 2),
+                        new ResearchAgentTaskService.TargetCellBinding("entity-1:limitations", 1)),
+                new ResearchAgentTaskService.TaskExecutionContext(
+                        "research-default", Map.of("allow_workspace_sources", true), Map.of("query", "audit")));
+
+        String taskId = taskService.createTask(audit).taskId();
+        ResearchAgentTaskService.ClaimedTask claim = taskService.claimTask(
+                new ResearchAgentTaskService.ClaimCommand(taskId, "worker-audit", 30));
+
+        assertThat(claim.leaseEpoch()).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from research_cell where research_run_id = ? and active_task_id = ?",
+                Integer.class, runId, taskId)).isEqualTo(2);
+    }
+
+    @Test
     void quorumCellBindingShouldReleaseOnlyAfterEveryCandidateLeaseExpires() {
         String rowId = Ids.newId();
         String cellId = Ids.newId();

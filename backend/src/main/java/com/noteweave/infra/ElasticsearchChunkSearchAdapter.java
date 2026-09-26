@@ -4,6 +4,7 @@ import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import com.noteweave.config.NoteWeaveProperties;
+import com.noteweave.retrieval.provider.RetrievalProviderException;
 import com.noteweave.search.ChunkSearchHit;
 import com.noteweave.search.ChunkSearchPort;
 import java.util.ArrayList;
@@ -31,8 +32,13 @@ public class ElasticsearchChunkSearchAdapter implements ChunkSearchPort {
 
     @Override
     public List<ChunkSearchHit> search(String workspaceId, String query, int topK) {
-        if (!properties.elasticsearch().enabled() || topK <= 0) {
+        if (topK <= 0) {
             return List.of();
+        }
+        if (!properties.elasticsearch().enabled()) {
+            throw new RetrievalProviderException(
+                    "QA_CHUNK_SEARCH_PROVIDER_DISABLED",
+                    "Elasticsearch chunk search provider is disabled");
         }
         ElasticsearchClient client = clientProvider.getIfAvailable();
         if (client == null) {
@@ -53,24 +59,39 @@ public class ElasticsearchChunkSearchAdapter implements ChunkSearchPort {
             for (Hit<Map> hit : response.hits().hits()) {
                 Map source = hit.source();
                 if (source == null) {
-                    continue;
+                    throw invalidResponse("Elasticsearch chunk hit has no source document");
+                }
+                String chunkId = text(source.get("chunk_id"));
+                String sourceId = text(source.get("source_id"));
+                String sourceSnapshotId = text(source.get("source_snapshot_id"));
+                String chunkNo = text(source.get("chunk_no"));
+                String content = text(source.get("content"));
+                if (chunkId.isBlank() || sourceId.isBlank() || sourceSnapshotId.isBlank()
+                        || chunkNo.isBlank() || content.isBlank()) {
+                    throw invalidResponse("Elasticsearch chunk hit is missing an identity or content field");
                 }
                 hits.add(new ChunkSearchHit(
-                        text(source.get("chunk_id")),
-                        text(source.get("source_id")),
-                        text(source.get("source_snapshot_id")),
-                        text(source.get("chunk_no")),
+                        chunkId,
+                        sourceId,
+                        sourceSnapshotId,
+                        chunkNo,
                         text(source.get("title")),
                         text(source.get("source_type")),
-                        text(source.get("content")),
+                        content,
                         hit.score() == null ? 0.0d : hit.score()
                 ));
             }
             return hits;
+        } catch (RetrievalProviderException ex) {
+            throw ex;
         } catch (Exception ex) {
             log.error("Elasticsearch chunk search failed; reason=es_search_failed");
             throw new IllegalStateException("Elasticsearch chunk search failed", ex);
         }
+    }
+
+    private RetrievalProviderException invalidResponse(String message) {
+        return new RetrievalProviderException("QA_CHUNK_SEARCH_RESPONSE_INVALID", message);
     }
 
     String indexName(String workspaceId) {

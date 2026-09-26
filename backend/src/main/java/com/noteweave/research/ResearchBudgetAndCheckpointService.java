@@ -23,10 +23,21 @@ public class ResearchBudgetAndCheckpointService {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final ResearchAgentCheckpointSnapshotCompiler checkpointCompiler;
 
     public ResearchBudgetAndCheckpointService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+        this(jdbcTemplate, objectMapper, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public ResearchBudgetAndCheckpointService(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
+            ResearchAgentCheckpointSnapshotCompiler checkpointCompiler
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.checkpointCompiler = checkpointCompiler;
     }
 
     @Transactional
@@ -196,6 +207,7 @@ public class ResearchBudgetAndCheckpointService {
                 """, id, command.researchRunId(), sequence, command.waveNo(), command.roundNo(), command.planRevision(),
                 command.entitySetVersion(), command.ledgerHash(), command.taskHighWaterMark(), command.candidateHighWaterMark(),
                 command.mergeHighWaterMark(), Json.write(objectMapper, command.budgetSummary()), Json.write(objectMapper, command.summary()));
+        if (checkpointCompiler != null) checkpointCompiler.compile(id, sequence, command);
         return new CheckpointReceipt(id, sequence);
     }
 

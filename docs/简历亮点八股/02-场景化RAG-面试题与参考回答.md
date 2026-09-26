@@ -1,6 +1,14 @@
 # 场景化 RAG：面试题与参考回答
 
+> 当前默认入口是[场景化 RAG 一体化面试手册](31-场景化RAG一体化面试手册.md)。A 档先讲其中 4 分钟主回答；B 档选择 Hybrid/RRF/Rerank、Reading Window、受限图读取、Evidence Selection 或多租户 Scope 独立展开；本文第 3 至 13 节属于 C 档 30 到 90 秒速查。术语定义不用硬凑三分钟，算法选择、失败降级和指标归因才进入二阶追问。
+
 > 阅读口径：第 3 至 13 节是打断式追问速查，不应单独作为完整答案。第 14 节提供项目总回答，第 16 节按八个评分面提供 3 到 5 分钟母题长回答，覆盖算法、工程与演进追问。
+
+> 证据边界：QA、Note、Wiki 的权威方案分别见 [问答 RAG](../问答RAG链路设计.md)、[Note 链路](../Note链路设计.md)和 [Wiki 模式](../Wiki模式设计.md)，指标口径见 [质量与评测门禁](../测试与评测/NoteWeave-评测指标报告.md)。当前参数不等于最优值，内部 Fixture 不等于生产准确率。
+
+> 深挖入口：[演进取舍专项](18-场景化RAG演进与技术取舍专项.md)和[案例、消融与 Ownership 答辩](19-场景化RAG真实案例消融实验与Ownership答辩.md)。
+
+> 推荐架构口径：索引升级使用 Generation、Catalog Watermark 和 Change Log Catch-up，Alias 按环境、索引族或租户桶管理。当前 Workspace 全量重建和 Catalog 漂移后重试只作为实现背景，统一裁决见[面试推荐架构与规模化演进裁决](43-面试推荐架构与规模化演进裁决.md)。
 
 ## 0. 脑图主干
 
@@ -19,7 +27,7 @@
 
 最开始我们用 BM25 取 TopK Chunk，它对术语、数字和代码符号很稳定，成本低，也最容易解释。用户开始用同义表达和自然语言提问后，单路关键词召回会漏掉语义相关内容，所以增加向量召回。向量也不能完全替代 BM25，因为精确实体和短字符串仍是词法检索的优势。
 
-两路召回以后，我们比较过归一化分数相加、Learning to Rank 和 RRF。分数相加需要持续校准不同查询和模型的分布，LTR 需要更大标注集，RRF 只看名次，更符合当前数据规模。系统先用 RRF 合并候选，再让 Cross-Encoder 只精排有限集合，Provider 失败时退回融合顺序。排序后还有 Evidence Selection，因为单条相关不等于整个证据集合好，还要做同源去重、来源覆盖和 Token 预算。
+两路召回以后，设计上比较归一化分数相加、Learning to Rank 和 RRF。分数相加需要持续校准不同查询和模型的分布，LTR 需要更大标注集，RRF 只看名次，更符合当前证据规模。系统先用 RRF 合并候选，再让可配置 Rerank Provider 只精排有限集合，Provider 失败时退回融合顺序。当前适配器不约束 Provider 一定是 Cross-Encoder，因此不能把某个具体模型架构说成仓库事实。排序后还有 Evidence Selection，因为单条相关不等于整个证据集合好，还要做证据身份去重、来源覆盖和字符预算。
 
 随后发现 QA、Note 和 Wiki 不能只换 Prompt。QA 的候选是直接回答问题的 Chunk；Note 要先选资料，再围绕锚点展开连续原文；Wiki 关心页面版本、关系和来源回链。最终三条链路共享 Scope、Evidence、Citation、Provider 和 Trace，只拆分候选、排序和预算策略。
 
@@ -101,11 +109,21 @@ Wiki 的核心对象是有版本和关系的知识页。检索不仅看文本相
 
 会，所以保留原 Query 和 Rewrite Query，Trace 中记录改写原因；专有名词和显式过滤条件必须保留。可用离线集比较改写前后的 Recall@K，并对低置信度改写走原 Query 双路召回或回退。
 
+当前项目要主动收紧口径。`qa-conversation-rewrite-v1` 和 `QaQueryExpansionService` 能证明版本化 Rewrite 与确定性 Expansion，后者最多产生 5 个去重变体；它们不能证明已经有统一实体别名表、校准置信度或跨 QA、Research、Artifact 的通用 Intent Router。把目标 Understanding Snapshot 说成当前实现，面试官继续问 DTO、状态、错误码和测试样本时会立刻暴露证据缺口。
+
+### 追问：什么时候必须澄清，什么时候可以多路检索？
+
+歧义只影响关键词表达，而且所有候选都在同一 Workspace 与 Source Scope 内时，可以保留 Original Query 并执行少量受限变体。歧义会改变答案对象、Source 范围、能力类型或后续写回时，必须澄清。不能用一个固定置信度覆盖所有风险，也不能通过扩大到全 Workspace 检索来掩盖指代不清。
+
+### 追问：最终回答正确，能否证明 Rewrite 正确？
+
+不能。Rerank 或生成模型可能偶然补救错误改写，错误答案也可能来自投影未 Ready、召回漏失、Evidence 截断或生成越界。理解层要单独看约束保留、指代与术语解析、澄清 Precision/Recall 和错误检索路由率，再沿 Query Variant、Candidate、Evidence 与 Claim 做归因。
+
 ## 8. 评估与数据
 
 ### 面试官问：你怎么评估 RAG？
 
-分层评估：召回看 Recall@K；排序看 MRR 和 NDCG；引用看 Citation Precision/Coverage；拒答看 Refusal Accuracy；安全边界看 Scope Violation；工程侧看 P95 延迟、Provider 失败率和降级率。最终回答质量可以人工评审或 LLM Judge，但不能代替检索层指标。
+分层评估：召回看 Recall@K；排序看 MRR 和 NDCG；引用先看 Citation Validity/Accuracy，再看 Citation Completeness，最后用 Claim-Evidence Coverage 判断完整证据是否支持原子 Claim；拒答联合看 Refusal Recall/Precision、Answer Coverage 和 Selective Accuracy；安全边界看 Scope Violation；工程侧看 P95 延迟、Provider 失败率和降级率。当前 Evaluator 中名为 `Citation Coverage` 的兼容字段表达 Citation Completeness，名为 `Refusal Accuracy` 的字段实际表达 Refusal Recall，不能把字段名直接当数学定义。最终回答质量可以人工评审或 LLM Judge，但不能代替检索层指标。
 
 ### 追问：你简历上的 100% 怎么解释？
 
@@ -115,7 +133,7 @@ Wiki 的核心对象是有版本和关系的知识页。检索不仅看文本相
 
 ### 向量服务不可用怎么办？
 
-降级到 BM25，保留 Workspace 和来源过滤，在 Trace 中记录降级。结果可能下降，但不能跨 Scope 或伪造向量结果。
+当前 Hybrid 路径要求 Query Embedding。Embedding 未启用或调用失败时，`QaHybridRetriever` 抛出 Provider 错误；生产默认又禁止 MySQL Fallback，因此正确口径是返回 `QA_RETRIEVAL_PROVIDER_UNAVAILABLE`，不能说成自动降级到 BM25。本地 Compose 可显式打开受控 MySQL Fallback，但它是较弱检索并必须记录 Degraded，不能外推为生产策略。若未来增加 ES BM25 单路降级，也必须继续保留 Workspace、Source Scope 和 Ownership 校验。
 
 ### Rerank 超时怎么办？
 
@@ -180,7 +198,7 @@ score(d) = Σ weight_i / (60 + rank_i(d))
 
 ### 12.5 Cross-Encoder Rerank 为什么更准也更慢
 
-Bi-Encoder 在索引阶段分别编码文档，Query 到来后只做向量相似度，适合大规模召回；Cross-Encoder 把 Query 和候选拼在一起输入模型，让注意力直接建模词间关系，排序更准，但每个候选都要前向计算。项目先召回有限候选，再批量 Rerank，正是典型的“高召回、低精排”架构。
+Bi-Encoder 在索引阶段分别编码文档，Query 到来后只做向量相似度，适合大规模召回；Cross-Encoder 把 Query 和候选拼在一起输入模型，让注意力直接建模词间关系，通常更适合精排，但每个候选都要前向计算。NoteWeave 的工程边界是 `RerankClient` 协议，只能证明“先召回有限候选，再调用可配置 Provider 精排”，不能证明当前配置模型一定采用 Cross-Encoder。面试官问模型结构时，应先报实际 Provider 与模型卡，再解释这段通用原理。
 
 ### 12.6 Chunk 切分的知识点
 
@@ -200,7 +218,7 @@ Cascade Retrieval 用便宜模型先缩小候选，再用昂贵模型精排。No
 
 ### 12.10 拒答为什么属于 RAG 能力
 
-检索系统不能只优化“有答案时找出来”，还要识别“资料里没有”。拒答门槛可以结合 Top Score、有效 Evidence 数、直接支持标记和来源覆盖。阈值过低会幻觉，过高会拒绝可回答问题，需要用包含 Negative Case 的 Gold Set 评估 Refusal Accuracy。
+检索系统不能只优化“有答案时找出来”，还要识别“资料里没有”。拒答门槛可以结合 Top Score、有效 Evidence 数、直接支持标记和来源覆盖。阈值过低会幻觉，过高会拒绝可回答问题，需要用同时包含 Positive/Negative Case 的 Gold Set 计算 Refusal Recall 与 Precision，并联报 Answer Coverage 和 Selective Accuracy。只在 Negative Case 上计算的当前 `Refusal Accuracy` 本质是 Refusal Recall，全部拒答也可能得到 1，不能单独作为发布门禁。
 
 ## 13. 三条链路的源码级追问
 
@@ -218,7 +236,26 @@ Cascade Retrieval 用便宜模型先缩小候选，再用昂贵模型精排。No
 
 ### 面试官问：TopK 排完以后为什么还要 Evidence Selection？
 
-排序优化单个候选，Selection 优化整个证据集合。项目先保证 Source Diversity，再补高分候选，同时做去重和字符限制。Rerank Provider 漏回部分候选时，不会把它们直接丢弃，而是放在已返回候选之后，并记录 Degradation。
+排序优化单个候选，Selection 优化整个证据集合。项目先保证 Source Diversity，再补高分候选，同时做证据身份去重和字符限制。Rerank Provider 合法但只返回部分候选时，不会把未返回项直接丢弃，而是放在已返回候选之后，并把这些候选标成 `fallbackScore=true`。当前 `RerankOutcome.degraded` 在该分支仍为 `false`，只有候选级信号，没有聚合降级信号，这是可观测性缺口，面试时不能说成已经完整记录 Degradation。
+
+### 12.11 当前 QA 检索漏斗到底是多少
+
+当前 V2 策略不是一句“TopK 取几十条”。精确漏斗是：Vector 与 Keyword 各召回 60；kNN 的 `numCandidates=max(5×topK, 100)`，因此当前是 300；两路按 `RRF_K=60`、Vector/Keyword 权重 `0.7/0.3` 融合并最多保留 100；Primary Fusion 少于 3 条时才触发确定性 Query Expansion，扩展最多 5 个去重变体；Rerank 接收融合顺序中的前 100 条，但客户端 Batch 80 会把单次实际文档限制为前 80 条，`top_n` 为 40；最后 Evidence Selection 最多保留 6 条、总计 8000 字符。
+
+这些数字反映的是当前保护逻辑，不是已经调出的最优值。60 控制双路召回覆盖，300 控制 ANN 搜索宽度，100 控制融合后 Hydration 上界，80 是 Provider 单请求文档上界，40 控制精排返回，6 与 8000 控制最终上下文。调大上游 K 会同时增加 ES 返回、Embedding 扩展调用、MySQL Ownership Hydration、Rerank 输入和字符筛选压力，不能只观察 Recall。当前 Vector 与 Keyword Threshold 均为 0，意味着召回层没有用绝对分数截断，主要依赖后续排序、Ownership 和 Evidence Policy 收口；这也是需要用 Negative Case 校准的风险点。
+
+### 12.12 用 Bad Case 反推该调哪一层
+
+| Bad Case | 先看什么证据 | 当前处理 | 不能先做什么 |
+|---|---|---|---|
+| 错误码、类名或版本号被语义近似内容淹没 | Keyword Rank、字段命中、Vector Rank、最终 Evidence | QA 的 ES Multi Match 对 Title/Heading/Content 使用 `3/3/2` Boost，并与向量路做加权 RRF | 直接提高向量权重或把 TopK 全部调大 |
+| 同义问题两路都少于 3 个融合候选 | Primary Fusion 数、Expansion Query、扩展后新增 Chunk | 触发最多 5 个确定性变体，并按 Chunk ID 去重合并 | 把它说成通用 LLM Intent Router |
+| Rerank 返回空、越界下标、重复下标或非有限分数 | Provider 原始响应、错误码、Fallback 顺序 | 整批退回 RRF，标记 `QA_RERANK_UNAVAILABLE` | 接受部分畸形响应或让整条问答失败 |
+| Rerank 只返回部分合法下标 | 返回下标集合、`fallbackScore`、聚合 Degraded | 已返回项在前，遗漏项按原 RRF 顺序补后；聚合降级当前未置位 | 声称监控已经完整识别部分结果 |
+| ES 命中属于旧 Snapshot 或身份不一致 | ES Identity、MySQL Ownership、`ownership_rejected_count` | 后置批量 Hydration 拒绝，Fail Closed | 因相似度高而绕过真源校验 |
+| 前几名都来自同一 Source 的相邻 Chunk | Source 分布、重复身份、字符占用 | Selection 先取不同 Source，再补高分项，最多 6 条和 8000 字符 | 把 Rerank 分数当成完整 Evidence Bundle 质量 |
+
+这张表体现调参顺序：先确认数据是否 Ready、Scope 是否正确、候选是否进入某一路，再判断 Fusion、Rerank 或 Selection 哪一层丢失证据。最终答案错误不能直接归因于 BM25 或 Rerank，因为生成、引用校验和资料本身也可能是根因。
 
 引用编号按最终 Prompt Evidence Order 生成。模型引用 Bundle 外证据或重复 Prompt Ref 时拒绝。这个设计把 TopK、Context Packing 和 Citation Identity 串成一个确定性过程。
 
@@ -244,13 +281,13 @@ Ego Graph 分别限制节点、边和渲染字符，缓存命中后仍读取 Liv
 
 Gold Annotation 先生成 Draft，再脱敏和人工 Reviewed，并检查候选与原文漂移。Shadow Replay 导出线上 Trace、Bundle 和内容无关 Receipt，在固定 Strategy Tuple 下重放相同候选数、字符约束和降级状态。Quality Gate 同时比较绝对阈值与相对 Delta。
 
-索引发布还要通过 Provider Ready、Dual Coverage、Completed Build 和 No Degraded Runs。Catalog 变化、Backfill 未完成或 Count 未验证时不切 Alias，避免把评测提升建立在不完整索引上。
+索引发布还要通过 Provider Ready、Dual Coverage、Completed Build、Change Log Catch-up 和 No Degraded Runs。构建先冻结 Catalog Watermark，Backfill 后追平增量；Count 未验证或增量日志有缺口时不切 Alias，避免把评测提升建立在不完整索引上。
 
 ## 14. 4 到 5 分钟标准主回答
 
 这个模块解决的是同一个 Workspace 里三种不同的信息需求：QA 要快速找到直接证据，Note 要围绕一份资料深读原文，Wiki 要按知识页和关系组织稳定内容。如果只做一套 Hybrid Search，然后换三个 Prompt，看起来复用最多，但召回单位、排序目标和失败语义都不一样。
 
-QA 的召回单位是 Chunk。查询先冻结 Workspace、Source Scope 和 Strategy Tuple，再同时执行 BM25 与向量召回。BM25 擅长产品名、版本号、错误码和专有词，向量召回擅长同义改写和自然语言表达。两路分数分布不同，不能直接相加，所以使用加权 RRF 按排名融合。融合后的候选再经过 Cross-Encoder Rerank，它把 Query 和文段一起编码，语义判断比双塔向量更细，但计算更贵，因此只处理较小候选集。
+QA 的召回单位是 Chunk。查询先冻结 Workspace、Source Scope 和 Strategy Tuple，再同时执行 BM25 与向量召回。BM25 擅长产品名、版本号、错误码和专有词，向量召回擅长同义改写和自然语言表达。两路分数分布不同，不能直接相加，所以使用加权 RRF 按排名融合。融合后的候选再经过可配置 Rerank Provider；若实际模型是 Cross-Encoder，它会联合编码 Query 和文段，通常比双塔向量更适合精排，但仓库协议本身不承诺具体模型结构。
 
 排序以后还有 Evidence Selection。TopK 只代表单条候选相关，不能保证整个上下文好用。如果前几名都是同一资料的相邻 Chunk，会浪费上下文，也缺少来源覆盖。Selection 先保证每个 Source 的代表证据，再按分数补齐，执行去重和字符限制。最后的 Citation ID 按进入 Prompt 的证据顺序生成，模型引用 Bundle 外内容时直接拒绝。检索结果不足时明确拒答，不用最近资料凑答案。
 
@@ -260,7 +297,7 @@ Wiki 的召回单位是不可变 Knowledge Version。它先定位 Page Identity 
 
 三条链路共用 RetrievalPlan、Candidate、Evidence Bundle、Trace、Scope 校验和 Provider 治理。Plan 里冻结 Mode、Policy、Prompt、索引和降级策略，避免运行过程中配置漂移。Scope Filter 在 Elasticsearch 召回前下推，召回后再批量校验 Passage、Snapshot 和 Knowledge Version 的 Ownership。前置过滤保证 TopK 不被越权数据占用，后置校验防止脏索引突破数据库权威边界。
 
-索引使用 MySQL 保存真源和投影状态，MinIO 保存原文件与快照，Elasticsearch 保存可重建检索文档。新索引先 Backfill 和 Dual Recall，数量、Catalog Version 和 Provider Health 都通过后，再原子切换 Alias。评测使用人工 Reviewed 的 Gold Set，并把线上 Trace 与 Evidence Bundle 导出做 Shadow Replay，比较 Recall、MRR、nDCG、Citation Support、拒答准确率、延迟和降级状态。
+索引使用 MySQL 保存真源和投影状态，MinIO 保存原文件与快照，Elasticsearch 保存可重建检索文档。新 Generation 先冻结 Catalog Watermark 并 Backfill，再从 Change Log 追平增量；数量、Provider Health、质量和租户隔离通过后，按环境、索引族或租户桶原子切换 Alias。评测使用人工 Reviewed 的 Gold Set，并把线上 Trace 与 Evidence Bundle 导出做 Shadow Replay，比较 Recall、MRR、nDCG、Citation Support、Refusal Recall/Precision、Answer Coverage、延迟和降级状态。
 
 Trade-off 是三条链路增加了策略和测试成本，但换来了清楚的召回目标和失败语义。数据规模很小、只有一种问答方式时，一条 Hybrid Search 足够；当前项目既有快速问答、资料精读和知识页读取，拆链路比让一个 Prompt 同时承担三种语义更容易优化和解释。
 
@@ -272,7 +309,7 @@ BM25 分数受词频、文档长度和查询长度影响，向量相似度通常
 
 ### 追问：为什么不直接让 Rerank 处理全库？
 
-Cross-Encoder 每个 Query-Document Pair 都要完整前向计算，不能像双塔向量一样预计算文档向量。全库 Rerank 的成本随文档数线性增长。项目先用 BM25 和 ANN 做高 Recall 候选生成，再对几十条候选精排，把昂贵模型放在第二阶段。
+以 Cross-Encoder 为例，每个 Query-Document Pair 都要完整前向计算，不能像双塔向量一样预计算文档向量，全库 Rerank 的成本随文档数近似线性增长。项目的通用判断不依赖某个模型实现：Rerank Provider 属于昂贵且可能失败的远程步骤，因此先用 BM25 和 ANN 生成有限候选，再精排当前前 80 条输入并最多取 40 条结果。
 
 ### 追问：三条链路会不会维护成本太高？
 
@@ -302,7 +339,7 @@ MySQL 保存 Source、Snapshot、Chunk 元数据和 Projection 状态，MinIO �
 
 上传、解析和 ES 写入无法放进一个事务。数据库先记录 Snapshot 与投影任务，Worker 解析固定 Snapshot，ES 写入成功后再由 Finalizer 更新 Ready。用户在窗口期看到 Pending 或 Indexing，不能把暂时搜不到解释为资料中没有。旧消息晚到时，Projection Version 和当前 Snapshot 状态阻止它把已撤回版本重新设为可见。
 
-索引升级不能原地覆盖。Embedding 模型、维度、Chunk 策略或 Mapping 改变时创建新 Index Version，Backfill 后做数量、Catalog Version、Provider Health 和质量门禁，再切 Alias。旧索引保留一个回滚窗口。Dual Recall 可以比较新旧候选，但切换条件必须固定，不能用同一批在线流量临时改标准。
+索引升级不能原地覆盖。Embedding 模型、维度、Chunk 策略或 Mapping 改变时创建新 Generation，记录 Catalog Watermark，Backfill 后通过 Change Log 追平上传、更新和删除，再做数量、Provider Health、质量与租户隔离门禁。旧 Generation 保留一个回滚窗口。Dual Recall 可以比较新旧候选，但切换条件必须固定，不能用同一批在线流量临时改标准。
 
 一次 Answer Run 还要冻结 Strategy Tuple，包括模式、Plan Version、索引、Embedding、RRF、Rerank、TopK、Evidence Budget 和降级状态。否则代码没变但配置变化，同一问题重放得到不同证据，无法判断优化是否有效。Evidence Bundle 保存入选身份与位置，不依赖后来更新的页面内容。
 
@@ -314,7 +351,7 @@ QA 延迟可以拆成 Query Rewrite、BM25、Vector、RRF、Hydration、Rerank�
 
 TopK 不是越大越好。召回 K 太小会漏证据，太大会增加 ES 返回、Hydration、Rerank 和 Prompt 成本，还让相邻重复 Chunk 增多。可以先画漏斗：两路各召回多少、去重后多少、Rerank 多少、最终 Evidence 多少。每层记录候选数、字符、耗时和丢弃原因，再用 Recall@K 曲线找边际收益变小的位置。
 
-Rerank 不处理全库，因为 Cross-Encoder 对 Query 与每个候选联合编码，计算量近似随候选数线性增长。Hybrid Recall 负责高 Recall 缩小集合，Rerank 负责有限集合高 Precision。Provider 支持批处理、超时和有限重试，失败时回退 RRF，而不是整条回答失败。向量服务不可用时 QA 可显式退到 BM25，但要记录 Degraded Reason。
+Rerank 不处理全库，因为远程精排成本与候选数量强相关；若 Provider 使用 Cross-Encoder，计算量近似随 Query-Document Pair 数线性增长。Hybrid Recall 负责高 Recall 缩小集合，Rerank 负责有限集合高 Precision。Provider 支持批处理、超时和有限重试，失败时回退 RRF，而不是整条回答失败。Embedding 不可用时 Hybrid 当前会失败；只有显式启用较弱 Fallback 的非生产环境才能继续，不能把目标 BM25 降级说成当前生产行为。
 
 并发上限还受 Elasticsearch Search Thread、Embedding/Rerank Rate Limit、Java I/O 线程池和 Hikari 连接池约束。两路召回并行不代表无限并发；Workspace 热点需要入口配额，同一 Query 的重复请求可以在权限和版本完整进入 Key 后缓存。Evidence Budget 防止高 TopK 把后续 LLM 上下文和首字延迟放大。
 
@@ -330,7 +367,7 @@ Query Rewrite 也在安全边界内。用户问“第二个呢”时可以解析
 
 资料内容按不可信数据处理。Chunk 中的 Prompt Injection 不能变成系统指令，Citation 只证明来源身份和支持关系，不给外部文本工具权限。Memory 不进入 Retrieval 和 Evidence Rerank，避免用户偏好或模型历史输出改变事实来源排序。Wiki 页面无法回到 Source 时降低引用等级，不让生成知识自证。
 
-当前还需说明 Provider 数据政策、日志留存、向量反推和敏感字段脱敏属于生产治理范围。仓库有 Scope、归属校验、错误脱敏和 Provider Endpoint Security 测试，但没有完整 DLP 与租户级加密密钥。
+当前还需说明 Provider 数据政策、日志留存、向量反推和敏感字段脱敏属于运行治理范围。仓库有 Scope、归属校验、错误脱敏和 Provider Endpoint Security 测试；当租户数量、数据敏感度或合规要求增长时，再细化留存和密钥策略。
 
 ### 16.5 可观测性：回答质量下降时如何判断是召回、排序还是生成
 
@@ -342,13 +379,13 @@ Query Rewrite 也在安全边界内。用户问“第二个呢”时可以解析
 
 告警要区分质量与基础设施。ES 不可用、Embedding 失败、Rerank 超时属于运行故障；索引 Ready 但 Recall 下降、Citation Support 下降属于质量回归；Scope Violation 属于安全事件。Projection 未完成不是 ES 故障，MySQL Fallback 也不能静默伪装正常 Hybrid 结果。
 
-仓库已有版本化 Trace、Shadow Export、Quality Gate 和 Health Indicator，没有完整线上 A/B 与 OpenTelemetry。生产 SLO 需要分别定义 QA 首字延迟、完成延迟、可用率、降级率、Citation Support 和拒答正确性，不能用接口 200 代表回答成功。
+仓库已有版本化 Trace、Shadow Export、Quality Gate 和 Health Indicator，已经能定位召回、证据组织和生成阶段的问题。若查询量、索引规模或模型调用时长增长，再按首字延迟、完成延迟、降级率、Citation Support 和拒答正确性细化线上基线，不能用接口 200 代表回答成功。
 
 ### 16.6 成本：为什么不只用最强 Embedding 和 LLM Judge
 
 RAG 成本包括离线解析与 Embedding、在线 BM25 与 Vector 查询、Rerank、Hydration、Prompt Token、索引存储和重建。模型升级还会触发全量 Backfill，索引双写期间存储与计算暂时增加。成本控制要同时看每次 Query 和每个 Source 生命周期。
 
-在线链路使用漏斗控制昂贵步骤。BM25 与 ANN 先高效召回，RRF 不需要模型调用，Cross-Encoder 只处理有限候选，Evidence Selection 限制最终字符。让 Rerank 处理全库或让 LLM Judge 对每个 Chunk 打分，质量上限可能更高，但延迟、价格、输出稳定性和批处理能力更差。当前数据规模也不足以训练 LTR，因此 RRF 是低校准成本选择。
+在线链路使用漏斗控制昂贵步骤。BM25 与 ANN 先高效召回，RRF 不需要模型调用，Rerank Provider 只处理有限候选，Evidence Selection 限制最终字符。让 Rerank 处理全库或让 LLM Judge 对每个 Chunk 打分，可能增加排序表达能力，但延迟、价格、输出稳定性和批处理压力更差。当前证据规模也不足以支撑可靠 LTR，因此 RRF 是低校准成本选择。
 
 离线成本由 Chunk 数、重叠率、Embedding 维度和版本数决定。Chunk 越小召回定位更精细，但文档数、向量数和上下文碎片增加；重叠越大语境损失少，存储与重复候选增加。版本化索引避免错误混用，却需要旧索引回滚窗口。Wiki 与 Note 能复用 Source Snapshot 和 Chunk，不能各自重复生成相同向量。
 
@@ -358,7 +395,7 @@ RAG 成本包括离线解析与 Embedding、在线 BM25 与 Vector 查询、Rera
 
 ### 16.7 测试证据：如何证明一次 RAG 优化真的有效
 
-检索评测要分层。Recall@K 证明相关证据进入候选，MRR 与 NDCG 证明排序位置，Citation Precision 与 Coverage 证明最终引用，Refusal Accuracy 证明无证据时没有强答，Scope Violation 证明安全边界，P95 与降级率证明工程可用。最终答案人工评分或 LLM Judge 不能替代这些中间指标，否则质量下降时无法定位。
+检索评测要分层。Recall@K 证明相关证据进入候选，MRR 与 NDCG 证明排序位置，Citation Accuracy 证明引用支持绑定 Claim，Citation Completeness 证明应引用 Claim 没有漏引，Claim-Evidence Coverage 再判断完整证据支持。拒答必须联合报告 Refusal Recall/Precision、Answer Coverage 和 Selective Accuracy，才能同时发现漏拒与过度拒答。Scope Violation 证明安全边界，P95 与降级率证明工程可用。最终答案人工评分或 LLM Judge 不能替代这些中间指标，否则质量下降时无法定位。
 
 Gold Case 需要固定 Mode、Workspace、Query、允许 Source、相关 Evidence、期望 Citation 与是否拒答。Query 类型要分精确术语、语义改写、跨语言、指代、多资料冲突和无答案。Annotation 要保留 Draft、人工 Reviewed 状态，并检测 Candidate Drift 与 Raw Content Drift，资料变了以后旧标签不能继续冒充真值。
 
@@ -388,9 +425,53 @@ Query Rewrite 可以从规则与单次模型输出演进为多候选 Query 或 H
 |---|---|---|---|
 | 业务抽象 | QA 进入 `QaHybridRetriever.retrieve()`，Note 进入 `NoteRetrievalService`，Wiki 进入 `WikiEvidenceRetriever` | QA 召回 Passage，Note 先选 Source 再规划阅读，Wiki 从 Page 出发做受限图扩展 | QA、Note、Wiki Retriever Test；三条链路共享资料真源，但不共享同一种召回单位 |
 | 数据与一致性 | `SourceRetrievalProjectionService.projectSnapshot()` 生成 QA Chunk 与 Note Source 双投影，`SourceRetrievalProjectionFinalizer.finalizeReady()` 收口 READY | Projection 带 Snapshot、Embedding、Schema Version；QA 与 Note 都完整后才把当前 Snapshot 标记可检索 | `SourceRetrievalProjectionCoordinatorTest`、Compensation Test；MySQL、ES 之间是最终一致，不是强事务 |
-| 并发与容量 | `OpenAiCompatibleEmbeddingClient` 批量嵌入，`ElasticsearchQaHybridSearchAdapter` 执行 kNN 与 BM25，`QaRerankService` 调 Rerank | Embedding Batch 32、Rerank Batch 80、QA Recall 60、Fusion 30、Rerank 12、Final Evidence 8 | Provider Client、RRF、Rerank Test；参数是默认基线，尚无生产 P95 容量结论 |
+| 并发与容量 | `OpenAiCompatibleEmbeddingClient` 批量嵌入，`ElasticsearchQaHybridSearchAdapter` 执行 kNN 与 BM25，`QaRerankService` 调 Rerank | Embedding Batch 32、Rerank Batch 80、每路 Recall 60、Fusion 100、Rerank Top N 40、Final Evidence 6/8000 字符 | Provider Client、RRF、Rerank Test；参数是默认基线，尚无生产 P95 容量结论 |
 | 安全 | ES 查询先按 Workspace、Source Scope 和 Current Snapshot 过滤，`RetrievalHydrator.hydratePassageOwnership()` 再从 MySQL 校验归属 | Scope Filter 前置减少泄漏面，Ownership Hydration 拒绝陈旧或伪造命中；缓存不能替代授权 | ES Query Test、`JdbcEvidenceOwnershipAdapterTest`；没有把向量相似度当权限判断 |
 | 可观测性 | `QaHybridRetriever` 输出 Vector、Keyword、RRF、Rerank、Ownership Rejected、Selected 数量，Projection Binder 输出状态指标 | 诊断按召回漏斗拆分，不用最终答案差直接推断 Embedding 失效 | Retrieval Shadow、Quality Gate、Operational Metrics Test；当前 Trace 主要靠 RunId 与 SnapshotVersion 串联 |
 | 成本 | Query Embedding、Rerank、LLM Judge、ES 存储和重建分别核算，`QaRerankService` 在 Provider 不可用时回退 RRF | Rerank 默认关闭，缺失时结果标记 Degraded；正式 Release Gate 要求 Rerank 与质量凭证 | `QaRerankServiceTest`、`RetrievalReleaseGateServiceTest`；降级能运行不等于可正式发布 |
 | 测试证据 | `RetrievalBenchmarkReplay`、`RetrievalShadowComparator`、`RetrievalQualityGate` 形成离线与 Shadow 证据链 | Gold、Shadow、Ablation 使用同一 Snapshot 和 Evidence Budget 才可比较 | Final Gold Contract、Replay、Shadow Comparator Test；6 条 Fixture 不能表述成线上准确率 |
-| 演进边界 | `RetrievalBackfillService.rebuildWorkspace()` 创建新物理索引，`RetrievalIndexManager.switchAliases()` 原子切换 | 先双写或回填，再做覆盖检查和 Alias 切换；失败保留旧 Alias | Live ES Integration、Backfill Catalog Gate Test；当前 ES 为单节点 Compose，不是生产向量集群 |
+| 演进边界 | 当前 `RetrievalBackfillService.rebuildWorkspace()` 创建新物理索引，`RetrievalIndexManager.switchAliases()` 原子切换 | 推荐迁移到 Generation、Catalog Watermark、Change Log Catch-up 和分桶 Alias；失败保留旧 Generation | Live ES Integration、Backfill Catalog Gate Test；推荐方案仍需迁移与容量验证 |
+
+## 当前接口与降级核对
+
+QA 由 `/api/v2/conversations/{conversationId}/messages` 创建 `AnswerRun`，通过 `/api/v2/workspaces/{workspaceId}/answer-runs/{runId}/events` 按游标回放。Elasticsearch、Embedding、Rerank 都可关闭，`NoOp` 或空结果必须标为 fallback/degraded。`answer_run_evidence_manifest` 固化证据身份，不能把离线 fixture 的召回比例说成线上准确率。
+
+## 18. 面试版上下游链路与技术取舍长回答
+
+如果从用户上传资料开始讲 RAG，链路不是“把问题丢给向量库”。文件先进入对象存储，MySQL 保存 Source、Snapshot、Chunk、Workspace Scope 和解析状态；解析 Worker 基于固定 Snapshot 切块，检索投影再把可搜索字段写入 Elasticsearch。Projection 只有在 Chunk、Source、Embedding 和索引版本都完成后才进入 Ready，回答时先按 Workspace 和允许的 Source Scope 过滤，再做召回和证据归属校验。这样用户看到的每条引用都能回到一个稳定 Snapshot，而不是指向不断变化的当前文件。
+
+三个场景共享资料真源和 Evidence 契约，但不能只换 Prompt。QA 的目标是用尽量少的 Passage 直接支持一个问题，所以会组合 BM25、向量、RRF 和可选 Rerank，再做集合级 Evidence Selection；Note 的目标是围绕少量 Source 保留章节和邻近语境，所以先选 Source，再找到 Anchor，最后扩展 Reading Window；Wiki 的目标是组织版本化知识页和来源回链，候选带 Page、Version 和受限关系，不能把生成页当普通 Chunk。最后三条链路都输出 Evidence Bundle，但候选单位、排序目标、预算和失败语义不同。
+
+当前选择 Elasticsearch 作为可选检索适配器，是因为它可以同时承载关键词、向量、过滤和聚合，投影也能从 MySQL 与 MinIO 重建。Qdrant 或 Weaviate 在向量召回上更专注，适合纯语义场景，但项目不能丢掉 BM25、Workspace 过滤、来源版本和可解释分数；GraphRAG 适合关系密集的知识网络，当前 Wiki 只有受限图扩展，尚未承担实体抽取、社区发现和图摘要。Embedding、Rerank 或 ES 关闭时，系统必须返回明确的 fallback 或 degraded 状态，不能把空列表写成“没有相关资料”。
+
+一致性和安全要沿着上下游一起讲。ES 命中只是排序候选，不是权限结论，`RetrievalHydrator` 还要从 MySQL 检查 Source、Snapshot 和 Workspace 归属；Projection 旧版本晚到时由 Version 和 Current Snapshot 条件阻止它重新可见；删除先撤回在线召回，再用 Cleanup Task 收敛对象和索引。评估不能只看最终答案满意度，要拆成召回覆盖、直接支持、Citation Support、拒答正确性、Window 连续性和版本回链。当前的 Gold、Shadow 和 Ablation 证明机制与回放边界，6 条内部样例不能推导线上准确率。
+
+面试时可以这样收住：我们没有追求一个覆盖所有场景的万能 RAG，而是用一套资料底座承载三种相关性定义。代价是需要维护三种策略、三套评测和更多状态，但换来的是 QA 更重直接支持，Note 更重连续原文，Wiki 更重版本和关系。只有当候选单位、证据预算和失败语义真正分化时才值得拆链路，数据少或问题简单时，BM25 或单一 Hybrid Search 仍然足够。
+
+## 19. AI 评测方法论：如何把“回答好不好”变成可验收指标
+
+### 19.1 先拆评测对象，再谈总分
+
+RAG 不能只用一个“答案满意度”代表质量。第一层是召回，回答相关资料是否进入候选集合；第二层是证据，最终送给模型的 Passage 是否直接支持结论；第三层是生成，回答是否正确、完整、没有超出证据；第四层是交付，引用、版本、Workspace 归属和降级状态是否正确。四层必须分开，否则一个答案错了，只看最终分数无法判断是 BM25 漏召回、Rerank 排错、Evidence Budget 截断，还是模型编造。
+
+QA 可以定义 `Recall@K = 命中的相关资料数 / 标注相关资料总数`，`Evidence Precision = 支持至少一个结论的证据数 / 最终选中证据数`，`Citation Support = 有直接证据支持的、且已经带引用的可核验结论数 / 带引用的可核验结论总数`。如果要衡量所有应引用结论中有多少带上有效引用，使用 `Citation Completeness = 带有效引用的可核验结论数 / 全部可核验结论数`。Note 还要增加 Source 命中率、Anchor 正确率和 Reading Window 连续性；Wiki 要增加 Page Version 正确率、Source Backlink 完整性和关系扩展有效率。拒答不能只看是否拒答，还要区分“证据不足时正确拒答”和“有证据却错误拒答”。
+
+### 19.2 评测集要分层，不能把 Fixture 当 Gold Set
+
+第一层是确定性 Fixture，用于验证 RRF 稳定 ID、版本门禁、ES Disabled、Rerank 超时回退和空结果语义。这一层适合每次提交都跑，但不能代表真实语言分布。第二层是人工 Reviewed Gold Set，每条样本需要记录问题、Workspace、相关 Source、关键证据、允许结论、拒答条件和标注理由。第三层是 Shadow Replay，用固定 Snapshot 和固定策略回放新旧版本，比较召回、证据、延迟和成本差异。第四层才是受控线上反馈，按查询类型、Workspace、Provider、模型版本和失败原因分桶，避免平均值掩盖某类租户或文件格式的回归。
+
+人工标注要有说明书。标注者先判断问题类型和所需证据，再判断每个候选是否相关、是否直接支持、是否存在版本冲突，最后判断答案是否越过证据。至少保留双人标注或抽样复核，并记录分歧原因。若使用 LLM Judge，必须先用人工样本校准它对引用支持、拒答和版本错误的判断，报告 Judge 与人工标签的一致率；Judge 只能作为筛选和回归工具，不能单独作为质量真相。
+
+### 19.3 评测结果要能定位到链路
+
+每次评测都要保存 Query、Snapshot Version、Strategy Tuple、Index Version、Embedding/Rerank/LLM Provider、Prompt Version、Candidate IDs、Evidence IDs、最终输出和成本信息。这样出现回归时，可以回答“是索引切换后召回变差，还是 Prompt 改变了引用格式”，而不是重新猜测。对比报告至少包含总体结果和分桶结果：事实问答、跨文档问题、长文档问题、无答案问题、权限边界问题、中文与英文混合问题分别统计。
+
+错误归因建议使用固定标签：`RECALL_MISS`、`RANKING_ERROR`、`EVIDENCE_TRUNCATION`、`VERSION_MISMATCH`、`SCOPE_VIOLATION`、`GENERATION_HALLUCINATION`、`REFUSAL_ERROR`、`CITATION_FORMAT_ERROR` 和 `PROVIDER_DEGRADED`。每个错误标签必须能回到 Trace、Candidate、Evidence Bundle 或 Hydration 日志，不能只在评测表里写“回答不好”。
+
+### 19.4 发布门禁如何设置
+
+发布门禁不应只要求平均分上升。可以设置四类门禁：召回核心分桶不能下降超过容忍范围；Citation Support 和拒答正确性不能出现高价值查询回归；P95、首字延迟和单位成本不能同时超预算；任何 Workspace Scope 或版本归属错误直接阻断。若新策略只提升平均 Recall，却让长文档 Citation Support 下降，不能按总分发布。Shadow 阶段发现的异常要保留失败样本，修复后重新回放，直到错误类型收敛。
+
+### 19.5 五分钟面试回答
+
+如果面试官问“你们怎么证明 RAG 变好了”，我会先说我们不把最终答案满意度当成唯一指标，而是拆成召回、证据、生成和交付四层。QA 关注 Recall、Evidence Precision 和 Citation Support，Note 关注 Source、Anchor 与 Window 连续性，Wiki 关注页面版本、关系扩展和来源回链。固定 Fixture 只验证确定性机制，人工 Gold Set 验证相关性和证据，Shadow Replay 对比新旧策略，线上反馈再按问题类型和版本分桶。每次评测冻结 Snapshot、策略、索引和模型版本，保存 Candidate、Evidence 和输出，错误按召回漏失、排序错误、证据截断、版本冲突、拒答错误和生成幻觉分类。发布时不只看平均分，还要同时检查引用支持、拒答正确性、P95 和单位成本，任何权限或版本错误直接阻断。这样面试官继续追问时，我可以从总分下钻到具体 Query、证据 ID 和故障类别，而不是只报一个模糊准确率。

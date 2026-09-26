@@ -47,13 +47,31 @@ public record NoteWeaveProperties(
             elasticsearch = new Elasticsearch(true, "localhost", 9200, "http", "noteweave_chunk", "", "");
         }
         if (embedding == null) {
-            embedding = new Embedding(false, "", "", "", 1024, 32, 10L, 60L, 12_000, 3);
+            embedding = new Embedding(
+                    true,
+                    "http://localhost:11434/v1/embeddings",
+                    "noteweave-embedding",
+                    "",
+                    1024,
+                    32,
+                    10L,
+                    60L,
+                    12_000,
+                    3);
         }
         if (rerank == null) {
-            rerank = new Rerank(false, "", "", "", 80, 1800, 20L, 3);
+            rerank = new Rerank(
+                    true,
+                    "http://localhost:11434/v1/rerank",
+                    "noteweave-rerank",
+                    "",
+                    80,
+                    1800,
+                    20L,
+                    3);
         }
         if (llm == null) {
-            llm = new Llm(false, "", "", "", 60L);
+            llm = new Llm(true, "http://localhost:11434/v1/chat/completions", "noteweave-chat", "", 60L);
         }
     }
 

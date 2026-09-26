@@ -76,6 +76,7 @@ export type CreateArtifactJobInput = {
   skill_key: string;
   user_requirement: string;
   inputs: Record<string, unknown>;
+  source_scope_source_ids?: string[];
 };
 
 export type ArtifactKnowledgeWritebackInput = {

@@ -3,6 +3,7 @@ package com.noteweave;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.config.NoteWeaveProperties;
 import com.noteweave.infra.ElasticsearchConfig;
 import com.noteweave.infra.KafkaConfig;
@@ -12,6 +13,9 @@ import com.noteweave.infra.LocalObjectStorage;
 import com.noteweave.infra.MinioObjectStorage;
 import com.noteweave.storage.ObjectStorage;
 import com.noteweave.infra.RedisConfig;
+import com.noteweave.worker.ArtifactOutboxPublisher;
+import com.noteweave.worker.KafkaArtifactOutboxPublisher;
+import com.noteweave.worker.KafkaDisabledArtifactOutboxPublisher;
 import java.nio.file.Path;
 import java.util.Map;
 import org.elasticsearch.client.RestClient;
@@ -85,6 +89,31 @@ class InfrastructureConfigurationCombinationTest {
                     assertThat(context).hasSingleBean(KafkaTemplate.class);
                     assertThat(context).hasSingleBean(KafkaMessagePublisher.class);
                 });
+    }
+
+    @Test
+    void kafkaToggleShouldSelectExactlyOneArtifactPublisherWithoutHttpFallback() {
+        ApplicationContextRunner runner = new ApplicationContextRunner()
+                .withBean(ObjectMapper.class, ObjectMapper::new)
+                .withBean(KafkaMessagePublisher.class, () -> (topic, key, payload) -> { })
+                .withUserConfiguration(
+                        KafkaArtifactOutboxPublisher.class,
+                        KafkaDisabledArtifactOutboxPublisher.class
+                );
+
+        runner.withPropertyValues("noteweave.kafka.enabled=true").run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context).hasSingleBean(ArtifactOutboxPublisher.class);
+            assertThat(context.getBean(ArtifactOutboxPublisher.class))
+                    .isInstanceOf(KafkaArtifactOutboxPublisher.class);
+        });
+
+        runner.withPropertyValues("noteweave.kafka.enabled=false").run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context).hasSingleBean(ArtifactOutboxPublisher.class);
+            assertThat(context.getBean(ArtifactOutboxPublisher.class))
+                    .isInstanceOf(KafkaDisabledArtifactOutboxPublisher.class);
+        });
     }
 
     @Test

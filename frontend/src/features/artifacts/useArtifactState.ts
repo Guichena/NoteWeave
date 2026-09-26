@@ -41,6 +41,7 @@ export function useArtifactState(
       return [];
     }
     const lease = gate.begin("jobs", workspaceId);
+    dispatch({ type: "jobs-loading" });
     try {
       const jobs = await api.listJobs(workspaceId, { signal: lease.signal });
       const latestRequest = resolveLatestArtifactVersionRequest(jobs);

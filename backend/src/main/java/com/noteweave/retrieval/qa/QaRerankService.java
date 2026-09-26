@@ -4,8 +4,10 @@ import com.noteweave.retrieval.provider.RerankClient;
 import com.noteweave.retrieval.qa.QaRrfFusionService.FusedHit;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
@@ -35,6 +37,16 @@ public class QaRerankService {
                     query,
                     safeCandidates.stream().map(this::document).toList(),
                     Math.min(topN, safeCandidates.size()));
+            if (result == null || result.hits() == null || result.hits().isEmpty()) {
+                return degraded(safeCandidates, topN, "QA_RERANK_UNAVAILABLE");
+            }
+            Set<Integer> returnedIndexes = new HashSet<>();
+            for (RerankClient.Hit hit : result.hits()) {
+                if (hit == null || hit.documentIndex() < 0 || hit.documentIndex() >= safeCandidates.size()
+                        || !Double.isFinite(hit.score()) || !returnedIndexes.add(hit.documentIndex())) {
+                    return degraded(safeCandidates, topN, "QA_RERANK_UNAVAILABLE");
+                }
+            }
             Map<Integer, RerankClient.Hit> byIndex = new HashMap<>();
             result.hits().forEach(hit -> byIndex.put(hit.documentIndex(), hit));
             List<RankedHit> ranked = new ArrayList<>();

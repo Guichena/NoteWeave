@@ -4,7 +4,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 import java.util.Map;
 
-/** Immutable wire contract for {@code research-agent-completion.v1}. */
+/**
+ * Immutable wire contract for {@code research-agent-completion.v1} and
+ * {@code research-agent-completion.v2}.  The v2 shape carries either
+ * {@code role_result} (ROLE_RESULT termination) or the DR-102
+ * {@code extraction_diagnostics} (candidate/evidence terminations), never both.
+ */
 public record ResearchAgentCompletionEnvelope(
         @JsonProperty("schema_version") String schemaVersion,
         @JsonProperty("task_id") String taskId,
@@ -19,6 +24,8 @@ public record ResearchAgentCompletionEnvelope(
         @JsonProperty("trace_digest") String traceDigest,
         List<Evidence> evidence,
         List<Candidate> candidates,
+        @JsonProperty("role_result") Map<String, Object> roleResult,
+        @JsonProperty("extraction_diagnostics") Map<String, Object> extractionDiagnostics,
         @JsonProperty("envelope_digest") String envelopeDigest
 ) {
     public ResearchAgentCompletionEnvelope {
@@ -26,12 +33,47 @@ public record ResearchAgentCompletionEnvelope(
         telemetry = immutableMap(telemetry);
         evidence = evidence == null ? null : List.copyOf(evidence);
         candidates = candidates == null ? null : List.copyOf(candidates);
+        roleResult = roleResult == null ? null : Map.copyOf(roleResult);
+        extractionDiagnostics = freezeCanonicalMap(extractionDiagnostics);
+    }
+
+    public ResearchAgentCompletionEnvelope(
+            String schemaVersion, String taskId, String workerInstanceId, int leaseEpoch, long fencingToken,
+            String executionKey, String taskSnapshotDigest, String terminationReason,
+            Map<String, Long> budgetUsage, Map<String, Long> telemetry, String traceDigest,
+            List<Evidence> evidence, List<Candidate> candidates, String envelopeDigest
+    ) {
+        this(schemaVersion, taskId, workerInstanceId, leaseEpoch, fencingToken, executionKey,
+                taskSnapshotDigest, terminationReason, budgetUsage, telemetry, traceDigest,
+                evidence, candidates, null, null, envelopeDigest);
+    }
+
+    /** Backwards-compatible role_result constructor; extraction_diagnostics stays null. */
+    public ResearchAgentCompletionEnvelope(
+            String schemaVersion, String taskId, String workerInstanceId, int leaseEpoch, long fencingToken,
+            String executionKey, String taskSnapshotDigest, String terminationReason,
+            Map<String, Long> budgetUsage, Map<String, Long> telemetry, String traceDigest,
+            List<Evidence> evidence, List<Candidate> candidates, Map<String, Object> roleResult,
+            String envelopeDigest
+    ) {
+        this(schemaVersion, taskId, workerInstanceId, leaseEpoch, fencingToken, executionKey,
+                taskSnapshotDigest, terminationReason, budgetUsage, telemetry, traceDigest,
+                evidence, candidates, roleResult, null, envelopeDigest);
     }
 
     public ResearchAgentCompletionEnvelope withEnvelopeDigest(String digest) {
         return new ResearchAgentCompletionEnvelope(
                 schemaVersion, taskId, workerInstanceId, leaseEpoch, fencingToken, executionKey,
-                taskSnapshotDigest, terminationReason, budgetUsage, telemetry, traceDigest, evidence, candidates, digest
+                taskSnapshotDigest, terminationReason, budgetUsage, telemetry, traceDigest,
+                evidence, candidates, roleResult, extractionDiagnostics, digest
+        );
+    }
+
+    public ResearchAgentCompletionEnvelope withExtractionDiagnostics(Map<String, Object> diagnostics) {
+        return new ResearchAgentCompletionEnvelope(
+                schemaVersion, taskId, workerInstanceId, leaseEpoch, fencingToken, executionKey,
+                taskSnapshotDigest, terminationReason, budgetUsage, telemetry, traceDigest,
+                evidence, candidates, roleResult, diagnostics, envelopeDigest
         );
     }
 
@@ -69,5 +111,12 @@ public record ResearchAgentCompletionEnvelope(
 
     private static Map<String, Long> immutableMap(Map<String, Long> source) {
         return source == null ? null : Map.copyOf(new java.util.TreeMap<>(source));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> freezeCanonicalMap(Map<String, Object> source) {
+        // NFC-normalize and key-sort once at construction so the diagnostics
+        // object is stable across Python/Java canonical digests.
+        return source == null ? null : (Map<String, Object>) ResearchCanonicalJson.canonicalize(source);
     }
 }

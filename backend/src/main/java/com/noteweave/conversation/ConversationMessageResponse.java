@@ -11,7 +11,8 @@ public record ConversationMessageResponse(
         String replyToMessageId,
         String contextStatus,
         String contentHash,
+        String answerStatus,
+        String answerError,
         Instant createdAt
 ) {
 }
-

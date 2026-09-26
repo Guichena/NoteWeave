@@ -1,0 +1,23 @@
+[
+  {
+    "branch_id": "332a4abc-0a3f-4add-9455-b8cc2572ff9f",
+    "conflict_score": null,
+    "created_at": "2026-09-18 08:36:34.000000",
+    "evidence_id": null,
+    "id": "3a145ac8-c357-4abb-a9e9-ad6312d11f65",
+    "read_focus": "Verify full Serper, Jina, GLM, table-state, verifier, and report completion with explicit limitation evidence",
+    "relation_type": null,
+    "repair_hint": null,
+    "research_run_id": "b53ee5dd-c630-42d0-9b61-35ed4eff81a8",
+    "row_key": "subject",
+    "row_status": "DISCOVERED",
+    "search_query": "According to official OpenAI documentation, how does Responses API background mode work, when should it be used, and what documented limitations or incompatibilities apply? Include exact source URLs. Validation marker NW-E2E-20260918-163634",
+    "source_id": null,
+    "source_title": "Subject",
+    "support_level": null,
+    "support_score": null,
+    "updated_at": "2026-09-18 08:36:34.000000",
+    "verification_status": "PENDING",
+    "verifier_note": null
+  }
+]

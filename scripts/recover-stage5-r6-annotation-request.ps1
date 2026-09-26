@@ -112,7 +112,7 @@ $documents = @(
     },
     [ordered]@{
         id = "research-capability-coverage"
-        path = "docs/ResearchAgent-Capability-Coverage.md"
+        path = "scripts/fixtures/research/ResearchAgent-Capability-Coverage.md"
         query = "Which ResearchAgent capabilities are covered and how are they verified?"
         topK = 6
     }

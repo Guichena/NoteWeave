@@ -27,4 +27,19 @@ class LocalObjectStorageTest {
         assertThatThrownBy(() -> storage.delete("noteweave-source", "../outside.txt"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void everyOperationShouldRejectObjectEscape() {
+        NoteWeaveProperties properties = new NoteWeaveProperties(
+                new NoteWeaveProperties.Storage("local", tempDir, null),
+                null, null, null, null, null);
+        LocalObjectStorage storage = new LocalObjectStorage(properties);
+
+        assertThatThrownBy(() -> storage.write("noteweave-source", "../outside.txt", new byte[]{1}))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> storage.read("noteweave-source", "../outside.txt"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> storage.exists("noteweave-source", "../outside.txt"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 }

@@ -189,14 +189,14 @@ public class ResearchBriefCompiler {
         return new CompiledBrief(query, Map.copyOf(brief));
     }
 
-    private Map<String, Object> readMap(String json) {
+    Map<String, Object> readMap(String json) {
         if (json == null || json.isBlank()) {
             return Map.of();
         }
         try {
             return objectMapper.readValue(json, new TypeReference<LinkedHashMap<String, Object>>() { });
         } catch (Exception ex) {
-            return Map.of("raw_summary", json);
+            throw snapshotMismatch("Research resume checkpoint summary JSON is invalid", ex);
         }
     }
 

@@ -85,7 +85,13 @@ public final class ResearchSourceScopeLoader {
             }
             return items;
         }, arguments);
-        return sourceIds.stream().map(itemsById::get).filter(java.util.Objects::nonNull).toList();
+        List<WorkerSourceScopeItemResponse> result = sourceIds.stream().map(itemsById::get).toList();
+        if (result.stream().anyMatch(java.util.Objects::isNull)) {
+            throw new BusinessException(
+                    "RESEARCH_SOURCE_SCOPE_UNAVAILABLE",
+                    "研究资料范围包含已删除、未就绪或不属于当前工作台的资料");
+        }
+        return result;
     }
 
     private List<String> readSourceIds(String json) {
@@ -93,8 +99,13 @@ public final class ResearchSourceScopeLoader {
             return List.of();
         }
         try {
-            return objectMapper.readValue(json, new TypeReference<>() {
+            List<String> value = objectMapper.readValue(json, new TypeReference<>() {
             });
+            if (value == null || value.stream().anyMatch(item -> item == null || item.isBlank())) {
+                throw new BusinessException(
+                        "RESEARCH_SOURCE_SCOPE_PARSE_FAILED", "研究资料范围必须是非空字符串数组");
+            }
+            return value;
         } catch (JsonProcessingException ex) {
             throw new BusinessException(
                     "RESEARCH_SOURCE_SCOPE_PARSE_FAILED",

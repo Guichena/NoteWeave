@@ -1,5 +1,7 @@
 # OpenSERP 项目深度分析
 
+> `[行业参考]` 本文是外部项目分析，不在 NoteWeave 默认阅读主线中，也不证明本项目已采用相同架构或取得相同效果。
+
 > 研究对象：[`karust/openserp`](https://github.com/karust/openserp)  
 > 固定基线：[`e7827cc03d68edbe5eab0f3ba23cf3c3ff29931f`](https://github.com/karust/openserp/tree/e7827cc03d68edbe5eab0f3ba23cf3c3ff29931f)（2026-07-13）  
 > 本地镜像：`reference/openserp`  

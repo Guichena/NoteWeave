@@ -68,7 +68,7 @@ def _completion_with_candidate(*, base_cell_version: int):
     })
 
 
-def _receipt_response(completion, *, replay: bool) -> dict[str, object]:
+def _receipt_response(completion, *, replay: bool, outcome: str = "COMMITTED") -> dict[str, object]:
     accepted = [
         {
             "cell_key": candidate.cell_key,
@@ -91,6 +91,7 @@ def _receipt_response(completion, *, replay: bool) -> dict[str, object]:
         "execution_id": "execution-1",
         "task_id": completion.task_id,
         "completion_digest": completion.envelope_digest,
+        "outcome": outcome,
         "evidence_appended": len(completion.evidence),
         "candidate_count": len(completion.candidates),
         "accepted_merges": accepted,
@@ -381,6 +382,20 @@ def test_client_complete_should_retry_response_loss_with_byte_identical_envelope
     assert requests[0] == requests[1]
     assert requests[0][0] is not None
     assert json.loads(requests[0][0]) == completion.model_dump(mode="json", exclude_none=True)
+
+
+def test_client_complete_should_accept_zero_candidate_quorum_pending_receipt(monkeypatch) -> None:
+    from app.agent_task_client import JavaResearchAgentTaskClient
+
+    completion = _completion()
+    client = JavaResearchAgentTaskClient("http://backend", "token", "worker-a")
+    response = {"data": _receipt_response(completion, replay=True, outcome="QUORUM_PENDING")}
+    monkeypatch.setattr(client, "_request_serialized", lambda *args, **kwargs: response)
+
+    receipt = client.complete(completion)
+
+    assert receipt.completion_id == "completion-1"
+    assert receipt.idempotent_replay is True
 
 
 def test_client_complete_should_stop_before_retry_when_execution_control_stops(monkeypatch) -> None:

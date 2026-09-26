@@ -7,6 +7,7 @@ from typing import Any
 from app.models import ResearchEvidenceCard, ResearchReadWindow
 from app.llm_client import LlmClient
 from app.json_repair import parse_json_payload
+from app.claim_fact_validator import validate_claim_facts
 
 
 def verify_report_citations(
@@ -51,12 +52,20 @@ def verify_report_citations(
             )
             association_valid = bool(card is not None and card.entity_id == row_id)
             support_score = _lexical_support(claim, card.quote_text) if card is not None else 0.0
-            polarity_valid = bool(card is not None and _polarity_consistent(claim, card.quote_text))
+            typed_validation = validate_claim_facts(claim, card.quote_text) if card is not None else None
+            polarity_valid = bool(card is not None and (
+                "LOCAL_POLARITY_CONTRADICTION" not in typed_validation.reason_codes
+                if typed_validation is not None and typed_validation.has_high_risk_facts
+                else _polarity_consistent(claim, card.quote_text)
+            ))
+            deterministic_status = typed_validation.status if typed_validation is not None else "UNKNOWN"
             semantic_status = _semantic_support_status(llm_client, claim, card.quote_text) if card is not None else "NOT_RUN"
+            deterministic_allows_support = deterministic_status not in {"CONTRADICTED", "UNKNOWN"}
             support_valid = bool(
                 card is not None
                 and card.relation_type == "SUPPORTS"
                 and polarity_valid
+                and deterministic_allows_support
                 and (
                     semantic_status == "ENTAILED"
                     or semantic_status == "NOT_RUN" and support_score >= 0.12
@@ -71,8 +80,22 @@ def verify_report_citations(
                     "association_valid": association_valid,
                     "support_valid": support_valid,
                     "polarity_valid": polarity_valid,
+                    "deterministic_status": deterministic_status,
+                    "typed_reason_codes": typed_validation.reason_codes if typed_validation is not None else [],
+                    "typed_facts": {
+                        "claim": [fact.model_dump(mode="json") for fact in typed_validation.claim_facts],
+                        "quote": [fact.model_dump(mode="json") for fact in typed_validation.quote_facts],
+                    } if typed_validation is not None else {"claim": [], "quote": []},
                     "semantic_status": semantic_status,
-                    "support_method": "LLM_ENTAILMENT" if semantic_status != "NOT_RUN" else "LEXICAL_POLARITY",
+                    "support_method": (
+                        "DETERMINISTIC_CONTRADICTION"
+                        if deterministic_status == "CONTRADICTED"
+                        else "TYPED_FACT_AND_LLM"
+                        if semantic_status != "NOT_RUN"
+                        else "TYPED_FACT_AND_LEXICAL"
+                        if deterministic_status == "ENTAILED"
+                        else "LEXICAL_POLARITY"
+                    ),
                     "support_score": support_score,
                 }
             )

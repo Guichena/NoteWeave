@@ -209,6 +209,66 @@ public class ResearchAgentLifecycleService {
         return new FailReceipt(failed, false);
     }
 
+    /**
+     * DR-305 business terminal transition. Called only after {@link ResearchAgentRunCompletionGate}
+     * decided a business outcome (COMPLETED_VERIFIED / COMPLETED_WITH_LIMITATIONS /
+     * INSUFFICIENT_EVIDENCE). The Run keeps the existing COMPLETED vocabulary; the four outcomes stay
+     * distinguishable in {@code research_run.completion_terminal_state}. Successful agent tasks stay
+     * SUBMITTED, while a SUBMITTED task without a durable completion is cancelled instead of posing as
+     * a success. Never call this for an infrastructure failure — that stays with {@link #failRun}.
+     */
+    @Transactional
+    public CompletionReceipt completeRun(String runId, String terminalState) {
+        FailedRun run = jdbcTemplate.query("""
+                select status, task_id from research_run where id = ? for update
+                """, rs -> rs.next() ? new FailedRun(rs.getString(1), rs.getString(2)) : null, runId);
+        if (run == null) {
+            throw new BusinessException("RESEARCH_AGENT_RUN_NOT_FOUND", "Research run does not exist");
+        }
+        if ("COMPLETED".equals(run.status())) return new CompletionReceipt(0, true);
+        if ("FAILED".equals(run.status()) || "CANCELLED".equals(run.status())) {
+            throw new BusinessException("RESEARCH_AGENT_RUN_TERMINAL", "Cannot complete a terminal research run");
+        }
+        String terminalReason = "RESEARCH_" + normalizeReason(terminalState);
+        jdbcTemplate.query("""
+                select id from research_agent_task where research_run_id = ? order by id for update
+                """, (rs, rowNum) -> rs.getString(1), runId);
+        jdbcTemplate.update("""
+                update research_run set status = 'COMPLETED', updated_at = current_timestamp where id = ?
+                """, runId);
+        int cancelled = jdbcTemplate.update("""
+                update research_agent_task
+                set status = 'CANCELLED', terminal_reason = ?, cancelled_at = current_timestamp,
+                    terminal_at = current_timestamp, worker_instance_id = null, lease_expires_at = null,
+                    next_attempt_at = null, updated_at = current_timestamp
+                where research_run_id = ? and status not in ('FAILED', 'CANCELLED')
+                  and (status <> 'SUBMITTED' or not exists (
+                      select 1 from research_agent_completion completion
+                      where completion.research_agent_task_id = research_agent_task.id
+                  ))
+                """, terminalReason, runId);
+        releaseReservationsForRun(runId);
+        jdbcTemplate.query("""
+                select id from research_cell
+                where research_run_id = ? and active_task_id is not null
+                order by cast(cell_key as binary), id for update
+                """, (rs, rowNum) -> rs.getString(1), runId);
+        jdbcTemplate.update("""
+                update research_cell set active_task_id = null, updated_at = current_timestamp
+                where research_run_id = ? and active_task_id is not null
+                """, runId);
+        jdbcTemplate.update("""
+                update research_agent_outbox set status = 'CANCELLED', updated_at = current_timestamp
+                where research_run_id = ? and status = 'READY'
+                """, runId);
+        taskService.completeTask(run.taskId(), terminalReason, terminalReason, runId);
+        jdbcTemplate.update("""
+                insert into research_trace(id, research_run_id, trace_type, trace_message, payload_json)
+                values (?, ?, 'RUN_BUSINESS_COMPLETED', ?, '{}')
+                """, Ids.newId(), runId, terminalState);
+        return new CompletionReceipt(cancelled, false);
+    }
+
     @Transactional
     public DeliveryFailureReceipt recordDeliveryFailure(DeliveryFailureCommand command) {
         requireTaskForRun(command.researchRunId(), command.taskId());
@@ -328,6 +388,7 @@ public class ResearchAgentLifecycleService {
 
     public record ReapReceipt(int retryWaitingCount, int failedCount) { }
     public record CancelReceipt(int cancelledTaskCount, boolean idempotentReplay) { }
+    public record CompletionReceipt(int cancelledTaskCount, boolean idempotentReplay) { }
     public record FailReceipt(int failedTaskCount, boolean idempotentReplay) { }
     public record DeliveryFailureCommand(String researchRunId, String taskId, String outboxId, String failureKey,
                                          String reasonCode, String traceDigest, int deliveryAttempt) { }

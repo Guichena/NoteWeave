@@ -1,0 +1,913 @@
+{
+  "schema_version": "deep-research-minimal-eval-public-evidence.v1",
+  "case_key": "min-normal-json-indexing",
+  "run_id": "e4a55d35-081b-48ff-a921-37eda6fd9161",
+  "workspace_id": "9c10cee5-05cc-438f-b4ad-a996c23dca98",
+  "captured_at": "2026-09-19T15:32:51.194092+00:00",
+  "truth_label": "生产待验证",
+  "note": "公开 API 原始证据已采集；仍须按 manifest required_checks 审计后才能标记 PASSED。",
+  "run_detail": {
+    "research_run_id": "e4a55d35-081b-48ff-a921-37eda6fd9161",
+    "workspace_id": "9c10cee5-05cc-438f-b4ad-a996c23dca98",
+    "task_id": "20799f60-dbb8-4442-a711-9259943be7bf",
+    "question": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用、证据不足时诚实降级的研究报告",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "final_report_title": "Research report: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+    "final_report_markdown": "# Research report\n\n## subject:answer\nMySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele\n\nCitations: [evidence:31d2082502d6e9c84b269d3bfc262e46d3b907f2d5291a86]\n\n## subject:implications\nMySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele\n\nCitations: [evidence:64d8fac783b64ae218cf636d8ee60ff70ea56be6a4453c30]\n\n## subject:key_evidence\nMySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele\n\nCitations: [evidence:2862aeb5f8f241562450efc69b4ca7090da28983c6a98de2]\n\n## subject:limitations\nMySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`.\n\nCitations: [evidence:512fc34f67bdc5f582926f59c6fbffe6240174a9c4095e39]\n\n## Citation audit\n\n### subject:answer\n\n- Evidence: `evidence:31d2082502d6e9c84b269d3bfc262e46d3b907f2d5291a86`\n- Exact quote: “MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele”\n- Snapshot: `research/external/af222bdd-bf17-43d1-ace2-afa42030a200/b89fc8965464947ca274e586a8d0c9a9f961142224abe9b973e5807d562014a5`\n- URL: https://www.bytebase.com/blog/postgres-vs-mysql-json-support/\n\n### subject:implications\n\n- Evidence: `evidence:64d8fac783b64ae218cf636d8ee60ff70ea56be6a4453c30`\n- Exact quote: “MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele”\n- Snapshot: `research/external/af222bdd-bf17-43d1-ace2-afa42030a200/b89fc8965464947ca274e586a8d0c9a9f961142224abe9b973e5807d562014a5`\n- URL: https://www.bytebase.com/blog/postgres-vs-mysql-json-support/\n\n### subject:key_evidence\n\n- Evidence: `evidence:2862aeb5f8f241562450efc69b4ca7090da28983c6a98de2`\n- Exact quote: “MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele”\n- Snapshot: `research/external/af222bdd-bf17-43d1-ace2-afa42030a200/b89fc8965464947ca274e586a8d0c9a9f961142224abe9b973e5807d562014a5`\n- URL: https://www.bytebase.com/blog/postgres-vs-mysql-json-support/\n\n### subject:limitations\n\n- Evidence: `evidence:512fc34f67bdc5f582926f59c6fbffe6240174a9c4095e39`\n- Exact quote: “MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`.”\n- Snapshot: `research/external/7aaf1e34-3bcd-4f36-b829-8192a41e1c48/b89fc8965464947ca274e586a8d0c9a9f961142224abe9b973e5807d562014a5`\n- URL: https://www.bytebase.com/blog/postgres-vs-mysql-json-support/\n\n",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/9c10cee5-05cc-438f-b4ad-a996c23dca98/research/e4a55d35-081b-48ff-a921-37eda6fd9161/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 3000,
+      "sha256": "6b31b3fc8e5ed5838ba328c2dea0bd77d69f471e1b68d2ae6c78fdf0a1690c1a"
+    },
+    "research_artifact": {
+      "artifact_id": "e4a55d35-081b-48ff-a921-37eda6fd9161",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "Research report: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "e4a55d35-081b-48ff-a921-37eda6fd9161",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/9c10cee5-05cc-438f-b4ad-a996c23dca98/research/e4a55d35-081b-48ff-a921-37eda6fd9161/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 3000,
+        "sha256": "6b31b3fc8e5ed5838ba328c2dea0bd77d69f471e1b68d2ae6c78fdf0a1690c1a"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 0,
+        "blocked_row_count": 0,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 0,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [],
+        "guardrailed_row_samples": [],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v1",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 1,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Subject",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+            "read_focus": "形成可逐项引用、证据不足时诚实降级的研究报告",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "subject:answer",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "answer",
+            "candidate_value": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:31d2082502d6e9c84b269d3bfc262e46d3b907f2d5291a86"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "subject:limitations",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "limitations",
+            "candidate_value": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`.",
+            "status": "VERIFIED",
+            "confidence": 1.0,
+            "evidence_refs": [
+              "evidence:512fc34f67bdc5f582926f59c6fbffe6240174a9c4095e39"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "subject:implications",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "implications",
+            "candidate_value": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:64d8fac783b64ae218cf636d8ee60ff70ea56be6a4453c30"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "subject:key_evidence",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "key_evidence",
+            "candidate_value": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:2862aeb5f8f241562450efc69b4ca7090da28983c6a98de2"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 1,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Subject",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+          "read_focus": "形成可逐项引用、证据不足时诚实降级的研究报告",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "subject:answer",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "answer",
+          "candidate_value": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:31d2082502d6e9c84b269d3bfc262e46d3b907f2d5291a86"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "subject:limitations",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "limitations",
+          "candidate_value": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`.",
+          "status": "VERIFIED",
+          "confidence": 1.0,
+          "evidence_refs": [
+            "evidence:512fc34f67bdc5f582926f59c6fbffe6240174a9c4095e39"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "subject:implications",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "implications",
+          "candidate_value": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:64d8fac783b64ae218cf636d8ee60ff70ea56be6a4453c30"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "subject:key_evidence",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "key_evidence",
+          "candidate_value": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:2862aeb5f8f241562450efc69b4ca7090da28983c6a98de2"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:64d8fac783b64ae218cf636d8ee60ff70ea56be6a4453c30",
+          "window_id": "window-2",
+          "source_id": "web-670ee3823440d3db",
+          "source_title": "Postgres vs. MySQL: JSON Support",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.bytebase.com/blog/postgres-vs-mysql-json-support/",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+          "read_focus": "Read external URL Postgres vs. MySQL: JSON Support for claims that answer: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+          "quote_text": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele",
+          "claim_text": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/af222bdd-bf17-43d1-ace2-afa42030a200/b89fc8965464947ca274e586a8d0c9a9f961142224abe9b973e5807d562014a5"
+        },
+        {
+          "evidence_id": "evidence:a5d8663fc32e68d241bb99780cb66a3358d7d00f607987f7",
+          "window_id": "window-2",
+          "source_id": "web-670ee3823440d3db",
+          "source_title": "Postgres vs. MySQL: JSON Support",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.bytebase.com/blog/postgres-vs-mysql-json-support/",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+          "read_focus": "Read external URL Postgres vs. MySQL: JSON Support for claims that answer: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+          "quote_text": "PostgreSQL continues to offer two distinct JSON data types: 1. **`jsonb`** (Preferred): Stores data in a decomposed binary format. While slightly slower for input due to conversion overhead, it's significantly faster for processing since no reparsing is needed. It also supports indexing. 2. **`json`**: Stores an exact copy of the input text, preserving whitespace and the order of object keys. Each processing operation requires reparsing the text.",
+          "claim_text": "PostgreSQL continues to offer two distinct JSON data types: 1. **`jsonb`** (Preferred): Stores data in a decomposed binary format. While slightly slower for input due to conversion overhead, it's significantly faster for processing since no reparsing is needed. It also supports indexing. 2. **`json`**: Stores an exact copy of the input text, preserving whitespace and the order of object keys. Each processing operation requires reparsing the text.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/af222bdd-bf17-43d1-ace2-afa42030a200/b89fc8965464947ca274e586a8d0c9a9f961142224abe9b973e5807d562014a5"
+        },
+        {
+          "evidence_id": "evidence:31d2082502d6e9c84b269d3bfc262e46d3b907f2d5291a86",
+          "window_id": "window-2",
+          "source_id": "web-670ee3823440d3db",
+          "source_title": "Postgres vs. MySQL: JSON Support",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.bytebase.com/blog/postgres-vs-mysql-json-support/",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+          "read_focus": "Read external URL Postgres vs. MySQL: JSON Support for claims that answer: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+          "quote_text": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele",
+          "claim_text": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/af222bdd-bf17-43d1-ace2-afa42030a200/b89fc8965464947ca274e586a8d0c9a9f961142224abe9b973e5807d562014a5"
+        },
+        {
+          "evidence_id": "evidence:5a007b57a12b433d7db86530cf3f8125eadcd3575bbf3ff3",
+          "window_id": "window-2",
+          "source_id": "web-670ee3823440d3db",
+          "source_title": "Postgres vs. MySQL: JSON Support",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.bytebase.com/blog/postgres-vs-mysql-json-support/",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+          "read_focus": "Read external URL Postgres vs. MySQL: JSON Support for claims that answer: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+          "quote_text": "PostgreSQL continues to offer two distinct JSON data types: 1. **`jsonb`** (Preferred): Stores data in a decomposed binary format. While slightly slower for input due to conversion overhead, it's significantly faster for processing since no reparsing is needed. It also supports indexing. 2. **`json`**: Stores an exact copy of the input text, preserving whitespace and the order of object keys. Each processing operation requires reparsing the text.",
+          "claim_text": "PostgreSQL continues to offer two distinct JSON data types: 1. **`jsonb`** (Preferred): Stores data in a decomposed binary format. While slightly slower for input due to conversion overhead, it's significantly faster for processing since no reparsing is needed. It also supports indexing. 2. **`json`**: Stores an exact copy of the input text, preserving whitespace and the order of object keys. Each processing operation requires reparsing the text.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/af222bdd-bf17-43d1-ace2-afa42030a200/b89fc8965464947ca274e586a8d0c9a9f961142224abe9b973e5807d562014a5"
+        },
+        {
+          "evidence_id": "evidence:2862aeb5f8f241562450efc69b4ca7090da28983c6a98de2",
+          "window_id": "window-2",
+          "source_id": "web-670ee3823440d3db",
+          "source_title": "Postgres vs. MySQL: JSON Support",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.bytebase.com/blog/postgres-vs-mysql-json-support/",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+          "read_focus": "Read external URL Postgres vs. MySQL: JSON Support for claims that answer: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+          "quote_text": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele",
+          "claim_text": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/af222bdd-bf17-43d1-ace2-afa42030a200/b89fc8965464947ca274e586a8d0c9a9f961142224abe9b973e5807d562014a5"
+        },
+        {
+          "evidence_id": "evidence:f88da40d694123f87db0288b9f6808db51fd4d52405606b4",
+          "window_id": "window-2",
+          "source_id": "web-670ee3823440d3db",
+          "source_title": "Postgres vs. MySQL: JSON Support",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.bytebase.com/blog/postgres-vs-mysql-json-support/",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+          "read_focus": "Read external URL Postgres vs. MySQL: JSON Support for claims that answer: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+          "quote_text": "PostgreSQL continues to offer two distinct JSON data types: 1. **`jsonb`** (Preferred): Stores data in a decomposed binary format. While slightly slower for input due to conversion overhead, it's significantly faster for processing since no reparsing is needed. It also supports indexing. 2. **`json`**: Stores an exact copy of the input text, preserving whitespace and the order of object keys. Each processing operation requires reparsing the text.",
+          "claim_text": "PostgreSQL continues to offer two distinct JSON data types: 1. **`jsonb`** (Preferred): Stores data in a decomposed binary format. While slightly slower for input due to conversion overhead, it's significantly faster for processing since no reparsing is needed. It also supports indexing. 2. **`json`**: Stores an exact copy of the input text, preserving whitespace and the order of object keys. Each processing operation requires reparsing the text.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/af222bdd-bf17-43d1-ace2-afa42030a200/b89fc8965464947ca274e586a8d0c9a9f961142224abe9b973e5807d562014a5"
+        },
+        {
+          "evidence_id": "evidence:512fc34f67bdc5f582926f59c6fbffe6240174a9c4095e39",
+          "window_id": "window-2",
+          "source_id": "web-670ee3823440d3db",
+          "source_title": "Postgres vs. MySQL: JSON Support",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.bytebase.com/blog/postgres-vs-mysql-json-support/",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+          "read_focus": "Read external URL Postgres vs. MySQL: JSON Support for claims that answer: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+          "quote_text": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`.",
+          "claim_text": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`.",
+          "relation_type": "SUPPORTS",
+          "support_score": 1.0,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/7aaf1e34-3bcd-4f36-b829-8192a41e1c48/b89fc8965464947ca274e586a8d0c9a9f961142224abe9b973e5807d562014a5"
+        },
+        {
+          "evidence_id": "evidence:24bab6a789798731109a65591bfe81583e9e79dfa3be51d5",
+          "window_id": "window-2",
+          "source_id": "web-670ee3823440d3db",
+          "source_title": "Postgres vs. MySQL: JSON Support",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.bytebase.com/blog/postgres-vs-mysql-json-support/",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+          "read_focus": "Read external URL Postgres vs. MySQL: JSON Support for claims that answer: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+          "quote_text": "PostgreSQL continues to offer two distinct JSON data types:",
+          "claim_text": "PostgreSQL continues to offer two distinct JSON data types:",
+          "relation_type": "SUPPORTS",
+          "support_score": 1.0,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/7aaf1e34-3bcd-4f36-b829-8192a41e1c48/b89fc8965464947ca274e586a8d0c9a9f961142224abe9b973e5807d562014a5"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "subject:answer",
+          "row_id": "subject",
+          "evidence_id": "evidence:31d2082502d6e9c84b269d3bfc262e46d3b907f2d5291a86",
+          "source_id": "web-670ee3823440d3db",
+          "source_title": "Postgres vs. MySQL: JSON Support",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.bytebase.com/blog/postgres-vs-mysql-json-support/"
+        },
+        {
+          "cell_id": "subject:key_evidence",
+          "row_id": "subject",
+          "evidence_id": "evidence:2862aeb5f8f241562450efc69b4ca7090da28983c6a98de2",
+          "source_id": "web-670ee3823440d3db",
+          "source_title": "Postgres vs. MySQL: JSON Support",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.bytebase.com/blog/postgres-vs-mysql-json-support/"
+        },
+        {
+          "cell_id": "subject:implications",
+          "row_id": "subject",
+          "evidence_id": "evidence:64d8fac783b64ae218cf636d8ee60ff70ea56be6a4453c30",
+          "source_id": "web-670ee3823440d3db",
+          "source_title": "Postgres vs. MySQL: JSON Support",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.bytebase.com/blog/postgres-vs-mysql-json-support/"
+        },
+        {
+          "cell_id": "subject:limitations",
+          "row_id": "subject",
+          "evidence_id": "evidence:512fc34f67bdc5f582926f59c6fbffe6240174a9c4095e39",
+          "source_id": "web-670ee3823440d3db",
+          "source_title": "Postgres vs. MySQL: JSON Support",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.bytebase.com/blog/postgres-vs-mysql-json-support/"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "bd8fc20e-a73c-4fdb-a476-278a2c39bcce",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用、证据不足时诚实降级的研究报告",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "profile_key": "DEFAULT",
+          "question": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+          "source_scope_count": 0,
+          "retrieval_mode": "WEB_ONLY"
+        },
+        "created_at": "2026-09-19T15:30:55Z"
+      },
+      {
+        "trace_id": "9cada402-417e-4b15-bba9-2e050a2a596d",
+        "trace_type": "INCREMENTAL_FINALIZED",
+        "trace_message": "Research report: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+        "payload": {
+          "cell_count": 4
+        },
+        "created_at": "2026-09-19T15:32:50Z"
+      }
+    ],
+    "created_at": "2026-09-19T15:30:55Z",
+    "updated_at": "2026-09-19T15:32:50Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "candidate_count": 4,
+      "candidates": [
+        {
+          "confidence": 0.9,
+          "base_cell_version": 0,
+          "task_id": "af222bdd-bf17-43d1-ace2-afa42030a200",
+          "cell_key": "subject:key_evidence",
+          "candidate_id": "0933c7bc-6567-45cb-8b42-96e1f36ef70c"
+        },
+        {
+          "confidence": 0.9,
+          "base_cell_version": 0,
+          "task_id": "af222bdd-bf17-43d1-ace2-afa42030a200",
+          "cell_key": "subject:implications",
+          "candidate_id": "8f1b1c7d-cd82-4567-840e-9de8e12e1d81"
+        },
+        {
+          "confidence": 0.9,
+          "base_cell_version": 0,
+          "task_id": "af222bdd-bf17-43d1-ace2-afa42030a200",
+          "cell_key": "subject:answer",
+          "candidate_id": "e404e521-f56c-4b74-8548-30a0764ddad5"
+        },
+        {
+          "confidence": 1.0,
+          "base_cell_version": 0,
+          "task_id": "7aaf1e34-3bcd-4f36-b829-8192a41e1c48",
+          "cell_key": "subject:limitations",
+          "candidate_id": "b1528585-4c57-4168-8a6b-cfdbc4350490"
+        }
+      ],
+      "tasks": [
+        {
+          "lease_expires_at": "2026-09-19T15:33:38Z",
+          "status": "SUBMITTED",
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1",
+          "task_key": "deep-cell:f13ffbce78c198ed316a1e00666889cc",
+          "task_id": "7aaf1e34-3bcd-4f36-b829-8192a41e1c48",
+          "lease_epoch": 1
+        },
+        {
+          "lease_expires_at": "2026-09-19T15:32:56Z",
+          "status": "SUBMITTED",
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1",
+          "task_key": "deep-cell:20afc2fb98ce8af6d3da121ea7297016",
+          "task_id": "af222bdd-bf17-43d1-ace2-afa42030a200",
+          "lease_epoch": 1
+        },
+        {
+          "lease_expires_at": "2026-09-19T15:33:48Z",
+          "status": "SUBMITTED",
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1",
+          "task_key": "evidence-audit:3923a8356689912da481f06efd021048",
+          "task_id": "27135004-90c1-4213-8446-06a053189089",
+          "lease_epoch": 1
+        },
+        {
+          "lease_expires_at": "2026-09-19T15:33:49Z",
+          "status": "SUBMITTED",
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1",
+          "task_key": "synthesis:b42ce2005039bd71ed2a62edbdc492c1",
+          "task_id": "367207a0-e5d1-4037-aaac-fbbcde897858",
+          "lease_epoch": 1
+        }
+      ],
+      "checkpoints": [],
+      "merges": [
+        {
+          "candidate_id": "8f1b1c7d-cd82-4567-840e-9de8e12e1d81",
+          "merge_id": "merge:c1dde9d5e0370d8e78388994dee39deac13c6212bc8ee6f99acafaf74926b4e0",
+          "cell_key": "subject:implications",
+          "result_cell_version": 1,
+          "expected_cell_version": 0,
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "decision": "ACCEPTED"
+        },
+        {
+          "candidate_id": "e404e521-f56c-4b74-8548-30a0764ddad5",
+          "merge_id": "merge:dc67abdba252e6976d877a9d3aa3a3407484572ea961f8a58bcd21849bf01238",
+          "cell_key": "subject:answer",
+          "result_cell_version": 1,
+          "expected_cell_version": 0,
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "decision": "ACCEPTED"
+        },
+        {
+          "candidate_id": "0933c7bc-6567-45cb-8b42-96e1f36ef70c",
+          "merge_id": "merge:6c0b28e55f5738d27d7bc77ce7d3dd06a7f66fe7b959492a8a53369036821eab",
+          "cell_key": "subject:key_evidence",
+          "result_cell_version": 1,
+          "expected_cell_version": 0,
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "decision": "ACCEPTED"
+        },
+        {
+          "candidate_id": "b1528585-4c57-4168-8a6b-cfdbc4350490",
+          "merge_id": "merge:0336a901f816b225c0c2772455c0c417cbcfe3e5f4368fc69b63686f93010482",
+          "cell_key": "subject:limitations",
+          "result_cell_version": 1,
+          "expected_cell_version": 0,
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "decision": "ACCEPTED"
+        }
+      ],
+      "execution_mode": "INCREMENTAL_V1",
+      "merge_count": 4,
+      "task_count": 4
+    }
+  },
+  "evidence_manifest_capture": {
+    "available": true,
+    "data": {
+      "manifest_id": "bc1f1f1a-54f3-4425-b91f-cf7a024030de",
+      "run_id": "e4a55d35-081b-48ff-a921-37eda6fd9161",
+      "report_content_hash": "6b31b3fc8e5ed5838ba328c2dea0bd77d69f471e1b68d2ae6c78fdf0a1690c1a",
+      "evidence": [
+        {
+          "rank": 1,
+          "evidence_id": "evidence:31d2082502d6e9c84b269d3bfc262e46d3b907f2d5291a86",
+          "source_id": "web-670ee3823440d3db",
+          "source_snapshot_id": "research/external/af222bdd-bf17-43d1-ace2-afa42030a200/b89fc8965464947ca274e586a8d0c9a9f961142224abe9b973e5807d562014a5",
+          "passage_id": "window-2",
+          "title": "Postgres vs. MySQL: JSON Support",
+          "excerpt": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele",
+          "content_hash": "449acbe124b8def4743f0f7b53c15bfbd8418df0ea10095ef5d5f1d4ba0ccf86",
+          "location": "subject:answer"
+        },
+        {
+          "rank": 2,
+          "evidence_id": "evidence:64d8fac783b64ae218cf636d8ee60ff70ea56be6a4453c30",
+          "source_id": "web-670ee3823440d3db",
+          "source_snapshot_id": "research/external/af222bdd-bf17-43d1-ace2-afa42030a200/b89fc8965464947ca274e586a8d0c9a9f961142224abe9b973e5807d562014a5",
+          "passage_id": "window-2",
+          "title": "Postgres vs. MySQL: JSON Support",
+          "excerpt": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele",
+          "content_hash": "449acbe124b8def4743f0f7b53c15bfbd8418df0ea10095ef5d5f1d4ba0ccf86",
+          "location": "subject:implications"
+        },
+        {
+          "rank": 3,
+          "evidence_id": "evidence:2862aeb5f8f241562450efc69b4ca7090da28983c6a98de2",
+          "source_id": "web-670ee3823440d3db",
+          "source_snapshot_id": "research/external/af222bdd-bf17-43d1-ace2-afa42030a200/b89fc8965464947ca274e586a8d0c9a9f961142224abe9b973e5807d562014a5",
+          "passage_id": "window-2",
+          "title": "Postgres vs. MySQL: JSON Support",
+          "excerpt": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele",
+          "content_hash": "449acbe124b8def4743f0f7b53c15bfbd8418df0ea10095ef5d5f1d4ba0ccf86",
+          "location": "subject:key_evidence"
+        },
+        {
+          "rank": 4,
+          "evidence_id": "evidence:512fc34f67bdc5f582926f59c6fbffe6240174a9c4095e39",
+          "source_id": "web-670ee3823440d3db",
+          "source_snapshot_id": "research/external/7aaf1e34-3bcd-4f36-b829-8192a41e1c48/b89fc8965464947ca274e586a8d0c9a9f961142224abe9b973e5807d562014a5",
+          "passage_id": "window-2",
+          "title": "Postgres vs. MySQL: JSON Support",
+          "excerpt": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`.",
+          "content_hash": "6144dae84f5902453e2106c654ce329e95e55385d3fefd296d3be2beb7bd295d",
+          "location": "subject:limitations"
+        }
+      ],
+      "created_at": "2026-09-19T15:32:50Z"
+    }
+  },
+  "collection_capture": {
+    "available": true,
+    "data": {
+      "collection_id": "00b15c60-def4-4237-be87-fe2460cbf305",
+      "workspace_id": "9c10cee5-05cc-438f-b4ad-a996c23dca98",
+      "research_run_id": "e4a55d35-081b-48ff-a921-37eda6fd9161",
+      "title": "Research report: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+      "status": "ACTIVE",
+      "report": {
+        "title": "Research report: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+        "markdown": "# Research report\n\n## subject:answer\nMySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele\n\nCitations: [evidence:31d2082502d6e9c84b269d3bfc262e46d3b907f2d5291a86]\n\n## subject:implications\nMySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele\n\nCitations: [evidence:64d8fac783b64ae218cf636d8ee60ff70ea56be6a4453c30]\n\n## subject:key_evidence\nMySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele\n\nCitations: [evidence:2862aeb5f8f241562450efc69b4ca7090da28983c6a98de2]\n\n## subject:limitations\nMySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`.\n\nCitations: [evidence:512fc34f67bdc5f582926f59c6fbffe6240174a9c4095e39]\n\n## Citation audit\n\n### subject:answer\n\n- Evidence: `evidence:31d2082502d6e9c84b269d3bfc262e46d3b907f2d5291a86`\n- Exact quote: “MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele”\n- Snapshot: `research/external/af222bdd-bf17-43d1-ace2-afa42030a200/b89fc8965464947ca274e586a8d0c9a9f961142224abe9b973e5807d562014a5`\n- URL: https://www.bytebase.com/blog/postgres-vs-mysql-json-support/\n\n### subject:implications\n\n- Evidence: `evidence:64d8fac783b64ae218cf636d8ee60ff70ea56be6a4453c30`\n- Exact quote: “MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele”\n- Snapshot: `research/external/af222bdd-bf17-43d1-ace2-afa42030a200/b89fc8965464947ca274e586a8d0c9a9f961142224abe9b973e5807d562014a5`\n- URL: https://www.bytebase.com/blog/postgres-vs-mysql-json-support/\n\n### subject:key_evidence\n\n- Evidence: `evidence:2862aeb5f8f241562450efc69b4ca7090da28983c6a98de2`\n- Exact quote: “MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele”\n- Snapshot: `research/external/af222bdd-bf17-43d1-ace2-afa42030a200/b89fc8965464947ca274e586a8d0c9a9f961142224abe9b973e5807d562014a5`\n- URL: https://www.bytebase.com/blog/postgres-vs-mysql-json-support/\n\n### subject:limitations\n\n- Evidence: `evidence:512fc34f67bdc5f582926f59c6fbffe6240174a9c4095e39`\n- Exact quote: “MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`.”\n- Snapshot: `research/external/7aaf1e34-3bcd-4f36-b829-8192a41e1c48/b89fc8965464947ca274e586a8d0c9a9f961142224abe9b973e5807d562014a5`\n- URL: https://www.bytebase.com/blog/postgres-vs-mysql-json-support/\n\n"
+      },
+      "adopted_sources": [
+        {
+          "source_kind": "WEB",
+          "evidence_id": "evidence:31d2082502d6e9c84b269d3bfc262e46d3b907f2d5291a86",
+          "source_id": "web-670ee3823440d3db",
+          "source_snapshot_key": "research/external/af222bdd-bf17-43d1-ace2-afa42030a200/b89fc8965464947ca274e586a8d0c9a9f961142224abe9b973e5807d562014a5",
+          "source_url": "https://www.bytebase.com/blog/postgres-vs-mysql-json-support/",
+          "source_domain": "www.bytebase.com",
+          "title": "Postgres vs. MySQL: JSON Support",
+          "excerpt": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele",
+          "citation_count": 3
+        },
+        {
+          "source_kind": "WEB",
+          "evidence_id": "evidence:512fc34f67bdc5f582926f59c6fbffe6240174a9c4095e39",
+          "source_id": "web-670ee3823440d3db",
+          "source_snapshot_key": "research/external/7aaf1e34-3bcd-4f36-b829-8192a41e1c48/b89fc8965464947ca274e586a8d0c9a9f961142224abe9b973e5807d562014a5",
+          "source_url": "https://www.bytebase.com/blog/postgres-vs-mysql-json-support/",
+          "source_domain": "www.bytebase.com",
+          "title": "Postgres vs. MySQL: JSON Support",
+          "excerpt": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`.",
+          "citation_count": 1
+        }
+      ],
+      "notes": [
+        {
+          "note_key": "subject:answer",
+          "note_type": "FINDING",
+          "title": "answer",
+          "content": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele",
+          "evidence_refs_json": "[\"evidence:31d2082502d6e9c84b269d3bfc262e46d3b907f2d5291a86\"]"
+        },
+        {
+          "note_key": "subject:implications",
+          "note_type": "FINDING",
+          "title": "implications",
+          "content": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele",
+          "evidence_refs_json": "[\"evidence:64d8fac783b64ae218cf636d8ee60ff70ea56be6a4453c30\"]"
+        },
+        {
+          "note_key": "subject:key_evidence",
+          "note_type": "FINDING",
+          "title": "key_evidence",
+          "content": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`. It stores JSON documents in an optimized binary format that enables quick access to ele",
+          "evidence_refs_json": "[\"evidence:2862aeb5f8f241562450efc69b4ca7090da28983c6a98de2\"]"
+        },
+        {
+          "note_key": "subject:limitations",
+          "note_type": "LIMITATION",
+          "title": "limitations",
+          "content": "MySQL implements a single `JSON` data type that's conceptually similar to PostgreSQL's `jsonb`.",
+          "evidence_refs_json": "[\"evidence:512fc34f67bdc5f582926f59c6fbffe6240174a9c4095e39\"]"
+        }
+      ],
+      "created_at": "2026-09-19T15:32:50Z",
+      "updated_at": "2026-09-19T15:32:50Z"
+    }
+  }
+}

@@ -30,6 +30,40 @@ class NoteSourceRerankServiceTest {
         assertThat(result.degraded()).isFalse();
     }
 
+    @Test
+    void emptyProviderResultShouldBeExplicitlyDegraded() {
+        RerankClient client = mock(RerankClient.class);
+        when(client.isEnabled()).thenReturn(true);
+        when(client.rerank("query", List.of(
+                "A\nPDF\nsummary\n[]\n{}\nsample",
+                "B\nPDF\nsummary\n[]\n{}\nsample"), 2))
+                .thenReturn(new RerankClient.RerankResult(List.of(), "rerank-v1"));
+        NoteSourceRerankService service = new NoteSourceRerankService(client);
+
+        var result = service.rerank("query", List.of(candidate("a", "A"), candidate("b", "B")), 2);
+
+        assertThat(result.degraded()).isTrue();
+        assertThat(result.degradationReasons()).containsExactly("NOTE_SOURCE_RERANK_UNAVAILABLE");
+        assertThat(result.candidates()).extracting(ScoredCandidate::sourceId).containsExactly("a", "b");
+    }
+
+    @Test
+    void invalidProviderIndexShouldBeExplicitlyDegraded() {
+        RerankClient client = mock(RerankClient.class);
+        when(client.isEnabled()).thenReturn(true);
+        when(client.rerank("query", List.of(
+                "A\nPDF\nsummary\n[]\n{}\nsample",
+                "B\nPDF\nsummary\n[]\n{}\nsample"), 2))
+                .thenReturn(new RerankClient.RerankResult(List.of(
+                        new RerankClient.Hit(99, 0.91, 1)), "rerank-v1"));
+        NoteSourceRerankService service = new NoteSourceRerankService(client);
+
+        var result = service.rerank("query", List.of(candidate("a", "A"), candidate("b", "B")), 2);
+
+        assertThat(result.degraded()).isTrue();
+        assertThat(result.candidates()).extracting(ScoredCandidate::sourceId).containsExactly("a", "b");
+    }
+
     private ScoredCandidate candidate(String id, String title) {
         CandidateSource source = new CandidateSource(id, title, "PDF", 1, 1, "", "",
                 "summary", "[]", "{}", "sample", 10, "", List.of(), List.of(), 0, 0, "", "");

@@ -1,5 +1,11 @@
 # Deep Research Agent：详细架构与具体设计
 
+> 本文是实现结构和机制真源。完整的 Git 时间线、设计演进、相近框架比较和五分钟取舍主回答见 [Research Agent 演进、技术选择与 Trade-off 专项](16-Research-Agent演进与技术取舍专项.md)；完整学校案例、算法口径、消融实验和 AI 协作 Ownership 见[真实案例、消融实验与 Ownership 答辩](17-Research-Agent真实案例消融实验与Ownership答辩.md)。
+>
+> 面试使用顺序：先背[一体化面试手册](30-Research-Agent一体化面试手册.md)的 4 分钟主回答，再从本文选择一个机制深挖。状态、字段和跨服务语义若与本文冲突，以 [Research 契约级数据模型](25-Research-Agent契约级数据模型与面试官下钻.md)、[API 与事件契约](../API与事件契约-v2.md)和当前源码为准。本文中的方案推导不自动等于生产运行事实，指标仍按 `[已测-模拟]`、`[演练假设]` 和 `[生产待验证]` 区分。
+>
+> 本文以当前 Matrix/Cell 实现为主。面试推荐方案使用稳定 ResearchRun、独立 ExecutionAttempt 和 Typed WorkItem，Matrix 只负责多对象多维度比较；验证按 L0 确定性规则、L1 语义判断、L2 独立复核分级。统一裁决见[面试推荐架构与规模化演进裁决](43-面试推荐架构与规模化演进裁决.md)。
+
 ## 0. 从搜索循环到验证驱动 Research Agent
 
 ### 0.1 V0：先用 ReAct 验证“模型能不能自主研究”
@@ -16,7 +22,7 @@
 
 ### 0.3 V2：把研究过程从对话轨迹变成 Table-as-State
 
-系统把实体建模为 Row，把待研究属性建模为 Cell。每个 Cell 保存候选值、证据引用、冲突引用、状态和版本。搜索和阅读只产生 Candidate 与 Evidence，不能直接写最终报告。
+当前比较型实现把实体建模为 Row，把待研究属性建模为 Cell。每个 Cell 保存候选值、证据引用、冲突引用、状态和版本。搜索和阅读只产生 Candidate 与 Evidence，不能直接写最终报告。推荐领域模型把 Cell 提升为 `MATRIX_CELL` 类型的 WorkItem，并为开放调查、事实核验、时间线和来源审计提供各自类型，运行合同相同，验收语义不同。
 
 选择 Cell 而不是整篇文档作为更新单位，是因为 Research 的缺口和冲突通常发生在字段级。选择结构化表而不是自由 JSON，是为了让完成度、优先级、并发冲突和恢复点都能由程序检查。代价是规划时必须先定义实体和字段，对完全开放、无法结构化的问题不如自由 ReAct 灵活。
 
@@ -28,7 +34,7 @@
 
 ### 0.5 V4：验证从“有引用”升级为局部与全局双门禁
 
-有 URL 只能证明模型见过某个页面，不能证明原文支持当前结论。Local Verifier 检查单个 Cell 的直接支持、否定证据、来源身份和冲突；Global Verifier 检查整个 Intent 的必填字段、关键缺口、跨 Cell 一致性和报告引用覆盖。
+有 URL 只能证明模型见过某个页面，不能证明原文支持当前结论。Local Verifier 检查单个 WorkItem 的直接支持、否定证据、来源身份和冲突；Global Verifier 检查整个 Intent 的必填字段、关键缺口、跨 WorkItem 一致性和报告引用覆盖。Local/Global 是验证责任，不强制对应两个模型调用。普通任务先跑 L0 确定性规则，再对争议 Claim 使用 L1 语义 Judge；高风险结论才增加 L2 独立来源、异构 Judge 或人工抽检。
 
 Verifier 也可能误判，因此确定性规则和模型判断分层执行，低置信否决可以进入有限反证分支。系统用 Gap 优先级、预算和循环上限约束恢复，不做无界自我反思。
 
@@ -43,11 +49,11 @@ Worker 通过 Lease 执行任务，Cell 用 CAS 合并，最终报告与 Manifes
 | 功能点 | 最小方案 | 候选方向 | 当前选择 | 选择依据与代价 |
 |---|---|---|---|---|
 | 任务目标 | 每轮 Prompt 重述 | 固定 Workflow、Intent + Plan | Intent 稳定，Plan 可版本化 | 兼顾目标稳定与动态探索，增加计划治理 |
-| 研究状态 | 保存 Agent 对话 | 文档级状态、自由 JSON、字段表 | Row/Cell Table-as-State | 缺口可计算、字段可 CAS，但要求问题可结构化 |
+| 研究状态 | 保存 Agent 对话 | 文档级状态、自由 JSON、字段表 | Typed WorkItem，Matrix 为比较型适配器 | 共享调度与版本合同，同时支持 Claim、Question、Timeline 和 Cell |
 | 候选合并 | Last Write Wins | 多数票、权威优先、独立候选仲裁 | 来源可审计的候选仲裁 | 降低错误覆盖，增加归一化和 Provenance 成本 |
-| 验证 | 最终模型自检 | 单层 Verifier、规则校验、双层验证 | Local + Global Verifier | 区分字段正确和任务完整，额外消耗模型调用 |
+| 验证 | 最终模型自检 | 单层 Verifier、规则校验、双层验证 | L0 规则、L1 语义、L2 独立复核 | 按风险付出 Judge 成本，允许证据不足 |
 | 循环停止 | 模型自行判断 | 固定轮次、预算耗尽、完成契约 | Stop Contract + Gap Priority | 防止过早收敛和无限循环，可能保守拒绝 |
-| 并发 | 单 Worker 顺序执行 | 全并行、字段级并行、有界 Wave | 受依赖和预算约束的任务化执行 | 提升吞吐，但要处理 Lease、CAS 和 Barrier |
+| 并发 | 单 Worker 顺序执行 | 全并行、字段级并行、有界 Wave | 默认顺序 WorkItem + Fetch 并发，满足阈值才启用 Wave | 避免并发为 1 时维护空转 Barrier |
 | 恢复 | 从头重跑 | 全事件回放、Checkpoint | Checkpoint + 审计记录 | 实现成本低于 Event Sourcing，历史重建粒度有限 |
 | 最终写作 | 直接读搜索结果 | 读全部候选、只读 Canonical State | Verifier-Gated Synthesis | 防止未验证内容进入报告，可能牺牲信息丰富度 |
 
@@ -203,7 +209,7 @@ Planner 从 Intent 生成全局 Plan，至少确定：
 
 ### 4.5 验证与循环决策
 
-Local Verifier 对 Cell 做支持度、冲突和来源检查。Global Verifier 基于当前 Ledger 重新计算 Intent Completion Contract。循环决策可以是：
+Local Verifier 对 WorkItem 做支持度、冲突和来源检查。Global Verifier 基于当前 Ledger 重新计算 Intent Completion Contract。当前 Matrix 实现中 WorkItem 对应 Cell。两者表示局部和集合级责任，可以共享一次语义判断结果，但不能省略各自的不变量。循环决策可以是：
 
 - CONTINUE_SEARCH
 - EXPAND_READ_WINDOW
@@ -696,4 +702,8 @@ Checkpoint 必须包含版本与身份，不能只保存 Prompt：
 | 完成提交 | `ResearchAgentCompletionService`、`ResearchAgentCompletionCommitter` | Canonical Payload、回放身份、预算释放与最终状态原子提交 | `ResearchAgentCompletionServiceTest`、Raw HTTP Contract Test |
 | 外部证据安全 | Worker `fetch_adapters.py`、`ResearchExternalSnapshotArchiveService` | DNS 与连接固定在 Worker，Backend 归档再次校验来源 | `test_fetch_adapters.py`、`ResearchExternalSnapshotArchiveServiceTest` |
 
-源码导航证明的是当前实现位置，不把规划中的大规模并行 DAG、LangGraph Runtime、Kubernetes Worker Drain 或跨区域容灾写成已落地能力。
+源码导航证明的是当前实现位置；如果并行分支、任务时长或 Worker 数量增长，再基于实际瓶颈讨论执行图和部署形态的调整，不把推测方案写成当前能力。
+
+## 当前运行面
+
+Java 侧先固化输入、预算和运行关联，再写 `research_agent_outbox`；Worker claim 后以 lease/fencing 约束 heartbeat 和 completion。checkpoint 恢复会建立新的运行关联旧 checkpoint，delivery failure 可 redrive。证据清单需要带 source identity、snapshot 和 digest，报告回写仍由 Java 校验 Workspace 和版本，不由 Worker 直接写业务表。

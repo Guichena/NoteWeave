@@ -6,6 +6,7 @@ import {
 export type ArtifactServerState = {
   workspaceId: string;
   revision: number;
+  jobsLoading: boolean;
   artifactJobs: ArtifactJobSummary[];
   latestArtifactVersion: ArtifactVersionDetail | null;
   selectedArtifactHistoryVersion: ArtifactVersionDetail | null;
@@ -17,6 +18,7 @@ export type ArtifactServerState = {
 
 export type ArtifactStateAction =
   | { type: "workspace"; workspaceId: string }
+  | { type: "jobs-loading" }
   | { type: "jobs-snapshot"; jobs: ArtifactJobSummary[]; latestVersion: ArtifactVersionDetail | null }
   | { type: "history-loading"; key: string }
   | { type: "history-selected"; key: string; version: ArtifactVersionDetail | null }
@@ -30,6 +32,7 @@ export function createArtifactServerState(workspaceId = ""): ArtifactServerState
   return {
     workspaceId,
     revision: 0,
+    jobsLoading: false,
     artifactJobs: [],
     latestArtifactVersion: null,
     selectedArtifactHistoryVersion: null,
@@ -47,10 +50,16 @@ export function reduceArtifactServerState(
   switch (action.type) {
     case "workspace":
       return action.workspaceId === state.workspaceId ? state : createArtifactServerState(action.workspaceId);
+    case "jobs-loading":
+      return {
+        ...state,
+        jobsLoading: true
+      };
     case "jobs-snapshot":
       return {
         ...state,
         revision: state.revision + 1,
+        jobsLoading: false,
         artifactJobs: action.jobs,
         latestArtifactVersion: action.latestVersion
       };

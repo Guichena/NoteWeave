@@ -20,6 +20,12 @@ class ResearchAgentCoordinatorRolloutGuardTest {
         var finalization = mock(ResearchAgentIncrementalFinalizationService.class);
         var guard = mock(ResearchAgentRolloutGuard.class);
         var lifecycle = mock(ResearchAgentLifecycleService.class);
+        var runnableWork = mock(ResearchAgentRunnableWorkService.class);
+        var roleWorkflow = mock(ResearchAgentRoleWorkflowService.class);
+        var completionGate = mock(ResearchAgentRunCompletionGate.class);
+        var honestReports = mock(ResearchAgentHonestReportService.class);
+        var globalConflictService = mock(ResearchGlobalConflictService.class);
+        var conflictRepairService = mock(ResearchAgentConflictRepairService.class);
         var snapshot = new ResearchAgentCoordinatorSnapshotService.Snapshot(
                 "run-1", 0, 1, 0, 0, 0, 0, 0, 2);
         when(snapshots.snapshot("run-1")).thenReturn(snapshot);
@@ -28,11 +34,13 @@ class ResearchAgentCoordinatorRolloutGuardTest {
                 List.of("DELIVERY_FAILURE_RATE_EXCEEDED"),
                 Map.of("delivery_failure_rate", 0.25d)));
         var service = new ResearchAgentCoordinatorTickService(
-                snapshots, coordinator, recovery, faults, finalization, guard, lifecycle);
+                snapshots, coordinator, recovery, faults, finalization, guard, lifecycle,
+                runnableWork, roleWorkflow, completionGate, honestReports,
+                globalConflictService, conflictRepairService);
 
         var receipt = service.tick("run-1", "coordinator-1");
 
         assertThat(receipt.outcome()).isEqualTo("ROLLOUT_PAUSED");
-        verifyNoInteractions(coordinator, recovery, faults, finalization, lifecycle);
+        verifyNoInteractions(coordinator, recovery, faults, finalization, lifecycle, runnableWork, roleWorkflow);
     }
 }

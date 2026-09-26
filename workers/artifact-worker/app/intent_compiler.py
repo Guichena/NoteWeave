@@ -196,6 +196,8 @@ def _infer_output_shape(skill_key: str, resolved_action_key: str) -> str:
         return "QUIZ_PACK"
     if skill_key == "wiki_page" or resolved_action_key == "WIKI_PAGE":
         return "WIKI_ARTICLE"
+    if skill_key == "mindmap_from_workspace":
+        return "MINDMAP_MARKDOWN"
     if skill_key == "bilibili_course_note_pdf":
         return "COURSE_NOTE_PDF_REQUEST"
     return "STRUCTURED_ARTIFACT"
@@ -209,6 +211,8 @@ def _infer_audience(user_requirement: str, skill_key: str) -> str:
         return "LEARNER"
     if skill_key == "wiki_page":
         return "KNOWLEDGE_READER"
+    if skill_key == "mindmap_from_workspace":
+        return "VISUAL_LEARNER"
     return "GENERAL"
 
 

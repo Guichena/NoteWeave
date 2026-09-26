@@ -1,5 +1,11 @@
 # Context Engineering 与 Memory：详细架构与具体设计
 
+> 案例与答辩补充：用户纠正到 Revision/Control Pack/Outcome 的完整链路、长期评测和 Ownership 见[演进案例专项](22-Context与Memory演进案例消融与Ownership答辩.md)。
+>
+> 面试使用顺序：先背[Context 与 Memory 一体化手册](34-Context与Memory一体化面试手册.md)，本文用于 Summary、Revision、Compiler、缓存和删除语义深挖。当前可以讲 Conversation Segment、RunInputSnapshot、Memory Candidate/Revision 和 Evidence 隔离；完整 Revoke Watermark、所有派生依赖传播、跨缓存与导出物理删除仍属于 `[目标设计]` 或 `[生产待验证]`。LongMemEval、Mem0、Zep 和 Letta 只提供任务与指标参照，内部学校 Gold 未按同一协议运行时不能横比分数。
+>
+> 面试推荐设计将 Memory 分成 Session、Explicit 和 Derived 三条路径。用户通过可信交互明确保存的低风险偏好可按窄 Scope 直接创建 Active Revision，并提供撤销；模型推断、行为信号和外部内容只能进入 Derived Candidate。统一裁决见[面试推荐架构与规模化演进裁决](43-面试推荐架构与规模化演进裁决.md)。
+
 ## 0. 从最近 N 条消息到可回放 Context 与门控 Memory
 
 ### 0.1 V0：最近 N 条消息是正确的起点
@@ -16,13 +22,13 @@
 
 系统消息、当前问题、近期原文、摘要、Memory 和 RAG Evidence 的信任等级与用途不同。简单按时间拼接无法保证关键任务契约，也无法解释某段内容为什么进入 Prompt。
 
-Context Compiler 按安全策略、当前问题、Raw Tail、Memory、Summary 和 Evidence 分区编译，分别记 Token Ledger 和截断原因。超限时删除低优先级条目，不在一条 Memory 或证据中间截断，避免语义和 Provenance 失真。
+Context Compiler 按安全、交互、事实、控制和历史五类预算分区编译，分别记录 Token Ledger 和截断原因。安全策略与任务契约不可裁剪；当前问题和必要 Raw Tail 使用交互预算；RAG Evidence 使用独立事实预算，不能被 Summary 或 Memory 挤掉；Explicit Memory 只进入控制预算；历史 Summary 使用剩余预算。超限时按分区规则删除低优先级条目，不在一条 Memory 或证据中间截断，避免语义和 Provenance 失真。
 
-### 0.4 V3：长期 Memory 从自动保存演进为 Candidate Promotion
+### 0.4 V3：长期 Memory 按来源拆成 Explicit 与 Derived
 
 自动把模型输出写入 Memory，个性化最快，但一次幻觉、注入或过时结论会持续影响后续任务；所有内容人工确认最安全，审核成本又过高；只做向量 Memory 易召回语义相近但 Scope、类型和有效期错误的内容。
 
-当前方案让 Answer、Research、Artifact 只提交 Observation 或 Candidate。Memory Runtime 校验类型、USER/WORKSPACE Scope、敏感信息、Provenance、重复与冲突，再按风险进入审核或有限自动晋升。Canonical Memory 使用 Object、Revision 和 Latest Pointer，不原地覆盖历史。
+推荐方案先判断来源。用户通过可信 UI 或明确指令要求“记住”时，低风险偏好经过类型、USER/WORKSPACE Scope、敏感信息、重复和冲突校验后，可直接创建可撤销的 Active Revision。跨 Workspace 传播、安全规则、敏感内容和高风险事实仍需确认。Answer、Research、Artifact 的模型推断、行为信号和外部资料只能提交 Derived Observation 或 Candidate，再按风险审核和晋升。Canonical Memory 使用 Object、Revision 和 Latest Pointer，不原地覆盖历史。
 
 ### 0.5 V4：Memory 排序从相似度演进为可解释的预算选择
 
@@ -48,7 +54,7 @@ Memory Pack 是确定性编译结果，记录入选原因和 Revision Ref。Redi
 |---|---|---|---|---|
 | 短期上下文 | 最近 N 条、Token Window、主题窗口 | 主题 Segment + 连续 Raw Tail | 保留主题又不破坏尾部顺序 | 需要主题边界与降级策略 |
 | 历史压缩 | 全量摘要、滚动覆盖、版本化增量摘要 | Summary Revision + Promotion CAS | 可追溯，旧构建不能覆盖新历史 | 状态模型更复杂 |
-| 长期记忆 | 自动写入、全人工、风险门控 | Candidate + 分层 Promotion | 在个性化和污染风险之间取平衡 | 晋升延迟和审核成本 |
+| 长期记忆 | 自动写入、全人工、按来源与风险分流 | Explicit 快路径 + Derived Candidate | 显式意图及时生效，推断内容继续防污染 | 需要可信用户动作、Scope 和撤销机制 |
 | Memory 模型 | 单行覆盖、Append-only Revision | Object + Revision + Latest Pointer | 支持冲突、回滚和审计 | 查询和更新步骤增多 |
 | 召回 | 纯向量、关键词、规则与排序组合 | 硬过滤后多信号排序 | Scope 和有效期不能交给相似度 | 需要维护 Policy |
 | Context Packing | 直接拼接、统一 TopK、分区预算 | 分区优先级 + Token Ledger | 信任和用途可解释 | 可能牺牲低优先级相关内容 |
@@ -124,14 +130,19 @@ flowchart TD
 
 Answer、Research 和 Artifact 只提交观察，不直接修改 Canonical Memory。Observation 带幂等键、来源 Run、候选类型和用户信号，由 Memory Runtime 单点治理。
 
+### ExplicitMemoryCommand
+
+显式保存来自可信用户动作，包含 Actor、Scope、Canonical Statement、风险分类和 Idempotency Key。低风险且无冲突时可直接追加 Active Revision；需要扩大 Scope、涉及敏感信息、事实断言或权限政策时进入 Review。网页文本、工具输出和模型建议不能伪装成 Explicit Command。
+
 ## 6. Promotion 流程
 
-1. 从明确确认、纠正或稳定产物中提取 Candidate。
-2. 校验 Candidate Type、Scope、敏感信息和 Provenance。
+1. 识别来源是 Explicit Command 还是 Derived Observation。
+2. 校验 Type、Scope、敏感信息、Provenance、幂等身份和可信用户动作。
 3. 查找同 Slot 的当前 Memory，判断重复、冲突或更新。
-4. 进入 Review Queue，用户确认或拒绝。
-5. 通过后创建新 Revision，并原子更新 Latest Version。
-6. 发布 Memory Event，使编译缓存失效。
+4. 低风险、窄 Scope、无冲突的 Explicit Command 直接创建可撤销 Active Revision。
+5. Derived Candidate、冲突内容和高风险 Explicit Command 进入 Review Queue。
+6. 通过后创建新 Revision，并原子更新 Latest Version。
+7. 发布 Memory Event，使编译缓存失效。
 
 Artifact Worker 只能输出 Promotion Preview。Java Memory Runtime 才能创建 Canonical Revision。
 
@@ -139,16 +150,15 @@ Artifact Worker 只能输出 Promotion Preview。Java Memory Runtime 才能创�
 
 Memory Recall 先按 USER/WORKSPACE、Type、Status 和有效期过滤，再结合任务类型、Key 匹配、最近使用和用户确认强度排序。输出 Explainable Memory Pack，包含入选原因和版本引用。
 
-Context Compiler 的优先级建议：
+Context Compiler 不使用一条全局优先级把所有内容相互挤压，而是使用分区预算：
 
-1. System 与安全策略。
-2. 当前用户问题和任务契约。
-3. 必要近期原文与活动主题。
-4. 已确认约束和高相关 Memory。
-5. 相关历史 Summary。
-6. RAG Evidence。
+1. 安全预算：System、安全策略和任务契约，不可裁剪。
+2. 交互预算：当前问题、必要近期原文和活动主题。
+3. 事实预算：RAG Evidence 独立保留，并记录来源与截断原因。
+4. 控制预算：符合 Scope、状态、有效期和风险策略的 Active Memory Revision，包括显式 Memory 与审核通过的 Derived Memory，只影响表达、结构与允许的控制项。
+5. 剩余预算：历史 Summary，允许截断、降采样或延后加载。
 
-Evidence 有独立预算和标签，实际排列可以按模型 Prompt 设计调整，但 Memory 不能提升为事实证据。
+Prompt 中的实际排列可以按模型要求调整，但预算隔离不变。Explicit 与 Derived 描述写入信任路径，不代表审核通过的 Derived Memory 永远不能使用；运行时仍要按 Revision 状态和类型编译。任何 Memory 都不能仅凭进入 Active 状态就提升为当前事实证据，历史 Summary 也不能挤掉当前任务所需的 RAG Evidence。
 
 ## 8. RunInputSnapshot
 
@@ -174,7 +184,7 @@ Compiled Memory Pack 可按 User/Workspace/Target/Policy Version 缓存，并设
 - Message Sequence 保证会话顺序。
 - Summary Promotion 使用 Segment Version CAS。
 - Memory Promotion 使用 Revision Version 与 Latest Pointer CAS。
-- Observation 使用 Run ID + Type + Key 幂等。
+- Observation 使用稳定 `observation_id` 或上游领域事件 ID 幂等；Run ID、Type 和 Key 只作为查询索引，不作为唯一键。同一 Run 内对同一 Key 的后续纠正必须能保存为新的 Observation。
 - 编译固定 Selection As Of 和 Conversation Cutoff，避免读到执行后的新状态。
 
 ## 12. 删除与隐私
@@ -344,7 +354,7 @@ Token 节省率只有在关键约束召回不下降时才有意义。不能为�
 
 ## 27. 不可变输入快照与连续 Raw Tail
 
-每次 Answer 或 Research Run 创建一份不可变 RunInputSnapshot。快照不是“当前消息列表的引用”，而是固定 History Head、已就绪 Summary Revision、连续 Active Raw Tail、Retrieval Plan 和 Evidence Manifest 身份。后续消息、摘要晋升或资料删除不会悄悄改变历史 Run 的原始输入。
+每次 AnswerRun、ResearchRun 或 ArtifactRun 创建一份不可变 RunInputSnapshot。快照不是“当前消息列表的引用”，而是固定 History Head、已就绪 Summary Revision、连续 Active Raw Tail、Retrieval Plan 和 Evidence Manifest 身份。后续消息和摘要晋升不会悄悄改变 Run 的原始输入；资料删除也不改写历史身份，但会触发 Replay Redaction。`[目标设计]` Snapshot 另存输入有效性 Epoch，隐私删除、撤权或安全封禁后，在途 Run 的工具调用和最终提交必须失败或转入 `INPUT_REVOKED`。内容可解释性和继续执行资格不能用同一个不可变字段表达。
 
 Raw Tail 必须有界且连续。不能为了省 Token 从尾部挑几条“看起来重要”的消息，因为被跳过的中间纠正可能改变后文语义。准备阶段失败后，恢复流程复用冻结的 Preparation 和原 Ledger ID；相同提交返回原 Receipt，相同幂等键但不同 Payload 返回冲突。
 
@@ -364,7 +374,7 @@ Candidate Policy 同时评估 Confidence、Utility、Scope、来源和冲突。�
 
 等价语句先做规则归一化，再判断重复，避免“请用中文回答”和“回答时使用中文”生成两条 Memory。语义模型可辅助，但最终去重与晋升仍受版本状态机约束。
 
-Memory Outcome 形成反馈闭环：被接受的结果提高 Utility，负向结果降低 Utility 并要求 Review，重复不良结果把 Memory 标记为 Stale。Utility 使用平滑更新，而不是一次反馈直接把分数改到极端，减少偶发评价造成的剧烈抖动。
+Memory Outcome 形成排序反馈：被接受的结果可以提高 Derived Memory 的 Utility，负向结果降低其排序先验并进入 Review。保存、导出、重试和编辑属于弱信号，不能单独把 Memory 标记为 Stale，更不能覆盖或撤销 Explicit Memory。只有明确纠正、用户撤销、到期、来源失效或人工复核结论才能推进 Canonical 状态。
 
 ## 30. Memory Pack 的确定性编译
 
@@ -543,9 +553,9 @@ Token 超限时按完整对象选择。另一种方法是让 LLM 对全部 Memor
 new_utility = old_utility × (1 - α) + outcome_score × α
 ```
 
-`α` 越大，响应新反馈越快，也更容易被单次异常影响；越小，分数稳定，但错误 Memory 需要更久才能降权。重复负向结果除降低 Utility 外，还可把状态转为 Stale。
+`α` 越大，响应新反馈越快，也更容易被单次异常影响；越小，分数稳定，但错误 Derived Memory 需要更久才能降权。该公式只调整 Derived Memory 的召回先验，不能自动推进 Canonical 状态。
 
-Outcome Feedback 不能直接作为事实正确性的证明。用户不喜欢某个回答，可能是生成问题而不是 Memory 问题，因此负向结果先触发 Review，而不是自动删除。
+Outcome Feedback 不能直接作为事实正确性的证明。用户不喜欢某个回答，可能是生成问题而不是 Memory 问题，因此负向结果只触发 Review。Explicit Memory 的撤销依赖明确用户动作、到期或来源失效，不由 Utility 阈值决定。
 
 ## 44. Cache Aside 与 Fingerprint
 
@@ -605,3 +615,7 @@ Replay Window 有界，防止内存无限增长。Cursor 过旧时明确要求�
 | Outcome Feedback | `MemoryOutcomeService`、`MemoryOutcomePolicy` | 反馈更新 Utility 信号，不直接改写事实内容 | `MemoryOutcomePolicyTest` |
 
 Memory 与 Evidence 属于不同信任域。当前 Memory 不参与资料召回、Evidence Rerank 或 Citation；向量 Memory 只适合先通过 `MemoryShadowRecallService` 观察候选，不应未经质量与删除验证直接写入 Prompt。
+
+## 当前表与审核边界
+
+canonical runtime 使用 `memory_item`、`memory_runtime_revision`、`memory_event`，历史候选/版本/审核链路使用 `memory_signal`、`memory_candidate`、`memory_object`、`memory_version`、`memory_review_decision`。审核决策、撤销和 outcome 都必须带 Workspace scope 与 revision，shadow recall 不能绕过人工或策略审核。

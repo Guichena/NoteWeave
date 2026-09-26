@@ -119,12 +119,24 @@ public class AnswerGenerationOrchestrator {
             persistAndEmitCancellation(run, streamOwner, fallbackSequence, consumer);
             return;
         }
+        if (streamed == null || streamed.isBlank()) {
+            if (run == null) {
+                emit(consumer, fallbackSequence, "answer.failed", "ANSWER_LLM_EMPTY_RESPONSE", null);
+                return;
+            }
+            answerRunService.advanceEventSequence(
+                    run.workspaceId(), run.runId(), runEventMux.currentSequence(run.runId()));
+            answerRunService.fail(
+                    run.workspaceId(), run.runId(), streamOwner,
+                    "ANSWER_LLM_EMPTY_RESPONSE", "Answer generation produced no content");
+            AnswerLiveEvent terminal = publishTerminal(run, "answer.failed", "ANSWER_LLM_EMPTY_RESPONSE");
+            emitTerminal(consumer, fallbackSequence, terminal, "answer.failed", "ANSWER_LLM_EMPTY_RESPONSE");
+            return;
+        }
         for (String citation : material.citationLines()) {
             emit(consumer, fallbackSequence, "citation.upsert", citation, run);
         }
-        if (streamed != null && !streamed.isBlank()) {
-            generationGateway.persistContent(material.workspaceId(), material.messageId(), streamed);
-        }
+        generationGateway.persistContent(material.workspaceId(), material.messageId(), streamed);
         if (run == null) {
             emit(consumer, fallbackSequence, "answer.completed", material.messageId(), null);
             return;
@@ -178,6 +190,10 @@ public class AnswerGenerationOrchestrator {
             Consumer<AnswerDeliveryEvent> consumer
     ) {
         AtomicLong sequence = new AtomicLong();
+        if (material.content() == null || material.content().isBlank()) {
+            emit(consumer, sequence, "answer.failed", "ANSWER_LLM_EMPTY_RESPONSE", null);
+            return;
+        }
         generationGateway.replayChunks(material.content())
                 .forEach(piece -> emit(consumer, sequence, "answer.delta", piece, null));
         material.citationLines().forEach(citation ->

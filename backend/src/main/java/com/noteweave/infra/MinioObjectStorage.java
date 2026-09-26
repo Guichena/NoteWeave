@@ -8,6 +8,7 @@ import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
+import io.minio.errors.ErrorResponseException;
 import jakarta.annotation.PostConstruct;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -99,9 +100,18 @@ public class MinioObjectStorage implements ObjectStorage {
                     .object(objectKey)
                     .build());
             return true;
+        } catch (ErrorResponseException ex) {
+            if (isObjectNotFoundCode(ex.errorResponse().code())) {
+                return false;
+            }
+            throw new IllegalStateException("minio stat failed: " + bucket + "/" + objectKey, ex);
         } catch (Exception ex) {
-            return false;
+            throw new IllegalStateException("minio stat failed: " + bucket + "/" + objectKey, ex);
         }
+    }
+
+    static boolean isObjectNotFoundCode(String code) {
+        return "NoSuchKey".equals(code) || "NoSuchObject".equals(code);
     }
 
     @Override

@@ -1,0 +1,40 @@
+[
+  {
+    "committed_at": "2026-09-18 08:38:05.000000",
+    "completion_key": "deep-cell:ec1ac59c-5097-40c1-b990-54c8d8f6ff8d:1:1",
+    "envelope_digest": "sha256:bfc4b19cd0a7d0489a88973ab85e523c31ad90cc24c3aea7c4f14e4a44a918ba",
+    "envelope_json": "{\"budget_usage\":{\"candidates_submitted\":0,\"evidence_cards\":0,\"extract_calls\":1,\"fetch_calls\":1,\"llm_calls\":1,\"read_calls\":1,\"search_calls\":1},\"candidates\":[],\"envelope_digest\":\"sha256:bfc4b19cd0a7d0489a88973ab85e523c31ad90cc24c3aea7c4f14e4a44a918ba\",\"evidence\":[],\"execution_key\":\"deep-cell:ec1ac59c-5097-40c1-b990-54c8d8f6ff8d:1:1\",\"fencing_token\":1,\"lease_epoch\":1,\"schema_version\":\"research-agent-completion.v1\",\"task_id\":\"ec1ac59c-5097-40c1-b990-54c8d8f6ff8d\",\"task_snapshot_digest\":\"sha256:fcbc707b9a710e1ff48f76619a1c6d1d35ab22fb0398cc146f5d1d15f20973c9\",\"telemetry\":{\"documents\":6,\"search_hits\":6,\"windows\":6},\"termination_reason\":\"NO_SUPPORTED_CANDIDATE\",\"trace_digest\":\"sha256:24d131256ff2efc095870fe9ff4f564963624542bc92997e3b14e0c4632b59f0\",\"worker_instance_id\":\"research-agent-worker-1\"}",
+    "envelope_size_bytes": 799,
+    "execution_id": "3e77e04e-80e4-4530-8339-8457053e72e7",
+    "fencing_token": 1,
+    "id": "e66b648a-c535-4bc0-9782-e8e52e883176",
+    "last_replayed_at": null,
+    "lease_epoch": 1,
+    "receipt_digest": "sha256:d8d44853b35cea6c6e587beaa2d54abc6ee6c79d07dae861b5cabc9218984310",
+    "receipt_json": "{\"accepted_merges\":[],\"budget\":{\"consumed\":{\"candidate_merges_accepted\":0,\"candidate_merges_rejected\":0,\"candidates_submitted\":0,\"evidence_appended\":0,\"evidence_cards\":0,\"extract_calls\":1,\"fetch_calls\":1,\"llm_calls\":1,\"read_calls\":1,\"search_calls\":1},\"released\":{\"candidate_merges_accepted\":3,\"candidate_merges_rejected\":3,\"candidates_submitted\":3,\"evidence_appended\":12,\"evidence_cards\":12,\"extract_calls\":0,\"fetch_calls\":0,\"llm_calls\":0,\"read_calls\":0,\"search_calls\":0},\"reserved\":{\"candidate_merges_accepted\":3,\"candidate_merges_rejected\":3,\"candidates_submitted\":3,\"evidence_appended\":12,\"evidence_cards\":12,\"extract_calls\":1,\"fetch_calls\":1,\"llm_calls\":1,\"read_calls\":1,\"search_calls\":1},\"state\":\"SETTLED\"},\"candidate_count\":0,\"completion_digest\":\"sha256:bfc4b19cd0a7d0489a88973ab85e523c31ad90cc24c3aea7c4f14e4a44a918ba\",\"completion_id\":\"e66b648a-c535-4bc0-9782-e8e52e883176\",\"evidence_appended\":0,\"execution_id\":\"3e77e04e-80e4-4530-8339-8457053e72e7\",\"outcome\":\"COMMITTED\",\"receipt_digest\":\"sha256:d8d44853b35cea6c6e587beaa2d54abc6ee6c79d07dae861b5cabc9218984310\",\"rejected_merges\":[],\"schema_version\":\"research-agent-completion-receipt.v1\",\"task_id\":\"ec1ac59c-5097-40c1-b990-54c8d8f6ff8d\"}",
+    "replay_count": 0,
+    "research_agent_task_id": "ec1ac59c-5097-40c1-b990-54c8d8f6ff8d",
+    "schema_version": "research-agent-completion.v1",
+    "snapshot_digest": "sha256:fcbc707b9a710e1ff48f76619a1c6d1d35ab22fb0398cc146f5d1d15f20973c9",
+    "worker_instance_id": "research-agent-worker-1"
+  },
+  {
+    "committed_at": "2026-09-18 08:39:07.000000",
+    "completion_key": "deep-cell:f8195d17-fdfb-4916-8e08-5d8820b08e8e:1:1",
+    "envelope_digest": "sha256:0447cb06ea4a1d3a9109aa51e73719b848f5b487f61d5f3efc5e4928f983ddc8",
+    "envelope_json": "{\"budget_usage\":{\"candidates_submitted\":0,\"evidence_cards\":0,\"extract_calls\":1,\"fetch_calls\":1,\"llm_calls\":1,\"read_calls\":1,\"search_calls\":1},\"candidates\":[],\"envelope_digest\":\"sha256:0447cb06ea4a1d3a9109aa51e73719b848f5b487f61d5f3efc5e4928f983ddc8\",\"evidence\":[],\"execution_key\":\"deep-cell:f8195d17-fdfb-4916-8e08-5d8820b08e8e:1:1\",\"fencing_token\":1,\"lease_epoch\":1,\"schema_version\":\"research-agent-completion.v1\",\"task_id\":\"f8195d17-fdfb-4916-8e08-5d8820b08e8e\",\"task_snapshot_digest\":\"sha256:353974f5a9b03477c97320d67e99ef9fcf820f702c5d91fc4a9c37d717f045e3\",\"telemetry\":{\"documents\":5,\"search_hits\":5,\"windows\":5},\"termination_reason\":\"NO_SUPPORTED_CANDIDATE\",\"trace_digest\":\"sha256:dad3f801826a8ff50c55692f8588e2720f5f0cfd7a069368186e64e08f7317e4\",\"worker_instance_id\":\"research-agent-worker-1\"}",
+    "envelope_size_bytes": 799,
+    "execution_id": "c460d1b3-d302-4d97-ba3e-6bd3f53b32bb",
+    "fencing_token": 1,
+    "id": "3303dd64-6da2-4d46-9c06-4c44f0b8e5a1",
+    "last_replayed_at": null,
+    "lease_epoch": 1,
+    "receipt_digest": "sha256:8595f83fd302cacad9ca47440540e400bf77aba060f84e05e71cbae444966c49",
+    "receipt_json": "{\"accepted_merges\":[],\"budget\":{\"consumed\":{\"candidate_merges_accepted\":0,\"candidate_merges_rejected\":0,\"candidates_submitted\":0,\"evidence_appended\":0,\"evidence_cards\":0,\"extract_calls\":1,\"fetch_calls\":1,\"llm_calls\":1,\"read_calls\":1,\"search_calls\":1},\"released\":{\"candidate_merges_accepted\":1,\"candidate_merges_rejected\":1,\"candidates_submitted\":1,\"evidence_appended\":4,\"evidence_cards\":4,\"extract_calls\":0,\"fetch_calls\":0,\"llm_calls\":0,\"read_calls\":0,\"search_calls\":0},\"reserved\":{\"candidate_merges_accepted\":1,\"candidate_merges_rejected\":1,\"candidates_submitted\":1,\"evidence_appended\":4,\"evidence_cards\":4,\"extract_calls\":1,\"fetch_calls\":1,\"llm_calls\":1,\"read_calls\":1,\"search_calls\":1},\"state\":\"SETTLED\"},\"candidate_count\":0,\"completion_digest\":\"sha256:0447cb06ea4a1d3a9109aa51e73719b848f5b487f61d5f3efc5e4928f983ddc8\",\"completion_id\":\"3303dd64-6da2-4d46-9c06-4c44f0b8e5a1\",\"evidence_appended\":0,\"execution_id\":\"c460d1b3-d302-4d97-ba3e-6bd3f53b32bb\",\"outcome\":\"COMMITTED\",\"receipt_digest\":\"sha256:8595f83fd302cacad9ca47440540e400bf77aba060f84e05e71cbae444966c49\",\"rejected_merges\":[],\"schema_version\":\"research-agent-completion-receipt.v1\",\"task_id\":\"f8195d17-fdfb-4916-8e08-5d8820b08e8e\"}",
+    "replay_count": 0,
+    "research_agent_task_id": "f8195d17-fdfb-4916-8e08-5d8820b08e8e",
+    "schema_version": "research-agent-completion.v1",
+    "snapshot_digest": "sha256:353974f5a9b03477c97320d67e99ef9fcf820f702c5d91fc4a9c37d717f045e3",
+    "worker_instance_id": "research-agent-worker-1"
+  }
+]

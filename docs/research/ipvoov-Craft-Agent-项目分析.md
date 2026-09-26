@@ -1,5 +1,7 @@
 # ipvoov/Craft-Agent 项目分析
 
+> `[行业参考]` 本文是外部项目分析，不证明 NoteWeave 的当前实现、测试结果或生产收益；相关采用建议仅属于 `[目标设计]`。
+
 > 调研对象：[`ipvoov/Craft-Agent`](https://github.com/ipvoov/Craft-Agent)  
 > 固定版本：[`3ce19c4e0382b54f27c9d04b0a723eca50687409`](https://github.com/ipvoov/Craft-Agent/tree/3ce19c4e0382b54f27c9d04b0a723eca50687409)  
 > 上游基线：ByteDance DeerFlow 1.x，仓库初始提交记录的上游 commit 为 [`b7a4b0f44610150e1f535dc70e3f57d0d5f56fcd`](https://github.com/bytedance/deer-flow/tree/b7a4b0f44610150e1f535dc70e3f57d0d5f56fcd)  
@@ -252,7 +254,7 @@ Reporter 将所有 observation 作为消息追加到 prompt，要求输出关键
 
 还有一个实现偏差：API 请求中的 `max_search_results` 会被 Researcher 读取并记录日志，但 `web_search` 实际仍使用全局 `Config["TAVILY_MAX_RESULTS"]`，所以请求级参数没有控制真实结果数。
 
-NoteWeave 已有 Workspace 与 external adapter 组合、Serper provider、provider chain、attempt/resolution/fallback metadata。Craft-Agent 在搜索基础设施上不比 NoteWeave先进，OpenSERP 对这一层更有参考价值。
+NoteWeave 已有 Workspace 与 external adapter 组合、Serper provider、provider chain、attempt/resolution/fallback metadata。Craft-Agent 在搜索基础设施上不比 NoteWeave 先进，OpenSERP 对这一层更有参考价值。
 
 ## 8. 网页抓取与阅读
 
@@ -301,7 +303,7 @@ Researcher prompt 要求跟踪来源，并在步骤结尾输出 Markdown 链接�
 - citation verifier；
 - local/global verifier；
 - polarity、support、contradiction 检查；
-- 报告引用覆盖率门禁；
+- 报告 Citation Completeness 与 Citation Support 分层门禁；
 - 来源快照归档。
 
 搜索结果和抓取文本进入模型上下文后，最终只留下自然语言 observation。Reporter 可能复制链接，也可能遗漏、错配或生成不存在的引用，系统不会检查。

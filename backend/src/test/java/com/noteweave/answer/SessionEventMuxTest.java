@@ -97,6 +97,25 @@ class SessionEventMuxTest {
     }
 
     @Test
+    void shouldReclaimTerminalChannelsAfterRetentionWindow() throws Exception {
+        SessionEventMux mux = new SessionEventMux(
+                Runnable::run,
+                new SimpleMeterRegistry(),
+                64,
+                16,
+                Duration.ofMillis(1),
+                100
+        );
+        AnswerLiveEvent terminal = mux.publish("run-retained", "answer.completed", "done");
+        Thread.sleep(20);
+
+        AnswerLiveEvent next = mux.publish("run-retained", "answer.delta", "new-run");
+
+        assertThat(terminal.sequence()).isEqualTo(1L);
+        assertThat(next.sequence()).isEqualTo(1L);
+    }
+
+    @Test
     void deltaEmitterShouldCoalesceTokensBeforePublishing() {
         var scheduler = Executors.newSingleThreadScheduledExecutor();
         try {
@@ -164,6 +183,20 @@ class SessionEventMuxTest {
                 return List.of();
             }
             return after(runId, after);
+        }
+
+        @Override
+        public ConversationLiveEvent publishConversation(
+                String conversationId, String runId, AnswerLiveEvent event
+        ) {
+            throw new UnsupportedOperationException("run-only test bridge");
+        }
+
+        @Override
+        public List<ConversationLiveEvent> readConversationAfter(
+                String conversationId, long after, Duration blockTimeout
+        ) {
+            return List.of();
         }
 
         @Override

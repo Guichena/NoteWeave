@@ -15,6 +15,7 @@ public class RetrievalProviderHealthIndicator implements HealthIndicator {
     private final RerankClient rerankClient;
     private final int expectedDimensions;
     private final boolean mysqlFallbackEnabled;
+    private final boolean elasticsearchEnabled;
     private volatile CachedHealth cachedHealth;
 
     @Autowired
@@ -28,6 +29,7 @@ public class RetrievalProviderHealthIndicator implements HealthIndicator {
         this.rerankClient = rerankClient;
         this.expectedDimensions = properties.embedding().dimensions();
         this.mysqlFallbackEnabled = mysqlFallbackEnabled;
+        this.elasticsearchEnabled = properties.elasticsearch().enabled();
     }
 
     public RetrievalProviderHealthIndicator(EmbeddingClient embeddingClient, RerankClient rerankClient) {
@@ -39,10 +41,20 @@ public class RetrievalProviderHealthIndicator implements HealthIndicator {
             RerankClient rerankClient,
             boolean mysqlFallbackEnabled
     ) {
+        this(embeddingClient, rerankClient, mysqlFallbackEnabled, true);
+    }
+
+    public RetrievalProviderHealthIndicator(
+            EmbeddingClient embeddingClient,
+            RerankClient rerankClient,
+            boolean mysqlFallbackEnabled,
+            boolean elasticsearchEnabled
+    ) {
         this.embeddingClient = embeddingClient;
         this.rerankClient = rerankClient;
         this.expectedDimensions = -1;
         this.mysqlFallbackEnabled = mysqlFallbackEnabled;
+        this.elasticsearchEnabled = elasticsearchEnabled;
     }
 
     @Override
@@ -86,12 +98,14 @@ public class RetrievalProviderHealthIndicator implements HealthIndicator {
                         ? provider.errorCode() : "RETRIEVAL_PROVIDER_PROBE_FAILED";
             }
         }
-        boolean primaryAvailable = embeddingEnabled && rerankEnabled && embeddingProbe && rerankProbe;
+        boolean primaryAvailable = elasticsearchEnabled
+                && embeddingEnabled && rerankEnabled && embeddingProbe && rerankProbe;
         boolean retrievalAvailable = primaryAvailable || mysqlFallbackEnabled;
         Health.Builder builder = retrievalAvailable ? Health.up() : Health.outOfService();
         return builder
                 .withDetail("embedding_configured", embeddingEnabled)
                 .withDetail("rerank_configured", rerankEnabled)
+                .withDetail("elasticsearch_configured", elasticsearchEnabled)
                 .withDetail("embedding_probe", embeddingProbe)
                 .withDetail("rerank_probe", rerankProbe)
                 .withDetail("primary_available", primaryAvailable)

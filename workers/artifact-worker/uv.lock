@@ -340,12 +340,22 @@ wheels = [
 ]
 
 [[package]]
+name = "kafka-python"
+version = "3.0.10"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2b/1a/828be30211d0c78d02a7b3bd6dd36d6cc39539693600960315d41192bd5e/kafka_python-3.0.10.tar.gz", hash = "sha256:06950fed5e705ec5207458ca6ae43b6c0ae1de4146ddbf7877f42a893830100c", size = 513160, upload-time = "2026-08-04T23:44:15.106Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/87/e1/23a30f129281533f14c09616f3182dee952eaf70d62c2342387b888d9047/kafka_python-3.0.10-py3-none-any.whl", hash = "sha256:9b2597f194009dcab8f7207ce9a15d59cb5d30bf5aa742fea69dffbd2866b2d1", size = 614240, upload-time = "2026-08-04T23:44:12.336Z" },
+]
+
+[[package]]
 name = "noteweave-artifact-worker"
 version = "0.0.1"
 source = { virtual = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "faster-whisper" },
+    { name = "kafka-python" },
     { name = "pydantic-settings" },
     { name = "reportlab" },
     { name = "uvicorn" },
@@ -361,6 +371,7 @@ test = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0,<1" },
     { name = "faster-whisper", specifier = ">=1.2.1,<2" },
+    { name = "kafka-python", specifier = ">=2.0.2,<4" },
     { name = "pydantic-settings", specifier = ">=2.6.0,<3" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.0,<10" },
     { name = "reportlab", specifier = ">=4.2.0,<5" },

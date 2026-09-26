@@ -26,6 +26,7 @@ type BuildArtifactRailPropsInput = {
       value: Record<string, string> | ((current: Record<string, string>) => Record<string, string>)
     ) => void;
     skills: ArtifactStudioSkill[];
+    loading: boolean;
     selectedSkill: ArtifactStudioSkill | undefined;
     setSelectedSkillKey: (key: string) => void;
   };
@@ -34,11 +35,14 @@ type BuildArtifactRailPropsInput = {
     appendHint: (hint: string) => void;
     preparePrompt: (skill: ArtifactStudioSkill) => string;
     launchPrompt: (skill: ArtifactStudioSkill) => Promise<void>;
+    composerError: string;
+    clearComposerError: () => void;
   };
   workspace: Workspace | null;
   artifactBusy: boolean;
   artifactWorkspace: {
     artifactJobs: ArtifactHistoryJobSummary[];
+    jobsLoading: boolean;
     latestArtifactVersion: ArtifactRailProps["latestArtifactVersion"];
     selectedArtifactHistoryVersion: ArtifactHistoryViewerVersion | null;
     selectedArtifactHistoryKey: string;
@@ -140,7 +144,12 @@ export function buildArtifactRailProps(input: BuildArtifactRailPropsInput): Arti
     isArtifactFormReady,
     artifactFormValues: catalog.formValues,
     launchArtifactPrompt: composer.launchPrompt,
+    artifactComposerError: composer.composerError,
+    clearArtifactComposerError: composer.clearComposerError,
     artifactStudioSkills: catalog.skills,
+    artifactSkillsLoading: catalog.loading,
+    artifactJobsLoading: artifactWorkspace.jobsLoading,
+    sourceCount: sourcesCount,
     setSelectedArtifactSkillKey: catalog.setSelectedSkillKey,
     setArtifactFormValues: catalog.setFormValues,
     artifactSidebarState,

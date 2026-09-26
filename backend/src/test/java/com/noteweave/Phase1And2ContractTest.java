@@ -379,9 +379,8 @@ class Phase1And2ContractTest {
         ChatStreamTestSupport.performAnswerRun(mockMvc, workspaceId, answerRunId)
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 直接回答")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 证据选择")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("查询意图")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:answer.snapshot")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("phase2.md")))
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("Deep Research"))))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event:citation.upsert")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event:answer.completed")));
@@ -470,8 +469,7 @@ class Phase1And2ContractTest {
 
         ChatStreamTestSupport.perform(mockMvc, assistantRequestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("查询意图：comparison")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("来源覆盖")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("这是比较类问题")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("RAG 资料 A")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("RAG 资料 B")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event:citation.upsert")));
@@ -566,9 +564,7 @@ class Phase1And2ContractTest {
 
         ChatStreamTestSupport.perform(mockMvc, assistantRequestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("会话上下文：已纳入最近连续对话窗口")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("连续对话窗口：最近 2 轮相关对话")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("主题锚点：")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("将最近连续对话仅用于理解追问语境")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("AlphaSpec")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event:citation.upsert")));
 
@@ -625,9 +621,7 @@ class Phase1And2ContractTest {
 
         ChatStreamTestSupport.perform(mockMvc, assistantRequestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("会话上下文：已纳入最近连续对话窗口")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("连续对话窗口：最近 3 轮相关对话")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("前序主题摘要：")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("将最近连续对话仅用于理解追问语境")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("AlphaSpec")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event:citation.upsert")));
     }

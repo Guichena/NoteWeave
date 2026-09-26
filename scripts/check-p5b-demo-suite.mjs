@@ -4,7 +4,13 @@ import { fileURLToPath } from "node:url";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const repoRoot = path.resolve(path.dirname(scriptPath), "..");
-const manifestPath = path.join(repoRoot, "docs", "DeepResearch-P5B-demo-suite.json");
+const manifestPath = path.join(
+  repoRoot,
+  "scripts",
+  "fixtures",
+  "deepresearch",
+  "DeepResearch-P5B-demo-suite.json"
+);
 
 function fail(message) {
   console.error(`[P5-B] ${message}`);

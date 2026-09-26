@@ -1,0 +1,66 @@
+[
+  {
+    "bounded": 0,
+    "cell_count": 6,
+    "column_count": 6,
+    "created_at": "2026-09-18 08:32:52.000000",
+    "id": "2f9c6d2e-f882-4d93-bc1b-859d959e72cc",
+    "plan_digest": "sha256:f114e311c180fa25a4dc5b605338b69e8bbfac5685c2de8f745ed044dee8d440",
+    "plan_json": {
+      "bounded": false,
+      "cell_count": 6,
+      "columns": [
+        {
+          "high_risk": false,
+          "key": "answer",
+          "label": "Answer",
+          "required_provenance_level": "QUALIFIED_SOURCE"
+        },
+        {
+          "high_risk": false,
+          "key": "key_evidence",
+          "label": "Key evidence",
+          "required_provenance_level": "QUALIFIED_SOURCE"
+        },
+        {
+          "high_risk": false,
+          "key": "limitations",
+          "label": "Limitations",
+          "required_provenance_level": "QUALIFIED_SOURCE"
+        },
+        {
+          "high_risk": false,
+          "key": "implications",
+          "label": "Implications",
+          "required_provenance_level": "QUALIFIED_SOURCE"
+        },
+        {
+          "high_risk": false,
+          "key": "finding-66cceaaf69bdb9ef",
+          "label": "Use official documentation as primary evidence",
+          "required_provenance_level": "QUALIFIED_SOURCE"
+        },
+        {
+          "high_risk": false,
+          "key": "finding-2e27c25232f65b5d",
+          "label": "Every major claim must include a verifiable URL",
+          "required_provenance_level": "QUALIFIED_SOURCE"
+        }
+      ],
+      "planner_version": "intent-matrix.v2",
+      "reason_codes": [],
+      "rows": [
+        {
+          "key": "subject",
+          "label": "Subject"
+        }
+      ]
+    },
+    "plan_mode": "INTENT_MATRIX_V2",
+    "plan_status": "SHADOW",
+    "planner_version": "intent-matrix.v2",
+    "reason_codes_json": [],
+    "research_run_id": "2f2e25c9-54a0-4993-837f-822e4e633b54",
+    "row_count": 1
+  }
+]

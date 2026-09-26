@@ -10,7 +10,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/** Provides local-only retrieval stubs when Elasticsearch is disabled. */
+/** Provides explicit disabled-provider adapters when Elasticsearch is disabled. */
 @Configuration
 @ConditionalOnProperty(name = "noteweave.elasticsearch.enabled", havingValue = "false")
 public class ElasticsearchDisabledConfig {

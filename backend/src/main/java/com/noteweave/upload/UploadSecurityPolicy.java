@@ -15,12 +15,13 @@ public class UploadSecurityPolicy {
     static final int MAX_CHUNK_SIZE = 8 * 1024 * 1024;
     static final int MAX_CHUNKS = 4096;
 
-    private static final Map<String, String> EXTENSION_MIME = Map.of(
-            "md", "text/markdown",
-            "markdown", "text/markdown",
-            "txt", "text/plain",
-            "json", "application/json",
-            "csv", "text/csv"
+    private static final Map<String, String> EXTENSION_MIME = Map.ofEntries(
+            Map.entry("md", "text/markdown"),
+            Map.entry("markdown", "text/markdown"),
+            Map.entry("txt", "text/plain"),
+            Map.entry("json", "application/json"),
+            Map.entry("csv", "text/csv"),
+            Map.entry("pdf", "application/pdf")
     );
 
     public void validateMetadata(CreateUploadRequest request) {
@@ -46,7 +47,10 @@ public class UploadSecurityPolicy {
         String expectedMime = EXTENSION_MIME.get(extension);
         String actualMime = normalizeMime(request.mimeType());
         if (expectedMime == null || !expectedMime.equals(actualMime)) {
-            throw new BusinessException("UPLOAD_FILE_TYPE_UNSUPPORTED", "仅支持 md、txt、json、csv 文本资料，且 MIME 必须匹配扩展名");
+            throw new BusinessException(
+                    "UPLOAD_FILE_TYPE_UNSUPPORTED",
+                    "仅支持 pdf、md、txt、json、csv 资料，且 MIME 必须匹配扩展名"
+            );
         }
     }
 
@@ -67,6 +71,13 @@ public class UploadSecurityPolicy {
         if (content.length > MAX_FILE_SIZE) {
             throw new BusinessException("UPLOAD_FILE_TOO_LARGE", "单文件最大允许 128MB");
         }
+        String normalizedMime = normalizeMime(mimeType);
+        if ("application/pdf".equals(normalizedMime)) {
+            if (!hasPdfSignature(content)) {
+                throw new BusinessException("UPLOAD_PDF_SIGNATURE_INVALID", "PDF 文件头无效");
+            }
+            return;
+        }
         if (containsNul(content)) {
             throw new BusinessException("UPLOAD_BINARY_CONTENT_REJECTED", "文本资料不能包含 NUL 字节");
         }
@@ -78,9 +89,18 @@ public class UploadSecurityPolicy {
         } catch (Exception ex) {
             throw new BusinessException("UPLOAD_TEXT_ENCODING_INVALID", "文本资料必须使用有效 UTF-8 编码");
         }
-        if (!EXTENSION_MIME.containsValue(normalizeMime(mimeType))) {
+        if (!EXTENSION_MIME.containsValue(normalizedMime)) {
             throw new BusinessException("UPLOAD_FILE_TYPE_UNSUPPORTED", "不支持该文件类型");
         }
+    }
+
+    private boolean hasPdfSignature(byte[] content) {
+        return content.length >= 5
+                && content[0] == '%'
+                && content[1] == 'P'
+                && content[2] == 'D'
+                && content[3] == 'F'
+                && content[4] == '-';
     }
 
     private boolean containsNul(byte[] content) {

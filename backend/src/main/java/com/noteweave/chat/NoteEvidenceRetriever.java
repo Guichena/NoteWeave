@@ -9,6 +9,7 @@ import com.noteweave.chat.NoteRetrievalService.NoteEntryMetadata;
 import com.noteweave.chat.NoteRetrievalService.NoteRecallPlan;
 import com.noteweave.chat.NoteRetrievalService.ReadingWindow;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Component;
@@ -49,20 +50,25 @@ public class NoteEvidenceRetriever implements EvidenceRetriever {
         NoteRecallPlan recallPlan = recallRetriever.retrieve(context.workspaceId(), context.query());
         List<NoteEntryMetadata> metadataEntries = retrievalService.readEntriesMetadataForNote(
                 context.workspaceId(), recallPlan.verifySources(), context.query());
-        List<ReadingWindow> windows = readingRetriever.retrieve(
-                        context.workspaceId(), recallPlan.verifySources(), context.query()).stream()
+        NoteReadingRetriever.ReadingResult reading = readingRetriever.retrieveWithDiagnostics(
+                context.workspaceId(), recallPlan.verifySources(), context.query());
+        List<ReadingWindow> windows = reading.windows().stream()
                 .limit(Math.max(0, step.candidateLimit()))
                 .toList();
         NoteRetrievalSnapshot snapshot = new NoteRetrievalSnapshot(recallPlan, metadataEntries, windows);
         List<EvidenceBundle.Evidence> evidence = java.util.stream.IntStream.range(0, windows.size())
                 .mapToObj(index -> toEvidence(windows.get(index), index, windows.size(), step.weight()))
                 .toList();
+        LinkedHashSet<String> degradationReasons = new LinkedHashSet<>(recallPlan.degradationReasons());
+        degradationReasons.addAll(reading.degradationReasons());
+        LinkedHashMap<String, Long> measurements = new LinkedHashMap<>(recallPlan.measurements());
+        measurements.putAll(reading.measurements());
         return new EvidenceRetrievalResult(
                 evidence,
                 Map.of(NoteRetrievalSnapshotCodec.METADATA_KEY, snapshotCodec.encode(snapshot)),
-                recallPlan.degraded(),
-                recallPlan.degradationReasons(),
-                recallPlan.measurements()
+                recallPlan.degraded() || reading.degraded(),
+                List.copyOf(degradationReasons),
+                Map.copyOf(measurements)
         );
     }
 

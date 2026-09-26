@@ -36,7 +36,7 @@ export function useConversationAnswerStream({
           setConnected(false);
         }
       },
-      onError: () => onStatusRef.current("会话流正在重连，回答状态将从快照恢复"),
+      onError: () => onStatusRef.current("实时更新暂不可用，回答将从任务快照同步"),
       onEvent: (event) => {
         try {
           const updates = store.applyConversationEvent(event);

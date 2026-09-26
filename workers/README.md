@@ -5,7 +5,7 @@ Python Worker 分别承接 Research 与 Artifact 的独立执行运行时：
 - `research-worker`：承接 Deep Research
 - `artifact-worker`：承接右侧 Skill-first 产物生成
 
-worker 不直写 Java 业务真源。Research Worker 只消费 canonical agent-command，并通过 claim、heartbeat、completion envelope 与 Java 协调；Artifact Worker 按 `task_id` 拉取输入并回调进度/完成/失败，另具备 run/resume/provider-ack、Skill Graph、Verifier/Repair、可选 LLM、系统 MCP、等待恢复和 PDF 导出链路。正式契约见 `docs/最小接口契约.md`。
+worker 不直写 Java 业务真源。Research Worker 只消费 canonical agent-command，并通过 claim、heartbeat、completion envelope 与 Java 协调；Artifact Worker 按 `task_id` 拉取输入并回调进度/完成/失败，另具备 run/resume/provider-ack、Skill Graph、Verifier/Repair、可选 LLM、系统 MCP、等待恢复和 PDF 导出链路。正式契约见 `docs/API与事件契约-v2.md` 的 Worker 最小契约章节。
 
 当前 Java 主系统已经落下第一批内部承接接口：
 
@@ -48,7 +48,7 @@ Research Worker 当前已经具备 `Search / Read / Extract / Verify / Branch / 
 
 - `python -m app.agent_kafka_consumer`：消费 `noteweave.research.agent.command`，按 lease/fencing 契约执行增量 cell task。
 
-Artifact Job 使用 Java 自动调度的 HTTP outbox publisher 调用 `POST /tasks/{task_id}/run`。Worker 在外部 provider 阻塞时进入 waiting，并通过系统 MCP 执行、Java host ack 和 `POST /tasks/{task_id}/resume` 自动恢复。运行态落盘，`/debug/*` 默认关闭。生产环境使用 `NOTEWEAVE_INTERNAL_AUTH_TOKEN`、`NOTEWEAVE_RESEARCH_INTERNAL_AUTH_TOKEN` 和 `NOTEWEAVE_ARTIFACT_INTERNAL_AUTH_TOKEN` 分域认证；Java 与 Worker 双向请求都必须携带 `X-NoteWeave-Internal-Token`，Artifact Worker 的 run/resume/ack/export/internal/debug 控制面均受保护，`/health` 除外。
+Artifact Job 使用 Java 的 MySQL Outbox 保存投递意图，由 `KafkaArtifactOutboxPublisher` 发布最小化的 `artifact-command.v1` 命令到 `noteweave.artifact.job`。Artifact Worker 关闭自动提交且每次只拉取一条命令，先携带 Delivery Token 向 Java 读取冻结输入，再执行模型、MCP 和导出；只有 Complete、Fail 或 Waiting 协议已经由 Java 确认，或旧 Delivery 被 409 Fencing 拒绝后，才手动提交 Kafka Offset。Worker 在外部 provider 阻塞时进入 Waiting，并通过系统 MCP 执行、Java host ack 和 `POST /tasks/{task_id}/resume` 自动恢复。运行态落盘，`/debug/*` 默认关闭。生产环境使用 `NOTEWEAVE_INTERNAL_AUTH_TOKEN`、`NOTEWEAVE_RESEARCH_INTERNAL_AUTH_TOKEN` 和 `NOTEWEAVE_ARTIFACT_INTERNAL_AUTH_TOKEN` 分域认证；Java 与 Worker 双向 HTTP 控制面请求都必须携带 `X-NoteWeave-Internal-Token`，Artifact Worker 的 resume/ack/export/internal/debug 控制面均受保护，`/health` 除外。
 
 当前 Research 异步链路为：Java coordinator 创建 agent task 与 command outbox，dispatcher 发布 `noteweave.research.agent.command`；Python consumer claim task、续约 heartbeat，并用 completion envelope 原子提交结果。consumer 手动提交 offset，poison message 按 `NOTEWEAVE_KAFKA_CONSUME_MAX_ATTEMPTS` 有限重试后进入专用 DLQ。
 

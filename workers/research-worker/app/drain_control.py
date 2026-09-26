@@ -141,10 +141,13 @@ class DrainAwareKafkaMessages:
             for records in batches.values():
                 self._pending.extend(records)
 
-    def commit(self) -> None:
+    def commit(self, offsets=None) -> None:
         commit = getattr(self.consumer, "commit", None)
         if callable(commit):
-            commit()
+            if offsets is None:
+                commit()
+            else:
+                commit(offsets=offsets)
 
     def close(self) -> None:
         close = getattr(self.consumer, "close", None)

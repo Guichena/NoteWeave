@@ -1,4 +1,5 @@
 import { type Message } from "./messageTypes";
+import { MarkdownSurface } from "../../shared/ui/MarkdownSurface";
 type MessageSection = {
   title: string;
   content: string;
@@ -20,15 +21,15 @@ export function MessageBubble({ message }: { message: Message }) {
   if (message.role !== "assistant" || !message.answerMode) {
     return <div className="bubble-body">{message.content}</div>;
   }
-  const presentation = buildAssistantPresentation(message);
   const isGenerating = message.answerStatus === "GENERATING";
   const isFailed = message.answerStatus === "FAILED" || message.answerStatus === "CANCELLED";
-  const body = presentation.body
-    || (isGenerating
+  const presentation = buildAssistantPresentation(message);
+  const body = isFailed
+    ? "本次回答未能完成。"
+    : presentation.body
+      || (isGenerating
       ? "正在检索当前工作台资料并生成回答…"
-      : isFailed
-        ? "本次回答未能完成。"
-        : "此回答暂未返回正文。");
+      : "此回答暂未返回正文。");
   return (
     <div aria-live={isGenerating ? "polite" : undefined}>
       {isGenerating ? (
@@ -42,9 +43,9 @@ export function MessageBubble({ message }: { message: Message }) {
           回答未完成：{message.answerError || "请稍后重试。"}
         </div>
       ) : null}
-      {presentation.leadTitle ? <div className="bubble-label">{presentation.leadTitle}</div> : null}
-      <div className="bubble-body">{body}</div>
-      {presentation.cards.length > 0 ? (
+      {!isFailed && presentation.leadTitle ? <div className="bubble-label">{presentation.leadTitle}</div> : null}
+      <MarkdownSurface content={body} className="bubble-body" />
+      {!isFailed && presentation.cards.length > 0 ? (
         <div className="bubble-cards">
           {presentation.cards.map((card, index) => (
             <details className="message-card" key={`${card.title}-${index}`} open={card.title === "来源引用"}>
@@ -52,7 +53,7 @@ export function MessageBubble({ message }: { message: Message }) {
                 <strong>{card.title}</strong>
                 <span>{card.preview}</span>
               </summary>
-              <div className="message-card-body">{card.content}</div>
+              <MarkdownSurface content={card.content} className="message-card-body" />
             </details>
           ))}
         </div>
@@ -62,17 +63,22 @@ export function MessageBubble({ message }: { message: Message }) {
 }
 
 function buildAssistantPresentation(message: Message): MessagePresentation {
-  const sections = splitMarkdownSections(message.content);
+  const parsedSections = splitMarkdownSections(message.content, message.answerMode === "wiki");
+  const sections = message.answerMode === "wiki"
+    ? normalizeWikiMessageSections(parsedSections)
+    : parsedSections;
   const [leadSection, ...restSections] = sections;
   const citationSectionTitles = new Set(["引用来源", "来源引用", "来源回链"]);
   const citationSection = restSections.find((section) => citationSectionTitles.has(section.title));
   const cards = message.answerMode === "note"
     ? buildNoteMessageCards(restSections, message.citations ?? [])
-    : buildDefaultMessageCards(restSections, citationSectionTitles, citationSection, message.citations ?? []);
+    : message.answerMode === "wiki"
+      ? buildWikiMessageCards(restSections, citationSectionTitles, citationSection, message.citations ?? [])
+      : buildDefaultMessageCards(restSections, citationSectionTitles, citationSection, message.citations ?? []);
   if (!leadSection) {
     return {
       leadTitle: null,
-      body: message.content.trim(),
+      body: message.answerMode === "wiki" ? "" : message.content.trim(),
       cards
     };
   }
@@ -81,6 +87,32 @@ function buildAssistantPresentation(message: Message): MessagePresentation {
     body: leadSection.content || leadSection.title,
     cards
   };
+}
+
+function normalizeWikiMessageSections(sections: MessageSection[]) {
+  return sections.flatMap((section) => {
+    const title = section.title.trim();
+    if (title === "页面关系") return [];
+    if (title !== "默认 Wiki 工作台") return [section];
+
+    const userFacingContent = section.content
+      .split("\n")
+      .filter((line) => !/^\s*\/workspaces(?:\/[^\s/]+)+\s*$/.test(line))
+      .join("\n")
+      .trim();
+    return userFacingContent ? [{ title: "", content: userFacingContent }] : [];
+  });
+}
+
+function buildWikiMessageCards(
+  restSections: MessageSection[],
+  citationSectionTitles: Set<string>,
+  citationSection: MessageSection | undefined,
+  citations: string[]
+) {
+  const chatRedundantSections = new Set(["页面关系", "默认 Wiki 工作台"]);
+  return buildDefaultMessageCards(restSections, citationSectionTitles, citationSection, citations)
+    .filter((card) => !chatRedundantSections.has(card.title));
 }
 
 function buildDefaultMessageCards(
@@ -177,13 +209,14 @@ function mergeCardSections(sections: Array<MessageSection | undefined>) {
     .join("\n\n");
 }
 
-function splitMarkdownSections(content: string): MessageSection[] {
+function splitMarkdownSections(content: string, includeLevelThree = false): MessageSection[] {
   const normalized = content.replaceAll("\r\n", "\n").trim();
-  const matches = Array.from(normalized.matchAll(/^##\s+(.+)$/gm));
+  const headingPattern = includeLevelThree ? /^#{2,3}\s+(.+)$/gm : /^##\s+(.+)$/gm;
+  const matches = Array.from(normalized.matchAll(headingPattern));
   if (matches.length === 0) {
     return normalized ? [{ title: "", content: normalized }] : [];
   }
-  return matches.map((match, index) => {
+  const sections = matches.map((match, index) => {
     const title = (match[1] ?? "").trim();
     const start = (match.index ?? 0) + match[0].length;
     const end = index + 1 < matches.length ? (matches[index + 1].index ?? normalized.length) : normalized.length;
@@ -192,6 +225,8 @@ function splitMarkdownSections(content: string): MessageSection[] {
       content: normalized.slice(start, end).trim()
     };
   });
+  const preamble = normalized.slice(0, matches[0].index ?? 0).trim();
+  return preamble ? [{ title: "", content: preamble }, ...sections] : sections;
 }
 
 function normalizeLeadTitle(title: string) {
@@ -213,6 +248,9 @@ function buildMessageCard(title: string, content: string, citationCount?: number
 
 function normalizeCardTitle(title: string) {
   switch (title.trim()) {
+    case "关键关系梳理":
+    case "关键关系":
+      return "关键页面关系";
     case "引用来源":
     case "来源回链":
     case "来源引用":
@@ -298,4 +336,3 @@ function countSectionBullets(content: string, sectionTitle: string) {
 function trimText(value: string, limit: number) {
   return value.length <= limit ? value : `${value.slice(0, Math.max(0, limit - 1))}…`;
 }
-

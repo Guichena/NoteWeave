@@ -47,8 +47,8 @@ public class ResearchAgentRateLimitService {
     public ResearchAgentRateLimitService(ObjectProvider<StringRedisTemplate> redis, MeterRegistry meters,
                                          @Value("${noteweave.research.agent.rate-limit.enabled:true}") boolean enabled,
                                          @Value("${noteweave.research.agent.rate-limit.allow-local-fallback:false}") boolean allowLocalFallback,
-                                         @Value("${noteweave.research.agent.rate-limit.capacity:10}") int capacity,
-                                         @Value("${noteweave.research.agent.rate-limit.refill-per-minute:10}") double refillPerMinute) {
+                                         @Value("${noteweave.research.agent.rate-limit.capacity:24}") int capacity,
+                                         @Value("${noteweave.research.agent.rate-limit.refill-per-minute:24}") double refillPerMinute) {
         this(redis.getIfAvailable(), meters, enabled, allowLocalFallback, capacity, refillPerMinute);
     }
 

@@ -5,15 +5,22 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import unicodedata
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from collections.abc import Mapping
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models import ControlPack, ResearchIntent
 
 
 class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def normalize_unicode_contract(cls, value: object) -> object:
+        return _normalize_unicode(value)
 
 
 class SnapshotTargetCell(_Strict):
@@ -41,7 +48,7 @@ class ResearchAgentTaskSnapshot(_Strict):
     entity_set_version: int = Field(ge=0)
     lease_epoch: int = Field(ge=1)
     fencing_token: int = Field(ge=1)
-    target_cells: list[SnapshotTargetCell] = Field(min_length=1, max_length=3)
+    target_cells: list[SnapshotTargetCell] = Field(default_factory=list, max_length=80)
     budget: dict[str, int | float] = Field(min_length=1)
     provider_key: str = Field(min_length=1, max_length=128)
     source_policy: dict[str, object] = Field(min_length=1)
@@ -57,6 +64,11 @@ class ResearchAgentTaskSnapshot(_Strict):
 
     @model_validator(mode="after")
     def validate_quorum_scope(self) -> "ResearchAgentTaskSnapshot":
+        if self.role == "WIDE_DISCOVERY":
+            if self.target_cells:
+                raise ValueError("WIDE_DISCOVERY must not own canonical cell targets")
+        elif not self.target_cells:
+            raise ValueError("runtime role requires canonical cell targets")
         values = (self.logical_task_key, self.quorum_group_key, self.candidate_quorum, self.candidate_slot, self.high_risk)
         if self.schema_version == "research-agent-task-snapshot.v1":
             if any(value is not None for value in values) or self.research_intent is not None or self.control_pack is not None:
@@ -89,7 +101,7 @@ class ResearchAgentTaskSnapshot(_Strict):
 def snapshot_digest(payload_without_digest: dict[str, object]) -> str:
     """Return the cross-runtime canonical SHA-256 used by the Backend claim response."""
     canonical = json.dumps(
-        payload_without_digest,
+        _normalize_unicode(payload_without_digest),
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
@@ -105,7 +117,9 @@ def require_trusted_claim_snapshot(claim: object) -> ResearchAgentTaskSnapshot:
     if not isinstance(raw_snapshot, str) or not raw_snapshot.strip() or not isinstance(claim_digest, str) or not claim_digest.strip():
         raise TaskSnapshotTrustError("claimed task has no trusted task snapshot")
     try:
-        snapshot = ResearchAgentTaskSnapshot.model_validate_json(raw_snapshot)
+        snapshot = ResearchAgentTaskSnapshot.model_validate(
+            json.loads(raw_snapshot, object_pairs_hook=_reject_duplicate_pairs)
+        )
         snapshot.require_valid_digest()
     except Exception as exc:
         raise TaskSnapshotTrustError("claimed task snapshot is invalid") from exc
@@ -117,3 +131,34 @@ def require_trusted_claim_snapshot(claim: object) -> ResearchAgentTaskSnapshot:
     ):
         raise TaskSnapshotTrustError("claimed task snapshot does not match claim identity")
     return snapshot
+
+
+def _normalize_unicode(value: object) -> object:
+    if isinstance(value, str):
+        normalized = unicodedata.normalize("NFC", value)
+        if any(0xD800 <= ord(character) <= 0xDFFF for character in normalized):
+            raise ValueError("Unicode surrogate code points are not valid task snapshot text")
+        return normalized
+    if isinstance(value, list):
+        return [_normalize_unicode(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_normalize_unicode(item) for item in value)
+    if isinstance(value, Mapping):
+        normalized: dict[object, object] = {}
+        for key, item in value.items():
+            normalized_key = _normalize_unicode(key)
+            if normalized_key in normalized:
+                raise ValueError(f"duplicate task snapshot JSON key after NFC normalization: {normalized_key!r}")
+            normalized[normalized_key] = _normalize_unicode(item)
+        return normalized
+    return value
+
+
+def _reject_duplicate_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        normalized_key = unicodedata.normalize("NFC", key)
+        if normalized_key in result:
+            raise ValueError(f"duplicate task snapshot JSON key: {normalized_key}")
+        result[normalized_key] = value
+    return result

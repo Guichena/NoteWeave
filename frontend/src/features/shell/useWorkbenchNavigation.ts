@@ -35,10 +35,21 @@ export function useWorkbenchNavigation({
     if (next === "chat") {
       setView("chat");
       navigateAppView("chat");
+      setStatus("准备就绪");
       return;
     }
     if (next === "research") {
       void openResearch();
+      return;
+    }
+    if (next === "library") {
+      if (!hasWorkspace) {
+        setStatus("请先创建工作台");
+        return;
+      }
+      setView("library");
+      navigateAppView("library");
+      setStatus("已打开工作台资料库");
       return;
     }
     if (next === "memory") {

@@ -83,11 +83,13 @@ public class ConversationService {
         int safeAfter = Math.max(0, afterSequence);
         int safeLimit = Math.max(1, Math.min(limit, 200));
         return jdbcTemplate.query("""
-                select id, message_seq, role, answer_mode, content, reply_to_message_id,
-                       context_status, content_hash, created_at
-                from conversation_message
-                where workspace_id = ? and conversation_id = ? and message_seq > ?
-                order by message_seq asc
+                select m.id, m.message_seq, m.role, m.answer_mode, m.content, m.reply_to_message_id,
+                       m.context_status, m.content_hash, r.status as answer_status,
+                       r.error_message as answer_error, m.created_at
+                from conversation_message m
+                left join answer_run r on r.assistant_request_id = m.assistant_request_id
+                where m.workspace_id = ? and m.conversation_id = ? and m.message_seq > ?
+                order by m.message_seq asc
                 limit ?
                 """, (rs, rowNum) -> new ConversationMessageResponse(
                 rs.getString("id"),
@@ -98,6 +100,8 @@ public class ConversationService {
                 rs.getString("reply_to_message_id"),
                 rs.getString("context_status"),
                 rs.getString("content_hash"),
+                rs.getString("answer_status"),
+                rs.getString("answer_error"),
                 rs.getTimestamp("created_at").toInstant()
         ), workspaceId, conversationId, safeAfter, safeLimit);
     }

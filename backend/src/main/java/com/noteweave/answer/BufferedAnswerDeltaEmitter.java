@@ -17,6 +17,7 @@ public final class BufferedAnswerDeltaEmitter implements AutoCloseable {
     private final StringBuilder pending = new StringBuilder();
     private ScheduledFuture<?> scheduledFlush;
     private RuntimeException failure;
+    private boolean failureObserved;
     private boolean closed;
 
     public BufferedAnswerDeltaEmitter(ScheduledExecutorService scheduler, Consumer<String> sink) {
@@ -56,11 +57,7 @@ public final class BufferedAnswerDeltaEmitter implements AutoCloseable {
         if (batch != null) {
             sink.accept(batch);
         }
-        synchronized (monitor) {
-            if (failure != null) {
-                throw failure;
-            }
-        }
+        throwStoredFailure(true);
     }
 
     @Override
@@ -71,7 +68,14 @@ public final class BufferedAnswerDeltaEmitter implements AutoCloseable {
             }
             closed = true;
         }
-        flush();
+        String batch;
+        synchronized (monitor) {
+            batch = drainLocked();
+        }
+        if (batch != null) {
+            sink.accept(batch);
+        }
+        throwStoredFailure(false);
     }
 
     private String drainLocked() {
@@ -94,6 +98,18 @@ public final class BufferedAnswerDeltaEmitter implements AutoCloseable {
             synchronized (monitor) {
                 failure = ex;
             }
+        }
+    }
+
+    private void throwStoredFailure(boolean markObserved) {
+        synchronized (monitor) {
+            if (failure == null || (!markObserved && failureObserved)) {
+                return;
+            }
+            if (markObserved) {
+                failureObserved = true;
+            }
+            throw failure;
         }
     }
 }

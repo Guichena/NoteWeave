@@ -121,11 +121,18 @@ describe("useWorkspaceSession", () => {
 
     await waitFor(() => expect(result.current.sessionLoading).toBe(false));
     await act(async () => {
-      await result.current.createWorkspace();
+      await result.current.createWorkspace({
+        name: "法规证据库",
+        description: "用于政策资料与结论审查"
+      });
     });
 
     expect(run).toHaveBeenCalledWith("创建工作台", expect.any(Function));
     expect(workspaceClient.create).toHaveBeenCalledTimes(1);
+    expect(workspaceClient.create).toHaveBeenCalledWith({
+      name: "法规证据库",
+      description: "用于政策资料与结论审查"
+    });
     expect(conversationClient.create).toHaveBeenCalledWith("workspace-2", {
       title: "默认研究会话",
       conversation_type: "WORKSPACE_CHAT"
@@ -134,6 +141,7 @@ describe("useWorkspaceSession", () => {
     expect(result.current.conversation?.conversation_id).toBe("conversation-created");
     expect(result.current.conversations).toHaveLength(1);
     expect(replaceSources).toHaveBeenCalledWith([]);
+    expect(replaceMessages).toHaveBeenCalledWith([]);
     expect(resetWorkspaceScope).toHaveBeenCalledTimes(1);
   });
 
@@ -158,11 +166,55 @@ describe("useWorkspaceSession", () => {
 
     await waitFor(() => expect(result.current.sessionLoading).toBe(false));
     await act(async () => {
-      await result.current.createConversation();
+      await result.current.createConversation("证据复核");
     });
 
     expect(setStatus).toHaveBeenCalledWith("请先创建工作台");
     expect(run).not.toHaveBeenCalled();
     expect(conversationClient.create).not.toHaveBeenCalled();
+  });
+
+  it("creates a named conversation without copying prior messages", async () => {
+    const createdConversation = {
+      conversation_id: "conversation-new",
+      title: "竞品证据梳理",
+      conversation_type: "WORKSPACE_CHAT",
+      created_at: "2026-07-22T02:00:00Z"
+    };
+    const conversationClient = { create: vi.fn(async () => createdConversation) };
+    const replaceMessages = vi.fn();
+    const { result } = renderHook(() => useWorkspaceSession({
+      run: createRun(),
+      setStatus: vi.fn(),
+      replaceMessages,
+      replaceSources: vi.fn(),
+      resetWorkspaceScope: vi.fn(),
+      loader: {
+        listAvailableWorkspaces: vi.fn(async () => [workspaceOne]),
+        restoreWorkspace: vi.fn(async () => ({
+          workspace: workspaceOne,
+          conversations: [conversationOne],
+          conversation: conversationOne,
+          messages: [{ role: "assistant", content: "existing" }],
+          sources: []
+        })),
+        switchConversation: vi.fn()
+      } as never,
+      workspaceClient: {} as never,
+      conversationClient: conversationClient as never
+    }));
+
+    await waitFor(() => expect(result.current.sessionLoading).toBe(false));
+    await act(async () => {
+      await result.current.createConversation("竞品证据梳理");
+    });
+
+    expect(conversationClient.create).toHaveBeenCalledWith("workspace-1", {
+      title: "竞品证据梳理",
+      conversation_type: "WORKSPACE_CHAT"
+    });
+    expect(result.current.conversation?.title).toBe("竞品证据梳理");
+    expect(result.current.conversations[0]?.conversation_id).toBe("conversation-new");
+    expect(replaceMessages).toHaveBeenLastCalledWith([]);
   });
 });

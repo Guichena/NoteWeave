@@ -1,7 +1,9 @@
 package com.noteweave.config;
 
 import jakarta.annotation.PostConstruct;
+import java.util.Arrays;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -16,16 +18,20 @@ public class ProductionConfigurationGuard {
     private final String artifactCallbackSecret;
     private final boolean localUserFallback;
     private final boolean qaMysqlFallbackEnabled;
+    private final boolean noteLocalMetadataFallbackEnabled;
     private final boolean quotaLocalFallbackEnabled;
+    private final boolean researchRateLimitLocalFallbackEnabled;
     private final boolean llmTemplateFallbackEnabled;
     private final String artifactWorkerBaseUrl;
     private final String kafkaSecurityProtocol;
+    private final boolean kafkaEnabled;
     private final String redisPassword;
     private final String elasticPassword;
     private final String kafkaSaslPassword;
     private final String minioAccessKey;
     private final String minioEndpoint;
     private final String elasticScheme;
+    private final String[] activeProfiles;
 
     public ProductionConfigurationGuard(
             @Value("${noteweave.environment:local}") String environment,
@@ -37,16 +43,22 @@ public class ProductionConfigurationGuard {
             @Value("${noteweave.worker.artifact-callback-secret:}") String artifactCallbackSecret,
             @Value("${noteweave.security.local-user-fallback:false}") boolean localUserFallback,
             @Value("${noteweave.retrieval.qa.mysql-fallback-enabled:false}") boolean qaMysqlFallbackEnabled,
+            @Value("${noteweave.retrieval.note.local-metadata-fallback-enabled:false}")
+            boolean noteLocalMetadataFallbackEnabled,
             @Value("${noteweave.quota.local-fallback-enabled:false}") boolean quotaLocalFallbackEnabled,
+            @Value("${noteweave.research.agent.rate-limit.allow-local-fallback:false}")
+            boolean researchRateLimitLocalFallbackEnabled,
             @Value("${noteweave.llm.template-fallback-enabled:false}") boolean llmTemplateFallbackEnabled,
             @Value("${noteweave.worker.artifact-base-url:http://localhost:18092}") String artifactWorkerBaseUrl,
             @Value("${spring.kafka.properties.security.protocol:PLAINTEXT}") String kafkaSecurityProtocol,
+            @Value("${noteweave.kafka.enabled:true}") boolean kafkaEnabled,
             @Value("${spring.data.redis.password:}") String redisPassword,
             @Value("${noteweave.elasticsearch.password:}") String elasticPassword,
             @Value("${KAFKA_SASL_PASSWORD:}") String kafkaSaslPassword,
             @Value("${noteweave.storage.minio.access-key:}") String minioAccessKey,
             @Value("${noteweave.storage.minio.endpoint:http://localhost:9000}") String minioEndpoint,
-            @Value("${noteweave.elasticsearch.scheme:http}") String elasticScheme
+            @Value("${noteweave.elasticsearch.scheme:http}") String elasticScheme,
+            Environment springEnvironment
     ) {
         this.environment = environment;
         this.internalAuthToken = internalAuthToken;
@@ -57,21 +69,29 @@ public class ProductionConfigurationGuard {
         this.artifactCallbackSecret = artifactCallbackSecret;
         this.localUserFallback = localUserFallback;
         this.qaMysqlFallbackEnabled = qaMysqlFallbackEnabled;
+        this.noteLocalMetadataFallbackEnabled = noteLocalMetadataFallbackEnabled;
         this.quotaLocalFallbackEnabled = quotaLocalFallbackEnabled;
+        this.researchRateLimitLocalFallbackEnabled = researchRateLimitLocalFallbackEnabled;
         this.llmTemplateFallbackEnabled = llmTemplateFallbackEnabled;
         this.artifactWorkerBaseUrl = artifactWorkerBaseUrl;
         this.kafkaSecurityProtocol = kafkaSecurityProtocol;
+        this.kafkaEnabled = kafkaEnabled;
         this.redisPassword = redisPassword;
         this.elasticPassword = elasticPassword;
         this.kafkaSaslPassword = kafkaSaslPassword;
         this.minioAccessKey = minioAccessKey;
         this.minioEndpoint = minioEndpoint;
         this.elasticScheme = elasticScheme;
+        this.activeProfiles = springEnvironment.getActiveProfiles();
     }
 
     @PostConstruct
     void validateProductionConfiguration() {
+        validateEnvironmentAlignment(environment, activeProfiles);
         if (isProduction(environment)) {
+            validateKafkaEnabled(kafkaEnabled);
+            validateNoteLocalFallback(noteLocalMetadataFallbackEnabled);
+            validateResearchRateLimitLocalFallback(researchRateLimitLocalFallbackEnabled);
             validateProductionValues(internalAuthToken, researchInternalAuthToken, artifactInternalAuthToken,
                     datasourcePassword, minioSecretKey,
                     artifactCallbackSecret, localUserFallback, qaMysqlFallbackEnabled,
@@ -85,6 +105,47 @@ public class ProductionConfigurationGuard {
         return environment != null
                 && ("production".equalsIgnoreCase(environment.trim())
                 || "prod".equalsIgnoreCase(environment.trim()));
+    }
+
+    public static void validateEnvironmentAlignment(String environment, String... activeProfiles) {
+        String normalized = environment == null ? "" : environment.trim().toLowerCase();
+        if (!Arrays.asList("local", "development", "dev", "test", "staging", "stage",
+                "production", "prod").contains(normalized)) {
+            throw new IllegalStateException("Unknown NOTEWEAVE_ENVIRONMENT: " + environment);
+        }
+        boolean productionProfile = Arrays.stream(activeProfiles == null ? new String[0] : activeProfiles)
+                .anyMatch(ProductionConfigurationGuard::isProduction);
+        if (productionProfile != isProduction(normalized)) {
+            throw new IllegalStateException(
+                    "Spring production profile and NOTEWEAVE_ENVIRONMENT must agree");
+        }
+        boolean testProfile = Arrays.stream(activeProfiles == null ? new String[0] : activeProfiles)
+                .anyMatch(profile -> "test".equalsIgnoreCase(profile));
+        if (testProfile != "test".equals(normalized)) {
+            throw new IllegalStateException("Spring test profile and NOTEWEAVE_ENVIRONMENT must agree");
+        }
+    }
+
+    public static void validateNoteLocalFallback(boolean noteLocalMetadataFallbackEnabled) {
+        if (noteLocalMetadataFallbackEnabled) {
+            throw new IllegalStateException(
+                    "Production must disable NOTEWEAVE_NOTE_LOCAL_METADATA_FALLBACK_ENABLED");
+        }
+    }
+
+    public static void validateResearchRateLimitLocalFallback(boolean enabled) {
+        if (enabled) {
+            throw new IllegalStateException(
+                    "Production must disable NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_ALLOW_LOCAL_FALLBACK");
+        }
+    }
+
+    public static void validateKafkaEnabled(boolean enabled) {
+        if (!enabled) {
+            throw new IllegalStateException(
+                    "Production requires NOTEWEAVE_KAFKA_ENABLED=true for durable Artifact commands"
+            );
+        }
     }
 
     public static void validateValues(String internalAuthToken, String datasourcePassword, String minioSecretKey) {

@@ -23,10 +23,15 @@ __pycache__/
 .pytest_cache/
 
 backend/target/
+backend/target-artifact-kafka-validation/
 backups/stage5-r6-recovered/raw/
 backups/stage5-r6-recovered/artifacts/
 frontend/vite.config.js
 frontend/vite.config.d.ts
+frontend/test-results/
+.codex-tmp/
+auth_screenshots/
+tmp/
 workers/**/.venv/
 workers/**/.artifact-worker-*.json
 workers/**/.artifact-worker-*.json.lock

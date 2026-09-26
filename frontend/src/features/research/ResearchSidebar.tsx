@@ -1,7 +1,7 @@
-import type { SourceAsset } from "../sources/model";
-import type { ResearchHistoryFilter, ResearchRunSummary, SignalChip } from "./model";
 import type { ResearchWorkbenchViewProps } from "./buildResearchWorkbenchProps";
 import { isResearchSourceReady } from "./launch";
+import { ResearchRunHistoryPanel } from "./ResearchRunHistoryPanel";
+import { Play, RefreshCw } from "lucide-react";
 
 export type ResearchSidebarProps = ResearchWorkbenchViewProps["sidebar"] & {
   isBusy: boolean;
@@ -9,14 +9,11 @@ export type ResearchSidebarProps = ResearchWorkbenchViewProps["sidebar"] & {
 
 export function ResearchSidebar(props: ResearchSidebarProps) {
   const {
-    summarizedResearchQuestion,
-    summarizedResearchGoal,
     researchDeliverableFormat,
     researchProfile,
     researchDepth,
     researchType,
     researchRetrievalMode,
-    researchScopeCount,
     researchQuestion,
     setResearchQuestion,
     researchGoal,
@@ -44,63 +41,26 @@ export function ResearchSidebar(props: ResearchSidebarProps) {
     researchScopeSources,
     currentSavedReportSourceInScope,
     researchRuns,
-    filteredResearchRuns,
-    researchHistoryFilter,
-    setResearchHistoryFilter,
-    researchHistoryFilterLabel,
-    researchTimelineMilestones,
-    runContinuityBaselineById,
-    buildRunContinuityBaselineLabel,
-    buildRunContinuityNarrative,
-    currentResearchRunSummary,
-    sameStageLabel,
-    timelineStageLabel,
-    currentRunStageLabelFromSummary,
-    openResearchRunHistoryItem,
-    summarizeText,
-    buildRunCheckpointNarrative,
-    formatTimestamp,
-    researchTimelinePath,
-    buildRunSignalChips,
-    buildRunPrimaryTone,
-    readRecoveryTargets,
-    currentResearchRunId,
-    formatRecoveryTargetLabels,
-    formatRecoveryTargetColumns,
-    buildCurrentRecoveryNarrative
   } = props;
   const readySourceCount = sources.filter(isResearchSourceReady).length;
+  const readySelectedSourceCount = researchScopeSources.filter(isResearchSourceReady).length;
+  const sourceScopeReady = researchRetrievalMode === "WEB_ONLY" || readySelectedSourceCount > 0;
+  const canStartResearch = Boolean(workspace && researchQuestion.trim() && sourceScopeReady);
   return (
           <aside className="research-index">
+            <div className="research-index-scroll">
             <p className="section-label">Deep Research</p>
             <h2>独立研究工作台</h2>
             <p className="phase-note">
               只读取此处显式填写的问题与勾选资料范围，不会从聊天上下文隐式升级。
             </p>
-            <div className="task-card research-snapshot-card">
-              <strong>当前研究快照</strong>
-              <span>{summarizedResearchQuestion}</span>
-              <small>目标：{summarizedResearchGoal}</small>
-              <small>交付：{researchDeliverableFormat.trim() || "Evidence-backed research report"}</small>
-              <small>
-                profile={researchProfile.trim() || "default"}
-                {" · "}
-                depth={researchDepth.trim() || "STANDARD"}
-                {" · "}
-                type={researchType.trim() || "AUTO"}
-              </small>
-              <small className={researchScopeCount > 0 ? "tone-ok" : ""}>
-                {researchScopeCount > 0
-                  ? `将携带 ${researchScopeCount} 份显式资料进入研究。`
-                  : "未勾选资料时，将以问题直接发起（取决于获取模式）。"}
-              </small>
-            </div>
             <label className="rail-field">
               <span>研究问题</span>
               <textarea
                 value={researchQuestion}
+                id="research-question-input"
                 onChange={(event) => setResearchQuestion(event.target.value)}
-                rows={5}
+                rows={4}
                 placeholder="写清楚要验证的问题、范围与成功标准。"
               />
             </label>
@@ -109,40 +69,9 @@ export function ResearchSidebar(props: ResearchSidebarProps) {
               <textarea
                 value={researchGoal}
                 onChange={(event) => setResearchGoal(event.target.value)}
-                rows={3}
+                rows={2}
                 placeholder="例如：输出可验证结论、冲突点与后续恢复建议。"
               />
-            </label>
-            <label className="rail-field">
-              <span>研究 Profile</span>
-              <input value={researchProfile} onChange={(event) => setResearchProfile(event.target.value)} placeholder="default" />
-            </label>
-            <label className="rail-field">
-              <span>交付格式</span>
-              <input value={researchDeliverableFormat} onChange={(event) => setResearchDeliverableFormat(event.target.value)} placeholder="Evidence-backed research report" />
-            </label>
-            <label className="rail-field">
-              <span>时间范围</span>
-              <input value={researchTimeRange} onChange={(event) => setResearchTimeRange(event.target.value)} placeholder="例如：2024-2026 / 当前季度 / 不限" />
-            </label>
-            <label className="rail-field">
-              <span>研究深度</span>
-              <select value={researchDepth} onChange={(event) => setResearchDepth(event.target.value)}>
-                <option value="QUICK">QUICK</option>
-                <option value="STANDARD">STANDARD</option>
-                <option value="DEEP">DEEP</option>
-              </select>
-            </label>
-            <label className="rail-field">
-              <span>研究类型</span>
-              <select value={researchType} onChange={(event) => setResearchType(event.target.value)}>
-                <option value="AUTO">AUTO</option>
-                <option value="PAPER_SURVEY">PAPER_SURVEY</option>
-                <option value="GITHUB_REPO_ANALYSIS">GITHUB_REPO_ANALYSIS</option>
-                <option value="PRODUCT_COMPARISON">PRODUCT_COMPARISON</option>
-                <option value="TECH_SOLUTION_COMPARISON">TECH_SOLUTION_COMPARISON</option>
-                <option value="CONCEPT_RESEARCH">CONCEPT_RESEARCH</option>
-              </select>
             </label>
             <div className="rail-field">
               <span>资料获取模式</span>
@@ -152,6 +81,7 @@ export function ResearchSidebar(props: ResearchSidebarProps) {
                     key={mode}
                     type="button"
                     className={researchRetrievalMode === mode ? "filter-pill active" : "filter-pill"}
+                    aria-pressed={researchRetrievalMode === mode}
                     onClick={() => setResearchRetrievalMode(mode)}
                     disabled={isBusy}
                   >
@@ -167,25 +97,49 @@ export function ResearchSidebar(props: ResearchSidebarProps) {
                     : "封闭资料研究，不调用外部网络搜索。"}
               </small>
             </div>
-            <label className="rail-field">
-              <span>显式约束</span>
-              <textarea value={researchConstraintsText} onChange={(event) => setResearchConstraintsText(event.target.value)} rows={4} />
-            </label>
-            <div className="research-inline-actions">
-              <button onClick={startDeepResearch} disabled={isBusy || !workspace}>
-                启动 Deep Research
-              </button>
-              <button className="secondary-button" onClick={() => void loadResearchRunHistory()} disabled={isBusy || !workspace}>
-                刷新历史
-              </button>
-            </div>
-            <div className="task-card">
-              <strong>Launch Contract</strong>
-              <span>独立入口只会提交这里显式填写的问题、目标、交付格式、研究类型、深度与 source scope。</span>
-              <small>question_ready={researchQuestion.trim() ? "YES" : "NO"} · goal_ready={researchGoal.trim() ? "YES" : "NO"}</small>
-              <small>constraints={(researchConstraintsText.trim() && researchConstraintsText.split(/\n+/).filter(Boolean).length) || 0} · time_range={researchTimeRange.trim() || "不限"}</small>
-              <small>entry gate：不从 Ask / Note / Wiki 上下文隐式升级。</small>
-            </div>
+            <details className="research-advanced-settings">
+              <summary>
+                <strong>研究设置</strong>
+                <span>{researchDepth || "STANDARD"} · {researchType || "AUTO"} · {researchProfile || "default"}</span>
+              </summary>
+              <div className="research-advanced-fields">
+                <label className="rail-field">
+                  <span>研究 Profile</span>
+                  <input value={researchProfile} onChange={(event) => setResearchProfile(event.target.value)} placeholder="default" />
+                </label>
+                <label className="rail-field">
+                  <span>交付格式</span>
+                  <input value={researchDeliverableFormat} onChange={(event) => setResearchDeliverableFormat(event.target.value)} placeholder="Evidence-backed research report" />
+                </label>
+                <label className="rail-field">
+                  <span>时间范围</span>
+                  <input value={researchTimeRange} onChange={(event) => setResearchTimeRange(event.target.value)} placeholder="例如：2024-2026 / 当前季度 / 不限" />
+                </label>
+                <label className="rail-field">
+                  <span>研究深度</span>
+                  <select value={researchDepth} onChange={(event) => setResearchDepth(event.target.value)}>
+                    <option value="QUICK">QUICK</option>
+                    <option value="STANDARD">STANDARD</option>
+                    <option value="DEEP">DEEP</option>
+                  </select>
+                </label>
+                <label className="rail-field">
+                  <span>研究类型</span>
+                  <select value={researchType} onChange={(event) => setResearchType(event.target.value)}>
+                    <option value="AUTO">AUTO</option>
+                    <option value="PAPER_SURVEY">PAPER_SURVEY</option>
+                    <option value="GITHUB_REPO_ANALYSIS">GITHUB_REPO_ANALYSIS</option>
+                    <option value="PRODUCT_COMPARISON">PRODUCT_COMPARISON</option>
+                    <option value="TECH_SOLUTION_COMPARISON">TECH_SOLUTION_COMPARISON</option>
+                    <option value="CONCEPT_RESEARCH">CONCEPT_RESEARCH</option>
+                  </select>
+                </label>
+                <label className="rail-field research-constraints-field">
+                  <span>显式约束</span>
+                  <textarea value={researchConstraintsText} onChange={(event) => setResearchConstraintsText(event.target.value)} rows={3} />
+                </label>
+              </div>
+            </details>
             <div className="wiki-maintenance">
               <strong>显式资料范围</strong>
               {sources.length > 0 ? (
@@ -208,7 +162,7 @@ export function ResearchSidebar(props: ResearchSidebarProps) {
                           setFocusedResearchSourceId(source.source_id);
                         }}
                         disabled={isBusy || !sourceReady}
-                        title={sourceReady ? "加入或移出 Research source scope" : `资料尚未就绪：${source.status}`}
+                        title={sourceReady ? "已解析，可加入或移出 Research source scope" : `资料尚未解析完成：${source.status}`}
                       >
                         {source.title}
                         {!sourceReady ? ` · ${source.status}` : ""}
@@ -232,181 +186,41 @@ export function ResearchSidebar(props: ResearchSidebarProps) {
                     </small>
                   ) : null}
                   {readySourceCount === 0 ? (
-                    <small>当前没有 READY 资料；未就绪条目仅供查看，仍可使用“仅网络”发起研究。</small>
+                    <small>当前没有已解析资料；未完成条目仅供查看，仍可使用“仅网络”发起研究。</small>
                   ) : null}
                 </>
               ) : (
-                <span>当前工作台还没有 READY 资料。你仍然可以直接发起 Deep Research。</span>
+                <span>当前工作台还没有已解析资料。你仍然可以直接发起 Deep Research。</span>
               )}
             </div>
-            <div className="wiki-maintenance">
-              <strong>Research Run 历史</strong>
-              <span>共 {researchRuns.length} 个 run，恢复任务也会保留在这里，便于审计和续跑。</span>
-              <span>当前筛选：{filteredResearchRuns.length} / {researchRuns.length}</span>
+            {researchRuns.length > 0 ? <ResearchRunHistoryPanel {...props} /> : (
+              <div className="research-empty-history">
+                <strong>还没有历史研究</strong>
+                <span>完成第一次研究后，运行记录、恢复入口与审计状态会显示在这里。</span>
+              </div>
+            )}
             </div>
-            <div className="research-filter-row">
-              {(["ALL", "RECOVERY", "CONFLICT", "STABLE", "RESUMED"] as ResearchHistoryFilter[]).map((filter) => (
+            <div className="research-launch-dock">
+              <span>
+                {canStartResearch
+                  ? "问题与资料范围已就绪"
+                  : researchQuestion.trim()
+                    ? "请选择已解析资料，或改用仅网络"
+                    : "先填写要验证的研究问题"}
+              </span>
+              <div className="research-inline-actions research-launch-actions">
                 <button
-                  key={`research-history-filter-${filter}`}
-                  type="button"
-                  className={researchHistoryFilter === filter ? "filter-pill active" : "filter-pill"}
-                  onClick={() => setResearchHistoryFilter(filter)}
-                  disabled={isBusy}
+                  className="primary-action"
+                  aria-label="启动 Deep Research"
+                  onClick={startDeepResearch}
+                  disabled={isBusy || !canStartResearch}
                 >
-                  {researchHistoryFilterLabel(filter)}
+                  <Play size={16} fill="currentColor" aria-hidden="true" />启动研究
                 </button>
-              ))}
-            </div>
-            <div className="wiki-maintenance">
-              <strong>关键转折时间线</strong>
-              {researchTimelineMilestones.length > 0 ? researchTimelineMilestones.map((milestone) => {
-                const milestoneBaseline = runContinuityBaselineById.get(milestone.run.research_run_id) ?? null;
-                const milestoneBaselineLabel = buildRunContinuityBaselineLabel(milestoneBaseline, milestone.run);
-                const milestoneContinuityNarrative = buildRunContinuityNarrative(milestoneBaseline, milestone.run);
-                const stageMatch = currentResearchRunSummary
-                  ? sameStageLabel(timelineStageLabel(milestone), currentRunStageLabelFromSummary(currentResearchRunSummary))
-                  : false;
-                const milestoneClassName = [
-                  "research-milestone-card",
-                  `tone-${milestone.tone}`,
-                  stageMatch ? "current-stage" : ""
-                ].filter(Boolean).join(" ");
-                return (
-                  <button
-                    key={`research-milestone-${milestone.key}`}
-                    type="button"
-                    className={milestoneClassName}
-                    onClick={() => void openResearchRunHistoryItem(milestone.run)}
-                    disabled={isBusy}
-                  >
-                    <strong>{milestone.label}</strong>
-                    <span>{milestone.run.final_report_title || summarizeText(milestone.run.question, 32)}</span>
-                    <small>{milestone.description}</small>
-                    <small>{buildRunCheckpointNarrative(milestone.run)}</small>
-                    {milestoneBaselineLabel ? (
-                      <small>continuity baseline={milestoneBaselineLabel}</small>
-                    ) : null}
-                    {milestoneContinuityNarrative ? (
-                      <small>{milestoneContinuityNarrative}</small>
-                    ) : null}
-                    {stageMatch ? <small>匹配当前 run 阶段</small> : null}
-                    <small>{formatTimestamp(milestone.run.updated_at)}</small>
-                    <div className="signal-chip-row">
-                      {milestone.chips.map((chip, index) => (
-                        <span key={`milestone-chip-${milestone.key}-${index}`} className={`signal-chip tone-${chip.tone}`}>
-                          {chip.label}: {chip.value}
-                        </span>
-                      ))}
-                    </div>
-                  </button>
-                );
-              }) : <span>当前还没有足够的 run 可提炼关键转折。</span>}
-            </div>
-            <div className="wiki-maintenance">
-              <strong>闭环路径摘要</strong>
-              {researchTimelinePath.stageLabels.length > 0 ? (
-                <>
-                  <span>{researchTimelinePath.stageLabels.join(" -> ")}</span>
-                  <small>当前阶段：{researchTimelinePath.currentStageLabel}</small>
-                  <small>
-                    当前 run 所在阶段：{researchTimelinePath.currentRunStageLabel || "未选择 run"}
-                    {" · "}
-                    {researchTimelinePath.currentRunAlignedWithPath ? "与全局路径当前阶段一致" : "当前查看的是历史阶段或不同阶段"}
-                  </small>
-                  {currentResearchRunSummary ? (
-                    <small>
-                      {buildRunContinuityNarrative(
-                        runContinuityBaselineById.get(currentResearchRunSummary.research_run_id) ?? null,
-                        currentResearchRunSummary
-                      ) || "当前 run 尚无可用 continuity baseline。"}
-                    </small>
-                  ) : null}
-                  <small>{researchTimelinePath.narrative}</small>
-                </>
-              ) : (
-                <span>当前还没有足够的 run 可形成闭环路径摘要。</span>
-              )}
-            </div>
-            <div className="research-history-list">
-              {filteredResearchRuns.length > 0 ? filteredResearchRuns.map((run) => {
-                const runContinuityBaseline = runContinuityBaselineById.get(run.research_run_id) ?? null;
-                const runContinuityBaselineLabel = buildRunContinuityBaselineLabel(runContinuityBaseline, run);
-                const runContinuityNarrative = buildRunContinuityNarrative(runContinuityBaseline, run);
-                const signalChips = buildRunSignalChips(run);
-                const signalTone = buildRunPrimaryTone(run);
-                const runRecoveryTargets = readRecoveryTargets(run.recovery_targets);
-                const stageMatch = currentResearchRunSummary
-                  ? sameStageLabel(currentRunStageLabelFromSummary(run), currentRunStageLabelFromSummary(currentResearchRunSummary))
-                  : false;
-                const cardClassName = [
-                  "research-history-card",
-                  run.research_run_id === currentResearchRunId ? "active" : "",
-                  stageMatch ? "current-stage" : "",
-                  signalTone !== "neutral" ? `signal-${signalTone}` : ""
-                ].filter(Boolean).join(" ");
-                return (
-                  <button
-                    key={`research-run-workbench-${run.research_run_id}`}
-                    type="button"
-                    className={cardClassName}
-                    onClick={() => void openResearchRunHistoryItem(run)}
-                    disabled={isBusy}
-                  >
-                    <strong>{run.final_report_title || summarizeText(run.question, 36)}</strong>
-                    <span>{run.status} · {run.profile_key || "DEFAULT"} · {formatTimestamp(run.updated_at)}</span>
-                    <small>
-                      local={run.local_verifier_status || "-"} ·
-                      branch={run.active_branch_id || "-"} · global={run.global_verifier_decision || "-"} · loop={run.final_loop_decision || "-"}
-                    </small>
-                    <small>
-                      intent={run.research_intent_alignment_status || "-"} ·
-                      intent_reason={run.research_intent_alignment_reason || "-"} ·
-                      constraints={run.intent_satisfied_constraint_count ?? 0}/{run.intent_constraint_count ?? 0} ·
-                      requirements={run.intent_satisfied_requirement_count ?? 0}/{run.intent_requirement_count ?? 0}
-                    </small>
-                    {runRecoveryTargets ? (
-                      <small>
-                        recovery={formatRecoveryTargetLabels(runRecoveryTargets) || "-"} ·
-                        columns={formatRecoveryTargetColumns(runRecoveryTargets) || "-"}
-                      </small>
-                    ) : null}
-                    <small>{buildRunCheckpointNarrative(run)}</small>
-                    {buildCurrentRecoveryNarrative(run.recovery_mode || "", runRecoveryTargets) ? (
-                      <small>{buildCurrentRecoveryNarrative(run.recovery_mode || "", runRecoveryTargets)}</small>
-                    ) : null}
-                    {runContinuityBaselineLabel ? (
-                      <small>continuity baseline={runContinuityBaselineLabel}</small>
-                    ) : null}
-                    {runContinuityNarrative ? (
-                      <small>{runContinuityNarrative}</small>
-                    ) : null}
-                    <div className="signal-chip-row">
-                      {stageMatch ? (
-                        <span className="signal-chip tone-neutral">当前阶段命中: {currentRunStageLabelFromSummary(run)}</span>
-                      ) : null}
-                      {signalChips.map((chip, index) => (
-                        <span key={`run-signal-chip-${run.research_run_id}-${index}`} className={`signal-chip tone-${chip.tone}`}>
-                          {chip.label}: {chip.value}
-                        </span>
-                      ))}
-                    </div>
-                    <small>
-                      rows={run.ledger_row_count} · verified={run.verified_row_count} · conflicted={run.conflicted_row_count}
-                    </small>
-                    <small>
-                      source_scope={run.source_scope_count} · checkpoints={run.checkpoint_count} · cf-branches={run.counterfactual_summary?.counterfactual_branch_count ?? 0}
-                    </small>
-                    {run.resumed_from_research_run_id ? (
-                      <small>resumed from {run.resumed_from_research_run_id} #{run.resumed_from_checkpoint_no ?? "-"}</small>
-                    ) : null}
-                  </button>
-                );
-              }) : (
-                <div className="empty-panel">
-                  <strong>没有匹配的 run</strong>
-                  <p>调整历史筛选，或新建一次 Deep Research。</p>
-                </div>
-              )}
+                <button className="secondary-button research-history-refresh" onClick={() => void loadResearchRunHistory()} disabled={isBusy || !workspace}>
+                  <RefreshCw size={15} aria-hidden="true" />刷新历史
+                </button>
+              </div>
             </div>
           </aside>
   );

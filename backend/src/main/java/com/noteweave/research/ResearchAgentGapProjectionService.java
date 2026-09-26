@@ -72,7 +72,8 @@ public class ResearchAgentGapProjectionService {
             Aggregate aggregate = item.getValue();
             result.add(new RepairGap(cell.cellKey(), cell.repairCount(), "FROZEN".equals(cell.status()), cell.activeTaskId() == null,
                     digest(item.getKey(), aggregate), List.copyOf(aggregate.taskIds),
-                    List.copyOf(aggregate.decisionIds), List.copyOf(aggregate.excludedSources)));
+                    List.copyOf(aggregate.decisionIds), List.copyOf(aggregate.excludedSources),
+                    aggregate.reasons.stream().sorted().toList()));
         }
         return result.stream().sorted(Comparator.comparing(RepairGap::cellKey)).toList();
     }
@@ -90,7 +91,13 @@ public class ResearchAgentGapProjectionService {
 
     private List<String> strings(String json) {
         if (json == null || json.isBlank()) return List.of();
-        try { return objectMapper.readValue(json, new TypeReference<List<String>>() { }); }
+        try {
+            List<String> values = objectMapper.readValue(json, new TypeReference<List<String>>() { });
+            if (values == null || values.stream().anyMatch(value -> value == null || value.isBlank())) {
+                throw new IllegalArgumentException("invalid string list");
+            }
+            return values;
+        }
         catch (Exception exception) { throw new BusinessException("RESEARCH_AGENT_GAP_PROJECTION_INVALID", "Task target snapshot is invalid"); }
     }
 
@@ -133,7 +140,7 @@ public class ResearchAgentGapProjectionService {
 
     public record RepairGap(String cellKey, int repairCount, boolean frozen, boolean noActiveTask,
                             String reasonDigest, List<String> failedTaskIds, List<String> verifierDecisionIds,
-                            List<String> excludedSourceIds) { }
+                            List<String> excludedSourceIds, List<String> reasonCodes) { }
     private record FailedTask(String id, String status, String terminalReason, String targetCellsJson, String executionContextJson) { }
     private record VerifierRepair(String id, String cellKey, String reasonCode, String evidenceIdsJson) { }
     private record CellState(String cellKey, String status, int repairCount, String activeTaskId) { }

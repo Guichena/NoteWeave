@@ -128,6 +128,20 @@ public class KnowledgeCommandService {
             List<String> citationIds
     ) {
         requireWorkspace(workspaceId);
+        return upsertWikiPageForInternalExecution(
+                workspaceId, title, content, citationIds);
+    }
+
+    /**
+     * Background Wiki tasks are already bound to a persisted workspace and do not have an HTTP
+     * user session. Request-facing callers must continue to use {@link #upsertWikiPage}.
+     */
+    KnowledgeItemResponse upsertWikiPageForInternalExecution(
+            String workspaceId,
+            String title,
+            String content,
+            List<String> citationIds
+    ) {
         List<String> normalizedCitationIds = citationIds == null
                 ? List.of() : List.copyOf(citationIds);
         String existingItemId = wikiMutationService.findWikiItemIdByTitle(

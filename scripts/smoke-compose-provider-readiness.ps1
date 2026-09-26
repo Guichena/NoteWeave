@@ -33,7 +33,6 @@ function Get-EnvValue {
 function Add-Check {
     param([System.Collections.Generic.List[object]]$Checks, [string]$Name, [bool]$Passed, [string]$Detail)
     $Checks.Add([ordered]@{ name = $Name; passed = $Passed; detail = $Detail }) | Out-Null
-    if (-not $Passed) { throw "Provider readiness failed: $Name - $Detail" }
 }
 
 function Require-EnabledProvider {
@@ -47,6 +46,19 @@ function Require-EnabledProvider {
     }
 }
 
+function Require-ConfiguredSecret {
+    param([hashtable]$Values, [System.Collections.Generic.List[object]]$Checks, [string]$Name)
+    $value = Get-EnvValue $Values $Name
+    $configured = -not [string]::IsNullOrWhiteSpace($value)
+    Add-Check $Checks "$Name configured" $configured "$Name=$($(if ($configured) { 'SET' } else { 'BLANK' }))"
+}
+
+function Require-EnvValue {
+    param([hashtable]$Values, [System.Collections.Generic.List[object]]$Checks, [string]$Name, [string]$Expected)
+    $value = Get-EnvValue $Values $Name
+    Add-Check $Checks "$Name value" ($value.ToLowerInvariant() -eq $Expected.ToLowerInvariant()) "$Name=$value"
+}
+
 $values = Read-EnvFile $EnvFile
 $checks = New-Object System.Collections.Generic.List[object]
 
@@ -56,8 +68,16 @@ try {
 
     if ($RequireFullDemo) {
         Require-EnabledProvider $values $checks "NOTEWEAVE_LLM" @("ENDPOINT", "MODEL")
+        Require-ConfiguredSecret $values $checks "NOTEWEAVE_LLM_API_KEY"
+        Require-EnvValue $values $checks "NOTEWEAVE_LLM_TEMPLATE_FALLBACK_ENABLED" "false"
         Require-EnabledProvider $values $checks "NOTEWEAVE_EMBEDDING" @("ENDPOINT", "MODEL", "DIMENSIONS")
+        Require-ConfiguredSecret $values $checks "NOTEWEAVE_EMBEDDING_API_KEY"
         Require-EnabledProvider $values $checks "NOTEWEAVE_RERANK" @("ENDPOINT", "MODEL")
+        Require-ConfiguredSecret $values $checks "NOTEWEAVE_RERANK_API_KEY"
+        Require-EnvValue $values $checks "NOTEWEAVE_ES_ENABLED" "true"
+        Require-EnvValue $values $checks "NOTEWEAVE_RESEARCH_AGENT_FAKE_PROVIDER_ENABLED" "false"
+        Require-EnvValue $values $checks "NOTEWEAVE_RESEARCH_PUBLIC_SEARCH_ENABLED" "true"
+        Require-EnvValue $values $checks "NOTEWEAVE_RESEARCH_ENABLE_URL_READER" "true"
 
         foreach ($name in @(
             "NOTEWEAVE_RESEARCH_LLM_BASE_URL", "NOTEWEAVE_RESEARCH_LLM_MODEL",
@@ -66,16 +86,33 @@ try {
             $value = Get-EnvValue $values $name
             Add-Check $checks "$name configured" (-not [string]::IsNullOrWhiteSpace($value)) "$name=$value"
         }
+
+        foreach ($name in @(
+            "NOTEWEAVE_RESEARCH_LLM_API_KEY",
+            "NOTEWEAVE_ARTIFACT_LLM_API_KEY",
+            "NOTEWEAVE_RESEARCH_JINA_API_KEY"
+        )) {
+            Require-ConfiguredSecret $values $checks $name
+        }
+
+        $searchKey = Get-EnvValue $values "NOTEWEAVE_RESEARCH_SERPER_API_KEY"
+        if ([string]::IsNullOrWhiteSpace($searchKey)) {
+            $searchKey = Get-EnvValue $values "NOTEWEAVE_RESEARCH_SEARCH_API_KEY"
+        }
+        $searchConfigured = -not [string]::IsNullOrWhiteSpace($searchKey)
+        Add-Check $checks "Research search credential configured" $searchConfigured "Research search credential=$($(if ($searchConfigured) { 'SET' } else { 'BLANK' }))"
     }
 
+    $passed = @($checks | Where-Object { -not $_.passed }).Count -eq 0
     $report = [ordered]@{
         measured_at = (Get-Date).ToString("o")
         env_file = (Resolve-Path -LiteralPath $EnvFile).Path
         require_full_demo = [bool]$RequireFullDemo
-        passed = $true
+        passed = $passed
         checks = $checks
     }
     $report | ConvertTo-Json -Depth 8
+    if (-not $passed) { exit 2 }
 } catch {
     $report = [ordered]@{
         measured_at = (Get-Date).ToString("o")

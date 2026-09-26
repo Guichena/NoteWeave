@@ -1,6 +1,7 @@
 package com.noteweave.research;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -38,5 +39,21 @@ class ResearchAgentTaskSnapshotCanonicalizerTest {
         assertThat(snapshot.json()).doesNotContain("\"quorum_group_key\"");
         assertThat(snapshot.digest()).isEqualTo(
                 "sha256:d30eae285854a2f4276062ed7a00a0aa74145213de0f9873a33872d42d7d81cd");
+    }
+    @Test
+    void shouldRejectNestedNfcEquivalentKeysBeforeSnapshotPersistence() {
+        String sourcePolicy = "{\"\u00e9\":1,\"e\\u0301\":2}";
+
+        assertThatThrownBy(() -> canonicalizer.canonicalize(
+                new ResearchAgentTaskSnapshotCanonicalizer.SnapshotInput(
+                        "task-1", "run-1", "workspace-1", "DEEP_CELL", "entity-1", "branch-main",
+                        1, 1, 1, 1,
+                        "[{\"cell_key\":\"entity-1:claim\",\"base_cell_version\":0}]",
+                        "{\"search_calls\":1}",
+                        "{\"provider_key\":\"research\",\"source_policy\":" + sourcePolicy
+                                + ",\"query_policy\":{\"query\":\"test\"}}")))
+                .isInstanceOf(com.noteweave.common.BusinessException.class)
+                .extracting(error -> ((com.noteweave.common.BusinessException) error).code())
+                .isEqualTo(ResearchCanonicalJson.KEY_COLLISION_CODE);
     }
 }

@@ -1,11 +1,9 @@
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request, status
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse
 from pathlib import Path
 import re
 import hmac
-import logging
-from threading import Lock
 from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 
@@ -41,14 +39,13 @@ from app.capability_wait_queue import (
     wake_waiting_task,
 )
 from app.config import load_settings, resolve_mcp_sandbox_root
-from app.error_sanitizer import sanitize_error_message
 from app.callback import (
     ArtifactAcquisitionAckExecutionResponse,
     ArtifactWorkerExecutionResponse,
     acknowledge_acquisition_operation_with_callbacks,
     resume_waiting_artifact_task_with_callbacks,
-    run_artifact_task_with_callbacks,
 )
+from app.artifact_kafka_consumer import ArtifactKafkaConsumerRuntime
 from app.acquisition_runtime import (
     acknowledge_acquisition_operation,
     clear_acquisition_runtime,
@@ -119,13 +116,16 @@ configure_waiting_task_store(settings.artifact_wait_queue_file_path)
 @asynccontextmanager
 async def artifact_worker_lifespan(_: FastAPI):
     recover_system_mcp_acquisition_operations(java_base_url=settings.java_base_url)
-    yield
+    consumer_runtime = ArtifactKafkaConsumerRuntime(settings)
+    consumer_runtime.start()
+    app.state.artifact_consumer_runtime = consumer_runtime
+    try:
+        yield
+    finally:
+        consumer_runtime.stop()
 
 
 app = FastAPI(title="NoteWeave Artifact Worker", lifespan=artifact_worker_lifespan)
-logger = logging.getLogger(__name__)
-_dispatched_task_lock = Lock()
-_dispatched_task_ids: set[str] = set()
 
 
 @app.middleware("http")
@@ -150,6 +150,9 @@ async def protect_debug_routes(request: Request, call_next):
 
 @app.get("/health")
 def health() -> dict[str, str]:
+    consumer_runtime = getattr(app.state, "artifact_consumer_runtime", None)
+    if consumer_runtime is not None and not consumer_runtime.healthy:
+        raise HTTPException(status_code=503, detail="artifact Kafka consumer is not healthy")
     return {"status": "ok", "worker_type": settings.worker_type}
 
 
@@ -174,11 +177,6 @@ def download_task_export(task_id: str, file_name: str) -> FileResponse:
 class DebugArtifactRunResponse(BaseModel):
     events: list[dict[str, object]]
     result: dict[str, object]
-
-
-class ArtifactTaskDispatchResponse(BaseModel):
-    task_id: str
-    status: str
 
 
 class DebugDefaultActionCatalogResponse(BaseModel):
@@ -606,38 +604,6 @@ def debug_run_task(task_input: ArtifactTaskInput) -> DebugArtifactRunResponse:
         events=[event.model_dump(mode="json") for event in events],
         result=_to_public_artifact_result_record(result.model_dump(mode="json")),
     )
-
-
-@app.post(
-    "/tasks/{task_id}/run",
-    response_model=ArtifactTaskDispatchResponse,
-    status_code=status.HTTP_202_ACCEPTED,
-)
-def run_task_from_java(
-    task_id: str,
-    background_tasks: BackgroundTasks,
-    delivery_token: str = Header(default="", alias="X-NoteWeave-Outbox-Delivery-Token"),
-) -> ArtifactTaskDispatchResponse:
-    with _dispatched_task_lock:
-        if task_id in _dispatched_task_ids:
-            return ArtifactTaskDispatchResponse(task_id=task_id, status="ALREADY_ACCEPTED")
-        _dispatched_task_ids.add(task_id)
-    background_tasks.add_task(_run_dispatched_artifact_task, task_id, delivery_token)
-    return ArtifactTaskDispatchResponse(task_id=task_id, status="ACCEPTED")
-
-
-def _run_dispatched_artifact_task(task_id: str, delivery_token: str = "") -> None:
-    try:
-        run_artifact_task_with_callbacks(task_id, delivery_token=delivery_token)
-    except Exception as exc:
-        logger.warning(
-            "Artifact task reached a reported failure terminal state: task_id=%s error=%s",
-            task_id,
-            sanitize_error_message(str(exc)),
-        )
-    finally:
-        with _dispatched_task_lock:
-            _dispatched_task_ids.discard(task_id)
 
 
 @app.post("/tasks/{task_id}/resume", response_model=ArtifactWorkerExecutionResponse)

@@ -76,7 +76,7 @@ class ElasticsearchChunkSearchAdapterTest {
     }
 
     @Test
-    void shouldReturnNoHitsOnlyWhenElasticsearchIsExplicitlyDisabled() {
+    void shouldFailClosedWhenElasticsearchIsDisabled() {
         ElasticsearchClient client = mock(ElasticsearchClient.class);
         ObjectProvider<ElasticsearchClient> disabledProvider = provider(client);
         ElasticsearchChunkSearchAdapter disabled = new ElasticsearchChunkSearchAdapter(
@@ -85,7 +85,9 @@ class ElasticsearchChunkSearchAdapterTest {
         ElasticsearchChunkSearchAdapter missing = new ElasticsearchChunkSearchAdapter(
                 missingProvider, properties(true));
 
-        assertThat(disabled.search("workspace", "query", 12)).isEmpty();
+        assertThatThrownBy(() -> disabled.search("workspace", "query", 12))
+                .isInstanceOf(com.noteweave.retrieval.provider.RetrievalProviderException.class)
+                .hasMessageContaining("disabled");
         assertThatThrownBy(() -> missing.search("workspace", "query", 12))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("client is unavailable");
@@ -121,6 +123,25 @@ class ElasticsearchChunkSearchAdapterTest {
             logger.detachAppender(appender);
             appender.stop();
         }
+    }
+
+    @Test
+    void shouldRejectMalformedHitInsteadOfReturningAnEmptyChunk() throws Exception {
+        ElasticsearchClient client = mock(ElasticsearchClient.class);
+        SearchResponse<Map> response = mock(SearchResponse.class);
+        HitsMetadata<Map> metadata = mock(HitsMetadata.class);
+        Hit<Map> hit = mock(Hit.class);
+        when(client.search(any(java.util.function.Function.class), eq(Map.class))).thenReturn(response);
+        when(response.hits()).thenReturn(metadata);
+        when(metadata.hits()).thenReturn(List.of(hit));
+        when(hit.source()).thenReturn(Map.of("source_id", "source-1"));
+
+        ElasticsearchChunkSearchAdapter adapter = new ElasticsearchChunkSearchAdapter(
+                provider(client), properties(true));
+
+        assertThatThrownBy(() -> adapter.search("workspace", "query", 12))
+                .isInstanceOf(com.noteweave.retrieval.provider.RetrievalProviderException.class)
+                .hasMessageContaining("missing an identity or content field");
     }
 
     @SuppressWarnings("unchecked")

@@ -1,0 +1,28 @@
+[
+  {
+    "execution_key": "deep-cell:ec1ac59c-5097-40c1-b990-54c8d8f6ff8d:1:1",
+    "fencing_token": 1,
+    "id": "3e77e04e-80e4-4530-8339-8457053e72e7",
+    "lease_epoch": 1,
+    "research_agent_task_id": "ec1ac59c-5097-40c1-b990-54c8d8f6ff8d",
+    "status": "SUBMITTED",
+    "submitted_at": "2026-09-18 08:38:04.000000",
+    "termination_reason": "NO_SUPPORTED_CANDIDATE",
+    "trace_digest": "sha256:24d131256ff2efc095870fe9ff4f564963624542bc92997e3b14e0c4632b59f0",
+    "usage_json": "{\"extract_calls\":1,\"evidence_appended\":0,\"read_calls\":1,\"llm_calls\":1,\"search_calls\":1,\"fetch_calls\":1,\"evidence_cards\":0,\"candidates_submitted\":0,\"candidate_merges_accepted\":0,\"candidate_merges_rejected\":0}",
+    "worker_instance_id": "research-agent-worker-1"
+  },
+  {
+    "execution_key": "deep-cell:f8195d17-fdfb-4916-8e08-5d8820b08e8e:1:1",
+    "fencing_token": 1,
+    "id": "c460d1b3-d302-4d97-ba3e-6bd3f53b32bb",
+    "lease_epoch": 1,
+    "research_agent_task_id": "f8195d17-fdfb-4916-8e08-5d8820b08e8e",
+    "status": "SUBMITTED",
+    "submitted_at": "2026-09-18 08:39:07.000000",
+    "termination_reason": "NO_SUPPORTED_CANDIDATE",
+    "trace_digest": "sha256:dad3f801826a8ff50c55692f8588e2720f5f0cfd7a069368186e64e08f7317e4",
+    "usage_json": "{\"extract_calls\":1,\"evidence_appended\":0,\"read_calls\":1,\"llm_calls\":1,\"search_calls\":1,\"fetch_calls\":1,\"evidence_cards\":0,\"candidates_submitted\":0,\"candidate_merges_accepted\":0,\"candidate_merges_rejected\":0}",
+    "worker_instance_id": "research-agent-worker-1"
+  }
+]

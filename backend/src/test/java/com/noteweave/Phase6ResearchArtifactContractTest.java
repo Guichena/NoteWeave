@@ -93,12 +93,14 @@ class Phase6ResearchArtifactContractTest {
                         "study_guide",
                         "quiz_pack",
                         "wiki_page",
+                        "mindmap_from_workspace",
                         "bilibili_course_note_pdf"
                 )))
                 .andReturn();
 
         JsonNode skills = objectMapper.readTree(result.getResponse().getContentAsString()).path("data");
         JsonNode resumeSkill = findByField(skills, "skill_key", "resume_highlight");
+        JsonNode mindmapSkill = findByField(skills, "skill_key", "mindmap_from_workspace");
         JsonNode bilibiliSkill = findByField(skills, "skill_key", "bilibili_course_note_pdf");
 
         assertThat(resumeSkill.path("status").asText()).isEqualTo("ACTIVE");
@@ -114,6 +116,12 @@ class Phase6ResearchArtifactContractTest {
         assertThat(resumeSkill.path("default_input_hints").isArray()).isTrue();
         assertThat(resumeSkill.path("default_input_hints")).isNotEmpty();
         assertThat(resumeSkill.has("supports_url_input")).isFalse();
+
+        assertThat(mindmapSkill.path("input_schema").path("properties").path("layout").path("default").asText())
+                .isEqualTo("balanced");
+        assertThat(mindmapSkill.path("input_schema").path("properties").path("depth").path("default").asText())
+                .isEqualTo("3");
+        assertThat(mindmapSkill.path("default_input_hints")).isNotEmpty();
 
         assertThat(bilibiliSkill.has("supports_url_input")).isFalse();
         assertThat(bilibiliSkill.path("input_schema").path("properties").has("url")).isTrue();
@@ -609,6 +617,37 @@ class Phase6ResearchArtifactContractTest {
                 .andExpect(jsonPath("$.data.upstream_refs[0].ref_type").value("SOURCE_SNAPSHOT"))
                 .andExpect(jsonPath("$.data.upstream_refs[0].revision_id").value(capturedSourceSnapshotId))
                 .andExpect(jsonPath("$.data.source_scope[?(@.source_id=='" + lateSourceId + "')]").isEmpty());
+    }
+
+    @Test
+    void artifactJobCanFreezeParsedSourceWhenRetrievalIndexingIsDisabled() throws Exception {
+        String workspaceId = createWorkspace();
+        String sourceId = uploadSource(workspaceId, "artifact-local-only-input.md", """
+                This parsed source remains readable when retrieval indexing is disabled.
+                Artifact generation should freeze its source window without requiring vectors.
+                """);
+        jdbcTemplate.update("update source set index_status = 'DISABLED' where id = ?", sourceId);
+        jdbcTemplate.update("update source_snapshot set index_status = 'DISABLED' where source_id = ?", sourceId);
+
+        MvcResult createResult = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "resume_highlight",
+                                "user_requirement", "Use parsed local-only source text",
+                                "inputs", Map.of("language", "en"),
+                                "source_scope_source_ids", List.of(sourceId)
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn();
+        String taskId = objectMapper.readTree(createResult.getResponse().getContentAsString())
+                .path("data").path("task_id").asText();
+
+        mockMvc.perform(get("/internal/worker/artifact-tasks/{taskId}/input", taskId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.source_scope.length()").value(1))
+                .andExpect(jsonPath("$.data.source_scope[0].source_id").value(sourceId))
+                .andExpect(jsonPath("$.data.source_scope[0].sample_text")
+                        .value(org.hamcrest.Matchers.containsString("remains readable")));
     }
 
     @Test

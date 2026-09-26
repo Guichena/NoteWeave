@@ -5,6 +5,8 @@ import com.noteweave.retrieval.provider.EmbeddingClient;
 import com.noteweave.retrieval.provider.RerankClient;
 import java.util.ArrayList;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -15,6 +17,24 @@ public class RetrievalReleaseGateService {
     private final EmbeddingClient embeddingClient;
     private final RerankClient rerankClient;
     private final RetrievalQualityReceiptService qualityReceiptService;
+    private final boolean elasticsearchEnabled;
+
+    @Autowired
+    public RetrievalReleaseGateService(
+            JdbcTemplate jdbcTemplate,
+            RetrievalBackfillService backfillService,
+            EmbeddingClient embeddingClient,
+            RerankClient rerankClient,
+            RetrievalQualityReceiptService qualityReceiptService,
+            @Value("${noteweave.elasticsearch.enabled:true}") boolean elasticsearchEnabled
+    ) {
+        this.jdbcTemplate = jdbcTemplate;
+        this.backfillService = backfillService;
+        this.embeddingClient = embeddingClient;
+        this.rerankClient = rerankClient;
+        this.qualityReceiptService = qualityReceiptService;
+        this.elasticsearchEnabled = elasticsearchEnabled;
+    }
 
     public RetrievalReleaseGateService(
             JdbcTemplate jdbcTemplate,
@@ -23,16 +43,14 @@ public class RetrievalReleaseGateService {
             RerankClient rerankClient,
             RetrievalQualityReceiptService qualityReceiptService
     ) {
-        this.jdbcTemplate = jdbcTemplate;
-        this.backfillService = backfillService;
-        this.embeddingClient = embeddingClient;
-        this.rerankClient = rerankClient;
-        this.qualityReceiptService = qualityReceiptService;
+        this(jdbcTemplate, backfillService, embeddingClient, rerankClient,
+                qualityReceiptService, true);
     }
 
     public GateResult evaluate(String workspaceId) {
         RetrievalStatus status = backfillService.status(workspaceId);
         List<String> violations = new ArrayList<>();
+        if (!elasticsearchEnabled) violations.add("ELASTICSEARCH_PROVIDER_NOT_READY");
         if (!embeddingClient.isEnabled()) violations.add("EMBEDDING_PROVIDER_NOT_READY");
         if (!rerankClient.isEnabled()) violations.add("RERANK_PROVIDER_NOT_READY");
         var coverage = status.coverage();

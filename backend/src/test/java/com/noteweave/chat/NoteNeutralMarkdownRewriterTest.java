@@ -1,12 +1,18 @@
 package com.noteweave.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.noteweave.common.BusinessException;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 
 class NoteNeutralMarkdownRewriterTest {
 
-    private final NoteNeutralMarkdownRewriter rewriter = new NoteNeutralMarkdownRewriter();
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+    private final NoteNeutralMarkdownRewriter rewriter =
+            new NoteNeutralMarkdownRewriter(true, meterRegistry);
 
     @Test
     void shouldExtractDirectAnswerAndDropProcessCards() {
@@ -54,7 +60,35 @@ class NoteNeutralMarkdownRewriterTest {
         );
 
         assertThat(result.mode()).isEqualTo("template");
+        assertThat(result.fallbackReason()).isEqualTo("NOTE_POLISH_LLM_UNAVAILABLE");
+        assertThat(meterRegistry.counter(
+                "noteweave.note.polish.fallback", "reason", "NOTE_POLISH_LLM_UNAVAILABLE").count())
+                .isEqualTo(1.0);
         assertThat(result.content()).contains("结论正文");
         assertThat(result.content()).doesNotContain("资料定位");
+    }
+
+    @Test
+    void shouldFailClosedWhenLlmFailsAndFallbackIsDisabled() {
+        ChatLlmClient failing = new ChatLlmClient() {
+            @Override
+            public String streamChat(String systemPrompt, String userPrompt, int maximumOutputTokens,
+                                     java.util.function.Consumer<String> onToken) {
+                throw new IllegalStateException("provider unavailable");
+            }
+
+            @Override
+            public boolean isEnabled() {
+                return true;
+            }
+        };
+        NoteNeutralMarkdownRewriter failClosed =
+                new NoteNeutralMarkdownRewriter(false, new SimpleMeterRegistry());
+
+        assertThatThrownBy(() -> failClosed.polishWithLlm(failing, "title", "long enough source content"))
+                .isInstanceOfSatisfying(BusinessException.class, error -> {
+                    assertThat(error.code()).isEqualTo("NOTE_POLISH_LLM_FAILED");
+                    assertThat(error.status()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+                });
     }
 }

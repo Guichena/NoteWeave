@@ -1,0 +1,72 @@
+[
+  {
+    "bounded": 0,
+    "cell_count": 7,
+    "column_count": 7,
+    "created_at": "2026-09-18 08:36:34.000000",
+    "id": "d2219442-7c4e-4ee1-984d-9a14469bacbc",
+    "plan_digest": "sha256:fea1e018dd172bb9acdf4984cf24462c397971541936288ce0ebc7b10e55f6a1",
+    "plan_json": {
+      "bounded": false,
+      "cell_count": 7,
+      "columns": [
+        {
+          "high_risk": false,
+          "key": "answer",
+          "label": "Answer",
+          "required_provenance_level": "QUALIFIED_SOURCE"
+        },
+        {
+          "high_risk": false,
+          "key": "key_evidence",
+          "label": "Key evidence",
+          "required_provenance_level": "QUALIFIED_SOURCE"
+        },
+        {
+          "high_risk": false,
+          "key": "limitations",
+          "label": "Limitations",
+          "required_provenance_level": "QUALIFIED_SOURCE"
+        },
+        {
+          "high_risk": false,
+          "key": "implications",
+          "label": "Implications",
+          "required_provenance_level": "QUALIFIED_SOURCE"
+        },
+        {
+          "high_risk": false,
+          "key": "finding-72a5adeb74f4fc3d",
+          "label": "Use official OpenAI documentation as primary evidence",
+          "required_provenance_level": "QUALIFIED_SOURCE"
+        },
+        {
+          "high_risk": false,
+          "key": "finding-8e55db3fec69918b",
+          "label": "Include documented limitations and incompatibilities",
+          "required_provenance_level": "QUALIFIED_SOURCE"
+        },
+        {
+          "high_risk": false,
+          "key": "finding-6260ba3a1ee4211f",
+          "label": "Every major claim must cite a source URL",
+          "required_provenance_level": "QUALIFIED_SOURCE"
+        }
+      ],
+      "planner_version": "intent-matrix.v2",
+      "reason_codes": [],
+      "rows": [
+        {
+          "key": "subject",
+          "label": "Subject"
+        }
+      ]
+    },
+    "plan_mode": "INTENT_MATRIX_V2",
+    "plan_status": "SHADOW",
+    "planner_version": "intent-matrix.v2",
+    "reason_codes_json": [],
+    "research_run_id": "b53ee5dd-c630-42d0-9b61-35ed4eff81a8",
+    "row_count": 1
+  }
+]

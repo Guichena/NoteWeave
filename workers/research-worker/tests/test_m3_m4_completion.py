@@ -445,6 +445,30 @@ def test_llm_gateway_should_apply_per_purpose_model_and_generation_limits(monkey
     assert client.usage_summary()["calls"][0]["model"] == "extractor-model"
 
 
+def test_llm_gateway_should_disable_thinking_for_glm5_json_contracts(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"choices":[{"message":{"content":"{}"}}]}'
+
+    def fake_urlopen(request, **kwargs):
+        captured.update(json.loads(request.data.decode("utf-8")))
+        return Response()
+
+    monkeypatch.setattr("app.llm_client.credential_safe_urlopen", fake_urlopen)
+    client = OpenAICompatibleLlmClient("key", "glm-5.3-flash")
+
+    assert client.complete_json("research.extract", {"window": "x"}) == "{}"
+    assert captured["thinking"] == {"type": "disabled"}
+
+
 def test_llm_gateway_should_not_retry_non_retryable_http_4xx(monkeypatch) -> None:
     calls = {"count": 0}
 

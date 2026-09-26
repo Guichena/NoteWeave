@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { buildInitialArtifactFormValues, type ArtifactStudioSkill } from "./artifactStudio";
 import type { ShellRun } from "../shell/useShellBusy";
 import type { AppView } from "../shell/viewRoute";
 import type { AnswerMode } from "../../routes";
 import { artifactsApi, type ArtifactsApi } from "./api";
 import { buildArtifactCreatePayload, buildArtifactPrompt } from "./artifactComposer";
+import { summarizeRunStatus } from "../../runStatus";
 
 type CatalogLike = {
   formValues: Record<string, string>;
@@ -17,6 +19,7 @@ type CatalogLike = {
 
 type UseArtifactComposerActionsInput = {
   workspaceId: string;
+  sourceIds: string[];
   run: ShellRun;
   setStatus: (status: string) => void;
   setView: (view: AppView) => void;
@@ -30,6 +33,7 @@ type UseArtifactComposerActionsInput = {
 
 export function useArtifactComposerActions({
   workspaceId,
+  sourceIds,
   run,
   setStatus,
   setView,
@@ -40,6 +44,8 @@ export function useArtifactComposerActions({
   loadJobs,
   api = artifactsApi
 }: UseArtifactComposerActionsInput) {
+  const [composerError, setComposerError] = useState("");
+
   function updateFormValue(fieldKey: string, value: string) {
     catalog.setFormValues((current) => ({ ...current, [fieldKey]: value }));
   }
@@ -68,21 +74,34 @@ export function useArtifactComposerActions({
   }
 
   async function launchPrompt(skill: ArtifactStudioSkill) {
+    setComposerError("");
     if (!workspaceId) {
-      setStatus("请先创建工作台");
+      const message = "请先创建工作台";
+      setComposerError(message);
+      setStatus(message);
       return;
     }
-    const payload = buildArtifactCreatePayload(skill, catalog.formValues, catalog.customInstruction);
+    const payload = buildArtifactCreatePayload(
+      skill,
+      catalog.formValues,
+      catalog.customInstruction,
+      sourceIds
+    );
     await run(`创建 ${skill.title} 任务`, async () => {
-      const created = await api.createJob(workspaceId, payload);
-      await loadJobs();
-      catalog.setComposerOpen(false);
-      catalog.setCustomInstruction("");
-      catalog.setFormValues(buildInitialArtifactFormValues(skill));
-      appendSystemMessage(
-        `已创建 ${skill.title} 任务：job=${created.artifact_job_id}，task=${created.task_id}，当前状态 ${created.status}。`
-      );
-      setStatus(`已创建“${skill.title}”任务，系统会通过独立 Artifact Worker 异步生成结果。`);
+      try {
+        const created = await api.createJob(workspaceId, payload);
+        await loadJobs();
+        catalog.setComposerOpen(false);
+        catalog.setCustomInstruction("");
+        catalog.setFormValues(buildInitialArtifactFormValues(skill));
+        appendSystemMessage(
+          `${skill.title} 已加入产物工作台，当前状态：${summarizeRunStatus(created.status)}。`
+        );
+        setStatus(`已创建“${skill.title}”任务，系统会通过独立 Artifact Worker 异步生成结果。`);
+      } catch (error) {
+        setComposerError(error instanceof Error ? error.message : "产物任务创建失败，请稍后重试");
+        throw error;
+      }
     }, "artifact");
   }
 
@@ -90,6 +109,8 @@ export function useArtifactComposerActions({
     updateFormValue,
     appendHint,
     preparePrompt,
-    launchPrompt
+    launchPrompt,
+    composerError,
+    clearComposerError: () => setComposerError("")
   };
 }

@@ -7,6 +7,7 @@ public record NoteSourceDraftResponse(
         String title,
         String content,
         @JsonProperty("rewrite_mode") String rewriteMode,
+        @JsonProperty("fallback_reason") String fallbackReason,
         @JsonProperty("source_content") String sourceContent
 ) {
 }

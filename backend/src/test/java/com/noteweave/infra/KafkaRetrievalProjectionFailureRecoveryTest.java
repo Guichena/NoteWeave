@@ -33,7 +33,8 @@ class KafkaRetrievalProjectionFailureRecoveryTest {
     @Test
     void kafkaConfigShouldProvisionEveryDeadLetterTopic() {
         KafkaAdmin.NewTopics topics = new KafkaConfig().kafkaDeadLetterTopics(
-                "source.parse", "retrieval.projection", "wiki.ingest", "wiki.retract", "conversation.summary");
+                "source.parse", "retrieval.projection", "wiki.ingest", "wiki.retract",
+                "conversation.summary", "artifact.job.dlq");
 
         @SuppressWarnings("unchecked")
         Collection<NewTopic> definitions = (Collection<NewTopic>) ReflectionTestUtils.invokeMethod(
@@ -46,7 +47,9 @@ class KafkaRetrievalProjectionFailureRecoveryTest {
                         "retrieval.projection.DLT",
                         "wiki.ingest.DLT",
                         "wiki.retract.DLT",
-                        "conversation.summary.DLT"
+                        "conversation.summary.DLT",
+                        "noteweave.artifact.job",
+                        "artifact.job.dlq"
                 );
         assertThat(definitions).allSatisfy(topic -> assertThat(topic.numPartitions()).isEqualTo(1));
     }

@@ -1,241 +1,97 @@
 # NoteWeave v2 文档中心
 
-## 主项目重构施工入口（2026-07-12）
-
-主项目（不含 Research/Artifact Worker 内部实现）的最新审查与施工文档统一位于：
-
-- [主项目重构文档索引](../改造计划/主项目重构/README.md)
-- [主项目系统差距审查与总体改造方案](../改造计划/主项目重构/主项目系统差距审查与总体改造方案.md)
-- [阶段0：正确性、安全与工程基线](../改造计划/主项目重构/阶段0-正确性安全与工程基线.md)
-- [阶段0A：Docker 全容器运行与交付基线](../改造计划/主项目重构/阶段0A-Docker全容器运行与交付基线.md)
-- [阶段1：Workspace 权限与模块边界](../改造计划/主项目重构/阶段1-Workspace权限与模块边界.md)
-- [阶段2：Execution、Outbox 与并发基础设施](../改造计划/主项目重构/阶段2-Execution-Outbox与并发基础设施.md)
-- [阶段3：资料上传、解析与索引投影](../改造计划/主项目重构/阶段3-资料上传解析与索引投影.md)
-- [阶段4：AnswerRun 与真实流式回答](../改造计划/主项目重构/阶段4-AnswerRun与真实流式回答.md)
-- [阶段5：QA、Note、Wiki 统一检索策略](../改造计划/主项目重构/阶段5-QA-Note-Wiki统一检索策略.md)
-- [阶段6：Knowledge、Memory 与前端生产化](../改造计划/主项目重构/阶段6-Knowledge-Memory与前端生产化.md)
-- **前端壳层（2026-07-21）**：[工作台设计规范（风格源 v1 / 产品源 v2）](./frontend/NoteWeave工作台设计规范-风格源v1-产品源v2.md) · [前端现实基线](./frontend/前端现实基线-20260721.md)
-
-以上文档是主项目当前的施工入口；目标架构仍以 `docs/NoteWeave-v2目标系统架构与功能中间件设计.md` 为准，历史审查文档仅用于追溯。
-
-> 本文件是项目文档的唯一正式入口。
->
-> 文档发生冲突时，按照本文定义的权威等级处理，不再使用“以另一份文档为准”的链式引用。
-
-## 1. 权威等级
-
-| 等级 | 类型 | 作用 |
-|---|---|---|
-| L0 | 当前代码、Flyway、自动化测试 | 当前已经实现的事实 |
-| L1 | 目标架构 | 决定系统最终应该如何设计 |
-| L2 | 现行改造方案 | 决定从当前状态如何迁移到目标架构 |
-| L3 | 子系统设计 | 描述 QA/Note/Wiki/Research/Artifact/Memory/Source 细节 |
-| L4 | API、事件和数据契约 | 约束跨模块与跨进程边界 |
-| L5 | 验证与能力证据 | 证明某项能力是否真正完成 |
-| L9 | 历史归档 | 只用于追溯，不得直接作为施工依据 |
-
-当 L1/L2 与 L0 不一致时：
-
-- L0 表示当前事实；
-- L1/L2 表示目标和改造要求；
-- 必须在 Backlog 中记录差距，不能用文档覆盖代码事实。
-
-## 2. 当前必读文档
-
-### 2.1 系统是什么
-
-1. [系统总体设计与功能总表](D:/java-projects/NoteWeave-v2/docs/系统总体设计与功能总表.md)
-2. [目标系统架构、功能与中间件设计](D:/java-projects/NoteWeave-v2/docs/NoteWeave-v2目标系统架构与功能中间件设计.md)
-
-### 2.2 当前如何改造
-
-1. [现有系统适配与改造实施方案](D:/java-projects/NoteWeave-v2/改造计划/NoteWeave-v2现有系统适配与改造实施方案.md)
-2. [主项目系统设计与中间件全面审计](D:/java-projects/NoteWeave-v2/docs/主项目系统设计与中间件全面审计及全新优化方案.md)
-
-### 2.3 当前技术契约
-
-1. [API 与事件契约 v2](D:/java-projects/NoteWeave-v2/docs/API与事件契约-v2.md)
-2. [数据库与迁移规范](D:/java-projects/NoteWeave-v2/docs/数据库与迁移规范.md)
-
-### 2.4 子系统设计
-
-- [问答 RAG 链路设计](D:/java-projects/NoteWeave-v2/docs/问答RAG链路设计.md)
-- [Note 链路设计](D:/java-projects/NoteWeave-v2/docs/Note链路设计.md)
-- [Wiki 链路设计](D:/java-projects/NoteWeave-v2/docs/Wiki模式设计.md)
-- [Memory 机制详细设计](D:/java-projects/NoteWeave-v2/docs/Memory机制详细设计.md)
-- [资料基础设施详细设计](D:/java-projects/NoteWeave-v2/docs/资料基础设施详细设计.md)
-- [Research Agent 架构文档](D:/java-projects/NoteWeave-v2/docs/DeepResearch-ResearchAgent架构文档.md)
-- [Research Agent 多 Agent 架构深度设计与验证实施手册](D:/java-projects/NoteWeave-v2/docs/ResearchAgent-多Agent架构深度设计与验证实施手册.md)
-- [产物生成 Skill 优先重构设计](D:/java-projects/NoteWeave-v2/docs/产物生成Skill优先重构设计.md)
-
-这些专项文档目前仍需继续适配统一 Answer Pipeline、Execution、选择性幂等、Redis 和线程池设计。发生冲突时以 L1/L2 文档为准。
-
-## 3. 后端设计模式决策
-
-当前统一决策：
-
-| 能力 | 决策 |
-|---|---|
-| Outbox | 保留，统一实现；只用于数据库提交后必须可靠投递的跨系统副作用 |
-| Inbox | 不建立全局万能表；按场景使用 Claim/Fencing、版本化 upsert、唯一键或 Receipt |
-| Execution | 用于 Research、Artifact、Source、重建和异步 Answer；普通 QA 只用 AnswerRun |
-| Redis Streams | 用于多实例 SSE 低延迟事件桥，重要状态仍在 MySQL |
-| Redis Cache | 用于权限、Catalog 和热点 Projection；Cache-Aside + TTL + 写后失效 |
-| Redis Rate Limit | 用于用户、Workspace 和外部 Provider 配额 |
-| Redis Lock | 只用于短期协调，不替代 MySQL lease/CAS |
-| 线程池 | 按 Answer I/O、Source I/O、Projection、SSE、Maintenance 隔离 |
-| Kafka | 用于 Worker 命令和可靠领域事件，不用于普通 QA 和同步查询 |
-| Saga 框架 | 当前不引入，使用状态机、Outbox、幂等和补偿 |
-| 全量事件溯源 | 当前不采用，保留业务真源表和审计事件 |
-
-## 4. 文档分类
-
-后续统一迁移为以下目录：
+NoteWeave v2 是一个来源驱动的研究与知识工作台。系统把 Source 的不可变版本转成可重建检索投影，供 QA、Note、Wiki 和 Deep Research 使用；Research 与 Artifact 的结果经过版本化、验证和写回后，可以产生新的 Source 或 Memory 候选，最终进入后续运行上下文。
 
 ```text
-docs/
-  01-项目介绍/
-  02-架构与设计/
-  03-施工与改造/
-  04-教学与学习/
-  90-验证与证据/
-  99-历史归档/
+Workspace / ACL
+  -> Source / immutable Snapshot
+  -> Parse / Chunk / Window / Retrieval Projection
+  -> QA / Note / Wiki
+  -> Deep Research
+  -> Artifact
+  -> Memory Candidate / Review / Revision
+  -> Control Pack / later Run
+  -> Feedback / Revocation / Knowledge Governance
 ```
 
-当前先建立分类和权威关系，不立即批量移动文件，避免破坏脚本和交叉引用。
+MySQL 保存业务真源、运行状态、证据关系和审计账本。Elasticsearch、向量索引、Redis 缓存、SSE 流和 Memory 编译结果都属于投影或传输面，丢失后应能从真源重建，不能反向覆盖业务事实。
 
-### 4.1 项目介绍
+## 证据标签
 
-保留并修改：
+所有长期文档使用同一套标签。段落没有标签时，只表示解释或导航，不应据此推断实现状态。
 
-- `系统总体设计与功能总表.md`
-- `项目亮点与简历草案.md`
-- 根目录、Backend、Frontend、Workers README
+| 标签 | 含义 | 可以据此声称什么 |
+| --- | --- | --- |
+| `[当前实现]` | 当前源码、配置、迁移或自动化测试可以直接证明 | 仓库中存在该状态、接口或保护机制 |
+| `[目标设计]` | 面向生产环境的完整设计 | 设计可实施，不代表已部署或达到指标 |
+| `[已测-模拟]` | 固定数据回放、Provider Mock、模拟压测或故障注入结果 | 只对给定版本、样本和环境成立 |
+| `[行业参考]` | 官方文档、标准、论文或开源项目提供的设计依据 | 支持取舍合理性，不证明 NoteWeave 效果 |
+| `[生产待验证]` | 需要真实用户、真实 Provider、持续流量或灾备演练 | 上线门禁或后续验证项 |
 
-### 4.2 架构与设计
+测试为零失败时，只记录“本次 N 轮零失败”以及执行环境，不写“风险为零”。目标值、参考值和模拟值必须与生产值分栏。
 
-当前权威：
+## 权威文档与内容归属
 
-- `NoteWeave-v2目标系统架构与功能中间件设计.md`
-- QA/Note/Wiki/Memory/Source/Research/Artifact 专项设计
+相同概念只在一份文档维护完整解释。其他文档只保留模块差异和链接。
 
-已建立替代文档、等待归档：
+| 权威主题 | 文档 | 不在其他文档重复的内容 |
+| --- | --- | --- |
+| 领域模型、系统拓扑、Workspace 隔离、全链路 | [系统架构设计](./系统架构设计.md) | 真源与投影、统一对象、发布版本包、跨能力主线 |
+| 演化、Bad Case、技术取舍 | [系统设计演化与技术取舍](./系统设计演化与技术取舍.md) | 每条能力从最小方案到目标方案的推导、替代方案和迁移条件 |
+| 数据、状态、事件、异步可靠性、可观测性、灾备、安全 | [API 与事件契约](./API与事件契约-v2.md) | Outbox、Kafka ACK、Callback、Lease、Fencing、Checkpoint、SLO/RTO/RPO |
+| Source 生命周期 | [资料基础设施](./资料基础设施详细设计.md) | 上传、解析、切片、版本、索引、删除传播与重建 |
+| QA | [QA RAG 链路](./问答RAG链路设计.md) | 场景检索、Evidence、引用、拒答和质量门禁 |
+| Note | [Note 链路](./Note链路设计.md) | Source 定位、Reading Window、草稿审阅和写回 |
+| Wiki | [Wiki 链路](./Wiki模式设计.md) | 页面版本、链接、反链、来源回链和治理状态 |
+| Deep Research | [Research Agent 架构](./DeepResearch-ResearchAgent架构文档.md)、[简历能力落地执行计划](./DeepResearch-简历能力落地执行计划.md) | 研究矩阵、证据验证、角色、恢复、冲突和成文；执行计划只维护当前简历主张的任务、门禁与证据 |
+| Artifact | [Artifact Skill 执行架构](./Artifact-Skill执行架构.md) | Skill Catalog、Skill Graph、Verifier、Version、文件与写回。面试从 [Agent 与 Artifact 一体化手册](./简历亮点八股/32-Agent执行与Artifact产物一体化面试手册.md) 进入，案例与契约下钻见 23、24 |
+| Memory | [Memory 机制](./Memory机制详细设计.md) | 候选、审核、不可变版本、撤销、反馈和上下文编译 |
+| 评测与发布门禁 | [质量、测试与发布门禁](./测试与评测/NoteWeave-评测指标报告.md) | 指标字典、数据集、统计方法、测试层次、灰度和回滚 |
+| 指标宣传与行业对照 | [指标可宣传性审计与补充](./research/指标可宣传性审计与补充.md) | 论文/产品公开口径、当前数字审计、简历表达和补数计划 |
+| 外部依据 | [Research Agent](./research/Research-Agent演进取舍外部依据.md)、[场景化 RAG](./research/RAG演进取舍外部依据.md)、[资料底座](./research/资料底座演进取舍外部依据.md)、[Agent 执行框架](./research/Agent执行框架演进取舍外部依据.md)、[Memory](./research/Memory业界演化研究.md) | 论文与官方文档取舍；产品/框架对照和项目分析在 `docs/research`，不进入实现事实或运维主线 |
+| 面试串讲 | [面试资料总索引](./简历亮点八股/00-总索引与背诵方法.md)、[全项目演进主线](./简历亮点八股/00-系统演进与面试叙事主线.md) | 从学校原型到当前架构的 4 到 5 分钟总回答、经历卡和连续追问；五个亮点先从一体化手册进入，再按附件下钻 |
+| 一体化功能手册 | [Research](./简历亮点八股/30-Research-Agent一体化面试手册.md)、[场景化 RAG](./简历亮点八股/31-场景化RAG一体化面试手册.md)、[Agent 与 Artifact](./简历亮点八股/32-Agent执行与Artifact产物一体化面试手册.md)、[资料底座](./简历亮点八股/33-资料底座与异步投递一体化面试手册.md)、[Context 与 Memory](./简历亮点八股/34-Context与Memory一体化面试手册.md) | 将同一功能的架构、演进、案例、契约、指标和追问合并为一个面试入口，旧专项作为深挖附件 |
+| 横切运行手册 | [Task 与 Quota](./简历亮点八股/38-Task调度-Quota与运行时治理一体化面试手册.md)、[前端流式状态](./简历亮点八股/39-前端工作台-流式状态与恢复一体化面试手册.md)、[检索投影发布](./简历亮点八股/40-检索投影治理-ReleaseGate与Inspector一体化面试手册.md)、[可观测性与 SLO](./简历亮点八股/41-可观测性-SLO与故障定位一体化面试手册.md)、[容量规划与成本治理](./简历亮点八股/42-容量规划-性能压测与成本治理一体化面试手册.md) | 补齐任务接纳、浏览器状态、索引发布、故障定位和容量成本五条跨功能主线，并标注源码闭环、演练假设和生产待验证边界 |
+| 推荐架构裁决 | [面试推荐架构与规模化演进](./简历亮点八股/43-面试推荐架构与规模化演进裁决.md) | 统一 Research、Artifact、Memory、Quota、检索和 SSE 的推荐终态、简化路径、升级条件与迁移边界；真实能力仍以源码和事实标签为准 |
+| 面试契约下钻 | [Research 契约](./简历亮点八股/25-Research-Agent契约级数据模型与面试官下钻.md)、[场景化 RAG 契约](./简历亮点八股/26-场景化RAG契约级数据模型与面试官下钻.md)、[Conversation/SSE](./简历亮点八股/27-Conversation-AnswerRun-SSE与上下文恢复.md)、[认证与 Workspace](./简历亮点八股/28-认证-Workspace权限与多租户隔离.md) | 按接口、表、状态、失败窗口和多租户边界继续追问；安全篇另含完整主回答、撤权事件和独立二阶下钻 |
+| 简历数字生产 | [业务指标埋点与简历数字生成手册](./简历亮点八股/29-业务指标埋点与简历数字生成手册.md) | 指标公式、SQL/事件、Gold Set、实验 Manifest、论文与产品宣传口径、演练数据卡、完整答辩和简历边界 |
+| 重点知识深挖 | [一级知识点深挖](./简历亮点八股/35-重点知识点三分钟深挖库.md)、[二阶追问回答](./简历亮点八股/36-重点知识点二阶追问回答库.md) | 核心机制逐点准备完整回答，继续覆盖替代方案、故障窗口、参数、扩容和对应八股；简单 CRUD 只做速查 |
+| 面试文档审查 | [全项目审查矩阵](./简历亮点八股/37-全项目面试文档审查矩阵.md) | 将全部面试材料分成主背、重点深挖和速查三档，并明确源码事实、契约语义和推荐架构的权威顺序 |
 
-- `系统架构设计.md`
-- `技术架构详细设计.md`
-- `技术栈与数据库设计.md`
-- `数据库迁移与建表顺序.md` -> `数据库与迁移规范.md`
-- `最小接口契约.md` -> `API与事件契约-v2.md`
+数据库表、HTTP 路径和事件字段在 [API 与事件契约](./API与事件契约-v2.md) 维护；Flyway 文件是最终 Schema 证据。截至 2026-09-16，仓库最高迁移为 `V104__add_research_agent_completion_replay_observation.sql`，环境实际版本仍要读取 `flyway_schema_history`。
 
-其中 API 和数据库内容需要先形成新的版本化契约，再归档旧文件。
+## 阅读顺序
 
-### 4.3 施工与改造
+1. 先读根目录 [README](../README.md) 和 [领域术语](../CONTEXT.md)，确认运行方式与稳定语言。
+2. 读 [系统架构设计](./系统架构设计.md)，沿 Source 到 Memory 的主线建立全景。
+3. 读 [系统设计演化与技术取舍](./系统设计演化与技术取舍.md)，理解为什么拆分状态机、投影和执行面。
+4. 读 [API 与事件契约](./API与事件契约-v2.md)，掌握状态推进、结果未知、恢复与跨组件一致性。
+5. 按实际问题进入 Source、QA、Note、Wiki、Research、Artifact 或 Memory 专题。
+6. 准备面试时先读对应的一体化功能手册，再进入旧专项附件下钻源码、算法和案例。
+7. 用 [质量、测试与发布门禁](./测试与评测/NoteWeave-评测指标报告.md) 核对指标、证据等级和上线条件。
+8. 最后用指标生产手册把简历数字绑定到数据来源和实验 Manifest，不从面试稿反推当前事实。
 
-当前权威：
+## 一次请求如何贯穿系统
 
-- `改造计划/NoteWeave-v2现有系统适配与改造实施方案.md`
+用户上传资料并在 Workspace 中提问时，Java 主服务先校验身份、成员关系和资源归属，再创建上传记录和对象引用。解析任务生成不可变 Source Snapshot、Chunk 与 Window，检索投影异步收敛。用户提交问题后，Turn Ledger、消息、输入快照和 AnswerRun 在 MySQL 中形成可恢复运行；检索层只查询当前 Workspace 允许的版本，回答层固化 Evidence Manifest。SSE 断线后按数据库游标回放，不能依赖进程内连接补状态。
 
-保留为施工规范：
+Research 在同一资料范围上创建独立 Research Run、类型化 WorkItem、Evidence、Checkpoint 和预算账本；比较型任务再把 WorkItem 具体化为 Matrix Cell。Artifact 使用独立 Job、Run、Execution Attempt、Skill Graph、Version 与校验状态。两者共享 Task Interface、Outbox、Execution Lease 抽象、Fencing 校验模式和 Callback Receipt 等可靠性原语，但不共享一张任务表或一套业务状态枚举；只有拥有领域结果提交权的 Execution Lease 使用 Epoch 和 Fencing。Memory 只接收受控候选，审核通过后产生不可变 Revision，再按运行类型编译 Control Pack。
 
-- `阶段计划/TDD与迁移总则.md`
-- `阶段计划/AI开发提示模板.md`
+Source 更新、删除、权限变化或事实撤销时，MySQL 先提交新版本或撤销事实，再通过 Outbox 驱动全文索引、向量索引、Redis 缓存、Wiki 关系、Memory 编译结果、评测副本和派生产物失效。用户可见删除与物理清理分开；高风险读取在权限或策略服务不可用时关闭访问。
 
-其余阶段文档在完成内容提取后归档。
+## 当前事实基线
 
-### 4.4 教学与学习
+`[当前实现]` Java 17 / Spring Boot 3.3.5 主服务持有 MySQL 8.4 业务状态，React 19 / TypeScript / Vite 提供工作台，Research Worker 与 Artifact Worker 使用 Python 3.12。Redis 7.2 用于缓存、节流和短期协调，Kafka 承载异步命令，MinIO 保存对象，Elasticsearch 8.15.3 提供可选检索投影。
 
-- `DeepResearch-ResearchAgent面试回答手册.md`
-- `DeepResearch-P5C-项目讲解稿.md`
-- `深度研究智能体执行手册.md`
-- `项目亮点与简历草案.md`
+`[当前实现]` Workspace、Source、QA、Note、Wiki、Research、Artifact、Memory、Task、Outbox、回调回执、运行输入快照与 SSE 回放均有源码或迁移落点。Research 的 `V097-V104` 能力包含证据校验、意图矩阵、运行阶段、Checkpoint Hydration、角色结果、Discovery Proposal、Feature Flag Snapshot 和 Completion Replay Observation；其中多项默认关闭或以 Shadow 方式运行，不能写成默认生产路径。
 
-教学材料不能作为实现完成度证据，必须引用 Capability Coverage。
+`[生产待验证]` 仓库没有持续生产流量、真实用户效果、长期 Provider 成本、跨可用区容灾或真实 SLO 达成证据。Compose 是本地联调拓扑，不代表生产部署。
 
-### 4.5 验证与证据
+## 文档维护规则
 
-- `ResearchAgent-Capability-Coverage.md`
-- `ResearchWorker-Repair-Plan.md`
-- `DeepResearch-Gate1样例说明.md`
-- `DeepResearch-P5A验证说明.md`
-- `DeepResearch-P5B-demo-suite.md/json`
-- `DeepResearch-M4-gold-set.json`
-- `DeepResearch-P5C-亮点证据映射.json`
-- `产物生成Agent二次全面审查与简历验收.md`
-- `主项目系统设计与中间件全面审计及全新优化方案.md`
-
-移动这些文件前必须同步修改 `scripts` 中的硬编码路径。
-
-### 4.6 历史归档
-
-计划归档：
-
-- `代码落地路线与开工清单.md`
-- 已完成阶段1～阶段5B文档
-- `Research与Artifact任务骨架施工设计.md`
-- `深度研究智能体编排升级设计.md`
-- `深度研究智能体工程落地设计.md`
-- `深度研究智能体全量交付执行文档.md`
-- `受控式异步产物生成Agent编排升级设计.md`
-- `产物生成Agent独立模块施工文档.md`
-- `产物生成Agent需求审计与收尾改造.md`
-- `改造计划` 中三份早期架构源文档
-- `改造计划/主项目检修与改造方案.md`
-
-历史文档顶部必须包含 `ARCHIVED`，且不得被 README 列为开工必读。
-
-## 5. 文档整改顺序
-
-### D0：入口治理
-
-- 建立本文；
-- 更新根 README；
-- 停止使用旧 `具体设计与落地索引`；
-- 给旧入口增加 DEPRECATED/ARCHIVED 标记。
-
-### D1：核心契约
-
-- 已新建 API 与事件契约 v2；
-- 已新建数据库与迁移规范；
-- 更新 Source/QA/Note/Wiki 专项设计；
-- 更新 Redis、线程池、Outbox/幂等决策。
-
-### D2：子系统收敛
-
-- Research 文档收敛为“架构 + 执行手册 + Capability Evidence”；
-- Artifact 文档收敛为“架构 + 运行契约 + Capability Evidence”；
-- Memory 文档收敛为“模型 + 门控 + Compiler + Outcome”。
-
-### D3：物理迁移
-
-- 创建分类目录；
-- 使用 `git mv` 移动文件；
-- 批量更新 Markdown 链接；
-- 修改脚本硬编码路径；
-- 运行文档链接检查和交付脚本。
-
-### D4：删除重复文件
-
-只在归档提交完成后删除完全重复内容。优先删除早期重复 DOCX，不直接删除仍有历史信息的 Markdown。
-
-## 6. 文档状态标记
-
-后续所有正式文档顶部必须包含：
-
-```text
-文档状态：CURRENT / DRAFT / EVIDENCE / DEPRECATED / ARCHIVED
-权威等级：L1-L9
-最后核对日期：YYYY-MM-DD
-代码基线：commit/branch（可选）
-替代文档：path（DEPRECATED/ARCHIVED 时必填）
-```
-
-## 7. 当前下一步
-
-文档治理的下一施工批次：
-
-1. 更新根 README 和 `具体设计与落地索引`；
-2. 新建 API 与事件契约 v2；
-3. 新建数据库与迁移规范；
-4. 更新 Source、QA、Note、Wiki 设计；
-5. 收敛 Research 和 Artifact 文档；
-6. 最后执行目录移动和链接修复。
+- 事实变更先更新权威文档，再更新面试摘要；禁止在多篇文档维护同一状态表或参数表。
+- 版本、参数和指标必须带来源。当前配置写 `[当前实现]`，模拟结果写 `[已测-模拟]`，建议阈值写 `[目标设计]`。
+- 外部产品、论文和开源项目只进入 `docs/research` 或专题末尾的依据表，不作为 NoteWeave 运行证据。
+- 领域文档必须包含业务问题、非目标、用户产物、演化、Bad Case、状态真源、正常/异常/恢复路径、幂等并发、参数推导、替代方案、指标、测试、灰度和下一阶段条件。
+- 受保护目录 `docs/简历亮点八股` 默认不新增、删除、移动或重命名文件；只有经过明确确认的独立面试专项可以新增，并在总索引登记。正文优先链接权威文档，避免复制长段架构说明。
+- 新增长期文档前先检查本页的权威归属。阶段方案、验收日志、一次性修复记录和 Debug 路由应合并回专题，不长期并列。

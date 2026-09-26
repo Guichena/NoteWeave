@@ -410,7 +410,11 @@ def test_run_research_task_should_emit_phase_specific_runtime_payload() -> None:
 
     assert by_phase["VERIFYING"]["tool_trace"]["phase"] == "TOOL_VERIFY_GLOBAL"
 
-    assert by_phase["WRITING"]["loop_decision"]["decision"] in {"SYNTHESIZE_REPORT", "CONTINUE_RECOVERY"}
+    assert by_phase["WRITING"]["loop_decision"]["decision"] in {
+        "SYNTHESIZE_REPORT",
+        "CONTINUE_RECOVERY",
+        "WRITE_WITH_GUARDRAILS",
+    }
     assert by_phase["WRITING"]["loop_round_count"] >= 1
 
 

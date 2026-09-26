@@ -9,6 +9,7 @@ import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import com.noteweave.retrieval.index.RetrievalIndexNames;
 import com.noteweave.retrieval.projection.RetrievalProjectionRepository.ProjectionType;
+import com.noteweave.retrieval.provider.RetrievalProviderException;
 import com.noteweave.retrieval.qa.QaHybridSearchPort.QaKeywordQuery;
 import com.noteweave.retrieval.qa.QaHybridSearchPort.QaSearchHit;
 import com.noteweave.retrieval.qa.QaHybridSearchPort.QaVectorQuery;
@@ -95,17 +96,24 @@ public class ElasticsearchQaHybridSearchAdapter implements QaHybridSearchPort {
             for (Hit<Map> hit : response.hits().hits()) {
                 Map source = hit.source();
                 if (source == null) {
-                    continue;
+                    throw invalidResponse("QA Elasticsearch hit has no source document");
+                }
+                String chunkId = text(source.get("chunk_id"));
+                String sourceId = text(source.get("source_id"));
+                String snapshotId = text(source.get("source_snapshot_id"));
+                String content = text(source.get("content"));
+                if (chunkId.isBlank() || sourceId.isBlank() || snapshotId.isBlank() || content.isBlank()) {
+                    throw invalidResponse("QA Elasticsearch hit is missing an identity or content field");
                 }
                 hits.add(new QaSearchHit(
-                        text(source.get("chunk_id")),
-                        text(source.get("source_id")),
-                        text(source.get("source_snapshot_id")),
+                        chunkId,
+                        sourceId,
+                        snapshotId,
                         integer(source.get("chunk_no")),
                         text(source.get("title")),
                         text(source.get("heading")),
                         text(source.get("source_type")),
-                        text(source.get("content")),
+                        content,
                         hit.score() == null ? 0.0d : hit.score()));
             }
             return hits;
@@ -114,18 +122,30 @@ public class ElasticsearchQaHybridSearchAdapter implements QaHybridSearchPort {
         }
     }
 
+    private RetrievalProviderException invalidResponse(String message) {
+        return new RetrievalProviderException("QA_RETRIEVAL_RESPONSE_INVALID", message);
+    }
+
     private String text(Object value) {
         return value == null ? "" : String.valueOf(value);
     }
 
     private int integer(Object value) {
         if (value instanceof Number number) {
-            return number.intValue();
+            long candidate = number.longValue();
+            if ((number instanceof Float || number instanceof Double)
+                    && number.doubleValue() != candidate) {
+                throw invalidResponse("QA Elasticsearch hit has an invalid chunk_no field");
+            }
+            if (candidate < Integer.MIN_VALUE || candidate > Integer.MAX_VALUE) {
+                throw invalidResponse("QA Elasticsearch hit has an invalid chunk_no field");
+            }
+            return (int) candidate;
         }
         try {
             return Integer.parseInt(text(value));
         } catch (NumberFormatException ex) {
-            return 0;
+            throw invalidResponse("QA Elasticsearch hit has an invalid chunk_no field");
         }
     }
 }

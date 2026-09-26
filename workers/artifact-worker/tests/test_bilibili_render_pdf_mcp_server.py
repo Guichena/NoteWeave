@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from mcp.bilibili_render_pdf_server import BilibiliRenderPdfServer
 
@@ -229,6 +230,63 @@ def test_render_latex_pdf_should_write_tex_and_real_pdf_artifacts(tmp_path: Path
     assert result["pdf_status"] == "COMPILED"
     assert pdf_path.exists()
     assert pdf_path.read_bytes().startswith(b"%PDF-1.")
+
+
+def test_fallback_template_should_replace_metadata_and_insert_body_before_document_end(
+    tmp_path: Path,
+) -> None:
+    server = _sandboxed_server(tmp_path)
+    server.template_path = tmp_path / "missing-template.tex"
+
+    latex = server._build_latex_document(
+        title="B站课程讲义验证",
+        video_url="https://www.bilibili.com/video/BV1NoteWeaveDemo",
+        video_channel="测试频道",
+        video_publish_date="2026-08-19",
+        video_duration="12:34",
+        cover_image_path="",
+        sections=[{"heading": "课程概览", "body": "验证中文正文。"}],
+    )
+
+    assert r"\newcommand{\notetitle}{B站课程讲义验证}" in latex
+    assert r"\newcommand{\videochannel}{测试频道}" in latex
+    assert r"\section{课程概览}" in latex
+    assert latex.index(r"\section{课程概览}") < latex.index(r"\end{document}")
+
+
+def test_render_latex_pdf_should_run_xelatex_twice_for_toc_and_references(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    server = _sandboxed_server(tmp_path)
+    server.allow_portable_pdf_fallback = False
+    server.template_path = tmp_path / "missing-template.tex"
+    calls: list[list[str]] = []
+
+    monkeypatch.setattr(
+        "mcp.bilibili_render_pdf_server.shutil.which",
+        lambda executable: "/usr/bin/xelatex" if executable == "xelatex" else None,
+    )
+
+    def fake_run(command, *, cwd, **kwargs):
+        calls.append(command)
+        (Path(cwd) / "two-pass.pdf").write_bytes(b"%PDF-1.7\n")
+        return SimpleNamespace(returncode=0, stdout=f"pass {len(calls)}", stderr="")
+
+    monkeypatch.setattr("mcp.bilibili_render_pdf_server.subprocess.run", fake_run)
+
+    result = server._render_latex_pdf(
+        {
+            "title": "两遍编译验证",
+            "output_dir": str(tmp_path),
+            "output_stem": "two-pass",
+            "sections": [{"heading": "课程概览", "body": "验证目录。"}],
+        }
+    )
+
+    assert len(calls) == 2
+    assert result["execution_mode"] == "controlled_xelatex_render"
+    assert result["compile_message"] == "pass 2"
 
 
 def test_transcribe_local_audio_should_fail_cleanly_when_skill_env_missing(

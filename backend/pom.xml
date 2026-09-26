@@ -21,6 +21,7 @@
         <java.version>17</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <noteweave.build.directory>${project.basedir}/target</noteweave.build.directory>
     </properties>
 
     <dependencies>
@@ -73,6 +74,19 @@
             <version>1.1.5</version>
         </dependency>
         <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>2.0.31</version>
+            <exclusions>
+                <!-- Spring Boot's spring-jcl provides the Commons Logging API. Keeping
+                     the legacy jar as well makes every test emit a classpath warning. -->
+                <exclusion>
+                    <groupId>commons-logging</groupId>
+                    <artifactId>commons-logging</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-core</artifactId>
         </dependency>
@@ -104,6 +118,7 @@
     </dependencies>
 
     <build>
+        <directory>${noteweave.build.directory}</directory>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

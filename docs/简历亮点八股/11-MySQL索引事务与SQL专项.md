@@ -106,7 +106,7 @@ Redo Log 是 InnoDB 的物理或物理逻辑重做记录，用于崩溃恢复。
 
 事务提交需要协调 Redo 与 Binlog，MySQL 通过两阶段提交降低“Redo 有而 Binlog 无”或相反导致的数据与复制不一致。Prepare 后崩溃时，恢复过程会依据 Binlog 是否完整决定提交或回滚。这里的两阶段提交是单机内部日志协调，不等于业务跨 MySQL、Kafka、MinIO 的分布式事务。Outbox 仍然需要本地事务保存业务状态与发布意图，再由 Dispatcher 异步投递。
 
-面试官继续追问时，应能区分 `innodb_flush_log_at_trx_commit` 与 `sync_binlog` 对持久性和吞吐的影响，并说明主从复制不自动等于备份。误删数据会随 Binlog 复制到从库，PITR 还需要完整备份、连续 Binlog 和恢复演练。NoteWeave 当前文档只能说明迁移与测试证据，不能在未演练时宣称某个 RPO 或 RTO 已达成。
+面试官继续追问时，应能区分 `innodb_flush_log_at_trx_commit` 与 `sync_binlog` 对持久性和吞吐的影响，并说明复制不自动等于备份。误删数据会随 Binlog 复制到其他节点，恢复目标还需要完整备份、连续日志和演练数据支撑。NoteWeave 当前文档以迁移与测试证据为准，不虚构恢复指标。
 
 Undo 还会引出 Purge 与长事务问题。活跃 Read View 需要旧版本时，Purge 不能删除相应 Undo，History List 可能持续增长。排查应查看长事务、事务开始时间和业务调用栈，避免只清理表空间。面试官问 Redo 是否保证不丢时，要把刷盘策略、操作系统缓存、磁盘故障和双日志提交条件一起说明。
 
@@ -156,7 +156,7 @@ DDL 可能持有 Metadata Lock。即使某种 ALTER 支持 Inplace 或 Instant�
 
 应用与数据库演进采用 Expand/Contract：先增加可空列、新表或新枚举，使旧代码仍能运行；发布能读新旧结构并逐步回填的新代码；验证覆盖率和一致性后再切换写入；最后删除旧字段与兼容分支。新增非空且无默认值的字段、直接重命名列或删除旧枚举，会让滚动发布中的旧实例失败。Flyway 脚本一旦进入共享环境通常追加修复，不重写历史版本。
 
-NoteWeave 的 V090 只在隔离 MySQL 8.4.9 环境完成过验证，共享开发库仍停在 V089，这个边界应保留。面试官问如何证明迁移可上线时，可以回答空库建库、从上一版本升级、旧新代码兼容、数据校验、耗时与锁观察、备份恢复和回滚演练。迁移脚本能执行只证明语法与基本数据路径正确，不证明大表时间、线上锁影响和生产回滚目标已经满足。
+当前迁移目录已包含到 V104；具体环境是否已经执行到最高版本必须以该环境的 `flyway_schema_history` 为准，不能把仓库文件存在当成共享库已升级。面试官问如何证明迁移可上线时，可以回答空库建库、从上一版本升级、旧新代码兼容、数据校验、耗时与锁观察、备份恢复和回滚演练。迁移脚本能执行只证明语法与基本数据路径正确，不证明大表时间、线上锁影响和生产回滚目标已经满足。
 
 DDL 失败后的清理也要预案。影子表、临时触发器、未完成索引和磁盘增长都可能残留，重复执行脚本必须知道哪些步骤幂等。部署流水线应给每个迁移设置可观察的超时和人工门禁，不能在应用所有实例启动时同时抢 DDL 锁。对于不可在线完成的变更，应安排维护窗口或后台渐进回填。
 
@@ -216,9 +216,9 @@ Offset 分页越深，需要扫描并丢弃的行越多，数据并发变化还�
 
 Backend 默认 Hikari Maximum Pool Size 20、Minimum Idle 4、Connection Timeout 30 秒、Validation Timeout 5 秒、Max Lifetime 30 分钟。这个池同时服务在线 API、Outbox、Cleanup、Research Coordinator 和其他后台任务。Answer I/O 最多 16 个线程、SSE Dispatch 最多 8 个线程，但它们不一定每个都持有连接，因此不能把线程数与连接数一一对应。
 
-Outbox 默认每 1 秒调度一次、每批最多 50，Claim Lease 1 分钟，最多 5 次 Attempt；Artifact Callback Lease 为 70 分钟。Claim 事务只更新状态与 Token，Kafka 或 Worker I/O 在事务外执行，再带 Token 条件确认。这个设置减少长事务，却接受重复投递和最终一致。Retry Backoff 指数增长并在 60 秒封顶，带最多约 20% Jitter。
+Outbox 默认每 1 秒调度一次、每批最多 50，Claim Lease 1 分钟，最多 5 次 Attempt；当前 Artifact Callback Lease 为 70 分钟。它是旧长消费协议的真实配置，不是推荐参数。推荐在短事务中按 Command ID 创建 Durable Execution，提交后确认 Kafka；Scheduler 再用独立 Execution Lease 管理 Worker。两种路径都要求 Kafka 和 Worker I/O 在数据库事务外执行，并通过唯一键、条件更新和 Fencing 接受重复投递与最终一致。
 
-文档上传上限 128 MB，Chunk Size 900、Overlap 120。大文件会放大 Source、Chunk、Outbox、Embedding 和 Projection 数据量，数据库容量测试必须按真实文件分布计算，不能只按 Source 行数。V090 只在隔离 MySQL 8.4.9 环境验证，共享开发库仍为 V089。
+文档上传上限 128 MB，Chunk Size 900、Overlap 120。大文件会放大 Source、Chunk、Outbox、Embedding 和 Projection 数据量，数据库容量测试必须按真实文件分布计算，不能只按 Source 行数。迁移是否已在某个环境执行到 V104，要以该环境的 Flyway History 和校验结果为准。
 
 面试时可以用 Hikari 20 做 Little 定律的演示，但结论必须标记为理想估算。完整参数来源见[项目真实配置参数与容量口径](15-项目真实配置参数与容量口径.md)。
 
@@ -236,3 +236,36 @@ Outbox 默认每 1 秒调度一次、每批最多 50，Claim Lease 1 分钟，�
 | 连接池容量 | Hikari 配置与全部 JDBC Service | Max 20、Min Idle 4、Connection Timeout 30 秒 | 需要连接池指标与压测；配置值本身不能证明 QPS |
 
 面试时应把 SQL 形状讲到索引列顺序、锁范围和影响行数，再说明真实 `EXPLAIN ANALYZE`、慢查询与行数分布尚需运行环境证据。文档中的建议索引不自动等于已经在生产验证。
+
+## 当前 Schema 核对
+
+主库使用 MySQL 8.4，Spring JDBC + Flyway 仓库迁移文件当前到 `V104`。状态、事件、Outbox、Evidence、Snapshot 和 Workspace ACL 是主要事务边界；DAO 更新后必须检查受影响行数，避免把 Lease、版本冲突或资源不存在误报成成功。H2 兼容测试只能补充回归，锁和索引行为仍需 MySQL 验证。
+
+## 24. MySQL 如何串成项目链路的 4 到 5 分钟回答
+
+在 NoteWeave 中，MySQL 不是“存几张表的后台”，而是 Workspace、任务状态、版本、Evidence、Outbox 和回调收据的业务仲裁层。用户上传、提交回答或创建 Artifact 时，Java Service 在事务里写入状态、幂等键和下一步任务；Worker 的完成回调再通过带状态、版本、Lease 或 Fencing 的条件更新推进状态。检索 Projection、MinIO 对象和 Kafka 消息都可能暂时落后，但最终业务结论仍以 MySQL 中的可查询状态为准。回答索引题时，可以先讲 B+Tree，再说明为什么这些索引和唯一键直接决定上传去重、Workspace 隔离、Outbox Claim 和版本回滚的正确性。
+
+B+Tree 适合范围和有序扫描，联合索引的列顺序要从实际过滤、排序和选择性出发，不能看到某个字段常用就单独建索引。Workspace 查询通常需要把 `workspace_id` 放进过滤路径，Outbox 需要覆盖 Ready 状态、时间、Lease Owner 和 Attempt，事件回放需要按 Run 和单调序号读取。`EXPLAIN` 要看访问类型、候选索引、实际扫描行、回表和排序，而不是只看“用了索引”。索引越多，写入、页分裂、Buffer Pool 和迁移成本越高，因此要结合真实 SQL、数据分布和慢查询验证。
+
+事务方面，ACID 解决的是一个本地数据库边界内的原子性和约束，不等于 MySQL、Kafka、MinIO、ES 之间有全局强一致。上传状态和 Outbox 可以在同一事务里提交，Kafka 发送和 ES 写入必须靠幂等、版本和补偿收敛。InnoDB 的 MVCC、Undo 和 Read View 让普通读不必阻塞写，条件更新和行锁则承担任务 Claim、Lease 和版本仲裁；高并发下要警惕锁顺序不一致、范围更新触发 Gap Lock、长事务阻塞 Purge 和连接池耗尽。死锁不是简单把事务重试无限次，必须固定访问顺序、缩短事务、限制重试，并记录冲突 SQL 和业务键。
+
+项目选择 Spring JDBC 和 Flyway，而不是让 JPA 自动建表，是因为关键 SQL 需要显式表达受影响行数、批量 Hydration、JSON 快照和迁移兼容。Expand/Contract 发布先增加可兼容字段，再让新旧代码同时可读写，回填和索引创建拆成可观测步骤，最后才删除旧语义；Flyway 成功只代表 SQL 执行完成，不代表旧应用、Worker 和 Projection 已兼容。PostgreSQL、分库分表、读写分离和分区表都有适用场景，但当前数据量和跨租户约束更需要单库内的关系完整性与可解释事务。未来如果写入规模、锁等待或备份窗口成为瓶颈，升级依据应是慢查询、连接池、复制延迟和数据增长曲线，而不是先把数据库拆开。
+
+面试收尾可以说：MySQL 在系统里承载的是“谁有权推进哪个状态”，索引决定查询和 Claim 的成本，事务决定本地状态是否完整，版本和唯一键决定重试是否产生重复业务结果。当前仓库迁移文件到 V104、测试 H2 兼容模式只能作为辅助验证，不能替代 MySQL 8.4 的锁、索引和 SQL 计划检查；没有生产数据、备份恢复和 Online DDL 演练时，也不能夸大为已经完成了高可用数据库治理。
+
+## 25. 必须独立讲三分钟的 MySQL 知识点
+
+| B 档知识点 | 三分钟主回答入口 | 项目落点 | 二阶追问 |
+| --- | --- | --- | --- |
+| 联合索引与 Claim 查询 | 1 到 3、21.1、22 | Outbox、Task、Cleanup 扫描 | 等值、范围和排序如何决定索引，为什么最老任务年龄比 Count 更重要 |
+| MVCC、隔离与锁 | 4 到 7、21.2 | 状态读取、Claim、Refresh Rotation | 快照读与当前读有何区别，Next-key Lock 何时出现，如何从死锁日志确定加锁顺序 |
+| 唯一约束、幂等与 CAS | 8、9、21.3 | Completion、Callback、Cell Version | 为什么先查再插仍会重复，影响行数为零是冲突还是成功，唯一键冲突后怎样返回原 Receipt |
+| 事务与 Outbox | 14、19、24 | Source/Task 与消息意图同事务 | Redo、Binlog 和提交顺序解决什么，为什么 Kafka 发送不能加入本地事务 |
+| 连接池、长事务与容量 | 15 到 17 | Hikari、批量 Hydration、后台任务 | 连接数为何不能无限加，长事务如何拖累 Undo 与清理，线程池为什么不能大于所有下游容量之和 |
+| DDL 与 Expand/Contract | 19、22 | Flyway、事件字段与多版本兼容 | Online DDL 是否零影响，旧 Worker 如何兼容新 Schema，Contract 何时可以执行 |
+
+普通 SQL 语法、单表 CRUD 和字段类型问题属于 C 档。面试官继续问执行计划、并发冲突、锁、事务或数据增长时，再切换到 B 档，完整回答必须包含具体查询条件、索引顺序、数据分布和验证方式。
+
+### 二阶回答示例：唯一约束已经幂等，为什么还需要状态机
+
+唯一约束只能阻止同一个业务键重复创建记录，不能判断一次状态迁移是否合法。Callback 可能使用同一个幂等键却携带不同 Payload，旧 Worker 也可能针对同一 Task 提交过期结果。系统先用唯一键定位同一语义操作，再比较 Payload Digest、From Status、Attempt 和 Token。完全相同的重放返回原 Receipt，键相同但内容不同返回冲突，状态或代际不匹配拒绝更新。幂等身份、内容一致和状态合法是三个不同条件。

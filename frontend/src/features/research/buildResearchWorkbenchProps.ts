@@ -26,6 +26,7 @@ import {
   sameStageLabel,
   buildRunSignalChips
 } from "./presentation";
+import { isResearchSourceReady } from "./launch";
 import type { ResearchWorkbenchController } from "./useResearchWorkbenchController";
 
 export type ResearchWorkbenchViewProps = ReturnType<typeof buildResearchWorkbenchProps>;
@@ -34,9 +35,11 @@ export function buildResearchWorkbenchProps(
   research: ResearchWorkbenchController,
   workspace: Workspace | null,
   sources: SourceAsset[],
-  isBusy: boolean
+  isBusy: boolean,
+  onOpenSourceLibrary: () => void | Promise<void>
 ) {
   const sourceById = new Map(sources.map((source) => [source.source_id, source] as const));
+  const readySourceCount = sources.filter(isResearchSourceReady).length;
 
   return {
     isBusy,
@@ -136,7 +139,16 @@ export function buildResearchWorkbenchProps(
       removeResearchSourceFromScope: research.removeResearchSourceFromScope,
       addResearchSourceToScope: research.addResearchSourceToScope,
       setFocusedResearchSourceId: research.setFocusedResearchSourceId,
-      researchTimelinePath: research.researchTimelinePath
+      researchTimelinePath: research.researchTimelinePath,
+      workspaceName: workspace?.name || "未选择工作台",
+      sourceCount: sources.length,
+      readySourceCount,
+      selectedSourceCount: research.researchScopeSources.length,
+      selectedSourceTitles: research.researchScopeSources.slice(0, 4).map((source) => source.title),
+      researchHistoryCount: research.researchRuns.length,
+      researchRetrievalMode: research.researchRetrievalMode,
+      researchQuestion: research.researchQuestion,
+      onOpenSourceLibrary
     },
     statusPanel: {
       currentResearchRunSummary: research.currentResearchRunSummary,

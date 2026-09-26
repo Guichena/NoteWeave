@@ -43,6 +43,17 @@ class WikiIngestFailureTransactionTest {
         jdbcTemplate.execute("drop table if exists task_event");
         jdbcTemplate.execute("drop table if exists task");
         jdbcTemplate.execute("drop table if exists source");
+        jdbcTemplate.execute("drop table if exists workspace");
+        jdbcTemplate.execute("""
+                create table workspace (
+                    id varchar(64) primary key,
+                    status varchar(32) not null,
+                    wiki_enabled boolean not null
+                )
+                """);
+        jdbcTemplate.update(
+                "insert into workspace(id, status, wiki_enabled) values (?, 'ACTIVE', true)",
+                "workspace-1");
         jdbcTemplate.execute("""
                 create table task (
                     id varchar(64) primary key,
@@ -82,7 +93,6 @@ class WikiIngestFailureTransactionTest {
                     status varchar(32)
                 )
                 """);
-        when(workspaceQueryPort.isWikiEnabled("workspace-1")).thenReturn(true);
     }
 
     @Test

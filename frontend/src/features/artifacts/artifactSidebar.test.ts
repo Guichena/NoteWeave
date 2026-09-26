@@ -104,7 +104,8 @@ describe("artifactSidebar", () => {
       title: "简历亮点描述",
       status: "等待中",
       detail: "简历亮点草稿",
-      tone: "waiting"
+      tone: "waiting",
+      group: "active"
     });
     expect(sidebar.runs[0].meta).toContain("Skill resume_highlight · ago(2026-07-08T10:00:00Z)");
     expect(sidebar.runs[0].waitSignals.map((chip) => chip.label)).toEqual(["Delivery", "Retry", "Provider", "State"]);
@@ -113,7 +114,8 @@ describe("artifactSidebar", () => {
       key: "research-research-1",
       title: "Deep Research 报告",
       status: "运行中",
-      tone: "active"
+      tone: "active",
+      group: "active"
     });
     expect(sidebar.runs[2]).toMatchObject({
       key: "workspace-task-task-1",
@@ -124,7 +126,8 @@ describe("artifactSidebar", () => {
       key: "workspace-wiki",
       title: "工作台 Wiki 构建",
       status: "运行中",
-      detail: "页面 7 · 待处理 2"
+      detail: "页面 7 · 待处理 2",
+      group: "active"
     });
     expect(sidebar.runs[3].waitDetails).toEqual([]);
 
@@ -144,6 +147,38 @@ describe("artifactSidebar", () => {
     expect(sidebar.latestAuditView.detailToggleLabel).toBe("查看最新版本审计详情");
     expect(sidebar.historyViewer.activeKey).toBe("artifact-version-job-1-v2");
     expect(sidebar.historyViewer.detailToggleLabel).toBe("查看最新版本审计详情");
+  });
+
+  it("classifies terminal and inactive runs outside the active group", () => {
+    const failedJob: ArtifactHistoryJobSummary = {
+      artifact_job_id: "failed-job",
+      skill_key: "resume_highlight",
+      status: "FAILED",
+      task_status: "FAILED",
+      progress_phase: "VALIDATION",
+      progress_message: "source scope must not be empty",
+      result_title: "",
+      latest_version_no: 0,
+      created_at: "2026-07-08T09:00:00Z",
+      updated_at: "2026-07-08T10:00:00Z"
+    };
+
+    const sidebar = buildArtifactSidebarState({
+      artifactJobs: [failedJob],
+      latestArtifactVersion: null,
+      selectedArtifactHistoryVersion: null,
+      selectedArtifactHistoryKey: "",
+      currentResearchRunSummary: null,
+      latestTask: null,
+      workspaceReady: true,
+      wikiState: { enabled: false, pageCount: 0, pendingTaskCount: 0, updatedAt: "" },
+      sourcesCount: 0,
+      resolveArtifactSkillTitle,
+      formatRelativeTime
+    });
+
+    expect(sidebar.runs[0]).toMatchObject({ tone: "danger", group: "recent", status: "失败" });
+    expect(sidebar.runs[1]).toMatchObject({ tone: "waiting", group: "inactive", status: "未开启" });
   });
 
   it("should keep sidebar stable when no workspace data is ready", () => {

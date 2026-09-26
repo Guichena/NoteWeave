@@ -14,13 +14,16 @@ public class ResearchAgentRepairAdvancementService {
     private final ResearchAgentGapProjectionService gaps;
     private final ResearchAgentRunAdvancementService advancements;
     private final ResearchAgentTaskCoordinatorService coordinator;
+    private final ResearchAgentLocalReplanRecorder localReplans;
 
     public ResearchAgentRepairAdvancementService(ResearchAgentGapProjectionService gaps,
                                                  ResearchAgentRunAdvancementService advancements,
-                                                 ResearchAgentTaskCoordinatorService coordinator) {
+                                                 ResearchAgentTaskCoordinatorService coordinator,
+                                                 ResearchAgentLocalReplanRecorder localReplans) {
         this.gaps = gaps;
         this.advancements = advancements;
         this.coordinator = coordinator;
+        this.localReplans = localReplans;
     }
 
     @Transactional
@@ -47,6 +50,11 @@ public class ResearchAgentRepairAdvancementService {
                         command.expectedCheckpointSeq(), canonical.digest(), command.failedWaveNo(), command.roundNo(),
                         command.planRevision(), command.entitySetVersion(), command.ledgerHash(), command.taskHighWaterMark(),
                         command.candidateHighWaterMark(), command.mergeHighWaterMark(), command.budgetSummary(), summary));
+        if (!advancement.idempotentReplay()
+                && decision.kind() == ResearchAgentRepairStopPolicy.DecisionKind.COUNTERFACTUAL) {
+            localReplans.record(command.researchRunId(), command.planRevision(), canonical.digest(),
+                    repairCause(projected), decision.targets());
+        }
         ResearchAgentTaskCoordinatorService.CoordinatorReceipt taskization;
         if (decision.kind() == ResearchAgentRepairStopPolicy.DecisionKind.COUNTERFACTUAL) {
             taskization = coordinator.planCounterfactualRepairs(new ResearchAgentTaskCoordinatorService.CounterfactualRepairCommand(
@@ -69,6 +77,29 @@ public class ResearchAgentRepairAdvancementService {
         });
         facts.put("reason", decision.reason()); facts.put("reason_digests", reasons); facts.put("excluded_source_ids", exclusions);
         return facts;
+    }
+
+    private String repairCause(List<ResearchAgentGapProjectionService.RepairGap> projected) {
+        List<String> reasons = projected.stream()
+                .flatMap(gap -> gap.reasonCodes().stream())
+                .map(value -> value == null ? "" : value.toUpperCase(java.util.Locale.ROOT))
+                .toList();
+        if (projected.stream().anyMatch(gap -> !gap.verifierDecisionIds().isEmpty())
+                || reasons.stream().anyMatch(value -> value.contains("CONFLICT") || value.contains("QUORUM"))) {
+            return "EVIDENCE_CONFLICT";
+        }
+        if (reasons.stream().anyMatch(value -> value.contains("NO_SUPPORTED_CANDIDATE")
+                || value.contains("NON_EXACT_QUOTE") || value.contains("NO_VALID")
+                || value.contains("EVIDENCE_ONLY"))) {
+            return "NO_VALID_QUOTE";
+        }
+        if (reasons.stream().anyMatch(value -> value.contains("NO_RESULT") || value.contains("SEARCH_EMPTY"))) {
+            return "NO_RESULTS";
+        }
+        if (reasons.stream().anyMatch(value -> value.contains("FETCH") || value.contains("READ"))) {
+            return "FETCH_FAILED";
+        }
+        return "PROVIDER_FAILED";
     }
 
     private void validate(RepairAdvanceCommand command) {

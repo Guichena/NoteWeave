@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { conversationsApi, type ConversationsApi } from "../conversations/api";
 import { type Conversation, type ConversationSummary } from "../conversations/model";
 import { type Message } from "../answers/messageTypes";
 import { type SourceAsset } from "../sources/model";
-import { workspaceApi, type WorkspaceApi } from "./api";
+import { workspaceApi, type CreateWorkspaceInput, type WorkspaceApi } from "./api";
 import { type Workspace } from "./model";
 import {
   workspaceSessionLoader,
@@ -23,10 +23,7 @@ type UseWorkspaceSessionInput = {
   conversationClient?: ConversationsApi;
 };
 
-const DEFAULT_MESSAGES: Message[] = [{
-  role: "assistant",
-  content: "工作台已恢复。可以继续上传资料或提问。"
-}];
+const DEFAULT_MESSAGES: Message[] = [];
 
 const SESSION_SELECTION_KEY = "noteweave.workspace.selection";
 
@@ -79,6 +76,9 @@ export function useWorkspaceSession({
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [sessionLoading, setSessionLoading] = useState(true);
+  // A bootstrap restore must not overwrite a workspace action completed while
+  // the initial request is still in flight.
+  const sessionMutationVersion = useRef(0);
 
   function applyRestoredWorkspace(restored: RestoredWorkspaceSession, resetScope = true) {
     setWorkspace(restored.workspace);
@@ -93,6 +93,7 @@ export function useWorkspaceSession({
 
   useEffect(() => {
     let cancelled = false;
+    const loadVersion = sessionMutationVersion.current;
     void (async () => {
       try {
         const available = await loader.listAvailableWorkspaces();
@@ -107,7 +108,7 @@ export function useWorkspaceSession({
         const target = available.find((item) => item.workspace_id === saved?.workspaceId)
           ?? available[0];
         const restored = await loader.restoreWorkspace(target, saved?.conversationId);
-        if (!cancelled && restored) {
+        if (!cancelled && sessionMutationVersion.current === loadVersion && restored) {
           applyRestoredWorkspace(restored, true);
           writeSessionSelection(restored.workspace.workspace_id, restored.conversation?.conversation_id);
         }
@@ -130,6 +131,7 @@ export function useWorkspaceSession({
     if (!workspaceId || workspaceId === workspace?.workspace_id) {
       return;
     }
+    sessionMutationVersion.current += 1;
     await run("切换工作台", async () => {
       const target = workspaces.find((item) => item.workspace_id === workspaceId);
       if (!target) {
@@ -163,11 +165,13 @@ export function useWorkspaceSession({
     });
   }
 
-  async function createWorkspace() {
+  async function createWorkspace(input: CreateWorkspaceInput) {
+    sessionMutationVersion.current += 1;
+    let createdWorkspace: Workspace | null = null;
     await run("创建工作台", async () => {
       const created = await workspaceClient.create({
-        name: "NoteWeave 研究工作台",
-        description: "用于上传资料、持续对话和维护工作台级 Wiki 的研究空间"
+        name: input.name,
+        description: input.description
       });
       const createdConversation = await conversationClient.create(created.workspace_id, {
         title: "默认研究会话",
@@ -181,23 +185,23 @@ export function useWorkspaceSession({
       setConversation(createdConversation);
       setConversations([toConversationSummary(createdConversation)]);
       replaceSources([]);
-      replaceMessages([{
-        role: "system",
-        content: `已创建工作台 ${created.name}，并创建默认会话。`
-      }]);
+      replaceMessages([]);
       resetWorkspaceScope();
       writeSessionSelection(created.workspace_id, createdConversation.conversation_id);
+      createdWorkspace = created;
     });
+    return createdWorkspace !== null;
   }
 
-  async function createConversation() {
+  async function createConversation(title: string) {
     if (!workspace) {
       setStatus("请先创建工作台");
-      return;
+      return false;
     }
+    let createdConversation: Conversation | null = null;
     await run("新建会话", async () => {
       const created = await conversationClient.create(workspace.workspace_id, {
-        title: `研究会话 ${conversations.length + 1}`,
+        title,
         conversation_type: "WORKSPACE_CHAT"
       });
       setConversation(created);
@@ -205,12 +209,11 @@ export function useWorkspaceSession({
         toConversationSummary(created),
         ...current.filter((item) => item.conversation_id !== created.conversation_id)
       ]);
-      replaceMessages([{
-        role: "assistant",
-        content: "新会话已创建，可以继续提问。"
-      }]);
+      replaceMessages([]);
       writeSessionSelection(workspace.workspace_id, created.conversation_id);
+      createdConversation = created;
     });
+    return createdConversation !== null;
   }
 
   return {

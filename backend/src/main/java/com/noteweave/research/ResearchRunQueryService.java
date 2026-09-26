@@ -2,12 +2,9 @@ package com.noteweave.research;
 
 import static com.noteweave.research.ResearchReadModelMapper.*;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.BusinessException;
 import com.noteweave.storage.ObjectStorage;
-import com.noteweave.memory.MemoryControlPackResponse;
 import com.noteweave.task.TaskService;
 import com.noteweave.task.WaitContextResponse;
 import com.noteweave.worker.WorkerSourceScopeItemResponse;
@@ -16,29 +13,37 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 @Service
 public class ResearchRunQueryService {
 
-    private final JdbcTemplate jdbcTemplate;
-    private final ObjectMapper objectMapper;
+    private static final int DEFAULT_RUN_LIST_LIMIT = 50;
+    private static final int MAX_RUN_LIST_LIMIT = 100;
+
     private final WorkspaceService workspaceService;
     private final TaskService taskService;
     private final ObjectStorage storage;
     private final ResearchArtifactService researchArtifactService;
     private final ResearchAgentProjectionService researchAgentProjectionService;
-    private final ResearchRunListQueryRepository researchRunListQueryRepository;
+    private final ResearchRunReadRepository researchRunReadRepository;
     private final ResearchCheckpointStore researchCheckpointStore;
     private final ResearchSourceProvenanceEnricher sourceProvenanceEnricher;
     private final ResearchSourceScopeLoader sourceScopeLoader;
+    private final ResearchEvidenceSampleAssembler researchEvidenceSampleAssembler;
+    private final ResearchCheckpointReadModelAssembler researchCheckpointReadModelAssembler;
+    private final ResearchProcessSummaryAssembler researchProcessSummaryAssembler;
+    private final ResearchCounterfactualSummaryAssembler researchCounterfactualSummaryAssembler;
+    private final ResearchClosedLoopStateAssembler researchClosedLoopStateAssembler;
+    private final ResearchCheckpointProcessAssembler researchCheckpointProcessAssembler;
+    private final ResearchReportReadModelAssembler researchReportReadModelAssembler;
+    private final ResearchRunQueryPayloadReader payloadReader;
 
     public ResearchRunQueryService(
             JdbcTemplate jdbcTemplate,
@@ -53,33 +58,98 @@ public class ResearchRunQueryService {
             ResearchSourceProvenanceEnricher sourceProvenanceEnricher,
             ResearchSourceScopeLoader sourceScopeLoader
     ) {
-        this.jdbcTemplate = jdbcTemplate;
-        this.objectMapper = objectMapper;
         this.workspaceService = workspaceService;
         this.taskService = taskService;
         this.storage = storage;
         this.researchArtifactService = researchArtifactService;
         this.researchAgentProjectionService = researchAgentProjectionService;
-        this.researchRunListQueryRepository = researchRunListQueryRepository;
+        this.researchRunReadRepository = new ResearchRunReadRepository(jdbcTemplate, objectMapper);
         this.researchCheckpointStore = researchCheckpointStore;
         this.sourceProvenanceEnricher = sourceProvenanceEnricher;
         this.sourceScopeLoader = sourceScopeLoader;
+        this.researchEvidenceSampleAssembler = new ResearchEvidenceSampleAssembler();
+        this.researchCheckpointReadModelAssembler = new ResearchCheckpointReadModelAssembler(
+                objectMapper, sourceProvenanceEnricher);
+        this.researchProcessSummaryAssembler = new ResearchProcessSummaryAssembler();
+        this.researchCounterfactualSummaryAssembler = new ResearchCounterfactualSummaryAssembler();
+        this.researchClosedLoopStateAssembler = new ResearchClosedLoopStateAssembler(
+                this.researchEvidenceSampleAssembler,
+                this.researchCheckpointReadModelAssembler,
+                this.researchCounterfactualSummaryAssembler
+        );
+        this.researchCheckpointProcessAssembler = new ResearchCheckpointProcessAssembler(
+                new ResearchVerifierGatedSummaryAssembler(),
+                this.researchCounterfactualSummaryAssembler
+        );
+        this.researchReportReadModelAssembler = new ResearchReportReadModelAssembler(objectMapper);
+        this.payloadReader = new ResearchRunQueryPayloadReader(objectMapper);
+    }
+
+    @Autowired
+    public ResearchRunQueryService(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
+            WorkspaceService workspaceService,
+            TaskService taskService,
+            ObjectStorage storage,
+            ResearchArtifactService researchArtifactService,
+            ResearchAgentProjectionService researchAgentProjectionService,
+            ResearchRunReadRepository researchRunReadRepository,
+            ResearchCheckpointStore researchCheckpointStore,
+            ResearchSourceProvenanceEnricher sourceProvenanceEnricher,
+            ResearchSourceScopeLoader sourceScopeLoader,
+            ResearchEvidenceSampleAssembler researchEvidenceSampleAssembler,
+            ResearchCheckpointReadModelAssembler researchCheckpointReadModelAssembler,
+            ResearchProcessSummaryAssembler researchProcessSummaryAssembler,
+            ResearchCounterfactualSummaryAssembler researchCounterfactualSummaryAssembler,
+            ResearchClosedLoopStateAssembler researchClosedLoopStateAssembler,
+            ResearchCheckpointProcessAssembler researchCheckpointProcessAssembler,
+            ResearchReportReadModelAssembler researchReportReadModelAssembler
+    ) {
+        this.workspaceService = workspaceService;
+        this.taskService = taskService;
+        this.storage = storage;
+        this.researchArtifactService = researchArtifactService;
+        this.researchAgentProjectionService = researchAgentProjectionService;
+        this.researchRunReadRepository = researchRunReadRepository;
+        this.researchCheckpointStore = researchCheckpointStore;
+        this.sourceProvenanceEnricher = sourceProvenanceEnricher;
+        this.sourceScopeLoader = sourceScopeLoader;
+        this.researchEvidenceSampleAssembler = researchEvidenceSampleAssembler;
+        this.researchCheckpointReadModelAssembler = researchCheckpointReadModelAssembler;
+        this.researchProcessSummaryAssembler = researchProcessSummaryAssembler;
+        this.researchCounterfactualSummaryAssembler = researchCounterfactualSummaryAssembler;
+        this.researchClosedLoopStateAssembler = researchClosedLoopStateAssembler;
+        this.researchCheckpointProcessAssembler = researchCheckpointProcessAssembler;
+        this.researchReportReadModelAssembler = researchReportReadModelAssembler;
+        this.payloadReader = new ResearchRunQueryPayloadReader(objectMapper);
     }
 
     public List<ResearchRunSummaryResponse> listRuns(String workspaceId) {
+        return listRuns(workspaceId, DEFAULT_RUN_LIST_LIMIT, 0);
+    }
+
+    public List<ResearchRunSummaryResponse> listRuns(String workspaceId, int limit, int offset) {
         requireWorkspace(workspaceId);
-        List<ResearchRunListRow> rows = researchRunListQueryRepository.listRows(workspaceId);
+        if (limit <= 0 || offset < 0) {
+            throw new BusinessException("RESEARCH_RUN_LIST_PAGE_INVALID", "研究运行列表分页参数无效");
+        }
+        List<ResearchRunListRow> rows = researchRunReadRepository.listRows(
+                workspaceId,
+                Math.min(limit, MAX_RUN_LIST_LIMIT),
+                offset
+        );
         ResearchRunListReadModel readModel = loadResearchRunListReadModel(workspaceId, rows);
         return rows.stream().map(row -> {
             String researchRunId = row.researchRunId();
             List<ResearchTraceResponse> traces = readModel.traces(researchRunId);
-            ResearchReportStructureResponse reportStructure = buildReportStructureFromEnrichedTraces(traces);
+            ResearchReportStructureResponse reportStructure = researchReportReadModelAssembler.buildReportStructure(traces);
             ResearchClosedLoopStateResponse closedLoopState = buildClosedLoopState(
-                    researchRunId,
                     traces,
                     readModel.closedLoopData(researchRunId)
             );
-            ResearchArtifactCandidateResponse researchArtifactCandidate = buildResearchArtifactCandidate(traces);
+            ResearchArtifactCandidateResponse researchArtifactCandidate =
+                    researchReportReadModelAssembler.buildResearchArtifactCandidate(traces);
             ResearchResumeCheckpointSummaryResponse resumeCheckpoint = buildResumeCheckpointSummary(row, readModel);
             ResearchCounterfactualSummaryResponse counterfactualSummary = buildCounterfactualSummary(reportStructure, closedLoopState);
             ResearchIntentAlignmentResponse researchIntentAlignment = buildResearchIntentAlignment(reportStructure, closedLoopState);
@@ -99,12 +169,12 @@ public class ResearchRunQueryService {
                     reportFile,
                     savedReportSource
             );
-            Map<String, Object> verifierGatedSummary = buildVerifierGatedSummary(
+            Map<String, Object> verifierGatedSummary = researchCheckpointProcessAssembler.buildVerifierGatedSummary(
                     closedLoopState.stateLedger().rows(),
-                    recoveryTargetsMap(recoveryTargets)
+                    payloadReader.recoveryTargetsMap(recoveryTargets)
             );
-            String localVerifierReason = extractDecisionReason(closedLoopState.localVerifier());
-            String globalVerifierReason = extractDecisionReason(closedLoopState.globalVerifier());
+            String localVerifierReason = payloadReader.extractDecisionReason(closedLoopState.localVerifier());
+            String globalVerifierReason = payloadReader.extractDecisionReason(closedLoopState.globalVerifier());
             String finalLoopReason = blankIfNull(stringValue(closedLoopState.loopDecisionPayload().get("reason")));
             String recoveryMode = counterfactualSummary == null
                     ? blankIfNull(reportStructure == null ? "" : reportStructure.recoveryMode())
@@ -160,7 +230,7 @@ public class ResearchRunQueryService {
                     researchArtifactCandidate,
                     reportFile,
                     researchArtifact,
-                    buildResearchProcessSummary(
+                    researchProcessSummaryAssembler.build(
                             reportStructure,
                             closedLoopState,
                             verifierSummary,
@@ -188,17 +258,15 @@ public class ResearchRunQueryService {
             return ResearchRunListReadModel.empty();
         }
         List<String> researchRunIds = rows.stream().map(ResearchRunListRow::researchRunId).toList();
-        Map<String, List<ResearchTraceResponse>> traces = loadTracesByRunIds(researchRunIds);
-        Map<String, List<Map<String, Object>>> branches = loadPersistedBranchesByRunIds(researchRunIds);
-        Map<String, List<Map<String, Object>>> ledgerRows = loadPersistedRowsByRunIds(researchRunIds);
-        Map<String, List<Map<String, Object>>> cells = loadPersistedCellsByRunIds(researchRunIds);
-        Map<String, List<Map<String, Object>>> sourceEvidence = loadPersistedSourceEvidenceByRunIds(researchRunIds);
-        Map<String, List<Map<String, Object>>> verifierDecisions = loadPersistedVerifierDecisionsByRunIds(
-                researchRunIds,
-                sourceEvidence
-        );
+        ResearchRunReadBundle readBundle = researchRunReadRepository.loadBatch(researchRunIds);
+        Map<String, List<ResearchTraceResponse>> traces = readBundle.tracesByRunId();
+        Map<String, List<Map<String, Object>>> branches = readBundle.branchesByRunId();
+        Map<String, List<Map<String, Object>>> ledgerRows = readBundle.rowsByRunId();
+        Map<String, List<Map<String, Object>>> cells = readBundle.cellsByRunId();
+        Map<String, List<Map<String, Object>>> sourceEvidence = readBundle.sourceEvidenceByRunId();
+        Map<String, List<Map<String, Object>>> verifierDecisions = readBundle.verifierDecisionsByRunId();
         Map<String, List<Map<String, Object>>> checkpoints = loadPersistedCheckpointsByRunIds(researchRunIds);
-        Map<String, List<Map<String, Object>>> cellEvidence = loadPersistedCellEvidenceByRunIds(researchRunIds);
+        Map<String, List<Map<String, Object>>> cellEvidence = readBundle.cellEvidenceByRunId();
 
         sourceProvenanceEnricher.enrich(List.of(traces, checkpoints));
 
@@ -233,6 +301,25 @@ public class ResearchRunQueryService {
                 savedReportSources,
                 taskService.loadWaitContexts(taskStatuses)
         );
+    }
+
+    private Map<String, List<Map<String, Object>>> loadPersistedCheckpointsByRunIds(
+            List<String> researchRunIds
+    ) {
+        Map<String, List<ResearchCheckpointRecord>> recordsByRunId =
+                researchCheckpointStore.findAllByRunIds(researchRunIds);
+        LinkedHashMap<String, List<Map<String, Object>>> checkpointsByRunId = new LinkedHashMap<>();
+        recordsByRunId.forEach((runId, records) -> checkpointsByRunId.put(
+                runId,
+                records.stream()
+                        .map(record -> researchCheckpointReadModelAssembler.toPersistedCheckpoint(record, false))
+                        .toList()
+        ));
+        return Map.copyOf(checkpointsByRunId);
+    }
+
+    private <T> List<T> values(Map<String, List<T>> valuesByRunId, String researchRunId) {
+        return valuesByRunId.getOrDefault(researchRunId, List.of());
     }
 
     private ResearchResumeCheckpointSummaryResponse buildResumeCheckpointSummary(
@@ -283,298 +370,30 @@ public class ResearchRunQueryService {
         );
     }
 
-    private Map<String, List<ResearchTraceResponse>> loadTracesByRunIds(List<String> researchRunIds) {
-        if (researchRunIds.isEmpty()) {
-            return Map.of();
-        }
-        return groupedValues(jdbcTemplate.query("""
-                select research_run_id, id, trace_type, trace_message, payload_json, created_at
-                from research_trace
-                where research_run_id in (%s)
-                order by research_run_id, created_at asc, id asc
-                """.formatted(placeholders(researchRunIds.size())), (rs, rowNum) -> new RunValue<>(
-                rs.getString("research_run_id"),
-                new ResearchTraceResponse(
-                        rs.getString("id"),
-                        rs.getString("trace_type"),
-                        rs.getString("trace_message"),
-                        readPayloadMap(rs.getString("payload_json")),
-                        toInstant(rs.getTimestamp("created_at"))
-                )
-        ), researchRunIds.toArray()));
-    }
-
-    private Map<String, List<Map<String, Object>>> loadPersistedBranchesByRunIds(List<String> researchRunIds) {
-        if (researchRunIds.isEmpty()) {
-            return Map.of();
-        }
-        return groupedValues(jdbcTemplate.query("""
-                select research_run_id, branch_key, parent_branch_id, branch_reason, branch_status,
-                       hypothesis_summary, target_evidence_ids_json, created_round
-                from research_branch
-                where research_run_id in (%s)
-                order by research_run_id, created_at asc, id asc
-                """.formatted(placeholders(researchRunIds.size())), (rs, rowNum) -> {
-            LinkedHashMap<String, Object> branch = new LinkedHashMap<>();
-            branch.put("branch_id", rs.getString("branch_key"));
-            branch.put("parent_branch_id", blankIfNull(rs.getString("parent_branch_id")));
-            branch.put("branch_reason", rs.getString("branch_reason"));
-            branch.put("status", rs.getString("branch_status"));
-            branch.put("hypothesis_summary", blankIfNull(rs.getString("hypothesis_summary")));
-            branch.put("target_evidence_ids", readStringList(rs.getString("target_evidence_ids_json")));
-            branch.put("created_round", rs.getInt("created_round"));
-            return new RunValue<>(rs.getString("research_run_id"), branch);
-        }, researchRunIds.toArray()));
-    }
-
-    private Map<String, List<Map<String, Object>>> loadPersistedRowsByRunIds(List<String> researchRunIds) {
-        if (researchRunIds.isEmpty()) {
-            return Map.of();
-        }
-        return groupedValues(jdbcTemplate.query("""
-                select rr.research_run_id, rr.row_key, rb.branch_key, rr.source_id, rr.source_title,
-                       rr.search_query, rr.read_focus, coalesce(s.generated_by, '') as generated_by,
-                       coalesce(s.generated_ref_id, '') as generated_ref_id, evidence_id, row_status,
-                       relation_type, support_score, conflict_score, support_level, verification_status,
-                       verifier_note, repair_hint
-                from research_row rr
-                left join research_branch rb on rb.id = rr.branch_id
-                left join source s on s.id = rr.source_id
-                where rr.research_run_id in (%s)
-                order by rr.research_run_id, rr.created_at asc, rr.id asc
-                """.formatted(placeholders(researchRunIds.size())), (rs, rowNum) -> {
-            LinkedHashMap<String, Object> row = new LinkedHashMap<>();
-            row.put("row_id", rs.getString("row_key"));
-            row.put("branch_id", blankIfNull(rs.getString("branch_key")));
-            row.put("source_id", blankIfNull(rs.getString("source_id")));
-            row.put("source_title", blankIfNull(rs.getString("source_title")));
-            row.put("generated_by", blankIfNull(rs.getString("generated_by")));
-            row.put("generated_ref_id", blankIfNull(rs.getString("generated_ref_id")));
-            row.put("search_query", blankIfNull(rs.getString("search_query")));
-            row.put("read_focus", blankIfNull(rs.getString("read_focus")));
-            row.put("evidence_id", blankIfNull(rs.getString("evidence_id")));
-            row.put("row_status", rs.getString("row_status"));
-            row.put("relation_type", blankIfNull(rs.getString("relation_type")));
-            row.put("support_score", rs.getBigDecimal("support_score"));
-            row.put("conflict_score", rs.getBigDecimal("conflict_score"));
-            row.put("support_level", blankIfNull(rs.getString("support_level")));
-            row.put("verification_status", blankIfNull(rs.getString("verification_status")));
-            row.put("verifier_note", blankIfNull(rs.getString("verifier_note")));
-            row.put("repair_hint", blankIfNull(rs.getString("repair_hint")));
-            return new RunValue<>(rs.getString("research_run_id"), row);
-        }, researchRunIds.toArray()));
-    }
-
-    private Map<String, List<Map<String, Object>>> loadPersistedCellsByRunIds(List<String> researchRunIds) {
-        if (researchRunIds.isEmpty()) {
-            return Map.of();
-        }
-        return groupedValues(jdbcTemplate.query("""
-                select rc.research_run_id, rc.cell_key, rr.row_key, rb.branch_key, rc.column_key,
-                       rc.candidate_value, rc.cell_status, rc.confidence_score, rc.evidence_refs_json,
-                       rc.last_verifier_decision, rc.repair_count
-                from research_cell rc
-                join research_row rr on rr.id = rc.research_row_id
-                left join research_branch rb on rb.id = rc.branch_id
-                where rc.research_run_id in (%s)
-                order by rc.research_run_id, rc.created_at asc, rc.id asc
-                """.formatted(placeholders(researchRunIds.size())), (rs, rowNum) -> {
-            LinkedHashMap<String, Object> cell = new LinkedHashMap<>();
-            cell.put("cell_id", rs.getString("cell_key"));
-            cell.put("row_id", rs.getString("row_key"));
-            cell.put("branch_id", blankIfNull(rs.getString("branch_key")));
-            cell.put("column_key", rs.getString("column_key"));
-            cell.put("candidate_value", blankIfNull(rs.getString("candidate_value")));
-            cell.put("status", rs.getString("cell_status"));
-            cell.put("confidence", rs.getBigDecimal("confidence_score"));
-            cell.put("evidence_refs", readStringList(rs.getString("evidence_refs_json")));
-            cell.put("last_verifier_decision", blankIfNull(rs.getString("last_verifier_decision")));
-            cell.put("repair_count", rs.getInt("repair_count"));
-            return new RunValue<>(rs.getString("research_run_id"), cell);
-        }, researchRunIds.toArray()));
-    }
-
-    private Map<String, List<Map<String, Object>>> loadPersistedSourceEvidenceByRunIds(
-            List<String> researchRunIds
-    ) {
-        if (researchRunIds.isEmpty()) {
-            return Map.of();
-        }
-        return groupedValues(jdbcTemplate.query("""
-                select se.research_run_id, se.evidence_key, se.window_id, se.source_id, se.source_title,
-                       se.source_url, se.provider, se.adapter, coalesce(s.generated_by, '') as generated_by,
-                       coalesce(s.generated_ref_id, '') as generated_ref_id, se.search_query, se.read_focus,
-                       se.quote_text, se.claim_text, se.relation_type, se.support_score, se.conflict_score,
-                       se.snapshot_status, se.snapshot_key
-                from source_evidence se
-                left join source s on s.id = se.source_id
-                where se.research_run_id in (%s)
-                order by se.research_run_id, se.created_at asc, se.id asc
-                """.formatted(placeholders(researchRunIds.size())), (rs, rowNum) -> {
-            LinkedHashMap<String, Object> evidence = new LinkedHashMap<>();
-            evidence.put("evidence_id", rs.getString("evidence_key"));
-            evidence.put("window_id", blankIfNull(rs.getString("window_id")));
-            evidence.put("source_id", blankIfNull(rs.getString("source_id")));
-            evidence.put("source_title", blankIfNull(rs.getString("source_title")));
-            evidence.put("generated_by", blankIfNull(rs.getString("generated_by")));
-            evidence.put("generated_ref_id", blankIfNull(rs.getString("generated_ref_id")));
-            evidence.put("source_url", blankIfNull(rs.getString("source_url")));
-            evidence.put("provider", blankIfNull(rs.getString("provider")));
-            evidence.put("adapter", blankIfNull(rs.getString("adapter")));
-            evidence.put("search_query", blankIfNull(rs.getString("search_query")));
-            evidence.put("read_focus", blankIfNull(rs.getString("read_focus")));
-            evidence.put("quote_text", blankIfNull(rs.getString("quote_text")));
-            evidence.put("claim_text", blankIfNull(rs.getString("claim_text")));
-            evidence.put("relation_type", blankIfNull(rs.getString("relation_type")));
-            evidence.put("support_score", rs.getBigDecimal("support_score"));
-            evidence.put("conflict_score", rs.getBigDecimal("conflict_score"));
-            evidence.put("snapshot_status", blankIfNull(rs.getString("snapshot_status")));
-            evidence.put("snapshot_key", blankIfNull(rs.getString("snapshot_key")));
-            return new RunValue<>(rs.getString("research_run_id"), evidence);
-        }, researchRunIds.toArray()));
-    }
-
-    private Map<String, List<Map<String, Object>>> loadPersistedVerifierDecisionsByRunIds(
-            List<String> researchRunIds,
-            Map<String, List<Map<String, Object>>> sourceEvidenceByRunId
-    ) {
-        if (researchRunIds.isEmpty()) {
-            return Map.of();
-        }
-        return groupedValues(jdbcTemplate.query("""
-                select rvd.research_run_id, rvd.id, rb.branch_key, rvd.decision_scope,
-                       rvd.decision_type, rvd.reason_code, rvd.target_id, rvd.evidence_ids_json,
-                       rvd.action_text, rvd.decision_status, rvd.notes_json
-                from research_verifier_decision rvd
-                left join research_branch rb on rb.id = rvd.branch_id
-                where rvd.research_run_id in (%s)
-                order by rvd.research_run_id, rvd.created_at asc, rvd.id asc
-                """.formatted(placeholders(researchRunIds.size())), (rs, rowNum) -> {
-            String researchRunId = rs.getString("research_run_id");
-            List<String> evidenceIds = readStringList(rs.getString("evidence_ids_json"));
-            LinkedHashMap<String, Object> decision = new LinkedHashMap<>();
-            decision.put("decision_id", rs.getString("id"));
-            decision.put("branch_id", blankIfNull(rs.getString("branch_key")));
-            decision.put("decision_scope", rs.getString("decision_scope"));
-            decision.put("decision_type", rs.getString("decision_type"));
-            decision.put("reason_code", rs.getString("reason_code"));
-            decision.put("target_id", blankIfNull(rs.getString("target_id")));
-            decision.put("evidence_ids", evidenceIds);
-            decision.put("action", blankIfNull(rs.getString("action_text")));
-            decision.put("status", blankIfNull(rs.getString("decision_status")));
-            decision.put("notes", readStringList(rs.getString("notes_json")));
-            List<Map<String, Object>> sourceSamples = buildEvidenceSourceSamples(
-                    evidenceIds,
-                    buildSourceEvidenceById(values(sourceEvidenceByRunId, researchRunId)),
-                    2
-            );
-            decision.put("source_samples", sourceSamples);
-            decision.put("source_sample_count", sourceSamples.size());
-            return new RunValue<>(researchRunId, decision);
-        }, researchRunIds.toArray()));
-    }
-
-    private Map<String, List<Map<String, Object>>> loadPersistedCheckpointsByRunIds(
-            List<String> researchRunIds
-    ) {
-        Map<String, List<ResearchCheckpointRecord>> recordsByRunId =
-                researchCheckpointStore.findAllByRunIds(researchRunIds);
-        LinkedHashMap<String, List<Map<String, Object>>> checkpointsByRunId = new LinkedHashMap<>();
-        recordsByRunId.forEach((runId, records) -> checkpointsByRunId.put(
-                runId,
-                records.stream().map(record -> toPersistedCheckpoint(record, false)).toList()
-        ));
-        return Map.copyOf(checkpointsByRunId);
-    }
-
-    private Map<String, List<Map<String, Object>>> loadPersistedCellEvidenceByRunIds(
-            List<String> researchRunIds
-    ) {
-        if (researchRunIds.isEmpty()) {
-            return Map.of();
-        }
-        return groupedValues(jdbcTemplate.query("""
-                select rce.research_run_id, rc.cell_key, rr.row_key, rce.evidence_key,
-                       se.source_id, se.source_title, se.source_url,
-                       coalesce(s.generated_by, '') as generated_by,
-                       coalesce(s.generated_ref_id, '') as generated_ref_id
-                from research_cell_evidence rce
-                join research_cell rc on rc.id = rce.research_cell_id
-                join research_row rr on rr.id = rc.research_row_id
-                join source_evidence se on se.id = rce.source_evidence_id
-                left join source s on s.id = se.source_id
-                where rce.research_run_id in (%s)
-                order by rce.research_run_id, rce.created_at asc, rce.id asc
-                """.formatted(placeholders(researchRunIds.size())), (rs, rowNum) -> {
-            LinkedHashMap<String, Object> item = new LinkedHashMap<>();
-            item.put("cell_id", rs.getString("cell_key"));
-            item.put("row_id", rs.getString("row_key"));
-            item.put("evidence_id", rs.getString("evidence_key"));
-            item.put("source_id", blankIfNull(rs.getString("source_id")));
-            item.put("source_title", blankIfNull(rs.getString("source_title")));
-            item.put("generated_by", blankIfNull(rs.getString("generated_by")));
-            item.put("generated_ref_id", blankIfNull(rs.getString("generated_ref_id")));
-            item.put("source_url", blankIfNull(rs.getString("source_url")));
-            return new RunValue<>(rs.getString("research_run_id"), item);
-        }, researchRunIds.toArray()));
-    }
-
-    private String placeholders(int count) {
-        return String.join(",", Collections.nCopies(count, "?"));
-    }
-
-    private <T> Map<String, List<T>> groupedValues(List<RunValue<T>> rows) {
-        LinkedHashMap<String, List<T>> grouped = new LinkedHashMap<>();
-        for (RunValue<T> row : rows) {
-            grouped.computeIfAbsent(row.researchRunId(), ignored -> new ArrayList<>()).add(row.value());
-        }
-        return grouped;
-    }
-
-    private <T> List<T> values(Map<String, List<T>> valuesByRunId, String researchRunId) {
-        return valuesByRunId.getOrDefault(researchRunId, List.of());
-    }
-
     public ResearchRunDetailResponse getRunDetail(String workspaceId, String researchRunId) {
         requireWorkspace(workspaceId);
-        DetailRow row = jdbcTemplate.query("""
-                select id, workspace_id, task_id, question, profile_key, research_intent_json,
-                       source_scope_json, control_pack_json, resumed_from_research_run_id,
-                       resumed_from_checkpoint_no, status, final_report_title,
-                       final_report_markdown, trace_summary, report_source_id, created_at, updated_at
-                from research_run
-                where workspace_id = ? and id = ?
-                """, rs -> {
-            if (!rs.next()) {
-                throw new BusinessException("RESEARCH_RUN_NOT_FOUND", "研究任务不存在");
-            }
-            return new DetailRow(
-                    rs.getString("id"),
-                    rs.getString("workspace_id"),
-                    rs.getString("task_id"),
-                    rs.getString("question"),
-                    rs.getString("profile_key"),
-                    rs.getString("research_intent_json"),
-                    rs.getString("source_scope_json"),
-                    rs.getString("control_pack_json"),
-                    rs.getString("resumed_from_research_run_id"),
-                    (Integer) rs.getObject("resumed_from_checkpoint_no"),
-                    rs.getString("status"),
-                    rs.getString("final_report_title"),
-                    rs.getString("final_report_markdown"),
-                    rs.getString("trace_summary"),
-                    rs.getString("report_source_id"),
-                    toInstant(rs.getTimestamp("created_at")),
-                    toInstant(rs.getTimestamp("updated_at"))
-            );
-        }, workspaceId, researchRunId);
+        ResearchRunDetailRow row = researchRunReadRepository.findDetail(workspaceId, researchRunId);
 
-        List<ResearchTraceResponse> traces = loadTraces(row.researchRunId());
+        ResearchRunReadBundle readBundle = researchRunReadRepository.loadBatch(List.of(row.researchRunId()));
+        List<ResearchTraceResponse> traces = values(readBundle.tracesByRunId(), row.researchRunId());
         sourceProvenanceEnricher.enrich(traces);
-        ResearchReportStructureResponse reportStructure = buildReportStructure(row.researchRunId(), traces);
-        ResearchClosedLoopStateResponse closedLoopState = buildClosedLoopState(row.researchRunId(), traces);
-        ResearchArtifactCandidateResponse researchArtifactCandidate = buildResearchArtifactCandidate(traces);
-        ResearchResumeContextSummaryResponse resumeContextSummary = buildResumeContextSummary(traces);
+        ResearchReportStructureResponse reportStructure = researchReportReadModelAssembler.buildReportStructure(traces);
+        ResearchClosedLoopStateResponse closedLoopState = buildClosedLoopState(
+                traces,
+                new ResearchClosedLoopData(
+                        values(readBundle.branchesByRunId(), row.researchRunId()),
+                        values(readBundle.rowsByRunId(), row.researchRunId()),
+                        values(readBundle.cellsByRunId(), row.researchRunId()),
+                        values(readBundle.sourceEvidenceByRunId(), row.researchRunId()),
+                        values(readBundle.verifierDecisionsByRunId(), row.researchRunId()),
+                        values(loadPersistedCheckpointsByRunIds(List.of(row.researchRunId())), row.researchRunId()),
+                        values(readBundle.cellEvidenceByRunId(), row.researchRunId())
+                )
+        );
+        ResearchArtifactCandidateResponse researchArtifactCandidate =
+                researchReportReadModelAssembler.buildResearchArtifactCandidate(traces);
+        ResearchResumeContextSummaryResponse resumeContextSummary =
+                researchReportReadModelAssembler.buildResumeContextSummary(traces);
         ResearchResumeCheckpointSummaryResponse resumeCheckpoint = loadResumeCheckpointSummary(
                 row.workspaceId(),
                 blankIfNull(row.resumedFromResearchRunId()).isBlank() ? null : row.resumedFromResearchRunId(),
@@ -604,10 +423,11 @@ public class ResearchRunQueryService {
                 row.taskId(),
                 row.question(),
                 row.profileKey(),
-                readResearchIntent(row.researchIntentJson()),
+                researchReportReadModelAssembler.readResearchIntent(row.researchIntentJson()),
                 blankIfNull(row.resumedFromResearchRunId()),
                 row.resumedFromCheckpointNo(),
                 row.status(),
+                blankIfNull(row.completionTerminalState()),
                 blankIfNull(row.finalReportTitle()),
                 blankIfNull(row.finalReportMarkdown()),
                 reportStructure,
@@ -615,7 +435,7 @@ public class ResearchRunQueryService {
                 researchArtifactCandidate,
                 reportFile,
                 researchArtifact,
-                buildResearchProcessSummary(
+                researchProcessSummaryAssembler.build(
                         reportStructure,
                         closedLoopState,
                         verifierSummary,
@@ -630,7 +450,7 @@ public class ResearchRunQueryService {
                 verifierSummary,
                 blankIfNull(row.traceSummary()),
                 sourceScope,
-                readControlPack(row.controlPackJson()),
+                payloadReader.readControlPack(row.controlPackJson()),
                 savedReportSource,
                 loadRunWaitContext(row.taskId(), row.status()),
                 closedLoopState,
@@ -645,7 +465,7 @@ public class ResearchRunQueryService {
         requireWorkspace(workspaceId);
         requireResearchRun(workspaceId, researchRunId);
         return loadPersistedCheckpoints(researchRunId).stream()
-                .map(this::toCheckpointSummaryResponse)
+                .map(researchCheckpointReadModelAssembler::toSummary)
                 .toList();
     }
 
@@ -656,12 +476,13 @@ public class ResearchRunQueryService {
                 researchArtifactService.loadRunArtifactView(workspaceId, researchRunId);
         byte[] checkpointPayload = storage.read("noteweave-derived", row.objectKey());
         ResearchCheckpointIntegrity.verify(row, checkpointPayload);
-        Map<String, Object> payload = readPayloadMap(new String(checkpointPayload, StandardCharsets.UTF_8));
-        Map<String, Object> summary = readPayloadMap(row.summaryJson());
+        Map<String, Object> payload = payloadReader.readPayloadMap(new String(checkpointPayload, StandardCharsets.UTF_8));
+        Map<String, Object> summary = payloadReader.readPayloadMap(row.summaryJson());
         sourceProvenanceEnricher.enrich(payload);
-        enrichPayloadLoopRoundsWithSourceSamples(payload);
+        researchEvidenceSampleAssembler.enrichPayloadLoopRoundsWithSourceSamples(payload);
         sourceProvenanceEnricher.enrich(summary);
-        ResearchProcessSummaryResponse researchProcessSummary = buildCheckpointProcessSummary(payload, summary);
+        ResearchProcessSummaryResponse researchProcessSummary = researchCheckpointProcessAssembler.buildProcessSummary(
+                payload, summary);
         return new ResearchCheckpointResponse(
                 row.checkpointNo(),
                 row.snapshotType(),
@@ -671,7 +492,7 @@ public class ResearchRunQueryService {
                 blankIfNull(row.activeBranchKey()),
                 blankIfNull(row.finalLoopDecision()),
                 readCheckpointSnapshotSummaryResponse(summary),
-                firstNonNullCounterfactualSummary(summary, payload),
+                researchCheckpointProcessAssembler.firstNonNullCounterfactualSummary(summary, payload),
                 artifactView.reportFile(),
                 artifactView.researchArtifact(),
                 artifactView.savedReportSource(),
@@ -681,23 +502,6 @@ public class ResearchRunQueryService {
                 castMapOrEmpty(payload.get("toolbox_summary")),
                 payload,
                 row.createdAt()
-        );
-    }
-
-    private ResearchCheckpointSummaryResponse toCheckpointSummaryResponse(Map<String, Object> checkpoint) {
-        return new ResearchCheckpointSummaryResponse(
-                intValue(checkpoint.get("checkpoint_no")),
-                blankIfNull(stringValue(checkpoint.get("snapshot_type"))),
-                blankIfNull(stringValue(checkpoint.get("active_branch_id"))),
-                blankIfNull(stringValue(checkpoint.get("final_loop_decision"))),
-                blankIfNull(stringValue(checkpoint.get("local_verifier_status"))),
-                blankIfNull(stringValue(checkpoint.get("global_verifier_decision"))),
-                intValue(checkpoint.get("verified_row_count")),
-                intValue(checkpoint.get("conflicted_row_count")),
-                readCheckpointSnapshotSummaryResponse(castMapOrEmpty(checkpoint.get("summary"))),
-                readCounterfactualSummary(castMapOrEmpty(checkpoint.get("counterfactual_summary"))),
-                readRecoveryTargetsResponse(castMapOrEmpty(checkpoint.get("recovery_targets"))),
-                (Instant) checkpoint.get("created_at")
         );
     }
 
@@ -711,7 +515,7 @@ public class ResearchRunQueryService {
         }
         ResearchCheckpointRecord checkpointRow = researchCheckpointStore.get(
                 workspaceId, sourceResearchRunId, checkpointNo);
-        Map<String, Object> summary = readPayloadMap(checkpointRow.summaryJson());
+        Map<String, Object> summary = payloadReader.readPayloadMap(checkpointRow.summaryJson());
         sourceProvenanceEnricher.enrich(summary);
         ResearchCheckpointSnapshotSummaryResponse summaryResponse = readCheckpointSnapshotSummaryResponse(summary);
         ResearchCounterfactualSummaryResponse counterfactualSummary = readCounterfactualSummary(
@@ -739,252 +543,18 @@ public class ResearchRunQueryService {
     }
 
     private void requireResearchRun(String workspaceId, String researchRunId) {
-        Integer count = jdbcTemplate.queryForObject("""
-                select count(*)
-                from research_run
-                where workspace_id = ? and id = ?
-                """, Integer.class, workspaceId, researchRunId);
-        if (count == null || count <= 0) {
-            throw new BusinessException("RESEARCH_RUN_NOT_FOUND", "研究任务不存在");
-        }
-    }
-
-    private List<ResearchTraceResponse> loadTraces(String researchRunId) {
-        return jdbcTemplate.query("""
-                select id, trace_type, trace_message, payload_json, created_at
-                from research_trace
-                where research_run_id = ?
-                order by created_at asc, id asc
-                """, (rs, rowNum) -> new ResearchTraceResponse(
-                rs.getString("id"),
-                rs.getString("trace_type"),
-                rs.getString("trace_message"),
-                readPayloadMap(rs.getString("payload_json")),
-                toInstant(rs.getTimestamp("created_at"))
-        ), researchRunId);
-    }
-
-    private MemoryControlPackResponse readControlPack(String json) {
-        try {
-            return objectMapper.readValue(json, MemoryControlPackResponse.class);
-        } catch (JsonProcessingException ex) {
-            throw new BusinessException("RESEARCH_CONTROL_PACK_PARSE_FAILED", "研究控制包解析失败");
-        }
-    }
-
-    private ResearchIntentResponse readResearchIntent(String json) {
-        if (json == null || json.isBlank()) {
-            return ResearchIntentPolicy.defaultIntent();
-        }
-        try {
-            return ResearchIntentPolicy.normalize(
-                    objectMapper.readValue(json, ResearchIntentResponse.class));
-        } catch (JsonProcessingException ex) {
-            throw new BusinessException("RESEARCH_INTENT_PARSE_FAILED", "研究意图解析失败");
-        }
-    }
-
-    private ResearchIntentResponse readResearchIntent(Map<String, Object> payload) {
-        if (payload == null || payload.isEmpty()) {
-            return ResearchIntentPolicy.defaultIntent();
-        }
-        return ResearchIntentPolicy.normalize(
-                objectMapper.convertValue(payload, ResearchIntentResponse.class));
-    }
-
-    private ResearchIntentAlignmentResponse readResearchIntentAlignment(Map<String, Object> payload) {
-        if (payload == null || payload.isEmpty()) {
-            return null;
-        }
-        return objectMapper.convertValue(payload, ResearchIntentAlignmentResponse.class);
-    }
-
-    private Map<String, Object> readPayloadMap(String json) {
-        if (json == null || json.isBlank()) {
-            return Map.of();
-        }
-        try {
-            return objectMapper.readValue(json, new TypeReference<LinkedHashMap<String, Object>>() {
-            });
-        } catch (JsonProcessingException ex) {
-            throw new BusinessException("RESEARCH_TRACE_PAYLOAD_PARSE_FAILED", "研究轨迹载荷解析失败");
-        }
-    }
-
-    private ResearchClosedLoopStateResponse buildClosedLoopState(String researchRunId, List<ResearchTraceResponse> traces) {
-        List<Map<String, Object>> persistedSourceEvidence = loadPersistedSourceEvidence(researchRunId);
-        return buildClosedLoopState(researchRunId, traces, new ResearchClosedLoopData(
-                loadPersistedBranches(researchRunId),
-                loadPersistedRows(researchRunId),
-                loadPersistedCells(researchRunId),
-                persistedSourceEvidence,
-                loadPersistedVerifierDecisions(researchRunId, persistedSourceEvidence),
-                loadPersistedCheckpoints(researchRunId),
-                loadPersistedCellEvidence(researchRunId)
-        ));
+        researchRunReadRepository.requireRun(workspaceId, researchRunId);
     }
 
     private ResearchClosedLoopStateResponse buildClosedLoopState(
-            String researchRunId,
             List<ResearchTraceResponse> traces,
             ResearchClosedLoopData data
     ) {
-        Map<String, Object> harnessSummary = extractNestedMap(traces, "HARNESS_SUMMARY", "harness_summary");
-        Map<String, Object> checkpointCandidate = extractNestedMap(traces, "RESEARCH_CHECKPOINT", "research_checkpoint_candidate");
-        Map<String, Object> finalResultPayload = extractNestedMap(traces, "FINAL_REPORT", "result_payload");
-        Map<String, Object> harnessControlState = extractStructuredResultMap(
+        return researchClosedLoopStateAssembler.build(
                 traces,
-                "HARNESS_CONTROL_STATE",
-                "harness_control_state",
-                finalResultPayload.get("harness_control_state"),
-                checkpointCandidate.get("harness_control_state")
+                data,
+                payloadReader.extractRecoveryTargets(traces, researchCheckpointProcessAssembler)
         );
-        Map<String, Object> auditSummaries = extractStructuredResultMap(
-                traces,
-                "AUDIT_SUMMARIES",
-                "audit_summaries",
-                harnessSummary.get("audit_summaries"),
-                finalResultPayload.get("audit_summaries"),
-                checkpointCandidate.get("audit_summaries")
-        );
-        Map<String, Object> toolboxSummary = extractStructuredResultMap(
-                traces,
-                "TOOLBOX_SUMMARY",
-                "toolbox_summary",
-                harnessSummary.get("toolbox_summary"),
-                finalResultPayload.get("toolbox_summary"),
-                checkpointCandidate.get("toolbox_summary")
-        );
-        Map<String, Object> localVerifier = extractNestedMap(traces, "LOCAL_VERIFIER", "local_verifier");
-        Map<String, Object> globalVerifier = extractNestedMap(traces, "GLOBAL_VERIFIER", "global_verifier");
-        Map<String, Object> recoveryTargets = extractRecoveryTargets(traces);
-        ResearchCounterfactualSummaryResponse counterfactualSummary = readCounterfactualSummary(
-                extractNestedMap(traces, "COUNTERFACTUAL_SUMMARY", "counterfactual_summary")
-        );
-        List<Map<String, Object>> persistedBranches = data.branches();
-        List<Map<String, Object>> persistedRows = data.rows();
-        List<Map<String, Object>> persistedCells = data.cells();
-        List<Map<String, Object>> persistedSourceEvidence = data.sourceEvidence();
-        List<Map<String, Object>> persistedVerifierDecisions = data.verifierDecisions();
-        List<Map<String, Object>> persistedCheckpoints = data.checkpoints();
-        List<Map<String, Object>> persistedCellEvidence = data.cellEvidence();
-        List<Map<String, Object>> branchDecisions = extractNestedListOfMaps(traces, "BRANCH_DECISIONS", "branch_decisions");
-        Map<String, Object> loopRuntime = extractTracePayload(traces, "LOOP_RUNTIME");
-        List<Map<String, Object>> loopRounds = extractListOfMaps(loopRuntime.get("loop_rounds"));
-        enrichLoopRoundsWithSourceSamples(loopRounds, persistedSourceEvidence);
-        Map<String, Object> loopDecision = castMapOrEmpty(loopRuntime.get("loop_decision"));
-        Map<String, Object> stateLedger = mergeStateLedgerSnapshot(
-                extractNestedMap(traces, "STATE_LEDGER", "state_ledger"),
-                persistedBranches,
-                persistedRows,
-                persistedCells,
-                persistedVerifierDecisions
-        );
-        ResearchStateLedgerResponse stateLedgerResponse = readStateLedgerResponse(stateLedger);
-        List<ResearchCheckpointSummaryResponse> checkpointResponses = persistedCheckpoints.stream()
-                .map(this::toCheckpointSummaryResponse)
-                .toList();
-        if (counterfactualSummary == null) {
-            counterfactualSummary = buildCounterfactualSummary(
-                    Map.of(),
-                    List.of(),
-                    branchDecisions,
-                    persistedBranches,
-                    persistedRows,
-                    stringValue(stateLedger.get("active_branch_id")),
-                    stringValue(localVerifier.get("status")),
-                    stringValue(globalVerifier.get("decision")),
-                    ""
-            );
-        }
-
-        return new ResearchClosedLoopStateResponse(
-                stringValue(stateLedger.get("active_branch_id")),
-                stringValue(localVerifier.get("status")),
-                stringValue(globalVerifier.get("decision")),
-                stringValue(loopDecision.get("decision")),
-                loopRounds.size(),
-                persistedRows.size(),
-                persistedBranches.size(),
-                persistedVerifierDecisions.size(),
-                harnessSummary,
-                checkpointCandidate,
-                harnessControlState,
-                auditSummaries,
-                toolboxSummary,
-                counterfactualSummary,
-                readRecoveryTargetsResponse(recoveryTargets),
-                stateLedgerResponse,
-                localVerifier,
-                globalVerifier,
-                persistedBranches,
-                persistedRows,
-                persistedCells,
-                persistedVerifierDecisions,
-                checkpointResponses,
-                persistedSourceEvidence,
-                persistedCellEvidence,
-                branchDecisions,
-                loopRounds,
-                loopDecision
-        );
-    }
-
-    private ResearchReportStructureResponse buildReportStructure(String researchRunId, List<ResearchTraceResponse> traces) {
-        ResearchReportStructureResponse response = buildReportStructureFromEnrichedTraces(traces);
-        if (response == null) {
-            return null;
-        }
-        return response;
-    }
-
-    private ResearchReportStructureResponse buildReportStructureFromEnrichedTraces(List<ResearchTraceResponse> traces) {
-        Map<String, Object> reportStructure = extractNestedMap(traces, "REPORT_STRUCTURE", "report_structure");
-        if (reportStructure.isEmpty()) {
-            Map<String, Object> finalResultPayload = extractNestedMap(traces, "FINAL_REPORT", "result_payload");
-            reportStructure = castMapOrEmpty(finalResultPayload.get("report_structure"));
-        }
-        if (reportStructure.isEmpty()) {
-            return null;
-        }
-        return new ResearchReportStructureResponse(
-                castMapOrEmpty(reportStructure.get("research_question")),
-                readResearchIntent(castMapOrEmpty(reportStructure.get("research_intent"))),
-                castMapOrEmpty(reportStructure.get("intent_completion_contract")),
-                readResearchIntentAlignment(castMapOrEmpty(reportStructure.get("research_intent_alignment"))),
-                extractStringList(reportStructure.get("key_findings")),
-                extractListOfMaps(reportStructure.get("verified_findings")),
-                extractListOfMaps(reportStructure.get("evidence_ledger")),
-                castMapOrEmpty(reportStructure.get("closed_loop_state")),
-                readCounterfactualSummary(castMapOrEmpty(reportStructure.get("counterfactual_summary"))),
-                castMapOrEmpty(reportStructure.get("conflict_and_counterfactual_review")),
-                castMapOrEmpty(reportStructure.get("recovery_status")),
-                castMapOrEmpty(reportStructure.get("final_answer")),
-                castMapOrEmpty(reportStructure.get("source_foundation")),
-                extractStringList(reportStructure.get("next_actions")),
-                castMapOrEmpty(reportStructure.get("resume_checkpoint")),
-                stringValue(reportStructure.get("recovery_mode")),
-                extractStringList(reportStructure.get("control_notes"))
-        );
-    }
-
-    private ResearchArtifactCandidateResponse buildResearchArtifactCandidate(List<ResearchTraceResponse> traces) {
-        Map<String, Object> finalResultPayload = extractNestedMap(traces, "FINAL_REPORT", "result_payload");
-        return readResearchArtifactCandidateResponse(nonEmptyMapOrNull(firstNonNull(
-                finalResultPayload.get("research_artifact_candidate"),
-                castMapOrEmpty(finalResultPayload.get("research_checkpoint_candidate")).get("research_artifact_candidate")
-        )));
-    }
-
-    private ResearchResumeContextSummaryResponse buildResumeContextSummary(List<ResearchTraceResponse> traces) {
-        Map<String, Object> finalResultPayload = extractNestedMap(traces, "FINAL_REPORT", "result_payload");
-        return readResumeContextSummaryResponse(nonEmptyMapOrNull(firstNonNull(
-                finalResultPayload.get("resume_context_summary"),
-                firstNonNull(
-                        castMapOrEmpty(finalResultPayload.get("research_artifact_candidate")).get("resume_context_summary"),
-                        castMapOrEmpty(finalResultPayload.get("research_checkpoint_candidate")).get("resume_context_summary")
-                )
-        )));
     }
 
     private ResearchVerifierSummaryResponse buildVerifierSummary(
@@ -999,15 +569,15 @@ public class ResearchRunQueryService {
         Map<String, Object> loopDecisionPayload = closedLoopState.loopDecisionPayload();
         ResearchIntentAlignmentResponse researchIntentAlignment = buildResearchIntentAlignment(reportStructure, closedLoopState);
         ResearchRecoveryTargetsResponse recoveryTargets = buildRecoveryTargets(reportStructure, closedLoopState);
-        Map<String, Object> verifierGatedSummary = buildVerifierGatedSummary(
+        Map<String, Object> verifierGatedSummary = researchCheckpointProcessAssembler.buildVerifierGatedSummary(
                 closedLoopState.stateLedger().rows(),
-                recoveryTargetsMap(recoveryTargets)
+                payloadReader.recoveryTargetsMap(recoveryTargets)
         );
         return new ResearchVerifierSummaryResponse(
                 blankIfNull(closedLoopState.localVerifierStatus()),
-                extractDecisionReason(localVerifier),
+                    payloadReader.extractDecisionReason(localVerifier),
                 blankIfNull(closedLoopState.globalVerifierDecision()),
-                extractDecisionReason(globalVerifier),
+                    payloadReader.extractDecisionReason(globalVerifier),
                 blankIfNull(closedLoopState.finalLoopDecision()),
                 blankIfNull(stringValue(loopDecisionPayload.get("reason"))),
                 researchIntentAlignment == null ? "" : blankIfNull(researchIntentAlignment.status()),
@@ -1015,238 +585,6 @@ public class ResearchRunQueryService {
                 recoveryTargets,
                 readVerifierGatedSummaryResponse(verifierGatedSummary)
         );
-    }
-
-    private ResearchProcessSummaryResponse buildResearchProcessSummary(
-            ResearchReportStructureResponse reportStructure,
-            ResearchClosedLoopStateResponse closedLoopState,
-            ResearchVerifierSummaryResponse verifierSummary,
-            int sourceScopeCount,
-            ResearchArtifactCandidateResponse researchArtifactCandidate
-    ) {
-        return new ResearchProcessSummaryResponse(
-                sourceScopeCount,
-                buildSearchReadTimeline(closedLoopState),
-                buildSourceEvidenceSummary(reportStructure, researchArtifactCandidate),
-                buildAuditSummary(closedLoopState, verifierSummary)
-        );
-    }
-
-    private ResearchProcessSummaryResponse buildCheckpointProcessSummary(
-            Map<String, Object> checkpointPayload,
-            Map<String, Object> checkpointSummary
-    ) {
-        return new ResearchProcessSummaryResponse(
-                estimateCheckpointSourceScopeCount(checkpointPayload),
-                buildCheckpointSearchReadTimeline(checkpointPayload),
-                buildCheckpointSourceEvidenceSummary(checkpointPayload),
-                buildCheckpointAuditSummary(checkpointPayload, checkpointSummary)
-        );
-    }
-
-    private ResearchSearchReadTimelineResponse buildSearchReadTimeline(ResearchClosedLoopStateResponse closedLoopState) {
-        List<Map<String, Object>> loopRounds = closedLoopState == null ? List.of() : closedLoopState.loopRounds();
-        List<ResearchLoopRoundSummaryResponse> roundResponses = new ArrayList<>();
-        LinkedHashSet<String> allQueries = new LinkedHashSet<>();
-        int totalSearchHitCount = 0;
-        int totalReadWindowCount = 0;
-        int totalEvidenceCardCount = 0;
-        for (Map<String, Object> round : loopRounds) {
-            List<String> searchQueries = extractStringList(round.get("search_queries"));
-            allQueries.addAll(searchQueries);
-            totalSearchHitCount += intValue(round.get("search_hit_count"));
-            totalReadWindowCount += intValue(round.get("read_window_count"));
-            totalEvidenceCardCount += intValue(round.get("evidence_card_count"));
-            roundResponses.add(new ResearchLoopRoundSummaryResponse(
-                    intValue(round.get("round_no")),
-                    intValue(round.get("search_hit_count")),
-                    intValue(round.get("read_window_count")),
-                    intValue(round.get("evidence_card_count")),
-                    searchQueries,
-                    extractStringList(round.get("evidence_ids")),
-                    blankIfNull(stringValue(round.get("branch_decision"))),
-                    blankIfNull(stringValue(round.get("global_decision")))
-            ));
-        }
-        return new ResearchSearchReadTimelineResponse(
-                loopRounds.size(),
-                totalSearchHitCount,
-                totalReadWindowCount,
-                totalEvidenceCardCount,
-                new ArrayList<>(allQueries),
-                closedLoopState == null ? "" : blankIfNull(closedLoopState.finalLoopDecision()),
-                closedLoopState == null ? "" : blankIfNull(stringValue(closedLoopState.loopDecisionPayload().get("reason"))),
-                closedLoopState == null ? "" : blankIfNull(stringValue(closedLoopState.loopDecisionPayload().get("terminal_disposition"))),
-                closedLoopState != null && booleanValue(closedLoopState.loopDecisionPayload().get("handoff_required")),
-                closedLoopState == null ? "" : blankIfNull(stringValue(closedLoopState.loopDecisionPayload().get("abandon_reason"))),
-                roundResponses
-        );
-    }
-
-    private ResearchSearchReadTimelineResponse buildCheckpointSearchReadTimeline(Map<String, Object> checkpointPayload) {
-        List<Map<String, Object>> loopRounds = extractListOfMaps(checkpointPayload.get("loop_rounds"));
-        Map<String, Object> loopDecision = castMapOrEmpty(checkpointPayload.get("loop_decision"));
-        List<ResearchLoopRoundSummaryResponse> roundResponses = new ArrayList<>();
-        LinkedHashSet<String> allQueries = new LinkedHashSet<>();
-        int totalSearchHitCount = 0;
-        int totalReadWindowCount = 0;
-        int totalEvidenceCardCount = 0;
-        for (Map<String, Object> round : loopRounds) {
-            List<String> searchQueries = extractStringList(round.get("search_queries"));
-            allQueries.addAll(searchQueries);
-            totalSearchHitCount += intValue(round.get("search_hit_count"));
-            totalReadWindowCount += intValue(round.get("read_window_count"));
-            totalEvidenceCardCount += intValue(round.get("evidence_card_count"));
-            roundResponses.add(new ResearchLoopRoundSummaryResponse(
-                    intValue(round.get("round_no")),
-                    intValue(round.get("search_hit_count")),
-                    intValue(round.get("read_window_count")),
-                    intValue(round.get("evidence_card_count")),
-                    searchQueries,
-                    extractStringList(round.get("evidence_ids")),
-                    blankIfNull(stringValue(round.get("branch_decision"))),
-                    blankIfNull(stringValue(round.get("global_decision")))
-            ));
-        }
-        return new ResearchSearchReadTimelineResponse(
-                loopRounds.size(),
-                totalSearchHitCount,
-                totalReadWindowCount,
-                totalEvidenceCardCount,
-                new ArrayList<>(allQueries),
-                blankIfNull(stringValue(loopDecision.get("decision"))),
-                blankIfNull(stringValue(loopDecision.get("reason"))),
-                blankIfNull(stringValue(loopDecision.get("terminal_disposition"))),
-                booleanValue(loopDecision.get("handoff_required")),
-                blankIfNull(stringValue(loopDecision.get("abandon_reason"))),
-                roundResponses
-        );
-    }
-
-    private ResearchSourceEvidenceSummaryResponse buildSourceEvidenceSummary(
-            ResearchReportStructureResponse reportStructure,
-            ResearchArtifactCandidateResponse researchArtifactCandidate
-    ) {
-        Map<String, Object> sourceFoundation = reportStructure == null ? Map.of() : reportStructure.sourceFoundation();
-        Map<String, Object> finalAnswer = reportStructure == null ? Map.of() : reportStructure.finalAnswer();
-        String sourceBasis = blankIfNull(stringValue(finalAnswer.get("source_basis")));
-        if (sourceBasis.isBlank() && researchArtifactCandidate != null) {
-            sourceBasis = blankIfNull(researchArtifactCandidate.sourceBasis());
-        }
-        return new ResearchSourceEvidenceSummaryResponse(
-                sourceBasis,
-                blankIfNull(stringValue(sourceFoundation.get("primary_quality"))),
-                blankIfNull(stringValue(sourceFoundation.get("quality_mix_label"))),
-                blankIfNull(stringValue(sourceFoundation.get("read_strategy_mix_label"))),
-                blankIfNull(stringValue(sourceFoundation.get("fetch_foundation_label"))),
-                blankIfNull(stringValue(sourceFoundation.get("orchestration_foundation_label"))),
-                reportStructure == null ? 0 : reportStructure.verifiedFindings().size(),
-                researchArtifactCandidate == null ? 0 : researchArtifactCandidate.citationCount()
-        );
-    }
-
-    private ResearchSourceEvidenceSummaryResponse buildCheckpointSourceEvidenceSummary(Map<String, Object> checkpointPayload) {
-        Map<String, Object> reportStructure = castMapOrEmpty(checkpointPayload.get("report_structure"));
-        Map<String, Object> sourceFoundation = castMapOrEmpty(reportStructure.get("source_foundation"));
-        Map<String, Object> finalAnswer = castMapOrEmpty(reportStructure.get("final_answer"));
-        return new ResearchSourceEvidenceSummaryResponse(
-                blankIfNull(stringValue(finalAnswer.get("source_basis"))),
-                blankIfNull(stringValue(sourceFoundation.get("primary_quality"))),
-                blankIfNull(stringValue(sourceFoundation.get("quality_mix_label"))),
-                blankIfNull(stringValue(sourceFoundation.get("read_strategy_mix_label"))),
-                blankIfNull(stringValue(sourceFoundation.get("fetch_foundation_label"))),
-                blankIfNull(stringValue(sourceFoundation.get("orchestration_foundation_label"))),
-                extractListOfMaps(reportStructure.get("verified_findings")).size(),
-                0
-        );
-    }
-
-    private ResearchAuditSummaryResponse buildAuditSummary(
-            ResearchClosedLoopStateResponse closedLoopState,
-            ResearchVerifierSummaryResponse verifierSummary
-    ) {
-        ResearchVerifierGatedSummaryResponse verifierGatedSummary = verifierSummary == null
-                ? null
-                : verifierSummary.verifierGatedSummary();
-        ResearchRecoveryTargetsResponse recoveryTargets = verifierSummary == null
-                ? null
-                : verifierSummary.recoveryTargets();
-        ResearchCounterfactualSummaryResponse counterfactualSummary = closedLoopState == null
-                ? null
-                : closedLoopState.counterfactualSummary();
-        return new ResearchAuditSummaryResponse(
-                verifierSummary == null ? "" : blankIfNull(verifierSummary.localVerifierStatus()),
-                verifierSummary == null ? "" : blankIfNull(verifierSummary.globalVerifierDecision()),
-                verifierSummary == null ? "" : blankIfNull(verifierSummary.finalLoopDecision()),
-                counterfactualSummary != null && counterfactualSummary.hasCounterfactualRecheck(),
-                counterfactualSummary == null ? 0 : counterfactualSummary.counterfactualBranchCount(),
-                closedLoopState == null ? 0 : closedLoopState.checkpoints().size(),
-                verifierGatedSummary == null ? 0 : verifierGatedSummary.blockedRowCount(),
-                closedLoopState == null ? 0 : closedLoopState.stateLedger().conflictedRowCount(),
-                verifierGatedSummary == null ? 0 : verifierGatedSummary.guardrailedRowCount(),
-                recoveryTargets == null ? 0 : recoveryTargets.requirementCount()
-        );
-    }
-
-    private ResearchAuditSummaryResponse buildCheckpointAuditSummary(
-            Map<String, Object> checkpointPayload,
-            Map<String, Object> checkpointSummary
-    ) {
-        Map<String, Object> safeSummary = castMapOrEmpty(checkpointSummary);
-        Map<String, Object> localVerifier = castMapOrEmpty(firstNonNull(
-                safeSummary.get("local_verifier"),
-                checkpointPayload.get("local_verifier")
-        ));
-        Map<String, Object> globalVerifier = castMapOrEmpty(firstNonNull(
-                safeSummary.get("global_verifier"),
-                checkpointPayload.get("global_verifier")
-        ));
-        Map<String, Object> loopDecision = castMapOrEmpty(firstNonNull(
-                safeSummary.get("loop_decision"),
-                checkpointPayload.get("loop_decision")
-        ));
-        ResearchCounterfactualSummaryResponse counterfactualSummary = firstNonNullCounterfactualSummary(
-                safeSummary,
-                checkpointPayload
-        );
-        ResearchRecoveryTargetsResponse recoveryTargets = readRecoveryTargetsResponse(
-                rawRecoveryTargets(checkpointPayload)
-        );
-        ResearchVerifierGatedSummaryResponse verifierGatedSummary = readVerifierGatedSummaryResponse(
-                castMapOrEmpty(safeSummary.get("verifier_gated_summary"))
-        );
-        ResearchCheckpointStateLedgerSummaryResponse stateLedgerSummary = readCheckpointStateLedgerSummaryResponse(
-                castMapOrEmpty(safeSummary.get("state_ledger"))
-        );
-        return new ResearchAuditSummaryResponse(
-                blankIfNull(stringValue(localVerifier.get("status"))),
-                blankIfNull(stringValue(globalVerifier.get("decision"))),
-                blankIfNull(stringValue(loopDecision.get("decision"))),
-                counterfactualSummary != null && counterfactualSummary.hasCounterfactualRecheck(),
-                counterfactualSummary == null ? 0 : counterfactualSummary.counterfactualBranchCount(),
-                intValue(firstNonNull(safeSummary.get("checkpoint_no"), 1)),
-                verifierGatedSummary == null ? 0 : verifierGatedSummary.blockedRowCount(),
-                stateLedgerSummary == null ? 0 : stateLedgerSummary.conflictedRowCount(),
-                verifierGatedSummary == null ? 0 : verifierGatedSummary.guardrailedRowCount(),
-                recoveryTargets == null ? 0 : recoveryTargets.requirementCount()
-        );
-    }
-
-    private int estimateCheckpointSourceScopeCount(Map<String, Object> checkpointPayload) {
-        LinkedHashSet<String> sourceIds = new LinkedHashSet<>();
-        for (Map<String, Object> readWindow : extractListOfMaps(checkpointPayload.get("read_windows"))) {
-            String sourceId = blankIfNull(stringValue(readWindow.get("source_id")));
-            if (!sourceId.isBlank()) {
-                sourceIds.add(sourceId);
-            }
-        }
-        for (Map<String, Object> evidenceCard : extractListOfMaps(checkpointPayload.get("evidence_cards"))) {
-            String sourceId = blankIfNull(stringValue(evidenceCard.get("source_id")));
-            if (!sourceId.isBlank()) {
-                sourceIds.add(sourceId);
-            }
-        }
-        return sourceIds.size();
     }
 
     private ResearchCounterfactualSummaryResponse buildCounterfactualSummary(
@@ -1261,7 +599,7 @@ public class ResearchRunQueryService {
                 : reportStructure.conflictAndCounterfactualReview();
         String recoveryMode = reportStructure == null ? "" : reportStructure.recoveryMode();
         List<Map<String, Object>> reportBranchDecisions = extractListOfMaps(conflictReview.get("branch_decisions"));
-        return buildCounterfactualSummary(
+        return researchCounterfactualSummaryAssembler.build(
                 conflictReview,
                 reportBranchDecisions,
                 closedLoopState == null ? List.of() : closedLoopState.branchDecisions(),
@@ -1283,7 +621,7 @@ public class ResearchRunQueryService {
         }
         Map<String, Object> localVerifier = closedLoopState == null ? Map.of() : closedLoopState.localVerifier();
         Map<String, Object> globalVerifier = closedLoopState == null ? Map.of() : closedLoopState.globalVerifier();
-        return readResearchIntentAlignment(castMapOrEmpty(firstNonNull(
+        return researchReportReadModelAssembler.readResearchIntentAlignment(castMapOrEmpty(firstNonNull(
                 globalVerifier.get("research_intent_alignment"),
                 localVerifier.get("research_intent_alignment")
         )));
@@ -1345,7 +683,7 @@ public class ResearchRunQueryService {
         Map<String, Object> stateLedger = castMapOrEmpty(checkpointPayload.get("state_ledger"));
         Map<String, Object> localVerifier = castMapOrEmpty(checkpointPayload.get("local_verifier"));
         Map<String, Object> globalVerifier = castMapOrEmpty(checkpointPayload.get("global_verifier"));
-        return buildCounterfactualSummary(
+        return researchCounterfactualSummaryAssembler.build(
                 conflictReview,
                 extractListOfMaps(conflictReview.get("branch_decisions")),
                 extractListOfMaps(checkpointPayload.get("branch_decisions")),
@@ -1367,830 +705,10 @@ public class ResearchRunQueryService {
         );
     }
 
-    private ResearchCounterfactualSummaryResponse buildCounterfactualSummary(
-            Map<String, Object> conflictReview,
-            List<Map<String, Object>> reportBranchDecisions,
-            List<Map<String, Object>> stateBranchDecisions,
-            List<Map<String, Object>> branches,
-            List<Map<String, Object>> rows,
-            String activeBranchId,
-            String localVerifierStatus,
-            String globalVerifierDecision,
-            String recoveryMode
-    ) {
-        List<Map<String, Object>> decisionCandidates = !reportBranchDecisions.isEmpty()
-                ? reportBranchDecisions
-                : stateBranchDecisions;
-        LinkedHashMap<String, Map<String, Object>> branchMap = new LinkedHashMap<>();
-        for (Map<String, Object> branch : branches) {
-            String branchId = stringValue(firstNonNull(branch.get("branch_id"), branch.get("branch_key")));
-            if (!branchId.isBlank()) {
-                branchMap.put(branchId, branch);
-            }
-        }
-
-        LinkedHashSet<String> counterfactualBranchIds = new LinkedHashSet<>();
-        LinkedHashSet<String> counterfactualSessionIds = new LinkedHashSet<>();
-        LinkedHashSet<String> activeCounterfactualBranchIds = new LinkedHashSet<>();
-        LinkedHashSet<String> activeCounterfactualSessionIds = new LinkedHashSet<>();
-        LinkedHashSet<String> branchReasons = new LinkedHashSet<>();
-        LinkedHashSet<String> targetEvidenceIds = new LinkedHashSet<>();
-        List<ResearchCounterfactualBranchResponse> counterfactualBranches = new ArrayList<>();
-
-        for (Map<String, Object> decision : decisionCandidates) {
-            String decisionType = stringValue(firstNonNull(decision.get("decision"), decision.get("decision_type")));
-            if (!"COUNTERFACTUAL_RECHECK".equals(decisionType)) {
-                continue;
-            }
-            String branchId = stringValue(firstNonNull(
-                    decision.get("branch_id"),
-                    firstNonNull(decision.get("target_id"), decision.get("branch_key"))
-            ));
-            Map<String, Object> branch = branchId.isBlank()
-                    ? Map.of()
-                    : branchMap.getOrDefault(branchId, Map.of());
-            String sessionId = blankIfNull(stringValue(firstNonNull(decision.get("session_id"), branch.get("session_id"))));
-            String parentSessionId = blankIfNull(stringValue(firstNonNull(decision.get("parent_session_id"), branch.get("parent_session_id"))));
-            String executionMode = blankIfNull(stringValue(firstNonNull(decision.get("execution_mode"), branch.get("execution_mode"))));
-            List<String> siblingBranchIds = extractStringList(firstNonNull(
-                    decision.get("sibling_branch_ids"), branch.get("sibling_branch_ids")
-            ));
-            List<String> branchTargetEvidenceIds = extractStringList(firstNonNull(
-                    decision.get("target_evidence_ids"),
-                    firstNonNull(
-                            decision.get("evidence_ids"),
-                            firstNonNull(branch.get("target_evidence_ids"), branch.get("target_evidence_ids_json"))
-                    )
-            ));
-            String branchReason = defaultIfBlank(
-                    stringValue(firstNonNull(decision.get("branch_reason"), branch.get("branch_reason"))),
-                    "COUNTERFACTUAL_RECHECK"
-            );
-            String branchStatus = defaultIfBlank(
-                    stringValue(firstNonNull(decision.get("branch_status"), firstNonNull(branch.get("status"), branch.get("branch_status")))),
-                    "ACTIVE_BRANCH"
-            );
-            if (!branchId.isBlank()) {
-                counterfactualBranchIds.add(branchId);
-            }
-            if (!sessionId.isBlank()) {
-                counterfactualSessionIds.add(sessionId);
-            }
-            if (!branchReason.isBlank()) {
-                branchReasons.add(branchReason);
-            }
-            targetEvidenceIds.addAll(branchTargetEvidenceIds);
-            if ((!branchId.isBlank() && branchId.equals(activeBranchId)) || isActiveBranchStatus(branchStatus)) {
-                if (!branchId.isBlank()) {
-                    activeCounterfactualBranchIds.add(branchId);
-                }
-                if (!sessionId.isBlank()) {
-                    activeCounterfactualSessionIds.add(sessionId);
-                }
-            }
-            counterfactualBranches.add(new ResearchCounterfactualBranchResponse(
-                    branchId,
-                    sessionId,
-                    blankIfNull(stringValue(firstNonNull(branch.get("parent_branch_id"), decision.get("parent_branch_id")))),
-                    parentSessionId,
-                    branchReason,
-                    branchStatus,
-                    executionMode,
-                    siblingBranchIds,
-                    decisionType,
-                    blankIfNull(stringValue(decision.get("verifier_scope"))),
-                    blankIfNull(stringValue(firstNonNull(branch.get("hypothesis_summary"), decision.get("hypothesis_summary")))),
-                    branchTargetEvidenceIds
-            ));
-        }
-
-        List<Map<String, Object>> conflictedRows = extractListOfMaps(conflictReview.get("conflicted_rows"));
-        if (conflictedRows.isEmpty()) {
-            conflictedRows = rows.stream()
-                    .filter(this::isCounterfactualRow)
-                    .toList();
-        }
-        boolean hasCounterfactualRecheck = !counterfactualBranches.isEmpty()
-                || "COUNTERFACTUAL_RECHECK".equals(recoveryMode);
-        return new ResearchCounterfactualSummaryResponse(
-                hasCounterfactualRecheck,
-                counterfactualBranches.size(),
-                conflictedRows.size(),
-                blankIfNull(localVerifierStatus),
-                blankIfNull(globalVerifierDecision),
-                blankIfNull(recoveryMode),
-                List.copyOf(counterfactualBranchIds),
-                List.copyOf(counterfactualSessionIds),
-                List.copyOf(activeCounterfactualBranchIds),
-                List.copyOf(activeCounterfactualSessionIds),
-                List.copyOf(branchReasons),
-                List.copyOf(targetEvidenceIds),
-                counterfactualBranches
-        );
-    }
-
-    private Map<String, Object> extractTracePayload(List<ResearchTraceResponse> traces, String traceType) {
-        return traces.stream()
-                .filter(trace -> traceType.equals(trace.traceType()))
-                .reduce((first, second) -> second)
-                .map(ResearchTraceResponse::payload)
-                .orElse(Map.of());
-    }
-
-    private String extractDecisionReason(Map<String, Object> verifierPayload) {
-        String directReason = blankIfNull(stringValue(firstNonNull(
-                verifierPayload.get("reason_code"),
-                verifierPayload.get("reason")
-        )));
-        if (!directReason.isBlank()) {
-            return directReason;
-        }
-        List<Map<String, Object>> decisionRecords = extractListOfMaps(verifierPayload.get("decision_records"));
-        if (decisionRecords.isEmpty()) {
-            return "";
-        }
-        Map<String, Object> latestRecord = decisionRecords.get(decisionRecords.size() - 1);
-        return blankIfNull(stringValue(firstNonNull(
-                latestRecord.get("reason_code"),
-                latestRecord.get("reason")
-        )));
-    }
-
-    private Map<String, Object> extractNestedMap(List<ResearchTraceResponse> traces, String traceType, String key) {
-        Map<String, Object> payload = extractTracePayload(traces, traceType);
-        return castMapOrEmpty(payload.get(key));
-    }
-
-    private Map<String, Object> extractStructuredResultMap(
-            List<ResearchTraceResponse> traces,
-            String traceType,
-            String key,
-            Object... fallbackCandidates
-    ) {
-        Map<String, Object> direct = extractNestedMap(traces, traceType, key);
-        if (!direct.isEmpty()) {
-            return direct;
-        }
-        for (Object candidate : fallbackCandidates) {
-            Map<String, Object> fallback = castMapOrEmpty(candidate);
-            if (!fallback.isEmpty()) {
-                return fallback;
-            }
-        }
-        return Map.of();
-    }
-
-    private List<Map<String, Object>> extractNestedListOfMaps(List<ResearchTraceResponse> traces, String traceType, String key) {
-        Map<String, Object> payload = extractTracePayload(traces, traceType);
-        return extractListOfMaps(payload.get(key));
-    }
-
-    private Map<String, Object> recoveryTargetsMap(ResearchRecoveryTargetsResponse recoveryTargets) {
-        if (recoveryTargets == null) {
-            return Map.of();
-        }
-        LinkedHashMap<String, Object> value = new LinkedHashMap<>();
-        value.put("requirement_ids", recoveryTargets.requirementIds());
-        value.put("requirement_types", recoveryTargets.requirementTypes());
-        value.put("requirement_labels", recoveryTargets.requirementLabels());
-        value.put("target_columns", recoveryTargets.targetColumns());
-        value.put("target_queries", recoveryTargets.targetQueries());
-        value.put("target_sources", recoveryTargets.targetSources());
-        value.put("requirement_count", recoveryTargets.requirementCount());
-        value.put("query_count", recoveryTargets.queryCount());
-        value.put("source_count", recoveryTargets.sourceCount());
-        value.put("column_count", recoveryTargets.columnCount());
-        return value;
-    }
-
-    private boolean isCounterfactualRow(Map<String, Object> row) {
-        String rowStatus = stringValue(row.get("row_status"));
-        String verificationStatus = stringValue(row.get("verification_status"));
-        return "CONFLICTED".equals(rowStatus)
-                || "COUNTERFACTUAL_REQUIRED".equals(verificationStatus)
-                || "COUNTERFACTUAL_RECHECK".equals(verificationStatus);
-    }
-
-    private boolean isActiveBranchStatus(String branchStatus) {
-        return "ACTIVE_BRANCH".equals(branchStatus) || "ACTIVE".equals(branchStatus);
-    }
-
-    private Map<String, Object> castMap(Map<?, ?> mapValue) {
-        LinkedHashMap<String, Object> casted = new LinkedHashMap<>();
-        mapValue.forEach((key, value) -> casted.put(String.valueOf(key), value));
-        return casted;
-    }
-
-    private List<Map<String, Object>> loadPersistedBranches(String researchRunId) {
-        return jdbcTemplate.query("""
-                select branch_key, parent_branch_id, branch_reason, branch_status,
-                       hypothesis_summary, target_evidence_ids_json, created_round
-                from research_branch
-                where research_run_id = ?
-                order by created_at asc, id asc
-                """, (rs, rowNum) -> {
-            LinkedHashMap<String, Object> branch = new LinkedHashMap<>();
-            branch.put("branch_id", rs.getString("branch_key"));
-            branch.put("parent_branch_id", blankIfNull(rs.getString("parent_branch_id")));
-            branch.put("branch_reason", rs.getString("branch_reason"));
-            branch.put("status", rs.getString("branch_status"));
-            branch.put("hypothesis_summary", blankIfNull(rs.getString("hypothesis_summary")));
-            branch.put("target_evidence_ids", readStringList(rs.getString("target_evidence_ids_json")));
-            branch.put("created_round", rs.getInt("created_round"));
-            return branch;
-        }, researchRunId);
-    }
-
-    private List<Map<String, Object>> loadPersistedRows(String researchRunId) {
-        return jdbcTemplate.query("""
-                select rr.row_key, rb.branch_key, rr.source_id, rr.source_title, rr.search_query, rr.read_focus,
-                       coalesce(s.generated_by, '') as generated_by,
-                       coalesce(s.generated_ref_id, '') as generated_ref_id,
-                       evidence_id, row_status, relation_type, support_score, conflict_score,
-                       support_level, verification_status, verifier_note, repair_hint
-                from research_row rr
-                left join research_branch rb on rb.id = rr.branch_id
-                left join source s on s.id = rr.source_id
-                where rr.research_run_id = ?
-                order by rr.created_at asc, rr.id asc
-                """, (rs, rowNum) -> {
-            LinkedHashMap<String, Object> row = new LinkedHashMap<>();
-            row.put("row_id", rs.getString("row_key"));
-            row.put("branch_id", blankIfNull(rs.getString("branch_key")));
-            row.put("source_id", blankIfNull(rs.getString("source_id")));
-            row.put("source_title", blankIfNull(rs.getString("source_title")));
-            row.put("generated_by", blankIfNull(rs.getString("generated_by")));
-            row.put("generated_ref_id", blankIfNull(rs.getString("generated_ref_id")));
-            row.put("search_query", blankIfNull(rs.getString("search_query")));
-            row.put("read_focus", blankIfNull(rs.getString("read_focus")));
-            row.put("evidence_id", blankIfNull(rs.getString("evidence_id")));
-            row.put("row_status", rs.getString("row_status"));
-            row.put("relation_type", blankIfNull(rs.getString("relation_type")));
-            row.put("support_score", rs.getBigDecimal("support_score"));
-            row.put("conflict_score", rs.getBigDecimal("conflict_score"));
-            row.put("support_level", blankIfNull(rs.getString("support_level")));
-            row.put("verification_status", blankIfNull(rs.getString("verification_status")));
-            row.put("verifier_note", blankIfNull(rs.getString("verifier_note")));
-            row.put("repair_hint", blankIfNull(rs.getString("repair_hint")));
-            return row;
-        }, researchRunId);
-    }
-
-    private List<Map<String, Object>> loadPersistedCells(String researchRunId) {
-        return jdbcTemplate.query("""
-                select rc.cell_key, rr.row_key, rb.branch_key, rc.column_key, rc.candidate_value,
-                       rc.cell_status, rc.confidence_score, rc.evidence_refs_json,
-                       last_verifier_decision, repair_count
-                from research_cell rc
-                join research_row rr on rr.id = rc.research_row_id
-                left join research_branch rb on rb.id = rc.branch_id
-                where rc.research_run_id = ?
-                order by rc.created_at asc, rc.id asc
-                """, (rs, rowNum) -> {
-            LinkedHashMap<String, Object> cell = new LinkedHashMap<>();
-            cell.put("cell_id", rs.getString("cell_key"));
-            cell.put("row_id", rs.getString("row_key"));
-            cell.put("branch_id", blankIfNull(rs.getString("branch_key")));
-            cell.put("column_key", rs.getString("column_key"));
-            cell.put("candidate_value", blankIfNull(rs.getString("candidate_value")));
-            cell.put("status", rs.getString("cell_status"));
-            cell.put("confidence", rs.getBigDecimal("confidence_score"));
-            cell.put("evidence_refs", readStringList(rs.getString("evidence_refs_json")));
-            cell.put("last_verifier_decision", blankIfNull(rs.getString("last_verifier_decision")));
-            cell.put("repair_count", rs.getInt("repair_count"));
-            return cell;
-        }, researchRunId);
-    }
-
-    private List<Map<String, Object>> loadPersistedVerifierDecisions(
-            String researchRunId,
-            List<Map<String, Object>> sourceEvidence
-    ) {
-        Map<String, Map<String, Object>> sourceEvidenceById = buildSourceEvidenceById(sourceEvidence);
-        return jdbcTemplate.query("""
-                select rvd.id, rb.branch_key, rvd.decision_scope, rvd.decision_type, rvd.reason_code,
-                       rvd.target_id, rvd.evidence_ids_json, rvd.action_text, rvd.decision_status, rvd.notes_json
-                from research_verifier_decision rvd
-                left join research_branch rb on rb.id = rvd.branch_id
-                where rvd.research_run_id = ?
-                order by rvd.created_at asc, rvd.id asc
-                """, (rs, rowNum) -> {
-            LinkedHashMap<String, Object> decision = new LinkedHashMap<>();
-            List<String> evidenceIds = readStringList(rs.getString("evidence_ids_json"));
-            decision.put("decision_id", rs.getString("id"));
-            decision.put("branch_id", blankIfNull(rs.getString("branch_key")));
-            decision.put("decision_scope", rs.getString("decision_scope"));
-            decision.put("decision_type", rs.getString("decision_type"));
-            decision.put("reason_code", rs.getString("reason_code"));
-            decision.put("target_id", blankIfNull(rs.getString("target_id")));
-            decision.put("evidence_ids", evidenceIds);
-            decision.put("action", blankIfNull(rs.getString("action_text")));
-            decision.put("status", blankIfNull(rs.getString("decision_status")));
-            decision.put("notes", readStringList(rs.getString("notes_json")));
-            List<Map<String, Object>> sourceSamples = buildEvidenceSourceSamples(evidenceIds, sourceEvidenceById, 2);
-            decision.put("source_samples", sourceSamples);
-            decision.put("source_sample_count", sourceSamples.size());
-            return decision;
-        }, researchRunId);
-    }
-
-    private Map<String, Map<String, Object>> buildSourceEvidenceById(List<Map<String, Object>> sourceEvidence) {
-        if (sourceEvidence == null || sourceEvidence.isEmpty()) {
-            return Map.of();
-        }
-        LinkedHashMap<String, Map<String, Object>> evidenceById = new LinkedHashMap<>();
-        for (Map<String, Object> evidence : sourceEvidence) {
-            String evidenceId = stringValue(evidence.get("evidence_id"));
-            if (!evidenceId.isBlank()) {
-                evidenceById.put(evidenceId, evidence);
-            }
-        }
-        return evidenceById;
-    }
-
-    private List<Map<String, Object>> buildEvidenceSourceSamples(
-            List<String> evidenceIds,
-            Map<String, Map<String, Object>> sourceEvidenceById,
-            int limit
-    ) {
-        if (evidenceIds == null || evidenceIds.isEmpty() || sourceEvidenceById.isEmpty() || limit <= 0) {
-            return List.of();
-        }
-        LinkedHashMap<String, Map<String, Object>> orderedSamples = new LinkedHashMap<>();
-        for (String evidenceId : evidenceIds) {
-            String normalizedEvidenceId = blankToNull(evidenceId);
-            if (normalizedEvidenceId == null || orderedSamples.size() >= limit) {
-                continue;
-            }
-            Map<String, Object> evidence = sourceEvidenceById.get(normalizedEvidenceId);
-            if (evidence == null) {
-                continue;
-            }
-            String sourceKey = defaultIfBlank(
-                    stringValue(evidence.get("source_id")),
-                    "evidence:" + normalizedEvidenceId
-            );
-            if (orderedSamples.containsKey(sourceKey)) {
-                continue;
-            }
-            LinkedHashMap<String, Object> sample = new LinkedHashMap<>();
-            sample.put("evidence_id", normalizedEvidenceId);
-            sample.put("source_id", blankIfNull(stringValue(evidence.get("source_id"))));
-            sample.put("source_title", blankIfNull(stringValue(evidence.get("source_title"))));
-            sample.put("generated_by", blankIfNull(stringValue(evidence.get("generated_by"))));
-            sample.put("generated_ref_id", blankIfNull(stringValue(evidence.get("generated_ref_id"))));
-            sample.put("search_query", blankIfNull(stringValue(evidence.get("search_query"))));
-            sample.put("read_focus", blankIfNull(stringValue(evidence.get("read_focus"))));
-            sample.put("relation_type", blankIfNull(stringValue(evidence.get("relation_type"))));
-            orderedSamples.put(sourceKey, sample);
-        }
-        return new ArrayList<>(orderedSamples.values());
-    }
-
-    private void enrichLoopRoundsWithSourceSamples(
-            List<Map<String, Object>> loopRounds,
-            List<Map<String, Object>> sourceEvidence
-    ) {
-        if (loopRounds == null || loopRounds.isEmpty() || sourceEvidence == null || sourceEvidence.isEmpty()) {
-            return;
-        }
-        Map<String, Map<String, Object>> sourceEvidenceById = buildSourceEvidenceById(sourceEvidence);
-        for (Map<String, Object> loopRound : loopRounds) {
-            List<Map<String, Object>> sourceSamples = buildLoopRoundSourceSamples(loopRound, sourceEvidenceById, sourceEvidence, 2);
-            loopRound.put("source_samples", sourceSamples);
-            loopRound.put("source_sample_count", sourceSamples.size());
-        }
-    }
-
-    private void enrichPayloadLoopRoundsWithSourceSamples(Map<String, Object> payload) {
-        if (payload == null || payload.isEmpty()) {
-            return;
-        }
-        if (!(payload.get("loop_rounds") instanceof List<?> rawLoopRounds) || rawLoopRounds.isEmpty()) {
-            return;
-        }
-        List<Map<String, Object>> evidenceRecords = buildLoopRoundPayloadEvidenceRecords(payload);
-        if (evidenceRecords.isEmpty()) {
-            return;
-        }
-        Map<String, Map<String, Object>> sourceEvidenceById = buildSourceEvidenceById(evidenceRecords);
-        for (Object item : rawLoopRounds) {
-            if (!(item instanceof Map<?, ?> rawLoopRound)) {
-                continue;
-            }
-            Map<String, Object> loopRound = castMap(rawLoopRound);
-            List<Map<String, Object>> sourceSamples = buildLoopRoundSourceSamples(loopRound, sourceEvidenceById, evidenceRecords, 2);
-            @SuppressWarnings("unchecked")
-            Map<Object, Object> mutableLoopRound = (Map<Object, Object>) rawLoopRound;
-            mutableLoopRound.put("source_samples", sourceSamples);
-            mutableLoopRound.put("source_sample_count", sourceSamples.size());
-        }
-    }
-
-    private List<Map<String, Object>> buildLoopRoundPayloadEvidenceRecords(Map<String, Object> payload) {
-        List<Map<String, Object>> evidenceRecords = new ArrayList<>();
-        for (Map<String, Object> evidenceCard : extractListOfMaps(payload.get("evidence_cards"))) {
-            LinkedHashMap<String, Object> normalized = new LinkedHashMap<>();
-            normalized.put("evidence_id", blankIfNull(stringValue(evidenceCard.get("evidence_id"))));
-            normalized.put("source_id", blankIfNull(stringValue(evidenceCard.get("source_id"))));
-            normalized.put("source_title", blankIfNull(stringValue(evidenceCard.get("source_title"))));
-            normalized.put("generated_by", blankIfNull(stringValue(evidenceCard.get("generated_by"))));
-            normalized.put("generated_ref_id", blankIfNull(stringValue(evidenceCard.get("generated_ref_id"))));
-            normalized.put("search_query", blankIfNull(stringValue(firstNonNull(
-                    evidenceCard.get("search_query"),
-                    evidenceCard.get("query")
-            ))));
-            normalized.put("read_focus", blankIfNull(stringValue(evidenceCard.get("read_focus"))));
-            normalized.put("relation_type", blankIfNull(stringValue(evidenceCard.get("relation_type"))));
-            evidenceRecords.add(normalized);
-        }
-        for (Map<String, Object> readWindow : extractListOfMaps(payload.get("read_windows"))) {
-            LinkedHashMap<String, Object> normalized = new LinkedHashMap<>();
-            normalized.put("evidence_id", blankIfNull(stringValue(readWindow.get("evidence_id"))));
-            normalized.put("source_id", blankIfNull(stringValue(readWindow.get("source_id"))));
-            normalized.put("source_title", blankIfNull(stringValue(readWindow.get("source_title"))));
-            normalized.put("generated_by", blankIfNull(stringValue(readWindow.get("generated_by"))));
-            normalized.put("generated_ref_id", blankIfNull(stringValue(readWindow.get("generated_ref_id"))));
-            normalized.put("search_query", blankIfNull(stringValue(firstNonNull(
-                    readWindow.get("search_query"),
-                    readWindow.get("query")
-            ))));
-            normalized.put("read_focus", blankIfNull(stringValue(readWindow.get("read_focus"))));
-            normalized.put("relation_type", blankIfNull(stringValue(readWindow.get("relation_type"))));
-            evidenceRecords.add(normalized);
-        }
-        return evidenceRecords;
-    }
-
-    private List<Map<String, Object>> buildLoopRoundSourceSamples(
-            Map<String, Object> loopRound,
-            Map<String, Map<String, Object>> sourceEvidenceById,
-            List<Map<String, Object>> sourceEvidence,
-            int limit
-    ) {
-        if (loopRound == null || limit <= 0) {
-            return List.of();
-        }
-        List<String> evidenceIds = new ArrayList<>();
-        evidenceIds.addAll(extractStringList(loopRound.get("evidence_ids")));
-        evidenceIds.addAll(extractStringList(loopRound.get("target_evidence_ids")));
-        List<Map<String, Object>> directSamples = buildEvidenceSourceSamples(evidenceIds, sourceEvidenceById, limit);
-        if (!directSamples.isEmpty()) {
-            return directSamples;
-        }
-
-        LinkedHashSet<String> queries = new LinkedHashSet<>(extractStringList(loopRound.get("search_queries")));
-        queries.addAll(extractStringList(loopRound.get("queries")));
-        String query = blankToNull(stringValue(firstNonNull(loopRound.get("search_query"), loopRound.get("query"))));
-        if (query != null) {
-            queries.add(query);
-        }
-        if (queries.isEmpty()) {
-            return List.of();
-        }
-
-        LinkedHashMap<String, Map<String, Object>> orderedSamples = new LinkedHashMap<>();
-        for (String candidateQuery : queries) {
-            for (Map<String, Object> evidence : sourceEvidence) {
-                String evidenceQuery = blankToNull(stringValue(evidence.get("search_query")));
-                if (evidenceQuery == null || !evidenceQuery.equals(candidateQuery)) {
-                    continue;
-                }
-                String evidenceId = blankToNull(stringValue(evidence.get("evidence_id")));
-                String sampleKey = defaultIfBlank(
-                        stringValue(evidence.get("source_id")),
-                        evidenceId == null ? candidateQuery : evidenceId
-                );
-                if (orderedSamples.containsKey(sampleKey)) {
-                    continue;
-                }
-                LinkedHashMap<String, Object> sample = new LinkedHashMap<>();
-                sample.put("evidence_id", evidenceId);
-                sample.put("source_id", blankIfNull(stringValue(evidence.get("source_id"))));
-                sample.put("source_title", blankIfNull(stringValue(evidence.get("source_title"))));
-                sample.put("generated_by", blankIfNull(stringValue(evidence.get("generated_by"))));
-                sample.put("generated_ref_id", blankIfNull(stringValue(evidence.get("generated_ref_id"))));
-                sample.put("search_query", evidenceQuery);
-                sample.put("read_focus", blankIfNull(stringValue(evidence.get("read_focus"))));
-                sample.put("relation_type", blankIfNull(stringValue(evidence.get("relation_type"))));
-                orderedSamples.put(sampleKey, sample);
-                if (orderedSamples.size() >= limit) {
-                    return new ArrayList<>(orderedSamples.values());
-                }
-            }
-        }
-        return new ArrayList<>(orderedSamples.values());
-    }
-
     private List<Map<String, Object>> loadPersistedCheckpoints(String researchRunId) {
         return researchCheckpointStore.findAll(researchRunId).stream()
-                .map(row -> toPersistedCheckpoint(row, true))
+                .map(row -> researchCheckpointReadModelAssembler.toPersistedCheckpoint(row, true))
                 .toList();
-    }
-
-    private Map<String, Object> toPersistedCheckpoint(
-            ResearchCheckpointRecord row,
-            boolean enrichSourceProvenance
-    ) {
-        LinkedHashMap<String, Object> checkpoint = new LinkedHashMap<>();
-        Map<String, Object> summary = readPayloadMap(row.summaryJson());
-        if (enrichSourceProvenance) {
-            sourceProvenanceEnricher.enrich(summary);
-        }
-        Map<String, Object> loopDecision = castMapOrEmpty(summary.get("loop_decision"));
-        Map<String, Object> localVerifier = castMapOrEmpty(summary.get("local_verifier"));
-        Map<String, Object> globalVerifier = castMapOrEmpty(summary.get("global_verifier"));
-        Map<String, Object> stateLedger = castMapOrEmpty(summary.get("state_ledger"));
-        Map<String, Object> researchIntentAlignment = castMapOrEmpty(summary.get("research_intent_alignment"));
-        Map<String, Object> counterfactualSummary = castMapOrEmpty(summary.get("counterfactual_summary"));
-        Map<String, Object> recoveryTargets = castMapOrEmpty(summary.get("recovery_targets"));
-        checkpoint.put("checkpoint_no", row.checkpointNo());
-        checkpoint.put("snapshot_type", row.snapshotType());
-        checkpoint.put("object_key", row.objectKey());
-        checkpoint.put("payload_sha256", row.payloadSha256());
-        checkpoint.put("content_size", row.contentSize());
-        checkpoint.put("active_branch_id", blankIfNull(row.activeBranchKey()));
-        checkpoint.put("final_loop_decision", blankIfNull(row.finalLoopDecision()));
-        checkpoint.put("summary", summary);
-        checkpoint.put("loop_decision", loopDecision);
-        checkpoint.put("local_verifier", localVerifier);
-        checkpoint.put("global_verifier", globalVerifier);
-        checkpoint.put("state_ledger", stateLedger);
-        checkpoint.put("research_intent_alignment", researchIntentAlignment.isEmpty() ? null : researchIntentAlignment);
-        checkpoint.put("counterfactual_summary", counterfactualSummary.isEmpty() ? null : counterfactualSummary);
-        checkpoint.put("recovery_targets", recoveryTargets.isEmpty() ? null : recoveryTargets);
-        checkpoint.put("local_verifier_status", blankIfNull(stringValue(localVerifier.get("status"))));
-        checkpoint.put("global_verifier_decision", blankIfNull(stringValue(globalVerifier.get("decision"))));
-        checkpoint.put("research_intent_alignment_status", blankIfNull(stringValue(summary.get("research_intent_alignment_status"))));
-        checkpoint.put("research_intent_alignment_reason", blankIfNull(stringValue(summary.get("research_intent_alignment_reason"))));
-        checkpoint.put("intent_constraint_count", intValue(summary.get("intent_constraint_count")));
-        checkpoint.put("intent_satisfied_constraint_count", intValue(summary.get("intent_satisfied_constraint_count")));
-        checkpoint.put("intent_requirement_count", intValue(summary.get("intent_requirement_count")));
-        checkpoint.put("intent_satisfied_requirement_count", intValue(summary.get("intent_satisfied_requirement_count")));
-        checkpoint.put("intent_pending_requirement_count", intValue(summary.get("intent_pending_requirement_count")));
-        checkpoint.put("missing_intent_requirements", extractStringList(summary.get("missing_intent_requirements")));
-        checkpoint.put("verified_row_count", intValue(stateLedger.get("verified_row_count")));
-        checkpoint.put("conflicted_row_count", intValue(stateLedger.get("conflicted_row_count")));
-        checkpoint.put("created_at", row.createdAt());
-        return checkpoint;
-    }
-
-    private Map<String, Object> buildVerifierGatedSummary(
-            List<Map<String, Object>> rows,
-            Map<String, Object> recoveryTargets
-    ) {
-        if (rows == null || rows.isEmpty()) {
-            return Map.of(
-                    "blocked_row_count", 0,
-                    "guardrailed_row_count", 0,
-                    "recovery_targeted_blocked_row_count", 0,
-                    "uncovered_blocked_row_count", 0,
-                    "requirement_partial_blocked_row_count", 0,
-                    "blocked_row_samples", List.of(),
-                    "guardrailed_row_samples", List.of(),
-                    "need_more_evidence_row_samples", List.of()
-            );
-        }
-        List<Map<String, Object>> blockedRows = rows.stream()
-                .filter(this::isVerifierGatedRow)
-                .toList();
-        int targetedBlockedRowCount = (int) blockedRows.stream()
-                .filter(row -> matchesRecoveryTargets(row, recoveryTargets))
-                .count();
-        int uncoveredBlockedRowCount = Math.max(blockedRows.size() - targetedBlockedRowCount, 0);
-        int requirementPartialBlockedRowCount = (int) blockedRows.stream()
-                .filter(row -> "PARTIAL".equals(stringValue(row.get("requirement_completion_status"))))
-                .count();
-        LinkedHashMap<String, Object> summary = new LinkedHashMap<>();
-        summary.put("blocked_row_count", blockedRows.size());
-        summary.put("guardrailed_row_count", (int) blockedRows.stream()
-                .filter(row -> !isConflictedRow(row))
-                .count());
-        summary.put("recovery_targeted_blocked_row_count", targetedBlockedRowCount);
-        summary.put("uncovered_blocked_row_count", uncoveredBlockedRowCount);
-        summary.put("requirement_partial_blocked_row_count", requirementPartialBlockedRowCount);
-        summary.put("blocked_row_samples", buildCheckpointRowsByPredicate(rows, this::isVerifierGatedRow, 2));
-        summary.put("guardrailed_row_samples", buildCheckpointRowsByPredicate(
-                rows,
-                row -> isVerifierGatedRow(row) && !isConflictedRow(row),
-                2
-        ));
-        summary.put("need_more_evidence_row_samples", buildCheckpointRowsByPredicate(
-                rows,
-                row -> "NEED_MORE_EVIDENCE".equals(stringValue(row.get("row_status"))),
-                2
-        ));
-        return summary;
-    }
-
-    private List<Map<String, Object>> buildCheckpointRowSamples(
-            List<Map<String, Object>> rows,
-            String rowStatus,
-            int limit
-    ) {
-        return buildCheckpointRowsByPredicate(rows, row -> rowStatus.equals(stringValue(row.get("row_status"))), limit);
-    }
-
-    private List<Map<String, Object>> buildCheckpointRowsByPredicate(
-            List<Map<String, Object>> rows,
-            java.util.function.Predicate<Map<String, Object>> predicate,
-            int limit
-    ) {
-        if (rows == null || rows.isEmpty() || limit <= 0) {
-            return List.of();
-        }
-        List<Map<String, Object>> samples = new ArrayList<>();
-        for (Map<String, Object> row : rows) {
-            if (!predicate.test(row)) {
-                continue;
-            }
-            samples.add(buildCheckpointRowSample(row));
-            if (samples.size() >= limit) {
-                break;
-            }
-        }
-        return samples;
-    }
-
-    private Map<String, Object> buildCheckpointRowSample(Map<String, Object> row) {
-        LinkedHashMap<String, Object> sample = new LinkedHashMap<>();
-        sample.put("row_id", blankIfNull(stringValue(row.get("row_id"))));
-        sample.put("source_id", blankIfNull(stringValue(row.get("source_id"))));
-        sample.put("source_title", blankIfNull(stringValue(row.get("source_title"))));
-        sample.put("evidence_id", blankIfNull(stringValue(row.get("evidence_id"))));
-        sample.put("search_query", blankIfNull(stringValue(row.get("search_query"))));
-        sample.put("claim_text", blankIfNull(stringValue(row.get("claim_text"))));
-        sample.put("row_status", blankIfNull(stringValue(row.get("row_status"))));
-        sample.put("support_level", blankIfNull(stringValue(row.get("support_level"))));
-        sample.put("verification_status", blankIfNull(stringValue(row.get("verification_status"))));
-        sample.put("requirement_completion_status", blankIfNull(stringValue(row.get("requirement_completion_status"))));
-        sample.put("repair_hint", blankIfNull(stringValue(row.get("repair_hint"))));
-        sample.put("branch_id", blankIfNull(stringValue(row.get("branch_id"))));
-        sample.put("matched_requirement_ids", extractStringList(row.get("matched_requirement_ids")));
-        sample.put("ready_requirement_ids", extractStringList(row.get("ready_requirement_ids")));
-        sample.put("missing_columns", extractStringList(row.get("missing_columns")));
-        return sample;
-    }
-
-    private boolean isVerifierGatedRow(Map<String, Object> row) {
-        return !isVerifiedRow(row);
-    }
-
-    private boolean isVerifiedRow(Map<String, Object> row) {
-        return "VERIFIED".equals(stringValue(row.get("row_status")));
-    }
-
-    private boolean isConflictedRow(Map<String, Object> row) {
-        return "CONFLICTED".equals(stringValue(row.get("row_status")));
-    }
-
-    private boolean matchesRecoveryTargets(Map<String, Object> row, Map<String, Object> recoveryTargets) {
-        if (recoveryTargets == null || recoveryTargets.isEmpty()) {
-            return false;
-        }
-        List<String> targetRequirementIds = extractStringList(recoveryTargets.get("requirement_ids"));
-        List<String> targetColumns = extractStringList(recoveryTargets.get("target_columns"));
-        List<String> targetQueries = extractStringList(recoveryTargets.get("target_queries"));
-        List<String> targetSources = extractStringList(recoveryTargets.get("target_sources"));
-        List<String> rowRequirementIds = new ArrayList<>(extractStringList(row.get("matched_requirement_ids")));
-        rowRequirementIds.addAll(extractStringList(row.get("ready_requirement_ids")));
-        if (rowRequirementIds.stream().anyMatch(targetRequirementIds::contains)) {
-            return true;
-        }
-        if (extractStringList(row.get("missing_columns")).stream().anyMatch(targetColumns::contains)) {
-            return true;
-        }
-        String searchQuery = blankToNull(stringValue(row.get("search_query")));
-        if (matchesTargetText(searchQuery, targetQueries)) {
-            return true;
-        }
-        String readFocus = blankToNull(stringValue(row.get("read_focus")));
-        if (matchesTargetText(readFocus, targetQueries)) {
-            return true;
-        }
-        String sourceTitle = blankToNull(stringValue(row.get("source_title")));
-        return matchesTargetText(sourceTitle, targetSources);
-    }
-
-    private boolean matchesTargetText(String value, List<String> targets) {
-        if (value == null || value.isBlank() || targets == null || targets.isEmpty()) {
-            return false;
-        }
-        for (String target : targets) {
-            if (target == null || target.isBlank()) {
-                continue;
-            }
-            if (target.contains(value) || value.contains(target)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private List<Map<String, Object>> buildCheckpointEvidenceSamples(
-            List<Map<String, Object>> evidenceCards,
-            int limit
-    ) {
-        if (evidenceCards == null || evidenceCards.isEmpty() || limit <= 0) {
-            return List.of();
-        }
-        List<Map<String, Object>> samples = new ArrayList<>();
-        for (Map<String, Object> evidenceCard : evidenceCards) {
-            LinkedHashMap<String, Object> sample = new LinkedHashMap<>();
-            sample.put("evidence_id", blankIfNull(stringValue(evidenceCard.get("evidence_id"))));
-            sample.put("source_id", blankIfNull(stringValue(evidenceCard.get("source_id"))));
-            sample.put("source_title", blankIfNull(stringValue(evidenceCard.get("source_title"))));
-            sample.put("window_id", blankIfNull(stringValue(evidenceCard.get("window_id"))));
-            sample.put("claim_text", blankIfNull(stringValue(evidenceCard.get("claim_text"))));
-            sample.put("relation_type", blankIfNull(stringValue(evidenceCard.get("relation_type"))));
-            samples.add(sample);
-            if (samples.size() >= limit) {
-                break;
-            }
-        }
-        return samples;
-    }
-
-    private List<Map<String, Object>> buildCheckpointReadWindowSamples(
-            List<Map<String, Object>> readWindows,
-            int limit
-    ) {
-        if (readWindows == null || readWindows.isEmpty() || limit <= 0) {
-            return List.of();
-        }
-        List<Map<String, Object>> samples = new ArrayList<>();
-        for (Map<String, Object> readWindow : readWindows) {
-            LinkedHashMap<String, Object> sample = new LinkedHashMap<>();
-            sample.put("window_id", blankIfNull(stringValue(readWindow.get("window_id"))));
-            sample.put("source_id", blankIfNull(stringValue(readWindow.get("source_id"))));
-            sample.put("source_title", blankIfNull(stringValue(readWindow.get("source_title"))));
-            sample.put("query", blankIfNull(stringValue(readWindow.get("query"))));
-            sample.put("read_focus", blankIfNull(stringValue(readWindow.get("read_focus"))));
-            sample.put("retention_reason", blankIfNull(stringValue(readWindow.get("retention_reason"))));
-            sample.put("snapshot_status", blankIfNull(stringValue(readWindow.get("snapshot_status"))));
-            samples.add(sample);
-            if (samples.size() >= limit) {
-                break;
-            }
-        }
-        return samples;
-    }
-
-    private Map<String, Object> rawRecoveryTargets(Map<String, Object> checkpointPayload) {
-        Map<String, Object> reportStructure = castMapOrEmpty(checkpointPayload.get("report_structure"));
-        Map<String, Object> closedLoopState = castMapOrEmpty(reportStructure.get("closed_loop_state"));
-        Map<String, Object> direct = castMapOrEmpty(firstNonNull(
-                closedLoopState.get("recovery_targets"),
-                castMapOrEmpty(reportStructure.get("recovery_status")).get("recovery_targets")
-        ));
-        if (!direct.isEmpty()) {
-            return direct;
-        }
-        Map<String, Object> stopContract = castMapOrEmpty(checkpointPayload.get("stop_contract"));
-        if (stopContract.isEmpty()) {
-            return Map.of();
-        }
-        return buildRecoveryTargetsFromStopContract(stopContract);
-    }
-
-    private Map<String, Object> rawIntentCompletionContract(Map<String, Object> checkpointPayload) {
-        Map<String, Object> stateLedger = castMapOrEmpty(checkpointPayload.get("state_ledger"));
-        Map<String, Object> direct = castMapOrEmpty(firstNonNull(
-                checkpointPayload.get("intent_completion_contract"),
-                stateLedger.get("intent_completion_contract")
-        ));
-        if (!direct.isEmpty()) {
-            return direct;
-        }
-        return castMapOrEmpty(castMapOrEmpty(
-                castMapOrEmpty(checkpointPayload.get("report_structure")).get("intent_completion_contract")
-        ));
-    }
-
-    private Map<String, Object> rawResearchIntentAlignment(Map<String, Object> checkpointPayload) {
-        Map<String, Object> direct = castMapOrEmpty(firstNonNull(
-                checkpointPayload.get("research_intent_alignment"),
-                castMapOrEmpty(castMapOrEmpty(checkpointPayload.get("report_structure")).get("research_intent_alignment"))
-        ));
-        if (!direct.isEmpty()) {
-            return direct;
-        }
-        Map<String, Object> globalVerifier = castMapOrEmpty(checkpointPayload.get("global_verifier"));
-        Map<String, Object> localVerifier = castMapOrEmpty(checkpointPayload.get("local_verifier"));
-        return castMapOrEmpty(firstNonNull(
-                globalVerifier.get("research_intent_alignment"),
-                localVerifier.get("research_intent_alignment")
-        ));
-    }
-
-    private ResearchCounterfactualSummaryResponse firstNonNullCounterfactualSummary(
-            Map<String, Object> checkpointSummary,
-            Map<String, Object> checkpointPayload
-    ) {
-        ResearchCounterfactualSummaryResponse summary = readCounterfactualSummary(
-                castMapOrEmpty(checkpointSummary.get("counterfactual_summary"))
-        );
-        return summary != null ? summary : buildCounterfactualSummary(checkpointPayload);
     }
 
     private Map<String, Object> rawCounterfactualSummary(Map<String, Object> checkpointPayload) {
@@ -2201,7 +719,8 @@ public class ResearchRunQueryService {
         if (!directSummary.isEmpty()) {
             return directSummary;
         }
-        ResearchCounterfactualSummaryResponse derivedSummary = buildCounterfactualSummary(checkpointPayload);
+        ResearchCounterfactualSummaryResponse derivedSummary = researchCheckpointProcessAssembler
+                .buildCounterfactualSummary(checkpointPayload);
         if (derivedSummary == null) {
             return Map.of();
         }
@@ -2231,159 +750,6 @@ public class ResearchRunQueryService {
         return summary;
     }
 
-    private Map<String, Object> extractRecoveryTargets(List<ResearchTraceResponse> traces) {
-        Map<String, Object> reportStructure = extractNestedMap(traces, "REPORT_STRUCTURE", "report_structure");
-        if (reportStructure.isEmpty()) {
-            Map<String, Object> finalResultPayload = extractNestedMap(traces, "FINAL_REPORT", "result_payload");
-            reportStructure = castMapOrEmpty(finalResultPayload.get("report_structure"));
-            if (reportStructure.isEmpty()) {
-                return buildRecoveryTargetsFromStopContract(castMapOrEmpty(finalResultPayload.get("stop_contract")));
-            }
-        }
-        Map<String, Object> closedLoopState = castMapOrEmpty(reportStructure.get("closed_loop_state"));
-        Map<String, Object> direct = castMapOrEmpty(firstNonNull(
-                closedLoopState.get("recovery_targets"),
-                castMapOrEmpty(reportStructure.get("recovery_status")).get("recovery_targets")
-        ));
-        if (!direct.isEmpty()) {
-            return direct;
-        }
-        return Map.of();
-    }
-
-    private Map<String, Object> buildRecoveryTargetsFromStopContract(Map<String, Object> stopContract) {
-        if (stopContract.isEmpty()) {
-            return Map.of();
-        }
-        List<String> requirementIds = extractStringList(stopContract.get("recovery_target_requirement_ids"));
-        List<String> requirementTypes = extractStringList(stopContract.get("recovery_target_requirement_types"));
-        List<String> requirementLabels = extractStringList(stopContract.get("recovery_target_requirement_labels"));
-        List<String> targetColumns = extractStringList(stopContract.get("recovery_target_columns"));
-        List<String> targetQueries = extractStringList(stopContract.get("recovery_target_queries"));
-        List<String> targetSources = extractStringList(stopContract.get("recovery_target_sources"));
-        if (requirementIds.isEmpty()
-                && requirementTypes.isEmpty()
-                && requirementLabels.isEmpty()
-                && targetColumns.isEmpty()
-                && targetQueries.isEmpty()
-                && targetSources.isEmpty()) {
-            return Map.of();
-        }
-        LinkedHashMap<String, Object> recoveryTargets = new LinkedHashMap<>();
-        recoveryTargets.put("requirement_ids", requirementIds);
-        recoveryTargets.put("requirement_types", requirementTypes);
-        recoveryTargets.put("requirement_labels", requirementLabels);
-        recoveryTargets.put("target_columns", targetColumns);
-        recoveryTargets.put("target_queries", targetQueries);
-        recoveryTargets.put("target_sources", targetSources);
-        recoveryTargets.put("requirement_count", requirementIds.size());
-        recoveryTargets.put("query_count", targetQueries.size());
-        recoveryTargets.put("source_count", targetSources.size());
-        recoveryTargets.put("column_count", targetColumns.size());
-        return recoveryTargets;
-    }
-
-    private List<Map<String, Object>> loadPersistedSourceEvidence(String researchRunId) {
-        return jdbcTemplate.query("""
-                select se.evidence_key, se.window_id, se.source_id, se.source_title, se.source_url, se.provider, se.adapter,
-                       coalesce(s.generated_by, '') as generated_by,
-                       coalesce(s.generated_ref_id, '') as generated_ref_id,
-                       se.search_query, se.read_focus, se.quote_text, se.claim_text, se.relation_type,
-                       se.support_score, se.conflict_score, se.snapshot_status, se.snapshot_key
-                from source_evidence se
-                left join source s on s.id = se.source_id
-                where se.research_run_id = ?
-                order by se.created_at asc, se.id asc
-                """, (rs, rowNum) -> {
-            LinkedHashMap<String, Object> evidence = new LinkedHashMap<>();
-            evidence.put("evidence_id", rs.getString("evidence_key"));
-            evidence.put("window_id", blankIfNull(rs.getString("window_id")));
-            evidence.put("source_id", blankIfNull(rs.getString("source_id")));
-            evidence.put("source_title", blankIfNull(rs.getString("source_title")));
-            evidence.put("generated_by", blankIfNull(rs.getString("generated_by")));
-            evidence.put("generated_ref_id", blankIfNull(rs.getString("generated_ref_id")));
-            evidence.put("source_url", blankIfNull(rs.getString("source_url")));
-            evidence.put("provider", blankIfNull(rs.getString("provider")));
-            evidence.put("adapter", blankIfNull(rs.getString("adapter")));
-            evidence.put("search_query", blankIfNull(rs.getString("search_query")));
-            evidence.put("read_focus", blankIfNull(rs.getString("read_focus")));
-            evidence.put("quote_text", blankIfNull(rs.getString("quote_text")));
-            evidence.put("claim_text", blankIfNull(rs.getString("claim_text")));
-            evidence.put("relation_type", blankIfNull(rs.getString("relation_type")));
-            evidence.put("support_score", rs.getBigDecimal("support_score"));
-            evidence.put("conflict_score", rs.getBigDecimal("conflict_score"));
-            evidence.put("snapshot_status", blankIfNull(rs.getString("snapshot_status")));
-            evidence.put("snapshot_key", blankIfNull(rs.getString("snapshot_key")));
-            return evidence;
-        }, researchRunId);
-    }
-
-    private List<Map<String, Object>> loadPersistedCellEvidence(String researchRunId) {
-        return jdbcTemplate.query("""
-                select rc.cell_key, rr.row_key, rce.evidence_key, se.source_id, se.source_title, se.source_url,
-                       coalesce(s.generated_by, '') as generated_by,
-                       coalesce(s.generated_ref_id, '') as generated_ref_id
-                from research_cell_evidence rce
-                join research_cell rc on rc.id = rce.research_cell_id
-                join research_row rr on rr.id = rc.research_row_id
-                join source_evidence se on se.id = rce.source_evidence_id
-                left join source s on s.id = se.source_id
-                where rce.research_run_id = ?
-                order by rce.created_at asc, rce.id asc
-                """, (rs, rowNum) -> {
-            LinkedHashMap<String, Object> cellEvidence = new LinkedHashMap<>();
-            cellEvidence.put("cell_id", rs.getString("cell_key"));
-            cellEvidence.put("row_id", rs.getString("row_key"));
-            cellEvidence.put("evidence_id", rs.getString("evidence_key"));
-            cellEvidence.put("source_id", blankIfNull(rs.getString("source_id")));
-            cellEvidence.put("source_title", blankIfNull(rs.getString("source_title")));
-            cellEvidence.put("generated_by", blankIfNull(rs.getString("generated_by")));
-            cellEvidence.put("generated_ref_id", blankIfNull(rs.getString("generated_ref_id")));
-            cellEvidence.put("source_url", blankIfNull(rs.getString("source_url")));
-            return cellEvidence;
-        }, researchRunId);
-    }
-
-    private Map<String, Object> mergeStateLedgerSnapshot(
-            Map<String, Object> stateLedger,
-            List<Map<String, Object>> persistedBranches,
-            List<Map<String, Object>> persistedRows,
-            List<Map<String, Object>> persistedCells,
-            List<Map<String, Object>> persistedVerifierDecisions
-    ) {
-        LinkedHashMap<String, Object> merged = new LinkedHashMap<>(stateLedger);
-        merged.put("branches", persistedBranches);
-        merged.put("rows", persistedRows);
-        merged.put("cells", persistedCells);
-        merged.put("verifier_decisions", persistedVerifierDecisions);
-        if (!persistedBranches.isEmpty() && stringValue(merged.get("active_branch_id")).isBlank()) {
-            merged.put("active_branch_id", stringValue(persistedBranches.get(persistedBranches.size() - 1).get("branch_id")));
-        }
-        merged.put("verified_row_count", persistedRows.stream()
-                .filter(row -> "VERIFIED".equals(stringValue(row.get("row_status"))))
-                .count());
-        merged.put("conflicted_row_count", persistedRows.stream()
-                .filter(row -> "CONFLICTED".equals(stringValue(row.get("row_status"))))
-                .count());
-        return merged;
-    }
-
-    private List<String> readStringList(String json) {
-        if (json == null || json.isBlank()) {
-            return List.of();
-        }
-        try {
-            return objectMapper.readValue(json, new TypeReference<List<String>>() {
-            });
-        } catch (JsonProcessingException ex) {
-            return List.of();
-        }
-    }
-
-    private String defaultIfBlank(String value, String fallback) {
-        return value == null || value.isBlank() ? fallback : value;
-    }
-
     private void requireWorkspace(String workspaceId) {
         if (!workspaceService.exists(workspaceId)) {
             throw new BusinessException("WORKSPACE_NOT_FOUND", "工作台不存在");
@@ -2405,22 +771,6 @@ public class ResearchRunQueryService {
 
     private Instant toInstant(Timestamp timestamp) {
         return timestamp == null ? null : timestamp.toInstant();
-    }
-
-    private record ResearchClosedLoopData(
-            List<Map<String, Object>> branches,
-            List<Map<String, Object>> rows,
-            List<Map<String, Object>> cells,
-            List<Map<String, Object>> sourceEvidence,
-            List<Map<String, Object>> verifierDecisions,
-            List<Map<String, Object>> checkpoints,
-            List<Map<String, Object>> cellEvidence
-    ) {
-        private static ResearchClosedLoopData empty() {
-            return new ResearchClosedLoopData(
-                    List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
-            );
-        }
     }
 
     private record ResearchRunListReadModel(
@@ -2474,30 +824,6 @@ public class ResearchRunQueryService {
         private static int intRecordValue(Object value) {
             return value instanceof Number number ? number.intValue() : 0;
         }
-    }
-
-    private record RunValue<T>(String researchRunId, T value) {
-    }
-
-    private record DetailRow(
-            String researchRunId,
-            String workspaceId,
-            String taskId,
-            String question,
-            String profileKey,
-            String researchIntentJson,
-            String sourceScopeJson,
-            String controlPackJson,
-            String resumedFromResearchRunId,
-            Integer resumedFromCheckpointNo,
-            String status,
-            String finalReportTitle,
-            String finalReportMarkdown,
-            String traceSummary,
-            String reportSourceId,
-            Instant createdAt,
-            Instant updatedAt
-    ) {
     }
 
 }

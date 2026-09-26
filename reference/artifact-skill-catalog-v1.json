@@ -4,6 +4,7 @@
     "study_guide": {"properties": ["language"], "required": []},
     "quiz_pack": {"properties": ["language"], "required": []},
     "wiki_page": {"properties": ["language"], "required": []},
+    "mindmap_from_workspace": {"properties": ["language", "layout", "depth"], "required": []},
     "bilibili_course_note_pdf": {"properties": ["language", "url"], "required": ["url"]},
     "report_draft": {"properties": ["language"], "required": []},
     "faq_draft": {"properties": ["language"], "required": []},

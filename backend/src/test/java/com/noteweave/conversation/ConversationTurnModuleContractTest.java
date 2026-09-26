@@ -715,6 +715,33 @@ class ConversationTurnModuleContractTest {
     }
 
     @Test
+    void messageReloadProjectsFailedAnswerRunStatusAndError() throws Exception {
+        String workspaceId = createWorkspace();
+        String conversationId = createConversation(workspaceId);
+        JsonNode answer = submit(conversationId, Map.of(
+                "content", "failed answer reload",
+                "answer_mode", "NOTE",
+                "client_request_id", "failed-answer-reload"
+        ), 200);
+        String assistantMessageId = answer.path("assistant_message_id").asText();
+        jdbcTemplate.update("""
+                update answer_run
+                set status = 'FAILED', error_code = 'PROVIDER_DISABLED',
+                    error_message = 'Answer LLM is not configured'
+                where answer_message_id = ?
+                """, assistantMessageId);
+
+        mockMvc.perform(get(
+                        "/api/v2/workspaces/{workspaceId}/conversations/{conversationId}/messages",
+                        workspaceId, conversationId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[1].message_id").value(assistantMessageId))
+                .andExpect(jsonPath("$.data[1].context_status").value("CURRENT"))
+                .andExpect(jsonPath("$.data[1].answer_status").value("FAILED"))
+                .andExpect(jsonPath("$.data[1].answer_error").value("Answer LLM is not configured"));
+    }
+
+    @Test
     void researchCompletionProjectsAReportCardIntoTheOriginalAssistantMessage() throws Exception {
         String workspaceId = createWorkspace();
         String conversationId = createConversation(workspaceId);

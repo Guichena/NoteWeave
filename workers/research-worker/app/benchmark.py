@@ -38,7 +38,7 @@ class BenchmarkProfile:
     rollout_no: int
 
     def __post_init__(self) -> None:
-        if self.execution_mode not in {"SEQUENTIAL", "PARALLEL", "SPECULATIVE"}:
+        if self.execution_mode not in {"SEQUENTIAL", "PARALLEL", "SPECULATIVE", "DISTRIBUTED_DETERMINISTIC"}:
             raise ValueError("unsupported benchmark execution mode")
         if self.provider_kind not in {"REAL", "SIMULATED"}:
             raise ValueError("provider_kind must be REAL or SIMULATED")
@@ -77,6 +77,7 @@ class BenchmarkRecord:
     http_429_count: int
     http_5xx_count: int
     termination_reason: str
+    result_classification: str = "IN_PROCESS_COMPONENT"
 
 
 @dataclass(frozen=True)
@@ -138,6 +139,7 @@ class BenchmarkRunner:
             http_429_count=_non_negative_int(execution.http_429_count),
             http_5xx_count=_non_negative_int(execution.http_5xx_count),
             termination_reason=execution.termination_reason.strip() or "UNKNOWN",
+            result_classification=_result_classification(profile, execution.result_payload),
         )
 
 
@@ -246,7 +248,7 @@ class BenchmarkSuiteRunner:
         normalized_modes = tuple(dict.fromkeys(str(mode).strip().upper() for mode in modes if str(mode).strip()))
         if "SEQUENTIAL" not in normalized_modes or len(normalized_modes) < 2:
             raise ValueError("benchmark suite requires SEQUENTIAL and at least one candidate mode")
-        if any(mode not in {"SEQUENTIAL", "PARALLEL", "SPECULATIVE"} for mode in normalized_modes):
+        if any(mode not in {"SEQUENTIAL", "PARALLEL", "SPECULATIVE", "DISTRIBUTED_DETERMINISTIC"} for mode in normalized_modes):
             raise ValueError("benchmark suite contains an unsupported execution mode")
 
         records: list[BenchmarkRecord] = []
@@ -285,6 +287,25 @@ def _manifest(profile: BenchmarkProfile, case: BenchmarkCase, *, include_mode: b
         manifest["execution_mode"] = profile.execution_mode
         manifest["profile_key"] = profile.profile_key
     return manifest
+
+
+def _result_classification(
+    profile: BenchmarkProfile,
+    result_payload: dict[str, object],
+) -> str:
+    declared = str(result_payload.get("result_classification") or "").strip().upper()
+    allowed = {
+        "IN_PROCESS_COMPONENT",
+        "DISTRIBUTED_DETERMINISTIC",
+        "DISTRIBUTED_REAL_PROVIDER",
+    }
+    if declared:
+        if declared not in allowed:
+            raise ValueError("unsupported benchmark result classification")
+        return declared
+    if profile.execution_mode == "DISTRIBUTED_DETERMINISTIC":
+        raise ValueError("distributed benchmark did not return a result classification")
+    return "IN_PROCESS_COMPONENT"
 
 
 def _digest(value: dict[str, object]) -> str:

@@ -1,5 +1,6 @@
 package com.noteweave.upload;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.Test;
@@ -24,5 +25,18 @@ class UploadSecurityPolicyTest {
                 .hasMessageContaining("UTF-8");
         assertThatThrownBy(() -> policy.validateMergedContent("text/markdown", 1, new byte[]{0}))
                 .hasMessageContaining("NUL");
+    }
+
+    @Test
+    void pdfMetadataAndSignatureShouldBeAccepted() {
+        assertThatCode(() -> policy.validateMetadata(new CreateUploadRequest(
+                "research.pdf", 8, "application/pdf", 8, 1)))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> policy.validateMergedContent(
+                "application/pdf", 8, "%PDF-1.7".getBytes()))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> policy.validateMergedContent(
+                "application/pdf", 8, "not-a-pd".getBytes()))
+                .hasMessageContaining("PDF 文件头");
     }
 }

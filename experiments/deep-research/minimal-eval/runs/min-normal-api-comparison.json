@@ -1,0 +1,957 @@
+{
+  "schema_version": "deep-research-minimal-eval-public-evidence.v1",
+  "case_key": "min-normal-api-comparison",
+  "run_id": "a1125180-c7df-4b45-94cd-663873856183",
+  "workspace_id": "cec85b12-1032-4df6-96bc-ac9933d54aed",
+  "captured_at": "2026-09-20T13:05:04.983931+00:00",
+  "truth_label": "生产待验证",
+  "note": "公开 API 原始证据已采集；仍须按 manifest required_checks 审计后才能标记 PASSED。",
+  "run_detail": {
+    "research_run_id": "a1125180-c7df-4b45-94cd-663873856183",
+    "workspace_id": "cec85b12-1032-4df6-96bc-ac9933d54aed",
+    "task_id": "b27e2f7f-585f-4223-90ee-67e8d3a75942",
+    "question": "Compare the OpenAI Responses API and Anthropic Messages API tool-calling and streaming-event designs. Use only official documentation from the two companies.",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用、证据不足时诚实降级的研究报告",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL",
+        "SOURCE_DOMAIN_ALLOWLIST: developers.openai.com,platform.openai.com,docs.anthropic.com,platform.claude.com"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "final_report_title": "Research report: Compare the OpenAI Responses API and Anthropic Messages API tool-calling and streaming-event designs. Use only official documentation from the two companies.",
+    "final_report_markdown": "# Research report\n\n## subject:answer\ntool_use = next(block for block in response.content if block.type == \"tool_use\")\n\nCitations: [evidence:69482d9cd6a7b4d803d9361b9551f643c4cc45ea37510c88]\n\n## subject:implications\nPass the `container` ID from the paused response.\n\nCitations: [evidence:69d2e62f766e541c709ae7176019554a0de1afd44266cbce]\n\n## subject:key_evidence\ntool_use = next(block for block in response.content if block.type == \"tool_use\")\n\nCitations: [evidence:296ed7d9c3a7084ee53f9eb3c7c8ff4969493611fd5035e5]\n\n## subject:limitations\nResponses, we’ve removed this param, leaving only one generation.\n\nCitations: [evidence:a83f0f1a773890d37e1ed25498c0b9b35f1d57dd7854209e]\n\n## Citation audit\n\n### subject:answer\n\n- Evidence: `evidence:69482d9cd6a7b4d803d9361b9551f643c4cc45ea37510c88`\n- Exact quote: “tool_use = next(block for block in response.content if block.type == \"tool_use\")”\n- Snapshot: `research/external/ec229531-f35f-4aec-92f8-e9d6736d6af3/a8049c83cae3388c0a25e1b85dad34fe5d075fcc4e122b5ba1ec8dd0a14b01d7`\n- URL: https://docs.anthropic.com/en/docs/build-with-claude/tool-use/overview\n\n### subject:implications\n\n- Evidence: `evidence:69d2e62f766e541c709ae7176019554a0de1afd44266cbce`\n- Exact quote: “Pass the `container` ID from the paused response.”\n- Snapshot: `research/external/40923590-ba2e-4f17-b2ba-d53d8a9c4da6/f9687ad4b3334d7a223d9b1db4f04aef3cf97704224fa5c831666a9a7c59e72e`\n- URL: https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/programmatic-tool-calling\n\n### subject:key_evidence\n\n- Evidence: `evidence:296ed7d9c3a7084ee53f9eb3c7c8ff4969493611fd5035e5`\n- Exact quote: “tool_use = next(block for block in response.content if block.type == \"tool_use\")”\n- Snapshot: `research/external/0de029d2-c4cc-4d23-a80f-b01dbdde2ed6/a8049c83cae3388c0a25e1b85dad34fe5d075fcc4e122b5ba1ec8dd0a14b01d7`\n- URL: https://docs.anthropic.com/en/docs/build-with-claude/tool-use/overview\n\n### subject:limitations\n\n- Evidence: `evidence:a83f0f1a773890d37e1ed25498c0b9b35f1d57dd7854209e`\n- Exact quote: “Responses, we’ve removed this param, leaving only one generation.”\n- Snapshot: `research/external/aa5299dc-b92d-4880-a06f-c0c7b1738601/62583013244727866ec51d2fff1b4852ee45c27a785dbe9b1bdb4bf6dec46a3f`\n- URL: https://developers.openai.com/api/docs/guides/migrate-to-responses\n\n",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/cec85b12-1032-4df6-96bc-ac9933d54aed/research/a1125180-c7df-4b45-94cd-663873856183/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 2312,
+      "sha256": "5c6dad63efc78fc9ad6b9828f6288d1c0efb471ac8ba53b1f05d08993e84971a"
+    },
+    "research_artifact": {
+      "artifact_id": "a1125180-c7df-4b45-94cd-663873856183",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "Research report: Compare the OpenAI Responses API and Anthropic Messages API tool-calling and streaming-event designs. Use only official documentation from the two companies.",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "a1125180-c7df-4b45-94cd-663873856183",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/cec85b12-1032-4df6-96bc-ac9933d54aed/research/a1125180-c7df-4b45-94cd-663873856183/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 2312,
+        "sha256": "5c6dad63efc78fc9ad6b9828f6288d1c0efb471ac8ba53b1f05d08993e84971a"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 0,
+        "blocked_row_count": 0,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 0,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [],
+        "guardrailed_row_samples": [],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v1",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 1,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "Compare the OpenAI Responses API and Anthropic Messages API tool-calling and streaming-event designs. Use only official documentation from the two companies.",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Subject",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "Compare the OpenAI Responses API and Anthropic Messages API tool-calling and streaming-event designs. Use only official documentation from the two companies.",
+            "read_focus": "形成可逐项引用、证据不足时诚实降级的研究报告",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "subject:key_evidence",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "key_evidence",
+            "candidate_value": "tool_use = next(block for block in response.content if block.type == \"tool_use\")",
+            "status": "VERIFIED",
+            "confidence": 1.0,
+            "evidence_refs": [
+              "evidence:296ed7d9c3a7084ee53f9eb3c7c8ff4969493611fd5035e5"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "subject:implications",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "implications",
+            "candidate_value": "Pass the `container` ID from the paused response.",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:69d2e62f766e541c709ae7176019554a0de1afd44266cbce"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "subject:answer",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "answer",
+            "candidate_value": "tool_use = next(block for block in response.content if block.type == \"tool_use\")",
+            "status": "VERIFIED",
+            "confidence": 1.0,
+            "evidence_refs": [
+              "evidence:69482d9cd6a7b4d803d9361b9551f643c4cc45ea37510c88"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "subject:limitations",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "limitations",
+            "candidate_value": "Responses, we’ve removed this param, leaving only one generation.",
+            "status": "VERIFIED",
+            "confidence": 1.0,
+            "evidence_refs": [
+              "evidence:a83f0f1a773890d37e1ed25498c0b9b35f1d57dd7854209e"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 1,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "Compare the OpenAI Responses API and Anthropic Messages API tool-calling and streaming-event designs. Use only official documentation from the two companies.",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Subject",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "Compare the OpenAI Responses API and Anthropic Messages API tool-calling and streaming-event designs. Use only official documentation from the two companies.",
+          "read_focus": "形成可逐项引用、证据不足时诚实降级的研究报告",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "subject:key_evidence",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "key_evidence",
+          "candidate_value": "tool_use = next(block for block in response.content if block.type == \"tool_use\")",
+          "status": "VERIFIED",
+          "confidence": 1.0,
+          "evidence_refs": [
+            "evidence:296ed7d9c3a7084ee53f9eb3c7c8ff4969493611fd5035e5"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "subject:implications",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "implications",
+          "candidate_value": "Pass the `container` ID from the paused response.",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:69d2e62f766e541c709ae7176019554a0de1afd44266cbce"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "subject:answer",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "answer",
+          "candidate_value": "tool_use = next(block for block in response.content if block.type == \"tool_use\")",
+          "status": "VERIFIED",
+          "confidence": 1.0,
+          "evidence_refs": [
+            "evidence:69482d9cd6a7b4d803d9361b9551f643c4cc45ea37510c88"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "subject:limitations",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "limitations",
+          "candidate_value": "Responses, we’ve removed this param, leaving only one generation.",
+          "status": "VERIFIED",
+          "confidence": 1.0,
+          "evidence_refs": [
+            "evidence:a83f0f1a773890d37e1ed25498c0b9b35f1d57dd7854209e"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:69482d9cd6a7b4d803d9361b9551f643c4cc45ea37510c88",
+          "window_id": "window-3",
+          "source_id": "web-83c4d284bba6ec51",
+          "source_title": "Tool use with Claude - Claude Platform Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.anthropic.com/en/docs/build-with-claude/tool-use/overview",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "Anthropic Messages API tool-calling site:docs.anthropic.com",
+          "read_focus": "Read external URL Tool use with Claude - Claude Platform Docs for claims that answer: Compare the OpenAI Responses API and Anthropic Messages API tool-calling and streaming-event designs. Use only official documentation from the two companies.",
+          "quote_text": "tool_use = next(block for block in response.content if block.type == \"tool_use\")",
+          "claim_text": "tool_use = next(block for block in response.content if block.type == \"tool_use\")",
+          "relation_type": "SUPPORTS",
+          "support_score": 1.0,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/ec229531-f35f-4aec-92f8-e9d6736d6af3/a8049c83cae3388c0a25e1b85dad34fe5d075fcc4e122b5ba1ec8dd0a14b01d7"
+        },
+        {
+          "evidence_id": "evidence:296ed7d9c3a7084ee53f9eb3c7c8ff4969493611fd5035e5",
+          "window_id": "window-3",
+          "source_id": "web-83c4d284bba6ec51",
+          "source_title": "Tool use with Claude - Claude Platform Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.anthropic.com/en/docs/build-with-claude/tool-use/overview",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "Anthropic Messages API tool-calling site:docs.anthropic.com",
+          "read_focus": "Read external URL Tool use with Claude - Claude Platform Docs for claims that answer: Compare the OpenAI Responses API and Anthropic Messages API tool-calling and streaming-event designs. Use only official documentation from the two companies.",
+          "quote_text": "tool_use = next(block for block in response.content if block.type == \"tool_use\")",
+          "claim_text": "tool_use = next(block for block in response.content if block.type == \"tool_use\")",
+          "relation_type": "SUPPORTS",
+          "support_score": 1.0,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/0de029d2-c4cc-4d23-a80f-b01dbdde2ed6/a8049c83cae3388c0a25e1b85dad34fe5d075fcc4e122b5ba1ec8dd0a14b01d7"
+        },
+        {
+          "evidence_id": "evidence:8b9ac3c653a5dc28ea02fa37b354ea81aa3586ad1dcb3d56",
+          "window_id": "window-2",
+          "source_id": "web-e55c99509dfc89fc",
+          "source_title": "Migrate to the Responses API - OpenAI Developers",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developers.openai.com/api/docs/guides/migrate-to-responses",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "Compare the OpenAI Responses API site:developers.openai.com",
+          "read_focus": "Read external URL Migrate to the Responses API - OpenAI Developers for claims that answer: Compare the OpenAI Responses API and Anthropic Messages API tool-calling and streaming-event designs. Use only official documentation from the two companies.",
+          "quote_text": "When you get a response back from the Responses API, t",
+          "claim_text": "When you get a response back from the Responses API, t",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.5,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/0de029d2-c4cc-4d23-a80f-b01dbdde2ed6/62583013244727866ec51d2fff1b4852ee45c27a785dbe9b1bdb4bf6dec46a3f"
+        },
+        {
+          "evidence_id": "evidence:3215e1306bb0726a3f82f0426d5d04630fde054fb660a4dc",
+          "window_id": "window-1",
+          "source_id": "web-788ec084b4143a8c",
+          "source_title": "Compare models | OpenAI API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developers.openai.com/api/docs/models/compare",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "Compare the OpenAI Responses API site:developers.openai.com",
+          "read_focus": "Read external URL Compare models | OpenAI API for claims that answer: Compare the OpenAI Responses API and Anthropic Messages API tool-calling and streaming-event designs. Use only official documentation from the two companies.",
+          "quote_text": "put Output Reasoning tokens Pricing Text tokens Input / 1M tokens $4.00 Cached input / 1M tokens $0.40 Cache writes / 1M tokens - Output / 1M tokens $20.00 Context Window 1,050,000 Max Output Tokens 128,000 Knowledge Cutoff Feb 16, 2026 Endpoints v1/chat/completions v1/responses v1/batch Supported Features Streaming Function calling Structured outputs Image input Rate Limits TPM Free - Tier 1 500,000 Tier 2 1,000,000 Tier 3 2,000,000 Tier 4 4,000,000 Tier 5 40,000,000 Learn more Playground GPT-5.6 Terra [](https://developers.openai.com/api/docs/models/gpt-5.6-terra) GPT-5.6 model that balances intelligence and cost Learn more Playground Reasoning Speed Input Output Reasoning tokens Pricing Text tokens Input / 1M tokens $2.00 Cached input / 1M tokens $0.20 Cache writes / 1M tokens - Output / 1M tokens $12.00 Context Window 1,050,000 Max Output Tokens 128,000 Knowledge Cutoff Feb 16, 2026 Endpoints v1/chat/completions v1/responses v1/batch Supported Features Streaming Function calling Structured outputs Image input Rate Limits TPM Free - Tier 1 500,000 Tier 2 1,000,000 Tier 3 2,000,000 Tier 4 4,000,000 Tier 5 40,000,000 Learn more Playground Ask AI ## Docs agent Loading docs agent...",
+          "claim_text": "put Output Reasoning tokens Pricing Text tokens Input / 1M tokens $4.00 Cached input / 1M tokens $0.40 Cache writes / 1M tokens - Output / 1M tokens $20.00 Context Window 1,050,000 Max Output Tokens 128,000 Knowledge Cutoff Feb 16, 2026 Endpoints v1/chat/completions v1/responses v1/batch Supported Features Streaming Function calling Structured outputs Image input Rate Limits TPM Free - Tier 1 500,000 Tier 2 1,000,000 Tier 3 2,000,000 Tier 4 4,000,000 Tier 5 40,000,000 Learn more Playground GPT-5.6 Terra [](https://developers.openai.com/api/docs/models/gpt-5.6-terra) GPT-5.6 model that balances intelligence and cost Learn more Playground Reasoning Speed Input Output Reasoning tokens Pricing Text tokens Input / 1M tokens $2.00 Cached input / 1M tokens $0.20 Cache writes / 1M tokens - Output / 1M tokens $12.00 Context Window 1,050,000 Max Output Tokens 128,000 Knowledge Cutoff Feb 16, 2026 Endpoints v1/chat/completions v1/responses v1/batch Supported Features Streaming Function calling Structured outputs Image input Rate Limits TPM Free - Tier 1 500,000 Tier 2 1,000,000 Tier 3 2,000,000 Tier 4 4,000,000 Tier 5 40,000,000 Learn more Playground Ask AI ## Docs agent Loading docs agent...",
+          "relation_type": "SUPPORTS",
+          "support_score": 1.0,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/aa5299dc-b92d-4880-a06f-c0c7b1738601/86668397e18d61e49da171063b627d1f967732d11079cf5890d2c00de0ccf243"
+        },
+        {
+          "evidence_id": "evidence:4b63c0b2aa83758a203853799ec4dfad6cad103dd010039b",
+          "window_id": "window-4",
+          "source_id": "web-f2b2b1614c93c6e0",
+          "source_title": "Programmatic tool calling - Claude Platform Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/programmatic-tool-calling",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "Anthropic Messages API tool-calling site:docs.anthropic.com",
+          "read_focus": "Read external URL Programmatic tool calling - Claude Platform Docs for claims that answer: Compare the OpenAI Responses API and Anthropic Messages API tool-calling and streaming-event designs. Use only official documentation from the two companies.",
+          "quote_text": "The API rejects a continuation that has pending programmatic tool calls but no container ID.",
+          "claim_text": "The API rejects a continuation that has pending programmatic tool calls but no container ID.",
+          "relation_type": "SUPPORTS",
+          "support_score": 1.0,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/aa5299dc-b92d-4880-a06f-c0c7b1738601/f9687ad4b3334d7a223d9b1db4f04aef3cf97704224fa5c831666a9a7c59e72e"
+        },
+        {
+          "evidence_id": "evidence:a83f0f1a773890d37e1ed25498c0b9b35f1d57dd7854209e",
+          "window_id": "window-2",
+          "source_id": "web-e55c99509dfc89fc",
+          "source_title": "Migrate to the Responses API - OpenAI Developers",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developers.openai.com/api/docs/guides/migrate-to-responses",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "Compare the OpenAI Responses API site:developers.openai.com",
+          "read_focus": "Read external URL Migrate to the Responses API - OpenAI Developers for claims that answer: Compare the OpenAI Responses API and Anthropic Messages API tool-calling and streaming-event designs. Use only official documentation from the two companies.",
+          "quote_text": "Responses, we’ve removed this param, leaving only one generation.",
+          "claim_text": "Responses, we’ve removed this param, leaving only one generation.",
+          "relation_type": "SUPPORTS",
+          "support_score": 1.0,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/aa5299dc-b92d-4880-a06f-c0c7b1738601/62583013244727866ec51d2fff1b4852ee45c27a785dbe9b1bdb4bf6dec46a3f"
+        },
+        {
+          "evidence_id": "evidence:69d2e62f766e541c709ae7176019554a0de1afd44266cbce",
+          "window_id": "window-4",
+          "source_id": "web-f2b2b1614c93c6e0",
+          "source_title": "Programmatic tool calling - Claude Platform Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/programmatic-tool-calling",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "Anthropic Messages API tool-calling site:docs.anthropic.com",
+          "read_focus": "Read external URL Programmatic tool calling - Claude Platform Docs for claims that answer: Compare the OpenAI Responses API and Anthropic Messages API tool-calling and streaming-event designs. Use only official documentation from the two companies.",
+          "quote_text": "Pass the `container` ID from the paused response.",
+          "claim_text": "Pass the `container` ID from the paused response.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/40923590-ba2e-4f17-b2ba-d53d8a9c4da6/f9687ad4b3334d7a223d9b1db4f04aef3cf97704224fa5c831666a9a7c59e72e"
+        },
+        {
+          "evidence_id": "evidence:0a013764d0c5978b0b9724b80fea2233fba0572c1b939aec",
+          "window_id": "window-2",
+          "source_id": "web-e55c99509dfc89fc",
+          "source_title": "Migrate to the Responses API - OpenAI Developers",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developers.openai.com/api/docs/guides/migrate-to-responses",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "Compare the OpenAI Responses API site:developers.openai.com",
+          "read_focus": "Read external URL Migrate to the Responses API - OpenAI Developers for claims that answer: Compare the OpenAI Responses API and Anthropic Messages API tool-calling and streaming-event designs. Use only official documentation from the two companies.",
+          "quote_text": "When you get a response back from the Responses API, t",
+          "claim_text": "When you get a response back from the Responses API, t",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/40923590-ba2e-4f17-b2ba-d53d8a9c4da6/62583013244727866ec51d2fff1b4852ee45c27a785dbe9b1bdb4bf6dec46a3f"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "subject:answer",
+          "row_id": "subject",
+          "evidence_id": "evidence:69482d9cd6a7b4d803d9361b9551f643c4cc45ea37510c88",
+          "source_id": "web-83c4d284bba6ec51",
+          "source_title": "Tool use with Claude - Claude Platform Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.anthropic.com/en/docs/build-with-claude/tool-use/overview"
+        },
+        {
+          "cell_id": "subject:key_evidence",
+          "row_id": "subject",
+          "evidence_id": "evidence:296ed7d9c3a7084ee53f9eb3c7c8ff4969493611fd5035e5",
+          "source_id": "web-83c4d284bba6ec51",
+          "source_title": "Tool use with Claude - Claude Platform Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.anthropic.com/en/docs/build-with-claude/tool-use/overview"
+        },
+        {
+          "cell_id": "subject:limitations",
+          "row_id": "subject",
+          "evidence_id": "evidence:a83f0f1a773890d37e1ed25498c0b9b35f1d57dd7854209e",
+          "source_id": "web-e55c99509dfc89fc",
+          "source_title": "Migrate to the Responses API - OpenAI Developers",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developers.openai.com/api/docs/guides/migrate-to-responses"
+        },
+        {
+          "cell_id": "subject:implications",
+          "row_id": "subject",
+          "evidence_id": "evidence:69d2e62f766e541c709ae7176019554a0de1afd44266cbce",
+          "source_id": "web-f2b2b1614c93c6e0",
+          "source_title": "Programmatic tool calling - Claude Platform Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/programmatic-tool-calling"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "5e14b6b4-ee7d-4fb8-ad0c-a43aea94af42",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "profile_key": "DEFAULT",
+          "research_intent": {
+            "research_goal": "形成可逐项引用、证据不足时诚实降级的研究报告",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL",
+              "SOURCE_DOMAIN_ALLOWLIST: developers.openai.com,platform.openai.com,docs.anthropic.com,platform.claude.com"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0,
+          "question": "Compare the OpenAI Responses API and Anthropic Messages API tool-calling and streaming-event designs. Use only official documentation from the two companies."
+        },
+        "created_at": "2026-09-20T13:01:37Z"
+      },
+      {
+        "trace_id": "ac9cbee4-6b0f-4823-bec9-5467a9679839",
+        "trace_type": "INCREMENTAL_FINALIZED",
+        "trace_message": "Research report: Compare the OpenAI Responses API and Anthropic Messages API tool-calling and streaming-event designs. Use only official documentation from the two companies.",
+        "payload": {
+          "cell_count": 4
+        },
+        "created_at": "2026-09-20T13:05:04Z"
+      }
+    ],
+    "created_at": "2026-09-20T13:01:37Z",
+    "updated_at": "2026-09-20T13:05:04Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "merges": [
+        {
+          "cell_key": "subject:answer",
+          "merge_id": "merge:f91d0c2ec14c9143a3a0099f8bfa78ea6b77c470f7f61c3732d8b5a221d64fe1",
+          "candidate_id": "6aa15f78-9c4a-4872-ae81-cf5944a036ae",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1
+        },
+        {
+          "cell_key": "subject:key_evidence",
+          "merge_id": "merge:c24a0dac5c09c31bcaae0bf3b63efcb8bf342a71e39bbafbae0aaa00a0229cb9",
+          "candidate_id": "bff2d4d6-d603-47d0-b435-c9dbe00091de",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1
+        },
+        {
+          "cell_key": "subject:limitations",
+          "merge_id": "merge:899f9ff3d2a9566834b935e33ebf75e6ce87a78ec5934fd95faa68304fe6650b",
+          "candidate_id": "5bcf80de-edbe-4095-9396-0745f773c38b",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1
+        },
+        {
+          "cell_key": "subject:implications",
+          "merge_id": "merge:37605b033b14c16104cd5ee723b778c6b90cf9190c25c163e06fa4108b1c8603",
+          "candidate_id": "b77cbdbb-054b-403e-983b-42e3713e3318",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1
+        }
+      ],
+      "checkpoints": [],
+      "tasks": [
+        {
+          "attempt_count": 1,
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-09-20T13:04:11Z",
+          "lease_epoch": 1,
+          "task_id": "0de029d2-c4cc-4d23-a80f-b01dbdde2ed6",
+          "task_key": "deep-cell:4c552421aa80b373a2cafec54494740e",
+          "worker_instance_id": "research-agent-worker-1",
+          "fencing_token": 1
+        },
+        {
+          "attempt_count": 1,
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-09-20T13:06:00Z",
+          "lease_epoch": 1,
+          "task_id": "40923590-ba2e-4f17-b2ba-d53d8a9c4da6",
+          "task_key": "deep-cell:4978d2b25eda10c629a7eca1208e1962",
+          "worker_instance_id": "research-agent-worker-1",
+          "fencing_token": 1
+        },
+        {
+          "attempt_count": 1,
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-09-20T13:05:06Z",
+          "lease_epoch": 1,
+          "task_id": "aa5299dc-b92d-4880-a06f-c0c7b1738601",
+          "task_key": "deep-cell:a27a91753271d9bcbeb90fbca73255b7",
+          "worker_instance_id": "research-agent-worker-1",
+          "fencing_token": 1
+        },
+        {
+          "attempt_count": 1,
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-09-20T13:03:08Z",
+          "lease_epoch": 1,
+          "task_id": "ec229531-f35f-4aec-92f8-e9d6736d6af3",
+          "task_key": "deep-cell:842fdbc47121fc7bd375cf90c97455c7",
+          "worker_instance_id": "research-agent-worker-1",
+          "fencing_token": 1
+        },
+        {
+          "attempt_count": 1,
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-09-20T13:06:02Z",
+          "lease_epoch": 1,
+          "task_id": "6632ad3e-a4c7-42ee-99c5-980c731ec5ec",
+          "task_key": "evidence-audit:9dcd47e02fb64d7132fd1c87e56774b1",
+          "worker_instance_id": "research-agent-worker-1",
+          "fencing_token": 1
+        },
+        {
+          "attempt_count": 1,
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-09-20T13:06:03Z",
+          "lease_epoch": 1,
+          "task_id": "2680d130-dfa7-4875-b8a2-c2f01ae31c17",
+          "task_key": "synthesis:1818461f274b58c3c3382dd55241b123",
+          "worker_instance_id": "research-agent-worker-1",
+          "fencing_token": 1
+        }
+      ],
+      "candidates": [
+        {
+          "base_cell_version": 0,
+          "confidence": 1.0,
+          "candidate_id": "6aa15f78-9c4a-4872-ae81-cf5944a036ae",
+          "cell_key": "subject:answer",
+          "task_id": "ec229531-f35f-4aec-92f8-e9d6736d6af3"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 1.0,
+          "candidate_id": "bff2d4d6-d603-47d0-b435-c9dbe00091de",
+          "cell_key": "subject:key_evidence",
+          "task_id": "0de029d2-c4cc-4d23-a80f-b01dbdde2ed6"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 1.0,
+          "candidate_id": "5bcf80de-edbe-4095-9396-0745f773c38b",
+          "cell_key": "subject:limitations",
+          "task_id": "aa5299dc-b92d-4880-a06f-c0c7b1738601"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "b77cbdbb-054b-403e-983b-42e3713e3318",
+          "cell_key": "subject:implications",
+          "task_id": "40923590-ba2e-4f17-b2ba-d53d8a9c4da6"
+        }
+      ],
+      "candidate_count": 4,
+      "task_count": 6,
+      "merge_count": 4,
+      "execution_mode": "INCREMENTAL_V1"
+    }
+  },
+  "evidence_manifest_capture": {
+    "available": true,
+    "data": {
+      "manifest_id": "fdb3d77c-3826-4505-9428-f31819af7c98",
+      "run_id": "a1125180-c7df-4b45-94cd-663873856183",
+      "report_content_hash": "5c6dad63efc78fc9ad6b9828f6288d1c0efb471ac8ba53b1f05d08993e84971a",
+      "evidence": [
+        {
+          "rank": 1,
+          "evidence_id": "evidence:69482d9cd6a7b4d803d9361b9551f643c4cc45ea37510c88",
+          "source_id": "web-83c4d284bba6ec51",
+          "source_snapshot_id": "research/external/ec229531-f35f-4aec-92f8-e9d6736d6af3/a8049c83cae3388c0a25e1b85dad34fe5d075fcc4e122b5ba1ec8dd0a14b01d7",
+          "passage_id": "window-3",
+          "title": "Tool use with Claude - Claude Platform Docs",
+          "excerpt": "tool_use = next(block for block in response.content if block.type == \"tool_use\")",
+          "content_hash": "8b0e479967d3e009a92d8334ddead891b8ef6aac3ca97e50ce525ee755a1e247",
+          "location": "subject:answer"
+        },
+        {
+          "rank": 2,
+          "evidence_id": "evidence:69d2e62f766e541c709ae7176019554a0de1afd44266cbce",
+          "source_id": "web-f2b2b1614c93c6e0",
+          "source_snapshot_id": "research/external/40923590-ba2e-4f17-b2ba-d53d8a9c4da6/f9687ad4b3334d7a223d9b1db4f04aef3cf97704224fa5c831666a9a7c59e72e",
+          "passage_id": "window-4",
+          "title": "Programmatic tool calling - Claude Platform Docs",
+          "excerpt": "Pass the `container` ID from the paused response.",
+          "content_hash": "4a6be12c0a81283392d77d19328f6c70eeaf332d0aa733d5cfbe7fe616521c44",
+          "location": "subject:implications"
+        },
+        {
+          "rank": 3,
+          "evidence_id": "evidence:296ed7d9c3a7084ee53f9eb3c7c8ff4969493611fd5035e5",
+          "source_id": "web-83c4d284bba6ec51",
+          "source_snapshot_id": "research/external/0de029d2-c4cc-4d23-a80f-b01dbdde2ed6/a8049c83cae3388c0a25e1b85dad34fe5d075fcc4e122b5ba1ec8dd0a14b01d7",
+          "passage_id": "window-3",
+          "title": "Tool use with Claude - Claude Platform Docs",
+          "excerpt": "tool_use = next(block for block in response.content if block.type == \"tool_use\")",
+          "content_hash": "8b0e479967d3e009a92d8334ddead891b8ef6aac3ca97e50ce525ee755a1e247",
+          "location": "subject:key_evidence"
+        },
+        {
+          "rank": 4,
+          "evidence_id": "evidence:a83f0f1a773890d37e1ed25498c0b9b35f1d57dd7854209e",
+          "source_id": "web-e55c99509dfc89fc",
+          "source_snapshot_id": "research/external/aa5299dc-b92d-4880-a06f-c0c7b1738601/62583013244727866ec51d2fff1b4852ee45c27a785dbe9b1bdb4bf6dec46a3f",
+          "passage_id": "window-2",
+          "title": "Migrate to the Responses API - OpenAI Developers",
+          "excerpt": "Responses, we’ve removed this param, leaving only one generation.",
+          "content_hash": "89afa7d1be69c9e59b7fdd914280c4d41dbe577ce293eeee4efc5b2d360ba93d",
+          "location": "subject:limitations"
+        }
+      ],
+      "created_at": "2026-09-20T13:05:04Z"
+    }
+  },
+  "collection_capture": {
+    "available": true,
+    "data": {
+      "collection_id": "1fd89d6e-abf3-4d5b-b328-242d6350e0dc",
+      "workspace_id": "cec85b12-1032-4df6-96bc-ac9933d54aed",
+      "research_run_id": "a1125180-c7df-4b45-94cd-663873856183",
+      "title": "Research report: Compare the OpenAI Responses API and Anthropic Messages API tool-calling and streaming-event designs. Use only official documentation from the two companies.",
+      "status": "ACTIVE",
+      "report": {
+        "title": "Research report: Compare the OpenAI Responses API and Anthropic Messages API tool-calling and streaming-event designs. Use only official documentation from the two companies.",
+        "markdown": "# Research report\n\n## subject:answer\ntool_use = next(block for block in response.content if block.type == \"tool_use\")\n\nCitations: [evidence:69482d9cd6a7b4d803d9361b9551f643c4cc45ea37510c88]\n\n## subject:implications\nPass the `container` ID from the paused response.\n\nCitations: [evidence:69d2e62f766e541c709ae7176019554a0de1afd44266cbce]\n\n## subject:key_evidence\ntool_use = next(block for block in response.content if block.type == \"tool_use\")\n\nCitations: [evidence:296ed7d9c3a7084ee53f9eb3c7c8ff4969493611fd5035e5]\n\n## subject:limitations\nResponses, we’ve removed this param, leaving only one generation.\n\nCitations: [evidence:a83f0f1a773890d37e1ed25498c0b9b35f1d57dd7854209e]\n\n## Citation audit\n\n### subject:answer\n\n- Evidence: `evidence:69482d9cd6a7b4d803d9361b9551f643c4cc45ea37510c88`\n- Exact quote: “tool_use = next(block for block in response.content if block.type == \"tool_use\")”\n- Snapshot: `research/external/ec229531-f35f-4aec-92f8-e9d6736d6af3/a8049c83cae3388c0a25e1b85dad34fe5d075fcc4e122b5ba1ec8dd0a14b01d7`\n- URL: https://docs.anthropic.com/en/docs/build-with-claude/tool-use/overview\n\n### subject:implications\n\n- Evidence: `evidence:69d2e62f766e541c709ae7176019554a0de1afd44266cbce`\n- Exact quote: “Pass the `container` ID from the paused response.”\n- Snapshot: `research/external/40923590-ba2e-4f17-b2ba-d53d8a9c4da6/f9687ad4b3334d7a223d9b1db4f04aef3cf97704224fa5c831666a9a7c59e72e`\n- URL: https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/programmatic-tool-calling\n\n### subject:key_evidence\n\n- Evidence: `evidence:296ed7d9c3a7084ee53f9eb3c7c8ff4969493611fd5035e5`\n- Exact quote: “tool_use = next(block for block in response.content if block.type == \"tool_use\")”\n- Snapshot: `research/external/0de029d2-c4cc-4d23-a80f-b01dbdde2ed6/a8049c83cae3388c0a25e1b85dad34fe5d075fcc4e122b5ba1ec8dd0a14b01d7`\n- URL: https://docs.anthropic.com/en/docs/build-with-claude/tool-use/overview\n\n### subject:limitations\n\n- Evidence: `evidence:a83f0f1a773890d37e1ed25498c0b9b35f1d57dd7854209e`\n- Exact quote: “Responses, we’ve removed this param, leaving only one generation.”\n- Snapshot: `research/external/aa5299dc-b92d-4880-a06f-c0c7b1738601/62583013244727866ec51d2fff1b4852ee45c27a785dbe9b1bdb4bf6dec46a3f`\n- URL: https://developers.openai.com/api/docs/guides/migrate-to-responses\n\n"
+      },
+      "adopted_sources": [
+        {
+          "source_kind": "WEB",
+          "evidence_id": "evidence:69482d9cd6a7b4d803d9361b9551f643c4cc45ea37510c88",
+          "source_id": "web-83c4d284bba6ec51",
+          "source_snapshot_key": "research/external/ec229531-f35f-4aec-92f8-e9d6736d6af3/a8049c83cae3388c0a25e1b85dad34fe5d075fcc4e122b5ba1ec8dd0a14b01d7",
+          "source_url": "https://docs.anthropic.com/en/docs/build-with-claude/tool-use/overview",
+          "source_domain": "docs.anthropic.com",
+          "title": "Tool use with Claude - Claude Platform Docs",
+          "excerpt": "tool_use = next(block for block in response.content if block.type == \"tool_use\")",
+          "citation_count": 1
+        },
+        {
+          "source_kind": "WEB",
+          "evidence_id": "evidence:296ed7d9c3a7084ee53f9eb3c7c8ff4969493611fd5035e5",
+          "source_id": "web-83c4d284bba6ec51",
+          "source_snapshot_key": "research/external/0de029d2-c4cc-4d23-a80f-b01dbdde2ed6/a8049c83cae3388c0a25e1b85dad34fe5d075fcc4e122b5ba1ec8dd0a14b01d7",
+          "source_url": "https://docs.anthropic.com/en/docs/build-with-claude/tool-use/overview",
+          "source_domain": "docs.anthropic.com",
+          "title": "Tool use with Claude - Claude Platform Docs",
+          "excerpt": "tool_use = next(block for block in response.content if block.type == \"tool_use\")",
+          "citation_count": 1
+        },
+        {
+          "source_kind": "WEB",
+          "evidence_id": "evidence:a83f0f1a773890d37e1ed25498c0b9b35f1d57dd7854209e",
+          "source_id": "web-e55c99509dfc89fc",
+          "source_snapshot_key": "research/external/aa5299dc-b92d-4880-a06f-c0c7b1738601/62583013244727866ec51d2fff1b4852ee45c27a785dbe9b1bdb4bf6dec46a3f",
+          "source_url": "https://developers.openai.com/api/docs/guides/migrate-to-responses",
+          "source_domain": "developers.openai.com",
+          "title": "Migrate to the Responses API - OpenAI Developers",
+          "excerpt": "Responses, we’ve removed this param, leaving only one generation.",
+          "citation_count": 1
+        },
+        {
+          "source_kind": "WEB",
+          "evidence_id": "evidence:69d2e62f766e541c709ae7176019554a0de1afd44266cbce",
+          "source_id": "web-f2b2b1614c93c6e0",
+          "source_snapshot_key": "research/external/40923590-ba2e-4f17-b2ba-d53d8a9c4da6/f9687ad4b3334d7a223d9b1db4f04aef3cf97704224fa5c831666a9a7c59e72e",
+          "source_url": "https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/programmatic-tool-calling",
+          "source_domain": "docs.anthropic.com",
+          "title": "Programmatic tool calling - Claude Platform Docs",
+          "excerpt": "Pass the `container` ID from the paused response.",
+          "citation_count": 1
+        }
+      ],
+      "notes": [
+        {
+          "note_key": "subject:answer",
+          "note_type": "FINDING",
+          "title": "answer",
+          "content": "tool_use = next(block for block in response.content if block.type == \"tool_use\")",
+          "evidence_refs_json": "[\"evidence:69482d9cd6a7b4d803d9361b9551f643c4cc45ea37510c88\"]"
+        },
+        {
+          "note_key": "subject:implications",
+          "note_type": "FINDING",
+          "title": "implications",
+          "content": "Pass the `container` ID from the paused response.",
+          "evidence_refs_json": "[\"evidence:69d2e62f766e541c709ae7176019554a0de1afd44266cbce\"]"
+        },
+        {
+          "note_key": "subject:key_evidence",
+          "note_type": "FINDING",
+          "title": "key_evidence",
+          "content": "tool_use = next(block for block in response.content if block.type == \"tool_use\")",
+          "evidence_refs_json": "[\"evidence:296ed7d9c3a7084ee53f9eb3c7c8ff4969493611fd5035e5\"]"
+        },
+        {
+          "note_key": "subject:limitations",
+          "note_type": "LIMITATION",
+          "title": "limitations",
+          "content": "Responses, we’ve removed this param, leaving only one generation.",
+          "evidence_refs_json": "[\"evidence:a83f0f1a773890d37e1ed25498c0b9b35f1d57dd7854209e\"]"
+        }
+      ],
+      "created_at": "2026-09-20T13:05:04Z",
+      "updated_at": "2026-09-20T13:05:04Z"
+    }
+  }
+}

@@ -1,5 +1,6 @@
 package com.noteweave.common;
 
+import java.io.IOException;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,6 +12,7 @@ import org.springframework.web.context.request.async.AsyncRequestNotUsableExcept
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 
 @RestControllerAdvice
@@ -20,6 +22,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BusinessException.class)
     ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException ex) {
+        if (ex.code().startsWith("RESEARCH_AGENT_COMPLETION")) {
+            log.warn("Research agent completion rejected: code={}, reason={}", ex.code(), ex.getMessage());
+        }
         return ResponseEntity.status(ex.status()).body(ApiResponse.error(ex.code(), ex.getMessage()));
     }
 
@@ -55,6 +60,29 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AsyncRequestNotUsableException.class)
     void handleDisconnectedAsyncClient(AsyncRequestNotUsableException ex) {
         log.debug("Async client disconnected before the response completed: {}", ex.getMessage());
+    }
+
+    @ExceptionHandler(IOException.class)
+    Object handleDisconnectedIo(IOException ex) {
+        // SSE clients commonly close the socket while the server is still flushing.
+        // Do not try to serialize an ApiResponse into an already-committed stream;
+        // that produces a misleading 500 and a second converter exception.
+        String message = ex.getMessage() == null ? "" : ex.getMessage().toLowerCase();
+        if (message.contains("broken pipe")
+                || message.contains("connection reset")
+                || message.contains("stream closed")) {
+            log.debug("I/O response interrupted before completion: {}", ex.getMessage());
+            return null;
+        }
+        log.error("Unhandled response I/O exception", ex);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ApiResponse.error("INTERNAL_ERROR", "服务内部错误"));
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    ResponseEntity<ApiResponse<Void>> handleNoResourceFound(NoResourceFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiResponse.error("RESOURCE_NOT_FOUND", "request resource does not exist"));
     }
 
     @ExceptionHandler(Exception.class)

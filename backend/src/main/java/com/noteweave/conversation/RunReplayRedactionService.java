@@ -141,20 +141,14 @@ public class RunReplayRedactionService {
     }
 
     private boolean artifactSourceScopeContains(String json, String sourceId) {
-        try {
-            JsonNode root = objectMapper.readTree(json);
-            if (!(root instanceof ArrayNode array)) {
-                return false;
+        ArrayNode array = readArtifactArray(json, "source scope");
+        for (JsonNode item : array) {
+            requireArtifactObject(item, "source scope");
+            if (sourceId.equals(item.path("source_id").asText())) {
+                return true;
             }
-            for (JsonNode item : array) {
-                if (sourceId.equals(item.path("source_id").asText())) {
-                    return true;
-                }
-            }
-            return false;
-        } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("Stored Artifact source scope JSON is invalid", ex);
         }
+        return false;
     }
 
     private boolean artifactUpstreamReferences(
@@ -163,49 +157,62 @@ public class RunReplayRedactionService {
             String generatedRefId,
             Set<String> snapshotIds
     ) {
-        try {
-            JsonNode root = objectMapper.readTree(json);
-            if (!(root instanceof ArrayNode array)) {
-                return false;
+        ArrayNode array = readArtifactArray(json, "upstream refs");
+        for (JsonNode item : array) {
+            requireArtifactObject(item, "upstream refs");
+            String refType = item.path("ref_type").asText();
+            String refId = item.path("ref_id").asText();
+            String revisionId = item.path("revision_id").asText();
+            if ("SOURCE_SNAPSHOT".equals(refType)
+                    && sourceId.equals(refId)
+                    && snapshotIds.contains(revisionId)) {
+                return true;
             }
-            for (JsonNode item : array) {
-                String refType = item.path("ref_type").asText();
-                String refId = item.path("ref_id").asText();
-                String revisionId = item.path("revision_id").asText();
-                if ("SOURCE_SNAPSHOT".equals(refType)
-                        && sourceId.equals(refId)
-                        && snapshotIds.contains(revisionId)) {
-                    return true;
-                }
-                if ("RESEARCH_REPORT".equals(refType)
-                        && generatedRefId != null
-                        && generatedRefId.equals(refId)
-                        && snapshotIds.contains(revisionId)) {
-                    return true;
-                }
+            if ("RESEARCH_REPORT".equals(refType)
+                    && generatedRefId != null
+                    && generatedRefId.equals(refId)
+                    && snapshotIds.contains(revisionId)) {
+                return true;
             }
-            return false;
-        } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("Stored Artifact upstream refs JSON is invalid", ex);
         }
+        return false;
     }
 
     private String redactArtifactSourceBody(String json, String sourceId) {
+        ArrayNode array = readArtifactArray(json, "source scope");
+        for (JsonNode item : array) {
+            requireArtifactObject(item, "source scope");
+            ObjectNode source = (ObjectNode) item;
+            if (sourceId.equals(source.path("source_id").asText())) {
+                source.put("summary", "");
+                source.put("sample_text", "");
+            }
+        }
         try {
-            JsonNode root = objectMapper.readTree(json);
-            if (!(root instanceof ArrayNode array)) {
-                return json;
-            }
-            for (JsonNode item : array) {
-                if (item instanceof ObjectNode source
-                        && sourceId.equals(source.path("source_id").asText())) {
-                    source.put("summary", "");
-                    source.put("sample_text", "");
-                }
-            }
             return objectMapper.writeValueAsString(array);
         } catch (JsonProcessingException ex) {
             throw new IllegalStateException("Stored Artifact input snapshot JSON is invalid", ex);
+        }
+    }
+
+    private ArrayNode readArtifactArray(String json, String field) {
+        if (json == null || json.isBlank()) {
+            throw new IllegalStateException("Stored Artifact " + field + " JSON is empty");
+        }
+        try {
+            JsonNode root = objectMapper.readTree(json);
+            if (!(root instanceof ArrayNode array)) {
+                throw new IllegalStateException("Stored Artifact " + field + " JSON must be an array");
+            }
+            return array;
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("Stored Artifact " + field + " JSON is invalid", ex);
+        }
+    }
+
+    private void requireArtifactObject(JsonNode item, String field) {
+        if (!(item instanceof ObjectNode)) {
+            throw new IllegalStateException("Stored Artifact " + field + " JSON contains a non-object item");
         }
     }
 

@@ -239,6 +239,7 @@ public class AnswerRunService {
         if ("FAILED".equals(current.status())) {
             return CompletionOutcome.FAILED;
         }
+        requireNonBlankFinalContent(finalContent);
         String actor = actor();
         int finalizing = jdbcTemplate.update("""
                 update answer_run
@@ -259,11 +260,12 @@ public class AnswerRunService {
             requireTransition(finalizing, runId, "FINALIZING");
         }
         appendEvent(runId, workspaceId, "answer.status", Map.of("status", "FINALIZING"));
-        jdbcTemplate.update("""
+        int finalizedRevision = jdbcTemplate.update("""
                 update message_revision
                 set status = 'FINAL', content = ?, output_tokens = ?, updated_at = current_timestamp
                 where workspace_id = ? and answer_run_id = ? and revision_no = 1 and status = 'STREAMING'
                 """, finalContent, outputTokens, workspaceId, runId);
+        requireMessageRevisionFinalization(finalizedRevision);
         int completed = jdbcTemplate.update("""
                 update answer_run
                 set status = 'COMPLETED', finished_at = current_timestamp,
@@ -278,6 +280,27 @@ public class AnswerRunService {
         ));
         meterRegistry.counter("noteweave.answer.run.completed").increment();
         return CompletionOutcome.COMPLETED;
+    }
+
+    static void requireNonBlankFinalContent(String finalContent) {
+        if (finalContent == null || finalContent.isBlank()) {
+            throw new BusinessException(
+                    "ANSWER_LLM_EMPTY_RESPONSE",
+                    "Answer generation produced no content",
+                    HttpStatus.BAD_GATEWAY
+            );
+        }
+    }
+
+    static void requireMessageRevisionFinalization(int updated) {
+        if (updated == 1) {
+            return;
+        }
+        throw new BusinessException(
+                "ANSWER_MESSAGE_REVISION_INVALID",
+                "Answer message revision is not in STREAMING state",
+                HttpStatus.CONFLICT
+        );
     }
 
     @Transactional

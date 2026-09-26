@@ -1,12 +1,46 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 from typing import Callable
 import time
 
 from app.branch import plan_branch_recovery
+from app.cell_recovery_policy import (
+    CellRecoveryAction,
+    CellRecoveryBudget,
+    CellRecoveryHistory,
+    CellRecoveryThresholds,
+    decide,
+)
+from app.cell_recovery_runtime import (
+    CellRecoveryBudgetLedger,
+    CellRecoveryDirective,
+    CellRecoveryOutcome,
+    CellRecoveryRuntime,
+    apply_cell_recovery_directive,
+    build_cell_recovery_directive,
+    plan_digest,
+    reconcile_recovery_mode,
+    resolve_loop_recovery_decision,
+)
+from app.extraction_result import ExtractionTerminationReason
 from app.fetch_adapters import run_research_fetch
 from app.llm_client import LlmClient
+from app.loop_stop_guard import (
+    CELL_BOUND_REASON_CODES,
+    DEFAULT_MAX_REPEATED_FAILURES,
+    LoopStopDecision,
+    LoopStopGuardInputs,
+    LoopStopGuardResult,
+    attempt_limit_cell_ids,
+    dominant_rejection_reason,
+    evaluate_loop_stop_guard,
+    freeze_unresolved_cells,
+    provider_failure_signal,
+    reason_category,
+    unresolved_cell_ids,
+)
 from app.models import (
     GlobalVerifierResult,
     LocalVerifierResult,
@@ -33,6 +67,15 @@ TERMINAL_DECISIONS = {
     "EXPAND_SOURCE_SCOPE",
 }
 
+#: DR-108: 恢复决策族的**呈现文本**。决策族本身不再由本模块决定（唯一权威是
+#: ``CellRecoveryPolicy``，经 ``resolve_loop_recovery_decision`` 收敛），这里只把
+#: 已确定的族渲染成对调用方可见的恢复动作文案。
+_RECOVERY_FAMILY_ACTIONS = {
+    "EXTRACT_AGAIN": "rerun evidence extraction with stricter schema",
+    "READ_MORE": "open one more read window before synthesis",
+    "COUNTERFACTUAL_RECHECK": "run one bounded counterfactual recheck before synthesis",
+}
+
 
 @dataclass
 class ResearchLoopResult:
@@ -41,6 +84,21 @@ class ResearchLoopResult:
     rounds: list[ResearchLoopRoundSummary]
     final_decision: ResearchLoopDecision
     resume_context_summary: dict[str, object] | None = None
+    # DR-202: 每次 Cell 恢复决策的结构化轨迹（动作 / reason_code / 影响 Cell /
+    # 预算扣减 / 是否发生外部调用）。集成测试直接断言此字段。
+    cell_recovery_trace: list[dict[str, object]] = field(default_factory=list)
+    # DR-108: 每轮**唯一指令**（生效 recovery_mode 及其来源 / 外部动作是否被撤销 /
+    # 停止原因码），与 ``cell_recovery_trace`` 按轮对齐（每轮一条）。
+    cell_recovery_directives: list[dict[str, object]] = field(default_factory=list)
+    # DR-204: 停止保护的权威原因码与类别（见 app/loop_stop_guard.py 的全量词表）。
+    # 基础设施类原因（PROVIDER_NOT_CONFIGURED / PROVIDER_UNAVAILABLE）用于回答
+    # 「这次循环为什么停」，避免把 Provider 故障伪装成证据不足。
+    stop_reason_code: str = ""
+    stop_reason_category: str = ""
+    # DR-204: 有界性证据——实际发生的外部恢复动作次数，以及可证明的明确上界
+    # （min(max_loop_rounds, max_attempts_per_cell) * cell_count）。
+    external_recovery_call_count: int = 0
+    external_recovery_call_upper_bound: int = 0
 
 
 @dataclass
@@ -96,6 +154,8 @@ def run_research_loop(
                 rounds=rounds,
                 final_decision=latest_decision,
                 resume_context_summary=resume_context.summary,
+                stop_reason_code=str(latest_decision.reason or ""),
+                stop_reason_category=reason_category(latest_decision.reason),
             )
         if _wall_clock_budget_exhausted(
             active_plan,
@@ -122,6 +182,8 @@ def run_research_loop(
                 rounds=rounds,
                 final_decision=deadline_decision,
                 resume_context_summary=resume_context.summary,
+                stop_reason_code=str(deadline_decision.reason or ""),
+                stop_reason_category=reason_category(deadline_decision.reason),
             )
         active_plan = _augment_plan_for_next_round(
             active_plan,
@@ -129,6 +191,36 @@ def run_research_loop(
             latest_artifacts,
         )
         start_round = max(1, max((item.round_no for item in rounds), default=0) + 1)
+
+    # DR-202: 每轮结束后把「缺证据 / 未收敛 Cell」的恢复决策集中委托给
+    # CellRecoveryPolicy。历史与预算账本跨轮累积，因此动作序列是确定性的。
+    max_attempts_per_cell = max(
+        1, int(active_plan.stop_contract.get("max_retry_per_cell", 3) or 3)
+    )
+    # DR-204: 「同一失败原因连续重复」阈值；允许 plan 覆盖，默认值集中在本模块常量。
+    max_repeated_failures = max(
+        1,
+        int(
+            active_plan.stop_contract.get(
+                "max_repeated_failures", DEFAULT_MAX_REPEATED_FAILURES
+            )
+            or DEFAULT_MAX_REPEATED_FAILURES
+        ),
+    )
+    recovery_runtime = CellRecoveryRuntime(
+        budget_ledger=CellRecoveryBudgetLedger.from_plan(active_plan),
+        thresholds=CellRecoveryThresholds(
+            max_attempts_per_cell=max_attempts_per_cell
+        ),
+    )
+    cell_recovery_trace: list[dict[str, object]] = []
+    cell_recovery_directives: list[dict[str, object]] = []
+    # DR-204: 「同一失败原因连续重复」的跨轮计数；判定阈值集中在 loop_stop_guard。
+    repeated_failure_reason = ""
+    repeated_failure_streak = 0
+    last_guard_result: LoopStopGuardResult | None = None
+    # DR-108: 每轮的**唯一指令**（recovery_mode / 外部动作 / 停止原因的收敛产物）。
+    last_directive: CellRecoveryDirective | None = None
 
     for round_no in range(start_round, max_rounds + 1):
         if cancellation_checker is not None:
@@ -152,6 +244,9 @@ def run_research_loop(
                         decision=latest_decision,
                     )
                 )
+            # DR-108: 本轮没有产生指令（循环在开始新一轮前就被墙钟短路），
+            # 停止原因回退到墙钟决策本身，避免沿用上一轮的指令。
+            last_directive = None
             break
         artifacts = toolbox.execute_round(
             task_input=task_input,
@@ -159,12 +254,16 @@ def run_research_loop(
             round_no=round_no,
             prior_artifacts=latest_artifacts,
         )
-        # P0-6: 每轮结束后冻结超 retry 预算的 cell,后续循环不再消耗 token
-        max_retry_per_cell = int(active_plan.stop_contract.get("max_retry_per_cell", 3))
-        artifacts = replace(
-            artifacts,
-            ledger=_freeze_overspent_cells(artifacts.ledger, max_retry_per_cell),
+        # DR-202: 旧规则（按 repair_count 冻结超 retry 预算的 cell）已收敛进
+        # CellRecoveryPolicy；这里只做编排：预算检查先于外部动作，已结算 Cell 不回退。
+        recovery_outcome = recovery_runtime.apply(
+            artifacts.ledger,
+            round_no=round_no,
+            rejection_summary=_extraction_rejection_summary(artifacts),
+            read_window_count=len(artifacts.read_windows),
+            plan_digest=plan_digest(active_plan),
         )
+        artifacts = replace(artifacts, ledger=recovery_outcome.ledger)
         has_conflict_cards = any(
             card.relation_type == "CONFLICTS"
             for card in artifacts.evidence_cards
@@ -183,21 +282,82 @@ def run_research_loop(
             has_conflict=has_conflict,
             ledger=artifacts.ledger,
             global_result=artifacts.global_result,
+            recovery_outcome=recovery_outcome,
         )
         _record_wall_clock_consumption(
             active_plan,
             initial_consumed=initial_wall_clock_consumed,
             run_started_at=run_started_at,
         )
-        if _wall_clock_budget_exhausted(
+        wall_clock_exhausted = _wall_clock_budget_exhausted(
             active_plan,
             initial_consumed=initial_wall_clock_consumed,
             run_started_at=run_started_at,
-        ):
+        )
+        if wall_clock_exhausted:
             decision = _wall_clock_exhausted_decision(
                 round_no=round_no,
                 artifacts=artifacts,
             )
+        # DR-204: 停止保护集中判定。轮次 / 墙钟 / 重复失败 / Cell 尝试上限 /
+        # Provider 基础设施失败全部由 loop_stop_guard 一处裁决，loop 侧不再散落 if。
+        repeated_failure_reason, repeated_failure_streak = _update_failure_streak(
+            previous_reason=repeated_failure_reason,
+            previous_streak=repeated_failure_streak,
+            artifacts=artifacts,
+        )
+        last_guard_result = _evaluate_loop_guard(
+            round_no=round_no,
+            max_rounds=max_rounds,
+            artifacts=artifacts,
+            decision=decision,
+            recovery_outcome=recovery_outcome,
+            llm_client=llm_client,
+            max_attempts_per_cell=max_attempts_per_cell,
+            max_repeated_failures=max_repeated_failures,
+            wall_clock_exhausted=wall_clock_exhausted,
+            rejection_reason=repeated_failure_reason,
+            repeated_failure_streak=repeated_failure_streak,
+            observed_cell_attempts=recovery_runtime.attempts_by_cell,
+        )
+        if last_guard_result.freeze_cell_ids:
+            artifacts = replace(
+                artifacts,
+                ledger=freeze_unresolved_cells(
+                    artifacts.ledger,
+                    last_guard_result.freeze_cell_ids,
+                    last_guard_result.stop_reason_code or "REPEATED_CELL_FAILURE",
+                ),
+            )
+        run_stop = last_guard_result.run_stop
+        if run_stop is not None and run_stop.is_infrastructure:
+            # DR-107: Provider 未配置 / 不可用属基础设施失败，立即停止且不得伪装成证据不足。
+            decision = _infrastructure_stop_decision(run_stop, artifacts)
+        elif run_stop is not None and run_stop.reason_code in CELL_BOUND_REASON_CODES:
+            decision = _cell_bound_stop_decision(decision, artifacts, run_stop)
+        else:
+            # DR-202: 若恢复策略判定没有任何可执行的外部动作（全部 FREEZE / STOP），
+            # 就不允许 loop 再发起一轮外部调用。
+            decision = _apply_cell_recovery_stop_guard(decision, recovery_outcome, artifacts)
+        # DR-108: 三套判断（决策族 / 停止保护 / Cell 级恢复）在此收敛成唯一指令，
+        # 之后「本轮生效的 recovery_mode」「是否还有外部动作」「停止原因」全部
+        # 只从这一条指令读取，不再各自重写。
+        guarded_reason = _guarded_stop_reason_code(last_guard_result)
+        resolved_reason = guarded_reason or str(decision.reason or "")
+        last_directive = build_cell_recovery_directive(
+            round_no=round_no,
+            decision_family=decision.decision,
+            decision_reason=str(decision.reason or ""),
+            recovery_outcome=recovery_outcome,
+            stop_reason_code=resolved_reason,
+            stop_reason_category=reason_category(resolved_reason),
+            freeze_cell_ids=last_guard_result.freeze_cell_ids,
+            external_call_upper_bound=last_guard_result.external_call_upper_bound,
+            external_call_allowed=last_guard_result.run_stop is None,
+        )
+        recovery_outcome = apply_cell_recovery_directive(recovery_outcome, last_directive)
+        cell_recovery_trace.extend(entry.as_dict() for entry in recovery_outcome.trace)
+        cell_recovery_directives.append(last_directive.as_dict())
         rounds.append(
             ResearchLoopRoundSummary(
                 round_no=round_no,
@@ -223,17 +383,39 @@ def run_research_loop(
                     artifacts=artifacts,
                     rounds=rounds,
                     decision=decision,
+                    cell_recovery_trace=cell_recovery_trace,
+                    cell_recovery_directives=cell_recovery_directives,
                 )
             )
         if not decision.should_continue:
             break
-        active_plan = _augment_plan_for_next_round(active_plan, decision, artifacts)
+        active_plan = _augment_plan_for_next_round(
+            active_plan,
+            decision,
+            artifacts,
+            # DR-108: 用指令里已收敛的生效模式，而不是 Cell 级策略的原始请求，
+            # 这样「请求 vs 生效」不会再出现两套取值。
+            recovery_mode=(
+                last_directive.recovery_mode if last_directive is not None else ""
+            ),
+        )
 
     if latest_artifacts is None or latest_decision is None:
         latest_artifacts = toolbox.execute_round(
             task_input=task_input,
             plan=active_plan,
             round_no=1,
+        )
+        fallback_outcome = recovery_runtime.apply(
+            latest_artifacts.ledger,
+            round_no=1,
+            rejection_summary=_extraction_rejection_summary(latest_artifacts),
+            read_window_count=len(latest_artifacts.read_windows),
+            plan_digest=plan_digest(active_plan),
+        )
+        latest_artifacts = replace(latest_artifacts, ledger=fallback_outcome.ledger)
+        cell_recovery_trace.extend(
+            entry.as_dict() for entry in fallback_outcome.trace
         )
         latest_decision = evaluate_loop_decision(
             plan=active_plan,
@@ -247,6 +429,7 @@ def run_research_loop(
             ),
             ledger=latest_artifacts.ledger,
             global_result=latest_artifacts.global_result,
+            recovery_outcome=fallback_outcome,
         )
 
     return ResearchLoopResult(
@@ -255,6 +438,245 @@ def run_research_loop(
         rounds=rounds,
         final_decision=latest_decision,
         resume_context_summary=resume_context.summary if resume_context is not None else None,
+        cell_recovery_trace=cell_recovery_trace,
+        cell_recovery_directives=cell_recovery_directives,
+        stop_reason_code=_resolved_stop_reason_code(
+            latest_decision, last_guard_result, last_directive
+        ),
+        stop_reason_category=reason_category(
+            _resolved_stop_reason_code(latest_decision, last_guard_result, last_directive)
+        ),
+        external_recovery_call_count=_external_recovery_call_count(cell_recovery_trace),
+        external_recovery_call_upper_bound=(
+            last_guard_result.external_call_upper_bound
+            if last_guard_result is not None
+            else 0
+        ),
+    )
+
+
+def _guarded_stop_reason_code(guard_result: LoopStopGuardResult | None) -> str:
+    """停止保护中**优先于循环决策**的原因码：基础设施类与 Cell 级保护。"""
+    if guard_result is None or guard_result.run_stop is None:
+        return ""
+    guarded = guard_result.run_stop
+    if guarded.is_infrastructure or guarded.is_cell_bound:
+        return guarded.reason_code
+    return ""
+
+
+def _resolved_stop_reason_code(
+    decision: ResearchLoopDecision,
+    guard_result: LoopStopGuardResult | None,
+    directive: CellRecoveryDirective | None = None,
+) -> str:
+    """停止原因的权威取值：DR-108 指令优先，其次基础设施 / Cell 级保护，最后循环决策。"""
+    if directive is not None:
+        return directive.stop_reason_code
+    return _guarded_stop_reason_code(guard_result) or str(decision.reason or "")
+
+
+def _external_recovery_call_count(trace: list[dict[str, object]]) -> int:
+    return sum(1 for entry in trace if bool(entry.get("external_call")))
+
+
+def _update_failure_streak(
+    *,
+    previous_reason: str,
+    previous_streak: int,
+    artifacts: ResearchRoundArtifacts,
+) -> tuple[str, int]:
+    """跨轮统计「同一主导失败原因」的连续出现次数。
+
+    只有在完全没有已接受证据时才累计；一旦有证据或已收敛为 VERIFIED，计数归零。
+    """
+    has_evidence = bool(artifacts.evidence_cards) or bool(
+        getattr(artifacts.ledger, "verified_row_count", 0)
+    )
+    if has_evidence:
+        return "", 0
+    reason = dominant_rejection_reason(_extraction_rejection_summary(artifacts))
+    if not reason:
+        return "", 0
+    if reason == previous_reason:
+        return reason, previous_streak + 1
+    return reason, 1
+
+
+def _evaluate_loop_guard(
+    *,
+    round_no: int,
+    max_rounds: int,
+    artifacts: ResearchRoundArtifacts,
+    decision: ResearchLoopDecision,
+    recovery_outcome: CellRecoveryOutcome,
+    llm_client: LlmClient | None,
+    max_attempts_per_cell: int,
+    max_repeated_failures: int,
+    wall_clock_exhausted: bool,
+    rejection_reason: str,
+    repeated_failure_streak: int,
+    observed_cell_attempts: Mapping[str, int] | None = None,
+) -> LoopStopGuardResult:
+    """收集全部信号并调用唯一的停止保护判定点。"""
+    llm_provider_failure = provider_failure_signal(llm_client)
+    return evaluate_loop_stop_guard(
+        LoopStopGuardInputs(
+            round_no=round_no,
+            max_rounds=max_rounds,
+            cell_count=len(artifacts.ledger.cells),
+            max_attempts_per_cell=max_attempts_per_cell,
+            max_repeated_failures=max_repeated_failures,
+            search_hit_count=len(artifacts.search_hits),
+            read_window_count=len(artifacts.read_windows),
+            evidence_card_count=len(artifacts.evidence_cards),
+            verified_row_count=int(getattr(artifacts.ledger, "verified_row_count", 0) or 0),
+            wall_clock_exhausted=wall_clock_exhausted,
+            llm_provider_configured=llm_client is not None,
+            llm_provider_failure=llm_provider_failure,
+            rejection_reason=rejection_reason,
+            repeated_failure_streak=repeated_failure_streak,
+            has_external_recovery_action=recovery_outcome.has_external_action,
+            decision_should_continue=decision.should_continue,
+            decision_reason=str(decision.reason or ""),
+            unresolved_cell_ids=unresolved_cell_ids(artifacts.ledger),
+            attempt_limit_cell_ids=attempt_limit_cell_ids(
+                artifacts.ledger,
+                max_attempts_per_cell=max_attempts_per_cell,
+                observed_attempts=observed_cell_attempts,
+            ),
+            halted_cell_ids=tuple(recovery_outcome.halted_cell_ids),
+        )
+    )
+
+
+def _infrastructure_stop_decision(
+    stop: LoopStopDecision,
+    artifacts: ResearchRoundArtifacts,
+) -> ResearchLoopDecision:
+    """基础设施类终止：明确的 machine-readable 标记，且不得落成证据不足 / 完成态。"""
+    has_coverage = bool(getattr(artifacts.ledger, "verified_row_count", 0))
+    actions = [
+        "verify the configured research providers and credentials before rerun",
+        f"infrastructure_failure:{stop.reason_code}",
+    ]
+    if not has_coverage:
+        actions.append(
+            f"abandon_condition:{stop.reason_code}_WITHOUT_VERIFIED_COVERAGE"
+        )
+    # terminal_disposition 仅作建议；DR-305 的 RunCompletionGate 是业务终态唯一权威。
+    # 基础设施失败需要人（运维）修复配置，因此建议 HUMAN_HANDOFF，而不是业务放弃。
+    return ResearchLoopDecision(
+        decision="WRITE_WITH_GUARDRAILS",
+        reason=stop.reason_code,
+        round_no=max(1, int(stop.round_no)),
+        should_continue=False,
+        recovery_actions=actions,
+        terminal_disposition="HUMAN_HANDOFF",
+        handoff_required=True,
+        abandon_reason="",
+    )
+
+
+def _cell_bound_stop_decision(
+    decision: ResearchLoopDecision,
+    artifacts: ResearchRoundArtifacts,
+    stop: LoopStopDecision,
+) -> ResearchLoopDecision:
+    """Cell 级停止保护：终止恢复并显式暴露未收敛 Cell（不再发起外部动作）。"""
+    has_coverage = bool(getattr(artifacts.ledger, "verified_row_count", 0))
+    frozen_ids = [
+        cell.cell_id for cell in artifacts.ledger.cells if str(cell.status or "") == "FROZEN"
+    ]
+    actions = list(decision.recovery_actions)
+    if frozen_ids:
+        actions.append("surface unresolved cells: " + ", ".join(frozen_ids[:4]))
+    if not has_coverage:
+        actions.append(f"abandon_condition:{stop.reason_code}_WITHOUT_VERIFIED_COVERAGE")
+    return ResearchLoopDecision(
+        decision="WRITE_WITH_GUARDRAILS",
+        reason=stop.reason_code,
+        round_no=max(1, int(stop.round_no)),
+        should_continue=False,
+        recovery_actions=actions,
+        # terminal_disposition 仅作建议；DR-305 的 RunCompletionGate 是业务终态唯一权威。
+        terminal_disposition="GUARDED_COMPLETE" if has_coverage else "ABANDON",
+        handoff_required=False,
+        abandon_reason=(
+            "" if has_coverage else f"{stop.reason_code}_WITHOUT_VERIFIED_COVERAGE"
+        ),
+    )
+
+
+def _extraction_rejection_summary(artifacts: ResearchRoundArtifacts) -> dict[str, int]:
+    """本轮抽取的**卡片级**拒绝原因计数，直接进入 Cell 恢复决策。
+
+    重要边界：这里刻意**不**把响应级的 ``LLM_UNAVAILABLE`` 注入为 Cell 信号。
+    原因：``run_research_loop`` 在 RULE 模式（``llm_client is None``）下不构建本地
+    默认 LLM，因此每一次 ``LLM_UNAVAILABLE`` 都是「运行环境未配置 Provider」这一
+    **Run 级基础设施状态**，而不是单个 Cell 的抽取拒绝。把它当作 Cell 信号会让所有
+    未填满 Cell 立即 FREEZE，从而掩盖真正的根因。
+
+    DR-204 / DR-107 已把该 Run 级状态上提为停止保护：当 Provider 未配置且本轮确实
+    到达抽取阶段时，``app.loop_stop_guard`` 会以 ``PROVIDER_NOT_CONFIGURED``
+    （基础设施类）终止循环，而不是把它记成证据不足。``CellRecoveryPolicy`` 本身
+    仍完整支持 ``LLM_UNAVAILABLE`` 分支，运行时 API 也会如实执行（见
+    ``cell_recovery_runtime.apply_cell_recovery_policy``）。
+    """
+    result = getattr(artifacts, "extraction_result", None)
+    if result is None:
+        return {}
+    if result.termination_reason == ExtractionTerminationReason.LLM_UNAVAILABLE:
+        # 运行级配置缺失：交给既有 loop 决策，不降格为 Cell 级信号。
+        return {}
+    return dict(result.rejection_counts())
+
+
+#: 这些 loop decision 由 Cell 级恢复驱动；当策略判定无外部动作可做时不得继续。
+_CELL_DRIVEN_RECOVERY_DECISIONS = frozenset(
+    {"READ_MORE", "EXTRACT_AGAIN", "COUNTERFACTUAL_RECHECK"}
+)
+
+
+def _apply_cell_recovery_stop_guard(
+    decision: ResearchLoopDecision,
+    outcome: CellRecoveryOutcome,
+    artifacts: ResearchRoundArtifacts,
+) -> ResearchLoopDecision:
+    """恢复策略判定「无外部动作可做」时，阻止 loop 再发起一轮外部调用。
+
+    仅当以下条件同时成立才改写 decision：
+
+    - decision 本来要继续，且属于 Cell 驱动的恢复决策族；
+    - 本轮没有任何外部恢复动作（全部 FREEZE / STOP / 已结算）；
+    - 至少有一个 Cell 被冻结或停止（确实存在未解决 Cell）。
+    """
+    if not decision.should_continue:
+        return decision
+    if decision.decision not in _CELL_DRIVEN_RECOVERY_DECISIONS:
+        return decision
+    if outcome.has_external_action or not outcome.halted_cell_ids:
+        return decision
+    has_verified_coverage = bool(getattr(artifacts.ledger, "verified_row_count", 0))
+    terminal_disposition = (
+        "GUARDED_COMPLETE" if has_verified_coverage else "HUMAN_HANDOFF"
+    )
+    return decision.model_copy(
+        update={
+            "decision": "WRITE_WITH_GUARDRAILS",
+            "reason": "CELL_RECOVERY_HALTED",
+            "should_continue": False,
+            "recovery_actions": [
+                *decision.recovery_actions,
+                "surface unresolved cells: "
+                + ", ".join(outcome.halted_cell_ids[:4]),
+            ],
+            "terminal_disposition": terminal_disposition,
+            # 与 loop 其他调用点语义一致：仅 HUMAN_HANDOFF 需要人工接手。
+            # 注意：DR-305 的 RunCompletionGate 是业务终态的唯一权威，这里的
+            # terminal_disposition 只作建议值，不抢先定义业务终态。
+            "handoff_required": terminal_disposition == "HUMAN_HANDOFF",
+        }
     )
 
 
@@ -265,6 +687,8 @@ def _build_runtime_checkpoint(
     artifacts: ResearchRoundArtifacts,
     rounds: list[ResearchLoopRoundSummary],
     decision: ResearchLoopDecision,
+    cell_recovery_trace: list[dict[str, object]] | None = None,
+    cell_recovery_directives: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     checkpoint_no = max(1, len(rounds))
     return {
@@ -286,6 +710,10 @@ def _build_runtime_checkpoint(
         "evidence_horizon_decisions": list(artifacts.evidence_horizon_decisions),
         "loop_rounds": [item.model_dump(mode="json") for item in rounds],
         "loop_decision": decision.model_dump(mode="json"),
+        # DR-202: Cell 恢复决策轨迹随 checkpoint 一起持久化，供集成测试与复盘断言。
+        "cell_recovery_trace": list(cell_recovery_trace or []),
+        # DR-108: 每轮的收敛指令（生效模式 / 撤销的外部动作 / 停止原因）。
+        "cell_recovery_directives": list(cell_recovery_directives or []),
         "budgets": {
             "max_loop_rounds": int(plan.stop_contract.get("max_loop_rounds", 1)),
             "max_retry_per_cell": int(plan.stop_contract.get("max_retry_per_cell", 1)),
@@ -373,6 +801,7 @@ def evaluate_loop_decision(
     has_conflict: bool,
     ledger: ResearchStateLedger | None,
     global_result: GlobalVerifierResult,
+    recovery_outcome: CellRecoveryOutcome | None = None,
 ) -> ResearchLoopDecision:
     max_rounds = _max_loop_rounds(plan)
     pending_requirements = _pending_requirement_progress(ledger)
@@ -444,21 +873,27 @@ def evaluate_loop_decision(
         )
 
     if evidence_card_count <= 0 and round_no < max_rounds:
-        if read_window_count > 0:
-            decision = "EXTRACT_AGAIN"
-            reason = "READ_WINDOWS_WITHOUT_EVIDENCE"
-            action = "rerun evidence extraction with stricter schema"
-        else:
-            decision = "READ_MORE"
-            reason = "SEARCH_HITS_WITHOUT_READ_WINDOWS"
-            action = "open one more read window before synthesis"
-        return ResearchLoopDecision(
-            decision=decision,
-            reason=reason,
-            round_no=round_no,
-            should_continue=True,
-            recovery_actions=[action],
-        )
+        # DR-108: 「缺证据该做什么」不再由本函数按 ``read_window_count`` 自行判断。
+        # 恢复动作的唯一权威是 CellRecoveryPolicy（经 CellRecoveryRuntime 编排）；
+        # 本函数只消费策略给出的决策族 + reason_code。
+        resolved = resolve_loop_recovery_decision(recovery_outcome)
+        if resolved is not None:
+            recovery_family, recovery_reason = resolved
+            return ResearchLoopDecision(
+                decision=recovery_family,
+                reason=recovery_reason,
+                round_no=round_no,
+                should_continue=True,
+                recovery_actions=[
+                    _RECOVERY_FAMILY_ACTIONS.get(
+                        recovery_family,
+                        "continue bounded recovery for unresolved cells",
+                    )
+                ],
+            )
+        # 策略判定无外部动作可做（全部 FREEZE / STOP / 已结算）时不在此处发明动作；
+        # 交由停止保护按 ``halted_cell_ids`` 裁决（CELL_RECOVERY_HALTED），并继续走
+        # 通用循环控制（待满足要求 / 提前承诺保护 / 全局验证器未就绪）。
 
     if pending_requirements and round_no < max_rounds:
         if has_pending_conflict_requirement:
@@ -500,6 +935,24 @@ def evaluate_loop_decision(
         )
 
     if global_result.decision != "READY_TO_WRITE" and round_no < max_rounds:
+        global_blockers = {
+            str(item).strip()
+            for item in dict(global_result.verification_facts or {}).get("blocker_reason_codes", [])
+            if str(item).strip()
+        }
+        # A local WARN can legitimately disagree with a canonical global
+        # barrier that has no factual blockers (for example, an unresolved
+        # intent note). Preserve the disagreement in the report, but do not
+        # burn the bounded recovery loop reopening already verified cells.
+        if global_blockers <= {"VERIFIER_DISAGREEMENT"} and global_result.verifier_disagreement:
+            return ResearchLoopDecision(
+                decision="WRITE_WITH_GUARDRAILS",
+                reason="VERIFIER_DISAGREEMENT_WITHOUT_CANONICAL_BLOCKER",
+                round_no=round_no,
+                should_continue=False,
+                recovery_actions=list(global_result.recovery_actions),
+                terminal_disposition="GUARDED_COMPLETE",
+            )
         return ResearchLoopDecision(
             decision="READ_MORE",
             reason="GLOBAL_VERIFIER_NOT_READY",
@@ -567,7 +1020,9 @@ def _augment_plan_for_next_round(
     plan: ResearchPlan,
     decision: ResearchLoopDecision,
     artifacts: ResearchRoundArtifacts,
+    recovery_mode: str = "",
 ) -> ResearchPlan:
+    requested_recovery_mode = str(recovery_mode or "").strip().upper()
     recovery_mode = ""
     notes: list[str] = []
     conflict_sources: list[str] = []
@@ -595,7 +1050,6 @@ def _augment_plan_for_next_round(
             f"{plan.normalized_question} :: evidence extraction retry round "
             f"{decision.round_no + 1}"
         )
-        recovery_mode = "EXTRACT_AGAIN"
         notes = [
             "recovery mode: reuse existing read windows before opening new sources"
         ]
@@ -605,7 +1059,6 @@ def _augment_plan_for_next_round(
             if requirement_hints["target_queries"]
             else f"{plan.normalized_question} :: recovery round {decision.round_no + 1}"
         )
-        recovery_mode = "READ_MORE" if decision.decision == "READ_MORE" else ""
         notes = []
 
     query_set = list(plan.query_set)
@@ -667,7 +1120,6 @@ def _augment_plan_for_next_round(
     ))
     stop_contract["recovery_target_queries"] = requirement_hints["target_queries"]
     if decision.decision == "COUNTERFACTUAL_RECHECK":
-        recovery_mode = "COUNTERFACTUAL_RECHECK"
         stop_contract["recovery_target_sources"] = list(
             dict.fromkeys(
                 list(stop_contract.get("recovery_target_sources", []))
@@ -734,6 +1186,13 @@ def _augment_plan_for_next_round(
         stop_contract.pop("recovery_target_requirement_labels", None)
         stop_contract.pop("recovery_target_columns", None)
         stop_contract.pop("recovery_target_queries", None)
+    # DR-108: 生效模式由唯一规则收敛（与 CellRecoveryDirective 同一实现）。
+    # loop 决策族定义恢复族，Cell 级策略只能在族内细化；跨族请求不再静默改写
+    # 生效值，而是保留在指令的 requested_recovery_mode 里供复盘。
+    recovery_mode, _recovery_mode_source = reconcile_recovery_mode(
+        decision_family=decision.decision,
+        requested_recovery_mode=requested_recovery_mode,
+    )
     if recovery_mode:
         stop_contract["recovery_mode"] = recovery_mode
     else:
@@ -778,16 +1237,43 @@ def _freeze_overspent_cells(
     设计参考文档 §6.2: VERIFIED / CONFLICTED / FROZEN 是 cell 的三个稳定终态;
     FROZEN 表示"当前预算下不再继续消耗资源",这与设计文档 §7.9 Stop Contract
     的"放弃条件"对齐。
+
+    DR-202: 阈值判定不再本地重写，而是委托 :func:`cell_recovery_policy.decide`。
+    本函数只保留「ATTEMPT_LIMIT_REACHED -> FROZEN」这一族的落地写法，避免恢复规则
+    在 loop 与策略模块里各有一份。
     """
     if max_retry_per_cell <= 0:
         return ledger
+    limits = CellRecoveryThresholds(max_attempts_per_cell=max_retry_per_cell)
+    empty_budget = CellRecoveryBudget(
+        remaining_search=0,
+        remaining_fetch=0,
+        remaining_read=0,
+        remaining_llm=0,
+        remaining_extract=0,
+    )
     new_cells = []
     frozen_count = 0
     for cell in ledger.cells:
         if cell.status in {"VERIFIED", "CONFLICTED", "FROZEN"}:
             new_cells.append(cell)
             continue
-        if cell.repair_count >= max_retry_per_cell:
+        decision = decide(
+            cell.status,
+            {},
+            empty_budget,
+            CellRecoveryHistory(
+                attempts=int(cell.repair_count or 0),
+                consecutive_failures=0,
+                actions_taken=(),
+                plan_digests=(),
+            ),
+            limits,
+        )
+        if (
+            decision.action is CellRecoveryAction.FREEZE_UNRESOLVED
+            and decision.reason_code == "ATTEMPT_LIMIT_REACHED"
+        ):
             new_cells.append(
                 cell.model_copy(
                     update={
@@ -951,7 +1437,7 @@ def _restore_resume_context(
     if isinstance(global_payload, dict):
         global_result = GlobalVerifierResult.model_validate(global_payload)
     else:
-        global_result = run_global_verifier(local_result, ledger, branch_decisions)
+        global_result = run_global_verifier(local_result, ledger, branch_decisions, evidence_cards)
 
     loop_rounds = _parse_models(payload.get("loop_rounds"), ResearchLoopRoundSummary)
     loop_decision_payload = payload.get("loop_decision")

@@ -72,7 +72,7 @@ def _counterfactual_repair_snapshot() -> dict[str, object]:
         schema_version="research-agent-task-snapshot.v2",
         role="COUNTERFACTUAL",
         branch_id="branch-counterfactual",
-        logical_task_key="counterfactual:repair-1",
+        logical_task_key="conflict-counterfactual:repair-1",
         candidate_quorum=1,
         candidate_slot=1,
         high_risk=False,
@@ -109,6 +109,22 @@ def _command() -> ResearchAgentCommand:
     return ResearchAgentCommand(
         schema_version="research-agent-command.v1", command_id="command-1", research_run_id="run-1",
         agent_task_id=_TASK_ID, idempotency_key="idem-1", delivery_attempt=1,
+    )
+
+
+def _extraction_result(*cards: object):
+    """DR-102: the toolchain boundary now returns a structured ExtractionResult."""
+    from app.extraction_result import ExtractionResult, ExtractionTerminationReason
+    from app.models import ResearchEvidenceCard
+
+    if not cards:
+        return ExtractionResult(termination_reason=ExtractionTerminationReason.NO_READ_WINDOWS)
+    return ExtractionResult(
+        accepted_cards=tuple(
+            card if isinstance(card, ResearchEvidenceCard) else ResearchEvidenceCard(**vars(card))
+            for card in cards
+        ),
+        termination_reason=ExtractionTerminationReason.ACCEPTED_CARDS,
     )
 
 
@@ -154,7 +170,7 @@ class _Toolchain:
 
     def extract(self, _task_input, _plan, _windows, *, llm_client):
         self.calls.append(("extract", llm_client is not None))
-        return ["evidence-card"]
+        return _extraction_result()
 
 
 def test_deep_cell_should_permit_each_real_phase_in_order_and_build_no_result_completion() -> None:
@@ -177,6 +193,246 @@ def test_deep_cell_should_permit_each_real_phase_in_order_and_build_no_result_co
     assert completion.budget_usage.evidence_cards == 0
     assert completion.task_snapshot_digest == _snapshot()["snapshot_digest"]
     assert completion.envelope_digest.startswith("sha256:")
+
+
+def test_deep_cell_should_emit_v2_extraction_diagnostics_for_a_zero_card_reason() -> None:
+    from app.deep_cell_executor import DeepCellExecutor
+
+    completion = DeepCellExecutor(_Permit(), "worker-a", toolchain=_Toolchain(), enable_llm=False)(
+        _command(), _claim(_snapshot())
+    )
+
+    assert completion.schema_version == "research-agent-completion.v2"
+    assert completion.role_result is None
+    assert completion.termination_reason == "NO_SUPPORTED_CANDIDATE"
+    diagnostics = completion.extraction_diagnostics
+    assert diagnostics is not None
+    assert diagnostics.termination_reason == "NO_READ_WINDOWS"
+    assert diagnostics.accepted_count == 0
+    assert diagnostics.rejected_count == 0
+    assert diagnostics.rejection_counts == {}
+
+
+def test_domain_allowlist_should_keep_official_subdomains_and_workspace_hits_only() -> None:
+    from app.deep_cell_executor import _filter_external_hits_by_domain
+    from app.task_snapshot_contract import ResearchAgentTaskSnapshot
+
+    raw = _external_snapshot()
+    raw.pop("snapshot_digest")
+    raw["source_policy"] = {
+        **raw["source_policy"],
+        "allowed_external_domains": ["platform.openai.com", "docs.anthropic.com"],
+    }
+    raw["snapshot_digest"] = snapshot_digest(raw)
+    snapshot = ResearchAgentTaskSnapshot.model_validate(raw)
+    hits = [
+        SimpleNamespace(url="https://platform.openai.com/docs/api-reference", source_domain="platform.openai.com", adapter="serper"),
+        SimpleNamespace(url="https://sub.docs.anthropic.com/guide", source_domain="", adapter="serper"),
+        SimpleNamespace(url="https://developer.cloud.tencent.com/article/1", source_domain="developer.cloud.tencent.com", adapter="serper"),
+        SimpleNamespace(url="", source_domain="", adapter="workspace"),
+    ]
+
+    filtered = _filter_external_hits_by_domain(snapshot, hits)
+
+    assert filtered == [hits[0], hits[1], hits[3]]
+
+
+def test_explicit_allowed_url_should_precede_provider_rankings() -> None:
+    from app.deep_cell_executor import _build_task_scope, _prepend_explicit_allowed_urls
+    from app.task_snapshot_contract import ResearchAgentTaskSnapshot
+
+    raw = _external_snapshot()
+    raw.pop("snapshot_digest")
+    raw["source_policy"] = {**raw["source_policy"], "allowed_external_domains": ["nber.org"]}
+    raw["query_policy"] = {
+        **raw["query_policy"],
+        "query": "Compare evidence at https://www.nber.org/papers/w28983 with another study",
+    }
+    raw["snapshot_digest"] = snapshot_digest(raw)
+    snapshot = ResearchAgentTaskSnapshot.model_validate(raw)
+    _task_input, plan, _allow_external = _build_task_scope(snapshot)
+    provider_hit = SimpleNamespace(url="https://www.nber.org/papers/w30292")
+
+    hits = _prepend_explicit_allowed_urls(snapshot, plan, [provider_hit])
+
+    assert hits[0].url == "https://www.nber.org/papers/w28983"
+    assert hits[0].adapter == "external_url"
+    assert hits[1] is provider_hit
+
+
+def test_domain_allowlist_should_scope_every_search_query_before_provider_call() -> None:
+    from app.deep_cell_executor import _build_task_scope, _scope_search_plan_to_domains
+    from app.task_snapshot_contract import ResearchAgentTaskSnapshot
+
+    raw = _external_snapshot()
+    raw.pop("snapshot_digest")
+    raw["source_policy"] = {
+        **raw["source_policy"],
+        "allowed_external_domains": ["platform.openai.com", "docs.anthropic.com"],
+    }
+    raw["snapshot_digest"] = snapshot_digest(raw)
+    snapshot = ResearchAgentTaskSnapshot.model_validate(raw)
+    _task_input, plan, _allow_external = _build_task_scope(snapshot)
+
+    scoped = _scope_search_plan_to_domains(snapshot, plan)
+
+    assert scoped.query_set
+    assert all(" site:" in query for query in scoped.query_set)
+    assert any(query.endswith("site:platform.openai.com") for query in scoped.query_set)
+    assert any(query.endswith("site:docs.anthropic.com") for query in scoped.query_set)
+    budgets = scoped.stop_contract["execution_profile"]["query_family_budgets"]
+    assert budgets["direct"] >= 2
+
+
+def test_domain_scoping_should_focus_each_comparison_slot_on_its_publisher() -> None:
+    from app.deep_cell_executor import _domain_focused_query
+
+    query = (
+        "Compare 'Hybrid working from home improves retention' (Nature, Trip.com trial) "
+        "and 'Work from Home & Productivity' (NBER Working Paper 28983)."
+    )
+
+    nature = _domain_focused_query(query, "nature.com")
+    nber = _domain_focused_query(query, "www.nber.org")
+
+    assert "Nature" in nature
+    assert "NBER" not in nature
+    assert "NBER" in nber
+    assert "Nature" not in nber
+
+
+def test_official_product_comparison_should_infer_primary_source_domains() -> None:
+    from app.deep_cell_executor import _build_task_scope, _effective_allowed_external_domains
+    from app.task_snapshot_contract import ResearchAgentTaskSnapshot
+
+    raw = _external_snapshot()
+    raw.pop("snapshot_digest")
+    raw["query_policy"] = {
+        **raw["query_policy"],
+        "query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引能力，优先引用双方官方文档。",
+    }
+    raw["snapshot_digest"] = snapshot_digest(raw)
+    snapshot = ResearchAgentTaskSnapshot.model_validate(raw)
+    _task_input, plan, _allow_external = _build_task_scope(snapshot)
+
+    assert _effective_allowed_external_domains(snapshot, plan) == {
+        "postgresql.org",
+        "dev.mysql.com",
+        "docs.oracle.com",
+    }
+
+
+def test_comparison_entity_should_scope_query_and_official_domain_to_one_product() -> None:
+    from app.deep_cell_executor import _build_task_scope, _effective_allowed_external_domains
+    from app.task_snapshot_contract import ResearchAgentTaskSnapshot
+
+    raw = _external_snapshot()
+    raw.pop("snapshot_digest")
+    raw["query_policy"] = {
+        **raw["query_policy"],
+        "query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引能力，优先引用双方官方文档。",
+        "entity_label": "PostgreSQL 17",
+    }
+    raw["snapshot_digest"] = snapshot_digest(raw)
+    snapshot = ResearchAgentTaskSnapshot.model_validate(raw)
+
+    task_input, plan, _allow_external = _build_task_scope(snapshot)
+
+    assert "Current Table-as-State entity: PostgreSQL 17" in task_input.input_payload.question
+    assert "only for this entity" in task_input.input_payload.question
+    assert _effective_allowed_external_domains(snapshot, plan) == {"postgresql.org"}
+
+
+def test_comparison_entity_should_prepend_versioned_official_seed_urls() -> None:
+    from app.deep_cell_executor import _build_task_scope, _prepend_explicit_allowed_urls
+    from app.task_snapshot_contract import ResearchAgentTaskSnapshot
+
+    raw = _external_snapshot()
+    raw.pop("snapshot_digest")
+    raw["query_policy"] = {
+        **raw["query_policy"],
+        "query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引能力，优先引用双方官方文档。",
+        "entity_label": "PostgreSQL 17",
+    }
+    raw["snapshot_digest"] = snapshot_digest(raw)
+    snapshot = ResearchAgentTaskSnapshot.model_validate(raw)
+    _task_input, plan, _allow_external = _build_task_scope(snapshot)
+
+    hits = _prepend_explicit_allowed_urls(snapshot, plan, [])
+
+    assert [hit.url for hit in hits] == [
+        "https://www.postgresql.org/docs/17/datatype-json.html#JSON-INDEXING",
+        "https://www.postgresql.org/docs/17/gin.html",
+    ]
+
+
+def test_external_hits_should_be_interleaved_across_source_domains() -> None:
+    from app.deep_cell_executor import _interleave_hits_by_domain
+
+    hits = [
+        SimpleNamespace(source_domain="docs.oracle.com", adapter="serper", rank=1),
+        SimpleNamespace(source_domain="docs.oracle.com", adapter="serper", rank=2),
+        SimpleNamespace(source_domain="www.postgresql.org", adapter="serper", rank=3),
+        SimpleNamespace(source_domain="www.postgresql.org", adapter="serper", rank=4),
+    ]
+
+    interleaved = _interleave_hits_by_domain(hits)
+
+    assert [hit.source_domain for hit in interleaved] == [
+        "docs.oracle.com",
+        "www.postgresql.org",
+        "docs.oracle.com",
+        "www.postgresql.org",
+    ]
+
+
+def test_inferred_official_domains_should_generate_product_focused_site_queries() -> None:
+    from app.deep_cell_executor import _build_task_scope, _scope_search_plan_to_domains
+    from app.task_snapshot_contract import ResearchAgentTaskSnapshot
+
+    raw = _external_snapshot()
+    raw.pop("snapshot_digest")
+    raw["query_policy"] = {
+        **raw["query_policy"],
+        "query": "Compare PostgreSQL 17 and MySQL 8.4 JSONB JSON_TABLE indexing using official documentation",
+    }
+    raw["snapshot_digest"] = snapshot_digest(raw)
+    snapshot = ResearchAgentTaskSnapshot.model_validate(raw)
+    _task_input, plan, _allow_external = _build_task_scope(snapshot)
+
+    scoped = _scope_search_plan_to_domains(snapshot, plan)
+
+    assert any("postgresql 17" in query.lower() and query.endswith("site:postgresql.org") for query in scoped.query_set)
+    assert any("mysql 8.4" in query.lower() and query.endswith("site:dev.mysql.com") for query in scoped.query_set)
+    assert any("mysql 8.4" in query.lower() and query.endswith("site:docs.oracle.com") for query in scoped.query_set)
+    assert all("official documentation" in query.lower() for query in scoped.query_set)
+
+
+def test_crash_fault_should_fire_only_after_at_least_one_external_archive() -> None:
+    from app.deep_cell_executor import _maybe_crash_after_archive
+
+    exits: list[int] = []
+    _maybe_crash_after_archive(0, enabled=True, exit_fn=exits.append)
+    _maybe_crash_after_archive(3, enabled=False, exit_fn=exits.append)
+    _maybe_crash_after_archive(3, enabled=True, exit_fn=exits.append)
+
+    assert exits == [86]
+
+
+def test_deterministic_fake_completion_should_report_accepted_extraction_diagnostics() -> None:
+    from app.deep_cell_executor import DeepCellExecutor
+    from app.deterministic_fake_toolchain import DeterministicFakeToolchain
+
+    completion = DeepCellExecutor(
+        _Permit(), "worker-a", toolchain=DeterministicFakeToolchain(), enable_llm=False
+    )(_command(), _claim(_snapshot()))
+
+    diagnostics = completion.extraction_diagnostics
+    assert diagnostics is not None
+    assert diagnostics.termination_reason == "ACCEPTED_CARDS"
+    assert diagnostics.accepted_count >= 1
+    assert diagnostics.rejected_count == 0
+    assert completion.termination_reason == "CANDIDATES_PROPOSED"
 
 
 def test_workspace_window_search_should_preserve_frozen_snapshot_and_database_window_identity() -> None:
@@ -215,6 +471,33 @@ def test_workspace_window_search_should_preserve_frozen_snapshot_and_database_wi
     assert hits[0].workspace_window_text == "The answer exists only in the second window."
 
 
+def test_workspace_window_search_should_bound_planned_queries_to_backend_contract() -> None:
+    from app.deep_cell_executor import _build_task_scope, _search_workspace_windows
+    from app.task_snapshot_contract import ResearchAgentTaskSnapshot
+
+    raw_snapshot = _snapshot(source_scope=[{
+        "source_id": "source-1",
+        "title": "Trusted note",
+        "sample_text": "Only the first window.",
+        "source_snapshot_id": "snapshot-1",
+        "source_window_id": "window-1",
+    }])
+    snapshot = ResearchAgentTaskSnapshot.model_validate(raw_snapshot)
+    task_input, plan, _allow_external = _build_task_scope(snapshot)
+    plan = plan.model_copy(update={
+        "query_set": [f"{plan.normalized_question} :: planned angle {index}" for index in range(9)]
+    })
+
+    class WindowPermit(_Permit):
+        def search_workspace_windows(self, _snapshot, *, queries, limit):
+            assert 1 <= len(queries) <= 8
+            assert queries[0] == plan.query_set[0]
+            assert limit > 0
+            return []
+
+    assert _search_workspace_windows(snapshot, task_input, plan, WindowPermit()) == []
+
+
 def test_deep_cell_should_execute_an_authoritative_counterfactual_quorum_slot() -> None:
     from app.deep_cell_executor import DeepCellExecutor
     from app.deterministic_fake_toolchain import DeterministicFakeToolchain
@@ -239,6 +522,27 @@ def test_deep_cell_should_execute_an_authoritative_counterfactual_repair_task() 
     assert completion.termination_reason == "CANDIDATES_PROPOSED"
     assert completion.candidates[0].cell_key == "entity-1:method"
     assert completion.task_snapshot_digest == _counterfactual_repair_snapshot()["snapshot_digest"]
+
+
+def test_deep_cell_should_execute_web_only_repair_without_seed_exclusions() -> None:
+    from app.deep_cell_executor import DeepCellExecutor
+
+    snapshot = _counterfactual_repair_snapshot()
+    snapshot.pop("snapshot_digest")
+    snapshot["source_policy"] = {
+        "retrieval_mode": "WEB_ONLY",
+        "source_scope": [],
+        "allow_external_search": True,
+        "allow_external_fetch": True,
+        "excluded_source_ids": [],
+    }
+    snapshot = {**snapshot, "snapshot_digest": snapshot_digest(snapshot)}
+
+    completion = DeepCellExecutor(
+        _Permit(), "worker-a", toolchain=_Toolchain(), enable_llm=False
+    )(_command(), _claim(snapshot))
+
+    assert completion.termination_reason == "NO_SUPPORTED_CANDIDATE"
 
 
 def test_deep_cell_should_not_start_next_phase_after_execution_control_stops() -> None:
@@ -310,11 +614,11 @@ def test_deep_cell_should_build_atomic_evidence_and_candidate_without_any_early_
 
         def extract(self, _task_input, _plan, _windows, *, llm_client):
             self.calls.append(("extract", llm_client is not None))
-            return [SimpleNamespace(
+            return _extraction_result(SimpleNamespace(
                 evidence_id="evidence-1", window_id="window-1", source_id="source-1", source_title="Trusted note",
                 quote_text="The method is documented.", claim_text="The method is documented.", relation_type="SUPPORTS",
                 support_score=0.9, conflict_score=0.0, entity_id="entity-1", column_key="method",
-            )]
+            ))
 
     permit = EvidencePermit()
     completion = DeepCellExecutor(permit, "worker-a", toolchain=EvidenceToolchain())(_command(), _claim(_snapshot()))
@@ -334,6 +638,81 @@ def test_deep_cell_should_build_atomic_evidence_and_candidate_without_any_early_
     assert completion.candidates[0].confidence_ppm == 900_000
 
 
+def test_deep_cell_should_keep_same_cell_conflict_evidence_outside_candidate_binding() -> None:
+    from app.deep_cell_executor import DeepCellExecutor
+
+    class ConflictToolchain(_Toolchain):
+        def read(self, _task_input, _plan, _documents, *, allow_external: bool):
+            self.calls.append(("read", allow_external))
+            return [
+                SimpleNamespace(window_id="window-1", snapshot_status="WORKSPACE", query="effect", read_focus="method"),
+                SimpleNamespace(window_id="window-2", snapshot_status="WORKSPACE", query="effect", read_focus="method"),
+            ]
+
+        def extract(self, _task_input, _plan, _windows, *, llm_client):
+            self.calls.append(("extract", llm_client is not None))
+            return _extraction_result(
+                SimpleNamespace(
+                    evidence_id="support-1", window_id="window-1", source_id="source-1", source_title="Study A",
+                    quote_text="The effect increased.", claim_text="The effect increased.", relation_type="SUPPORTS",
+                    support_score=0.9, conflict_score=0.0, entity_id="entity-1", column_key="method",
+                ),
+                SimpleNamespace(
+                    evidence_id="conflict-1", window_id="window-2", source_id="source-2", source_title="Study B",
+                    quote_text="The effect decreased.", claim_text="The effect decreased.", relation_type="CONFLICTS",
+                    support_score=0.0, conflict_score=0.9, entity_id="entity-1", column_key="method",
+                ),
+            )
+
+    completion = DeepCellExecutor(_Permit(), "worker-a", toolchain=ConflictToolchain())(
+        _command(), _claim(_snapshot())
+    )
+
+    assert len(completion.evidence) == 2
+    assert len(completion.candidates) == 1
+    assert completion.candidates[0].candidate_value == "The effect increased."
+    assert completion.candidates[0].evidence_keys == (completion.evidence[0].evidence_key,)
+    assert completion.evidence[1].relation_type == "CONFLICTS"
+
+
+def test_deep_cell_should_bind_only_evidence_with_the_selected_candidate_claim() -> None:
+    from app.deep_cell_executor import DeepCellExecutor
+
+    class DistinctClaimsToolchain(_Toolchain):
+        def read(self, _task_input, _plan, _documents, *, allow_external: bool):
+            self.calls.append(("read", allow_external))
+            return [
+                SimpleNamespace(window_id="window-1", snapshot_status="WORKSPACE", query="effect", read_focus="method"),
+                SimpleNamespace(window_id="window-2", snapshot_status="WORKSPACE", query="effect", read_focus="method"),
+            ]
+
+        def extract(self, _task_input, _plan, _windows, *, llm_client):
+            self.calls.append(("extract", llm_client is not None))
+            return _extraction_result(
+                SimpleNamespace(
+                    evidence_id="support-strong", window_id="window-1", source_id="source-1", source_title="Study A",
+                    quote_text="The primary method is documented.", claim_text="The primary method is documented.",
+                    relation_type="SUPPORTS", support_score=0.95, conflict_score=0.0,
+                    entity_id="entity-1", column_key="method",
+                ),
+                SimpleNamespace(
+                    evidence_id="support-other", window_id="window-2", source_id="source-2", source_title="Study B",
+                    quote_text="A different method is documented.", claim_text="A different method is documented.",
+                    relation_type="SUPPORTS", support_score=0.9, conflict_score=0.0,
+                    entity_id="entity-1", column_key="method",
+                ),
+            )
+
+    completion = DeepCellExecutor(_Permit(), "worker-a", toolchain=DistinctClaimsToolchain())(
+        _command(), _claim(_snapshot())
+    )
+
+    assert len(completion.evidence) == 2
+    assert len(completion.candidates) == 1
+    assert completion.candidates[0].candidate_value == "The primary method is documented."
+    assert completion.candidates[0].evidence_keys == (completion.evidence[0].evidence_key,)
+
+
 def test_deep_cell_should_archive_external_window_before_emitting_external_evidence() -> None:
     from app.deep_cell_executor import DeepCellExecutor
 
@@ -349,12 +728,12 @@ def test_deep_cell_should_archive_external_window_before_emitting_external_evide
 
         def extract(self, _task_input, _plan, _windows, *, llm_client):
             self.calls.append(("extract", llm_client is not None))
-            return [SimpleNamespace(
+            return _extraction_result(SimpleNamespace(
                 evidence_id="evidence-1", window_id="window-1", source_id="web-source-1",
                 source_title="External source", quote_text="Archived external quote.",
                 claim_text="External conclusion.", relation_type="SUPPORTS", support_score=0.9,
                 conflict_score=0.0, entity_id="entity-1", column_key="method",
-            )]
+            ))
 
     permit = _ArchivePermit()
     completion = DeepCellExecutor(permit, "worker-a", toolchain=ExternalToolchain(), enable_llm=False)(
@@ -381,6 +760,8 @@ def test_deep_cell_should_use_real_http_permits_and_archive_before_external_evid
             if self.path == "/internal/research-agent/permits":
                 data = {"status": "GRANTED", "tool_identity": payload["tool_identity"]}
             elif self.path == "/internal/research-agent/workspace-windows/search":
+                data = []
+            elif self.path == "/internal/research-agent/external-snapshots/archived":
                 data = []
             elif self.path == "/internal/research-agent/external-snapshots":
                 content_sha256 = hashlib.sha256(str(payload["content_text"]).encode("utf-8")).hexdigest()
@@ -419,12 +800,12 @@ def test_deep_cell_should_use_real_http_permits_and_archive_before_external_evid
 
         def extract(self, _task_input, _plan, _windows, *, llm_client):
             self.calls.append(("extract", llm_client is not None))
-            return [SimpleNamespace(
+            return _extraction_result(SimpleNamespace(
                 evidence_id="evidence-http-1", window_id="window-http-1", source_id="web-source-http-1",
                 source_title="External HTTP source", quote_text="HTTP archived external quote.",
                 claim_text="HTTP external conclusion.", relation_type="SUPPORTS", support_score=0.9,
                 conflict_score=0.0, entity_id="entity-1", column_key="method",
-            )]
+            ))
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -441,10 +822,11 @@ def test_deep_cell_should_use_real_http_permits_and_archive_before_external_evid
         server.server_close()
         thread.join(timeout=2)
 
-    assert [(path, payload.get("tool_identity")) for path, payload, _token in calls] == [
-        ("/internal/research-agent/permits", "search"),
-        ("/internal/research-agent/workspace-windows/search", None),
-        ("/internal/research-agent/permits", "fetch"),
+        assert [(path, payload.get("tool_identity")) for path, payload, _token in calls] == [
+            ("/internal/research-agent/external-snapshots/archived", None),
+            ("/internal/research-agent/permits", "search"),
+            ("/internal/research-agent/workspace-windows/search", None),
+            ("/internal/research-agent/permits", "fetch"),
         ("/internal/research-agent/permits", "read"),
         ("/internal/research-agent/external-snapshots", None),
         ("/internal/research-agent/permits", "extract"),
@@ -469,12 +851,12 @@ def test_deep_cell_should_fail_closed_for_unarchived_external_window() -> None:
 
         def extract(self, _task_input, _plan, _windows, *, llm_client):
             self.calls.append(("extract", llm_client is not None))
-            return [SimpleNamespace(
+            return _extraction_result(SimpleNamespace(
                 evidence_id="evidence-1", window_id="window-1", source_id="web-source-1",
                 source_title="External source", quote_text="Unarchived external quote.",
                 claim_text="External conclusion.", relation_type="SUPPORTS", support_score=0.9,
                 conflict_score=0.0, entity_id="entity-1", column_key="method",
-            )]
+            ))
 
     permit = _ArchivePermit()
     completion = DeepCellExecutor(permit, "worker-a", toolchain=UnarchivedExternalToolchain(), enable_llm=False)(
@@ -503,6 +885,45 @@ def test_deterministic_fake_toolchain_should_use_no_external_or_llm_provider(mon
     assert completion.budget_usage.search_calls == 1
     assert completion.budget_usage.extract_calls == 1
     assert completion.evidence[0].support_score_ppm == 800_000
+
+
+def test_deterministic_fake_toolchain_should_reuse_authoritative_workspace_window_identity() -> None:
+    from app.deep_cell_executor import DeepCellExecutor
+    from app.deterministic_fake_toolchain import DeterministicFakeToolchain
+
+    source_scope = [{
+        "source_id": "source-1",
+        "title": "Trusted note",
+        "sample_text": "Snapshot sample text.",
+        "source_snapshot_id": "snapshot-1",
+        "source_window_id": "window-sample",
+    }]
+
+    class WorkspaceWindowPermit(_Permit):
+        def search_workspace_windows(self, _snapshot, *, queries, limit):
+            assert queries
+            assert limit > 0
+            return [SimpleNamespace(
+                source_id="source-1",
+                source_snapshot_id="snapshot-1",
+                source_window_id="window-authoritative",
+                source_title="Trusted note",
+                query=queries[0],
+                window_text="Authoritative workspace evidence.",
+                score_ppm=980_000,
+            )]
+
+    completion = DeepCellExecutor(
+        WorkspaceWindowPermit(),
+        "worker-a",
+        toolchain=DeterministicFakeToolchain(),
+        enable_llm=False,
+    )(_command(), _claim(_snapshot(source_scope=source_scope)))
+
+    assert completion.termination_reason == "CANDIDATES_PROPOSED"
+    assert completion.evidence[0].window_id == "window-authoritative"
+    assert completion.evidence[0].quote_text == "Authoritative workspace evidence."
+    assert completion.evidence[0].snapshot_status == "WORKSPACE"
 
 
 def test_deep_cell_should_scope_stable_evidence_keys_per_task_in_the_same_run() -> None:

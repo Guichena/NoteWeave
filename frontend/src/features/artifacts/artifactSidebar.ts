@@ -35,6 +35,7 @@ export type ArtifactSidebarRunCard = {
   waitSignals: WaitContextSignalChip[];
   waitDetails: WaitContextDetailLine[];
   tone: RunTone;
+  group: "active" | "recent" | "inactive";
 };
 
 export type ArtifactSidebarResearchRunSummary = {
@@ -160,6 +161,7 @@ type BuildArtifactRunCardParams = {
 };
 
 function buildArtifactRunCard(params: BuildArtifactRunCardParams): ArtifactSidebarRunCard {
+  const resolvedStatus = resolveRunStatus(undefined, params.status);
   return {
     key: params.key,
     title: params.title,
@@ -168,7 +170,8 @@ function buildArtifactRunCard(params: BuildArtifactRunCardParams): ArtifactSideb
     meta: formatRunMeta(params.baseMeta, params.waitContext),
     waitSignals: buildWaitContextSignalChips(params.waitContext),
     waitDetails: buildWaitContextDetailLines(params.waitContext),
-    tone: resolveRunTone(params.status)
+    tone: resolveRunTone(resolvedStatus),
+    group: classifyRunGroup(resolvedStatus)
   };
 }
 
@@ -193,8 +196,26 @@ function buildArtifactWikiRunCard(
       : "可在更多工具中开启",
     waitSignals: [],
     waitDetails: [],
-    tone: resolveRunTone(status)
+    tone: resolveRunTone(status),
+    group: classifyRunGroup(status)
   };
+}
+
+function classifyRunGroup(status: string): ArtifactSidebarRunCard["group"] {
+  const normalized = status.trim().toUpperCase();
+  if (normalized === "OFF") {
+    return "inactive";
+  }
+  if (
+    normalized === "RUNNING"
+    || normalized === "WAITING"
+    || normalized === "PENDING"
+    || normalized === "QUEUED"
+    || normalized.startsWith("WAITING_FOR_")
+  ) {
+    return "active";
+  }
+  return "recent";
 }
 
 function formatRunMeta(baseMeta: string, waitContext?: WaitContext | null): string {

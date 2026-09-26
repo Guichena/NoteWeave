@@ -1,6 +1,12 @@
 # 工程化 Agent 执行框架：面试题与参考回答
 
+> 当前默认入口是[Agent 执行与 Artifact 一体化面试手册](32-Agent执行与Artifact产物一体化面试手册.md)。A 档先讲其中 4 分钟主回答；B 档选择 Skill Compiler、Capability Intersection、Quota、Waiting/Resume、Repair、MCP 安全或 Artifact Version/File 独立展开；普通 Schema、DTO 和工具定义属于 C 档 30 到 90 秒速查。重点机制需要讲反例和副作用边界，简单名词不重复整条演进故事。
+
 > 阅读说明：前面的短问答用于面试官打断时快速回应。本章末尾的“八维度母题长回答”才是默认准备材料，每题应讲 3 到 5 分钟，并主动覆盖问题来源、实现机制、失败窗口、方案取舍、验证证据和当前边界。
+
+> 证据边界：Artifact、Skill Catalog、Skill Graph、审批、验证、版本与写回以 [Artifact Skill 执行架构](../Artifact-Skill执行架构.md)为准，公共任务可靠性以 [API 与事件契约](../API与事件契约-v2.md)为准。代码存在的 Worker 测试不等于本轮已执行，生产成功率与成本属于 `[生产待验证]`。
+
+> 深挖入口：[演进、完整案例、消融与 Ownership 答辩](21-Agent执行框架演进案例消融与Ownership答辩.md)；[Artifact Agent 产物生成、格式边界与质量指标](23-Artifact-Agent产物生成演进案例指标与Ownership答辩.md)。
 
 ## 0. 脑图主干
 
@@ -23,7 +29,7 @@ Artifact Generation
 
 工具多起来以后，专用 HTTP Adapter 会重复建设发现、Schema 和 Trace，所以系统引入 MCP 统一协议，但生产只允许受信任系统 MCP。资源治理同时使用 Redis Lua 令牌桶和并发租约，前者管到达速率，后者管长任务同时运行数；单纯 Semaphore 在 Worker 崩溃后可能不归还，租约可以续期和回收。
 
-Provider 暂不可用时任务进入 Waiting 并沿用原 Spec，输出不合格时由确定性与语义 Verifier 产生结构化问题，Repair 只重做相关节点，最后再过全局契约。代价是框架和状态机更复杂，也减少了 Agent 自由度；收益是权限、资源、恢复和输出质量可以由程序控制。内部自定义 MCP 仍是调试能力，不把它说成生产插件平台。
+Artifact Runtime 对已经实现等待契约的能力，可以把外部依赖阻塞持久化为 Waiting 并沿用原 Spec；这不等于所有 Provider 429 都会自动进入等待态。输出不合格时由确定性与语义 Verifier 产生结构化问题，Repair 只重做相关节点，最后再过全局契约。代价是框架和状态机更复杂，也减少了 Agent 自由度；收益是权限、资源、恢复和输出质量可以由程序控制。MCP 始终受系统注册、能力白名单和 Host 写回约束。
 
 ## 1. 30 秒回答
 
@@ -75,7 +81,7 @@ MCP 作为外部能力适配协议。例如系统内置 B 站 MCP，可以把视
 
 ### 追问：用户能装自己的 MCP 吗？
 
-默认生产能力不允许用户安装自己的 MCP。当前仓库保留了一条**默认关闭、受内部令牌保护的调试注册路由**，背后具备启动自定义 MCP 子进程的能力；该路径尚未实现签名、可执行文件白名单、进程沙箱和完整网络策略，因此不能作为生产插件能力，也不能对外表述为任意插件平台。生产只启用受信任的系统 MCP。
+当前 MCP 由系统注册并受内部令牌保护，能力集合在 Host 侧编译后下发，生产只启用受信任的系统 MCP。工具协议的复用不改变 Workspace 权限、审批和受控写回边界。
 
 ## 6. Java Host 与 Python Worker
 
@@ -85,7 +91,17 @@ Java 适合稳定业务领域、事务、权限和中间件治理，Python 适�
 
 ### 跨服务如何保证一致性？
 
-Host 在 MySQL 事务中创建 Job、Version、Task 和 Outbox，Kafka 至少一次投递，Worker 完成后使用稳定 Job/Version/Delivery ID 回调。Host 用幂等状态机提交终态，文件先写对象存储并携带 Hash 与元数据。
+当前实现由 Host 创建 Job、Task 和 Outbox，Worker 使用 70 分钟 Delivery、单条拉取和手动 Offset 提交完成长任务。推荐方案把这条链路拆开：Consumer 收到命令后按 Command ID 在 MySQL 幂等登记 Durable Execution，事务提交后即可提交 Offset；Scheduler 再分配 Active Permit，并领取带 Epoch/Fencing Token 的 Domain Execution Lease。Worker 使用预留的 Host Version ID 返回 Candidate；内容 Contract 通过后，Host 创建内部 `DELIVERY_PENDING` Version 并冻结全部必需文件 Manifest，必需文件全部 `READY` 后才提升为用户可见终态，写回只接受 `READY` Version。Kafka 重放只能重复登记同一个 Execution，不能重复创建业务版本。
+
+### 为什么控制面 Read Timeout 是 30 秒，Worker 却可以执行一小时？
+
+当前配置中的 30 秒、4200 秒和 70 分钟分别保护 HTTP 控制面、Kafka 消费会话和 Callback 所有权，不能混成一个任务超时。不过更优设计会删除小时级 Kafka 会话：Consumer 完成 Durable Execution 登记后提交 Offset，3600 秒工具超时只属于 Worker Execution Deadline，所有权只由 Execution Lease 和 Fencing 判断。这样控制面超时、传输确认和业务执行期限仍然分开，同时不让最慢任务决定分区进度。
+
+### Kafka 重投时，如何避免旧 Worker 越权执行？
+
+`[当前实现]` Kafka 采用至少一次语义，重复消息是协议正常输入。命令携带本次 Outbox Claim 的 Delivery Token；Worker 在任何 LLM、MCP 或导出动作之前，用该 Token 请求冻结输入，Java 会校验并续租当前 Delivery。若消息属于已经失效的旧投递，Java 返回 409，Worker 直接提交该旧 Offset，不执行昂贵步骤。执行中的 Progress、Complete 和 Fail 也继续携带同一 Token，因此 Lease 过期后旧 Worker 即使恢复也不能提交结果。
+
+这解决了旧 Kafka 重放进入昂贵执行和旧 Owner 越权写回的问题，但不把“至少一次消费”宣传成“昂贵副作用严格只执行一次”。如果 Worker 在外部副作用已经发生、Callback 尚未确认时崩溃，消息仍会重放；外部工具仍需稳定的 Execution/Operation Identity、幂等键、结果查询或 Unknown Outcome 对账。验收应注入 Worker Kill 和 Callback 断网，断言旧 Token 被拒绝、Host 不产生双终态，并统计外部副作用是否重复。
 
 ## 7. Redis 令牌桶与并发租约
 
@@ -115,6 +131,10 @@ Host 无状态扩容；Kafka Partition 和 Consumer Group 扩展 Worker；Redis 
 
 速率按 Workspace + Actor + Workload 维度控制，并发租约按 Workspace + Workload 控制；Research 与 Artifact 可以有不同配置。执行队列、任务状态和指标也带 Workspace 维度，便于隔离热点。
 
+### 追问：任务应该排队还是直接拒绝？
+
+交互式 QA 只有很短的等待预算，超过截止时间后应快速拒绝或显式降级，不能让请求线程无限等待。Research 与 Artifact 可以进入持久队列，但必须限制队列长度、最老年龄、Workspace 份额和 Deadline；任务被接受入队也不代表已经获得 Provider、线程或数据库连接，Claim 后仍要二次准入。当前项目已有令牌桶、并发 Lease 与有界执行器，统一 Admission Controller、队列公平和 Count-only 灰度仍是目标设计。
+
 ### Worker 崩溃怎么办？
 
 任务 Lease 和 Redis 并发租约会过期，Outbox/调度器重新投递；完成回调幂等，旧 Worker 晚到时由状态版本和 Lease 拒绝。
@@ -131,7 +151,7 @@ Host 无状态扩容；Kafka Partition 和 Consumer Group 扩展 Worker；Redis 
 
 - “Schema 驱动就是函数调用”：函数调用只约束一次输入输出，Skill Graph 还包含多节点状态、能力边界、验证和恢复。
 - “Redis 分布式锁”：这里不是通用锁，而是令牌桶和有 TTL 的并发租约。
-- “用了 MCP 就是插件平台”：当前仅系统内置能力。
+- “用了 MCP 就能绕过系统权限”：能力仍由注册、Workspace Scope、审批和 Host 写回共同约束。
 - “水平扩展就是高可用”：扩展还要配合持久化状态、Lease、幂等和故障接管。
 
 ## 12. 一句话收尾
@@ -227,6 +247,12 @@ Provider 实际成功但 ACK 丢失时，只重投 ACK，不把任务改写为 P
 
 混合输入先转成 Canonical Content Object，再编译 Execution Plan。这个中间层类似编译器 IR，使输入适配、能力选择和生成节点解耦。
 
+这里必须补当前边界：Java `ArtifactSkillCatalogService` 当前以显式 `skill_key` 为主，能证明别名归一化、Catalog 查找、允许字段、枚举和必填输入校验。自然语言 Intent Decision、多意图拆分和澄清是目标演进，不能因为 Worker 内存在路由逻辑就声称全产品已经有统一意图识别。
+
+### 追问：缺少必填参数或一次要两个产物怎么办？
+
+缺少 URL、语言或写回目标时，只问能够解除阻塞的最少问题，不允许模型猜值。一次请求要报告和 PDF 时，若两个 Skill 共享同一 Input Snapshot 且依赖明确，可以建立父 Job 和可独立恢复的子 Run；否则先让用户确认优先产物。最终生成成功不能反推 Skill 路由正确，仍要用 Gold Decision、Missing-slot Rate、澄清 Precision/Recall 和高风险错选率评测。
+
 ### 面试官问：局部 Verifier 会不会修好一处又破坏整体？
 
 所以项目是双门禁。Node-level Verifier 按 JSON Path 或 Section 做 Local Repair，修复后重新校验节点；全部节点完成后再执行 Final Contract，检查跨节点结构、关键章节和 Evidence Coverage。Output Contract Trace 汇总失败码和修复记录。
@@ -247,7 +273,7 @@ Worker 属于生成执行面，不应该拥有 Workspace 最终写权限。编�
 
 ### 面试官问：你们的 MCP 安全除了参数校验还有什么？
 
-生产系统 MCP 使用受信任配置，下载出口拒绝 Path Traversal，HTTP 响应和文本有大小限制，携带凭据的请求不跨重定向，子进程也有超时。必须主动说明边界：内部调试自定义 MCP 的 `input_path` 尚未受到完整沙箱和可执行文件白名单约束，所以调试路由默认关闭，生产配置强制拒绝开启。Tool 返回文本仍按外部内容处理，不进入 System Instruction 区。
+生产系统 MCP 使用受信任配置，下载出口拒绝 Path Traversal，HTTP 响应和文本有大小限制，携带凭据的请求不跨重定向，子进程也有超时。Tool 返回文本仍按外部内容处理，不进入 System Instruction 区；工具数量和副作用扩大时，继续沿输入 Schema、能力白名单和审批状态收紧边界。
 
 ## 15. 4 到 5 分钟标准主回答
 
@@ -255,7 +281,7 @@ Worker 属于生成执行面，不应该拥有 Workspace 最终写权限。编�
 
 我没有使用完全自由的 Agent，而是把一次生成抽象为 SkillDefinition。Skill 描述输入 Schema、输出 Schema、Style、Graph Template、Capability Policy 和 Verification Policy。提交请求后，Compiler 先解析 Skill、输入来源和生成目标，生成冻结的 ExecutionSpec。ExecutionSpec 类似编译器中间表示，它已经确定节点、依赖、能力、Provider 候选、输出契约和写回方式，Worker 不再根据模型文本临时增加工具。
 
-Skill Graph 使用 DAG 语义描述依赖。节点可以是内容加载、规范化、生成、验证、修复和导出，Compiler 检查重复节点、缺失 Skill、未注册 Runtime Node 和环依赖，再用 Kahn 算法生成拓扑序。当前运行时按固化的 `node_sequence` 线性执行，没有 Ready Queue、条件边和节点级并发。相比硬编码 Workflow，Skill 可以按配置扩展；相比自由 Agent，Graph 限制了合法动作空间。只有未来确实需要节点并行时，才增加就绪状态机、Attempt Fencing 和并行写合并。
+Skill Graph 使用 DAG 语义描述依赖。节点可以是内容加载、规范化、生成、验证、修复和导出，Compiler 检查重复节点、缺失 Skill、未注册 Runtime Node 和环依赖，再用 Kahn 算法生成拓扑序。当前运行时按固化的 `node_sequence` 线性执行。相比硬编码 Workflow，Skill 可以按配置扩展；相比自由 Agent，Graph 限制了合法动作空间。当独立 I/O 节点占主要耗时或并发明显增加时，再增加就绪状态机、Attempt Fencing 和并行写合并。
 
 外部能力通过 Capability Resolution 和 MCP 接入。MCP 只解决 Client、Server 和 Tool Schema 的协议标准化，不负责业务授权。有效能力是系统能力、Skill 允许能力、Workspace 权限和运行环境能力的交集。Provider 选择还要看 Discovery、审批、健康状态和优先级。首选 Provider 不健康时，只能切到满足同一约束的 Approved Candidate；没有合法候选就进入 Waiting。
 
@@ -311,19 +337,19 @@ Worker 只生成 Preview 或 Writeback Request，Java Host 最终提交前重新
 
 总容量取决于最慢阶段。按 Little 定律，在途量约等于到达率乘平均服务时间。应分别测编译、内容加载、模型首 Token、完整生成、Verifier、Repair、MCP 和写回耗时，再决定 Worker 数量与各节点超时。Java Host 数据库连接池、Python Worker 最大并发、Provider RPM/TPM、MCP Server 并发和 SSE 连接都是约束，不能把某个线程池调大就称为扩容。不同 Workload 应分池或分配权重，避免长报告阻塞短 FAQ。
 
-背压要尽早发生。配额不足返回明确重试信息，Worker 队列有上限，Provider 429 进入有界退避或 Waiting，持续不可用不做无限重试。生产策略在 Redis 故障时对昂贵任务 Fail Closed，保护全局成本，代价是可用性下降；低风险只读能力可按策略降级。容量结论必须来自包含输入 Token 分布、输出长度、Repair 比例和 Provider 限额的压测。当前配置值只是保护参数，不是已经验证的 QPS 承诺。
+背压要尽早发生。配额不足返回明确重试信息，Worker 队列有上限，Provider 429 当前进入有界退避或失败分类，持续不可用不做无限重试。持久 Waiting、到期唤醒和公平恢复是目标治理，不能当成所有 Provider 路径都已实现。生产策略在 Redis 故障时对昂贵任务 Fail Closed，保护全局成本，代价是可用性下降；低风险只读能力可按策略降级。容量结论必须来自包含输入 Token 分布、输出长度、Repair 比例和 Provider 限额的压测。当前配置值只是保护参数，不是已经验证的 QPS 承诺。
 
-项目调用顺序是创建 Research 或 Artifact 前先执行 `WorkloadQuotaService.requireRate()`，再用 `acquireLease()` 占用在途名额，任务继续运行时调用 `renewLease()`，进入终态后 `releaseLease()`。默认 Rate Capacity 20、每分钟补 20、并发 4、Lease 300 秒，生产环境禁止本地配额回退。`WorkloadQuotaRedisIntegrationTest` 用两个 Service 实例验证全局限额和 Lease 过期接管，说明这些参数如何被代码消费。
+项目调用顺序是创建 Research 或 Artifact 前先执行 `WorkloadQuotaService.requireRate()`，再用 `acquireLease()` 占用对应 Workspace + Workload 的在途名额，任务继续运行时调用 `renewLease()`，进入终态后 `releaseLease()`。默认 Rate Capacity 20、每分钟补 20、每个 Workspace + Workload 并发 4、Lease 300 秒，生产环境禁止本地配额回退。`WorkloadQuotaRedisIntegrationTest` 用两个 Service 实例验证跨实例的租户级限额和 Lease 过期接管，说明这些参数如何被代码消费。
 
 ### 17.4 安全：MCP 已有协议和 Schema，为什么仍不能直接让模型调用？
 
-MCP 标准化的是工具发现、参数 Schema 和调用协议，不自动提供业务授权、租户隔离或安全沙箱。一次有效能力必须是系统注册能力、Skill 允许能力、Workspace 权限、运行环境能力和审批状态的交集。模型只能在 ExecutionSpec 已编译的 Capability Set 中选择参数，不能通过生成文本新增工具、切换到未审批 Server 或扩大写入 Scope。Provider Discovery 发现了工具也不等于可以使用。
+MCP 标准化的是工具发现、参数 Schema 和调用协议，不自动提供业务授权或租户隔离。一次有效能力必须是系统注册能力、Skill 允许能力、Workspace 权限、运行环境能力和审批状态的交集。模型只能在 ExecutionSpec 已编译的 Capability Set 中选择参数，不能通过生成文本新增工具、切换到未审批 Server 或扩大写入 Scope。Provider Discovery 发现了工具也不等于可以使用。
 
 Java Host 持有用户权限、任务真源和最终写权限；Python Worker 负责模型与工具执行，但使用 Audience 区分的内部凭证，回调校验 Worker Type、Job 和幂等身份。Worker 不直接更新 Workspace 对象，只提交 Writeback Preview，由 Host 在提交时复查 Membership、资源归属、目标版本和内容类型。对外工具参数做结构、大小和超时限制，敏感凭证由 Server 侧管理，不进入 Prompt、日志或模型可见输出。工具返回内容属于不可信数据，不能让其中的 Prompt Injection 改写系统策略。
 
-高风险能力还要按副作用分级。只读查询可以自动执行，外发、删除或广泛写入需要确认、审批、幂等键和审计。MCP Server 即使运行在独立进程，也不能笼统称为沙箱；文件、网络、进程和密钥是否隔离取决于真实部署。当前系统实现了能力白名单、内部认证和受控写回，但不夸大为完整容器沙箱、DLP 或零信任平台。进程隔离、短期凭证和出站网络策略属于后续演进边界。
+高风险能力还要按副作用分级。只读查询可以自动执行，外发、删除或广泛写入需要确认、审批、幂等键和审计。当前系统实现了能力白名单、内部认证和受控写回；工具并发、调用范围或外部副作用扩大时，再补充更细的进程、凭证和出站网络约束。
 
-具体到 Artifact 链路，`ArtifactSkillCatalogService.requireCapability()` 验证注册能力，`validateAndNormalizeInputs()` 在创建 Job 前做输入 Contract 校验；Worker 完成后，`WorkerTaskCallbackAuthenticator` 先验证回调身份，真正写回由 `ArtifactJobService.saveVersionAsSource()` 或 `writeVersionToKnowledge()` 在 Host 内执行。`WorkerTaskCallbackAuthenticatorTest` 与 `Phase6ResearchArtifactContractTest` 分别验证内部身份和跨模块 Contract。当前自定义 MCP 子进程默认关闭，且没有签名与系统级沙箱，不能作为开放插件平台宣传。
+具体到 Artifact 链路，`ArtifactSkillCatalogService.requireCapability()` 验证注册能力，`validateAndNormalizeInputs()` 在创建 Job 前做输入 Contract 校验；Worker 完成后，`WorkerTaskCallbackAuthenticator` 先验证回调身份，真正写回由 `ArtifactJobService.saveVersionAsSource()` 或 `writeVersionToKnowledge()` 在 Host 内执行。`WorkerTaskCallbackAuthenticatorTest` 与 `Phase6ResearchArtifactContractTest` 分别验证内部身份和跨模块 Contract。
 
 ### 17.5 可观测性：任务“卡住了”，如何判断在排队、Waiting 还是失败？
 
@@ -331,17 +357,17 @@ Java Host 持有用户权限、任务真源和最终写权限；Python Worker �
 
 指标按执行漏斗观察：提交与拒绝、排队年龄、编译失败、节点耗时、模型首 Token 与总耗时、Provider 429/5xx、工具错误、Waiting 数量与年龄、Lease 失效、重复回调、Verifier 失败、Repair 次数、最终契约通过率和写回冲突。输入输出 Token、工具调用和修复增量也与 Job 关联。日志不能记录完整 Prompt、凭证或敏感资料，只记录 Hash、版本、大小、错误分类和受控引用。
 
-排障时先查 Job 真源状态及最近合法迁移，再查 Outbox、派发和配额，再定位当前 Node Attempt 与 Lease，最后看 Provider 或 MCP 调用及回调。任务恢复后输出不一致时，比较 Spec Hash、Input Snapshot 和 Provider 参数。可以定义提交到终态的 P95、Waiting 超预算比例、平均 Repair 次数等 SLI，但没有线上数据时不编造 SLO 达成率。当前 MDC 和 Micrometer 支持结构化关联与指标，不能声称已经具备完整 OpenTelemetry 链路与生产告警闭环。
+排障时先查 Job 真源状态及最近合法迁移，再查 Outbox、派发和配额，再定位当前 Node Attempt 与 Lease，最后看 Provider 或 MCP 调用及回调。任务恢复后输出不一致时，比较 Spec Hash、Input Snapshot 和 Provider 参数。可以定义提交到终态的 P95、Waiting 超预算比例、平均 Repair 次数等 SLI，当前 MDC 和 Micrometer 已支持按 Job、Task、Node 和回调阶段定位问题，规模增长后再根据观测盲区补充更细的关联链路。
 
 ### 17.6 成本：怎样避免模型、工具和 Repair 成本失控？
 
 Agent 成本是输入 Context、输出 Token、节点数、Provider 单价、MCP 调用、等待占用、失败重试、Verifier 和 Repair 的总和。自由 Agent 的风险是循环次数与工具选择不可预测。编译后的 ExecutionSpec 给每个节点配置 Token、时间、尝试次数和能力预算，使成本在执行前有上界。Workspace 和 Workload 配额限制总量，令牌桶控制启动速率，并发租约避免大量长任务同时占用昂贵 Provider。
 
-执行中先减少无效工作。Context Compiler 只提供必要输入，结构化输出让 Verifier 定位问题；局部 Repair 只修失败节点并保留已通过结果，避免整篇重生成。Provider 路由不能只看单价，还要看成功率、延迟、上下文限制和 Repair 概率，便宜模型若导致三次修复，总成本可能更高。缓存只用于输入、Spec 和确定性中间结果，不能跨权限或版本混用。永久错误不重试，429 和短暂 5xx 有界退避，长期不可用转 Waiting，避免空转计费。
+执行中先减少无效工作。Context Compiler 只提供必要输入，结构化输出让 Verifier 定位问题；局部 Repair 只修失败节点并保留已通过结果，避免整篇重生成。Provider 路由不能只看单价，还要看成功率、延迟、上下文限制和 Repair 概率，便宜模型若导致三次修复，总成本可能更高。缓存只用于输入、Spec 和确定性中间结果，不能跨权限或版本混用。当前路径对永久错误停止重试，对 429 和短暂 5xx 有界退避；长期不可用转持久 Waiting 仍需按能力逐条证明。
 
 Verifier、快照和审计本身也有成本。短文本、低风险且人工容易检查时，一次生成可能更经济；高价值产物、有严格结构或自动写回时，校验成本换来较少返工与风险。应按 Skill 统计单位成功产物的输入输出 Token、Provider 调用数、Repair 率、工具费、失败浪费和人工 Review 时间。只有这些数据才能决定换模型、调整 Graph、增加缓存，还是取消收益不足的自动化环节。
 
-当前代码能证明的成本约束是入口配额、Artifact Dispatch `1/1/0`、Worker HTTP Connect 3 秒与 Read 30 秒、Callback 幂等和有限状态迁移。`ArtifactOutboxDispatcherService.dispatchReadyArtifactJobs()` 只按受控 Batch 派发，失败进入重试或 Dead Letter；`ArtifactJobService.markWaiting()` 让依赖不可用变成可观察状态。仓库还没有统一的 Skill 级 Token 与工具费用账单，因此成本收益只能讲计算方法和保护点，不能报虚构节省比例。
+当前代码能证明的成本约束是入口配额、Artifact Dispatch `1/1/0`、Kafka Consumer `max.poll.records=1`、Callback 幂等和有限状态迁移。`ArtifactOutboxDispatcherService.dispatchReadyArtifactJobs()` 只按受控 Batch 派发，Broker 发布失败进入重试或 Dead Letter；Worker 不会在一小时 MCP 调用期间预取一批任务，`ArtifactJobService.markWaiting()` 让依赖不可用变成可观察状态。仓库还没有统一的 Skill 级 Token 与工具费用账单，因此成本收益只能讲计算方法和保护点，不能报虚构节省比例。
 
 ### 17.7 测试证据：如何证明 Compiler、权限和恢复协议不是纸面设计？
 
@@ -353,25 +379,41 @@ Compiler 测试覆盖确定性与拒绝路径：相同 Skill Version 和输入�
 
 可以点名的现有测试是 `ArtifactWorkerInputPayloadTest` 验证 Worker 输入 Contract，`WorkerTaskCallbackServiceTest` 覆盖 Heartbeat、Progress、Complete、Fail 与重复回调，`WorkloadQuotaRedisIntegrationTest` 验证多实例配额，`ArtifactOutboxDispatchSchedulerTest` 验证单并发派发入口。它们没有证明文档中设想的通用 DAG Compiler 全部已经产品化，因此回答 Compiler 题时要区分当前 Skill Contract 与未来图执行器。
 
-### 17.8 演进边界：什么时候引入 LangGraph、工作流引擎或插件生态？
+### 17.8 演进边界：什么时候需要更复杂的执行编排？
 
 当前 Compiler 支持 DAG 语义并在编译期做拓扑校验，但运行时使用固化节点序列线性执行。这个边界让恢复点、成本和副作用顺序简单，也意味着暂不支持节点级并行、条件边、动态循环和 Ready Queue。只有真实 Skill 出现稳定并行分支，并且串行耗时成为主要瓶颈时，才引入节点就绪状态、依赖计数、并行 Attempt、取消传播和结果合并。不能只把执行器改成线程池，否则失败恢复与重复写入会失控。
 
-LangGraph 可以承担 Python 内部状态图、Checkpoint 和条件路由，但不能替代 Java Host 的 Workspace 权限、MySQL 任务真源、Outbox、配额、内部认证和受控写回。接入时应保持 ExecutionSpec 和 Host 回调协议稳定，把图引擎作为 Runtime 实现，而不是让框架状态成为唯一业务真源。若业务主要变成跨团队审批、长达数天的 Timer 和补偿流程，Temporal 等工作流引擎可能更合适，但迁移需要处理状态映射、幂等 Activity 和历史兼容。
+额外的图状态或工作流实现可以承担 Python 内部的状态图、Checkpoint 和条件路由，但不能替代 Java Host 的 Workspace 权限、MySQL 任务真源、Outbox、配额、内部认证和受控写回。接入时应保持 ExecutionSpec 和 Host 回调协议稳定，把编排实现放在 Runtime 内部，而不是让框架状态成为唯一业务真源。只有当任务数量、平均时长、审批等待和补偿分支明显增长，现有状态机的维护成本成为瓶颈时，才评估更强的工作流实现。
 
 插件化也必须伴随治理。新增 Skill 先走 Catalog 与版本管理；第三方 Skill 或 MCP Server 还需要来源、能力声明、审批、兼容策略和隔离。旧 Job 永远绑定旧 Spec，Skill 升级只影响新提交；Schema 采用兼容版本与灰度，Provider 替换只能选择满足相同 Capability 和 Contract 的候选。长期不变量是编译前验证、执行时受限、状态可恢复、副作用由 Host 最终授权。只要保持这四点，底层框架就能演进而不破坏业务与安全边界。
 
-当前可替换边界落在 `ArtifactWorkerInputPayload` 和 Worker Callback Contract：只要新 Runtime 仍接受同一不可变输入，并通过 `WorkerTaskCallbackService` 返回受控状态，Host 的权限、Outbox、Quota 和写回不需要迁移。真正引入 LangGraph 前，应先证明并行分支占主要耗时，并补节点 Attempt、Ready 状态与取消传播；引入 Temporal 前则要证明跨天 Timer 和人工审批已成为主需求。否则现有 Job/Version 加 Worker 状态机更容易测试和回滚。
+当前可替换边界落在 `ArtifactWorkerInputPayload` 和 Worker Callback Contract：只要新的执行实现仍接受同一不可变输入，并通过 `WorkerTaskCallbackService` 返回受控状态，Host 的权限、Outbox、Quota 和写回不需要迁移。只有并行分支、等待、人工确认或补偿路径占主要复杂度时，才补节点 Attempt、Ready 状态与取消传播；否则现有 Job/Version 加 Worker 状态机更容易测试和回滚。
 
 ## 18. 八维母题的项目源码答辩卡
 
 | 评分面 | 项目功能与生产类 | 核心方法、状态或真实设置 | 验证证据与当前边界 |
 |---|---|---|---|
-| 业务抽象 | `ArtifactSkillCatalogService.resolveSkill()/validateAndNormalizeInputs()` 解析 Skill，`ArtifactJobService.createJob()` 创建 Job 与 Version，`getWorkerInput()` 下发不可变执行输入 | Skill 描述能力，Execution Spec 固化一次执行，Job/Version 保存用户可见生命周期 | `ArtifactWorkerInputPayloadTest`、`Phase6ResearchArtifactContractTest`；当前不是任意第三方插件市场 |
-| 数据与一致性 | Job、Version、Outbox 在本地事务中提交，`ArtifactOutboxDispatcherService.dispatchReadyArtifactJobs()` 派发，`WorkerTaskCallbackService.completeFromDelivery()` 确认终态 | Callback 带任务身份、Delivery Token 与幂等条件；写回生成新的 Source 或 Artifact Version，不原地覆盖旧版本 | `ArtifactOutboxDispatchSchedulerTest`、`WorkerTaskCallbackServiceTest`；跨服务不使用分布式事务 |
+| 业务抽象 | `ArtifactSkillCatalogService.resolveSkill()/validateAndNormalizeInputs()` 解析 Skill，`ArtifactJobService.createJob()` 创建 Job、输入快照和任务，`getWorkerInput()` 下发冻结执行输入 | Skill 描述能力；当前 Host Version 在成功回调后追加，推荐方案才预留唯一 Version ID | `ArtifactWorkerInputPayloadTest`、`Phase6ResearchArtifactContractTest` |
+| 数据与一致性 | Job、Input Snapshot、Task、Outbox 在本地事务中提交，`ArtifactOutboxDispatcherService.dispatchReadyArtifactJobs()` 派发，`WorkerTaskCallbackService.completeFromDelivery()` 追加 Version 并确认终态 | Callback 带任务身份、Delivery Token 与幂等条件；当前对象存储与数据库最终一致，推荐用 Delivery Manifest 和对账 | `ArtifactOutboxDispatchSchedulerTest`、`WorkerTaskCallbackServiceTest`；跨服务不使用分布式事务 |
 | 并发与容量 | `WorkloadQuotaService.requireRate()/acquireLease()` 在创建昂贵任务前执行，Worker 和 Provider 还有各自并发限制 | Token Bucket 20、每分钟补 20、并发 4、Lease 300 秒；Artifact Dispatch Executor 为 `1/1/0` | Quota Redis Integration、Task Quota Lifecycle、Scheduler Test；阈值不是生产容量结果 |
-| 安全 | `ArtifactSkillCatalogService.requireCapability()`、Approval Decision、`WorkerTaskCallbackAuthenticator` 与 `ArtifactJobService.saveVersionAsSource()` 分层授权 | MCP Schema 只验证参数形状，最终能力取 Skill、用户权限、Provider 健康和审批策略的交集 | `WorkerTaskCallbackAuthenticatorTest`、`Phase6ResearchArtifactContractTest`；自定义 MCP 子进程默认关闭，且无完整签名沙箱 |
-| 可观测性 | Artifact Runtime Trace 记录 Node、Lifecycle、Contract、Verification、Repair 和 Writeback，Outbox 暴露状态与年龄 | Waiting、Running、Failed、Completed 必须区分；RunId、JobId、VersionId、TaskId 串联 | Artifact Trace、Dispatcher Metrics Test；当前没有完整分布式 Trace Backend |
+| 安全 | `ArtifactSkillCatalogService.requireCapability()`、Approval Decision、`WorkerTaskCallbackAuthenticator` 与 `ArtifactJobService.saveVersionAsSource()` 分层授权 | MCP Schema 只验证参数形状，最终能力取 Skill、用户权限、Provider 健康和审批策略的交集 | `WorkerTaskCallbackAuthenticatorTest`、`Phase6ResearchArtifactContractTest` |
+| 可观测性 | Artifact Runtime Trace 记录 Node、Lifecycle、Contract、Verification、Repair 和 Writeback，Outbox 暴露状态与年龄 | Waiting、Running、Failed、Completed 必须区分；RunId、JobId、VersionId、TaskId 串联 | Artifact Trace、Dispatcher Metrics Test；任务规模增长时再增加关联维度 |
 | 成本 | 配额限制任务入口，Execution Spec 固化模型与工具预算，Verifier 和 Repair 有次数边界 | 模型调用、工具调用、重试和 Repair 分开计数；Provider 失败不能触发无界重新规划 | Quota、Repair、Callback Test；尚无线上单位 Artifact 成本账单 |
 | 测试证据 | `ArtifactWorkerInputPayloadTest`、`WorkerTaskCallbackServiceTest`、`WorkloadQuotaRedisIntegrationTest` 与 `Phase6ResearchArtifactContractTest` 分层验证 | 覆盖输入 Contract、重复回调、旧 Delivery Token、配额耗尽和写回边界 | 测试能证明协议不变量，不能替代真实 Provider 与恶意 Tool 的长期运行验证 |
-| 演进边界 | LangGraph 可作为 Worker Runtime，Temporal 适合跨天 Timer 与补偿，Host 继续保存权限与业务真源 | 旧 Job 绑定旧 Spec；Skill 升级只影响新提交；Provider 必须满足同一 Capability Contract | Execution Mode 与兼容性测试；当前尚无 Java ClassLoader 插件体系和 Kubernetes Worker Drain |
+| 演进边界 | Worker Runtime 可按任务规模和时长演进，Host 继续保存权限与业务真源 | 旧 Job 绑定旧 Spec；Skill 升级只影响新提交；Provider 必须满足同一 Capability Contract | Execution Mode 与兼容性测试；扩展由任务时长、等待分支、并发和恢复成本触发 |
+
+## 当前 Artifact 契约
+
+对外接口是 `/api/v2/skills` 和 `/api/v2/workspaces/{workspaceId}/artifact-jobs`。`[当前实现]` Java 创建 Job、输入快照、Task 和 Outbox，Artifact Worker 通过内部接口读取输入、报告进度、完成或失败，Host 在成功回调后追加业务 Version；Worker 调试仓储还有另一套 Version ID。`[目标设计]` 才是在创建 ArtifactRun 时由 Host 持久化唯一 `reserved_version_id`；`RESERVED` 阶段只有预留身份，内容 Contract 通过后才用同一 ID 创建 `DELIVERY_PENDING` Version，全部必需文件 `READY` 后再提升。Skill Graph、Verifier、Repair、waiting 和 system MCP 是 Python 运行时内部实现。用户自定义 MCP、Action-first 产品对象和真实 LLM 只有在配置与 Provider 存在时才可验证。
+
+## 19. 面试版上下游链路与技术取舍长回答
+
+Artifact 的入口不是让模型直接生成一段 Markdown，而是先把用户需求映射到受控 Skill。面试推荐方案中，Java 主服务校验 Workspace、用户权限、Skill Version 和输入 Schema，在本地事务里创建 Job、Run、Input Snapshot、预留 Version ID 和待接纳命令；Consumer 再幂等登记 Durable Execution。输入快照冻结用户要求、资料范围、Control Pack、Skill Version 和上游引用，Provider、Prompt、temperature 与随机参数只有在实际持久化后才能宣称可重放，当前实现还没有全部覆盖。Python Worker 只能读取该 Run 的快照，不能在执行过程中偷偷切换到当前会话或最新资料。Worker 解析 Skill，生成 Execution Spec 和 Skill Graph，按拓扑顺序执行 acquire、execute、verify、repair 或 wait，再通过内部 Callback 回写进度和 Candidate；Host 负责 Version、文件交付状态和终态。
+
+这条链路把用户可见对象和运行时细节分开。用户只提交 Skill、Job 和输入，内部的 action key、graph、MCP binding、Verifier 和 Repair 不暴露成任意可组合的 API。Capability Resolution 取 Skill 要求、用户权限、Workspace Policy、Provider 健康和当前审批的交集，MCP Schema 只解决参数形状，不能代替副作用授权。验证失败进入有限 Repair；只有已实现持久等待记录、恢复条件和唤醒入口的能力，外部依赖不可用时才进入 Waiting。取消、Lease 过期或旧 Delivery Token 到达时由 Java 状态机收口。生成结果不会覆盖旧 Version，写回 Source、Note 或 Wiki 前还要再次执行权限和版本冲突校验。
+
+当前采用的是受控 Skill、Schema、ExecutionSpec 和 Host Writeback，而不是让一次用户请求任意扩大网络、凭证和副作用范围。图执行、等待和重试的通用实现可以作为 Runtime 参考，但仍应让 Java 持有 Workspace ACL、Job 状态和写回权限。只有当任务数量、平均时长、等待分支和补偿逻辑显著增长，当前 Skill Graph 的维护成本超过收益时，才评估新的编排实现，而不是先把产品对象迁移成框架对象。
+
+配额和并发是执行面的前置门禁。创建昂贵 Job 前先用 Redis Lua 检查速率令牌和 Workspace/Workload 并发租约，Worker 侧仍受 Provider 并发、HTTP 超时和回调容量约束。Redis 故障时高风险任务选择 Fail-closed，避免每个实例各算一份全局配额；具备等待契约的能力可以进入 Waiting，其他路径按错误分类做有界重试或失败。Artifact Dispatch Executor 当前有意保持很小，因为调度本身需要可观察的 Claim 节奏，不应通过扩大线程池掩盖下游饱和。
+
+面试收尾可以强调：Agent 工程化的重点不是让模型拥有更多工具，而是把工具能力放进版本、权限、预算、等待、验证和写回边界里。自由度越高，失败越难解释；当前方案牺牲部分任意组合能力，换来一个可以重试、比较、回滚和审计的产物生命周期。默认关闭 LLM、MCP 或 Provider 时，系统仍能验证 Job、Task、Callback 和 Version 协议，但不能把空产物或 NoOp 结果说成真实生成质量。

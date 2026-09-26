@@ -1,0 +1,40 @@
+[
+  {
+    "attempt_count": 1,
+    "created_at": "2026-09-18 08:12:39.000000",
+    "dead_lettered_at": null,
+    "delivery_no": 1,
+    "id": "201e3b7c-8b9e-4284-85c7-9091808fa4a5",
+    "last_error": null,
+    "lease_owner": null,
+    "lease_until": null,
+    "message_key": "bf1935ee-54db-49e5-833c-f3a5a2ed50f0",
+    "next_attempt_at": null,
+    "payload_json": "{\"schema_version\":\"research-agent-command.v1\",\"command_id\":\"201e3b7c-8b9e-4284-85c7-9091808fa4a5\",\"research_run_id\":\"31d1d44f-85b9-44e3-b1fd-89dcbefa3c14\",\"agent_task_id\":\"bf1935ee-54db-49e5-833c-f3a5a2ed50f0\",\"idempotency_key\":\"agent-command:bf1935ee-54db-49e5-833c-f3a5a2ed50f0:delivery:1\",\"delivery_attempt\":1}",
+    "research_agent_task_id": "bf1935ee-54db-49e5-833c-f3a5a2ed50f0",
+    "research_run_id": "31d1d44f-85b9-44e3-b1fd-89dcbefa3c14",
+    "sent_at": "2026-09-18 08:12:40.000000",
+    "status": "SENT",
+    "topic": "noteweave.research.agent.command",
+    "updated_at": "2026-09-18 08:12:40.000000"
+  },
+  {
+    "attempt_count": 1,
+    "created_at": "2026-09-18 08:12:39.000000",
+    "dead_lettered_at": null,
+    "delivery_no": 1,
+    "id": "878b72f6-abe4-44af-8006-008ae1f6e859",
+    "last_error": null,
+    "lease_owner": null,
+    "lease_until": null,
+    "message_key": "7c4896f3-86af-4147-ad61-8806e9466a64",
+    "next_attempt_at": null,
+    "payload_json": "{\"schema_version\":\"research-agent-command.v1\",\"command_id\":\"878b72f6-abe4-44af-8006-008ae1f6e859\",\"research_run_id\":\"31d1d44f-85b9-44e3-b1fd-89dcbefa3c14\",\"agent_task_id\":\"7c4896f3-86af-4147-ad61-8806e9466a64\",\"idempotency_key\":\"agent-command:7c4896f3-86af-4147-ad61-8806e9466a64:delivery:1\",\"delivery_attempt\":1}",
+    "research_agent_task_id": "7c4896f3-86af-4147-ad61-8806e9466a64",
+    "research_run_id": "31d1d44f-85b9-44e3-b1fd-89dcbefa3c14",
+    "sent_at": "2026-09-18 08:12:40.000000",
+    "status": "SENT",
+    "topic": "noteweave.research.agent.command",
+    "updated_at": "2026-09-18 08:12:40.000000"
+  }
+]

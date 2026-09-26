@@ -45,6 +45,7 @@ public class NoteAnswerSourceService {
                 rewritten.title(),
                 rewritten.content(),
                 rewritten.mode(),
+                rewritten.fallbackReason(),
                 message.content()
         );
     }

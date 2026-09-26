@@ -2,6 +2,7 @@ package com.noteweave.knowledge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.noteweave.security.AuditActorProvider;
@@ -16,6 +17,7 @@ class KnowledgeCommandServiceTest {
 
     private JdbcTemplate jdbcTemplate;
     private KnowledgeCommandService commandService;
+    private WorkspaceQueryPort workspaceQueryPort;
 
     @BeforeEach
     void setUp() {
@@ -26,7 +28,7 @@ class KnowledgeCommandServiceTest {
                 "");
         jdbcTemplate = new JdbcTemplate(dataSource);
         createSchema();
-        WorkspaceQueryPort workspaceQueryPort = mock(WorkspaceQueryPort.class);
+        workspaceQueryPort = mock(WorkspaceQueryPort.class);
         when(workspaceQueryPort.exists("workspace")).thenReturn(true);
         AuditActorProvider actorProvider = mock(AuditActorProvider.class);
         when(actorProvider.currentOrSystem("KNOWLEDGE")).thenReturn("actor");
@@ -40,6 +42,15 @@ class KnowledgeCommandServiceTest {
                 actorProvider,
                 versionService,
                 mutationService);
+    }
+
+    @Test
+    void backgroundWikiUpsertShouldNotRequireHttpWorkspaceIdentity() {
+        KnowledgeItemResponse created = commandService.upsertWikiPageForInternalExecution(
+                "workspace", "Background Page", "background content", List.of());
+
+        assertThat(created.title()).isEqualTo("Background Page");
+        verifyNoInteractions(workspaceQueryPort);
     }
 
     @Test

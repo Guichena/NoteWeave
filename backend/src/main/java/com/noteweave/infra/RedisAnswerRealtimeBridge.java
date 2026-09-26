@@ -99,33 +99,58 @@ public class RedisAnswerRealtimeBridge implements AnswerRealtimeBridge {
             String runId,
             AnswerLiveEvent event
     ) {
+        RuntimeException lastFailure = null;
+        // Redis can briefly reject a publish while the connection is reconnecting (for
+        // example immediately after Kafka/Redis recovery). A single bounded retry keeps
+        // that transient blip from turning an otherwise healthy answer into a failed
+        // conversation turn. Sequence numbers are allocated per attempt, so retries
+        // remain monotonic and do not overwrite an already-published stream record.
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                return publishConversationOnce(conversationId, runId, event);
+            } catch (RuntimeException ex) {
+                lastFailure = ex;
+                if (attempt == 0) {
+                    try {
+                        Thread.sleep(40L);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+        }
+        meterRegistry.counter("noteweave.conversation.redis.error", "operation", "publish").increment();
+        throw unavailable("conversation publish", lastFailure);
+    }
+
+    private ConversationLiveEvent publishConversationOnce(
+            String conversationId,
+            String runId,
+            AnswerLiveEvent event
+    ) {
         String streamKey = conversationStreamKey(conversationId);
         String sequenceKey = conversationSequenceKey(conversationId);
-        try {
-            Long sequence = redisTemplate.opsForValue().increment(sequenceKey);
-            if (sequence == null) {
-                throw new IllegalStateException("Redis did not return a conversation sequence");
-            }
-            Map<String, String> fields = new LinkedHashMap<>();
-            fields.put("sequence", Long.toString(sequence));
-            fields.put("run_id", runId);
-            fields.put("run_sequence", Long.toString(event.sequence()));
-            fields.put("type", event.eventType());
-            fields.put("data", event.data());
-            fields.put("occurred_at", event.occurredAt().toString());
-            redisTemplate.opsForStream().add(StreamRecords.string(fields)
-                    .withStreamKey(streamKey)
-                    .withId(RecordId.of(sequence + "-0")));
-            redisTemplate.opsForStream().trim(streamKey, maxLength, true);
-            redisTemplate.expire(streamKey, ttl);
-            redisTemplate.expire(sequenceKey, ttl);
-            meterRegistry.counter("noteweave.conversation.redis.publish", "type", event.eventType()).increment();
-            return new ConversationLiveEvent(
-                    sequence, runId, event.sequence(), event.eventType(), event.data(), event.occurredAt());
-        } catch (RuntimeException ex) {
-            meterRegistry.counter("noteweave.conversation.redis.error", "operation", "publish").increment();
-            throw unavailable("conversation publish", ex);
+        Long sequence = redisTemplate.opsForValue().increment(sequenceKey);
+        if (sequence == null) {
+            throw new IllegalStateException("Redis did not return a conversation sequence");
         }
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("sequence", Long.toString(sequence));
+        fields.put("run_id", runId);
+        fields.put("run_sequence", Long.toString(event.sequence()));
+        fields.put("type", event.eventType());
+        fields.put("data", event.data());
+        fields.put("occurred_at", event.occurredAt().toString());
+        redisTemplate.opsForStream().add(StreamRecords.string(fields)
+                .withStreamKey(streamKey)
+                .withId(RecordId.of(sequence + "-0")));
+        redisTemplate.opsForStream().trim(streamKey, maxLength, true);
+        redisTemplate.expire(streamKey, ttl);
+        redisTemplate.expire(sequenceKey, ttl);
+        meterRegistry.counter("noteweave.conversation.redis.publish", "type", event.eventType()).increment();
+        return new ConversationLiveEvent(
+                sequence, runId, event.sequence(), event.eventType(), event.data(), event.occurredAt());
     }
 
     @Override

@@ -45,7 +45,10 @@ def build_output_contract_trace(
     warnings: list[str] = []
 
     for heading in plan.outline:
-        if f"### {heading}" in markdown:
+        heading_present = f"### {heading}" in markdown
+        if plan.execution_spec.output_shape == "MINDMAP_MARKDOWN":
+            heading_present = heading_present or f"## {heading}" in markdown
+        if heading_present:
             _append_trace(
                 trace_bucket=outline_checks,
                 passed_checks=passed_checks,

@@ -25,14 +25,15 @@ export function useShellBusy(initialStatus = "准备就绪") {
   const [status, setStatus] = useState(initialStatus);
 
   const run = useCallback<ShellRun>(async (label, action, scope = "shell") => {
+    const pendingStatus = `正在${label}...`;
     try {
       setBusy((current) => setBusyScope(current, scope, true));
-      setStatus(`${label}中...`);
+      setStatus(pendingStatus);
       await action();
-      setStatus(`${label}完成`);
+      setStatus((current) => current === pendingStatus ? `已完成：${label}` : current);
     } catch (error) {
       if (isAbortError(error)) {
-        setStatus((current) => current === `${label}中...` ? initialStatus : current);
+        setStatus((current) => current === pendingStatus ? initialStatus : current);
       } else {
         setStatus(error instanceof Error ? error.message : `${label}失败`);
       }

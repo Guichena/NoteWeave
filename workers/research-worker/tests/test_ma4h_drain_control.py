@@ -74,3 +74,24 @@ def test_drain_aware_polling_never_polls_after_drain() -> None:
     with pytest.raises(StopIteration):
         next(messages)
     assert consumer.poll_calls == 0
+
+
+def test_drain_aware_commit_forwards_exact_offsets() -> None:
+    from app.drain_control import DrainAwareKafkaMessages, DrainCoordinator
+
+    class Consumer:
+        def __init__(self) -> None:
+            self.offsets = None
+
+        def commit(self, offsets=None) -> None:
+            self.offsets = offsets
+
+    consumer = Consumer()
+    messages = DrainAwareKafkaMessages(
+        consumer, DrainCoordinator(start_watchdog=False), poll_timeout_ms=50
+    )
+    expected = {("research", 0): 42}
+
+    messages.commit(offsets=expected)
+
+    assert consumer.offsets == expected

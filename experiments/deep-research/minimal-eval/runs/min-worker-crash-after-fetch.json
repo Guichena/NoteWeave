@@ -1,0 +1,632 @@
+{
+  "schema_version": "deep-research-minimal-eval-public-evidence.v1",
+  "case_key": "min-worker-crash-after-fetch",
+  "run_id": "e0f1c2f1-1de8-4318-bf62-b37323c12985",
+  "workspace_id": "44874a3c-5d3b-4984-aad1-da7770a4c050",
+  "captured_at": "2026-09-20T06:54:19.927891+00:00",
+  "truth_label": "生产待验证",
+  "note": "公开 API 原始证据已采集；仍须按 manifest required_checks 审计后才能标记 PASSED。",
+  "run_detail": {
+    "research_run_id": "e0f1c2f1-1de8-4318-bf62-b37323c12985",
+    "workspace_id": "44874a3c-5d3b-4984-aad1-da7770a4c050",
+    "task_id": "2a83ea93-ac49-4cdd-91d6-ac16e23726c4",
+    "question": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档；在网页已归档、抽取未开始时终止 Worker，并由新 Execution 接管。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用、证据不足时诚实降级的研究报告",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL",
+        "SOURCE_DOMAIN_ALLOWLIST: postgresql.org,dev.mysql.com"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "final_report_title": "Research report: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档；在网页已归档、抽取未开始时终止 Worker，并由新 Execution 接管。",
+    "final_report_markdown": "# Research report\n\n比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档；在网页已归档、抽取未开始时终止 Worker，并由新 Execution 接管。\n\n**Outcome:** `COMPLETED_WITH_LIMITATIONS`\n\n## Verified findings\n\n### PostgreSQL offers two types for storing JSON data: \\`json\\` and \\`jsonb\\`.\n\n- Cell: `subject:answer`\n- Candidate: `2b2da87f-560f-4171-9bd7-d90f93e206bf`\n- Evidence: `evidence:0c206bafb2776dd4948ecaff519b013c2681712a8e05fde4`\n  - Exact quote: “PostgreSQL offers two types for storing JSON data: \\`json\\` and \\`jsonb\\`.”\n  - Snapshot: `research/external/5ce66d71-1088-4890-a9a2-0bb025f68da2/001285bc3fa03c1cc60144f4b753113a31378699be9d0e3612791921deb920d8`\n  - URL: https://www.postgresql.org/docs/current/datatype-json.html\n\n### PostgreSQL offers two types for storing JSON data: \\`json\\` and \\`jsonb\\`.\n\n- Cell: `subject:key_evidence`\n- Candidate: `06114b09-54e5-43bd-96f5-a42686d7cca4`\n- Evidence: `evidence:c838d42e12d26e1278d744a6f9eae29c3e1c7f5b32b32d43`\n  - Exact quote: “PostgreSQL offers two types for storing JSON data: \\`json\\` and \\`jsonb\\`.”\n  - Snapshot: `research/external/5ce66d71-1088-4890-a9a2-0bb025f68da2/001285bc3fa03c1cc60144f4b753113a31378699be9d0e3612791921deb920d8`\n  - URL: https://www.postgresql.org/docs/current/datatype-json.html\n\n## Limitations\n\n- `subject:implications`: OPTIONAL_CELL_UNRESOLVED (`GAP`)\n- `subject:limitations`: OPTIONAL_CELL_UNRESOLVED (`GAP`)\n- UNRESOLVED_CELLS_REMAIN\n\n## Completion reasons\n\n- UNRESOLVED_CELLS_REMAIN",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/44874a3c-5d3b-4984-aad1-da7770a4c050/research/e0f1c2f1-1de8-4318-bf62-b37323c12985/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 1546,
+      "sha256": "b12bd5834f33080ab3a355869fc9157b4463228b6dd31894539c89dfbdab7b37"
+    },
+    "research_artifact": {
+      "artifact_id": "e0f1c2f1-1de8-4318-bf62-b37323c12985",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "Research report: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档；在网页已归档、抽取未开始时终止 Worker，并由新 Execution 接管。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "e0f1c2f1-1de8-4318-bf62-b37323c12985",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/44874a3c-5d3b-4984-aad1-da7770a4c050/research/e0f1c2f1-1de8-4318-bf62-b37323c12985/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 1546,
+        "sha256": "b12bd5834f33080ab3a355869fc9157b4463228b6dd31894539c89dfbdab7b37"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 0,
+        "blocked_row_count": 1,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 1,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 1,
+        "guardrailed_row_count": 1,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 1,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [
+          {
+            "row_id": "subject",
+            "source_id": "",
+            "source_title": "Subject",
+            "evidence_id": "",
+            "search_query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档；在网页已归档、抽取未开始时终止 Worker，并由新 Execution 接管。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "guardrailed_row_samples": [
+          {
+            "row_id": "subject",
+            "source_id": "",
+            "source_title": "Subject",
+            "evidence_id": "",
+            "search_query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档；在网页已归档、抽取未开始时终止 Worker，并由新 Execution 接管。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v1",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 1,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档；在网页已归档、抽取未开始时终止 Worker，并由新 Execution 接管。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Subject",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档；在网页已归档、抽取未开始时终止 Worker，并由新 Execution 接管。",
+            "read_focus": "形成可逐项引用、证据不足时诚实降级的研究报告",
+            "evidence_id": "",
+            "row_status": "DISCOVERED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "subject:implications",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "implications",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "subject:key_evidence",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "key_evidence",
+            "candidate_value": "PostgreSQL offers two types for storing JSON data: `json` and `jsonb`.",
+            "status": "VERIFIED",
+            "confidence": 1.0,
+            "evidence_refs": [
+              "evidence:c838d42e12d26e1278d744a6f9eae29c3e1c7f5b32b32d43"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "subject:limitations",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "limitations",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "subject:answer",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "answer",
+            "candidate_value": "PostgreSQL offers two types for storing JSON data: `json` and `jsonb`.",
+            "status": "VERIFIED",
+            "confidence": 1.0,
+            "evidence_refs": [
+              "evidence:0c206bafb2776dd4948ecaff519b013c2681712a8e05fde4"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 0,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档；在网页已归档、抽取未开始时终止 Worker，并由新 Execution 接管。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Subject",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档；在网页已归档、抽取未开始时终止 Worker，并由新 Execution 接管。",
+          "read_focus": "形成可逐项引用、证据不足时诚实降级的研究报告",
+          "evidence_id": "",
+          "row_status": "DISCOVERED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "subject:implications",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "implications",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "subject:key_evidence",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "key_evidence",
+          "candidate_value": "PostgreSQL offers two types for storing JSON data: `json` and `jsonb`.",
+          "status": "VERIFIED",
+          "confidence": 1.0,
+          "evidence_refs": [
+            "evidence:c838d42e12d26e1278d744a6f9eae29c3e1c7f5b32b32d43"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "subject:limitations",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "limitations",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "subject:answer",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "answer",
+          "candidate_value": "PostgreSQL offers two types for storing JSON data: `json` and `jsonb`.",
+          "status": "VERIFIED",
+          "confidence": 1.0,
+          "evidence_refs": [
+            "evidence:0c206bafb2776dd4948ecaff519b013c2681712a8e05fde4"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:0c206bafb2776dd4948ecaff519b013c2681712a8e05fde4",
+          "window_id": "window-1",
+          "source_id": "web-4fc539f4fb130a78",
+          "source_title": "PostgreSQL: Documentation: 18: 8.14. JSON Types",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/datatype-json.html",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档；在网页已归档、抽取未开始时终止 Worker，并由新 Execution 接管。",
+          "read_focus": "archive-reuse:answer/implications/key_evidence",
+          "quote_text": "PostgreSQL offers two types for storing JSON data: `json` and `jsonb`.",
+          "claim_text": "PostgreSQL offers two types for storing JSON data: `json` and `jsonb`.",
+          "relation_type": "SUPPORTS",
+          "support_score": 1.0,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/5ce66d71-1088-4890-a9a2-0bb025f68da2/001285bc3fa03c1cc60144f4b753113a31378699be9d0e3612791921deb920d8"
+        },
+        {
+          "evidence_id": "evidence:c838d42e12d26e1278d744a6f9eae29c3e1c7f5b32b32d43",
+          "window_id": "window-1",
+          "source_id": "web-4fc539f4fb130a78",
+          "source_title": "PostgreSQL: Documentation: 18: 8.14. JSON Types",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/datatype-json.html",
+          "provider": "serper",
+          "adapter": "external_url",
+          "search_query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档；在网页已归档、抽取未开始时终止 Worker，并由新 Execution 接管。",
+          "read_focus": "archive-reuse:answer/implications/key_evidence",
+          "quote_text": "PostgreSQL offers two types for storing JSON data: `json` and `jsonb`.",
+          "claim_text": "PostgreSQL offers two types for storing JSON data: `json` and `jsonb`.",
+          "relation_type": "SUPPORTS",
+          "support_score": 1.0,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/5ce66d71-1088-4890-a9a2-0bb025f68da2/001285bc3fa03c1cc60144f4b753113a31378699be9d0e3612791921deb920d8"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "subject:key_evidence",
+          "row_id": "subject",
+          "evidence_id": "evidence:c838d42e12d26e1278d744a6f9eae29c3e1c7f5b32b32d43",
+          "source_id": "web-4fc539f4fb130a78",
+          "source_title": "PostgreSQL: Documentation: 18: 8.14. JSON Types",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/datatype-json.html"
+        },
+        {
+          "cell_id": "subject:answer",
+          "row_id": "subject",
+          "evidence_id": "evidence:0c206bafb2776dd4948ecaff519b013c2681712a8e05fde4",
+          "source_id": "web-4fc539f4fb130a78",
+          "source_title": "PostgreSQL: Documentation: 18: 8.14. JSON Types",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/datatype-json.html"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "1c403c3d-289e-4343-90b3-fc378092d3b3",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用、证据不足时诚实降级的研究报告",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL",
+              "SOURCE_DOMAIN_ALLOWLIST: postgresql.org,dev.mysql.com"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0,
+          "question": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档；在网页已归档、抽取未开始时终止 Worker，并由新 Execution 接管。",
+          "profile_key": "DEFAULT"
+        },
+        "created_at": "2026-09-20T06:50:42Z"
+      },
+      {
+        "trace_id": "628fb7ff-8da3-48d3-9631-610ff63cb8f1",
+        "trace_type": "RUN_BUSINESS_COMPLETED",
+        "trace_message": "COMPLETED_WITH_LIMITATIONS",
+        "payload": {},
+        "created_at": "2026-09-20T06:54:17Z"
+      }
+    ],
+    "created_at": "2026-09-20T06:50:42Z",
+    "updated_at": "2026-09-20T06:54:17Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "candidates": [
+        {
+          "confidence": 1.0,
+          "candidate_id": "06114b09-54e5-43bd-96f5-a42686d7cca4",
+          "cell_key": "subject:key_evidence",
+          "task_id": "5ce66d71-1088-4890-a9a2-0bb025f68da2",
+          "base_cell_version": 0
+        },
+        {
+          "confidence": 1.0,
+          "candidate_id": "2b2da87f-560f-4171-9bd7-d90f93e206bf",
+          "cell_key": "subject:answer",
+          "task_id": "5ce66d71-1088-4890-a9a2-0bb025f68da2",
+          "base_cell_version": 0
+        }
+      ],
+      "candidate_count": 2,
+      "task_count": 2,
+      "merge_count": 2,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [
+        {
+          "merge_id": "merge:79aca99f3462779b41adb8d4b7efefbe7ec0f1bcb9855b692b54a695dd989b26",
+          "candidate_id": "06114b09-54e5-43bd-96f5-a42686d7cca4",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "subject:key_evidence"
+        },
+        {
+          "merge_id": "merge:2c761538e37a33a43990406420752a0d408b80d7733da70597c84a55888ca6dd",
+          "candidate_id": "2b2da87f-560f-4171-9bd7-d90f93e206bf",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "subject:answer"
+        }
+      ],
+      "checkpoints": [],
+      "tasks": [
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-09-20T06:54:02Z",
+          "lease_epoch": 1,
+          "task_id": "5ce66d71-1088-4890-a9a2-0bb025f68da2",
+          "task_key": "deep-cell:97274a6e61463cb362109d9a849921c4",
+          "worker_instance_id": "research-agent-worker-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-09-20T06:55:13Z",
+          "lease_epoch": 1,
+          "task_id": "5f591937-3d91-4d4d-b162-3d4433e095e1",
+          "task_key": "deep-cell:05ba3d2717aaa923aa747ee0f515308c",
+          "worker_instance_id": "research-agent-worker-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        }
+      ]
+    }
+  },
+  "evidence_manifest_capture": {
+    "available": false,
+    "error": "GET /api/v2/workspaces/44874a3c-5d3b-4984-aad1-da7770a4c050/research-runs/e0f1c2f1-1de8-4318-bf62-b37323c12985/evidence failed (400): {\"success\":false,\"code\":\"RESEARCH_EVIDENCE_MANIFEST_NOT_FOUND\",\"message\":\"Research evidence manifest does not exist\",\"data\":null,\"request_id\":\"7311f5ea-cab7-4a24-8ec1-69025a02276b\"}"
+  },
+  "collection_capture": {
+    "available": false,
+    "error": "GET /api/v2/workspaces/44874a3c-5d3b-4984-aad1-da7770a4c050/research-runs/e0f1c2f1-1de8-4318-bf62-b37323c12985/collection failed (400): {\"success\":false,\"code\":\"RESEARCH_COLLECTION_NOT_FOUND\",\"message\":\"Research Collection does not exist\",\"data\":null,\"request_id\":\"aa53ac66-7de6-4315-af1c-7a820e05447b\"}"
+  }
+}

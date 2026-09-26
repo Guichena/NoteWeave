@@ -45,6 +45,17 @@ class RetrievalProviderHealthIndicatorTest {
         assertThat(rerankCalls).hasValue(1);
     }
 
+    @Test
+    void elasticsearchDisabledShouldNotReportPrimaryRetrievalAsHealthy() {
+        RetrievalProviderHealthIndicator indicator = new RetrievalProviderHealthIndicator(
+                embedding(true), rerank(true), false, false);
+
+        assertThat(indicator.health().getStatus()).isEqualTo(Status.OUT_OF_SERVICE);
+        assertThat(indicator.health().getDetails())
+                .containsEntry("elasticsearch_configured", false)
+                .containsEntry("primary_available", false);
+    }
+
     private EmbeddingClient embedding(boolean enabled) {
         return embedding(enabled, new AtomicInteger());
     }

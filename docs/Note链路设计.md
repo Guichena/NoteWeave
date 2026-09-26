@@ -1,505 +1,148 @@
-# NoteWeave v2 Note 链路设计
+# Note：资料定位、连续阅读与可审阅写回
 
-## 1. 定位
+## 业务问题与非目标
 
-`Note 链路` 不是“只负责生成笔记”的模式，而是统一聊天界面中的一种回答链路。
+用户整理笔记时通常先想起“一份资料或某个章节”，再需要打开附近原文、组织证据、生成中性草稿并决定是否写回。直接用 Chunk Top K 回答会把不同资料片段混在一起，也会切断标题、段落和上下文。
 
-它和问答 RAG、Wiki 链路的用户目标是一致的：都要在聊天框里回答用户当前问题。真正不同的是背后的检索方式：Note 链路参考 `shenmintao/marginalia` 的个人资料库检索思路，先用资料级结构化信号缩小候选范围，再打开原文窗口读取证据，最后生成带引用回答。结构化笔记只是这条链路回答后的附加沉淀能力，不是主职责。
+Note 不自动把所有聊天保存成知识，不替用户发布 Wiki 页面，也不让模型覆盖已有 Source。它的最终产物是带来源、可编辑、可拒绝并能条件写回的新草稿或 Source Version。
 
-一句话定义：
-
-`Note 链路是面向资料深读的回答链路：用户仍然在聊天框里提问，系统先通过标题、摘要、标签、目录、历史笔记、结构化元数据和关系信号定位候选资料，再读取原文窗口和摘录证据，最终生成可引用回答；如果用户需要，再把回答沉淀为结构化笔记。`
-
-## 2. 三条链路的核心差别
-
-三条链路的主要区别不是“前端长得不一样”，也不是“最终产物不一样”，更不是“一个负责回答、一个负责整理、一个负责页面维护”。它们都服务聊天框回答，差别只在背后的检索路径不同。
-
-| 链路 | 检索重点 | 回答特点 |
-|---|---|---|
-| 问答 RAG | 直接对资料 chunk 做快速混合召回、rerank 和证据拼装 | 快、轻、适合连续追问 |
-| Note | 先做资料级候选定位，再打开原文窗口读取证据 | 更像深读资料，适合整理、比较、解释和带引用回答 |
-| Wiki | 基于全量 Wiki 页面、索引、页面链接、图关系和来源回链检索 | 优先使用已沉淀知识网络回答 |
-
-因此 Note 链路必须能回答问题。它不是把 QA 的结果包装成笔记，而是用 Marginalia 式检索方式得到不同的证据上下文，再回答同一个用户问题。
-
-## 3. Marginalia 式检索方式
-
-Note 链路学习的是 Marginalia 的检索漏斗：
+## 用户链路
 
 ```text
-metadata / folder / catalog / tag / journal / relation
-  -> candidate entries
-  -> candidate triage
-  -> verify batch
-  -> source windows
-  -> evidence excerpts
-  -> cited answer
-  -> optional structured note
+Question / Topic
+  -> Source Recall
+  -> Anchor Selection
+  -> Reading Plan
+  -> Continuous Windows
+  -> Evidence Bundle
+  -> Neutral Draft
+  -> User Review
+  -> Save as Source / Reject / Edit
 ```
 
-对应到 NoteWeave：
+`[当前实现]` Note 与 QA/Wiki 共用 Conversation/Turn 提交，以 `answer_mode` 选择策略；`NoteRecallRetriever`、`NoteReadingRetriever`、`NoteEvidenceRetriever` 和 `NoteNeutralMarkdownRewriter` 负责召回、阅读窗口、证据和草稿；`ChatController` 提供 Source Draft 与 Save-as-Source 接口。
 
-```text
-资料标题 / 摘要 / 标签 / 文件夹 / 文档类型 / 历史笔记 / 关系信号
-  -> 候选资料
-  -> 候选资料排序
-  -> 验证批次
-  -> 原文窗口
-  -> 摘录卡片
-  -> 带引用回答
-  -> 可选保存为结构化笔记
+## 演化与 Bad Case
+
+| 阶段 | 方案 | Bad Case | 修复 |
+| --- | --- | --- | --- |
+| V0 保存聊天答案 | 一键把 Answer 复制成 Note | 混入对话语气、无原文定位、无法判断谁确认过 | 先生成 Draft，保存前人工审阅 |
+| V1 Chunk Top K | 直接取最相关片段 | 多份资料碎片混排，原文上下文断裂 | 先 Source 粗排，再选 Anchor |
+| V2 Anchor 单点 | 返回命中 Chunk | 定义在上一段，限定条件在下一段 | 扩展连续 Reading Window |
+| V3 全文塞入 Prompt | 选中 Source 后传全部正文 | 大文档超预算，关键信息被稀释 | Reading Plan、窗口角色和字符预算 |
+| V4 自动写回 | 模型结果直接覆盖资料 | 并发覆盖、恶意内容和错误事实进入资料池 | 条件写回、新 Version、重新鉴权和幂等键 |
+| 目标系统 | Draft、Evidence、Review、Version 和后续投影闭环 | 用户编辑后 Citation 可能失配 | 段落级 Provenance、Diff 和发布校验 |
+
+`[行业参考]` Obsidian 使用文件、标题和 Block 作为可定位链接，并维护反链；Outline 的 Revision History 支持查看差异和非破坏恢复；BookStack 将角色与内容级权限组合。NoteWeave 采用稳定位置、版本和非破坏写回，但不复制这些产品的文件格式或协作模型。
+
+## 数据真源与状态
+
+草稿关联 Conversation Message、AnswerRun、Evidence Manifest、Source/Snapshot 和 Draft Digest。保存后产生新 Source 或 Version；Draft 本身不是资料真源。
+
+`[当前实现]` Note 回答仍走 AnswerRun（`PREPARING -> RETRIEVING -> GENERATING -> FINALIZING`）。下图是资料定位到写回的产品语义，不是另一套数据库状态枚举。
+
+```mermaid
+stateDiagram-v2
+    [*] --> RETRIEVING
+    RETRIEVING --> READING: source selected
+    READING --> DRAFTED: evidence sufficient
+    READING --> REFUSED: no reliable window
+    DRAFTED --> REVIEWED
+    REVIEWED --> SAVED: conditional writeback
+    REVIEWED --> REJECTED
+    DRAFTED --> SUPERSEDED: user edits or regenerates
 ```
 
-这条链路不应该一上来就取 chunk top-k。它先判断“哪些资料值得读”，再决定“打开哪些原文窗口”，最后才让模型基于可验证片段回答。
+`[目标设计]` 用户编辑 Draft 后生成新的 Draft Revision，并重新计算 Claim-Citation Mapping。保存绑定精确 Draft Revision、Source Target、Expected Version 和 Idempotency Key。
 
-工程实现中，`recall_knowledge` 被拆成 NoteWeave 内部的轻量步骤：
+## 两阶段检索
 
-```text
-search_journal
-  -> search_metadata
-  -> relation_hint_expand
-  -> candidate_triage
-  -> build_verify_batch
-  -> read_entries_metadata
-  -> read_source_windows
-  -> evidence_excerpt_cards
-```
+### Source Recall
 
-这些步骤主要服务实现和调试，不作为对外产品口径平铺展示。现行方案只强调“主回答 + 依据卡片”：
+第一阶段按标题、标签、摘要、生成来源、Metadata、关键词与可选语义信号对 Source 排序。Source 必须属于 Workspace、当前可见、具有可读 Snapshot，并优先选择 Window 已就绪的版本。
 
-```text
-先定位资料
-  -> 候选资料
-再深读窗口
-  -> 原文窗口
-再基于证据回答
-  -> 摘录证据
-```
+`[当前实现]` Source 候选最多取 8；Rerank 前最多 40，Rerank Top N 16；Tag 解析最多 8；Relation Graph 使用标签等关系扩展。当前数值是实现配置，不是最佳值。
 
-其中 `search_journal` 不是额外记忆系统，而是读取用户保存过的 `KnowledgeItem(type=NOTE)` 及其 citation，作为“哪些资料曾经被整理过、哪些结论曾经被引用过”的结构化检索信号。
-同时，Journal 信号不是永远等权复用：系统会校验历史 Note 绑定的来源是否已经更新或失效。来源已更新的历史 Note 会被标成 `stale-source-updated` 并降权；来源失效的历史 Note 只作为审计线索保留，不再强驱动候选召回。
+### Anchor 与 Reading Window
 
-## 4. 核心原则
+第二阶段只在选中的 Source 内定位 Anchor，再按 Reading Role 扩展前后窗口。窗口按 Source/Snapshot、Chunk No、Window No 和 Location 保持顺序；不同 Source 之间不拼接成假连续正文。
 
-### 4.1 工作台是默认边界
+`[当前实现]` Reading Window 候选最多 24，Rerank 后最多 8。候选记录 `read_role`、`anchor_window_no` 和 `read_objective`，用于区分命中、定义、条件和上下文。
 
-Note 链路默认只在当前研究工作台内工作，不做全局开放召回。
+`[目标设计]` Window Planner 根据标题边界、段落、列表、表格和 Token Budget 调整范围。需要跨 Source 对比时，先保持每个 Source 内连续，再在 Evidence Bundle 层并列，不做字符级交错。
 
-工作台内可参与候选定位的对象包括：
+## 正常、异常与恢复
 
-- 用户上传文件
-- 文本或网页导入资料
-- 音视频转写文本
-- 用户保存的结构化笔记
-- 已确认并保存为资料的研究报告
-- 已确认并保存为资料的右侧产物
-- 已维护的 Wiki 页面资料化版本
+正常情况下，Turn 固化输入和 Note Retrieval Plan，Source Recall 返回候选，批量校验 Ownership 后构建 Reading Plan；Window Retriever 按 Anchor 取连续原文，Evidence Selection 去重并保留位置；生成器输出中性草稿和 Citation；用户修改或确认后，写回接口重新检查 Message、Workspace、Draft Revision 和目标版本。
 
-### 4.2 绑定规则
+异常路径：
 
-Note 链路的回答行为绑定 `conversation_id`，因为它发生在某一次聊天上下文里；但它的检索边界绑定 `workspace_id`，因为资料池属于研究工作台。
+- Source 命中但 Window 未就绪，返回明确降级或等待状态，不用摘要冒充原文。
+- Rerank 关闭时保留确定性排序并记录降级，不把它算作 Rerank 成功。
+- Relation Expansion 只提供候选，最终仍做 Workspace/版本校验和预算限制。
+- 草稿生成成功但保存超时，客户端按 Idempotency Key 查询，不重复创建 Source。
+- 目标 Source 在审阅期间产生新版本，Expected Version 不匹配时返回冲突，让用户比较后另建版本。
+- 原 Source 被删除或权限收回，未保存 Draft 失去发布资格；历史 Draft 保留受控审计摘要。
+- SSE 断线从 AnswerRun 事件恢复，Draft 保存结果从 MySQL 查询。
 
-这意味着：
+恢复时复用冻结的 Source/Snapshot/Window 与生成 Receipt。未确认的模型结果不进入 Draft Revision；写回属于独立事务，不因 AnswerRun 完成自动重试。
 
-- 用户在某个会话里选择 `NOTE` 链路提问
-- 系统读取该会话的近期上下文理解问题，并通过 `Topic-Aware Rolling Context Window` 编译最近相关多轮对话
-- 系统只在当前会话所属工作台内做 Marginalia 式资料级检索
-- 本次回答保存为聊天消息，属于该会话
-- 如果用户点击“确认入库为资料”，系统会先生成中性 Markdown 草稿（模板优先，LLM 可用时润色），用户确认后写入工作台资料池 `Source`，与上传资料同一检索链路
+## 幂等、并发、缓存与安全
 
-简单说：
+Source Recall 和 Reading Window 使用同一 Run Snapshot，防止前后阶段看到不同版本。批量 Hydration 的 SQL 带 Workspace；缓存 Key 包含 Workspace、ACL Version、Source Catalog Version 和 Snapshot。
 
-```text
-Note 回答：conversation_id
-Note 检索资料边界：workspace_id
-确认入库后的资料：workspace Source（非 knowledge NOTE）
-```
+保存操作的唯一边界是 Draft Revision + Target + Operation Type。相同摘要重复请求返回原 Version；不同摘要使用同一键返回冲突。模型只能提出“保存这个 Draft”的意图，服务端按当前用户重新校验，不能使用生成时权限替代执行时权限。
 
-其中连续对话上下文不会直接替代资料检索，而是先被编译成：
+恶意 Source 中的 Prompt Injection 只能作为 Evidence 文本。System Prompt 明确区分指令与引用内容；Draft Validator 阻止工具命令、隐藏元数据和未授权链接进入写回。高风险写回需要人工确认。
 
-- `连续对话窗口`
-- `主题锚点`
-- `前序主题摘要`
+## 参数与失败模式
 
-再注入候选资料定位、原文窗口打开和摘录证据整理这三个步骤，保证 Note 在多轮追问里仍然围绕同一批资料持续深读。
+| 参数 | 初值来源 | 过小 | 过大 | 主要观察 |
+| --- | --- | --- | --- | --- |
+| Source Top K | `[当前实现]` 8 | 正确资料漏召回 | 跨资料噪声和窗口成本 | Source Hit@K、P95 |
+| Source Rerank 40/16 | `[当前实现]` | 精排前漏掉候选 | Provider 成本上升 | Hit@K、Rerank P99、成本 |
+| Window Candidate 24 | `[当前实现]` | 定义/限定条件缺失 | 近重复和内存增加 | Window Recall、候选字符 |
+| Window Top N 8 | `[当前实现]` | 连续性不足 | Prompt 稀释 | Continuity、Citation Completeness、Claim-Evidence Coverage |
+| 前后窗口半径 | `[目标设计]` 按结构推导 | 断上下文 | 引入无关章节 | Window Continuity、Precision |
+| Draft 字符/Token 预算 | `[目标设计]` 按产物规格 | 关键证据缺失 | 成本和编辑负担 | Adoption、Edit Rate、Cost |
 
-### 4.3 先找资料，再读片段
+调优固定 Source Snapshot、Query Set、Parser、Window Schema、Rerank Model 和 Prompt。停止条件包括 Scope Violation、Source Hit 明显回退、Window Continuity 下降、Citation Accuracy 下降或 P99/成本超预算。恢复需固定回放与 Shadow 流量同时通过，并保留滞回窗口。
 
-Note 链路的关键不是多拿几个 chunk，而是先通过结构化信号找资料：
+## 指标
 
-- 标题
-- 摘要
-- 标签
-- 文件夹
-- 文档类型
-- 创建时间和更新时间
-- 历史笔记
-- 历史整理记录
-- 资料间引用或主题关系
+| 指标 | 分子 / 分母 | 说明 |
+| --- | --- | --- |
+| Source Hit@K | Top K 包含 Gold Source 的 Query / 全部 Gold Query | 粗排能否找到资料 |
+| Anchor Accuracy | Anchor 位于标注范围的 Query / 有 Anchor 标注 Query | 定位正确性 |
+| Reading Window Continuity | 完整覆盖标注连续区间的返回 / 有窗口标注样本 | 是否保留上下文 |
+| Citation Accuracy / Completeness | 与 QA 同一口径：分别判断引用是否支撑绑定 Claim、应引用 Claim 是否至少有一个有效引用 | 草稿的引用准确性与责任完整性 |
+| Claim-Evidence Coverage | 被完整 Evidence 支持的原子 Claim / 全部可核验原子 Claim | 防止“有引用但证据只支持半句话” |
+| Draft Adoption Rate | 被用户保存的 Draft / 展示给用户的 Draft | 需要真实用户 |
+| Human Edit Rate | 保存前发生实质编辑的 Draft / 已保存 Draft | 高低都需结合质量解释 |
+| Takeover Rate | 用户放弃生成并手工完成 / 启动 Note 任务 | 识别工作流失效 |
+| Writeback Conflict Rate | 版本冲突写回 / 写回尝试 | 并发与审阅时长信号 |
 
-只有候选资料确认后，系统才打开原文窗口读取可验证片段。
+所有指标记录时间窗、Dataset、Bundle、文件类型、长度、语言、Workspace 风险和数据来源。Adoption、Edit、Takeover 属于 `[生产待验证]`，不能用测试点击代替。
 
-候选资料排序由以下信号共同决定：
+## 为什么不复用 QA 或 Wiki 策略
 
-- `metadata signal`
-  标题、摘要、标签、类型、结构化元数据和样本文本。
-  当前实现不是把这些字段简单拼接后做一次命中判断，而是采用 `coverage-aware metadata rank`：
-  按 `title / summary / tags / metadata / sample_text / source_type` 做字段加权，
-  同时计算 `coverage_terms / query_coverage / matched_fields`，让覆盖更多查询意图、且命中更关键字段的资料排在前面。
+QA 以最小证据集合回答一个问题，Note 以 Source 和连续原文支持阅读与草稿；Wiki 以当前页面版本和链接关系支持知识导航。共用 Chunk 索引与 Evidence DTO 可以减少实现重复，但排序目标、预算和产物不同。
 
-- `journal signal`
-  已保存 Note 的标题、摘要、正文与 citation 回链。
-  当前实现还会做 `Journal Freshness Guard`：
-  如果历史 Note 绑定的 source 在记录后已经更新，则该 Note 进入 `stale-source-updated`；
-  如果绑定 source 已失效，则进入 `source-unavailable`。
-  这两类历史 Note 仍可在 Journal 卡片中展示，但排序会落后于 fresh Note，且不会再和最新资料同权参与候选召回。
+不直接用全文加载，因为长资料成本和 Lost-in-the-middle 不可控；不直接用 GraphRAG，因为 Note 的首要问题是 Source/Window 连续性；不自动写 Memory，因为未经审阅的草稿会污染后续上下文。
 
-- `relation signal`
-  候选资料之间的标签重叠、主题共现和历史 Note 共同引用。
-  当前实现会把命中的资料作为 anchor，基于共享标签、历史 Note 共同引用、历史回答共引和关系图传播给相邻资料加权，并在候选资料的召回信号中标记为 `relation-expansion`。
+## 测试、灰度与回滚
 
-- `source-type quota`
-  候选主集合不会默认被同一种资料形态挤满。
-  当前实现会在 `journal-quota / metadata-quota / relation-quota` 之后，再补一层 `source-type-quota`，
-  让不同 `source_type` 的资料都更有机会进入候选主集合与验证批次，
-  例如让 `MARKDOWN / PDF / SPREADSHEET / LOG` 这类不同形态的资料同时参与深读，而不是只保留同类型高分资料。
+- Source Rank、Relation Expansion、Reading Planner 和 Window Rerank 单测。
+- Workspace、Snapshot、Window 顺序和版本冲突集成测试。
+- 固定长文回放覆盖定义在前、限定在后、表格跨窗口、同名 Source 与错误标签。
+- Prompt Injection 红队验证恶意 Source 不能触发工具或绕过写回审批。
+- Playwright E2E 走真实上传、Note 回答、Citation、编辑和 Save-as-Source。
+- 灰度按 Note Strategy Bundle 分配新 Run；写回 Schema 变化先双读，回滚不删除新 Draft Revision。
 
-- `window readiness`
-  资料是否已经完成切片并具备可打开的原文窗口。
-  当前实现不再把 `sample_text` 误当成“可深读”的证据，而是显式基于 `source_window` 数量判断：
-  有真实原文窗口的资料会得到 `source-window-ready` 信号与可读性加分；
-  没有原文窗口的资料会被标记为 `source-window-missing`，并在验证批次里尽量后置，只在工作台确实缺少可读窗口时才以 `window-fallback` 方式兜底保留。
+`[当前实现]` Note Reading、Rerank、Conversation Context、Draft 与 Save-as-Source 测试提供当前验证面。
 
-### 4.4 回答是主线，笔记是附加
+`[生产待验证]` 长期用户编辑/采纳、协同编辑、离线同步和复杂格式窗口质量仍需真实使用数据。
 
-Note 链路默认要回答用户问题。
+## 面试入口
 
-结构化笔记的定位是：
-
-- 对高价值回答进行保存
-- 把证据摘录组织成后续可复用材料
-- 支撑后续 Wiki 页面和右侧产物生成
-
-所以文档、代码和前端都不应该把 Note 描述成“只生成笔记”。
-
-## 5. 回答形态
-
-Note 模式的回答不应该把所有检索过程都塞进聊天正文。
-像引用来源、摘录证据、原文窗口这类“证明回答为什么成立”的对象，可以不直接铺在正文里，而是以下挂折叠卡片的形式呈现，用户点击后再看细节。
-
-现行对外口径进一步收敛为“主回答 + 依据卡片”：
-
-```text
-聊天正文
-  -> 主回答
-
-可展开附属卡片
-  -> 资料定位
-  -> 深读窗口
-  -> 摘录证据
-  -> 引用来源
-```
-
-这里的“依据卡片”不是指底层只做这几件事，而是指用户感知层只需要看到和当前回答直接相关的解释对象：
-
-- `资料定位`
-  对应检索说明、候选资料、关系扩展和验证批次，回答“这轮先锁定了哪些资料”
-- `深读窗口`
-  对应条目元数据和原文读取计划，回答“接下来系统具体打开哪些原文窗口深读”
-- `摘录证据`
-  对应本轮真正参与回答的原文片段，回答“这次回答具体引用了哪些证据”
-
-前端呈现上，这些信息不再混在聊天正文里顺序铺开，而是统一做成可点击的信息卡片：
-
-- 正文只保留主回答
-- `资料定位 / 深读窗口 / 摘录证据` 作为 Note 的主要依据卡片固定出现
-- 卡片摘要直接显示 `几份候选资料 / 几个阅读窗口 / 几条摘录证据 / 几条来源引用`
-- 用户点开后再看原文窗口定位、摘录内容和引用细节
-- `来源引用` 只保留一张统一卡片，避免和正文说明或 Wiki 回链信息重复展示
-
-这样做的原因是：
-
-- 聊天区首先要可读，用户应先看到结论
-- Note 链路的深读特征仍要保留，但用户不需要先理解一整套检索治理结构
-- 引用、摘录和原文窗口默认折叠，避免把一屏聊天正文挤成“证据流水账”
-- 后续右侧产物生成和保存为 Note 时，也更容易直接复用这些结构化卡片，而不是反解析整段正文
-
-### 5.1 直接回答
-
-先回答用户问题，不能让用户感觉系统只是在整理材料。
-
-当前实现里，`直接回答` 已经不再只是“我准备怎么检索”的流程说明，而是会先基于本轮命中的原文窗口给出一版可验证综合结论；如果 Journal 里存在 `stale-source-updated` 或 `source-unavailable`，正文也会显式说明“本轮已按当前可读原文重新核对”，避免把旧整理当成当前事实。
-
-### 5.2 候选资料卡
-
-展示系统为什么选择这些资料，而不是直接展示一堆 chunk。
-
-候选资料卡应包含：
-
-- 资料标题
-- 资料摘要
-- 命中原因
-- 标签或类型
-- 可读片段数量
-- `query_coverage`
-  当前 query 被这份资料覆盖了多少个关键项。
-- `coverage_terms / matched_fields`
-  这份资料具体覆盖了哪些查询词、命中了哪些 metadata 字段。
-- `selection_reason`
-  这份资料是因为 `journal-quota / metadata-quota / relation-quota / source-type-quota / top-score-backfill` 中的哪一类准入槽位进入候选主集合。
-
-### 5.3 关系扩展卡
-
-关系扩展不是直接把更多 chunk 塞给模型，而是把与主候选资料相关、但还没有进入主候选集合的资料显式列出来。
-
-当前实现里，关系扩展主要来自：
-
-- 标签重叠
-- 历史 Note 共同引用
-- 历史回答共引
-- 与 anchor 资料的主题相邻性
-
-这些资料会进入扩展候选，用于后续验证批次，而不是直接替代主候选资料。
-
-### 5.4 验证批次卡
-
-验证批次是当前实现里非常关键的一层，用来把“候选资料”和“关系扩展资料”收束成真正要打开原文窗口的一小批可验证对象。
-
-默认结构包括：
-
-- `candidate_sources`
-  当前轮主候选资料数量
-
-- `relation_expansion_sources`
-  当前轮关系扩展资料数量
-
-- `verify_batch_sources`
-  最终进入原文窗口读取的资料数量
-
-- `trace`
-  本轮 metadata、journal、relation 三类信号的累计得分
-
-- `verify_admission_reason`
-  每份资料为什么进入验证批次，例如 `candidate:journal-quota`、`candidate:metadata-quota`、`candidate:source-type-quota`、`candidate:top-score-backfill`、`relation-expansion` 或 `relation-expansion:source-type-quota`
-
-- `candidate_quota_trace / verify_admission_trace`
-  不只解释单条资料，也解释整轮证据收束策略：
-  前者汇总候选主集合的准入槽位分布，后者汇总验证批次的准入来源分布。
-
-这一步的价值是：
-
-- 避免 Note 链路退化成“全库 chunk top-k”
-- 让回答前真正完成一次资料级 triage
-- 让前端和测试能看到这轮回答到底验证了哪些资料
-
-### 5.5 条目元数据卡
-
-对齐 `marginalia/read_entries_metadata` 的思路，Note 链路在进入原文窗口之前，会先读取验证批次中每个资料的结构化元数据视图。
-
-当前实现会为每个 verify source 补齐：
-
-- `tags`
-  资料标签与主题词
-
-- `metadata_signals`
-  资料摘要、解析元数据、entry strategy、chunk/window 数量等结构化信号
-
-- `related_entries`
-  与该资料存在共享标签、历史 Note 共引、标题摘要邻近或关系图传播邻近的相邻资料
-
-- `read plan`
-  把高分窗口细分为 `primary-window / continuation-window / secondary-window`，更像 `marginalia/read_files` 里的“先打开主片段，再沿附近窗口续读”的精读方式
-  当前实现还会显式补出 `read_objective`，区分 `best-evidence / adjacent-context / secondary-evidence`
-
-这一步的目的不是直接回答，而是先让系统知道“这份资料是什么、可读性如何、和谁相关”，再决定后续窗口阅读和证据摘录。
-
-当前代码已经把这一层显式落成了可返回结构，而不是抽象概念：
-
-- `tags`
-  直接来自 `source.tags_json`
-
-- `metadata_signals`
-  由 `source.summary`、`source.metadata_json`、chunk / window 数量等信号拼成
-
-- `parse / index state`
-  显式返回当前资料的 `parse_status / index_status`，避免把“可读性”只当成隐含前提
-
-- `window_locators`
-  提前给出该资料下最值得打开的窗口定位，包含 `chunk_no / heading / window_no / location_info / score / read_role / read_objective`
-
-- `window_has_more`
-  当当前展示的 window locators 只是这份资料可读窗口的一部分时，显式告诉上层还有更多窗口可继续展开
-
-- `related_entries`
-  给出共享标签、历史 Note 共引、标题摘要邻近和关系图传播形成的相邻资料预览，并附带关系理由
-
-- `co_cited_turns`
-  给出该资料是否曾在历史某一轮回答中与当前 anchor 资料共同被引用，用来模拟 `mine_citation_graph` 带来的细粒度关系发现
-
-### 5.6 原文窗口卡
-
-原文窗口是 Note 链路区别于普通 RAG 的关键。
-
-窗口可以对应：
-
-- PDF 页码范围
-- Markdown / Word 段落
-- 网页正文片段
-- 表格行列范围
-- 音视频转写时间段
-
-当前实现不是把全部窗口一股脑塞进模型，而是遵守两层收束规则：
-
-- 先按 `source` 分桶，每份资料最多保留 2 个高分窗口
-- 再做一次全局排序，最终最多带 8 个窗口进入回答
-
-此外，当前 `source_window` 已不再等同于“一个 chunk 只有一个窗口”，而是在解析阶段把 chunk 进一步切成多个重叠 read windows。这样 `window_no`、`window_locators`、`continuation-window` 和后续精读计划才真正有意义，而不是对整块 chunk 的伪窗口命名。
-
-这样可以保证 Note 真的是“先定资料、再开窗口”，而不是退化成高噪声 chunk 堆叠。
-
-### 5.7 摘录证据卡
-
-摘录证据用于支撑回答中的关键结论。
-
-每条摘录应包含：
-
-- 原文摘录
-- 来源位置
-- 对应观点
-- 相关原因
-- 是否存在待确认或冲突
-
-### 5.8 可选结构化笔记卡
-
-当用户点击保存或需要整理时，系统可以把本次回答沉淀为结构化笔记。
-
-默认结构：
-
-```text
-# 标题
-
-## 直接结论
-
-## 关键观点
-
-## 证据摘录
-
-## 来源对比
-
-## 待确认问题
-
-## 后续整理方向
-```
-
-## 6. 检索流程
-
-```text
-用户在聊天框提问
-  -> 读取当前研究工作台
-  -> 解析问题意图
-  -> search_journal：从已保存 Note 和 citation 回链读取历史整理信号
-  -> journal freshness guard：校验历史 Note 绑定来源是否已更新或失效，对 stale / unavailable Journal 降权
-  -> search_metadata：基于标题、摘要、标签、结构化元数据和样本文本做字段加权 metadata rank，并输出 query coverage / matched fields
-  -> relation_hint_expand：用标签重叠、历史共同引用、标题摘要邻近、关系图传播和窗口可读性补充关系信号
-  -> candidate_triage：按 journal / metadata / relation 配额选出主候选资料
-  -> build_verify_batch：把主候选和关系扩展收束为验证批次
-  -> read_entries_metadata：读取 verify source 的 tags / metadata_signals / related_entries
-  -> 按 primary / continuation / secondary 读取计划打开验证批次中的原文窗口
-  -> 抽取摘录卡片
-  -> 基于证据和引用生成回答
-  -> 用户可选保存为结构化笔记
-```
-
-当前 Java 原型中的对应落点是：
-
-- `RetrievalService.findNoteRecallPlan(...)`
-  负责 `search_journal / journal freshness guard / search_metadata / relation_hint_expand / candidate_triage / build_verify_batch`
-  其中候选排序还会显式纳入 `window readiness`，优先保证真正能打开原文窗口的资料先进入验证批次
-
-- `RetrievalService.readEntriesMetadataForNote(...)`
-  负责 `tags / metadata_signals / window_locators / related_entries / co-cited-turns`
-  其中 `window_locators` 会显式补出 `read_objective`
-
-- `RetrievalService.openSourceWindowsForNote(...)`
-  负责按 source 分桶生成精读读取计划，并输出带 `heading / window_no / location_info / read_role / read_objective` 的窗口集合
-
-- `ChatService.buildNoteAnswer(...)`
-  负责把 Journal 信号、候选资料、关系扩展、验证批次、条目元数据、关键观点、摘录证据和引用回答组织成可直接流式返回的文本结构
-
-## 7. 内部对象
-
-```text
-Workspace
-  -> Source
-  -> SourceMetadata
-  -> NoteRecallPlan
-  -> NoteRecallTrace
-  -> NoteEntryMetadata
-  -> RelatedEntryPreview
-  -> SourceWindow
-  -> NoteJournalSignal
-  -> ExcerptCard
-  -> Citation
-  -> KnowledgeItem(type=NOTE)
-```
-
-其中：
-
-- `SourceMetadata` 承载标题、摘要、标签、文件夹、类型等候选定位信号
-- `NoteRecallPlan` 承载 journal hits、candidate sources、relation expansion sources 和 verify batch
-- `CandidateSource` 当前不仅承载标题、摘要和召回信号，还会显式携带 `selection_reason / verify_admission_reason`
-- `NoteRecallTrace` 承载本轮召回中 metadata / journal / relation 三类信号的汇总轨迹
-- `NoteEntryMetadata` 承载 verify source 的 tags、metadata_signals、chunk/window readiness 和 related_entries
-- `RelatedEntryPreview` 承载共享标签与历史共引形成的相邻资料视图
-- `RelatedEntryPreview` 当前还会显式输出 `co_cited_turn_count / relation_reason / lexical_overlap_score / graph_neighborhood_score`，用于说明该资料为什么会被拉入邻接推荐
-- `SourceWindow` 表示可回跳原文窗口
-- `NoteJournalSignal` 来自已保存 Note 及其 citation 回链，用于提示“哪些资料被历史整理过”
-- `NoteJournalSignal` 还会附带 freshness 状态，区分 `fresh / stale-source-updated / source-unavailable`
-- `ExcerptCard` 表示摘录证据
-- `KnowledgeItem(type=NOTE)` 只表示用户保存后的结构化笔记，不等于 Note 链路本身
-
-## 8. 落地范围
-
-Note 链路落地范围：
-
-```text
-资料级候选定位
-  -> 历史 Note / Journal 信号召回
-  -> 关系信号扩展
-  -> 验证批次构建
-  -> 原文窗口读取
-  -> 窗口相关性重排
-  -> 摘录证据
-  -> 带引用回答
-  -> 可选保存为 Note
-```
-
-当前阶段已经完成的实现边界：
-
-- 服务端输出已收敛为 `资料定位 -> 深读窗口 -> 摘录证据` 三段，前端默认以下挂依据卡片展示
-- `资料定位` 内部继续带 `Journal 信号 / 候选资料 / 关系扩展 / 验证摘要`
-- `深读窗口` 内部继续带 `资料元信息 / 原文窗口`
-- 已把 `coverage-aware metadata rank` 落到代码里，候选资料和验证批次会显式输出 `query_coverage / coverage_terms / matched_fields`
-- 已补入 `source-type-quota`，避免候选主集合和验证批次被同一种资料形态挤满
-- 已把 `window readiness` 接到真实 `source_window` 上，候选资料与验证批次会区分 `source-window-ready / source-window-missing`
-- 已把 `heading`、`window_locators` 和 `read_objective` 纳入返回契约与测试
-- 已把 `Journal Freshness Guard` 落到代码里，历史 Note 会根据来源更新或失效状态自动降权
-- 已支持 `save-as-note`，并把回答引用保留到 `knowledge_version_citation`
-
-当前阶段暂不额外引入：
-
-- 多智能体角色分工
-- 独立 Note 页面
-- 向量数据库专用实现
-
-Note 链路不单独拆成另一个产品页面，它始终服务聊天框回答。以下能力作为 Note 链路的设计边界处理：
-
-- 不把 Note 写成 QA 换皮
-- 不把 Note 写成只生成笔记
-- 不把 Note 与 Wiki 合并成一条泛化链路
-- 不把保存后的 Note 自动发布成 Wiki 页面
-- 不引入多智能体协作来完成资料深读
-
-## 9. 最终口径
-
-`Note 链路的核心不是生成笔记，而是采用 Marginalia 式结构化检索漏斗回答问题。它先通过 search_journal、带字段加权与 query coverage 的 search_metadata，以及 relation_hint_expand 定位候选资料，再通过 candidate triage 和 verify batch 收束真正要验证的资料窗口，最后抽取摘录卡片并生成带引用回答；在交互上，聊天区只保留正常回答，资料定位、深读窗口、摘录证据与引用来源通过可展开卡片呈现；结构化笔记只是用户确认后的附加沉淀能力。`
+面试主回答与追问见 [场景化 RAG 一体化手册](./简历亮点八股/31-场景化RAG一体化面试手册.md)。

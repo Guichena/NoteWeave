@@ -44,6 +44,12 @@ class ArtifactAcquisitionAckExecutionResponse(BaseModel):
     resumed_tasks: list[ArtifactWorkerExecutionResponse]
 
 
+class ArtifactCallbackHttpError(RuntimeError):
+    def __init__(self, status_code: int, detail: str) -> None:
+        self.status_code = status_code
+        super().__init__(f"Java callback failed: {status_code} {detail}")
+
+
 class ArtifactCallbackClient(Protocol):
     def fetch_task_input(self, task_id: str) -> ArtifactTaskInput:
         ...
@@ -171,7 +177,7 @@ class JavaArtifactCallbackClient:
                 text = response.read().decode("utf-8")
         except error.HTTPError as exc:
             detail = sanitize_error_message(exc.read().decode("utf-8", errors="replace"))
-            raise RuntimeError(f"Java callback failed: {exc.code} {detail}") from exc
+            raise ArtifactCallbackHttpError(exc.code, detail) from exc
         except error.URLError as exc:
             raise RuntimeError(f"Java callback unavailable: {sanitize_error_message(str(exc.reason))}") from exc
         return json.loads(text) if text else {}
@@ -193,7 +199,8 @@ def run_artifact_task_with_callbacks(
     try:
         events, result = run_artifact_task(task_input)
     except Exception as exc:
-        _report_execution_failure(callback_client, task_id, "WORKER_EXECUTION", exc)
+        if _report_execution_failure(callback_client, task_id, "WORKER_EXECUTION", exc):
+            setattr(exc, "artifact_failure_reported", True)
         raise
     return _emit_callbacks_for_result(task_id, events, result, callback_client)
 
@@ -395,7 +402,7 @@ def _report_execution_failure(
     task_id: str,
     phase: str,
     exc: Exception,
-) -> None:
+) -> bool:
     try:
         error_code = str(getattr(exc, "error_code", type(exc).__name__.upper()))
         try:
@@ -414,12 +421,14 @@ def _report_execution_failure(
                 error_code=error_code,
                 error_message=sanitize_error_message(str(exc)),
             )
+        return True
     except Exception:
         logger.exception(
             "Artifact execution failed and the failure callback could not be delivered: task_id=%s phase=%s",
             task_id,
             phase,
         )
+        return False
 
 
 def is_retryable_failure(exc: Exception) -> bool:

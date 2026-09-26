@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -124,6 +125,10 @@ public class ConversationController {
         response.setCharacterEncoding(java.nio.charset.StandardCharsets.UTF_8.name());
         response.setContentType(MediaType.TEXT_EVENT_STREAM_VALUE + ";charset=UTF-8");
         SseEmitter emitter = new SseEmitter(120_000L);
+        AtomicBoolean emitterClosed = new AtomicBoolean();
+        emitter.onCompletion(() -> emitterClosed.set(true));
+        emitter.onTimeout(() -> emitterClosed.set(true));
+        emitter.onError(ignored -> emitterClosed.set(true));
         try {
             sseConnectionExecutor.execute(() -> {
                 try {
@@ -137,17 +142,17 @@ public class ConversationController {
                     conversationEventMux.follow(
                             conversationId,
                             cursor,
-                            event -> send(emitter, event),
+                            event -> send(emitter, emitterClosed, event),
                             Duration.ofSeconds(115),
                             closeOnTerminal
                     );
-                    emitter.complete();
+                    completeOnce(emitter, emitterClosed);
                 } catch (Exception ex) {
-                    emitter.completeWithError(ex);
+                    completeWithErrorOnce(emitter, emitterClosed, ex);
                 }
             });
         } catch (RejectedExecutionException ex) {
-            emitter.completeWithError(ex);
+            completeWithErrorOnce(emitter, emitterClosed, ex);
         }
         return emitter;
     }
@@ -166,7 +171,14 @@ public class ConversationController {
         }
     }
 
-    private void send(SseEmitter emitter, ConversationLiveEvent event) {
+    private void send(
+            SseEmitter emitter,
+            AtomicBoolean emitterClosed,
+            ConversationLiveEvent event
+    ) {
+        if (emitterClosed.get()) {
+            return;
+        }
         try {
             String payload = Json.write(objectMapper, Map.of(
                     "run_id", event.runId(),
@@ -179,7 +191,20 @@ public class ConversationController {
                     .name(event.eventType())
                     .data(payload));
         } catch (IOException ex) {
+            emitterClosed.set(true);
             throw new IllegalStateException("SSE client disconnected", ex);
+        }
+    }
+
+    static void completeOnce(SseEmitter emitter, AtomicBoolean closed) {
+        if (closed.compareAndSet(false, true)) {
+            emitter.complete();
+        }
+    }
+
+    static void completeWithErrorOnce(SseEmitter emitter, AtomicBoolean closed, Throwable error) {
+        if (closed.compareAndSet(false, true)) {
+            emitter.completeWithError(error);
         }
     }
 }

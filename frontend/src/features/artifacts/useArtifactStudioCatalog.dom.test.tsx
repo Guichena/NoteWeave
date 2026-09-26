@@ -33,6 +33,7 @@ describe("useArtifactStudioCatalog", () => {
     ));
 
     await waitFor(() => expect(result.current.skills).toHaveLength(1));
+    expect(result.current.loading).toBe(false);
     expect(result.current.skills[0].key).toBe("second");
     expect(result.current.selectedSkillKey).toBe("second");
     expect(result.current.formValues).toEqual({ language: "zh-CN" });
@@ -60,6 +61,7 @@ describe("useArtifactStudioCatalog", () => {
       "Skill 目录加载失败，请检查 Artifact Worker 后重试。"
     ));
     expect(result.current.skills).toEqual([]);
+    expect(result.current.loading).toBe(false);
     expect(result.current.selectedSkill).toBeUndefined();
     expect(result.current.composerOpen).toBe(false);
   });

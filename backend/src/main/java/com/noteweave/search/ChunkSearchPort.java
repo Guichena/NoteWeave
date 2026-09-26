@@ -6,8 +6,8 @@ import java.util.List;
  * Workspace-scoped full-text chunk search capability.
  *
  * <p>The application layer depends on this contract rather than a concrete
- * search engine. An unavailable implementation returns no hits so callers can
- * apply their explicit fallback strategy.</p>
+ * search engine. An unavailable implementation must raise a provider error;
+ * an empty result is reserved for a successful search with no matches.</p>
  */
 public interface ChunkSearchPort {
 

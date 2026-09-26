@@ -4,9 +4,11 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.BusinessException;
+import com.noteweave.common.Ids;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,32 +21,27 @@ public class ResearchAgentPermitService {
             ResearchAgentTaskSnapshotCanonicalizer.SCHEMA_V1,
             ResearchAgentTaskSnapshotCanonicalizer.SCHEMA_V2,
             ResearchAgentTaskSnapshotCanonicalizer.SCHEMA_V3);
-    private static final Map<String, Set<String>> ROLE_TOOLS = Map.of(
-            "DEEP_CELL", Set.of("search", "fetch", "read", "extract", "archive"),
-            "WIDE_DISCOVERY", Set.of("search", "fetch", "read", "extract", "archive"),
-            "COUNTERFACTUAL", Set.of("search", "fetch", "read", "extract", "archive"),
-            "EVIDENCE_AUDIT", Set.of("fetch", "read", "extract", "archive"),
-            "SYNTHESIS", Set.of("extract")
-    );
-
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final ResearchAgentTaskSnapshotCanonicalizer snapshotCanonicalizer;
     private final ResearchAgentRateLimitService rateLimitService;
     private final MeterRegistry meters;
+    private final ResearchAgentRoleCapabilityRegistry roleCapabilities;
 
     public ResearchAgentPermitService(
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
             ResearchAgentTaskSnapshotCanonicalizer snapshotCanonicalizer,
             ResearchAgentRateLimitService rateLimitService,
-            MeterRegistry meters
+            MeterRegistry meters,
+            ResearchAgentRoleCapabilityRegistry roleCapabilities
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.snapshotCanonicalizer = snapshotCanonicalizer;
         this.rateLimitService = rateLimitService;
         this.meters = meters;
+        this.roleCapabilities = roleCapabilities;
     }
 
     @Transactional
@@ -114,7 +111,7 @@ public class ResearchAgentPermitService {
                         task.candidateQuorum() == 2));
         if (!canonical.digest().equals(task.snapshotDigest())) throw invalidSnapshot();
 
-        Set<String> allowedTools = ROLE_TOOLS.get(task.role());
+        Set<String> allowedTools = roleCapabilities.requireRegistered(task.role()).allowedTools();
         if (allowedTools == null || !allowedTools.contains(command.toolIdentity())) {
             meter("tool_forbidden");
             throw new BusinessException(
@@ -128,8 +125,32 @@ public class ResearchAgentPermitService {
         if (!"archive".equals(command.toolIdentity())) {
             rateLimitService.requirePermit(new ResearchAgentRateLimitService.PermitRequest(
                     providerKey, task.workspaceId(), task.runId(), task.role()));
+            // D-39: authorize once per lease/tool so a re-claimed task can still be charged
+            // for the provider rounds its abandoned attempts were already cleared to spend.
+            recordGrant(task.runId(), task.id(), command.workerInstanceId(), command.leaseEpoch(),
+                    command.fencingToken(), command.toolIdentity());
         }
         return new PermitReceipt("GRANTED", command.toolIdentity());
+    }
+
+    /**
+     * Idempotent per (task, lease, tool): a worker retries an interrupted HTTP round inside
+     * the same lease without re-invoking the provider, while every fresh lease epoch inserts
+     * its own row so re-executions cannot erase earlier authorized rounds.
+     */
+    private void recordGrant(String runId, String taskId, String workerInstanceId, int leaseEpoch,
+                             long fencingToken, String toolIdentity) {
+        try {
+            jdbcTemplate.update("""
+                    insert into research_agent_tool_grant(
+                        id, research_run_id, research_agent_task_id, lease_epoch, fencing_token,
+                        worker_instance_id, tool_identity
+                    ) values (?, ?, ?, ?, ?, ?, ?)
+                    """, Ids.newId(), runId, taskId, leaseEpoch, fencingToken, workerInstanceId, toolIdentity);
+        } catch (DataIntegrityViolationException duplicate) {
+            // Same lease/tool replay after an interrupted round: already authorized once.
+            meter("grant_replayed");
+        }
     }
 
     private void validateCommand(PermitCommand command) {

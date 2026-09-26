@@ -1,4 +1,6 @@
-import { lazy, memo, Suspense } from "react";
+import { lazy, memo, Suspense, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { Activity, X } from "lucide-react";
 import { summarizeRunStatus } from "../../runStatus";
 import type { ResearchWorkbenchViewProps as BuiltResearchWorkbenchViewProps } from "./buildResearchWorkbenchProps";
 
@@ -21,6 +23,7 @@ export const ResearchWorkbenchView = memo(function ResearchWorkbenchView({
   statusPanel,
   detail
 }: ResearchWorkbenchViewProps) {
+  const [statusOpen, setStatusOpen] = useState(false);
   const {
     currentResearchRunSummary,
     currentResearchWaitContext,
@@ -44,8 +47,20 @@ export const ResearchWorkbenchView = memo(function ResearchWorkbenchView({
     wait_context?: unknown;
   } | null;
 
+  useEffect(() => {
+    if (!detail.researchDetailOpen && !statusOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (detail.researchDetailOpen) detail.setResearchDetailOpen(false);
+        else setStatusOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [detail.researchDetailOpen, detail.setResearchDetailOpen, statusOpen]);
+
   return (
-    <section className="research-workbench">
+    <section className={`research-workbench${currentResearchRun ? "" : " is-empty"}${statusOpen ? " status-open" : ""}`}>
       <Suspense fallback={(
         <aside className="research-index research-sidebar-loading">
           <p className="section-label">Deep Research</p>
@@ -64,8 +79,38 @@ export const ResearchWorkbenchView = memo(function ResearchWorkbenchView({
         <LazyResearchReportPanel {...report} isBusy={isBusy} />
       </Suspense>
 
-      <aside className="research-side">
+      {currentResearchRun ? (
+        <button
+          type="button"
+          className="research-status-toggle secondary-button"
+          aria-label="打开研究运行状态"
+          aria-controls="research-status-panel"
+          aria-expanded={statusOpen}
+          title="打开研究运行状态"
+          onClick={() => setStatusOpen(true)}
+        >
+          <Activity size={18} aria-hidden="true" />
+        </button>
+      ) : null}
+      {statusOpen ? (
+        <button
+          type="button"
+          className="research-status-backdrop"
+          aria-label="点击背景关闭研究运行状态"
+          onClick={() => setStatusOpen(false)}
+        />
+      ) : null}
+      <aside className="research-side" id="research-status-panel" aria-label="研究运行状态">
         <p className="section-label">Research Detail</p>
+        <button
+          type="button"
+          className="research-status-close secondary-button"
+          aria-label="关闭研究运行状态"
+          title="关闭研究运行状态"
+          onClick={() => setStatusOpen(false)}
+        >
+          <X size={17} aria-hidden="true" />
+        </button>
         <div className="task-card">
           <strong>研究详情</strong>
           <span>主界面只保留研究主流程；checkpoint、verifier、trace、counterfactual 等高级信息统一放到详情弹窗。</span>
@@ -166,46 +211,62 @@ export const ResearchWorkbenchView = memo(function ResearchWorkbenchView({
         ) : null}
       </aside>
 
-      {detail.researchDetailOpen && detail.currentResearchRun ? (
-        <Suspense fallback={(
-          <div className="research-detail-overlay research-detail-loading">
-            <div className="research-detail-dialog">
+      {detail.researchDetailOpen && detail.currentResearchRun ? createPortal((
+        <div
+          className="research-detail-overlay"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              detail.setResearchDetailOpen(false);
+            }
+          }}
+        >
+          <Suspense fallback={(
+            <aside className="research-detail-dialog research-detail-loading" aria-busy="true" aria-live="polite">
               <p className="section-label">Research Detail</p>
-              <span>正在加载研究详情工作台…</span>
-            </div>
-          </div>
-        )}>
-          <LazyResearchDetailWorkbench
-            run={detail.currentResearchRun}
-            selectedCheckpointNo={detail.selectedResearchCheckpointNo}
-            selectedCheckpoint={detail.selectedResearchCheckpoint}
-            comparisonCheckpointNo={detail.compareResearchCheckpointNo}
-            comparisonCheckpoint={detail.compareResearchCheckpoint}
-            isBusy={isBusy}
-            onClose={() => detail.setResearchDetailOpen(false)}
-            onRefresh={() => void detail.refreshCurrentResearchRun()}
-            onSaveAsSource={() => void detail.saveResearchReportAsSource()}
-            onOpenWorkbench={() => void detail.openResearchWorkbench()}
-            onSetSourceScope={(sourceId, inScope) => {
-              if (inScope) {
-                detail.addResearchSourceToScope(sourceId);
-              } else {
-                detail.removeResearchSourceFromScope(sourceId);
-              }
-            }}
-            onFocusSource={detail.setFocusedResearchSourceId}
-            onSelectCheckpoint={(checkpointNo, comparisonNo) => {
-              void detail.openResearchCheckpoint(checkpointNo, comparisonNo);
-            }}
-            onSelectComparison={(checkpointNo) => {
-              void detail.updateResearchCheckpointComparison(checkpointNo);
-            }}
-            onResume={(checkpointNo) => {
-              void detail.resumeResearchFromCheckpoint(checkpointNo);
-            }}
-          />
-        </Suspense>
-      ) : null}
+              <div className="view-loading-body">
+                <span className="view-loading-spinner" aria-hidden="true" />
+                <span>正在加载研究详情工作台…</span>
+              </div>
+              <div className="view-loading-skeleton" aria-hidden="true">
+                <span className="skeleton-line w-70" />
+                <span className="skeleton-line w-55" />
+                <span className="skeleton-line w-40" />
+              </div>
+            </aside>
+          )}>
+            <LazyResearchDetailWorkbench
+              run={detail.currentResearchRun}
+              selectedCheckpointNo={detail.selectedResearchCheckpointNo}
+              selectedCheckpoint={detail.selectedResearchCheckpoint}
+              comparisonCheckpointNo={detail.compareResearchCheckpointNo}
+              comparisonCheckpoint={detail.compareResearchCheckpoint}
+              isBusy={isBusy}
+              onClose={() => detail.setResearchDetailOpen(false)}
+              onRefresh={() => void detail.refreshCurrentResearchRun()}
+              onSaveAsSource={() => void detail.saveResearchReportAsSource()}
+              onOpenWorkbench={() => void detail.openResearchWorkbench()}
+              onSetSourceScope={(sourceId, inScope) => {
+                if (inScope) {
+                  detail.addResearchSourceToScope(sourceId);
+                } else {
+                  detail.removeResearchSourceFromScope(sourceId);
+                }
+              }}
+              onFocusSource={detail.setFocusedResearchSourceId}
+              onSelectCheckpoint={(checkpointNo, comparisonNo) => {
+                void detail.openResearchCheckpoint(checkpointNo, comparisonNo);
+              }}
+              onSelectComparison={(checkpointNo) => {
+                void detail.updateResearchCheckpointComparison(checkpointNo);
+              }}
+              onResume={(checkpointNo) => {
+                void detail.resumeResearchFromCheckpoint(checkpointNo);
+              }}
+            />
+          </Suspense>
+        </div>
+      ), document.body) : null}
     </section>
   );
 });

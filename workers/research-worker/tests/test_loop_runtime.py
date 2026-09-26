@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 pytestmark = pytest.mark.usefixtures("fake_default_llm")
@@ -58,17 +60,23 @@ def _build_task_input(sample_text: str = "Stable evidence supports verifier gate
     )
 
 
-def test_loop_runtime_should_default_to_standard_loop_rounds() -> None:
-    """P0-6: STANDARD profile 默认 4 轮 (从原来的 2 轮上调,给 cell retry 留空间)。"""
+def test_loop_runtime_should_default_to_standard_loop_rounds(fake_default_llm) -> None:
+    """P0-6: STANDARD profile 默认 4 轮 (从原来的 2 轮上调,给 cell retry 留空间)。
+
+    DR-204 升级：无 Provider（``llm_client=None``）现在会被停止保护判定为
+    ``PROVIDER_NOT_CONFIGURED`` 基础设施终止，因此本用例必须显式提供可用的
+    LLM Provider 才能验证「默认轮次上限允许 ≥2 轮」这一性质。
+    """
     task_input = _build_task_input(
         "However, this source reports a conflict risk that needs counterfactual verification."
     )
     plan = build_research_plan(task_input)
 
-    result = run_research_loop(task_input, plan)
+    result = run_research_loop(task_input, plan, llm_client=fake_default_llm)
 
     assert plan.stop_contract["max_loop_rounds"] == 4
     assert len(result.rounds) >= 2
+    assert result.stop_reason_category != "INFRASTRUCTURE"
     assert result.final_decision.decision in {
         "WRITE_WITH_GUARDRAILS",
         "COUNTERFACTUAL_RECHECK",
@@ -253,29 +261,66 @@ def test_ready_result_should_be_explicit_verified_completion() -> None:
     assert decision.handoff_required is False
 
 
-def test_evaluate_loop_decision_should_search_more_when_reading_has_no_evidence() -> None:
+class _UngroundableQuoteLlm:
+    """返回一张引文无法在窗口内定位的候选卡 -> ``NON_EXACT_QUOTE`` 拒绝。
+
+    用于在真实 ``run_research_loop`` 上构造「有搜索命中与已读窗口、但零证据卡」的情境。
+    """
+
+    def complete_json(self, purpose: str, payload: dict) -> str:
+        if purpose != "research.extract":
+            return ""
+        schema_columns = [
+            str(item).strip()
+            for item in payload.get("schema_columns", [])
+            if str(item).strip()
+        ] or ["claim"]
+        windows = payload.get("windows") or []
+        window_id = windows[0].get("window_id", "window-1") if windows else "window-1"
+        return json.dumps(
+            {
+                "evidence_cards": [
+                    {
+                        "window_id": window_id,
+                        "column_key": schema_columns[0],
+                        "claim_text": "A claim whose quote cannot be grounded.",
+                        "quote_text": "THIS QUOTE IS ABSENT FROM EVERY WINDOW",
+                        "relation_type": "SUPPORTS",
+                    }
+                ]
+            }
+        )
+
+
+def test_loop_should_retry_extraction_when_read_windows_have_no_evidence() -> None:
+    """DR-108 断言迁移（原 ``test_evaluate_loop_decision_should_search_more_when_reading_has_no_evidence``）。
+
+    原断言（观察点：直接调用 ``evaluate_loop_decision`` + 空 ledger）锁定的性质：
+    **存在搜索命中与已读窗口、但零证据卡时，循环必须继续并请求抽取恢复（``EXTRACT_AGAIN``），
+    不得直接合成。** 该性质不是「决策函数的返回值形状」，而是可观察的循环行为，因此可迁移。
+
+    收敛后「缺证据该做什么」的唯一权威是 ``CellRecoveryPolicy``（经
+    ``CellRecoveryRuntime`` 编排），故观察点迁移到真实 ``run_research_loop``：同一情境
+    （hits>0 / read>0 / cards=0 / 无冲突）下策略给出 ``RETRY_EXTRACTION``，循环决策族为
+    ``EXTRACT_AGAIN`` 且仍继续。被断言的性质未被放宽。
+    """
     task_input = _build_task_input()
     plan = build_research_plan(task_input)
-    global_result = GlobalVerifierResult(
-        status="WARN",
-        decision="WRITE_WITH_GUARDRAILS",
-        summary="missing evidence",
-        recovery_actions=[],
-    )
 
-    decision = evaluate_loop_decision(
-        plan=plan,
-        round_no=1,
-        search_hit_count=1,
-        read_window_count=1,
-        evidence_card_count=0,
-        has_conflict=False,
-        ledger=ResearchStateLedger(),
-        global_result=global_result,
-    )
+    result = run_research_loop(task_input, plan, llm_client=_UngroundableQuoteLlm())
 
-    assert decision.decision == "EXTRACT_AGAIN"
-    assert decision.should_continue is True
+    first = result.rounds[0]
+    assert first.search_hit_count > 0
+    assert first.read_window_count > 0
+    assert first.evidence_card_count == 0
+    assert first.loop_decision.decision == "EXTRACT_AGAIN"
+    assert first.loop_decision.should_continue is True
+    # 决策族来自策略动作（唯一权威），不是 loop 本地的 read_window_count 规则。
+    assert any(
+        entry["action"] == "RETRY_EXTRACTION"
+        and entry["reason_code"] == "NON_EXACT_QUOTE"
+        for entry in result.cell_recovery_trace
+    )
 
 
 def test_evaluate_loop_decision_should_continue_when_required_findings_are_pending() -> None:

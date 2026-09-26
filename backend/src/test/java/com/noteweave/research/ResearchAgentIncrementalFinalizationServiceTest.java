@@ -29,6 +29,7 @@ import org.springframework.test.web.servlet.MockMvc;
 class ResearchAgentIncrementalFinalizationServiceTest {
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private ResearchAgentIncrementalFinalizationService finalization;
+    @Autowired private ResearchAgentHonestReportService honestReports;
     @Autowired private MockMvc mockMvc;
     @SpyBean private ResearchAgentIncrementalFinalizationFaultInjector finalizationFaults;
     private String runId;
@@ -83,6 +84,12 @@ class ResearchAgentIncrementalFinalizationServiceTest {
         assertThat(replay.idempotentReplay()).isTrue();
         assertThat(first.artifactId()).isEqualTo(replay.artifactId()).isNotBlank();
         assertThat(first.reportDigest()).isEqualTo(replay.reportDigest()).startsWith("sha256:");
+        assertThat(first.reportMarkdown()).contains(
+                "## Citation audit",
+                "Evidence: `evidence-1`",
+                "Exact quote: “Verified citation excerpt”",
+                "research/external/finalization-test/snapshot-1",
+                "https://example.com/research");
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_report_artifact where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("select status from research_run where id = ?", String.class, runId)).isEqualTo("COMPLETED");
         assertThat(jdbcTemplate.queryForObject("select task_status from task where id = ?", String.class, parentTaskId)).isEqualTo("COMPLETED");
@@ -175,6 +182,71 @@ class ResearchAgentIncrementalFinalizationServiceTest {
                 .extracting(error -> ((BusinessException) error).code()).isEqualTo("RESEARCH_AGENT_FINALIZATION_GATE_REJECTED");
         assertThat(jdbcTemplate.queryForObject("select status from research_run where id = ?", String.class, runId)).isEqualTo("RUNNING");
         assertThat(jdbcTemplate.queryForObject("select task_status from task where id = ?", String.class, parentTaskId)).isEqualTo("RUNNING");
+    }
+
+    @Test
+    void shouldFinalizeWhenHistoricalFailedTaskWasRepairedIntoVerifiedLedger() {
+        jdbcTemplate.update("""
+                insert into research_agent_task(
+                    id, research_run_id, task_key, idempotency_key, wave_no, role, entity_id,
+                    branch_id, plan_revision, entity_set_version, target_cells_json, budget_json,
+                    status, terminal_reason, terminal_at)
+                values (?, ?, 'failed-before-repair', 'failed-before-repair', 1, 'DEEP_CELL',
+                    'entity-1', 'branch-main', 1, 1, '["entity-1:claim"]', '{}',
+                    'FAILED', 'NO_SUPPORTED_CANDIDATE', current_timestamp)
+                """, Ids.newId(), runId);
+
+        var receipt = finalization.finalizeIncrementalRun(runId);
+
+        assertThat(receipt.idempotentReplay()).isFalse();
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from research_run where id = ?", String.class, runId))
+                .isEqualTo("COMPLETED");
+    }
+
+    @Test
+    void limitationReportShouldTraceAClaimThroughCandidateEvidenceSnapshotAndUrl() {
+        String candidateId = Ids.newId();
+        jdbcTemplate.update("""
+                insert into research_agent_candidate(
+                    id, research_run_id, task_id, execution_id, idempotency_key,
+                    cell_key, base_cell_version, plan_revision, entity_set_version,
+                    lease_epoch, fencing_token, candidate_value, evidence_ids_json, confidence_score)
+                values (?, ?, 'task-trace', 'execution-trace', 'candidate-trace',
+                    'entity-1:claim', 0, 1, 1, 1, 1, 'Verified answer', '["evidence-1"]', 0.9000)
+                """, candidateId, runId);
+        jdbcTemplate.update("""
+                insert into research_cell_merge(
+                    id, research_run_id, candidate_id, merge_key, cell_key,
+                    expected_cell_version, result_cell_version, verdict, decision,
+                    reason_code, accepted_evidence_ids_json)
+                values (?, ?, ?, 'merge-trace', 'entity-1:claim', 0, 1,
+                    'ACCEPT', 'ACCEPTED', 'QUALIFIED', '["evidence-1"]')
+                """, Ids.newId(), runId, candidateId);
+        var decision = new ResearchAgentRunCompletionGate.CompletionDecision(
+                ResearchAgentRunCompletionGate.CompletionTerminalState.COMPLETED_WITH_LIMITATIONS,
+                java.util.List.of(new ResearchAgentRunCompletionGate.PromotableClaim(
+                        "entity-1:claim", "claim", "Verified answer", java.util.List.of("evidence-1"))),
+                java.util.List.of(new ResearchAgentRunCompletionGate.UnresolvedCell(
+                        "entity-1:limitations", "limitations", "GAP", "OPTIONAL_CELL_UNRESOLVED")),
+                java.util.List.of("UNRESOLVED_CELLS_REMAIN"),
+                java.util.List.of("UNRESOLVED_CELLS_REMAIN"));
+
+        String report = honestReports.renderAndPersist(runId, decision);
+
+        assertThat(report).contains(
+                "COMPLETED_WITH_LIMITATIONS",
+                "Verified answer",
+                "Cell: `entity-1:claim`",
+                "Candidate: `" + candidateId + "`",
+                "Evidence: `evidence-1`",
+                "Exact quote: “Verified citation excerpt”",
+                "research/external/finalization-test/snapshot-1",
+                "https://example.com/research",
+                "OPTIONAL_CELL_UNRESOLVED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from research_agent_report_artifact where research_run_id = ?",
+                Integer.class, runId)).isEqualTo(1);
     }
 
     @Test

@@ -1,3 +1,4 @@
+import urllib.parse
 import urllib.request
 
 import pytest
@@ -83,3 +84,28 @@ def test_credentialed_provider_request_should_connect_to_the_validated_ip(monkey
     assert connections == [("93.184.216.34", 80)]
     assert requests[0][0:2] == ("POST", "/v1/search")
     assert requests[0][2]["Host"] == "provider.example"
+
+
+def test_docker_synthetic_dns_requires_explicit_opt_in(monkeypatch) -> None:
+    from app.http_security import resolve_public_http_addresses
+
+    monkeypatch.setattr(
+        "app.http_security.socket.getaddrinfo",
+        lambda *_args, **_kwargs: [(2, 1, 6, "", ("198.18.0.29", 443))],
+    )
+
+    with pytest.raises(ValueError, match="URL_BLOCKED_NON_PUBLIC_ADDRESS"):
+        resolve_public_http_addresses(urllib.parse.urlsplit("https://provider.example/search"))
+
+    monkeypatch.setenv("NOTEWEAVE_ALLOW_DOCKER_SYNTHETIC_DNS", "true")
+    assert [str(item) for item in resolve_public_http_addresses(
+        urllib.parse.urlsplit("https://provider.example/search")
+    )] == ["198.18.0.29"]
+
+
+def test_docker_synthetic_literal_ip_remains_blocked(monkeypatch) -> None:
+    from app.http_security import resolve_public_http_addresses
+
+    monkeypatch.setenv("NOTEWEAVE_ALLOW_DOCKER_SYNTHETIC_DNS", "true")
+    with pytest.raises(ValueError, match="URL_BLOCKED_NON_PUBLIC_ADDRESS"):
+        resolve_public_http_addresses(urllib.parse.urlsplit("https://198.18.0.29/search"))

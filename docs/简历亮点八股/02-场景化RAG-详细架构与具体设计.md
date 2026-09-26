@@ -1,5 +1,11 @@
 # 场景化 RAG：详细架构与具体设计
 
+> 案例与答辩补充：设计选择与 Git 演进见[演进取舍专项](18-场景化RAG演进与技术取舍专项.md)，学校案例、消融、统计可信度和 Ownership 见[案例与消融答辩](19-场景化RAG真实案例消融实验与Ownership答辩.md)。
+>
+> 面试使用顺序：先背[一体化面试手册](31-场景化RAG一体化面试手册.md)，本文只负责算法、数据结构和失败语义深挖。DTO、模式边界和 Evidence 身份以[契约级数据模型](26-场景化RAG契约级数据模型与面试官下钻.md)及当前源码为准。固定的 `3 QA + 3 Note` 数字是手工回归基线，不是在线链路准确率；Wiki 是受限关系读取，不包装成完整 GraphRAG；Provider 模型类型和生产 P95 没有证据时统一标记为 `[生产待验证]`。
+>
+> 索引升级的面试推荐方案是 Generation Index、Catalog Watermark 和 Change Log Catch-up，Alias 按环境、索引族或租户桶管理，不按 Workspace 无限增长。当前 `rebuildWorkspace()` 与 Catalog 漂移后全量重试属于学校规模实现，统一裁决见[面试推荐架构与规模化演进裁决](43-面试推荐架构与规模化演进裁决.md)。
+
 ## 0. 从一条 TopK 检索到三条场景化 RAG
 
 ### 0.1 V0：单路关键词检索先建立可引用问答
@@ -12,7 +18,7 @@
 
 BM25 与向量的原始分数不在同一量纲。直接归一化加权实现简单，但分数分布会随查询、索引和模型变化；Learning to Rank 能学习更复杂的组合，需要更大、更稳定的标注数据；RRF 只依赖排名，适合当前数据规模和异构召回。
 
-当前 QA 先做 BM25 与 Vector Recall，再用加权 RRF 合并稳定 Candidate ID。RRF 忽略原始分差，所以只作为候选融合；Cross-Encoder Rerank 在有限候选上重新判断 Query 与文本的联合相关性。Rerank 超时或失败时回退到 RRF 顺序，不把 Provider 故障伪装成“没有证据”。
+当前 QA 先做 BM25 与 Vector Recall，再用加权 RRF 合并稳定 Candidate ID。RRF 忽略原始分差，所以只作为候选融合；通用 `RerankClient` 在有限候选上重新判断 Query 与文本的相关性。Rerank 超时或响应畸形时回退到 RRF 顺序，不把 Provider 故障伪装成“没有证据”。当前接口不限定模型结构，Cross-Encoder 只是可选实现的一种。
 
 ### 0.3 V2：从通用 TopK 拆出 QA、Note、Wiki
 
@@ -28,7 +34,7 @@ BM25 与向量的原始分数不在同一量纲。直接归一化加权实现简
 
 ### 0.5 V4：索引从“写进去就能搜”演进为版本化投影
 
-Embedding 模型、维度、Mapping 或 Chunk 策略变化后，旧索引不能静默复用。系统让 MySQL 保存 Source、Snapshot、Chunk 和 Projection 状态，MinIO 保存原文件，Elasticsearch 保存可重建投影。Index Version、Strategy Tuple 和 Alias 切换使回填与实验可回滚。
+Embedding 模型、维度、Mapping 或 Chunk 策略变化后，旧索引不能静默复用。系统让 MySQL 保存 Source、Snapshot、Chunk 和 Projection 状态，MinIO 保存原文件，Elasticsearch 保存可重建投影。推荐新建 Generation Index，冻结 Catalog Watermark，全量回填后消费构建期间的 Change Log 追平增量，再通过 Release Gate 和 Alias 发布。Strategy Tuple 固定 Generation 与检索策略，使实验可回放。
 
 代价是资料从上传到可检索存在一致性窗口，需要区分投影未完成、Provider 降级和 ES 故障，并通过 Projection Lag、Shadow Replay 和 Release Gate 观测。
 
@@ -46,17 +52,17 @@ Embedding 模型、维度、Mapping 或 Chunk 策略变化后，旧索引不能�
 |---|---|---|---|---|
 | 词法与语义 | BM25、Vector、Hybrid | Hybrid | 两类错误互补 | 查询成本上升 |
 | 融合 | 分数相加、LTR、RRF | RRF | 当前缺少大规模标注，异构分数难校准 | 忽略原始分差 |
-| 精排 | 全库 Cross-Encoder、候选精排、不精排 | 只精排融合候选 | 控制计算和时延 | 召回漏掉的候选无法补回 |
+| 精排 | 全库精排、候选精排、不精排 | 通过通用 Provider 只精排融合候选 | 控制计算和时延，不锁定模型结构 | 召回漏掉的候选无法补回 |
 | Chunk | 固定小块、大块、语义切分 | 固定策略加章节与位置元数据 | 可重复、可评测，保留扩窗依据 | 仍需针对文档类型调参 |
 | Note 阅读 | 全库窗口排序、先资料后窗口 | 两阶段 Cascade Retrieval | 先缩小资料，再保留原文语境 | 增加一次规划和查询 |
 | Wiki 关系 | 无图、全 GraphRAG、受限图读取 | 受限图读取 | 利用已有链接，不虚构完整知识图谱 | 图信号较弱，不能替代文本证据 |
 | Scope | 召回后过滤、查询前过滤 | ES 下推 + MySQL Ownership 二次校验 | 防泄漏也防索引脏数据 | 多一次 Hydration 校验 |
-| 索引升级 | 原地覆盖、双写 Alias、停机重建 | 版本化投影与切换 | 可回滚、可复现实验 | 存储和回填成本 |
+| 索引升级 | 原地覆盖、全量重建、Generation Catch-up | Generation + Watermark + Change Log + Alias | 可回滚，活跃 Workspace 无需反复从头构建 | 双份存储、增量日志和发布对账 |
 | 证据不足 | 继续生成、返回空、拒答 | 显式不足与受控拒答 | 不把相关性冒充支持度 | 用户体验更保守 |
 
 ### 0.8 面试叙事顺序
 
-先从“为什么关键词和向量谁也替代不了谁”讲 Hybrid，再说明 RRF 与 Rerank 的分工；随后用 QA、Note、Wiki 对相关性的不同定义解释拆链路；最后补 Evidence Selection、Scope 和版本化投影。这样讲的是检索问题如何升级，不是把 BM25、HNSW、RRF、Cross-Encoder 名词排成清单。
+先从“为什么关键词和向量谁也替代不了谁”讲 Hybrid，再说明 RRF 与 Rerank 的分工；随后用 QA、Note、Wiki 对相关性的不同定义解释拆链路；最后补 Evidence Selection、Scope 和版本化投影。这样讲的是检索问题如何升级，不是把 BM25、HNSW、RRF、Cross-Encoder 名词排成清单。只有实际 Provider 模型卡能证明模型结构，仓库当前只证明 Rerank 协议与降级边界。
 
 ## 1. 目标与非目标
 
@@ -192,9 +198,9 @@ MySQL 保存 Source、Snapshot、Chunk 和 Projection 状态，MinIO 保存原�
 |---|---|---|
 | 召回 | Recall@K | 相关证据是否进入候选 |
 | 排序 | MRR / NDCG@K | 相关证据是否排在前面 |
-| 引用 | Precision / Coverage | 引用是否正确且覆盖答案 |
+| 引用 | Accuracy / Completeness / Claim-Evidence Coverage | 引用是否支持绑定 Claim、是否漏引、证据是否完整支持结论 |
 | 安全 | Scope Violation | 是否出现越权来源 |
-| 拒答 | Refusal Accuracy | 无证据时是否正确拒答 |
+| 拒答 | Refusal Recall / Precision、Answer Coverage、Selective Accuracy | 是否漏拒、是否过度拒答、回答面与回答后的正确性 |
 | 性能 | P50/P95 | 各阶段和总检索耗时 |
 
 ### 9.3 当前消融口径
@@ -205,11 +211,13 @@ MySQL 保存 Source、Snapshot、Chunk 和 Projection 状态，MinIO 保存原�
 
 | 故障 | QA | Note | Wiki |
 |---|---|---|---|
-| Embedding 失败 | BM25 | 元数据/关键词 Source Recall | 文本页面召回 |
+| Embedding 失败 | Hybrid 当前返回 `QA_RETRIEVAL_PROVIDER_UNAVAILABLE`；非生产环境可显式启用较弱 MySQL Fallback | 元数据/关键词 Source Recall | 文本页面召回 |
 | Rerank 失败 | RRF 顺序 | Source/Window 原排序 | 文本加关系原排序 |
 | ES 不可用 | 明确失败或受控 DB 兜底 | 限定已知资料读取 | 读取已知页面 |
 | 投影未完成 | 排除该 Snapshot | 提示处理中 | 使用上一有效版本 |
 | 证据不足 | 拒答 | 请求缩小资料或问题 | 输出缺少来源 |
+
+这张表描述三条不同检索链路，不能把 Note 或 Wiki 的文本回退套到 QA。当前 QA Hybrid 在进入 ES 检索前就要求 Query Embedding；生产配置又禁止 MySQL Fallback，所以不存在“向量失败后自动保留 ES BM25 单路”的当前实现。若以后增加 BM25 单路降级，还要单独验证 Source Scope、Ownership、Degraded 标记和质量门禁。
 
 ## 11. 测试策略
 
@@ -305,7 +313,7 @@ Compiler 校验专有名词和显式 Scope 没有丢失。低置信度时原 Que
 
 ## 18. 索引版本与重建
 
-向量模型变化会改变 Dimension 和分布，切分策略变化会改变 Chunk Identity。重建不能原地覆盖当前索引，应该创建新 Index Version，完成 Backfill、质量门禁和完整性对账后再切换 Alias。失败时仍可读取旧版本。
+向量模型变化会改变 Dimension 和分布，切分策略变化会改变 Chunk Identity。重建不能原地覆盖当前索引。推荐创建新 Generation，记录稳定 Catalog Watermark，完成 Backfill 后从 Change Log 追平上传、更新和删除，再执行覆盖、质量、租户隔离和兼容性门禁。失败时 Alias 仍指向旧 Generation。
 
 Projection 的状态至少区分 Pending、Building、Ready、Failed、Retracted。只有 Ready 进入在线检索。这个设计把 ES 八股里的 Index Alias、Reindex、Mapping 不可变与项目资料功能连接起来。
 
@@ -316,7 +324,7 @@ Projection 的状态至少区分 Pending、Building、Ready、Failed、Retracted
 - Recall@3 = 2/2 = 1。
 - Reciprocal Rank = 1/1 = 1，因为第一个相关结果排第 1。
 - Precision@3 = 2/3。
-- 如果最终只引用 A，则 Citation Coverage = 1/2。
+- 如果两个 Gold Claim 都需要引用，但最终只有一个 Claim 绑定有效 Citation，则 Citation Completeness = 1/2。这个结果不能推出 Citation Accuracy：A 的 Citation 仍需单独判断是否真正支持所绑定 Claim。
 
 MRR 更关注第一个正确结果，NDCG 能表达多个相关结果在不同位置的收益。QA 不能只看 Recall，因为把正确证据放到第 20 名通常无法进入上下文。
 
@@ -368,7 +376,7 @@ Note 的 Candidate Pool 不限制为最近若干资料。Source Rank 综合 Jour
 
 Tag Resolver 区分 Structured Facet 与 Unknown Text Fallback，避免把普通文本误当成结构化过滤条件。最终答案只渲染仍存在于 Evidence Bundle 的 Window，图扩展命中过但被预算器淘汰的内容不能偷偷进入 Prompt。Metadata 与 Window Hydration 采用批量查询，查询次数不随 Source 数线性增长。
 
-Note 使用独立的 Source-level Alias，不与 QA 的 Chunk-level Alias 混用；投影只保存检索所需字段，不保存 Raw Full Text。这样既匹配资料级粗排，也减少 ES 中的敏感正文副本。
+Note 使用独立的 Source-level 索引族，不与 QA 的 Chunk-level 索引族混用；Alias 按环境、索引族或租户桶管理，不为每个 Workspace 长期创建。投影只保存检索所需字段，不保存 Raw Full Text。这样既匹配资料级粗排，也减少 ES 中的敏感正文副本。
 
 ## 26. Wiki 的不可变版本与受限图读取
 
@@ -380,7 +388,7 @@ Wiki 没有页面时不回退普通 RAG，因为“没有结构化知识页”�
 
 ## 27. 投影切换与可复现实验
 
-检索投影采用 Dual Recall、Current Snapshot 和 Atomic Alias Switch。Catalog 在构建期间变化、Backfill 未完成、文档数量未验证时拒绝切换；Partial Projection Failure 会停用已写入文档，新 Snapshot Finalize 后才停用旧 Snapshot，Retry 前重新激活目标文档。向量维度和 Version Contract 不一致时不进入索引。
+当前实现采用 Dual Recall、Current Snapshot 和 Atomic Alias Switch，Catalog 在构建期间变化时拒绝切换并重试，适合学校规模。推荐方案在构建开始时冻结 Catalog Watermark，把后续上传、更新和删除写入 Change Log；Backfill 完成后 Catch-up 到发布水位，再校验文档数量。Partial Projection Failure 会停用已写入文档，新 Snapshot Finalize 后才停用旧 Snapshot，Retry 前重新激活目标文档。向量维度和 Version Contract 不一致时不进入索引。
 
 Release Gate 同时要求 Provider Ready、Dual Coverage、Completed Build 和 No Degraded Runs。Provider Health Probe 带短缓存，减少发布检查对下游的重复压力。
 
@@ -459,13 +467,13 @@ Embedding 检索通常是 Bi-Encoder。Query 和 Document 分开编码，文档�
 
 Cross-Encoder 把 Query 和 Document 拼在一起输入模型，每层 Attention 都能比较两边 Token，相关性判断更准确，但每个 Pair 都要重新计算。
 
-项目使用“Bi-Encoder 召回，Cross-Encoder 精排”的级联结构：
+项目当前使用“Bi-Encoder 向量召回，加通用 Provider 候选精排”的级联接口；当所配 Provider 确认为 Cross-Encoder 时，可具体画成：
 
 ```text
 全库 -> BM25/ANN -> 数十个 Candidate -> Cross-Encoder -> Evidence Selection
 ```
 
-替代方案是只用高质量 Embedding，延迟低但精排能力弱；或者让 LLM Judge 排序，解释能力强但成本和稳定性更差。Cross-Encoder 在质量、吞吐和可批处理之间更平衡。
+替代方案是只用高质量 Embedding，延迟低但精排表达能力有限；或者让 LLM Judge 排序，解释能力强但成本和稳定性更差。Cross-Encoder 通常适合候选精排，但是否更优必须以实际 Provider、语言分桶、长文本截断、P95/P99 和 Gold Set 验证，不能从接口名推导。
 
 ## 32. Chunking 的知识与 Trade-off
 
@@ -537,17 +545,19 @@ snapshot_status = READY
 
 ## 36. 索引更新方法与 Alias
 
-原地修改 Mapping 的能力有限，Embedding 版本变化还需要重算全部向量。直接删除旧索引再重建会产生不可用窗口。项目采用新版本索引、Backfill、验证和 Alias Switch：
+原地修改 Mapping 的能力有限，Embedding 版本变化还需要重算全部向量。直接删除旧索引再重建会产生不可用窗口。推荐采用 Generation、Backfill、Change Log Catch-up、验证和 Alias Switch：
 
 ```text
-index_v1 <- current alias
-build index_v2
-dual validation
+index_g1 <- current alias
+freeze catalog watermark
+build index_g2
+catch up change log
+release validation
 atomic alias switch
-index_v2 <- current alias
+index_g2 <- current alias
 ```
 
-Alias 切换快，但前提是 v2 完整。Catalog 在构建中变化、文档数量不符、部分投影失败或 Provider 不健康时拒绝切换。代价是重建期间需要双份存储和额外写入。
+Alias 切换快，但前提是新 Generation 已追平发布水位。文档数量不符、Change Log 有缺口、部分投影失败或 Provider 不健康时拒绝切换。Alias 按环境、索引族或租户桶管理，查询强制下推 Workspace Scope；共享索引降低 Alias 和 Shard 数量，也提高了租户过滤与缓存 Key 的安全要求。代价是重建期间需要双份存储、增量日志和额外写入。
 
 ## 37. RAG 评测为什么必须分层
 
@@ -557,7 +567,9 @@ Recall@K 衡量相关资料有没有进入前 K，MRR 看第一个相关结果�
 
 - Citation Support：引用是否支持对应陈述。
 - Evidence Coverage：关键结论是否都有证据。
-- Refusal Accuracy：资料不足时是否拒答。
+- Refusal Recall：应拒答样本是否被拒答；当前字段 `Refusal Accuracy` 实际映射到这一语义。
+- Refusal Precision：被拒答样本是否真的应该拒答，防止全部拒答。
+- Answer Coverage 与 Selective Accuracy：系统实际回答多少，以及已回答样本中有依据的正确率。
 - Scope Violation：是否出现越权证据。
 - Degradation Fidelity：Provider 故障是否被正确记录。
 
@@ -573,13 +585,17 @@ Recall@K 衡量相关资料有没有进入前 K，MRR 看第一个相关结果�
 
 | 设计概念 | 当前生产实现 | 当前设置或不变量 | 主要测试 |
 |---|---|---|---|
-| 文档与查询 Embedding | `OpenAiCompatibleEmbeddingClient` | 默认关闭；维度默认 1024，返回数量和维度必须匹配配置 | `OpenAiCompatibleEmbeddingClientTest` |
+| 文档与查询 Embedding | `OpenAiCompatibleEmbeddingClient` | `application.yml` 和 Compose 均默认关闭；维度默认 1024，返回数量和维度必须匹配配置 | `OpenAiCompatibleEmbeddingClientTest` |
 | QA Hybrid 召回 | `QaHybridRetriever.retrieve()`、`ElasticsearchQaHybridSearchAdapter` | kNN 与 BM25 各召回，Scope 在 ES 前置过滤 | `ElasticsearchQaHybridSearchAdapterQueryTest` |
 | RRF 与 Rerank | `QaRrfFusionService`、`QaRerankService` | RRF K 为 60；Rerank 不可用时标记 Degraded 并保留融合顺序 | `QaRrfFusionServiceTest`、`QaRerankServiceTest` |
 | Evidence Selection | `QaEvidenceSelectionPolicy.selectFinalBundle()` | 最终 Bundle 同时受数量、来源多样性和文本预算约束 | `QaEvidenceSelectionPolicyTest` |
 | Ownership 二次校验 | `RetrievalHydrator`、`JdbcEvidenceOwnershipAdapter` | ES 命中必须能在 MySQL 找到同 Workspace、Source 与 Snapshot 归属 | `JdbcEvidenceOwnershipAdapterTest` |
 | 双 Projection | `SourceRetrievalProjectionService`、`SourceRetrievalProjectionFinalizer` | QA Chunk 与 Note Source 都 READY 后才 Finalize 当前 Snapshot | Coordinator、Compensation Test |
-| 索引重建与 Alias | `RetrievalBackfillService.rebuildWorkspace()`、`RetrievalIndexManager.switchAliases()` | Build 覆盖完整且 Source Catalog 未漂移才切换 QA 与 Note Alias | `RetrievalBackfillServiceCatalogGateTest`、Live ES Integration Test |
+| 索引重建与 Alias | `[当前实现]` `RetrievalBackfillService.rebuildWorkspace()`、`RetrievalIndexManager.switchAliases()` | 当前要求 Build 覆盖完整且 Source Catalog 未漂移；推荐迁移为 Generation、Watermark 与 Change Log Catch-up | `RetrievalBackfillServiceCatalogGateTest`、Live ES Integration Test；推荐方案仍待迁移验证 |
 | 分层评测 | `RetrievalBenchmarkReplay`、`RetrievalShadowComparator`、`RetrievalQualityGate` | 同一 Snapshot、Plan 和 Evidence Budget 才能比较 | Replay、Shadow Comparator、Quality Gate Test |
 
-当前向量存储是 Elasticsearch 8.15.3 的 `dense_vector` 与 cosine kNN。链路代码完整，但 Compose 默认关闭 ES、Embedding 和 Rerank；首次启用还需要正确维度和历史 Rebuild。缺少 Rerank 时能降级运行，不能通过正式 Release Gate。
+当前向量存储是 Elasticsearch 8.15.3 的 `dense_vector` 与 cosine kNN。链路代码完整；`application.yml` 的 Elasticsearch 默认值为开启，根目录 Compose 将其覆盖为关闭，Embedding 和 Rerank 在两层均默认关闭。首次启用还需要正确维度和历史 Rebuild。缺少 Rerank 时能降级运行，不能通过正式 Release Gate。
+
+## 当前事实边界
+
+检索 projection 的 owner 仍是 Java 主服务，source snapshot、chunk/window、retrieval projection 和 quality receipt 都有数据库状态。正式 ES 命中要同时满足 workspace/source ownership、current snapshot 和 release gate；配置关闭时只验证 fallback 和错误处理，不宣称 dense vector 已经运行。

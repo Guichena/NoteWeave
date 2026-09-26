@@ -9,6 +9,7 @@ import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import com.noteweave.retrieval.index.RetrievalIndexNames;
 import com.noteweave.retrieval.projection.RetrievalProjectionRepository.ProjectionType;
+import com.noteweave.retrieval.provider.RetrievalProviderException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -79,9 +80,16 @@ public class ElasticsearchNoteSourceSearchAdapter implements NoteSourceSearchPor
             List<NoteSourceHit> result = new ArrayList<>();
             for (Hit<Map> hit : response.hits().hits()) {
                 Map source = hit.source();
-                if (source == null) continue;
+                if (source == null) {
+                    throw invalidResponse("Note source Elasticsearch hit has no source document");
+                }
+                String sourceId = text(source.get("source_id"));
+                String snapshotId = text(source.get("source_snapshot_id"));
+                if (sourceId.isBlank() || snapshotId.isBlank()) {
+                    throw invalidResponse("Note source Elasticsearch hit is missing an identity field");
+                }
                 result.add(new NoteSourceHit(
-                        text(source.get("source_id")), text(source.get("source_snapshot_id")),
+                        sourceId, snapshotId,
                         text(source.get("title")), text(source.get("source_type")),
                         text(source.get("summary")), strings(source.get("tags")),
                         text(source.get("metadata_text")), hit.score() == null ? 0.0d : hit.score()));
@@ -90,6 +98,10 @@ public class ElasticsearchNoteSourceSearchAdapter implements NoteSourceSearchPor
         } catch (IOException ex) {
             throw new IllegalStateException("Note source Elasticsearch retrieval failed", ex);
         }
+    }
+
+    private RetrievalProviderException invalidResponse(String message) {
+        return new RetrievalProviderException("NOTE_SOURCE_RETRIEVAL_RESPONSE_INVALID", message);
     }
 
     private String text(Object value) {

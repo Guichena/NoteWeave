@@ -92,16 +92,18 @@ class ResearchAgentTaskCoordinatorServiceTest {
         ResearchAgentTaskCoordinatorService.CoordinatorReceipt first = coordinator.planAndEnqueue(runId);
         ResearchAgentTaskCoordinatorService.CoordinatorReceipt replay = coordinator.planAndEnqueue(runId);
 
-        assertThat(first.createdTaskCount()).isEqualTo(1);
-        assertThat(first.enqueuedCommandCount()).isEqualTo(1);
+        assertThat(first.createdTaskCount()).isEqualTo(2);
+        assertThat(first.enqueuedCommandCount()).isEqualTo(2);
         assertThat(first.scopedCellCount()).isEqualTo(2);
         assertThat(replay.createdTaskCount()).isZero();
-        assertThat(replay.idempotentReplayCount()).isEqualTo(1);
-        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
-        assertThat(jdbcTemplate.queryForObject("select count(*) from research_budget_reservation where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
-        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_outbox where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
-        assertThat(jdbcTemplate.queryForObject("select execution_context_json from research_agent_task where research_run_id = ?", String.class, runId))
-                .contains("The method is documented.", "allow_external_search", "false");
+        assertThat(replay.idempotentReplayCount()).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ?", Integer.class, runId)).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_budget_reservation where research_run_id = ?", Integer.class, runId)).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_outbox where research_run_id = ?", Integer.class, runId)).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForList(
+                "select execution_context_json from research_agent_task where research_run_id = ?", String.class, runId))
+                .allSatisfy(context -> assertThat(context)
+                        .contains("The method is documented.", "allow_external_search", "false"));
     }
 
     @Test
@@ -110,11 +112,44 @@ class ResearchAgentTaskCoordinatorServiceTest {
 
         coordinator.planAndEnqueue(runId);
 
-        String context = jdbcTemplate.queryForObject(
-                "select execution_context_json from research_agent_task where research_run_id = ?", String.class, runId);
-        var sourcePolicy = objectMapper.readTree(context).path("source_policy");
-        assertThat(sourcePolicy.path("allow_external_search").asBoolean()).isTrue();
-        assertThat(sourcePolicy.path("allow_external_fetch").asBoolean()).isTrue();
+        var contexts = jdbcTemplate.queryForList(
+                "select execution_context_json from research_agent_task where research_run_id = ?",
+                String.class, runId);
+        assertThat(contexts).hasSize(2).allSatisfy(context -> {
+            try {
+                var sourcePolicy = objectMapper.readTree(context).path("source_policy");
+                assertThat(sourcePolicy.path("allow_external_search").asBoolean()).isTrue();
+                assertThat(sourcePolicy.path("allow_external_fetch").asBoolean()).isTrue();
+            } catch (Exception exception) {
+                throw new AssertionError(exception);
+            }
+        });
+    }
+
+    @Test
+    void shouldCarryServerParsedDomainAllowlistIntoTheImmutableTaskSnapshot() throws Exception {
+        when(externalEvidencePolicy.enabled()).thenReturn(true);
+        jdbcTemplate.update("update research_run set research_intent_json = ? where id = ?",
+                objectMapper.writeValueAsString(Map.of(
+                        "research_goal", "Compare APIs",
+                        "constraints", List.of(
+                                "SOURCE_DOMAIN_ALLOWLIST: platform.openai.com, docs.anthropic.com, invalid/path",
+                                "formal claims require citations"))), runId);
+
+        coordinator.planAndEnqueue(runId);
+
+        var contexts = jdbcTemplate.queryForList(
+                "select execution_context_json from research_agent_task where research_run_id = ?",
+                String.class, runId);
+        assertThat(contexts).hasSize(2).allSatisfy(context -> {
+            try {
+                var domains = objectMapper.readTree(context).path("source_policy").path("allowed_external_domains");
+                assertThat(domains).extracting(node -> node.asText())
+                        .containsExactly("docs.anthropic.com", "platform.openai.com");
+            } catch (Exception exception) {
+                throw new AssertionError(exception);
+            }
+        });
     }
 
     @Test
@@ -280,8 +315,8 @@ class ResearchAgentTaskCoordinatorServiceTest {
         coordinator.planAndEnqueueForWave(runId, 2);
         var afterTaskization = coordinatorSnapshot.snapshot(runId);
         assertThat(afterTaskization.currentWaveNo()).isEqualTo(2);
-        assertThat(afterTaskization.taskCount()).isEqualTo(1);
-        assertThat(afterTaskization.activeTaskCount()).isEqualTo(1);
+        assertThat(afterTaskization.taskCount()).isEqualTo(2);
+        assertThat(afterTaskization.activeTaskCount()).isEqualTo(2);
     }
 
     @Test
@@ -290,12 +325,12 @@ class ResearchAgentTaskCoordinatorServiceTest {
         var replay = coordinatorTick.tick(runId, "scheduler-b");
 
         assertThat(first.outcome()).isEqualTo("INITIAL_WAVE_TASKIZED");
-        assertThat(first.taskization().createdTaskCount()).isEqualTo(1);
+        assertThat(first.taskization().createdTaskCount()).isEqualTo(2);
         assertThat(replay.outcome()).isEqualTo("ACTIVE_NOOP");
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ?", Integer.class, runId))
-                .isEqualTo(1);
+                .isEqualTo(2);
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_outbox where research_run_id = ?", Integer.class, runId))
-                .isEqualTo(1);
+                .isEqualTo(2);
     }
 
     @Test
@@ -312,7 +347,7 @@ class ResearchAgentTaskCoordinatorServiceTest {
         var recovered = coordinatorTick.tick(runId, "scheduler-b");
         assertThat(recovered.outcome()).isEqualTo("INITIAL_WAVE_TASKIZED");
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ?", Integer.class, runId))
-                .isEqualTo(1);
+                .isEqualTo(2);
     }
 
     @Test
@@ -331,9 +366,15 @@ class ResearchAgentTaskCoordinatorServiceTest {
 
         assertThat(first.outcome()).isEqualTo("FAILED_WAVE_REPAIR_TASKIZED");
         assertThat(replay.outcome()).isEqualTo("ACTIVE_NOOP");
-        assertThat(settledRepairWave.outcome()).isEqualTo("RUN_FAILED");
-        assertThat(jdbcTemplate.queryForObject(
-                "select status from research_run where id = ?", String.class, runId)).isEqualTo("FAILED");
+        // DR-305 upgrade: this exhausted wave used to fail the Run with the opaque
+        // RESEARCH_AGENT_TERMINAL_BARRIER_UNSATISFIED. Missing evidence is now an honest business
+        // terminal state, so the Run completes instead of failing.
+        assertThat(settledRepairWave.outcome()).isEqualTo("RUN_COMPLETED");
+        assertThat(jdbcTemplate.queryForMap("""
+                select status, completion_terminal_state from research_run where id = ?
+                """, runId))
+                .containsEntry("status", "COMPLETED")
+                .containsEntry("completion_terminal_state", "INSUFFICIENT_EVIDENCE");
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from research_agent_task where research_run_id = ? and status = 'SUBMITTED'",
                 Integer.class, runId)).isZero();
@@ -343,7 +384,73 @@ class ResearchAgentTaskCoordinatorServiceTest {
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_run_advancement where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_checkpoint where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ? and role = 'COUNTERFACTUAL'", Integer.class, runId)).isEqualTo(2);
-        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_outbox where research_run_id = ?", Integer.class, runId)).isEqualTo(3);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_outbox where research_run_id = ?", Integer.class, runId)).isEqualTo(4);
+    }
+
+    @Test
+    void shouldLocallyReplanOnlyTheUnresolvedCellAndPersistItsAudit() throws Exception {
+        coordinator.planAndEnqueueForWave(runId, 1);
+        jdbcTemplate.update("""
+                update research_cell
+                set cell_status = 'VERIFIED', candidate_value = 'settled method',
+                    evidence_refs_json = '["evidence-settled"]', active_task_id = null
+                where research_run_id = ? and cell_key = 'entity-1:method'
+                """, runId);
+        jdbcTemplate.update("""
+                update research_agent_task
+                set status = 'FAILED', terminal_reason = 'NO_SUPPORTED_CANDIDATE',
+                    terminal_at = current_timestamp
+                where research_run_id = ? and wave_no = 1
+                """, runId);
+        String initialPlanDigest = "sha256:" + "1".repeat(64);
+        jdbcTemplate.update("""
+                insert into research_matrix_plan(
+                    id, research_run_id, planner_version, plan_mode, plan_status,
+                    row_count, column_count, cell_count, bounded, reason_codes_json,
+                    plan_json, plan_digest)
+                values (?, ?, 'test-plan.v1', 'INTENT_MATRIX_V2', 'ACTIVE',
+                    1, 2, 2, false, '[]', ?, ?)
+                """, Ids.newId(), runId,
+                objectMapper.writeValueAsString(Map.of("cells", List.of("entity-1:method", "entity-1:evidence"))),
+                initialPlanDigest);
+        String originalSource = jdbcTemplate.queryForObject(
+                "select id from source where workspace_id = ?", String.class, workspaceId);
+        String independentSource = insertReadySource("Independent local-replan source");
+        jdbcTemplate.update("update research_run set source_scope_json = ? where id = ?",
+                objectMapper.writeValueAsString(List.of(originalSource, independentSource)), runId);
+
+        var receipt = coordinatorTick.tick(runId, "scheduler-local-replan");
+
+        assertThat(receipt.outcome()).isEqualTo("FAILED_WAVE_REPAIR_TASKIZED");
+        assertThat(receipt.taskization().createdTaskCount()).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("""
+                select target_cells_json from research_agent_task
+                where research_run_id = ? and wave_no = 2
+                """, String.class, runId)).isEqualTo("[\"entity-1:evidence\"]");
+        assertThat(jdbcTemplate.queryForMap("""
+                select cell_status, repair_count from research_cell
+                where research_run_id = ? and cell_key = 'entity-1:method'
+                """, runId))
+                .containsEntry("cell_status", "VERIFIED")
+                .containsEntry("repair_count", 0);
+        assertThat(jdbcTemplate.queryForMap("""
+                select plan_revision_from, plan_revision_to, old_plan_digest,
+                       deviation_type, affected_cells_json, selected_repair
+                from research_agent_replan_audit where research_run_id = ?
+                """, runId))
+                .containsEntry("plan_revision_from", 1)
+                .containsEntry("plan_revision_to", 2)
+                .containsEntry("old_plan_digest", initialPlanDigest)
+                .containsEntry("deviation_type", "MARGINAL_GAIN_EXHAUSTED")
+                .containsEntry("affected_cells_json", "[\"entity-1:evidence\"]")
+                .containsEntry("selected_repair", "COUNTERFACTUAL_RESEARCH");
+        String localPlanJson = jdbcTemplate.queryForObject("""
+                select plan_json from research_matrix_plan
+                where research_run_id = ? and plan_mode = 'LOCAL_REPAIR'
+                """, String.class, runId);
+        var localPlan = objectMapper.readTree(localPlanJson);
+        if (localPlan.isTextual()) localPlan = objectMapper.readTree(localPlan.asText());
+        assertThat(localPlan.path("repair_cause").asText()).isEqualTo("NO_VALID_QUOTE");
     }
 
     @Test
@@ -369,6 +476,30 @@ class ResearchAgentTaskCoordinatorServiceTest {
                 "select task_status, progress_phase from task where target_id = ?", runId))
                 .containsEntry("task_status", "FAILED")
                 .containsEntry("progress_phase", "RESEARCH_FAILED");
+    }
+
+    @Test
+    void shouldFailRunWhenCounterfactualRepairHasNoIndependentSeedSource() {
+        coordinator.planAndEnqueueForWave(runId, 1);
+        jdbcTemplate.update("""
+                update research_agent_task
+                set status = 'FAILED', terminal_reason = 'LEASE_RETRY_EXHAUSTED',
+                    terminal_at = current_timestamp
+                where research_run_id = ?
+                """, runId);
+
+        var receipt = coordinatorTick.tick(runId, "scheduler-no-independent-source");
+
+        assertThat(receipt.outcome()).isEqualTo("FAILED_WAVE_STOPPED");
+        assertThat(receipt.taskization().createdTaskCount()).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from research_run where id = ?", String.class, runId)).isEqualTo("FAILED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from research_agent_task where research_run_id = ? and role = 'COUNTERFACTUAL'",
+                Integer.class, runId)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from research_agent_run_advancement where research_run_id = ?",
+                Integer.class, runId)).isEqualTo(1);
     }
 
     @Test
@@ -400,20 +531,23 @@ class ResearchAgentTaskCoordinatorServiceTest {
         var replay = advancementTaskization.advanceAndTaskize(advanceCommand());
 
         assertThat(first.advancement().checkpointSeq()).isEqualTo(1);
-        assertThat(first.taskization().createdTaskCount()).isEqualTo(1);
-        assertThat(first.taskization().enqueuedCommandCount()).isEqualTo(1);
+        assertThat(first.taskization().createdTaskCount()).isEqualTo(2);
+        assertThat(first.taskization().enqueuedCommandCount()).isEqualTo(2);
         assertThat(replay.advancement().idempotentReplay()).isTrue();
         assertThat(replay.taskization().createdTaskCount()).isZero();
-        assertThat(replay.taskization().idempotentReplayCount()).isEqualTo(1);
-        assertThat(jdbcTemplate.queryForObject("select wave_no from research_agent_task where research_run_id = ?", Integer.class, runId)).isEqualTo(2);
-        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
-        assertThat(jdbcTemplate.queryForObject("select count(*) from research_budget_reservation where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
-        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_outbox where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
+        assertThat(replay.taskization().idempotentReplayCount()).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForList(
+                "select distinct wave_no from research_agent_task where research_run_id = ?", Integer.class, runId))
+                .containsExactly(2);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ?", Integer.class, runId)).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_budget_reservation where research_run_id = ?", Integer.class, runId)).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_outbox where research_run_id = ?", Integer.class, runId)).isEqualTo(2);
     }
 
     @Test
     void shouldCreateReplayableCounterfactualWithServerCheckedIndependentSourceScope() {
         when(externalEvidencePolicy.enabled()).thenReturn(true);
+        jdbcTemplate.update("update research_row set source_title = 'PostgreSQL 17' where research_run_id = ? and row_key = 'entity-1'", runId);
         String excludedSourceId = jdbcTemplate.queryForObject(
                 "select id from source where workspace_id = ? order by id limit 1", String.class, workspaceId);
         String independentSourceId = insertReadySource("Independent source");
@@ -434,7 +568,8 @@ class ResearchAgentTaskCoordinatorServiceTest {
                 .isEqualTo("COUNTERFACTUAL");
         String context = jdbcTemplate.queryForObject("select execution_context_json from research_agent_task where research_run_id = ?", String.class, runId);
         assertThat(context).contains("excluded_source_ids", excludedSourceId, "Independent source",
-                        "\"allow_external_search\":true", "\"allow_external_fetch\":true")
+                        "\"allow_external_search\":true", "\"allow_external_fetch\":true",
+                        "\"entity_label\":\"PostgreSQL 17\"")
                 .doesNotContain("Trusted source");
         assertThat(jdbcTemplate.queryForObject("select repair_count from research_cell where research_run_id = ? and cell_key = 'entity-1:method'", Integer.class, runId))
                 .isEqualTo(1);
@@ -471,9 +606,18 @@ class ResearchAgentTaskCoordinatorServiceTest {
     }
 
     @Test
+    void shouldRejectMissingSeedScopeInsteadOfDowngradingWebPlusSeedsToWebOnly() {
+        jdbcTemplate.update("update research_run set source_scope_json = '[]' where id = ?", runId);
+
+        assertThatThrownBy(() -> coordinator.planAndEnqueue(runId))
+                .isInstanceOfSatisfying(BusinessException.class, error ->
+                        assertThat(error.code()).isEqualTo("RESEARCH_AGENT_COORDINATOR_SOURCE_SCOPE_REQUIRED"));
+    }
+
+    @Test
     void shouldDeriveRepairGapAndSourceExclusionFromFailedTaskSnapshot() {
         var taskization = coordinator.planAndEnqueueForWave(runId, 1);
-        assertThat(taskization.createdTaskCount()).isEqualTo(1);
+        assertThat(taskization.createdTaskCount()).isEqualTo(2);
         jdbcTemplate.update("update research_agent_task set status = 'FAILED', terminal_reason = 'LEASE_RETRY_EXHAUSTED', terminal_at = current_timestamp where research_run_id = ?", runId);
         String trustedSourceId = jdbcTemplate.queryForObject("select id from source where workspace_id = ?", String.class, workspaceId);
 
@@ -511,7 +655,7 @@ class ResearchAgentTaskCoordinatorServiceTest {
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_run_advancement where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_checkpoint where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ? and role = 'COUNTERFACTUAL'", Integer.class, runId)).isEqualTo(2);
-        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_outbox where research_run_id = ?", Integer.class, runId)).isEqualTo(3);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_outbox where research_run_id = ?", Integer.class, runId)).isEqualTo(4);
     }
 
     @Test
@@ -666,29 +810,38 @@ class ResearchAgentTaskCoordinatorServiceTest {
 
         var revised = coordinator.planAndEnqueue(runId);
 
-        assertThat(first.createdTaskCount()).isEqualTo(1);
-        assertThat(revised.createdTaskCount()).isEqualTo(1);
-        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ?", Integer.class, runId)).isEqualTo(2);
+        assertThat(first.createdTaskCount()).isEqualTo(2);
+        assertThat(revised.createdTaskCount()).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ?", Integer.class, runId)).isEqualTo(4);
     }
 
     @Test
     void shouldReserveTenDimensionEnvelope() throws Exception {
         coordinator.planAndEnqueue(runId);
-        String taskId = jdbcTemplate.queryForObject(
-                "select id from research_agent_task where research_run_id = ?", String.class, runId);
+        var reservations = jdbcTemplate.queryForList("""
+                select state, reserved_json from research_budget_reservation where research_run_id = ?
+                """, runId);
 
-        assertThat(jdbcTemplate.queryForObject(
-                "select state from research_budget_reservation where research_agent_task_id = ?", String.class, taskId))
-                .isEqualTo("RESERVED");
-        String reservedJson = jdbcTemplate.queryForObject(
-                "select reserved_json from research_budget_reservation where research_agent_task_id = ?",
-                String.class, taskId);
-        Map<String, Long> reserved = new com.fasterxml.jackson.databind.ObjectMapper().readValue(
-                reservedJson, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Long>>() { });
-        assertThat(reserved.keySet()).containsExactlyInAnyOrder(
-                "llm_calls", "search_calls", "fetch_calls", "read_calls", "extract_calls",
-                "evidence_cards", "evidence_appended", "candidates_submitted",
-                "candidate_merges_accepted", "candidate_merges_rejected");
+        assertThat(reservations).hasSize(2).allSatisfy(reservation -> {
+            assertThat(reservation.get("STATE")).isEqualTo("RESERVED");
+            try {
+                Map<String, Long> reserved = new com.fasterxml.jackson.databind.ObjectMapper().readValue(
+                        String.valueOf(reservation.get("RESERVED_JSON")),
+                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Long>>() { });
+                assertThat(reserved.keySet()).containsExactlyInAnyOrder(
+                        "llm_calls", "search_calls", "fetch_calls", "read_calls", "extract_calls",
+                        "evidence_cards", "evidence_appended", "candidates_submitted",
+                        "candidate_merges_accepted", "candidate_merges_rejected");
+                assertThat(reserved.get("llm_calls")).isEqualTo(2L);
+                assertThat(reserved)
+                        .containsEntry("search_calls", 3L)
+                        .containsEntry("fetch_calls", 3L)
+                        .containsEntry("read_calls", 3L)
+                        .containsEntry("extract_calls", 3L);
+            } catch (Exception exception) {
+                throw new AssertionError(exception);
+            }
+        });
     }
 
     private void assertAgentStateIsEmpty() {

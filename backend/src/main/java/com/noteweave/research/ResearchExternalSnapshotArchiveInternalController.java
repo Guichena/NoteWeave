@@ -2,6 +2,7 @@ package com.noteweave.research;
 
 import com.noteweave.common.ApiResponse;
 import com.noteweave.common.BusinessException;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -16,6 +17,8 @@ public class ResearchExternalSnapshotArchiveInternalController {
     private static final Set<String> FIELDS = Set.of(
             "task_id", "worker_instance_id", "lease_epoch", "fencing_token", "window_id", "source_id",
             "source_title", "source_url", "provider", "adapter", "content_text");
+    private static final Set<String> REUSE_FIELDS = Set.of(
+            "task_id", "worker_instance_id", "lease_epoch", "fencing_token");
     private final ResearchExternalSnapshotArchiveService service;
 
     public ResearchExternalSnapshotArchiveInternalController(ResearchExternalSnapshotArchiveService service) {
@@ -30,6 +33,21 @@ public class ResearchExternalSnapshotArchiveInternalController {
                 positiveLong(request, "fencing_token"), text(request, "window_id"), text(request, "source_id"),
                 text(request, "source_title"), text(request, "source_url"), text(request, "provider"),
                 text(request, "adapter"), text(request, "content_text"))));
+    }
+
+    /**
+     * D-39: the re-execution's reuse inventory. Same twist as {@code archive}: unknown fields
+     * are rejected rather than ignored, so no caller can widen the returned scope.
+     */
+    @PostMapping("/external-snapshots/archived")
+    ApiResponse<List<ResearchExternalSnapshotArchiveService.ReusableWindow>> archived(
+            @RequestBody Map<String, Object> request
+    ) {
+        if (request == null || !request.keySet().equals(REUSE_FIELDS)) throw invalid();
+        return ApiResponse.success(service.reusableWindows(
+                new ResearchExternalSnapshotArchiveService.ReuseCommand(
+                        text(request, "task_id"), text(request, "worker_instance_id"),
+                        positiveInt(request, "lease_epoch"), positiveLong(request, "fencing_token"))));
     }
 
     private String text(Map<String, Object> request, String key) {

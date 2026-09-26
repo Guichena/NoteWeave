@@ -541,7 +541,11 @@ def _verify_and_repair_skill_output(
 
     if executable_skill_key == "resume_local_repair":
         sections = _normalize_sections(output.get("sections", state.get("sections", [])))
-        sections, section_repairs = _repair_missing_outline_sections(sections, plan)
+        sections, section_repairs = _repair_missing_outline_sections(
+            sections,
+            plan,
+            task_input,
+        )
         repair_actions.extend(section_repairs)
         verification_report = _coerce_resume_verification_report(
             output.get("resume_verification_report", {}),
@@ -571,7 +575,11 @@ def _verify_and_repair_skill_output(
         )
         if executable_skill_key != "resume_local_repair":
             if executable_skill_key != "resume_bullet_writer":
-                sections, section_repairs = _repair_missing_outline_sections(sections, plan)
+                sections, section_repairs = _repair_missing_outline_sections(
+                    sections,
+                    plan,
+                    task_input,
+                )
                 repair_actions.extend(section_repairs)
                 verification_checks.append("outline contract preserved")
             else:
@@ -719,19 +727,35 @@ def _coerce_resume_verification_report(
 def _repair_missing_outline_sections(
     sections: list[ArtifactSectionDraft],
     plan: ArtifactExecutionPlan,
+    task_input: ArtifactTaskInput,
 ) -> tuple[list[ArtifactSectionDraft], list[str]]:
     repaired_sections = list(sections)
     repair_actions: list[str] = []
     existing_headings = {section.heading for section in repaired_sections}
+    source_refs = [
+        source.title.strip()
+        for source in task_input.source_scope[:3]
+        if source.title.strip()
+    ]
+    source_line = "、".join(source_refs) or "当前工作台资料"
+    template_action_key = plan.template_action_key or plan.action_key
     for heading in plan.outline:
         if heading not in existing_headings:
+            body = _generic_section_body(
+                template_action_key,
+                heading,
+                source_line,
+                "",
+                "",
+            )
             repaired_sections.append(
                 ArtifactSectionDraft(
                     heading=heading,
-                    body=f"Node-level repair inserted section for {heading}.",
-                    source_refs=[],
+                    body=body,
+                    source_refs=source_refs,
                 )
             )
+            existing_headings.add(heading)
             repair_actions.append(f"missing section backfilled at node level: {heading}")
     return repaired_sections, repair_actions
 
@@ -1048,6 +1072,23 @@ def _generic_section_body(
             ),
             "相关页面": (
                 "建议链接到施工文档、编排升级设计、MCP 权限治理和 Artifact Runtime 测试说明。"
+            ),
+        },
+        "MINDMAP": {
+            "主题中心": (
+                f"围绕 {source_line} 建立资料全景。"
+            ),
+            "关键概念": (
+                "提炼核心概念、关键对象与关系。"
+            ),
+            "证据脉络": (
+                "按来源线索组织关键证据。"
+            ),
+            "核心结论": (
+                "收敛可以直接复用的主要结论。"
+            ),
+            "后续行动": (
+                "继续追问、验证并沉淀到 Wiki。"
             ),
         },
         "STRUCTURED_NOTE": {

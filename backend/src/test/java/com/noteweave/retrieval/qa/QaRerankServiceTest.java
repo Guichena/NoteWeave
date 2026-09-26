@@ -76,6 +76,37 @@ class QaRerankServiceTest {
     }
 
     @Test
+    void emptyProviderResultShouldBeExplicitlyDegraded() {
+        QaRerankService service = new QaRerankService(new RerankClient() {
+            @Override public boolean isEnabled() { return true; }
+            @Override public RerankResult rerank(String query, List<String> documents, int topN) {
+                return new RerankResult(List.of(), "rerank-v1");
+            }
+        });
+
+        var outcome = service.rerank("query", List.of(hit("a", 0.03), hit("b", 0.02)), 2);
+
+        assertThat(outcome.degraded()).isTrue();
+        assertThat(outcome.degradationReasons()).containsExactly("QA_RERANK_UNAVAILABLE");
+        assertThat(outcome.hits()).extracting(ranked -> ranked.hit().chunkId()).containsExactly("a", "b");
+    }
+
+    @Test
+    void invalidProviderIndexShouldBeExplicitlyDegraded() {
+        QaRerankService service = new QaRerankService(new RerankClient() {
+            @Override public boolean isEnabled() { return true; }
+            @Override public RerankResult rerank(String query, List<String> documents, int topN) {
+                return new RerankResult(List.of(new Hit(99, 0.8, 1)), "rerank-v1");
+            }
+        });
+
+        var outcome = service.rerank("query", List.of(hit("a", 0.03), hit("b", 0.02)), 2);
+
+        assertThat(outcome.degraded()).isTrue();
+        assertThat(outcome.hits()).extracting(ranked -> ranked.hit().chunkId()).containsExactly("a", "b");
+    }
+
+    @Test
     void removesMarkdownAndUrlNoiseBeforeCallingProvider() {
         java.util.concurrent.atomic.AtomicReference<String> captured = new java.util.concurrent.atomic.AtomicReference<>();
         QaRerankService service = new QaRerankService(new RerankClient() {

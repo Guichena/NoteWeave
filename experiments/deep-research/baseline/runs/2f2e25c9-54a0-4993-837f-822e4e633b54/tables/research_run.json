@@ -1,0 +1,43 @@
+[
+  {
+    "agent_execution_mode": "INCREMENTAL_V1",
+    "agent_feature_flags_json": {
+      "checkpoint_hydration_v2": false,
+      "evidence_audit_v1": true,
+      "intent_matrix_v2": false,
+      "runnable_work_v2": false,
+      "strict_research_evidence_validation": false,
+      "wide_discovery_accepted_precision": 0.0,
+      "wide_discovery_auto_accept": false,
+      "wide_discovery_precision_threshold": 0.9,
+      "wide_discovery_v1": false,
+      "worker_synthesis_v1": true
+    },
+    "answer_message_id": null,
+    "attempt_no": 1,
+    "context_snapshot_id": null,
+    "control_pack_json": "{\"pack_type\":\"research\",\"target_key\":\"DEEP\",\"task_neighborhood\":\"RESEARCH_DEEP\",\"style_constraints\":[],\"structure_constraints\":[],\"terminology_policy\":[],\"forbidden_patterns\":[],\"evidence_policy\":[\"Memory 不作为研究证据\",\"研究结论必须由搜索结果、工作台资料或验证证据支持\"],\"interaction_policy\":[],\"review_checklist\":[],\"memory_object_ids\":[],\"memory_references\":[],\"compilation_trace\":{\"policy_version\":\"memory-compiler-policy-v1\",\"maximum_tokens\":480,\"selected_tokens\":35,\"candidate_count\":0,\"selected_count\":0,\"dropped_count\":0,\"truncated\":false,\"degraded\":false,\"degradation_reasons\":[]}}",
+    "conversation_id": null,
+    "created_at": "2026-09-18 08:32:52.000000",
+    "fencing_token": 1,
+    "final_report_markdown": null,
+    "final_report_title": null,
+    "id": "2f2e25c9-54a0-4993-837f-822e4e633b54",
+    "profile_key": "DEEP",
+    "query_message_id": null,
+    "question": "Compare OpenAI Responses API and Anthropic Messages API tool calling and streaming event models using official documentation. Include verifiable source URLs. GLM validation marker NW-E2E-20260918-163252",
+    "report_source_id": null,
+    "research_intent_json": "{\"research_goal\":\"Verify Serper, Jina, GLM evidence extraction, table state, verifier, and final report\",\"deliverable_format\":\"Evidence-backed comparison report with citations and URLs\",\"constraints\":[\"Use official documentation as primary evidence\",\"Every major claim must include a verifiable URL\"],\"time_range\":\"Current documentation\",\"depth\":\"DEEP\",\"research_type\":\"COMPARATIVE\"}",
+    "resume_mode": null,
+    "resumed_from_checkpoint_no": null,
+    "resumed_from_research_run_id": null,
+    "retrieval_mode": "WEB_ONLY",
+    "run_version": 0,
+    "source_scope_json": "[]",
+    "status": "FAILED",
+    "task_id": "8440e734-73df-4c06-8013-0b279c2a9ca9",
+    "trace_summary": null,
+    "updated_at": "2026-09-18 08:35:45.000000",
+    "workspace_id": "46ed460c-c240-42c9-8152-2595cdc21ef4"
+  }
+]

@@ -57,9 +57,9 @@ class QaAnswerRunShadowExportServiceTest {
                 .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
         sanitizer = new RetrievalSnapshotSanitizer();
         service = new QaAnswerRunShadowExportService(
-                jdbcTemplate,
                 objectMapper,
-                new RetrievalExecutionShadowExporter(sanitizer)
+                new RetrievalExecutionShadowExporter(sanitizer),
+                new QaAnswerRunShadowExportReadRepository(jdbcTemplate)
         );
         createSchema();
         seedOwnership();

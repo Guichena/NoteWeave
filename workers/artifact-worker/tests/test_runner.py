@@ -11,6 +11,7 @@ from app.action_compat import resolve_action_compatibility, resolve_action_key_f
 from app.compiler import build_execution_plan
 from app.artifact_skill_catalog import list_artifact_skill_definitions, resolve_artifact_skill_definition
 from app.content_runtime import build_canonical_content_objects
+from app.composer import render_markdown, resolve_artifact_title
 from app.intent_compiler import compile_execution_spec
 from app.llm_client import FakeLlmClient
 from app.generation_runtime import ArtifactConfigurationRequiredError
@@ -839,6 +840,7 @@ def test_artifact_skill_catalog_should_expose_builtin_skill_metadata() -> None:
 
     assert any(skill.skill_key == "resume_highlight" for skill in skills)
     assert any(skill.skill_key == "bilibili_course_note_pdf" for skill in skills)
+    assert any(skill.skill_key == "mindmap_from_workspace" for skill in skills)
     bilibili_skill = resolve_artifact_skill_definition("bilibili_course_note_pdf")
     course_notes_skill = resolve_artifact_skill_definition("course_notes")
     video_summary_skill = resolve_artifact_skill_definition("video_summary")
@@ -860,6 +862,142 @@ def test_artifact_skill_catalog_should_expose_builtin_skill_metadata() -> None:
     assert video_summary_skill.requires_url_input is True
     assert video_summary_skill.url_input_keys == ["url", "video_url"]
     assert video_summary_skill.input_schema["required"] == ["url"]
+
+
+def test_mindmap_skill_should_compile_to_safe_hierarchical_markdown() -> None:
+    task_input = _build_task_input(
+        task_id="mindmap-job",
+        target_id="artifact-mindmap-1",
+        action_key="",
+        skill_key="mindmap_from_workspace",
+        style_profile_key="default",
+        structure_constraints=["输出单一根节点、主分支和短语化节点。"],
+        generation_brief="把当前资料整理为思维导图。",
+        user_requirement="突出证据、结论与后续行动。",
+        source_scope=[{
+            "source_id": "src-mindmap-1",
+            "title": "产物可视化设计",
+            "summary": "用受控 Markdown 真源生成可交互的知识导图。",
+        }],
+        inputs={"language": "zh-CN", "layout": "compact", "depth": "3"},
+    )
+    plan = build_execution_plan(task_input)
+    markdown = render_markdown(task_input, plan, [
+        ArtifactSectionDraft(
+            heading="核心能力",
+            body="交互式缩放。分支折叠。来源可追溯。额外细节。",
+            source_refs=["产物可视化设计"],
+        ),
+        ArtifactSectionDraft(
+            heading="后续升级",
+            body="加入 Mermaid；加入 Vega-Lite；接入演示文稿。",
+            source_refs=[],
+        ),
+        ArtifactSectionDraft(
+            heading="核心结论",
+            body=(
+                "输出单一根节点、4 到 7 条主分支和短语化节点”，"
+                "当前资料已经形成可追溯的工作流。"
+            ),
+            source_refs=[],
+        ),
+    ])
+
+    assert resolve_artifact_title(task_input, plan) == "工作台知识导图"
+    assert resolve_action_key_from_skill_key("mindmap_from_workspace") == "MINDMAP"
+    assert plan.action_key == "MINDMAP"
+    assert plan.artifact_type == "MINDMAP"
+    assert plan.execution_spec.output_shape == "MINDMAP_MARKDOWN"
+    assert markdown.startswith("# 工作台知识导图\n")
+    assert "## 核心能力" in markdown
+    assert "- 交互式缩放" in markdown
+    assert "- 额外细节" not in markdown
+    assert "输出单一根节点" not in markdown
+    assert "- 当前资料已经形成可追溯的工作流" in markdown
+    assert "## 来源" in markdown
+    assert "- 产物可视化设计" in markdown
+    assert "Generation Goal" not in markdown
+
+
+def test_run_mindmap_skill_should_pass_its_own_output_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeLlmClient(
+        {
+            "artifact.generate": r"""
+            {
+              "sections": [
+                {"heading": "产品入口", "body": "工作台入口与空状态。", "source_refs": ["产品入口与空状态 QA"]},
+                {"heading": "资料状态", "body": "资料范围与索引状态。", "source_refs": ["产品入口与空状态 QA"]},
+                {"heading": "跨模块检查点", "body": "Research、Wiki 与 Artifact。", "source_refs": ["产品入口与空状态 QA"]}
+              ]
+            }
+            """
+        }
+    )
+    monkeypatch.setattr(runner_module, "build_default_llm_client", lambda: fake)
+    task_input = _build_task_input(
+        task_id="mindmap-contract-job",
+        target_id="artifact-mindmap-contract-1",
+        action_key="",
+        skill_key="mindmap_from_workspace",
+        style_profile_key="default",
+        structure_constraints=["输出单一根节点、主分支和短语化节点。"],
+        generation_brief="把当前资料整理为思维导图。",
+        user_requirement="围绕产品入口与资料状态，保留来源线索。",
+        source_scope=[{
+            "source_id": "src-mindmap-contract-1",
+            "title": "产品入口与空状态 QA",
+            "summary": "验证工作台入口、资料状态和跨模块检查点。",
+        }],
+        inputs={"language": "zh-CN", "layout": "compact", "depth": "3"},
+    )
+
+    _, result = run_artifact_task(task_input)
+
+    assert result.job_snapshot.action_key == "MINDMAP"
+    assert result.version_snapshot.artifact_type == "MINDMAP"
+    assert result.result_payload["verification"]["status"] == "PASS"
+    assert result.result_payload["verification"]["failed_checks"] == []
+    markdown = result.result_payload["markdown"]
+    assert markdown.startswith("# 工作台知识导图\n")
+    assert "## 关键概念" in markdown
+    assert "## 证据脉络" in markdown
+    assert "## 后续行动" in markdown
+    assert "## 产品入口" not in markdown
+    assert "### 主题快照" not in markdown
+    assert "Node-level repair inserted" not in markdown
+    assert "配方重点" not in markdown
+    assert "任务重点" not in markdown
+    assert "- 提炼核心概念、关键对象与关系" in markdown
+
+
+def test_outline_repair_should_use_task_source_and_recipe_context() -> None:
+    task_input = _build_generic_task_input("report")
+    plan = build_execution_plan(task_input)
+    skill = resolve_skill_definition("generic_section_writer")
+
+    verified_output, verification_status, _, repair_actions = (
+        _verify_and_repair_skill_output(
+            skill=skill,
+            output={"sections": []},
+            task_input=task_input,
+            plan=plan,
+            state={"prompt_recipe": plan.prompt_recipe},
+        )
+    )
+
+    repaired_sections = verified_output["sections"]
+    evidence_section = next(
+        section for section in repaired_sections if section.heading == "证据综述"
+    )
+    assert verification_status == "PASS_WITH_REPAIR"
+    assert repair_actions
+    assert evidence_section.source_refs == ["产物模块总设计", "技能图运行时"]
+    assert "产物模块总设计、技能图运行时" in evidence_section.body
+    assert "配方重点" not in evidence_section.body
+    assert "任务重点" not in evidence_section.body
+    assert "Node-level repair inserted" not in evidence_section.body
 
 
 def test_build_execution_plan_should_reject_unknown_skill_key() -> None:

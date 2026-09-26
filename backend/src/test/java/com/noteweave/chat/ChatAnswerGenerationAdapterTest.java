@@ -42,4 +42,46 @@ class ChatAnswerGenerationAdapterTest {
         assertThat(chunks).isNotEmpty();
         assertThat(adapter.configuredModel()).isEqualTo("template-fallback");
     }
+
+    @Test
+    void templateFallbackShouldRejectEmptyDraft() {
+        ChatLlmClient client = mock(ChatLlmClient.class);
+        when(client.isEnabled()).thenReturn(false);
+        ChatAnswerGenerationAdapter adapter = new ChatAnswerGenerationAdapter(
+                mock(JdbcTemplate.class), client, true);
+
+        assertThatThrownBy(() -> adapter.generate("  ", 1200, ignored -> {}))
+                .isInstanceOfSatisfying(BusinessException.class, error -> {
+                    assertThat(error.code()).isEqualTo("ANSWER_TEMPLATE_EMPTY_RESPONSE");
+                    assertThat(error.status()).isEqualTo(HttpStatus.BAD_GATEWAY);
+                });
+    }
+
+    @Test
+    void enabledLlmShouldRejectEmptyGeneration() {
+        ChatLlmClient client = mock(ChatLlmClient.class);
+        when(client.isEnabled()).thenReturn(true);
+        when(client.streamChat(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyInt(),
+                org.mockito.ArgumentMatchers.<java.util.function.Consumer<String>>any()))
+                .thenReturn("  ");
+        ChatAnswerGenerationAdapter adapter = new ChatAnswerGenerationAdapter(
+                mock(JdbcTemplate.class), client, false);
+
+        assertThatThrownBy(() -> adapter.generate("draft", 1200, ignored -> {}))
+                .isInstanceOfSatisfying(BusinessException.class, error -> {
+                    assertThat(error.code()).isEqualTo("ANSWER_LLM_EMPTY_RESPONSE");
+                    assertThat(error.status()).isEqualTo(HttpStatus.BAD_GATEWAY);
+                });
+    }
+
+    @Test
+    void replayChunksShouldNotEmitEmptyDelta() {
+        ChatAnswerGenerationAdapter adapter = new ChatAnswerGenerationAdapter(
+                mock(JdbcTemplate.class), mock(ChatLlmClient.class), true);
+
+        assertThat(adapter.replayChunks("  ")).isEmpty();
+    }
 }

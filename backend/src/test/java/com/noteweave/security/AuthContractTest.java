@@ -29,6 +29,121 @@ class AuthContractTest {
     @Autowired ObjectMapper objectMapper;
 
     @Test
+    void registrationShouldCreateAHashedCredentialAndAuthenticatedSession() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        String username = "registered-" + suffix;
+        String email = username + "@noteweave.test";
+        String password = "Correct-Horse-" + suffix;
+
+        String registrationJson = mockMvc.perform(post("/api/v2/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of(
+                                "username", username,
+                                "email", email,
+                                "password", password))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.user.username").value(username))
+                .andExpect(jsonPath("$.data.user.email").value(email))
+                .andReturn().getResponse().getContentAsString();
+
+        JsonNode registration = objectMapper.readTree(registrationJson).path("data");
+        String accessToken = registration.path("access_token").asText();
+        String storedPasswordHash = jdbcTemplate.queryForObject(
+                "select password_hash from users where username = ?", String.class, username);
+        assertThat(storedPasswordHash).isNotEqualTo(password);
+        assertThat(passwordHasher.matches(password, storedPasswordHash)).isTrue();
+
+        mockMvc.perform(get("/api/v2/auth/session")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.username").value(username));
+    }
+
+    @Test
+    void registrationShouldRejectDuplicateUsernameOrEmail() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        String username = "duplicate-" + suffix;
+        String email = username + "@noteweave.test";
+        String password = "Correct-Horse-" + suffix;
+        java.util.Map<String, String> registration = java.util.Map.of(
+                "username", username, "email", email, "password", password);
+
+        mockMvc.perform(post("/api/v2/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(registration)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/v2/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of(
+                                "username", username, "email", "other-" + email, "password", password))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("AUTH_REGISTRATION_CONFLICT"));
+
+        mockMvc.perform(post("/api/v2/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of(
+                                "username", "other-" + username, "email", email, "password", password))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("AUTH_REGISTRATION_CONFLICT"));
+    }
+
+    @Test
+    void registrationShouldValidatePublicCredentials() throws Exception {
+        mockMvc.perform(post("/api/v2/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"username":"no","email":"not-an-email","password":"short"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    void repeatedRegistrationAttemptsShouldBeRateLimitedAndAudited() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        String username = "limited-" + suffix;
+        String remoteAddress = "198.51.100.77";
+
+        for (int attempt = 0; attempt < 3; attempt++) {
+            var result = mockMvc.perform(post("/api/v2/auth/register")
+                    .with(request -> {
+                        request.setRemoteAddr(remoteAddress);
+                        return request;
+                    })
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(java.util.Map.of(
+                            "username", attempt == 1 ? username.toUpperCase() : username,
+                            "email", "limited-" + attempt + "-" + suffix + "@noteweave.test",
+                            "password", "Correct-Horse-" + suffix))));
+            if (attempt < 2) {
+                result.andExpect(status().isOk());
+            } else {
+                result.andExpect(status().isConflict())
+                        .andExpect(jsonPath("$.code").value("AUTH_REGISTRATION_CONFLICT"));
+            }
+        }
+
+        mockMvc.perform(post("/api/v2/auth/register")
+                        .with(request -> {
+                            request.setRemoteAddr(remoteAddress);
+                            return request;
+                        })
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of(
+                                "username", username,
+                                "email", "limited-final-" + suffix + "@noteweave.test",
+                                "password", "Correct-Horse-" + suffix))))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("AUTH_REGISTRATION_RATE_LIMITED"));
+
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from auth_registration_security_event
+                where outcome = 'RATE_LIMITED'
+                """, Integer.class)).isGreaterThanOrEqualTo(1);
+    }
+
+    @Test
     void loginRefreshSessionAndLogoutShouldUseHashedRotatingTokens() throws Exception {
         String suffix = UUID.randomUUID().toString();
         String userId = UUID.randomUUID().toString();

@@ -107,7 +107,7 @@ connect + retries * per_attempt_timeout < task_deadline
 
 无限重试会突破用户 Deadline，也会在下游恢复时制造重试风暴。指数退避加 Jitter 只用于可恢复错误，永久 Schema、权限和输入错误直接终态化。
 
-项目里可以对照两类 HTTP Client。Artifact Worker 由 `ArtifactWorkerRestClientFactory.create()` 构造 JDK HttpClient，Connect Timeout 默认 3 秒，`JdkClientHttpRequestFactory` 的 Read Timeout 默认 30 秒，分别被 `HttpArtifactOutboxPublisher` 和 `HttpArtifactWorkerControlClient` 使用。Embedding 与 Rerank Provider 也使用 JDK HttpClient，连接建立固定为 10 秒，单次请求分别使用配置中的 Query 10 秒、Batch 60 秒和 Rerank 20 秒，最大尝试次数默认 3。Provider 对 408、429 和 5xx 重试，对无效响应、维度不匹配等契约错误直接失败。当前调用链尚未实现统一 Deadline 和完整取消传播，因此不能把各层 Timeout 简单相加后声称满足端到端 SLA。面试时可以指出这个演进边界：下一步应把 Answer Run Deadline 向 Provider、Worker 和重试器下传，并确保剩余预算不足时不再开启新 Attempt。
+项目里可以对照两类 HTTP Client。Artifact Worker 控制面由 `ArtifactWorkerRestClientFactory.create()` 构造 JDK HttpClient，Connect Timeout 默认 3 秒，`JdkClientHttpRequestFactory` 的 Read Timeout 默认 30 秒，由 `HttpArtifactWorkerControlClient` 用于 Resume、Acquisition Ack 等短调用；Artifact 任务启动已改走 Kafka，不再受这两个 HTTP Timeout 控制。Embedding 与 Rerank Provider 也使用 JDK HttpClient，连接建立固定为 10 秒，单次请求分别使用配置中的 Query 10 秒、Batch 60 秒和 Rerank 20 秒，最大尝试次数默认 3。Provider 对 408、429 和 5xx 重试，对无效响应、维度不匹配等契约错误直接失败。当前调用链尚未实现统一 Deadline 和完整取消传播，因此不能把各层 Timeout 简单相加后声称满足端到端 SLA。面试时可以指出这个演进边界：下一步应把 Answer Run Deadline 向 Provider、Worker 和重试器下传，并确保剩余预算不足时不再开启新 Attempt。
 
 ## 10. DNS、TLS 与 SSRF
 
@@ -121,7 +121,7 @@ Research Worker 的真实入口在 `workers/research-worker/app/fetch_adapters.p
 
 CPU 高先看线程运行状态、热点方法和 GC，不直接加机器；内存高区分 Heap、Native、Direct Buffer 与 Page Cache；接口慢拆 Queue、DB、Provider 与 Streaming；线程数高检查阻塞点和线程池隔离；连接池 Pending 高检查慢 SQL、长事务和池大小。每次都要用指标和 Dump 验证假设。
 
-落到项目排障时，可以从 `OperationalMetricsBinder.bind()` 注册的指标开始：`noteweave.outbox.messages{status}` 判断积压在哪个状态，`noteweave.outbox.oldest_ready_age_seconds` 判断最老可派发消息等待多久，`noteweave.source.messages{status}` 和 `noteweave.source.projection_chunks{status}` 判断资料解析与 ES 投影是否卡住。实时回答还要结合各执行器 Active、Queue、Rejected，数据库看 Hikari Active、Pending，外部 Provider 看超时、429 和降级原因。一个具体判断是：Answer 慢但 Outbox Age 正常，进一步看 `answerIoExecutor` Queue；Queue 高且 Hikari Pending 为零，更可能是 Provider 等待；Hikari Pending 同时升高才继续查慢 SQL 和长事务。仓库提供 Micrometer 和 Actuator 指标，但没有完成全链路 OpenTelemetry Trace，所以跨 HTTP、Kafka 和 Worker 的关联主要依靠 RunId、TaskId、Attempt、SnapshotVersion 及结构化日志。
+落到项目排障时，可以从 `OperationalMetricsBinder.bind()` 注册的指标开始：`noteweave.outbox.messages{status}` 判断积压在哪个状态，`noteweave.outbox.oldest_ready_age_seconds` 判断最老可派发消息等待多久，`noteweave.source.messages{status}` 和 `noteweave.source.projection_chunks{status}` 判断资料解析与 ES 投影是否卡住。实时回答还要结合各执行器 Active、Queue、Rejected，数据库看 Hikari Active、Pending，外部 Provider 看超时、429 和降级原因。一个具体判断是：Answer 慢但 Outbox Age 正常，进一步看 `answerIoExecutor` Queue；Queue 高且 Hikari Pending 为零，更可能是 Provider 等待；Hikari Pending 同时升高才继续查慢 SQL 和长事务。仓库提供 Micrometer 和 Actuator 指标，跨 HTTP、Kafka 和 Worker 的关联主要依靠 RunId、TaskId、Attempt、SnapshotVersion 及结构化日志；当链路规模扩大时，再按新的排查成本增加指标维度。
 
 ## 12. HashMap、ConcurrentHashMap 与集合选择
 
@@ -193,7 +193,7 @@ NoteWeave 将实时执行器、调度器和普通请求线程池分开配置，�
 
 Singleton 表示同一个 ApplicationContext 内通常只有一个 Bean 实例，不等于 JVM 全局单例，也不自动线程安全；Request Scope 只适合 Web 请求生命周期，异步任务离开请求后不能继续依赖。优雅关闭时先停止接新任务，再等待在途任务、续租或保存 Checkpoint，最后释放线程池和连接。Destroy 回调有时间预算，不能把所有恢复逻辑只放在进程退出钩子中。
 
-项目启动和关闭都有具体落点。`NoteWeaveProperties` 通过 `@ConfigurationProperties(prefix = "noteweave")` 绑定层级配置，`ProductionConfigurationGuard.validateProductionConfiguration()` 在 `@PostConstruct` 阶段检查生产环境弱密钥、本地用户回退、QA MySQL 回退、Quota 本地回退、非 TLS Worker、Kafka、MinIO 与 ES 配置，违规时直接阻止应用启动。`MinioObjectStorage` 和 `InternalServiceAuthFilter` 也在初始化阶段校验依赖；`AuthBootstrapInitializer` 用 `ApplicationRunner` 处理启动后的认证初始化。关闭时，Answer I/O 与 SSE Dispatch 分别最多等待 20 秒和 10 秒，SSE Connection 与 Redis Bridge 不等待；两个 ScheduledExecutorService 通过 Bean 的 `destroyMethod = "shutdown"` 关闭。不同设置反映了业务语义：短任务尽量排空，长连接不能无限拖住停机。当前还不是完整的 Kubernetes Drain 方案，Compose 的 Restart Policy 也不能证明滚动发布期间零丢失，面试时应把 Bean 生命周期与部署编排边界分开。
+项目启动和关闭都有具体落点。`NoteWeaveProperties` 通过 `@ConfigurationProperties(prefix = "noteweave")` 绑定层级配置，`ProductionConfigurationGuard.validateProductionConfiguration()` 在 `@PostConstruct` 阶段检查生产环境弱密钥、本地用户回退、QA MySQL 回退、Quota 本地回退、非 TLS Worker、Kafka、MinIO 与 ES 配置，违规时直接阻止应用启动。`MinioObjectStorage` 和 `InternalServiceAuthFilter` 也在初始化阶段校验依赖；`AuthBootstrapInitializer` 用 `ApplicationRunner` 处理启动后的认证初始化。关闭时，Answer I/O 与 SSE Dispatch 分别最多等待 20 秒和 10 秒，SSE Connection 与 Redis Bridge 不等待；两个 ScheduledExecutorService 通过 Bean 的 `destroyMethod = "shutdown"` 关闭。不同设置反映了业务语义：短任务尽量排空，长连接不能无限拖住停机。若任务数量或长连接规模增加，再把 Drain、超时和连接迁移纳入部署验证，面试时把 Bean 生命周期与部署编排边界分开。
 
 ## 18. Java 高频题如何回答到项目层
 
@@ -283,9 +283,42 @@ Backend 调 Artifact Worker 的 Connect Timeout 为 3 秒、Read Timeout 为 30 
 | MDC 与 ThreadLocal | `RealtimeExecutorConfig`、`ResearchAgentCompletionMetrics` | `TaskDecorator`、`clearTransaction()` | 异常路径清理测试、回滚 Stage 指标 |
 | JVM 内存边界 | `SessionEventMux`、`ConversationEventMux`、Embedding 配置 | Replay 512、Subscriber Queue 64、Batch 32、Input 12000 | 有界队列测试、Heap Dump 与 GC Log |
 | Spring 事务代理 | `WikiIngestTransactionExecutor`、`SegmentSummaryPromotionService` | `execute()`、`noRollbackFor` | `WikiIngestFailureTransactionTest` |
-| HTTP 超时与重试 | `ArtifactWorkerRestClientFactory`、`OpenAiCompatibleEmbeddingClient`、`OpenAiCompatibleRerankClient` | Connect 3/10 秒、Read 30 秒、Provider Attempt 3 | `HttpArtifactOutboxPublisherTest`、Embedding 和 Rerank Client Test |
+| HTTP 超时与重试 | `ArtifactWorkerRestClientFactory`、`OpenAiCompatibleEmbeddingClient`、`OpenAiCompatibleRerankClient` | Artifact 控制面 Connect 3 秒、Read 30 秒；Provider Connect 10 秒、Attempt 3 | `HttpArtifactWorkerControlClientTest`、Embedding 和 Rerank Client Test |
 | DNS、TLS、SSRF | Research Worker `fetch_adapters.py`、`ResearchExternalSnapshotArchiveService` | `getaddrinfo()`、IP Pinning、逐跳 Redirect 校验、`validate()` | `test_fetch_adapters.py`、`ResearchExternalSnapshotArchiveServiceTest` |
 | 集合与复合原子操作 | `WorkloadQuotaService`、`SessionEventMux` | `computeIfAbsent()`、`compute()`、局部锁、Redis Lua | `WorkloadQuotaServiceTest`、`WorkloadQuotaRedisIntegrationTest` |
 | Record 与缓存 Key | `MemoryCompiledPackCache.CacheKey` | 六字段 Key、Envelope Key 二次相等校验 | `MemoryCompiledPackCacheTest` |
 | Bean 生命周期与启动门禁 | `ProductionConfigurationGuard`、`AuthBootstrapInitializer` | `@PostConstruct`、`ApplicationRunner`、Executor Shutdown | `ProductionConfigurationGuardTest` |
 | 排障指标 | `OperationalMetricsBinder` | Outbox 状态、Oldest Ready Age、Source 和 Projection 状态 | `OperationalMetricsBinderTest` |
+
+## 当前运行基线
+
+Backend 编译目标是 Java 17，Spring Boot 3.3.5 使用 JDBC、线程池和 `SseEmitter`；回答 SSE 默认连接超时 120 秒，连接被拒绝时必须转为可解释终态事件。Research/Artifact worker 是 Python 3.12，网络安全和 DNS 固定主要在 Research Worker fetch adapter 与 Java 归档校验两端完成。不要把 JVM 线程池参数或单机测试当成生产容量。
+
+## 22. Java 基础如何串成项目链路的 4 到 5 分钟回答
+
+如果面试官从 Java 基础追问到项目，我会沿“请求进入、事务提交、异步执行、事件交付”这条线讲，而不是把术语逐个背出来。HTTP 请求进入 Spring Controller 后，参数校验和身份过滤在边界完成，Service 负责 Workspace ACL、状态机、幂等和事务，JDBC DAO 用条件更新和受影响行数表达并发仲裁。事务提交后，Outbox 或 Task 把工作交给 Kafka 和 Worker，SSE 连接只负责传输持久化事件。这样可以把 JVM 内的线程安全、数据库的 CAS、跨进程的 Lease 和浏览器的重连放在同一张因果图里。
+
+Java 内存模型解决的是同一 JVM 内的可见性和重排，不解决多实例业务一致性。`volatile` 能让状态写入及时可见，但不能让 `count++` 变成原子操作；CAS 和 `AtomicInteger` 适合进程内计数，MySQL 的条件更新则像跨实例的业务 CAS，必须带状态、Attempt、Lease Epoch 或 Fencing Token。项目不会用 `synchronized` 保护所有 Service，因为它只能覆盖单 JVM，Outbox Claim、配额和任务所有权仍交给 MySQL 或 Redis。旧 Owner 即使读到相同 Task ID，也会因为代际 Token 不匹配而被拒绝，这正是防止 ABA 和晚到写回的关键。
+
+线程池也要按等待类型隔离。回答生成的阻塞 I/O、SSE 连接、事件 Dispatch、Redis Bridge 和后台 Outbox 不能共享一个无界公共池，否则长连接或外部 Provider 会挤占其他模块。队列有界、拒绝策略显式，线程数还要受 Hikari 连接池、Provider 并发、内存和下游速率限制约束。`CompletableFuture` 如果不指定 Executor 可能混入公共 ForkJoinPool，当前项目更主要使用注入 Executor、Kafka Consumer、Scheduler 和 Worker callback，所以回答时不能把不存在的异步抽象说成核心实现。MDC 可以传播 Trace，但用户身份不能只依赖 ThreadLocal，跨请求和 Worker 回调仍要用稳定 Token、Task 和 Fencing 重新认证。
+
+网络问题要按超时预算拆分。DNS、TCP 建连、TLS 握手、HTTP 读取、Kafka Poll、Provider 生成、数据库连接和 SSE 交付各自占用时间，单一的“接口超时”无法解释长尾。当前 Artifact 用 4200 秒 Max Poll 和 70 分钟 Delivery Lease 覆盖小时级任务；推荐改为 Kafka 快速登记 Durable Execution，长任务 Deadline、Heartbeat 和 Fencing 全部属于 Execution Lease。SSE 断线靠 Last-Event-ID 回放而不是重跑回答。SSRF 防护还要处理私网地址、DNS Rebinding、重定向和跨端口凭证。
+
+JVM 排障同样要结合业务。Heap 正常而进程 RSS 增长，可能是线程栈、Direct Memory 或 Native Allocation；Replay Queue、Subscriber Queue、Embedding Batch 和线程池队列有界，能够限制业务对象堆积，但 Backend 的生产 Heap 和 GC 参数仍需按部署环境验证。当前 Java 17、Spring Boot 3.3.5、Hikari、Kafka、Redis 和 SSE 的配置是保护基线，不是压测结论。面试回答的重点是知道哪一层负责什么，知道哪些机制只在进程内有效，并能说明测试和指标如何证明，而不是把“用了并发”和“用了线程池”当成结论。
+
+## 23. 必须独立讲三分钟的 Java 知识点
+
+| B 档知识点 | 三分钟主回答入口 | 一阶项目落点 | 二阶追问 |
+| --- | --- | --- | --- |
+| JMM、CAS 与 Fencing | 2、19.1 | Research Heartbeat、Outbox Claim | 为什么 `volatile` 不能保护多实例，数据库 CAS 与 CPU CAS 有什么不同，ABA 如何处理 |
+| 线程池、隔离与背压 | 4、19.1、20.1 | Answer I/O、SSE、Redis Bridge | 零队列为何适合阻塞 Pump，AbortPolicy 后业务返回什么，线程数为何受 Hikari 和 Provider 限制 |
+| JVM 内存、GC 与 Lease | 6、7、19.2、20.2 | 有界 Replay、Subscriber、Heartbeat | Heap 正常但 RSS 上升查什么，STW 超过 Lease 后如何保证正确性，调大 Heap 有什么反作用 |
+| Spring 事务与 Outbox | 8、19.3 | Wiki 事务执行器、业务状态与 Outbox | 自调用为何失效，`REQUIRES_NEW` 为什么会制造幽灵消息，外部 I/O 为什么不进长事务 |
+| HTTP Timeout 与 Unknown Outcome | 9、19.4、20.3 | Provider、Artifact 控制面、Callback | Read Timeout 后能否重试，Deadline 怎样向下传播，TCP 成功为何不等于业务成功 |
+| SSRF、DNS 与 TLS | 10、19.4 | Research Fetch Adapter | DNS Rebinding 怎么防，Redirect 为什么重新校验，为什么不能宣称所有出站链路都已沙箱化 |
+
+每个 B 档回答按“原理、项目反例、当前实现、失败窗口、验证与边界”组织，正常语速约三分钟。HashMap、泛型、Bean 生命周期等问题如果没有继续进入并发、安全或性能，只保留 30 到 90 秒速查，不重复完整项目故事。
+
+### 二阶回答示例：数据库 CAS 与 CPU CAS 是不是同一回事
+
+两者都包含“只有当前值仍等于期望值才更新”的思想，但实现层不同。CPU CAS 是单机共享内存上的原子指令，可能有自旋、ABA 和缓存一致性成本；数据库条件更新由 SQL、事务、索引和行锁完成，跨进程生效，还会受到隔离级别、锁等待和提交失败影响。NoteWeave 用 `status + attempt + owner/token` 组成期望状态，更新影响行数为零表示所有权或代际已经变化。它避免旧 Worker 覆盖新状态，却不能撤销旧 Worker 已经完成的外部副作用，因此还需要幂等键、Receipt 或对账。

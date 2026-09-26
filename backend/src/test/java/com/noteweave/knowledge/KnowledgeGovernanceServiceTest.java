@@ -2,10 +2,14 @@ package com.noteweave.knowledge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.noteweave.security.AuditActorProvider;
 import com.noteweave.workspace.WorkspaceQueryPort;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,6 +21,7 @@ class KnowledgeGovernanceServiceTest {
     private JdbcTemplate jdbcTemplate;
     private KnowledgeCommandService commandService;
     private KnowledgeGovernanceService governanceService;
+    private WorkspaceQueryPort workspaceQueryPort;
 
     @BeforeEach
     void setUp() {
@@ -27,7 +32,7 @@ class KnowledgeGovernanceServiceTest {
                 "");
         jdbcTemplate = new JdbcTemplate(dataSource);
         createSchema();
-        WorkspaceQueryPort workspaceQueryPort = mock(WorkspaceQueryPort.class);
+        workspaceQueryPort = mock(WorkspaceQueryPort.class);
         when(workspaceQueryPort.exists("workspace")).thenReturn(true);
         when(workspaceQueryPort.isWikiEnabled("workspace")).thenReturn(true);
         AuditActorProvider actorProvider = mock(AuditActorProvider.class);
@@ -49,6 +54,37 @@ class KnowledgeGovernanceServiceTest {
                 versionService,
                 mutationService,
                 commandService);
+    }
+
+    @Test
+    void backgroundWikiStatsShouldReadPersistedStateWithoutHttpWorkspaceIdentity() {
+        reset(workspaceQueryPort);
+
+        WikiStatsResponse stats = governanceService
+                .getWikiStatsForInternalExecution("workspace");
+
+        assertThat(stats.wikiEnabled()).isTrue();
+        verifyNoInteractions(workspaceQueryPort);
+    }
+
+    @Test
+    void pendingWikiTaskCountShouldExcludeTerminalFailuresAndCancellations() {
+        jdbcTemplate.update("""
+                insert into task(
+                    id, workspace_id, task_type, task_status,
+                    progress_phase, progress_message, target_type, target_id
+                ) values
+                    ('pending-task', 'workspace', 'WIKI_INGEST', 'PENDING',
+                     'QUEUED', 'queued', 'SOURCE', 'source'),
+                    ('failed-task', 'workspace', 'WIKI_INGEST', 'FAILED',
+                     'FAILED', 'failed', 'SOURCE', 'source'),
+                    ('cancelled-task', 'workspace', 'WIKI_RETRACT', 'CANCELLED',
+                     'CANCELLED', 'cancelled', 'SOURCE', 'source')
+                """);
+
+        WikiStatsResponse stats = governanceService.getWikiStats("workspace");
+
+        assertThat(stats.pendingTaskCount()).isEqualTo(1);
     }
 
     @Test
@@ -152,7 +188,47 @@ class KnowledgeGovernanceServiceTest {
                 """, Integer.class)).isEqualTo(1);
     }
 
+    @Test
+    void shouldCollapseDuplicateSourceCitationsAndOrderRelatedPagesByLatestUpdate() {
+        jdbcTemplate.update("""
+                insert into citation(id, source_id, title, quote_text)
+                values (?, ?, ?, ?), (?, ?, ?, ?)
+                """,
+                "citation-a", "source", "Source", "quote a",
+                "citation-b", "source", "Source", "quote b");
+        KnowledgeItemResponse older = commandService.createItemWithVersion(
+                "workspace", "WIKI", "Older page", "older", null,
+                List.of("citation-a", "citation-b"));
+        KnowledgeItemResponse newer = commandService.createItemWithVersion(
+                "workspace", "WIKI", "Newer page", "newer", null,
+                List.of("citation-a"));
+        jdbcTemplate.update(
+                "update knowledge_item set updated_at = ? where id = ?",
+                Timestamp.from(Instant.parse("2026-08-10T00:00:00Z")),
+                older.itemId());
+        jdbcTemplate.update(
+                "update knowledge_item set updated_at = ? where id = ?",
+                Timestamp.from(Instant.parse("2026-08-11T00:00:00Z")),
+                newer.itemId());
+
+        List<WikiTaskRelatedPageResponse> relatedPages =
+                governanceService.relatedWikiPagesForSource("workspace", "source", 3);
+
+        assertThat(relatedPages)
+                .extracting(WikiTaskRelatedPageResponse::itemId)
+                .containsExactly(newer.itemId(), older.itemId());
+    }
+
     private void createSchema() {
+        jdbcTemplate.execute("""
+                create table workspace(
+                    id varchar(36) primary key,
+                    status varchar(32) not null,
+                    wiki_enabled boolean not null
+                )
+                """);
+        jdbcTemplate.update(
+                "insert into workspace(id, status, wiki_enabled) values ('workspace', 'ACTIVE', true)");
         jdbcTemplate.execute("""
                 create table knowledge_item(
                     id varchar(36) primary key,

@@ -23,7 +23,7 @@ public class ArtifactOutboxDispatchScheduler {
     private final ArtifactOutboxDispatcherService dispatcherService;
     private final TaskExecutor artifactDispatchExecutor;
     private final AtomicBoolean dispatchRunning = new AtomicBoolean();
-    private int lastAlertedDeadLetterCount;
+    private int lastObservedDeadLetterCount = -1;
 
     public ArtifactOutboxDispatchScheduler(
             ArtifactOutboxDispatcherService dispatcherService,
@@ -54,10 +54,18 @@ public class ArtifactOutboxDispatchScheduler {
         try {
             dispatcherService.dispatchReadyArtifactJobs(10);
             int deadLetterCount = dispatcherService.metrics().deadLetterCount();
-            if (deadLetterCount > 0 && deadLetterCount != lastAlertedDeadLetterCount) {
+            if (lastObservedDeadLetterCount < 0) {
+                if (deadLetterCount > 0) {
+                    log.warn("Artifact outbox contains {} existing dead-letter message(s); no new dead letters observed",
+                            deadLetterCount);
+                }
+            } else if (deadLetterCount > lastObservedDeadLetterCount) {
                 log.error("Artifact outbox dead-letter alert: {} message(s) require operator review", deadLetterCount);
+            } else if (deadLetterCount < lastObservedDeadLetterCount) {
+                log.info("Artifact outbox dead-letter backlog decreased from {} to {}",
+                        lastObservedDeadLetterCount, deadLetterCount);
             }
-            lastAlertedDeadLetterCount = deadLetterCount;
+            lastObservedDeadLetterCount = deadLetterCount;
         } catch (RuntimeException ex) {
             log.warn("Artifact outbox dispatch cycle failed: {}", ex.getMessage());
         } finally {

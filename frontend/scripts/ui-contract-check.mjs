@@ -5,11 +5,14 @@ const read = (relativePath) => readFileSync(resolve(relativePath), "utf8");
 
 const appSource = read("src/App.tsx");
 const chatWorkbenchSource = read("src/features/conversations/ChatWorkbench.tsx");
+const chatSourcesPaneSource = read("src/features/conversations/ChatSourcesPane.tsx");
 const artifactRailSource = read("src/features/artifacts/ArtifactRail.tsx");
+const artifactUtilitySource = read("src/features/artifacts/ArtifactUtilityPanel.tsx");
 const researchWorkbenchSource = read("src/features/research/ResearchWorkbenchView.tsx");
 const shellSource = read("src/features/shell/WorkbenchShell.tsx");
 const shellBusySource = read("src/features/shell/useShellBusy.ts");
 const wikiControllerSource = read("src/features/knowledge/useWikiWorkbenchController.ts");
+const wikiIssueActionsSource = read("src/features/knowledge/useWikiIssueActions.ts");
 const researchControllerSource = read("src/features/research/useResearchWorkbenchController.ts");
 const chatControllerSource = read("src/features/conversations/useChatSessionController.ts");
 const routesSource = read("src/routes.tsx");
@@ -18,10 +21,13 @@ const stylesSource = read("src/styles.css");
 const surfaceSource = [
   appSource,
   chatWorkbenchSource,
+  chatSourcesPaneSource,
   artifactRailSource,
+  artifactUtilitySource,
   researchWorkbenchSource,
   shellSource,
   wikiControllerSource,
+  wikiIssueActionsSource,
   researchControllerSource,
   chatControllerSource
 ].join("\n");
@@ -47,8 +53,8 @@ const requiredSnippets = [
   { label: "品牌标题", source: shellSource, snippet: "<h1 className=\"global-rail-brand-text\">NoteWeave</h1>" },
   { label: "WorkbenchShell", source: appSource, snippet: "WorkbenchShell" },
   { label: "左导航", source: shellSource, snippet: "global-rail" },
-  { label: "Chat 资料区", source: chatWorkbenchSource, snippet: "sources-pane" },
-  { label: "source-drawer 兼容 class", source: chatWorkbenchSource, snippet: "source-drawer" },
+  { label: "Chat 资料区", source: chatSourcesPaneSource, snippet: "sources-pane" },
+  { label: "source-drawer 兼容 class", source: chatSourcesPaneSource, snippet: "source-drawer" },
   {
     label: "Chat 内 Artifact lazy 边界",
     source: chatWorkbenchSource,
@@ -57,7 +63,7 @@ const requiredSnippets = [
   {
     label: "Artifact 按需 Suspense",
     source: chatWorkbenchSource,
-    snippet: "artifactRailOpen ? <Suspense"
+    snippet: "artifactRailOpen ? ("
   },
   {
     label: "模式情境条",
@@ -71,17 +77,17 @@ const requiredSnippets = [
   },
   {
     label: "Note 入库入口",
-    source: artifactRailSource,
+    source: artifactUtilitySource,
     snippet: "保存最新回答为 Note"
   },
   {
     label: "Wiki 构建开关文案",
-    source: artifactRailSource,
+    source: artifactUtilitySource,
     snippet: "开启 Wiki 构建"
   },
   {
     label: "进入 Wiki 工作台动作",
-    source: wikiControllerSource,
+    source: wikiIssueActionsSource,
     snippet: "进入 Wiki 工作台"
   },
   {

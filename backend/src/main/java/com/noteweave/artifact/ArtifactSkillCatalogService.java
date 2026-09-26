@@ -30,6 +30,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         register(skills, new ArtifactSkillDefinition("study_guide", "学习指南", languageOnlySchema()));
         register(skills, new ArtifactSkillDefinition("quiz_pack", "测验题集", languageOnlySchema()));
         register(skills, new ArtifactSkillDefinition("wiki_page", "Wiki 页面", languageOnlySchema()));
+        register(skills, new ArtifactSkillDefinition("mindmap_from_workspace", "思维导图", mindMapSchema()));
         register(skills, new ArtifactSkillDefinition("bilibili_course_note_pdf", "B站讲义 PDF", languageAndUrlSchema(true)));
         register(skills, new ArtifactSkillDefinition("report_draft", "结构化报告", languageOnlySchema()));
         register(skills, new ArtifactSkillDefinition("faq_draft", "FAQ 草稿", languageOnlySchema()));
@@ -47,6 +48,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
                 Map.entry("study_guide", "STUDY_GUIDE"),
                 Map.entry("quiz_pack", "QUIZ"),
                 Map.entry("wiki_page", "WIKI_PAGE"),
+                Map.entry("mindmap_from_workspace", "MINDMAP"),
                 Map.entry("bilibili_course_note_pdf", "COURSE_NOTES"),
                 Map.entry("report_draft", "REPORT"),
                 Map.entry("faq_draft", "FAQ"),
@@ -164,6 +166,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
             case "study_guide" -> "按知识点、关键概念和练习建议生成结构化学习材料";
             case "quiz_pack" -> "围绕当前资料生成题目、答案解析和评分要点";
             case "wiki_page" -> "沉淀成定义、机制、引用和相关页面齐全的知识页草稿";
+            case "mindmap_from_workspace" -> "把当前工作台资料整理为可缩放、可折叠的交互式思维导图";
             case "bilibili_course_note_pdf" -> "面向 B 站视频链接生成图文讲义与 PDF 讲义任务";
             case "report_draft" -> "生成结构化报告草稿";
             case "faq_draft" -> "生成 FAQ 草稿";
@@ -301,6 +304,29 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         );
     }
 
+    private Map<String, Object> mindMapSchema() {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("language", languageSchema());
+        properties.put("layout", Map.of(
+                "type", "string",
+                "default", "balanced",
+                "oneOf", List.of(
+                        Map.of("const", "balanced", "title", "均衡分支"),
+                        Map.of("const", "compact", "title", "紧凑概览")
+                )
+        ));
+        properties.put("depth", Map.of(
+                "type", "string",
+                "default", "3",
+                "oneOf", List.of(
+                        Map.of("const", "2", "title", "2 层，快速浏览"),
+                        Map.of("const", "3", "title", "3 层，推荐"),
+                        Map.of("const", "4", "title", "4 层，详细")
+                )
+        ));
+        return Map.of("type", "object", "properties", Map.copyOf(properties));
+    }
+
     private Map<String, Object> languageAndUrlSchema(boolean required) {
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put("language", languageSchema());
@@ -328,6 +354,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
             case "study_guide" -> List.of("突出关键概念", "加入练习路径", "适合新人上手");
             case "quiz_pack" -> List.of("区分题型难度", "附标准答案", "保留评分要点");
             case "wiki_page" -> List.of("定义先行", "补充关键机制", "保留相关页面建议");
+            case "mindmap_from_workspace" -> List.of("4 到 7 条主分支", "节点使用短语", "保留来源线索");
             case "bilibili_course_note_pdf" -> List.of("填写 B 站视频链接", "保留章节结构", "输出讲义 PDF");
             case "report_draft" -> List.of("问题-方法-效果", "保留关键证据", "适合方案沉淀");
             case "faq_draft" -> List.of("面向帮助中心", "问题答案成对", "补充使用说明");

@@ -1,0 +1,23 @@
+[
+  {
+    "branch_id": "14d28469-bc4d-4381-bb33-db33569ecf5a",
+    "conflict_score": null,
+    "created_at": "2026-09-18 08:12:38.000000",
+    "evidence_id": null,
+    "id": "e4b0ef76-9ecf-47f6-9e45-d7df783e815d",
+    "read_focus": "验证真实联网检索、网页读取、证据抽取、Table-as-State、Verifier 与最终报告链路",
+    "relation_type": null,
+    "repair_hint": null,
+    "research_run_id": "31d1d44f-85b9-44e3-b1fd-89dcbefa3c14",
+    "row_key": "subject",
+    "row_status": "DISCOVERED",
+    "search_query": "截至 2026 年 9 月，比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的主要差异。必须引用两家公司官方文档，并给出可核验 URL。验收标记：NW-E2E-2026-09-18 16:12:37",
+    "source_id": null,
+    "source_title": "Subject",
+    "support_level": null,
+    "support_score": null,
+    "updated_at": "2026-09-18 08:12:38.000000",
+    "verification_status": "PENDING",
+    "verifier_note": null
+  }
+]

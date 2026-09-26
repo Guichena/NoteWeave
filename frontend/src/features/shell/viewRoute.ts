@@ -1,4 +1,4 @@
-export type AppView = "chat" | "wiki" | "memory" | "research";
+export type AppView = "chat" | "library" | "wiki" | "memory" | "research";
 
 export type ParsedAppLocation = {
   view: AppView;
@@ -7,6 +7,8 @@ export type ParsedAppLocation = {
 
 export function pathForView(view: AppView, wikiPath?: string | null): string {
   switch (view) {
+    case "library":
+      return "/library";
     case "research":
       return "/research";
     case "memory":
@@ -21,6 +23,9 @@ export function pathForView(view: AppView, wikiPath?: string | null): string {
 
 export function parseAppLocation(pathname: string): ParsedAppLocation {
   const path = pathname || "/";
+  if (path === "/library" || path.startsWith("/library/")) {
+    return { view: "library", path: "/library" };
+  }
   if (path === "/research" || path.startsWith("/research/")) {
     return { view: "research", path: "/research" };
   }

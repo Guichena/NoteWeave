@@ -1,73 +1,9 @@
-type TraceTone = "search" | "read" | "workspace";
-
-type TraceAuditTarget = {
-  traceIndex: number;
-  checkpointNo: number | null;
-  branchId: string;
-};
-
-type TraceCard = {
-  key: string;
-  anchorId: string;
-  traceType: string;
-  traceMessage: string;
-  roundNo: number | null;
-  narrative: string;
-  createdAt: string;
-  checkpointNarrative: string;
-  auditFocusNarrative: string;
-  recoveryNarrative: string;
-  sourceNarrative: string;
-  outcomeNarrative: string;
-  primaryUrl: string;
-  primarySourceId: string;
-  primarySourceInScope: boolean;
-  hasPrimarySourceAsset: boolean;
-  checkpointNo: number | null;
-  kind: TraceTone;
-  focused: boolean;
-  selected: boolean;
-  auditTarget: TraceAuditTarget;
-};
-
-type TraceGroup = {
-  title: string;
-  stageLabel: string;
-  description: string;
-  empty: string;
-  tone: TraceTone;
-  roundMessage: string;
-  entries: TraceCard[];
-};
-
-type TraceDetail = {
-  tone: TraceTone;
-  title: string;
-  stageLabel: string;
-  traceType: string;
-  traceMessage: string;
-  roundNo: number | null;
-  narrative: string;
-  createdAt: string;
-  checkpointNarrative: string;
-  recoveryNarrative: string;
-  primaryUrl: string;
-  primaryUrlLabel: string;
-  sourceNarrative: string;
-  provider: string;
-  adapter: string;
-  snapshotStatus: string;
-  checkpointNo: number | null;
-  primarySourceId: string;
-  primarySourceInScope: boolean;
-  hasPrimarySourceAsset: boolean;
-  querySamples: string[];
-  searchAngles: string[];
-  readFocuses: string[];
-  outcomeNarrative: string;
-  kind: TraceTone;
-  auditTarget: TraceAuditTarget;
-};
+import type {
+  TraceAuditTarget,
+  TraceCard,
+  TraceDetail,
+  TraceGroup
+} from "./researchDetailViewModel";
 
 type ResearchProcessTraceBrowserProps = {
   groups: TraceGroup[];

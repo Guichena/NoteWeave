@@ -6,7 +6,8 @@ import math
 from typing import Callable
 
 from app.branch import plan_branch_recovery
-from app.extractor import extract_evidence_cards
+from app.extraction_result import ExtractionResult
+from app.extractor import extract_evidence_cards_detailed
 from app.fetch_adapters import run_research_fetch
 from app.llm_client import LlmClient
 from app.models import (
@@ -49,6 +50,8 @@ class ResearchRoundArtifacts:
     global_result: GlobalVerifierResult
     tool_traces: list[ResearchStepTrace] = field(default_factory=list)
     evidence_horizon_decisions: list[dict[str, object]] = field(default_factory=list)
+    # DR-202: 本轮结构化抽取出口（含拒绝原因计数），供 Cell 恢复策略决策使用。
+    extraction_result: ExtractionResult | None = None
 
 
 class ResearchToolbox:
@@ -146,7 +149,7 @@ class ResearchToolbox:
         )
 
         extract_started = _utc_now()
-        evidence_cards, extract_trace = self.extract_evidence(
+        evidence_cards, extract_trace, extraction_result = self.extract_evidence(
             task_input,
             plan,
             read_windows,
@@ -262,6 +265,7 @@ class ResearchToolbox:
             local_result,
             ledger,
             branch_decisions,
+            evidence_cards,
             round_no=round_no,
         )
         global_trace = _observe_trace(global_trace, global_started, 1)
@@ -355,6 +359,7 @@ class ResearchToolbox:
             global_result=global_result,
             tool_traces=all_tool_traces,
             evidence_horizon_decisions=horizon_decisions,
+            extraction_result=extraction_result,
         )
 
     def _check_cancelled(self) -> None:
@@ -397,7 +402,9 @@ class ResearchToolbox:
         recovery_mode: str,
     ) -> tuple[list[ResearchSearchHit], ResearchStepTrace]:
         query_plan = build_search_query_plan(plan)
-        if recovery_mode == "EXTRACT_AGAIN" and prior_artifacts is not None:
+        # DR-202: RETRY_EXTRACTION(EXTRACT_AGAIN) 与 REREAD_WINDOW 都不得重复搜索；
+        # REREAD_WINDOW 只重开窗口，因此复用已抓取的 hits。
+        if recovery_mode in {"EXTRACT_AGAIN", "REREAD_WINDOW"} and prior_artifacts is not None:
             hits = list(prior_artifacts.search_hits)
             return hits, _build_tool_trace(
                 round_no=round_no,
@@ -436,7 +443,7 @@ class ResearchToolbox:
             plan,
             remaining_budget=round_budget,
         )
-        if recovery_mode in {"READ_MORE", "COUNTERFACTUAL_RECHECK"} and prior_artifacts is not None:
+        if recovery_mode in {"READ_MORE", "COUNTERFACTUAL_RECHECK", "TARGETED_SEARCH"} and prior_artifacts is not None:
             hits = _merge_models(
                 prior_artifacts.search_hits,
                 current_hits,
@@ -496,7 +503,7 @@ class ResearchToolbox:
         prior_artifacts: ResearchRoundArtifacts | None,
         recovery_mode: str,
     ) -> tuple[list[ResearchFetchedDocument], ResearchStepTrace]:
-        if recovery_mode == "EXTRACT_AGAIN" and prior_artifacts is not None and prior_artifacts.fetched_documents:
+        if recovery_mode in {"EXTRACT_AGAIN", "REREAD_WINDOW"} and prior_artifacts is not None and prior_artifacts.fetched_documents:
             documents = list(prior_artifacts.fetched_documents)
             return documents, _build_tool_trace(
                 round_no=round_no,
@@ -508,7 +515,7 @@ class ResearchToolbox:
             )
 
         current_documents = run_research_fetch(task_input, plan, search_hits)
-        if recovery_mode in {"READ_MORE", "COUNTERFACTUAL_RECHECK"} and prior_artifacts is not None:
+        if recovery_mode in {"READ_MORE", "COUNTERFACTUAL_RECHECK", "TARGETED_SEARCH"} and prior_artifacts is not None:
             documents = _merge_models(
                 prior_artifacts.fetched_documents,
                 current_documents,
@@ -578,7 +585,12 @@ class ResearchToolbox:
             plan,
             fetched_documents=fetched_documents,
         )
-        if recovery_mode in {"READ_MORE", "COUNTERFACTUAL_RECHECK"} and prior_artifacts is not None:
+        if recovery_mode in {
+            "READ_MORE",
+            "COUNTERFACTUAL_RECHECK",
+            "TARGETED_SEARCH",
+            "REREAD_WINDOW",
+        } and prior_artifacts is not None:
             windows = _merge_models(
                 prior_artifacts.read_windows,
                 current_windows,
@@ -632,8 +644,9 @@ class ResearchToolbox:
         *,
         round_no: int,
         recovery_mode: str,
-    ) -> tuple[list[ResearchEvidenceCard], ResearchStepTrace]:
-        evidence_cards = extract_evidence_cards(
+    ) -> tuple[list[ResearchEvidenceCard], ResearchStepTrace, ExtractionResult]:
+        # DR-202: 走结构化出口，随卡片一起返回拒绝原因，供 Cell 恢复策略决策。
+        extraction_result = extract_evidence_cards_detailed(
             task_input,
             plan,
             read_windows,
@@ -641,7 +654,7 @@ class ResearchToolbox:
         )
         evidence_cards = [
             card.model_copy(update={"discovery_round": round_no})
-            for card in evidence_cards
+            for card in extraction_result.accepted_cards
         ]
         conflict_count = sum(1 for card in evidence_cards if card.relation_type == "CONFLICTS")
         support_count = sum(1 for card in evidence_cards if card.relation_type == "SUPPORTS")
@@ -661,9 +674,12 @@ class ResearchToolbox:
                 "conflict_card_count": conflict_count,
                 "support_card_count": support_count,
                 "weak_support_card_count": weak_support_count,
+                "extraction_termination_reason": extraction_result.termination_reason.value,
+                "extraction_rejected_count": extraction_result.rejected_count,
+                "extraction_rejection_counts": extraction_result.rejection_counts(),
             },
             warnings=["evidence extraction produced no cards"] if not evidence_cards else [],
-        )
+        ), extraction_result
 
     def update_state_ledger(
         self,
@@ -1087,10 +1103,11 @@ class ResearchToolbox:
         local_result: LocalVerifierResult,
         ledger: ResearchStateLedger,
         branch_decisions: list[ResearchBranchDecision],
+        evidence_cards: list[ResearchEvidenceCard] | None = None,
         *,
         round_no: int,
     ) -> tuple[GlobalVerifierResult, ResearchStepTrace]:
-        global_result = run_global_verifier(local_result, ledger, branch_decisions)
+        global_result = run_global_verifier(local_result, ledger, branch_decisions, evidence_cards)
         return global_result, _build_tool_trace(
             round_no=round_no,
             tool_name="verify_global",

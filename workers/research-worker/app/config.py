@@ -31,7 +31,13 @@ class Settings(BaseSettings):
     research_agent_bundle_max_cells: int = 3
     research_agent_consumer_enabled: bool = True
     research_agent_deep_cell_executor_enabled: bool = True
+    research_agent_evidence_audit_enabled: bool = False
+    research_agent_synthesis_enabled: bool = False
+    research_agent_wide_discovery_enabled: bool = False
     research_agent_fake_provider_enabled: bool = False
+    research_agent_fault_invalid_json: bool = False
+    research_agent_fault_tamper_quote: bool = False
+    research_agent_fault_crash_after_archive: bool = False
     research_agent_worker_instance_id: str = Field(default_factory=lambda: _default_worker_instance_id())
     research_agent_lease_seconds: int = Field(default=60, ge=4, le=3600)
     research_agent_heartbeat_interval_seconds: float | None = Field(default=None, gt=0)
@@ -118,6 +124,14 @@ class Settings(BaseSettings):
         if request_timeout >= interval:
             raise ValueError("heartbeat request timeout must be less than heartbeat interval")
         if self._is_production():
+            if self.research_agent_fake_provider_enabled:
+                raise ValueError("production forbids the deterministic fake research provider")
+            if self.research_agent_fault_invalid_json:
+                raise ValueError("production forbids research fault injection")
+            if self.research_agent_fault_tamper_quote:
+                raise ValueError("production forbids research quote-tamper injection")
+            if self.research_agent_fault_crash_after_archive:
+                raise ValueError("production forbids research crash injection")
             if not os.environ.get("NOTEWEAVE_RESEARCH_INTERNAL_AUTH_TOKEN", "").strip():
                 raise ValueError("production requires NOTEWEAVE_RESEARCH_INTERNAL_AUTH_TOKEN")
             if not self.internal_auth_token.strip() or len(self.internal_auth_token.strip()) < 24:

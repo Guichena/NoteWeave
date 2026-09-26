@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import signal
 import sys
@@ -33,6 +34,9 @@ from app.execution_control import (
     require_execution_active,
 )
 from app.drain_control import DrainAwareKafkaMessages, DrainCoordinator, DrainGraceExpired, DrainRequested
+
+
+logger = logging.getLogger(__name__)
 from app.task_snapshot_contract import TaskSnapshotTrustError, require_trusted_claim_snapshot
 from app.research_agent_completion_contract import (
     ResearchAgentCompletionEnvelope,
@@ -255,7 +259,7 @@ def consume_research_agent_commands(
                 exc,
             )
             dead_letters += 1
-            _commit_if_supported(messages)
+            _commit_if_supported(messages, message)
             continue
 
         last_error: Exception | None = None
@@ -303,6 +307,12 @@ def consume_research_agent_commands(
                 except Exception as exc:
                     last_error = exc
                     failed_attempts += 1
+                    logger.exception(
+                        "Research agent command failed task_id=%s delivery_attempt=%s error_type=%s",
+                        command.agent_task_id,
+                        command.delivery_attempt,
+                        type(exc).__name__,
+                    )
                     if not _is_retryable_agent_error(exc):
                         break
                     if attempt_index + 1 < attempts_limit and backoff_base_seconds > 0:
@@ -315,11 +325,11 @@ def consume_research_agent_commands(
 
         if did_complete:
             completed += 1
-            _commit_if_supported(messages)
+            _commit_if_supported(messages, message)
             continue
         if did_skip:
             skipped += 1
-            _commit_if_supported(messages)
+            _commit_if_supported(messages, message)
             continue
 
         failed_messages += 1
@@ -331,7 +341,7 @@ def consume_research_agent_commands(
         )
         _report_failure_or_stop(failure_reporter, command, record, last_error)
         dead_letters += 1
-        _commit_if_supported(messages)
+        _commit_if_supported(messages, message)
 
     return KafkaConsumeSummary(
         consumed_count=consumed,
@@ -407,11 +417,27 @@ def run_research_agent_kafka_consumer_forever(executor: AgentExecutor | None = N
     )
     if executor is None:
         from app.deep_cell_executor import DeepCellExecutor
+        from app.authoritative_role_router import AuthoritativeRoleRouter
+        from app.evidence_audit_executor import EvidenceAuditExecutor
+        from app.synthesis_executor import SynthesisExecutor
+        from app.discovery_executor import DiscoveryExecutor
         if settings.research_agent_fake_provider_enabled:
             from app.deterministic_fake_toolchain import DeterministicFakeToolchain
-            executor = DeepCellExecutor(client, worker_instance_id, toolchain=DeterministicFakeToolchain(), enable_llm=False)
+            deep_executor = DeepCellExecutor(client, worker_instance_id, toolchain=DeterministicFakeToolchain(), enable_llm=False)
         else:
-            executor = DeepCellExecutor(client, worker_instance_id)
+            deep_executor = DeepCellExecutor(client, worker_instance_id)
+        executors = {"DEEP_CELL": deep_executor, "COUNTERFACTUAL": deep_executor}
+        enabled_roles = {"DEEP_CELL", "COUNTERFACTUAL"}
+        if settings.research_agent_evidence_audit_enabled:
+            executors["EVIDENCE_AUDIT"] = EvidenceAuditExecutor(worker_instance_id)
+            enabled_roles.add("EVIDENCE_AUDIT")
+        if settings.research_agent_synthesis_enabled:
+            executors["SYNTHESIS"] = SynthesisExecutor(worker_instance_id)
+            enabled_roles.add("SYNTHESIS")
+        if settings.research_agent_wide_discovery_enabled:
+            executors["WIDE_DISCOVERY"] = DiscoveryExecutor(worker_instance_id)
+            enabled_roles.add("WIDE_DISCOVERY")
+        executor = AuthoritativeRoleRouter(executors, enabled_roles=enabled_roles)
     coordinator = DrainCoordinator()
     consumer = create_research_agent_kafka_consumer()
     messages = DrainAwareKafkaMessages(

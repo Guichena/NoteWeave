@@ -11,9 +11,7 @@ public interface ObjectStorage {
 
     boolean exists(String bucket, String objectKey);
 
-    default void delete(String bucket, String objectKey) {
-        throw new UnsupportedOperationException("delete not supported by this backend");
-    }
+    void delete(String bucket, String objectKey);
 
     String backendName();
 }

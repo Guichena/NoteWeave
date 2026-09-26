@@ -8,8 +8,11 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.Locale;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,8 +23,13 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class ResearchAgentTaskCoordinatorService {
-    private static final int MAX_CELLS_PER_TASK = 3;
-    private static final int MAX_EVIDENCE_CARDS_PER_CELL = 4;
+    // A DeepCell extraction is only reliable when the LLM has one authoritative
+    // target field. Bundling several schema columns lets one salient field consume
+    // the whole response and leaves sibling Cells without candidates.
+    private static final int MAX_CELLS_PER_TASK = 1;
+    // Must match deep_cell_executor.MAX_EVIDENCE_CARDS_PER_CELL. The worker
+    // deterministically caps admitted evidence before building candidates.
+    private static final int MAX_EVIDENCE_CARDS_PER_CELL = 6;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final ResearchAgentTaskService taskService;
@@ -53,11 +61,21 @@ public class ResearchAgentTaskCoordinatorService {
         if (waveNo < 1) throw new BusinessException("RESEARCH_AGENT_COORDINATOR_WAVE_INVALID", "Wave number must be positive");
         RunScope run = requireIncrementalRunnableRun(runId);
         ResearchBriefCompiler.CompiledBrief brief = researchBriefCompiler.compile(run.id(), run.question());
-        List<Map<String, Object>> sources = loadTrustedSources(run.workspaceId(), run.sourceScopeJson());
+        List<Map<String, Object>> sources = loadTrustedSources(
+                run.workspaceId(), run.sourceScopeJson(), run.retrievalMode());
         List<CellScope> cells = jdbcTemplate.query("""
                 select cell_key, cell_version, plan_revision, entity_set_version, high_risk, branch_id
                 from research_cell
-                where research_run_id = ? and cell_status not in ('FROZEN', 'VERIFIED') and active_task_id is null
+                where research_run_id = ? and cell_status in ('GAP', 'STALE', 'CANDIDATE_READY') and active_task_id is null
+                  and not exists (
+                    select 1 from research_verifier_decision decision
+                    where decision.research_run_id = research_cell.research_run_id
+                      and decision.target_id = research_cell.cell_key
+                      and decision.decision_status = 'OPEN'
+                      and decision.decision_type in (
+                        'QUORUM_REPAIR_REQUIRED', 'EVIDENCE_AUDIT_REPAIR_REQUIRED', 'EVIDENCE_AUDIT_BLOCKED'
+                      )
+                  )
                 order by cell_key
                 """, (rs, rowNum) -> new CellScope(rs.getString(1), rs.getInt(2), rs.getInt(3), rs.getInt(4),
                         rs.getBoolean(5), rs.getString(6)), runId);
@@ -90,8 +108,8 @@ public class ResearchAgentTaskCoordinatorService {
                         bundle.stream().map(CellScope::cellKey).toList(), snapshotBudget,
                         bundle.stream().map(cell -> new ResearchAgentTaskService.TargetCellBinding(cell.cellKey(), cell.version())).toList(),
                         new ResearchAgentTaskService.TaskExecutionContext("research-default",
-                                sourcePolicy(run, slotSources),
-                                brief.queryPolicy(), run.researchIntent(), run.controlPack())
+                                sourcePolicyForSlot(run, slotSources, candidateQuorum, candidateSlot),
+                                withEntityLabel(brief.queryPolicy(), run.id(), entityId), run.researchIntent(), run.controlPack())
                 ));
                 jdbcTemplate.update("""
                         update research_agent_task
@@ -127,7 +145,8 @@ public class ResearchAgentTaskCoordinatorService {
         }
         RunScope run = requireIncrementalRunnableRun(command.researchRunId());
         ResearchBriefCompiler.CompiledBrief brief = researchBriefCompiler.compile(run.id(), run.question());
-        List<Map<String, Object>> sources = loadTrustedSources(run.workspaceId(), run.sourceScopeJson());
+        List<Map<String, Object>> sources = loadTrustedSources(
+                run.workspaceId(), run.sourceScopeJson(), run.retrievalMode());
         List<CounterfactualTarget> targets = command.targets().stream()
                 .sorted(java.util.Comparator.comparing(CounterfactualTarget::cellKey).thenComparing(CounterfactualTarget::reasonDigest))
                 .toList();
@@ -142,20 +161,25 @@ public class ResearchAgentTaskCoordinatorService {
             List<Map<String, Object>> independentSources = sources.stream()
                     .filter(source -> !target.excludedSourceIds().contains(String.valueOf(source.get("source_id"))))
                     .toList();
-            if (independentSources.isEmpty() && !run.retrievalMode().usesWeb()) {
-                throw new BusinessException("RESEARCH_AGENT_REPAIR_SOURCE_SCOPE_EMPTY", "Counterfactual repair has no independent source scope");
+            if (independentSources.isEmpty() && run.retrievalMode().usesSeeds()) {
+                continue;
             }
             String fingerprint = repairFingerprint(run.id(), command.parentCheckpointSeq(), command.waveNo(), cell, target);
+            // DR-304: a conflict repair gets its own logical-key prefix so its attempts are
+            // independently countable, and its context carries the conflict trace anchor so the
+            // counterfactual is scoped to the exact claim, not merely to the cell.
+            String logicalPrefix = target.conflictAnchored() ? "conflict-counterfactual:" : "counterfactual:";
             TaskPriority priority = repairPriority(cell);
             Map<String, Object> snapshotBudget = new LinkedHashMap<>(deepCellBudget(1));
             ResearchAgentTaskService.TaskSnapshot task = taskService.createTask(new ResearchAgentTaskService.CreateTaskCommand(
-                    run.id(), "counterfactual:" + fingerprint, "repair:" + fingerprint, command.waveNo(), "COUNTERFACTUAL",
+                    run.id(), logicalPrefix + fingerprint, "repair:" + fingerprint, command.waveNo(), "COUNTERFACTUAL",
                     entityId(cell.cellKey()), "branch-counterfactual", cell.planRevision(), cell.entitySetVersion(),
                     List.of(cell.cellKey()), snapshotBudget,
                     List.of(new ResearchAgentTaskService.TargetCellBinding(cell.cellKey(), cell.version())),
                     new ResearchAgentTaskService.TaskExecutionContext("research-default",
                             repairSourcePolicy(run, independentSources, target.excludedSourceIds()),
-                            repairQueryPolicy(brief, target.reasonDigest(), command.parentCheckpointSeq()),
+                            withEntityLabel(repairQueryPolicy(brief, target.reasonDigest(), command.parentCheckpointSeq(),
+                                    target.conflictTraceId(), target.conflictEvidenceKeys()), run.id(), entityId(cell.cellKey())),
                             run.researchIntent(), run.controlPack())
             ));
             jdbcTemplate.update("""
@@ -165,7 +189,7 @@ public class ResearchAgentTaskCoordinatorService {
                         priority_score = ?, priority_reason = ?,
                         updated_at = current_timestamp
                     where id = ?
-                    """, "counterfactual:" + fingerprint, priority.score(), priority.reason(), task.taskId());
+                    """, logicalPrefix + fingerprint, priority.score(), priority.reason(), task.taskId());
             boolean existed = jdbcTemplate.queryForObject("select count(*) from research_budget_reservation where research_agent_task_id = ?", Integer.class, task.taskId()) > 0;
             budgetService.reserve(new ResearchBudgetAndCheckpointService.ReserveCommand(
                     run.id(), task.taskId(), "repair-reserve:" + fingerprint, deepCellBudget(1)));
@@ -201,6 +225,22 @@ public class ResearchAgentTaskCoordinatorService {
         return run;
     }
 
+    private Map<String, Object> withEntityLabel(
+            Map<String, Object> basePolicy,
+            String runId,
+            String entityId
+    ) {
+        Map<String, Object> policy = new LinkedHashMap<>(basePolicy);
+        String label = jdbcTemplate.query("""
+                select source_title from research_row
+                where research_run_id = ? and row_key = ?
+                """, rs -> rs.next() ? rs.getString(1) : null, runId, entityId);
+        if (label != null && !label.isBlank() && !"Subject".equalsIgnoreCase(label.strip())) {
+            policy.put("entity_label", label.strip());
+        }
+        return Map.copyOf(policy);
+    }
+
     private Map<String, Object> readRequiredMap(String raw, String label) {
         try {
             Map<String, Object> value = objectMapper.readValue(raw, new TypeReference<>() { });
@@ -228,13 +268,64 @@ public class ResearchAgentTaskCoordinatorService {
         return cell;
     }
 
-    private List<Map<String, Object>> loadTrustedSources(String workspaceId, String rawScope) {
+    /**
+     * DR-304 pre-flight: can a counterfactual repair be taskized for this run right now? Reuses the
+     * exact trusted-source authority of {@link #planCounterfactualRepairs} but never throws, so a
+     * coordinator tick can leave a conflict open instead of failing on an unusable source scope.
+     */
+    boolean counterfactualRepairFeasible(String runId) {
+        try {
+            RunScope run = requireIncrementalRunnableRun(runId);
+            List<Map<String, Object>> sources = loadTrustedSources(
+                    run.workspaceId(), run.sourceScopeJson(), run.retrievalMode());
+            return !run.retrievalMode().usesSeeds() || !sources.isEmpty();
+        } catch (RuntimeException exception) {
+            return false;
+        }
+    }
+
+    private List<Map<String, Object>> loadTrustedSources(
+            String workspaceId,
+            String rawScope,
+            ResearchRetrievalMode retrievalMode
+    ) {
         List<String> ids;
-        try { ids = objectMapper.readValue(rawScope, new TypeReference<List<String>>() { }); }
-        catch (JsonProcessingException exception) { throw new BusinessException("RESEARCH_AGENT_COORDINATOR_SOURCE_SCOPE_INVALID", "Run source scope is invalid"); }
-        if (ids == null || ids.isEmpty()) return List.of();
-        List<Map<String, Object>> result = new ArrayList<>();
+        if (rawScope == null || rawScope.isBlank()) {
+            throw new BusinessException(
+                    "RESEARCH_AGENT_COORDINATOR_SOURCE_SCOPE_INVALID", "Run source scope is missing");
+        }
+        try {
+            ids = objectMapper.readValue(rawScope, new TypeReference<List<String>>() { });
+        } catch (JsonProcessingException | IllegalArgumentException exception) {
+            throw new BusinessException(
+                    "RESEARCH_AGENT_COORDINATOR_SOURCE_SCOPE_INVALID", "Run source scope is invalid");
+        }
+        if (ids == null) {
+            throw new BusinessException(
+                    "RESEARCH_AGENT_COORDINATOR_SOURCE_SCOPE_INVALID", "Run source scope must be an array");
+        }
+        Set<String> normalizedIds = new LinkedHashSet<>();
         for (String sourceId : ids) {
+            if (sourceId == null || sourceId.isBlank() || !normalizedIds.add(sourceId.trim())) {
+                throw new BusinessException(
+                        "RESEARCH_AGENT_COORDINATOR_SOURCE_SCOPE_INVALID", "Run source scope contains an invalid or duplicate source");
+            }
+        }
+        if (normalizedIds.isEmpty()) {
+            if (retrievalMode.usesSeeds()) {
+                throw new BusinessException(
+                        "RESEARCH_AGENT_COORDINATOR_SOURCE_SCOPE_REQUIRED",
+                        retrievalMode + " requires a non-empty trusted source scope");
+            }
+            return List.of();
+        }
+        if (!retrievalMode.usesSeeds()) {
+            throw new BusinessException(
+                    "RESEARCH_AGENT_COORDINATOR_SOURCE_SCOPE_INVALID",
+                    "WEB_ONLY cannot contain trusted seed sources");
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (String sourceId : normalizedIds) {
             Map<String, Object> source = jdbcTemplate.query("""
                     select s.id, s.title, s.source_type, coalesce(s.summary, '') as summary,
                       ss.id as source_snapshot_id,
@@ -251,7 +342,9 @@ public class ResearchAgentTaskCoordinatorService {
                     where s.id = ? and s.workspace_id = ? and s.status = 'READY'
                     """, rs -> rs.next() ? sourceMap(rs) : null, sourceId, workspaceId);
             if (source == null || String.valueOf(source.get("sample_text")).isBlank()) {
-                throw new BusinessException("RESEARCH_AGENT_COORDINATOR_SOURCE_SCOPE_INVALID", "Run source scope contains no ready source sample");
+                throw new BusinessException(
+                        "RESEARCH_AGENT_COORDINATOR_SOURCE_SCOPE_UNAVAILABLE",
+                        "Run source scope contains a missing or unusable ready source");
             }
             result.add(source);
         }
@@ -348,15 +441,19 @@ public class ResearchAgentTaskCoordinatorService {
         return List.copyOf(selected);
     }
     private String entityId(String cellKey) { int separator = cellKey.indexOf(':'); if (separator < 1) throw new BusinessException("RESEARCH_AGENT_COORDINATOR_SCOPE_INVALID", "Cell key has no entity scope"); return cellKey.substring(0, separator); }
-    private Map<String, Long> deepCellBudget(int targetCellCount) {
+    static Map<String, Long> deepCellBudget(int targetCellCount) {
         long cells = Math.max(1, targetCellCount);
         long evidence = cells * MAX_EVIDENCE_CARDS_PER_CELL;
         return Map.of(
-                "llm_calls", 1L,
-                "search_calls", 1L,
-                "fetch_calls", 1L,
-                "read_calls", 1L,
-                "extract_calls", 1L,
+                // The worker accounts physical provider attempts, including one retry.
+                // Keep the frozen reservation aligned with research.extract max_attempts.
+                "llm_calls", 2L,
+                // Tool grants from earlier leases are charged at completion time. Reserve
+                // the task's three-attempt recovery ceiling so a legal retry can settle.
+                "search_calls", 3L,
+                "fetch_calls", 3L,
+                "read_calls", 3L,
+                "extract_calls", 3L,
                 "evidence_cards", evidence,
                 "evidence_appended", evidence,
                 "candidates_submitted", cells,
@@ -373,7 +470,8 @@ public class ResearchAgentTaskCoordinatorService {
         try {
             String text = runId + "|parent@" + parentCheckpointSeq + "|wave@" + waveNo + "|counterfactual|"
                     + cell.cellKey() + "@" + cell.version() + "|plan@" + cell.planRevision() + "|entities@" + cell.entitySetVersion()
-                    + "|reason@" + target.reasonDigest() + target.excludedSourceIds().stream().sorted().map(id -> "|exclude@" + id).reduce("", String::concat);
+                    + "|reason@" + target.reasonDigest() + target.excludedSourceIds().stream().sorted().map(id -> "|exclude@" + id).reduce("", String::concat)
+                    + (target.conflictTraceId() == null ? "" : "|conflict@" + target.conflictTraceId());
             byte[] hash = MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8));
             StringBuilder output = new StringBuilder();
             for (byte item : hash) output.append(String.format("%02x", item));
@@ -384,22 +482,68 @@ public class ResearchAgentTaskCoordinatorService {
     private record TaskPriority(int score, String reason) { }
     public record CounterfactualRepairCommand(String researchRunId, int parentCheckpointSeq, int waveNo,
                                               List<CounterfactualTarget> targets) { }
-    public record CounterfactualTarget(String cellKey, String reasonDigest, List<String> excludedSourceIds) {
+    public record CounterfactualTarget(String cellKey, String reasonDigest, List<String> excludedSourceIds,
+                                       String conflictTraceId, List<String> conflictEvidenceKeys) {
         public CounterfactualTarget {
             excludedSourceIds = excludedSourceIds == null ? List.of() : excludedSourceIds.stream()
                     .filter(value -> value != null && !value.isBlank()).sorted().toList();
+            conflictEvidenceKeys = conflictEvidenceKeys == null ? List.of() : conflictEvidenceKeys.stream()
+                    .filter(value -> value != null && !value.isBlank()).distinct().sorted().toList();
+            conflictTraceId = (conflictTraceId == null || conflictTraceId.isBlank()) ? null : conflictTraceId;
             if (reasonDigest == null || reasonDigest.isBlank()) {
                 throw new BusinessException("RESEARCH_AGENT_REPAIR_INVALID", "Counterfactual repair reason digest is required");
             }
         }
+
+        /** DR-304: failed-wave / quorum repairs are not anchored to a conflict trace. */
+        public CounterfactualTarget(String cellKey, String reasonDigest, List<String> excludedSourceIds) {
+            this(cellKey, reasonDigest, excludedSourceIds, null, List.of());
+        }
+
+        /** True when this repair is a DR-304 conflict repair and must carry its trace anchor. */
+        boolean conflictAnchored() {
+            return conflictTraceId != null;
+        }
     }
     private Map<String, Object> sourcePolicy(RunScope run, List<Map<String, Object>> sources) {
         boolean allowExternal = run.retrievalMode().usesWeb() && externalEvidencePolicy.enabled();
-        return Map.of(
-                "retrieval_mode", run.retrievalMode().name(),
-                "source_scope", sources,
-                "allow_external_search", allowExternal,
-                "allow_external_fetch", allowExternal);
+        Map<String, Object> policy = new LinkedHashMap<>();
+        policy.put("retrieval_mode", run.retrievalMode().name());
+        policy.put("source_scope", sources);
+        policy.put("allow_external_search", allowExternal);
+        policy.put("allow_external_fetch", allowExternal);
+        List<String> allowedDomains = allowedExternalDomains(run.researchIntent());
+        if (!allowedDomains.isEmpty()) policy.put("allowed_external_domains", allowedDomains);
+        return Map.copyOf(policy);
+    }
+
+    private Map<String, Object> sourcePolicyForSlot(
+            RunScope run, List<Map<String, Object>> sources, int candidateQuorum, int candidateSlot
+    ) {
+        Map<String, Object> policy = new LinkedHashMap<>(sourcePolicy(run, sources));
+        List<String> domains = allowedExternalDomains(run.researchIntent());
+        if (candidateQuorum > 1 && domains.size() >= candidateQuorum) {
+            List<String> selected = new ArrayList<>();
+            for (int index = candidateSlot - 1; index < domains.size(); index += candidateQuorum) {
+                selected.add(domains.get(index));
+            }
+            policy.put("allowed_external_domains", List.copyOf(selected));
+        }
+        return Map.copyOf(policy);
+    }
+
+    private List<String> allowedExternalDomains(Map<String, Object> researchIntent) {
+        Object raw = researchIntent.get("constraints");
+        if (!(raw instanceof List<?> constraints)) return List.of();
+        String prefix = "SOURCE_DOMAIN_ALLOWLIST:";
+        return constraints.stream()
+                .filter(String.class::isInstance)
+                .map(String.class::cast)
+                .filter(value -> value.regionMatches(true, 0, prefix, 0, prefix.length()))
+                .flatMap(value -> java.util.Arrays.stream(value.substring(prefix.length()).split(",")))
+                .map(value -> value.trim().toLowerCase(Locale.ROOT))
+                .filter(value -> value.matches("(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}"))
+                .distinct().sorted().toList();
     }
 
     private Map<String, Object> repairSourcePolicy(
@@ -408,9 +552,6 @@ public class ResearchAgentTaskCoordinatorService {
             List<String> excludedSourceIds
     ) {
         Map<String, Object> policy = new LinkedHashMap<>(sourcePolicy(run, sources));
-        if (sources.isEmpty() && run.retrievalMode() == ResearchRetrievalMode.WEB_PLUS_SEEDS) {
-            policy.put("retrieval_mode", ResearchRetrievalMode.WEB_ONLY.name());
-        }
         policy.put("excluded_source_ids", excludedSourceIds);
         return Map.copyOf(policy);
     }
@@ -418,11 +559,19 @@ public class ResearchAgentTaskCoordinatorService {
     private Map<String, Object> repairQueryPolicy(
             ResearchBriefCompiler.CompiledBrief brief,
             String reasonDigest,
-            int parentCheckpointSeq
+            int parentCheckpointSeq,
+            String conflictTraceId,
+            List<String> conflictEvidenceKeys
     ) {
         Map<String, Object> policy = new LinkedHashMap<>(brief.queryPolicy());
         policy.put("repair_reason_digest", reasonDigest);
         policy.put("parent_checkpoint_seq", parentCheckpointSeq);
+        if (conflictTraceId != null) {
+            // DR-304 target anchor: the counterfactual must be able to name the exact claim it is
+            // refuting, not just the entity/source/query/column.
+            policy.put("conflict_trace_id", conflictTraceId);
+            policy.put("conflict_evidence_ids", conflictEvidenceKeys);
+        }
         return Map.copyOf(policy);
     }
 

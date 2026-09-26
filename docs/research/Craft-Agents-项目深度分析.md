@@ -1,5 +1,7 @@
 # Craft Agents OSS 项目深度分析
 
+> `[行业参考]` 本文是外部项目分析，不在 NoteWeave 默认阅读主线中。对 NoteWeave 的启发只属于 `[目标设计]`，不能证明当前实现或生产效果。
+
 > 研究基线：`craft-ai-agents/craft-agents-oss`，commit `4289b16097322e9911d3078d8a64bd8c830717c3`，标签 `v0.11.1`，2026-07-10。
 > 本文把官方 README 的产品叙述与固定提交中的源码事实分开；源码链接均固定到该提交。
 

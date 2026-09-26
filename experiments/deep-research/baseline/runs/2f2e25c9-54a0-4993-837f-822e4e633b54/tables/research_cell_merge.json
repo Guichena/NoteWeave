@@ -1,0 +1,50 @@
+[
+  {
+    "accepted_evidence_ids_json": "[\"evidence:5f972869ca1ffde66fb4eeb2c0252afaa0802a03fe055c1c\"]",
+    "agent_completion_id": "cf3c4b17-c2d7-415a-b437-e952766b6123",
+    "candidate_id": "36fe1667-d8d7-4662-8b3a-0a0eadb93a8f",
+    "cell_key": "subject:answer",
+    "content_digest": "sha256:f695dcc1d827c4c118e872d25f4a8ee7fa39b3445e04c0c0af7dd0d055a66073",
+    "decision": "ACCEPTED",
+    "expected_cell_version": 0,
+    "id": "41c476a6-c5c2-4844-99bf-6e165af71185",
+    "merge_key": "merge:3f8cf5fd119f209d0543d2fb10f12bd5f541b2b7a24ad2c7c15e4fe0fc16ee80",
+    "merged_at": "2026-09-18 08:34:19.000000",
+    "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+    "research_run_id": "2f2e25c9-54a0-4993-837f-822e4e633b54",
+    "result_cell_version": 1,
+    "verdict": "SUPPORTS"
+  },
+  {
+    "accepted_evidence_ids_json": "[\"evidence:adc5411a2df180ae7e446c900b1c0a818862db3374e9d719\"]",
+    "agent_completion_id": "cf3c4b17-c2d7-415a-b437-e952766b6123",
+    "candidate_id": "0b4aa37c-eaa2-44fc-8065-65703daf33fe",
+    "cell_key": "subject:key_evidence",
+    "content_digest": "sha256:9c31f9132739830fd4b6e633313802f82cf10461f7d76bd22c8bde5b83b8d875",
+    "decision": "ACCEPTED",
+    "expected_cell_version": 0,
+    "id": "a007d846-b8ad-45b0-99fa-0c430a04d25f",
+    "merge_key": "merge:6b538780dca773ddff70123ee26ef6a757034d388cc8b09533b178fb8ca98aa2",
+    "merged_at": "2026-09-18 08:34:19.000000",
+    "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+    "research_run_id": "2f2e25c9-54a0-4993-837f-822e4e633b54",
+    "result_cell_version": 1,
+    "verdict": "SUPPORTS"
+  },
+  {
+    "accepted_evidence_ids_json": "[\"evidence:6c7a96187adbc3a111aea97415483df594fcc1b8c26983bc\"]",
+    "agent_completion_id": "cf3c4b17-c2d7-415a-b437-e952766b6123",
+    "candidate_id": "28455dc3-0e44-43d8-8736-f83b77f5f084",
+    "cell_key": "subject:implications",
+    "content_digest": "sha256:7e84d190fb23fb0372476e1936ccdccaf99ed2d1e7d4e219d0294047d1c6f48c",
+    "decision": "ACCEPTED",
+    "expected_cell_version": 0,
+    "id": "b2cbdcfb-a6f7-40a7-b985-46a4bbc956a2",
+    "merge_key": "merge:bf9881cd7aeec8f0461e3e2b3882930937210d0f64353d16b152a12c361517ac",
+    "merged_at": "2026-09-18 08:34:19.000000",
+    "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+    "research_run_id": "2f2e25c9-54a0-4993-837f-822e4e633b54",
+    "result_cell_version": 1,
+    "verdict": "SUPPORTS"
+  }
+]

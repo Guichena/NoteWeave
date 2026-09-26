@@ -59,6 +59,7 @@ export type KnowledgeStateAction =
   | { type: "home"; home: WikiHome }
   | { type: "home-snapshot"; snapshot: KnowledgeHomeSnapshot }
   | { type: "selection"; snapshot: KnowledgeSelectionSnapshot }
+  | { type: "reset-selection" }
   | { type: "clear-selection"; graph: WikiGraph }
   | { type: "graph"; graph: WikiGraph }
   | { type: "version"; version: KnowledgeVersionDetail }
@@ -141,6 +142,16 @@ export function reduceKnowledgeServerState(
         selectedWikiVersionDetail: toLatestVersion(action.snapshot.detail),
         selectedWikiLog: [],
         wikiGraph: action.snapshot.graph ?? state.wikiGraph
+      };
+    case "reset-selection":
+      return {
+        ...state,
+        revision: state.revision + 1,
+        selectedWikiItemId: "",
+        selectedWikiDetail: null,
+        selectedWikiVersions: [],
+        selectedWikiVersionDetail: null,
+        selectedWikiLog: []
       };
     case "clear-selection":
       return {

@@ -77,6 +77,49 @@ class ProductionConfigurationGuardTest {
     }
 
     @Test
+    void environmentAndSpringProfilesMustAgree() {
+        assertThatCode(() -> ProductionConfigurationGuard.validateEnvironmentAlignment(
+                "production", "production")).doesNotThrowAnyException();
+        assertThatCode(() -> ProductionConfigurationGuard.validateEnvironmentAlignment(
+                "test", "test")).doesNotThrowAnyException();
+        assertThatThrownBy(() -> ProductionConfigurationGuard.validateEnvironmentAlignment(
+                "local", "production"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("must agree");
+        assertThatThrownBy(() -> ProductionConfigurationGuard.validateEnvironmentAlignment(
+                "production"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("must agree");
+        assertThatThrownBy(() -> ProductionConfigurationGuard.validateEnvironmentAlignment(
+                "unknown"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Unknown NOTEWEAVE_ENVIRONMENT");
+    }
+
+    @Test
+    void productionMustRejectNoteLocalMetadataFallback() {
+        assertThatThrownBy(() -> ProductionConfigurationGuard.validateNoteLocalFallback(true))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("NOTEWEAVE_NOTE_LOCAL_METADATA_FALLBACK_ENABLED");
+    }
+
+    @Test
+    void productionMustRejectResearchRateLimitLocalFallback() {
+        assertThatThrownBy(() -> ProductionConfigurationGuard.validateResearchRateLimitLocalFallback(true))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_ALLOW_LOCAL_FALLBACK");
+    }
+
+    @Test
+    void productionMustKeepKafkaEnabledForDurableArtifactCommands() {
+        assertThatThrownBy(() -> ProductionConfigurationGuard.validateKafkaEnabled(false))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("NOTEWEAVE_KAFKA_ENABLED=true");
+        assertThatCode(() -> ProductionConfigurationGuard.validateKafkaEnabled(true))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
     void productionMustRequireDistinctAudienceScopedInternalTokens() {
         assertThatThrownBy(() -> ProductionConfigurationGuard.validateProductionValues(
                 "coordinator-token-with-entropy", "shared-token-with-entropy", "shared-token-with-entropy",

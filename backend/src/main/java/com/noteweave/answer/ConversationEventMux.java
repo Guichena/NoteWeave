@@ -2,6 +2,7 @@ package com.noteweave.answer;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -35,6 +36,8 @@ public class ConversationEventMux {
     private final MeterRegistry meterRegistry;
     private final int replayCapacity;
     private final int subscriberQueueCapacity;
+    private final Duration channelRetention;
+    private final int maxRetainedChannels;
     private final AtomicInteger activeSubscribers = new AtomicInteger();
 
     @Autowired
@@ -44,7 +47,9 @@ public class ConversationEventMux {
             @Qualifier("sseDispatchExecutor") Executor dispatchExecutor,
             MeterRegistry meterRegistry,
             @Value("${noteweave.conversation.events.replay-capacity:512}") int replayCapacity,
-            @Value("${noteweave.conversation.events.subscriber-queue-capacity:64}") int subscriberQueueCapacity
+            @Value("${noteweave.conversation.events.subscriber-queue-capacity:64}") int subscriberQueueCapacity,
+            @Value("${noteweave.conversation.events.channel-retention-seconds:900}") long channelRetentionSeconds,
+            @Value("${noteweave.conversation.events.max-retained-channels:10000}") int maxRetainedChannels
     ) {
         this.bridge = bridgeProvider.getIfAvailable();
         this.bridgeExecutor = bridgeExecutor;
@@ -52,6 +57,8 @@ public class ConversationEventMux {
         this.meterRegistry = meterRegistry;
         this.replayCapacity = Math.max(32, replayCapacity);
         this.subscriberQueueCapacity = Math.max(8, subscriberQueueCapacity);
+        this.channelRetention = Duration.ofSeconds(Math.max(1, channelRetentionSeconds));
+        this.maxRetainedChannels = Math.max(128, maxRetainedChannels);
         meterRegistry.gauge("noteweave.conversation.events.active_subscribers", activeSubscribers);
     }
 
@@ -63,16 +70,43 @@ public class ConversationEventMux {
             int replayCapacity,
             int subscriberQueueCapacity
     ) {
+        this(
+                bridge,
+                bridgeExecutor,
+                dispatchExecutor,
+                meterRegistry,
+                replayCapacity,
+                subscriberQueueCapacity,
+                Duration.ofMinutes(15),
+                10_000
+        );
+    }
+
+    ConversationEventMux(
+            AnswerRealtimeBridge bridge,
+            Executor bridgeExecutor,
+            Executor dispatchExecutor,
+            MeterRegistry meterRegistry,
+            int replayCapacity,
+            int subscriberQueueCapacity,
+            Duration channelRetention,
+            int maxRetainedChannels
+    ) {
         this.bridge = bridge;
         this.bridgeExecutor = bridgeExecutor;
         this.dispatchExecutor = dispatchExecutor;
         this.meterRegistry = meterRegistry;
         this.replayCapacity = Math.max(32, replayCapacity);
         this.subscriberQueueCapacity = Math.max(8, subscriberQueueCapacity);
+        this.channelRetention = channelRetention == null || channelRetention.isNegative()
+                ? Duration.ofMinutes(15)
+                : channelRetention;
+        this.maxRetainedChannels = Math.max(1, maxRetainedChannels);
         meterRegistry.gauge("noteweave.conversation.events.active_subscribers", activeSubscribers);
     }
 
     public ConversationLiveEvent publish(String conversationId, String runId, AnswerLiveEvent runEvent) {
+        cleanupIdleChannels();
         Channel channel = channels.computeIfAbsent(conversationId, ignored -> new Channel());
         ConversationLiveEvent event = publishToBridge(conversationId, runId, runEvent);
         List<Subscriber> subscribers;
@@ -91,6 +125,7 @@ public class ConversationEventMux {
                 return event;
             }
             channel.sequence = Math.max(channel.sequence, event.sequence());
+            channel.lastTouchedAt = Instant.now();
             append(channel, event);
             subscribers = new ArrayList<>(channel.subscribers);
         }
@@ -102,11 +137,13 @@ public class ConversationEventMux {
     }
 
     public boolean hasSubscribers(String conversationId) {
+        cleanupIdleChannels();
         Channel channel = channels.get(conversationId);
         if (channel == null) {
             return false;
         }
         synchronized (channel) {
+            channel.lastTouchedAt = java.time.Instant.now();
             return !channel.subscribers.isEmpty();
         }
     }
@@ -118,10 +155,12 @@ public class ConversationEventMux {
             Duration timeout,
             boolean closeOnAnswerTerminal
     ) {
+        cleanupIdleChannels();
         Channel channel = channels.computeIfAbsent(conversationId, ignored -> new Channel());
         Subscriber subscriber = new Subscriber(channel, consumer, closeOnAnswerTerminal);
         List<ConversationLiveEvent> replay;
         synchronized (channel) {
+            channel.lastTouchedAt = java.time.Instant.now();
             replay = channel.replay.stream().filter(event -> event.sequence() > after).toList();
             channel.subscribers.add(subscriber);
             activeSubscribers.incrementAndGet();
@@ -219,6 +258,7 @@ public class ConversationEventMux {
                 return;
             }
             channel.sequence = Math.max(channel.sequence, event.sequence());
+            channel.lastTouchedAt = Instant.now();
             append(channel, event);
             subscribers = new ArrayList<>(channel.subscribers);
         }
@@ -243,6 +283,31 @@ public class ConversationEventMux {
         synchronized (channel) {
             return channel.sequence;
         }
+    }
+
+    private void cleanupIdleChannels() {
+        Instant cutoff = Instant.now().minus(channelRetention);
+        channels.entrySet().removeIf(entry -> {
+            Channel channel = entry.getValue();
+            synchronized (channel) {
+                return channel.subscribers.isEmpty()
+                        && channel.lastTouchedAt != null
+                        && channel.lastTouchedAt.isBefore(cutoff);
+            }
+        });
+        if (channels.size() <= maxRetainedChannels) {
+            return;
+        }
+        channels.entrySet().stream()
+                .filter(entry -> {
+                    Channel channel = entry.getValue();
+                    synchronized (channel) {
+                        return channel.subscribers.isEmpty() && channel.lastTouchedAt != null;
+                    }
+                })
+                .sorted((left, right) -> left.getValue().lastTouchedAt.compareTo(right.getValue().lastTouchedAt))
+                .limit(Math.max(0, channels.size() - maxRetainedChannels))
+                .forEach(entry -> channels.remove(entry.getKey(), entry.getValue()));
     }
 
     private boolean terminal(String eventType) {
@@ -399,6 +464,7 @@ public class ConversationEventMux {
     private final class Channel {
         private long sequence;
         private boolean bridgePumpRunning;
+        private Instant lastTouchedAt = Instant.now();
         private final Deque<ConversationLiveEvent> replay = new ArrayDeque<>();
         private final List<Subscriber> subscribers = new ArrayList<>();
     }

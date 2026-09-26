@@ -19,13 +19,13 @@ public class LocalObjectStorage implements ObjectStorage {
     private final Path root;
 
     public LocalObjectStorage(NoteWeaveProperties properties) {
-        this.root = properties.storage().localRoot();
+        this.root = properties.storage().localRoot().toAbsolutePath().normalize();
     }
 
     @Override
     public Path write(String bucket, String objectKey, byte[] content) {
         try {
-            Path target = root.resolve(bucket).resolve(objectKey).normalize();
+            Path target = resolveTarget(bucket, objectKey);
             Files.createDirectories(target.getParent());
             Files.write(target, content);
             return target;
@@ -37,7 +37,7 @@ public class LocalObjectStorage implements ObjectStorage {
     @Override
     public byte[] read(String bucket, String objectKey) {
         try {
-            return Files.readAllBytes(root.resolve(bucket).resolve(objectKey).normalize());
+            return Files.readAllBytes(resolveTarget(bucket, objectKey));
         } catch (IOException ex) {
             throw new IllegalStateException("read object failed: " + bucket + "/" + objectKey, ex);
         }
@@ -45,16 +45,12 @@ public class LocalObjectStorage implements ObjectStorage {
 
     @Override
     public boolean exists(String bucket, String objectKey) {
-        return Files.exists(root.resolve(bucket).resolve(objectKey).normalize());
+        return Files.exists(resolveTarget(bucket, objectKey));
     }
 
     @Override
     public void delete(String bucket, String objectKey) {
-        Path bucketRoot = root.resolve(bucket).normalize();
-        Path target = bucketRoot.resolve(objectKey).normalize();
-        if (!target.startsWith(bucketRoot)) {
-            throw new IllegalArgumentException("object key escapes storage bucket");
-        }
+        Path target = resolveTarget(bucket, objectKey);
         try {
             Files.deleteIfExists(target);
         } catch (IOException ex) {
@@ -65,5 +61,17 @@ public class LocalObjectStorage implements ObjectStorage {
     @Override
     public String backendName() {
         return "local";
+    }
+
+    private Path resolveTarget(String bucket, String objectKey) {
+        Path bucketRoot = root.resolve(bucket).normalize();
+        if (!bucketRoot.startsWith(root)) {
+            throw new IllegalArgumentException("bucket escapes local object storage root");
+        }
+        Path target = bucketRoot.resolve(objectKey).normalize();
+        if (!target.startsWith(bucketRoot)) {
+            throw new IllegalArgumentException("object key escapes storage bucket");
+        }
+        return target;
     }
 }

@@ -82,9 +82,12 @@ public class KafkaConfig {
             @Value("${noteweave.kafka.topics.retrieval-projection:noteweave.retrieval.projection}") String retrievalProjectionTopic,
             @Value("${noteweave.kafka.topics.wiki-ingest:noteweave.wiki.ingest}") String wikiIngestTopic,
             @Value("${noteweave.kafka.topics.wiki-retract:noteweave.wiki.retract}") String wikiRetractTopic,
-            @Value("${noteweave.kafka.topics.conversation-summary:noteweave.conversation.summary}") String conversationSummaryTopic
+            @Value("${noteweave.kafka.topics.conversation-summary:noteweave.conversation.summary}") String conversationSummaryTopic,
+            @Value("${noteweave.kafka.artifact-dlq-topic:noteweave.artifact.job.dlq}") String artifactDlqTopic
     ) {
         return new KafkaAdmin.NewTopics(
+                TopicBuilder.name("noteweave.artifact.job").partitions(1).replicas(1).build(),
+                TopicBuilder.name(artifactDlqTopic).partitions(1).replicas(1).build(),
                 deadLetterTopic(sourceParseTopic),
                 deadLetterTopic(retrievalProjectionTopic),
                 deadLetterTopic(wikiIngestTopic),

@@ -14,6 +14,7 @@ export type RestoredMessage = {
   content: string;
   answerMode?: AnswerMode;
   answerStatus?: string;
+  answerError?: string;
 };
 
 export type RestoredWorkspaceSession = {
@@ -115,9 +116,14 @@ function toRestoredMessage(message: ConversationMessage): RestoredMessage {
     restored.answerMode = mode;
   }
   if (restored.role === "assistant") {
-    restored.answerStatus = message.context_status === "FAILED"
-      ? "FAILED"
-      : message.context_status === "PENDING" ? "GENERATING" : "COMPLETED";
+    const answerStatus = (message.answer_status || "").toUpperCase();
+    restored.answerStatus = answerStatus
+      || (message.context_status === "FAILED"
+        ? "FAILED"
+        : message.context_status === "PENDING" ? "GENERATING" : "COMPLETED");
+    if (message.answer_error) {
+      restored.answerError = message.answer_error;
+    }
   }
   return restored;
 }

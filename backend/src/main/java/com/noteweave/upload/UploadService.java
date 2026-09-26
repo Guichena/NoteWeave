@@ -26,6 +26,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 public class UploadService {
@@ -45,6 +47,7 @@ public class UploadService {
     private final UploadSecurityPolicy uploadSecurityPolicy;
     private final AuditActorProvider auditActorProvider;
     private final SourceCatalogVersionService sourceCatalogVersionService;
+    private final UploadTempObjectCleanupService uploadTempObjectCleanupService;
 
     public UploadService(
             JdbcTemplate jdbcTemplate,
@@ -57,7 +60,8 @@ public class UploadService {
             SourceMessagingMode messagingMode,
             UploadSecurityPolicy uploadSecurityPolicy,
             AuditActorProvider auditActorProvider,
-            SourceCatalogVersionService sourceCatalogVersionService
+            SourceCatalogVersionService sourceCatalogVersionService,
+            UploadTempObjectCleanupService uploadTempObjectCleanupService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.workspaceAccessGuard = workspaceAccessGuard;
@@ -70,6 +74,7 @@ public class UploadService {
         this.uploadSecurityPolicy = uploadSecurityPolicy;
         this.auditActorProvider = auditActorProvider;
         this.sourceCatalogVersionService = sourceCatalogVersionService;
+        this.uploadTempObjectCleanupService = uploadTempObjectCleanupService;
         log.info("UploadService initialised with object storage backend: {}", storage.backendName());
     }
 
@@ -133,6 +138,7 @@ public class UploadService {
         workspaceAccessGuard.requirePermission(upload.workspaceId(), WorkspacePermission.SOURCE_WRITE);
         String actor = auditActorProvider.currentOrSystem("UPLOAD");
         if ("COMPLETED".equals(upload.status()) && upload.sourceId() != null && upload.taskId() != null) {
+            cleanupAfterCommit(uploadId);
             return sourceResult(upload.workspaceId(), upload.sourceId(), upload.taskId());
         }
         if (!"UPLOADING".equals(upload.status())) {
@@ -221,7 +227,21 @@ public class UploadService {
                     HttpStatus.CONFLICT
             );
         }
+        cleanupAfterCommit(uploadId);
         return new CompleteUploadResponse(sourceId, taskId, finalParseStatus, finalIndexStatus);
+    }
+
+    private void cleanupAfterCommit(String uploadId) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            uploadTempObjectCleanupService.cleanupAfterCommit(uploadId);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                uploadTempObjectCleanupService.cleanupAfterCommit(uploadId);
+            }
+        });
     }
 
     private CompleteUploadResponse sourceResult(String workspaceId, String sourceId, String taskId) {
@@ -254,10 +274,8 @@ public class UploadService {
                 """, (rs, rowNum) -> new FileObjectRef(rs.getString("id"), rs.getString("object_key")), upload.workspaceId(), sha256);
         if (!existing.isEmpty()) {
             FileObjectRef ref = existing.get(0);
-            String bucket = storage.backendName().equals("local") ? "noteweave-source" : ref.objectKey().contains("/") ? ref.objectKey().substring(0, ref.objectKey().indexOf('/')) : BUCKET_SOURCE;
-            String key = storage.backendName().equals("local") ? ref.objectKey().substring(ref.objectKey().indexOf('/') + 1) : ref.objectKey();
-            if (!storage.exists(bucket, key)) {
-                storage.write(bucket, key, merged);
+            if (!storage.exists(BUCKET_SOURCE, ref.objectKey())) {
+                storage.write(BUCKET_SOURCE, ref.objectKey(), merged);
             }
             jdbcTemplate.update("""
                     update file_object set ref_count = ref_count + 1

@@ -8,8 +8,8 @@ import com.noteweave.config.NoteWeaveProperties;
 import com.noteweave.storage.ObjectStorage;
 import com.noteweave.task.TaskCommandPort;
 import com.noteweave.security.AuditActorProvider;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -34,6 +34,7 @@ public class SourceParseService implements SourceParsePort {
 
     private final JdbcTemplate jdbcTemplate;
     private final DocumentChunker documentChunker;
+    private final SourceDocumentTextExtractor documentTextExtractor;
     private final ObjectMapper objectMapper;
     private final ObjectStorage storage;
     private final SourceMessagingMode messagingMode;
@@ -44,7 +45,8 @@ public class SourceParseService implements SourceParsePort {
     private final SourceCatalogVersionService sourceCatalogVersionService;
     private final ApplicationEventPublisher eventPublisher;
 
-    public SourceParseService(JdbcTemplate jdbcTemplate, DocumentChunker documentChunker, ObjectMapper objectMapper,
+    public SourceParseService(JdbcTemplate jdbcTemplate, DocumentChunker documentChunker,
+                              SourceDocumentTextExtractor documentTextExtractor, ObjectMapper objectMapper,
                               ObjectStorage storage, SourceMessagingMode messagingMode,
                               NoteWeaveProperties properties, TaskCommandPort taskCommandPort,
                               PlatformTransactionManager transactionManager, AuditActorProvider auditActorProvider,
@@ -52,6 +54,7 @@ public class SourceParseService implements SourceParsePort {
                               ApplicationEventPublisher eventPublisher) {
         this.jdbcTemplate = jdbcTemplate;
         this.documentChunker = documentChunker;
+        this.documentTextExtractor = documentTextExtractor;
         this.objectMapper = objectMapper;
         this.storage = storage;
         this.messagingMode = messagingMode;
@@ -69,7 +72,9 @@ public class SourceParseService implements SourceParsePort {
         if (!sourceMeta.processable()) {
             throw new SourceParseNoLongerProcessableException(sourceId, snapshotId);
         }
-        String text = new String(bytes, StandardCharsets.UTF_8);
+        SourceDocumentTextExtractor.ExtractedDocument extracted = documentTextExtractor.extract(
+                sourceMeta.title(), sourceMeta.mimeType(), bytes);
+        String text = extracted.text();
         String actor = auditActorProvider.currentOrSystem("SOURCE_PARSE");
         String sourceParseTaskId = findSourceParseTaskId(sourceId);
         boolean projectionEnabled = elasticsearchEnabled;
@@ -97,13 +102,16 @@ public class SourceParseService implements SourceParsePort {
         }
 
         List<String> tags = deriveTags(sourceMeta.title(), sourceMeta.sourceType(), text);
-        Map<String, Object> metadata = Map.of(
-                "title", sourceMeta.title(),
-                "source_type", sourceMeta.sourceType(),
-                "chunk_count", chunks.size(),
-                "char_count", text.length(),
-                "entry_strategy", "marginalia_structured_reading_funnel"
-        );
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("title", sourceMeta.title());
+        metadata.put("source_type", sourceMeta.sourceType());
+        metadata.put("mime_type", extracted.mimeType());
+        metadata.put("chunk_count", chunks.size());
+        metadata.put("char_count", text.length());
+        if (extracted.pageCount() > 0) {
+            metadata.put("page_count", extracted.pageCount());
+        }
+        metadata.put("entry_strategy", "marginalia_structured_reading_funnel");
         jdbcTemplate.update("""
                 update source
                 set summary = ?, tags_json = ?, metadata_json = ?,
@@ -221,9 +229,11 @@ public class SourceParseService implements SourceParsePort {
 
     private SourceMeta loadSourceMetaForProcessing(String workspaceId, String sourceId, String snapshotId) {
         return jdbcTemplate.query("""
-                select s.title, s.source_type, s.status, ss.parse_status
+                select s.title, s.source_type, s.status, ss.parse_status,
+                       coalesce(fo.mime_type, 'text/markdown') as mime_type
                 from source s
                 join source_snapshot ss on ss.id = ? and ss.source_id = s.id
+                left join file_object fo on fo.id = s.file_object_id
                 where s.id = ? and s.workspace_id = ?
                 for update
                 """, rs -> {
@@ -232,7 +242,12 @@ public class SourceParseService implements SourceParsePort {
             }
             boolean processable = !"DELETED".equals(rs.getString("status"))
                     && "PENDING".equals(rs.getString("parse_status"));
-            return new SourceMeta(rs.getString("title"), rs.getString("source_type"), processable);
+            return new SourceMeta(
+                    rs.getString("title"),
+                    rs.getString("source_type"),
+                    rs.getString("mime_type"),
+                    processable
+            );
         }, snapshotId, sourceId, workspaceId);
     }
 
@@ -309,7 +324,7 @@ public class SourceParseService implements SourceParsePort {
         return windows;
     }
 
-    private record SourceMeta(String title, String sourceType, boolean processable) {
+    private record SourceMeta(String title, String sourceType, String mimeType, boolean processable) {
     }
 
     public record SourceParseAssessment(

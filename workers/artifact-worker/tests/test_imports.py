@@ -172,59 +172,12 @@ def test_artifact_worker_default_file_stores_should_live_under_dedicated_runtime
     assert settings.artifact_wait_queue_file_path == "runtime/artifact-worker/wait-queue.json"
 
 
-def test_formal_artifact_worker_routes_should_include_run_resume_and_provider_ack() -> None:
+def test_formal_artifact_worker_routes_should_exclude_http_task_start_and_keep_control_routes() -> None:
     registered_routes = {route.path for route in app.routes}
 
-    assert "/tasks/{task_id}/run" in registered_routes
+    assert "/tasks/{task_id}/run" not in registered_routes
     assert "/tasks/{task_id}/resume" in registered_routes
     assert "/callbacks/acquisition/ack" in registered_routes
-
-
-def test_artifact_run_dispatch_should_ack_before_background_execution() -> None:
-    from app import main as main_module
-
-    class CapturingBackgroundTasks:
-        def __init__(self) -> None:
-            self.calls: list[tuple[object, tuple[object, ...]]] = []
-
-        def add_task(self, function, *args, **_kwargs) -> None:
-            self.calls.append((function, args))
-
-    tasks = CapturingBackgroundTasks()
-    main_module._dispatched_task_ids.discard("task-async")
-    try:
-        accepted = main_module.run_task_from_java("task-async", tasks, "")
-        duplicate = main_module.run_task_from_java("task-async", tasks, "")
-
-        assert accepted.status == "ACCEPTED"
-        assert duplicate.status == "ALREADY_ACCEPTED"
-        assert len(tasks.calls) == 1
-        assert tasks.calls[0][1] == ("task-async", "")
-    finally:
-        main_module._dispatched_task_ids.discard("task-async")
-
-
-def test_artifact_run_dispatch_should_release_duplicate_guard_after_background_failure(
-    monkeypatch,
-    caplog,
-) -> None:
-    from app import main as main_module
-
-    def fail_task(_task_id: str, *, delivery_token: str = "") -> None:
-        raise RuntimeError("worker failed token=top-secret at C:\\private\\artifact.log")
-
-    monkeypatch.setattr(main_module, "run_artifact_task_with_callbacks", fail_task)
-    main_module._dispatched_task_ids.add("task-failed")
-
-    try:
-        main_module._run_dispatched_artifact_task("task-failed")
-
-        assert "task-failed" not in main_module._dispatched_task_ids
-        assert "worker failed token=[REDACTED] at [PATH_REDACTED]" in caplog.text
-        assert "top-secret" not in caplog.text
-        assert "private" not in caplog.text
-    finally:
-        main_module._dispatched_task_ids.discard("task-failed")
 
 
 def test_artifact_worker_formal_routes_should_require_internal_token_when_configured() -> None:
@@ -274,7 +227,7 @@ def test_artifact_worker_formal_routes_should_fail_closed_when_token_is_unset() 
         request = Request({
             "type": "http",
             "method": "POST",
-            "path": "/tasks/task-1/run",
+            "path": "/tasks/task-1/resume",
             "headers": [],
         })
         response = asyncio.run(
@@ -340,7 +293,7 @@ def test_documented_debug_routes_should_match_registered_fastapi_routes() -> Non
     doc_path = (
         Path(__file__).resolve().parents[3]
         / "docs"
-        / "产物生成Agent独立模块施工文档.md"
+        / "Artifact-Skill执行架构.md"
     )
     doc_text = doc_path.read_text(encoding="utf-8")
     documented_routes = set(re.findall(r"/debug/[a-z0-9-]+", doc_text))

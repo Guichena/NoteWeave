@@ -11,6 +11,19 @@ import { ResearchProcessOverview } from "./ResearchProcessOverview";
 import { ResearchProcessStageLanes } from "./ResearchProcessStageLanes";
 import { ResearchProcessTraceBrowser } from "./ResearchProcessTraceBrowser";
 import { ResearchRoundTimeline } from "./ResearchRoundTimeline";
+import { deriveResearchEvidenceMetrics } from "./derived";
+import {
+  asRecord,
+  asRecords,
+  buildResearchRounds,
+  buildTraceCards,
+  buildTraceDetail,
+  buildTraceGroups,
+  count,
+  evidenceItems,
+  stringList,
+  text
+} from "./researchDetailViewModel";
 
 type WorkbenchTab = "process" | "audit" | "checkpoints";
 
@@ -31,40 +44,6 @@ type ResearchDetailWorkbenchProps = {
   onSelectComparison: (checkpointNo: number | null) => void;
   onResume: (checkpointNo: number) => void;
 };
-
-type EvidenceItem = { key: string; title: string; claim: string; meta: string };
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
-}
-
-function asRecords(value: unknown): Array<Record<string, unknown>> {
-  return Array.isArray(value) ? value.map(asRecord).filter((item) => Object.keys(item).length > 0) : [];
-}
-
-function text(value: unknown, fallback = "-") {
-  const normalized = value == null ? "" : String(value).trim();
-  return normalized || fallback;
-}
-
-function count(value: unknown) {
-  return typeof value === "number" ? value : Number(value) || 0;
-}
-
-function stringList(value: unknown) {
-  return Array.isArray(value) ? value.map((item) => text(item, "")).filter(Boolean) : [];
-}
-
-function evidenceItems(value: unknown, prefix: string): EvidenceItem[] {
-  return asRecords(value).map((item, index) => ({
-    key: text(item["evidence_id"] ?? item["row_id"] ?? item["id"], `${prefix}-${index}`),
-    title: text(item["source_title"] ?? item["title"] ?? item["row_id"], `记录 ${index + 1}`),
-    claim: text(item["claim_text"] ?? item["claim"] ?? item["candidate_value"], "暂无摘要"),
-    meta: [item["status"], item["relation_type"], item["source_id"]].map((item) => text(item, "")).filter(Boolean).join(" · ")
-  }));
-}
 
 export function ResearchDetailWorkbench({
   run,
@@ -90,83 +69,31 @@ export function ResearchDetailWorkbench({
   const process = run.research_process_summary ?? null;
   const timeline = process?.search_read_timeline ?? null;
   const evidenceSummary = process?.source_evidence_summary ?? null;
+  const evidenceMetrics = deriveResearchEvidenceMetrics(run);
+  const effectiveTimeline = timeline ? {
+    ...timeline,
+    total_search_hit_count: evidenceMetrics.searchHitCount,
+    total_read_window_count: evidenceMetrics.readWindowCount,
+    total_evidence_card_count: evidenceMetrics.evidenceCardCount,
+    all_search_queries: evidenceMetrics.searchQueries
+  } : null;
+  const effectiveEvidenceSummary = evidenceSummary ? {
+    ...evidenceSummary,
+    source_basis: evidenceMetrics.sourceBasis,
+    primary_quality: evidenceMetrics.primaryQuality,
+    verified_finding_count: evidenceMetrics.verifiedFindingCount,
+    citation_count: evidenceMetrics.citationCount
+  } : null;
   const audit = process?.audit_summary ?? null;
   const closedLoop = run.closed_loop_state;
-  const sourceIds = new Set(run.source_scope.map((source) => source.source_id));
-  const rounds = (timeline?.rounds ?? []).map((round) => ({
-    roundNo: round.round_no,
-    branchId: text(closedLoop.loop_rounds.find((item) => count(item["round_no"]) === round.round_no)?.["branch_id"], ""),
-    decision: round.global_decision || round.branch_decision || "推进中",
-    reason: text(closedLoop.loop_rounds.find((item) => count(item["round_no"]) === round.round_no)?.["reason"], "未返回原因"),
-    searchHitCount: String(round.search_hit_count),
-    readWindowCount: String(round.read_window_count),
-    evidenceCardCount: String(round.evidence_card_count),
-    sourceNarrative: round.search_queries.join(" / "),
-    deltaNarrative: `本轮新增 ${round.evidence_ids.length} 条证据引用。`,
-    outcomeNarrative: round.global_decision ? `本轮结果：${round.global_decision}` : ""
-  }));
+  const sourceIds = useMemo(() => new Set(run.source_scope.map((source) => source.source_id)), [run.source_scope]);
+  const rounds = buildResearchRounds(timeline, closedLoop.loop_rounds);
   const effectiveRoundNo = activeRoundNo ?? rounds.at(-1)?.roundNo ?? null;
 
-  const traceCards = useMemo(() => run.traces.map((trace, index) => {
-    const payload = asRecord(trace.payload);
-    const traceType = trace.trace_type.toUpperCase();
-    const kind = traceType.includes("SEARCH")
-      ? "search" as const
-      : traceType.includes("READ") || traceType.includes("FETCH") || traceType.includes("EVIDENCE")
-        ? "read" as const
-        : "workspace" as const;
-    const sourceId = text(payload["source_id"], "");
-    const checkpointNo = count(payload["checkpoint_no"]) || null;
-    const roundNo = count(payload["round_no"]) || null;
-    const key = trace.trace_id || `trace-${index}`;
-    return {
-      key,
-      anchorId: `research-trace-${key}`,
-      traceType: trace.trace_type,
-      traceMessage: trace.trace_message,
-      roundNo,
-      narrative: text(payload["narrative"] ?? payload["summary"], "该步骤已记录到 Research trace。"),
-      createdAt: trace.created_at,
-      checkpointNarrative: checkpointNo ? `关联 checkpoint #${checkpointNo}` : "未关联 checkpoint",
-      auditFocusNarrative: "当前审计焦点",
-      recoveryNarrative: text(payload["recovery_narrative"], ""),
-      sourceNarrative: text(payload["source_title"] ?? payload["source_url"], ""),
-      outcomeNarrative: text(payload["outcome"] ?? payload["decision"], ""),
-      primaryUrl: text(payload["source_url"] ?? payload["url"], ""),
-      primarySourceId: sourceId,
-      primarySourceInScope: sourceIds.has(sourceId),
-      hasPrimarySourceAsset: Boolean(sourceId),
-      checkpointNo,
-      kind,
-      focused: false,
-      selected: selectedTraceKey === key,
-      auditTarget: { traceIndex: index, checkpointNo, branchId: text(payload["branch_id"], "") },
-      payload
-    };
-  }), [run.traces, selectedTraceKey, sourceIds]);
-  const traceGroups = (["search", "read", "workspace"] as const).map((kind) => ({
-    title: kind === "search" ? "搜索线索" : kind === "read" ? "阅读与证据" : "闭环与工作台",
-    stageLabel: kind === "search" ? "Search" : kind === "read" ? "Read" : "Workspace",
-    description: kind === "search" ? "检索 query 与候选入口" : kind === "read" ? "页面读取、证据提取与快照" : "校验、checkpoint 与结果回流",
-    empty: "当前阶段还没有可展示的轨迹。",
-    tone: kind,
-    roundMessage: effectiveRoundNo ? `当前查看第 ${effectiveRoundNo} 轮` : "整体运行轨迹",
-    entries: traceCards.filter((trace) => trace.kind === kind)
-  }));
+  const traceCards = useMemo(() => buildTraceCards(run.traces, selectedTraceKey, sourceIds), [run.traces, selectedTraceKey, sourceIds]);
+  const traceGroups = buildTraceGroups(traceCards, effectiveRoundNo);
   const selectedTrace = traceCards.find((trace) => trace.key === selectedTraceKey) ?? traceCards[0] ?? null;
-  const selectedTraceDetail = selectedTrace ? {
-    ...selectedTrace,
-    tone: selectedTrace.kind,
-    title: selectedTrace.kind === "search" ? "搜索" : selectedTrace.kind === "read" ? "阅读" : "闭环",
-    stageLabel: selectedTrace.kind.toUpperCase(),
-    primaryUrlLabel: selectedTrace.primaryUrl || selectedTrace.primarySourceId || "未显式返回",
-    provider: text(selectedTrace.payload["provider"], ""),
-    adapter: text(selectedTrace.payload["adapter"], ""),
-    snapshotStatus: text(selectedTrace.payload["snapshot_status"], ""),
-    querySamples: stringList(selectedTrace.payload["search_queries"] ?? selectedTrace.payload["query_samples"]),
-    searchAngles: stringList(selectedTrace.payload["search_angles"]),
-    readFocuses: stringList(selectedTrace.payload["read_focuses"] ?? selectedTrace.payload["read_focus"])
-  } : null;
+  const selectedTraceDetail = buildTraceDetail(selectedTrace);
 
   const ledger = asRecord(closedLoop.state_ledger);
   const recovery = asRecord(closedLoop.recovery_targets);
@@ -180,11 +107,17 @@ export function ResearchDetailWorkbench({
   const selectedEvidence = evidenceItems(selectedPayload["evidence_cards"] ?? selectedPayload["evidence_ledger"], "evidence");
 
   return (
-    <div className="research-detail-modal research-detail-workbench" onClick={(event) => event.stopPropagation()}>
+    <div
+      className="research-detail-modal research-detail-workbench"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="research-detail-title"
+      onClick={(event) => event.stopPropagation()}
+    >
       <div className="research-detail-header">
         <div>
           <p className="section-label">Research workbench</p>
-          <h3>{run.final_report_title || run.question || "Deep Research"}</h3>
+          <h3 id="research-detail-title">{run.final_report_title || run.question || "Deep Research"}</h3>
           <small>{run.status} · {run.source_scope.length} 个来源 · {checkpoints.length} 个 checkpoint</small>
         </div>
         <button type="button" className="secondary-button" onClick={onClose}>关闭</button>
@@ -202,16 +135,16 @@ export function ResearchDetailWorkbench({
           <div className="research-detail-section-stack">
             <ResearchProcessOverview
               processSummary={process}
-              searchReadTimeline={timeline}
-              sourceEvidenceSummary={evidenceSummary}
-              searchTimelineSummary={timeline?.all_search_queries.join(" / ") || "尚未返回检索 query"}
-              searchTimelineRoundLabel={`${timeline?.loop_round_count ?? 0} 个研究轮次`}
-              fetchTimelineSummary={`${timeline?.total_search_hit_count ?? 0} 个候选入口`}
+              searchReadTimeline={effectiveTimeline}
+              sourceEvidenceSummary={effectiveEvidenceSummary}
+              searchTimelineSummary={effectiveTimeline?.all_search_queries.join(" / ") || "尚未返回检索 query"}
+              searchTimelineRoundLabel={`${effectiveTimeline?.loop_round_count ?? 0} 个研究轮次`}
+              fetchTimelineSummary={`${evidenceMetrics.searchHitCount} 个候选入口`}
               fetchTimelineDetail="候选入口会在阅读阶段转为可追溯证据。"
-              readTimelineSummary={`${timeline?.total_read_window_count ?? 0} 个阅读窗口`}
-              readTimelineDetail={`${timeline?.total_evidence_card_count ?? 0} 张证据卡`}
-              sourceEvidenceSummaryLead={`${evidenceSummary?.verified_finding_count ?? 0} 条已验证结论`}
-              sourceEvidenceSummaryDetail={`${evidenceSummary?.citation_count ?? 0} 条引用 · ${evidenceSummary?.primary_quality || "质量待评估"}`}
+              readTimelineSummary={`${evidenceMetrics.readWindowCount} 个阅读窗口`}
+              readTimelineDetail={`${evidenceMetrics.evidenceCardCount} 张证据卡`}
+              sourceEvidenceSummaryLead={`${evidenceMetrics.verifiedFindingCount} 条已验证结论`}
+              sourceEvidenceSummaryDetail={`${evidenceMetrics.citationCount} 条引用 · ${evidenceMetrics.primaryQuality || "质量待评估"}`}
               visibleSearchTraceCount={traceCards.filter((trace) => trace.kind === "search").length}
               visibleReadTraceCount={traceCards.filter((trace) => trace.kind === "read").length}
               loopRoundCount={rounds.length}
@@ -235,23 +168,23 @@ export function ResearchDetailWorkbench({
               overviewTitle={run.question}
               overviewNarrative={run.trace_summary || "当前研究过程已按搜索、阅读、验证和写回阶段归档。"}
               overviewSourceNarrative={`${run.source_scope.length} 个资料来源`}
-              overviewSearchCount={timeline?.total_search_hit_count ?? 0}
+              overviewSearchCount={evidenceMetrics.searchHitCount}
               overviewSearchLabel="搜索命中"
-              overviewReadCount={timeline?.total_read_window_count ?? 0}
+              overviewReadCount={evidenceMetrics.readWindowCount}
               overviewReadLabel="阅读窗口"
               overviewWorkspaceCount={run.saved_report_source ? 1 : 0}
               overviewWorkspaceLabel="报告回流"
-              overviewLoopCount={String(timeline?.loop_round_count ?? 0)}
+              overviewLoopCount={String(effectiveTimeline?.loop_round_count ?? 0)}
               overviewLoopLabel="闭环轮次"
             />
             <ResearchProcessStageLanes
-              searchSummary={timeline?.all_search_queries.join(" / ") || "尚未返回 query"}
-              searchScopeMessage={`${timeline?.total_search_hit_count ?? 0} 个搜索命中`}
-              searchAngleMessage={`${timeline?.loop_round_count ?? 0} 个轮次`}
+              searchSummary={effectiveTimeline?.all_search_queries.join(" / ") || "尚未返回 query"}
+              searchScopeMessage={`${evidenceMetrics.searchHitCount} 个搜索命中`}
+              searchAngleMessage={`${effectiveTimeline?.loop_round_count ?? 0} 个轮次`}
               runtimeSnapshot={run.status}
-              readSummary={`${timeline?.total_read_window_count ?? 0} 个阅读窗口`}
-              readSourceMessage={`${timeline?.total_evidence_card_count ?? 0} 张证据卡`}
-              readScopeMessage={`${evidenceSummary?.verified_finding_count ?? 0} 条已验证结论`}
+              readSummary={`${evidenceMetrics.readWindowCount} 个阅读窗口`}
+              readSourceMessage={`${evidenceMetrics.evidenceCardCount} 张证据卡`}
+              readScopeMessage={`${evidenceMetrics.verifiedFindingCount} 条已验证结论`}
               taskRuntimeFocusNarrative=""
               workspaceScopeMessage={run.saved_report_source ? "报告已写回资料池" : "报告尚未写回资料池"}
               savedReportRoundNarrative=""

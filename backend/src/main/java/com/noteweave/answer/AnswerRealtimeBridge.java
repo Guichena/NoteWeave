@@ -10,21 +10,17 @@ public interface AnswerRealtimeBridge {
 
     List<AnswerLiveEvent> readAfter(String runId, long after, Duration blockTimeout);
 
-    default ConversationLiveEvent publishConversation(
+    ConversationLiveEvent publishConversation(
             String conversationId,
             String runId,
             AnswerLiveEvent event
-    ) {
-        return null;
-    }
+    );
 
-    default List<ConversationLiveEvent> readConversationAfter(
+    List<ConversationLiveEvent> readConversationAfter(
             String conversationId,
             long after,
             Duration blockTimeout
-    ) {
-        return List.of();
-    }
+    );
 
     void signalCancellation(String runId);
 

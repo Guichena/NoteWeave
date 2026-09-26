@@ -37,6 +37,8 @@ public class SessionEventMux {
     private final MeterRegistry meterRegistry;
     private final int replayCapacity;
     private final int subscriberQueueCapacity;
+    private final Duration channelRetention;
+    private final int maxRetainedChannels;
     private final AnswerRealtimeBridge realtimeBridge;
     private final Executor bridgeExecutor;
     private final AtomicInteger activeSubscribers = new AtomicInteger();
@@ -48,7 +50,9 @@ public class SessionEventMux {
             ObjectProvider<AnswerRealtimeBridge> bridgeProvider,
             MeterRegistry meterRegistry,
             @Value("${noteweave.answer.events.replay-capacity:512}") int replayCapacity,
-            @Value("${noteweave.answer.events.subscriber-queue-capacity:64}") int subscriberQueueCapacity
+            @Value("${noteweave.answer.events.subscriber-queue-capacity:64}") int subscriberQueueCapacity,
+            @Value("${noteweave.answer.events.channel-retention-seconds:900}") long channelRetentionSeconds,
+            @Value("${noteweave.answer.events.max-retained-channels:10000}") int maxRetainedChannels
     ) {
         this.dispatchExecutor = dispatchExecutor;
         this.bridgeExecutor = bridgeExecutor;
@@ -56,10 +60,13 @@ public class SessionEventMux {
         this.meterRegistry = meterRegistry;
         this.replayCapacity = Math.max(32, replayCapacity);
         this.subscriberQueueCapacity = Math.max(8, subscriberQueueCapacity);
+        this.channelRetention = Duration.ofSeconds(Math.max(1, channelRetentionSeconds));
+        this.maxRetainedChannels = Math.max(128, maxRetainedChannels);
         meterRegistry.gauge("noteweave.answer.events.active_subscribers", activeSubscribers);
     }
 
     public void seed(String runId, long sequence) {
+        cleanupRetiredChannels();
         RunChannel channel = channels.computeIfAbsent(runId, ignored -> new RunChannel());
         synchronized (channel) {
             channel.sequence = Math.max(channel.sequence, sequence);
@@ -67,6 +74,7 @@ public class SessionEventMux {
     }
 
     public AnswerLiveEvent publish(String runId, String eventType, String data) {
+        cleanupRetiredChannels();
         RunChannel channel = channels.computeIfAbsent(runId, ignored -> new RunChannel());
         AnswerLiveEvent event;
         List<Subscriber> subscribers;
@@ -88,6 +96,7 @@ public class SessionEventMux {
     }
 
     public AnswerLiveEvent publishAt(String runId, long sequence, String eventType, String data) {
+        cleanupRetiredChannels();
         RunChannel channel = channels.computeIfAbsent(runId, ignored -> new RunChannel());
         AnswerLiveEvent event;
         List<Subscriber> subscribers;
@@ -110,6 +119,7 @@ public class SessionEventMux {
     }
 
     public long currentSequence(String runId) {
+        cleanupRetiredChannels();
         RunChannel channel = channels.get(runId);
         if (channel == null) {
             return 0;
@@ -120,6 +130,7 @@ public class SessionEventMux {
     }
 
     public void follow(String runId, long after, Consumer<AnswerLiveEvent> consumer, Duration timeout) {
+        cleanupRetiredChannels();
         RunChannel channel = channels.computeIfAbsent(runId, ignored -> new RunChannel());
         Subscriber subscriber = new Subscriber(channel, consumer);
         List<AnswerLiveEvent> replay;
@@ -154,12 +165,58 @@ public class SessionEventMux {
             int replayCapacity,
             int subscriberQueueCapacity
     ) {
+        this(
+                dispatchExecutor,
+                Runnable::run,
+                null,
+                meterRegistry,
+                replayCapacity,
+                subscriberQueueCapacity,
+                Duration.ofMinutes(15),
+                10_000
+        );
+    }
+
+    SessionEventMux(
+            Executor dispatchExecutor,
+            MeterRegistry meterRegistry,
+            int replayCapacity,
+            int subscriberQueueCapacity,
+            Duration channelRetention,
+            int maxRetainedChannels
+    ) {
+        this(
+                dispatchExecutor,
+                Runnable::run,
+                null,
+                meterRegistry,
+                replayCapacity,
+                subscriberQueueCapacity,
+                channelRetention,
+                maxRetainedChannels
+        );
+    }
+
+    private SessionEventMux(
+            Executor dispatchExecutor,
+            Executor bridgeExecutor,
+            AnswerRealtimeBridge realtimeBridge,
+            MeterRegistry meterRegistry,
+            int replayCapacity,
+            int subscriberQueueCapacity,
+            Duration channelRetention,
+            int maxRetainedChannels
+    ) {
         this.dispatchExecutor = dispatchExecutor;
-        this.bridgeExecutor = Runnable::run;
-        this.realtimeBridge = null;
+        this.bridgeExecutor = bridgeExecutor;
+        this.realtimeBridge = realtimeBridge;
         this.meterRegistry = meterRegistry;
         this.replayCapacity = Math.max(32, replayCapacity);
         this.subscriberQueueCapacity = Math.max(8, subscriberQueueCapacity);
+        this.channelRetention = channelRetention == null || channelRetention.isNegative()
+                ? Duration.ofMinutes(15)
+                : channelRetention;
+        this.maxRetainedChannels = Math.max(1, maxRetainedChannels);
         meterRegistry.gauge("noteweave.answer.events.active_subscribers", activeSubscribers);
     }
 
@@ -171,13 +228,16 @@ public class SessionEventMux {
             int replayCapacity,
             int subscriberQueueCapacity
     ) {
-        this.dispatchExecutor = dispatchExecutor;
-        this.bridgeExecutor = bridgeExecutor;
-        this.realtimeBridge = realtimeBridge;
-        this.meterRegistry = meterRegistry;
-        this.replayCapacity = Math.max(32, replayCapacity);
-        this.subscriberQueueCapacity = Math.max(8, subscriberQueueCapacity);
-        meterRegistry.gauge("noteweave.answer.events.active_subscribers", activeSubscribers);
+        this(
+                dispatchExecutor,
+                bridgeExecutor,
+                realtimeBridge,
+                meterRegistry,
+                replayCapacity,
+                subscriberQueueCapacity,
+                Duration.ofMinutes(15),
+                10_000
+        );
     }
 
     private void ensureBridgePump(String runId, RunChannel channel, long after) {
@@ -275,6 +335,32 @@ public class SessionEventMux {
             channel.replay.removeFirst();
             meterRegistry.counter("noteweave.answer.events.replay_trimmed").increment();
         }
+    }
+
+    private void cleanupRetiredChannels() {
+        Instant cutoff = Instant.now().minus(channelRetention);
+        channels.entrySet().removeIf(entry -> {
+            RunChannel channel = entry.getValue();
+            synchronized (channel) {
+                return channel.subscribers.isEmpty()
+                        && channel.terminal
+                        && channel.terminalAt != null
+                        && channel.terminalAt.isBefore(cutoff);
+            }
+        });
+        if (channels.size() <= maxRetainedChannels) {
+            return;
+        }
+        channels.entrySet().stream()
+                .filter(entry -> {
+                    RunChannel channel = entry.getValue();
+                    synchronized (channel) {
+                        return channel.subscribers.isEmpty() && channel.terminal && channel.terminalAt != null;
+                    }
+                })
+                .sorted((left, right) -> left.getValue().terminalAt.compareTo(right.getValue().terminalAt))
+                .limit(Math.max(0, channels.size() - maxRetainedChannels))
+                .forEach(entry -> channels.remove(entry.getKey(), entry.getValue()));
     }
 
     private boolean isTerminal(String eventType) {

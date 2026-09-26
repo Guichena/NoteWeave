@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ChevronDown, Settings2 } from "lucide-react";
 import { ApiError } from "../../shared/api";
 import { workspaceApi, type WorkspaceApi } from "./api";
 import {
@@ -107,16 +108,29 @@ export function WorkspaceSettingsPanel({
         <div>
           <p className="section-label">Workspace Settings</p>
           <h2>{showMembers ? "检索与成员" : "检索设置"}</h2>
+          <p className="workspace-settings-intro">控制当前工作台的检索策略与访问权限。</p>
         </div>
         <button className="secondary-button" onClick={onClose}>关闭</button>
       </header>
 
-      {loading ? <p className="workspace-settings-state">正在加载工作台设置...</p> : (
+      {loading ? (
+        <div className="workspace-settings-state is-loading" aria-busy="true" aria-live="polite">
+          <span className="workspace-settings-state-icon" aria-hidden="true"><Settings2 size={19} /></span>
+          <div>
+            <strong>正在读取工作台设置</strong>
+            <span>同步检索策略与成员权限。</span>
+          </div>
+          <div className="view-loading-skeleton" aria-hidden="true">
+            <span className="skeleton-line w-70" />
+            <span className="skeleton-line w-40" />
+          </div>
+        </div>
+      ) : (
         <>
           <div className="workspace-retrieval-setting">
             <div>
               <strong>检索策略 V2</strong>
-              <p>{retrieval?.retrieval_strategy_v2_enabled ? "已启用" : "未启用"}</p>
+              <p>{retrieval?.retrieval_strategy_v2_enabled ? "已启用，可使用新版召回策略" : "已停用，继续使用兼容策略"}</p>
             </div>
             <label className="workspace-toggle">
               <input
@@ -125,13 +139,16 @@ export function WorkspaceSettingsPanel({
                 disabled={mutating}
                 onChange={(event) => void updateRetrieval(event.target.checked)}
               />
-              <span>{retrieval?.retrieval_strategy_v2_enabled ? "启用" : "停用"}</span>
+              <span className="workspace-toggle-track" aria-hidden="true">
+                <span className="workspace-toggle-thumb" />
+              </span>
+              <span>{retrieval?.retrieval_strategy_v2_enabled ? "已启用" : "已停用"}</span>
             </label>
           </div>
 
           {showMembers ? (
             members === null ? (
-              <p className="workspace-settings-state">当前账号没有成员管理权限。</p>
+              <p className="workspace-settings-state is-note">当前账号没有成员管理权限。</p>
             ) : (
               <div className="workspace-members">
                 <div className="workspace-member-add">
@@ -141,12 +158,15 @@ export function WorkspaceSettingsPanel({
                   </label>
                   <label>
                     <span>角色</span>
-                    <select value={newRole} onChange={(event) => setNewRole(event.target.value as UpdateWorkspaceMemberInput["role"])}>
-                      <option value="VIEWER">Viewer</option>
-                      <option value="EDITOR">Editor</option>
-                    </select>
+                    <span className="workspace-select-control">
+                      <select value={newRole} onChange={(event) => setNewRole(event.target.value as UpdateWorkspaceMemberInput["role"])}>
+                        <option value="VIEWER">Viewer</option>
+                        <option value="EDITOR">Editor</option>
+                      </select>
+                      <ChevronDown size={14} aria-hidden="true" />
+                    </span>
                   </label>
-                  <button disabled={mutating || !newUserId.trim()} onClick={() => void addMember()}>添加成员</button>
+                  <button className="primary-action" disabled={mutating || !newUserId.trim()} onClick={() => void addMember()}>添加成员</button>
                 </div>
                 <div className="workspace-member-list">
                   {members.map((member) => (
@@ -162,7 +182,7 @@ export function WorkspaceSettingsPanel({
               </div>
             )
           ) : (
-            <p className="workspace-settings-state">当前为单人工作台模式，成员协作入口未开放。</p>
+            <p className="workspace-settings-state is-note">当前为单人工作台模式，成员协作入口未开放。</p>
           )}
         </>
       )}
@@ -194,18 +214,24 @@ function WorkspaceMemberRow({
     <div className="workspace-member-row">
       <div className="workspace-member-identity">
         <strong>{member.display_name || member.user_id}</strong>
-        <span>{member.user_id}</span>
+        <span title={member.user_id}>{formatUserId(member.user_id)}</span>
       </div>
       {owner ? <span className="status-chip">Owner</span> : (
         <>
-          <select aria-label={`${member.display_name} 角色`} value={role} disabled={disabled} onChange={(event) => setRole(event.target.value as UpdateWorkspaceMemberInput["role"])}>
-            <option value="VIEWER">Viewer</option>
-            <option value="EDITOR">Editor</option>
-          </select>
-          <select aria-label={`${member.display_name} 状态`} value={status} disabled={disabled} onChange={(event) => setStatus(event.target.value as UpdateWorkspaceMemberInput["status"])}>
-            <option value="ACTIVE">Active</option>
-            <option value="SUSPENDED">Suspended</option>
-          </select>
+          <span className="workspace-select-control">
+            <select aria-label={`${member.display_name} 角色`} value={role} disabled={disabled} onChange={(event) => setRole(event.target.value as UpdateWorkspaceMemberInput["role"])}>
+              <option value="VIEWER">Viewer</option>
+              <option value="EDITOR">Editor</option>
+            </select>
+            <ChevronDown size={14} aria-hidden="true" />
+          </span>
+          <span className="workspace-select-control">
+            <select aria-label={`${member.display_name} 状态`} value={status} disabled={disabled} onChange={(event) => setStatus(event.target.value as UpdateWorkspaceMemberInput["status"])}>
+              <option value="ACTIVE">Active</option>
+              <option value="SUSPENDED">Suspended</option>
+            </select>
+            <ChevronDown size={14} aria-hidden="true" />
+          </span>
           <div className="workspace-member-actions">
             <button disabled={disabled} onClick={() => void onUpdate(member, { role, status })}>保存</button>
             <button className="danger-button" disabled={disabled} onClick={() => void onRemove(member)}>移除</button>
@@ -224,6 +250,10 @@ function upsertMember(members: WorkspaceMember[], saved: WorkspaceMember) {
 
 function roleOrder(role: WorkspaceMember["role"]) {
   return role === "OWNER" ? 0 : role === "EDITOR" ? 1 : 2;
+}
+
+function formatUserId(userId: string) {
+  return userId.length > 18 ? `${userId.slice(0, 8)}…${userId.slice(-5)}` : userId;
 }
 
 function errorMessage(cause: unknown, fallback: string) {

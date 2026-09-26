@@ -18,6 +18,7 @@ public record ResearchRunDetailResponse(
         String resumedFromResearchRunId,
         Integer resumedFromCheckpointNo,
         String status,
+        String completionTerminalState,
         String finalReportTitle,
         String finalReportMarkdown,
         ResearchReportStructureResponse reportStructure,

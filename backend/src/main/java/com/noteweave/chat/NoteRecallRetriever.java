@@ -8,6 +8,7 @@ import com.noteweave.chat.NoteRetrievalService.NoteRelationSignal;
 import com.noteweave.retrieval.note.NoteSourceRerankService;
 import com.noteweave.retrieval.note.NoteSourceSearchPort;
 import com.noteweave.retrieval.provider.EmbeddingClient;
+import com.noteweave.retrieval.provider.RetrievalProviderException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -18,6 +19,7 @@ import java.util.Map;
 import java.util.Set;
 import org.springframework.stereotype.Component;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 
 @Component
 public class NoteRecallRetriever {
@@ -29,6 +31,7 @@ public class NoteRecallRetriever {
     private final NoteSourceSearchPort sourceSearchPort;
     private final NoteSourceRerankService rerankService;
     private final NoteTagResolver tagResolver;
+    private final boolean localMetadataFallbackEnabled;
 
     public NoteRecallRetriever(
             NoteRecallRepository repository,
@@ -36,7 +39,7 @@ public class NoteRecallRetriever {
             NoteRelationGraph relationGraph,
             NoteRecallRanker ranker
     ) {
-        this(repository, journalRetriever, relationGraph, ranker, null, null, null, null);
+        this(repository, journalRetriever, relationGraph, ranker, null, null, null, null, true);
     }
 
     @Autowired
@@ -48,7 +51,9 @@ public class NoteRecallRetriever {
             EmbeddingClient embeddingClient,
             NoteSourceSearchPort sourceSearchPort,
             NoteSourceRerankService rerankService,
-            NoteTagResolver tagResolver
+            NoteTagResolver tagResolver,
+            @Value("${noteweave.retrieval.note.local-metadata-fallback-enabled:false}")
+            boolean localMetadataFallbackEnabled
     ) {
         this.repository = repository;
         this.journalRetriever = journalRetriever;
@@ -58,6 +63,7 @@ public class NoteRecallRetriever {
         this.sourceSearchPort = sourceSearchPort;
         this.rerankService = rerankService;
         this.tagResolver = tagResolver;
+        this.localMetadataFallbackEnabled = localMetadataFallbackEnabled;
     }
 
     public NoteRecallPlan retrieve(String workspaceId, String query) {
@@ -74,7 +80,10 @@ public class NoteRecallRetriever {
         Map<String, Integer> tagScores = tagResolution.sourceScores();
         Map<String, Integer> semanticScores = new HashMap<>();
         Map<String, Integer> indexedMetadataScores = new HashMap<>();
-        if (embeddingClient != null && sourceSearchPort != null && embeddingClient.isEnabled()) {
+        boolean sourceRecallUnavailable = embeddingClient == null
+                || sourceSearchPort == null
+                || !embeddingClient.isEnabled();
+        if (!sourceRecallUnavailable) {
             try {
                 var vector = embeddingClient.embedQuery(query).singleVector();
                 int rank = 0;
@@ -86,18 +95,22 @@ public class NoteRecallRetriever {
                     indexedMetadataScores.put(hit.sourceId(), weightedRankScore(++rank, 0.8d));
                 }
             } catch (RuntimeException ex) {
-                degradationReasons.add("NOTE_SOURCE_RECALL_UNAVAILABLE");
+                sourceRecallUnavailable = true;
             }
-        } else {
-            degradationReasons.add("NOTE_SOURCE_RECALL_UNAVAILABLE");
         }
-        // Test/dev environments may intentionally disable the provider; retain the local
-        // metadata scorer only as an explicit degraded compatibility path. Production with
-        // an enabled provider uses the indexed metadata channel above.
-        boolean indexedRecallAvailable = !semanticScores.isEmpty() || !indexedMetadataScores.isEmpty();
-        Map<String, NoteRecallRanker.MetadataRank> metadataRanks = indexedRecallAvailable
-                ? Map.of()
-                : ranker.rankMetadata(candidates, terms);
+        if (sourceRecallUnavailable) {
+            degradationReasons.add("NOTE_SOURCE_RECALL_UNAVAILABLE");
+            if (!localMetadataFallbackEnabled) {
+                throw new RetrievalProviderException(
+                        "NOTE_SOURCE_RETRIEVAL_PROVIDER_UNAVAILABLE",
+                        "Note source retrieval provider is unavailable"
+                );
+            }
+            degradationReasons.add("NOTE_LOCAL_METADATA_FALLBACK");
+        }
+        Map<String, NoteRecallRanker.MetadataRank> metadataRanks = sourceRecallUnavailable
+                ? ranker.rankMetadata(candidates, terms)
+                : Map.of();
 
         Set<String> anchorSourceIds = new LinkedHashSet<>();
         candidates.stream()
@@ -138,7 +151,8 @@ public class NoteRecallRetriever {
                     "source_candidate_count", (long) candidates.size(),
                     "resolved_tag_count", (long) tagResolution.resolvedTags().size(),
                     "semantic_hit_count", (long) semanticScores.size(),
-                    "metadata_index_hit_count", (long) indexedMetadataScores.size()));
+                    "metadata_index_hit_count", (long) indexedMetadataScores.size(),
+                    "note_local_fallback_used", sourceRecallUnavailable ? 1L : 0L));
         }
 
         NoteSourceRerankService.Outcome rerankOutcome = rerankService == null
@@ -174,6 +188,7 @@ public class NoteRecallRetriever {
                         "resolved_tag_count", (long) tagResolution.resolvedTags().size(),
                         "semantic_hit_count", (long) semanticScores.size(),
                         "metadata_index_hit_count", (long) indexedMetadataScores.size(),
+                        "note_local_fallback_used", sourceRecallUnavailable ? 1L : 0L,
                         "source_rerank_count", (long) reranked.size(),
                         "verify_batch_count", (long) verifySources.size())
         );

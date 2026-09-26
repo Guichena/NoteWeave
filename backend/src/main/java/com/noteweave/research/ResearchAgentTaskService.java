@@ -37,15 +37,18 @@ public class ResearchAgentTaskService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final ResearchAgentTaskSnapshotCanonicalizer snapshotCanonicalizer;
+    private final ResearchAgentRoleCapabilityRegistry roleCapabilities;
 
     public ResearchAgentTaskService(
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
-            ResearchAgentTaskSnapshotCanonicalizer snapshotCanonicalizer
+            ResearchAgentTaskSnapshotCanonicalizer snapshotCanonicalizer,
+            ResearchAgentRoleCapabilityRegistry roleCapabilities
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.snapshotCanonicalizer = snapshotCanonicalizer;
+        this.roleCapabilities = roleCapabilities;
     }
 
     @Transactional
@@ -260,7 +263,8 @@ public class ResearchAgentTaskService {
     private void bindClaimedTargetCells(TaskRow task) {
         if (!isSnapshotSchema(task.snapshotSchemaVersion())) return;
         List<Map<String, Object>> bindings = new ArrayList<>(
-                readList(task.targetBindingsJson(), "RESEARCH_AGENT_TASK_SNAPSHOT_INVALID"));
+                readList(task.targetBindingsJson(), "RESEARCH_AGENT_TASK_SNAPSHOT_INVALID",
+                        "WIDE_DISCOVERY".equals(task.role())));
         bindings.sort((left, right) -> ResearchAgentBinaryOrder.UTF8.compare(
                 String.valueOf(left.get("cell_id")), String.valueOf(right.get("cell_id"))));
         String bindingOwner = task.candidateQuorum() == 2 ? task.quorumGroupKey() : task.id();
@@ -275,7 +279,7 @@ public class ResearchAgentTaskService {
                             update research_cell
                             set active_task_id = ?, updated_at = current_timestamp
                             where research_run_id = ? and cell_key = ? and cell_version = ?
-                              and plan_revision = ? and entity_set_version = ?
+                              and plan_revision <= ? and entity_set_version = ?
                               and (active_task_id is null or active_task_id = ?)
                             """, bindingOwner, task.researchRunId(), cellKey, version.intValue(),
                             task.planRevision(), task.entitySetVersion(), bindingOwner)
@@ -283,7 +287,7 @@ public class ResearchAgentTaskService {
                             update research_cell
                             set active_task_id = ?, lease_epoch = ?, fencing_token = ?, updated_at = current_timestamp
                             where research_run_id = ? and cell_key = ? and cell_version = ?
-                              and plan_revision = ? and entity_set_version = ?
+                              and plan_revision <= ? and entity_set_version = ?
                               and (active_task_id is null or active_task_id = ?)
                             """, bindingOwner, task.leaseEpoch(), task.fencingToken(), task.researchRunId(), cellKey,
                             version.intValue(), task.planRevision(), task.entitySetVersion(), bindingOwner);
@@ -385,9 +389,15 @@ public class ResearchAgentTaskService {
     }
 
     private List<Map<String, Object>> readList(String rawJson, String errorCode) {
+        return readList(rawJson, errorCode, false);
+    }
+
+    private List<Map<String, Object>> readList(String rawJson, String errorCode, boolean allowEmpty) {
         try {
             List<Map<String, Object>> list = objectMapper.readValue(rawJson, new TypeReference<List<Map<String, Object>>>() { });
-            if (list == null || list.isEmpty()) throw new BusinessException(errorCode, "Task snapshot JSON is invalid");
+            if (list == null || (!allowEmpty && list.isEmpty())) {
+                throw new BusinessException(errorCode, "Task snapshot JSON is invalid");
+            }
             return list;
         } catch (JsonProcessingException | IllegalArgumentException exception) {
             throw new BusinessException(errorCode, "Task snapshot JSON is invalid");
@@ -425,7 +435,9 @@ public class ResearchAgentTaskService {
         if (blank(command.researchRunId()) || blank(command.taskKey()) || blank(command.idempotencyKey())
                 || blank(command.role()) || blank(command.entityId()) || blank(command.branchId())
                 || command.waveNo() < 1 || command.planRevision() < 0 || command.entitySetVersion() < 0
-                || command.targetCells() == null || command.targetCells().isEmpty() || command.budget() == null) {
+                || command.targetCells() == null
+                || (command.targetCells().isEmpty() && !"WIDE_DISCOVERY".equals(command.role()))
+                || command.budget() == null) {
             throw new BusinessException("RESEARCH_AGENT_TASK_INVALID", "Research agent task contract is invalid");
         }
         boolean bindingsPresent = command.targetBindings() != null;
@@ -434,10 +446,12 @@ public class ResearchAgentTaskService {
             throw new BusinessException("RESEARCH_AGENT_TASK_SNAPSHOT_INVALID", "Task snapshot scope must be supplied as a complete unit");
         }
         if (!bindingsPresent) return; // Legacy MA3/MA4A transport task: intentionally not eligible for MA4D execution.
-        if (!SNAPSHOT_ROLES.contains(command.role()) || command.targetBindings().isEmpty()
+        if (!SNAPSHOT_ROLES.contains(command.role())
+                || (command.targetBindings().isEmpty() && !"WIDE_DISCOVERY".equals(command.role()))
                 || command.targetBindings().size() != command.targetCells().size()) {
             throw new BusinessException("RESEARCH_AGENT_TASK_SNAPSHOT_INVALID", "Task snapshot bindings are invalid");
         }
+        roleCapabilities.requireSchedulable(command.role());
         Set<String> legacyCells = new HashSet<>(command.targetCells());
         Set<String> bindingCells = new HashSet<>();
         for (TargetCellBinding binding : command.targetBindings()) {

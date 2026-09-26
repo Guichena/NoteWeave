@@ -1,11 +1,7 @@
 package com.noteweave.memory;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.capability.CapabilityCatalogPort;
-import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
 import com.noteweave.security.CurrentUserProvider;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -27,7 +23,7 @@ import org.springframework.stereotype.Service;
 public class MemoryCompilerService {
 
     private final JdbcTemplate jdbcTemplate;
-    private final ObjectMapper objectMapper;
+    private final MemoryCompilerReadRepository readRepository;
     private final ObjectProvider<CapabilityCatalogPort> capabilityCatalogProvider;
     private final CurrentUserProvider currentUserProvider;
     private final MemoryCompilerPolicy compilerPolicy;
@@ -44,7 +40,7 @@ public class MemoryCompilerService {
             MeterRegistry meterRegistry
     ) {
         this.jdbcTemplate = jdbcTemplate;
-        this.objectMapper = objectMapper;
+        this.readRepository = new MemoryCompilerReadRepository(jdbcTemplate, objectMapper);
         this.capabilityCatalogProvider = capabilityCatalogProvider;
         this.currentUserProvider = currentUserProvider;
         this.compilerPolicy = compilerPolicy;
@@ -111,7 +107,7 @@ public class MemoryCompilerService {
             return;
         }
         List<MemoryReferenceResponse> references = pack.memoryReferences().isEmpty()
-                ? hydrateReferences(workspaceId, pack.memoryObjectIds())
+                ? readRepository.hydrateReferences(workspaceId, pack.memoryObjectIds())
                 : pack.memoryReferences();
         for (MemoryReferenceResponse reference : references) {
             Integer existing = jdbcTemplate.queryForObject("""
@@ -162,13 +158,14 @@ public class MemoryCompilerService {
             List<String> degradationReasons
     ) {
         String currentUserId = currentUserProvider.requireUserId();
-        List<StateRow> stateRows = loadStateRows(workspaceId);
-        List<StateRow> eligibleState = stateRows.stream()
+        List<MemoryCompilerReadRepository.StateRow> stateRows = loadStateRows(workspaceId);
+        List<MemoryCompilerReadRepository.StateRow> eligibleState = stateRows.stream()
                 .filter(row -> compilerPolicy.scopeAllowed(
                         row.memoryScope(), row.ownerUserId(), currentUserId))
                 .filter(row -> compilerPolicy.neighborhoodPriority(
                         row.taskNeighborhoods(), taskNeighborhood, allowedNeighborhoods) < 3)
-                .sorted(java.util.Comparator.comparing(StateRow::memoryObjectId))
+                .sorted(java.util.Comparator.comparing(
+                        MemoryCompilerReadRepository.StateRow::memoryObjectId))
                 .toList();
         MemoryCompiledPackCache.CacheKey cacheKey = new MemoryCompiledPackCache.CacheKey(
                 workspaceId,
@@ -189,7 +186,7 @@ public class MemoryCompilerService {
             return cached.get();
         }
 
-        List<ObjectRow> rows = loadObjectRows(workspaceId);
+        List<MemoryCompilerReadRepository.ObjectRow> rows = loadObjectRows(workspaceId);
         List<RankedObject> rankedRows = rows.stream()
                 .filter(row -> compilerPolicy.scopeAllowed(
                         row.memoryScope(), row.ownerUserId(), currentUserId))
@@ -217,7 +214,7 @@ public class MemoryCompilerService {
                 .sum();
 
         for (RankedObject ranked : rankedRows) {
-            ObjectRow row = ranked.row();
+            MemoryCompilerReadRepository.ObjectRow row = ranked.row();
             int incrementalTokens = incrementalTokens(
                     row.compileHints(),
                     styleConstraints,
@@ -276,39 +273,10 @@ public class MemoryCompilerService {
         return pack;
     }
 
-    private List<StateRow> loadStateRows(String workspaceId) {
+    private List<MemoryCompilerReadRepository.StateRow> loadStateRows(String workspaceId) {
         long startedAt = System.nanoTime();
         try {
-            List<StateRow> rows = jdbcTemplate.query("""
-                    select i.id, r.id as revision_id, i.utility_score,
-                           i.memory_scope, i.owner_user_id, i.updated_at,
-                           r.normalized_value_json, r.display_text,
-                           r.status, r.valid_from, r.valid_until
-                    from memory_item i
-                    join memory_runtime_revision r
-                      on r.id = i.current_revision_id
-                     and r.memory_item_id = i.id
-                    where i.workspace_id = ? and i.status = 'ACTIVE'
-                      and i.review_status = 'APPROVED'
-                      and r.status = 'ACTIVE'
-                      and r.valid_from <= current_timestamp
-                      and (r.valid_until is null or r.valid_until > current_timestamp)
-                    """, (rs, rowNum) -> {
-                CanonicalPayload payload = readCanonicalPayload(
-                        rs.getString("normalized_value_json"), rs.getString("display_text"));
-                return new StateRow(
-                        rs.getString("id"),
-                        rs.getString("revision_id"),
-                        rs.getDouble("utility_score"),
-                        rs.getString("memory_scope"),
-                        rs.getString("owner_user_id"),
-                        rs.getTimestamp("updated_at").toInstant(),
-                        payload.taskNeighborhoods(),
-                        rs.getString("status"),
-                        timestampText(rs.getTimestamp("valid_from")),
-                        timestampText(rs.getTimestamp("valid_until"))
-                );
-            }, workspaceId);
+            List<MemoryCompilerReadRepository.StateRow> rows = readRepository.loadStateRows(workspaceId);
             recordDatabaseLoad("state", "success", startedAt);
             return rows;
         } catch (RuntimeException exception) {
@@ -317,37 +285,10 @@ public class MemoryCompilerService {
         }
     }
 
-    private List<ObjectRow> loadObjectRows(String workspaceId) {
+    private List<MemoryCompilerReadRepository.ObjectRow> loadObjectRows(String workspaceId) {
         long startedAt = System.nanoTime();
         try {
-            List<ObjectRow> rows = jdbcTemplate.query("""
-                    select i.id, r.id as revision_id, i.utility_score,
-                           i.memory_scope, i.owner_user_id, i.updated_at,
-                           r.normalized_value_json, r.display_text, r.status
-                    from memory_item i
-                    join memory_runtime_revision r
-                      on r.id = i.current_revision_id
-                     and r.memory_item_id = i.id
-                    where i.workspace_id = ? and i.status = 'ACTIVE'
-                      and i.review_status = 'APPROVED'
-                      and r.status = 'ACTIVE'
-                      and r.valid_from <= current_timestamp
-                      and (r.valid_until is null or r.valid_until > current_timestamp)
-                    """, (rs, rowNum) -> {
-                CanonicalPayload payload = readCanonicalPayload(
-                        rs.getString("normalized_value_json"), rs.getString("display_text"));
-                return new ObjectRow(
-                        rs.getString("id"),
-                        rs.getString("revision_id"),
-                        rs.getDouble("utility_score"),
-                        rs.getString("memory_scope"),
-                        rs.getString("owner_user_id"),
-                        rs.getTimestamp("updated_at").toInstant(),
-                        payload.taskNeighborhoods(),
-                        payload.compileHints(),
-                        rs.getString("status")
-                );
-            }, workspaceId);
+            List<MemoryCompilerReadRepository.ObjectRow> rows = readRepository.loadObjectRows(workspaceId);
             recordDatabaseLoad("pack", "success", startedAt);
             return rows;
         } catch (RuntimeException exception) {
@@ -374,10 +315,10 @@ public class MemoryCompilerService {
         return fingerprint(fields);
     }
 
-    private String stateFingerprint(List<StateRow> rows) {
+    private String stateFingerprint(List<MemoryCompilerReadRepository.StateRow> rows) {
         List<String> fields = new ArrayList<>();
         fields.add(Integer.toString(rows.size()));
-        for (StateRow row : rows) {
+        for (MemoryCompilerReadRepository.StateRow row : rows) {
             fields.add(row.memoryObjectId());
             fields.add(row.memoryVersionId());
             fields.add(Double.toString(row.utilityScore()));
@@ -406,10 +347,6 @@ public class MemoryCompilerService {
         } catch (java.security.NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 unavailable", exception);
         }
-    }
-
-    private String timestampText(java.sql.Timestamp timestamp) {
-        return timestamp == null ? "" : timestamp.toInstant().toString();
     }
 
     private void recordDatabaseLoad(String phase, String result, long startedAt) {
@@ -458,147 +395,8 @@ public class MemoryCompilerService {
                 .replace(' ', '_');
     }
 
-    private List<MemoryReferenceResponse> hydrateReferences(
-            String workspaceId,
-            List<String> memoryObjectIds
-    ) {
-        if (memoryObjectIds.isEmpty()) {
-            return List.of();
-        }
-        String placeholders = String.join(",", memoryObjectIds.stream()
-                .map(ignored -> "?").toList());
-        List<Object> parameters = new ArrayList<>();
-        parameters.add(workspaceId);
-        parameters.addAll(memoryObjectIds);
-        List<MemoryReferenceResponse> rows = jdbcTemplate.query("""
-                select i.id, r.id as revision_id, i.utility_score,
-                       r.normalized_value_json, r.display_text
-                from memory_item i
-                join memory_runtime_revision r
-                  on r.id = i.current_revision_id
-                 and r.memory_item_id = i.id
-                where i.workspace_id = ? and i.id in (%s)
-                """.formatted(placeholders), (rs, rowNum) -> new MemoryReferenceResponse(
-                rs.getString("id"),
-                rs.getString("revision_id"),
-                rs.getDouble("utility_score")
-        ), parameters.toArray());
-        java.util.Map<String, MemoryReferenceResponse> byId = rows.stream()
-                .collect(java.util.stream.Collectors.toMap(
-                        MemoryReferenceResponse::memoryObjectId,
-                        item -> item));
-        return memoryObjectIds.stream()
-                .map(byId::get)
-                .filter(java.util.Objects::nonNull)
-                .toList();
-    }
-
-    private List<String> readStringList(String json) {
-        if (json == null || json.isBlank()) {
-            return List.of();
-        }
-        try {
-            return objectMapper.readValue(json, new TypeReference<>() {
-            });
-        } catch (JsonProcessingException ex) {
-            throw new BusinessException("MEMORY_JSON_PARSE_FAILED", "Memory JSON 解析失败");
-        }
-    }
-
-    private MemorySignalService.MemoryCompileHints readCompileHints(String json) {
-        if (json == null || json.isBlank()) {
-            return new MemorySignalService.MemoryCompileHints(List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
-        }
-        try {
-            return objectMapper.readValue(json, new TypeReference<>() {
-            });
-        } catch (JsonProcessingException ex) {
-            throw new BusinessException("MEMORY_COMPILE_POLICY_PARSE_FAILED", "Memory compile policy 解析失败");
-        }
-    }
-
-    private CanonicalPayload readCanonicalPayload(String json, String displayText) {
-        List<String> fallbackStyle = displayText == null || displayText.isBlank()
-                ? List.of() : List.of(displayText);
-        if (json == null || json.isBlank()) {
-            return new CanonicalPayload(
-                    List.of("COMMON"),
-                    new MemorySignalService.MemoryCompileHints(
-                            fallbackStyle, List.of(), List.of(), List.of(), List.of(), List.of()),
-                    null);
-        }
-        try {
-            JsonNode root = objectMapper.readTree(json);
-            List<String> neighborhoods = readStringListNode(root.path("task_neighborhoods"));
-            if (neighborhoods.isEmpty()) {
-                neighborhoods = List.of("COMMON");
-            }
-            JsonNode hintsNode = readNestedJson(root.path("compile_hints"));
-            MemorySignalService.MemoryCompileHints hints = hintsNode.isMissingNode() || hintsNode.isNull()
-                    ? new MemorySignalService.MemoryCompileHints(
-                            fallbackStyle, List.of(), List.of(), List.of(), List.of(), List.of())
-                    : objectMapper.treeToValue(hintsNode, MemorySignalService.MemoryCompileHints.class);
-            JsonNode utilityNode = root.path("utility_score");
-            Double utilityScore = utilityNode.isNumber() ? utilityNode.doubleValue() : null;
-            return new CanonicalPayload(neighborhoods, hints, utilityScore);
-        } catch (JsonProcessingException exception) {
-            throw new BusinessException(
-                    "MEMORY_CANONICAL_PAYLOAD_PARSE_FAILED", "Canonical Memory payload parse failed");
-        }
-    }
-
-    private List<String> readStringListNode(JsonNode node) throws JsonProcessingException {
-        JsonNode value = readNestedJson(node);
-        if (!value.isArray()) {
-            return List.of();
-        }
-        return objectMapper.treeToValue(value, new TypeReference<>() {
-        });
-    }
-
-    private JsonNode readNestedJson(JsonNode node) throws JsonProcessingException {
-        if (node.isTextual()) {
-            return objectMapper.readTree(node.textValue());
-        }
-        return node;
-    }
-
-    private record CanonicalPayload(
-            List<String> taskNeighborhoods,
-            MemorySignalService.MemoryCompileHints compileHints,
-            Double persistedUtilityScore
-    ) {
-    }
-
-    private record ObjectRow(
-            String memoryObjectId,
-            String memoryVersionId,
-            double utilityScore,
-            String memoryScope,
-            String ownerUserId,
-            java.time.Instant updatedAt,
-            List<String> taskNeighborhoods,
-            MemorySignalService.MemoryCompileHints compileHints,
-            String status
-    ) {
-    }
-
-    private record StateRow(
-            String memoryObjectId,
-            String memoryVersionId,
-            double utilityScore,
-            String memoryScope,
-            String ownerUserId,
-            java.time.Instant updatedAt,
-            List<String> taskNeighborhoods,
-            String status,
-            String validFrom,
-            String validTo
-    ) {
-    }
-
     private record RankedObject(
-            ObjectRow row,
+            MemoryCompilerReadRepository.ObjectRow row,
             int scopePriority,
             int neighborhoodPriority
     ) {

@@ -1,0 +1,55 @@
+{
+  "schema_version": "deep-research-worker-recovery-audit.v1",
+  "case_key": "min-worker-crash-after-fetch",
+  "truth_label": "已测-真实运行",
+  "content_run": {
+    "run_id": "bb26b3bd-76f7-4904-a1eb-8a1612a9d33e",
+    "terminal_state": "COMPLETED_WITH_LIMITATIONS",
+    "reason_codes": ["UNRESOLVED_CELLS_REMAIN"],
+    "recovered_task_id": "1c5ea749-4b81-4eec-bfdb-d7b88d868aac",
+    "first_execution": {
+      "worker_instance_id": "research-agent-crash-1",
+      "attempt_count": 1,
+      "lease_epoch": 1,
+      "fencing_token": 1,
+      "archived_window_count": 4,
+      "tool_grants": ["search", "fetch", "read"],
+      "fault_exit_code": 86
+    },
+    "recovered_execution": {
+      "worker_instance_id": "research-agent-recovery-2",
+      "attempt_count": 2,
+      "lease_epoch": 2,
+      "fencing_token": 2,
+      "terminal_reason": "CANDIDATES_PROPOSED",
+      "archived_window_count_after_recovery": 4,
+      "tool_grants": ["extract"]
+    },
+    "checks": {
+      "TASK_RECLAIMED": true,
+      "NO_DUPLICATE_FETCH_READ": true,
+      "BUDGET_CONSERVED": true
+    }
+  },
+  "stale_callback_probe": {
+    "run_id": "a65a33d0-d836-45f7-81ca-c7c33bf70ac6",
+    "task_id": "1a544e91-0416-4d73-86e4-bd2a0b6ecd25",
+    "current_authority": {"lease_epoch": 2, "fencing_token": 2},
+    "submitted_authority": {"lease_epoch": 1, "fencing_token": 1},
+    "http_status": 400,
+    "error_code": "RESEARCH_AGENT_TASK_STALE_LEASE",
+    "canonical_state_before": {"completion_count": 0, "execution_count": 0, "merge_count": 0, "bound_cell_versions": [0, 0, 0]},
+    "canonical_state_after": {"completion_count": 0, "execution_count": 0, "merge_count": 0, "bound_cell_versions": [0, 0, 0]},
+    "checks": {"STALE_CALLBACK_REJECTED": true, "CANONICAL_STATE_UNCHANGED": true}
+  },
+  "required_checks": {
+    "TASK_RECLAIMED": true,
+    "STALE_CALLBACK_REJECTED": true,
+    "NO_DUPLICATE_FETCH_READ": true,
+    "BUDGET_CONSERVED": true
+  },
+  "notes": [
+    "The content run and the stale-callback probe are separate real runs so the callback can be submitted before any committed completion short-circuits through idempotent replay.",
+    "The eval collector encountered a transient HTTP 502 after the content run completed; terminal state and recovery facts were audited from canonical MySQL rows."
+  ]
+}

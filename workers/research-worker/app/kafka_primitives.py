@@ -69,10 +69,25 @@ def message_value(message: object) -> str:
     raise RuntimeError(f"Unsupported Kafka message value type: {type(value).__name__}")
 
 
-def commit_if_supported(messages: Iterable[object]) -> None:
+def commit_if_supported(messages: Iterable[object], message: object | None = None) -> None:
     commit = getattr(messages, "commit", None)
-    if callable(commit):
+    if not callable(commit):
+        return
+    topic = getattr(message, "topic", None)
+    partition = getattr(message, "partition", None)
+    offset = getattr(message, "offset", None)
+    if message is None or topic is None or partition is None or offset is None:
         commit()
+        return
+    # KafkaConsumer may prefetch multiple records. A bare commit() persists the
+    # consumer's current *position*, which can be past records that this loop has
+    # not executed yet. Commit exactly the record that just reached a durable
+    # outcome so a crash cannot silently skip prefetched research tasks.
+    from kafka import OffsetAndMetadata, TopicPartition
+
+    commit(offsets={
+        TopicPartition(str(topic), int(partition)): OffsetAndMetadata(int(offset) + 1, "")
+    })
 
 
 def kafka_security_options(settings: object) -> dict[str, object]:

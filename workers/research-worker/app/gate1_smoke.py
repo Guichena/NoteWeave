@@ -485,7 +485,7 @@ def evaluate_gate1_smoke_case(
     failures: list[str] = []
     if not actual["report_generated"]:
         failures.append("report_markdown is empty")
-    if actual["source_count"] < 1:
+    if not case.expect_external_fallback and actual["source_count"] < 1:
         failures.append("report does not expose at least one source-backed evidence context")
     if not actual["process_summary_ready"]:
         failures.append("toolbox_summary is missing search/fetch/read summaries")

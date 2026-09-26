@@ -26,6 +26,32 @@ def _language_only_schema() -> dict[str, object]:
     }
 
 
+def _mindmap_schema() -> dict[str, object]:
+    return {
+        "type": "object",
+        "properties": {
+            "language": _language_schema(),
+            "layout": {
+                "type": "string",
+                "default": "balanced",
+                "oneOf": [
+                    {"const": "balanced", "title": "均衡分支"},
+                    {"const": "compact", "title": "紧凑概览"},
+                ],
+            },
+            "depth": {
+                "type": "string",
+                "default": "3",
+                "oneOf": [
+                    {"const": "2", "title": "2 层，快速浏览"},
+                    {"const": "3", "title": "3 层，推荐"},
+                    {"const": "4", "title": "4 层，详细"},
+                ],
+            },
+        },
+    }
+
+
 def _language_and_url_schema(
     *,
     required: bool,
@@ -70,6 +96,12 @@ _ARTIFACT_SKILLS = {
         display_name="Wiki 页面",
         description="沉淀成定义、机制、引用和相关页面齐全的知识页草稿",
         input_schema=_language_only_schema(),
+    ),
+    "mindmap_from_workspace": ArtifactSkillDefinition(
+        skill_key="mindmap_from_workspace",
+        display_name="思维导图",
+        description="把当前工作台资料整理为可缩放、可折叠的交互式思维导图",
+        input_schema=_mindmap_schema(),
     ),
     "bilibili_course_note_pdf": ArtifactSkillDefinition(
         skill_key="bilibili_course_note_pdf",
@@ -125,6 +157,7 @@ _SKILL_ACTION_BINDINGS = {
     "study_guide": "STUDY_GUIDE",
     "quiz_pack": "QUIZ",
     "wiki_page": "WIKI_PAGE",
+    "mindmap_from_workspace": "MINDMAP",
     "bilibili_course_note_pdf": "COURSE_NOTES",
     "report_draft": "REPORT",
     "faq_draft": "FAQ",

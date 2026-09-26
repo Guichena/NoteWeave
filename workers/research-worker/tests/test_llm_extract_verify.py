@@ -4,7 +4,8 @@ import json
 
 import pytest
 
-from app.extractor import extract_evidence_cards
+from app.extractor import extract_evidence_cards, extract_evidence_cards_detailed
+from app.extraction_result import ExtractionFailureReason
 from app.llm_client import FakeLlmClient
 from app.models import ResearchStateLedger, ResearchStateRow, ResearchTaskInput
 from app.planner import build_research_plan
@@ -113,6 +114,62 @@ def test_llm_extractor_should_generate_evidence_cards_from_valid_json() -> None:
     assert cards[0].quote_end > cards[0].quote_start
     assert cards[0].content_sha256
     assert cards[0].support_score == 0.93
+    extraction_payload = llm_client.calls[0][1]
+    extraction_policy = extraction_payload["extraction_policy"]
+    assert any("one contiguous exact substring" in item for item in extraction_policy)
+    assert any("preserve Markdown list markers" in item for item in extraction_policy)
+    assert "character-for-character substring" in extraction_payload["schema"]["evidence_cards"][0]["quote_text"]
+
+
+def test_llm_extractor_should_send_relevant_page_excerpt_instead_of_navigation_prefix() -> None:
+    task_input, plan, _search_hits, read_windows = _read_windows()
+    relevant = "PostgreSQL jsonb supports GIN indexes for containment queries."
+    read_windows = [
+        read_windows[0].model_copy(
+            update={
+                "window_text": "Navigation cookie menu " * 100 + relevant,
+                "query": "PostgreSQL jsonb GIN indexes",
+            }
+        )
+    ]
+    llm_client = FakeLlmClient({"research.extract": '{"evidence_cards":[]}'})
+
+    extract_evidence_cards(task_input, plan, read_windows, llm_client=llm_client)
+
+    sent_text = llm_client.calls[0][1]["windows"][0]["text"]
+    assert relevant in sent_text
+    assert len(sent_text) <= 1200
+
+
+def test_deep_cell_extractor_should_preserve_server_owned_target_entity_id() -> None:
+    task_input, plan, _search_hits, read_windows = _read_windows()
+    plan.stop_contract["deep_cell_entity_id"] = "subject"
+    llm_client = FakeLlmClient(
+        {
+            "research.extract": json.dumps(
+                {
+                    "evidence_cards": [
+                        {
+                            "window_id": read_windows[0].window_id,
+                            "entity_id": "model-invented-source-row",
+                            "entity_name": "LLM Evidence Source",
+                            "column_key": "product",
+                            "claim_text": "Synthesis must cite opened windows.",
+                            "quote_text": "Verifier gated synthesis must cite opened windows",
+                            "relation_type": "SUPPORTS",
+                            "support_score": 0.93,
+                            "conflict_score": 0.01,
+                        }
+                    ]
+                }
+            )
+        }
+    )
+
+    cards = extract_evidence_cards(task_input, plan, read_windows, llm_client=llm_client)
+
+    assert len(cards) == 1
+    assert cards[0].entity_id == "subject"
 
 
 def test_llm_extractor_should_repair_fenced_json_with_trailing_commas() -> None:
@@ -132,6 +189,80 @@ def test_llm_extractor_should_repair_fenced_json_with_trailing_commas() -> None:
     assert cards[0].claim_text == "Repair works"
     assert cards[0].quote_text in read_windows[0].window_text
     assert cards[0].quote_start >= 0
+
+
+def test_llm_extractor_should_accept_valid_json_when_exact_quote_contains_url() -> None:
+    task_input, plan, _search_hits, read_windows = _read_windows()
+    quoted_url = "https://www.postgresql.org/docs/17/datatype-json.html"
+    read_windows = [
+        read_windows[0].model_copy(
+            update={"window_text": f"Official documentation: {quoted_url}"}
+        )
+    ]
+    llm_client = FakeLlmClient(
+        {
+            "research.extract": json.dumps(
+                {
+                    "evidence_cards": [
+                        {
+                            "window_id": read_windows[0].window_id,
+                            "column_key": "product",
+                            "claim_text": "The official documentation URL is cited.",
+                            "quote_text": quoted_url,
+                            "relation_type": "SUPPORTS",
+                            "support_score": 0.9,
+                            "conflict_score": 0.0,
+                        }
+                    ]
+                }
+            )
+        }
+    )
+
+    cards = extract_evidence_cards(task_input, plan, read_windows, llm_client=llm_client)
+
+    assert len(cards) == 1
+    assert cards[0].quote_text == quoted_url
+
+
+def test_external_extractor_should_reject_exact_but_question_irrelevant_quote() -> None:
+    task_input, plan, _search_hits, read_windows = _read_windows()
+    unrelated = "Teams should record routine meetings for later review."
+    read_windows = [
+        read_windows[0].model_copy(
+            update={
+                "window_text": unrelated,
+                "adapter": "external_url",
+                "untrusted_content": True,
+            }
+        )
+    ]
+    llm_client = FakeLlmClient(
+        {
+            "research.extract": json.dumps(
+                {
+                    "evidence_cards": [
+                        {
+                            "window_id": read_windows[0].window_id,
+                            "column_key": "product",
+                            "claim_text": unrelated,
+                            "quote_text": unrelated,
+                            "relation_type": "SUPPORTS",
+                            "support_score": 0.9,
+                            "conflict_score": 0.0,
+                        }
+                    ]
+                }
+            )
+        }
+    )
+
+    result = extract_evidence_cards_detailed(
+        task_input, plan, read_windows, llm_client=llm_client
+    )
+
+    assert result.accepted_count == 0
+    assert result.rejected_cards[0].reason is ExtractionFailureReason.WRONG_COLUMN
 
 
 def test_llm_extractor_should_return_no_cards_on_unusable_output() -> None:
@@ -936,14 +1067,16 @@ def test_global_verifier_should_discount_completion_score_when_fetch_is_fallback
     fetched_cards = _extract_with_fake(task_input, plan, fetched_windows)
     fetched_ledger = build_state_ledger(task_input, plan, external_search_hits, fetched_windows, fetched_cards)
     fetched_local = run_local_verifier(task_input, plan, fetched_ledger, external_search_hits, fetched_windows, fetched_cards)
-    fetched_global = run_global_verifier(fetched_local, fetched_ledger, [])
+    fetched_global = run_global_verifier(fetched_local, fetched_ledger, [], fetched_cards)
 
     fallback_cards = _extract_with_fake(task_input, plan, fallback_windows)
     fallback_ledger = build_state_ledger(task_input, plan, external_search_hits, fallback_windows, fallback_cards)
     fallback_local = run_local_verifier(task_input, plan, fallback_ledger, external_search_hits, fallback_windows, fallback_cards)
-    fallback_global = run_global_verifier(fallback_local, fallback_ledger, [])
+    fallback_global = run_global_verifier(fallback_local, fallback_ledger, [], fallback_cards)
 
-    assert fetched_global.completion_score > fallback_global.completion_score
+    # Transport fallback is a Local diagnostic. Global scoring is recomputed
+    # only from canonical evidence facts, so equivalent unarchived evidence is equal.
+    assert fetched_global.completion_score == fallback_global.completion_score
     assert fallback_global.decision == "WRITE_WITH_GUARDRAILS"
 
 
@@ -986,7 +1119,7 @@ def test_global_verifier_should_discount_completion_score_when_orchestration_is_
     primary_cards = _extract_with_fake(task_input, plan, primary_windows)
     primary_ledger = build_state_ledger(task_input, plan, primary_hits, primary_windows, primary_cards)
     primary_local = run_local_verifier(task_input, plan, primary_ledger, primary_hits, primary_windows, primary_cards)
-    primary_global = run_global_verifier(primary_local, primary_ledger, [])
+    primary_global = run_global_verifier(primary_local, primary_ledger, [], primary_cards)
 
     fallback_hits = [
         hit.model_copy(
@@ -1027,9 +1160,11 @@ def test_global_verifier_should_discount_completion_score_when_orchestration_is_
     fallback_cards = _extract_with_fake(task_input, plan, fallback_windows)
     fallback_ledger = build_state_ledger(task_input, plan, fallback_hits, fallback_windows, fallback_cards)
     fallback_local = run_local_verifier(task_input, plan, fallback_ledger, fallback_hits, fallback_windows, fallback_cards)
-    fallback_global = run_global_verifier(fallback_local, fallback_ledger, [])
+    fallback_global = run_global_verifier(fallback_local, fallback_ledger, [], fallback_cards)
 
-    assert primary_global.completion_score > fallback_global.completion_score
+    # Provider routing is not a canonical quality fact; Local warnings remain
+    # diagnostic and cannot manufacture a Global blocker or score penalty.
+    assert primary_global.completion_score == fallback_global.completion_score
     assert fallback_global.decision == "WRITE_WITH_GUARDRAILS"
 
 
@@ -1065,8 +1200,9 @@ def test_global_verifier_should_discount_completion_score_when_fetched_windows_a
                 "fetch_attempts": ["JINA"],
                 "transport_chain": ["JINA"],
                 "transport_resolution": "JINA",
-                "snapshot_key": "snap-archive-ready",
-                "snapshot_archive_ready": True,
+                    "snapshot_key": "snap-archive-ready",
+                    "snapshot_archive_ready": True,
+                    "snapshot_status": "EXTERNAL_ARCHIVED",
             }
         )
         for window in read_windows
@@ -1074,7 +1210,7 @@ def test_global_verifier_should_discount_completion_score_when_fetched_windows_a
     ready_cards = _extract_with_fake(task_input, plan, ready_windows)
     ready_ledger = build_state_ledger(task_input, plan, ready_hits, ready_windows, ready_cards)
     ready_local = run_local_verifier(task_input, plan, ready_ledger, ready_hits, ready_windows, ready_cards)
-    ready_global = run_global_verifier(ready_local, ready_ledger, [])
+    ready_global = run_global_verifier(ready_local, ready_ledger, [], ready_cards)
 
     not_ready_hits = [
         hit.model_copy(
@@ -1106,8 +1242,9 @@ def test_global_verifier_should_discount_completion_score_when_fetched_windows_a
                 "fetch_attempts": ["JINA"],
                 "transport_chain": ["JINA"],
                 "transport_resolution": "JINA",
-                "snapshot_key": "",
-                "snapshot_archive_ready": False,
+                    "snapshot_key": "",
+                    "snapshot_archive_ready": False,
+                    "snapshot_status": "EXTERNAL_UNARCHIVED",
             }
         )
         for window in read_windows
@@ -1115,7 +1252,7 @@ def test_global_verifier_should_discount_completion_score_when_fetched_windows_a
     not_ready_cards = _extract_with_fake(task_input, plan, not_ready_windows)
     not_ready_ledger = build_state_ledger(task_input, plan, not_ready_hits, not_ready_windows, not_ready_cards)
     not_ready_local = run_local_verifier(task_input, plan, not_ready_ledger, not_ready_hits, not_ready_windows, not_ready_cards)
-    not_ready_global = run_global_verifier(not_ready_local, not_ready_ledger, [])
+    not_ready_global = run_global_verifier(not_ready_local, not_ready_ledger, [], not_ready_cards)
 
     assert ready_global.completion_score > not_ready_global.completion_score
     assert not_ready_global.decision == "WRITE_WITH_GUARDRAILS"
@@ -1480,3 +1617,59 @@ def test_final_answer_should_surface_fetch_aware_source_basis_and_confidence() -
 
     assert "fallback" in structure["final_answer"]["source_basis"].lower()
     assert "fallback" in structure["final_answer"]["confidence_label"].lower()
+
+
+def test_relevant_excerpt_should_prefer_prose_over_term_matching_navigation() -> None:
+    from app.extractor import _select_relevant_excerpt
+
+    navigation = " ".join(
+        f"[Responses streaming tools {index}](https://example.com/nav/{index})"
+        for index in range(30)
+    )
+    prose = (
+        "The Responses API streams semantic events as response output is generated. "
+        "Tool calls are represented as typed output items with arguments and call identifiers. "
+    ) * 12
+    text = navigation + "\n\n# Streaming responses\n\n" + prose
+
+    excerpt = _select_relevant_excerpt(
+        text, "Responses API streaming events and tool calls", max_chars=500
+    )
+
+    assert "semantic events" in excerpt
+    assert excerpt in text
+
+
+def test_external_intent_gate_should_match_singular_prose_to_plural_api_names() -> None:
+    from app.extractor import _quote_matches_question_intent
+
+    assert _quote_matches_question_intent(
+        "Compare OpenAI Responses API with Anthropic Messages API",
+        "A response can include one or more tool call output items.",
+    )
+    assert _quote_matches_question_intent(
+        "Compare OpenAI Responses API with Anthropic Messages API",
+        "Each message contains content blocks and a role.",
+    )
+
+
+def test_quote_tamper_fault_should_preserve_provider_call_but_replace_all_quotes() -> None:
+    import json
+    from app.llm_client import FakeLlmClient, QuoteTamperFaultLlmClient
+
+    delegate = FakeLlmClient({"research.extract": "```json\n" + json.dumps({
+        "evidence_cards": [
+            {"quote_text": "real exact quote", "claim_text": "real exact quote"},
+            {"quote_text": "second quote", "claim_text": "second quote"},
+        ]
+    }) + "\n```"})
+    client = QuoteTamperFaultLlmClient(delegate)
+
+    payload = json.loads(client.complete_json("research.extract", {}))
+
+    assert len(delegate.calls) == 1
+    assert all(
+        card["quote_text"] == "__NOTEWEAVE_TAMPERED_QUOTE_NOT_IN_SOURCE__"
+        and card["claim_text"] == card["quote_text"]
+        for card in payload["evidence_cards"]
+    )

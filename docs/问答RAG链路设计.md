@@ -1,634 +1,194 @@
-# NoteWeave v2 问答 RAG 链路设计
+# QA：带引用回答与场景化 RAG
 
-## 1. 定位
+## 业务问题与非目标
 
-`问答 RAG 链路` 是 NoteWeave 在统一聊天界面中的默认回答链路。
+QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样性和上下文预算。
 
-它负责在当前研究工作台资料范围内，为用户提供低延迟、可引用、可继续追问的资料问答能力。
+QA 不负责开放式网页研究，不在证据不足时继续搜索到无限步骤，也不把 Memory 偏好当作事实引用。跨来源冲突、复杂多跳和长报告交给 Research；连续阅读和草稿写回交给 Note；页面关系与治理交给 Wiki。
 
-一句话定义：
+## 用户操作与产物
 
-`问答 RAG 链路是面向快速理解和连续追问的资料问答链路：系统基于当前研究工作台内已经解析和索引的资料进行检索，读取必要证据片段，生成带来源引用的回答，并允许用户将高价值回答保存为结构化笔记或继续派生产物。`
-
-## 2. 与 Note / Wiki 的区别
-
-三条链路的共同目标都是在统一聊天框里回答用户当前问题。它们不应该被理解成三个不同页面或三个不同产物生成器，差别主要体现在检索方式、证据组织方式和回答上下文来源上。
-
-### 2.1 问答 RAG 链路
-
-问答 RAG 链路是 `答案优先`。
-
-目标是：
-
-- 快速回答当前问题
-- 保持当前会话上下文连续性
-- 给出必要引用
-- 尽量降低交互延迟
-- 支持一键保存或继续生成产物
-
-典型输出：
+用户在 Conversation 中提交问题，得到流式回答、引用列表、来源片段、运行状态和可恢复事件。运行结束后，AnswerRun 保存 Evidence Manifest 与输入快照，资料更新后仍能解释旧回答使用的版本。
 
 ```text
-聊天正文
-  -> 直接回答
-
-可展开附属卡片
-  -> 关键依据
-  -> 引用来源
-  -> 后续建议
+Turn Submission
+  -> Query Rewrite / Expansion
+  -> Workspace and Snapshot Filter
+  -> Keyword + Vector Recall
+  -> Weighted RRF
+  -> Rerank
+  -> Evidence Relevance and Diversity Selection
+  -> Answer / Refusal
+  -> Citation Validation
+  -> Persisted Events and Manifest
 ```
 
-也就是说，问答 RAG 虽然要给出证据和引用，但默认不把整段引用文本硬塞进聊天正文，而是放到回答下方的可展开卡片里，让正文保持简洁。
+`[当前实现]` `ConversationTurnModule` 负责 Turn 幂等和输入落库，`ChatService` 异步执行；`QaHybridRetriever`、`QaRrfFusionService`、`QaRerankService`、`QaEvidenceRelevancePolicy` 和 `QaEvidenceSelectionPolicy` 提供检索与证据选择；AnswerRun Event 支持 SSE 游标恢复。
 
-### 2.2 Note 链路
+## Query Understanding 与检索查询合同
 
-Note 链路是 `资料级检索优先`。
+`[当前实现]` QA 已把用户原问题与检索表达分开。`qa-conversation-rewrite-v1` 保存多轮 Query Rewrite 版本，`QaQueryExpansionService` 在低召回路径中解析当前问题和主题锚点，生成最多 5 个确定性查询变体，并去除重复和常见问句前缀。它能证明原问题不会被 Expansion 覆盖，也能回放某个策略版本，但没有统一的实体别名表、指代置信度、澄清状态或跨能力 Intent Decision，不能把它描述成完整的自然语言理解系统。
 
-它参考 `Marginalia-style Structured Reading Funnel`，重点是：
+`[目标设计]` QA 的理解结果至少保留以下字段：
 
-- 先通过标题、摘要、标签、历史笔记和结构化元数据定位候选资料
-- 再读取原文窗口
-- 抽取摘录证据
-- 生成带引用回答
-- 按需保存为结构化笔记
+| 字段 | 作用 | 失败时的处理 |
+| --- | --- | --- |
+| Original Query | 回答目标、审计和重放真值 | 永不被 Rewrite 覆盖 |
+| Normalized Query Set | 检索用改写、关键词和主题锚点 | 单个变体失败不改变原问题 |
+| Entity / Alias | 解析简称、术语和上下文实体 | 无法唯一解析时保留多个候选 |
+| Explicit Constraint | 时间、Source、格式和否定约束 | Rewrite 不得删除或放宽 |
+| Unresolved Reference | “它”“第二个”等未决指代 | 影响答案对象或 Scope 时澄清 |
+| Clarification Decision | 是否继续、澄清或拒绝 | 保存原因码和策略版本 |
 
-因此 Note 链路也要回答问题，只是它使用的是“先找资料、再读原文窗口”的检索方式，结构化笔记只是附加沉淀能力。
+澄清不是统一低置信阈值。歧义只影响搜索措辞时，可以在原 Scope 内并行受限变体；歧义会改变 Workspace、Source、答案对象或后续写回时，必须先问清楚。多轮上下文中的实体和别名只能来自当前冻结的 Conversation Snapshot，不能从其他 Workspace 或未授权 Memory 猜测。生成器仍以 Original Query 和显式约束为回答目标，Normalized Query 只影响候选检索。
 
-### 2.3 Wiki 链路
+理解层单独评测槽位完整率、指代消解准确率、术语解析准确率、澄清 Precision/Recall 和错误检索路由率。最终答案正确不能反推 Rewrite 正确，因为 Rerank 或模型可能偶然补救；答案错误也不能直接归因于 Rewrite，需要沿 Query Variant、Candidate、Evidence 和 Claim 逐层定位。
 
-Wiki 链路是 `全量 Wiki 检索优先`。
+## 演化与 Bad Case
 
-它参考 `WebKonra / WeKnora` 的全量 Wiki 思路，优先使用 Wiki Index、页面正文、页面链接、反向链接、图关系、版本和来源回链回答问题，目标是让用户围绕长期知识网络持续维护，而不是只完成一次问答。
+| 阶段 | 方案 | Bad Case | 下一步修复 |
+| --- | --- | --- | --- |
+| V0 直接 Prompt | 把用户问题交给模型 | 幻觉、无法核对、资料边界不清 | 先检索再生成，返回 Source |
+| V1 单路 Top K | BM25 或向量搜索前 K 个 Chunk | 精确编号和语义问法互相失配；单一 Source 占满候选 | Sparse + Dense，多路融合与来源去重 |
+| V2 分数相加 | 直接归一化不同检索分数 | 不同 Provider 分数不可比，权重漂移 | RRF 只使用排名，再做 Rerank |
+| V3 Rerank 后全塞 Prompt | Top N 直接拼接 | 重复片段挤占预算，相关不代表能支撑 Claim | Relevance Policy、Evidence Selection、字符预算 |
+| V4 有引用回答 | 生成文本附 Citation | 引用存在但不支持 Claim，引用版本可能过时 | Manifest、Claim-Evidence Coverage、引用校验与拒答 |
+| 目标系统 | Versioned Bundle + 离线/Shadow/在线门禁 | 模型、Prompt、索引或评测集漂移 | Release Bundle、质量回执、漂移监控与回滚 |
 
-## 3. 核心原则
+`[行业参考]` Elasticsearch 官方把全文、向量、Hybrid、Filter 和安全能力视为不同层；LangSmith 的 RAG 评测把 Correctness、Relevance、Groundedness 与 Retrieval Relevance 分开。NoteWeave 采用混合召回和分层评测，但 Evidence 所有权、Workspace 隔离和引用版本由自己的主服务保证。
 
-### 3.1 工作台是默认检索边界
+## 状态、真源与版本
 
-问答 RAG 链路默认只在当前研究工作台内检索，不做全局开放召回。
+`[当前实现]` AnswerRun 状态与 [API 与事件契约](./API与事件契约-v2.md) 一致，不是 `PENDING/VALIDATING`：
 
-基础检索对象包括：
-
-- 用户上传资料
-- URL / 文本导入资料
-- 音视频转写文本
-- 被用户明确保存为资料的系统生成内容
-
-问答 RAG 的基础闭环只建立在“工作台资料池 + 证据引用”之上。其他链路产生的内容如果要进入问答检索，必须先被用户明确保存为资料，再按普通资料统一解析、索引和引用。
-
-### 3.2 绑定规则
-
-问答 RAG 的回答行为绑定 `conversation_id`，因为它要承接当前聊天记录和连续追问；检索边界绑定 `workspace_id`，因为资料池属于研究工作台。
-
-```text
-QA 回答：conversation_id
-QA 检索资料边界：workspace_id
-QA 引用证据：workspace_id 内的资料片段
+```mermaid
+stateDiagram-v2
+    [*] --> PREPARING
+    PREPARING --> RETRIEVING
+    RETRIEVING --> GENERATING: evidence admitted
+    RETRIEVING --> COMPLETED: refusal or explicit degradation
+    GENERATING --> FINALIZING
+    FINALIZING --> COMPLETED
+    RETRIEVING --> FAILED
+    GENERATING --> FAILED
+    FINALIZING --> FAILED
+    RETRIEVING --> CANCELLED
+    GENERATING --> CANCELLED
+    FINALIZING --> CANCELLED
 ```
 
-### 3.3 先快后准
+引用校验发生在生成提交前，不单独形成一个名为 `VALIDATING` 的 Run 状态。旧入口可能出现 `CREATED`，只按兼容映射解释。
 
-问答 RAG 链路不追求每次都进行多轮研究，而是采用“先快后准”的默认策略：
+MySQL 中的 Turn、Run Input Snapshot、AnswerRun、Answer Event 和 Evidence Manifest 是运行真源。Elasticsearch 命中、Embedding、Rerank 分数和 Redis 实时桥接是运行过程或投影，不拥有终态。
 
-1. 先利用会话上下文和轻量检索快速理解问题
-2. 再召回少量高置信候选片段
-3. 对关键片段进行 rerank 或证据校验
-4. 生成引用清楚的回答
-5. 如果证据不足，再提示用户升级为 Note、Wiki 或 Deep Research
+Release Bundle 至少固化 Query Rewrite Version、Retrieval Plan、Strategy Profile、Relevance/Selection Policy、Embedding/Rerank/LLM Model、Prompt、Index Version 和 Feature Flag。`[当前实现]` `qa-weknora-hybrid-v1`、`qa-conversation-rewrite-v1`、`qa-low-recall-expansion-v1` 与 `qa-source-diverse-budget-v2` 已形成版本化策略元组的一部分。
 
-### 3.4 引用必须可回跳
+## 正常、异常与恢复
 
-回答中出现事实性结论时，应尽量绑定 `Citation`。
+### 正常路径
 
-Citation 至少应能回到：
+Turn 提交事务创建消息、上下文快照和 AnswerRun。Query Rewrite 只生成结构化检索查询，不改用户原问题。检索先施加 Workspace、Snapshot Status 和 Source Scope，再执行关键词与向量召回；RRF 合并排名，Rerank 调整语义次序；Evidence Policy 去除无法支撑问题的片段，Selection 优先保留不同 Source，并受条数和字符预算限制。生成器只使用选择后的 Evidence，输出 Citation 引用稳定 Evidence ID。
 
-- 资料
-- 资料快照
-- chunk
-- 原文窗口
-- 页码 / 段落 / 时间戳 / offset
+### 异常路径
 
-### 3.5 不把聊天历史当事实来源
+- Client 重复提交同一 Request ID，返回已有 Run，不产生第二个 Answer。
+- Embedding 或 Rerank 关闭时，只走明确允许的降级路径，并记录 `degraded` 与原因。
+- Elasticsearch 零命中表示策略结果为空；Provider 关闭、超时、损坏响应和权限错误分别分类。
+- 候选存在但不满足 Evidence Relevance，返回证据不足拒答，不能生成空引用成功。
+- 资料在运行中更新，当前 Run 继续使用冻结 Snapshot；新 Run 使用新 Bundle/版本。
+- SSE 断线按事件序号回放；终态从 AnswerRun 补发。
+- 用户取消先更新持久状态，执行器在检索、Provider 和生成边界检查取消；晚到结果因状态条件被拒绝。
 
-聊天历史只用于理解上下文，不直接作为事实证据。
+### 恢复与结果未知
 
-如果回答需要事实依据，必须回到当前工作台内可检索、可回跳的资料证据。
+模型或 Rerank 读超时属于结果未知。生成调用使用 Run + Step + Input Digest 的操作键；Provider 支持查询或幂等键时先对账。未完成的候选不进入 Answer Event 和 Manifest。进程重启从输入快照重新构建可重放步骤，已持久化 Evidence 和事件按版本复用。
 
-## 4. 技术路线
+## 检索与 Evidence 算法
 
-问答 RAG 链路定义为：
+### 多路召回和 Weighted RRF
 
-`Workspace-bounded Conversational RAG + Hybrid Retrieval + Evidence Rerank + Citation-grounded Answer`
+RRF 对每一路排名贡献 `weight / (k + rank)`，避免直接比较 BM25、Cosine 和 Provider 分数。K 太小会让第一名支配融合，太大会压平头部差异。权重表达通道优先级，不等于概率。
 
-可以拆成六段：
+`[当前实现]` QA V2 策略：每步候选 12，关键词和向量各 Recall 60，Fusion Ceiling 100，Rerank Top N 40，RRF K 60，Vector/Keyword Weight 为 0.7/0.3。阈值当前为 0，后续由 Evidence Policy 收口。
 
-1. `Query Understanding`
-   基于当前用户问题、最近会话消息、当前回答链路、工作台信息，生成检索意图和查询改写。
+这些数字只证明当前策略可以确定性回放。没有同数据集消融前，不能声称 0.7/0.3 或 K=60 最优。
 
-2. `Workspace-bounded Retrieval`
-   只在当前 `workspace_id / topic_scope_id` 内检索，避免不同工作台资料串扰。
+### Evidence Selection
 
-3. `Hybrid Retrieval`
-   同时使用关键词检索、向量检索和结构化过滤召回候选内容。
+`[当前实现]` 最终 Evidence 最多 6 条、总字符最多 8000。第一轮每个 Source 取一条，第二轮按排序补满，重复 Evidence ID 不重复加入。Relevance Policy 处理显著标识、词项支持和相邻 Chunk 延续。
 
-4. `Evidence Rerank`
-   对候选资料片段做二次排序，优先选择能直接回答问题、来源可靠、引用位置明确的证据。
+`[目标设计]` 选择目标同时考虑相关性、Claim 覆盖、来源质量/多样性、近重复、版本新鲜度和字符成本。生成后按 Claim 切分，计算每条 Claim 是否至少有一个直接支持 Evidence；无法支持的句子删除、改为不确定表达或触发拒答。
 
-5. `Context Packing`
-   将少量证据片段、引用定位和 `Topic-Aware Rolling Context Window` 编译出的必要会话上下文组装成模型输入，避免把大量无关资料塞给模型。
+## 幂等、并发与一致性
 
-6. `Citation-grounded Answer`
-   生成简洁回答，并把事实结论绑定到 Citation。
+Turn Submission 用 Client Request ID 和 Ledger 防重复；Answer Event 序号按 Run 单调。检索投影按 Snapshot 和 Index Version 查询，结果 Hydration 再以 Workspace 与 Source 当前可见性批量校验，防止索引陈旧造成越权。
 
-当前 Java 原型已经落地其中的轻量等价实现：
+Query Cache Key 包含 Workspace、ACL Version、Retrieval Strategy、Index Version、Normalized Query 和 Source Scope。权限或 Source 变化主动失效。Answer 本身不以模糊 Query Key 全局缓存，因为 Conversation Context、Memory Pack 和 Evidence Version 会改变结果。
 
-```text
-Query Understanding
-  -> workspace-bounded source_chunk recall
-  -> title / source_type / metadata structured scoring
-  -> chunk keyword scoring
-  -> source diversity selection
-  -> evidence packing with match_reason
-  -> Citation-grounded SSE answer
-```
+同一 Conversation 并发 Turn 通过 Turn Ledger 和 Active History Head 确定顺序；每个 Run 的输入快照独立，晚完成的旧 Run 不能覆盖新消息或 Wiki/Source 版本。
 
-向量召回和 Elasticsearch 是同一接口下的替换实现，不改变问答 RAG 的链路口径。
+## 参数推导与调优
 
-## 5. 检索对象
+| 参数 | 太小的失败模式 | 太大的失败模式 | 调优证据 |
+| --- | --- | --- | --- |
+| Recall K | Gold Evidence 进不了候选 | ES/Embedding 延迟和噪声上升 | Recall@K 曲线与候选 P95 |
+| Fusion Ceiling | 融合前截断正确一路 | Rerank 输入与内存放大 | Recall、Rerank Cost、Tail Latency |
+| RRF K | 头部一路垄断 | 排名差异被压平 | nDCG/MRR 与分桶 Bad Case |
+| Channel Weight | 某类问法长期漏召回 | 另一通道贡献被淹没 | 精确词、语义改写、跨语言分桶 |
+| Rerank Top N | 正确候选未进入精排 | Provider 成本和 P99 增长 | nDCG、P95/P99、单位成功成本 |
+| Evidence Count | Claim 覆盖不足 | 重复、Prompt 稀释、成本上升 | Claim-Evidence Coverage 与 Faithfulness |
+| Character Budget | 上下文被截断 | Token 成本和 Lost-in-the-middle | 引用覆盖、生成延迟、Token |
 
-问答 RAG 链路的检索对象以工作台资料池为主，不直接依赖其他链路内部对象：
+`[目标设计]` 固定 Dataset、Snapshot、Index、模型与 Prompt，对 BM25、Vector、RRF、Rerank 和 Evidence Selection 做逐层消融。新策略若 Scope Violation > 0、Citation Accuracy 低于门禁、关键分桶 Recall 明显回退或 P99/成本超预算，停止灰度。恢复需修复版本在固定回放和 Shadow 窗口同时通过。
 
-| 对象 | 用途 | 是否默认参与 |
-|---|---|---|
-| `Source Chunk` | 用户资料解析后的文本片段 | 是 |
-| `Conversation Message` | 当前会话上下文理解 | 只作上下文，不作证据 |
-| `Generated Source` | 被用户明确保存为资料的系统生成内容 | 按资料接入 |
+## 指标与阈值动作
 
-说明：
+| 指标 | 分子 / 分母 | 主要用途 |
+| --- | --- | --- |
+| Hit@K | Top K 含至少一个 Gold 的 Query / Gold Query | 判断能否找到 |
+| Recall@K | Top K 命中 Gold Evidence 数 / 全部 Gold Evidence 数 | 判断证据覆盖 |
+| Precision@K | Top K 相关 Evidence 数 / K 或实际返回数 | 判断噪声 |
+| MRR | 每个 Query 第一个相关结果倒数排名的均值 | 判断首个证据位置 |
+| nDCG@K | 实际 DCG / 理想 DCG | 判断多级相关排序 |
+| Citation Validity | 可解析且版本存在的 Citation / 全部 Citation | 链接与身份有效性 |
+| Citation Accuracy | 真正支持对应 Claim 的 Citation / 已判定 Citation | 引用是否支撑 |
+| Citation Completeness | 至少绑定一个有效 Citation 的应引用 Claim / 全部应引用 Claim | 引用责任是否完整；当前评测字段 `Citation Coverage` 兼容映射到该语义 |
+| Claim-Evidence Coverage | 被一组 Evidence 完整支持的原子 Claim / 全部可核验原子 Claim | 结论是否真正可追溯，不等同于只附了链接 |
+| Faithfulness | 完全受给定 Evidence 支持的判定单元 / 全部判定单元 | 控制幻觉 |
+| Unsupported Conclusion Rate | 无依据结论 / 全部可核验结论 | 硬质量门禁 |
+| Refusal Recall | 正确拒答的应拒答样本 / 全部应拒答样本 | 避免证据不足时硬答；当前字段 `Refusal Accuracy` 兼容映射到该语义 |
+| Refusal Precision | 正确拒答样本 / 全部被拒答样本 | 防止系统靠全部拒答虚高 Recall |
+| Answer Coverage | 非拒答样本 / 全部合格样本 | 披露系统实际愿意回答多少问题 |
+| Selective Accuracy | 被系统回答的样本中正确数 / 被回答样本 | 衡量拒答后的质量 |
 
-- 问答 RAG 不直接硬编码 Note / Wiki / Artifact / Memory 的内部对象。
-- 其他链路产生的内容只有被用户明确保存为资料后，才进入统一资料解析、索引和引用流程。
-- Research Trace 属于 Deep Research 过程资产，默认不进入主检索。
+所有指标按 Dataset Version、Bundle、语言、问题类型、Workspace 风险、设备/Provider 和时间窗切片，报告 Bootstrap 置信区间。阈值和完整元数据见 [评测文档](./测试与评测/NoteWeave-评测指标报告.md)。
 
-## 6. 主流程
+## 为什么不用相近方案
 
-```text
-用户在聊天框提问
-  -> 读取当前会话上下文
-  -> 读取工作台 / 主题范围
-  -> 判断问题类型
-  -> 生成检索查询与过滤条件
-  -> 执行关键词检索 + 向量检索 + 结构化过滤
-  -> 合并候选结果
-  -> rerank 候选证据
-  -> 生成 Citation 候选
-  -> 组装回答上下文
-  -> LLM 生成带引用回答
-  -> 保存 Conversation Message 与 Message Citation
-  -> 用户可继续追问 / 保存为结构化笔记 / 触发右侧产物
-```
+| 方案 | 不直接采用 | 迁移或引入条件 |
+| --- | --- | --- |
+| 纯向量 RAG | 精确编号、专名、权限过滤与版本语义不足 | 作为混合召回一路，不独占策略 |
+| 只用 BM25 | 同义改写、跨语言和抽象问题 Recall 受限 | 保留为确定性基线和降级 |
+| 分数归一化相加 | Provider 分数分布漂移，跨模型难比较 | 有稳定校准集和版本化校准器时评估 |
+| GraphRAG | 构建、更新和全局查询成本高 | 多跳/全局问题占比高且离线评测证明净收益 |
+| QA 直接升级 Agent | 单轮问题的成本、状态和安全复杂度不划算 | 需要多步工具、冲突验证和长报告时转 Research |
+| Memory 参与 Evidence Rank | 偏好和内部记忆会伪装成外部事实 | Memory 只影响表达和过程，事实仍需 Evidence |
 
-## 7. 查询理解
+## 测试、灰度与回滚
 
-### 7.1 输入
+- 单测验证 Query Rewrite、RRF、Relevance、Evidence Selection 和拒答。
+- 理解合同测试覆盖原问题保留、约束不丢失、指代歧义、别名冲突、错误 Scope 扩大和澄清原因码；当前仓库只覆盖其中的确定性 Expansion 部分。
+- Provider 契约测试验证关闭、超时、`429`、损坏 JSON 与越界 Document Index。
+- Repository/ES 集成测试验证 Workspace Filter、Snapshot Version 和损坏响应。
+- 固定 Gold 回放报告各层候选与消融结果，检查近重复泄漏。
+- Prompt Injection 红队把恶意指令放入 Source 与 Tool Result，验证它不能改变 Tool/Scope。
+- Playwright E2E 上传真实资料、提交问题、检查 Citation 和 SSE 重连。
+- 灰度按 Bundle 和 Workspace 分配，只对新 Run 生效；回滚切旧 Bundle/Index Alias，历史 Manifest 不变。
 
-查询理解阶段输入：
+`[当前实现]` Retrieval Benchmark Replay、Shadow Comparator、Quality Gate、Final Gold Contract、QA Hybrid/RRF/Rerank、Evidence Ownership 和 SSE 测试提供现有验证面。
 
-- 用户当前问题
-- 当前会话最近若干轮消息
-- 当前工作台信息
-- 当前主题范围
-- 用户当前选择的回答链路
-- 可选的当前资料阅读上下文
+`[生产待验证]` 真实 Provider 的 Answer Quality、长期拒答曲线、用户采纳率、漂移和单位成功回答成本仍需真实流量。
 
-### 7.2 输出
+## 面试入口
 
-查询理解阶段输出：
-
-```json
-{
-  "question_type": "definition | summary | comparison | source_lookup | reasoning | generation",
-  "search_queries": ["..."],
-  "must_filter": {
-    "workspace_id": 1,
-    "topic_scope_id": 2
-  },
-  "preferred_material_types": ["uploaded_file", "imported_text", "generated_source"],
-  "answer_style": "short | normal | detailed",
-  "needs_citation": true
-}
-```
-
-### 7.3 规则
-
-- 连续追问优先进入 `Topic-Aware Rolling Context Window`
-- 当前实现会把最近相关多轮对话编译成 `连续对话窗口 + 主题锚点 + 前序主题摘要`
-- 明确问“来源在哪”时提高引用密度
-- 明确要求总结、对比、解释时提高资料覆盖度
-- 证据不足时不强答，应提示可升级为 Note 或 Deep Research
-
-## 8. 召回策略
-
-### 8.1 关键词检索
-
-用于处理：
-
-- 精确术语
-- 文件名
-- 人名 / 公司名 / 产品名
-- 标题与小标题
-- 中文短词
-
-推荐由 `Elasticsearch` 承接：
-
-- `source_chunk_index`
-
-问答 RAG 不直接查询 Note、Wiki、Artifact 或 Memory 的内部索引。只有当系统生成内容被用户明确保存进工作台资料池后，才按普通资料进入统一资料索引。
-
-### 8.2 向量检索
-
-用于处理：
-
-- 语义相似问题
-- 改写后的自然语言查询
-- 跨文件概念匹配
-- 用户描述不完全匹配原文关键词的情况
-
-当前不单独引入向量数据库，优先使用 Elasticsearch 向量能力或后续可替换实现。
-
-### 8.3 结构化过滤
-
-所有召回都必须带上：
-
-- `workspace_id`
-- `topic_scope_id`
-- `status`
-- `visibility`
-- `deleted_at`
-
-可选过滤：
-
-- source_type
-- material_type
-- created_by
-- updated_at
-- tag
-
-### 8.4 合并策略
-
-候选结果合并采用轻量 `RRF-style merge`：
-
-- 关键词结果提供精确命中
-- 向量结果提供语义补召
-- 结构化对象提高可解释性
-- 系统生成内容只有在被用户明确保存为资料后，才作为普通资料参与召回
-
-当前 MySQL 原型使用轻量合并策略：
-
-- `chunk-keyword`
-  正文片段命中用户问题词。
-
-- `metadata-filter`
-  资料标题、类型、摘要、标签或结构化元数据命中用户问题词。
-
-- `source-diversity`
-  证据选择阶段优先覆盖不同资料来源，特别是比较类问题。
-
-- `workspace-recent`
-  问题词为空或无直接命中时，按工作台内最近资料兜底。
-
-## 9. Rerank 与证据选择
-
-### 9.1 Rerank 输入
-
-Rerank 阶段输入：
-
-- 用户问题
-- 候选片段标题
-- 候选片段摘要
-- 候选片段正文短摘录
-- 来源类型
-- 来源更新时间
-- 是否已有 Citation 定位
-
-### 9.2 排序偏好
-
-优先级从高到低：
-
-1. 能直接回答问题的资料片段
-2. 有明确引用位置的资料片段
-3. 来自当前用户选中资料或当前会话强相关资料的片段
-4. 被用户明确保存为资料的系统生成内容
-5. 仅语义相似但证据位置不清晰的片段
-
-### 9.3 证据选择
-
-默认建议：
-
-- 快速问答：选 3-5 条证据
-- 普通问答：选 5-8 条证据
-- 对比类问题：保证每个被比较对象至少有 1-2 条证据
-- 来源查找类问题：宁可少答，也要保证引用准确
-
-当前实现的证据选择规则：
-
-```text
-候选 chunk 按 score 排序
-  -> 第一轮每个 source 至多选一条高分证据
-  -> 第二轮用剩余高分证据补足数量
-  -> 每条证据写入 match_reason
-  -> 生成 citation 和 message_citation
-```
-
-这样可以避免比较类问题被同一份资料的多个相邻片段垄断。
-
-## 10. Context Packing
-
-模型输入不应塞入全部召回内容，而应压缩为结构化上下文：
-
-```text
-用户问题
-会话必要上下文
-证据片段列表
-  - evidence_id
-  - source_type
-  - title
-  - excerpt
-  - citation_locator
-  - relevance_reason
-回答要求
-```
-
-Context Packing 规则：
-
-- 保留用户问题原文
-- 保留必要的连续对话指代信息
-- 每条证据都带 `evidence_id`
-- 每条证据都带可生成 Citation 的定位信息
-- 删除重复、低分、无定位证据
-- 会话上下文窗口只能帮助理解指代和主题延续，不能替代资料证据
-
-## 11. 回答生成
-
-回答结构建议：
-
-```text
-直接回答
-
-证据选择
-
-关键依据
-- ...
-- ...
-
-引用来源
-- ...
-
-可继续操作
-- 保存为结构化笔记
-- 生成报告 / 测验 / 学习指南
-- 升级为深度研究
-```
-
-生成约束：
-
-- 不编造未检索到的来源
-- 不把会话历史当作事实引用
-- 引用必须来自当前轮证据候选
-- 如果证据不足，明确说明不足
-- 如果存在冲突证据，标出冲突
-
-## 12. 数据对象
-
-### 12.1 复用对象
-
-问答 RAG 链路复用以下对象：
-
-- `conversation`
-- `conversation_message`
-- `source`
-- `source_snapshot`
-- `source_chunk`
-- `source_window`
-- `citation`
-- `message_citation`
-- `retrieval_trace`
-- `llm_call_log`
-
-### 12.2 建议补充字段
-
-`conversation_message` 建议补充或保留：
-
-- `retrieval_trace_id`
-- `answer_mode`
-- `model_name`
-- `latency_ms`
-- `citation_count`
-
-`retrieval_trace` 建议至少包含：
-
-- `id`
-- `workspace_id`
-- `topic_scope_id`
-- `conversation_id`
-- `message_id`
-- `query_text`
-- `query_rewrite_json`
-- `retrieval_strategy`
-- `candidate_count`
-- `selected_evidence_count`
-- `latency_ms`
-- `trace_payload_json`
-- `created_at`
-
-## 13. 接口设计
-
-### 13.1 发送消息
-
-```text
-POST /api/v2/conversations/{conversationId}/messages
-```
-
-请求体：
-
-```json
-{
-  "content": "这几篇资料对 RAG 的定义是什么？",
-  "answer_mode": "QA",
-  "client_request_id": "qa-001",
-  "source_scope_source_ids": ["source_a", "source_b"]
-}
-```
-
-`source_scope_source_ids` 为可选字段。未传时保持 Workspace 全量资料语义；传入时只允许从这些 Source 的 Passage 形成 EvidenceBundle 和 citation。当前该字段仅支持 `QA`，`NOTE/WIKI` 携带时明确返回 `ANSWER_SOURCE_SCOPE_UNSUPPORTED`。
-
-返回：
-
-```json
-{
-  "user_message_id": "msg_user",
-  "assistant_message_id": "msg_assistant",
-  "assistant_request_id": "req_assistant",
-  "stream_url": "/api/v2/chat/requests/req_assistant/stream"
-}
-```
-
-### 13.2 流式回答
-
-```text
-GET /api/v2/chat/requests/{assistantRequestId}/stream
-```
-
-事件：
-
-```text
-chat.delta
-chat.citation
-chat.completed
-chat.failed
-```
-
-### 13.3 回答沉淀（现行口径）
-
-QA 链路**不提供**回答直接沉淀接口。
-
-沉淀仅发生在 **Note 模式**：
-
-```text
-POST /api/v2/messages/{messageId}/source-draft   # 生成中性 Markdown 草稿
-POST /api/v2/messages/{messageId}/save-as-source # 用户确认后写入资料池
-```
-
-作用：
-
-- 把 Note 回答整理为中性 Markdown 知识点草稿
-- 用户确认标题/正文后，作为普通 `Source` 进入资料池（parse/index 与上传一致）
-- QA 继续只做聊天 + 资料 RAG，避免把带视角的回答静默灌入检索
-
-## 14. 后端模块
-
-推荐模块：
-
-- `ConversationService`
-- `QaRagChainService`
-- `QueryRewriteService`
-- `RetrievalService`
-- `RerankService`
-- `EvidencePackingService`
-- `CitationResolver`
-- `AnswerGenerationService`
-- `KnowledgeWritebackService`
-- `RetrievalTraceService`
-
-模块调用关系：
-
-```text
-ConversationController
-  -> QaRagChainService
-      -> QueryRewriteService
-      -> RetrievalService
-      -> RerankService
-      -> EvidencePackingService
-      -> AnswerGenerationService
-      -> CitationResolver
-      -> RetrievalTraceService
-  -> ConversationService
-```
-
-## 15. Elasticsearch 索引建议
-
-### 15.1 source_chunk_index
-
-字段：
-
-- `workspace_id`
-- `topic_scope_id`
-- `source_id`
-- `source_snapshot_id`
-- `chunk_id`
-- `title`
-- `heading`
-- `content`
-- `summary`
-- `page_no`
-- `locator_json`
-- `embedding`
-- `status`
-
-### 15.2 资料化生成内容索引
-
-问答 RAG 不直接读取其他链路内部对象。系统生成内容如果被用户保存为资料，可以进入统一资料索引；具体索引是否拆分由实现阶段决定。
-
-#### generated_source_index
-
-字段：
-
-- `workspace_id`
-- `topic_scope_id`
-- `source_id`
-- `source_snapshot_id`
-- `generated_from_type`
-- `generated_from_id`
-- `title`
-- `content`
-- `summary`
-- `embedding`
-- `status`
-
-## 16. 评估与验收
-
-问答 RAG 链路的验收不只看“回答像不像”，至少要看四类指标：
-
-### 16.1 检索指标
-
-- `hit@k`
-- `MRR`
-- `nDCG`
-- 候选为空率
-
-### 16.2 引用指标
-
-- Citation 覆盖率
-- Citation 可回跳成功率
-- 引用片段与回答事实的一致率
-
-### 16.3 回答指标
-
-- 直接回答率
-- 证据不足时的拒答 / 降级提示正确率
-- 冲突证据提示率
-
-### 16.4 体验指标
-
-- 首 token 延迟
-- 总回答延迟
-- 用户继续追问率
-- 保存为结构化笔记率
-- 右侧产物触发率
-
-## 17. 落地范围
-
-问答 RAG 链路落地范围：
-
-```text
-工作台级过滤
-  -> source chunk 关键词检索
-  -> source metadata 结构化评分
-  -> 轻量 RRF-style 合并
-  -> source diversity 证据选择
-  -> match_reason 可解释证据打包
-  -> Citation 生成
-  -> 带引用回答
-  -> 保存为结构化笔记
-```
-
-当前工程边界：
-
-- 不引入独立向量数据库；ES 向量召回作为同接口替换实现。
-- 不做全局跨工作台检索。
-- 不把聊天历史当事实来源。
-- 不自动改写 Wiki。
-- 不把 QA 升级成 Deep Research；证据不足时提示切换 Note / Wiki / Deep Research。
-
-## 18. 最终口径
-
-`问答 RAG 链路是 NoteWeave 的默认资料问答链路。它以当前研究工作台为检索边界，通过关键词检索、向量检索、结构化过滤和证据 rerank 召回已解析资料中的高价值片段，再通过 Citation-grounded Answer 生成可回跳来源的回答。它和 Note 链路的区别是答案优先、延迟更低、输出更轻；和 Wiki 链路的区别是不会优先进入长期页面组织，而是围绕当前问题快速给出可信回答。`
+面试主回答与追问见 [场景化 RAG 一体化手册](./简历亮点八股/31-场景化RAG一体化面试手册.md)。

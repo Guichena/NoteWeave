@@ -11,7 +11,6 @@ import java.security.NoSuchAlgorithmException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
 import org.springframework.stereotype.Component;
 
 /** Shared claim/completion authority for research-agent task snapshots. */
@@ -32,7 +31,8 @@ class ResearchAgentTaskSnapshotCanonicalizer {
         if (!SCHEMA_V1.equals(input.schemaVersion())
                 && !SCHEMA_V2.equals(input.schemaVersion())
                 && !SCHEMA_V3.equals(input.schemaVersion())) throw invalid();
-        List<Map<String, Object>> targetBindings = readList(input.targetBindingsJson());
+        List<Map<String, Object>> targetBindings = readList(
+                input.targetBindingsJson(), "WIDE_DISCOVERY".equals(input.role()));
         Map<String, Object> budget = readMap(input.budgetJson());
         Map<String, Object> context = readMap(input.executionContextJson());
         Object providerKey = context.get("provider_key");
@@ -86,9 +86,9 @@ class ResearchAgentTaskSnapshotCanonicalizer {
             snapshot.put("candidate_slot", input.candidateSlot());
             snapshot.put("high_risk", input.highRisk());
         }
-        String digest = sha256(Json.write(objectMapper, canonicalValue(snapshot)));
+        String digest = sha256(Json.write(objectMapper, ResearchCanonicalJson.canonicalize(snapshot)));
         snapshot.put("snapshot_digest", digest);
-        return new CanonicalSnapshot(Json.write(objectMapper, canonicalValue(snapshot)), digest);
+        return new CanonicalSnapshot(Json.write(objectMapper, ResearchCanonicalJson.canonicalize(snapshot)), digest);
     }
 
     private Map<String, Object> readMap(String raw) {
@@ -101,24 +101,14 @@ class ResearchAgentTaskSnapshotCanonicalizer {
         }
     }
 
-    private List<Map<String, Object>> readList(String raw) {
+    private List<Map<String, Object>> readList(String raw, boolean allowEmpty) {
         try {
             List<Map<String, Object>> result = objectMapper.readValue(raw, new TypeReference<>() { });
-            if (result == null || result.isEmpty()) throw invalid();
+            if (result == null || (!allowEmpty && result.isEmpty())) throw invalid();
             return result;
         } catch (JsonProcessingException | IllegalArgumentException exception) {
             throw invalid();
         }
-    }
-
-    private Object canonicalValue(Object value) {
-        if (value instanceof Map<?, ?> raw) {
-            Map<String, Object> sorted = new TreeMap<>(ResearchAgentBinaryOrder.UTF8);
-            raw.forEach((key, child) -> sorted.put(String.valueOf(key), canonicalValue(child)));
-            return sorted;
-        }
-        if (value instanceof List<?> list) return list.stream().map(this::canonicalValue).toList();
-        return value;
     }
 
     private String sha256(String payload) {

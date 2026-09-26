@@ -20,6 +20,9 @@ class ResearchTaskBenchmarkBoundary:
     }
 
     def execute(self, profile: BenchmarkProfile, case: BenchmarkCase) -> BenchmarkExecution:
+        if profile.execution_mode == "DISTRIBUTED_DETERMINISTIC":
+            from app.distributed_benchmark_runtime import DistributedResearchBenchmarkBoundary
+            return DistributedResearchBenchmarkBoundary.from_environment().execute(profile, case)
         if profile.execution_mode == "SPECULATIVE":
             raise RuntimeError("SPECULATIVE benchmark requires the distributed candidate-quorum harness")
         runtime_mode = self._MODE_MAP[profile.execution_mode]

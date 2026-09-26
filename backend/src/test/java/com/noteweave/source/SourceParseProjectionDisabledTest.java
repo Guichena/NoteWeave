@@ -30,8 +30,11 @@ class SourceParseProjectionDisabledTest {
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
         createSchema(jdbcTemplate);
         jdbcTemplate.update("""
-                insert into source(id, workspace_id, title, source_type, status, parse_status, index_status)
-                values ('source-1', 'workspace-1', 'Kafka without Elasticsearch', 'TEXT',
+                insert into file_object(id, mime_type) values ('file-1', 'text/markdown')
+                """);
+        jdbcTemplate.update("""
+                insert into source(id, workspace_id, file_object_id, title, source_type, status, parse_status, index_status)
+                values ('source-1', 'workspace-1', 'file-1', 'Kafka without Elasticsearch', 'TEXT',
                         'PROCESSING', 'PENDING', 'PENDING')
                 """);
         jdbcTemplate.update("""
@@ -51,6 +54,7 @@ class SourceParseProjectionDisabledTest {
         SourceParseService service = new SourceParseService(
                 jdbcTemplate,
                 documentChunker,
+                new SourceDocumentTextExtractor(),
                 new ObjectMapper(),
                 mock(ObjectStorage.class),
                 messagingMode,
@@ -88,9 +92,16 @@ class SourceParseProjectionDisabledTest {
 
     private void createSchema(JdbcTemplate jdbcTemplate) {
         jdbcTemplate.execute("""
+                create table file_object (
+                    id varchar(64) primary key,
+                    mime_type varchar(160) not null
+                )
+                """);
+        jdbcTemplate.execute("""
                 create table source (
                     id varchar(64) primary key,
                     workspace_id varchar(64) not null,
+                    file_object_id varchar(64),
                     title varchar(300) not null,
                     source_type varchar(64) not null,
                     status varchar(32) not null,

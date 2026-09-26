@@ -4,8 +4,9 @@ import { fileURLToPath } from "node:url";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const repoRoot = path.resolve(path.dirname(scriptPath), "..");
-const narrativePath = path.join(repoRoot, "docs", "DeepResearch-P5C-项目讲解稿.md");
-const evidencePath = path.join(repoRoot, "docs", "DeepResearch-P5C-亮点证据映射.json");
+const fixtureRoot = path.join(repoRoot, "scripts", "fixtures", "deepresearch");
+const narrativePath = path.join(fixtureRoot, "DeepResearch-P5C-项目讲解稿.md");
+const evidencePath = path.join(fixtureRoot, "DeepResearch-P5C-亮点证据映射.json");
 
 function fail(message) {
   console.error(`[P5-C] ${message}`);

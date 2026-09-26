@@ -9,10 +9,12 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.List;
+import java.util.Locale;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +24,7 @@ public class AuthService {
     private final JdbcTemplate jdbcTemplate;
     private final PasswordHasher passwordHasher;
     private final AuthLoginRateLimiter loginRateLimiter;
+    private final AuthRegistrationRateLimiter registrationRateLimiter;
     private final String invalidUserPasswordHash;
     private final SecureRandom secureRandom = new SecureRandom();
     private final Clock clock;
@@ -33,23 +36,54 @@ public class AuthService {
             JdbcTemplate jdbcTemplate,
             PasswordHasher passwordHasher,
             AuthLoginRateLimiter loginRateLimiter,
+            AuthRegistrationRateLimiter registrationRateLimiter,
             @Value("${noteweave.security.access-token-minutes:15}") long accessTokenMinutes,
             @Value("${noteweave.security.refresh-token-days:30}") long refreshTokenDays
     ) {
-        this(jdbcTemplate, passwordHasher, loginRateLimiter, Clock.systemUTC(),
+        this(jdbcTemplate, passwordHasher, loginRateLimiter, registrationRateLimiter, Clock.systemUTC(),
                 accessTokenMinutes, refreshTokenDays);
     }
 
     AuthService(JdbcTemplate jdbcTemplate, PasswordHasher passwordHasher,
-                AuthLoginRateLimiter loginRateLimiter, Clock clock,
+                AuthLoginRateLimiter loginRateLimiter,
+                AuthRegistrationRateLimiter registrationRateLimiter,
+                Clock clock,
                 long accessTokenMinutes, long refreshTokenDays) {
         this.jdbcTemplate = jdbcTemplate;
         this.passwordHasher = passwordHasher;
         this.loginRateLimiter = loginRateLimiter;
+        this.registrationRateLimiter = registrationRateLimiter;
         this.invalidUserPasswordHash = passwordHasher.hash("noteweave-invalid-user-timing-equalizer");
         this.clock = clock;
         this.accessTokenMinutes = accessTokenMinutes;
         this.refreshTokenDays = refreshTokenDays;
+    }
+
+    @Transactional(noRollbackFor = BusinessException.class)
+    public AuthSessionResponse register(
+            String username,
+            String email,
+            String password,
+            String displayName,
+            String clientAddress
+    ) {
+        String normalizedUsername = username.trim();
+        String normalizedEmail = email.trim().toLowerCase(Locale.ROOT);
+        registrationRateLimiter.beforeAttempt(clientAddress, normalizedUsername, normalizedEmail);
+        String normalizedDisplayName = displayName == null || displayName.isBlank()
+                ? normalizedUsername : displayName.trim();
+        String userId = Ids.newId();
+        try {
+            jdbcTemplate.update("""
+                    insert into users(id, username, email, display_name, password_hash, status)
+                    values (?, ?, ?, ?, ?, 'ACTIVE')
+                    """, userId, normalizedUsername, normalizedEmail, normalizedDisplayName,
+                    passwordHasher.hash(password));
+        } catch (DuplicateKeyException ex) {
+            throw registrationConflict();
+        }
+        return issueSession(new UserCredential(
+                userId, normalizedUsername, normalizedEmail, normalizedDisplayName, ""));
     }
 
     @Transactional(noRollbackFor = BusinessException.class)
@@ -63,6 +97,10 @@ public class AuthService {
             throw new BusinessException("AUTHENTICATION_INVALID", "用户名或密码错误", HttpStatus.UNAUTHORIZED);
         }
         loginRateLimiter.recordSuccess(attempt);
+        return issueSession(user);
+    }
+
+    private AuthSessionResponse issueSession(UserCredential user) {
         Instant now = clock.instant();
         String accessToken = newToken();
         String refreshToken = newToken();
@@ -77,6 +115,11 @@ public class AuthService {
                 TokenHasher.sha256(refreshToken), Timestamp.from(now), Timestamp.from(accessExpiresAt),
                 Timestamp.from(refreshExpiresAt), Timestamp.from(now));
         return response(user, accessToken, refreshToken, accessExpiresAt, refreshExpiresAt);
+    }
+
+    private BusinessException registrationConflict() {
+        return new BusinessException("AUTH_REGISTRATION_CONFLICT",
+                "Username or email is already registered", HttpStatus.CONFLICT);
     }
 
     @Transactional

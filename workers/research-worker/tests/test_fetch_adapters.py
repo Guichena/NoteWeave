@@ -14,6 +14,7 @@ from app.fetch_adapters import (
     _decompress_response,
     _pinned_http_get,
     _read_response_bytes,
+    _select_query_relevant_text,
     run_research_fetch,
 )
 from app.models import ResearchSearchHit, ResearchTaskInput
@@ -504,6 +505,48 @@ def test_read_response_bytes_should_not_stop_at_legacy_small_limit() -> None:
 
     assert raw.endswith(b"tail-evidence")
     assert len(raw) == len(payload)
+
+
+def test_long_webpage_should_select_research_body_instead_of_cookie_header() -> None:
+    header = "privacy cookie manage preferences advertisement search articles " * 180
+    body = "Hybrid working from home improves retention without damaging performance. " * 120
+
+    selected = _select_query_relevant_text(
+        header + body,
+        "Nature Trip.com hybrid working retention performance",
+        token_budget=800,
+    )
+
+    assert "Hybrid working from home" in selected
+    assert not selected.startswith("privacy cookie")
+
+
+def test_markdown_navigation_repetition_should_not_hide_primary_result() -> None:
+    navigation = (
+        "[Nature hybrid working performance](https://www.nature.com/articles/result) "
+        "[Self-assessed productivity](https://www.nature.com/articles/result#productivity) "
+    ) * 90
+    primary_result = (
+        "The randomized trial involved 1,612 graduate employees at Trip.com. "
+        "We found no evidence of a significant effect on employees' performance reviews. "
+        "Null equivalence tests showed that hybrid working did not affect performance grades. "
+    ) * 12
+    references = (
+        "[References](https://www.nature.com/articles/result#ref-CR1) "
+        "hybrid working productivity performance "
+    ) * 70
+
+    selected = _select_query_relevant_text(
+        navigation + primary_result + references,
+        (
+            "Compare Nature's Trip.com randomized trial hybrid working performance "
+            "(https://www.nature.com/articles/result) with productivity evidence"
+        ),
+        token_budget=800,
+    )
+
+    assert "did not affect performance grades" in selected
+    assert not selected.startswith("[Nature hybrid working performance]")
 
 
 def test_decode_response_should_use_gb18030_when_utf8_would_mojibake() -> None:

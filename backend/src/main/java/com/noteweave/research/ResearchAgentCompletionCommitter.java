@@ -33,23 +33,30 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** The sole REQUIRED transaction that commits every MA4G completion effect. */
 @Service
 class ResearchAgentCompletionCommitter {
+    private static final Logger log = LoggerFactory.getLogger(ResearchAgentCompletionCommitter.class);
     private static final String RECEIPT_SCHEMA = "research-agent-completion-receipt.v1";
     private static final String RECEIPT_DIGEST_DOMAIN = "research-agent-completion-receipt.v1";
-    private static final String EVIDENCE_DIGEST_DOMAIN = "research-agent-source-evidence.v1";
-    private static final String CANDIDATE_DIGEST_DOMAIN = "research-agent-candidate.v1";
     private static final String MERGE_DIGEST_DOMAIN = "research-agent-cell-merge.v1";
     private static final String CELL_EVIDENCE_DIGEST_DOMAIN = "research-agent-cell-evidence.v1";
     private static final String SNAPSHOT_SCHEMA = "research-agent-task-snapshot.v1";
     private static final String SNAPSHOT_SCHEMA_V2 = "research-agent-task-snapshot.v2";
     private static final String SNAPSHOT_SCHEMA_V3 = "research-agent-task-snapshot.v3";
-    private static final String BLIND_DIGEST_DOMAIN = "research-agent-blind-candidate.v1";
     private static final Set<String> TERMINAL_RUN = Set.of("COMPLETED", "FAILED", "CANCELLED");
     private static final Set<String> SERVER_DERIVED_USAGE = Set.of(
             "evidence_appended", "candidate_merges_accepted", "candidate_merges_rejected"
+    );
+    /** D-39: server-authorized provider round -> budget dimension it must charge. */
+    private static final Map<String, String> TOOL_IDENTITY_BUDGET_KEYS = Map.of(
+            "search", "search_calls",
+            "fetch", "fetch_calls",
+            "read", "read_calls",
+            "extract", "extract_calls"
     );
     private static final Set<String> COMPLETE_BUDGET_KEYS;
     static {
@@ -63,8 +70,13 @@ class ResearchAgentCompletionCommitter {
     private final ResearchAgentCompletionCanonicalizer canonicalizer;
     private final ResearchAgentTaskSnapshotCanonicalizer snapshotCanonicalizer;
     private final ResearchAgentCompletionReplayRepository replayRepository;
+    private final ResearchAgentCompletionWriteRepository writeRepository;
+    private final ResearchAgentCompletionMergePlanner mergePlanner;
+    private final ResearchEvidenceQualificationService evidenceQualificationService;
+    private final ResearchAgentCompletionReceiptPayloadBuilder receiptPayloadBuilder;
     private final ObjectProvider<ResearchAgentCompletionFaultInjector> faultInjectors;
     private final ResearchAgentCompletionMetrics completionMetrics;
+    private final ResearchAgentRoleResultService roleResultService;
 
     ResearchAgentCompletionCommitter(
             JdbcTemplate jdbcTemplate,
@@ -72,16 +84,25 @@ class ResearchAgentCompletionCommitter {
             ResearchAgentCompletionCanonicalizer canonicalizer,
             ResearchAgentTaskSnapshotCanonicalizer snapshotCanonicalizer,
             ResearchAgentCompletionReplayRepository replayRepository,
+            ResearchAgentCompletionWriteRepository writeRepository,
+            ResearchAgentCompletionMergePlanner mergePlanner,
+            ResearchEvidenceQualificationService evidenceQualificationService,
             ObjectProvider<ResearchAgentCompletionFaultInjector> faultInjectors,
-            ResearchAgentCompletionMetrics completionMetrics
+            ResearchAgentCompletionMetrics completionMetrics,
+            ResearchAgentRoleResultService roleResultService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.canonicalizer = canonicalizer;
         this.snapshotCanonicalizer = snapshotCanonicalizer;
         this.replayRepository = replayRepository;
+        this.writeRepository = writeRepository;
+        this.mergePlanner = mergePlanner;
+        this.evidenceQualificationService = evidenceQualificationService;
+        this.receiptPayloadBuilder = new ResearchAgentCompletionReceiptPayloadBuilder();
         this.faultInjectors = faultInjectors;
         this.completionMetrics = completionMetrics;
+        this.roleResultService = roleResultService;
     }
 
     @Transactional(propagation = Propagation.REQUIRED)
@@ -106,7 +127,7 @@ class ResearchAgentCompletionCommitter {
         if (committed != null) return replayRepository.resolve(committed, validated);
         lockAndRejectOrphanExecution(task.id(), envelope.executionKey());
         ReservationRow reservation = lockReservation(task.id());
-        List<TargetBinding> targets = targetBindings(task.targetBindingsJson());
+        List<TargetBinding> targets = targetBindings(task.targetBindingsJson(), task.role());
         List<CellRow> cells = lockCells(task, targets);
         lockAndRejectChildKeyConflicts(run.id(), envelope);
 
@@ -114,34 +135,43 @@ class ResearchAgentCompletionCommitter {
         Map<String, TrustedSource> trustedSources = trustedSources(task.executionContextJson());
         Map<String, TrustedEvidenceSource> trustedEvidence = validateEvidenceAuthority(
                 run.id(), task.id(), envelope.evidence(), trustedSources);
+        ResearchEvidenceQualificationService.QualificationBatch evidenceQualification =
+                evidenceQualificationService.evaluate(task, envelope, trustedEvidence);
         checkpoint(ResearchAgentCompletionFaultInjector.Stage.AFTER_LOCKS, 0);
 
         String executionId = Ids.newId();
         String completionId = Ids.newId();
-        MergeOutcome plannedOutcome = planMergeOutcome(task, envelope, cells, trustedEvidence);
+        MergeOutcome plannedOutcome = planMergeOutcome(
+                task, envelope, cells, trustedEvidence, evidenceQualification.rejectedCandidateKeys());
         BudgetLedger ledger = calculateBudget(
-                reservation, envelope.budgetUsage(), envelope.evidence().size(),
+                task, envelope, reservation, envelope.budgetUsage(), envelope.evidence().size(),
                 plannedOutcome.accepted().size(), plannedOutcome.rejected().size());
         ResearchAgentCompletionReceipt unsignedReceipt = buildReceipt(
                 completionId, executionId, task, validated.digest(), envelope.evidence().size(),
                 envelope.candidates().size(), plannedOutcome, ledger);
-        Map<String, Object> receiptPayload = receiptPayload(unsignedReceipt, false);
+        Map<String, Object> receiptPayload = receiptPayloadBuilder.build(unsignedReceipt, false);
         String receiptDigest = canonicalizer.domainSeparatedDigest(RECEIPT_DIGEST_DOMAIN, receiptPayload);
         ResearchAgentCompletionReceipt finalReceipt = new ResearchAgentCompletionReceipt(
                 RECEIPT_SCHEMA, unsignedReceipt.completionId(), unsignedReceipt.executionId(), unsignedReceipt.taskId(),
                 unsignedReceipt.completionDigest(), receiptDigest, false, unsignedReceipt.outcome(), unsignedReceipt.evidenceAppended(),
                 unsignedReceipt.candidateCount(), unsignedReceipt.acceptedMerges(), unsignedReceipt.rejectedMerges(),
                 unsignedReceipt.budget());
-        String receiptJson = canonicalizer.canonicalJsonValue(receiptPayload(finalReceipt, true));
+        String receiptJson = canonicalizer.canonicalJsonValue(receiptPayloadBuilder.build(finalReceipt, true));
 
+        // DR-102: persist the bounded extraction diagnostics so a zero-card
+        // extraction is explainable from the execution row (null when the shape
+        // is v1 or ROLE_RESULT, which carry no diagnostics).
+        String extractionDiagnosticsJson = envelope.extractionDiagnostics() == null
+                ? null : canonicalizer.canonicalJsonValue(envelope.extractionDiagnostics());
         jdbcTemplate.update("""
                 insert into research_agent_execution(
                     id, research_agent_task_id, execution_key, lease_epoch, fencing_token,
-                    worker_instance_id, status, termination_reason, usage_json, trace_digest
-                ) values (?, ?, ?, ?, ?, ?, 'SUBMITTED', ?, ?, ?)
+                    worker_instance_id, status, termination_reason, usage_json, trace_digest,
+                    extraction_diagnostics_json
+                ) values (?, ?, ?, ?, ?, ?, 'SUBMITTED', ?, ?, ?, ?)
                 """, executionId, task.id(), envelope.executionKey(), envelope.leaseEpoch(), envelope.fencingToken(),
                 envelope.workerInstanceId(), envelope.terminationReason(),
-                Json.write(objectMapper, ledger.consumed()), envelope.traceDigest());
+                Json.write(objectMapper, ledger.consumed()), envelope.traceDigest(), extractionDiagnosticsJson);
         checkpoint(ResearchAgentCompletionFaultInjector.Stage.AFTER_EXECUTION_ANCHOR, 0);
 
         jdbcTemplate.update("""
@@ -157,13 +187,18 @@ class ResearchAgentCompletionCommitter {
                 envelope.fencingToken(), receiptJson, receiptDigest);
         checkpoint(ResearchAgentCompletionFaultInjector.Stage.AFTER_COMPLETION_ANCHOR, 0);
 
-        Map<String, EvidencePersisted> evidenceByKey = appendEvidence(
-                run.id(), completionId, envelope.evidence(), trustedEvidence);
-        List<CandidatePersisted> candidates = appendCandidates(
-                run.id(), task, completionId, executionId, envelope.candidates(), evidenceByKey);
+        roleResultService.validateAndPersist(task, envelope, completionId);
+
+        Map<String, EvidencePersisted> evidenceByKey = writeRepository.appendEvidence(
+                run.id(), completionId, envelope.evidence(), trustedEvidence, this::checkpoint);
+        List<CandidatePersisted> candidates = writeRepository.appendCandidates(
+                run.id(), task, completionId, executionId, envelope.candidates(), evidenceByKey, this::checkpoint);
+        evidenceQualificationService.persist(
+                run.id(), completionId, evidenceQualification, evidenceByKey, candidates, cells);
         MergeOutcome mergeOutcome = task.candidateQuorum() == 2
                 ? applyQuorumVerdictAndCas(run.id(), task, completionId, cells, plannedOutcome)
-                : applyVerdictsAndCas(run.id(), task, completionId, candidates, cells, evidenceByKey);
+                : applyVerdictsAndCas(run.id(), task, completionId, candidates, cells, evidenceByKey,
+                        evidenceQualification.rejectedCandidateKeys());
         if (!plannedOutcome.equals(mergeOutcome)) {
             throw new IllegalStateException("Persisted merge outcome differs from the locked completion plan");
         }
@@ -172,14 +207,18 @@ class ResearchAgentCompletionCommitter {
         persistBudget(reservation, completionId, envelope.executionKey(), ledger);
         checkpoint(ResearchAgentCompletionFaultInjector.Stage.AFTER_BUDGET_FINALIZE, 0);
 
+        String taskTerminalStatus = task.candidateQuorum() == 1
+                && Set.of("EVIDENCE_ONLY", "NO_SUPPORTED_CANDIDATE").contains(envelope.terminationReason())
+                ? "FAILED"
+                : "SUBMITTED";
         int terminal = jdbcTemplate.update("""
                 update research_agent_task
-                set status = 'SUBMITTED', terminal_at = current_timestamp, terminal_reason = ?,
+                set status = ?, terminal_at = current_timestamp, terminal_reason = ?,
                     updated_at = current_timestamp
                 where id = ? and status in ('CLAIMED', 'RUNNING')
                   and worker_instance_id = ? and lease_epoch = ? and fencing_token = ?
                   and lease_expires_at > current_timestamp
-                """, envelope.terminationReason(), task.id(), envelope.workerInstanceId(),
+                """, taskTerminalStatus, envelope.terminationReason(), task.id(), envelope.workerInstanceId(),
                 envelope.leaseEpoch(), envelope.fencingToken());
         if (terminal != 1) throw staleLease();
         checkpoint(ResearchAgentCompletionFaultInjector.Stage.AFTER_TASK_TERMINAL_UPDATE, 0);
@@ -271,6 +310,7 @@ class ResearchAgentCompletionCommitter {
 
     private List<CellRow> lockCells(TaskRow task, List<TargetBinding> targets) {
         List<String> keys = targets.stream().map(TargetBinding::cellKey).distinct().toList();
+        if (keys.isEmpty()) return List.of();
         String placeholders = String.join(",", Collections.nCopies(keys.size(), "?"));
         List<Object> parameters = new ArrayList<>();
         parameters.add(task.runId());
@@ -340,13 +380,22 @@ class ResearchAgentCompletionCommitter {
         if (TERMINAL_RUN.contains(run.status())) {
             throw new BusinessException("RESEARCH_AGENT_RUN_TERMINAL", "Research run is terminal");
         }
-        boolean v1 = SNAPSHOT_SCHEMA.equals(task.snapshotSchemaVersion()) && "DEEP_CELL".equals(task.role());
+        boolean candidateEnvelope = (ResearchAgentCompletionCanonicalizer.SCHEMA_VERSION.equals(envelope.schemaVersion())
+                || ResearchAgentCompletionCanonicalizer.SCHEMA_VERSION_V2.equals(envelope.schemaVersion()))
+                && !"ROLE_RESULT".equals(envelope.terminationReason());
+        boolean v1 = candidateEnvelope && SNAPSHOT_SCHEMA.equals(task.snapshotSchemaVersion())
+                && "DEEP_CELL".equals(task.role());
         boolean v2 = (SNAPSHOT_SCHEMA_V2.equals(task.snapshotSchemaVersion())
                 || SNAPSHOT_SCHEMA_V3.equals(task.snapshotSchemaVersion()))
+                && candidateEnvelope
                 && ("DEEP_CELL".equals(task.role())
                 || (task.candidateQuorum() == 2 && "COUNTERFACTUAL".equals(task.role()))
                 || isCounterfactualRepairTask(task));
-        if (!v1 && !v2) {
+        boolean roleResultTask = SNAPSHOT_SCHEMA_V3.equals(task.snapshotSchemaVersion())
+                && Set.of("EVIDENCE_AUDIT", "SYNTHESIS", "WIDE_DISCOVERY").contains(task.role())
+                && ResearchAgentCompletionCanonicalizer.SCHEMA_VERSION_V2.equals(envelope.schemaVersion())
+                && "ROLE_RESULT".equals(envelope.terminationReason());
+        if (!v1 && !v2 && !roleResultTask) {
             throw new BusinessException("RESEARCH_AGENT_COMPLETION_INVALID",
                     "Task is not an authoritative atomic research task");
         }
@@ -395,12 +444,16 @@ class ResearchAgentCompletionCommitter {
         for (CellRow cell : cells) {
             int expectedVersion = expected.get(cell.cellKey());
             String bindingOwner = task.candidateQuorum() == 2 ? task.quorumGroupKey() : task.id();
-            if (cell.cellVersion() != expectedVersion || cell.planRevision() != task.planRevision()
+            boolean planRevisionStale = roleResultTask
+                    ? cell.planRevision() > task.planRevision()
+                    : cell.planRevision() != task.planRevision();
+            if (cell.cellVersion() != expectedVersion || planRevisionStale
                     || cell.entitySetVersion() != task.entitySetVersion()
                     || !bindingOwner.equals(cell.activeTaskId())
                     || (task.candidateQuorum() == 1 && (cell.leaseEpoch() != task.leaseEpoch()
                     || cell.fencingToken() != task.fencingToken())) || "FROZEN".equals(cell.status())
-                    || "VERIFIED".equals(cell.status())) {
+                    || (!roleResultTask && "VERIFIED".equals(cell.status()))
+                    || (roleResultTask && !"WIDE_DISCOVERY".equals(task.role()) && !"VERIFIED".equals(cell.status()))) {
                 throw snapshotStale("Canonical target cell no longer matches the task snapshot");
             }
         }
@@ -577,246 +630,18 @@ class ResearchAgentCompletionCommitter {
         }
     }
 
-    private Map<String, EvidencePersisted> appendEvidence(
-            String runId,
-            String completionId,
-            List<ResearchAgentCompletionEnvelope.Evidence> evidence,
-            Map<String, TrustedEvidenceSource> trustedEvidence
-    ) {
-        Map<String, EvidencePersisted> result = new HashMap<>();
-        int ordinal = 0;
-        for (ResearchAgentCompletionEnvelope.Evidence item : evidence.stream()
-                .sorted(Comparator.comparing(ResearchAgentCompletionEnvelope.Evidence::evidenceKey)).toList()) {
-            TrustedEvidenceSource authority = trustedEvidence.get(item.evidenceKey());
-            if (authority == null) throw new IllegalStateException("Validated evidence authority is missing");
-            if (!authority.sourceId().equals(item.sourceId())) {
-                throw new IllegalStateException("Validated evidence source identity is inconsistent");
-            }
-            String evidenceId = Ids.newId();
-            BigDecimal legacySupport = legacyScore(item.supportScorePpm());
-            BigDecimal legacyConflict = legacyScore(item.conflictScorePpm());
-            Map<String, Object> content = rowContent();
-            content.put("id", evidenceId);
-            content.put("research_run_id", runId);
-            content.put("agent_completion_id", completionId);
-            content.put("evidence_key", item.evidenceKey());
-            content.put("window_id", item.windowId());
-            content.put("source_id", item.sourceId());
-            content.put("source_title", authority.sourceTitle());
-            content.put("source_url", authority.sourceUrl());
-            content.put("source_origin", authority.sourceOrigin());
-            content.put("source_domain", authority.sourceDomain());
-            content.put("lineage_digest", authority.lineageDigest());
-            content.put("provider", authority.provider());
-            content.put("adapter", authority.adapter());
-            content.put("search_query", item.searchQuery());
-            content.put("read_focus", item.readFocus());
-            content.put("quote_text", item.quoteText());
-            content.put("claim_text", item.claimText());
-            content.put("relation_type", item.relationType());
-            content.put("support_score", legacySupport.toPlainString());
-            content.put("conflict_score", legacyConflict.toPlainString());
-            content.put("support_score_ppm", item.supportScorePpm());
-            content.put("conflict_score_ppm", item.conflictScorePpm());
-            content.put("snapshot_status", authority.snapshotStatus());
-            content.put("snapshot_key", authority.snapshotKey());
-            String contentDigest = canonicalizer.domainSeparatedDigest(EVIDENCE_DIGEST_DOMAIN, content);
-            try {
-                jdbcTemplate.update("""
-                        insert into source_evidence(
-                            id, research_run_id, evidence_key, window_id, source_id, source_title,
-                            source_url, source_origin, source_domain, lineage_digest,
-                            provider, adapter, search_query, read_focus, quote_text, claim_text,
-                            relation_type, support_score, conflict_score, snapshot_status, snapshot_key,
-                            agent_completion_id, content_digest, support_score_ppm, conflict_score_ppm
-                        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, evidenceId, runId, item.evidenceKey(), item.windowId(), item.sourceId(),
-                        authority.sourceTitle(), authority.sourceUrl(), authority.sourceOrigin(),
-                        authority.sourceDomain(), authority.lineageDigest(), authority.provider(), authority.adapter(),
-                        item.searchQuery(), item.readFocus(),
-                        item.quoteText(), item.claimText(), item.relationType(), legacySupport, legacyConflict,
-                        authority.snapshotStatus(), authority.snapshotKey(), completionId, contentDigest,
-                        item.supportScorePpm(), item.conflictScorePpm());
-            } catch (DataIntegrityViolationException exception) {
-                throw new BusinessException("RESEARCH_AGENT_COMPLETION_EVIDENCE_CONFLICT",
-                        "Evidence stable key raced with different content");
-            }
-            result.put(item.evidenceKey(), new EvidencePersisted(
-                    evidenceId, item.evidenceKey(), item.sourceId(), authority.sourceOrigin(),
-                    authority.sourceDomain(), authority.lineageDigest(), item.claimText(),
-                    item.relationType(), contentDigest));
-            checkpoint(ResearchAgentCompletionFaultInjector.Stage.AFTER_NTH_EVIDENCE, ++ordinal);
-        }
-        return Map.copyOf(result);
-    }
-
-    private List<CandidatePersisted> appendCandidates(
-            String runId,
-            TaskRow task,
-            String completionId,
-            String executionId,
-            List<ResearchAgentCompletionEnvelope.Candidate> candidates,
-            Map<String, EvidencePersisted> evidenceByKey
-    ) {
-        List<CandidatePersisted> result = new ArrayList<>();
-        int ordinal = 0;
-        for (ResearchAgentCompletionEnvelope.Candidate item : candidates.stream()
-                .sorted(Comparator.comparing(ResearchAgentCompletionEnvelope.Candidate::candidateKey)).toList()) {
-            String candidateId = Ids.newId();
-            List<String> evidenceKeys = item.evidenceKeys().stream().sorted().toList();
-            List<EvidencePersisted> boundEvidence = evidenceKeys.stream().map(evidenceByKey::get).toList();
-            List<String> sourceDomains = boundEvidence.stream()
-                    .flatMap(itemEvidence -> itemEvidence.quorumIdentities().stream())
-                    .distinct().sorted().toList();
-            BigDecimal legacyConfidence = legacyScore(item.confidencePpm());
-            Map<String, Object> content = rowContent();
-            content.put("id", candidateId);
-            content.put("research_run_id", runId);
-            content.put("agent_completion_id", completionId);
-            content.put("research_agent_execution_id", executionId);
-            content.put("task_id", task.id());
-            content.put("execution_id", executionId);
-            content.put("idempotency_key", item.candidateKey());
-            content.put("cell_key", item.cellKey());
-            content.put("base_cell_version", item.baseCellVersion());
-            content.put("plan_revision", task.planRevision());
-            content.put("entity_set_version", task.entitySetVersion());
-            content.put("lease_epoch", task.leaseEpoch());
-            content.put("fencing_token", task.fencingToken());
-            content.put("candidate_value", item.candidateValue());
-            content.put("evidence_ids", evidenceKeys);
-            content.put("confidence_score", legacyConfidence.toPlainString());
-            content.put("confidence_score_ppm", item.confidencePpm());
-            String blindDigest = null;
-            if (task.candidateQuorum() == 2) {
-                Map<String, Object> blindContent = rowContent();
-                blindContent.put("cell_key", item.cellKey());
-                blindContent.put("base_cell_version", item.baseCellVersion());
-                blindContent.put("candidate_value", nfc(item.candidateValue()));
-                blindContent.put("evidence_ids", evidenceKeys);
-                blindContent.put("source_domains", sourceDomains);
-                blindDigest = canonicalizer.domainSeparatedDigest(BLIND_DIGEST_DOMAIN, blindContent);
-                content.put("quorum_group_key", task.quorumGroupKey());
-                content.put("candidate_slot", task.candidateSlot());
-                content.put("source_domains", sourceDomains);
-                content.put("blind_digest", blindDigest);
-            }
-            String contentDigest = canonicalizer.domainSeparatedDigest(CANDIDATE_DIGEST_DOMAIN, content);
-            try {
-                jdbcTemplate.update("""
-                        insert into research_agent_candidate(
-                            id, research_run_id, task_id, execution_id, idempotency_key, cell_key,
-                            base_cell_version, plan_revision, entity_set_version, lease_epoch, fencing_token,
-                            candidate_value, evidence_ids_json, confidence_score,
-                            agent_completion_id, content_digest, research_agent_execution_id, confidence_score_ppm,
-                            quorum_group_key, candidate_slot, source_domains_json, blind_digest
-                        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, candidateId, runId, task.id(), executionId, item.candidateKey(), item.cellKey(),
-                        item.baseCellVersion(), task.planRevision(), task.entitySetVersion(), task.leaseEpoch(),
-                        task.fencingToken(), item.candidateValue(), Json.write(objectMapper, evidenceKeys),
-                        legacyConfidence, completionId, contentDigest, executionId, item.confidencePpm(),
-                        task.quorumGroupKey(), task.candidateSlot(),
-                        task.candidateQuorum() == 2 ? Json.write(objectMapper, sourceDomains) : null, blindDigest);
-            } catch (DataIntegrityViolationException exception) {
-                throw new BusinessException("RESEARCH_AGENT_COMPLETION_CANDIDATE_CONFLICT",
-                        "Candidate stable key raced with different content");
-            }
-            result.add(new CandidatePersisted(candidateId, item, boundEvidence, contentDigest));
-            checkpoint(ResearchAgentCompletionFaultInjector.Stage.AFTER_NTH_CANDIDATE, ++ordinal);
-        }
-        return List.copyOf(result);
-    }
-
     private MergeOutcome planMergeOutcome(
             TaskRow task,
             ResearchAgentCompletionEnvelope envelope,
             List<CellRow> cells,
-            Map<String, TrustedEvidenceSource> trustedEvidence
+            Map<String, TrustedEvidenceSource> trustedEvidence,
+            Set<String> qualificationRejectedCandidates
     ) {
         if (task.candidateQuorum() == 2) {
-            return planQuorumOutcome(task, envelope, trustedEvidence);
+            return mergePlanner.planQuorum(task, envelope, trustedEvidence,
+                    loadQuorumCandidates(task), qualificationRejectedCandidates);
         }
-        Map<String, ResearchAgentCompletionEnvelope.Evidence> evidenceByKey = new HashMap<>();
-        envelope.evidence().forEach(item -> evidenceByKey.put(item.evidenceKey(), item));
-        Set<String> lockedCells = new HashSet<>();
-        cells.forEach(cell -> lockedCells.add(cell.cellKey()));
-        List<ResearchAgentCompletionReceipt.MergeReceipt> accepted = new ArrayList<>();
-        List<ResearchAgentCompletionReceipt.MergeReceipt> rejected = new ArrayList<>();
-        for (ResearchAgentCompletionEnvelope.Candidate candidate : envelope.candidates().stream()
-                .sorted(Comparator.comparing(
-                        ResearchAgentCompletionEnvelope.Candidate::cellKey, ResearchAgentBinaryOrder.UTF8)).toList()) {
-            if (!lockedCells.contains(candidate.cellKey())) {
-                throw snapshotStale("Candidate target is not locked by its task snapshot");
-            }
-            boolean supported = candidate.evidenceKeys().stream().map(evidenceByKey::get).allMatch(evidence ->
-                    evidence != null && "SUPPORTS".equals(evidence.relationType())
-                            && candidate.candidateValue().equals(evidence.claimText()));
-            ResearchAgentCompletionReceipt.MergeReceipt receipt =
-                    new ResearchAgentCompletionReceipt.MergeReceipt(
-                            candidate.cellKey(), candidate.baseCellVersion(),
-                            supported ? candidate.baseCellVersion() + 1 : candidate.baseCellVersion(),
-                            supported ? "ACCEPTED" : "REJECTED",
-                            supported ? "VERIFIED_AND_VERSION_MATCHED" : "NOT_ENOUGH_INFO");
-            if (supported) accepted.add(receipt); else rejected.add(receipt);
-        }
-        return new MergeOutcome(List.copyOf(accepted), List.copyOf(rejected));
-    }
-
-    private MergeOutcome planQuorumOutcome(
-            TaskRow task,
-            ResearchAgentCompletionEnvelope envelope,
-            Map<String, TrustedEvidenceSource> trustedEvidence
-    ) {
-        List<QuorumCandidate> existing = loadQuorumCandidates(task);
-        if (existing.isEmpty()) return new MergeOutcome(List.of(), List.of());
-        if (existing.size() != 1 || envelope.candidates().size() != 1) {
-            throw new BusinessException("RESEARCH_AGENT_COMPLETION_QUORUM_CONFLICT", "Quorum group has an invalid candidate cardinality");
-        }
-        ResearchAgentCompletionEnvelope.Candidate candidate = envelope.candidates().get(0);
-        Map<String, ResearchAgentCompletionEnvelope.Evidence> evidence = new HashMap<>();
-        envelope.evidence().forEach(item -> evidence.put(item.evidenceKey(), item));
-        List<String> domains = candidate.evidenceKeys().stream().map(trustedEvidence::get)
-                .filter(java.util.Objects::nonNull)
-                .flatMap(source -> source.quorumIdentities().stream())
-                .distinct().sorted().toList();
-        boolean supported = candidate.evidenceKeys().stream().map(evidence::get).allMatch(item ->
-                item != null && "SUPPORTS".equals(item.relationType())
-                        && candidate.candidateValue().equals(item.claimText()));
-        QuorumCandidate current = new QuorumCandidate(
-                null, task.id(), null, candidate.candidateKey(), candidate.cellKey(), candidate.baseCellVersion(),
-                candidate.candidateValue(), candidate.confidencePpm(), domains,
-                candidate.evidenceKeys().stream().sorted().toList(), null, task.candidateSlot(), supported);
-        return quorumOutcome(List.of(existing.get(0), current));
-    }
-
-    private MergeOutcome quorumOutcome(List<QuorumCandidate> candidates) {
-        if (candidates.size() != 2) return new MergeOutcome(List.of(), List.of());
-        QuorumCandidate first = candidates.get(0);
-        QuorumCandidate second = candidates.get(1);
-        String reason = null;
-        if (first.slot() == second.slot() || first.taskId().equals(second.taskId())) {
-            reason = "QUORUM_EXECUTION_NOT_INDEPENDENT";
-        } else if (!first.cellKey().equals(second.cellKey()) || first.baseCellVersion() != second.baseCellVersion()) {
-            reason = "QUORUM_TARGET_CONFLICT";
-        } else if (!nfc(first.value()).equals(nfc(second.value()))) {
-            reason = "QUORUM_VALUE_CONFLICT";
-        } else if (!first.supported() || !second.supported()
-                || !hasStrongSourceIdentity(first.domains())
-                || !hasStrongSourceIdentity(second.domains())) {
-            reason = "QUORUM_PROVENANCE_MISSING";
-        } else if (!Collections.disjoint(first.domains(), second.domains())) {
-            reason = "QUORUM_SOURCE_DOMAIN_NOT_INDEPENDENT";
-        }
-        ResearchAgentCompletionReceipt.MergeReceipt receipt = new ResearchAgentCompletionReceipt.MergeReceipt(
-                first.cellKey(), first.baseCellVersion(), reason == null ? first.baseCellVersion() + 1 : first.baseCellVersion(),
-                reason == null ? "ACCEPTED" : "REJECTED",
-                reason == null ? "QUORUM_VERIFIED_AND_VERSION_MATCHED" : reason);
-        return reason == null ? new MergeOutcome(List.of(receipt), List.of()) : new MergeOutcome(List.of(), List.of(receipt));
-    }
-
-    private boolean hasStrongSourceIdentity(List<String> identities) {
-        return identities.stream().anyMatch(value -> value.startsWith("domain:"))
-                && identities.stream().anyMatch(value -> value.startsWith("lineage:"));
+        return mergePlanner.planSingle(envelope, cells, qualificationRejectedCandidates);
     }
 
     private List<QuorumCandidate> loadQuorumCandidates(TaskRow task) {
@@ -839,8 +664,22 @@ class ResearchAgentCompletionCommitter {
         return rows.stream().map(item -> new QuorumCandidate(
                 item.id(), item.taskId(), item.executionId(), item.candidateKey(), item.cellKey(),
                 item.baseCellVersion(), item.value(), item.confidencePpm(), item.domains(), item.evidenceKeys(),
-                item.blindDigest(), item.slot(), persistedEvidenceSupports(task.runId(), item.evidenceKeys(), item.value())))
+                item.blindDigest(), item.slot(),
+                persistedEvidenceSupports(task.runId(), item.evidenceKeys(), item.value())
+                        && !persistedQualificationRejected(item.id())))
                 .toList();
+    }
+
+    /**
+     * Reads the persisted canonical qualification verdict of an already staged quorum
+     * candidate so a qualification-rejected slot can never be promoted by a later slot.
+     */
+    private boolean persistedQualificationRejected(String candidateId) {
+        Integer rejected = jdbcTemplate.queryForObject("""
+                select count(*) from research_evidence_validation
+                where candidate_id = ? and final_status = 'REJECTED'
+                """, Integer.class, candidateId);
+        return rejected != null && rejected > 0;
     }
 
     private boolean persistedEvidenceSupports(String runId, List<String> keys, String value) {
@@ -862,7 +701,7 @@ class ResearchAgentCompletionCommitter {
     ) {
         if (planned.accepted().isEmpty() && planned.rejected().isEmpty()) return planned;
         List<QuorumCandidate> candidates = loadQuorumCandidates(task);
-        MergeOutcome durable = quorumOutcome(candidates);
+        MergeOutcome durable = mergePlanner.quorumOutcome(candidates);
         if (!planned.equals(durable)) throw new IllegalStateException("Durable quorum decision differs from its locked plan");
         QuorumCandidate chosen = candidates.stream().sorted(Comparator
                 .comparing((QuorumCandidate item) -> item.blindDigest() == null ? "" : item.blindDigest())
@@ -950,7 +789,8 @@ class ResearchAgentCompletionCommitter {
             String completionId,
             List<CandidatePersisted> candidates,
             List<CellRow> cells,
-            Map<String, EvidencePersisted> evidenceByKey
+            Map<String, EvidencePersisted> evidenceByKey,
+            Set<String> qualificationRejectedCandidates
     ) {
         Map<String, CellRow> cellsByKey = new HashMap<>();
         cells.forEach(cell -> cellsByKey.put(cell.cellKey(), cell));
@@ -961,11 +801,14 @@ class ResearchAgentCompletionCommitter {
                 .sorted(Comparator.comparing(item -> item.envelope().cellKey(), ResearchAgentBinaryOrder.UTF8)).toList()) {
             ResearchAgentCompletionEnvelope.Candidate candidate = persisted.envelope();
             CellRow cell = cellsByKey.get(candidate.cellKey());
-            boolean supported = persisted.evidence().stream().allMatch(evidence ->
+            boolean literalSupport = persisted.evidence().stream().allMatch(evidence ->
                     "SUPPORTS".equals(evidence.relationType())
                             && candidate.candidateValue().equals(evidence.claimText()));
+            boolean qualificationRejected = qualificationRejectedCandidates.contains(candidate.candidateKey());
+            boolean supported = literalSupport && !qualificationRejected;
             String decision = supported ? "ACCEPTED" : "REJECTED";
-            String reason = supported ? "VERIFIED_AND_VERSION_MATCHED" : "NOT_ENOUGH_INFO";
+            String reason = supported ? "VERIFIED_AND_VERSION_MATCHED"
+                    : literalSupport ? "EVIDENCE_QUALIFICATION_REJECTED" : "NOT_ENOUGH_INFO";
             String verdict = supported ? "SUPPORTS" : "NOT_ENOUGH_INFO";
             int resultVersion = candidate.baseCellVersion();
             List<String> acceptedEvidenceKeys = supported
@@ -1076,6 +919,8 @@ class ResearchAgentCompletionCommitter {
     }
 
     private BudgetLedger calculateBudget(
+            TaskRow task,
+            ResearchAgentCompletionEnvelope envelope,
             ReservationRow reservation,
             Map<String, Long> workerUsage,
             int evidenceAppended,
@@ -1094,12 +939,21 @@ class ResearchAgentCompletionCommitter {
                 "evidence_appended", (long) evidenceAppended,
                 "candidate_merges_accepted", (long) acceptedMerges,
                 "candidate_merges_rejected", (long) rejectedMerges);
+        // D-39: provider rounds the server already authorized for this task under EARLIER
+        // leases still count against the reservation, otherwise a restart would reset the
+        // effective consumption ceiling and let a re-execution re-spend the same budget.
+        Map<String, Long> priorAuthorizedRounds = priorAuthorizedToolRounds(task);
         Map<String, Long> consumed = new TreeMap<>();
         Map<String, Long> released = new TreeMap<>();
         for (Map.Entry<String, Long> reserved : reservation.reserved().entrySet()) {
-            long used = workerUsage.containsKey(reserved.getKey())
+            long self = workerUsage.containsKey(reserved.getKey())
                     ? workerUsage.get(reserved.getKey()) : derived.getOrDefault(reserved.getKey(), 0L);
+            long used = self + priorAuthorizedRounds.getOrDefault(reserved.getKey(), 0L);
             if (used < 0 || used > reserved.getValue()) {
+                log.warn(
+                        "Research agent completion budget exceeded: taskId={}, dimension={}, workerUsage={}, priorAuthorized={}, reserved={}",
+                        task.id(), reserved.getKey(), self,
+                        priorAuthorizedRounds.getOrDefault(reserved.getKey(), 0L), reserved.getValue());
                 throw new BusinessException("RESEARCH_AGENT_COMPLETION_BUDGET_EXCEEDED",
                         "Completion usage exceeds its reservation");
             }
@@ -1111,6 +965,29 @@ class ResearchAgentCompletionCommitter {
                     "Completion usage contains an unreserved dimension");
         }
         return new BudgetLedger(new TreeMap<>(reservation.reserved()), Map.copyOf(consumed), Map.copyOf(released));
+    }
+
+    /**
+     * Counts the tool rounds the server authorized for this task before the current lease.
+     * Only the four provider tools have a {@code *_calls} budget dimension, and each contract
+     * entry maps 1:1 onto one authorized provider round, so the units match the worker's own
+     * {@code searched/fetched/read/extracted} counters exactly.
+     */
+    private Map<String, Long> priorAuthorizedToolRounds(TaskRow task) {
+        List<Object[]> rows = jdbcTemplate.query("""
+                select tool_identity, count(*)
+                from research_agent_tool_grant
+                where research_agent_task_id = ?
+                  and not (lease_epoch = ? and fencing_token = ?)
+                group by tool_identity
+                """, (rs, rowNum) -> new Object[]{rs.getString(1), rs.getLong(2)},
+                task.id(), task.leaseEpoch(), task.fencingToken());
+        Map<String, Long> result = new TreeMap<>();
+        for (Object[] row : rows) {
+            String budgetKey = TOOL_IDENTITY_BUDGET_KEYS.get(String.valueOf(row[0]));
+            if (budgetKey != null) result.put(budgetKey, (Long) row[1]);
+        }
+        return Map.copyOf(result);
     }
 
     private void persistBudget(
@@ -1158,47 +1035,17 @@ class ResearchAgentCompletionCommitter {
 
     private String outcomeFor(TaskRow task, MergeOutcome outcome, int candidateCount) {
         if (task.candidateQuorum() == 1) return "COMMITTED";
-        if (candidateCount > 0 && outcome.accepted().isEmpty() && outcome.rejected().isEmpty()) return "QUORUM_PENDING";
+        if (outcome.accepted().isEmpty() && outcome.rejected().isEmpty()) return "QUORUM_PENDING";
         return outcome.accepted().isEmpty() ? "QUORUM_REPAIR_REQUIRED" : "QUORUM_MERGED";
     }
 
-    private Map<String, Object> receiptPayload(ResearchAgentCompletionReceipt receipt, boolean includeDigest) {
-        Map<String, Object> payload = rowContent();
-        payload.put("schema_version", receipt.schemaVersion());
-        payload.put("completion_id", receipt.completionId());
-        payload.put("execution_id", receipt.executionId());
-        payload.put("task_id", receipt.taskId());
-        payload.put("completion_digest", receipt.completionDigest());
-        payload.put("outcome", receipt.outcome());
-        payload.put("evidence_appended", receipt.evidenceAppended());
-        payload.put("candidate_count", receipt.candidateCount());
-        payload.put("accepted_merges", receipt.acceptedMerges().stream().map(this::mergeReceiptPayload).toList());
-        payload.put("rejected_merges", receipt.rejectedMerges().stream().map(this::mergeReceiptPayload).toList());
-        Map<String, Object> budget = rowContent();
-        budget.put("state", receipt.budget().state());
-        budget.put("reserved", receipt.budget().reserved());
-        budget.put("consumed", receipt.budget().consumed());
-        budget.put("released", receipt.budget().released());
-        payload.put("budget", budget);
-        if (includeDigest) payload.put("receipt_digest", receipt.receiptDigest());
-        return payload;
-    }
-
-    private Map<String, Object> mergeReceiptPayload(ResearchAgentCompletionReceipt.MergeReceipt receipt) {
-        Map<String, Object> result = rowContent();
-        result.put("cell_key", receipt.cellKey());
-        result.put("from_version", receipt.fromVersion());
-        result.put("to_version", receipt.toVersion());
-        result.put("decision", receipt.decision());
-        result.put("reason_code", receipt.reasonCode());
-        return result;
-    }
-
-    private List<TargetBinding> targetBindings(String json) {
+    private List<TargetBinding> targetBindings(String json, String role) {
         try {
             List<Map<String, Object>> values = objectMapper.readValue(json, new TypeReference<>() { });
-            if (values == null || values.isEmpty() || values.size() > 3) {
-                throw snapshotStale("Task target snapshot must contain one to three cells");
+            int maximum = Set.of("EVIDENCE_AUDIT", "SYNTHESIS").contains(role) ? 80 : 3;
+            boolean emptyAllowed = "WIDE_DISCOVERY".equals(role);
+            if (values == null || (!emptyAllowed && values.isEmpty()) || values.size() > maximum) {
+                throw snapshotStale("Task target snapshot has an invalid cell count");
             }
             List<TargetBinding> result = new ArrayList<>();
             for (Map<String, Object> value : values) {
@@ -1316,7 +1163,8 @@ class ResearchAgentCompletionCommitter {
                 && task.quorumGroupKey() == null
                 && "branch-counterfactual".equals(task.branchId())
                 && task.logicalTaskKey() != null
-                && task.logicalTaskKey().startsWith("counterfactual:");
+                && (task.logicalTaskKey().startsWith("counterfactual:")
+                || task.logicalTaskKey().startsWith("conflict-counterfactual:"));
     }
 
     private void resolveCounterfactualRepairDecisions(String runId, TaskRow task, MergeOutcome outcome) {
@@ -1352,7 +1200,7 @@ class ResearchAgentCompletionCommitter {
 
     private record RunRow(String id, String workspaceId, String status, String executionMode) { }
 
-    private record TaskRow(
+    record TaskRow(
             String id,
             String runId,
             String status,
@@ -1388,9 +1236,9 @@ class ResearchAgentCompletionCommitter {
             String settlementKey
     ) { }
 
-    private record TargetBinding(String cellKey, int expectedVersion) { }
+    record TargetBinding(String cellKey, int expectedVersion) { }
 
-    private record CellRow(
+    record CellRow(
             String id,
             String cellKey,
             String status,
@@ -1406,7 +1254,7 @@ class ResearchAgentCompletionCommitter {
 
     private record WorkspaceWindow(String sourceTitle, String contentText) { }
 
-    private record TrustedEvidenceSource(
+    record TrustedEvidenceSource(
             String sourceId,
             String sourceTitle,
             String sourceUrl,
@@ -1435,7 +1283,7 @@ class ResearchAgentCompletionCommitter {
             String archiveStatus
     ) { }
 
-    private record EvidencePersisted(
+    record EvidencePersisted(
             String id,
             String evidenceKey,
             String sourceId,
@@ -1451,14 +1299,14 @@ class ResearchAgentCompletionCommitter {
         }
     }
 
-    private record CandidatePersisted(
+    record CandidatePersisted(
             String id,
             ResearchAgentCompletionEnvelope.Candidate envelope,
             List<EvidencePersisted> evidence,
             String contentDigest
     ) { }
 
-    private record QuorumCandidate(
+    record QuorumCandidate(
             String id,
             String taskId,
             String executionId,
@@ -1474,7 +1322,7 @@ class ResearchAgentCompletionCommitter {
             boolean supported
     ) { }
 
-    private record MergeOutcome(
+    record MergeOutcome(
             List<ResearchAgentCompletionReceipt.MergeReceipt> accepted,
             List<ResearchAgentCompletionReceipt.MergeReceipt> rejected
     ) { }

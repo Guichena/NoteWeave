@@ -15,6 +15,13 @@ export type AuthSession = {
   user: AuthUser;
 };
 
+export type RegisterInput = {
+  username: string;
+  email: string;
+  password: string;
+  displayName?: string;
+};
+
 const STORAGE_KEY = "noteweave.auth.session.v1";
 const AUTH_CHANGED_EVENT = "noteweave:auth-changed";
 let memorySession: AuthSession | null = readStoredSession();
@@ -60,6 +67,21 @@ export async function login(loginValue: string, password: string) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ login: loginValue, password })
+  });
+  setAuthSession(session);
+  return session;
+}
+
+export async function register(input: RegisterInput) {
+  const session = await authRequest<AuthSession>("/api/v2/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      username: input.username,
+      email: input.email,
+      password: input.password,
+      displayName: input.displayName
+    })
   });
   setAuthSession(session);
   return session;

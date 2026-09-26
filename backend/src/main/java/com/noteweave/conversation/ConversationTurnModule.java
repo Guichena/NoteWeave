@@ -1,8 +1,6 @@
 package com.noteweave.conversation;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.noteweave.chat.ChatService;
 import com.noteweave.answer.strategy.AnswerMode;
 import com.noteweave.answer.AnswerRunService;
@@ -16,9 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.dao.DuplicateKeyException;
@@ -34,7 +30,7 @@ public class ConversationTurnModule {
     private static final int RECOVERY_LEASE_SECONDS = 60;
 
     private final JdbcTemplate jdbcTemplate;
-    private final ObjectMapper objectMapper;
+    private final ConversationTurnPayloadCodec payloadCodec;
     private final ChatService chatService;
     private final ResearchRunService researchRunService;
     private final ConversationMessageSequence messageSequence;
@@ -59,7 +55,7 @@ public class ConversationTurnModule {
             PlatformTransactionManager transactionManager
     ) {
         this.jdbcTemplate = jdbcTemplate;
-        this.objectMapper = objectMapper;
+        this.payloadCodec = new ConversationTurnPayloadCodec(objectMapper);
         this.chatService = chatService;
         this.researchRunService = researchRunService;
         this.messageSequence = messageSequence;
@@ -75,7 +71,7 @@ public class ConversationTurnModule {
         command.effectiveRetrievalConfig();
         String actor = auditActorProvider.currentOrSystem("CONVERSATION");
         String executionKind = executionKind(command.requestedTurnMode());
-        String requestHash = requestHash(command);
+        String requestHash = payloadCodec.requestHash(command);
         ExistingSubmission existing = findExisting(actor, command.conversationId(), command.clientRequestId());
         if (existing != null) {
             if (!existing.requestPayloadHash().equals(requestHash)) {
@@ -98,7 +94,7 @@ public class ConversationTurnModule {
                         existing.errorMessage() == null ? "Turn submission preparation failed" : existing.errorMessage()
                 );
             }
-            return readReceipt(existing.receiptJson()).asReused();
+            return payloadCodec.readReceipt(existing.receiptJson()).asReused();
         }
 
         if ("RESEARCH".equals(executionKind)) {
@@ -152,13 +148,13 @@ public class ConversationTurnModule {
                 }
                 if ("READY".equals(winner.status())
                         && winner.receiptJson() != null && !winner.receiptJson().isBlank()) {
-                    return readReceipt(winner.receiptJson()).asReused();
+                    return payloadCodec.readReceipt(winner.receiptJson()).asReused();
                 }
             }
             java.util.concurrent.locks.LockSupport.parkNanos(java.time.Duration.ofMillis(20).toNanos());
         }
         if (winner != null && winner.receiptJson() != null && !winner.receiptJson().isBlank()) {
-            return readReceipt(winner.receiptJson()).asReused();
+            return payloadCodec.readReceipt(winner.receiptJson()).asReused();
         }
         throw new BusinessException(
                 "TURN_SUBMISSION_IN_PROGRESS",
@@ -208,8 +204,9 @@ public class ConversationTurnModule {
                 set query_message_id = ?, answer_message_id = ?, answer_run_id = ?, receipt_json = ?,
                     preparation_json = ?, preparation_attempt = 1, updated_at = current_timestamp
                 where id = ? and status = 'PREPARING'
-                """, userMessageId, assistantMessageId, answerRunId, writeReceipt(receipt),
-                preparationJson(command, conversation), submissionId);
+                """, userMessageId, assistantMessageId, answerRunId, payloadCodec.writeReceipt(receipt),
+                payloadCodec.preparationJson(
+                        command, conversation.activeHeadMessageId(), conversation.lockVersion()), submissionId);
         return new PreparedAnswerTurn(conversation.workspaceId(), receipt);
     }
 
@@ -230,7 +227,9 @@ public class ConversationTurnModule {
                     status = 'READY', updated_at = current_timestamp
                 where id = ? and status = 'PREPARING'
                 """, receipt.messageId(), receipt.assistantMessageId(), receipt.answerRunId(), receipt.researchRunId(),
-                writeReceipt(receipt), preparationJson(command, conversation), submissionId);
+                payloadCodec.writeReceipt(receipt),
+                payloadCodec.preparationJson(
+                        command, conversation.activeHeadMessageId(), conversation.lockVersion()), submissionId);
         runInputSnapshotService.recordResearchSnapshot(workspaceId, receipt, command);
         jdbcTemplate.update("""
                 update research_run
@@ -512,7 +511,7 @@ public class ConversationTurnModule {
             throw new BusinessException(
                     "TURN_RECOVERY_INPUT_MISSING", "Frozen turn preparation is unavailable", HttpStatus.CONFLICT);
         }
-        TurnReceipt receipt = readReceipt(row.receiptJson());
+        TurnReceipt receipt = payloadCodec.readReceipt(row.receiptJson());
         String leaseOwner = Ids.newId();
         int claimed = jdbcTemplate.update("""
                 update turn_submission
@@ -550,29 +549,7 @@ public class ConversationTurnModule {
     }
 
     private SubmitTurnCommand readFrozenCommand(String conversationId, String preparationJson) {
-        try {
-            Map<String, Object> frozen = objectMapper.readValue(
-                    preparationJson, new TypeReference<Map<String, Object>>() { });
-            List<String> sourceScope = frozen.get("source_scope") instanceof List<?> values
-                    ? values.stream().map(String::valueOf).toList()
-                    : List.of();
-            return new SubmitTurnCommand(
-                    conversationId,
-                    String.valueOf(frozen.getOrDefault("content", "")),
-                    String.valueOf(frozen.getOrDefault("requested_turn_mode", "QA")),
-                    "recovery:" + conversationId,
-                    sourceScope,
-                    frozen.get("expected_history_head_message_id") == null
-                            ? null : String.valueOf(frozen.get("expected_history_head_message_id")),
-                    frozen.get("retrieval_strategy") == null
-                            ? null : String.valueOf(frozen.get("retrieval_strategy")),
-                    stringList(frozen.get("retrieval_channels")),
-                    stringList(frozen.get("grounding_refs"))
-            );
-        } catch (JsonProcessingException ex) {
-            throw new BusinessException(
-                    "TURN_RECOVERY_INPUT_INVALID", "Frozen turn preparation is invalid", HttpStatus.CONFLICT);
-        }
+        return payloadCodec.readFrozenCommand(conversationId, preparationJson);
     }
 
     private ConversationState requireConversationState(String conversationId) {
@@ -648,67 +625,12 @@ public class ConversationTurnModule {
         }
     }
 
-    private String requestHash(SubmitTurnCommand command) {
-        Map<String, Object> canonical = new LinkedHashMap<>();
-        canonical.put("operation", "NEW_TURN");
-        canonical.put("content", command.content());
-        canonical.put("requested_turn_mode", command.requestedTurnMode());
-        EffectiveRetrievalConfig retrievalConfig = command.effectiveRetrievalConfig();
-        canonical.put("retrieval_config", retrievalConfig);
-        canonical.put("expected_history_head_message_id", command.expectedHistoryHeadMessageId());
-        try {
-            byte[] payload = objectMapper.writeValueAsString(canonical).getBytes(StandardCharsets.UTF_8);
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(payload));
-        } catch (JsonProcessingException | NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("Cannot hash turn submission", ex);
-        }
-    }
-
-    private String preparationJson(SubmitTurnCommand command, ConversationState conversation) {
-        Map<String, Object> preparation = new LinkedHashMap<>();
-        preparation.put("content", command.content());
-        preparation.put("requested_turn_mode", command.requestedTurnMode());
-        EffectiveRetrievalConfig retrievalConfig = command.effectiveRetrievalConfig();
-        preparation.put("source_scope", retrievalConfig.sourceScope());
-        preparation.put("retrieval_strategy", retrievalConfig.strategy());
-        preparation.put("retrieval_channels", retrievalConfig.channels());
-        preparation.put("grounding_refs", retrievalConfig.groundingRefs());
-        preparation.put("history_head_message_id", conversation.activeHeadMessageId());
-        preparation.put("conversation_lock_version", conversation.lockVersion());
-        preparation.put("expected_history_head_message_id", command.expectedHistoryHeadMessageId());
-        try {
-            return objectMapper.writeValueAsString(preparation);
-        } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("Cannot persist frozen turn preparation", ex);
-        }
-    }
-
-    private List<String> stringList(Object value) {
-        return value instanceof List<?> values ? values.stream().map(String::valueOf).toList() : List.of();
-    }
-
-    private String writeReceipt(TurnReceipt receipt) {
-        try {
-            return objectMapper.writeValueAsString(receipt);
-        } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("Cannot persist turn receipt", ex);
-        }
-    }
-
     private String sha256(String value) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(
                     (value == null ? "" : value).getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException("SHA-256 is unavailable", ex);
-        }
-    }
-
-    private TurnReceipt readReceipt(String receiptJson) {
-        try {
-            return objectMapper.readValue(receiptJson, TurnReceipt.class);
-        } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("Cannot read persisted turn receipt", ex);
         }
     }
 

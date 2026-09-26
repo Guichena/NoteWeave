@@ -50,6 +50,17 @@ spring:
 
 noteweave:
   research:
+    strict-research-evidence-validation: ${NOTEWEAVE_RESEARCH_STRICT_EVIDENCE_VALIDATION:false}
+    intent-matrix-v2: ${NOTEWEAVE_RESEARCH_INTENT_MATRIX_V2:false}
+    runnable-work-v2: ${NOTEWEAVE_RESEARCH_RUNNABLE_WORK_V2:false}
+    checkpoint-hydration-v2: ${NOTEWEAVE_RESEARCH_CHECKPOINT_HYDRATION_V2:false}
+    evidence-audit-v1: ${NOTEWEAVE_RESEARCH_EVIDENCE_AUDIT_V1:false}
+    worker-synthesis-v1: ${NOTEWEAVE_RESEARCH_WORKER_SYNTHESIS_V1:false}
+    wide-discovery-v1: ${NOTEWEAVE_RESEARCH_WIDE_DISCOVERY_V1:false}
+    wide-discovery-auto-accept: ${NOTEWEAVE_RESEARCH_WIDE_DISCOVERY_AUTO_ACCEPT:false}
+    wide-discovery-accepted-precision: ${NOTEWEAVE_RESEARCH_WIDE_DISCOVERY_ACCEPTED_PRECISION:0.0}
+    wide-discovery-precision-threshold: ${NOTEWEAVE_RESEARCH_WIDE_DISCOVERY_PRECISION_THRESHOLD:0.90}
+    distributed-replay-observation: ${NOTEWEAVE_RESEARCH_DISTRIBUTED_REPLAY_OBSERVATION:false}
     agent:
       external-evidence-enabled: ${NOTEWEAVE_RESEARCH_AGENT_EXTERNAL_EVIDENCE_ENABLED:true}
       lifecycle-reaper-enabled: ${NOTEWEAVE_RESEARCH_AGENT_LIFECYCLE_REAPER_ENABLED:false}
@@ -62,19 +73,43 @@ noteweave:
       rollout-max-terminal-failure-rate: ${NOTEWEAVE_RESEARCH_AGENT_ROLLOUT_MAX_TERMINAL_FAILURE_RATE:0.20}
       rollout-max-delivery-failure-rate: ${NOTEWEAVE_RESEARCH_AGENT_ROLLOUT_MAX_DELIVERY_FAILURE_RATE:0.20}
       rollout-max-rejected-merge-rate: ${NOTEWEAVE_RESEARCH_AGENT_ROLLOUT_MAX_REJECTED_MERGE_RATE:0.30}
+      rate-limit:
+        enabled: ${NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_ENABLED:true}
+        allow-local-fallback: ${NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_ALLOW_LOCAL_FALLBACK:false}
+        capacity: ${NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_CAPACITY:24}
+        refill-per-minute: ${NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_REFILL_PER_MINUTE:24}
   environment: ${NOTEWEAVE_ENVIRONMENT:local}
   retrieval:
     qa:
       mysql-fallback-enabled: ${NOTEWEAVE_QA_MYSQL_FALLBACK_ENABLED:false}
+    note:
+      local-metadata-fallback-enabled: ${NOTEWEAVE_NOTE_LOCAL_METADATA_FALLBACK_ENABLED:false}
+  answer:
+    events:
+      channel-retention-seconds: ${NOTEWEAVE_ANSWER_EVENTS_CHANNEL_RETENTION_SECONDS:900}
+      max-retained-channels: ${NOTEWEAVE_ANSWER_EVENTS_MAX_RETAINED_CHANNELS:10000}
+  conversation:
+    events:
+      channel-retention-seconds: ${NOTEWEAVE_CONVERSATION_EVENTS_CHANNEL_RETENTION_SECONDS:900}
+      max-retained-channels: ${NOTEWEAVE_CONVERSATION_EVENTS_MAX_RETAINED_CHANNELS:10000}
+  upload:
+    cleanup-delay-ms: ${NOTEWEAVE_UPLOAD_CLEANUP_DELAY_MS:60000}
+    cleanup-stale-after-seconds: ${NOTEWEAVE_UPLOAD_CLEANUP_STALE_AFTER_SECONDS:86400}
   worker:
     artifact-callback-secret: ${NOTEWEAVE_ARTIFACT_CALLBACK_SECRET:}
     artifact-base-url: ${NOTEWEAVE_WORKER_ARTIFACT_BASE_URL:http://localhost:18092}
     connect-timeout-seconds: ${NOTEWEAVE_WORKER_CONNECT_TIMEOUT_SECONDS:3}
     read-timeout-seconds: ${NOTEWEAVE_WORKER_READ_TIMEOUT_SECONDS:30}
+    artifact-input-unfenced-enabled: ${NOTEWEAVE_ARTIFACT_INPUT_UNFENCED_ENABLED:false}
   security:
     local-user-fallback: ${NOTEWEAVE_LOCAL_USER_FALLBACK:false}
     access-token-minutes: ${NOTEWEAVE_ACCESS_TOKEN_MINUTES:15}
     refresh-token-days: ${NOTEWEAVE_REFRESH_TOKEN_DAYS:30}
+    registration-rate-limit:
+      enabled: ${NOTEWEAVE_REGISTRATION_RATE_LIMIT_ENABLED:true}
+      window-minutes: ${NOTEWEAVE_REGISTRATION_RATE_LIMIT_WINDOW_MINUTES:60}
+      ip-max-attempts: ${NOTEWEAVE_REGISTRATION_RATE_LIMIT_IP_MAX_ATTEMPTS:20}
+      account-max-attempts: ${NOTEWEAVE_REGISTRATION_RATE_LIMIT_ACCOUNT_MAX_ATTEMPTS:5}
     bootstrap:
       username: ${NOTEWEAVE_BOOTSTRAP_USERNAME:}
       email: ${NOTEWEAVE_BOOTSTRAP_EMAIL:}
@@ -143,6 +178,7 @@ noteweave:
       wiki-retract: ${NOTEWEAVE_KAFKA_TOPIC_WIKI_RETRACT:noteweave.wiki.retract}
       conversation-summary: ${NOTEWEAVE_KAFKA_TOPIC_CONVERSATION_SUMMARY:noteweave.conversation.summary}
       research-agent-command: ${NOTEWEAVE_KAFKA_RESEARCH_AGENT_TOPIC:noteweave.research.agent.command}
+    artifact-dlq-topic: ${NOTEWEAVE_KAFKA_ARTIFACT_DLQ_TOPIC:noteweave.artifact.job.dlq}
   elasticsearch:
     enabled: ${NOTEWEAVE_ES_ENABLED:true}
     host: ${NOTEWEAVE_ES_HOST:localhost}
@@ -152,7 +188,7 @@ noteweave:
     username: ${NOTEWEAVE_ES_USERNAME:}
     password: ${NOTEWEAVE_ES_PASSWORD:}
   embedding:
-    enabled: ${NOTEWEAVE_EMBEDDING_ENABLED:false}
+    enabled: ${NOTEWEAVE_EMBEDDING_ENABLED:true}
     endpoint: ${NOTEWEAVE_EMBEDDING_ENDPOINT:http://localhost:11434/v1/embeddings}
     model: ${NOTEWEAVE_EMBEDDING_MODEL:noteweave-embedding}
     api-key: ${NOTEWEAVE_EMBEDDING_API_KEY:}
@@ -163,7 +199,7 @@ noteweave:
     max-input-characters: ${NOTEWEAVE_EMBEDDING_MAX_INPUT_CHARACTERS:12000}
     max-attempts: ${NOTEWEAVE_EMBEDDING_MAX_ATTEMPTS:3}
   rerank:
-    enabled: ${NOTEWEAVE_RERANK_ENABLED:false}
+    enabled: ${NOTEWEAVE_RERANK_ENABLED:true}
     endpoint: ${NOTEWEAVE_RERANK_ENDPOINT:http://localhost:11434/v1/rerank}
     model: ${NOTEWEAVE_RERANK_MODEL:noteweave-rerank}
     api-key: ${NOTEWEAVE_RERANK_API_KEY:}
@@ -172,7 +208,7 @@ noteweave:
     timeout-seconds: ${NOTEWEAVE_RERANK_TIMEOUT_SECONDS:20}
     max-attempts: ${NOTEWEAVE_RERANK_MAX_ATTEMPTS:3}
   llm:
-    enabled: ${NOTEWEAVE_LLM_ENABLED:false}
+    enabled: ${NOTEWEAVE_LLM_ENABLED:true}
     template-fallback-enabled: ${NOTEWEAVE_LLM_TEMPLATE_FALLBACK_ENABLED:false}
     endpoint: ${NOTEWEAVE_LLM_ENDPOINT:http://localhost:11434/v1/chat/completions}
     model: ${NOTEWEAVE_LLM_MODEL:noteweave-chat}
@@ -193,4 +229,4 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: ${MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE:health}

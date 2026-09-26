@@ -14,21 +14,33 @@ spring:
       port: 6379
 
 noteweave:
+  environment: test
   retrieval:
     qa:
       mysql-fallback-enabled: true
+    note:
+      local-metadata-fallback-enabled: true
   llm:
+    enabled: false
     template-fallback-enabled: true
+  embedding:
+    enabled: false
+  rerank:
+    enabled: false
   quota:
     enabled: false
   security:
     local-user-fallback: true
     acl-cache-enabled: false
+    registration-rate-limit:
+      account-max-attempts: 3
+      ip-max-attempts: 1000
   redis:
     enabled: false
   worker:
     artifact-auto-dispatch-enabled: false
     artifact-callback-secret: test-artifact-callback-secret
+    artifact-input-unfenced-enabled: true
   storage:
     backend: local
     local-root: target/test-noteweave-storage

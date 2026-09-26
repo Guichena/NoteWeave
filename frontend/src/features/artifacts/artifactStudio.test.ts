@@ -193,4 +193,34 @@ describe("artifactStudio skill form helpers", () => {
       output_mode: "concise"
     });
   });
+
+  it("should derive localized mind map controls and defaults", () => {
+    const skill = buildArtifactStudioSkill({
+      skill_key: "mindmap_from_workspace",
+      display_name: "思维导图",
+      description: "生成交互式思维导图",
+      status: "ACTIVE",
+      input_schema: {
+        type: "object",
+        properties: {
+          layout: {
+            type: "string",
+            default: "balanced",
+            oneOf: [{ const: "balanced", title: "均衡分支" }]
+          },
+          depth: {
+            type: "string",
+            default: "3",
+            oneOf: [{ const: "3", title: "3 层，推荐" }]
+          }
+        }
+      }
+    });
+
+    expect(skill.inputFields.map((field) => [field.key, field.label])).toEqual([
+      ["depth", "内容层级"],
+      ["layout", "导图布局"]
+    ]);
+    expect(buildInitialArtifactFormValues(skill)).toEqual({ layout: "balanced", depth: "3" });
+  });
 });

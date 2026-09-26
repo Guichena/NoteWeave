@@ -3,6 +3,7 @@ from __future__ import annotations
 import http.client
 import io
 import ipaddress
+import os
 import socket
 import ssl
 import urllib.error
@@ -89,7 +90,17 @@ def resolve_public_http_addresses(
                     addresses.append(address)
         except (socket.gaierror, ValueError) as exc:
             raise ValueError("URL_BLOCKED_DNS_RESOLUTION") from exc
-    if not addresses or any(not address.is_global for address in addresses):
+    allow_synthetic_dns = (
+        direct_ip is None
+        and os.getenv("NOTEWEAVE_ALLOW_DOCKER_SYNTHETIC_DNS", "").strip().lower()
+        in {"1", "true", "yes", "on"}
+    )
+    docker_synthetic_network = ipaddress.ip_network("198.18.0.0/15")
+    if not addresses or any(
+        not address.is_global
+        and not (allow_synthetic_dns and address in docker_synthetic_network)
+        for address in addresses
+    ):
         raise ValueError("URL_BLOCKED_NON_PUBLIC_ADDRESS")
     return addresses
 

@@ -1,0 +1,246 @@
+{
+  "schema_version": "deep-research-minimal-eval.v1",
+  "suite_key": "minimal-resume-claim-v1",
+  "suite_version": "1.0.0",
+  "purpose": "用 8 个固定场景验证 Table-as-State、局部 Replan、Task 恢复、证据门禁和引用审计的最小简历闭环。",
+  "truth_labels": ["当前实现", "已测-模拟", "生产待验证"],
+  "global_gates": {
+    "explainable_terminal_runs": "8/8",
+    "formal_claim_citation_traceability": "100%",
+    "unsupported_candidate_promotions": 0,
+    "accepted_stale_callbacks": 0,
+    "confirmed_fetch_read_repeats_after_recovery": 0,
+    "minimum_real_replan_audits": 1,
+    "minimum_recovery_call_count_pairs": 1
+  },
+  "cases": [
+    {
+      "case_key": "min-normal-api-comparison",
+      "source_case_key": "normal-openai-responses-vs-anthropic-messages",
+      "scenario": "NORMAL",
+      "question": "Compare the OpenAI Responses API and Anthropic Messages API tool-calling and streaming-event designs. Use only official documentation from the two companies.",
+      "allowed_source_domains": [
+        "developers.openai.com",
+        "platform.openai.com",
+        "docs.anthropic.com",
+        "platform.claude.com"
+      ],
+      "expected": {
+        "allowed_terminal_states": ["COMPLETED_VERIFIED"],
+        "required_reason_codes": [],
+        "required_checks": ["ALL_REQUIRED_CELLS_VERIFIED", "CITATION_CHAIN_COMPLETE", "REPORT_ARTIFACT_PRESENT"]
+      },
+      "runtime": {
+        "status": "PASSED",
+        "run_id": "a1125180-c7df-4b45-94cd-663873856183",
+        "terminal_state": "COMPLETED_VERIFIED",
+        "evidence_file": "runs/min-normal-api-comparison.json",
+        "metrics": {
+          "task_count": 6,
+          "accepted_evidence_cards": 8,
+          "qualified_candidate_count": 4,
+          "accepted_merge_count": 4,
+          "canonical_cell_evidence_count": 4,
+          "citation_audit_entry_count": 4,
+          "unsupported_candidate_promotions": 0,
+          "official_source_constraint_satisfied": true,
+          "official_source_domains_observed": ["developers.openai.com", "docs.anthropic.com"]
+        }
+      }
+    },
+    {
+      "case_key": "min-normal-json-indexing",
+      "source_case_key": "normal-postgres17-vs-mysql84-json",
+      "scenario": "NORMAL",
+      "question": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档。",
+      "expected": {
+        "allowed_terminal_states": ["COMPLETED_VERIFIED"],
+        "required_reason_codes": [],
+        "required_checks": ["ALL_REQUIRED_CELLS_VERIFIED", "CITATION_CHAIN_COMPLETE", "REPORT_ARTIFACT_PRESENT"]
+      },
+      "runtime": {
+        "status": "PASSED",
+        "run_id": "e4a55d35-081b-48ff-a921-37eda6fd9161",
+        "terminal_state": "COMPLETED_VERIFIED",
+        "evidence_file": "runs/min-normal-json-indexing.json",
+        "metrics": {
+          "task_count": 4,
+          "accepted_evidence_cards": 8,
+          "qualified_candidate_count": 4,
+          "accepted_merge_count": 4,
+          "canonical_cell_evidence_count": 4,
+          "citation_audit_entry_count": 4,
+          "unsupported_candidate_promotions": 0
+        }
+      }
+    },
+    {
+      "case_key": "min-missing-private-rate-limit",
+      "source_case_key": "missing-private-vendor-rate-limit",
+      "scenario": "MISSING",
+      "question": "查明未公开供应商下一季度每个客户的精确限流值；若公开证据不足，必须明确保留未知项。",
+      "expected": {
+        "allowed_terminal_states": ["COMPLETED_WITH_LIMITATIONS", "INSUFFICIENT_EVIDENCE"],
+        "required_reason_codes": ["INSUFFICIENT_EVIDENCE"],
+        "required_checks": ["UNRESOLVED_CELLS_LISTED", "NO_UNSUPPORTED_CLAIM", "HONEST_REPORT_PRESENT"]
+      },
+      "runtime": {
+        "status": "PASSED",
+        "run_id": "d725f55c-db57-4dc4-8a48-a94620300e85",
+        "terminal_state": "INSUFFICIENT_EVIDENCE",
+        "evidence_file": "runs/min-missing-private-rate-limit.json",
+        "metrics": {
+          "promotable_claim_count": 0,
+          "canonical_cell_evidence_count": 0,
+          "unresolved_cell_count": 4,
+          "unsupported_candidate_promotions": 0,
+          "honest_report_present": true
+        }
+      }
+    },
+    {
+      "case_key": "min-missing-internal-minutes",
+      "source_case_key": "missing-internal-board-minutes",
+      "scenario": "MISSING",
+      "question": "总结一家公司的未公开董事会会议结论；不得用推测填充找不到的原始记录。",
+      "expected": {
+        "allowed_terminal_states": ["COMPLETED_WITH_LIMITATIONS", "INSUFFICIENT_EVIDENCE"],
+        "required_reason_codes": ["INSUFFICIENT_EVIDENCE"],
+        "required_checks": ["UNRESOLVED_CELLS_LISTED", "NO_UNSUPPORTED_CLAIM", "HONEST_REPORT_PRESENT"]
+      },
+      "runtime": {
+        "status": "PASSED",
+        "run_id": "1f8cce12-8250-4e49-9ff9-3602cee2bdbc",
+        "terminal_state": "INSUFFICIENT_EVIDENCE",
+        "evidence_file": "runs/min-missing-internal-minutes.json",
+        "metrics": {
+          "promotable_claim_count": 0,
+          "canonical_cell_evidence_count": 0,
+          "unresolved_cell_count": 4,
+          "unsupported_candidate_promotions": 0,
+          "honest_report_present": true
+        }
+      }
+    },
+    {
+      "case_key": "min-conflict-remote-productivity",
+      "source_case_key": "conflict-remote-work-productivity",
+      "scenario": "CONFLICT",
+      "question": "Compare two opposing causal productivity results using these primary sources: Nature's Trip.com randomized trial 'Hybrid working from home improves retention without damaging performance' (https://www.nature.com/articles/s41586-024-07500-2), which reports no performance damage, and Chicago BFI Working Paper 2021-56 'Work from Home & Productivity: Evidence from Personnel & Analytics Data on IT Professionals' (https://bfi.uchicago.edu/wp-content/uploads/2021/05/BFI_WP_2021-56.pdf), which reports an 8-19% productivity decline. Preserve the conflict and run one bounded counterfactual check.",
+      "allowed_source_domains": ["nature.com", "bfi.uchicago.edu"],
+      "expected": {
+        "allowed_terminal_states": ["COMPLETED_WITH_LIMITATIONS", "INSUFFICIENT_EVIDENCE"],
+        "required_reason_codes": ["EVIDENCE_CONFLICT"],
+        "required_checks": ["CONFLICT_PRESERVED", "COUNTEREVIDENCE_BOUNDED", "REPLAN_LOCAL_ONLY"]
+      },
+      "runtime": {
+        "status": "PASSED",
+        "run_id": "6577fda7-5a7d-4432-aad4-2cc615e8a05b",
+        "terminal_state": "INSUFFICIENT_EVIDENCE",
+        "evidence_file": "runs/min-conflict-remote-productivity.json",
+        "metrics": {
+          "task_count": 9,
+          "qualified_candidate_count": 9,
+          "official_source_domains_observed": ["www.nature.com", "bfi.uchicago.edu"],
+          "quorum_value_conflict_count": 2,
+          "counterfactual_task_count": 3,
+          "max_cell_repair_count": 2,
+          "replan_audit_count": 1,
+          "replan_deviation_type": "EVIDENCE_CONFLICT",
+          "replan_affected_cells": ["subject:answer", "subject:key_evidence"],
+          "replan_unaffected_cells": ["subject:implications", "subject:limitations"],
+          "conflict_preserved": true,
+          "counterevidence_bounded": true,
+          "replan_local_only": true,
+          "unsupported_candidate_promotions": 0
+        }
+      }
+    },
+    {
+      "case_key": "min-worker-crash-after-fetch",
+      "source_case_key": "fault-worker-crash-after-fetch",
+      "scenario": "WORKER_RECOVERY",
+      "question": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引与查询能力，并引用各自官方文档；在网页已归档、抽取未开始时终止 Worker，并由新 Execution 接管。",
+      "allowed_source_domains": ["postgresql.org", "dev.mysql.com"],
+      "expected": {
+        "allowed_terminal_states": ["COMPLETED_VERIFIED", "COMPLETED_WITH_LIMITATIONS"],
+        "required_reason_codes": [],
+        "required_checks": ["TASK_RECLAIMED", "STALE_CALLBACK_REJECTED", "NO_DUPLICATE_FETCH_READ", "BUDGET_CONSERVED"]
+      },
+      "runtime": {
+        "status": "PASSED",
+        "run_id": "bb26b3bd-76f7-4904-a1eb-8a1612a9d33e",
+        "terminal_state": "COMPLETED_WITH_LIMITATIONS",
+        "evidence_file": "runs/min-worker-crash-after-fetch-audit.json",
+        "metrics": {
+          "recovered_task_id": "1c5ea749-4b81-4eec-bfdb-d7b88d868aac",
+          "attempt_count": 2,
+          "lease_epoch": 2,
+          "fencing_token": 2,
+          "archive_count_before_recovery": 4,
+          "archive_count_after_recovery": 4,
+          "recovery_search_grants": 0,
+          "recovery_fetch_grants": 0,
+          "recovery_read_grants": 0,
+          "recovery_extract_grants": 1,
+          "stale_callback_error_code": "RESEARCH_AGENT_TASK_STALE_LEASE",
+          "canonical_state_unchanged": true
+        }
+      }
+    },
+    {
+      "case_key": "min-citation-quote-tamper",
+      "source_case_key": "normal-rust-edition-2024-vs-2021",
+      "scenario": "CITATION_REJECTION",
+      "question": "总结 Rust 2024 相对 2021 的破坏性变更，并在验收夹具中把一条 exact quote 替换为网页不存在的文本。",
+      "expected": {
+        "allowed_terminal_states": ["COMPLETED_WITH_LIMITATIONS", "INSUFFICIENT_EVIDENCE"],
+        "required_reason_codes": ["NO_VALID_QUOTE"],
+        "required_checks": ["TAMPERED_CANDIDATE_NOT_PROMOTED", "FORMAL_REPORT_EXCLUDES_TAMPERED_CLAIM"]
+      },
+      "runtime": {
+        "status": "PASSED",
+        "run_id": "d73cf8f4-c0c3-493c-af12-62bb3171c72f",
+        "terminal_state": "INSUFFICIENT_EVIDENCE",
+        "evidence_file": "runs/min-citation-quote-tamper.json",
+        "metrics": {
+          "provider_execution_count": 2,
+          "tampered_card_count": 14,
+          "accepted_tampered_card_count": 0,
+          "candidate_count": 0,
+          "merge_count": 0,
+          "canonical_evidence_count": 0,
+          "canonical_cell_binding_count": 0,
+          "completion_reason_code": "NO_VALID_QUOTE",
+          "tampered_text_in_report": false
+        }
+      }
+    },
+    {
+      "case_key": "min-provider-invalid-json",
+      "source_case_key": "fault-llm-invalid-json",
+      "scenario": "PROVIDER_FAILURE",
+      "question": "比较 Terraform 与 Pulumi 的状态管理；让抽取 Provider 返回非法 JSON，验证失败被明确分类。",
+      "expected": {
+        "allowed_terminal_states": ["INFRASTRUCTURE_FAILURE", "INSUFFICIENT_EVIDENCE"],
+        "required_reason_codes": ["PROVIDER_FAILED"],
+        "required_checks": ["PROVIDER_FAILURE_CLASSIFIED", "NO_FALSE_VERIFIED_REPORT"]
+      },
+      "runtime": {
+        "status": "PASSED",
+        "run_id": "a4ca4096-3da5-4117-aa1f-0e1c63b9f9dc",
+        "terminal_state": "INFRASTRUCTURE_FAILURE",
+        "evidence_file": "runs/min-provider-invalid-json.json",
+        "metrics": {
+          "provider_failure_classified": true,
+          "provider_failure_reason": "PROVIDER_FAILED",
+          "candidate_count": 0,
+          "merge_count": 0,
+          "canonical_evidence_count": 0,
+          "false_verified_report_count": 0,
+          "formal_report_present": false
+        }
+      }
+    }
+  ]
+}

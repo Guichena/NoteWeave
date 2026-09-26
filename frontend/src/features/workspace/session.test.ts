@@ -30,6 +30,27 @@ describe("WorkspaceSessionLoader", () => {
     });
   });
 
+  it("restores the persisted AnswerRun failure instead of treating current history as completed", async () => {
+    const port = createPort({
+      conversations: [conversation("failed")],
+      messages: [{
+        ...message(1, "ASSISTANT", "> **[TEMPLATE PLACEHOLDER]** partial content"),
+        context_status: "CURRENT",
+        answer_status: "FAILED",
+        answer_error: "Answer LLM is not configured"
+      }]
+    });
+    const loader = new WorkspaceSessionLoader(port as never);
+
+    await expect(loader.restoreWorkspace(workspace("workspace"))).resolves.toMatchObject({
+      messages: [{
+        role: "assistant",
+        answerStatus: "FAILED",
+        answerError: "Answer LLM is not configured"
+      }]
+    });
+  });
+
   it("paginates complete message history", async () => {
     const firstPage = Array.from({ length: 200 }, (_, index) => message(index + 1));
     const listMessages = vi.fn()

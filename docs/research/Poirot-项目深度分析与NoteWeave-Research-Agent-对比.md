@@ -1,5 +1,7 @@
 # Poirot 项目深度分析与 NoteWeave Research Agent 对比
 
+> `[行业参考]` 本文的外部项目事实用于设计对照。NoteWeave 比较与建议属于 `[目标设计]`，不能替代当前源码、测试或生产证据。
+
 > 调研日期：2026-07-29  
 > 上游仓库：[`HezaoHezao/poirot`](https://github.com/HezaoHezao/poirot)  
 > 源码基线：[`86bf279`](https://github.com/HezaoHezao/poirot/commit/86bf279ad90c180f0ba696755620dd7d6661465e)  
@@ -208,13 +210,13 @@ Worker 主链包含 Planning、Searching、Reading、Extracting、Verifying、Wr
 
 `ResearchAgentTaskCoordinatorService` 在事务中创建 task、budget reservation 和 outbox。高风险 cell 会 fan-out 为两个独立 slot，分别使用 `DEEP_CELL` 和 `COUNTERFACTUAL` role，两个候选共享 quorum group，但有独立 task、lease、fencing、execution 和 budget。[`ResearchAgentTaskCoordinatorService.java`](../../backend/src/main/java/com/noteweave/research/ResearchAgentTaskCoordinatorService.java)
 
-Worker 返回 immutable completion 后，Backend 才做 authoritative validation、blind verification 和 CAS。第一个高风险候选只能进入 durable staging；两个独立来源域得到一致结果后才允许改 canonical cell。相关实现与验证边界记录在 [`ResearchAgent-MA5Q-Distributed-Quorum-Fanout-Blind-Merge-Plan.md`](../ResearchAgent-MA5Q-Distributed-Quorum-Fanout-Blind-Merge-Plan.md)。
+Worker 返回 immutable completion 后，Backend 才做 authoritative validation、blind verification 和 CAS。第一个高风险候选只能进入 durable staging；两个独立来源域得到一致结果后才允许改 canonical cell。当前实现边界见 [`DeepResearch-ResearchAgent架构文档.md`](../DeepResearch-ResearchAgent架构文档.md)。
 
 ### 可靠性来自数据库事务，不依赖 Agent 自律
 
 NoteWeave 的运行正确性由 task status、lease epoch、fencing token、snapshot digest、append-only evidence/candidate、budget reservation、completion receipt 和 CAS 共同保证。Kafka 只负责至少一次唤醒。
 
-MA4A-J 已覆盖 taskization、outbox、Kafka、多 Worker、lease takeover、atomic completion、checkpoint、repair、finalization 和报告 artifact。证据边界主要是 deterministic fake provider 与真实 MySQL/Kafka 隔离夹具；真实 provider 的质量、成本和延迟 A/B 仍未完成。[`ResearchAgent-MA4-Distributed-Execution-Plan.md`](../ResearchAgent-MA4-Distributed-Execution-Plan.md)
+当前 Research 执行面覆盖 taskization、outbox、Kafka、worker lease、atomic completion、checkpoint、repair、finalization 和报告 artifact。证据边界主要是 deterministic fake provider 与真实 MySQL/Kafka 隔离夹具；真实 provider 的质量、成本和延迟 A/B 仍未完成。当前架构见 [`DeepResearch-ResearchAgent架构文档.md`](../DeepResearch-ResearchAgent架构文档.md)。
 
 ## 逐项对比
 
@@ -428,7 +430,7 @@ NoteWeave 不需要改成另一个 Poirot。现有 entity/cell/evidence ledger�
 
 ### NoteWeave
 
-- [Research Agent 能力覆盖与发布门禁](../ResearchAgent-Capability-Coverage.md)
+- [Deep Research ResearchAgent 架构文档](../DeepResearch-ResearchAgent架构文档.md)
 - [Research Worker models](../../workers/research-worker/app/models.py)
 - [Research Worker runner](../../workers/research-worker/app/runner.py)
 - [Research loop runtime](../../workers/research-worker/app/loop_runtime.py)
@@ -441,7 +443,4 @@ NoteWeave 不需要改成另一个 Poirot。现有 entity/cell/evidence ledger�
 - [Atomic completion service](../../backend/src/main/java/com/noteweave/research/ResearchAgentCompletionService.java)
 - [Cell merge service](../../backend/src/main/java/com/noteweave/research/ResearchAgentCellMergeService.java)
 - [Budget and checkpoint](../../backend/src/main/java/com/noteweave/research/ResearchBudgetAndCheckpointService.java)
-- [MA4 分布式执行方案](../ResearchAgent-MA4-Distributed-Execution-Plan.md)
-- [MA5 角色质量与 Provider Benchmark](../ResearchAgent-MA5-Role-Quality-Provider-Benchmark-Plan.md)
-- [MA5Q 分布式双候选与盲验](../ResearchAgent-MA5Q-Distributed-Quorum-Fanout-Blind-Merge-Plan.md)
-- [MA6 运行治理与回退](../ResearchAgent-MA6-Runtime-Governance-Rollback-Plan.md)
+- [Research Agent 当前架构](../DeepResearch-ResearchAgent架构文档.md)

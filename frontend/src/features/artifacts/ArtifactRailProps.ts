@@ -6,6 +6,7 @@ import type { Workspace } from "../workspace/model";
 
 export type ArtifactRailProps = {
   artifactComposerOpen: boolean;
+  onCloseArtifactRail?: () => void;
   isBusy: boolean;
   setArtifactComposerOpen: (open: boolean) => void;
   selectedArtifactSkill?: ArtifactStudioSkill;
@@ -18,7 +19,12 @@ export type ArtifactRailProps = {
   isArtifactFormReady: (skill: ArtifactStudioSkill, formValues: Record<string, string>) => boolean;
   artifactFormValues: Record<string, string>;
   launchArtifactPrompt: (skill: ArtifactStudioSkill) => void | Promise<void>;
+  artifactComposerError: string;
+  clearArtifactComposerError: () => void;
   artifactStudioSkills: ArtifactStudioSkill[];
+  artifactSkillsLoading: boolean;
+  artifactJobsLoading: boolean;
+  sourceCount: number;
   setSelectedArtifactSkillKey: (key: string) => void;
   setArtifactFormValues: (
     value: Record<string, string> | ((current: Record<string, string>) => Record<string, string>)

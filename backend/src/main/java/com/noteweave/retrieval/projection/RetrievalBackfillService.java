@@ -23,6 +23,7 @@ public class RetrievalBackfillService {
     private final SourceRetrievalProjectionService projectionService;
     private final RetrievalIndexManager indexManager;
     private final SourceCatalogVersionService sourceCatalogVersionService;
+    private final RetrievalBackfillSourceFinalizer sourceFinalizer;
 
     public RetrievalBackfillService(
             JdbcTemplate jdbcTemplate,
@@ -30,7 +31,8 @@ public class RetrievalBackfillService {
             RetrievalIndexBuildRepository buildRepository,
             SourceRetrievalProjectionService projectionService,
             RetrievalIndexManager indexManager,
-            SourceCatalogVersionService sourceCatalogVersionService
+            SourceCatalogVersionService sourceCatalogVersionService,
+            RetrievalBackfillSourceFinalizer sourceFinalizer
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.properties = properties;
@@ -38,6 +40,7 @@ public class RetrievalBackfillService {
         this.projectionService = projectionService;
         this.indexManager = indexManager;
         this.sourceCatalogVersionService = sourceCatalogVersionService;
+        this.sourceFinalizer = sourceFinalizer;
     }
 
     public BackfillResult rebuildWorkspace(String workspaceId) {
@@ -93,6 +96,8 @@ public class RetrievalBackfillService {
             indexManager.switchAliases(java.util.Map.of(
                     RetrievalIndexNames.alias(ProjectionType.QA_CHUNK, workspaceId), qaTarget,
                     RetrievalIndexNames.alias(ProjectionType.NOTE_SOURCE, workspaceId), noteTarget));
+            requireStableCatalog(workspaceId, sourceCatalogVersion);
+            sourceFinalizer.markIndexed(workspaceId, targets);
             buildRepository.complete(qaBuild.id());
             buildRepository.complete(noteBuild.id());
             return result(workspaceId, qaBuild.id(), noteBuild.id(), List.of());
@@ -179,7 +184,7 @@ public class RetrievalBackfillService {
                 buildRepository.findById(noteBuildId), List.copyOf(failedSources));
     }
 
-    private record SnapshotTarget(String sourceId, String snapshotId, long chunkCount) { }
+    public record SnapshotTarget(String sourceId, String snapshotId, long chunkCount) { }
     public record ProjectionCount(String projectionType, String status, long count) { }
     public record Coverage(long sourceCount, long readySourceCount,
                            long qaReadySourceCount, long noteReadySourceCount) { }

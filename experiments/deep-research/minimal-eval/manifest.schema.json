@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "deep-research-minimal-eval.v1",
+  "title": "Deep Research minimal resume claim evaluation",
+  "type": "object",
+  "required": ["schema_version", "suite_key", "suite_version", "purpose", "global_gates", "cases"],
+  "properties": {
+    "schema_version": {"const": "deep-research-minimal-eval.v1"},
+    "suite_key": {"type": "string", "minLength": 1},
+    "suite_version": {"type": "string", "minLength": 1},
+    "purpose": {"type": "string", "minLength": 1},
+    "global_gates": {"type": "object"},
+    "cases": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "required": ["case_key", "source_case_key", "scenario", "question", "expected", "runtime"],
+        "properties": {
+          "case_key": {"type": "string", "minLength": 1},
+          "source_case_key": {"type": "string", "minLength": 1},
+          "scenario": {
+            "enum": ["NORMAL", "MISSING", "CONFLICT", "WORKER_RECOVERY", "CITATION_REJECTION", "PROVIDER_FAILURE"]
+          },
+          "question": {"type": "string", "minLength": 1},
+          "expected": {
+            "type": "object",
+            "required": ["allowed_terminal_states", "required_reason_codes", "required_checks"]
+          },
+          "runtime": {
+            "type": "object",
+            "required": ["status", "run_id", "terminal_state", "evidence_file", "metrics"],
+            "properties": {
+              "status": {"enum": ["PENDING_RUNTIME", "PASSED", "FAILED"]},
+              "run_id": {"type": ["string", "null"]},
+              "terminal_state": {"type": ["string", "null"]},
+              "evidence_file": {"type": ["string", "null"]},
+              "metrics": {"type": ["object", "null"]}
+            }
+          }
+        }
+      }
+    }
+  }
+}

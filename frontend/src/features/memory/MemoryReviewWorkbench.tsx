@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ArrowRight, BadgeCheck, BrainCircuit, Inbox, LoaderCircle, RefreshCw, ScanSearch } from "lucide-react";
 import {
   type MemoryReviewDecision,
   type MemoryReviewItem
@@ -40,16 +41,20 @@ export function MemoryReviewWorkbench({ workspaceId }: MemoryReviewWorkbenchProp
   return (
     <section className="memory-workbench">
       <aside className="memory-queue-panel">
-        <p className="section-label">Memory Review</p>
-        <h2>统一审核队列</h2>
+        <p className="section-label">01 · Candidate</p>
+        <div className="memory-panel-heading">
+          <h2>统一审核队列</h2>
+          <span aria-label={`${queue.length} 条待审核`}>{queue.length}</span>
+        </div>
         <p className="phase-note">
-          队列只读取当前运行时的 revision；旧 memory_object review 已停止写入。
+          仅显示当前运行时产生、需要人工判断的 revision；历史对象不会重复进入队列。
         </p>
         <button
           className="secondary-button"
           disabled={queueLoading || mutating}
           onClick={() => void refreshQueue()}
         >
+          <RefreshCw className={queueLoading ? "is-spinning" : ""} size={15} aria-hidden="true" />
           {queueLoading ? "刷新中…" : "刷新审核队列"}
         </button>
         <div className="memory-queue-list">
@@ -79,8 +84,34 @@ export function MemoryReviewWorkbench({ workspaceId }: MemoryReviewWorkbenchProp
       </aside>
 
       <article className="memory-review-panel">
-        <p className="section-label">Review Decision</p>
-        {selectedItem ? (
+        <p className="section-label">02 · Review</p>
+        <div className="memory-runtime-inline">
+          <span className="memory-runtime-inline-index">03</span>
+          <div>
+            <strong>运行时生效</strong>
+            <span>接受的 revision 成为当前版本；拒绝或撤销会同步退出编译、召回与回放。</span>
+          </div>
+        </div>
+        {notice ? <p className="status-line" role="status">{notice}</p> : null}
+        {error ? <p className="memory-error" role="alert">{error}</p> : null}
+        {lastDecision ? (
+          <p className="phase-note">
+            最近决策：{lastDecision.status} · revision={lastDecision.revision_id}
+          </p>
+        ) : null}
+        {queueLoading && !selectedItem ? (
+          <div className="memory-review-loading" role="status" aria-live="polite">
+            <span className="memory-review-loading-icon" aria-hidden="true">
+              <LoaderCircle className="is-spinning" size={22} />
+            </span>
+            <div>
+              <strong>正在读取审核队列</strong>
+              <p>同步当前运行时的 Memory revision 与审核状态。</p>
+            </div>
+            <span className="memory-review-loading-line" aria-hidden="true" />
+            <span className="memory-review-loading-line is-short" aria-hidden="true" />
+          </div>
+        ) : selectedItem ? (
           <>
             <h2>{selectedItem.review_kind === "PROPOSAL" ? "新 Revision 审核" : "已生效 Memory 复核"}</h2>
             <div className="memory-statement-card">
@@ -115,25 +146,74 @@ export function MemoryReviewWorkbench({ workspaceId }: MemoryReviewWorkbenchProp
                 </button>
               ))}
             </div>
-            {notice ? <p className="status-line">{notice}</p> : null}
-            {error ? <p className="memory-error">{error}</p> : null}
-            {lastDecision ? (
-              <p className="phase-note">
-                最近决策：{lastDecision.status} · revision={lastDecision.revision_id}
-              </p>
-            ) : null}
           </>
         ) : (
-          <p className="empty-state">从左侧选择一个 revision 进行审核。</p>
+          <div className="memory-empty-state" aria-label="Memory 审核流程">
+            <div className="memory-empty-heading">
+              <span className="empty-state-icon" aria-hidden="true"><BrainCircuit size={22} /></span>
+              <div className="empty-state-copy">
+                <span className="memory-empty-kicker">{queue.length} 条 revision 等待审核</span>
+                <strong>{queue.length > 0 ? "选择一条 Memory revision" : "等待新的 Memory revision"}</strong>
+                <p>
+                  {queue.length > 0
+                    ? "从左侧队列选择候选，随后核对来源、冲突状态和效用分数。"
+                    : "当前运行时没有待审核候选，新 revision 产生后会进入这条审核流程。"}
+                </p>
+              </div>
+            </div>
+            <ol className="memory-review-flow" aria-label="候选到审核决策的阶段">
+              <li className={queue.length > 0 ? "is-current" : "is-waiting"}>
+                <span className="memory-review-flow-icon" aria-hidden="true"><Inbox size={17} /></span>
+                <div>
+                  <small>01 · Candidate</small>
+                  <strong>进入审核队列</strong>
+                  <span>{queue.length} 条待审核</span>
+                </div>
+              </li>
+              <li>
+                <span className="memory-review-flow-icon" aria-hidden="true"><ScanSearch size={17} /></span>
+                <div>
+                  <small>02 · Review</small>
+                  <strong>核对来源与冲突</strong>
+                  <span>人工决定接受或拒绝</span>
+                </div>
+              </li>
+            </ol>
+            <div className="memory-review-handoff" aria-label="审核后的运行时去向">
+              <ArrowRight size={18} aria-hidden="true" />
+              <div>
+                <small>Next · Runtime</small>
+                <strong>审核通过后进入运行时</strong>
+                <span>右侧显示唯一生效版本与召回约束。</span>
+              </div>
+            </div>
+          </div>
         )}
       </article>
 
       <aside className="memory-version-panel">
-        <p className="section-label">Single Runtime</p>
-        <h2>运行时说明</h2>
+        <p className="section-label">03 · Runtime</p>
+        <div className="memory-runtime-heading">
+          <span aria-hidden="true"><BadgeCheck size={18} /></span>
+          <h2>运行时生效</h2>
+        </div>
         <p className="phase-note">
           接受后 revision 成为该 Memory item 的 current revision；拒绝或撤销会同步从编译、召回和回放中移除。
         </p>
+        <dl className="memory-runtime-policy" aria-label="运行时约束">
+          <div>
+            <dt>生效版本</dt>
+            <dd>当前已接受 revision</dd>
+          </div>
+          <div>
+            <dt>召回范围</dt>
+            <dd>仅限已接受内容</dd>
+          </div>
+          <div>
+            <dt>拒绝 / 撤销</dt>
+            <dd>同步退出运行时</dd>
+          </div>
+        </dl>
       </aside>
     </section>
   );

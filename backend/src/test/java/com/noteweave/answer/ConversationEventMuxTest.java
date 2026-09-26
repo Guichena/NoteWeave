@@ -40,6 +40,14 @@ class ConversationEventMuxTest {
             }
 
             @Override
+            public List<ConversationLiveEvent> readConversationAfter(
+                    String conversationId, long after, Duration blockTimeout
+            ) {
+                throw new AnswerRealtimeBridgeUnavailableException(
+                        "redis unavailable", new IllegalStateException("connection refused"));
+            }
+
+            @Override
             public void signalCancellation(String runId) {
             }
 
@@ -80,6 +88,29 @@ class ConversationEventMuxTest {
                 .containsExactly("run-1", "run-2", "run-2");
         assertThat(received).extracting(ConversationLiveEvent::runSequence)
                 .containsExactly(1L, 7L, 8L);
+    }
+
+    @Test
+    void shouldReclaimIdleConversationChannelsAfterRetentionWindow() throws Exception {
+        ConversationEventMux mux = new ConversationEventMux(
+                null,
+                Runnable::run,
+                Runnable::run,
+                new SimpleMeterRegistry(),
+                64,
+                16,
+                Duration.ofMillis(1),
+                100
+        );
+        ConversationLiveEvent first = mux.publish(
+                "conversation-retained", "run-1", runEvent(1, "answer.delta", "old"));
+        Thread.sleep(20);
+
+        ConversationLiveEvent next = mux.publish(
+                "conversation-retained", "run-2", runEvent(2, "answer.delta", "new"));
+
+        assertThat(first.sequence()).isEqualTo(1L);
+        assertThat(next.sequence()).isEqualTo(1L);
     }
 
     @Test

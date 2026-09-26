@@ -144,4 +144,43 @@ class ResearchAgentAutomaticRunBootstrapTest {
         assertThat(snapshot.path("source_policy").path("allow_external_search").asBoolean()).isTrue();
         assertThat(snapshot.path("source_policy").path("allow_external_fetch").asBoolean()).isTrue();
     }
+
+    @Test
+    void shouldMarkConflictSensitiveAnswerAndEvidenceCellsHighRisk() {
+        String workspaceId = Ids.newId();
+        jdbcTemplate.update(
+                "insert into workspace(id, owner_id, name, status) values (?, 'local-user', 'agent-conflict', 'ACTIVE')",
+                workspaceId);
+
+        ResearchRunResponse created = researchRunService.createRun(workspaceId, new CreateResearchRunRequest(
+                "Compare opposing productivity findings and preserve the conflict",
+                "DEFAULT", "Run one bounded counterfactual review", "Markdown report",
+                List.of("Do not average contradictory evidence"), null, "STANDARD", "AUTO", List.of(),
+                "WEB_ONLY", List.of()));
+
+        List<String> highRisk = jdbcTemplate.queryForList("""
+                select column_key from research_cell
+                where research_run_id = ? and high_risk = true order by column_key
+                """, String.class, created.researchRunId());
+        assertThat(highRisk).containsExactly("answer", "key_evidence");
+    }
+
+    @Test
+    void shouldNotTreatGeneratedConflictReportingConstraintAsExplicitCounterevidenceRequest() {
+        String workspaceId = Ids.newId();
+        jdbcTemplate.update(
+                "insert into workspace(id, owner_id, name, status) values (?, 'local-user', 'agent-comparison', 'ACTIVE')",
+                workspaceId);
+
+        ResearchRunResponse created = researchRunService.createRun(workspaceId, new CreateResearchRunRequest(
+                "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引能力",
+                "DEFAULT", "输出逐项引用的比较报告", "Markdown report",
+                List.of("必须显式区分已验证结论、冲突点与后续恢复动作。"), null,
+                "STANDARD", "PRODUCT_COMPARISON", List.of(), "WEB_ONLY", List.of()));
+
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from research_cell
+                where research_run_id = ? and high_risk = true
+                """, Integer.class, created.researchRunId())).isZero();
+    }
 }

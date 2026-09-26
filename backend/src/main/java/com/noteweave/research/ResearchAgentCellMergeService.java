@@ -266,8 +266,17 @@ public class ResearchAgentCellMergeService {
     }
 
     private List<String> readStringList(String rawJson) {
+        if (rawJson == null || rawJson.isBlank()) {
+            throw new BusinessException(
+                    "RESEARCH_AGENT_CANDIDATE_EVIDENCE_PARSE_FAILED", "Candidate evidence payload is missing");
+        }
         try {
-            return objectMapper.readValue(rawJson, new TypeReference<List<String>>() { });
+            List<String> values = objectMapper.readValue(rawJson, new TypeReference<List<String>>() { });
+            if (values == null || values.stream().anyMatch(value -> value == null || value.isBlank())) {
+                throw new BusinessException(
+                        "RESEARCH_AGENT_CANDIDATE_EVIDENCE_PARSE_FAILED", "Candidate evidence payload is invalid");
+            }
+            return values;
         } catch (JsonProcessingException exception) {
             throw new BusinessException("RESEARCH_AGENT_CANDIDATE_EVIDENCE_PARSE_FAILED", "Candidate evidence payload is invalid");
         }

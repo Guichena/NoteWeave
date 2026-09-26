@@ -12,6 +12,7 @@ from app.models import ResearchTaskInput
 from app.planner import build_research_plan
 from app.runner import run_research_task
 from app.search_adapters import (
+    _build_external_search_adapters,
     CompositeSearchAdapter,
     ExternalSearchAdapter,
     HttpGetSearchTransport,
@@ -49,6 +50,41 @@ def test_search_transport_should_not_retry_non_retryable_401(monkeypatch, transp
     assert transport.search("query", 2) == []
     assert attempts == 1
     assert transport.last_attempt_count == 1
+
+
+@pytest.mark.parametrize(
+    "transport",
+    [
+        HttpJsonSearchTransport("serper", "secret", max_retries=3),
+        HttpGetSearchTransport("custom", "secret", "https://search.example/api", max_retries=3),
+    ],
+)
+def test_search_transport_should_retry_tls_level_os_errors(monkeypatch, transport) -> None:
+    attempts = 0
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b'{"organic":[]}'
+
+    def flaky_tls(_request, timeout):
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise OSError("temporary TLS handshake failure")
+        return Response()
+
+    monkeypatch.setattr("app.search_adapters.credential_safe_urlopen", flaky_tls)
+    monkeypatch.setattr("app.search_adapters.time.sleep", lambda _seconds: None)
+
+    assert transport.search("query", 2) == []
+    assert attempts == 3
+    assert transport.last_attempt_count == 3
 
 
 class FakeExternalTransport:
@@ -130,6 +166,28 @@ def test_public_wikipedia_search_should_be_available_only_when_explicitly_enable
     assert isinstance(adapter, CompositeSearchAdapter)
     assert len(adapter.adapters) == 1
     assert adapter.adapters[0].provider_name == "wikipedia"
+
+
+def test_generic_search_settings_should_apply_to_first_authenticated_provider(monkeypatch) -> None:
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_PUBLIC_SEARCH_ENABLED", "true")
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_SEARCH_PROVIDER_CHAIN", "wikipedia,serper")
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_SEARCH_API_KEY", "generic-search-secret")
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_SEARCH_BASE_URL", "https://search.example.test")
+    for name in (
+        "NOTEWEAVE_RESEARCH_SERPER_API_KEY",
+        "NOTEWEAVE_RESEARCH_SERPER_BASE_URL",
+        "SERPER_API_KEY",
+        "SERPER_BASE_URL",
+        "SEARCH_API_KEY",
+        "SEARCH_API_BASE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    adapters = _build_external_search_adapters()
+
+    assert [adapter.provider_name for adapter in adapters] == ["wikipedia", "serper"]
+    assert adapters[1].api_key == "generic-search-secret"
+    assert adapters[1].transport.base_url == "https://search.example.test"
 
 
 def test_wikipedia_transport_should_normalize_public_api_results(monkeypatch) -> None:

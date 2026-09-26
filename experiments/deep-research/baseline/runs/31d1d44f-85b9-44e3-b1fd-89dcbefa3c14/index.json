@@ -1,0 +1,100 @@
+{
+  "cell_status_counts": {
+    "GAP": 4
+  },
+  "database": "noteweave",
+  "export_schema": "research-baseline-run-export.v1",
+  "question": "截至 2026 年 9 月，比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的主要差异。必须引用两家公司官方文档，并给出可核验 URL。验收标记：NW-E2E-2026-09-18 16:12:37",
+  "research_run_id": "31d1d44f-85b9-44e3-b1fd-89dcbefa3c14",
+  "skipped_tables": [],
+  "tables": {
+    "research_agent_candidate": {
+      "filter": "research_run_id",
+      "row_count": 0
+    },
+    "research_agent_checkpoint": {
+      "filter": "research_run_id",
+      "row_count": 0
+    },
+    "research_agent_completion": {
+      "filter": "research_agent_task_id<task_subquery>",
+      "row_count": 2
+    },
+    "research_agent_execution": {
+      "filter": "research_agent_task_id<task_subquery>",
+      "row_count": 2
+    },
+    "research_agent_outbox": {
+      "filter": "research_run_id",
+      "row_count": 2
+    },
+    "research_agent_report_artifact": {
+      "filter": "research_run_id",
+      "row_count": 0
+    },
+    "research_agent_role_result": {
+      "filter": "research_run_id",
+      "row_count": 0
+    },
+    "research_agent_run_advancement": {
+      "filter": "research_run_id",
+      "row_count": 0
+    },
+    "research_agent_task": {
+      "filter": "research_run_id",
+      "row_count": 2
+    },
+    "research_budget_reservation": {
+      "filter": "research_run_id",
+      "row_count": 2
+    },
+    "research_cell": {
+      "filter": "research_run_id",
+      "row_count": 4
+    },
+    "research_cell_evidence": {
+      "filter": "research_run_id",
+      "row_count": 0
+    },
+    "research_cell_merge": {
+      "filter": "research_run_id",
+      "row_count": 0
+    },
+    "research_checkpoint_hydration_snapshot": {
+      "filter": "research_run_id",
+      "row_count": 0
+    },
+    "research_evidence_validation": {
+      "filter": "research_run_id",
+      "row_count": 0
+    },
+    "research_matrix_plan": {
+      "filter": "research_run_id",
+      "row_count": 1
+    },
+    "research_row": {
+      "filter": "research_run_id",
+      "row_count": 1
+    },
+    "research_run": {
+      "filter": "id",
+      "row_count": 1
+    },
+    "research_run_stage": {
+      "filter": "research_run_id",
+      "row_count": 0
+    },
+    "research_verifier_decision": {
+      "filter": "research_run_id",
+      "row_count": 0
+    },
+    "source_evidence": {
+      "filter": "research_run_id",
+      "row_count": 0
+    }
+  },
+  "task_terminal_reasons": [
+    "NO_SUPPORTED_CANDIDATE"
+  ],
+  "terminal_state": "FAILED"
+}

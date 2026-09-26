@@ -1,0 +1,84 @@
+[
+  {
+    "bounded": 0,
+    "cell_count": 28,
+    "column_count": 7,
+    "created_at": "2026-09-18 08:12:38.000000",
+    "id": "82c789c2-e331-4c8f-aa7e-3d21b8e0c1c8",
+    "plan_digest": "sha256:1873d185381fe6d9c9afe0b6402873fd371612748329fcb1bc9c8492535f6779",
+    "plan_json": {
+      "bounded": false,
+      "cell_count": 28,
+      "columns": [
+        {
+          "high_risk": false,
+          "key": "answer",
+          "label": "Answer",
+          "required_provenance_level": "QUALIFIED_SOURCE"
+        },
+        {
+          "high_risk": false,
+          "key": "key_evidence",
+          "label": "Key evidence",
+          "required_provenance_level": "QUALIFIED_SOURCE"
+        },
+        {
+          "high_risk": false,
+          "key": "limitations",
+          "label": "Limitations",
+          "required_provenance_level": "QUALIFIED_SOURCE"
+        },
+        {
+          "high_risk": false,
+          "key": "implications",
+          "label": "Implications",
+          "required_provenance_level": "QUALIFIED_SOURCE"
+        },
+        {
+          "high_risk": false,
+          "key": "finding-955eedd149e824b1",
+          "label": "仅使用 OpenAI 与 Anthropic 官方文档作为核心证据",
+          "required_provenance_level": "QUALIFIED_SOURCE"
+        },
+        {
+          "high_risk": false,
+          "key": "finding-69b02c166b6a5a8e",
+          "label": "每个核心结论必须关联可核验 URL",
+          "required_provenance_level": "QUALIFIED_SOURCE"
+        },
+        {
+          "high_risk": false,
+          "key": "finding-f89ae8e8cbd4e61b",
+          "label": "明确标注无法确认的信息",
+          "required_provenance_level": "QUALIFIED_SOURCE"
+        }
+      ],
+      "planner_version": "intent-matrix.v2",
+      "reason_codes": [],
+      "rows": [
+        {
+          "key": "entity-a330f86a074e7e02",
+          "label": "截至 2026 年 9 月"
+        },
+        {
+          "key": "entity-5404feed2af115a2",
+          "label": "比较 OpenAI Responses API"
+        },
+        {
+          "key": "entity-59796e602333f094",
+          "label": "Anthropic Messages API 在工具调用"
+        },
+        {
+          "key": "entity-b25a39e239f44a16",
+          "label": "流式事件设计上"
+        }
+      ]
+    },
+    "plan_mode": "INTENT_MATRIX_V2",
+    "plan_status": "SHADOW",
+    "planner_version": "intent-matrix.v2",
+    "reason_codes_json": [],
+    "research_run_id": "31d1d44f-85b9-44e3-b1fd-89dcbefa3c14",
+    "row_count": 4
+  }
+]

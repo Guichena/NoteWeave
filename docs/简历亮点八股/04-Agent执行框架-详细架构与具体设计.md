@@ -1,5 +1,9 @@
 # 工程化 Agent 执行框架：详细架构与具体设计
 
+> 案例与答辩补充：从 Compile 到受控写回的完整案例、Unknown Outcome、消融和 Ownership 见[演进案例专项](21-Agent执行框架演进案例消融与Ownership答辩.md)；真实产物能力、格式边界、质量指标和业务案例见 [Artifact Agent 专项](23-Artifact-Agent产物生成演进案例指标与Ownership答辩.md)。
+>
+> 面试使用顺序：先背[Agent 与 Artifact 一体化手册](32-Agent执行与Artifact产物一体化面试手册.md)，本文用于 Skill Compiler、Capability、Quota、MCP 和运行时细节。当前运行时是“编译期 DAG、运行期拓扑序线性执行”，不是完整并行 DAG 引擎；只有具备持久 Waiting Receipt 与唤醒入口的路径才能声称 Waiting/Resume；任意 Workspace 写回、外部 Provider Exactly-once 和所有 MCP 的安全沙箱仍属于 `[目标设计]` 或 `[生产待验证]`。
+
 ## 0. 从一次 Prompt 到受控 Agent 执行框架
 
 ### 0.1 V0：一次 Prompt 生成为什么很快达到上限
@@ -22,7 +26,7 @@ Compiler 在执行前检查节点注册、Schema 兼容、依赖环和 Capabilit
 
 每个工具写专用 HTTP Client 的优势是边界清晰、容易做细粒度安全；工具增多后，发现、参数 Schema、错误和 Trace 会重复建设。MCP 提供统一协议，适合把视频提取、渲染等能力接到 Skill Graph。
 
-系统使用系统能力、Skill 允许能力和运行环境能力的交集，Prompt 不能扩大权限。生产只启用受信任系统 MCP。仓库中的自定义 MCP 子进程入口只用于默认关闭的内部调试，尚无完整沙箱、签名和可执行文件白名单，不能描述为生产插件市场。
+系统使用系统能力、Skill 允许能力和运行环境能力的交集，Prompt 不能扩大权限。当前 MCP 以系统注册、能力白名单、输入 Schema、内部认证和受控写回为边界，工具协议的复用不改变 Host 的权限与审计责任。
 
 ### 0.5 V4：长任务从限速演进为限速、限并发和租约恢复
 
@@ -32,7 +36,7 @@ Compiler 在执行前检查节点注册、Schema 兼容、依赖环和 Capabilit
 
 ### 0.6 V5：失败处理从全量重试演进为 Waiting、Resume 与局部 Repair
 
-Provider 暂时不可用、能力等待和输出不合格不是同一种失败。能力暂不可用时任务进入 Waiting，持久化原因和恢复条件，Provider 恢复后沿用原 Spec；确定性或语义 Verifier 失败时生成结构化问题，只重做相关节点。
+Provider 暂时不可用、能力等待和输出不合格不是同一种失败。只有已经实现持久等待记录、恢复条件和唤醒入口的能力，暂不可用时才进入 Waiting 并在恢复后沿用原 Spec；其余 Provider 路径仍按当前代码做有界重试、失败分类或终态投影。确定性或语义 Verifier 失败时生成结构化问题，只重做相关节点。
 
 局部 Repair 节省成本，但可能修好一处又破坏整体，因此最终产物仍要过全局 Output Contract。Repair 次数有上限，不能让模型无限自我修正。
 
@@ -59,7 +63,7 @@ Python Worker 直接写 Workspace 或业务表实现最短，却绕过 Java Host
 
 ### 0.9 面试叙事顺序
 
-先从一次 Prompt 无法支撑长产物讲起，再比较固定 Workflow 和自由 Agent；用 Skill、Schema、ExecutionSpec 解释为什么选择受控中间路线；随后挑 MCP 权限、Redis 两类配额、Waiting/Repair 三个工程点；最后主动说明当前运行时不是完整并行 DAG，自定义 MCP 也不是生产插件平台。
+先从一次 Prompt 无法支撑长产物讲起，再比较固定 Workflow 和自由 Agent；用 Skill、Schema、ExecutionSpec 解释为什么选择受控中间路线；随后挑 MCP 权限、Redis 两类配额、Waiting/Repair 三个工程点；最后说明当前运行时以受控节点序列为主，复杂并行和扩展能力由任务规模与副作用边界触发。
 
 ## 1. 总体架构
 
@@ -110,17 +114,17 @@ DRAFT -> QUEUED -> RUNNING -> VERIFYING -> COMPLETED
 
 每次状态转换校验 From Status、Version 和 Owner。终态写入幂等，失败和取消不能被旧回调改成完成。
 
-## 4. 提交链路
+## 4. 推荐提交链路
 
 1. Host 校验 Workspace 权限、Skill 和输入 Schema。
 2. Redis Lua 检查令牌桶并获取并发租约。
-3. MySQL 事务创建 Job/Version/Task/Outbox。
-4. Dispatcher 发送 Kafka，Worker 获取冻结输入。
-5. Worker 编译或读取 ExecutionSpec，执行 Skill Graph。
-6. 结果写 MinIO，回调携带文件 Hash、结构化结果和 Trace。
-7. Host 原子提交 Version 终态并释放租约。
+3. MySQL 事务创建 Job、ArtifactRun、Input Snapshot、预留 Version ID 和 Command Outbox，不提前创建用户可见 Version。
+4. Consumer 按 Command ID 幂等登记 Durable Execution，事务提交后提交 Kafka Offset。
+5. Scheduler 创建 ExecutionAttempt，分配 Active Permit，并领取带 Epoch/Fencing Token 的 Domain Execution Lease，Worker 获取冻结输入。Permit 只表达资源占用，不与业务 Fencing 共用代次。
+6. Worker 编译或读取 ExecutionSpec，执行 Skill Graph，只返回内容 Candidate、引用和 Trace。
+7. 内容 Contract 通过后，Host 创建不可见的 `DELIVERY_PENDING` Version 与全部必需文件的 `PENDING` Manifest。DeliveryAttempt 再写 Staging、执行文件 Contract 并晋升对象；必需文件全部 `READY` 后，Version 才提升为用户可见的 `READY`，释放租约。
 
-如果数据库事务失败，必须释放已获取租约；如果任务创建后 Host 崩溃，租约由续租与过期机制回收。
+如果数据库事务失败，必须释放已获取租约；如果任务创建后 Host 崩溃，租约由续租与过期机制回收。当前实现仍是长 Kafka Delivery、回调后追加 Host Version 和 Worker 调试 Version ID，以上链路属于面试推荐的迁移目标。
 
 ## 5. Skill Graph
 
@@ -130,9 +134,9 @@ Compiler 校验：节点类型已注册、输入输出兼容、依赖无环或�
 
 ## 6. Capability Policy 与 MCP
 
-Capability Union 由系统能力、Skill 允许能力和运行环境能力取交集，不因 Prompt 提示扩大。每次 MCP 调用记录 Server、Tool、参数摘要、权限结果、耗时和状态，敏感参数脱敏。
+历史模型中的 `Capability Union` 表示收集图中各节点声明的能力需求，不表示把权限做并集放大。一次运行的 Effective Capability 仍由系统能力、Skill 声明、Workspace Policy、用户审批、风险策略和运行环境取交集，不因 Prompt 提示扩大。每次 MCP 调用记录 Server、Tool、参数摘要、权限结果、耗时和状态，敏感参数脱敏。
 
-内置 MCP 通过受信任配置加载。未来开放第三方能力时，需要增加进程沙箱、文件路径白名单、网络出口、凭据隔离、签名和人工授权。
+内置 MCP 通过受信任配置加载。工具数量、调用并发或副作用范围扩大时，继续沿能力白名单、路径约束、凭据隔离和人工授权补充边界。
 
 ## 7. Redis Quota 设计
 
@@ -193,7 +197,7 @@ Verifier 分确定性与语义两层。确定性层检查 JSON Schema、必填�
 
 ## 14. 当前边界
 
-当前实现是系统内置 Skill 与 MCP，不是通用用户插件市场；配额参数是保护默认值，不是性能上限；水平扩展依赖外部 MySQL、Kafka、Redis、MinIO 和 Provider 的实际容量。
+当前实现是系统内置 Skill 与 MCP；配额参数是保护默认值，不是性能上限；水平扩展要依据外部 MySQL、Kafka、Redis、MinIO 和 Provider 的实际容量。
 
 ## 15. Skill Compiler 的具体算法
 
@@ -229,6 +233,20 @@ effective_capabilities = skill_allowed
 6. 检查环和受控循环上限。
 7. 固化 Prompt/Policy/Skill Version。
 8. 生成 Hash，作为重试和审计身份。
+
+### 15.3 编译授权不是永久授权
+
+ExecutionSpec 中的 Capability Set 是本次 Run 的能力上限和可复现输入，不是执行数分钟后仍然有效的授权票据。`[目标设计]` 每个高风险工具调用前，Host 或受信 Tool Gateway 重新求交集：
+
+```text
+invocation_capabilities = compiled_capabilities
+                        ∩ current_workspace_acl
+                        ∩ current_security_policy
+                        ∩ unexpired_approval_scope
+                        ∩ runtime_provider_health
+```
+
+执行时交集只能收紧，不能因为 Catalog 新增能力而自动扩大当前 Run。能力通过后仍需单独取得本次调用的 Budget Reservation，权限与额度不能互相代替。写工具先持久化 `OperationIntent`，审批绑定精确工具、目标、参数 Digest、Scope、Artifact/Plan Version 和过期时间；调用时任何 Digest、Epoch 或 Approval 状态变化都拒绝并要求新 Proposal。只读工具同样受输入有效性 Epoch 与 SSRF/数据域策略约束。这样同时保留“当时编译了什么”的可解释性和“现在是否仍可执行”的持续授权，避免长任务中的 TOCTOU。
 
 ## 16. Skill Graph 的编译与运行边界
 
@@ -336,7 +354,7 @@ Provider 选择同时考虑 Skill Graph 约束、Capability Mapping、候选发�
 
 Capability Mapping Snapshot 记录映射来源和约束，保证任务恢复时知道“为什么选中这个 Provider”。健康检查和 Discovery Scan 更新候选状态后，可以自动唤醒真正受该能力阻塞的任务，不能把整个 Waiting Queue 全部重跑。
 
-这套机制接近控制面与数据面的分离：控制面注册、发现、审批和映射能力，数据面只执行已经编译并授权的 Provider。面试时可用 Capability-aware Scheduling 概括，但要说明它不是 Kubernetes 调度器，也没有声称实现通用服务发现平台。
+这套机制接近控制面与数据面的分离：控制面注册、发现、审批和映射能力，数据面只执行已经编译并授权的 Provider。面试时可用 Capability-aware Scheduling 概括；当能力数量、并发或 Provider 等待增长时，再细化调度与隔离策略。
 
 ## 24. Waiting、Resume 与编译结果复用
 
@@ -554,12 +572,16 @@ Worker 生成 Preview，用户或策略确认后产生 Writeback Request。Host 
 | 设计概念 | 当前生产实现 | 当前设置或不变量 | 主要测试 |
 |---|---|---|---|
 | Skill Catalog | `ArtifactSkillCatalogService.resolveSkill()/validateAndNormalizeInputs()` | Skill 定义版本化输入、输出与能力声明，不保存一次运行状态 | `ArtifactWorkerInputPayloadTest` |
-| Job 与 Version | `ArtifactJobService.createJob()/regenerateVersion()/rollbackVersion()` | Regenerate 创建新 Version，Rollback 改变可见版本，不原地篡改历史产物 | `Phase6ResearchArtifactContractTest` |
+| Job 与 Version | `ArtifactJobService.createJob()/regenerateVersion()/rollbackVersion()` | `[当前实现]` Regenerate 创建新 Version，Rollback 改变可见版本且不改写历史行；`[目标设计]` 采用追加式 Rollback Run 与新 Version，Head 不倒拨 | `Phase6ResearchArtifactContractTest` |
 | Worker Input | `ArtifactJobService.getWorkerInput()`、`ArtifactWorkerInputPayload` | Worker 获得不可变任务、来源范围与输出 Contract | `ArtifactWorkerInputPayloadTest` |
-| Outbox 派发 | `ArtifactOutboxDispatcherService.dispatchReadyArtifactJobs()`、`HttpArtifactOutboxPublisher` | Artifact Dispatch Executor 为 `1/1/0`，HTTP Connect 3 秒、Read 30 秒 | `ArtifactOutboxDispatchSchedulerTest`、`HttpArtifactOutboxPublisherTest` |
+| Outbox 派发 | 当前 `ArtifactOutboxDispatcherService`、`KafkaArtifactOutboxPublisher`、`ArtifactKafkaConsumerRuntime`；推荐增加 Durable Execution Registrar/Scheduler | 当前为单条拉取、手动提交、4200 秒 Max Poll 和 70 分钟 Delivery Lease；推荐在持久登记 Command 后提交 Offset，由独立 Execution Lease 管理小时级任务 | 当前测试只能证明旧协议；迁移验收需覆盖登记后宕机、消息重放和 Scheduler 接管 |
 | Callback 与 Fencing | `WorkerTaskCallbackAuthenticator`、`WorkerTaskCallbackService.completeFromDelivery()` | Callback 必须匹配内部身份、任务状态、Worker 与当前交付代际 | `WorkerTaskCallbackAuthenticatorTest`、`WorkerTaskCallbackServiceTest` |
 | 配额 | `WorkloadQuotaService` | Rate Key 为 Workspace、Actor、Workload；Concurrency Key 为 Workspace、Workload | Quota Service 与 Redis Integration Test |
 | Capability 与审批 | Capability Catalog Port、Artifact Approval 与 Capability Union 决策 | 协议 Schema 不等于授权，Host 计算最终能力交集 | Capability Decision Contract Test |
 | 受控写回 | `ArtifactJobService.saveVersionAsSource()/writeVersionToKnowledge()` | Worker 只能提交候选结果，Host 重新校验 Workspace、版本和副作用范围 | `Phase6ResearchArtifactContractTest` |
 
-当前框架的生产边界是 Java Host 加独立 Python Worker。LangGraph、Temporal、Java SPI 插件和第三方 MCP 市场都是可选演进，不属于当前落地能力。默认只允许受信任的系统 MCP，自定义 MCP 子进程能力默认关闭，且尚无完整签名、白名单和沙箱体系。
+当前框架的核心边界是 Java Host 加独立 Python Worker，Host 保存权限、任务真源和写回协议，Worker 只执行编译并授权的输入。只有当 Skill 数量、等待分支、任务时长或工具副作用显著增加时，才重新评估执行图、编排和扩展边界。
+
+## 当前运行事实
+
+`[当前实现]` `artifact_job`、`artifact_job_run`、`artifact_version`、`artifact_file` 和 `artifact_run_input_snapshot` 固化 Job、混合的业务运行/执行尝试、版本、文件和输入。再生成、比较和回滚都以 Version 为边界；writeback 重新检查 Workspace、目标版本和 source/knowledge 当前版本。Outbox lease、callback receipt 和 dead-letter 防止旧交付代际直接覆盖当前状态。`[目标设计]` 将 `artifact_job_run` 拆成不可变 ArtifactRun 与 ExecutionAttempt，并采用追加式回滚，避免把 Worker 恢复计成用户再生成或让 Head 倒拨。

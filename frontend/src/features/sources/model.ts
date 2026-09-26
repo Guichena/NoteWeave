@@ -10,6 +10,56 @@ export type SourceAsset = {
   updated_at: string;
 };
 
+export function isSourceReady(source: Pick<SourceAsset, "status">): boolean {
+  return source.status.trim().toUpperCase() === "READY";
+}
+
+export function isSourceSearchable(source: Pick<SourceAsset, "status" | "index_status">): boolean {
+  return isSourceReady(source)
+    && source.index_status.trim().toUpperCase() === "INDEXED";
+}
+
+export function isSourceReadableOnly(source: Pick<SourceAsset, "status" | "index_status">): boolean {
+  return isSourceReady(source)
+    && source.index_status.trim().toUpperCase() === "DISABLED";
+}
+
+export function formatSourceProcessingStatus(status: string): string {
+  switch (status.trim().toUpperCase()) {
+    case "READY":
+      return "已解析";
+    case "PENDING":
+    case "PROCESSING":
+    case "PARSING":
+      return "处理中";
+    case "FAILED":
+    case "ERROR":
+      return "处理失败";
+    case "DELETED":
+      return "已删除";
+    default:
+      return status.trim() || "状态未知";
+  }
+}
+
+export function formatSourceIndexStatus(status: string): string {
+  switch (status.trim().toUpperCase()) {
+    case "INDEXED":
+      return "已建立检索索引";
+    case "DISABLED":
+      return "未建立检索索引";
+    case "PENDING":
+    case "PROCESSING":
+    case "BUILDING":
+      return "索引处理中";
+    case "FAILED":
+    case "ERROR":
+      return "索引失败";
+    default:
+      return status.trim() || "索引状态未知";
+  }
+}
+
 export type CompletedSourceUpload = {
   source_id: string;
   task_id: string;

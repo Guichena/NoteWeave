@@ -21,6 +21,16 @@ public class AuthController {
         this.currentUserProvider = currentUserProvider;
     }
 
+    @PostMapping("/register")
+    ApiResponse<AuthSessionResponse> register(
+            @Valid @RequestBody RegisterRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        return ApiResponse.success(authService.register(
+                request.username(), request.email(), request.password(), request.displayName(),
+                httpRequest.getRemoteAddr()));
+    }
+
     @PostMapping("/login")
     ApiResponse<AuthSessionResponse> login(
             @Valid @RequestBody LoginRequest request,

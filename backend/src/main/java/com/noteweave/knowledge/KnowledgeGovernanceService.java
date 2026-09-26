@@ -41,6 +41,24 @@ public class KnowledgeGovernanceService {
     }
 
     public WikiStatsResponse getWikiStats(String workspaceId) {
+        return assembleWikiStats(
+                workspaceId, workspaceQueryPort.isWikiEnabled(workspaceId));
+    }
+
+    WikiStatsResponse getWikiStatsForInternalExecution(String workspaceId) {
+        Integer enabledWorkspaceCount = jdbcTemplate.queryForObject("""
+                select count(*) from workspace
+                where id = ? and status = 'ACTIVE' and wiki_enabled = true
+                """, Integer.class, workspaceId);
+        return assembleWikiStats(
+                workspaceId,
+                enabledWorkspaceCount != null && enabledWorkspaceCount > 0);
+    }
+
+    private WikiStatsResponse assembleWikiStats(
+            String workspaceId,
+            boolean wikiEnabled
+    ) {
         List<WikiIssueResponse> issues = lintWiki(workspaceId);
         int pageCount = count("""
                 select count(*) from knowledge_item
@@ -90,7 +108,7 @@ public class KnowledgeGovernanceService {
                 from task
                 where workspace_id = ?
                   and task_type in ('WIKI_INGEST', 'WIKI_RETRACT')
-                  and task_status <> 'COMPLETED'
+                  and task_status in ('PENDING', 'RUNNING')
                 """, workspaceId);
         int autoFixableIssueCount = (int) issues.stream()
                 .filter(WikiIssueResponse::autoFixable)
@@ -110,7 +128,7 @@ public class KnowledgeGovernanceService {
                 recentUpdates,
                 recentTasks,
                 pendingTaskCount,
-                workspaceQueryPort.isWikiEnabled(workspaceId));
+                wikiEnabled);
     }
 
     public WikiRebuildAdviceResponse getWikiRebuildAdvice(String workspaceId) {
@@ -418,7 +436,7 @@ public class KnowledgeGovernanceService {
             int limit
     ) {
         List<String> itemIds = jdbcTemplate.queryForList("""
-                select distinct i.id
+                select i.id
                 from knowledge_item i
                 join knowledge_version v on v.id = i.latest_version_id
                 join knowledge_version_citation kvc on kvc.knowledge_version_id = v.id
@@ -427,7 +445,8 @@ public class KnowledgeGovernanceService {
                   and i.item_type = 'WIKI'
                   and i.status = 'ACTIVE'
                   and c.source_id = ?
-                order by i.updated_at desc
+                group by i.id
+                order by max(i.updated_at) desc
                 limit ?
                 """, String.class, workspaceId, sourceId, limit);
         if (itemIds.isEmpty()) {

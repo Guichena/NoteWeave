@@ -414,3 +414,165 @@ def test_completion_full_serialized_envelope_should_enforce_exact_256kib_boundar
     assert len(serialize_completion_envelope(boundary)) == 256 * 1024
     with pytest.raises(ValidationError, match="payload size"):
         _build(payload(1))
+
+
+#: Cross-runtime golden value shared with ResearchAgentCompletionCanonicalizerTest.java.
+_DR102_GOLDEN_DIGEST = "sha256:3307022eef5d046b75c609e8dba679017cd5ddcfa670b5f5170861769821aa44"
+
+
+def _diagnostics(**updates: object) -> dict[str, object]:
+    value: dict[str, object] = {
+        "schema_version": "research-extraction-diagnostics.v1",
+        "termination_reason": "ALL_CARDS_REJECTED",
+        "accepted_count": 0,
+        "rejected_count": 2,
+        "rejection_counts": {"NON_EXACT_QUOTE": 1, "WRONG_COLUMN": 1},
+        "provider_receipt": {
+            "purpose": "research.extract",
+            "transport": "openai-compatible",
+            "model": "gpt-test",
+            "call_count": 1,
+            "response_digest": "sha256:" + "a" * 64,
+            "response_chars": 1234,
+        },
+        "rejection_samples": [
+            {
+                "reason": "NON_EXACT_QUOTE",
+                "window_id": "window-a",
+                "column_key": "method",
+                "detail": "window_id=window-a column_key=method quote_len=12",
+            },
+            {
+                "reason": "WRONG_COLUMN",
+                "window_id": "window-b",
+                "column_key": "unknown",
+                "detail": "window_id=window-b column_key=unknown",
+            },
+        ],
+    }
+    value.update(updates)
+    return value
+
+
+def _v2_extraction_payload(**diagnostics_updates: object) -> dict[str, object]:
+    return {
+        "schema_version": "research-agent-completion.v2",
+        "task_id": "00000000-0000-0000-0000-000000000001",
+        "worker_instance_id": "worker-a",
+        "lease_epoch": 2,
+        "fencing_token": 7,
+        "execution_key": "deep-cell:00000000-0000-0000-0000-000000000001:2:7",
+        "task_snapshot_digest": "sha256:" + "1" * 64,
+        "termination_reason": "NO_SUPPORTED_CANDIDATE",
+        "budget_usage": {
+            "llm_calls": 1,
+            "search_calls": 1,
+            "fetch_calls": 1,
+            "read_calls": 1,
+            "extract_calls": 1,
+            "evidence_cards": 0,
+            "candidates_submitted": 0,
+        },
+        "telemetry": {"search_hits": 2, "documents": 1, "windows": 2},
+        "trace_digest": "sha256:" + "2" * 64,
+        "evidence": [],
+        "candidates": [],
+        "extraction_diagnostics": _diagnostics(**diagnostics_updates),
+    }
+
+
+def test_v2_extraction_envelope_should_match_cross_runtime_golden_digest() -> None:
+    from app.research_agent_completion_contract import canonical_envelope_bytes
+
+    envelope = _build(_v2_extraction_payload())
+
+    assert envelope.schema_version == "research-agent-completion.v2"
+    assert envelope.role_result is None
+    assert envelope.extraction_diagnostics is not None
+    assert envelope.extraction_diagnostics.rejection_counts == {
+        "NON_EXACT_QUOTE": 1,
+        "WRONG_COLUMN": 1,
+    }
+    canonical = canonical_envelope_bytes(envelope, include_envelope_digest=False)
+    assert b'"extraction_diagnostics"' in canonical and b'"role_result"' not in canonical
+    assert envelope.envelope_digest == _DR102_GOLDEN_DIGEST
+
+
+@pytest.mark.parametrize(
+    "diagnostics_updates",
+    [
+        {"accepted_count": 0, "termination_reason": "ACCEPTED_CARDS", "rejected_count": 0,
+         "rejection_counts": {}},
+        {"accepted_count": 1, "termination_reason": "ALL_CARDS_REJECTED", "rejected_count": 2,
+         "rejection_counts": {"NON_EXACT_QUOTE": 2}},
+        {"rejection_counts": {"NON_EXACT_QUOTE": 1}},
+        {"rejection_counts": {"NON_EXACT_QUOTE": 1, "UNKNOWN_REASON": 1}},
+        {"rejected_count": 1},
+        {"provider_receipt": {"purpose": "research.extract", "transport": "openai-compatible",
+                              "model": "gpt-test", "call_count": 1, "response_digest": "not-a-digest",
+                              "response_chars": 1}},
+        {"provider_receipt": {"purpose": "research.other", "transport": "openai-compatible",
+                              "model": "gpt-test", "call_count": 1, "response_digest": "",
+                              "response_chars": 1}},
+        {"future_field": 1},
+    ],
+)
+def test_extraction_diagnostics_hard_gates_should_reject_inconsistent_shapes(diagnostics_updates) -> None:
+    with pytest.raises(ValidationError):
+        _build(_v2_extraction_payload(**diagnostics_updates))
+
+
+def test_extraction_diagnostics_should_accept_a_clean_accepted_extraction() -> None:
+    envelope = _build(_v2_extraction_payload(
+        termination_reason="ACCEPTED_CARDS",
+        accepted_count=1,
+        rejected_count=0,
+        rejection_counts={},
+        rejection_samples=[],
+    ))
+
+    assert envelope.extraction_diagnostics is not None
+    assert envelope.extraction_diagnostics.accepted_count == 1
+
+
+def test_extraction_diagnostics_should_reject_more_samples_than_rejections() -> None:
+    samples = [
+        {"reason": "NON_EXACT_QUOTE", "window_id": f"window-{index}", "column_key": "method", "detail": ""}
+        for index in range(3)
+    ]
+    with pytest.raises(ValidationError, match="rejection_samples"):
+        _build(_v2_extraction_payload(rejection_samples=samples))
+
+
+def test_completion_shapes_should_bind_v1_role_and_extraction_variants_exactly() -> None:
+    from app.research_agent_completion_contract import ResearchAgentExtractionDiagnostics
+
+    # v1 must never carry extraction_diagnostics.
+    v1_with_diagnostics = _payload()
+    v1_with_diagnostics["extraction_diagnostics"] = _diagnostics()
+    with pytest.raises(ValidationError, match="extraction_diagnostics"):
+        _build(v1_with_diagnostics)
+
+    # v2 non-ROLE_RESULT must carry extraction_diagnostics (not None).
+    v2_without_diagnostics = _v2_extraction_payload()
+    v2_without_diagnostics.pop("extraction_diagnostics")
+    with pytest.raises(ValidationError, match="extraction_diagnostics"):
+        _build(v2_without_diagnostics)
+
+    # v2 ROLE_RESULT must not carry extraction_diagnostics.
+    role_result = _payload()
+    role_result["schema_version"] = "research-agent-completion.v2"
+    role_result["termination_reason"] = "ROLE_RESULT"
+    role_result["evidence"] = []
+    role_result["candidates"] = []
+    role_result["budget_usage"]["evidence_cards"] = 0  # type: ignore[index]
+    role_result["budget_usage"]["candidates_submitted"] = 0  # type: ignore[index]
+    role_result["role_result"] = {"result_schema_version": "research-evidence-audit-result.v1"}
+    _build(role_result)
+    role_result["extraction_diagnostics"] = _diagnostics()
+    with pytest.raises(ValidationError, match="extraction_diagnostics"):
+        _build(role_result)
+
+    # The diagnostics model itself is frozen/strict and rejects unknown subfields.
+    with pytest.raises(ValidationError):
+        ResearchAgentExtractionDiagnostics.model_validate(_diagnostics(future_field=1))

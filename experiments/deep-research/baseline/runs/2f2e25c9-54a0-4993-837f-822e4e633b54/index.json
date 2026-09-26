@@ -1,0 +1,102 @@
+{
+  "cell_status_counts": {
+    "GAP": 1,
+    "VERIFIED": 3
+  },
+  "database": "noteweave",
+  "export_schema": "research-baseline-run-export.v1",
+  "question": "Compare OpenAI Responses API and Anthropic Messages API tool calling and streaming event models using official documentation. Include verifiable source URLs. GLM validation marker NW-E2E-20260918-163252",
+  "research_run_id": "2f2e25c9-54a0-4993-837f-822e4e633b54",
+  "skipped_tables": [],
+  "tables": {
+    "research_agent_candidate": {
+      "filter": "research_run_id",
+      "row_count": 3
+    },
+    "research_agent_checkpoint": {
+      "filter": "research_run_id",
+      "row_count": 0
+    },
+    "research_agent_completion": {
+      "filter": "research_agent_task_id<task_subquery>",
+      "row_count": 2
+    },
+    "research_agent_execution": {
+      "filter": "research_agent_task_id<task_subquery>",
+      "row_count": 2
+    },
+    "research_agent_outbox": {
+      "filter": "research_run_id",
+      "row_count": 2
+    },
+    "research_agent_report_artifact": {
+      "filter": "research_run_id",
+      "row_count": 0
+    },
+    "research_agent_role_result": {
+      "filter": "research_run_id",
+      "row_count": 0
+    },
+    "research_agent_run_advancement": {
+      "filter": "research_run_id",
+      "row_count": 0
+    },
+    "research_agent_task": {
+      "filter": "research_run_id",
+      "row_count": 2
+    },
+    "research_budget_reservation": {
+      "filter": "research_run_id",
+      "row_count": 2
+    },
+    "research_cell": {
+      "filter": "research_run_id",
+      "row_count": 4
+    },
+    "research_cell_evidence": {
+      "filter": "research_run_id",
+      "row_count": 3
+    },
+    "research_cell_merge": {
+      "filter": "research_run_id",
+      "row_count": 3
+    },
+    "research_checkpoint_hydration_snapshot": {
+      "filter": "research_run_id",
+      "row_count": 0
+    },
+    "research_evidence_validation": {
+      "filter": "research_run_id",
+      "row_count": 3
+    },
+    "research_matrix_plan": {
+      "filter": "research_run_id",
+      "row_count": 1
+    },
+    "research_row": {
+      "filter": "research_run_id",
+      "row_count": 1
+    },
+    "research_run": {
+      "filter": "id",
+      "row_count": 1
+    },
+    "research_run_stage": {
+      "filter": "research_run_id",
+      "row_count": 0
+    },
+    "research_verifier_decision": {
+      "filter": "research_run_id",
+      "row_count": 0
+    },
+    "source_evidence": {
+      "filter": "research_run_id",
+      "row_count": 3
+    }
+  },
+  "task_terminal_reasons": [
+    "CANDIDATES_PROPOSED",
+    "NO_SUPPORTED_CANDIDATE"
+  ],
+  "terminal_state": "FAILED"
+}

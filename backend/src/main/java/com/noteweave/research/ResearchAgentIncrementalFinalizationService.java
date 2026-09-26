@@ -53,21 +53,28 @@ public class ResearchAgentIncrementalFinalizationService {
             return new FinalizationReceipt(run.id(), artifact.id(), artifact.digest(), run.title(), run.markdown(), true);
         }
         if (!"RUNNING".equals(run.status())) throw new BusinessException("RESEARCH_AGENT_FINALIZATION_GATE_REJECTED", "Run is not finalizable");
-        Integer activeOrFailed = jdbcTemplate.queryForObject("""
+        // FAILED is a historical task outcome, not necessarily an unresolved ledger outcome.
+        // A later COUNTERFACTUAL/repair task can verify the same cell while the original failed
+        // task intentionally remains immutable for auditability.  The canonical cell ledger below
+        // is the authority for whether that repair converged; counting every historical FAILED
+        // task here caused fully verified runs to spin forever at finalization.
+        Integer active = jdbcTemplate.queryForObject("""
                 select count(*) from research_agent_task where research_run_id = ?
-                and status in ('PENDING','CLAIMED','RUNNING','RETRY_WAIT','EXPIRED','FAILED')
+                and status in ('PENDING','CLAIMED','RUNNING','RETRY_WAIT','EXPIRED')
                 """, Integer.class, runId);
         Integer unverified = jdbcTemplate.queryForObject("""
                 select count(*) from research_cell where research_run_id = ?
                 and (cell_status <> 'VERIFIED' or evidence_refs_json is null or evidence_refs_json = '[]')
                 """, Integer.class, runId);
         Integer verified = jdbcTemplate.queryForObject("select count(*) from research_cell where research_run_id = ? and cell_status = 'VERIFIED'", Integer.class, runId);
-        if ((activeOrFailed != null && activeOrFailed > 0) || unverified == null || unverified > 0 || verified == null || verified == 0) {
+        if ((active != null && active > 0) || unverified == null || unverified > 0 || verified == null || verified == 0) {
             throw new BusinessException("RESEARCH_AGENT_FINALIZATION_GATE_REJECTED", "Canonical ledger is not citation-gated finalizable");
         }
         List<Cell> cells = loadVerifiedCells(runId);
         cells.sort((left, right) -> ResearchAgentBinaryOrder.UTF8.compare(left.key(), right.key()));
-        String markdown = render(run.question(), cells);
+        SynthesisCandidate synthesis = loadValidatedSynthesis(runId);
+        String markdown = synthesis == null ? render(run.question(), cells) : synthesis.markdown();
+        markdown = appendCitationAudit(markdown, cells);
         String title = "Research report: " + run.question().substring(0, Math.min(240, run.question().length()));
         String artifactId = Ids.newId();
         String reportDigest = sha256(markdown);
@@ -78,6 +85,12 @@ public class ResearchAgentIncrementalFinalizationService {
                 ) values (?, ?, 'canonical-ledger:v1', ?, ?, ?, ?)
                 """, artifactId, runId, reportDigest, title, markdown, cells.size());
         jdbcTemplate.update("update research_run set status = 'COMPLETED', final_report_title = ?, final_report_markdown = ?, updated_at = current_timestamp where id = ? and status = 'RUNNING'", title, markdown, runId);
+        if (synthesis != null) {
+            jdbcTemplate.update("""
+                    update research_agent_synthesis_candidate set status = 'PROMOTED'
+                    where id = ? and status = 'VALIDATED'
+                    """, synthesis.id());
+        }
         persistEvidenceManifest(run, markdown, cells);
         researchCollectionService.materialize(run.id());
         projectConversationReport(run, title);
@@ -95,6 +108,14 @@ public class ResearchAgentIncrementalFinalizationService {
             throw new BusinessException("RESEARCH_AGENT_FINALIZATION_INTEGRITY_ERROR", "Completed incremental run has no report artifact");
         }
         return artifact;
+    }
+
+    private SynthesisCandidate loadValidatedSynthesis(String runId) {
+        return jdbcTemplate.query("""
+                select id, markdown from research_agent_synthesis_candidate
+                where research_run_id = ? and status = 'VALIDATED'
+                order by created_at desc, id desc limit 1
+                """, rs -> rs.next() ? new SynthesisCandidate(rs.getString(1), rs.getString(2)) : null, runId);
     }
 
     private void projectConversationReport(RunRow run, String title) {
@@ -128,14 +149,14 @@ public class ResearchAgentIncrementalFinalizationService {
             List<Evidence> evidence = jdbcTemplate.query("""
                     select source_evidence.evidence_key, source_evidence.source_id, source_evidence.source_title,
                            source_evidence.quote_text, source_evidence.claim_text, source_evidence.snapshot_key,
-                           source_evidence.window_id
+                           source_evidence.window_id, source_evidence.source_url
                     from research_cell_evidence cell_evidence
                     join source_evidence on source_evidence.id = cell_evidence.source_evidence_id
                     where cell_evidence.research_cell_id = ?
                     order by source_evidence.evidence_key asc
                     """, (rs, rowNum) -> new Evidence(
                     rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
-                    rs.getString(5), rs.getString(6), rs.getString(7)), cell.id());
+                    rs.getString(5), rs.getString(6), rs.getString(7), rs.getString(8)), cell.id());
             for (Evidence item : evidence) {
                 String excerpt = nonBlank(item.quote(), item.claim());
                 if (excerpt.isBlank()) continue;
@@ -175,6 +196,30 @@ public class ResearchAgentIncrementalFinalizationService {
         return result.toString();
     }
 
+    private String appendCitationAudit(String markdown, List<Cell> cells) {
+        StringBuilder result = new StringBuilder(markdown == null ? "" : markdown.stripTrailing());
+        result.append("\n\n## Citation audit\n\n");
+        for (Cell cell : cells) {
+            List<Evidence> evidence = jdbcTemplate.query("""
+                    select se.evidence_key, se.source_id, se.source_title, se.quote_text,
+                           se.claim_text, se.snapshot_key, se.window_id, se.source_url
+                    from research_cell_evidence ce
+                    join source_evidence se on se.id = ce.source_evidence_id
+                    where ce.research_cell_id = ? order by se.evidence_key
+                    """, (rs, rowNum) -> new Evidence(
+                    rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
+                    rs.getString(5), rs.getString(6), rs.getString(7), rs.getString(8)), cell.id());
+            for (Evidence item : evidence) {
+                result.append("### ").append(markdownCell(cell.key())).append("\n\n")
+                        .append("- Evidence: `").append(markdownCell(item.key())).append("`\n")
+                        .append("- Exact quote: “").append(markdownCell(nonBlank(item.quote(), item.claim()))).append("”\n")
+                        .append("- Snapshot: `").append(markdownCell(item.snapshotKey())).append("`\n")
+                        .append("- URL: ").append(markdownCell(item.url())).append("\n\n");
+            }
+        }
+        return result.toString();
+    }
+
     private String markdownCell(String value) {
         if (value == null) return "";
         return value.replace("\\", "\\\\")
@@ -198,6 +243,8 @@ public class ResearchAgentIncrementalFinalizationService {
             String answerMessageId
     ) { }
     private record Cell(String id, String key, String value, String evidence) { }
-    private record Evidence(String key, String sourceId, String title, String quote, String claim, String snapshotKey, String windowId) { }
+    private record Evidence(String key, String sourceId, String title, String quote, String claim,
+                            String snapshotKey, String windowId, String url) { }
+    private record SynthesisCandidate(String id, String markdown) { }
     private record Artifact(String id, String digest) { }
 }

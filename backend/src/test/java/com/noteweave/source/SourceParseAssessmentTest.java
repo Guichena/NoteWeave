@@ -46,6 +46,7 @@ class SourceParseAssessmentTest {
         service = new SourceParseService(
                 jdbcTemplate,
                 mock(DocumentChunker.class),
+                mock(SourceDocumentTextExtractor.class),
                 new ObjectMapper(),
                 mock(ObjectStorage.class),
                 mock(SourceMessagingMode.class),

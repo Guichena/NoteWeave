@@ -1,10 +1,14 @@
 package com.noteweave.chat;
 
+import com.noteweave.common.BusinessException;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 /**
@@ -28,11 +32,22 @@ public class NoteNeutralMarkdownRewriter {
             "定位说明"
     );
 
+    private final boolean templateFallbackEnabled;
+    private final MeterRegistry meterRegistry;
+
+    public NoteNeutralMarkdownRewriter(
+            @Value("${noteweave.llm.template-fallback-enabled:false}") boolean templateFallbackEnabled,
+            MeterRegistry meterRegistry
+    ) {
+        this.templateFallbackEnabled = templateFallbackEnabled;
+        this.meterRegistry = meterRegistry;
+    }
+
     public RewriteResult rewrite(String title, String answerContent) {
         String safeTitle = normalizeTitle(title);
         String source = answerContent == null ? "" : answerContent.replace("\r\n", "\n").trim();
         if (source.isBlank()) {
-            return new RewriteResult(safeTitle, "", "template");
+            return new RewriteResult(safeTitle, "", "template", "");
         }
         String directAnswer = extractDirectAnswer(source);
         String cleaned = stripProcessNoise(directAnswer);
@@ -45,13 +60,16 @@ public class NoteNeutralMarkdownRewriter {
         }
         String body = cleaned.isBlank() ? source : cleaned;
         String markdown = "# " + safeTitle + "\n\n" + body;
-        return new RewriteResult(safeTitle, markdown.trim(), "template");
+        return new RewriteResult(safeTitle, markdown.trim(), "template", "");
     }
 
     public RewriteResult polishWithLlm(ChatLlmClient llmClient, String title, String answerContent) {
         RewriteResult template = rewrite(title, answerContent);
-        if (llmClient == null || !llmClient.isEnabled() || template.content().isBlank()) {
+        if (template.content().isBlank()) {
             return template;
+        }
+        if (llmClient == null || !llmClient.isEnabled()) {
+            return fallbackOrThrow(template, "NOTE_POLISH_LLM_UNAVAILABLE");
         }
         try {
             String systemPrompt = """
@@ -75,12 +93,24 @@ public class NoteNeutralMarkdownRewriter {
             });
             String normalized = normalizeLlmMarkdown(template.title(), polished);
             if (normalized.isBlank() || normalized.length() < 20) {
-                return template;
+                return fallbackOrThrow(template, "NOTE_POLISH_LLM_INVALID_RESPONSE");
             }
-            return new RewriteResult(template.title(), normalized, "llm");
+            return new RewriteResult(template.title(), normalized, "llm", "");
         } catch (RuntimeException ex) {
-            return template;
+            return fallbackOrThrow(template, "NOTE_POLISH_LLM_FAILED");
         }
+    }
+
+    private RewriteResult fallbackOrThrow(RewriteResult template, String reason) {
+        if (!templateFallbackEnabled) {
+            throw new BusinessException(
+                    "NOTE_POLISH_LLM_FAILED",
+                    "Note polish LLM is unavailable",
+                    HttpStatus.SERVICE_UNAVAILABLE
+            );
+        }
+        meterRegistry.counter("noteweave.note.polish.fallback", "reason", reason).increment();
+        return new RewriteResult(template.title(), template.content(), "template", reason);
     }
 
     private String extractDirectAnswer(String source) {
@@ -233,6 +263,6 @@ public class NoteNeutralMarkdownRewriter {
         return content.replaceAll("\n{3,}", "\n\n");
     }
 
-    public record RewriteResult(String title, String content, String mode) {
+    public record RewriteResult(String title, String content, String mode, String fallbackReason) {
     }
 }

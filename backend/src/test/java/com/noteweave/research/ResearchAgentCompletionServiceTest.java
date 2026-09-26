@@ -40,6 +40,7 @@ class ResearchAgentCompletionServiceTest {
     @Autowired private ResearchAgentCompletionService completionService;
     @Autowired private ResearchAgentCompletionCanonicalizer canonicalizer;
     @Autowired private ResearchAgentLifecycleService lifecycleService;
+    @Autowired private ResearchAgentFeatureFlagService featureFlags;
     @Autowired private MeterRegistry meterRegistry;
 
     @MockBean private ResearchAgentCompletionFaultInjector faultInjector;
@@ -156,7 +157,7 @@ class ResearchAgentCompletionServiceTest {
         ResearchAgentCompletionReceipt first = completionService.complete(
                 pair.first().taskId(), envelopeForSource(pair.first(), "worker-a", "source-0", "Source 0", "trusted quote 0"));
         ResearchAgentCompletionReceipt second = completionService.complete(
-                pair.second().taskId(), envelopeForSource(pair.second(), "worker-b", "source-1", "Source 1", "trusted quote 1"));
+                pair.second().taskId(), envelopeForSource(pair.second(), "worker-b", "source-1", "Source 1", "trusted quote 0"));
 
         assertThat(first.outcome()).isEqualTo("QUORUM_PENDING");
         assertThat(second.outcome()).isEqualTo("QUORUM_MERGED");
@@ -233,7 +234,7 @@ class ResearchAgentCompletionServiceTest {
 
         ResearchAgentCompletionReceipt receipt = completionService.complete(pair.second().taskId(),
                 envelopeForSourceAndValue(pair.second(), "worker-b", "source-1", "Source 1",
-                        "trusted quote 1", "conflicting-value"));
+                        "trusted quote 0", "conflicting-value"));
 
         assertThat(receipt.outcome()).isEqualTo("QUORUM_REPAIR_REQUIRED");
         assertThat(receipt.rejectedMerges()).containsExactly(new ResearchAgentCompletionReceipt.MergeReceipt(
@@ -258,7 +259,7 @@ class ResearchAgentCompletionServiceTest {
         completionService.complete(pair.first().taskId(), envelopeForSource(
                 pair.first(), "worker-a", "source-0", "Source 0", "trusted quote 0"));
         ResearchAgentCompletionEnvelope secondEnvelope = envelopeForSource(
-                pair.second(), "worker-b", "source-1", "Source 1", "trusted quote 1");
+                pair.second(), "worker-b", "source-1", "Source 1", "trusted quote 0");
         doAnswer(invocation -> {
             if (invocation.getArgument(0) == ResearchAgentCompletionFaultInjector.Stage.AFTER_FIRST_CELL_CAS) {
                 throw new IllegalStateException("ma5q injected after quorum CAS");
@@ -331,7 +332,7 @@ class ResearchAgentCompletionServiceTest {
     void shouldMergeInEitherSlotOrderWhileKeepingTheEarlyPendingReceiptImmutable() {
         QuorumPair pair = quorumPair();
         ResearchAgentCompletionEnvelope slotTwo = envelopeForSource(
-                pair.second(), "worker-b", "source-1", "Source 1", "trusted quote 1");
+                pair.second(), "worker-b", "source-1", "Source 1", "trusted quote 0");
         ResearchAgentCompletionEnvelope slotOne = envelopeForSource(
                 pair.first(), "worker-a", "source-0", "Source 0", "trusted quote 0");
 
@@ -374,6 +375,43 @@ class ResearchAgentCompletionServiceTest {
     }
 
     @Test
+    void shouldPersistExtractionDiagnosticsForV2CandidateEnvelope() {
+        Fixture fixture = fixture(1);
+        Map<String, Object> providerReceipt = new java.util.LinkedHashMap<>();
+        providerReceipt.put("purpose", "research.extract");
+        providerReceipt.put("transport", "openai-compatible");
+        providerReceipt.put("model", "");
+        providerReceipt.put("call_count", 0);
+        providerReceipt.put("response_digest", "");
+        providerReceipt.put("response_chars", 0);
+        Map<String, Object> diagnostics = new java.util.LinkedHashMap<>();
+        diagnostics.put("schema_version", "research-extraction-diagnostics.v1");
+        diagnostics.put("termination_reason", "LLM_UNAVAILABLE");
+        diagnostics.put("accepted_count", 0);
+        diagnostics.put("rejected_count", 0);
+        diagnostics.put("rejection_counts", Map.of());
+        diagnostics.put("provider_receipt", providerReceipt);
+        Map<String, Long> usage = Map.of(
+                "llm_calls", 0L, "search_calls", 0L, "fetch_calls", 0L, "read_calls", 0L,
+                "extract_calls", 1L, "evidence_cards", 0L, "candidates_submitted", 0L);
+        ResearchAgentCompletionEnvelope envelope = signed(new ResearchAgentCompletionEnvelope(
+                "research-agent-completion.v2", fixture.taskId(), "worker-a", fixture.leaseEpoch(),
+                fixture.fencingToken(), fixture.executionKey(), fixture.snapshotDigest(),
+                "NO_SUPPORTED_CANDIDATE", usage,
+                Map.of("search_hits", 0L, "documents", 0L, "windows", 0L),
+                "sha256:" + "3".repeat(64), List.of(), List.of(), null, diagnostics, null));
+
+        ResearchAgentCompletionReceipt completion = completionService.complete(fixture.taskId(), envelope);
+
+        assertThat(completion.evidenceAppended()).isZero();
+        String stored = jdbcTemplate.queryForObject(
+                "select extraction_diagnostics_json from research_agent_execution where id = ?",
+                String.class, completion.executionId());
+        assertThat(stored).isEqualTo(canonicalizer.canonicalJsonValue(diagnostics));
+        assertThat(stored).contains("\"termination_reason\":\"LLM_UNAVAILABLE\"").contains("\"accepted_count\":0");
+    }
+
+    @Test
     void shouldPersistRejectedCandidateWithoutCellMutationOrCellEvidence() {
         Fixture fixture = fixture(1);
         ResearchAgentCompletionEnvelope full = envelope(fixture, true);
@@ -404,6 +442,142 @@ class ResearchAgentCompletionServiceTest {
     }
 
     @Test
+    void shouldNotPromoteCandidateWhoseGroundedQuoteContradictsItsClaim() {
+        Fixture fixture = fixture(1);
+
+        ResearchAgentCompletionReceipt receipt = completionService.complete(
+                fixture.taskId(), contradictedClaimEnvelope(fixture));
+
+        assertThat(receipt.outcome()).isEqualTo("COMMITTED");
+        assertThat(receipt.acceptedMerges()).isEmpty();
+        assertThat(receipt.rejectedMerges()).containsExactly(new ResearchAgentCompletionReceipt.MergeReceipt(
+                fixture.cellKeys().get(0), 0, 0, "REJECTED", "EVIDENCE_QUALIFICATION_REJECTED"));
+        assertThat(jdbcTemplate.queryForMap("""
+                select cell_status, cell_version, candidate_value, last_merge_id
+                from research_cell where research_run_id = ? and cell_key = ?
+                """, fixture.runId(), fixture.cellKeys().get(0)))
+                .containsEntry("cell_status", "CANDIDATE_READY")
+                .containsEntry("cell_version", 0)
+                .containsEntry("candidate_value", "old-0")
+                .containsEntry("last_merge_id", null);
+        assertThat(count("research_cell_evidence", "research_run_id", fixture.runId())).isZero();
+        assertThat(receipt.budget().consumed()).containsEntry("candidate_merges_accepted", 0L)
+                .containsEntry("candidate_merges_rejected", 1L);
+    }
+
+    @Test
+    void shouldEnforceTheCandidateGateInShadowModeWithoutTheStrictFlag() {
+        Fixture fixture = fixture(1);
+        assertThat(featureFlags.currentEnabled(ResearchAgentFeatureFlagService.STRICT_EVIDENCE)).isFalse();
+        assertThat(featureFlags.enabledForRun(fixture.runId(), ResearchAgentFeatureFlagService.STRICT_EVIDENCE))
+                .isFalse();
+
+        ResearchAgentCompletionReceipt receipt = completionService.complete(
+                fixture.taskId(), contradictedClaimEnvelope(fixture));
+
+        assertThat(jdbcTemplate.queryForObject("""
+                select validation_mode from research_evidence_validation
+                where completion_id = ? and candidate_id is not null
+                """, String.class, receipt.completionId())).isEqualTo("SHADOW");
+        assertThat(receipt.acceptedMerges()).isEmpty();
+        assertThat(receipt.rejectedMerges()).singleElement()
+                .extracting(ResearchAgentCompletionReceipt.MergeReceipt::reasonCode)
+                .isEqualTo("EVIDENCE_QUALIFICATION_REJECTED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select cell_version from research_cell where research_run_id = ? and cell_key = ?",
+                Integer.class, fixture.runId(), fixture.cellKeys().get(0))).isZero();
+    }
+
+    @Test
+    void shouldStillPromoteAQualifiedCandidateThroughTheSameGate() {
+        Fixture fixture = fixture(1);
+
+        ResearchAgentCompletionReceipt receipt = completionService.complete(
+                fixture.taskId(), envelope(fixture, true));
+
+        assertThat(receipt.rejectedMerges()).isEmpty();
+        assertThat(receipt.acceptedMerges()).containsExactly(new ResearchAgentCompletionReceipt.MergeReceipt(
+                fixture.cellKeys().get(0), 0, 1, "ACCEPTED", "VERIFIED_AND_VERSION_MATCHED"));
+        assertThat(jdbcTemplate.queryForMap("""
+                select cell_status, cell_version, candidate_value from research_cell
+                where research_run_id = ? and cell_key = ?
+                """, fixture.runId(), fixture.cellKeys().get(0)))
+                .containsEntry("cell_status", "VERIFIED")
+                .containsEntry("cell_version", 1)
+                .containsEntry("candidate_value", "value-0");
+    }
+
+    @Test
+    void shouldReplayAQualificationRejectedCompletionWithoutPromotion() {
+        Fixture fixture = fixture(1);
+        ResearchAgentCompletionEnvelope envelope = contradictedClaimEnvelope(fixture);
+        ResearchAgentCompletionReceipt first = completionService.complete(fixture.taskId(), envelope);
+
+        ResearchAgentCompletionReceipt replay = completionService.complete(fixture.taskId(), envelope);
+
+        assertThat(replay.idempotentReplay()).isTrue();
+        assertThat(replay.completionId()).isEqualTo(first.completionId());
+        assertThat(replay.receiptDigest()).isEqualTo(first.receiptDigest());
+        assertThat(replay.rejectedMerges()).containsExactly(new ResearchAgentCompletionReceipt.MergeReceipt(
+                fixture.cellKeys().get(0), 0, 0, "REJECTED", "EVIDENCE_QUALIFICATION_REJECTED"));
+        assertThat(jdbcTemplate.queryForObject(
+                "select cell_version from research_cell where research_run_id = ? and cell_key = ?",
+                Integer.class, fixture.runId(), fixture.cellKeys().get(0))).isZero();
+    }
+
+    @Test
+    void shouldReportATypedConflictWhenAStoredCompletionPredatesTheCandidateGate() {
+        Fixture fixture = fixture(1);
+        ResearchAgentCompletionEnvelope envelope = envelope(fixture, true);
+        ResearchAgentCompletionReceipt committed = completionService.complete(fixture.taskId(), envelope);
+        assertThat(committed.acceptedMerges()).hasSize(1);
+
+        // Simulates a completion that was committed before the DR-301 hard gate existed: the
+        // merge was durably written as ACCEPTED/VERIFIED while the canonical qualification
+        // verdict persisted for the very same candidate is REJECTED. Replay must report a typed,
+        // explainable conflict instead of an unclassified internal error.
+        jdbcTemplate.update("""
+                update research_evidence_validation set final_status = 'REJECTED'
+                where completion_id = ? and candidate_id is not null
+                """, committed.completionId());
+        String committedState = state(fixture);
+
+        assertCode(() -> completionService.complete(fixture.taskId(), envelope),
+                "RESEARCH_AGENT_COMPLETION_QUALIFICATION_STALE");
+        assertThat(state(fixture)).isEqualTo(committedState);
+        assertThat(jdbcTemplate.queryForObject(
+                "select cell_version from research_cell where research_run_id = ? and cell_key = ?",
+                Integer.class, fixture.runId(), fixture.cellKeys().get(0))).isEqualTo(1);
+    }
+
+    @Test
+    void shouldRecordQualificationModeAndPerCandidateReasonCodesForAudit() {
+        Fixture fixture = fixture(1);
+
+        ResearchAgentCompletionReceipt receipt = completionService.complete(
+                fixture.taskId(), contradictedClaimEnvelope(fixture));
+
+        Map<String, Object> row = jdbcTemplate.queryForMap("""
+                select v.validation_mode, v.final_status, v.candidate_id, v.cell_id
+                from research_evidence_validation v
+                join research_agent_candidate c on c.id = v.candidate_id
+                where v.completion_id = ?
+                """, receipt.completionId());
+        String reasonCodes = jdbcTemplate.queryForObject("""
+                select reason_codes_json from research_evidence_validation
+                where completion_id = ? and candidate_id is not null
+                """, String.class, receipt.completionId());
+
+        assertThat(row.get("validation_mode")).isEqualTo("SHADOW");
+        assertThat(row.get("final_status")).isEqualTo("REJECTED");
+        assertThat(row.get("candidate_id")).isNotNull();
+        assertThat(row.get("cell_id")).isEqualTo(jdbcTemplate.queryForObject(
+                "select id from research_cell where research_run_id = ? and cell_key = ?",
+                String.class, fixture.runId(), fixture.cellKeys().get(0)));
+        assertThat(reasonCodes).contains("NUMBER_VALUE_CONTRADICTION");
+    }
+
+    @Test
     void shouldCommitNoSupportedCandidateWithEmptyChildrenAndReleaseBinding() {
         Fixture fixture = fixture(1);
         ResearchAgentCompletionEnvelope full = envelope(fixture, true);
@@ -427,7 +601,77 @@ class ResearchAgentCompletionServiceTest {
                 .containsEntry("cell_version", 0)
                 .containsEntry("candidate_value", "old-0")
                 .containsEntry("active_task_id", null);
+        assertThat(jdbcTemplate.queryForMap(
+                "select status, terminal_reason from research_agent_task where id = ?", fixture.taskId()))
+                .containsEntry("status", "FAILED")
+                .containsEntry("terminal_reason", "NO_SUPPORTED_CANDIDATE");
         assertThat(receipt.budget().consumed().values()).allMatch(value -> value == 0L);
+    }
+
+    @Test
+    void shouldReplayNoSupportedQuorumCandidateAsPending() {
+        Fixture fixture = quorumFixture();
+        ResearchAgentCompletionEnvelope full = envelope(fixture, true);
+        Map<String, Object> providerReceipt = new java.util.LinkedHashMap<>();
+        providerReceipt.put("purpose", "research.extract");
+        providerReceipt.put("transport", "openai-compatible");
+        providerReceipt.put("model", "");
+        providerReceipt.put("call_count", 0);
+        providerReceipt.put("response_digest", "");
+        providerReceipt.put("response_chars", 0);
+        Map<String, Object> diagnostics = new java.util.LinkedHashMap<>();
+        diagnostics.put("schema_version", "research-extraction-diagnostics.v1");
+        diagnostics.put("termination_reason", "LLM_UNAVAILABLE");
+        diagnostics.put("accepted_count", 0);
+        diagnostics.put("rejected_count", 0);
+        diagnostics.put("rejection_counts", Map.of());
+        diagnostics.put("provider_receipt", providerReceipt);
+        ResearchAgentCompletionEnvelope noResult = signed(new ResearchAgentCompletionEnvelope(
+                "research-agent-completion.v2", full.taskId(), full.workerInstanceId(), full.leaseEpoch(),
+                full.fencingToken(), full.executionKey(), full.taskSnapshotDigest(), "NO_SUPPORTED_CANDIDATE",
+                Map.of("llm_calls", 0L, "search_calls", 0L, "fetch_calls", 0L, "read_calls", 0L,
+                        "extract_calls", 1L, "evidence_cards", 0L, "candidates_submitted", 0L),
+                Map.of("search_hits", 0L, "documents", 0L, "windows", 0L),
+                full.traceDigest(), List.of(), List.of(), null, diagnostics, null));
+
+        ResearchAgentCompletionReceipt committed = completionService.complete(fixture.taskId(), noResult);
+        ResearchAgentCompletionReceipt replay = completionService.complete(fixture.taskId(), noResult);
+
+        assertThat(committed.outcome()).isEqualTo("QUORUM_PENDING");
+        assertThat(committed.acceptedMerges()).isEmpty();
+        assertThat(committed.rejectedMerges()).isEmpty();
+        assertThat(replay.idempotentReplay()).isTrue();
+        assertThat(replay.outcome()).isEqualTo("QUORUM_PENDING");
+        assertThat(replay.completionId()).isEqualTo(committed.completionId());
+        assertThat(replay.receiptDigest()).isEqualTo(committed.receiptDigest());
+    }
+
+    @Test
+    void shouldCommitNoCandidateSecondQuorumSlotAsPendingAfterSiblingCandidate() {
+        QuorumPair pair = quorumPair();
+        ResearchAgentCompletionReceipt first = completionService.complete(
+                pair.first().taskId(), envelopeForSource(
+                        pair.first(), "worker-a", "source-0", "Source 0", "trusted quote 0"));
+        ResearchAgentCompletionEnvelope full = envelopeForSource(
+                pair.second(), "worker-b", "source-1", "Source 1", "trusted quote 0");
+        ResearchAgentCompletionEnvelope noCandidate = signed(new ResearchAgentCompletionEnvelope(
+                full.schemaVersion(), full.taskId(), full.workerInstanceId(), full.leaseEpoch(),
+                full.fencingToken(), full.executionKey(), full.taskSnapshotDigest(), "NO_SUPPORTED_CANDIDATE",
+                Map.of("llm_calls", 0L, "search_calls", 0L, "fetch_calls", 0L, "read_calls", 0L,
+                        "extract_calls", 1L, "evidence_cards", 0L, "candidates_submitted", 0L),
+                Map.of("search_hits", 0L, "documents", 0L, "windows", 0L),
+                full.traceDigest(), List.of(), List.of(), null, full.extractionDiagnostics(), null));
+
+        ResearchAgentCompletionReceipt second = completionService.complete(
+                pair.second().taskId(), noCandidate);
+
+        assertThat(first.outcome()).isEqualTo("QUORUM_PENDING");
+        assertThat(second.outcome()).isEqualTo("QUORUM_PENDING");
+        assertThat(second.acceptedMerges()).isEmpty();
+        assertThat(second.rejectedMerges()).isEmpty();
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from research_agent_task where id = ?", String.class, pair.second().taskId()))
+                .isEqualTo("SUBMITTED");
     }
 
     @Test
@@ -957,7 +1201,10 @@ class ResearchAgentCompletionServiceTest {
                 new ResearchAgentTaskService.ClaimCommand(fixture.taskId(), "worker-a", 300));
         fixture = new Fixture(fixture.runId(), fixture.taskId(), fixture.cellKeys(), webOnlyClaim.leaseEpoch(),
                 webOnlyClaim.fencingToken(), webOnlyClaim.snapshotDigest(), fixture.executionKey());
-        String content = "Header. Archived external quote. Footer.";
+        // DR-301: the archived span must carry the claim's typed fact ("value-0" -> number 0);
+        // otherwise canonical qualification classifies the binding as UNKNOWN
+        // (TYPED_FACT_MISSING_FROM_CITATION_SPAN) and the candidate must not be promoted.
+        String content = "Header. Archived external quote 0. Footer.";
         jdbcTemplate.update("""
                 insert into research_external_snapshot(
                     id, research_run_id, research_agent_task_id, window_id, source_id, source_title,
@@ -975,7 +1222,7 @@ class ResearchAgentCompletionServiceTest {
                 base.budgetUsage(), base.telemetry(), base.traceDigest(),
                 List.of(new ResearchAgentCompletionEnvelope.Evidence(
                         original.evidenceKey(), "external-window-1", "web-source-1", "External source",
-                        original.searchQuery(), original.readFocus(), "Archived external quote",
+                        original.searchQuery(), original.readFocus(), "Archived external quote 0",
                         original.claimText(), original.relationType(), original.supportScorePpm(),
                         original.conflictScorePpm(), "EXTERNAL_ARCHIVED")),
                 base.candidates(), null));
@@ -1461,7 +1708,7 @@ class ResearchAgentCompletionServiceTest {
                     logical_task_key = ?, quorum_group_key = null, candidate_quorum = 1, candidate_slot = 1,
                     snapshot_schema_version = 'research-agent-task-snapshot.v2', snapshot_digest = null
                 where id = ?
-                """, "counterfactual:" + fixture.runId(), fixture.taskId());
+                """, "conflict-counterfactual:" + fixture.runId(), fixture.taskId());
         ResearchAgentTaskService.ClaimedTask replay = taskService.claimTask(
                 new ResearchAgentTaskService.ClaimCommand(fixture.taskId(), "worker-a", 300));
         return new Fixture(fixture.runId(), fixture.taskId(), fixture.cellKeys(), replay.leaseEpoch(),
@@ -1469,7 +1716,12 @@ class ResearchAgentCompletionServiceTest {
     }
 
     private QuorumPair quorumPair() {
-        return quorumPair("source-1", "Source 1", "prefix trusted quote 1 suffix");
+        // DR-301: the synthetic second sample must stay digit-free-harmonious with the shared
+        // candidate value. "prefix trusted quote 1 suffix" made the second slot's claim
+        // ("value-0", typed number 0) contradict its own citation ("trusted quote 1", number 1),
+        // which the canonical typed-fact check must reject. The sample stays distinct from the
+        // first slot's so the two slots still have independent lineage.
+        return quorumPair("source-1", "Source 1", "second trusted quote 0 suffix");
     }
 
     private QuorumPair quorumPair(String secondSourceId, String secondSourceTitle, String secondSample) {
@@ -1532,6 +1784,17 @@ class ResearchAgentCompletionServiceTest {
                 base.schemaVersion(), base.taskId(), worker, base.leaseEpoch(), base.fencingToken(),
                 base.executionKey(), base.taskSnapshotDigest(), base.terminationReason(), base.budgetUsage(),
                 base.telemetry(), base.traceDigest(), List.of(evidence), List.of(candidate), null));
+    }
+
+    /**
+     * Candidate whose citation exists and is grounded, whose relation is SUPPORTS and whose
+     * claim text equals the candidate value — yet the deterministic typed-fact validator proves
+     * the quote contradicts the claim ("value-1" against the cited number 0). The literal merge
+     * rule accepts this binding; canonical evidence qualification must reject it.
+     */
+    private ResearchAgentCompletionEnvelope contradictedClaimEnvelope(Fixture fixture) {
+        return envelopeForSourceAndValue(
+                fixture, "worker-a", "source-0", "Source 0", "trusted quote 0", "value-1");
     }
 
     private Fixture fixtureInSameRun(Fixture existing, String suffix) {

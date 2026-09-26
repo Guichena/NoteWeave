@@ -165,7 +165,7 @@ public class ChatController {
             HttpServletResponse response
     ) {
         long cursor = resolveCursor(after, lastEventId);
-        answerRunService.get(workspaceId, runId);
+        chatService.requireRunStreamAccess(workspaceId, runId);
         response.setCharacterEncoding(java.nio.charset.StandardCharsets.UTF_8.name());
         response.setContentType(MediaType.TEXT_EVENT_STREAM_VALUE + ";charset=UTF-8");
         SseEmitter emitter = new SseEmitter(120_000L);
@@ -207,7 +207,7 @@ public class ChatController {
                             try {
                                 answerIoExecutor.execute(() -> {
                                     try {
-                                        chatService.streamRun(workspaceId, runId, ignored -> { });
+                                        chatService.streamAuthorizedRun(workspaceId, runId, ignored -> { });
                                     } catch (BusinessException ex) {
                                         if (!"ANSWER_RUN_ALREADY_STREAMING".equals(ex.code())) {
                                             throw ex;
@@ -224,7 +224,7 @@ public class ChatController {
                                 return;
                             }
                         }
-                        chatService.followRun(workspaceId, runId, cursor, event -> send(emitter,
+                        chatService.followAuthorizedRun(workspaceId, runId, cursor, event -> send(emitter,
                                 new ChatStreamEvent(Long.toString(event.sequence()), event.eventType(), event.data())));
                     }
                     emitter.complete();

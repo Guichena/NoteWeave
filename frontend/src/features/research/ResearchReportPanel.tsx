@@ -1,8 +1,20 @@
 import type { ResearchWorkbenchViewProps } from "./buildResearchWorkbenchProps";
+import { ResearchWritebackReceipt } from "./ResearchWritebackReceipt";
+import { ResearchLaunchboard } from "./ResearchLaunchboard";
+import { deriveResearchEvidenceMetrics } from "./derived";
+import { ResearchReportView } from "./ResearchReportView";
 
 export type ResearchReportPanelProps = ResearchWorkbenchViewProps["report"] & {
   isBusy: boolean;
 };
+
+export function isResearchRunPending(status: string | undefined) {
+  return ["QUEUED", "RUNNING"].includes((status || "").toUpperCase());
+}
+
+export function isResearchRunFailed(status: string | undefined) {
+  return (status || "").toUpperCase() === "FAILED";
+}
 
 export function ResearchReportPanel(props: ResearchReportPanelProps) {
   const {
@@ -35,15 +47,24 @@ export function ResearchReportPanel(props: ResearchReportPanelProps) {
     currentSavedReportSource,
     currentEvidenceHighlights,
     researchClosedLoopState,
-    buildArtifactRecoveryNarrative,
-    currentRunSummaryRecoveryTargets,
-    currentSavedReportSourceAsset,
-    currentSavedReportSourceInScope,
-    removeResearchSourceFromScope,
-    addResearchSourceToScope,
-    setFocusedResearchSourceId,
-    researchTimelinePath
+    researchTimelinePath,
+    workspaceName,
+    sourceCount,
+    readySourceCount,
+    selectedSourceCount,
+    selectedSourceTitles,
+    researchHistoryCount,
+    researchRetrievalMode,
+    researchQuestion,
+    onOpenSourceLibrary
   } = props;
+  const runPending = isResearchRunPending(currentResearchRun?.status);
+  const runFailed = isResearchRunFailed(currentResearchRun?.status);
+  const insufficientEvidence = currentResearchRun?.completion_terminal_state === "INSUFFICIENT_EVIDENCE";
+  const hasFinalMarkdown = Boolean(currentResearchRun?.final_report_markdown?.trim());
+  const hasCompletedMarkdownReport = !runPending && !runFailed && !insufficientEvidence && hasFinalMarkdown;
+  const runHasNoFinalResult = runPending || runFailed;
+  const evidenceMetrics = deriveResearchEvidenceMetrics(currentResearchRun, currentResearchCollection);
   return (
           <article className="research-page">
             <p className="section-label">Research Run</p>
@@ -81,7 +102,7 @@ export function ResearchReportPanel(props: ResearchReportPanelProps) {
                     <button
                       className="secondary-button"
                       onClick={saveResearchReportAsSource}
-                      disabled={isBusy || !currentResearchRun?.final_report_markdown}
+                      disabled={isBusy || !currentResearchRun?.final_report_markdown || insufficientEvidence}
                     >
                       保存为资料
                     </button>
@@ -101,13 +122,45 @@ export function ResearchReportPanel(props: ResearchReportPanelProps) {
                   <strong>Result Snapshot</strong>
                   <div className="research-deliverable-card">
                     <span className="process-lane-badge">
-                      调研成果 · {formatResearchAnswerStatus(currentFinalAnswer.answer_status)}
+                      调研成果 · {formatResearchAnswerStatus(
+                        runPending
+                          ? "IN_PROGRESS"
+                          : runFailed
+                            ? "FAILED"
+                            : insufficientEvidence
+                              ? "INSUFFICIENT_EVIDENCE"
+                            : hasCompletedMarkdownReport
+                              ? "VERIFIED"
+                              : currentFinalAnswer.answer_status
+                      )}
                     </span>
-                    <p>{currentFinalAnswer.answer_text || "当前还没有形成稳定的调研成果摘要。"}</p>
+                    <p>
+                      {runPending
+                        ? "研究任务正在运行，稳定答案会在检索、阅读与核验完成后显示。"
+                        : runFailed
+                          ? "本次研究运行失败，没有形成最终答案。请打开研究详情查看 RUN_FAILED trace 与失败原因。"
+                          : insufficientEvidence
+                            ? "本次研究已结束，但现有来源不足以形成可核验结论。下方保留缺口说明，不能作为稳定研究成果。"
+                          : hasCompletedMarkdownReport && !researchReportStructure
+                            ? "研究报告已完成，并由通过证据审计的账本综合生成。"
+                            : currentFinalAnswer.answer_text || "当前还没有形成稳定的调研成果摘要。"}
+                    </p>
                     <small>{resultSnapshotTitle}</small>
-                    <small>{resultSnapshotNarrative}</small>
+                    <small>
+                      {runPending
+                        ? "正在收集证据并推进 verifier，当前内容不是最终结论。"
+                        : runFailed
+                          ? "失败运行不会作为稳定研究成果，也不会自动写回资料库。"
+                          : insufficientEvidence
+                            ? "请调整问题范围、补充资料或重新运行。证据不足的报告不可保存为资料。"
+                          : hasCompletedMarkdownReport && !researchReportStructure
+                            ? "完整结论、逐项引用与限制说明已写入下方报告，可继续导出或保存为资料。"
+                            : resultSnapshotNarrative}
+                    </small>
                   </div>
-                  {currentExecutiveSummary.length > 0 ? (
+                  {!runHasNoFinalResult
+                    && (!hasCompletedMarkdownReport || Boolean(researchReportStructure))
+                    && currentExecutiveSummary.length > 0 ? (
                     <div className="research-evidence-grid">
                       {currentExecutiveSummary.slice(0, 3).map((item, index) => (
                         <div key={`research-executive-${index}`} className="link-card research-evidence-card">
@@ -119,8 +172,8 @@ export function ResearchReportPanel(props: ResearchReportPanelProps) {
                   ) : null}
                   <small>
                     source_scope={currentResearchRun.source_scope.length} ·
-                    verified_findings={currentResearchSourceEvidenceSummary?.verified_finding_count ?? currentVerifiedFindings.length} ·
-                    citations={currentResearchSourceEvidenceSummary?.citation_count ?? 0}
+                    verified_findings={Math.max(evidenceMetrics.verifiedFindingCount, currentVerifiedFindings.length)} ·
+                    citations={evidenceMetrics.citationCount}
                   </small>
                   <small>检索过程、网页阅读轨迹和 verifier / checkpoint 审计已收纳到“研究详情”中展示。</small>
                 </div>
@@ -147,7 +200,7 @@ export function ResearchReportPanel(props: ResearchReportPanelProps) {
                 ) : null}
                 {researchReportStructure ? (
                   <>
-                    <div className="wiki-citations">
+                    <div className="wiki-citations research-report-shell">
                       <strong>Research Report</strong>
                       <span>{researchReportStructure.research_question.original_question}</span>
                       <small>
@@ -183,7 +236,12 @@ export function ResearchReportPanel(props: ResearchReportPanelProps) {
                         <small>pending=none</small>
                       )}
                       {currentResearchRun.final_report_markdown ? (
-                        <pre className="research-json">{currentResearchRun.final_report_markdown}</pre>
+                        <ResearchReportView
+                          markdown={currentResearchRun.final_report_markdown}
+                          status={currentResearchRun.status}
+                          sourceCount={evidenceMetrics.citationCount}
+                          updatedAt={formatTimestamp(currentResearchRun.updated_at)}
+                        />
                       ) : (
                         <small>当前 final report markdown 尚未就绪，可先刷新状态或稍后查看。</small>
                       )}
@@ -238,90 +296,49 @@ export function ResearchReportPanel(props: ResearchReportPanelProps) {
                       <small>{"检索过程、网页阅读轨迹和工具使用过程已收纳到“研究详情 -> 调研过程”中展示。"}</small>
                     </div>
                   </>
+                ) : hasCompletedMarkdownReport ? (
+                  <div className="research-report-shell research-completed-markdown-report">
+                    <strong>Research Report</strong>
+                    <span>证据审计与综合生成已完成，以下是本次运行的最终报告。</span>
+                    <small>
+                      source_scope={currentResearchRun.source_scope.length} · 状态={currentResearchRun.status}
+                    </small>
+                    <ResearchReportView
+                      markdown={currentResearchRun.final_report_markdown}
+                      status={currentResearchRun.status}
+                      sourceCount={evidenceMetrics.citationCount}
+                      updatedAt={formatTimestamp(currentResearchRun.updated_at)}
+                    />
+                  </div>
                 ) : (
                   <div className="wiki-summary">
-                    <strong>结构化报告尚未就绪</strong>
-                    <span>当前 run 还没有 `report_structure`，可以先查看任务状态或等待回调完成。</span>
+                    <strong>
+                      {runPending ? "结构化报告生成中" : runFailed ? "研究运行失败" : "结构化报告尚未就绪"}
+                    </strong>
+                    <span>
+                      {runPending
+                        ? "任务已进入执行流程，可以刷新运行状态或打开研究详情查看当前进度。"
+                        : runFailed
+                          ? "本次运行没有生成 `report_structure`，请打开研究详情检查 RUN_FAILED trace 后再决定是否重试。"
+                          : "当前 run 还没有 `report_structure`，可以先查看任务状态或等待回调完成。"}
+                    </span>
                   </div>
                 )}
-                <div className="wiki-citations">
-                  <strong>Writeback Receipt</strong>
-                  {currentSavedReportSource ? (
-                    <>
-                      <span>
-                        source={currentSavedReportSource.source_id} · type={currentSavedReportSource.source_type} ·
-                        status={currentSavedReportSource.status}
-                      </span>
-                      <small>
-                        parse={currentSavedReportSource.parse_status} · index={currentSavedReportSource.index_status} ·
-                        generated_by={currentSavedReportSource.generated_by || "-"}
-                      </small>
-                      <small>
-                        generated_ref_id={currentSavedReportSource.generated_ref_id || "-"} ·
-                        title={currentSavedReportSource.title || "未命名研究报告"}
-                      </small>
-                      <small>
-                        {buildArtifactRecoveryNarrative(
-                          currentResearchRunSummary?.recovery_mode || researchReportStructure?.recovery_status.active_recovery_strategy || researchReportStructure?.recovery_mode || "",
-                          currentRunSummaryRecoveryTargets
-                        ) || "产物出口纠偏说明：当前写回凭证未附带额外 recovery narrative。"}
-                      </small>
-                      {currentSavedReportSourceAsset ? (
-                        <small>资料池映射：该报告已出现在当前工作台 source 列表中，可继续参与后续检索与研究。</small>
-                      ) : (
-                        <small>资料池映射：detail 已记录写回对象，但当前 sources 列表尚未刷新到对应条目。</small>
-                      )}
-                      <small>
-                        {currentSavedReportSourceInScope
-                          ? "source scope 状态：当前报告 source 已纳入显式研究输入。"
-                          : "source scope 状态：当前报告 source 尚未纳入显式研究输入。"}
-                      </small>
-                      {currentSavedReportSourceAsset ? (
-                        <div className="research-inline-actions">
-                          {currentSavedReportSourceInScope ? (
-                            <button
-                              type="button"
-                              className="secondary-button"
-                              onClick={() => removeResearchSourceFromScope(currentSavedReportSource.source_id)}
-                              disabled={isBusy}
-                            >
-                              移出当前 source scope
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              className="secondary-button"
-                              onClick={() => addResearchSourceToScope(currentSavedReportSource.source_id)}
-                              disabled={isBusy}
-                            >
-                              加入当前 source scope
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            onClick={() => setFocusedResearchSourceId(currentSavedReportSource.source_id)}
-                            disabled={isBusy}
-                          >
-                            定位到 source scope
-                          </button>
-                        </div>
-                      ) : null}
-                    </>
-                  ) : (
-                    <>
-                      <span>当前 final report 尚未写回资料池。</span>
-                      <small>产物出口纠偏说明：只有在显式执行 `save-report-as-source` 后，研究报告才会形成稳定的资料池映射与可检索来源对象。</small>
-                    </>
-                  )}
-                </div>
+                <ResearchWritebackReceipt {...props} />
               </>
             ) : (
-              <div className="wiki-summary">
-                <div className="empty-panel research-empty-panel">
-                  <strong>还没有选中的 Research Run</strong>
-                  <p>在左侧填写问题并启动研究，或从历史列表选择一个 run 查看报告与证据。</p>
-                </div>
+                <div className="research-empty-summary">
+                  <ResearchLaunchboard
+                    workspaceName={workspaceName}
+                    sourceCount={sourceCount}
+                    readySourceCount={readySourceCount}
+                    selectedSourceCount={selectedSourceCount}
+                    selectedSourceTitles={selectedSourceTitles}
+                    researchHistoryCount={researchHistoryCount}
+                    researchRetrievalMode={researchRetrievalMode}
+                    researchQuestion={researchQuestion}
+                    onOpenSourceLibrary={onOpenSourceLibrary}
+                  />
                 {researchTimelinePath.stageLabels.length > 0 ? (
                   <>
                     <small>当前路径阶段：{researchTimelinePath.currentStageLabel || "未形成稳定阶段"}</small>

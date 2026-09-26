@@ -1,6 +1,14 @@
 # Deep Research Agent：面试题与参考回答
 
+> 当前默认入口是[Research Agent 一体化面试手册](30-Research-Agent一体化面试手册.md)。A 档先讲其中 4 分钟主回答；B 档从本文第 19 节或[三分钟深挖库](35-重点知识点三分钟深挖库.md)展开关键机制；本文第 3 至 16 节属于 C 档打断式速查，单题回答 30 到 90 秒即可。简单定义题不为时长重复叙事，只有状态机、证据、恢复和 Trade-off 才继续下钻。
+
+> 需要按时间顺序讲清每次选择的触发问题、候选方案、外部依据、最终原因和代价时，使用 [Research Agent 演进、技术选择与 Trade-off 专项](16-Research-Agent演进与技术取舍专项.md)。面试官要求展开一个完整学校案例、消融实验、Verifier 校准、五类失败窗口或 AI 协作 Ownership 时，使用[真实案例、消融实验与 Ownership 答辩](17-Research-Agent真实案例消融实验与Ownership答辩.md)。本文保留按面试问题快速跳转的结构。
+
 > 阅读口径：第 3 至 16 节是面试官打断时使用的速查结论，不应单独作为完整回答。第 17 节提供项目总回答，第 19 节按面试官八个评分面提供 3 到 5 分钟母题长回答。准备时先掌握长回答，再用速查结论处理追问。
+
+> 证据边界：当前数据、阶段和恢复机制以 [Deep Research 架构文档](../DeepResearch-ResearchAgent架构文档.md)为准。`[已测-模拟]` 只能引用其中保留的历史验收记录；生产完成率、质量、成本和用户收益均为 `[生产待验证]`。
+
+> 推荐架构口径：稳定 `ResearchRun + ExecutionAttempt + Typed WorkItem` 是默认答案，Matrix 只用于比较型任务；Local/Global 表示局部与集合级验证责任，不要求固定调用两个模型。本文保留的 Table-as-State、Cell 和双 Verifier 主要用于解释当前实现与比较型下钻，统一裁决见[面试推荐架构与规模化演进裁决](43-面试推荐架构与规模化演进裁决.md)。
 
 ## 0. 脑图主干
 
@@ -35,7 +43,7 @@
 
 我的设计核心是 `Verification-Centric Research`。首先把用户问题编译成 Research Intent 和全局 Plan，明确研究目标、对象类型、字段、约束、交付格式和停止条件。随后用 `Table-as-State` 作为研究状态，每个 Cell 都有独立的候选值、Evidence Binding 和验证结果。Worker 内部 Ledger 可以记录冲突信号并驱动补查；当前 Java 权威合并层对与已验证值冲突的候选采取 Fail Closed 拒绝，不自动持久化 `CORRECTED/SCOPED` 状态。搜索和阅读不是为了无限收集资料，而是为了填补缺失 Cell、验证已有结论或解决冲突。
 
-验证分成两层。Local Verifier 面向单个 Cell，判断证据是否直接支持候选值、是否存在冲突，以及当前字段能否进入已验证状态。Global Verifier 不复制 Local 的结果，而是基于当前 Ledger 重新检查研究意图、字段完整度、来源基础和整体一致性，决定继续检索、局部修复、带约束写作还是生成报告。
+验证责任分成局部和集合两层。Local Verifier 面向单个 WorkItem，在比较型任务中就是 Cell，判断证据是否直接支持候选值、是否存在冲突，以及当前单元能否进入已验证状态。Global Verifier 不复制 Local 的结果，而是基于当前 Ledger 重新检查研究意图、字段完整度、来源基础和整体一致性，决定继续检索、局部修复、带约束写作还是生成报告。两种责任可以由确定性规则和一次语义 Judge 共同完成，不强制等于两次模型调用；只有高风险结论才进入独立来源、异构 Judge 或人工抽检。
 
 如果资料不足，系统根据缺口生成补查目标；如果存在冲突，则进入有界的反证分支，不允许无限扩散。每轮闭环结束后持久化 Checkpoint，保存 Plan、Ledger、Evidence、Verifier 结果和下一步决策，恢复时从最近的有效检查点继续。最后通过 Citation Audit 检查报告结论与来源的关联，并用内部 Gold Set 从 Entity、Cell、Row、Citation 和 Branch 五个维度评估。这套设计的重点是研究过程可控、可恢复、可审计，不是追求完全自主的无限循环 Agent。
 
@@ -71,7 +79,7 @@ ReAct 适合步骤较短、工具反馈能立即判断对错的任务。Deep Res
 
 ### 追问：为什么以 Cell 为单位，不以文档或 Claim 为单位？
 
-文档粒度太粗，一份文档可能只支持报告中的一个字段；自由 Claim 粒度又容易在多轮生成中变化。Cell 同时绑定了实体和字段，边界稳定，也更容易计算完整度、冲突率和引用覆盖率。复杂叙述仍可由多个 Cell 或 Claim 组合，但最小验收单位保持稳定。
+文档粒度太粗，一份文档可能只支持报告中的一个字段；自由 Claim 粒度又容易在多轮生成中变化。Cell 同时绑定了实体和字段，边界稳定，也更容易计算 WorkItem Completion、冲突率、Citation Completeness 和 Citation Support。复杂叙述仍可由多个 Cell 或 Claim 组合，但最小验收单位保持稳定。
 
 ## 5. Plan 与 Replan
 
@@ -93,6 +101,16 @@ Plan 至少包含 Goal、Context、Constraint、Step 和 Checkpoint：
 
 通过三个边界控制：限制闭环轮数和恢复动作次数；记录同类 Query、来源和阅读窗口，避免重复动作；使用 Stop Contract 判断继续研究是否仍可能提升关键字段。如果剩余缺口无法在允许来源和能力范围内补齐，则带不确定性输出，而不是继续循环。
 
+### 追问：Replan 到底撤销什么，为什么不从头再跑？
+
+先按偏差影响选择回滚范围：当前 Step、当前 Stage、局部依赖子图或全局重编译。新 Plan Revision 生效后，旧 Revision 未执行任务取消，晚到结果由 Plan Revision、Cell Version 和 Fencing 拒绝。已经验证且不依赖失效假设的 Evidence 保留，只撤销受影响 Cell、派生 Claim 和下游 Synthesis。全局 Plan 重编译只用于冻结 Intent 下的全局依赖假设失效；用户改变目标、资料范围或交付标准时创建新 ResearchRun，不能用 Replan 改写原 Run。全量重做会重复搜索和 Provider 调用，也会丢掉原来可解释的证据状态。
+
+当前仓库可以指向 Plan Revision、Plan Digest、Cell Version、Checkpoint 与 Completion 幂等；Search/Read/Model 的完整 Operation Receipt 仍是目标合同。面试时不能把 Completion Receipt 偷换成所有外部调用都已经 Exactly-once。
+
+### 追问：如何证明 Replan 让计划变好？
+
+不能只说次数变少。至少比较必填目标覆盖、依赖合法、Checkpoint 完整、有效 Replan 率、回滚距离和重复外部动作率，再看完成率、P99 与单位成功成本是否改善。Replan 次数低可能是失去纠偏能力，次数高也可能是 Planner 不稳定。每次接受的 Replan 都要有偏差原因、受影响 Cell、预算变化和新 Digest，无法回到这些记录的“智能纠偏”经不起追问。
+
 ## 6. Local Verifier 与 Global Verifier
 
 ### 面试官问：两层验证有什么区别？
@@ -100,6 +118,8 @@ Plan 至少包含 Goal、Context、Constraint、Step 和 Checkpoint：
 Local Verifier 关注一个 Cell 的证据质量，例如引用片段是否直接支持候选值、来源是否属于当前快照、冲突证据是否已经处理。Global Verifier 关注整个研究任务，例如必填字段是否完整、实体覆盖是否充分、多个字段之间是否自洽、是否满足用户的交付要求。
 
 Local 通过不代表可以写报告。一个个 Cell 都可能有证据，但研究对象遗漏一半，或者字段组合无法回答原问题，这时 Global 仍应要求继续研究。
+
+Local 和 Global 是验收责任，不是固定的两个 Agent。低风险字段可以只跑身份、版本、数字、单位和引用定位等 L0 规则；有争议 Claim 再进入 L1 语义判断；高风险结论使用 L2 独立复核。这样避免所有请求承担双模型成本，也避免生成模型无约束地给自己背书。
 
 ### 追问：Verifier 也是 LLM，怎么保证它不幻觉？
 
@@ -129,7 +149,7 @@ Local 通过不代表可以写报告。一个个 Cell 都可能有证据，但�
 
 ### 面试官问：有引用就说明答案可信吗？
 
-不够。至少要区分 Citation Association 和 Citation Support：前者确认引用是否属于当前结论和来源，后者判断引用片段是否真正支持结论。系统保留来源快照、原文 Span 和内容 Hash，避免页面变化后无法回放；报告生成后再检查字段覆盖、引用归属和支持关系。
+不够。至少要区分 Citation Association 和 Citation Support：前者确认引用是否属于当前结论和来源，后者判断引用片段是否真正支持结论。系统保留来源快照、原文 Span 和内容 Hash，避免页面变化后无法回放；报告生成后再检查 Required WorkItem Completion、引用归属、Citation Support 和 Citation Completeness。
 
 ### 追问：为什么不在最终写作阶段让模型自己补引用？
 
@@ -283,9 +303,9 @@ Lease 解决“谁暂时有权执行”，CAS 解决“提交时状态是否仍�
 
 ### 面试官问：如何避免 Agent 查到一点资料就提前写报告？
 
-系统用 Premature Commitment Guard。Required Frozen Cell 未完成，或仍有 Active Counterfactual Branch 时不允许 Synthesis。每个 Cell 还有 Adaptive Evidence Horizon，确定性高的字段缩小阅读范围，冲突和低覆盖字段扩大范围。达到终止边界后可以输出受约束报告，但必须显式保留缺失、冲突和来源限制。
+系统用 Premature Commitment Guard。Required WorkItem 未通过对应类型的验收，或仍有 Active Counterfactual Branch 时不允许 Synthesis。每个 WorkItem 还有 Adaptive Evidence Horizon，确定性高的字段缩小阅读范围，冲突和低覆盖项扩大范围；比较型任务中的 WorkItem 才具体表现为 Frozen Cell。达到终止边界后可以输出受约束报告，但必须显式保留缺失、冲突和来源限制。
 
-面试官如果问这是不是动态规划，可以回答不是。它更像不确定性驱动的自适应搜索，状态是 Cell Coverage、Conflict、Retry Pressure 和 Horizon，动作是补搜、扩读、反证或停止。
+面试官如果问这是不是动态规划，可以回答不是。它更像不确定性驱动的自适应搜索，状态是 Required WorkItem Completion、Conflict、Retry Pressure 和 Horizon，动作是补搜、扩读、反证或停止；Matrix Cell Coverage 只描述比较型子集。
 
 ### 面试官问：Java 和 Python 都算了 Hash，为什么还会不一致？
 
@@ -323,7 +343,7 @@ Hash 只保证相同字节得到相同摘要，不保证两个语言生成相同
 
 工程上这是一个跨 Java Host、Python Worker、MySQL、Kafka 和对象存储的长任务。任务通过 Lease、Epoch 和 Cell Version 控制并发，旧 Worker 晚到时不能覆盖新结果；Checkpoint 保存 Plan、Cell 状态、证据引用和下一步动作，进程重启后从闭包状态恢复。Java 与 Python 之间的 Completion Payload 先做统一 Canonicalization，再计算 Digest，避免 JSON 顺序和 Unicode 表示差异造成错误冲突。最终完成在数据库事务中提交任务终态、Cell、Binding、Manifest 和 Outbox，响应丢失时通过稳定 Receipt 幂等重放。
 
-这套方案的代价是状态模型更复杂，表和测试都比自由 Agent 多。它适合研究时间长、字段明确、结果需要审计的任务，不适合一句话就能回答的简单问题。简单问答走普通 RAG 更快；研究任务才值得承担规划、验证和恢复成本。评估时我不会只看报告是否流畅，而会看字段覆盖率、引用支持率、冲突识别率、恢复一致性和拒绝错误结论的能力。
+这套方案的代价是状态模型更复杂，表和测试都比自由 Agent 多。它适合研究时间长、工作单元可验收、结果需要审计的任务，不适合一句话就能回答的简单问题。简单问答走普通 RAG 更快；研究任务才值得承担规划、验证和恢复成本。评估时我不会只看报告是否流畅，而会看 Required WorkItem Completion、引用支持率、冲突识别率、恢复一致性和拒绝错误结论的能力；比较型任务再看 Matrix Cell Coverage。
 
 ## 18. 长回答后的连续追问模板
 
@@ -349,37 +369,37 @@ Verifier 本质上也是有误差的分类器。阈值过严会降低 Recall，�
 
 普通 RAG 的核心对象是 Query、Candidate 和 Evidence，一轮检索后就能判断证据是否足够。Deep Research 面对的是一个需要持续推进的交付契约，比如比较多个产品的价格、版本、能力和限制。它不仅要找到相关资料，还要知道研究对象有哪些、每个对象必须覆盖哪些字段、字段当前是缺失、候选、已验证还是冲突，以及什么时候可以带着限制条件结束。
 
-因此系统把用户自然语言先编译为 Research Intent。Intent 固定目标、实体类型、必填字段、来源范围、约束和交付格式，Plan 只描述当前准备怎么完成。这个区分很重要：来源失效或实体范围变化时，可以生成新 Plan，不能通过 Replan 偷偷降低 Intent 的完成标准。研究状态使用 Row 与 Cell，而不是把进度藏在 Agent 对话里。Row 对应实体，Cell 对应一个可独立验证的字段，Evidence 绑定到具体 Cell 和候选。
+因此系统把用户自然语言先编译为 Research Intent。Intent 固定目标、必填结果、来源范围、约束和交付格式，Plan 只描述当前准备怎么完成。这个区分很重要：来源失效或实体范围变化时，可以生成新 Plan，不能通过 Replan 偷偷降低 Intent 的完成标准。研究状态使用 Typed WorkItem，而不是把进度藏在 Agent 对话里。多对象比较使用 Matrix，Row 对应实体，Cell 对应可独立验证的字段；事实调查、开放问题、时间线和来源审计使用各自的 WorkItem 合同，Evidence 绑定到具体 WorkItem 和 Candidate。
 
-最小方案是 ReAct，让模型反复 Search、Read、Think。它在三五步探索中更灵活，开发成本也低；固定 Workflow 稳定、易测试，却很难预先穷举开放式搜索路径。当前选择 Plan-and-Execute 加 Table-as-State，保留模型对查询与工具的动态选择，让程序控制目标、状态和终止。代价是规划阶段必须把任务结构化，对完全无法定义字段的开放创作不合适。
+最小方案是 ReAct，让模型反复 Search、Read、Think。它在三五步探索中更灵活，开发成本也低；固定 Workflow 稳定、易测试，却很难预先穷举开放式搜索路径。推荐选择 Plan-and-Execute 加 Typed WorkItem，比较型任务使用 Table-as-State，保留模型对查询与工具的动态选择，让程序控制目标、状态和终止。当前代码以 Matrix/Cell 路径最完整，其他 WorkItem 是演进设计，不能反向说成已全部落地。
 
-业务成功不能只看报告是否流畅。至少要看实体与字段覆盖、高影响字段验证率、Citation Support、冲突识别、Guarded Write 比例、任务恢复后是否产生同一 Canonical State，以及用户是否保存或继续使用报告。当前没有线上留存和规模数据，因此这些是指标设计和测试证据，不是已经验证的商业成绩。
+业务成功不能只看报告是否流畅。至少要看 Required WorkItem Completion、高影响 Claim 验证率、Citation Support 与 Completeness、冲突识别、Guarded Write 比例、任务恢复后是否产生同一 Canonical State，以及用户是否在固定观察窗口内主动保存、导出或继续编辑报告。当前没有线上留存和规模数据，因此这些是指标设计和测试证据，不是已经验证的商业成绩。
 
-面试官继续追问“是不是复杂化”时，可以给选择边界：一句事实问答走普通 QA RAG，少量未知步骤可以用自由 ReAct；字段明确、时间较长、结果要审计的研究任务，才承担 Cell、Verifier 和 Checkpoint 的复杂度。
+面试官继续追问“是不是复杂化”时，可以给选择边界：一句事实问答走普通 QA RAG，少量未知步骤可以用自由 ReAct；时间较长、结果要审计或需要显式完成合同的研究任务，才承担 WorkItem、Verifier 和 Checkpoint 的复杂度。
 
-### 19.2 数据与一致性：候选、Cell 和最终报告如何保持一致
+### 19.2 数据与一致性：Candidate、Canonical WorkItem 和最终报告如何保持一致
 
-Research 有三类状态需要分开。Candidate 是 Worker 从某段 Evidence 中抽取出的待审值，Canonical Cell 是 Java 权威合并层接受的当前字段状态，Final Report 是只读 Canonical State 生成的派生结果。Candidate 不能直接覆盖 Cell，Report 也不能绕过 Cell 读取所有搜索片段，否则 Last Write Wins 和未验证内容会进入最终输出。
+Research 有三类状态需要分开。Candidate 是 Worker 从某段 Evidence 中抽取出的待审结果，Canonical WorkItem State 是 Java 权威合并层接受的当前状态，Final Report 是只读 Canonical State 生成的派生结果。比较型 WorkItem 的 Canonical State 就是 Cell。Candidate 不能直接覆盖 WorkItem，Report 也不能绕过 Canonical Ledger 读取所有搜索片段，否则 Last Write Wins 和未验证内容会进入最终输出。
 
-合并请求同时校验 Research Run、Plan Revision、Cell Version、Lease Epoch、Fencing Token 和当前状态。条件更新命中一行才表示提交成功，旧 Worker 即使内容正确，也不能覆盖更高版本。两个候选文本相同还要检查来源身份与归一化结果，同站转载或同一 Snapshot 的不同片段不能简单计作独立 Quorum。候选与已验证值冲突时，当前权威层返回 `VERIFIED_VALUE_CONFLICT` 并保留原值，不虚构自动 `CORRECTED` 或 `SCOPED` 状态。
+合并请求同时校验 Research Run、Plan Revision、WorkItem Version、Lease Epoch、Fencing Token 和当前状态。当前 Matrix 实现中，WorkItem Version 对应 Cell Version。条件更新命中一行才表示提交成功，旧 Worker 即使内容正确，也不能覆盖更高版本。两个候选文本相同还要检查来源身份与归一化结果，同站转载或同一 Snapshot 的不同片段不能简单计作独立 Quorum。候选与已验证值冲突时，当前权威层返回 `VERIFIED_VALUE_CONFLICT` 并保留原值，不虚构自动 `CORRECTED` 或 `SCOPED` 状态。
 
-长模型调用不放在数据库事务中。Worker Claim Task 后在事务外搜索、抓取和验证，只有 Claim、Cell Merge、Checkpoint 指针与 Completion 在短事务中更新。这样不会持有行锁几分钟，也减少连接池占用。它允许任务执行期间状态变化，所以必须用 Lease、Epoch 和版本识别旧结果。
+长模型调用不放在数据库事务中。Worker Claim Task 后在事务外搜索、抓取和验证，只有 Claim、WorkItem Merge、Checkpoint 指针与 Completion 在短事务中更新。这样不会持有行锁几分钟，也减少连接池占用。它允许任务执行期间状态变化，所以必须用 Lease、Epoch 和版本识别旧结果。
 
 最终完成需要把报告引用、Evidence Manifest、任务终态和可见投影在一个权威提交过程中收口。文件先按不可变 Key 写对象存储，Completion Payload 携带 Hash 和版本。Host 验证归属和 Digest 后提交终态；如果数据库成功但 HTTP 响应丢失，重复 Completion 返回已有 Receipt，不再生成第二份报告。Checkpoint 大对象读取时校验 Size 与 SHA-256，避免损坏快照被当作恢复真源。
 
-这套方案得到的是业务层的幂等和最终一致，不是跨 Kafka、MySQL、对象存储的全局 Exactly-once。验证要制造旧 Lease 晚到、Cell 并发更新、完成响应丢失、Checkpoint 损坏和重复 Kafka 命令，观察条件更新、冲突码和最终状态是否符合不变量。
+这套方案得到的是业务层的幂等和最终一致，不是跨 Kafka、MySQL、对象存储的全局 Exactly-once。验证要制造旧 Lease 晚到、WorkItem 并发更新、完成响应丢失、Checkpoint 损坏和重复 Kafka 命令；比较型 Case 再专门覆盖 Cell 并发合并，观察条件更新、冲突码和最终状态是否符合不变量。
 
 ### 19.3 并发与容量：哪些步骤可以并行，如何避免研究任务拖垮系统
 
 研究任务天然有大量 I/O 等待，但“每个 Cell 都并行”会放大搜索费用、Provider 429、重复阅读和状态冲突。并发需要先看依赖图。确认产品版本后才能判断对应价格和功能，存在这种口径依赖的 Cell 不能盲目并行；同一页面的多个 Fetch 可以共享 Snapshot；反证和修复分支需要基于上一轮验证结果，通常按 Wave 推进。
 
-系统把 Run Advancement 拆成 Task，并使用 Wave Barrier 判断当前批次是否完成。可并行的是互不依赖的 Fetch、Read 或 Cell Task，Canonical Merge 仍通过版本和 CAS 串行收口。Research Worker 有最大并发配置，Fetch 另有有界并发与超时；Lease Heartbeat 间隔必须小于租约三分之一，Heartbeat 请求超时又必须小于间隔，失败预算还要给下一次续租留出空间。这个配置关系防止 Worker 在网络抖动时误以为仍持有所有权。
+系统把 Run Advancement 拆成 Typed WorkItem。默认 Agent 并发为 1 时使用依赖计数和阶段游标，只有 Fetch/Read I/O 有界并发；当独立 WorkItem 比例、Provider Permit、预算和合并拒绝率同时满足阈值后，才编成 Wave 并使用 Barrier 做 Fan-in。Canonical Merge 始终通过版本和 CAS 串行收口。Lease Heartbeat 间隔必须小于租约期限，并给网络抖动和下一次续租留出空间。
 
 容量可以从 `L = λW` 估算。假设研究任务平均 5 分钟完成，入口稳定到达每分钟 2 条，平均在途就接近 10 条；如果每条任务同时开 4 个 Fetch，外部并发可能达到 40，还没有算重试和反证。入口需要 Workspace 与 Actor 速率限制，Research Workload 需要并发租约，Task 调度还要有优先级和预算。只加 Worker 会同时增加 MySQL Claim、Kafka 消费、外部搜索和 LLM 压力。
 
-背压指标包括待执行 Task 数、最老 Task 年龄、当前 Wave 时长、Provider 429、Lease Lost、Checkpoint 大小、单 Run Token 与 Cost、循环次数和平均 Evidence Horizon。Provider 限流上升时先降低任务并发或进入 Waiting，不能靠快速重试；数据库锁等待上升时继续扩 Worker 会恶化。
+背压指标包括待执行 Task 数、最老 Task 年龄、当前 Wave 时长、Provider 429、Lease Lost、Checkpoint 大小、单 Run Token 与 Cost、循环次数和平均 Evidence Horizon。当前 Provider 与 Worker 路径对 429、408 和 5xx 做有限重试与可重试分类，耗尽后进入失败投影或 DLT；降低并发是当前可执行止损，持久 Waiting 与自动恢复是需要继续补强的目标治理。数据库锁等待上升时继续扩 Worker 会恶化。
 
-当前仓库证明了调度、Lease、Barrier 和恢复机制，没有真实 Provider 长时间容量测试。面试中可以给模型和测量方法，不能把默认并发 1、Fetch 并发 4 或脚本验证结果当成系统极限。
+当前仓库证明了调度、Lease、可选 Barrier 和恢复机制，没有真实 Provider 长时间容量测试。面试中应先说明当前有效并行是 Fetch I/O，再讲 Wave 的启用条件，不能把默认并发 1、Fetch 并发 4 或脚本验证结果当成系统极限。
 
 ### 19.4 安全：外部网页、工具和跨服务任务如何建立信任边界
 
@@ -391,19 +411,19 @@ Research 同时接触用户资料、公开网页、搜索 Provider、Python Work
 
 第四层是结果污染。Candidate 必须经过 Evidence Binding、来源身份、Local Verifier 和 Canonical Merge；Memory 不参与 Evidence 排名；Final Reporter 只读通过门禁的 Canonical State。这样外部网页中的恶意指令最多影响一个待验证候选，不能直接写系统 Memory 或完成报告。
 
-当前边界也要说清：搜索与 LLM 出口的安全约束不一定和完整 Fetch 防护同等成熟，外部 Provider 还有数据政策与日志留存风险；系统尚无统一零信任网络、Secret Manager 和全面渗透测试。安全回答要包含已经存在的门禁，也要指出仍需加固的出口。
+当前边界也要说清：搜索与 LLM 出口要分别执行权限、超时、来源和内容校验，外部 Provider 还要结合调用范围与数据策略管理。面试主回答先讲已经实现的来源归档、Permit、Workspace Scope 和回调鉴权，只有被追问安全规模或运行环境时，再展开更强的隔离和审计方案。
 
 ### 19.5 可观测性：Research 卡住时如何定位到具体阶段
 
-Research 的“卡住”至少有六种原因：命令没有投递、Task 没有被 Claim、Worker 丢 Lease、Provider 持续失败、Cell 验证无法通过、当前 Wave 已完成但 Advancement 没推进。只看最终 Run 状态无法区分。每个 Run 需要关联 Command Delivery、Task、Wave、Plan Revision、Cell、Checkpoint、Completion Receipt 和 Report Artifact。
+Research 的“卡住”至少有六种原因：命令没有投递、Task 没有被 Claim、Worker 丢 Lease、Provider 持续失败、WorkItem 验证无法通过、当前执行阶段已完成但 Advancement 没推进。只看最终 Run 状态无法区分。每个 Run 需要关联 Command Delivery、ExecutionAttempt、Task、Plan Revision、WorkItem、Checkpoint、Completion Receipt 和 Report Artifact；只有真实 Fan-out 才需要 Wave。
 
 定位可以按控制面顺序进行。先看 Run 当前状态、更新时间和最老未完成 Task；再看 Command Outbox 是否 Ready、Claimed、Retry 或 Dead Letter；Task 已运行时看 Lease Owner、Epoch、Heartbeat 与 Attempt；执行完成但 Run 未推进时看 Wave Barrier、Gap Projection、Advance Decision 与 Coordinator Tick；报告阶段看 Incremental Finalization、Manifest 和 Completion Receipt。跨 Java 与 Python 的 Trace 使用稳定 ID 和 Digest，不依赖本地日志顺序。
 
-指标分四组。调度侧看 Queue Age、Claim Success、Lease Lost、Heartbeat Failure、Wave Duration 和 Recovery Count；研究质量看 Cell Coverage、Verified Ratio、Conflict、Guarded Write、Counterfactual Branch 和 Citation Support；资源侧看搜索次数、Fetch 字节、Token、Checkpoint Size、Provider 延迟与 429；完成侧看 Finalization Retry、Duplicate Completion、Manifest Backfill 和 Run Success。Trace 中只保存必要身份、计数和受控摘要。
+指标分四组。调度侧看 Queue Age、Claim Success、Lease Lost、Heartbeat Failure、Attempt Recovery Count，真实 Fan-out 再看 Wave Duration；研究质量看 Required WorkItem Completion、Verified Ratio、Conflict、Guarded Write、Counterfactual Branch 和 Citation Support，比较型子集补 Matrix Cell Coverage；资源侧看搜索次数、Fetch 字节、Token、Checkpoint Size、Provider 延迟与 429；完成侧看 Finalization Retry、Duplicate Completion、Manifest Backfill 和 Run Success。Trace 中只保存必要身份、计数和受控摘要。
 
-告警必须能指向动作。Oldest Task Age 上升且 Worker 利用率低，查 Dispatcher 或 Claim；Lease Lost 上升，查 Heartbeat 延迟和停顿；Cell 长期 Pending 且搜索次数增长，可能是 Stop Policy 或来源不足；Conflict 增长不一定是故障，可能是数据真实冲突；Completion 重试增长但业务成功率稳定，优先查回调网络，不要重跑研究。
+告警必须能指向动作。Oldest Task Age 上升且 Worker 利用率低，查 Dispatcher 或 Claim；Lease Lost 上升，查 Heartbeat 延迟和停顿；WorkItem 长期 Pending 且搜索次数增长，可能是 Stop Policy、类型化验收条件或来源不足；Conflict 增长不一定是故障，可能是数据真实冲突；Completion 重试增长但业务成功率稳定，优先查回调网络，不要重跑研究。
 
-当前有业务 Metrics、Checkpoint 与 Trace，但不能宣称完整 OpenTelemetry。生产还需要统一 Trace Context 传播、Dashboard、告警路由和 SLO 基线。建议 SLI 包括 Run 成功率、P95 完成时间、关键 Cell 验证率、Citation Support、恢复成功率和单位 Run 成本。
+当前实现有业务 Metrics、Checkpoint 与 Trace，能够按 Run、Task、Cell 和 Completion 定位主要阶段；推荐模型把 Cell 观测提升为带 WorkItem Type 的统一维度，并增加 ExecutionAttempt。面试主回答先讲已有观测对象，再说明迁移映射；若任务数量或运行时长增长，再根据队列年龄、恢复率、Provider 延迟和单位 Run 成本补充更细的统一观测方案。
 
 ### 19.6 成本：验证和反证会不会让 Research 变得不可用
 
@@ -433,11 +453,11 @@ Research 的测试重点不是 Controller 返回 200，而是故障窗口与不�
 
 当前架构把业务控制面放在 Java，把动态研究执行放在 Python。这个边界适合已有 Workspace、权限、MySQL 状态机、Outbox 和 Artifact 体系的项目。全 Python 可以减少跨语言协议，AI 生态也更集中，但业务事务和权限要重建；全 Java 统一部署与类型系统，却会降低研究工具和模型实验迭代速度。
 
-LangGraph 适合表达模型节点、循环和状态图，可以替换 Worker 内部分 Plan/Execute 逻辑，但不会自动解决 Workspace 权限、MySQL 真源、Kafka 重复、外部对象、配额与幂等完成。Temporal 或 Camunda 更适合跨天 Timer、人工审批、补偿和可视化运维，代价是引入新的持久化语义和 Worker 协议。只有当前 Coordinator 的定时扫描、Wave 和恢复逻辑难以维护，且工作流需求跨多个 Agent 复用时，才值得迁移。
+额外的图编排或工作流实现可以表达模型节点、循环、等待和补偿，但不会自动解决 Workspace 权限、MySQL 真源、Kafka 重复、外部对象、配额与幂等完成。当前 Coordinator 的定时扫描、Wave 和恢复逻辑已经能够支撑现有任务，只有任务数量、平均时长、等待分支或跨任务复用显著增长，现有状态机维护成本成为瓶颈时，才值得评估新的编排实现。
 
 多 Agent 也不是默认升级。角色并行可以覆盖不同来源和视角，但会增加候选冲突、费用、协调和虚假多数。当前方案把研究拆为任务与 Cell，并用 Quorum、Verifier 和 Barrier 收口，先解决状态正确性。只有评测证明单 Worker 在某类任务上存在稳定覆盖缺口，而且新增角色能提高 Citation Support 或完成率，才增加角色并行。
 
-规模扩大后，优先看数据库和 Provider。Command Outbox 扫描成为瓶颈时可迁 CDC；Task 表热点时按 Run 或 Workspace 分区；Checkpoint 太大时拆增量快照；外部搜索限额成为主瓶颈时增加 Provider 路由和结果缓存。部署从 Compose 进入 Kubernetes 前，还要补 Worker Drain、Pod Disruption、Secret Manager、Network Policy 和备份恢复。
+规模扩大后，优先看数据库和 Provider。Command Outbox 扫描成为瓶颈时评估更高效的投递方式；Task 表出现热点时按 Run 或 Workspace 优化访问；Checkpoint 太大时拆增量快照；外部搜索限额成为主瓶颈时增加 Provider 路由和结果缓存。扩展顺序由队列年龄、锁等待、Provider 限额、Checkpoint 大小和恢复耗时决定，先用数据确认瓶颈，再选择部署和数据层方案。
 
 选择更简单方案的条件同样明确：短问题走 RAG，三五步探索走 ReAct，固定批处理走普通 Workflow。工程能力不是机制越多越好，而是每个机制都有可观察的失败场景和退出条件。
 
@@ -451,7 +471,23 @@ LangGraph 适合表达模型节点、循环和状态图，可以替换 Worker �
 | 数据与一致性 | `ResearchAgentCellMergeService` 仲裁 Candidate，`ResearchAgentCompletionCommitter` 原子提交完成结果，`ResearchBudgetAndCheckpointService` 保存预算与 Checkpoint | Cell 更新带 Expected Version；完成回调同时校验 Worker、Lease Epoch、Fencing Token 与目标版本 | `ResearchAgentCellMergeServiceTest`、`ResearchAgentMySqlLockMatrixIT`、Completion Fault Injection Test |
 | 并发与容量 | `ResearchAgentTaskService.claimTask()/heartbeat()` 管理任务所有权，`ResearchAgentRateLimitService` 控制 Provider | Worker Max Concurrency 当前为 1，Fetch Concurrency 为 4；Task Lease 60 秒、Heartbeat 15 秒、失败预算 30 秒 | `ResearchAgentTaskServiceTest`、`ResearchAgentRateLimitRedisIntegrationTest`；这些是保护参数，不是生产吞吐证明 |
 | 安全 | `ResearchAgentPermitService` 校验工具身份，`ResearchExternalSnapshotArchiveService.validate()` 校验归档来源，Worker Fetch Adapter 负责 DNS 与连接固定 | 归档入口拒绝 UserInfo、内网数字地址和元数据域名；网页抓取逐次校验 Redirect | `ResearchAgentTrustedPermitServiceTest`、`ResearchExternalSnapshotArchiveServiceTest`、`test_fetch_adapters.py`；不能推广为所有 LLM Egress 都有同等沙箱 |
-| 可观测性 | `ResearchAgentCompletionMetrics` 记录提交、冲突、回滚阶段，`ResearchRunQueryService` 聚合运行态查询 | 关联键使用 RunId、TaskId、Attempt、CheckpointSeq、CellKey；回滚 Stage 使用低基数 Tag | Completion Service、Read Model Mapper 和 Coordinator Scheduler Test；当前不是完整 OpenTelemetry Trace |
+| 可观测性 | `ResearchAgentCompletionMetrics` 记录提交、冲突、回滚阶段，`ResearchRunQueryService` 聚合运行态查询 | 关联键使用 RunId、TaskId、Attempt、CheckpointSeq、CellKey；回滚 Stage 使用低基数 Tag | Completion Service、Read Model Mapper 和 Coordinator Scheduler Test；任务规模增长时再增加关联维度 |
 | 成本 | `ResearchBudgetAndCheckpointService` 预留和结算 Token、搜索与任务预算，`ResearchAgentRepairStopPolicy` 限制 Repair | Repair 由 Gap、Reason Digest、已排除来源与次数共同决定，不允许无界循环 | `ResearchBudgetAndCheckpointServiceTest`、`ResearchAgentRepairStopPolicyTest`；没有线上单位 Research 成本基线 |
 | 测试证据 | Completion、Coordinator、Lease、MySQL Lock Matrix、Redis Rate Limit 分层验证 | 覆盖重复回调、旧 Owner 晚到、锁竞争、故障注入、回放与停止条件 | 测试存在不等于本轮全部运行，也不等于生产流量验证；口述时要说清证据等级 |
-| 演进边界 | `ResearchAgentRolloutGuard` 与 `ResearchAgentExecutionModeService` 控制执行模式，Host 仍保存业务真源 | LangGraph 可替换 Python Runtime，但不能接管 Workspace 权限、任务真源和受控写回 | `ResearchAgentCoordinatorRolloutGuardTest`、`ResearchAgentRolloutPolicyTest`；当前 Compose 不是集群级 HA |
+| 演进边界 | `ResearchAgentRolloutGuard` 与 `ResearchAgentExecutionModeService` 控制执行模式，Host 仍保存业务真源 | 执行 Runtime 可以替换，但不能接管 Workspace 权限、任务真源和受控写回 | `ResearchAgentCoordinatorRolloutGuardTest`、`ResearchAgentRolloutPolicyTest`；规模变化时按 Worker 容量重新评估 |
+
+## 当前接口与数据核对
+
+当前用户入口是 `/api/v2/workspaces/{workspaceId}/research-runs`，内部协作覆盖 task 创建/claim/heartbeat/expire、checkpoint、预算、external snapshot、取消和 completion。运行事实落在 `research_run`、`research_cell`、`research_agent_task`、`research_agent_execution`、`research_evidence_manifest` 等表，命令通过 Kafka outbox 交给 Python 3.12 Research Worker。没有配置 Research LLM 时只能验证任务状态机、checkpoint 和显式失败路径。
+
+## 21. 面试版上下游链路与技术取舍长回答
+
+如果面试官要求把 Research 从入口一直讲到结果，我会先把它和普通聊天区分开。用户提交的不是一句需要立即生成的 Prompt，而是一个有实体范围、字段要求、来源限制和交付格式的研究意图。Java 主服务先校验 Workspace 和资料范围，创建 `ResearchRun`、输入快照、Plan Revision 与预算记录，再把需要执行的命令写入本地 Outbox。Outbox 投递 Kafka 后，Python Worker 才开始搜索、读取和抽取。这个顺序保证用户看到的 Run 身份和权限来自控制面，模型只负责执行步骤，不能因为网页内容或 Prompt 里的指令改变研究范围。
+
+Worker 执行时不把完整对话当作进度，而是读取 Row、Cell、Candidate、Evidence 和当前 Gap。每次搜索都要知道自己在补哪个字段，读取结果先归档成 External Snapshot，再绑定到具体证据位置。Candidate 不能直接写成最终值，Java 合并层会检查来源独立性、Cell Version、Plan Revision、Lease Epoch 和 Fencing Token。Local Verifier 判断一个字段是否被证据支持，Global Verifier 判断整张研究表的口径、覆盖率和来源分布是否一致。只有通过门禁的 Canonical State 才能进入报告生成，最终报告还要引用 Evidence Manifest，因此回答、表格和引用可以沿同一条链路回放。
+
+这也是我们没有直接采用自由 ReAct 或一套现成多 Agent 框架的原因。ReAct 对临时探索很灵活，但它把进度藏在消息里，难以回答“哪个字段已经完成”“为什么提前结束”“重试时输入是否变化”。图和工作流框架可以提供节点抽象，但并不自动解决 Workspace ACL、来源归档、字段级仲裁和项目里的业务版本。当前用 MySQL 保存业务真源、Kafka 传命令、Python 执行工具，已经能用 Checkpoint、Lease、Receipt 和条件更新完成恢复；只有等待、人工确认和补偿路径显著增加时，才重新评估是否引入额外编排层。
+
+并发也不是越大越好。互不依赖的 Fetch 可以有界并发，同一资料的读取可以复用 Snapshot，但版本确认、冲突修复和 Canonical Merge 要受 Cell Version 和 Wave Barrier 约束。Provider 429 当前进入有界退避和可重试错误路径，不能说成已经持久化 Waiting；旧 Worker 晚到时，Fencing 拒绝它覆盖新 Owner。故障排查要顺着 Run、Outbox、Task、Lease、Cell、Checkpoint、Completion Receipt 逐层看，不能只看“报告失败”。当前测试证明的是状态机、重复回调、旧 Owner、Checkpoint 损坏和停止策略，不能把默认 Worker 并发和内部样例说成公网搜索质量或生产吞吐。
+
+面试收尾可以这样说：Research 的核心不是多调用几次搜索，而是把开放式问题编译成可验收的 Typed WorkItem，把外部内容冻结成可追溯证据，再用有界执行和原子完成把结果交付出去。它牺牲了自由 Agent 的短期灵活性，换来了计划完成度、冲突解释、失败恢复和审计能力；简单事实问答不需要承担这套成本，只有需要跨来源比较、长时间运行和结果复核的任务才值得使用。

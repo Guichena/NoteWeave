@@ -23,6 +23,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ResearchRunCommandService {
 
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(ResearchRunCommandService.class);
+
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final WorkspaceService workspaceService;
@@ -32,6 +35,8 @@ public class ResearchRunCommandService {
     private final ResearchAgentExternalEvidencePolicy externalEvidencePolicy;
     private final ResearchCheckpointStore researchCheckpointStore;
     private final ObjectStorage storage;
+    private final ResearchAgentCheckpointHydrator checkpointHydrator;
+    private final ResearchAgentFeatureFlagService featureFlags;
 
     public ResearchRunCommandService(
             JdbcTemplate jdbcTemplate,
@@ -42,7 +47,9 @@ public class ResearchRunCommandService {
             ResearchAgentRunBootstrapService researchAgentRunBootstrapService,
             ResearchAgentExternalEvidencePolicy externalEvidencePolicy,
             ResearchCheckpointStore researchCheckpointStore,
-            ObjectStorage storage
+            ObjectStorage storage,
+            ResearchAgentCheckpointHydrator checkpointHydrator,
+            ResearchAgentFeatureFlagService featureFlags
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -53,6 +60,8 @@ public class ResearchRunCommandService {
         this.externalEvidencePolicy = externalEvidencePolicy;
         this.researchCheckpointStore = researchCheckpointStore;
         this.storage = storage;
+        this.checkpointHydrator = checkpointHydrator;
+        this.featureFlags = featureFlags;
     }
 
     @Transactional
@@ -75,14 +84,14 @@ public class ResearchRunCommandService {
                 insert into research_run(
                     id, workspace_id, task_id, question, profile_key,
                     research_intent_json, source_scope_json, control_pack_json, retrieval_mode,
-                    status, agent_execution_mode
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, 'RUNNING', 'INCREMENTAL_V1')
+                    status, agent_execution_mode, agent_feature_flags_json
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, 'RUNNING', 'INCREMENTAL_V1', ?)
                 """,
                 researchRunId, workspaceId, taskId, request.question().trim(), profileKey,
                 Json.write(objectMapper, researchIntent),
                 Json.write(objectMapper, sourceScopeIds),
                 Json.write(objectMapper, controlPack),
-                acquisitionPolicy.mode().name()
+                acquisitionPolicy.mode().name(), featureFlags.captureJson()
         );
         researchAgentRunBootstrapService.bootstrap(
                 researchRunId, request.question().trim(), researchIntent);
@@ -106,13 +115,47 @@ public class ResearchRunCommandService {
             String researchRunId,
             int checkpointNo
     ) {
+        return resumeFromCheckpoint(workspaceId, researchRunId, checkpointNo, "AUTO");
+    }
+
+    @Transactional
+    public ResearchRunResponse resumeFromCheckpoint(
+            String workspaceId,
+            String researchRunId,
+            int checkpointNo,
+            String requestedResumeMode
+    ) {
         requireWorkspace(workspaceId);
         ResumeSourceRun sourceRun = loadResumeSourceRun(workspaceId, researchRunId);
-        ResearchCheckpointRecord checkpoint = researchCheckpointStore.get(workspaceId, researchRunId, checkpointNo);
-        ResearchCheckpointIntegrity.verify(
-                checkpoint,
-                storage.read("noteweave-derived", checkpoint.objectKey())
-        );
+        String requestMode = requestedResumeMode == null ? "AUTO" : requestedResumeMode.strip().toUpperCase();
+        if (!List.of("AUTO", "HYDRATE_REQUIRED", "CONTEXT_RESTART").contains(requestMode)) {
+            throw new BusinessException("RESEARCH_CHECKPOINT_RESUME_MODE_INVALID", "Unsupported checkpoint resume mode");
+        }
+        boolean hydrate = !"CONTEXT_RESTART".equals(requestMode)
+                && checkpointHydrator.available(workspaceId, researchRunId, checkpointNo);
+        if ("HYDRATE_REQUIRED".equals(requestMode) && !hydrate) {
+            throw new BusinessException("RESEARCH_CHECKPOINT_HYDRATION_REQUIRED",
+                    "Checkpoint does not support required canonical-ledger hydration");
+        }
+        // Never silently fall back: the effective mode plus the reason it was chosen are persisted
+        // on the descendant Run and returned to the caller, so an AUTO request that could not
+        // hydrate is distinguishable from an explicit CONTEXT_RESTART.
+        String effectiveResumeMode = hydrate ? "HYDRATED_LEDGER_RESUME" : "CONTEXT_RESTART";
+        String resumeModeReason;
+        if (hydrate) {
+            resumeModeReason = "HYDRATE_REQUIRED".equals(requestMode)
+                    ? "HYDRATION_REQUIRED_SATISFIED" : "HYDRATION_AVAILABLE";
+        } else {
+            resumeModeReason = "AUTO".equals(requestMode)
+                    ? "AUTO_HYDRATION_UNAVAILABLE" : "EXPLICIT_CONTEXT_RESTART";
+        }
+        if (!hydrate) {
+            ResearchCheckpointRecord checkpoint = researchCheckpointStore.get(workspaceId, researchRunId, checkpointNo);
+            ResearchCheckpointIntegrity.verify(
+                    checkpoint,
+                    storage.read("noteweave-derived", checkpoint.objectKey())
+            );
+        }
 
         String resumedResearchRunId = Ids.newId();
         String taskId = taskService.createTask(
@@ -123,17 +166,29 @@ public class ResearchRunCommandService {
                 insert into research_run(
                     id, workspace_id, task_id, question, profile_key,
                     research_intent_json, source_scope_json, control_pack_json, retrieval_mode, status,
-                    resumed_from_research_run_id, resumed_from_checkpoint_no, agent_execution_mode
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, 'RUNNING', ?, ?, 'INCREMENTAL_V1')
+                    resumed_from_research_run_id, resumed_from_checkpoint_no, agent_execution_mode, resume_mode,
+                    resume_mode_reason, agent_feature_flags_json
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, 'RUNNING', ?, ?, 'INCREMENTAL_V1', ?, ?, ?)
                 """,
                 resumedResearchRunId, workspaceId, taskId, sourceRun.question(), sourceRun.profileKey(),
                 sourceRun.researchIntentJson(), sourceRun.sourceScopeJson(), sourceRun.controlPackJson(),
-                sourceRun.retrievalMode().name(), researchRunId, checkpointNo
+                sourceRun.retrievalMode().name(), researchRunId, checkpointNo, effectiveResumeMode,
+                resumeModeReason, featureFlags.captureJson()
         );
+        log.info("Research resume decision: sourceRun={} checkpoint={} requested={} effective={} reason={}",
+                researchRunId, checkpointNo, requestMode, effectiveResumeMode, resumeModeReason);
         ResearchIntentResponse resumedIntent = readResearchIntent(sourceRun.researchIntentJson());
-        researchAgentRunBootstrapService.bootstrap(
-                resumedResearchRunId, sourceRun.question(), resumedIntent);
-        startCoordinatingTask(taskId, "Research checkpoint restored into canonical agent coordination");
+        ResearchAgentCheckpointHydrator.HydrationReceipt hydrationReceipt = null;
+        if (hydrate) {
+            hydrationReceipt = checkpointHydrator.hydrate(
+                    workspaceId, researchRunId, checkpointNo, resumedResearchRunId);
+        } else {
+            researchAgentRunBootstrapService.bootstrap(
+                    resumedResearchRunId, sourceRun.question(), resumedIntent);
+        }
+        startCoordinatingTask(taskId, hydrate
+                ? "Research canonical ledger hydrated into agent coordination"
+                : "Research checkpoint context restarted into agent coordination");
         insertTrace(resumedResearchRunId, "RUN_CREATED", "Research resume run 已入队", Map.of(
                 "question", sourceRun.question(),
                 "profile_key", sourceRun.profileKey(),
@@ -142,7 +197,8 @@ public class ResearchRunCommandService {
                 "source_scope_count", readStringList(sourceRun.sourceScopeJson()).size(),
                 "retrieval_mode", sourceRun.retrievalMode().name(),
                 "resumed_from_research_run_id", researchRunId,
-                "resumed_from_checkpoint_no", checkpointNo
+                "resumed_from_checkpoint_no", checkpointNo,
+                "resume_mode", effectiveResumeMode
         ));
         insertTrace(
                 resumedResearchRunId,
@@ -150,7 +206,11 @@ public class ResearchRunCommandService {
                 "Research run 从 checkpoint 恢复创建",
                 Map.of(
                         "resumed_from_research_run_id", researchRunId,
-                        "resumed_from_checkpoint_no", checkpointNo
+                        "resumed_from_checkpoint_no", checkpointNo,
+                        "resume_mode", effectiveResumeMode,
+                        "resume_mode_reason", resumeModeReason,
+                        "restored_cell_count", hydrationReceipt == null ? 0 : hydrationReceipt.restoredCellCount(),
+                        "restored_evidence_count", hydrationReceipt == null ? 0 : hydrationReceipt.restoredEvidenceCount()
                 )
         );
         memoryCompilerService.logPackUsage(
@@ -160,7 +220,8 @@ public class ResearchRunCommandService {
                 resumedResearchRunId,
                 readControlPack(sourceRun.controlPackJson())
         );
-        return new ResearchRunResponse(resumedResearchRunId, taskId, "RUNNING");
+        return new ResearchRunResponse(
+                resumedResearchRunId, taskId, "RUNNING", effectiveResumeMode, resumeModeReason);
     }
 
     @Transactional
@@ -311,7 +372,11 @@ public class ResearchRunCommandService {
             return List.of();
         }
         try {
-            return objectMapper.readValue(json, new TypeReference<>() { });
+            List<String> value = objectMapper.readValue(json, new TypeReference<>() { });
+            if (value == null) {
+                throw new BusinessException("RESEARCH_SOURCE_SCOPE_PARSE_FAILED", "研究资料范围必须是数组");
+            }
+            return value;
         } catch (JsonProcessingException exception) {
             throw new BusinessException("RESEARCH_SOURCE_SCOPE_PARSE_FAILED", "研究资料范围解析失败");
         }

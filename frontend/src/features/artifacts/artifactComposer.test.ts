@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildArtifactPrompt, buildArtifactRequirement } from "./artifactComposer";
+import { buildArtifactCreatePayload, buildArtifactPrompt, buildArtifactRequirement } from "./artifactComposer";
 import type { ArtifactStudioSkill } from "./artifactStudio";
 
 const skill = {
@@ -28,5 +28,16 @@ describe("artifactComposer", () => {
     const req = buildArtifactRequirement(skill, { language: "en" }, "");
     expect(req).toContain("技能：简历亮点描述");
     expect(req).toContain("输出语言：en");
+  });
+
+  it("freezes the displayed workspace sources into the artifact job request", () => {
+    const payload = buildArtifactCreatePayload(
+      skill,
+      { language: "zh-CN" },
+      "",
+      ["source-1", "source-2", "source-1"]
+    );
+
+    expect(payload.source_scope_source_ids).toEqual(["source-1", "source-2"]);
   });
 });

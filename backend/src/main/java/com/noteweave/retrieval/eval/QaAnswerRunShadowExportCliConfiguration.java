@@ -23,6 +23,7 @@ import org.springframework.context.annotation.Profile;
 @Import({
         RetrievalSnapshotSanitizer.class,
         RetrievalExecutionShadowExporter.class,
+        QaAnswerRunShadowExportReadRepository.class,
         QaAnswerRunShadowExportService.class
 })
 public class QaAnswerRunShadowExportCliConfiguration {

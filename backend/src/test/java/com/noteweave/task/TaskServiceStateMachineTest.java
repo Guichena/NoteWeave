@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.BusinessException;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,6 +19,7 @@ class TaskServiceStateMachineTest {
     private JdbcTemplate jdbcTemplate;
     private TaskService taskService;
     private SimpleMeterRegistry meterRegistry;
+    private List<Object> publishedEvents;
 
     @BeforeEach
     void setUp() {
@@ -55,7 +58,15 @@ class TaskServiceStateMachineTest {
                 )
                 """);
         meterRegistry = new SimpleMeterRegistry();
-        taskService = new TaskService(jdbcTemplate, new ObjectMapper(), meterRegistry);
+        publishedEvents = new ArrayList<>();
+        taskService = new TaskService(
+                jdbcTemplate,
+                new ObjectMapper(),
+                meterRegistry,
+                null,
+                null,
+                publishedEvents::add
+        );
     }
 
     @Test
@@ -124,6 +135,29 @@ class TaskServiceStateMachineTest {
 
         assertThat(status(taskId)).isEqualTo("COMPLETED");
         assertThat(eventCount(taskId, "TASK_COMPLETED")).isEqualTo(1);
+    }
+
+    @Test
+    void waitingProgressPublishesTheCanonicalProgressEvent() {
+        String taskId = createRunningTask();
+
+        taskService.recordWaiting(
+                taskId,
+                "WAITING_FOR_PROVIDER",
+                "waiting for provider",
+                35,
+                Map.of("attempt", 1),
+                Map.of("wait_reason", Map.of("status", "WAITING_FOR_PROVIDER"))
+        );
+
+        assertThat(status(taskId)).isEqualTo("WAITING");
+        assertThat(publishedEvents)
+                .singleElement()
+                .isInstanceOfSatisfying(TaskProgressRecordedEvent.class, event -> {
+                    assertThat(event.taskId()).isEqualTo(taskId);
+                    assertThat(event.phase()).isEqualTo("WAITING_FOR_PROVIDER");
+                    assertThat(event.progressPercent()).isEqualTo(35);
+                });
     }
 
     private String createRunningTask() {

@@ -75,6 +75,21 @@ class ExternalSnapshotArchiveReceipt:
 
 
 @dataclass(frozen=True)
+class ArchivedExternalSnapshot:
+    """One server-owned external page already archived for this task by an earlier execution."""
+
+    window_id: str
+    source_id: str
+    source_title: str
+    source_url: str
+    provider: str
+    adapter: str
+    snapshot_key: str
+    content_text: str
+    content_sha256: str
+
+
+@dataclass(frozen=True)
 class WorkspaceWindowSearchHit:
     source_window_id: str
     source_snapshot_id: str
@@ -291,6 +306,48 @@ class JavaResearchAgentTaskClient:
             raise
         return _validated_external_archive_receipt(data, snapshot, window_id, source_id)
 
+    def archived_external_snapshot_inventory(
+        self,
+        snapshot: ResearchAgentTaskSnapshot,
+    ) -> list[ArchivedExternalSnapshot]:
+        """Read the task's server-owned external archive before paying to fetch it again."""
+        response = self._request(
+            "POST",
+            "/internal/research-agent/external-snapshots/archived",
+            {
+                "task_id": snapshot.task_id,
+                "worker_instance_id": self.worker_instance_id,
+                "lease_epoch": snapshot.lease_epoch,
+                "fencing_token": snapshot.fencing_token,
+            },
+            idempotency_key=(
+                f"agent-archive-inventory:{snapshot.task_id}:{snapshot.lease_epoch}"
+                f":{snapshot.fencing_token}"
+            ),
+        )
+        raw_items = response.get("data") if isinstance(response, dict) else None
+        if not isinstance(raw_items, list):
+            raise AgentTaskProtocolError("external archive inventory response data must be an array")
+        inventory: list[ArchivedExternalSnapshot] = []
+        for raw in raw_items:
+            if not isinstance(raw, dict) or set(raw) != _EXTERNAL_ARCHIVE_INVENTORY_FIELDS:
+                raise AgentTaskProtocolError("external archive inventory row has missing or unknown fields")
+            values = {key: raw.get(key) for key in _EXTERNAL_ARCHIVE_INVENTORY_FIELDS}
+            if any(not isinstance(value, str) or is_unicode_blank(value) for value in values.values()):
+                raise AgentTaskProtocolError("external archive inventory row has an invalid text field")
+            if any(has_unicode_boundary_whitespace(value) for value in values.values()):
+                raise AgentTaskProtocolError("external archive inventory row has boundary whitespace")
+            content_sha256 = str(values["content_sha256"])
+            if not _SHA256_TEXT_PATTERN.fullmatch(content_sha256):
+                raise AgentTaskProtocolError("external archive inventory content_sha256 is invalid")
+            # Recomputed locally: a mismatched archive can never become completion evidence.
+            if not hmac.compare_digest(
+                hashlib.sha256(str(values["content_text"]).encode("utf-8")).hexdigest(), content_sha256
+            ):
+                raise AgentTaskProtocolError("external archive inventory content does not match its digest")
+            inventory.append(ArchivedExternalSnapshot(**values))
+        return inventory
+
     def report_delivery_failure(self, command: ResearchAgentCommand, failure: dict[str, object]) -> None:
         error_message = str(failure.get("error_message") or "").strip()
         reason_code = (
@@ -407,10 +464,11 @@ def _optional_string(value: object) -> str | None:
 
 
 _SHA256_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+_SHA256_TEXT_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _RECEIPT_SCHEMA = "research-agent-completion-receipt.v1"
 _RECEIPT_FIELDS = {
     "schema_version", "completion_id", "execution_id", "task_id", "completion_digest",
-    "receipt_digest", "idempotent_replay", "evidence_appended", "candidate_count",
+    "receipt_digest", "idempotent_replay", "outcome", "evidence_appended", "candidate_count",
     "accepted_merges", "rejected_merges", "budget",
 }
 _MERGE_FIELDS = {"cell_key", "from_version", "to_version", "decision", "reason_code"}
@@ -426,6 +484,10 @@ _MAX_RECEIPT_BYTES = 256 * 1024
 _EXTERNAL_ARCHIVE_RECEIPT_FIELDS = {
     "archive_id", "task_id", "window_id", "source_id", "snapshot_status", "snapshot_key",
     "content_sha256", "idempotent_replay",
+}
+_EXTERNAL_ARCHIVE_INVENTORY_FIELDS = {
+    "window_id", "source_id", "source_title", "source_url", "provider", "adapter",
+    "snapshot_key", "content_text", "content_sha256",
 }
 
 
@@ -492,12 +554,17 @@ def _validated_completion_receipt(payload: dict[str, Any],
     replay = payload.get("idempotent_replay")
     if not isinstance(replay, bool):
         raise AgentTaskProtocolError("completion response idempotent_replay must be boolean")
+    outcome = identifier(payload, "outcome", max_chars=32)
+    if outcome not in {"COMMITTED", "QUORUM_PENDING", "QUORUM_MERGED", "QUORUM_REPAIR_REQUIRED"}:
+        raise AgentTaskProtocolError("completion response outcome is unsupported")
     evidence_appended = counter(payload, "evidence_appended")
     candidate_count = counter(payload, "candidate_count")
     accepted = merge_list(payload.get("accepted_merges"), "accepted_merges")
     rejected = merge_list(payload.get("rejected_merges"), "rejected_merges")
     cells = [str(item["cell_key"]) for item in [*accepted, *rejected]]
-    if len(cells) != len(set(cells)) or len(accepted) + len(rejected) != candidate_count:
+    pending_shape_invalid = outcome == "QUORUM_PENDING" and (accepted or rejected)
+    committed_shape_invalid = outcome != "QUORUM_PENDING" and len(accepted) + len(rejected) != candidate_count
+    if len(cells) != len(set(cells)) or pending_shape_invalid or committed_shape_invalid:
         raise AgentTaskProtocolError("completion response merge counts or cells are inconsistent")
     budget = payload.get("budget")
     if not isinstance(budget, dict) or set(budget) != _BUDGET_FIELDS or budget.get("state") != "SETTLED":
