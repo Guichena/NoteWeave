@@ -345,3 +345,5 @@ Worker 在 LibreOffice 将 PPTX 转成 PDF 后，使用 `pypdf` 逐页提取实�
 现有 v1 控制包在 Run 创建时记录了精确 Memory Revision 用量，但 Worker 获取输入、继续读取 Source 窗口、提交 Candidate 和下载已发布文件之前没有检查 Revision 是否仍有效。新增按 `memory_usage_log` 冻结引用与当前 ACTIVE Revision 对比的门禁；撤销或更新后拒绝上述路径。撤销传播同时清空对应 Artifact Run 输入快照、Run 记录和当前 Job 中的 v1 控制包，并把 Run 快照设为 `METADATA_ONLY`；v2 影子快照按同一 Revision 精确引用脱敏。历史没有 Run 或没有 Revision 用量记录的版本维持兼容。
 
 `ArtifactContextV2ShadowSnapshotContractTest` **2 passed**，其中撤销测试确认 Worker 输入被拒、v1 控制包清空及 v2 投影脱敏；`RunReplayRedactionServiceTest` **3 passed**。Artifact/Research 集成回归 `Phase6ResearchArtifactContractTest` **53 个用例，45 执行通过、8 个既有跳过**。下载边界代码共用同一门禁，但尚未有真实 READY 文件在 Memory 撤销前后的专用下载故障测试；这项仍需补足。
+
+补充 READY 文件故障用例 `Phase6ResearchArtifactContractTest#revokingFrozenMemoryMustBlockPreviouslyPublishedArtifactDownload` **1 passed**：发布前引用被记录，文件首次下载成功，撤销后同一文件下载返回 HTTP 409 / `ARTIFACT_MEMORY_REVOKED`。这是 H2 与本地对象存储契约，未覆盖跨进程 Worker 已缓存控制包、MinIO 或用户已下载文件。

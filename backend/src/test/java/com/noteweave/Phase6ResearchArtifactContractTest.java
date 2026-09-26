@@ -19,6 +19,8 @@ import com.noteweave.artifact.ArtifactVersionDetailResponse;
 import com.noteweave.answer.ConversationEventMux;
 import com.noteweave.answer.ConversationLiveEvent;
 import com.noteweave.infra.LocalObjectStorage;
+import com.noteweave.memory.ExecutionObservation;
+import com.noteweave.memory.MemoryRuntime;
 import com.noteweave.research.ResearchCheckpointResponse;
 import com.noteweave.research.ResearchCheckpointSummaryResponse;
 import com.noteweave.research.ResearchAgentCoordinatorRunScanner;
@@ -95,6 +97,9 @@ class Phase6ResearchArtifactContractTest {
 
     @Autowired
     private TaskService taskService;
+
+    @Autowired
+    private MemoryRuntime memoryRuntime;
 
     @Test
     void artifactSkillCatalogShouldExposeBuiltInSkills() throws Exception {
@@ -1035,6 +1040,56 @@ void artifactJobShouldCreateTaskExposeWorkerInputAndPersistVersion() throws Exce
                         workspaceId, artifactJobId, fileId))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("ARTIFACT_SOURCE_REVOKED"));
+    }
+
+    @Test
+    void revokingFrozenMemoryMustBlockPreviouslyPublishedArtifactDownload() throws Exception {
+        String workspaceId = createWorkspace();
+        var proposal = memoryRuntime.observe(new ExecutionObservation(
+                "artifact-download-" + System.nanoTime(), workspaceId, "WORKSPACE",
+                "preference:artifact-download", "Private published Memory preference",
+                "USER_FEEDBACK", "download-revoke-test"));
+        mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/memory/revisions/{revisionId}/review",
+                        workspaceId, proposal.revisionId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("decision", "ACCEPT"))))
+                .andExpect(status().isOk());
+        MvcResult created = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "study_guide", "user_requirement", "Use approved style",
+                                "inputs", Map.of("language", "en")))))
+                .andExpect(status().isOk()).andReturn();
+        JsonNode job = objectMapper.readTree(created.getResponse().getContentAsString()).path("data");
+        String taskId = job.path("task_id").asText();
+        String artifactJobId = job.path("artifact_job_id").asText();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from memory_usage_log
+                where target_type = 'ARTIFACT_JOB_RUN' and target_id = ? and memory_revision_id = ?
+                """, Integer.class, taskId, proposal.revisionId())).isEqualTo(1);
+        completeArtifact(taskId, "Memory styled guide", "# Guide\n\nPublished output.");
+        MvcResult listed = mockMvc.perform(get(
+                        "/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}/versions/1/files",
+                        workspaceId, artifactJobId))
+                .andExpect(status().isOk()).andReturn();
+        String fileId = objectMapper.readTree(listed.getResponse().getContentAsString())
+                .path("data").get(0).path("file_id").asText();
+        mockMvc.perform(get(
+                        "/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}/versions/1/files/{fileId}",
+                        workspaceId, artifactJobId, fileId))
+                .andExpect(status().isOk());
+        jdbcTemplate.update("update memory_item set review_status = 'REVIEW_REQUIRED' where id = ?",
+                proposal.memoryItemId());
+        mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/memory/revisions/{revisionId}/review",
+                        workspaceId, proposal.revisionId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("decision", "REVOKE"))))
+                .andExpect(status().isOk());
+        mockMvc.perform(get(
+                        "/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}/versions/1/files/{fileId}",
+                        workspaceId, artifactJobId, fileId))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ARTIFACT_MEMORY_REVOKED"));
     }
 
     @Test
