@@ -165,6 +165,15 @@ public class ArtifactVideoMaterialService {
                 from artifact_video_material_bundle where id = ? and bundle_version = 1
                 """, (rs, index) -> {
             if (!run.workspaceId().equals(rs.getString("workspace_id"))) throw scopeInvalid();
+            ArtifactJobTaskRow parentRun = jobs.findByTaskId(rs.getString("task_id"));
+            Map<String, Object> parentInputs;
+            try {
+                parentInputs = mapper.readValue(parentRun.inputsJson(),
+                        new com.fasterxml.jackson.core.type.TypeReference<>() {});
+            } catch (Exception ex) {
+                throw scopeInvalid();
+            }
+            if (!acquisitionInputs(parentInputs).equals(acquisitionInputs(inputs))) throw scopeInvalid();
             String url = string(inputs.get("url"));
             Matcher video = Pattern.compile("^https?://(?:www\\.)?bilibili\\.com/video/"
                     + "(BV[0-9A-Za-z]{10})(?:\\?[^#]*)?$").matcher(url);
@@ -185,6 +194,12 @@ public class ArtifactVideoMaterialService {
     private static BusinessException scopeInvalid() {
         return new BusinessException("VIDEO_MATERIAL_SCOPE_INVALID",
                 "素材包不属于本次冻结输入和 Workspace", HttpStatus.CONFLICT);
+    }
+
+    private static Map<String, Object> acquisitionInputs(Map<String, Object> inputs) {
+        Map<String, Object> acquisition = new TreeMap<>(inputs);
+        acquisition.remove("video_material_bundle_id");
+        return acquisition;
     }
 
     /** Reconcile process crashes after object write and before the Bundle transaction commits. */
