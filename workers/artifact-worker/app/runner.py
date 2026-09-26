@@ -218,6 +218,9 @@ def _run_artifact_task(
         # already-completed external operation remain checkpointed/durable.
         canonical_content_objects = build_canonical_content_objects(task_input)
         context_pack = build_context_pack(task_input, plan, canonical_content_objects)
+    if task_input.input_payload.writeback_mode == "MATERIAL_ONLY":
+        return _build_material_only_result(
+            task_input, plan, capability_resolution, canonical_content_objects)
     repaired_sections, node_traces, generation_trace = execute_skill_graph(
         task_input,
         plan,
@@ -465,6 +468,39 @@ class ArtifactOutputContractViolationError(RuntimeError):
     def __init__(self, failed_checks: list[str]) -> None:
         self.failed_checks = list(failed_checks)
         super().__init__("Artifact output contract failed: " + "; ".join(self.failed_checks))
+
+
+def _build_material_only_result(
+    task_input: ArtifactTaskInput,
+    plan: ArtifactExecutionPlan,
+    capability_resolution: ArtifactCapabilityResolution,
+    canonical_content_objects: list[CanonicalContentObject],
+) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
+    receipt = build_acquisition_receipt(
+        task_input, plan, capability_resolution, canonical_content_objects)
+    runtime = register_acquisition_runtime(
+        task_id=task_input.task_id, acquisition_receipt=receipt)
+    dispatches = _submit_async_custom_mcp_operations(receipt)
+    job = ArtifactJobSnapshot(
+        task_id=task_input.task_id, workspace_id=task_input.workspace_id,
+        target_id=task_input.target_id, action_key="VIDEO_MATERIAL", status="COMPLETED")
+    version = ArtifactVersionSnapshot(
+        version_id="", artifact_type="VIDEO_MATERIAL", title="Video material",
+        status="NOT_APPLICABLE", summary="Material-only task has no Artifact Version.")
+    result = ArtifactTaskResult(
+        result_title="Video material",
+        result_payload={
+            "acquisition_receipt": receipt.model_dump(mode="json"),
+            "acquisition_runtime_snapshot": runtime,
+            "acquisition_runtime_dispatches": dispatches,
+        },
+        trace_summary="video acquisition completed without Artifact generation or export",
+        job_snapshot=job,
+        version_snapshot=version,
+    )
+    return [ArtifactProgressEvent(
+        phase="ACQUIRING", progress_percent=85,
+        message="video acquisition receipt ready")], result
 
 
 def _build_waiting_result(

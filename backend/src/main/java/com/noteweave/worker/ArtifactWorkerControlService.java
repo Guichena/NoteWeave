@@ -3,6 +3,7 @@ package com.noteweave.worker;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import com.noteweave.artifact.VideoMaterialTaskService;
 import com.noteweave.common.SensitiveErrorMessageSanitizer;
 import com.noteweave.infra.outbox.DurableOutboxDispatcher;
 import com.noteweave.task.TaskService;
@@ -15,17 +16,20 @@ public class ArtifactWorkerControlService {
     private final WorkerTaskCallbackService workerTaskCallbackService;
     private final DurableOutboxDispatcher outboxDispatcher;
     private final TaskService taskService;
+    private final VideoMaterialTaskService videoMaterialTaskService;
 
     public ArtifactWorkerControlService(
             ArtifactWorkerControlClient artifactWorkerControlClient,
             WorkerTaskCallbackService workerTaskCallbackService,
             DurableOutboxDispatcher outboxDispatcher,
-            TaskService taskService
+            TaskService taskService,
+            VideoMaterialTaskService videoMaterialTaskService
     ) {
         this.artifactWorkerControlClient = artifactWorkerControlClient;
         this.workerTaskCallbackService = workerTaskCallbackService;
         this.outboxDispatcher = outboxDispatcher;
         this.taskService = taskService;
+        this.videoMaterialTaskService = videoMaterialTaskService;
     }
 
     public ArtifactWorkerExecutionResponse resumeTask(String taskId, ArtifactWorkerResumeRequest request) {
@@ -104,6 +108,13 @@ public class ArtifactWorkerControlService {
             errorMessage = "provider callback reported acquisition failure";
         }
         errorMessage = SensitiveErrorMessageSanitizer.sanitize(errorMessage);
+        String deliveryToken = activeDeliveryToken(taskId);
+        if ("VIDEO_MATERIAL".equals(taskService.getTaskRef(taskId).taskType())) {
+            String materialErrorCode = errorCode.matches("[A-Z][A-Z0-9_]{0,79}")
+                    ? errorCode : "PROVIDER_CALLBACK_FAILED";
+            videoMaterialTaskService.fail(taskId, deliveryToken, materialErrorCode);
+            return;
+        }
         workerTaskCallbackService.failFromDelivery(
                 taskId,
                 new WorkerFailRequest(
@@ -113,7 +124,7 @@ public class ArtifactWorkerControlService {
                         true
                 ),
                 "artifact-provider-fail:" + taskId + ":" + blankIfNull(request.callbackToken()),
-                activeDeliveryToken(taskId)
+                deliveryToken
         );
     }
 

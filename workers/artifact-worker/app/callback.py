@@ -33,6 +33,7 @@ from app.models import ArtifactProgressEvent, ArtifactTaskInput, ArtifactTaskRes
 from app.candidate_file_manifest import build_required_files, build_video_deck_required_files
 from app.export_runtime import export_artifact_if_required, validate_frozen_video_scope
 from app.video_material_bundle import VideoMaterialBundleV1
+from app.video_material_task import VideoMaterialTaskInput
 from app.video_knowledge_plan import VideoKnowledgePlanV1, build_local_evidence_plan
 from app.video_deck_ir import VideoDeckIRV1
 from app.video_deck_render import render_original_video_deck
@@ -144,6 +145,47 @@ class JavaArtifactCallbackClient:
             if cursor:
                 source.source_metadata["material_scan_next_cursor"] = cursor
         return task_input
+
+    def fetch_parent_material_input(self, task_id: str) -> VideoMaterialTaskInput:
+        response = self._request(
+            "GET", f"/internal/worker/video-material-tasks/{quote(task_id, safe='')}/input")
+        return VideoMaterialTaskInput.model_validate(_unwrap_api_response(response))
+
+    def publish_parent_material(self, task_id: str, bundle: VideoMaterialBundleV1) -> dict[str, object]:
+        digest = bundle.content_digest()
+        receipt = _unwrap_api_response(self._request(
+            "POST", f"/internal/worker/video-material-tasks/{quote(task_id, safe='')}/bundle",
+            {"bundle": bundle.model_dump(mode="json", exclude_none=True), "content_digest": digest},
+        ))
+        if (receipt.get("task_id") != task_id or receipt.get("content_digest") != digest):
+            raise ValueError("Host parent material receipt differs from submitted Bundle")
+        return receipt
+
+    def publish_parent_plan(self, task_id: str, bundle_row_id: str,
+                            plan: VideoKnowledgePlanV1) -> dict[str, object]:
+        receipt = _unwrap_api_response(self._request(
+            "POST", f"/internal/worker/video-material-tasks/{quote(task_id, safe='')}/knowledge-plan",
+            {"bundle_row_id": bundle_row_id, "plan": plan.model_dump(mode="json"),
+             "content_digest": plan.content_digest()},
+        ))
+        if receipt.get("bundle_row_id") != bundle_row_id \
+                or receipt.get("content_digest") != plan.content_digest():
+            raise ValueError("Host parent knowledge plan receipt differs from submitted Plan")
+        return receipt
+
+    def complete_parent_material(self, task_id: str, bundle_row_id: str, plan_id: str) -> None:
+        self._request(
+            "POST", f"/internal/worker/video-material-tasks/{quote(task_id, safe='')}/complete",
+            {"bundle_id": bundle_row_id, "plan_id": plan_id}, task_id=task_id,
+            callback_task_type="VIDEO_MATERIAL",
+        )
+
+    def fail_parent_material(self, task_id: str, error_code: str) -> None:
+        self._request(
+            "POST", f"/internal/worker/video-material-tasks/{quote(task_id, safe='')}/fail",
+            {"error_code": error_code}, task_id=task_id,
+            callback_task_type="VIDEO_MATERIAL",
+        )
 
     def publish_video_material(self, task_id: str, bundle: VideoMaterialBundleV1) -> dict[str, object]:
         digest = bundle.content_digest()
@@ -293,6 +335,7 @@ class JavaArtifactCallbackClient:
         *,
         idempotency_key: str = "",
         task_id: str = "",
+        callback_task_type: str = "ARTIFACT_JOB",
     ) -> dict[str, Any]:
         body = None if payload is None else json.dumps(payload).encode("utf-8")
         req = request.Request(
@@ -313,7 +356,7 @@ class JavaArtifactCallbackClient:
                 ),
                 **(
                     {"X-NoteWeave-Task-Callback-Token": _task_callback_token(
-                        self.callback_secret, "ARTIFACT_JOB", task_id
+                        self.callback_secret, callback_task_type, task_id
                     )}
                     if self.callback_secret and task_id
                     else {}
@@ -371,6 +414,104 @@ def run_artifact_task_with_callbacks(
     return _emit_callbacks_for_result(task_id, events, result, callback_client, task_input)
 
 
+def run_video_material_task_with_callbacks(
+    task_id: str,
+    client: JavaArtifactCallbackClient | None = None,
+    delivery_token: str = "",
+) -> ArtifactWorkerExecutionResponse:
+    settings = load_settings()
+    callback_client = client or JavaArtifactCallbackClient(
+        settings.java_base_url, settings.internal_auth_token,
+        settings.callback_secret, delivery_token)
+    try:
+        parent_input = callback_client.fetch_parent_material_input(task_id)
+        task_input = parent_input.to_acquisition_input()
+        events, result = run_artifact_task(task_input)
+        return _emit_material_callbacks_for_result(
+            task_id, events, result, callback_client, task_input)
+    except ArtifactCallbackHttpError as exc:
+        if _report_material_failure(callback_client, task_id):
+            setattr(exc, "artifact_failure_reported", True)
+        raise
+    except Exception as exc:
+        if _report_material_failure(callback_client, task_id):
+            setattr(exc, "artifact_failure_reported", True)
+        raise
+
+
+def _report_material_failure(client: JavaArtifactCallbackClient, task_id: str) -> bool:
+    try:
+        client.fail_parent_material(task_id, "VIDEO_MATERIAL_WORKER_FAILED")
+        return True
+    except ArtifactCallbackHttpError as exc:
+        if exc.status_code == 409:
+            return False
+        logger.warning("Video material failure callback rejected: %s",
+                       sanitize_error_message(str(exc)))
+        return False
+    except Exception:
+        logger.exception("Video material failure callback unavailable")
+        return False
+
+
+def _emit_material_callbacks_for_result(
+    task_id: str, events: list[ArtifactProgressEvent], result: ArtifactTaskResult,
+    client: JavaArtifactCallbackClient, task_input: ArtifactTaskInput,
+) -> ArtifactWorkerExecutionResponse:
+    if _is_waiting_status(result.job_snapshot.status):
+        _dispatch_system_provider_operations(result, client.java_base_url)
+    else:
+        bundle = _collect_parent_video_material(task_id, task_input)
+        receipt = client.publish_parent_material(task_id, bundle)
+        plan = build_local_evidence_plan(bundle)
+        plan_receipt = client.publish_parent_plan(task_id, str(receipt["id"]), plan)
+        client.complete_parent_material(task_id, str(receipt["id"]), str(plan_receipt["id"]))
+    return ArtifactWorkerExecutionResponse(
+        task_id=task_id, status=result.job_snapshot.status,
+        progress_events=len(events), result_title="Video material")
+
+
+def _collect_parent_video_material(
+    task_id: str, task_input: ArtifactTaskInput,
+) -> VideoMaterialBundleV1:
+    capture_payload: dict[str, object] | None = None
+    subtitle_payload: dict[str, object] | None = None
+    observation_payload: dict[str, object] | None = None
+    has_capture_stage = has_observation_stage = False
+    for operation in list_acquisition_operations(task_id=task_id):
+        operation_key = operation.get("operation_key")
+        payload = get_acquisition_result_payload(str(operation.get("request_id", "")))
+        if operation_key == "CAPTURE_FRAMES" \
+                and operation.get("server_id") == SYSTEM_BILIBILI_SERVER_ID:
+            has_capture_stage = True
+            if isinstance(payload, dict):
+                capture_payload = payload
+        elif operation_key == "ANALYZE_FRAMES" \
+                and operation.get("server_id") == SYSTEM_BILIBILI_SERVER_ID:
+            has_observation_stage = True
+            if isinstance(payload, dict):
+                observation_payload = payload
+        elif operation_key == "EXTRACT_TRANSCRIPT" and isinstance(payload, dict):
+            subtitle_payload = payload
+    if subtitle_payload is None or (has_capture_stage and capture_payload is None):
+        raise ValueError("video material acquisition has incomplete provider receipts")
+    bundle = subtitle_bundle_from_provider(task_input, subtitle_payload)
+    if bundle is None:
+        raise ValueError("video transcript has no complete, verifiable subtitle material")
+    if capture_payload is not None:
+        bundle = merge_captured_video_frames(task_input, bundle, capture_payload)
+    if has_observation_stage:
+        if observation_payload is None:
+            raise ValueError("video frame observation has no acknowledged receipt")
+        verify_frame_observation_batch(
+            task_id=task_id, files=bundle.files, payload=observation_payload)
+        bundle = VideoMaterialBundleV1.model_validate({
+            **bundle.model_dump(mode="json", exclude_none=True),
+            "frame_observations": observation_payload["frames"],
+        })
+    return bundle
+
+
 def resume_waiting_artifact_task_with_callbacks(
     task_id: str,
     *,
@@ -401,17 +542,39 @@ def resume_waiting_artifact_task_with_callbacks(
     except ValueError:
         raise
     except Exception as exc:
-        _report_execution_failure(callback_client, task_id, "WORKER_RESUME", exc)
+        if task_input is not None \
+                and task_input.input_payload.writeback_mode == "MATERIAL_ONLY":
+            if isinstance(callback_client, JavaArtifactCallbackClient):
+                _report_material_failure(callback_client, task_id)
+        else:
+            _report_execution_failure(callback_client, task_id, "WORKER_RESUME", exc)
         raise
     try:
         if not _is_waiting_status(result.job_snapshot.status):
             cache_waiting_task_delivery(task_id, events, result)
-        response = _emit_callbacks_for_result(task_id, events, result, callback_client, task_input)
+        if task_input is not None \
+                and task_input.input_payload.writeback_mode == "MATERIAL_ONLY":
+            if not isinstance(callback_client, JavaArtifactCallbackClient):
+                raise ValueError("material task requires the Host callback client")
+            response = _emit_material_callbacks_for_result(
+                task_id, events, result, callback_client, task_input)
+        else:
+            response = _emit_callbacks_for_result(task_id, events, result, callback_client, task_input)
     except ValueError as exc:
-        _report_execution_failure(callback_client, task_id, "WORKER_RESUME", exc)
+        if task_input is not None \
+                and task_input.input_payload.writeback_mode == "MATERIAL_ONLY":
+            if isinstance(callback_client, JavaArtifactCallbackClient):
+                _report_material_failure(callback_client, task_id)
+        else:
+            _report_execution_failure(callback_client, task_id, "WORKER_RESUME", exc)
         release_waiting_task_claim(task_id)
         raise
-    except Exception:
+    except Exception as exc:
+        if task_input is not None \
+                and task_input.input_payload.writeback_mode == "MATERIAL_ONLY" \
+                and isinstance(callback_client, JavaArtifactCallbackClient):
+            if _report_material_failure(callback_client, task_id):
+                setattr(exc, "artifact_failure_reported", True)
         release_waiting_task_claim(task_id)
         raise
     if not _is_waiting_status(result.job_snapshot.status):

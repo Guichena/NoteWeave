@@ -399,3 +399,9 @@ V123 给 `artifact_video_material_bundle` 增加互斥来源：保留旧 `artifa
 新增独立内部 Worker 路由：持有效 Outbox 投递令牌领取冻结输入时启动 `VIDEO_MATERIAL` Task；Bundle、Plan 各自经已有 Host 内容门禁冻结；完成回调在同一事务内依次将 Task 置 COMPLETED、将父请求置 READY 并确认 Outbox。任一 Bundle/Plan ID 不符或创建者权限已撤销时整笔事务回滚，Task 仍 RUNNING、Outbox 仍 PROCESSING。失败回调标记 Task/父请求 FAILED；若父请求已申请取消，完成或失败回调转为 CANCELLED 并确认 Outbox，不发布 READY。终态回调使用任务类型绑定的 HMAC Token，且额外核对活跃投递令牌。
 
 `VideoLearningRequestCreationContractTest` **1 passed**（领输入、冻结输入身份、鉴权失败回调、Outbox 确认），`VideoLearningRequestRepositoryContractTest` **7 passed**（含默认关闭、非法 Bundle 回滚、权限撤销回滚、成功 READY、运行中取消）。最后追加非法 Bundle 回滚断言后单独复跑后者 **7 passed，0 failed/0 error/0 skipped**。Worker 目前尚未识别 `video-material-command.v1`，采集 Graph 与异步恢复仍需接入；生产开关继续关闭。
+
+## P6 素材 Worker 采集与父请求回调
+
+Worker 现识别独立的 `video-material-command.v1`，凭 Host 冻结的父请求输入复用已发布 B站 Skill 的字幕、抽帧和观察采集能力。`MATERIAL_ONLY` 分支在 Provider 等待和恢复后只构建 Bundle 与本地证据 Plan，不生成 PDF、Candidate 或 Artifact Version。Bundle/Plan 经父请求专用 Host 回调分别冻结，最后以任务类型 HMAC 和投递令牌完成 READY。内容门禁返回 409 时先尝试把当前有效投递终止为 FAILED；旧令牌重放仍由 Host 拒绝。系统 Provider 失败也分流至父请求的失败事务，非法 Provider 错误码收敛为固定码。等待恢复路径按资料任务完成，避免误走旧 Artifact Job 的发布回调。
+
+Worker 定向 `test_video_material_task.py test_artifact_kafka_consumer.py test_callback.py` **41 passed**；Worker 全量 `pytest -q` **360 passed，38.30 秒**。Host `ArtifactWorkerControlServiceTest` **4 passed，0 failed/0 error/0 skipped**。`git diff --check` 通过。以上为模拟 Provider 响应与 H2/本地合同，未进行真实 B站跨进程采集和第三方凭据调用；父请求子 Job 协调与 UI 尚未实现，功能开关保持默认关闭。

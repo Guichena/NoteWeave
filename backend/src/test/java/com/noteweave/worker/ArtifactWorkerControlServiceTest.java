@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.noteweave.infra.outbox.DurableOutboxDispatcher;
+import com.noteweave.artifact.VideoMaterialTaskService;
 import com.noteweave.task.TaskService;
 import java.util.List;
 import java.util.Map;
@@ -18,8 +19,9 @@ class ArtifactWorkerControlServiceTest {
     private final WorkerTaskCallbackService callbacks = mock(WorkerTaskCallbackService.class);
     private final DurableOutboxDispatcher outbox = mock(DurableOutboxDispatcher.class);
     private final TaskService tasks = mock(TaskService.class);
+    private final VideoMaterialTaskService materials = mock(VideoMaterialTaskService.class);
     private final ArtifactWorkerControlService service =
-            new ArtifactWorkerControlService(client, callbacks, outbox, tasks);
+            new ArtifactWorkerControlService(client, callbacks, outbox, tasks, materials);
 
     @Test
     void acknowledgedProviderResumesWithTheCurrentHostDeliveryToken() {
@@ -56,6 +58,28 @@ class ArtifactWorkerControlServiceTest {
         assertThatThrownBy(() -> service.acknowledgeAcquisition(request()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("active artifact delivery");
+    }
+
+    @Test
+    void failedProviderTerminatesParentMaterialTaskUsingItsFencedDelivery() {
+        ArtifactAcquisitionAckRequest request = new ArtifactAcquisitionAckRequest(
+                "provider-token", "FAILED", "", "SUBTITLE_UNAVAILABLE", "", Map.of());
+        var receipt = new ArtifactAcquisitionReceiptResponse(
+                "receipt-1", "request-1", "task-1", "input-url-1", "EXTRACT_TRANSCRIPT",
+                "", "", "FAILED", "FAILED", "", "", "", "",
+                "SUBTITLE_UNAVAILABLE", "", 1);
+        when(client.acknowledgeAcquisition(request)).thenReturn(new ArtifactAcquisitionAckResponse(
+                acknowledged().operation(), receipt, List.of()));
+        when(tasks.getTaskRef("task-1")).thenReturn(new TaskService.TaskRef(
+                "task-1", "workspace-1", "VIDEO_MATERIAL", "WAITING",
+                "VIDEO_LEARNING_REQUEST", "parent-1"));
+        when(outbox.activeTaskDeliveryToken("noteweave.artifact.job", "task-1"))
+                .thenReturn("delivery-1");
+
+        service.acknowledgeAcquisition(request);
+
+        verify(materials).fail("task-1", "delivery-1", "SUBTITLE_UNAVAILABLE");
+        verifyNoInteractions(callbacks);
     }
 
     private ArtifactAcquisitionAckRequest request() {
