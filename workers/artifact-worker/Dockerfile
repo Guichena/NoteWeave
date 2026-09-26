@@ -10,6 +10,8 @@ RUN cp /etc/apt/sources.list.d/debian.sources /tmp/debian.sources \
     && apt-get -o Acquire::Retries=5 install --no-install-recommends -y \
         fonts-arphic-gbsn00lp \
         ffmpeg \
+        libreoffice-impress \
+        poppler-utils \
         tesseract-ocr \
         tesseract-ocr-chi-sim \
         texlive-lang-chinese \
@@ -29,6 +31,7 @@ RUN pip install --no-cache-dir \
     "kafka-python>=2.0.2,<4" \
     "pydantic-settings>=2.6.0,<3" \
     "Pillow>=11.0,<13" \
+    "python-pptx>=1.0.2,<2" \
     "faster-whisper>=1.2.1,<2" \
     "reportlab>=4.2.0,<5" \
     "yt-dlp>=2025.6.30,<2027" \

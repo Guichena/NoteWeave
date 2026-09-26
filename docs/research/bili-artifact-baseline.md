@@ -313,3 +313,9 @@ Host 集成回放创建两个独立 Job，引同一个 PDF Job 冻结的素材�
 新增 Host `VideoDeckValidator`，以 Host 已入库的 Bundle/Plan 重建每页的节点、时间、原画面文件 ID/SHA、已抽取主张、证据引用与缺口，并校验 Worker 页序、IR 摘要、Markdown、通用内容章节、导出回执和每页文件角色清单。受控引用读取允许 `video_learning_deck` 作为独立 Skill 使用相同冻结资料。Python 产生的跨语言固定 Candidate 在 Java 验证通过；伪造画面文件 ID 和删掉 PNG 预览均被拒绝。尚未校验 PPTX 内部逐页画面与预览 PNG 的语义对应，因此暂不注册生产 Skill。
 
 `VideoDeckValidatorTest` **1 passed**；`Phase6ResearchArtifactContractTest` **52 用例，44 执行通过、8 个既有跳过**；`ArtifactCandidateTest` **6 passed**；`ArtifactRollbackGateTest` **2 passed**。Host 编译通过。部署转换器和真实视频页预览仍未验收。
+
+## P4 PPTX 内部画面与可编辑文字门禁
+
+Host 在 Candidate 文件预检中解析受限 OOXML ZIP，要求 PPTX 页数等于冻结页清单，每页只有一张原画面，图片关系指向内嵌媒体，媒体 SHA-256 等于对应冻结画面摘要，无裁切参数，并含页标题和已抽取主张的可编辑文字。ZIP 条目数量、展开大小和 XML 外部实体均受限。用 Python 实际渲染的固定 PPTX 验证通过，改写 PPTX 内图片字节后即使外层文件可重新计算摘要也被拒绝。Worker 镜像定义补入 `python-pptx`、LibreOffice Impress 和 Poppler。
+
+`VideoDeckFileVerifierTest` **1 passed**，`VideoDeckValidatorTest` **1 passed**；Artifact 完成契约 **52 用例，44 执行通过、8 个既有跳过**，Candidate **6 passed**，回滚 **2 passed**。本机 Docker daemon 未运行，未构建或验证更新后的 Worker 镜像；当前开发机也未装 LibreOffice。PNG 预览是否忠实对应 PPTX 仍需实际转换和视觉验收，固定真实视频样本未取得，生产 Skill 暂未注册。
