@@ -179,3 +179,9 @@ PDF 的视频 URL 采集顺序现为 `EXTRACT_TRANSCRIPT` → `CAPTURE_FRAMES` �
 Host 对带发布 Catalog 摘要的新 Run，要求 Candidate 同时携带 `artifact-content-v1` 和准确的 `content_ir_digest`；缺失在认领完成任务及创建 Version 前返回 `ARTIFACT_CONTENT_IR_REQUIRED`。旧无发布摘要的历史快照仍可按原回调回放。视频素材引用检查先于 Candidate 检查，保持缺失/伪造素材引用的专用错误；Worker 原有全 Skill 内容生成路径已在验证通过、文件渲染前生成 IR。测试新增缺 IR 不产生 Version、完整 IR 可提交的 Host 合同，更新合成 Worker 回调夹具。
 
 首次全批有 15 项旧合成回调因无 IR 而失败；迁移共享夹具后仅两项直接 Manifest 回调未携带 IR，补齐后通过。再一次全批出现既有孤儿对象巡检测试的一次调用未扫到目标：巡检是游标分页，测试改为最多 100 轮内验证最终清理且仍保留近期/已引用/前缀外对象。最终 Host `Phase6ResearchArtifactContractTest` **52 个用例，44 执行通过、8 个既有跳过**，`ArtifactCandidateTest` **6 passed**，`ArtifactRollbackGateTest` **2 passed**，`ArtifactSkillCatalogPublicationTest` **2 passed**，`ArtifactWorkerInputControllerTest` **5 passed**。类型化 IR 目前仍是通用章节契约，`artifact_type` 尚未与每个 Skill 的专用输出 Schema 绑定；P3/P4 的产物专用 IR 不因此视为完成。
+
+## P2 类型化知识规划契约（Worker 基础）
+
+新增独立的 `video-knowledge-plan-v1` 模型和生成入口，规划对象以冻结 Bundle 内容摘要、BVID、分 P 和时长绑定素材，避免把知识计划嵌入 Bundle 后形成循环摘要。模型要求唯一主题根节点、合法父子层级与时间包含关系，全部字幕与画面被引用，画面只归一个节点。术语必须出现在所引纠错字幕或 OCR 文字中；`EXTRACTED` 主张须逐字落在合法引用中；没有证据的主张须标记 `UNVERIFIED` 和显式缺口。LLM 返回 JSON 后再做本地校验；空响应、越界响应、错误摘要与跨分集引用不进入知识规划。画面 OCR 仍只代表文字观察，不证明图表或代码语义。
+
+定向 Worker **13 passed**；Worker 全套 **324 passed，35.43 秒**。目前这是独立的 Worker 规划契约，尚未由 Host 保存/发布不可变规划版本，也未接入现有 PDF 或 P3/P4 生成链；因此不能称为已完成的共享语义知识树。真实模型、B 站与视觉观察回放仍待验收。

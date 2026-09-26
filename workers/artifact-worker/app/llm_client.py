@@ -70,6 +70,16 @@ class OpenAICompatibleLlmClient:
         self.timeout_seconds = timeout_seconds
 
     def complete_json(self, purpose: str, payload: dict[str, object]) -> str:
+        contract = (
+            "Return only a JSON object matching video-knowledge-plan-v1. "
+            "Use only the supplied corrected subtitles and frame OCR. "
+            "An EXTRACTED claim must copy exact text from its cited evidence; "
+            "mark unsupported claims UNVERIFIED and list UNVERIFIED_CLAIM in node.missing."
+            if purpose == "video_knowledge_plan" else
+            "Follow the requested outline and output contract. "
+            "Return only valid JSON with a sections array; every section must contain "
+            "heading, body, and source_refs. source_refs may only use supplied source titles."
+        )
         request_payload = {
             "model": self.model_name,
             "messages": [
@@ -78,9 +88,7 @@ class OpenAICompatibleLlmClient:
                     "content": (
                         "You are the controlled generation node of NoteWeave Artifact Runtime. "
                         "Use only the supplied source materials for factual claims. "
-                        "Follow the requested outline and output contract. "
-                        "Return only valid JSON with a sections array; every section must contain "
-                        "heading, body, and source_refs. source_refs may only use supplied source titles."
+                        + contract
                     ),
                 },
                 {
