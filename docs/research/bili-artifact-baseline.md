@@ -233,3 +233,7 @@ Worker 原先把任何非空 `source_refs` 都统计为已覆盖，即使引用�
 ## C3 Answer 冻结时点的前缀门禁
 
 现有 Answer `run_input_snapshot` 在 USER Query 消息的序号处冻结，此时后一条 ASSISTANT 占位还处于 PENDING。新增 `refreshForInputCutoff`：锁定会话后确认只有紧随 USER Query 的 PENDING 助手占位，按 cutoff 投影，摘要队列也只取 CURRENT 前缀。数据库影子编译器允许这一受约束边界，拒绝已完成助手后的旧 cutoff、非连续消息和删除消息；不会把占位内容纳入上下文。定向契约 **1 passed**，完整 `ConversationTurnModuleContractTest` **39 passed**、`ContextWindowPlannerV2Test` **6 passed**、`ContextProjectionV2ContractTest` **3 passed**，合计 **48 passed**。这只是 C3 输入时点的前置门禁；尚未在 Run 中持久化 v2 Context 或切换生产 v1 快照。
+
+## C4 固定标注样本的影子选择基线
+
+新增直接读取 `context-v2-gold-v1.json` 的离线回放测试，对五个可编译场景计算 Raw Tail、用户约束、Memory Revision 与可用主题摘要的误选/漏选计数。删除样本不送入正常编译器，继续由脱敏契约处理。五个样本共 **0 Raw Tail 不一致、0 约束不一致、0 Memory 不一致、0 主题摘要不一致、0 超预算**。首轮回放与 v2 Schema/选择器测试 **10 passed**；补入摘要选择计数后的回放与选择器 **7 passed**。这是合成标注的离线门禁，未比较真实 v1/v2 Run、未测真实用户误选率，也未开启 Workspace 灰度。
