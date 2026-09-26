@@ -45,6 +45,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
             if (!(rawEntry instanceof Map<?, ?> entry) || !(entry.get("input_schema") instanceof Map<?, ?> schema)) {
                 throw new IllegalStateException("invalid artifact Skill catalog entry");
             }
+            validatePublishedEntry(entry, schema);
             String key = String.valueOf(entry.get("skill_key"));
             Map<String, Object> inputSchema = new LinkedHashMap<>();
             schema.forEach((field, value) -> inputSchema.put(String.valueOf(field), value));
@@ -86,6 +87,33 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
 
     public List<String> requiredFileRoles(String skillKey) {
         return requiredFileRoles.get(resolveSkill(skillKey).skillKey());
+    }
+
+    static void validatePublishedEntry(Map<?, ?> entry, Map<?, ?> schema) {
+        if (!entry.keySet().equals(Set.of("skill_key", "version", "display_name", "description",
+                "input_schema", "output_schema_ref", "graph_key", "prompt_recipe_id",
+                "required_file_roles", "capability_allowlist", "action_key"))
+                || !"1.0.0".equals(entry.get("version"))
+                || !"artifact-content-v1".equals(entry.get("output_schema_ref"))
+                || !schema.keySet().stream().allMatch(Set.of("type", "properties", "required")::contains)
+                || !"object".equals(schema.get("type"))
+                || !(schema.get("properties") instanceof Map<?, ?> properties)
+                || !(entry.get("capability_allowlist") instanceof List<?> capabilities)
+                || !Set.of("READ_WORKSPACE_DOC", "GENERATE_STRUCTURED_TEXT", "VERIFY_OUTPUT",
+                        "READ_WEB_PAGE", "EXTRACT_TRANSCRIPT", "TRANSCRIBE_AUDIO").containsAll(capabilities)) {
+            throw new IllegalStateException("unsupported artifact Skill publication policy");
+        }
+        Object required = schema.containsKey("required") ? schema.get("required") : List.of();
+        if (!(required instanceof List<?> requiredKeys) || !properties.keySet().containsAll(requiredKeys)) {
+            throw new IllegalStateException("published Skill has invalid required inputs");
+        }
+        for (Object rawField : properties.values()) {
+            if (!(rawField instanceof Map<?, ?> field)
+                    || !field.keySet().stream().allMatch(Set.of("type", "default", "oneOf", "enum")::contains)
+                    || !"string".equals(field.get("type"))) {
+                throw new IllegalStateException("unsupported published Skill input field");
+            }
+        }
     }
 
     public ArtifactSkillDefinition resolveSkill(String skillKey) {

@@ -4,7 +4,7 @@ import json
 import hashlib
 from pathlib import Path
 
-from app.artifact_skill_catalog import CATALOG_DIGEST, list_artifact_skill_definitions
+from app.artifact_skill_catalog import CATALOG_DIGEST, list_artifact_skill_definitions, validate_published_catalog
 from app.main import _to_public_input_schema
 from app.registry import PRODUCTION_ACTIONS
 from app.models import ArtifactTaskInput
@@ -61,3 +61,18 @@ def test_worker_rejects_run_frozen_against_another_catalog_before_execution() ->
     })
     with pytest.raises(ValueError, match="catalog digest"):
         run_artifact_task(task)
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda catalog: catalog["skills"][0].update({"version": "999.0.0"}),
+    lambda catalog: catalog["skills"][0].update({"arbitrary_script": "run.py"}),
+    lambda catalog: catalog["skills"][0].update({"capability_allowlist": ["ARBITRARY_TOOL"]}),
+    lambda catalog: catalog["skills"][0]["input_schema"]["properties"].update(
+        {"dangerous": {"type": "object"}}),
+])
+def test_published_catalog_rejects_unknown_policy(mutation) -> None:
+    root = Path(__file__).resolve().parents[3]
+    catalog = json.loads((root / "reference" / "artifact-skill-catalog-v2.json").read_text(encoding="utf-8"))
+    mutation(catalog)
+    with pytest.raises(ValueError):
+        validate_published_catalog(catalog)
