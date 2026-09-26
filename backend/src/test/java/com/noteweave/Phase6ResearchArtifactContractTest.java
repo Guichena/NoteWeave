@@ -5114,6 +5114,11 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
     }
 
     private Map<String, Object> artifactCandidate(String taskId, String markdown, String pdfFileName) throws Exception {
+        return artifactCandidate(taskId, markdown, pdfFileName, List.of());
+    }
+
+    private Map<String, Object> artifactCandidate(String taskId, String markdown, String pdfFileName,
+                                                   List<String> previewNames) throws Exception {
         Map<String, Object> snapshot = jdbcTemplate.queryForMap("""
                 select r.input_snapshot_id, s.compiler_version from artifact_job_run r
                 join artifact_run_input_snapshot s on s.id = r.input_snapshot_id
@@ -5139,6 +5144,14 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
                     "size_bytes", pdf.length, "checksum_sha256", java.util.HexFormat.of().formatHex(
                             java.security.MessageDigest.getInstance("SHA-256").digest(pdf))));
         }
+        for (int index = 0; index < previewNames.size(); index++) {
+            String name = previewNames.get(index);
+            byte[] png = artifactWorkerExportClient.fetch(taskId, name);
+            files.add(Map.of("role", "SLIDE_PREVIEW", "variant", "original", "sequence_no", index + 1,
+                    "file_name", name, "media_type", "image/png", "size_bytes", png.length,
+                    "checksum_sha256", java.util.HexFormat.of().formatHex(
+                            java.security.MessageDigest.getInstance("SHA-256").digest(png))));
+        }
         return Map.of("task_id", taskId, "input_snapshot_id", snapshotId,
                 "catalog_digest", catalogDigest, "content_sha256", contentHash,
                 "candidate_id", candidateId, "required_files", files);
@@ -5157,6 +5170,76 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
         Map<String, Object> updated = new LinkedHashMap<>(completion);
         updated.put("result_payload", payload);
         return objectMapper.writeValueAsString(updated);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void candidateManifestPublishesMultiplePreviewFilesIndependently() throws Exception {
+        String workspaceId = createWorkspace();
+        MvcResult created = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "bilibili_course_note_pdf",
+                                "user_requirement", "PDF with slide previews",
+                                "inputs", Map.of("url", "https://www.bilibili.com/video/BV1NoteWeaveDemo")))))
+                .andExpect(status().isOk()).andReturn();
+        JsonNode job = objectMapper.readTree(created.getResponse().getContentAsString()).path("data");
+        String taskId = job.path("task_id").asText();
+        String markdown = "# Course notes with visual evidence";
+        Map<String, Object> candidate = artifactCandidate(taskId, markdown, "course.pdf",
+                List.of("slide-1.png", "slide-2.png"));
+        Map<String, Object> payload = Map.of(
+                "markdown", markdown,
+                "verification", Map.of("status", "PASS"),
+                "export_trace", Map.of("status", "COMPILED", "file_name", "course.pdf"),
+                "candidate", candidate);
+        Map<String, Object> request = Map.of(
+                "result_type", "MARKDOWN", "result_title", "Visual course notes",
+                "result_payload", payload, "trace_summary", "multiple preview contract",
+                "citations", List.of());
+        List<Map<String, Object>> invalidFiles = new ArrayList<>(
+                (List<Map<String, Object>>) candidate.get("required_files"));
+        Map<String, Object> invalidPreview = new LinkedHashMap<>(invalidFiles.get(3));
+        invalidPreview.put("checksum_sha256", "0".repeat(64));
+        invalidFiles.set(3, invalidPreview);
+        Map<String, Object> invalidCandidate = new LinkedHashMap<>(candidate);
+        invalidCandidate.put("required_files", invalidFiles);
+        Map<String, Object> invalidPayload = new LinkedHashMap<>(payload);
+        invalidPayload.put("candidate", invalidCandidate);
+        Map<String, Object> invalidRequest = new LinkedHashMap<>(request);
+        invalidRequest.put("result_payload", invalidPayload);
+        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "multi-preview-invalid:" + taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalidRequest)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ARTIFACT_FILE_MANIFEST_INVALID"));
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from artifact_version where artifact_job_id = ?",
+                Integer.class, job.path("artifact_job_id").asText())).isZero();
+        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "multi-preview:" + taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk());
+
+        MvcResult listed = mockMvc.perform(get(
+                        "/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}/versions/1/files",
+                        workspaceId, job.path("artifact_job_id").asText()))
+                .andExpect(status().isOk()).andReturn();
+        JsonNode files = objectMapper.readTree(listed.getResponse().getContentAsString()).path("data");
+        assertThat(files.size()).isEqualTo(4);
+        int previews = 0;
+        for (JsonNode file : files) {
+            if (!"SLIDE_PREVIEW".equals(file.path("file_role").asText())) continue;
+            previews++;
+            mockMvc.perform(get(
+                            "/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}/versions/1/files/{fileId}",
+                            workspaceId, job.path("artifact_job_id").asText(), file.path("file_id").asText()))
+                    .andExpect(status().isOk())
+                    .andExpect(content().contentType(MediaType.IMAGE_PNG));
+        }
+        assertThat(previews).isEqualTo(2);
     }
 
     @Test

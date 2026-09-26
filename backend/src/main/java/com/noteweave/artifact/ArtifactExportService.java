@@ -136,8 +136,56 @@ public class ArtifactExportService {
             verifyPdf(pdf);
             files.add(new PreparedFile(PDF, pdfFileName, "application/pdf", pdf, sha256(pdf)));
         }
+        appendDeclaredAuxiliaryFiles(taskId, request, files);
         requireCandidateFileManifest(request, files);
         return List.copyOf(files);
+    }
+
+    private void appendDeclaredAuxiliaryFiles(String taskId, WorkerCompleteRequest request,
+                                              List<PreparedFile> files) {
+        Object candidate = request.resultPayload() == null ? null : request.resultPayload().get("candidate");
+        if (!(candidate instanceof Map<?, ?> envelope)) return;
+        if (!(envelope.get("required_files") instanceof List<?> declared) || declared.size() > 501) {
+            throw invalidManifest();
+        }
+        for (Object item : declared) {
+            if (!(item instanceof Map<?, ?> entry)) throw invalidManifest();
+            String role = String.valueOf(entry.get("role"));
+            if ("PRIMARY_MARKDOWN".equals(role) || "PRIMARY_PDF".equals(role)) continue;
+            String format = switch (role) {
+                case "PRIMARY_PPTX" -> "PPTX";
+                case "SOURCE_MD" -> MARKDOWN;
+                case "SLIDE_PREVIEW" -> "PNG";
+                default -> throw invalidManifest();
+            };
+            String mediaType = switch (format) {
+                case "PPTX" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+                case "PNG" -> "image/png";
+                default -> "text/markdown; charset=UTF-8";
+            };
+            String extension = switch (format) {
+                case "PPTX" -> ".pptx";
+                case "PNG" -> ".png";
+                default -> ".md";
+            };
+            String name = String.valueOf(entry.get("file_name"));
+            if (name.length() > 160 || !name.toLowerCase(java.util.Locale.ROOT).endsWith(extension)
+                    || !name.equals(safeFileName(name)) || name.contains("..")
+                    || name.chars().anyMatch(character -> character < 32)) {
+                throw invalidManifest();
+            }
+            if (!mediaType.equals(entry.get("media_type"))
+                    || !(entry.get("variant") instanceof String variant)
+                    || !(entry.get("sequence_no") instanceof Number sequence)
+                    || !isIntegralNumber(sequence) || sequence.longValue() < 0 || sequence.longValue() > 10_000) {
+                throw invalidManifest();
+            }
+            byte[] content = fetchWorkerExport(taskId, name);
+            if (content.length == 0 || content.length > 100_000_000) throw invalidManifest();
+            verifyPreparedFormat(format, content);
+            files.add(new PreparedFile(format, role, variant, sequence.intValue(), name,
+                    mediaType, content, sha256(content)));
+        }
     }
 
     private void requireCandidateFileManifest(WorkerCompleteRequest request, List<PreparedFile> files) {
@@ -152,19 +200,22 @@ public class ArtifactExportService {
         for (Object item : declared) {
             if (!(item instanceof Map<?, ?> entry)) throw invalidManifest();
             String role = String.valueOf(entry.get("role"));
-            if (!seen.add(role)) throw invalidManifest();
+            String variant = String.valueOf(entry.get("variant"));
+            if (!isIntegralNumber(entry.get("sequence_no"))) throw invalidManifest();
+            int sequenceNo = ((Number) entry.get("sequence_no")).intValue();
+            if (!seen.add(role + ":" + variant + ":" + sequenceNo)) throw invalidManifest();
             PreparedFile actual = files.stream()
-                    .filter(file -> file.role().equals(role)).findFirst().orElse(null);
+                    .filter(file -> file.role().equals(role) && file.variant().equals(variant)
+                            && file.sequenceNo() == sequenceNo).findFirst().orElse(null);
             if (actual == null || !actual.checksum().equals(entry.get("checksum_sha256"))
                     || !actual.mediaType().equals(entry.get("media_type"))
                     || !isIntegralNumber(entry.get("size_bytes"))
                     || !(entry.get("size_bytes") instanceof Number size)
                     || size.longValue() != actual.content().length
-                    || !"".equals(entry.get("variant"))
-                    || !isIntegralNumber(entry.get("sequence_no"))
-                    || !(entry.get("sequence_no") instanceof Number sequence)
-                    || sequence.intValue() != 0
-                    || (PDF.equals(actual.format()) && !actual.fileName().equals(entry.get("file_name")))) {
+                    || !(entry.get("variant") instanceof String)
+                    || (PDF.equals(actual.format()) && !actual.fileName().equals(entry.get("file_name")))
+                    || (!"PRIMARY_MARKDOWN".equals(role)
+                            && !actual.fileName().equals(entry.get("file_name")))) {
                 throw invalidManifest();
             }
         }
@@ -312,7 +363,8 @@ public class ArtifactExportService {
             try {
                 java.awt.image.BufferedImage image = javax.imageio.ImageIO.read(
                         new java.io.ByteArrayInputStream(content));
-                if (image == null || image.getWidth() < 1 || image.getHeight() < 1) {
+                if (image == null || image.getWidth() < 1 || image.getHeight() < 1
+                        || (long) image.getWidth() * image.getHeight() > 50_000_000) {
                     throw new java.io.IOException("invalid PNG dimensions");
                 }
             } catch (java.io.IOException ex) {

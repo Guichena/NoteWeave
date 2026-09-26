@@ -47,6 +47,16 @@ class TestResearchOutboxPublisherConfig {
                         org.springframework.http.HttpStatus.BAD_GATEWAY);
             }
             return exports.computeIfAbsent(taskId + ":" + fileName, key -> {
+                if (fileName.endsWith(".png")) {
+                    try (java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream()) {
+                        java.awt.image.BufferedImage image = new java.awt.image.BufferedImage(
+                                2, 2, java.awt.image.BufferedImage.TYPE_INT_RGB);
+                        javax.imageio.ImageIO.write(image, "png", output);
+                        return output.toByteArray();
+                    } catch (java.io.IOException ex) {
+                        throw new IllegalStateException("test PNG generation failed", ex);
+                    }
+                }
                 try (org.apache.pdfbox.pdmodel.PDDocument document =
                              new org.apache.pdfbox.pdmodel.PDDocument();
                      java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream()) {

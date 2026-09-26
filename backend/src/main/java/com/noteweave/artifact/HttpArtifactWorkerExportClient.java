@@ -29,12 +29,12 @@ class HttpArtifactWorkerExportClient implements ArtifactWorkerExportClient {
                     .uri("/tasks/{taskId}/exports/{fileName}", taskId, fileName)
                     .retrieve().body(byte[].class);
             if (content == null || content.length == 0) {
-                throw new BusinessException("ARTIFACT_EXPORT_EMPTY", "Artifact Worker 返回空 PDF");
+                throw new BusinessException("ARTIFACT_EXPORT_EMPTY", "Artifact Worker 返回空产物文件");
             }
             return content;
         } catch (RestClientException ex) {
             throw new BusinessException("ARTIFACT_EXPORT_FETCH_FAILED",
-                    "无法从 Artifact Worker 获取 PDF 文件", HttpStatus.BAD_GATEWAY);
+                    "无法从 Artifact Worker 获取产物文件", HttpStatus.BAD_GATEWAY);
         }
     }
 }
