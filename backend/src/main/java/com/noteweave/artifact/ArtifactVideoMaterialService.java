@@ -7,6 +7,8 @@ import com.noteweave.config.NoteWeaveProperties;
 import com.noteweave.storage.ObjectStorage;
 import java.io.ByteArrayInputStream;
 import java.security.MessageDigest;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.HashSet;
@@ -18,6 +20,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -38,6 +41,7 @@ public class ArtifactVideoMaterialService {
     private final ArtifactWorkerExportClient workerFiles;
     private final ObjectStorage storage;
     private final String bucket;
+    private String orphanScanCursor = "";
 
     public ArtifactVideoMaterialService(ArtifactJobReadRepository jobs, JdbcTemplate jdbc,
                                         ObjectMapper mapper, ArtifactWorkerExportClient workerFiles,
@@ -110,6 +114,44 @@ public class ArtifactVideoMaterialService {
         if (rows.size() != 1) throw new BusinessException("VIDEO_MATERIAL_FILE_NOT_FOUND",
                 "素材文件不存在", HttpStatus.NOT_FOUND);
         return rows.get(0);
+    }
+
+    /** Reconcile process crashes after object write and before the Bundle transaction commits. */
+    @Scheduled(fixedDelayString = "${noteweave.artifact.video-material-cleanup-delay-ms:3600000}")
+    public synchronized int cleanupOrphanedFrameFiles() {
+        String prefix = "artifacts/video-material/";
+        Instant cutoff = Instant.now().minus(Duration.ofHours(24));
+        int removed = 0;
+        int visited = 0;
+        while (visited < 1_000) {
+            List<ObjectStorage.StoredObject> page = storage.list(bucket, prefix, orphanScanCursor, 100);
+            if (page.isEmpty()) {
+                orphanScanCursor = "";
+                break;
+            }
+            for (ObjectStorage.StoredObject object : page) {
+                orphanScanCursor = object.key();
+                visited++;
+                if (!object.key().startsWith(prefix) || object.lastModified() == null
+                        || !object.lastModified().isBefore(cutoff)) continue;
+                Integer references = jdbc.queryForObject("""
+                        select count(*) from artifact_video_material_file
+                        where bucket_name = ? and object_key = ?
+                        """, Integer.class, bucket, object.key());
+                if (references != null && references > 0) continue;
+                try {
+                    storage.delete(bucket, object.key());
+                    removed++;
+                } catch (RuntimeException ex) {
+                    log.warn("Video material orphan cleanup failed; key={}", object.key(), ex);
+                }
+            }
+            if (page.size() < 100) {
+                orphanScanCursor = "";
+                break;
+            }
+        }
+        return removed;
     }
 
     private void storeFrameFiles(String taskId, String bundleRowId, Map<String, Object> bundle) {
