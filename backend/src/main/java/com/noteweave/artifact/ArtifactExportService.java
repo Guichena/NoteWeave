@@ -39,6 +39,7 @@ public class ArtifactExportService {
     private final ArtifactWorkerExportClient artifactWorkerClient;
     private final ArtifactSkillCatalogService skillCatalog;
     private final ArtifactMemoryRevisionGuard memoryRevisionGuard;
+    private final ArtifactContextV2ShadowSnapshotService contextV2Snapshots;
     private final String exportBucket;
     private String orphanScanCursor = "";
 
@@ -49,6 +50,7 @@ public class ArtifactExportService {
             ArtifactWorkerExportClient artifactWorkerClient,
             ArtifactSkillCatalogService skillCatalog,
             ArtifactMemoryRevisionGuard memoryRevisionGuard,
+            ArtifactContextV2ShadowSnapshotService contextV2Snapshots,
             com.noteweave.config.NoteWeaveProperties properties
     ) {
         this.jdbcTemplate = jdbcTemplate;
@@ -57,6 +59,7 @@ public class ArtifactExportService {
         this.artifactWorkerClient = artifactWorkerClient;
         this.skillCatalog = skillCatalog;
         this.memoryRevisionGuard = memoryRevisionGuard;
+        this.contextV2Snapshots = contextV2Snapshots;
         this.exportBucket = properties.storage().minio().bucketExport();
     }
 
@@ -539,15 +542,19 @@ public class ArtifactExportService {
     private void requireVersionSourcesVisible(ExportRow version) {
         if (version.originTaskId() == null || version.originTaskId().isBlank()) return;
         memoryRevisionGuard.requireActive(version.originTaskId());
-        List<String> scopes = jdbcTemplate.queryForList("""
-                select s.source_scope_snapshot_json
+        List<VersionInput> inputs = jdbcTemplate.query("""
+                select s.id, s.workspace_id, s.user_requirement, s.source_scope_snapshot_json
                 from artifact_job_run r
                 join artifact_run_input_snapshot s on s.id = r.input_snapshot_id
                 where r.task_id = ?
-                """, String.class, version.originTaskId());
-        if (scopes.isEmpty()) return; // Historical versions predate frozen input snapshots.
+                """, (rs, index) -> new VersionInput(rs.getString(1), rs.getString(2),
+                rs.getString(3), rs.getString(4)), version.originTaskId());
+        if (inputs.isEmpty()) return; // Historical versions predate frozen input snapshots.
+        VersionInput input = inputs.get(0);
+        contextV2Snapshots.activeRequirement(version.originTaskId(), input.workspaceId(),
+                input.snapshotId(), input.requirement());
         try {
-            JsonNode sources = objectMapper.readTree(scopes.get(0));
+            JsonNode sources = objectMapper.readTree(input.sourceScopeJson());
             if (!sources.isArray()) throw new IllegalArgumentException("source scope must be an array");
             for (JsonNode source : sources) {
                 String sourceId = source.isTextual() ? source.asText() : source.path("source_id").asText();
@@ -571,6 +578,9 @@ public class ArtifactExportService {
                     "产物来源快照无法校验", HttpStatus.CONFLICT);
         }
     }
+
+    private record VersionInput(String snapshotId, String workspaceId,
+                                String requirement, String sourceScopeJson) {}
 
     public List<ArtifactFileMetadataResponse> listFiles(String artifactVersionId) {
         return jdbcTemplate.query("""

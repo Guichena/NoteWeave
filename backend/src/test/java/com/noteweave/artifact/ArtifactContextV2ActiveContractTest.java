@@ -32,6 +32,7 @@ class ArtifactContextV2ActiveContractTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired MemoryRuntime memoryRuntime;
     @Autowired ArtifactJobService jobs;
+    @Autowired ArtifactExportService exports;
 
     @Test
     void activeRunConsumesOnlyItsFrozenProjectionAndFailsClosedWhenRedacted() throws Exception {
@@ -74,11 +75,24 @@ class ArtifactContextV2ActiveContractTest {
         assertThat(jobs.getWorkerInput(laterTask).inputPayload().generationBrief())
                 .isEqualTo("New v1 request");
 
+        String artifactJobId = jdbc.queryForObject(
+                "select artifact_job_id from artifact_job_run where task_id = ?",
+                String.class, taskId);
+        jdbc.update("""
+                insert into artifact_version(id, artifact_job_id, version_no, title,
+                                             content_markdown, origin_task_id)
+                values (?, ?, 1, 'Frozen version', '# Frozen content', ?)
+                """, java.util.UUID.randomUUID().toString(), artifactJobId, taskId);
+        assertThatThrownBy(() -> exports.downloadFile(workspaceId, artifactJobId, 1, "missing-file"))
+                .hasMessageContaining("产物文件不可下载");
+
         jdbc.update("""
                 update artifact_context_v2_shadow_snapshot set status = 'REDACTED'
                 where input_snapshot_id = (select input_snapshot_id from artifact_job_run where task_id = ?)
                 """, taskId);
         assertThatThrownBy(() -> jobs.getWorkerInput(taskId))
+                .hasMessageContaining("Frozen Artifact Context is unavailable");
+        assertThatThrownBy(() -> exports.downloadFile(workspaceId, artifactJobId, 1, "missing-file"))
                 .hasMessageContaining("Frozen Artifact Context is unavailable");
     }
 

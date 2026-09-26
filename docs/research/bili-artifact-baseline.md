@@ -473,3 +473,7 @@ V126 为 Artifact 的已冻结 Context 投影增加按 Run 固定的 `consumptio
 `ArtifactContextV2ActiveContractTest` **1 passed**、`ArtifactContextV2ShadowSnapshotContractTest` **2 passed**、`ArtifactCandidateTest` **6 passed**、`ArtifactRollbackGateTest` **2 passed**，合计 **11 passed，0 failed/0 error/0 skipped**，Maven 退出码 0；Flyway 应用至 V126。新合同覆盖冻结 Memory 在 Worker 生成要求中的消费、ACTIVE→OFF 后旧 Run 不漂移、新 Run 回到 v1、投影 REDACTED 时读取失败。仍需真实 Worker 跨进程回放、完整删除传播及 C4 样本评测；此处 Memory 是生成偏好，不作为 Source 事实或 Citation。
 
 补跑受 Artifact Worker 输入影响的 `ArtifactWorkerControlServiceTest` **4 passed** 与父资料 `VideoLearningRequestRepositoryContractTest` **7 passed**，共 **11 passed，0 failed/0 error/0 skipped**。本批两轮合计 **22 passed**。
+
+## C3 ACTIVE Artifact 已发布文件读取门禁
+
+文件下载在检验 Source、交付状态和对象字节前，沿 `origin_task_id` 找回原 Run 输入，并复核当时标为 ACTIVE 的 Context 投影身份、摘要及可回放状态。投影 REDACTED 时拒绝历史 Version 文件下载；SHADOW、v1 和没有冻结输入快照的历史版本仍走原有兼容路径。新增合同用同一 ACTIVE Run 的模拟 Version 验证脱敏前到达文件门禁、脱敏后先因 Context 失效拒绝；它不假装模拟 Version 已发布或有真实文件。`ArtifactContextV2ActiveContractTest` **1 passed**，既有已发布文件 Memory 撤销合同 **1 passed**，Source 删除合同 **1 passed**；合计 **3 passed，0 failed/0 error/0 skipped**。首次 Maven 选择器把 Source 删除用例名写错，因此那次只运行前两项；随后用准确方法名单独复跑 Source 合同通过。真实文件字节与浏览器下载仍待跨进程验收。
