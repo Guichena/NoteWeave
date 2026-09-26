@@ -137,3 +137,9 @@ Worker 复查又发现冻结 Bundle 与额外外部 URL 同时存在时，专用
 发布 Catalog、生产 Action、Provider Registry 和系统 MCP 注册了 `CAPTURE_VIDEO_FRAMES`。仅新 `bilibili_course_note_pdf` URL 采集计划在 `EXTRACT_TRANSCRIPT` 后加入 `CAPTURE_FRAMES`，两个 Operation 各有独立请求、回调令牌与可恢复等待；已冻结 Bundle 输入仍不触发视频 Provider。画面调用最多 16 帧，固定 30 秒基础采样，MCP 自身仍校验实际分集、时长与实际画面时间。Worker 在两项回执齐备后把字幕与画面合成一次 Host Bundle 提交，逐帧暂存到受控导出口，再生成含图 PDF 和文件 Manifest。系统 Provider 恢复仍沿已有持久化 Operation Outcome 与 Host ACK；自定义字幕 Provider 的回执也可与内建画面 Provider 合并。
 
 首轮 Worker 回归有 5 项旧测试假定字幕 ACK 即完成；改为分别断言字幕 ACK 后仍等待、不会提前提交素材/Version、画面 ACK 后完成。另有一次 Windows 临时配置文件替换拒绝，重跑未复现。合成回放用 PDF 解析器检查最终文件含真实图片对象，检查 Host 导出口的 PNG 字节与 Bundle 时间引用。最终 Worker 全套 **300 passed，43.03 秒**；Host `Phase6ResearchArtifactContractTest` **48 个用例，40 执行通过、8 个既有跳过**，`ArtifactSkillCatalogPublicationTest` **2 passed**，三份发布 Catalog 的 SHA-256 一致。真实 B 站抓取、Docker/ffmpeg、跨进程 Provider 崩溃恢复、MinIO 联调与语义知识树/视觉观察仍未实测或实现；时间节点当前仅做可追溯的画面分配。
+
+## P2 视频采集策略冻结
+
+PDF Skill 发布输入新增 `frame_density`（LOW/STANDARD/HIGH，默认 STANDARD）与 `asr_fallback`（ALLOW/DENY，默认 ALLOW）。Host 在 Run 输入快照冻结并用 Catalog 枚举校验；Worker 将策略解析为逐 Operation 的 `tool_arguments` 并持久化，字幕工具按策略决定是否允许转写兜底，抽帧工具按密度设置间隔与上限。历史资料包的复用比较忽略两个默认值，以便旧快照仍可被同设置的新 Run 引用；非默认值仍需严格相等。
+
+新增 Host 契约验证有效值冻结与无效值拒绝，`Phase6ResearchArtifactContractTest#videoAcquisitionPolicyIsFrozenAndInvalidValuesAreRejected` **1 passed**。Worker Callback 定向 **21 passed**，全套 **301 passed，37.50 秒**。首次定向测试失败源于新增测试误嵌入相邻用例、并误读 `ArtifactTaskResult.status`；修正测试后通过。三份发布 Catalog 原始字节 SHA-256 一致。尚未在真实 B 站或 Docker Provider 环境验证这些策略的实际下载/转写效果。

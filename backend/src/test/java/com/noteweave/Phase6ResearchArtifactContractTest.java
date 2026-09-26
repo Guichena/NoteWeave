@@ -707,6 +707,38 @@ void artifactJobShouldCreateTaskExposeWorkerInputAndPersistVersion() throws Exce
     }
 
     @Test
+    void videoAcquisitionPolicyIsFrozenAndInvalidValuesAreRejected() throws Exception {
+        String workspaceId = createWorkspace();
+        String url = "https://www.bilibili.com/video/BV1NoteWeaveDemo";
+        MvcResult create = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "bilibili_course_note_pdf",
+                                "user_requirement", "Freeze capture and transcription policy",
+                                "inputs", Map.of("url", url, "frame_density", "HIGH", "asr_fallback", "DENY")
+                        ))))
+                .andExpect(status().isOk()).andReturn();
+        String taskId = objectMapper.readTree(create.getResponse().getContentAsString())
+                .path("data").path("task_id").asText();
+        mockMvc.perform(get("/internal/worker/artifact-tasks/{taskId}/input", taskId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.input_payload.inputs.frame_density").value("HIGH"))
+                .andExpect(jsonPath("$.data.input_payload.inputs.asr_fallback").value("DENY"));
+
+        for (String field : List.of("frame_density", "asr_fallback")) {
+            mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of(
+                                    "skill_key", "bilibili_course_note_pdf",
+                                    "user_requirement", "Reject unsupported policy",
+                                    "inputs", Map.of("url", url, field, "UNSUPPORTED")
+                            ))))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("ARTIFACT_SKILL_INPUT_ENUM_INVALID"));
+        }
+    }
+
+    @Test
     void artifactWindowPagesMustUseFrozenSnapshotAndRejectRevokedSource() throws Exception {
         String workspaceId = createWorkspace();
         String sourceId = uploadSource(workspaceId, "paged-source.md", "Opening fact in first window.");

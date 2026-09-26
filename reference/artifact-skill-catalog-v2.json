@@ -279,6 +279,16 @@
           },
           "video_material_bundle_id": {
             "type": "string"
+          },
+          "frame_density": {
+            "type": "string",
+            "default": "STANDARD",
+            "enum": ["LOW", "STANDARD", "HIGH"]
+          },
+          "asr_fallback": {
+            "type": "string",
+            "default": "ALLOW",
+            "enum": ["ALLOW", "DENY"]
           }
         },
         "required": [

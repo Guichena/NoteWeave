@@ -134,6 +134,7 @@ def register_acquisition_runtime(
                     provider_status=operation.provider_status,
                     health_status=operation.health_status,
                     input_locator=operation.input_locator,
+                    tool_arguments=dict(operation.tool_arguments),
                     input_digest=_build_input_digest(
                         request_id=operation.request_id,
                         input_locator=operation.input_locator,

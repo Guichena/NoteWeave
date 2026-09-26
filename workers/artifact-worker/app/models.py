@@ -377,6 +377,7 @@ class AcquisitionOperationReceipt(BaseModel):
     status: str
     request_id: str = ""
     input_locator: str = ""
+    tool_arguments: dict[str, object] = Field(default_factory=dict)
     requested_at: str = ""
     completed_at: str = ""
     provider_receipt_id: str = ""
@@ -449,6 +450,7 @@ class AcquisitionRuntimeOperation(BaseModel):
     provider_status: str = ""
     health_status: str = ""
     input_locator: str = ""
+    tool_arguments: dict[str, object] = Field(default_factory=dict)
     input_digest: str = ""
     requested_at: str = ""
     completed_at: str = ""

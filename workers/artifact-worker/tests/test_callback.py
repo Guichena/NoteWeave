@@ -171,6 +171,8 @@ def test_video_material_client_publishes_and_reads_frozen_bundle(monkeypatch) ->
         input_digest="a" * 64, subtitle_source="MANUAL",
         srt_text="1\n00:00:00,000 --> 00:00:02,000\noriginal",
     )
+
+
     requests = []
 
     class FakeResponse:
@@ -208,6 +210,26 @@ def test_video_material_client_publishes_and_reads_frozen_bundle(monkeypatch) ->
     assert all(req.get_header("X-noteweave-outbox-delivery-token") == "delivery-1"
                for req in requests)
     assert json.loads(requests[0].data)["content_digest"] == bundle.content_digest()
+
+
+def test_video_acquisition_policy_is_persisted_on_operations() -> None:
+    clear_acquisition_runtime()
+    clear_waiting_tasks()
+    try:
+        task = _build_waiting_task_input()
+        task.input_payload.inputs.update({"frame_density": "HIGH", "asr_fallback": "DENY"})
+        _, result = run_artifact_task(task)
+        assert result.job_snapshot.status == "WAITING_FOR_PROVIDER"
+        operations = list_acquisition_operations(task_id=task.task_id)
+        transcript = next(op for op in operations if op["operation_key"] == "EXTRACT_TRANSCRIPT")
+        frames = next(op for op in operations if op["operation_key"] == "CAPTURE_FRAMES")
+        assert transcript["tool_arguments"]["fallback_to_transcription"] is False
+        assert transcript["tool_arguments"]["allow_auto_subtitles"] is True
+        assert frames["tool_arguments"]["interval_ms"] == 15_000
+        assert frames["tool_arguments"]["max_frames"] == 32
+    finally:
+        clear_acquisition_runtime()
+        clear_waiting_tasks()
 
 
 def test_fetch_frozen_material_frames_checks_scope_media_type_and_bytes(monkeypatch) -> None:

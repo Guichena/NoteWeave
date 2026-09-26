@@ -570,6 +570,7 @@ def build_acquisition_receipt(
                     status=operation_status,
                     request_id=request_id,
                     input_locator=_resolve_input_locator(descriptor),
+                    tool_arguments=_video_operation_arguments(task_input, operation_key, descriptor),
                     requested_at=_utc_now(),
                     completed_at=completed_at,
                     provider_receipt_id=_resolve_operation_provider_receipt_id(
@@ -1049,6 +1050,33 @@ def _resolve_operation_capability(operation_key: str) -> str:
         "CAPTURE_FRAMES": "CAPTURE_VIDEO_FRAMES",
         "TRANSCRIBE_AUDIO": "TRANSCRIBE_AUDIO",
     }.get(operation_key, "")
+
+
+def _video_operation_arguments(
+    task_input: ArtifactTaskInput, operation_key: str, descriptor: dict[str, object],
+) -> dict[str, object]:
+    if task_input.input_payload.skill_key.strip().lower() != "bilibili_course_note_pdf":
+        return {}
+    inputs = task_input.input_payload.inputs
+    if operation_key == "EXTRACT_TRANSCRIPT":
+        asr_fallback = str(inputs.get("asr_fallback", "ALLOW"))
+        if asr_fallback not in {"ALLOW", "DENY"}:
+            raise ValueError("unsupported frozen ASR fallback policy")
+        return {
+            "video_url": _resolve_input_locator(descriptor),
+            "fallback_to_transcription": asr_fallback == "ALLOW",
+            "allow_auto_subtitles": True,
+        }
+    if operation_key == "CAPTURE_FRAMES":
+        policy = {"LOW": (60_000, 8), "STANDARD": (30_000, 16),
+                  "HIGH": (15_000, 32)}
+        density = str(inputs.get("frame_density", "STANDARD"))
+        if density not in policy:
+            raise ValueError("unsupported frozen frame density")
+        interval_ms, max_frames = policy[density]
+        return {"video_url": _resolve_input_locator(descriptor),
+                "interval_ms": interval_ms, "max_frames": max_frames}
+    return {}
 
 
 def _requires_async_provider_execution(

@@ -199,6 +199,9 @@ public class ArtifactVideoMaterialService {
     private static Map<String, Object> acquisitionInputs(Map<String, Object> inputs) {
         Map<String, Object> acquisition = new TreeMap<>(inputs);
         acquisition.remove("video_material_bundle_id");
+        // Earlier frozen Runs predate these explicit defaults; preserve their reuse identity.
+        if ("STANDARD".equals(acquisition.get("frame_density"))) acquisition.remove("frame_density");
+        if ("ALLOW".equals(acquisition.get("asr_fallback"))) acquisition.remove("asr_fallback");
         return acquisition;
     }
 
