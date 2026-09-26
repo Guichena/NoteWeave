@@ -23,6 +23,10 @@ record ArtifactCandidate(String candidateId, String digest, String contentSha256
         String contentSha256 = sha256(markdown);
         String candidateId = sha256(taskId + ":" + inputSnapshotId + ":" + contentSha256);
         Object raw = request.resultPayload() == null ? null : request.resultPayload().get("candidate");
+        if (raw == null && !expectedCatalogDigest.isBlank()) {
+            throw new BusinessException("ARTIFACT_CANDIDATE_REQUIRED",
+                    "Published artifact Run requires a Worker Candidate", HttpStatus.CONFLICT);
+        }
         if (raw != null) {
             if (!(raw instanceof Map<?, ?> value)
                     || !taskId.equals(value.get("task_id"))

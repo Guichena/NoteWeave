@@ -55,6 +55,14 @@ class ArtifactCandidateTest {
                 .isInstanceOf(BusinessException.class);
     }
 
+    @Test
+    void publishedRunCannotCompleteWithoutCandidate() {
+        assertThatThrownBy(() -> ArtifactCandidate.from("task-1", "snapshot-1", "published-digest",
+                request(Map.of("markdown", MARKDOWN)), MARKDOWN))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("requires a Worker Candidate");
+    }
+
     private WorkerCompleteRequest request(Map<String, Object> payload) {
         return new WorkerCompleteRequest("MARKDOWN", "Artifact", payload, "", List.of());
     }

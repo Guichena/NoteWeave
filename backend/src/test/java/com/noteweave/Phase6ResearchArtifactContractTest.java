@@ -177,7 +177,7 @@ class Phase6ResearchArtifactContractTest {
     }
 
     @Test
-    void artifactJobShouldCreateTaskExposeWorkerInputAndPersistVersion() throws Exception {
+void artifactJobShouldCreateTaskExposeWorkerInputAndPersistVersion() throws Exception {
         String workspaceId = createWorkspace();
         String sourceId = uploadSource(workspaceId, "artifact-input.md", """
                 Artifact input source for report generation.
@@ -237,7 +237,7 @@ class Phase6ResearchArtifactContractTest {
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
                         .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
+                        .content(artifactCompletionJson(taskId, Map.of(
                                 "result_type", "MARKDOWN",
                                 "result_title", "Alpha Report",
                                 "result_payload", Map.of(
@@ -1049,7 +1049,7 @@ class Phase6ResearchArtifactContractTest {
     }
 
     @Test
-    void artifactCallbacksShouldBeIdempotentAfterTaskReachesTerminalState() throws Exception {
+void artifactCallbacksShouldBeIdempotentAfterTaskReachesTerminalState() throws Exception {
         String workspaceId = createWorkspace();
         MvcResult createResult = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -1074,7 +1074,7 @@ class Phase6ResearchArtifactContractTest {
         MvcResult firstComplete = mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
                         .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(completion)))
+                        .content(artifactCompletionJson(taskId, completion)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("COMPLETED"))
                 .andReturn();
@@ -1084,7 +1084,7 @@ class Phase6ResearchArtifactContractTest {
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
                         .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(completion)))
+                        .content(artifactCompletionJson(taskId, completion)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("COMPLETED"))
                 .andExpect(jsonPath("$.data.result_ref").value(firstResultRef));
@@ -1092,14 +1092,14 @@ class Phase6ResearchArtifactContractTest {
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
                         .header("X-NoteWeave-Idempotency-Key", "replayed-with-new-key:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(completion)))
+                        .content(artifactCompletionJson(taskId, completion)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.result_ref").value(firstResultRef));
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
                         .header("X-NoteWeave-Idempotency-Key", "conflicting-new-key:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
+                        .content(artifactCompletionJson(taskId, Map.of(
                                 "result_type", "MARKDOWN",
                                 "result_title", "Conflicting Artifact",
                                 "result_payload", Map.of("markdown", "# Different payload"),
@@ -1110,7 +1110,7 @@ class Phase6ResearchArtifactContractTest {
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
                         .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
+                        .content(artifactCompletionJson(taskId, Map.of(
                                 "result_type", "MARKDOWN",
                                 "result_title", "Conflicting Artifact",
                                 "result_payload", Map.of("markdown", "# Different payload"),
@@ -1321,7 +1321,7 @@ class Phase6ResearchArtifactContractTest {
     }
 
     @Test
-    void completedArtifactVersionShouldBeSavedAsWorkspaceSourceIdempotently() throws Exception {
+void completedArtifactVersionShouldBeSavedAsWorkspaceSourceIdempotently() throws Exception {
         String workspaceId = createWorkspace();
         MvcResult createResult = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -1338,7 +1338,7 @@ class Phase6ResearchArtifactContractTest {
         MvcResult completeResult = mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
                         .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
+                        .content(artifactCompletionJson(taskId, Map.of(
                                 "result_type", "MARKDOWN",
                                 "result_title", "Saved Study Guide",
                                 "result_payload", Map.of("markdown", "# Saved Study Guide\n\nGrounded artifact content."),
@@ -1389,7 +1389,7 @@ class Phase6ResearchArtifactContractTest {
     }
 
     @Test
-    void completedArtifactVersionShouldWriteBackToNoteAndWikiThroughJavaHost() throws Exception {
+void completedArtifactVersionShouldWriteBackToNoteAndWikiThroughJavaHost() throws Exception {
         String workspaceId = createWorkspace();
         MvcResult createResult = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -1406,7 +1406,7 @@ class Phase6ResearchArtifactContractTest {
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
                         .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
+                        .content(artifactCompletionJson(taskId, Map.of(
                                 "result_type", "MARKDOWN",
                                 "result_title", "Artifact Knowledge",
                                 "result_payload", Map.of("markdown", "# Artifact Knowledge\n\nHost controlled writeback."),
@@ -1749,7 +1749,7 @@ class Phase6ResearchArtifactContractTest {
     }
 
     @Test
-    void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Exception {
+void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Exception {
         String workspaceId = createWorkspace();
 
         MvcResult createResult = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
@@ -1936,7 +1936,7 @@ class Phase6ResearchArtifactContractTest {
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
                         .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
+                        .content(artifactCompletionJson(taskId, Map.of(
                                 "result_type", "MARKDOWN",
                                 "result_title", "B站讲义 PDF 任务结果",
                                 "result_payload", Map.of(
@@ -2018,6 +2018,8 @@ class Phase6ResearchArtifactContractTest {
                 "artifact waiting job resumed through java control plane",
                 java.util.List.of(Map.of("title", "BV1NoteWeaveDemo"))
         );
+        recordingArtifactWorkerControlClient.stubCandidate(taskId, artifactCandidate(taskId,
+                "## B站讲义 PDF 任务结果\n\n字幕与 PDF 编译均已完成。", "worker-course-notes.pdf"));
 
         mockMvc.perform(post("/internal/worker/artifact-tasks/{taskId}/resume", taskId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -2132,6 +2134,8 @@ class Phase6ResearchArtifactContractTest {
                 "artifact acquisition ack resumed and finalized",
                 java.util.List.of(Map.of("title", "BV1NoteWeaveDemo"))
         );
+        recordingArtifactWorkerControlClient.stubCandidate(taskId, artifactCandidate(taskId,
+                "## B站讲义 PDF 任务结果\n\n字幕与 PDF 编译均已完成。", "worker-course-notes.pdf"));
         recordingArtifactWorkerControlClient.stubAcquisitionAck(
                 "artifact-callback-token-bili-ack-1",
                 taskId,
@@ -2364,6 +2368,8 @@ class Phase6ResearchArtifactContractTest {
                 "artifact acquisition ack redelivery history resumed and finalized",
                 java.util.List.of(Map.of("title", "BV1NoteWeaveDemo"))
         );
+        recordingArtifactWorkerControlClient.stubCandidate(taskId, artifactCandidate(taskId,
+                "## B站讲义 PDF 重投递结果\n\n第二次 provider delivery 已恢复成功。", "worker-course-notes.pdf"));
         recordingArtifactWorkerControlClient.stubAcquisitionAckWithAttemptHistory(
                 "artifact-callback-token-bili-redelivery-2",
                 taskId,
@@ -5107,12 +5113,58 @@ class Phase6ResearchArtifactContractTest {
         assertThat(failTraceCount).isNotNull().isEqualTo(1);
     }
 
+    private Map<String, Object> artifactCandidate(String taskId, String markdown, String pdfFileName) throws Exception {
+        Map<String, Object> snapshot = jdbcTemplate.queryForMap("""
+                select r.input_snapshot_id, s.compiler_version from artifact_job_run r
+                join artifact_run_input_snapshot s on s.id = r.input_snapshot_id
+                where r.task_id = ?
+                """, taskId);
+        String snapshotId = String.valueOf(snapshot.get("input_snapshot_id"));
+        String compilerVersion = String.valueOf(snapshot.get("compiler_version"));
+        String catalogDigest = compilerVersion.substring("artifact-input-v1@sha256:".length());
+        byte[] markdownBytes = markdown.getBytes(StandardCharsets.UTF_8);
+        String contentHash = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest(markdownBytes));
+        String candidateId = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest((taskId + ":" + snapshotId + ":" + contentHash)
+                        .getBytes(StandardCharsets.UTF_8)));
+        List<Map<String, Object>> files = new ArrayList<>();
+        files.add(Map.of("role", "PRIMARY_MARKDOWN", "variant", "", "sequence_no", 0,
+                "file_name", "content.md", "media_type", "text/markdown; charset=UTF-8",
+                "size_bytes", markdownBytes.length, "checksum_sha256", contentHash));
+        if (pdfFileName != null && !pdfFileName.isBlank()) {
+            byte[] pdf = artifactWorkerExportClient.fetch(taskId, pdfFileName);
+            files.add(Map.of("role", "PRIMARY_PDF", "variant", "", "sequence_no", 0,
+                    "file_name", pdfFileName, "media_type", "application/pdf",
+                    "size_bytes", pdf.length, "checksum_sha256", java.util.HexFormat.of().formatHex(
+                            java.security.MessageDigest.getInstance("SHA-256").digest(pdf))));
+        }
+        return Map.of("task_id", taskId, "input_snapshot_id", snapshotId,
+                "catalog_digest", catalogDigest, "content_sha256", contentHash,
+                "candidate_id", candidateId, "required_files", files);
+    }
+
+    @SuppressWarnings("unchecked")
+    private String artifactCompletionJson(String taskId, Map<String, Object> completion) throws Exception {
+        Map<String, Object> payload = new LinkedHashMap<>((Map<String, Object>) completion.get("result_payload"));
+        String markdown = String.valueOf(payload.getOrDefault("markdown", payload.getOrDefault("content_markdown", "")));
+        Map<String, Object> export = payload.get("export_trace") instanceof Map<?, ?> value
+                ? (Map<String, Object>) value : Map.of();
+        String pdfFileName = "COMPILED".equals(export.get("status"))
+                ? String.valueOf(export.getOrDefault("file_name", "")) : "";
+        payload.putIfAbsent("verification", Map.of("status", "PASS"));
+        payload.put("candidate", artifactCandidate(taskId, markdown, pdfFileName));
+        Map<String, Object> updated = new LinkedHashMap<>(completion);
+        updated.put("result_payload", payload);
+        return objectMapper.writeValueAsString(updated);
+    }
+
     private void completeArtifact(String taskId, String title, String markdown) throws Exception {
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
                         .header("X-NoteWeave-Outbox-Delivery-Token", artifactDeliveryToken(taskId))
                         .header("X-NoteWeave-Idempotency-Key", "test-complete:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
+                        .content(artifactCompletionJson(taskId, Map.of(
                                 "result_type", "MARKDOWN",
                                 "result_title", title,
                                 "result_payload", Map.of("markdown", markdown),

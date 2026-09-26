@@ -39,21 +39,24 @@ class TestResearchOutboxPublisherConfig {
     @Bean
     @Primary
     ArtifactWorkerExportClient artifactWorkerExportClient() {
+        java.util.concurrent.ConcurrentHashMap<String, byte[]> exports = new java.util.concurrent.ConcurrentHashMap<>();
         return (taskId, fileName) -> {
             if (fileName.startsWith("missing-")) {
                 throw new com.noteweave.common.BusinessException(
                         "ARTIFACT_EXPORT_FETCH_FAILED", "worker export unavailable",
                         org.springframework.http.HttpStatus.BAD_GATEWAY);
             }
-            try (org.apache.pdfbox.pdmodel.PDDocument document =
-                         new org.apache.pdfbox.pdmodel.PDDocument();
-                 java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream()) {
-                document.addPage(new org.apache.pdfbox.pdmodel.PDPage());
-                document.save(output);
-                return output.toByteArray();
-            } catch (java.io.IOException ex) {
-                throw new IllegalStateException("test PDF generation failed", ex);
-            }
+            return exports.computeIfAbsent(taskId + ":" + fileName, key -> {
+                try (org.apache.pdfbox.pdmodel.PDDocument document =
+                             new org.apache.pdfbox.pdmodel.PDDocument();
+                     java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream()) {
+                    document.addPage(new org.apache.pdfbox.pdmodel.PDPage());
+                    document.save(output);
+                    return output.toByteArray();
+                } catch (java.io.IOException ex) {
+                    throw new IllegalStateException("test PDF generation failed", ex);
+                }
+            });
         };
     }
 
@@ -216,6 +219,7 @@ class TestResearchOutboxPublisherConfig {
         private final List<ResumeInvocation> resumeInvocations = new ArrayList<>();
         private final List<ArtifactAcquisitionAckRequest> acquisitionAckRequests = new ArrayList<>();
         private final Map<String, ResumeStub> resumeStubs = new HashMap<>();
+        private final Map<String, Map<String, Object>> resumeCandidates = new HashMap<>();
         private final Map<String, AcquisitionAckStub> acquisitionAckStubs = new HashMap<>();
         private final Map<String, Map<String, Object>> pendingRuntimeTraceByTaskId = new HashMap<>();
 
@@ -234,6 +238,10 @@ class TestResearchOutboxPublisherConfig {
             resultPayload.put("markdown", stub.markdown());
             resultPayload.put("export_trace", Map.of(
                     "status", "COMPILED", "file_name", "worker-course-notes.pdf"));
+            resultPayload.put("verification", Map.of("status", "PASS"));
+            if (resumeCandidates.containsKey(taskId)) {
+                resultPayload.put("candidate", resumeCandidates.get(taskId));
+            }
             Map<String, Object> pendingRuntimeTrace = pendingRuntimeTraceByTaskId.remove(taskId);
             if (pendingRuntimeTrace != null && !pendingRuntimeTrace.isEmpty()) {
                 resultPayload.putAll(pendingRuntimeTrace);
@@ -426,6 +434,10 @@ class TestResearchOutboxPublisherConfig {
             resumeStubs.put(taskId, new ResumeStub(resultTitle, markdown, traceSummary, citations, "provider callback 已到达，开始整理讲义内容"));
         }
 
+        void stubCandidate(String taskId, Map<String, Object> candidate) {
+            resumeCandidates.put(taskId, candidate);
+        }
+
         void stubAcquisitionAck(
                 String callbackToken,
                 String taskId,
@@ -531,6 +543,7 @@ class TestResearchOutboxPublisherConfig {
             resumeInvocations.clear();
             acquisitionAckRequests.clear();
             resumeStubs.clear();
+            resumeCandidates.clear();
             acquisitionAckStubs.clear();
             pendingRuntimeTraceByTaskId.clear();
         }
