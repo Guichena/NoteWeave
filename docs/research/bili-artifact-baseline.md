@@ -545,3 +545,7 @@ Wiki 当前版本的列表、搜索、相关页和详情，按当前引用的 So
 ## C3 历史 Knowledge Version 引用门禁
 
 将引用来源的 Workspace/Version 查询抽为共用门禁。Knowledge 历史版本列表在展示摘要前过滤撤销引用，历史详情在返回正文及 Citation 前再校验；当前版本继续复用该门禁。新增合同使旧版本正文仍留存于数据库但对撤销后的读取不可见。联跑 `KnowledgeQueryServiceTest` **7**、`KnowledgeVersionServiceTest` **4**、`KnowledgeGovernanceServiceTest` **6**、`KnowledgeCommandServiceTest` **4**、`ContextV2ResearchContractTest` **7**，共 **28 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。版本引用查询仍依赖已持久化 Citation；无引用的手工版本保持可读。
+
+## C3 答案生成前的派生 Research 引用门禁
+
+答案生成适配器装配本次消息的 Citation 文本时，先根据 Source 持久化的 `generated_by/generated_ref_id` 复核 Research 原 Run，再把标题与 `quote_text` 放入生成材料。撤销后阻断该次装配，避免引用文本送往后续模型调用。H2 合同验证可读与撤销两态；`ChatAnswerGenerationAdapterTest` **6**、`ContextV2ResearchContractTest` **7**，共 **13 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。测试中的 Research 门禁为模拟，真实 Run 的损坏/撤销状态由 Research 合同验证；已保存答案正文及其引用展示没有在此批迁移。
