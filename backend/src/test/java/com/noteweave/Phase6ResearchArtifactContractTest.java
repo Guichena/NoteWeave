@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.artifact.ArtifactJobService;
 import com.noteweave.artifact.ArtifactExportService;
 import com.noteweave.artifact.ArtifactWorkerExportClient;
+import com.noteweave.artifact.ArtifactVideoMaterialService;
 import com.noteweave.artifact.ArtifactVersionDetailResponse;
 import com.noteweave.answer.ConversationEventMux;
 import com.noteweave.answer.ConversationLiveEvent;
@@ -67,6 +68,9 @@ class Phase6ResearchArtifactContractTest {
 
     @Autowired
     private ArtifactWorkerExportClient artifactWorkerExportClient;
+
+    @Autowired
+    private ArtifactVideoMaterialService videoMaterialService;
 
     @Autowired
     private org.springframework.transaction.PlatformTransactionManager transactionManager;
@@ -5314,6 +5318,99 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
                 select count(*) from artifact_version where artifact_job_id =
                 (select artifact_job_id from artifact_job_run where task_id = ?)
                 """, Integer.class, taskId)).isEqualTo(1);
+    }
+
+    @Test
+    void frameMaterialStoresVerifiedBytesAndRejectsCrossPartReferences() throws Exception {
+        String workspaceId = createWorkspace();
+        MvcResult created = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "bilibili_course_note_pdf", "user_requirement", "frame gate",
+                                "inputs", Map.of("url", "https://www.bilibili.com/video/BV1234567890?p=2")))))
+                .andExpect(status().isOk()).andReturn();
+        String taskId = objectMapper.readTree(created.getResponse().getContentAsString())
+                .path("data").path("task_id").asText();
+        String snapshotId = jdbcTemplate.queryForObject(
+                "select input_snapshot_id from artifact_job_run where task_id = ?", String.class, taskId);
+        String inputsJson = jdbcTemplate.queryForObject(
+                "select inputs_json from artifact_run_input_snapshot where id = ?", String.class, snapshotId);
+        String canonicalInputs = new ObjectMapper()
+                .configure(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+                .writeValueAsString(objectMapper.readValue(inputsJson, Map.class));
+        String inputDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest((snapshotId + ":" + canonicalInputs).getBytes(StandardCharsets.UTF_8)));
+        byte[] image = artifactWorkerExportClient.fetch(taskId, "frame1.png");
+        String imageDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(image));
+        Map<String, Object> file = Map.of("file_id", "frame1", "role", "VIDEO_FRAME",
+                "media_type", "image/png", "size_bytes", image.length, "checksum_sha256", imageDigest);
+        Map<String, Object> frame = Map.of("frame_id", "f1", "part", 2, "at_ms", 1000,
+                "file_id", "frame1", "checksum_sha256", imageDigest, "dedupe_of", "");
+        Map<String, Object> bundle = new LinkedHashMap<>(Map.ofEntries(
+                Map.entry("schema_version", "video-material-v1"), Map.entry("bundle_id", "bundle-" + taskId),
+                Map.entry("bundle_version", 1), Map.entry("workspace_id", workspaceId),
+                Map.entry("bvid", "BV1234567890"), Map.entry("part", 2), Map.entry("duration_ms", 5000),
+                Map.entry("input_digest", inputDigest), Map.entry("subtitle_source", "NONE"),
+                Map.entry("transcript_original", ""), Map.entry("transcript_corrected", ""),
+                Map.entry("transcript_segments", List.of()), Map.entry("frames", List.of(frame)),
+                Map.entry("knowledge_nodes", List.of(Map.of("node_id", "n1", "title", "画面",
+                        "start_ms", 0, "end_ms", 2000, "transcript_segment_ids", List.of(),
+                        "frame_ids", List.of("f1"), "missing", List.of()))),
+                Map.entry("files", List.of(file)), Map.entry("coverage_gaps", List.of("NO_SUBTITLE"))));
+        String digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(new ObjectMapper()
+                        .configure(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+                        .writeValueAsBytes(bundle)));
+        ArtifactVideoMaterialService.Submission submission =
+                new ArtifactVideoMaterialService.Submission(bundle, digest);
+        java.util.concurrent.atomic.AtomicReference<Map<String, Object>> staged =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        new org.springframework.transaction.support.TransactionTemplate(transactionManager).execute(status -> {
+            videoMaterialService.submit(taskId, submission);
+            staged.set(jdbcTemplate.queryForMap("""
+                    select bucket_name, object_key from artifact_video_material_file f
+                    join artifact_video_material_bundle b on b.id = f.bundle_id
+                    where b.task_id = ?
+                    """, taskId));
+            status.setRollbackOnly();
+            return null;
+        });
+        assertThat(storage.exists(String.valueOf(staged.get().get("bucket_name")),
+                String.valueOf(staged.get().get("object_key")))).isFalse();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from artifact_video_material_bundle where task_id = ?",
+                Integer.class, taskId)).isZero();
+        ArtifactVideoMaterialService.Receipt receipt = videoMaterialService.submit(taskId, submission);
+        assertThat(videoMaterialService.submit(taskId, submission).id()).isEqualTo(receipt.id());
+        assertThat(videoMaterialService.readFile(taskId, "frame1").bytes()).isEqualTo(image);
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from artifact_video_material_file where bundle_id = ?",
+                Integer.class, receipt.id())).isEqualTo(1);
+        Map<String, Object> crossPart = new LinkedHashMap<>(frame);
+        crossPart.put("part", 1);
+        Map<String, Object> invalid = new LinkedHashMap<>(bundle);
+        invalid.put("frames", List.of(crossPart));
+        String invalidDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(new ObjectMapper()
+                        .configure(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+                        .writeValueAsBytes(invalid)));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> videoMaterialService.submit(taskId,
+                new ArtifactVideoMaterialService.Submission(invalid, invalidDigest)))
+                .isInstanceOf(com.noteweave.common.BusinessException.class)
+                .hasMessageContaining("frame reference");
+        Map<String, Object> outOfRangeNode = new LinkedHashMap<>(bundle);
+        outOfRangeNode.put("knowledge_nodes", List.of(Map.of("node_id", "n1", "title", "画面",
+                "start_ms", 2000, "end_ms", 3000, "transcript_segment_ids", List.of(),
+                "frame_ids", List.of("f1"), "missing", List.of())));
+        String outOfRangeDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest(new ObjectMapper()
+                        .configure(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+                        .writeValueAsBytes(outOfRangeNode)));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> videoMaterialService.submit(taskId,
+                new ArtifactVideoMaterialService.Submission(outOfRangeNode, outOfRangeDigest)))
+                .isInstanceOf(com.noteweave.common.BusinessException.class)
+                .hasMessageContaining("outside its time range");
     }
 
     @Test

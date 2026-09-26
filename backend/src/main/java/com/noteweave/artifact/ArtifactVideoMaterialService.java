@@ -3,6 +3,9 @@ package com.noteweave.artifact;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
+import com.noteweave.config.NoteWeaveProperties;
+import com.noteweave.storage.ObjectStorage;
+import java.io.ByteArrayInputStream;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.HexFormat;
@@ -15,23 +18,36 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import javax.imageio.ImageIO;
 
-/** Immutable subtitle-stage material; visual files require a separate publication gate. */
+/** Immutable video material with separately stored and verified frame bytes. */
 @Service
 public class ArtifactVideoMaterialService {
+    private static final Logger log = LoggerFactory.getLogger(ArtifactVideoMaterialService.class);
     private static final Pattern BVID = Pattern.compile("BV[0-9A-Za-z]{10}");
     private static final Pattern SHA256 = Pattern.compile("[0-9a-f]{64}");
     private final ArtifactJobReadRepository jobs;
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
+    private final ArtifactWorkerExportClient workerFiles;
+    private final ObjectStorage storage;
+    private final String bucket;
 
     public ArtifactVideoMaterialService(ArtifactJobReadRepository jobs, JdbcTemplate jdbc,
-                                        ObjectMapper mapper) {
+                                        ObjectMapper mapper, ArtifactWorkerExportClient workerFiles,
+                                        ObjectStorage storage, NoteWeaveProperties properties) {
         this.jobs = jobs;
         this.jdbc = jdbc;
         this.mapper = mapper;
+        this.workerFiles = workerFiles;
+        this.storage = storage;
+        this.bucket = properties.storage().minio().bucketExport();
     }
 
     @Transactional
@@ -70,7 +86,99 @@ public class ArtifactVideoMaterialService {
                 """, id, run.workspaceId(), run.artifactJobId(), taskId, bundleId,
                 string(bundle.get("bvid")), number(bundle.get("part")),
                 string(bundle.get("input_digest")), digest, json(bundle));
+        storeFrameFiles(taskId, id, bundle);
         return new Receipt(id, bundleId, 1, digest, run.workspaceId(), taskId);
+    }
+
+    /** Never expose Worker paths; a file must belong to the frozen bundle for this task. */
+    public MaterialBytes readFile(String taskId, String fileId) {
+        jobs.findByTaskId(taskId);
+        List<MaterialBytes> rows = jdbc.query("""
+                select f.media_type, f.bucket_name, f.object_key, f.checksum_sha256, f.size_bytes
+                from artifact_video_material_file f
+                join artifact_video_material_bundle b on b.id = f.bundle_id
+                where b.task_id = ? and b.bundle_version = 1 and f.file_id = ?
+                """, (rs, index) -> {
+            byte[] bytes = storage.read(rs.getString("bucket_name"), rs.getString("object_key"));
+            if (bytes.length != rs.getLong("size_bytes")
+                    || !hash(bytes).equals(rs.getString("checksum_sha256"))) {
+                throw new BusinessException("VIDEO_MATERIAL_FILE_DEGRADED",
+                        "素材文件摘要不匹配", HttpStatus.CONFLICT);
+            }
+            return new MaterialBytes(rs.getString("media_type"), bytes);
+        }, taskId, fileId);
+        if (rows.size() != 1) throw new BusinessException("VIDEO_MATERIAL_FILE_NOT_FOUND",
+                "素材文件不存在", HttpStatus.NOT_FOUND);
+        return rows.get(0);
+    }
+
+    private void storeFrameFiles(String taskId, String bundleRowId, Map<String, Object> bundle) {
+        @SuppressWarnings("unchecked") List<Map<String, Object>> files =
+                (List<Map<String, Object>>) bundle.get("files");
+        for (Map<String, Object> file : files) {
+            String fileId = string(file.get("file_id"));
+            String mediaType = string(file.get("media_type"));
+            String fileName = fileId + ("image/png".equals(mediaType) ? ".png" : ".jpg");
+            byte[] bytes = workerFiles.fetch(taskId, fileName);
+            if (bytes == null || bytes.length != number(file.get("size_bytes"))
+                    || bytes.length > 16_000_000 || !hash(bytes).equals(file.get("checksum_sha256"))) {
+                throw invalid("material frame bytes do not match the file manifest");
+            }
+            try (var input = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
+                if (input == null || !("image/png".equals(mediaType) ? png(bytes) : jpeg(bytes))) {
+                    throw invalid("material frame is not a valid image");
+                }
+                var readers = ImageIO.getImageReaders(input);
+                if (!readers.hasNext()) throw invalid("material frame is not decodable");
+                var reader = readers.next();
+                try {
+                    reader.setInput(input);
+                    if ((long) reader.getWidth(0) * reader.getHeight(0) > 50_000_000
+                            || reader.getWidth(0) < 1 || reader.getHeight(0) < 1
+                            || !("image/png".equals(mediaType) ? "png" : "jpeg")
+                                    .equalsIgnoreCase(reader.getFormatName())
+                            || reader.read(0) == null) {
+                        throw invalid("material frame is not a valid image");
+                    }
+                } finally {
+                    reader.dispose();
+                }
+            } catch (java.io.IOException ex) {
+                throw invalid("material frame is not decodable");
+            }
+            String objectKey = "artifacts/video-material/" + bundleRowId + "/" + fileName;
+            storage.write(bucket, objectKey, bytes);
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCompletion(int status) {
+                    if (status != STATUS_COMMITTED) {
+                        try {
+                            storage.delete(bucket, objectKey);
+                        } catch (RuntimeException ex) {
+                            log.warn("Video material rollback cleanup failed; key={}", objectKey, ex);
+                        }
+                    }
+                }
+            });
+            if (!hash(storage.read(bucket, objectKey)).equals(file.get("checksum_sha256"))) {
+                throw invalid("stored material frame digest differs from Worker bytes");
+            }
+            jdbc.update("""
+                    insert into artifact_video_material_file(id, bundle_id, file_id, media_type,
+                        storage_backend, bucket_name, object_key, size_bytes, checksum_sha256)
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, Ids.newId(), bundleRowId, fileId, mediaType, storage.backendName(),
+                    bucket, objectKey, bytes.length, string(file.get("checksum_sha256")));
+        }
+    }
+
+    private static boolean png(byte[] bytes) {
+        return bytes.length >= 8 && java.util.Arrays.equals(java.util.Arrays.copyOf(bytes, 8),
+                new byte[] {(byte) 137, 80, 78, 71, 13, 10, 26, 10});
+    }
+
+    private static boolean jpeg(byte[] bytes) {
+        return bytes.length >= 4 && (bytes[0] & 255) == 255 && (bytes[1] & 255) == 216
+                && (bytes[bytes.length - 2] & 255) == 255 && (bytes[bytes.length - 1] & 255) == 217;
     }
 
     public Map<String, Object> read(String taskId) {
@@ -153,13 +261,10 @@ public class ArtifactVideoMaterialService {
         try { part = requestedPart.find() ? Integer.parseInt(requestedPart.group(1)) : 1; }
         catch (NumberFormatException ex) { throw invalid("video part is invalid"); }
         if (number(bundle.get("part")) != part) throw invalid("video material belongs to another part");
-        if (!(bundle.get("frames") instanceof List<?> frames) || !frames.isEmpty()
-                || !(bundle.get("files") instanceof List<?> files) || !files.isEmpty()
-                || !(bundle.get("knowledge_nodes") instanceof List<?> nodes) || !nodes.isEmpty()
-                || !(bundle.get("coverage_gaps") instanceof List<?> gaps)
-                || !gaps.contains("NO_FRAMES")) {
-            throw invalid("subtitle-stage material must declare its missing visual evidence");
-        }
+        if (!(bundle.get("frames") instanceof List<?> frames)
+                || !(bundle.get("files") instanceof List<?> files)
+                || !(bundle.get("knowledge_nodes") instanceof List<?> nodes)
+                || !(bundle.get("coverage_gaps") instanceof List<?> gaps)) throw invalid("material collections are invalid");
         String sourceType = string(bundle.get("subtitle_source"));
         if (!Set.of("MANUAL", "AI_CAPTION", "ASR", "NONE").contains(sourceType)
                 || !(bundle.get("transcript_segments") instanceof List<?> rawSegments)) {
@@ -171,6 +276,7 @@ public class ArtifactVideoMaterialService {
                     || !string(bundle.get("transcript_corrected")).isBlank()) {
                 throw invalid("subtitle-free material must declare a gap and contain no transcript");
             }
+            validateVisuals(bundle, frames, files, nodes, gaps);
             return;
         }
         if (rawSegments.isEmpty() || gaps.contains("NO_SUBTITLE")) throw invalid("subtitle coverage contradicts cues");
@@ -198,6 +304,94 @@ public class ArtifactVideoMaterialService {
                 || !String.join("\n", corrected).equals(bundle.get("transcript_corrected"))) {
             throw invalid("full transcript does not match its timed cues");
         }
+        validateVisuals(bundle, frames, files, nodes, gaps);
+    }
+
+    private void validateVisuals(Map<String, Object> bundle, List<?> frames, List<?> files,
+                                 List<?> nodes, List<?> gaps) {
+        if (files.size() > 32 || frames.size() > 32 || nodes.size() > 128
+                || (frames.isEmpty() != gaps.contains("NO_FRAMES")))
+            throw invalid("frame coverage or count is invalid");
+        Map<String, Map<?, ?>> fileById = new java.util.HashMap<>();
+        long totalBytes = 0;
+        for (Object raw : files) {
+            if (!(raw instanceof Map<?, ?> file)
+                    || !file.keySet().equals(Set.of("file_id", "role", "media_type", "size_bytes", "checksum_sha256"))
+                    || !string(file.get("file_id")).matches("[A-Za-z0-9_-]{1,100}")
+                    || fileById.putIfAbsent(string(file.get("file_id")), file) != null
+                    || !"VIDEO_FRAME".equals(file.get("role"))
+                    || !Set.of("image/png", "image/jpeg").contains(file.get("media_type"))
+                    || number(file.get("size_bytes")) < 1 || number(file.get("size_bytes")) > 16_000_000
+                    || !SHA256.matcher(string(file.get("checksum_sha256"))).matches()) {
+                throw invalid("material file manifest is invalid");
+            }
+            totalBytes += number(file.get("size_bytes"));
+        }
+        if (totalBytes > 100_000_000) throw invalid("material frame files exceed bundle limit");
+        Map<String, Map<?, ?>> frameById = new java.util.HashMap<>();
+        Set<String> usedFiles = new HashSet<>();
+        for (Object raw : frames) {
+            if (!(raw instanceof Map<?, ?> frame)
+                    || !frame.keySet().equals(Set.of("frame_id", "part", "at_ms", "file_id", "checksum_sha256", "dedupe_of"))
+                    || string(frame.get("frame_id")).isBlank()
+                    || frameById.putIfAbsent(string(frame.get("frame_id")), frame) != null
+                    || number(frame.get("part")) != number(bundle.get("part"))
+                    || number(frame.get("at_ms")) < 0
+                    || number(frame.get("at_ms")) >= number(bundle.get("duration_ms"))
+                    || !fileById.containsKey(string(frame.get("file_id")))
+                    || !fileById.get(string(frame.get("file_id"))).get("checksum_sha256")
+                            .equals(frame.get("checksum_sha256"))) {
+                throw invalid("material frame reference is invalid");
+            }
+            usedFiles.add(string(frame.get("file_id")));
+        }
+        if (usedFiles.size() != files.size()) throw invalid("unreferenced material file");
+        for (Map<?, ?> frame : frameById.values()) {
+            Set<String> visited = new HashSet<>();
+            String parent = string(frame.get("dedupe_of"));
+            while (!parent.isBlank()) {
+                if (!visited.add(parent) || !frameById.containsKey(parent)
+                        || parent.equals(frame.get("frame_id"))) throw invalid("frame dedupe reference is invalid");
+                parent = string(frameById.get(parent).get("dedupe_of"));
+            }
+        }
+        Map<String, Map<?, ?>> segments = new java.util.HashMap<>();
+        for (Object raw : (List<?>) bundle.get("transcript_segments")) {
+            Map<?, ?> segment = (Map<?, ?>) raw;
+            segments.put(string(segment.get("segment_id")), segment);
+        }
+        Set<String> nodeIds = new HashSet<>();
+        for (Object raw : nodes) {
+            if (!(raw instanceof Map<?, ?> node)
+                    || !node.keySet().equals(Set.of("node_id", "title", "start_ms", "end_ms",
+                            "transcript_segment_ids", "frame_ids", "missing"))
+                    || string(node.get("node_id")).isBlank()
+                    || !nodeIds.add(string(node.get("node_id")))
+                    || string(node.get("title")).isBlank()
+                    || number(node.get("start_ms")) < 0
+                    || number(node.get("end_ms")) <= number(node.get("start_ms"))
+                    || number(node.get("end_ms")) > number(bundle.get("duration_ms"))
+                    || !(node.get("transcript_segment_ids") instanceof List<?> segmentRefs)
+                    || !(node.get("frame_ids") instanceof List<?> frameRefs)
+                    || !(node.get("missing") instanceof List<?> missing)
+                    || (segmentRefs.isEmpty() && frameRefs.isEmpty() && missing.isEmpty())) {
+                throw invalid("knowledge node is invalid");
+            }
+            for (Object ref : segmentRefs) {
+                Map<?, ?> segment = segments.get(ref);
+                if (segment == null || number(segment.get("end_ms")) < number(node.get("start_ms"))
+                        || number(segment.get("start_ms")) > number(node.get("end_ms"))) {
+                    throw invalid("knowledge node subtitle reference is outside its time range");
+                }
+            }
+            for (Object ref : frameRefs) {
+                Map<?, ?> frame = frameById.get(ref);
+                if (frame == null || number(frame.get("at_ms")) < number(node.get("start_ms"))
+                        || number(frame.get("at_ms")) > number(node.get("end_ms"))) {
+                    throw invalid("knowledge node frame reference is outside its time range");
+                }
+            }
+        }
     }
 
     private String digest(Map<String, Object> bundle) {
@@ -205,9 +399,13 @@ public class ArtifactVideoMaterialService {
     }
 
     private String hash(String content) {
+        return hash(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    private String hash(byte[] content) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                    .digest(content.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+                    .digest(content));
         } catch (Exception ex) {
             throw invalid("video material cannot be canonicalized");
         }
@@ -241,6 +439,7 @@ public class ArtifactVideoMaterialService {
     }
 
     public record Submission(Map<String, Object> bundle, String contentDigest) {}
+    public record MaterialBytes(String mediaType, byte[] bytes) {}
     public record Receipt(String id, String bundleId, int bundleVersion, String contentDigest,
                           String workspaceId, String taskId) {}
 }

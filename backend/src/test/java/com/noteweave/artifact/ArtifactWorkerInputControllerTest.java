@@ -102,13 +102,20 @@ class ArtifactWorkerInputControllerTest {
         assertThatThrownBy(() -> controller.getVideoMaterial("task-1", "stale-token"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("does not own the active outbox delivery");
+        assertThatThrownBy(() -> controller.getVideoMaterialFile("task-1", "frame-1", "stale-token"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("does not own the active outbox delivery");
         org.mockito.Mockito.verifyNoInteractions(materials);
 
         when(dispatcher.renewTaskMessage("noteweave.artifact.job", "task-1", "delivery-1",
                 OutboxDispatchPolicy.ARTIFACT_LEASE_DURATION)).thenReturn(true);
         controller.submitVideoMaterial("task-1", submission, "delivery-1");
         controller.getVideoMaterial("task-1", "delivery-1");
+        when(materials.readFile("task-1", "frame-1")).thenReturn(
+                new ArtifactVideoMaterialService.MaterialBytes("image/png", new byte[] {1, 2}));
+        controller.getVideoMaterialFile("task-1", "frame-1", "delivery-1");
         verify(materials).submit("task-1", submission);
         verify(materials).read("task-1");
+        verify(materials).readFile("task-1", "frame-1");
     }
 }

@@ -7,6 +7,8 @@ import com.noteweave.infra.outbox.DurableOutboxDispatcher;
 import com.noteweave.infra.outbox.OutboxDispatchPolicy;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -73,6 +75,18 @@ public class ArtifactWorkerInputController {
     ) {
         requireDelivery(taskId, deliveryToken);
         return ApiResponse.success(videoMaterials.read(taskId));
+    }
+
+    @GetMapping("/{taskId}/video-material/files/{fileId}")
+    ResponseEntity<byte[]> getVideoMaterialFile(
+            @PathVariable String taskId, @PathVariable String fileId,
+            @RequestHeader(value = DurableOutboxDispatcher.DELIVERY_TOKEN_HEADER,
+                    defaultValue = "") String deliveryToken
+    ) {
+        requireDelivery(taskId, deliveryToken);
+        ArtifactVideoMaterialService.MaterialBytes file = videoMaterials.readFile(taskId, fileId);
+        return ResponseEntity.ok().contentType(MediaType.parseMediaType(file.mediaType()))
+                .body(file.bytes());
     }
 
     @GetMapping("/{taskId}/sources/{sourceId}/windows")
