@@ -41,5 +41,12 @@ public class ResearchGeneratedSourceReadGate {
         return true;
     }
 
+    public void requireReadable(String workspaceId, String generatedBy, String generatedRefId) {
+        if (!visible(workspaceId, generatedBy, generatedRefId)) {
+            throw new BusinessException("RESEARCH_SOURCE_CONTEXT_REDACTED",
+                    "Generated Research Source is no longer readable", HttpStatus.CONFLICT);
+        }
+    }
+
     private record Origin(String snapshotId, String replayAvailability) {}
 }

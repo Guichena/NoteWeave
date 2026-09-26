@@ -19,6 +19,7 @@ import com.noteweave.research.ResearchBriefCompiler;
 import com.noteweave.research.ResearchAgentTaskCoordinatorService;
 import com.noteweave.research.ResearchAgentTaskService;
 import com.noteweave.research.ResearchRunCommandService;
+import com.noteweave.research.ResearchSourceScopeLoader;
 import com.noteweave.storage.ObjectStorage;
 import com.noteweave.memory.ExecutionObservation;
 import com.noteweave.memory.MemoryRuntime;
@@ -50,6 +51,7 @@ class ContextV2ResearchContractTest {
     @Autowired ResearchAgentTaskCoordinatorService coordinator;
     @Autowired ResearchAgentTaskService tasks;
     @Autowired ResearchRunCommandService researchRuns;
+    @Autowired ResearchSourceScopeLoader researchSourceScope;
     @Autowired ObjectStorage storage;
     @Autowired MemoryRuntime memory;
     @SpyBean ConversationContextCompilerV2Service compiler;
@@ -214,6 +216,8 @@ class ContextV2ResearchContractTest {
                 workspace);
         assertThat(data(get("/api/v2/workspaces/{workspaceId}/sources", workspace)).toString())
                 .contains(sourceId);
+        assertThat(researchSourceScope.load(workspace, mapper.writeValueAsString(java.util.List.of(sourceId))))
+                .hasSize(1);
 
         String originalSnapshot = jdbc.queryForObject("""
                 select snapshot_json from run_input_snapshot where research_run_id = ?
@@ -225,6 +229,10 @@ class ContextV2ResearchContractTest {
                 mapper.writeValueAsString(damaged), runId);
         mvc.perform(get("/api/v2/workspaces/{workspaceId}/sources", workspace))
                 .andExpect(status().isConflict());
+        assertThatThrownBy(() -> researchSourceScope.load(workspace,
+                mapper.writeValueAsString(java.util.List.of(sourceId))))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("RESEARCH_CONTEXT_SNAPSHOT_MISMATCH"));
         jdbc.update("update run_input_snapshot set snapshot_json = ? where research_run_id = ?",
                 originalSnapshot, runId);
 
@@ -233,6 +241,10 @@ class ContextV2ResearchContractTest {
                 .andExpect(status().isOk());
         assertThat(data(get("/api/v2/workspaces/{workspaceId}/sources", workspace)).toString())
                 .doesNotContain(sourceId, "Frozen report");
+        assertThatThrownBy(() -> researchSourceScope.load(workspace,
+                mapper.writeValueAsString(java.util.List.of(sourceId))))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("RESEARCH_SOURCE_CONTEXT_REDACTED"));
     }
 
     @Test

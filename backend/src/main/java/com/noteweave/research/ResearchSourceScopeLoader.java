@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /** Loads a Research source scope in its declared order using one source query. */
@@ -20,10 +21,18 @@ public final class ResearchSourceScopeLoader {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final ResearchGeneratedSourceReadGate generatedSourceGate;
 
     public ResearchSourceScopeLoader(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+        this(jdbcTemplate, objectMapper, null);
+    }
+
+    @Autowired
+    public ResearchSourceScopeLoader(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
+                                     ResearchGeneratedSourceReadGate generatedSourceGate) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.generatedSourceGate = generatedSourceGate;
     }
 
     public int count(String sourceScopeJson) {
@@ -90,6 +99,11 @@ public final class ResearchSourceScopeLoader {
             throw new BusinessException(
                     "RESEARCH_SOURCE_SCOPE_UNAVAILABLE",
                     "研究资料范围包含已删除、未就绪或不属于当前工作台的资料");
+        }
+        if (generatedSourceGate != null) {
+            for (WorkerSourceScopeItemResponse item : result) {
+                generatedSourceGate.requireReadable(workspaceId, item.generatedBy(), item.generatedRefId());
+            }
         }
         return result;
     }

@@ -505,3 +505,7 @@ Research 列表仍由 SQL 排除已降为 `METADATA_ONLY` 的 v2 Run；对余下
 ## C3 派生 Research Source 目录读取门禁
 
 通用 Source 目录现在对 `research_agent` 派生条目按原 Research Run 校验冻结 Context；已降为 `METADATA_ONLY` 的 v2 来源从目录过滤，即使目录本身曾被缓存也会逐次应用可见性规则。其他来源与没有 v2 快照的历史 Research 条目保持兼容；损坏或缺失的 v2 来源不会被当成可读记录。集成合同先列出派生条目，破坏投影摘要后确认目录冲突，恢复摘要，再删除原问题并复读相同目录，验证条目消失。`ContextV2ResearchContractTest` **7 passed**、`SourceServiceCacheTest` **3 passed**，共 **10 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。此批只覆盖通用目录，未覆盖 Source 正文、文件、通用检索及派生 Wiki 的所有读取路径。
+
+## C3 派生 Research Source 资料范围消费门禁
+
+Research Worker 的 Source Scope 装载复用同一原 Run 门禁。已撤销的 v2 来源返回 `RESEARCH_SOURCE_CONTEXT_REDACTED`，摘要损坏返回 `RESEARCH_CONTEXT_SNAPSHOT_MISMATCH`，不再把原文件摘要或样本文本交给后续 Research。集成合同在可读、损坏和撤销三种状态下检查同一 Source；`ContextV2ResearchContractTest` **7 passed**、`ResearchPersistenceJsonBoundaryTest` **4 passed**、`ResearchRunListQueryCountTest` **3 passed**，共 **14 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。此处仍未覆盖 Answer、Artifact 及通用检索对该派生 Source 的全部读取路径。
