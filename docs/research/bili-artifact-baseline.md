@@ -417,3 +417,7 @@ Worker 定向 `test_video_material_task.py test_artifact_kafka_consumer.py test_
 父请求 GET 列表按当前创建者返回最近 20 项，包含服务端新建开关、视频 URL/分集及素材与每项子 Job 的独立投影；创建入口关闭后仍能看到已接受请求。Artifact Studio 的视频资料包区域可选四种产物、语言、分集、画面密度、ASR 策略和学习重点；客户端请求 ID 在同一未修改表单的重试中保持不变。页面显示一次采集和每项产物状态，并提供取消未开始任务、同步下方产物记录的入口。旧单项 Skill 创建及 PDF 下载没有改动。服务端 `noteweave.video-learning.enabled` 仍默认关闭。
 
 Host `VideoLearningRequestRepositoryContractTest` **7 passed，0 failed/0 error/0 skipped**，新增关闭新建但可读取列表、视频身份字段断言。首次前端构建与测试并行触发同一工作树的 pnpm 依赖链接竞争，分别报 `EEXIST`/`EBUSY`，**未运行测试**；串行离线安装完成。第一次前端全量测试 **248 passed、1 failed**，失败是新 DOM 测试未清理前一用例的渲染节点；修正测试夹具后定向 **7 passed**，全量 **249 passed/249**。第一次 TypeScript 构建发现 Workspace 字段应为 `workspace_id`，修正后生产构建通过；响应式 CSS 调整后再次构建通过，`ui:check` 通过，`git diff --check` 通过。浏览器实际渲染在约 392px 与 375px 视口检查了收起的状态列表和展开的四选表单；初次看到复选框继承输入框整宽、取消按钮挤压状态，修正为单列选择和内容宽按钮后复核无截断。预览仅使用本地模拟数据，未调用真实 B站或启用父请求入口；跨进程与真实文件验收仍缺。
+
+## P6 素材文件丢失的下载故障门禁
+
+冻结素材文件的普通读取和子 Run 复用读取现在共用对象字节校验；对象缺失或存储读取故障统一返回 HTTP 409 / `VIDEO_MATERIAL_FILE_DEGRADED`，不把对象 Key 路径异常暴露给客户端。故障用例在已可读取的测试帧上删除本地对象，验证两条读取路径拒绝、DB 素材引用仍保留。`Phase6ResearchArtifactContractTest#frameMaterialStoresVerifiedBytesAndRejectsCrossPartReferences` **1 passed**，`ArtifactVideoMaterialCleanupTest` **1 passed**，合计 **2 passed，0 failed/0 error/0 skipped**。现有孤儿清理只删除超过 24 小时且不在 `artifact_video_material_file` 引用表中的对象；对于已入库但父请求失败或取消的素材，尚无能证明所有子 Run/Version 引用均已解除的归一化持有记录，因此没有实施按父状态直接删除。

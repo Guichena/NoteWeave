@@ -6295,6 +6295,23 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
                         videoMaterialService.readReferencedKnowledgePlan(wrongPartTaskId, receipt.id()))
                 .isInstanceOf(com.noteweave.common.BusinessException.class)
                 .hasMessageContaining("Workspace");
+        Map<String, Object> retainedFile = jdbcTemplate.queryForMap("""
+                select bucket_name, object_key from artifact_video_material_file
+                where bundle_id = ? and file_id = 'frame1'
+                """, receipt.id());
+        storage.delete(String.valueOf(retainedFile.get("bucket_name")),
+                String.valueOf(retainedFile.get("object_key")));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        videoMaterialService.readReferencedFile(childTaskId, receipt.id(), "frame1"))
+                .isInstanceOf(com.noteweave.common.BusinessException.class)
+                .hasMessageContaining("素材文件不可读取");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        videoMaterialService.readFile(taskId, "frame1"))
+                .isInstanceOf(com.noteweave.common.BusinessException.class)
+                .hasMessageContaining("素材文件不可读取");
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from artifact_video_material_file where bundle_id = ?
+                """, Integer.class, receipt.id())).isEqualTo(1);
     }
 
     @Test

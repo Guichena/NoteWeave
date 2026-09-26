@@ -177,12 +177,9 @@ public class ArtifactVideoMaterialService {
                 join artifact_video_material_bundle b on b.id = f.bundle_id
                 where b.task_id = ? and b.bundle_version = 1 and f.file_id = ?
                 """, (rs, index) -> {
-            byte[] bytes = storage.read(rs.getString("bucket_name"), rs.getString("object_key"));
-            if (bytes.length != rs.getLong("size_bytes")
-                    || !hash(bytes).equals(rs.getString("checksum_sha256"))) {
-                throw new BusinessException("VIDEO_MATERIAL_FILE_DEGRADED",
-                        "素材文件摘要不匹配", HttpStatus.CONFLICT);
-            }
+            byte[] bytes = readVerifiedFile(rs.getString("bucket_name"),
+                    rs.getString("object_key"), rs.getLong("size_bytes"),
+                    rs.getString("checksum_sha256"));
             return new MaterialBytes(rs.getString("media_type"), bytes);
         }, taskId, fileId);
         if (rows.size() != 1) throw new BusinessException("VIDEO_MATERIAL_FILE_NOT_FOUND",
@@ -381,12 +378,9 @@ public class ArtifactVideoMaterialService {
                 select media_type, bucket_name, object_key, checksum_sha256, size_bytes
                 from artifact_video_material_file where bundle_id = ? and file_id = ?
                 """, (rs, index) -> {
-            byte[] bytes = storage.read(rs.getString("bucket_name"), rs.getString("object_key"));
-            if (bytes.length != rs.getLong("size_bytes")
-                    || !hash(bytes).equals(rs.getString("checksum_sha256"))) {
-                throw new BusinessException("VIDEO_MATERIAL_FILE_DEGRADED",
-                        "素材文件摘要不匹配", HttpStatus.CONFLICT);
-            }
+            byte[] bytes = readVerifiedFile(rs.getString("bucket_name"),
+                    rs.getString("object_key"), rs.getLong("size_bytes"),
+                    rs.getString("checksum_sha256"));
             return new MaterialBytes(rs.getString("media_type"), bytes);
         }, bundleRowId, fileId);
         if (rows.size() != 1) throw new BusinessException("VIDEO_MATERIAL_FILE_NOT_FOUND",
@@ -955,6 +949,22 @@ public class ArtifactVideoMaterialService {
 
     private static BusinessException invalid(String message) {
         return new BusinessException("VIDEO_MATERIAL_INVALID", message, HttpStatus.CONFLICT);
+    }
+
+    private byte[] readVerifiedFile(String bucketName, String objectKey,
+                                    long expectedSize, String expectedDigest) {
+        byte[] bytes;
+        try {
+            bytes = storage.read(bucketName, objectKey);
+        } catch (RuntimeException missing) {
+            throw new BusinessException("VIDEO_MATERIAL_FILE_DEGRADED",
+                    "素材文件不可读取", HttpStatus.CONFLICT);
+        }
+        if (bytes == null || bytes.length != expectedSize || !hash(bytes).equals(expectedDigest)) {
+            throw new BusinessException("VIDEO_MATERIAL_FILE_DEGRADED",
+                    "素材文件摘要不匹配", HttpStatus.CONFLICT);
+        }
+        return bytes;
     }
 
     public record Submission(Map<String, Object> bundle, String contentDigest) {}
