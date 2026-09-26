@@ -54,6 +54,7 @@ noteweave:
       shadow-enabled: ${NOTEWEAVE_CONTEXT_V2_SHADOW_ENABLED:false}
       active-enabled: ${NOTEWEAVE_CONTEXT_V2_ACTIVE_ENABLED:false}
       research-active-enabled: ${NOTEWEAVE_CONTEXT_V2_RESEARCH_ACTIVE_ENABLED:false}
+      artifact-active-enabled: ${NOTEWEAVE_CONTEXT_V2_ARTIFACT_ACTIVE_ENABLED:false}
   research:
     strict-research-evidence-validation: ${NOTEWEAVE_RESEARCH_STRICT_EVIDENCE_VALIDATION:false}
     intent-matrix-v2: ${NOTEWEAVE_RESEARCH_INTENT_MATRIX_V2:false}

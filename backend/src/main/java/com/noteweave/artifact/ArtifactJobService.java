@@ -465,6 +465,8 @@ public class ArtifactJobService {
     public ArtifactWorkerInputResponse getWorkerInput(String taskId) {
         ArtifactJobTaskRow row = findByTaskId(taskId);
         memoryRevisionGuard.requireActive(taskId);
+        String activeRequirement = contextV2ShadowSnapshots.activeRequirement(
+                taskId, row.workspaceId(), row.inputSnapshotId(), row.userRequirement());
         Map<String, Object> inputs = artifactPayloadReadModelAssembler.readInputs(row.inputsJson());
         return new ArtifactWorkerInputResponse(
                 row.taskId(),
@@ -482,7 +484,7 @@ public class ArtifactJobService {
                         blankIfNull(row.styleProfileKey()),
                         blankIfNull(row.contextSnapshotId()),
                         row.userRequirement(),
-                        row.userRequirement(),
+                        activeRequirement == null ? row.userRequirement() : activeRequirement,
                         inputs
                 ),
                 contextV2ShadowSnapshots.readForWorker(taskId)
@@ -509,6 +511,8 @@ public class ArtifactJobService {
         requireVerifiedCandidate(request);
         requireFrozenSourcesVisible(row);
         memoryRevisionGuard.requireActive(taskId);
+        contextV2ShadowSnapshots.activeRequirement(
+                taskId, row.workspaceId(), row.inputSnapshotId(), row.userRequirement());
         videoMaterialService.validateCandidateReference(taskId, request.resultPayload());
         ArtifactCandidate candidate = ArtifactCandidate.from(taskId, row.inputSnapshotId(),
                 catalogDigestFrom(row.compilerVersion()), expectedArtifactType(row), request, markdown);

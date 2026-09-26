@@ -465,3 +465,11 @@ Host `VideoLearningRequestRepositoryContractTest`、`ArtifactCandidateTest`、`A
 测试迭代中，首次合同因待回复助手行缺少 `PENDING` 关联和编译失败后事务被标记回滚，返回 HTTP 500；补齐关联并将编译尝试置于嵌套事务后通过。一次测试将 JSON 的 `raw_tail` 错读为驼峰字段，修正断言。随后 Research 合同从 **3 passed** 扩展到 **6 passed**，覆盖真实任务消费、编译失败回退、损坏摘要拒绝、消息删除、Memory 撤销与检查点重试。扩大联跑曾达到 **165 passed，0 failed/0 error/0 skipped**，覆盖会话、Research Task/协调/提交/最终化。最终配置及读取门禁改动后，`ContextV2ResearchContractTest` **6**、`ContextV2ActiveAnswerContractTest` **5**、`ResearchRunListQueryCountTest` **3**、`ResearchArtifactServiceTest` **2**、`ResearchAgentIncrementalFinalizationServiceTest` **10**，合计 **26 passed，0 failed/0 error/0 skipped**，Maven 退出码 0；Flyway 成功应用 V125，`git diff --check` 通过。这些是 H2/模拟合同，尚未做生产灰度或真实外部研究回放。
 
 自动审批拒绝了清空 Research 问题、报告、Trace、规划行并取消任务/Run 的广泛清理改动，理由是会不可逆地破坏已有研究记录；该改动未执行。本批改为投影精确脱敏和消费/读取门禁。后续如需清理既有产物正文，须在明确保留与删除策略后另行处理。
+
+## C3 Artifact 消费冻结 Context v2
+
+V126 为 Artifact 的已冻结 Context 投影增加按 Run 固定的 `consumption_mode`。只有全局 Answer ACTIVE、独立 `artifact-active-enabled` 与 Workspace ACTIVE 同时满足时，新 Run 才标为 `ACTIVE`；默认仍为 `SHADOW`，旧 Run 与旧 Worker 输入不切换。ACTIVE Worker 输入从持久化投影验证摘要、Workspace、原需求和完整回放状态，再把已选 Memory 偏好附在生成要求后；原 `user_requirement` 和 Source 范围保持独立。Memory 被撤销后，投影变为 REDACTED，Worker 输入与完成回调拒绝继续消费；切回 OFF 只影响新 Run，已创建 ACTIVE Run 继续按原冻结模式复核。
+
+`ArtifactContextV2ActiveContractTest` **1 passed**、`ArtifactContextV2ShadowSnapshotContractTest` **2 passed**、`ArtifactCandidateTest` **6 passed**、`ArtifactRollbackGateTest` **2 passed**，合计 **11 passed，0 failed/0 error/0 skipped**，Maven 退出码 0；Flyway 应用至 V126。新合同覆盖冻结 Memory 在 Worker 生成要求中的消费、ACTIVE→OFF 后旧 Run 不漂移、新 Run 回到 v1、投影 REDACTED 时读取失败。仍需真实 Worker 跨进程回放、完整删除传播及 C4 样本评测；此处 Memory 是生成偏好，不作为 Source 事实或 Citation。
+
+补跑受 Artifact Worker 输入影响的 `ArtifactWorkerControlServiceTest` **4 passed** 与父资料 `VideoLearningRequestRepositoryContractTest` **7 passed**，共 **11 passed，0 failed/0 error/0 skipped**。本批两轮合计 **22 passed**。
