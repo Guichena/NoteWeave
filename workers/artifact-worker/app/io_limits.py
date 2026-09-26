@@ -42,3 +42,13 @@ def read_text_file_limited(
             f"provider text file exceeds the {max_bytes}-byte limit: {path}"
         )
     return content.decode("utf-8", errors="ignore").strip()
+
+
+def read_provider_text_in_sandbox(path_value: object) -> str:
+    """Provider file locators are never authority to read arbitrary Worker files."""
+    from app.config import resolve_mcp_sandbox_root
+
+    path = Path(str(path_value).strip()).resolve()
+    if not path.is_relative_to(resolve_mcp_sandbox_root().resolve()):
+        raise ValueError("provider text file is outside the controlled sandbox")
+    return read_text_file_limited(path)

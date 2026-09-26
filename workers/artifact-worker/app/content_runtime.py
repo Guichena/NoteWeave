@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import hashlib
 
 from app.action_compat import resolve_action_compatibility
-from app.io_limits import ContentSizeLimitError, read_text_file_limited
+from app.io_limits import ContentSizeLimitError, read_provider_text_in_sandbox
 from app.capability_provider import (
     get_capability_provider_approval_status,
     get_capability_provider_discovery_status,
@@ -1065,18 +1065,6 @@ def _resolve_source_acquisition_payload(
 def _build_text_from_acquisition_payload(
     payload: dict[str, object],
 ) -> tuple[str, dict[str, object]]:
-    subtitle_preview = payload.get("subtitle_preview")
-    if isinstance(subtitle_preview, list):
-        preview_lines = [str(line).strip() for line in subtitle_preview if str(line).strip()]
-        if preview_lines:
-            return (
-                "\n".join(preview_lines),
-                {
-                    "acquisition_mode": str(payload.get("acquisition_mode", "")),
-                    "selected_subtitle_path": str(payload.get("selected_subtitle_path", "")),
-                    "subtitle_file_count": len(payload.get("subtitle_files") or []),
-                },
-            )
     transcription = payload.get("transcription") or {}
     artifacts = transcription.get("artifacts") or {}
     for key in ("txt_files", "srt_files"):
@@ -1104,6 +1092,18 @@ def _build_text_from_acquisition_payload(
                     "selected_subtitle_path": selected_subtitle_path,
                 },
             )
+    subtitle_preview = payload.get("subtitle_preview")
+    if isinstance(subtitle_preview, list):
+        preview_lines = [str(line).strip() for line in subtitle_preview if str(line).strip()]
+        if preview_lines:
+            return (
+                "\n".join(preview_lines),
+                {
+                    "acquisition_mode": str(payload.get("acquisition_mode", "")),
+                    "subtitle_file_count": len(payload.get("subtitle_files") or []),
+                    "material_gap": "FULL_SUBTITLE_FILE_UNAVAILABLE",
+                },
+            )
     return "", {}
 
 
@@ -1112,8 +1112,8 @@ def _read_text_file(path_value: object) -> str:
     if not path:
         return ""
     try:
-        return read_text_file_limited(path)
-    except (OSError, ContentSizeLimitError):
+        return read_provider_text_in_sandbox(path)
+    except (OSError, ContentSizeLimitError, ValueError):
         return ""
 
 

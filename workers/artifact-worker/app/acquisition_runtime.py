@@ -17,7 +17,7 @@ from app.models import (
     AcquisitionRuntimeOperation,
 )
 from app.provider_job_status import resolve_provider_job_status
-from app.io_limits import ContentSizeLimitError, read_text_file_limited, validate_json_payload_size
+from app.io_limits import ContentSizeLimitError, read_provider_text_in_sandbox, validate_json_payload_size
 from app.file_store_lease import FileStoreLease
 
 
@@ -751,24 +751,24 @@ def _summarize_provider_payload(provider_payload: dict[str, object]) -> dict[str
 
 
 def _extract_provider_payload_text(provider_payload: dict[str, object]) -> str:
-    preview = provider_payload.get("subtitle_preview")
-    if isinstance(preview, list):
-        preview_lines = [str(line).strip() for line in preview if str(line).strip()]
-        if preview_lines:
-            return "\n".join(preview_lines)
     transcription = provider_payload.get("transcription") or {}
     artifacts = transcription.get("artifacts") or {}
     for key in ("txt_files", "srt_files"):
         values = artifacts.get(key) or []
         if values:
             try:
-                return read_text_file_limited(values[0])
-            except (OSError, ContentSizeLimitError):
+                return read_provider_text_in_sandbox(values[0])
+            except (OSError, ContentSizeLimitError, ValueError):
                 continue
     selected_subtitle_path = str(provider_payload.get("selected_subtitle_path", "")).strip()
     if selected_subtitle_path:
         try:
-            return read_text_file_limited(selected_subtitle_path)
-        except (OSError, ContentSizeLimitError):
-            return ""
+            return read_provider_text_in_sandbox(selected_subtitle_path)
+        except (OSError, ContentSizeLimitError, ValueError):
+            pass
+    preview = provider_payload.get("subtitle_preview")
+    if isinstance(preview, list):
+        preview_lines = [str(line).strip() for line in preview if str(line).strip()]
+        if preview_lines:
+            return "\n".join(preview_lines)
     return json.dumps(provider_payload, ensure_ascii=False)
