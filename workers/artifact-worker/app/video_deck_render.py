@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import re
+import unicodedata
 from io import BytesIO
 from pathlib import Path
 from typing import Callable
@@ -23,6 +25,30 @@ WIDTH = Inches(13.333)
 HEIGHT = Inches(7.5)
 IMAGE_BOX = (Inches(0.7), Inches(1.45), Inches(7.65), Inches(5.25))
 TEXT_BOX = (Inches(8.7), Inches(1.45), Inches(3.9), Inches(4.9))
+
+
+def _display_units(text: str) -> int:
+    return sum(2 if unicodedata.east_asian_width(char) in {"W", "F"} else 1
+               for char in text)
+
+
+def _title_font_size(title: str) -> int:
+    units = _display_units(title)
+    if units > 80:
+        raise ValueError("video deck title exceeds fixed template width")
+    return 30 if units <= 45 else 24 if units <= 70 else 20
+
+
+def _body_font_size(claims: list[str]) -> int:
+    text = claims or [""]
+    width_pt = TEXT_BOX[2] / 12700
+    height_pt = TEXT_BOX[3] / 12700
+    for size in (18, 16, 14):
+        lines = sum(max(1, math.ceil(_display_units(claim) * size * 0.6 / width_pt))
+                    for claim in text) + 2 * (len(text) - 1)
+        if lines * size * 1.35 <= height_pt:
+            return size
+    raise ValueError("video deck claims exceed fixed template height")
 
 
 def _fit_image(width: int, height: int) -> tuple[int, int, int, int]:
@@ -64,7 +90,7 @@ def render_original_video_deck(
         title.text_frame.text = slide_ir.title
         title_paragraph = title.text_frame.paragraphs[0]
         title_paragraph.font.name = "Aptos"
-        title_paragraph.font.size = Pt(30)
+        title_paragraph.font.size = Pt(_title_font_size(slide_ir.title))
         title_paragraph.font.bold = True
         title_paragraph.font.color.rgb = RGBColor(25, 44, 62)
         x, y, width, height = _fit_image(*dimensions)
@@ -75,9 +101,10 @@ def render_original_video_deck(
         body.text_frame.word_wrap = True
         body.text_frame.text = "\n\n".join(slide_ir.claims) if slide_ir.claims else \
             DECK_LABELS[ir.language][4]
+        body_font_size = _body_font_size(slide_ir.claims)
         for paragraph in body.text_frame.paragraphs:
             paragraph.font.name = "Aptos"
-            paragraph.font.size = Pt(18)
+            paragraph.font.size = Pt(body_font_size)
             paragraph.font.color.rgb = RGBColor(38, 51, 60)
         footer = slide.shapes.add_textbox(Inches(0.7), Inches(6.9), Inches(11.9), Inches(0.35))
         footer.text_frame.text = (

@@ -477,3 +477,7 @@ V126 为 Artifact 的已冻结 Context 投影增加按 Run 固定的 `consumptio
 ## C3 ACTIVE Artifact 已发布文件读取门禁
 
 文件下载在检验 Source、交付状态和对象字节前，沿 `origin_task_id` 找回原 Run 输入，并复核当时标为 ACTIVE 的 Context 投影身份、摘要及可回放状态。投影 REDACTED 时拒绝历史 Version 文件下载；SHADOW、v1 和没有冻结输入快照的历史版本仍走原有兼容路径。新增合同用同一 ACTIVE Run 的模拟 Version 验证脱敏前到达文件门禁、脱敏后先因 Context 失效拒绝；它不假装模拟 Version 已发布或有真实文件。`ArtifactContextV2ActiveContractTest` **1 passed**，既有已发布文件 Memory 撤销合同 **1 passed**，Source 删除合同 **1 passed**；合计 **3 passed，0 failed/0 error/0 skipped**。首次 Maven 选择器把 Source 删除用例名写错，因此那次只运行前两项；随后用准确方法名单独复跑 Source 合同通过。真实文件字节与浏览器下载仍待跨进程验收。
+
+## P4 PowerPoint 实际渲染与版面门禁
+
+本机 PowerPoint 可打开 Worker 生成的原画面 PPTX。以冻结的合成 PNG、字幕与含证据引用的 Plan 生成普通及长标题/密集正文两份单页演示文稿，PowerPoint COM 均成功打开并导出 1280×720 PNG。首次压力预览中，长标题超出右侧页边；根据实际渲染把标题按中英文显示宽度选择字号，正文按估算行高选字号，超出最低可读字号时明确拒绝生成。重新导出的压力页标题完整可见，原画面未裁边，正文在页内。`test_video_deck_ir.py` **11 passed**；Worker 全套 **362 passed，41.46 秒**。这是合成图片、单页、PowerPoint 桌面端的视觉检查；未验证真实 B站画面、多页版面、容器内 LibreOffice 转换或逐页 PNG 与 PPTX 的部署一致性。P4 仍不能宣称完成。

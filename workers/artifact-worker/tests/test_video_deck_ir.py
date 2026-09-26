@@ -9,7 +9,10 @@ from PIL import Image
 from reportlab.pdfgen import canvas
 
 from app.video_deck_ir import VideoDeckIRV1, build_video_deck_ir
-from app.video_deck_render import render_original_video_deck, verify_original_video_deck
+from app.video_deck_render import (
+    _body_font_size, _title_font_size, render_original_video_deck,
+    verify_original_video_deck,
+)
 from app.video_deck_preview import rasterize_deck_pdf
 from app.video_deck_runtime import run_video_deck_task, render_video_deck_markdown
 from app.candidate_file_manifest import build_video_deck_required_files
@@ -117,6 +120,14 @@ def test_original_image_deck_opens_and_preserves_complete_frame(
     verify_original_video_deck(path, ir)
     with pytest.raises(ValueError, match="manifest"):
         render_original_video_deck("task-deck-2", ir, bundle, plan, lambda _: b"wrong")
+
+
+def test_fixed_template_reduces_long_title_and_rejects_unreadable_density() -> None:
+    assert _title_font_size("Consistency and synchronization across cache replicas") == 24
+    with pytest.raises(ValueError, match="title exceeds"):
+        _title_font_size("长" * 41)
+    with pytest.raises(ValueError, match="claims exceed"):
+        _body_font_size(["证" * 320])
 
 
 @pytest.mark.skipif(not shutil.which("pdfinfo") or not shutil.which("pdftoppm"),
