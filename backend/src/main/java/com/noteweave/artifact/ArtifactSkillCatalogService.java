@@ -1,7 +1,12 @@
 package com.noteweave.artifact;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.capability.CapabilityCatalogPort;
 import com.noteweave.common.BusinessException;
+import java.io.InputStream;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -14,52 +19,54 @@ import org.springframework.stereotype.Service;
 @Service
 public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
 
-    private static final List<Map<String, String>> LANGUAGE_OPTIONS = List.of(
-            Map.of("const", "zh-CN", "title", "中文（简体）"),
-            Map.of("const", "en", "title", "English"),
-            Map.of("const", "zh-EN", "title", "中英双语")
-    );
-
     private final Map<String, ArtifactSkillDefinition> skillsByKey;
     private final Map<String, String> aliases;
     private final Map<String, String> actionBindings;
+    private final String catalogDigest;
 
     public ArtifactSkillCatalogService() {
+        Map<String, Object> catalog;
+        byte[] catalogBytes;
+        try (InputStream input = ArtifactSkillCatalogService.class.getResourceAsStream(
+                "/artifact-skill-catalog-v2.json")) {
+            if (input == null) throw new IllegalStateException("published artifact Skill catalog is missing");
+            catalogBytes = input.readAllBytes();
+            catalog = new ObjectMapper().readValue(catalogBytes, new TypeReference<>() {});
+            catalogDigest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(catalogBytes));
+        } catch (Exception error) {
+            throw new IllegalStateException("cannot load published artifact Skill catalog", error);
+        }
+        if (!Integer.valueOf(2).equals(catalog.get("catalog_version"))) {
+            throw new IllegalStateException("unsupported artifact Skill catalog version");
+        }
         Map<String, ArtifactSkillDefinition> skills = new LinkedHashMap<>();
-        register(skills, new ArtifactSkillDefinition("resume_highlight", "简历亮点描述", languageOnlySchema()));
-        register(skills, new ArtifactSkillDefinition("study_guide", "学习指南", languageOnlySchema()));
-        register(skills, new ArtifactSkillDefinition("quiz_pack", "测验题集", languageOnlySchema()));
-        register(skills, new ArtifactSkillDefinition("wiki_page", "Wiki 页面", languageOnlySchema()));
-        register(skills, new ArtifactSkillDefinition("mindmap_from_workspace", "思维导图", mindMapSchema()));
-        register(skills, new ArtifactSkillDefinition("bilibili_course_note_pdf", "B站讲义 PDF",
-                languageAndUrlSchema(true, List.of("video_url", "bilibili_url"))));
-        register(skills, new ArtifactSkillDefinition("report_draft", "结构化报告", languageOnlySchema()));
-        register(skills, new ArtifactSkillDefinition("faq_draft", "FAQ 草稿", languageOnlySchema()));
-        register(skills, new ArtifactSkillDefinition("structured_note", "结构化笔记", languageOnlySchema()));
-        register(skills, new ArtifactSkillDefinition("video_summary", "视频总结",
-                languageAndUrlSchema(true, List.of("video_url"))));
-        register(skills, new ArtifactSkillDefinition("audio_minutes", "音频纪要", languageOnlySchema()));
-        register(skills, new ArtifactSkillDefinition("course_notes", "课程笔记",
-                languageAndUrlSchema(false, List.of("video_url"))));
+        for (Object rawEntry : (List<?>) catalog.get("skills")) {
+            if (!(rawEntry instanceof Map<?, ?> entry) || !(entry.get("input_schema") instanceof Map<?, ?> schema)) {
+                throw new IllegalStateException("invalid artifact Skill catalog entry");
+            }
+            String key = String.valueOf(entry.get("skill_key"));
+            Map<String, Object> inputSchema = new LinkedHashMap<>();
+            schema.forEach((field, value) -> inputSchema.put(String.valueOf(field), value));
+            if (skills.putIfAbsent(key, new ArtifactSkillDefinition(
+                    key, String.valueOf(entry.get("display_name")), Map.copyOf(inputSchema))) != null) {
+                throw new IllegalStateException("duplicate artifact Skill key: " + key);
+            }
+        }
         this.skillsByKey = Map.copyOf(skills);
-        this.aliases = Map.of(
-                "resume_highlights", "resume_highlight",
-                "bilibili_pdf", "bilibili_course_note_pdf"
-        );
-        this.actionBindings = Map.ofEntries(
-                Map.entry("resume_highlight", "RESUME_HIGHLIGHT"),
-                Map.entry("study_guide", "STUDY_GUIDE"),
-                Map.entry("quiz_pack", "QUIZ"),
-                Map.entry("wiki_page", "WIKI_PAGE"),
-                Map.entry("mindmap_from_workspace", "MINDMAP"),
-                Map.entry("bilibili_course_note_pdf", "COURSE_NOTES"),
-                Map.entry("report_draft", "REPORT"),
-                Map.entry("faq_draft", "FAQ"),
-                Map.entry("structured_note", "STRUCTURED_NOTE"),
-                Map.entry("video_summary", "VIDEO_SUMMARY"),
-                Map.entry("audio_minutes", "AUDIO_MINUTES"),
-                Map.entry("course_notes", "COURSE_NOTES")
-        );
+        Map<String, String> catalogAliases = new LinkedHashMap<>();
+        ((Map<?, ?>) catalog.get("aliases")).forEach((key, value) ->
+                catalogAliases.put(String.valueOf(key), String.valueOf(value)));
+        this.aliases = Map.copyOf(catalogAliases);
+        Map<String, String> bindings = new LinkedHashMap<>();
+        for (Object rawEntry : (List<?>) catalog.get("skills")) {
+            Map<?, ?> entry = (Map<?, ?>) rawEntry;
+            bindings.put(String.valueOf(entry.get("skill_key")), String.valueOf(entry.get("action_key")));
+        }
+        this.actionBindings = Map.copyOf(bindings);
+    }
+
+    public String catalogDigest() {
+        return catalogDigest;
     }
 
     public ArtifactSkillDefinition resolveSkill(String skillKey) {
@@ -158,10 +165,6 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
                         buildDefaultInputHints(skill.skillKey())
                 ))
                 .toList();
-    }
-
-    private void register(Map<String, ArtifactSkillDefinition> skills, ArtifactSkillDefinition skill) {
-        skills.put(skill.skillKey(), skill);
     }
 
     private String canonicalSkillKey(String value) {
@@ -320,60 +323,6 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
             }
         }
         return Set.copyOf(values);
-    }
-
-    private Map<String, Object> languageOnlySchema() {
-        return Map.of(
-                "type", "object",
-                "properties", Map.of(
-                        "language", languageSchema()
-                )
-        );
-    }
-
-    private Map<String, Object> mindMapSchema() {
-        Map<String, Object> properties = new LinkedHashMap<>();
-        properties.put("language", languageSchema());
-        properties.put("layout", Map.of(
-                "type", "string",
-                "default", "balanced",
-                "oneOf", List.of(
-                        Map.of("const", "balanced", "title", "均衡分支"),
-                        Map.of("const", "compact", "title", "紧凑概览")
-                )
-        ));
-        properties.put("depth", Map.of(
-                "type", "string",
-                "default", "3",
-                "oneOf", List.of(
-                        Map.of("const", "2", "title", "2 层，快速浏览"),
-                        Map.of("const", "3", "title", "3 层，推荐"),
-                        Map.of("const", "4", "title", "4 层，详细")
-                )
-        ));
-        return Map.of("type", "object", "properties", Map.copyOf(properties));
-    }
-
-    private Map<String, Object> languageAndUrlSchema(boolean required, List<String> aliases) {
-        Map<String, Object> properties = new LinkedHashMap<>();
-        properties.put("language", languageSchema());
-        properties.put("url", Map.of("type", "string"));
-        for (String alias : aliases) properties.put(alias, Map.of("type", "string"));
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", properties);
-        if (required) {
-            schema.put("required", List.of("url"));
-        }
-        return Map.copyOf(schema);
-    }
-
-    private Map<String, Object> languageSchema() {
-        return Map.of(
-                "type", "string",
-                "default", "zh-CN",
-                "oneOf", LANGUAGE_OPTIONS
-        );
     }
 
     private List<String> buildDefaultInputHints(String skillKey) {

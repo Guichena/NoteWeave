@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 
-from app.artifact_skill_catalog import list_artifact_skill_definitions
+from app.artifact_skill_catalog import CATALOG_DIGEST, list_artifact_skill_definitions
 from app.main import _to_public_input_schema
+from app.registry import PRODUCTION_ACTIONS
 
 
 def test_worker_public_skill_catalog_should_match_cross_language_contract() -> None:
@@ -28,3 +30,19 @@ def test_worker_public_skill_catalog_should_match_cross_language_contract() -> N
         for skill_key, definition in contract["skills"].items()
     }
     assert actual == expected
+
+
+def test_published_skill_catalog_matches_both_runtime_copies_and_action_registry() -> None:
+    root = Path(__file__).resolve().parents[3]
+    source = (root / "reference" / "artifact-skill-catalog-v2.json").read_bytes()
+    host = (root / "backend" / "src" / "main" / "resources" / "artifact-skill-catalog-v2.json").read_bytes()
+    worker = (root / "workers" / "artifact-worker" / "app" / "artifact-skill-catalog-v2.json").read_bytes()
+    assert source == host == worker
+    assert CATALOG_DIGEST == hashlib.sha256(source).hexdigest()
+    entries = json.loads(source)["skills"]
+    assert len(entries) == len({entry["skill_key"] for entry in entries}) == 12
+    for entry in entries:
+        action = PRODUCTION_ACTIONS[entry["action_key"]]
+        assert entry["graph_key"] == action.default_skill_graph_key
+        assert entry["prompt_recipe_id"] == action.default_prompt_recipe_id
+        assert entry["capability_allowlist"] == action.supported_capabilities
