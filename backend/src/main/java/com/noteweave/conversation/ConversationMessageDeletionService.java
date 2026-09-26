@@ -64,6 +64,21 @@ public class ConversationMessageDeletionService {
                     """, revisionId);
             replayRedactionService.redactDeletedSummaryRevision(revisionId);
         }
+        List<String> coveringV2RevisionIds = jdbcTemplate.query("""
+                select id from conversation_topic_summary_revision_v2
+                where workspace_id = ? and conversation_id = ?
+                  and status in ('BUILDING', 'READY')
+                  and start_seq <= (select message_seq from conversation_message where id = ?)
+                  and end_seq >= (select message_seq from conversation_message where id = ?)
+                """, (rs, rowNum) -> rs.getString("id"), workspaceId, conversationId, messageId, messageId);
+        for (String revisionId : coveringV2RevisionIds) {
+            jdbcTemplate.update("""
+                    update conversation_topic_summary_revision_v2
+                    set status = 'STALE', summary_text = '', content_hash = null
+                    where id = ? and status in ('BUILDING', 'READY')
+                    """, revisionId);
+            replayRedactionService.redactDeletedSummaryRevision(revisionId);
+        }
         jdbcTemplate.update("""
                 update conversation_topic_segment_v2
                 set decision_status = 'STALE', source_digest = ?,

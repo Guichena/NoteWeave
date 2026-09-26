@@ -167,6 +167,28 @@ class KafkaTaskConsumerTest {
                 .matches("[0-9a-f]{64}");
     }
 
+    @Test
+    void topicSummaryV2MessageRoutesToV2Promotion() {
+        com.noteweave.conversation.ConversationTopicSummaryV2Service v2 =
+                mock(com.noteweave.conversation.ConversationTopicSummaryV2Service.class);
+        KafkaTaskConsumer summaryConsumer = new KafkaTaskConsumer(sourceParseService,
+                wikiIngestService, taskService, new ObjectMapper(), null, null, v2);
+        ConsumerRecord<String, String> record = new ConsumerRecord<>(
+                "noteweave.conversation.summary", 0, 10L, "revision-v2", """
+                {"summary_projection_version":2,"segment_id":"segment-v2",
+                 "summary_revision_id":"revision-v2",
+                 "source_messages":[{"role":"USER","content":"Frozen topic text"}]}
+                """);
+
+        summaryConsumer.onConversationSummary(record);
+
+        verify(v2).promote(org.mockito.ArgumentMatchers.eq("segment-v2"),
+                org.mockito.ArgumentMatchers.eq("revision-v2"),
+                org.mockito.ArgumentMatchers.argThat(request ->
+                        "user: Frozen topic text".equals(request.summaryText())
+                                && request.contentHash().matches("[0-9a-f]{64}")));
+    }
+
     private ConsumerRecord<String, String> sourceParseRecord(String taskId) {
         String taskJson = taskId == null ? "null" : "\"" + taskId + "\"";
         return new ConsumerRecord<>(

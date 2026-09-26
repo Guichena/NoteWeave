@@ -41,6 +41,7 @@ class ConversationTurnModuleContractTest {
     @Autowired ObjectMapper objectMapper;
     @Autowired JdbcTemplate jdbcTemplate;
     @Autowired ConversationTopicProjectionV2Service topicProjectionV2Service;
+    @Autowired ConversationTopicSummaryV2Service topicSummaryV2Service;
     @Autowired ResearchAgentTaskCoordinatorService researchTaskCoordinator;
     @Autowired ResearchAgentTaskService researchAgentTaskService;
     @Autowired ResearchAgentIncrementalFinalizationService researchFinalizationService;
@@ -948,6 +949,38 @@ class ConversationTurnModuleContractTest {
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from conversation_topic_segment_v2 where conversation_id = ?
                 """, Integer.class, conversationId)).isEqualTo(3);
+        String firstSegmentId = first.segments().get(0).segmentId();
+        String revisionId = jdbcTemplate.queryForObject("""
+                select id from conversation_topic_summary_revision_v2
+                where segment_id = ? and status = 'BUILDING'
+                """, String.class, firstSegmentId);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from task_outbox where message_key = ? and status = 'READY'
+                """, Integer.class, revisionId)).isEqualTo(1);
+        String summaryText = jdbcTemplate.query("""
+                select role, content from conversation_message
+                where conversation_id = ? and message_seq between ? and ? order by message_seq
+                """, (rs, rowNum) -> ConversationTopicSummaryV2Service.summarizeMessage(
+                        rs.getString(1), rs.getString(2)), conversationId,
+                first.segments().get(0).startSeq(),
+                jdbcTemplate.queryForObject("""
+                        select end_seq from conversation_topic_summary_revision_v2 where id = ?
+                        """, Integer.class, revisionId)).stream()
+                .filter(value -> !value.isBlank()).collect(java.util.stream.Collectors.joining("\n"));
+        String summaryHash = java.util.HexFormat.of().formatHex(
+                java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(summaryText.getBytes(StandardCharsets.UTF_8)));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> topicSummaryV2Service.promote(
+                firstSegmentId, revisionId,
+                new PromoteSegmentSummaryRequest("Forged summary", summaryHash)))
+                .isInstanceOf(com.noteweave.common.BusinessException.class);
+        assertThat(jdbcTemplate.queryForObject("""
+                select status from conversation_topic_summary_revision_v2 where id = ?
+                """, String.class, revisionId)).isEqualTo("BUILDING");
+        topicSummaryV2Service.promote(firstSegmentId, revisionId,
+                new PromoteSegmentSummaryRequest(summaryText, summaryHash));
+        assertThat(topicSummaryV2Service.ready(workspaceId, conversationId, 10))
+                .extracting(ContextProjectionV2.TopicSummary::revisionId).contains(revisionId);
         jdbcTemplate.update("""
                 insert into conversation_constraint_v2(id, workspace_id, conversation_id,
                     source_message_id, kind, scope, constraint_text, valid_from_seq,
@@ -964,6 +997,12 @@ class ConversationTurnModuleContractTest {
         assertThat(jdbcTemplate.queryForObject("""
                 select decision_status from conversation_topic_segment_v2 where id = ?
                 """, String.class, first.segments().get(0).segmentId())).isEqualTo("STALE");
+        assertThat(jdbcTemplate.queryForObject("""
+                select status from conversation_topic_summary_revision_v2 where id = ?
+                """, String.class, revisionId)).isEqualTo("STALE");
+        assertThat(jdbcTemplate.queryForObject("""
+                select summary_text from conversation_topic_summary_revision_v2 where id = ?
+                """, String.class, revisionId)).isEmpty();
         assertThat(jdbcTemplate.queryForObject("""
                 select status from conversation_topic_v2 where id = ?
                 """, String.class, first.segments().get(0).topicId())).isEqualTo("STALE");

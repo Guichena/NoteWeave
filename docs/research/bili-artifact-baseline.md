@@ -202,6 +202,12 @@ Host 编译通过；`Phase6ResearchArtifactContractTest` **52 个用例，44 执
 
 影子编译器原先只要求当前主题摘要结束于 Raw Tail 之前，可能在摘要末尾与最近 8 条原文开头之间漏掉未总结的消息。现在要求当前主题摘要从活动 Segment 起点开始、恰好覆盖到 Raw Tail 前一条；否则从活动 Segment 起点扩展原文，仍受 256 条和必需信息预算门禁约束。回归分别验证有缺口时扩展，以及摘要连续时维持 8 条 Raw Tail。`ContextWindowPlannerV2Test` **5 passed**，`ContextProjectionV2ContractTest` **3 passed**，`TopicSegmenterV2Test` **5 passed**。这仍是 C2 影子选择器，尚未接入 QA/Note/Wiki 或任何 Run 快照。
 
+## C2 v2 主题摘要修订与失效
+
+新增独立的 `conversation_topic_summary_revision_v2` 迁移。影子主题投影刷新后，针对可信片段和最近 8 条原文之前的覆盖区间建立 BUILDING 修订、任务及出箱消息；Kafka v2 路由从冻结消息生成确定性摘录，发布时复核当前消息序列与正文摘要、片段/主题状态，并校验摘录正文与 SHA-256。删除被覆盖消息会清空修订正文、标记 STALE 并使引用它的 Run 回放脱敏；旧 v1 摘要路由保持原样。测试时发现历史账本的 `content_hash` 与当前正文存在不一致，因此 v2 冻结指纹以实际读取的正文重新计算，不依赖该旧字段。
+
+首轮完整回归 **51 tests，1 error**，错误为上述旧 `content_hash` 不一致；调整后定向 **15 passed**，随后新增伪造正文拒绝断言，最终 `ConversationTurnModuleContractTest` **38 passed**、`KafkaTaskConsumerTest` **9 passed**、`ContextWindowPlannerV2Test` **5 passed**，合计 **52 passed**。v2 构建目前由显式影子刷新触发；窗口尚未从数据库编译任务输入，也未接入 QA/Note/Wiki/Research/Artifact，因此 C2/C3 仍未完成。
+
 ## P1 内容 IR 与冻结 Skill Action 的一致性
 
 Host 原本只校验通用 `artifact-content-v1` 的内容摘要、Markdown 摘要和章节，却不检查 `artifact_type` 是否属于当前 Skill。现在对 Run 快照中记录的 Catalog 摘要与当前发布目录一致的任务，在 Candidate 提交和回放两条路径上，用目录中的 Action Key 校验 `artifact_type`；旧目录摘要不一致的历史 Run 继续按原有内容门禁回放。现有 `artifact_job.action_key` 在 Skill 创建路径为空，不能作为该门禁的依据；首次测试据此修正为读取已冻结 Catalog 摘要并查对应目录绑定。

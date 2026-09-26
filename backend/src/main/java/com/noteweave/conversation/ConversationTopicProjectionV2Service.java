@@ -17,11 +17,14 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ConversationTopicProjectionV2Service {
     private final JdbcTemplate jdbc;
+    private final ConversationTopicSummaryV2Service summaries;
     private final TopicSegmenterV2 segmenter = new TopicSegmenterV2();
     private final ConversationConstraintProjectorV2 constraintProjector = new ConversationConstraintProjectorV2();
 
-    public ConversationTopicProjectionV2Service(JdbcTemplate jdbc) {
+    public ConversationTopicProjectionV2Service(JdbcTemplate jdbc,
+                                                 ConversationTopicSummaryV2Service summaries) {
         this.jdbc = jdbc;
+        this.summaries = summaries;
     }
 
     @Transactional
@@ -133,6 +136,7 @@ public class ConversationTopicProjectionV2Service {
                         constraint.id(), workspaceId, conversationId);
             }
         }
+        summaries.queueBuilds(workspaceId, conversationId);
         return projection;
     }
 
