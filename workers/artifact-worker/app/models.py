@@ -86,6 +86,8 @@ class ArtifactTaskInput(BaseModel):
     context_snapshot: ContextSnapshot = Field(default_factory=ContextSnapshot)
     control_pack: ControlPack
     input_payload: ArtifactTaskInputPayload
+    # Worker-local material fetched through the Host's fenced reference endpoint.
+    frozen_video_material: dict[str, object] = Field(default_factory=dict)
 
 
 class ArtifactSkillDefinition(BaseModel):

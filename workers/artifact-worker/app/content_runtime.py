@@ -32,6 +32,7 @@ from app.models import (
 )
 from app.registry import resolve_style_profile
 from app.acquisition_runtime import get_acquisition_result_payload
+from app.video_material_bundle import VideoMaterialBundleV1
 from app.provider_job_status import resolve_provider_job_status
 
 
@@ -44,6 +45,18 @@ def build_content_acquisition_plan(task_input: ArtifactTaskInput) -> ContentAcqu
         ContentAcquisitionSourcePlan(**descriptor["source_plan"])
         for descriptor in descriptors
     ]
+    if "FROZEN_VIDEO_BUNDLE" in routes:
+        return ContentAcquisitionPlan(
+            strategy_key=f"acq-{task_input.task_id}",
+            primary_strategy="FROZEN_VIDEO_MATERIAL",
+            steps=[ContentAcquisitionStep(
+                step_id=f"{task_input.task_id}-normalize-frozen-video",
+                step_type="NORMALIZE_TO_CCO",
+                description="Normalize the Host-frozen video transcript without a provider fetch.",
+            )],
+            route_summary=route_summary, source_plans=source_plans,
+            notes=["Video material was fetched from the frozen Host Bundle reference."],
+        )
     has_external_web = any(route in {"WEB_URL", "VIDEO_URL"} for route in routes)
     has_card_context = "CARD_CONTEXT" in routes
 
@@ -754,6 +767,8 @@ def describe_input_adapter_routes(task_input: ArtifactTaskInput) -> list[str]:
 
 def _adapt_source_inputs(task_input: ArtifactTaskInput, action_key: str) -> list[dict[str, object]]:
     descriptors: list[dict[str, object]] = []
+    frozen_bundle = (VideoMaterialBundleV1.model_validate(task_input.frozen_video_material)
+                     if task_input.frozen_video_material else None)
     for source in _resolve_effective_sources(task_input):
         normalized_source_type = source.source_type.strip().upper() or "DOCUMENT_TEXT"
         adapter_route = _resolve_adapter_route(normalized_source_type, source.source_uri)
@@ -779,6 +794,12 @@ def _adapt_source_inputs(task_input: ArtifactTaskInput, action_key: str) -> list
             "\n\n".join(str(window["content"]) for window in selected_windows)
             if selected_windows else source.sample_text.strip() or source.summary.strip() or source.title
         )
+        if frozen_bundle is not None and adapter_route == "VIDEO_URL":
+            adapter_route = "FROZEN_VIDEO_BUNDLE"
+            normalization_target_kind = "TRANSCRIPT"
+            planned_operations = ["NORMALIZE_TO_CCO"]
+            required_capabilities = []
+            plain_text = frozen_bundle.transcript_corrected
         metadata: dict[str, object] = {
             "original_source_type": normalized_source_type,
             "adapter_route": adapter_route,
@@ -794,6 +815,15 @@ def _adapt_source_inputs(task_input: ArtifactTaskInput, action_key: str) -> list
             "material_gap": source.material_gap,
             **source.source_metadata,
         }
+        if adapter_route == "FROZEN_VIDEO_BUNDLE":
+            metadata.update({
+                "video_material_bundle_id": frozen_bundle.bundle_id,
+                "video_material_digest": frozen_bundle.content_digest(),
+                "subtitle_source": frozen_bundle.subtitle_source,
+                "coverage_gaps": list(frozen_bundle.coverage_gaps),
+                "timed_segments": [segment.model_dump(mode="json")
+                                   for segment in frozen_bundle.transcript_segments],
+            })
         descriptors.append(
             {
                 "source": source,

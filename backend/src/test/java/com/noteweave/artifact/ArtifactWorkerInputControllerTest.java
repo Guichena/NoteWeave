@@ -105,6 +105,14 @@ class ArtifactWorkerInputControllerTest {
         assertThatThrownBy(() -> controller.getVideoMaterialFile("task-1", "frame-1", "stale-token"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("does not own the active outbox delivery");
+        assertThatThrownBy(() -> controller.getReferencedVideoMaterial(
+                "task-1", "bundle-1", "stale-token"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("does not own the active outbox delivery");
+        assertThatThrownBy(() -> controller.getReferencedVideoMaterialFile(
+                "task-1", "bundle-1", "frame-1", "stale-token"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("does not own the active outbox delivery");
         org.mockito.Mockito.verifyNoInteractions(materials);
 
         when(dispatcher.renewTaskMessage("noteweave.artifact.job", "task-1", "delivery-1",
@@ -114,8 +122,14 @@ class ArtifactWorkerInputControllerTest {
         when(materials.readFile("task-1", "frame-1")).thenReturn(
                 new ArtifactVideoMaterialService.MaterialBytes("image/png", new byte[] {1, 2}));
         controller.getVideoMaterialFile("task-1", "frame-1", "delivery-1");
+        when(materials.readReferencedFile("task-1", "bundle-1", "frame-1")).thenReturn(
+                new ArtifactVideoMaterialService.MaterialBytes("image/png", new byte[] {1, 2}));
+        controller.getReferencedVideoMaterial("task-1", "bundle-1", "delivery-1");
+        controller.getReferencedVideoMaterialFile("task-1", "bundle-1", "frame-1", "delivery-1");
         verify(materials).submit("task-1", submission);
         verify(materials).read("task-1");
         verify(materials).readFile("task-1", "frame-1");
+        verify(materials).readReferenced("task-1", "bundle-1");
+        verify(materials).readReferencedFile("task-1", "bundle-1", "frame-1");
     }
 }

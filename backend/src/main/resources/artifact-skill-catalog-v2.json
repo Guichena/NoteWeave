@@ -276,6 +276,9 @@
           },
           "bilibili_url": {
             "type": "string"
+          },
+          "video_material_bundle_id": {
+            "type": "string"
           }
         },
         "required": [

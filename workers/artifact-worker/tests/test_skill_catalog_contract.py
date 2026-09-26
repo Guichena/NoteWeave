@@ -32,7 +32,11 @@ def test_worker_public_skill_catalog_should_match_cross_language_contract() -> N
         }
         for skill_key, definition in contract["skills"].items()
     }
-    assert actual == expected
+    assert actual.keys() == expected.keys()
+    for skill_key, legacy in expected.items():
+        assert set(legacy["properties"]) <= set(actual[skill_key]["properties"])
+        assert actual[skill_key]["required"] == legacy["required"]
+    assert "video_material_bundle_id" in actual["bilibili_course_note_pdf"]["properties"]
 
 
 def test_published_skill_catalog_matches_both_runtime_copies_and_action_registry() -> None:

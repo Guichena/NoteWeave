@@ -79,14 +79,7 @@ def _resolve_section_frames(
     task_input: ArtifactTaskInput, sections: list[object],
     bundle: VideoMaterialBundleV1, frame_files: dict[str, Path], sandbox_root: Path,
 ) -> list[list[dict[str, object]]]:
-    url = urlparse(_resolve_video_url(task_input))
-    parts = parse_qs(url.query).get("p", ["1"])
-    if len(parts) != 1 or not parts[0].isdigit() or not url.path.rstrip("/").endswith(
-            "/" + bundle.bvid) or int(parts[0]) != bundle.part \
-            or bundle.workspace_id != task_input.workspace_id \
-            or bundle.input_digest != frozen_video_input_digest(
-                task_input.input_snapshot_id, task_input.input_payload.inputs):
-        raise ValueError("PDF video material does not match its frozen Run input")
+    validate_frozen_video_scope(task_input, bundle)
     if set(frame_files) != {file.file_id for file in bundle.files}:
         raise ValueError("PDF material frame file set differs from frozen Bundle")
     paths: dict[str, Path] = {}
@@ -117,6 +110,20 @@ def _resolve_section_frames(
     if assigned != set(by_frame):
         raise ValueError("PDF knowledge nodes do not assign every frozen frame to a section")
     return references
+
+
+def validate_frozen_video_scope(task_input: ArtifactTaskInput, bundle: VideoMaterialBundleV1) -> None:
+    url = urlparse(_resolve_video_url(task_input))
+    parts = parse_qs(url.query).get("p", ["1"])
+    referenced_id = str(task_input.input_payload.inputs.get("video_material_bundle_id") or "").strip()
+    if url.scheme not in {"http", "https"} or url.hostname not in {
+            "bilibili.com", "www.bilibili.com"} \
+            or len(parts) != 1 or not parts[0].isdigit() or not url.path.rstrip("/").endswith(
+            "/" + bundle.bvid) or int(parts[0]) != bundle.part \
+            or bundle.workspace_id != task_input.workspace_id \
+            or (not referenced_id and bundle.input_digest != frozen_video_input_digest(
+                task_input.input_snapshot_id, task_input.input_payload.inputs)):
+        raise ValueError("PDF video material does not match its frozen Run input")
 
 
 def _resolve_video_url(task_input: ArtifactTaskInput) -> str:

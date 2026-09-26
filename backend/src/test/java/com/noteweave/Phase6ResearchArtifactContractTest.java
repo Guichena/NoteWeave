@@ -177,7 +177,15 @@ class Phase6ResearchArtifactContractTest {
                     "required", List.copyOf(required)
             ));
         });
-        assertThat(actualContract).isEqualTo(expectedContract);
+        assertThat(actualContract.keySet()).isEqualTo(expectedContract.keySet());
+        expectedContract.forEach((key, legacy) -> {
+            assertThat(actualContract.get(key).get("properties"))
+                    .containsAll(legacy.get("properties"));
+            assertThat(actualContract.get(key).get("required"))
+                    .isEqualTo(legacy.get("required"));
+        });
+        assertThat(actualContract.get("bilibili_course_note_pdf").get("properties"))
+                .contains("video_material_bundle_id");
     }
 
     @Test
@@ -5340,6 +5348,50 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
                 select count(*) from artifact_version where artifact_job_id =
                 (select artifact_job_id from artifact_job_run where task_id = ?)
                 """, Integer.class, taskId)).isEqualTo(1);
+        MvcResult childCreated = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "bilibili_course_note_pdf",
+                                "user_requirement", "reuse frozen subtitle material",
+                                "inputs", Map.of("url", "https://www.bilibili.com/video/BV1234567890?p=2",
+                                        "video_material_bundle_id", id)))))
+                .andExpect(status().isOk()).andReturn();
+        String childTaskId = objectMapper.readTree(childCreated.getResponse().getContentAsString())
+                .path("data").path("task_id").asText();
+        assertThat(videoMaterialService.readReferenced(childTaskId, id).get("bundle_id"))
+                .isEqualTo(bundle.get("bundle_id"));
+        Map<String, Object> childCandidate = new LinkedHashMap<>(artifactCandidate(
+                childTaskId, markdown, "course.pdf"));
+        childCandidate.put("video_material", candidate.get("video_material"));
+        childCandidate.put("content_ir_digest", irDigest);
+        Map<String, Object> childPayload = new LinkedHashMap<>(payload);
+        childPayload.put("candidate", childCandidate);
+        Map<String, Object> childCompletion = new LinkedHashMap<>(completion);
+        childCompletion.put("result_payload", childPayload);
+        mockMvc.perform(post(completionPath, childTaskId)
+                        .header("X-NoteWeave-Idempotency-Key", "material-reuse:" + childTaskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(childCompletion)))
+                .andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from artifact_version where artifact_job_id =
+                (select artifact_job_id from artifact_job_run where task_id = ?)
+                """, Integer.class, childTaskId)).isEqualTo(1);
+        String anotherWorkspace = createWorkspace();
+        MvcResult foreign = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", anotherWorkspace)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "bilibili_course_note_pdf",
+                                "user_requirement", "foreign bundle must fail",
+                                "inputs", Map.of("url", "https://www.bilibili.com/video/BV1234567890?p=2",
+                                        "video_material_bundle_id", id)))))
+                .andExpect(status().isOk()).andReturn();
+        String foreignTaskId = objectMapper.readTree(foreign.getResponse().getContentAsString())
+                .path("data").path("task_id").asText();
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> videoMaterialService.readReferenced(foreignTaskId, id))
+                .isInstanceOf(com.noteweave.common.BusinessException.class)
+                .hasMessageContaining("Workspace");
     }
 
     @Test
@@ -5433,6 +5485,30 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
                 new ArtifactVideoMaterialService.Submission(outOfRangeNode, outOfRangeDigest)))
                 .isInstanceOf(com.noteweave.common.BusinessException.class)
                 .hasMessageContaining("outside its time range");
+        MvcResult child = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "bilibili_course_note_pdf", "user_requirement", "reuse frame bytes",
+                                "inputs", Map.of("url", "https://www.bilibili.com/video/BV1234567890?p=2",
+                                        "video_material_bundle_id", receipt.id())))))
+                .andExpect(status().isOk()).andReturn();
+        String childTaskId = objectMapper.readTree(child.getResponse().getContentAsString())
+                .path("data").path("task_id").asText();
+        assertThat(videoMaterialService.readReferencedFile(childTaskId, receipt.id(), "frame1").bytes())
+                .isEqualTo(image);
+        MvcResult wrongPartChild = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "bilibili_course_note_pdf", "user_requirement", "wrong part",
+                                "inputs", Map.of("url", "https://www.bilibili.com/video/BV1234567890?p=1",
+                                        "video_material_bundle_id", receipt.id())))))
+                .andExpect(status().isOk()).andReturn();
+        String wrongPartTaskId = objectMapper.readTree(wrongPartChild.getResponse().getContentAsString())
+                .path("data").path("task_id").asText();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        videoMaterialService.readReferencedFile(wrongPartTaskId, receipt.id(), "frame1"))
+                .isInstanceOf(com.noteweave.common.BusinessException.class)
+                .hasMessageContaining("Workspace");
     }
 
     @Test

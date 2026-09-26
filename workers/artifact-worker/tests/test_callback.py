@@ -29,6 +29,9 @@ from app.capability_provider import (
 from app.capability_wait_queue import clear_waiting_tasks, get_waiting_task
 from app.models import ArtifactProgressEvent, ArtifactTaskInput, ArtifactTaskResult
 from app.runner import run_artifact_task
+from app.compiler import build_execution_plan
+from app.content_runtime import build_canonical_content_objects
+from app.video_material_bundle import frozen_video_input_digest
 from app.video_subtitle_material import subtitle_only_bundle
 from app.video_material_bundle import VideoMaterialBundleV1
 
@@ -197,8 +200,10 @@ def test_video_material_client_publishes_and_reads_frozen_bundle(monkeypatch) ->
     receipt = client.publish_video_material("task-1", bundle)
     assert receipt["id"] == "material-1"
     assert client.fetch_video_material("task-1") == bundle
-    assert [req.get_method() for req in requests] == ["POST", "GET"]
+    assert client.fetch_video_material("task-1", "material-1") == bundle
+    assert [req.get_method() for req in requests] == ["POST", "GET", "GET"]
     assert all("/artifact-tasks/task-1/video-material" in req.full_url for req in requests)
+    assert requests[-1].full_url.endswith("/video-material/references/material-1")
     assert all(req.get_header("X-noteweave-outbox-delivery-token") == "delivery-1"
                for req in requests)
     assert json.loads(requests[0].data)["content_digest"] == bundle.content_digest()
@@ -245,7 +250,10 @@ def test_fetch_frozen_material_frames_checks_scope_media_type_and_bytes(monkeypa
         "http://java-host:8081", internal_auth_token="internal-1", delivery_token="delivery-1",
     )
     assert client.fetch_video_material_files("task-1", bundle) == {"frame1": image}
+    assert client.fetch_video_material_files("task-1", bundle, "bundle-row-1") == {"frame1": image}
     assert requests[0].full_url.endswith("/artifact-tasks/task-1/video-material/files/frame1")
+    assert requests[1].full_url.endswith(
+        "/artifact-tasks/task-1/video-material/references/bundle-row-1/files/frame1")
     assert requests[0].get_header("X-noteweave-internal-token") == "internal-1"
     assert requests[0].get_header("X-noteweave-outbox-delivery-token") == "delivery-1"
     returned["bytes"] = b"wrong"
@@ -295,6 +303,61 @@ def test_verified_provider_material_is_bound_to_candidate(tmp_path, monkeypatch)
         "id": "material-1", "bundle_id": "video-material-task-a-waiting",
         "bundle_version": 1, "content_digest": published[0].content_digest(),
     }
+
+
+def test_referenced_bundle_frames_add_evidence_section_and_manifest(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("NOTEWEAVE_MCP_SANDBOX_ROOT", str(tmp_path))
+    task = _build_waiting_task_input()
+    task.input_snapshot_id = "child-snapshot"
+    task.input_payload.inputs = {
+        "url": "https://www.bilibili.com/video/BV1234567890?p=2",
+        "video_material_bundle_id": "material-parent",
+    }
+    output = BytesIO()
+    Image.new("RGB", (2, 2), "red").save(output, format="PNG")
+    frame_bytes = output.getvalue()
+    checksum = hashlib.sha256(frame_bytes).hexdigest()
+    bundle = VideoMaterialBundleV1.model_validate({
+        "bundle_id": "bundle-parent", "bundle_version": 1, "workspace_id": task.workspace_id,
+        "bvid": "BV1234567890", "part": 2, "duration_ms": 5000,
+        "input_digest": frozen_video_input_digest("parent-snapshot", {"url": task.input_payload.inputs["url"]}),
+        "subtitle_source": "NONE", "coverage_gaps": ["NO_SUBTITLE"],
+        "files": [{"file_id": "frame1", "role": "VIDEO_FRAME", "media_type": "image/png",
+                   "size_bytes": len(frame_bytes), "checksum_sha256": checksum}],
+        "frames": [{"frame_id": "f1", "part": 2, "at_ms": 1000,
+                    "file_id": "frame1", "checksum_sha256": checksum}],
+        "knowledge_nodes": [{"node_id": "n1", "title": "Verified frame",
+                             "start_ms": 0, "end_ms": 2000, "frame_ids": ["f1"]}],
+    })
+
+    class FakeJavaClient(JavaArtifactCallbackClient):
+        def fetch_video_material(self, task_id, bundle_row_id=""):
+            return bundle
+
+        def fetch_video_material_files(self, task_id, fetched, bundle_row_id=""):
+            fetched.verify_file_bytes(lambda _: frame_bytes)
+            return {"frame1": frame_bytes}
+
+    observed = {}
+
+    def fake_export(**kwargs):
+        observed.update(kwargs)
+        return {"status": "COMPILED", "frame_file_ids": ["frame1"]}
+
+    monkeypatch.setattr(callback_module, "export_artifact_if_required", fake_export)
+    monkeypatch.setattr(callback_module, "build_required_files", lambda markdown, trace: ["verified-pdf"])
+    result = SimpleNamespace(result_title="Course", result_payload={
+        "candidate": {}, "sections": [{"heading": "Introduction", "body": "Text"}],
+        "markdown": "# Course",
+    })
+    callback_module._attach_frozen_video_material(
+        task.task_id, task, result, FakeJavaClient("http://java-host:8081"))
+    assert [section.heading for section in observed["sections"]] == [
+        "Introduction", "Verified frame"]
+    assert "Video frame evidence" in observed["sections"][1].body
+    assert observed["frame_files"]["frame1"].read_bytes() == frame_bytes
+    assert result.result_payload["candidate"]["required_files"] == ["verified-pdf"]
+    assert result.result_payload["candidate"]["video_material"]["id"] == "material-parent"
 
 
 def test_java_artifact_callback_client_should_send_internal_auth_token(monkeypatch) -> None:
@@ -514,6 +577,35 @@ def test_duplicate_acquisition_ack_should_retry_complete_delivery_after_transpor
     assert len(client.completed_results) == 1
     assert client.completed_results[0].version_snapshot.version_id == cached_version_id
     assert client.failures == []
+
+
+def test_referenced_video_bundle_uses_frozen_transcript_without_provider_fetch(monkeypatch) -> None:
+    monkeypatch.setenv("NOTEWEAVE_ALLOW_PORTABLE_PDF_FALLBACK", "true")
+    task = _build_waiting_task_input()
+    task.input_snapshot_id = "snapshot-child"
+    task.input_payload.inputs = {
+        "url": "https://www.bilibili.com/video/BV1234567890?p=2",
+        "language": "zh-CN", "video_material_bundle_id": "material-parent",
+    }
+    bundle = subtitle_only_bundle(
+        bundle_id="material-parent-bundle", bundle_version=1,
+        workspace_id=task.workspace_id, bvid="BV1234567890", part=2,
+        duration_ms=10_000, input_digest=frozen_video_input_digest(
+            "snapshot-parent", {"url": task.input_payload.inputs["url"]}),
+        subtitle_source="MANUAL",
+        srt_text="1\n00:00:01,000 --> 00:00:03,000\nFrozen transcript evidence.\n",
+    )
+    task.frozen_video_material = bundle.model_dump(mode="json")
+    plan = build_execution_plan(task)
+    assert plan.content_acquisition_plan.primary_strategy == "FROZEN_VIDEO_MATERIAL"
+    assert "EXTRACT_TRANSCRIPT" not in plan.lazy_loaded_capabilities
+    assert plan.content_acquisition_plan.source_plans[0].planned_operations == ["NORMALIZE_TO_CCO"]
+    content = build_canonical_content_objects(task)
+    assert any(item.kind == "TRANSCRIPT" and "Frozen transcript evidence." in item.plain_text
+               for item in content)
+    _, result = run_artifact_task(task)
+    assert result.job_snapshot.status == "COMPLETED"
+    assert "Frozen transcript evidence." in str(result.result_payload)
 
 
 def test_host_deferred_provider_ack_resumes_only_after_fenced_resume(monkeypatch) -> None:

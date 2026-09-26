@@ -6,13 +6,14 @@ import hmac
 import base64
 import logging
 import re
+from pathlib import Path
 from typing import Any, Protocol
 from urllib import error, request
 from urllib.parse import urlencode, quote
 
 from pydantic import BaseModel
 
-from app.config import load_settings
+from app.config import load_settings, resolve_mcp_sandbox_root
 from app.error_sanitizer import sanitize_error_message
 from app.llm_client import credential_safe_urlopen
 from app.acquisition_runtime import (
@@ -28,7 +29,9 @@ from app.capability_wait_queue import (
     to_public_callback_operation,
     wake_waiting_task,
 )
-from app.models import ArtifactProgressEvent, ArtifactTaskInput, ArtifactTaskResult
+from app.models import ArtifactProgressEvent, ArtifactTaskInput, ArtifactTaskResult, ArtifactSectionDraft
+from app.candidate_file_manifest import build_required_files
+from app.export_runtime import export_artifact_if_required, validate_frozen_video_scope
 from app.video_material_bundle import VideoMaterialBundleV1
 from app.video_subtitle_material import subtitle_bundle_from_provider
 from app.material_resolver import select_frozen_windows
@@ -149,14 +152,17 @@ class JavaArtifactCallbackClient:
             raise ValueError("Host video material receipt does not match the submitted bundle")
         return receipt
 
-    def fetch_video_material(self, task_id: str) -> VideoMaterialBundleV1:
+    def fetch_video_material(self, task_id: str, bundle_row_id: str = "") -> VideoMaterialBundleV1:
+        path = f"/internal/worker/artifact-tasks/{quote(task_id, safe='')}/video-material"
+        if bundle_row_id:
+            path += f"/references/{quote(bundle_row_id, safe='')}"
         material = _unwrap_api_response(self._request(
-            "GET", f"/internal/worker/artifact-tasks/{quote(task_id, safe='')}/video-material"
+            "GET", path
         ))
         return VideoMaterialBundleV1.model_validate(material)
 
     def fetch_video_material_files(
-        self, task_id: str, bundle: VideoMaterialBundleV1,
+        self, task_id: str, bundle: VideoMaterialBundleV1, bundle_row_id: str = "",
     ) -> dict[str, bytes]:
         """Read immutable frame IDs from Host and verify every byte against the frozen Bundle."""
         if len(bundle.files) > 32 or sum(file.size_bytes for file in bundle.files) > 100_000_000:
@@ -166,8 +172,10 @@ class JavaArtifactCallbackClient:
             if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", file.file_id) \
                     or file.size_bytes > 16_000_000:
                 raise ValueError("video material file ID or size is unsupported")
-            path = (f"/internal/worker/artifact-tasks/{quote(task_id, safe='')}"
-                    f"/video-material/files/{quote(file.file_id, safe='')}")
+            path = f"/internal/worker/artifact-tasks/{quote(task_id, safe='')}/video-material"
+            if bundle_row_id:
+                path += f"/references/{quote(bundle_row_id, safe='')}"
+            path += f"/files/{quote(file.file_id, safe='')}"
             headers = {
                 **({"X-NoteWeave-Internal-Token": self.internal_auth_token}
                    if self.internal_auth_token else {}),
@@ -312,6 +320,13 @@ def run_artifact_task_with_callbacks(
     )
     task_input = callback_client.fetch_task_input(task_id)
     try:
+        referenced_id = str(task_input.input_payload.inputs.get("video_material_bundle_id") or "").strip()
+        if referenced_id:
+            if not isinstance(callback_client, JavaArtifactCallbackClient):
+                raise ValueError("referenced video material requires a Host callback client")
+            bundle = callback_client.fetch_video_material(task_id, referenced_id)
+            validate_frozen_video_scope(task_input, bundle)
+            task_input.frozen_video_material = bundle.model_dump(mode="json")
         events, result = run_artifact_task(task_input)
     except Exception as exc:
         if _report_execution_failure(callback_client, task_id, "WORKER_EXECUTION", exc):
@@ -444,6 +459,46 @@ def _attach_frozen_video_material(
 ) -> None:
     if task_input is None or not isinstance(callback_client, JavaArtifactCallbackClient):
         return
+    referenced_id = str(task_input.input_payload.inputs.get("video_material_bundle_id") or "").strip()
+    if referenced_id:
+        bundle = callback_client.fetch_video_material(task_id, referenced_id)
+        candidate = result.result_payload.get("candidate")
+        if not isinstance(candidate, dict):
+            raise ValueError("referenced video material requires a Worker Candidate")
+        if bundle.frames:
+            contents = callback_client.fetch_video_material_files(task_id, bundle, referenced_id)
+            frame_paths = _stage_frozen_video_frames(task_id, referenced_id, bundle, contents)
+            sections = [ArtifactSectionDraft.model_validate(item)
+                        for item in result.result_payload.get("sections", [])]
+            headings = {section.heading.strip().casefold() for section in sections}
+            segments = {segment.segment_id: segment for segment in bundle.transcript_segments}
+            for node in bundle.knowledge_nodes:
+                if not node.frame_ids or node.title.strip().casefold() in headings:
+                    continue
+                evidence = [segments[segment_id].corrected_text
+                            for segment_id in node.transcript_segment_ids]
+                sections.append(ArtifactSectionDraft(
+                    heading=node.title,
+                    body="\n\n".join(evidence) if evidence else
+                         f"Video frame evidence at {node.start_ms / 1000:.1f}–{node.end_ms / 1000:.1f} s.",
+                    source_refs=[f"video-material:{bundle.bundle_id}:{node.node_id}"],
+                ))
+                headings.add(node.title.strip().casefold())
+            export_trace = export_artifact_if_required(
+                task_input=task_input, title=result.result_title,
+                sections=sections, video_material=bundle, frame_files=frame_paths,
+            )
+            if export_trace.get("status") != "COMPILED":
+                raise ValueError("frozen frame PDF did not compile")
+            result.result_payload["export_trace"] = export_trace
+            markdown = str(result.result_payload.get("markdown") or "")
+            candidate["required_files"] = build_required_files(markdown, export_trace)
+        candidate["video_material"] = {
+            "id": referenced_id, "bundle_id": bundle.bundle_id,
+            "bundle_version": bundle.bundle_version,
+            "content_digest": bundle.content_digest(),
+        }
+        return
     for operation in list_acquisition_operations(task_id=task_id):
         if (operation.get("server_id") != SYSTEM_BILIBILI_SERVER_ID
                 or operation.get("operation_key") != "EXTRACT_TRANSCRIPT"):
@@ -464,6 +519,32 @@ def _attach_frozen_video_material(
             "content_digest": receipt["content_digest"],
         }
         return
+
+
+def _stage_frozen_video_frames(
+    task_id: str, bundle_row_id: str, bundle: VideoMaterialBundleV1,
+    contents: dict[str, bytes],
+) -> dict[str, Path]:
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", bundle_row_id) \
+            or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", task_id):
+        raise ValueError("frozen video material identity is unsafe for sandbox staging")
+    root = resolve_mcp_sandbox_root() / "inputs" / "video-material" / task_id / bundle_row_id
+    root.mkdir(parents=True, exist_ok=True)
+    paths: dict[str, Path] = {}
+    for file in bundle.files:
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", file.file_id):
+            raise ValueError("frozen frame file ID is unsafe")
+        suffix = ".png" if file.media_type == "image/png" else ".jpg"
+        path = root / f"{file.file_id}{suffix}"
+        if path.is_symlink():
+            raise ValueError("frozen frame staging cannot follow a symlink")
+        content = contents[file.file_id]
+        if path.exists() and path.read_bytes() != content:
+            raise ValueError("frozen frame staging conflicts with existing bytes")
+        if not path.exists():
+            path.write_bytes(content)
+        paths[file.file_id] = path
+    return paths
 
 
 def _dispatch_system_provider_operations(

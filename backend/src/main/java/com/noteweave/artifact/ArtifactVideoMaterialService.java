@@ -116,6 +116,77 @@ public class ArtifactVideoMaterialService {
         return rows.get(0);
     }
 
+    /** Current Run may consume exactly the Bundle ID frozen in its own input snapshot. */
+    public Map<String, Object> readReferenced(String taskId, String bundleRowId) {
+        resolveReferenced(taskId, bundleRowId);
+        String material = jdbc.queryForObject("""
+                select material_json from artifact_video_material_bundle where id = ?
+                """, String.class, bundleRowId);
+        try {
+            return mapper.readValue(material, new com.fasterxml.jackson.core.type.TypeReference<>() {});
+        } catch (Exception ex) {
+            throw new IllegalStateException("stored referenced video material is invalid", ex);
+        }
+    }
+
+    public MaterialBytes readReferencedFile(String taskId, String bundleRowId, String fileId) {
+        resolveReferenced(taskId, bundleRowId);
+        List<MaterialBytes> rows = jdbc.query("""
+                select media_type, bucket_name, object_key, checksum_sha256, size_bytes
+                from artifact_video_material_file where bundle_id = ? and file_id = ?
+                """, (rs, index) -> {
+            byte[] bytes = storage.read(rs.getString("bucket_name"), rs.getString("object_key"));
+            if (bytes.length != rs.getLong("size_bytes")
+                    || !hash(bytes).equals(rs.getString("checksum_sha256"))) {
+                throw new BusinessException("VIDEO_MATERIAL_FILE_DEGRADED",
+                        "素材文件摘要不匹配", HttpStatus.CONFLICT);
+            }
+            return new MaterialBytes(rs.getString("media_type"), bytes);
+        }, bundleRowId, fileId);
+        if (rows.size() != 1) throw new BusinessException("VIDEO_MATERIAL_FILE_NOT_FOUND",
+                "素材文件不存在", HttpStatus.NOT_FOUND);
+        return rows.get(0);
+    }
+
+    private Receipt resolveReferenced(String taskId, String bundleRowId) {
+        ArtifactJobTaskRow run = jobs.findByTaskId(taskId);
+        Map<String, Object> inputs;
+        try {
+            inputs = mapper.readValue(run.inputsJson(), new com.fasterxml.jackson.core.type.TypeReference<>() {});
+        } catch (Exception ex) {
+            throw scopeInvalid();
+        }
+        if (!"bilibili_course_note_pdf".equals(run.skillKey())
+                || bundleRowId == null || bundleRowId.isBlank()
+                || !bundleRowId.equals(inputs.get("video_material_bundle_id"))) throw scopeInvalid();
+        List<Receipt> rows = jdbc.query("""
+                select id, bundle_id, bundle_version, content_digest, workspace_id, task_id,
+                    bvid, part_no
+                from artifact_video_material_bundle where id = ? and bundle_version = 1
+                """, (rs, index) -> {
+            if (!run.workspaceId().equals(rs.getString("workspace_id"))) throw scopeInvalid();
+            String url = string(inputs.get("url"));
+            Matcher video = Pattern.compile("^https?://(?:www\\.)?bilibili\\.com/video/"
+                    + "(BV[0-9A-Za-z]{10})(?:\\?[^#]*)?$").matcher(url);
+            if (!video.matches() || !video.group(1).equals(rs.getString("bvid"))) throw scopeInvalid();
+            Matcher requestedPart = Pattern.compile("[?&]p=([0-9]+)(?:&|$)").matcher(url);
+            int part;
+            try { part = requestedPart.find() ? Integer.parseInt(requestedPart.group(1)) : 1; }
+            catch (NumberFormatException ex) { throw scopeInvalid(); }
+            if (part != rs.getInt("part_no")) throw scopeInvalid();
+            return new Receipt(rs.getString("id"), rs.getString("bundle_id"),
+                    rs.getInt("bundle_version"), rs.getString("content_digest"),
+                    rs.getString("workspace_id"), rs.getString("task_id"));
+        }, bundleRowId);
+        if (rows.size() != 1) throw scopeInvalid();
+        return rows.get(0);
+    }
+
+    private static BusinessException scopeInvalid() {
+        return new BusinessException("VIDEO_MATERIAL_SCOPE_INVALID",
+                "素材包不属于本次冻结输入和 Workspace", HttpStatus.CONFLICT);
+    }
+
     /** Reconcile process crashes after object write and before the Bundle transaction commits. */
     @Scheduled(fixedDelayString = "${noteweave.artifact.video-material-cleanup-delay-ms:3600000}")
     public synchronized int cleanupOrphanedFrameFiles() {
@@ -249,13 +320,23 @@ public class ArtifactVideoMaterialService {
                 rs.getString("workspace_id"), rs.getString("task_id")), taskId);
         Object candidate = resultPayload == null ? null : resultPayload.get("candidate");
         Object rawReference = candidate instanceof Map<?, ?> value ? value.get("video_material") : null;
-        if (frozen.isEmpty() && rawReference == null) return;
-        if (frozen.size() != 1 || !(rawReference instanceof Map<?, ?> reference)
+        ArtifactJobTaskRow run = jobs.findByTaskId(taskId);
+        Map<String, Object> inputs;
+        try {
+            inputs = mapper.readValue(run.inputsJson(), new com.fasterxml.jackson.core.type.TypeReference<>() {});
+        } catch (Exception ex) {
+            throw scopeInvalid();
+        }
+        String referencedId = string(inputs.get("video_material_bundle_id"));
+        if (frozen.isEmpty() && referencedId.isBlank() && rawReference == null) return;
+        if ((!referencedId.isBlank() && !frozen.isEmpty())
+                || (referencedId.isBlank() && frozen.size() != 1)
+                || !(rawReference instanceof Map<?, ?> reference)
                 || !reference.keySet().equals(Set.of("id", "bundle_id", "bundle_version", "content_digest"))) {
             throw new BusinessException("VIDEO_MATERIAL_REFERENCE_INVALID",
                     "Candidate must cite its frozen video material", HttpStatus.CONFLICT);
         }
-        Receipt receipt = frozen.get(0);
+        Receipt receipt = referencedId.isBlank() ? frozen.get(0) : resolveReferenced(taskId, referencedId);
         if (!receipt.id().equals(reference.get("id"))
                 || !receipt.bundleId().equals(reference.get("bundle_id"))
                 || receipt.bundleVersion() != number(reference.get("bundle_version"))

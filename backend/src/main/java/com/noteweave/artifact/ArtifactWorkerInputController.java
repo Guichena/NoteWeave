@@ -89,6 +89,29 @@ public class ArtifactWorkerInputController {
                 .body(file.bytes());
     }
 
+    @GetMapping("/{taskId}/video-material/references/{bundleId}")
+    ApiResponse<Map<String, Object>> getReferencedVideoMaterial(
+            @PathVariable String taskId, @PathVariable String bundleId,
+            @RequestHeader(value = DurableOutboxDispatcher.DELIVERY_TOKEN_HEADER,
+                    defaultValue = "") String deliveryToken
+    ) {
+        requireDelivery(taskId, deliveryToken);
+        return ApiResponse.success(videoMaterials.readReferenced(taskId, bundleId));
+    }
+
+    @GetMapping("/{taskId}/video-material/references/{bundleId}/files/{fileId}")
+    ResponseEntity<byte[]> getReferencedVideoMaterialFile(
+            @PathVariable String taskId, @PathVariable String bundleId, @PathVariable String fileId,
+            @RequestHeader(value = DurableOutboxDispatcher.DELIVERY_TOKEN_HEADER,
+                    defaultValue = "") String deliveryToken
+    ) {
+        requireDelivery(taskId, deliveryToken);
+        ArtifactVideoMaterialService.MaterialBytes file =
+                videoMaterials.readReferencedFile(taskId, bundleId, fileId);
+        return ResponseEntity.ok().contentType(MediaType.parseMediaType(file.mediaType()))
+                .body(file.bytes());
+    }
+
     @GetMapping("/{taskId}/sources/{sourceId}/windows")
     ApiResponse<ArtifactSourceWindowPageResponse> getSourceWindows(
             @PathVariable String taskId,
