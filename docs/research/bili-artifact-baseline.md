@@ -271,3 +271,9 @@ READY、FAILED、REDACTED、OFF 和摘要篡改的定向契约通过；最终 `C
 新增 `VideoDerivedTextV1`：博客章节与面试问答各有专用结构、独立内容摘要和 Markdown 摘要，问答固定简答、详答、相关知识。两种产物均从同一份冻结 `VideoMaterialBundleV1` 与 `VideoKnowledgePlanV1` 派生，只复制已被知识计划校验过的 `EXTRACTED` 主张及证据引用；`UNVERIFIED` 只呈现明确缺口。本地证据窗口计划没有语义主张，会被拒绝生成，避免空索引被误当作学习文章或问答。Verifier 对照冻结 Bundle/Plan、重新确定性派生并比对 Markdown，篡改主张、引用或渲染会失败。
 
 首轮定向测试 **3 failed、1 passed**，定位到构造预览 IR 时嵌套模型未被解析；修复后另有 **1 failed、20 passed**，是伪造测试未同步更新 Markdown 摘要，随后改为完整伪造场景。最终定向 **21 passed**，Worker 全套 **333 passed，34.66 秒**。此批只是 P3 的内容契约基础；尚未注册生产 Skill、创建独立 Job/Version 或接入本地 Repair。外部语义规划的数据发送仍未获授权，本地证据窗口不足以触发这两种产物的 READY。
+
+## P2/P3 冻结视频资料读取完整性
+
+Host 从 `artifact_video_material_bundle` 和 `artifact_video_knowledge_plan` 读取已冻结 JSON 时，现会用规范 JSON 重算 SHA-256 并与入库摘要比较。原始 Task 与受控引用 Task 共用这条读取门禁；库内 JSON 被改写时返回明确的 `VIDEO_MATERIAL_DEGRADED` 或 `VIDEO_KNOWLEDGE_PLAN_DEGRADED`，不继续把损坏资料交给派生产物。新增故障回放，分别篡改计划和资料包 JSON，并验证恢复原内容后可以读取。
+
+定向 Host 测试 **1 passed**；Artifact 契约回归 `Phase6ResearchArtifactContractTest` **52 个用例，44 执行通过、8 个既有跳过**，`ArtifactCandidateTest` **6 passed**、`ArtifactRollbackGateTest` **2 passed**、`ArtifactWorkerInputControllerTest` **5 passed**。这验证读取时的内容完整性，不代表 P3 已接入独立 Job、Version 或 READY。

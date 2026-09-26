@@ -119,14 +119,7 @@ public class ArtifactVideoMaterialService {
     /** Current Run may consume exactly the Bundle ID frozen in its own input snapshot. */
     public Map<String, Object> readReferenced(String taskId, String bundleRowId) {
         resolveReferenced(taskId, bundleRowId);
-        String material = jdbc.queryForObject("""
-                select material_json from artifact_video_material_bundle where id = ?
-                """, String.class, bundleRowId);
-        try {
-            return mapper.readValue(material, new com.fasterxml.jackson.core.type.TypeReference<>() {});
-        } catch (Exception ex) {
-            throw new IllegalStateException("stored referenced video material is invalid", ex);
-        }
+        return readBundleById(bundleRowId);
     }
 
     /** A semantic plan is immutable and bound to one already-frozen Bundle digest. */
@@ -189,13 +182,22 @@ public class ArtifactVideoMaterialService {
     }
 
     private Map<String, Object> readPlanByBundleId(String bundleRowId) {
-        List<String> plans = jdbc.query("""
-                select plan_json from artifact_video_knowledge_plan where bundle_id = ?
-                """, (rs, index) -> rs.getString("plan_json"), bundleRowId);
+        List<Map<String, String>> plans = jdbc.query("""
+                select plan_json, content_digest from artifact_video_knowledge_plan where bundle_id = ?
+                """, (rs, index) -> Map.of("json", rs.getString("plan_json"),
+                        "digest", rs.getString("content_digest")), bundleRowId);
         if (plans.size() != 1) throw new BusinessException("VIDEO_KNOWLEDGE_PLAN_NOT_FOUND",
                 "知识规划尚未冻结", HttpStatus.NOT_FOUND);
         try {
-            return mapper.readValue(plans.get(0), new com.fasterxml.jackson.core.type.TypeReference<>() {});
+            Map<String, Object> plan = mapper.readValue(plans.get(0).get("json"),
+                    new com.fasterxml.jackson.core.type.TypeReference<>() {});
+            if (!digest(plan).equals(plans.get(0).get("digest"))) {
+                throw new BusinessException("VIDEO_KNOWLEDGE_PLAN_DEGRADED",
+                        "知识规划摘要不匹配", HttpStatus.CONFLICT);
+            }
+            return plan;
+        } catch (BusinessException ex) {
+            throw ex;
         } catch (Exception ex) {
             throw new IllegalStateException("stored knowledge plan is invalid", ex);
         }
@@ -400,18 +402,35 @@ public class ArtifactVideoMaterialService {
 
     public Map<String, Object> read(String taskId) {
         jobs.findByTaskId(taskId);
-        return jdbc.query("""
-                select material_json from artifact_video_material_bundle
+        List<String> ids = jdbc.query("""
+                select id from artifact_video_material_bundle
                 where task_id = ? and bundle_version = 1
-                """, rs -> {
-            if (!rs.next()) throw new BusinessException("VIDEO_MATERIAL_NOT_FOUND",
-                    "素材包尚未冻结", HttpStatus.NOT_FOUND);
-            try {
-                return mapper.readValue(rs.getString("material_json"), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
-            } catch (Exception ex) {
-                throw new IllegalStateException("stored video material is invalid", ex);
+                """, (rs, index) -> rs.getString("id"), taskId);
+        if (ids.size() != 1) throw new BusinessException("VIDEO_MATERIAL_NOT_FOUND",
+                "素材包尚未冻结", HttpStatus.NOT_FOUND);
+        return readBundleById(ids.get(0));
+    }
+
+    private Map<String, Object> readBundleById(String bundleRowId) {
+        List<Map<String, String>> rows = jdbc.query("""
+                select material_json, content_digest from artifact_video_material_bundle where id = ?
+                """, (rs, index) -> Map.of("json", rs.getString("material_json"),
+                        "digest", rs.getString("content_digest")), bundleRowId);
+        if (rows.size() != 1) throw new BusinessException("VIDEO_MATERIAL_NOT_FOUND",
+                "素材包尚未冻结", HttpStatus.NOT_FOUND);
+        try {
+            Map<String, Object> bundle = mapper.readValue(rows.get(0).get("json"),
+                    new com.fasterxml.jackson.core.type.TypeReference<>() {});
+            if (!digest(bundle).equals(rows.get(0).get("digest"))) {
+                throw new BusinessException("VIDEO_MATERIAL_DEGRADED",
+                        "素材包摘要不匹配", HttpStatus.CONFLICT);
             }
-        }, taskId);
+            return bundle;
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new IllegalStateException("stored video material is invalid", ex);
+        }
     }
 
     /** A published material must be cited by the Candidate that consumes it. */

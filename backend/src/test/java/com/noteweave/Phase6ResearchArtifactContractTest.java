@@ -5712,6 +5712,26 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
                 taskId, new ArtifactVideoMaterialService.KnowledgeSubmission(receipt.id(), badPlan, badDigest)))
                 .isInstanceOf(com.noteweave.common.BusinessException.class)
                 .hasMessageContaining("extracted claim");
+        jdbcTemplate.update("update artifact_video_knowledge_plan set plan_json = ? where id = ?",
+                objectMapper.writeValueAsString(badPlan), frozen.id());
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        videoMaterialService.readKnowledgePlan(taskId, receipt.id()))
+                .isInstanceOf(com.noteweave.common.BusinessException.class)
+                .hasMessageContaining("摘要不匹配");
+        jdbcTemplate.update("update artifact_video_knowledge_plan set plan_json = ? where id = ?",
+                objectMapper.writeValueAsString(plan), frozen.id());
+        assertThat(videoMaterialService.readKnowledgePlan(taskId, receipt.id())).isEqualTo(plan);
+
+        Map<String, Object> alteredBundle = new LinkedHashMap<>(bundle);
+        alteredBundle.put("coverage_gaps", List.of("NO_SUBTITLE", "ADDED_AFTER_FREEZE"));
+        jdbcTemplate.update("update artifact_video_material_bundle set material_json = ? where id = ?",
+                objectMapper.writeValueAsString(alteredBundle), receipt.id());
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> videoMaterialService.read(taskId))
+                .isInstanceOf(com.noteweave.common.BusinessException.class)
+                .hasMessageContaining("摘要不匹配");
+        jdbcTemplate.update("update artifact_video_material_bundle set material_json = ? where id = ?",
+                objectMapper.writeValueAsString(bundle), receipt.id());
+        assertThat(videoMaterialService.read(taskId)).isEqualTo(bundle);
     }
 
     @Test
