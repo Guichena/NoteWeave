@@ -132,10 +132,19 @@ public class ArtifactExportService {
     public List<PreparedFile> prepareRollbackFiles(String sourceVersionId) {
         materializeExports(sourceVersionId); // lazily archive historical files before copying
         ExportRow source = loadVersionById(sourceVersionId);
+        Integer unavailable = jdbcTemplate.queryForObject("""
+                select count(*) from artifact_file
+                where artifact_version_id = ? and status <> 'READY'
+                """, Integer.class, sourceVersionId);
+        if (unavailable != null && unavailable > 0) {
+            throw new BusinessException("ARTIFACT_SOURCE_FILE_MISSING",
+                    "回滚源版本包含未就绪文件", HttpStatus.CONFLICT);
+        }
         List<PreparedFile> files = jdbcTemplate.query("""
-                select file_format, file_name, media_type, bucket_name, object_key, checksum_sha256
+                select file_format, file_role, variant, sequence_no,
+                       file_name, media_type, bucket_name, object_key, checksum_sha256
                 from artifact_file where artifact_version_id = ? and status = 'READY'
-                order by file_format
+                order by file_role, variant, sequence_no
                 """, (rs, index) -> {
             byte[] bytes = objectStorage.read(rs.getString("bucket_name"), rs.getString("object_key"));
             String checksum = sha256(bytes);
@@ -143,8 +152,9 @@ public class ArtifactExportService {
                 throw new BusinessException("ARTIFACT_SOURCE_FILE_INVALID",
                         "回滚源文件摘要不匹配", HttpStatus.CONFLICT);
             }
-            if (PDF.equals(rs.getString("file_format"))) verifyPdf(bytes);
-            return new PreparedFile(rs.getString("file_format"), rs.getString("file_name"),
+            verifyPreparedFormat(rs.getString("file_format"), bytes);
+            return new PreparedFile(rs.getString("file_format"), rs.getString("file_role"),
+                    rs.getString("variant"), rs.getInt("sequence_no"), rs.getString("file_name"),
                     rs.getString("media_type"), bytes, checksum);
         }, sourceVersionId);
         boolean markdownReady = files.stream().anyMatch(file -> MARKDOWN.equals(file.format()));
@@ -162,12 +172,35 @@ public class ArtifactExportService {
             throw new IllegalStateException("Artifact files must publish in the Version transaction");
         }
         ExportRow row = loadVersionById(versionId);
+        java.util.Set<String> fileKeys = new java.util.HashSet<>();
         for (PreparedFile file : files) {
+            String key = file.role() + ":" + file.variant() + ":" + file.sequenceNo();
+            if (!fileKeys.add(key) || !java.util.Set.of(
+                    "PRIMARY_MARKDOWN", "PRIMARY_PDF", "PRIMARY_PPTX", "SOURCE_MD", "SLIDE_PREVIEW"
+            ).contains(file.role()) || file.variant() == null
+                    || !file.variant().matches("[A-Za-z0-9_-]{0,64}")
+                    || file.sequenceNo() < 0 || file.sequenceNo() > 10_000) {
+                throw new BusinessException("ARTIFACT_FILE_ROLE_INVALID",
+                        "产物文件角色或序号无效", HttpStatus.CONFLICT);
+            }
+            if (!java.util.Map.of(
+                    "PRIMARY_MARKDOWN", MARKDOWN,
+                    "PRIMARY_PDF", PDF,
+                    "PRIMARY_PPTX", "PPTX",
+                    "SOURCE_MD", MARKDOWN,
+                    "SLIDE_PREVIEW", "PNG"
+            ).get(file.role()).equals(file.format())) {
+                throw new BusinessException("ARTIFACT_FILE_ROLE_INVALID",
+                        "文件角色与格式不匹配", HttpStatus.CONFLICT);
+            }
             if (file.content().length == 0 || !sha256(file.content()).equals(file.checksum())) {
                 throw new BusinessException("ARTIFACT_FILE_INVALID", "发布文件摘要不匹配", HttpStatus.CONFLICT);
             }
-            String objectKey = "artifacts/staged/%s/%s/%s".formatted(
-                    row.originTaskId(), versionId, safeFileName(file.fileName()));
+            verifyPreparedFormat(file.format(), file.content());
+            String objectKey = "artifacts/staged/%s/%s/%s/%s/%d/%s".formatted(
+                    row.originTaskId(), versionId, file.role(),
+                    file.variant().isEmpty() ? "default" : file.variant(),
+                    file.sequenceNo(), safeFileName(file.fileName()));
             objectStorage.write(exportBucket, objectKey, file.content());
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
@@ -186,7 +219,8 @@ public class ArtifactExportService {
                 throw new BusinessException("ARTIFACT_FILE_STORE_MISMATCH",
                         "暂存文件写入后摘要不匹配", HttpStatus.CONFLICT);
             }
-            upsertFileMetadata(row, file.format(), file.fileName(), file.mediaType(), objectKey,
+            upsertFileMetadata(row, file.format(), file.role(), file.variant(), file.sequenceNo(),
+                    file.fileName(), file.mediaType(), objectKey,
                     file.content().length, file.checksum(), "READY", "");
         }
     }
@@ -211,8 +245,49 @@ public class ArtifactExportService {
         }
     }
 
-    public record PreparedFile(String format, String fileName, String mediaType,
-                               byte[] content, String checksum) { }
+    private void verifyPreparedFormat(String format, byte[] content) {
+        if (PDF.equals(format)) {
+            verifyPdf(content);
+        } else if ("PNG".equals(format)) {
+            try {
+                java.awt.image.BufferedImage image = javax.imageio.ImageIO.read(
+                        new java.io.ByteArrayInputStream(content));
+                if (image == null || image.getWidth() < 1 || image.getHeight() < 1) {
+                    throw new java.io.IOException("invalid PNG dimensions");
+                }
+            } catch (java.io.IOException ex) {
+                throw new BusinessException("ARTIFACT_PNG_INVALID", "PNG 预览不可打开", HttpStatus.CONFLICT);
+            }
+        } else if ("PPTX".equals(format)) {
+            boolean contentTypes = false;
+            boolean presentation = false;
+            int slides = 0;
+            try (java.util.zip.ZipInputStream zip = new java.util.zip.ZipInputStream(
+                    new java.io.ByteArrayInputStream(content))) {
+                java.util.zip.ZipEntry entry;
+                while ((entry = zip.getNextEntry()) != null) {
+                    String name = entry.getName();
+                    if ("[Content_Types].xml".equals(name)) contentTypes = true;
+                    if ("ppt/presentation.xml".equals(name)) presentation = true;
+                    if (name.matches("ppt/slides/slide[0-9]+\\.xml")) slides++;
+                    if (slides > 500) break;
+                }
+            } catch (java.io.IOException ex) {
+                throw new BusinessException("ARTIFACT_PPTX_INVALID", "PPTX 无法打开", HttpStatus.CONFLICT);
+            }
+            if (!contentTypes || !presentation || slides < 1 || slides > 500) {
+                throw new BusinessException("ARTIFACT_PPTX_INVALID", "PPTX 缺少演示文稿或页面结构", HttpStatus.CONFLICT);
+            }
+        }
+    }
+
+    public record PreparedFile(String format, String role, String variant, int sequenceNo,
+                               String fileName, String mediaType, byte[] content, String checksum) {
+        public PreparedFile(String format, String fileName, String mediaType,
+                            byte[] content, String checksum) {
+            this(format, primaryRole(format), "", 0, fileName, mediaType, content, checksum);
+        }
+    }
 
     @Scheduled(fixedDelayString = "${noteweave.artifact.file-reconcile-delay-ms:60000}")
     public void reconcileDegradedFiles() {
@@ -430,29 +505,39 @@ public class ArtifactExportService {
             String status,
             String errorMessage
     ) {
+        upsertFileMetadata(row, format, primaryRole(format), "", 0, fileName, mediaType,
+                objectKey, sizeBytes, checksum, status, errorMessage);
+    }
+
+    private void upsertFileMetadata(
+            ExportRow row, String format, String role, String variant, int sequenceNo,
+            String fileName, String mediaType, String objectKey, long sizeBytes,
+            String checksum, String status, String errorMessage
+    ) {
         int updated = jdbcTemplate.update("""
                 update artifact_file
-                set file_name = ?, media_type = ?, storage_backend = ?, bucket_name = ?, object_key = ?,
+                set file_format = ?, file_name = ?, media_type = ?, storage_backend = ?,
+                    bucket_name = ?, object_key = ?,
                     size_bytes = ?, checksum_sha256 = ?, status = ?, error_message = ?
-                where artifact_version_id = ? and file_role = ? and variant = '' and sequence_no = 0
+                where artifact_version_id = ? and file_role = ? and variant = ? and sequence_no = ?
                 """,
-                fileName, mediaType, objectStorage.backendName(), exportBucket, objectKey,
-                sizeBytes, checksum, status, errorMessage, row.versionId(), primaryRole(format));
+                format, fileName, mediaType, objectStorage.backendName(), exportBucket, objectKey,
+                sizeBytes, checksum, status, errorMessage, row.versionId(), role, variant, sequenceNo);
         if (updated == 0) {
             jdbcTemplate.update("""
                     insert into artifact_file(
                         id, artifact_version_id, file_format, file_role, variant, sequence_no,
                         file_name, media_type, storage_backend,
                         bucket_name, object_key, size_bytes, checksum_sha256, status, error_message
-                    ) values (?, ?, ?, ?, '', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    Ids.newId(), row.versionId(), format, primaryRole(format),
+                    Ids.newId(), row.versionId(), format, role, variant, sequenceNo,
                     fileName, mediaType, objectStorage.backendName(),
                     exportBucket, objectKey, sizeBytes, checksum, status, errorMessage);
         }
     }
 
-    private String primaryRole(String format) {
+    private static String primaryRole(String format) {
         return MARKDOWN.equals(format) ? "PRIMARY_MARKDOWN" :
                 PDF.equals(format) ? "PRIMARY_PDF" : "LEGACY_" + format;
     }

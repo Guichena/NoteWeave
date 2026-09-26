@@ -65,6 +65,9 @@ class Phase6ResearchArtifactContractTest {
     private ArtifactExportService artifactExportService;
 
     @Autowired
+    private org.springframework.transaction.PlatformTransactionManager transactionManager;
+
+    @Autowired
     private ConversationEventMux conversationEventMux;
 
     @Autowired
@@ -1322,6 +1325,23 @@ class Phase6ResearchArtifactContractTest {
                 .andExpect(jsonPath("$.data.files[0].storage_backend").value("local"))
                 .andExpect(jsonPath("$.data.files[0].checksum_sha256").value(org.hamcrest.Matchers.matchesPattern("[0-9a-f]{64}")));
 
+        String firstVersionId = artifactJobService.getVersionDetail(workspaceId, artifactJobId, 1).versionId();
+        java.awt.image.BufferedImage preview = new java.awt.image.BufferedImage(
+                2, 2, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        java.io.ByteArrayOutputStream previewOutput = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(preview, "png", previewOutput);
+        byte[] previewBytes = previewOutput.toByteArray();
+        String previewDigest = java.util.HexFormat.of().formatHex(
+                java.security.MessageDigest.getInstance("SHA-256").digest(previewBytes));
+        new org.springframework.transaction.support.TransactionTemplate(transactionManager).execute(status -> {
+            artifactExportService.publishPreparedFiles(firstVersionId, List.of(
+                    new ArtifactExportService.PreparedFile("PNG", "SLIDE_PREVIEW", "original", 1,
+                            "slide-1.png", "image/png", previewBytes, previewDigest),
+                    new ArtifactExportService.PreparedFile("PNG", "SLIDE_PREVIEW", "original", 2,
+                            "slide-2.png", "image/png", previewBytes, previewDigest)));
+            return null;
+        });
+
         MvcResult regenerateResult = mockMvc.perform(post(
                         "/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}/versions/1/regenerate",
                         workspaceId,
@@ -1365,6 +1385,13 @@ class Phase6ResearchArtifactContractTest {
                 .andExpect(jsonPath("$.data.version_no").value(3))
                 .andExpect(jsonPath("$.data.content_markdown").value("# Guide\n\nOriginal line."))
                 .andExpect(jsonPath("$.data.files[0].file_format").value("MARKDOWN"));
+
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from artifact_file
+                where artifact_version_id = (
+                    select id from artifact_version where artifact_job_id = ? and version_no = 3
+                ) and file_role = 'SLIDE_PREVIEW' and variant = 'original'
+                """, Integer.class, artifactJobId)).isEqualTo(2);
 
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from artifact_version where artifact_job_id = ?",
