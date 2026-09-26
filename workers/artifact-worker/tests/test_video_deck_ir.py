@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+import shutil
 from io import BytesIO
 
 import pytest
 from PIL import Image
+from reportlab.pdfgen import canvas
 
 from app.video_deck_ir import VideoDeckIRV1, build_video_deck_ir
 from app.video_deck_render import render_original_video_deck, verify_original_video_deck
+from app.video_deck_preview import rasterize_deck_pdf
 from app.video_knowledge_plan import VideoKnowledgePlanV1, build_local_evidence_plan
 from app.video_material_bundle import VideoMaterialBundleV1
 
@@ -96,3 +99,27 @@ def test_original_image_deck_opens_and_preserves_complete_frame(
     verify_original_video_deck(path, ir)
     with pytest.raises(ValueError, match="manifest"):
         render_original_video_deck("task-deck-2", ir, bundle, plan, lambda _: b"wrong")
+
+
+@pytest.mark.skipif(not shutil.which("pdfinfo") or not shutil.which("pdftoppm"),
+                    reason="Poppler preview tools are unavailable")
+def test_deck_pdf_rasterizer_checks_every_page(tmp_path) -> None:
+    bundle, plan = _frozen_source()
+    ir = build_video_deck_ir(bundle, plan)
+    pdf = tmp_path / "deck.pdf"
+    document = canvas.Canvas(str(pdf), pagesize=(960, 540))
+    document.drawString(40, 480, "Consistency")
+    document.showPage()
+    document.save()
+    previews = rasterize_deck_pdf(pdf, ir, tmp_path / "previews")
+    assert len(previews) == 1
+    with Image.open(previews[0]) as image:
+        assert image.width >= 1000 and image.height >= 500
+
+    two_pages = tmp_path / "extra.pdf"
+    document = canvas.Canvas(str(two_pages), pagesize=(960, 540))
+    document.showPage()
+    document.showPage()
+    document.save()
+    with pytest.raises(ValueError, match="page count"):
+        rasterize_deck_pdf(two_pages, ir, tmp_path / "other-previews")
