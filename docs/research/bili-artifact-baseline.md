@@ -448,6 +448,10 @@ Host 从已发布 Skill Catalog 读取实际版本，新增 `noteweave.video-lea
 
 Host `VideoLearningRequestRepositoryContractTest`、`ArtifactCandidateTest`、`ArtifactRollbackGateTest` 联跑 **15 passed，0 failed/0 error/0 skipped**，Maven BUILD SUCCESS（55.072 秒）；前端 API/面板定向 **10 passed**，`pnpm build` 通过。合同包含非原发起者拒绝、冻结输入复用、双击冲突、兄弟 Outbox 保持 READY 和重试再次失败后取消的状态。真实 Worker 跨进程重试仍待 P6 联调。
 
+## P6 新 Version 的素材 Bundle 持有
+
+V127 为 `artifact_version` 增加可空的 `material_bundle_id` 外键；父请求继续以自身 `material_bundle_id` 持有 Bundle。经候选引用校验的新视频 Version 在发布事务内写入 Bundle 身份，追加式回滚副本继承同一持有关系；非视频和历史 Version 的列保持可空。合成原画面 PPTX 发布合同验证 v1 与回滚 v2 均指向同一素材包；`Phase6ResearchArtifactContractTest#originalVideoDeckPublishesItsOwnVersionWithPptxAndPreview` **1**、`ArtifactRollbackGateTest` **2**、`VideoLearningRequestRepositoryContractTest` **7**，共 **10 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。旧历史 Version 尚未回填持有列；自动清理仍只删除超过 24 小时且没有文件引用的暂存对象，不会根据父请求终态清理已登记的 Bundle。
+
 ## C3 Answer 消费冻结 Context v2
 
 新增独立全局 `noteweave.context.v2.active-enabled` 门禁（默认关闭）和 Workspace `ACTIVE` 模式；QA、NOTE、WIKI 在生成前读取已冻结的 READY 投影，使用所选原文、主题摘要及用户约束组装检索问题，把用户约束送入回答控制段。Memory 控制包仍按独立域编译，不并入来源引用。Run 输入快照记录 v2 快照 ID、摘要、所选引用及预算；落库前重读持久化 JSON 并核对摘要。编译 FAILED 时回退 v1，记录失败码；Workspace 关回 OFF 后，新 Run 使用 v1，已冻结 Run 保留。删除被引用的消息后，影子投影变为无正文的 REDACTED，Run 回放降为 METADATA_ONLY。

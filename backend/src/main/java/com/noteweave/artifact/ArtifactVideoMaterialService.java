@@ -622,7 +622,7 @@ public class ArtifactVideoMaterialService {
     }
 
     /** A published material must be cited by the Candidate that consumes it. */
-    void validateCandidateReference(String taskId, Map<String, Object> resultPayload) {
+    String validateCandidateReference(String taskId, Map<String, Object> resultPayload) {
         List<Receipt> frozen = jdbc.query("""
                 select id, bundle_id, bundle_version, content_digest, workspace_id, task_id
                 from artifact_video_material_bundle where task_id = ? and bundle_version = 1
@@ -639,7 +639,7 @@ public class ArtifactVideoMaterialService {
             throw scopeInvalid();
         }
         String referencedId = string(inputs.get("video_material_bundle_id"));
-        if (frozen.isEmpty() && referencedId.isBlank() && rawReference == null) return;
+        if (frozen.isEmpty() && referencedId.isBlank() && rawReference == null) return null;
         if ((!referencedId.isBlank() && !frozen.isEmpty())
                 || (referencedId.isBlank() && frozen.size() != 1)
                 || !(rawReference instanceof Map<?, ?> reference)
@@ -671,6 +671,17 @@ public class ArtifactVideoMaterialService {
             VideoDeckValidator.validate(resultPayload, readBundleById(receipt.id()), plan,
                     receipt.contentDigest(), digest(plan), string(inputs.get("language")));
         }
+        return receipt.id();
+    }
+
+    void linkPublishedVersion(String versionId, String bundleRowId) {
+        if (bundleRowId == null) return;
+        int updated = jdbc.update("""
+                update artifact_version set material_bundle_id = ?
+                where id = ? and material_bundle_id is null
+                """, bundleRowId, versionId);
+        if (updated != 1) throw new BusinessException("VIDEO_MATERIAL_VERSION_HOLD_CONFLICT",
+                "Published Version cannot hold its frozen material", HttpStatus.CONFLICT);
     }
 
     private void validateBundle(String workspaceId, String inputSnapshotId, String taskId,

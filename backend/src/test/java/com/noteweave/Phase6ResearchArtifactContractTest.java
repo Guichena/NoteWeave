@@ -6123,6 +6123,10 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
         assertThat(jdbcTemplate.queryForObject(
                 "select delivery_status from artifact_version where origin_task_id = ?",
                 String.class, deckTask)).isEqualTo("READY");
+        assertThat(jdbcTemplate.queryForObject("""
+                select material_bundle_id from artifact_version
+                where artifact_job_id = ? and version_no = 1
+                """, String.class, deckJob)).isEqualTo(material.id());
         assertThat(jdbcTemplate.queryForList("""
                 select file_role from artifact_file f join artifact_version v
                 on v.id = f.artifact_version_id where v.origin_task_id = ? and f.status = 'READY'
@@ -6144,6 +6148,10 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
                         workspaceId, deckJob).contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.version_no").value(2));
+        assertThat(jdbcTemplate.queryForObject("""
+                select material_bundle_id from artifact_version
+                where artifact_job_id = ? and version_no = 2
+                """, String.class, deckJob)).isEqualTo(material.id());
         assertThat(jdbcTemplate.queryForList("""
                 select file_role from artifact_file f join artifact_version v
                 on v.id = f.artifact_version_id where v.artifact_job_id = ?

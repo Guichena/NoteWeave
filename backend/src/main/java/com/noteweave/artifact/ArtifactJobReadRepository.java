@@ -240,7 +240,8 @@ class ArtifactJobReadRepository {
     ArtifactRollbackRow loadRollbackRow(String workspaceId, String artifactJobId, int versionNo) {
         return jdbcTemplate.query("""
                 select av.skill_key, av.title, av.content_markdown, av.result_payload_json,
-                       av.citations_json, coalesce(av.origin_task_id, aj.task_id) as origin_task_id
+                       av.citations_json, coalesce(av.origin_task_id, aj.task_id) as origin_task_id,
+                       av.material_bundle_id
                 from artifact_version av
                 join artifact_job aj on aj.id = av.artifact_job_id
                 where aj.workspace_id = ? and aj.id = ? and av.version_no = ?
@@ -254,7 +255,8 @@ class ArtifactJobReadRepository {
                     blank(rs.getString("content_markdown")),
                     blank(rs.getString("result_payload_json")),
                     blank(rs.getString("citations_json")),
-                    blank(rs.getString("origin_task_id"))
+                    blank(rs.getString("origin_task_id")),
+                    rs.getString("material_bundle_id")
             );
         }, workspaceId, artifactJobId, versionNo);
     }
@@ -460,7 +462,8 @@ record ArtifactRollbackRow(
         String contentMarkdown,
         String resultPayloadJson,
         String citationsJson,
-        String originTaskId
+        String originTaskId,
+        String materialBundleId
 ) {
 }
 

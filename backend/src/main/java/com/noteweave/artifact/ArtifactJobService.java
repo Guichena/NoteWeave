@@ -300,6 +300,7 @@ public class ArtifactJobService {
                 source.originTaskId(),
                 workspaceId
         );
+        videoMaterialService.linkPublishedVersion(versionId, source.materialBundleId());
         return getVersionDetail(workspaceId, artifactJobId, nextVersionNo);
     }
 
@@ -518,7 +519,8 @@ public class ArtifactJobService {
         memoryRevisionGuard.requireActive(taskId);
         contextV2ShadowSnapshots.activeRequirement(
                 taskId, row.workspaceId(), row.inputSnapshotId(), row.userRequirement());
-        videoMaterialService.validateCandidateReference(taskId, request.resultPayload());
+        String materialBundleId = videoMaterialService.validateCandidateReference(
+                taskId, request.resultPayload());
         ArtifactCandidate candidate = ArtifactCandidate.from(taskId, row.inputSnapshotId(),
                 catalogDigestFrom(row.compilerVersion()), expectedArtifactType(row), request, markdown);
         int claimed = artifactJobWriteRepository.claimCompletion(row.artifactJobId(), taskId);
@@ -543,6 +545,7 @@ public class ArtifactJobService {
                 Json.write(objectMapper, request.citations() == null ? List.of() : request.citations()),
                 taskId
         );
+        videoMaterialService.linkPublishedVersion(versionId, materialBundleId);
         artifactJobWriteRepository.recordCandidateReceipt(taskId, candidate.candidateId(),
                 candidate.digest(), versionId, row.inputSnapshotId());
         artifactJobWriteRepository.completeJob(row.artifactJobId(), request.resultTitle(), nextVersionNo);
