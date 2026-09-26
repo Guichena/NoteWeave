@@ -237,3 +237,7 @@ Worker 原先把任何非空 `source_refs` 都统计为已覆盖，即使引用�
 ## C4 固定标注样本的影子选择基线
 
 新增直接读取 `context-v2-gold-v1.json` 的离线回放测试，对五个可编译场景计算 Raw Tail、用户约束、Memory Revision 与可用主题摘要的误选/漏选计数。删除样本不送入正常编译器，继续由脱敏契约处理。五个样本共 **0 Raw Tail 不一致、0 约束不一致、0 Memory 不一致、0 主题摘要不一致、0 超预算**。首轮回放与 v2 Schema/选择器测试 **10 passed**；补入摘要选择计数后的回放与选择器 **7 passed**。这是合成标注的离线门禁，未比较真实 v1/v2 Run、未测真实用户误选率，也未开启 Workspace 灰度。
+
+## C3 v2 冻结视图的确定性脱敏
+
+`ContextProjectionV2.redacted()` 保留消息、摘要、约束、Memory 和决策的结构化标识，同时清空当前输入、原文、摘要、规则及 Memory 正文，更新文本摘要，移除可能携带敏感词的决策原因与降级详情，并转成 `METADATA_ONLY`。重复脱敏幂等。`ContextProjectionV2ContractTest` **4 passed**、窗口选择器 **6 passed**、固定样本回放 **1 passed**，合计 **11 passed**。这只是未来持久化快照可复用的脱敏函数；v2 Run 快照表和实际删除传播尚未接入，不能把它当成已完成的 C3 回放门禁。

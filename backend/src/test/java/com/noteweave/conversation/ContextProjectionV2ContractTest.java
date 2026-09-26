@@ -63,6 +63,35 @@ class ContextProjectionV2ContractTest {
     }
 
     @Test
+    void redactionRetainsReferencesButRemovesAllDerivedText() throws Exception {
+        ContextProjectionV2 original = new ContextProjectionV2(
+                "context-projection-v2", "shadow-v2", "workspace", "actor", "conversation",
+                2, "private query",
+                List.of(new ContextProjectionV2.RawMessage("message-2", 2, "USER",
+                        "private raw", digest("private raw"))),
+                List.of(new ContextProjectionV2.TopicSummary("topic", "segment", "revision",
+                        1, 1, "private summary", digest("private summary"))),
+                List.of(new ContextProjectionV2.UserConstraint("constraint", "message-1", "USER",
+                        "FORMAT", "GLOBAL", "private rule", 1, null, "ACTIVE")),
+                List.of(new ContextProjectionV2.MemoryRevision("memory", "memory-revision",
+                        "private memory", digest("private memory"))),
+                List.of(new ContextProjectionV2.Decision("TOPIC_SUMMARY", "revision",
+                        "INCLUDE", "MATCHED_ACTIVE_TOPIC")), 1000, 100, List.of(), "FULL");
+
+        ContextProjectionV2 redacted = original.redacted();
+
+        assertThat(redacted.replayAvailability()).isEqualTo("METADATA_ONLY");
+        assertThat(redacted.currentInput()).isEmpty();
+        assertThat(redacted.rawTail().get(0).messageId()).isEqualTo("message-2");
+        assertThat(redacted.rawTail().get(0).text()).isEmpty();
+        assertThat(redacted.topicSummaries().get(0).revisionId()).isEqualTo("revision");
+        assertThat(redacted.topicSummaries().get(0).text()).isEmpty();
+        assertThat(redacted.constraints().get(0).text()).isEmpty();
+        assertThat(redacted.memoryRevisions().get(0).text()).isEmpty();
+        assertThat(redacted.redacted()).isSameAs(redacted);
+    }
+
+    @Test
     void goldCasesCoverRequiredTopicAndDeletionScenariosWithValidAnnotations() throws Exception {
         JsonNode gold;
         try (var input = getClass().getResourceAsStream("/conversation/context-v2-gold-v1.json")) {

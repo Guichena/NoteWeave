@@ -137,6 +137,32 @@ public record ContextProjectionV2(
         }
     }
 
+    /** Preserve structural references while removing every text field after sensitive deletion. */
+    public ContextProjectionV2 redacted() {
+        if ("METADATA_ONLY".equals(replayAvailability)) return this;
+        String emptyHash = sha256("");
+        List<RawMessage> redactedRaw = rawTail.stream()
+                .map(message -> new RawMessage(message.messageId(), message.seq(),
+                        message.role(), "", emptyHash)).toList();
+        List<TopicSummary> redactedSummaries = topicSummaries.stream()
+                .map(summary -> new TopicSummary(summary.topicId(), summary.segmentId(),
+                        summary.revisionId(), summary.startSeq(), summary.endSeq(), "", emptyHash)).toList();
+        List<UserConstraint> redactedConstraints = constraints.stream()
+                .map(rule -> new UserConstraint(rule.constraintId(), rule.sourceMessageId(),
+                        rule.sourceRole(), rule.kind(), rule.scope(), "", rule.validFromSeq(),
+                        rule.invalidAfterSeq(), rule.status())).toList();
+        List<MemoryRevision> redactedMemories = memoryRevisions.stream()
+                .map(memory -> new MemoryRevision(memory.memoryId(), memory.revisionId(),
+                        "", emptyHash)).toList();
+        List<Decision> redactedDecisions = decisions.stream()
+                .map(decision -> new Decision(decision.refType(), decision.refId(),
+                        decision.action(), "SENSITIVE_REFERENCE_REDACTED")).toList();
+        return new ContextProjectionV2(schemaVersion, compilerVersion, workspaceId, actorId,
+                conversationId, cutoffSeq, "", redactedRaw, redactedSummaries,
+                redactedConstraints, redactedMemories, redactedDecisions, tokenBudget, 0,
+                List.of("SENSITIVE_REFERENCE_REDACTED"), "METADATA_ONLY");
+    }
+
     private static boolean blank(String value) {
         return value == null || value.isBlank();
     }
