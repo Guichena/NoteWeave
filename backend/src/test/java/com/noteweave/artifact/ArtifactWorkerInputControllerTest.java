@@ -69,4 +69,18 @@ class ArtifactWorkerInputControllerTest {
 
         verify(jobService).getWorkerInput("task-1");
     }
+
+    @Test
+    void sourceWindowReadRequiresActiveDeliveryBeforeReadingMaterial() {
+        ArtifactJobService jobService = mock(ArtifactJobService.class);
+        DurableOutboxDispatcher dispatcher = mock(DurableOutboxDispatcher.class);
+        ArtifactWorkerInputController controller = new ArtifactWorkerInputController(
+                jobService, dispatcher, "production", false);
+
+        assertThatThrownBy(() -> controller.getSourceWindows(
+                "task-1", "source-1", "snapshot-1", "", 16, 65536, "stale-token"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("does not own the active outbox delivery");
+        org.mockito.Mockito.verifyNoInteractions(jobService);
+    }
 }

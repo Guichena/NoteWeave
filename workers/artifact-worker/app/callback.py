@@ -7,6 +7,7 @@ import base64
 import logging
 from typing import Any, Protocol
 from urllib import error, request
+from urllib.parse import urlencode, quote
 
 from pydantic import BaseModel
 
@@ -23,6 +24,7 @@ from app.capability_wait_queue import (
     wake_waiting_task,
 )
 from app.models import ArtifactProgressEvent, ArtifactTaskInput, ArtifactTaskResult
+from app.material_resolver import select_frozen_windows
 from app.runner import run_artifact_task
 from app.system_mcp_executor import submit_system_mcp_acquisition_operation
 from app.system_mcp_registry import SYSTEM_BILIBILI_SERVER_ID
@@ -86,7 +88,46 @@ class JavaArtifactCallbackClient:
 
     def fetch_task_input(self, task_id: str) -> ArtifactTaskInput:
         response = self._request("GET", f"/internal/worker/artifact-tasks/{task_id}/input")
-        return ArtifactTaskInput.model_validate(_unwrap_api_response(response))
+        task_input = ArtifactTaskInput.model_validate(_unwrap_api_response(response))
+        if task_input.replay_availability != "FULL":
+            return task_input
+        for source in task_input.source_scope:
+            snapshot_id = source.source_snapshot_id or str(
+                source.source_metadata.get("source_snapshot_id", ""))
+            if not snapshot_id:
+                continue  # Historical task input keeps sample_text compatibility.
+
+            def fetch_page(cursor: str) -> dict[str, object]:
+                query = urlencode({
+                    "sourceSnapshotId": snapshot_id,
+                    "cursor": cursor,
+                    "maxWindows": 16,
+                    "maxBytes": 65_536,
+                })
+                path = (
+                    f"/internal/worker/artifact-tasks/{quote(task_id, safe='')}"
+                    f"/sources/{quote(source.source_id, safe='')}/windows?{query}"
+                )
+                page = _unwrap_api_response(self._request("GET", path))
+                if (page.get("source_snapshot_id") != snapshot_id or page.get("source_id") != source.source_id):
+                    raise ValueError("source window page does not match the frozen snapshot")
+                return page
+
+            try:
+                windows, gap, cursor = select_frozen_windows(
+                    query=task_input.input_payload.user_requirement + " " + source.title,
+                    fetch_page=fetch_page,
+                )
+            except ArtifactCallbackHttpError as exc:
+                if exc.status_code != 404:
+                    raise
+                source.material_gap = "WINDOW_ENDPOINT_UNAVAILABLE"
+                continue
+            source.material_windows = windows
+            source.material_gap = gap or ("NO_WINDOWS" if not windows else "")
+            if cursor:
+                source.source_metadata["material_scan_next_cursor"] = cursor
+        return task_input
 
     def send_progress(self, task_id: str, event: ArtifactProgressEvent) -> None:
         payload = event.model_dump(mode="json")

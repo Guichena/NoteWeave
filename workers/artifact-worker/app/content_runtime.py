@@ -771,13 +771,27 @@ def _adapt_source_inputs(task_input: ArtifactTaskInput, action_key: str) -> list
             normalized_source_type,
             adapter_route,
         )
-        plain_text = source.sample_text.strip() or source.summary.strip() or source.title
+        selected_windows = [
+            window for window in source.material_windows
+            if isinstance(window, dict) and str(window.get("content", "")).strip()
+        ]
+        plain_text = (
+            "\n\n".join(str(window["content"]) for window in selected_windows)
+            if selected_windows else source.sample_text.strip() or source.summary.strip() or source.title
+        )
         metadata: dict[str, object] = {
             "original_source_type": normalized_source_type,
             "adapter_route": adapter_route,
             "source_platform": source_platform,
             "source_uri": source.source_uri,
             "related_source_ids": list(source.related_source_ids),
+            "selected_source_window_ids": [
+                str(window.get("window_id", "")) for window in selected_windows
+            ],
+            "selected_source_window_locations": [
+                str(window.get("location_info", "")) for window in selected_windows
+            ],
+            "material_gap": source.material_gap,
             **source.source_metadata,
         }
         descriptors.append(

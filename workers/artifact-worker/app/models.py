@@ -8,6 +8,10 @@ class SourceScopeItem(BaseModel):
     title: str
     summary: str = ""
     sample_text: str = ""
+    source_snapshot_id: str = ""
+    source_window_id: str = ""
+    material_windows: list[dict[str, object]] = Field(default_factory=list)
+    material_gap: str = ""
     generated_by: str = ""
     generated_ref_id: str = ""
     source_type: str = "DOCUMENT_TEXT"

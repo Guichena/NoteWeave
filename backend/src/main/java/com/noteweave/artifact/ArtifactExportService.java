@@ -71,6 +71,7 @@ public class ArtifactExportService {
 
     public ArtifactExportFile downloadPdf(String workspaceId, String artifactJobId, int versionNo) {
         ExportRow row = loadVersion(workspaceId, artifactJobId, versionNo);
+        requireVersionSourcesVisible(row);
         requireReadyDelivery(row.versionId());
         if (!hasFile(row.versionId(), PDF)) {
             Integer published = jdbcTemplate.queryForObject(
@@ -259,6 +260,41 @@ public class ArtifactExportService {
         }
     }
 
+    private void requireVersionSourcesVisible(ExportRow version) {
+        if (version.originTaskId() == null || version.originTaskId().isBlank()) return;
+        List<String> scopes = jdbcTemplate.queryForList("""
+                select s.source_scope_snapshot_json
+                from artifact_job_run r
+                join artifact_run_input_snapshot s on s.id = r.input_snapshot_id
+                where r.task_id = ?
+                """, String.class, version.originTaskId());
+        if (scopes.isEmpty()) return; // Historical versions predate frozen input snapshots.
+        try {
+            JsonNode sources = objectMapper.readTree(scopes.get(0));
+            if (!sources.isArray()) throw new IllegalArgumentException("source scope must be an array");
+            for (JsonNode source : sources) {
+                String sourceId = source.isTextual() ? source.asText() : source.path("source_id").asText();
+                String snapshotId = source.path("source_snapshot_id").asText();
+                Integer visible = jdbcTemplate.queryForObject("""
+                        select count(*) from source s
+                        join source_snapshot ss on ss.source_id = s.id
+                        where s.workspace_id = (select workspace_id from artifact_job where id = ?)
+                          and s.id = ? and s.status = 'READY'
+                          and (? = '' or ss.id = ?)
+                        """, Integer.class, version.artifactJobId(), sourceId, snapshotId, snapshotId);
+                if (visible == null || visible == 0) {
+                    throw new BusinessException("ARTIFACT_SOURCE_REVOKED",
+                            "产物来源已删除、撤权或不可用", HttpStatus.CONFLICT);
+                }
+            }
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new BusinessException("ARTIFACT_SOURCE_SCOPE_INVALID",
+                    "产物来源快照无法校验", HttpStatus.CONFLICT);
+        }
+    }
+
     public List<ArtifactFileMetadataResponse> listFiles(String artifactVersionId) {
         return jdbcTemplate.query("""
                 select id, file_format, file_name, media_type, storage_backend, bucket_name,
@@ -291,6 +327,7 @@ public class ArtifactExportService {
     public ArtifactDownloadFile downloadFile(String workspaceId, String artifactJobId,
                                              int versionNo, String fileId) {
         ExportRow version = loadVersion(workspaceId, artifactJobId, versionNo);
+        requireVersionSourcesVisible(version);
         requireReadyDelivery(version.versionId());
         List<ArtifactFileMetadataResponse> matches = listFiles(version.versionId()).stream()
                 .filter(file -> fileId.equals(file.fileId()))

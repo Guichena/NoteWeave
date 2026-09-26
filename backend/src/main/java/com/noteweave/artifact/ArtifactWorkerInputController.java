@@ -10,6 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -43,6 +44,29 @@ public class ArtifactWorkerInputController {
                     defaultValue = ""
             ) String deliveryToken
     ) {
+        requireDelivery(taskId, deliveryToken);
+        return ApiResponse.success(artifactJobService.getWorkerInput(taskId));
+    }
+
+    @GetMapping("/{taskId}/sources/{sourceId}/windows")
+    ApiResponse<ArtifactSourceWindowPageResponse> getSourceWindows(
+            @PathVariable String taskId,
+            @PathVariable String sourceId,
+            @RequestParam String sourceSnapshotId,
+            @RequestParam(defaultValue = "") String cursor,
+            @RequestParam(defaultValue = "16") int maxWindows,
+            @RequestParam(defaultValue = "65536") int maxBytes,
+            @RequestHeader(
+                    value = DurableOutboxDispatcher.DELIVERY_TOKEN_HEADER,
+                    defaultValue = ""
+            ) String deliveryToken
+    ) {
+        requireDelivery(taskId, deliveryToken);
+        return ApiResponse.success(artifactJobService.readSourceWindows(
+                taskId, sourceId, sourceSnapshotId, cursor, maxWindows, maxBytes));
+    }
+
+    private void requireDelivery(String taskId, String deliveryToken) {
         if (deliveryToken.isBlank() && !allowsUnfencedInput()) {
             throw new BusinessException(
                     "WORKER_INPUT_DELIVERY_TOKEN_REQUIRED",
@@ -62,7 +86,6 @@ public class ArtifactWorkerInputController {
                     HttpStatus.CONFLICT
             );
         }
-        return ApiResponse.success(artifactJobService.getWorkerInput(taskId));
     }
 
     private boolean allowsUnfencedInput() {

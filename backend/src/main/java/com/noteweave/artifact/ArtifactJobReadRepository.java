@@ -330,6 +330,35 @@ class ArtifactJobReadRepository {
         }, workspaceId, sourceId);
     }
 
+    List<ArtifactSourceWindowRow> readSourceWindows(String workspaceId, String sourceId,
+                                                   String snapshotId, int afterChunkNo,
+                                                   int afterWindowNo, int limit) {
+        return jdbcTemplate.query("""
+                select sw.id, sc.chunk_no, sw.window_no,
+                       coalesce(sc.heading, '') as heading,
+                       coalesce(sw.location_info, sc.location_info, '') as location_info,
+                       sw.content
+                from source_window sw
+                join source_chunk sc on sc.id = sw.source_chunk_id
+                join source_snapshot ss on ss.id = sc.source_snapshot_id
+                join source s on s.id = sc.source_id
+                where s.workspace_id = ? and s.id = ? and s.status = 'READY'
+                  and ss.id = ? and ss.source_id = s.id
+                  and ss.parse_status = 'PARSED'
+                  and ss.index_status in ('INDEXED', 'DISABLED')
+                  and (sc.chunk_no > ? or (sc.chunk_no = ? and sw.window_no > ?))
+                order by sc.chunk_no, sw.window_no
+                limit ?
+                """, (rs, index) -> new ArtifactSourceWindowRow(
+                rs.getString("id"), rs.getInt("chunk_no"), rs.getInt("window_no"),
+                rs.getString("heading"), rs.getString("location_info"), rs.getString("content")),
+                workspaceId, sourceId, snapshotId,
+                afterChunkNo, afterChunkNo, afterWindowNo, limit);
+    }
+
+    record ArtifactSourceWindowRow(String windowId, int chunkNo, int windowNo,
+                                   String heading, String locationInfo, String content) { }
+
     void requireJob(String workspaceId, String artifactJobId) {
         Integer count = jdbcTemplate.queryForObject("""
                 select count(*)

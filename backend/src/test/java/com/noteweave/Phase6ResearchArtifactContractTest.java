@@ -655,6 +655,97 @@ class Phase6ResearchArtifactContractTest {
     }
 
     @Test
+    void artifactWindowPagesMustUseFrozenSnapshotAndRejectRevokedSource() throws Exception {
+        String workspaceId = createWorkspace();
+        String sourceId = uploadSource(workspaceId, "paged-source.md", "Opening fact in first window.");
+        String snapshotId = jdbcTemplate.queryForObject(
+                "select id from source_snapshot where source_id = ? order by version_no desc limit 1",
+                String.class, sourceId);
+        String chunkId = java.util.UUID.randomUUID().toString();
+        String lateWindowId = java.util.UUID.randomUUID().toString();
+        jdbcTemplate.update("""
+                insert into source_chunk(id, workspace_id, source_id, source_snapshot_id,
+                                         chunk_no, heading, content, token_estimate, location_info)
+                values (?, ?, ?, ?, 999, 'Late section', 'OnlyInLaterWindow', 4, 'page 9')
+                """, chunkId, workspaceId, sourceId, snapshotId);
+        jdbcTemplate.update("""
+                insert into source_window(id, source_chunk_id, window_no, content, location_info)
+                values (?, ?, 0, 'OnlyInLaterWindow', 'page 9')
+                """, lateWindowId, chunkId);
+        MvcResult created = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "study_guide", "user_requirement", "Use later fact",
+                                "inputs", Map.of("language", "en"),
+                                "source_scope_source_ids", List.of(sourceId)))))
+                .andExpect(status().isOk()).andReturn();
+        String taskId = objectMapper.readTree(created.getResponse().getContentAsString())
+                .path("data").path("task_id").asText();
+
+        String cursor = "";
+        boolean sawLate = false;
+        for (int page = 0; page < 8; page++) {
+            MvcResult result = mockMvc.perform(get(
+                            "/internal/worker/artifact-tasks/{taskId}/sources/{sourceId}/windows",
+                            taskId, sourceId)
+                            .param("sourceSnapshotId", snapshotId)
+                            .param("cursor", cursor).param("maxWindows", "1"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.source_snapshot_id").value(snapshotId))
+                    .andReturn();
+            JsonNode pageData = objectMapper.readTree(result.getResponse().getContentAsString()).path("data");
+            JsonNode window = pageData.path("windows").get(0);
+            if (lateWindowId.equals(window.path("window_id").asText())) {
+                assertThat(window.path("content").asText()).isEqualTo("OnlyInLaterWindow");
+                assertThat(window.path("location_info").asText()).isEqualTo("page 9");
+                assertThat(window.path("checksum_sha256").asText()).hasSize(64);
+                sawLate = true;
+                break;
+            }
+            cursor = pageData.path("next_cursor").asText();
+            if (cursor.isBlank()) break;
+        }
+        assertThat(sawLate).isTrue();
+        String newerSnapshotId = java.util.UUID.randomUUID().toString();
+        int newerVersionNo = jdbcTemplate.queryForObject(
+                "select max(version_no) + 1 from source_snapshot where source_id = ?",
+                Integer.class, sourceId);
+        jdbcTemplate.update("""
+                insert into source_snapshot(id, source_id, file_object_id, version_no,
+                                            object_key, sha256, parse_status, index_status)
+                select ?, source_id, file_object_id, ?, object_key, sha256, parse_status, index_status
+                from source_snapshot where id = ?
+                """, newerSnapshotId, newerVersionNo, snapshotId);
+        String newerChunkId = java.util.UUID.randomUUID().toString();
+        jdbcTemplate.update("""
+                insert into source_chunk(id, workspace_id, source_id, source_snapshot_id,
+                                         chunk_no, heading, content, token_estimate, location_info)
+                values (?, ?, ?, ?, 0, 'Changed latest', 'ChangedLatestOnly', 3, 'page 1')
+                """, newerChunkId, workspaceId, sourceId, newerSnapshotId);
+        jdbcTemplate.update("""
+                insert into source_window(id, source_chunk_id, window_no, content, location_info)
+                values (?, ?, 0, 'ChangedLatestOnly', 'page 1')
+                """, java.util.UUID.randomUUID().toString(), newerChunkId);
+        mockMvc.perform(get("/internal/worker/artifact-tasks/{taskId}/input", taskId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.source_scope[0].source_snapshot_id").value(snapshotId));
+        mockMvc.perform(get("/internal/worker/artifact-tasks/{taskId}/sources/{sourceId}/windows",
+                        taskId, sourceId).param("sourceSnapshotId", snapshotId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.windows[0].content",
+                        org.hamcrest.Matchers.not("ChangedLatestOnly")));
+        mockMvc.perform(get("/internal/worker/artifact-tasks/{taskId}/sources/{sourceId}/windows",
+                        taskId, sourceId).param("sourceSnapshotId", "other-snapshot"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
+                        "/api/v2/workspaces/{workspaceId}/sources/{sourceId}", workspaceId, sourceId))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/internal/worker/artifact-tasks/{taskId}/sources/{sourceId}/windows",
+                        taskId, sourceId).param("sourceSnapshotId", snapshotId))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
     void artifactJobWithoutExplicitSourceScopeMustNotDiscoverWorkspaceSources() throws Exception {
         String workspaceId = createWorkspace();
         uploadSource(workspaceId, "implicit-artifact-input.md", ""
@@ -713,6 +804,41 @@ class Phase6ResearchArtifactContractTest {
                                 "result_type", "MARKDOWN", "result_title", "Revoked source output",
                                 "result_payload", Map.of("markdown", "# Secret from stale run"),
                                 "trace_summary", "stale run", "citations", List.of()))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ARTIFACT_SOURCE_REVOKED"));
+    }
+
+    @Test
+    void deletingSourceMustBlockPreviouslyPublishedArtifactDownload() throws Exception {
+        String workspaceId = createWorkspace();
+        String sourceId = uploadSource(workspaceId, "download-source.md", "Grounded download content.");
+        MvcResult created = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "study_guide", "user_requirement", "Use source",
+                                "inputs", Map.of("language", "en"),
+                                "source_scope_source_ids", List.of(sourceId)))))
+                .andExpect(status().isOk()).andReturn();
+        JsonNode data = objectMapper.readTree(created.getResponse().getContentAsString()).path("data");
+        String taskId = data.path("task_id").asText();
+        String artifactJobId = data.path("artifact_job_id").asText();
+        completeArtifact(taskId, "Grounded artifact", "# Grounded artifact\n\nGrounded download content.");
+        MvcResult listed = mockMvc.perform(get(
+                        "/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}/versions/1/files",
+                        workspaceId, artifactJobId))
+                .andExpect(status().isOk()).andReturn();
+        String fileId = objectMapper.readTree(listed.getResponse().getContentAsString())
+                .path("data").get(0).path("file_id").asText();
+        mockMvc.perform(get(
+                        "/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}/versions/1/files/{fileId}",
+                        workspaceId, artifactJobId, fileId))
+                .andExpect(status().isOk());
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
+                        "/api/v2/workspaces/{workspaceId}/sources/{sourceId}", workspaceId, sourceId))
+                .andExpect(status().isOk());
+        mockMvc.perform(get(
+                        "/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}/versions/1/files/{fileId}",
+                        workspaceId, artifactJobId, fileId))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("ARTIFACT_SOURCE_REVOKED"));
     }

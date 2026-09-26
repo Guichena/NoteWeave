@@ -454,6 +454,71 @@ public class ArtifactJobService {
         return new CompletionOutcome("ARTIFACT_VERSIONED", "产物版本已生成：" + request.resultTitle(), versionId);
     }
 
+    public ArtifactSourceWindowPageResponse readSourceWindows(
+            String taskId, String sourceId, String sourceSnapshotId,
+            String cursor, int maxWindows, int maxBytes) {
+        if (maxWindows < 1 || maxWindows > 32 || maxBytes < 1024 || maxBytes > 262_144) {
+            throw new BusinessException("ARTIFACT_WINDOW_BUDGET_INVALID",
+                    "资料窗口预算超出允许范围", HttpStatus.BAD_REQUEST);
+        }
+        ArtifactJobTaskRow run = findByTaskId(taskId);
+        WorkerSourceScopeItemResponse frozen = readCapturedSourceScope(
+                run.workspaceId(), run.sourceScopeJson()).stream()
+                .filter(source -> sourceId.equals(source.sourceId())
+                        && sourceSnapshotId.equals(source.sourceSnapshotId()))
+                .findFirst().orElseThrow(() -> new BusinessException(
+                        "ARTIFACT_WINDOW_SCOPE_DENIED", "资料不属于该 Run 的冻结范围", HttpStatus.FORBIDDEN));
+        requireFrozenSourcesVisible(run);
+        int afterChunkNo = -1;
+        int afterWindowNo = -1;
+        if (cursor != null && !cursor.isBlank()) {
+            String[] parts = cursor.split(":", -1);
+            try {
+                if (parts.length != 2) throw new NumberFormatException("cursor shape");
+                afterChunkNo = Integer.parseInt(parts[0]);
+                afterWindowNo = Integer.parseInt(parts[1]);
+                if (afterChunkNo < 0 || afterWindowNo < 0) throw new NumberFormatException("negative cursor");
+            } catch (NumberFormatException ex) {
+                throw new BusinessException("ARTIFACT_WINDOW_CURSOR_INVALID",
+                        "资料窗口游标无效", HttpStatus.BAD_REQUEST);
+            }
+        }
+        List<ArtifactJobReadRepository.ArtifactSourceWindowRow> rows =
+                artifactJobReadRepository.readSourceWindows(run.workspaceId(), frozen.sourceId(),
+                        frozen.sourceSnapshotId(), afterChunkNo, afterWindowNo, maxWindows + 1);
+        java.util.ArrayList<ArtifactSourceWindowResponse> selected = new java.util.ArrayList<>();
+        int remainingBytes = maxBytes;
+        boolean budgetExhausted = false;
+        for (ArtifactJobReadRepository.ArtifactSourceWindowRow window : rows) {
+            if (selected.size() == maxWindows) break;
+            byte[] bytes = window.content().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            if (bytes.length > remainingBytes) {
+                if (selected.isEmpty()) {
+                    throw new BusinessException("ARTIFACT_WINDOW_BUDGET_INSUFFICIENT",
+                            "单个资料窗口超过本页字节预算", HttpStatus.CONFLICT);
+                }
+                budgetExhausted = true;
+                break;
+            }
+            remainingBytes -= bytes.length;
+            selected.add(new ArtifactSourceWindowResponse(window.windowId(), window.chunkNo(),
+                    window.windowNo(), window.heading(), window.locationInfo(), window.content(),
+                    java.util.HexFormat.of().formatHex(sha256Bytes(bytes))));
+        }
+        boolean more = rows.size() > selected.size();
+        ArtifactSourceWindowResponse last = selected.isEmpty() ? null : selected.get(selected.size() - 1);
+        return new ArtifactSourceWindowPageResponse(sourceId, sourceSnapshotId, List.copyOf(selected),
+                more ? last.chunkNo() + ":" + last.windowNo() : "", budgetExhausted);
+    }
+
+    private byte[] sha256Bytes(byte[] bytes) {
+        try {
+            return java.security.MessageDigest.getInstance("SHA-256").digest(bytes);
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 unavailable", ex);
+        }
+    }
+
     public void validateCandidateReplay(String taskId, com.noteweave.worker.WorkerCompleteRequest request) {
         ArtifactJobTaskRow row = findByTaskId(taskId);
         ArtifactCandidate candidate = ArtifactCandidate.from(taskId, row.inputSnapshotId(), request,

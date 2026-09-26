@@ -295,6 +295,20 @@ def _run_artifact_task(
                 cco.model_dump(mode="json") for cco in canonical_content_objects
             ],
             "context_pack": context_pack.model_dump(mode="json"),
+            "material_resolution": [
+                {
+                    "source_id": source.source_id,
+                    "source_snapshot_id": source.source_snapshot_id or str(
+                        source.source_metadata.get("source_snapshot_id", "")),
+                    "selected_window_ids": [
+                        str(window.get("window_id", "")) for window in source.material_windows
+                    ],
+                    "gap": source.material_gap,
+                    "scan_next_cursor": str(
+                        source.source_metadata.get("material_scan_next_cursor", "")),
+                }
+                for source in task_input.source_scope
+            ],
             "capability_resolution": capability_resolution.model_dump(mode="json"),
             "acquisition_receipt": acquisition_receipt.model_dump(mode="json"),
             "acquisition_runtime_snapshot": acquisition_runtime_snapshot,
@@ -316,7 +330,15 @@ def _run_artifact_task(
             "-> verifier / repair -> artifact version export"
         ),
         citations=[
-            {"title": item.title, "source_id": item.source_id}
+            {
+                "title": item.title,
+                "source_id": item.source_id,
+                "source_snapshot_id": item.source_snapshot_id or str(
+                    item.source_metadata.get("source_snapshot_id", "")),
+                "source_window_ids": [
+                    str(window.get("window_id", "")) for window in item.material_windows
+                ],
+            }
             for item in task_input.source_scope[:3]
         ],
         job_snapshot=job_snapshot,
