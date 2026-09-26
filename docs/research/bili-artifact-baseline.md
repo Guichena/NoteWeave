@@ -515,3 +515,7 @@ Research Worker 的 Source Scope 装载复用同一原 Run 门禁。已撤销的
 Source 身份批量复核加入 QA 本地回退与 NOTE 候选池，QA/NOTE Hydrator 在返回 Passage 所属及阅读窗口前过滤撤销来源。混合 QA 在外部 Rerank 调用前先用数据库所属关系及冻结 Context 校验候选，避免把已撤销来源的正文送往重排器；摘要损坏会明确失败而不是走 MySQL 回退。集成合同用同一派生 Source 验证可读、摘要损坏和消息撤销后的 Hydrator/NOTE 候选行为；模拟 Provider 合同确认被拒正文未到达重排调用。首次定向测试有 **6 failed**：旧 MySQL 回退单测使用全模拟 Hydrator，没有设置新增的来源可读集合，候选被清空；补齐测试夹具后复跑 `ContextV2ResearchContractTest` **7**、`QaHybridRetrieverProviderIntegrationTest` **2**、`QaPassageRetrieverTest` **15**、`RetrievalHydratorTest` **3**、`NoteRecallRepositoryQueryTest` **1**，共 **28 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。仍需审计直接读取 Source/文件、Artifact、派生 Wiki、既有答案引用及索引清理/跨进程撤销传播。
 
 补跑 NOTE/QA 邻接消费合同：`NoteRetrievalServiceHydrationTest` **2**、`NoteRecallRetrieverTest` **4**、`NoteReadingRetrieverTest` **2**、`NoteEvidenceRetrieverTest` **3**、`QaPassageEvidenceRetrieverTest` **4**，共 **15 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。
+
+## C3 派生 Research Source 的 Artifact 输入门禁
+
+Artifact 新 Job 捕获来源时校验上游 Research Run；既有 Run 的 Worker 输入、Source 分窗及 Candidate 提交均复核冻结 Source 与上游引用。因而撤销的 Research 来源不会再通过已冻结的 `sample_text` 或分窗送给 Worker，损坏摘要也直接拒绝。`ContextV2ResearchContractTest` 使用同一派生 Source 先创建 Artifact Job，再破坏摘要及撤销来源，验证 Worker 输入拒绝和新 Job 不可创建。联跑 `ContextV2ResearchContractTest` **7**、`ArtifactWorkerControlServiceTest` **4**、`ArtifactCandidateTest` **6**、`ArtifactRollbackGateTest` **2**，共 **19 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。历史 Artifact Version 的已发布正文/文件读取是否随来源撤销而阻断，仍须与 Research 已发布内容的保留/删除策略一起确定。

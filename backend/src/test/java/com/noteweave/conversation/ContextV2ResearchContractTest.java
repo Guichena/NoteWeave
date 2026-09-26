@@ -22,6 +22,7 @@ import com.noteweave.research.ResearchRunCommandService;
 import com.noteweave.research.ResearchSourceScopeLoader;
 import com.noteweave.chat.RetrievalHydrator;
 import com.noteweave.chat.NoteRecallRepository;
+import com.noteweave.artifact.ArtifactJobService;
 import com.noteweave.storage.ObjectStorage;
 import com.noteweave.memory.ExecutionObservation;
 import com.noteweave.memory.MemoryRuntime;
@@ -56,6 +57,7 @@ class ContextV2ResearchContractTest {
     @Autowired ResearchSourceScopeLoader researchSourceScope;
     @Autowired RetrievalHydrator retrievalHydrator;
     @Autowired NoteRecallRepository noteRecallRepository;
+    @Autowired ArtifactJobService artifactJobs;
     @Autowired ObjectStorage storage;
     @Autowired MemoryRuntime memory;
     @SpyBean ConversationContextCompilerV2Service compiler;
@@ -244,6 +246,16 @@ class ContextV2ResearchContractTest {
         assertThat(noteRecallRepository.findCurrentSources(workspace))
                 .extracting(com.noteweave.chat.NoteRetrievalService.CandidateSource::sourceId)
                 .contains(sourceId);
+        String artifactTaskId = data(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspace)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsBytes(Map.of(
+                        "skill_key", "resume_highlight", "user_requirement", "Summarize report",
+                        "inputs", Map.of("language", "zh-CN"),
+                        "source_scope_source_ids", java.util.List.of(sourceId)))))
+                .path("task_id").asText();
+        assertThat(artifactJobs.getWorkerInput(artifactTaskId).sourceScope())
+                .extracting(com.noteweave.worker.WorkerSourceScopeItemResponse::sourceId)
+                .containsExactly(sourceId);
 
         String originalSnapshot = jdbc.queryForObject("""
                 select snapshot_json from run_input_snapshot where research_run_id = ?
@@ -261,6 +273,9 @@ class ContextV2ResearchContractTest {
                         failure -> assertThat(failure.code()).isEqualTo("RESEARCH_CONTEXT_SNAPSHOT_MISMATCH"));
         assertThatThrownBy(() -> retrievalHydrator.hydratePassageOwnership(
                 workspace, java.util.List.of(chunkId)))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("RESEARCH_CONTEXT_SNAPSHOT_MISMATCH"));
+        assertThatThrownBy(() -> artifactJobs.getWorkerInput(artifactTaskId))
                 .isInstanceOfSatisfying(BusinessException.class,
                         failure -> assertThat(failure.code()).isEqualTo("RESEARCH_CONTEXT_SNAPSHOT_MISMATCH"));
         jdbc.update("update run_input_snapshot set snapshot_json = ? where research_run_id = ?",
@@ -282,6 +297,16 @@ class ContextV2ResearchContractTest {
         assertThat(noteRecallRepository.findCurrentSources(workspace))
                 .extracting(com.noteweave.chat.NoteRetrievalService.CandidateSource::sourceId)
                 .doesNotContain(sourceId);
+        assertThatThrownBy(() -> artifactJobs.getWorkerInput(artifactTaskId))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("RESEARCH_SOURCE_CONTEXT_REDACTED"));
+        mvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspace)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsBytes(Map.of(
+                        "skill_key", "resume_highlight", "user_requirement", "Retry report",
+                        "inputs", Map.of("language", "zh-CN"),
+                        "source_scope_source_ids", java.util.List.of(sourceId)))))
+                .andExpect(status().isConflict());
     }
 
     @Test

@@ -13,6 +13,7 @@ import com.noteweave.knowledge.KnowledgeItemResponse;
 import com.noteweave.knowledge.KnowledgeCommandService;
 import com.noteweave.source.GeneratedSourceResult;
 import com.noteweave.source.GeneratedSourceService;
+import com.noteweave.research.ResearchGeneratedSourceReadGate;
 import com.noteweave.task.TaskService;
 import com.noteweave.worker.WorkerContextSnapshotResponse;
 import com.noteweave.worker.WorkerFailRequest;
@@ -45,6 +46,7 @@ public class ArtifactJobService {
     private final KnowledgeCommandService knowledgeCommandService;
     private final ArtifactContextV2ShadowSnapshotService contextV2ShadowSnapshots;
     private final ArtifactMemoryRevisionGuard memoryRevisionGuard;
+    private final ResearchGeneratedSourceReadGate generatedSourceGate;
 
     public ArtifactJobService(
             JdbcTemplate jdbcTemplate,
@@ -60,7 +62,8 @@ public class ArtifactJobService {
             GeneratedSourceService generatedSourceService,
             KnowledgeCommandService knowledgeCommandService,
             ArtifactContextV2ShadowSnapshotService contextV2ShadowSnapshots,
-            ArtifactMemoryRevisionGuard memoryRevisionGuard
+            ArtifactMemoryRevisionGuard memoryRevisionGuard,
+            ResearchGeneratedSourceReadGate generatedSourceGate
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -76,6 +79,7 @@ public class ArtifactJobService {
         this.knowledgeCommandService = knowledgeCommandService;
         this.contextV2ShadowSnapshots = contextV2ShadowSnapshots;
         this.memoryRevisionGuard = memoryRevisionGuard;
+        this.generatedSourceGate = generatedSourceGate;
     }
 
     @Transactional
@@ -464,6 +468,7 @@ public class ArtifactJobService {
 
     public ArtifactWorkerInputResponse getWorkerInput(String taskId) {
         ArtifactJobTaskRow row = findByTaskId(taskId);
+        requireFrozenSourcesVisible(row);
         memoryRevisionGuard.requireActive(taskId);
         String activeRequirement = contextV2ShadowSnapshots.activeRequirement(
                 taskId, row.workspaceId(), row.inputSnapshotId(), row.userRequirement());
@@ -658,6 +663,8 @@ public class ArtifactJobService {
                 throw new BusinessException("ARTIFACT_SOURCE_REVOKED",
                         "冻结资料已删除、撤权或不可用", HttpStatus.CONFLICT);
             }
+            generatedSourceGate.requireReadable(row.workspaceId(),
+                    source.generatedBy(), source.generatedRefId());
         }
         for (ArtifactUpstreamRefRequest ref : readUpstreamRefs(row.upstreamRefsJson())) {
             if (!artifactJobReadRepository.validUpstreamRef(
@@ -665,6 +672,7 @@ public class ArtifactJobService {
                 throw new BusinessException("ARTIFACT_UPSTREAM_REVOKED",
                         "上游引用已删除、撤权或不可用", HttpStatus.CONFLICT);
             }
+            requireGeneratedUpstreamReadable(row.workspaceId(), ref);
         }
     }
 
@@ -751,12 +759,29 @@ public class ArtifactJobService {
                 throw new BusinessException("ARTIFACT_UPSTREAM_REF_INVALID",
                         "Artifact upstream ref does not belong to this workspace or revision");
             }
+            requireGeneratedUpstreamReadable(workspaceId, ref);
         }
         return List.copyOf(refs);
     }
 
     private List<WorkerSourceScopeItemResponse> loadSourceScopeItem(String workspaceId, String sourceId) {
-        return artifactJobReadRepository.loadSourceScopeItem(workspaceId, sourceId);
+        List<WorkerSourceScopeItemResponse> items = artifactJobReadRepository.loadSourceScopeItem(
+                workspaceId, sourceId);
+        for (WorkerSourceScopeItemResponse item : items) {
+            generatedSourceGate.requireReadable(workspaceId, item.generatedBy(), item.generatedRefId());
+        }
+        return items;
+    }
+
+    private void requireGeneratedUpstreamReadable(String workspaceId, ArtifactUpstreamRefRequest ref) {
+        if ("RESEARCH_REPORT".equals(ref.refType())) {
+            generatedSourceGate.requireReadable(workspaceId, "research_agent", ref.refId());
+        } else if ("SOURCE_SNAPSHOT".equals(ref.refType())
+                && !generatedSourceGate.readableSourceIds(workspaceId, List.of(ref.refId()))
+                        .contains(ref.refId())) {
+            throw new BusinessException("ARTIFACT_UPSTREAM_REVOKED",
+                    "上游引用已删除、撤权或不可用", HttpStatus.CONFLICT);
+        }
     }
 
     private List<WorkerSourceScopeItemResponse> readCapturedSourceScope(String workspaceId, String json) {
