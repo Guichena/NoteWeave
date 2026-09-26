@@ -62,7 +62,8 @@ public class ArtifactVideoMaterialService {
         }
         if (submission == null || submission.bundle() == null) throw invalid("video material body is missing");
         Map<String, Object> bundle = submission.bundle();
-        validateBundle(run, bundle);
+        validateBundle(run.workspaceId(), run.inputSnapshotId(), run.taskId(),
+                run.inputsJson(), bundle);
         String digest = digest(bundle);
         if (!digest.equals(submission.contentDigest())) {
             throw invalid("video material digest does not match its frozen content");
@@ -92,6 +93,74 @@ public class ArtifactVideoMaterialService {
                 string(bundle.get("input_digest")), digest, json(bundle));
         storeFrameFiles(taskId, id, bundle);
         return new Receipt(id, bundleId, 1, digest, run.workspaceId(), taskId);
+    }
+
+    /** Material-only parent origin; no placeholder PDF Job is created. */
+    @Transactional
+    public Receipt submitParentMaterial(String taskId, Submission submission) {
+        ParentTask parent = requireParentTask(taskId);
+        if (submission == null || submission.bundle() == null) {
+            throw invalid("video material body is missing");
+        }
+        Map<String, Object> inputs = parent.inputs();
+        Map<String, Object> bundle = submission.bundle();
+        validateBundle(parent.workspaceId(), parent.requestId(), taskId, json(inputs), bundle);
+        String digest = digest(bundle);
+        if (!digest.equals(submission.contentDigest())) {
+            throw invalid("video material digest does not match its frozen content");
+        }
+        List<Receipt> previous = jdbc.query("""
+                select id, bundle_id, bundle_version, content_digest, workspace_id, task_id
+                from artifact_video_material_bundle where task_id = ? and bundle_version = 1
+                """, (rs, index) -> new Receipt(rs.getString("id"), rs.getString("bundle_id"),
+                rs.getInt("bundle_version"), rs.getString("content_digest"),
+                rs.getString("workspace_id"), rs.getString("task_id")), taskId);
+        if (!previous.isEmpty()) {
+            if (previous.get(0).contentDigest().equals(digest)) return previous.get(0);
+            throw new BusinessException("VIDEO_MATERIAL_CONFLICT",
+                    "同一任务已冻结不同的素材包", HttpStatus.CONFLICT);
+        }
+        String id = Ids.newId();
+        String bundleId = string(bundle.get("bundle_id"));
+        jdbc.update("""
+                insert into artifact_video_material_bundle(
+                    id, workspace_id, video_learning_request_id, task_id,
+                    bundle_id, bundle_version, bvid, part_no, input_digest,
+                    content_digest, material_json
+                ) values (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+                """, id, parent.workspaceId(), parent.requestId(), taskId,
+                bundleId, string(bundle.get("bvid")), number(bundle.get("part")),
+                string(bundle.get("input_digest")), digest, json(bundle));
+        storeFrameFiles(taskId, id, bundle);
+        return new Receipt(id, bundleId, 1, digest, parent.workspaceId(), taskId);
+    }
+
+    private ParentTask requireParentTask(String taskId) {
+        List<ParentTask> parents = jdbc.query("""
+                select r.id, r.workspace_id, r.video_url, r.part_no, r.language,
+                       r.frame_density, r.asr_fallback
+                from video_learning_request r
+                join task t on t.id = r.material_task_id
+                where t.id = ? and t.workspace_id = r.workspace_id
+                  and t.task_type = 'VIDEO_MATERIAL'
+                  and t.target_type = 'VIDEO_LEARNING_REQUEST' and t.target_id = r.id
+                  and t.task_status in ('RUNNING', 'WAITING')
+                  and r.material_state in ('QUEUED', 'RUNNING')
+                  and r.cancellation_requested = false
+                for update
+                """, (rs, index) -> new ParentTask(rs.getString(1), rs.getString(2),
+                rs.getString(3), rs.getInt(4), rs.getString(5), rs.getString(6),
+                rs.getString(7)), taskId);
+        if (parents.size() != 1) throw scopeInvalid();
+        return parents.get(0);
+    }
+
+    private record ParentTask(String requestId, String workspaceId, String url, int part,
+                              String language, String frameDensity, String asrFallback) {
+        Map<String, Object> inputs() {
+            return Map.of("url", url, "part", String.valueOf(part), "language", language,
+                    "frame_density", frameDensity, "asr_fallback", asrFallback);
+        }
     }
 
     /** Never expose Worker paths; a file must belong to the frozen bundle for this task. */
@@ -166,6 +235,47 @@ public class ArtifactVideoMaterialService {
         return new KnowledgeReceipt(id, source.id(), planDigest);
     }
 
+    @Transactional
+    public KnowledgeReceipt submitParentKnowledgePlan(String taskId, KnowledgeSubmission submission) {
+        ParentTask parent = requireParentTask(taskId);
+        if (submission == null || submission.plan() == null) {
+            throw invalid("knowledge plan body is missing");
+        }
+        List<Receipt> bundles = jdbc.query("""
+                select id, bundle_id, bundle_version, content_digest, workspace_id, task_id
+                from artifact_video_material_bundle
+                where task_id = ? and video_learning_request_id = ? and bundle_version = 1
+                """, (rs, index) -> new Receipt(rs.getString("id"), rs.getString("bundle_id"),
+                rs.getInt("bundle_version"), rs.getString("content_digest"),
+                rs.getString("workspace_id"), rs.getString("task_id")), taskId, parent.requestId());
+        if (bundles.size() != 1 || !bundles.get(0).id().equals(submission.bundleRowId())) {
+            throw invalid("knowledge plan has no frozen parent Bundle");
+        }
+        Receipt source = bundles.get(0);
+        Map<String, Object> bundle = readBundleById(source.id());
+        VideoKnowledgePlanValidator.validate(submission.plan(), bundle, source.contentDigest());
+        String planDigest = digest(submission.plan());
+        if (!planDigest.equals(submission.contentDigest())) {
+            throw invalid("knowledge plan digest does not match its content");
+        }
+        List<KnowledgeReceipt> previous = jdbc.query("""
+                select id, bundle_id, content_digest from artifact_video_knowledge_plan
+                where bundle_id = ?
+                """, (rs, index) -> new KnowledgeReceipt(rs.getString("id"),
+                rs.getString("bundle_id"), rs.getString("content_digest")), source.id());
+        if (!previous.isEmpty()) {
+            if (previous.get(0).contentDigest().equals(planDigest)) return previous.get(0);
+            throw new BusinessException("VIDEO_KNOWLEDGE_PLAN_CONFLICT",
+                    "同一素材包已冻结不同的知识规划", HttpStatus.CONFLICT);
+        }
+        String id = Ids.newId();
+        jdbc.update("""
+                insert into artifact_video_knowledge_plan(id, bundle_id, content_digest, plan_json)
+                values (?, ?, ?, ?)
+                """, id, source.id(), planDigest, json(submission.plan()));
+        return new KnowledgeReceipt(id, source.id(), planDigest);
+    }
+
     public Map<String, Object> readKnowledgePlan(String taskId, String bundleRowId) {
         jobs.findByTaskId(taskId);
         List<String> sources = jdbc.query("""
@@ -205,28 +315,45 @@ public class ArtifactVideoMaterialService {
 
     /** Parent READY gate: a Plan and Bundle must match the frozen acquisition identity. */
     ParentMaterialIdentity requireParentMaterial(String workspaceId, String bundleRowId, String planId,
-                               String videoUrl, int part, String frameDensity, String asrFallback) {
+                               String requestId, String materialTaskId, String videoUrl, int part,
+                               String frameDensity, String asrFallback) {
         List<ParentMaterialRow> rows = jdbc.query("""
-                select b.bvid, b.part_no, b.content_digest, p.content_digest, r.inputs_json
+                select b.bvid, b.part_no, b.content_digest, p.content_digest,
+                       r.inputs_json, b.video_learning_request_id, b.task_id
                 from artifact_video_material_bundle b
                 join artifact_video_knowledge_plan p on p.bundle_id = b.id
-                join artifact_job_run r on r.task_id = b.task_id
+                left join artifact_job_run r on r.task_id = b.task_id
                 where b.id = ? and p.id = ? and b.workspace_id = ? and b.bundle_version = 1
                 """, (rs, index) -> new ParentMaterialRow(rs.getString(1), rs.getInt(2),
-                rs.getString(3), rs.getString(4), rs.getString(5)), bundleRowId, planId, workspaceId);
+                rs.getString(3), rs.getString(4), rs.getString(5), rs.getString(6),
+                rs.getString(7)), bundleRowId, planId, workspaceId);
         if (rows.size() != 1) throw scopeInvalid();
         ParentMaterialRow row = rows.get(0);
+        if (materialTaskId != null && (!requestId.equals(row.parentRequestId())
+                || !materialTaskId.equals(row.taskId()))) throw scopeInvalid();
+        if (materialTaskId == null && row.parentRequestId() != null) throw scopeInvalid();
+        if (materialTaskId != null) {
+            List<String> completed = jdbc.query("""
+                    select id from task where id = ? and workspace_id = ?
+                      and task_type = 'VIDEO_MATERIAL' and task_status = 'COMPLETED'
+                    """, (rs, index) -> rs.getString(1), materialTaskId, workspaceId);
+            if (completed.size() != 1) throw scopeInvalid();
+        }
         Matcher video = Pattern.compile("^https://www\\.bilibili\\.com/video/"
                 + "(BV[0-9A-Za-z]{10})(?:\\?[^#]*)?$").matcher(videoUrl);
         if (!video.matches() || !video.group(1).equals(row.bvid()) || part != row.part()) {
             throw scopeInvalid();
         }
         try {
+            if (row.inputsJson() == null) {
+                if (materialTaskId == null) throw scopeInvalid();
+            } else {
             Map<String, Object> original = mapper.readValue(row.inputsJson(),
                     new com.fasterxml.jackson.core.type.TypeReference<>() {});
             if (!frameDensity.equals(string(original.getOrDefault("frame_density", "STANDARD")))
                     || !asrFallback.equals(string(original.getOrDefault("asr_fallback", "ALLOW")))) {
                 throw scopeInvalid();
+            }
             }
         } catch (BusinessException ex) {
             throw ex;
@@ -241,7 +368,7 @@ public class ArtifactVideoMaterialService {
 
     record ParentMaterialIdentity(String bundleDigest, String planDigest) {}
     private record ParentMaterialRow(String bvid, int part, String contentDigest, String planDigest,
-                                     String inputsJson) {}
+                                     String inputsJson, String parentRequestId, String taskId) {}
 
     public MaterialBytes readReferencedFile(String taskId, String bundleRowId, String fileId) {
         resolveReferenced(taskId, bundleRowId);
@@ -277,17 +404,35 @@ public class ArtifactVideoMaterialService {
                 || !bundleRowId.equals(inputs.get("video_material_bundle_id"))) throw scopeInvalid();
         List<Receipt> rows = jdbc.query("""
                 select id, bundle_id, bundle_version, content_digest, workspace_id, task_id,
-                    bvid, part_no
+                    bvid, part_no, video_learning_request_id
                 from artifact_video_material_bundle where id = ? and bundle_version = 1
                 """, (rs, index) -> {
             if (!run.workspaceId().equals(rs.getString("workspace_id"))) throw scopeInvalid();
-            ArtifactJobTaskRow parentRun = jobs.findByTaskId(rs.getString("task_id"));
             Map<String, Object> parentInputs;
-            try {
-                parentInputs = mapper.readValue(parentRun.inputsJson(),
-                        new com.fasterxml.jackson.core.type.TypeReference<>() {});
-            } catch (Exception ex) {
-                throw scopeInvalid();
+            String parentRequestId = rs.getString("video_learning_request_id");
+            if (parentRequestId == null) {
+                ArtifactJobTaskRow parentRun = jobs.findByTaskId(rs.getString("task_id"));
+                try {
+                    parentInputs = mapper.readValue(parentRun.inputsJson(),
+                            new com.fasterxml.jackson.core.type.TypeReference<>() {});
+                } catch (Exception ex) {
+                    throw scopeInvalid();
+                }
+            } else {
+                List<ParentTask> parents = jdbc.query("""
+                        select r.id, r.workspace_id, r.video_url, r.part_no, r.language,
+                               r.frame_density, r.asr_fallback
+                        from video_learning_request r
+                        where r.id = ? and r.workspace_id = ? and r.material_task_id = ?
+                          and r.material_bundle_id = ? and r.material_content_digest = ?
+                          and r.material_state = 'READY'
+                        """, (parentRs, parentIndex) -> new ParentTask(parentRs.getString(1),
+                        parentRs.getString(2), parentRs.getString(3), parentRs.getInt(4),
+                        parentRs.getString(5), parentRs.getString(6), parentRs.getString(7)),
+                        parentRequestId, run.workspaceId(), rs.getString("task_id"),
+                        bundleRowId, rs.getString("content_digest"));
+                if (parents.size() != 1) throw scopeInvalid();
+                parentInputs = parents.get(0).inputs();
             }
             if (!acquisitionInputs(parentInputs).equals(acquisitionInputs(inputs))) throw scopeInvalid();
             String url = string(inputs.get("url"));
@@ -529,7 +674,8 @@ public class ArtifactVideoMaterialService {
         }
     }
 
-    private void validateBundle(ArtifactJobTaskRow run, Map<String, Object> bundle) {
+    private void validateBundle(String workspaceId, String inputSnapshotId, String taskId,
+                                String inputsJson, Map<String, Object> bundle) {
         Set<String> legacyFields = Set.of(
                 "schema_version", "bundle_id", "bundle_version", "workspace_id", "bvid", "part",
                 "duration_ms", "input_digest", "subtitle_source", "transcript_original",
@@ -541,7 +687,7 @@ public class ArtifactVideoMaterialService {
                     && fields.containsAll(legacyFields) && fields.contains("frame_observations")))
                 || !"video-material-v1".equals(bundle.get("schema_version"))
                 || number(bundle.get("bundle_version")) != 1
-                || !run.workspaceId().equals(bundle.get("workspace_id"))
+                || !workspaceId.equals(bundle.get("workspace_id"))
                 || string(bundle.get("bundle_id")).isBlank()
                 || string(bundle.get("bundle_id")).length() > 120
                 || !BVID.matcher(string(bundle.get("bvid"))).matches()
@@ -552,7 +698,7 @@ public class ArtifactVideoMaterialService {
         }
         Map<String, Object> inputs;
         try {
-            inputs = mapper.readValue(run.inputsJson(), new com.fasterxml.jackson.core.type.TypeReference<>() {});
+            inputs = mapper.readValue(inputsJson, new com.fasterxml.jackson.core.type.TypeReference<>() {});
         } catch (Exception ex) {
             throw invalid("frozen video URL is unavailable");
         }
@@ -561,7 +707,7 @@ public class ArtifactVideoMaterialService {
         if (!source.find() || !source.group(1).equals(bundle.get("bvid"))) {
             throw invalid("video material belongs to another frozen URL");
         }
-        String expectedInputDigest = hash(run.inputSnapshotId() + ":" + json(canonical(inputs)));
+        String expectedInputDigest = hash(inputSnapshotId + ":" + json(canonical(inputs)));
         if (!expectedInputDigest.equals(bundle.get("input_digest"))) {
             throw invalid("video material does not match the frozen input snapshot");
         }
@@ -586,7 +732,7 @@ public class ArtifactVideoMaterialService {
                     || !string(bundle.get("transcript_corrected")).isBlank()) {
                 throw invalid("subtitle-free material must declare a gap and contain no transcript");
             }
-            validateVisuals(run.taskId(), bundle, frames, files, nodes, gaps);
+            validateVisuals(taskId, bundle, frames, files, nodes, gaps);
             return;
         }
         if (rawSegments.isEmpty() || gaps.contains("NO_SUBTITLE")) throw invalid("subtitle coverage contradicts cues");
@@ -614,7 +760,7 @@ public class ArtifactVideoMaterialService {
                 || !String.join("\n", corrected).equals(bundle.get("transcript_corrected"))) {
             throw invalid("full transcript does not match its timed cues");
         }
-        validateVisuals(run.taskId(), bundle, frames, files, nodes, gaps);
+        validateVisuals(taskId, bundle, frames, files, nodes, gaps);
     }
 
     private void validateVisuals(String taskId, Map<String, Object> bundle, List<?> frames, List<?> files,

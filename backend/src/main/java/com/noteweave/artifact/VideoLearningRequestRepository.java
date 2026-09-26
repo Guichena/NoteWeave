@@ -92,15 +92,16 @@ public class VideoLearningRequestRepository {
     public void markMaterialReady(String workspaceId, String requestId,
                                   String bundleId, String planId) {
         List<ParentInput> parents = jdbc.query("""
-                select video_url, part_no, frame_density, asr_fallback
+                select video_url, part_no, frame_density, asr_fallback, material_task_id
                 from video_learning_request where id = ? and workspace_id = ? for update
                 """, (rs, index) -> new ParentInput(rs.getString(1), rs.getInt(2),
-                rs.getString(3), rs.getString(4)), requestId, workspaceId);
+                rs.getString(3), rs.getString(4), rs.getString(5)), requestId, workspaceId);
         if (parents.size() != 1) throw invalid("parent request does not belong to Workspace");
         ParentInput parent = parents.get(0);
         ArtifactVideoMaterialService.ParentMaterialIdentity identity =
                 videoMaterials.requireParentMaterial(workspaceId, bundleId, planId,
-                parent.videoUrl(), parent.part(), parent.frameDensity(), parent.asrFallback());
+                requestId, parent.materialTaskId(), parent.videoUrl(), parent.part(),
+                parent.frameDensity(), parent.asrFallback());
         int updated = jdbc.update("""
                 update video_learning_request
                 set material_bundle_id = ?, knowledge_plan_id = ?,
@@ -268,5 +269,5 @@ public class VideoLearningRequestRepository {
     public record ChoiceView(String skillKey, String artifactJobId, String status,
                              String taskId) {}
     private record ParentInput(String videoUrl, int part, String frameDensity,
-                               String asrFallback) {}
+                               String asrFallback, String materialTaskId) {}
 }

@@ -379,3 +379,9 @@ V122 在父请求记录创建者 User ID；同一客户端请求 ID 的重放还
 首次 Maven 测试因断言使用 Java 驼峰字段而非 API 的 snake_case 序列化，**5 用例中 1 failed**；修正测试后编译发现局部变量遮蔽注入的 `TaskService`，修正后再次执行 `VideoLearningRequestRepositoryContractTest` **5 passed，0 failed/0 error/0 skipped**，覆盖 GET 投影、HTTP 取消、幂等重复取消、非创建者拒绝、未投递停止及已接管任务保留。当前运行中的 Worker 只收到持久化取消意图，尚未接入协作取消回调；父请求创建入口、素材专用 Worker Task/Outbox、后台子 Job 协调仍未开放。
 
 素材 Task 绑定追加数据库条件：Task 必须是同 Workspace、`VIDEO_MATERIAL` 类型、以该父请求为 `VIDEO_LEARNING_REQUEST` 目标且仍 PENDING；仅靠传入 Task ID 不可绑定其他父请求或伪装的 Artifact Task。契约新增错误目标与错误类型场景，`VideoLearningRequestRepositoryContractTest` **5 passed，0 failed/0 error/0 skipped**。
+
+## P6 独立素材任务的 Bundle/Plan 所有权
+
+V123 给 `artifact_video_material_bundle` 增加互斥来源：保留旧 `artifact_job_id`，新增 `video_learning_request_id`，同一行只能归属一个。Host 新增父资料 Task 的 Bundle 与 KnowledgePlan 冻结入口，沿用摘要、字幕、画面、证据闭包和幂等冲突校验；父请求的 READY 门禁对独立来源要求 Bundle 的 Task/父 ID 精确一致，且 Task 已 COMPLETED。下游子 Job 读取父资料时仍核对 Workspace、父请求冻结摘要、BVID、分集和采集策略；父请求取消不撤回已有 READY 资料。
+
+首次定向测试在嵌套 JDBC lambda 中复用了变量名，**编译失败**；修正后 V123 在 H2 成功应用。`VideoLearningRequestRepositoryContractTest` **6 passed**，覆盖无占位 PDF Job 冻结、相同内容重放、不同内容冲突、Plan 重放、Task 未完成时 READY 拒绝、完成后 READY、取消后保持 READY；旧 PDF Bundle 的 `Phase6ResearchArtifactContractTest#observedVideoMaterialBindsOcrEvidenceToFrozenFrameBytes` **1 passed**。新父资料入口目前仅是内部 Service；专用 Worker 命令、回调、对外创建 API 和子 Job 协调尚未实现。
