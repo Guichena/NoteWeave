@@ -411,3 +411,9 @@ Worker 定向 `test_video_material_task.py test_artifact_kafka_consumer.py test_
 新增父请求选择协调器：逐项锁定 READY 父请求及其未链接选择，复核原创建者当前 Workspace 权限、父请求原冻结的 Bundle/Plan 摘要和采集策略，再沿用 Artifact Job 创建事务写入独立 Job、Run 输入快照、Task 与 Outbox，并在同一事务链接选择。失败回滚该选项；再次扫描只补缺项，不重建已链接的 Job。后台扫描默认可处理已经接受的请求，即使新请求入口后来关闭；测试配置关闭定时扫描以便确定性故障测试。创建时的 Memory 控制包和 Context v2 影子快照显式使用已复核的原创建者，不依赖后台线程的当前登录用户。三个派生产物的受控输入补上分集、抽帧密度和 ASR 策略，以便非默认策略的子 Job 与冻结资料包对账；Worker 接受旧目录摘要下的默认策略排队 Run，拒绝把旧摘要冒充新策略。
 
 首次 `VideoLearningRequestRepositoryContractTest` **7 passed**；追加两个子项的权限撤销、摘要损坏和恢复补建后复跑 **7 passed，0 failed/0 error/0 skipped**。联跑 `ArtifactContextV2ShadowSnapshotContractTest` 共 **9 passed**。Worker 目录与采集定向测试 **15 passed**；更新目录后的 Worker 全量 **361 passed，38.30 秒**。首次联跑 Maven 命令在 PowerShell 中未给带逗号的 `-Dtest` 参数加引号，**命令解析失败、未启动测试**；加引号后上述 9 项通过。`git diff --check` 通过。当前仍缺四选 UI、父请求完整跨进程联调、实际文件预览与灰度验收；入口开关仍默认关闭。
+
+## P6 四选入口和父子状态展示
+
+父请求 GET 列表按当前创建者返回最近 20 项，包含服务端新建开关、视频 URL/分集及素材与每项子 Job 的独立投影；创建入口关闭后仍能看到已接受请求。Artifact Studio 的视频资料包区域可选四种产物、语言、分集、画面密度、ASR 策略和学习重点；客户端请求 ID 在同一未修改表单的重试中保持不变。页面显示一次采集和每项产物状态，并提供取消未开始任务、同步下方产物记录的入口。旧单项 Skill 创建及 PDF 下载没有改动。服务端 `noteweave.video-learning.enabled` 仍默认关闭。
+
+Host `VideoLearningRequestRepositoryContractTest` **7 passed，0 failed/0 error/0 skipped**，新增关闭新建但可读取列表、视频身份字段断言。首次前端构建与测试并行触发同一工作树的 pnpm 依赖链接竞争，分别报 `EEXIST`/`EBUSY`，**未运行测试**；串行离线安装完成。第一次前端全量测试 **248 passed、1 failed**，失败是新 DOM 测试未清理前一用例的渲染节点；修正测试夹具后定向 **7 passed**，全量 **249 passed/249**。第一次 TypeScript 构建发现 Workspace 字段应为 `workspace_id`，修正后生产构建通过；响应式 CSS 调整后再次构建通过，`ui:check` 通过，`git diff --check` 通过。浏览器实际渲染在约 392px 与 375px 视口检查了收起的状态列表和展开的四选表单；初次看到复选框继承输入框整宽、取消按钮挤压状态，修正为单列选择和内容宽按钮后复核无截断。预览仅使用本地模拟数据，未调用真实 B站或启用父请求入口；跨进程与真实文件验收仍缺。

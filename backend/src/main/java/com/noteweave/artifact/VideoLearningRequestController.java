@@ -4,6 +4,7 @@ import com.noteweave.common.ApiResponse;
 import com.noteweave.security.CurrentUserProvider;
 import com.noteweave.security.WorkspaceAccessGuard;
 import com.noteweave.security.WorkspacePermission;
+import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -37,6 +38,13 @@ public class VideoLearningRequestController {
         return ApiResponse.success(service.create(workspaceId, request));
     }
 
+    @GetMapping
+    ApiResponse<Overview> list(@PathVariable String workspaceId) {
+        access.requirePermission(workspaceId, WorkspacePermission.WORKSPACE_READ);
+        return ApiResponse.success(new Overview(service.isEnabled(),
+                requests.recentForActor(workspaceId, users.requireUserId())));
+    }
+
     @GetMapping("/{requestId}")
     ApiResponse<VideoLearningRequestRepository.ParentView> get(
             @PathVariable String workspaceId, @PathVariable String requestId) {
@@ -51,4 +59,7 @@ public class VideoLearningRequestController {
         return ApiResponse.success(requests.requestCancellation(
                 workspaceId, requestId, users.requireUserId()));
     }
+
+    public record Overview(boolean enabled,
+                           List<VideoLearningRequestRepository.ParentView> requests) {}
 }

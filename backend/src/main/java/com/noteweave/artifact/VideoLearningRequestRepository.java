@@ -204,17 +204,29 @@ public class VideoLearningRequestRepository {
     }
 
     /** The parent status is a projection; child terminal states remain independent. */
+    public List<ParentView> recentForActor(String workspaceId, String actorId) {
+        List<String> ids = jdbc.query("""
+                select id from video_learning_request
+                where workspace_id = ? and actor_user_id = ?
+                order by created_at desc, id desc limit 20
+                """, (rs, index) -> rs.getString(1), workspaceId, actorId);
+        return ids.stream().map(id -> view(workspaceId, id)).toList();
+    }
+
+    /** The parent status is a projection; child terminal states remain independent. */
     public ParentView view(String workspaceId, String requestId) {
         List<ParentView> parents = jdbc.query("""
                 select r.id, r.material_state, r.material_task_id, r.material_bundle_id,
-                       r.knowledge_plan_id, r.cancellation_requested, t.task_status
+                       r.knowledge_plan_id, r.cancellation_requested, t.task_status,
+                       r.video_url, r.part_no
                 from video_learning_request r
                 left join task t on t.id = r.material_task_id
                 where r.id = ? and r.workspace_id = ?
                 """, (rs, index) -> new ParentView(rs.getString(1),
                 projectedMaterialState(rs.getString(2), rs.getString(7)),
                 rs.getString(3), rs.getString(4), rs.getString(5),
-                rs.getBoolean(6), List.of()), requestId, workspaceId);
+                rs.getBoolean(6), rs.getString(8), rs.getInt(9), List.of()),
+                requestId, workspaceId);
         if (parents.size() != 1) throw invalid("parent request does not belong to Workspace");
         ParentView parent = parents.get(0);
         List<ChoiceView> choices = jdbc.query("""
@@ -228,7 +240,7 @@ public class VideoLearningRequestRepository {
                 requestId);
         return new ParentView(parent.requestId(), parent.materialState(), parent.materialTaskId(),
                 parent.materialBundleId(), parent.knowledgePlanId(),
-                parent.cancellationRequested(), choices);
+                parent.cancellationRequested(), parent.videoUrl(), parent.part(), choices);
     }
 
     /** Stop undelivered work and record an intent for already dispatched work. */
@@ -301,7 +313,8 @@ public class VideoLearningRequestRepository {
                                 String materialState, boolean replayed) {}
     public record ParentView(String requestId, String materialState, String materialTaskId,
                              String materialBundleId, String knowledgePlanId,
-                             boolean cancellationRequested, List<ChoiceView> choices) {}
+                             boolean cancellationRequested, String videoUrl, int part,
+                             List<ChoiceView> choices) {}
     public record ChoiceView(String skillKey, String artifactJobId, String status,
                              String taskId) {}
     private record ParentInput(String videoUrl, int part, String frameDensity,

@@ -79,6 +79,42 @@ export type CreateArtifactJobInput = {
   source_scope_source_ids?: string[];
 };
 
+export type VideoLearningChoice = {
+  skill_key: string;
+  artifact_job_id: string | null;
+  status: string;
+  task_id: string | null;
+};
+
+export type VideoLearningRequest = {
+  request_id: string;
+  material_state: string;
+  material_task_id: string | null;
+  material_bundle_id: string | null;
+  knowledge_plan_id: string | null;
+  cancellation_requested: boolean;
+  video_url: string;
+  part: number;
+  choices: VideoLearningChoice[];
+};
+
+export type VideoLearningOverview = {
+  enabled: boolean;
+  requests: VideoLearningRequest[];
+};
+
+export type CreateVideoLearningInput = {
+  client_request_id: string;
+  video_url: string;
+  part: number;
+  language: "zh-CN" | "en" | "zh-EN";
+  frame_density: "LOW" | "STANDARD" | "HIGH";
+  asr_fallback: "ALLOW" | "DENY";
+  template_version: "original-v1";
+  user_requirement: string;
+  selected_skills: string[];
+};
+
 export type ArtifactKnowledgeWritebackInput = {
   item_type: "NOTE" | "WIKI";
   title: string;

@@ -48,6 +48,14 @@ class VideoLearningRequestRepositoryContractTest {
                 """, String.class, first.requestId()))
                 .containsExactly("interview_qa", "knowledge_blog");
         assertThat(requests.missingChoices(workspaceId, first.requestId())).isEmpty();
+        String overview = mvc.perform(get(
+                        "/api/v2/workspaces/{workspaceId}/video-learning-bundles", workspaceId))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        var overviewData = mapper.readTree(overview).path("data");
+        assertThat(overviewData.path("enabled").asBoolean()).isFalse();
+        assertThat(overviewData.path("requests")).hasSize(1);
+        assertThat(overviewData.path("requests").get(0).path("video_url").asText())
+                .contains("BV1234567890");
         assertThatThrownBy(() -> requests.markMaterialReady(workspaceId, first.requestId(),
                 "missing-bundle", "missing-plan"))
                 .hasMessageContaining("Workspace");

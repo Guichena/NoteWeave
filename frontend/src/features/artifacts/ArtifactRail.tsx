@@ -2,6 +2,7 @@ import { ArrowLeft, Layers3, LibraryBig, LoaderCircle, X } from "lucide-react";
 import { ArtifactStudioActivity } from "./ArtifactStudioActivity";
 import { ArtifactStudioGrid } from "./ArtifactStudioGrid";
 import { ArtifactUtilityPanel } from "./ArtifactUtilityPanel";
+import { VideoLearningPanel } from "./VideoLearningPanel";
 import { buildInitialArtifactFormValues } from "./artifactStudio";
 import { type ArtifactRailProps } from "./ArtifactRailProps";
 
@@ -168,6 +169,11 @@ export function ArtifactRail(props: ArtifactRailProps) {
           )}
           {!artifactSkillsLoading && artifactStudioSkills.length === 0 ? (
             <p className="artifact-quiet-state">Skill 目录当前不可用，无法创建产物任务。</p>
+          ) : null}
+
+          {workspace ? (
+            <VideoLearningPanel workspaceId={workspace.workspace_id}
+              onJobsChanged={props.refreshArtifactJobs} />
           ) : null}
 
           <ArtifactStudioActivity {...props} />

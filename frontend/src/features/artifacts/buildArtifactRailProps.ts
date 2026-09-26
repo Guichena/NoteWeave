@@ -149,6 +149,7 @@ export function buildArtifactRailProps(input: BuildArtifactRailPropsInput): Arti
     artifactStudioSkills: catalog.skills,
     artifactSkillsLoading: catalog.loading,
     artifactJobsLoading: artifactWorkspace.jobsLoading,
+    refreshArtifactJobs: artifactWorkspace.loadJobs,
     sourceCount: sourcesCount,
     setSelectedArtifactSkillKey: catalog.setSelectedSkillKey,
     setArtifactFormValues: catalog.setFormValues,

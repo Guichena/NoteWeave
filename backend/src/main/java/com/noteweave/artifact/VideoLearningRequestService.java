@@ -38,6 +38,10 @@ public class VideoLearningRequestService {
         this.enabled = enabled;
     }
 
+    public boolean isEnabled() {
+        return enabled;
+    }
+
     @Transactional
     public VideoLearningRequestRepository.ParentView create(String workspaceId,
                                                              CreateVideoLearningBundleRequest request) {
