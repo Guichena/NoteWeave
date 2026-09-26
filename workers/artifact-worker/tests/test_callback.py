@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import hashlib
+from io import BytesIO
 from types import SimpleNamespace
 import pytest
+from PIL import Image
 
 import app.callback as callback_module
 from app.callback import (
@@ -27,6 +30,7 @@ from app.capability_wait_queue import clear_waiting_tasks, get_waiting_task
 from app.models import ArtifactProgressEvent, ArtifactTaskInput, ArtifactTaskResult
 from app.runner import run_artifact_task
 from app.video_subtitle_material import subtitle_only_bundle
+from app.video_material_bundle import VideoMaterialBundleV1
 
 
 def _build_resume_task_input() -> ArtifactTaskInput:
@@ -198,6 +202,59 @@ def test_video_material_client_publishes_and_reads_frozen_bundle(monkeypatch) ->
     assert all(req.get_header("X-noteweave-outbox-delivery-token") == "delivery-1"
                for req in requests)
     assert json.loads(requests[0].data)["content_digest"] == bundle.content_digest()
+
+
+def test_fetch_frozen_material_frames_checks_scope_media_type_and_bytes(monkeypatch) -> None:
+    output = BytesIO()
+    Image.new("RGB", (2, 2), "blue").save(output, format="PNG")
+    image = output.getvalue()
+    digest = hashlib.sha256(image).hexdigest()
+    bundle = VideoMaterialBundleV1.model_validate({
+        "bundle_id": "bundle-1", "bundle_version": 1, "workspace_id": "ws-1",
+        "bvid": "BV1234567890", "part": 2, "duration_ms": 5000,
+        "input_digest": "a" * 64, "subtitle_source": "NONE",
+        "coverage_gaps": ["NO_SUBTITLE"],
+        "files": [{"file_id": "frame1", "role": "VIDEO_FRAME", "media_type": "image/png",
+                   "size_bytes": len(image), "checksum_sha256": digest}],
+        "frames": [{"frame_id": "f1", "part": 2, "at_ms": 1000,
+                    "file_id": "frame1", "checksum_sha256": digest}],
+    })
+    returned = {"bytes": image, "media_type": "image/png"}
+    requests = []
+
+    class FakeResponse:
+        @property
+        def headers(self):
+            return {"Content-Type": returned["media_type"]}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def read(self, limit):
+            return returned["bytes"][:limit]
+
+    def fake_urlopen(req, timeout):
+        requests.append(req)
+        return FakeResponse()
+
+    monkeypatch.setattr(callback_module, "credential_safe_urlopen", fake_urlopen)
+    client = JavaArtifactCallbackClient(
+        "http://java-host:8081", internal_auth_token="internal-1", delivery_token="delivery-1",
+    )
+    assert client.fetch_video_material_files("task-1", bundle) == {"frame1": image}
+    assert requests[0].full_url.endswith("/artifact-tasks/task-1/video-material/files/frame1")
+    assert requests[0].get_header("X-noteweave-internal-token") == "internal-1"
+    assert requests[0].get_header("X-noteweave-outbox-delivery-token") == "delivery-1"
+    returned["bytes"] = b"wrong"
+    with pytest.raises(ValueError, match="bytes do not match"):
+        client.fetch_video_material_files("task-1", bundle)
+    returned["bytes"] = image
+    returned["media_type"] = "image/jpeg"
+    with pytest.raises(ValueError, match="media type"):
+        client.fetch_video_material_files("task-1", bundle)
 
 
 def test_verified_provider_material_is_bound_to_candidate(tmp_path, monkeypatch) -> None:

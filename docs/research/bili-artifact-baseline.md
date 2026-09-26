@@ -95,3 +95,7 @@ Worker 已在内容校验后产生 `artifact-content-v1`；Host 原先只在回�
 在 C0 契约和 C1 主题投影之上新增纯函数式 `ContextWindowPlannerV2`，只接收已冻结、已授权的消息/摘要/约束/Memory 引用。优先保留当前输入、适用的有效用户约束、传入的 Memory Revision 和最近 8 条连续原文；当前片段缺 READY 摘要时扩大原文，超过 256 条或预算不足会明确报错。同主题旧片段摘要只在其 READY、位于原文窗口之前且活动主题判定确定时纳入；异主题和不确定主题均留可解释的排除决定。预算暂以 UTF-8 字节数作为保守单位，尚未固定模型 tokenizer。
 
 首轮测试发现活动片段为 `UNCERTAIN` 时仍带入旧同主题摘要，修正后 `ContextWindowPlannerV2Test` **3 passed**；同批 C0/C1 契约 **10 passed**，合计 **13 passed**。该组件还未读取数据库、做执行者权限检查、增量 Summary Revision、Memory 状态指纹或接入 QA/Note/Wiki/Research/Artifact；因此只是 C2 影子选择层，不能宣称任务上下文已迁移。
+
+## P2 冻结画面读回客户端
+
+Worker 新增按 Bundle 文件清单从 Host 受控端点读取画面的客户端，发送当前 Outbox 投递令牌与内部令牌，限制文件 ID、单文件和总大小，逐项核对 MIME，再按冻结清单验证字节摘要与图片可解码性。只通过 Host File ID 读取，不接受 Worker 绝对路径或外部 URL。定向回归 **17 passed**，Worker 全套 **281 passed，42.06 秒**。目前 PDF 生成还没有调用这条路径；这只是后续复用素材的受控读接口。

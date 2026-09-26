@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import base64
 import logging
+import re
 from typing import Any, Protocol
 from urllib import error, request
 from urllib.parse import urlencode, quote
@@ -153,6 +154,41 @@ class JavaArtifactCallbackClient:
             "GET", f"/internal/worker/artifact-tasks/{quote(task_id, safe='')}/video-material"
         ))
         return VideoMaterialBundleV1.model_validate(material)
+
+    def fetch_video_material_files(
+        self, task_id: str, bundle: VideoMaterialBundleV1,
+    ) -> dict[str, bytes]:
+        """Read immutable frame IDs from Host and verify every byte against the frozen Bundle."""
+        if len(bundle.files) > 32 or sum(file.size_bytes for file in bundle.files) > 100_000_000:
+            raise ValueError("video material file manifest exceeds Host limits")
+        content: dict[str, bytes] = {}
+        for file in bundle.files:
+            if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", file.file_id) \
+                    or file.size_bytes > 16_000_000:
+                raise ValueError("video material file ID or size is unsupported")
+            path = (f"/internal/worker/artifact-tasks/{quote(task_id, safe='')}"
+                    f"/video-material/files/{quote(file.file_id, safe='')}")
+            headers = {
+                **({"X-NoteWeave-Internal-Token": self.internal_auth_token}
+                   if self.internal_auth_token else {}),
+                **({"X-NoteWeave-Outbox-Delivery-Token": self.delivery_token}
+                   if self.delivery_token else {}),
+            }
+            req = request.Request(url=f"{self.java_base_url}{path}", method="GET", headers=headers)
+            try:
+                with credential_safe_urlopen(req, timeout=30) as response:
+                    if response.headers.get("Content-Type", "").split(";", 1)[0] != file.media_type:
+                        raise ValueError("Host material file media type differs from frozen manifest")
+                    content[file.file_id] = response.read(file.size_bytes + 1)
+            except error.HTTPError as exc:
+                detail = sanitize_error_message(exc.read().decode("utf-8", errors="replace"))
+                raise ArtifactCallbackHttpError(exc.code, detail) from exc
+            except error.URLError as exc:
+                raise RuntimeError(
+                    f"Java callback unavailable: {sanitize_error_message(str(exc.reason))}"
+                ) from exc
+        bundle.verify_file_bytes(content.__getitem__)
+        return content
 
     def send_progress(self, task_id: str, event: ArtifactProgressEvent) -> None:
         payload = event.model_dump(mode="json")
