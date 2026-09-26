@@ -31,6 +31,7 @@ RUN pip install --no-cache-dir \
     "kafka-python>=2.0.2,<4" \
     "pydantic-settings>=2.6.0,<3" \
     "Pillow>=11.0,<13" \
+    "pypdf>=6.0,<7" \
     "python-pptx>=1.0.2,<2" \
     "faster-whisper>=1.2.1,<2" \
     "reportlab>=4.2.0,<5" \

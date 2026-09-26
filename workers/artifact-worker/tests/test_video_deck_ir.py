@@ -127,6 +127,7 @@ def test_deck_pdf_rasterizer_checks_every_page(tmp_path) -> None:
     pdf = tmp_path / "deck.pdf"
     document = canvas.Canvas(str(pdf), pagesize=(960, 540))
     document.drawString(40, 480, "Consistency")
+    document.drawString(40, 420, "cache consistency")
     document.showPage()
     document.save()
     previews = rasterize_deck_pdf(pdf, ir, tmp_path / "previews")
@@ -141,6 +142,14 @@ def test_deck_pdf_rasterizer_checks_every_page(tmp_path) -> None:
     document.save()
     with pytest.raises(ValueError, match="page count"):
         rasterize_deck_pdf(two_pages, ir, tmp_path / "other-previews")
+
+    missing_claim = tmp_path / "missing-claim.pdf"
+    document = canvas.Canvas(str(missing_claim), pagesize=(960, 540))
+    document.drawString(40, 480, "Consistency")
+    document.showPage()
+    document.save()
+    with pytest.raises(ValueError, match="lost rendered title or claim"):
+        rasterize_deck_pdf(missing_claim, ir, tmp_path / "missing-preview")
 
 
 def test_frozen_deck_candidate_and_required_file_manifest(tmp_path, monkeypatch) -> None:
