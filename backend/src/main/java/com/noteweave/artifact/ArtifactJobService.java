@@ -43,6 +43,7 @@ public class ArtifactJobService {
     private final ArtifactVideoMaterialService videoMaterialService;
     private final GeneratedSourceService generatedSourceService;
     private final KnowledgeCommandService knowledgeCommandService;
+    private final ArtifactContextV2ShadowSnapshotService contextV2ShadowSnapshots;
 
     public ArtifactJobService(
             JdbcTemplate jdbcTemplate,
@@ -56,7 +57,8 @@ public class ArtifactJobService {
             ArtifactSkillCatalogService artifactSkillCatalogService,
             ArtifactVideoMaterialService videoMaterialService,
             GeneratedSourceService generatedSourceService,
-            KnowledgeCommandService knowledgeCommandService
+            KnowledgeCommandService knowledgeCommandService,
+            ArtifactContextV2ShadowSnapshotService contextV2ShadowSnapshots
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -70,6 +72,7 @@ public class ArtifactJobService {
         this.videoMaterialService = videoMaterialService;
         this.generatedSourceService = generatedSourceService;
         this.knowledgeCommandService = knowledgeCommandService;
+        this.contextV2ShadowSnapshots = contextV2ShadowSnapshots;
     }
 
     @Transactional
@@ -122,6 +125,7 @@ public class ArtifactJobService {
                 )),
                 artifactSkillCatalogService.catalogDigest()
         );
+        contextV2ShadowSnapshots.freeze(workspaceId, taskId, userRequirement, skillKey);
         memoryCompilerService.logPackUsage(
                 workspaceId,
                 "ARTIFACT",
@@ -181,6 +185,7 @@ public class ArtifactJobService {
                 )),
                 artifactSkillCatalogService.catalogDigest()
         );
+        contextV2ShadowSnapshots.freeze(workspaceId, taskId, requirement, row.skillKey());
         memoryCompilerService.logPackUsage(
                 workspaceId,
                 "ARTIFACT",

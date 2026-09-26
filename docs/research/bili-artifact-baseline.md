@@ -333,3 +333,9 @@ Host 集成回放从一份冻结 Bundle 与含语义主张的 Plan 创建独立 
 Worker 在 LibreOffice 将 PPTX 转成 PDF 后，使用 `pypdf` 逐页提取实际 PDF 文字，并按冻结 IR 检查每页标题和所有已抽取主张仍可见；缺页、多页、PDF 解析失败、过大的转换文件或任一页文字缺失均不生成预览清单。这个检查发生在 PNG 栅格化前，避免结构上含文字但导出时丢字的 Candidate 提交。`pypdf` 加入 Worker 依赖、Dockerfile 和 `uv.lock`；锁文件离线解析因本机 uv 缓存缺包失败，联网解析成功，锁定 49 个包。
 
 定向 **10 passed，1.11 秒**，包含 PDF 保留文字、缺主张和多页故障；Worker 全套 **351 passed，43.88 秒**。本机 PowerPoint 将固定合成 PPTX 实际转成 PDF，再通过相同的逐页文字与 PNG 门禁。Docker Desktop 启动尝试后进程未保持运行，Linux daemon 仍不可用，无法构建镜像或实测 LibreOffice。PDF 文字提取不能证明版面没有局部挤压或字体替换，仍需逐页人工视觉验收和真实视频样本。
+
+## C3 Artifact 独立 Run 的 v2 Context 影子冻结
+
+新增 V119 影子快照与 Memory Revision 引用表。Workspace 同时开启全局影子配置和本地 SHADOW 模式时，Artifact 初次创建及再生成在 Run 输入快照写入的同一事务内编译独立 v2 Context，校验所选 Memory Revision 仍为当前 ACTIVE，并按 `input_snapshot_id` 冻结完整投影与 SHA-256。独立请求的会话 ID 为空、cutoff 为 0；每个 Run 单独编译，不读取会话最新 Head。Memory Revision 撤销后按精确引用脱敏影子投影。Worker 仍消费原 `artifact-input-v1` 快照，影子模式不是 v2 生产启用。
+
+后端编译通过；Flyway 在 H2 测试库将 102 个迁移应用至 V119。`ArtifactContextV2ShadowSnapshotContractTest` **2 passed**（关闭/开启模式、独立 Run 冻结及 Memory 撤销传播）；`RunReplayRedactionServiceTest` **3 passed**。尚未扩展 Worker 输入合同以消费 v2、覆盖会话关联的 Artifact/Research/QA/Note/Wiki 生产迁移，也未验证已发布文件包含被删内容时的下载阻断。当前影子编译失败会使已选择 SHADOW 的 Artifact 创建事务失败；生产默认关闭。

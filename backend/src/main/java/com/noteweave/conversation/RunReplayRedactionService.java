@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.noteweave.artifact.ArtifactContextV2ShadowSnapshotService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -21,17 +22,20 @@ public class RunReplayRedactionService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final ContextV2ShadowSnapshotService shadowSnapshots;
+    private final ArtifactContextV2ShadowSnapshotService artifactShadowSnapshots;
 
     public RunReplayRedactionService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
-        this(jdbcTemplate, objectMapper, null);
+        this(jdbcTemplate, objectMapper, null, null);
     }
 
     @Autowired
     public RunReplayRedactionService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
-                                     ContextV2ShadowSnapshotService shadowSnapshots) {
+                                     ContextV2ShadowSnapshotService shadowSnapshots,
+                                     ArtifactContextV2ShadowSnapshotService artifactShadowSnapshots) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.shadowSnapshots = shadowSnapshots;
+        this.artifactShadowSnapshots = artifactShadowSnapshots;
     }
 
     public void redactDeletedSource(String workspaceId, String sourceId) {
@@ -98,6 +102,7 @@ public class RunReplayRedactionService {
                 where replay_availability = 'FULL' and snapshot_json like ?
                 """, "%" + revisionId + "%");
         if (shadowSnapshots != null) shadowSnapshots.redactReference("MEMORY_REVISION", revisionId);
+        if (artifactShadowSnapshots != null) artifactShadowSnapshots.redactMemoryRevision(revisionId);
     }
 
     private void redactArtifactSnapshots(String workspaceId, String sourceId) {
