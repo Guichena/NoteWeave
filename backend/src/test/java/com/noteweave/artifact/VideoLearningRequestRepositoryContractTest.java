@@ -29,6 +29,7 @@ class VideoLearningRequestRepositoryContractTest {
     @Autowired TaskService tasks;
     @Autowired VideoLearningRequestRepository requests;
     @Autowired ArtifactVideoMaterialService videoMaterials;
+    @Autowired VideoMaterialTaskService materialTasks;
 
     @Test
     void freezesOneToFourChoicesAndReplaysOnlyIdenticalRequest() throws Exception {
@@ -101,6 +102,21 @@ class VideoLearningRequestRepositoryContractTest {
     }
 
     @Test
+    void publicCreationRemainsDisabledWithoutRolloutFlag() throws Exception {
+        String workspaceId = workspace();
+        mvc.perform(post("/api/v2/workspaces/{workspaceId}/video-learning-bundles", workspaceId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsBytes(new CreateVideoLearningBundleRequest(
+                        "disabled-client", "https://www.bilibili.com/video/BV1234567890",
+                        1, "zh-CN", "STANDARD", "ALLOW", "original-v1", "study",
+                        List.of("knowledge_blog")))))
+                .andExpect(status().isServiceUnavailable());
+        assertThat(jdbc.queryForObject("""
+                select count(*) from video_learning_request where workspace_id = ?
+                """, Integer.class, workspaceId)).isZero();
+    }
+
+    @Test
     void projectsChoicesAndCancelsOnlyUndeliveredMaterialWork() throws Exception {
         String workspaceId = workspace();
         var parent = requests.createOrReplay(workspaceId, "local-user", "client-cancel",
@@ -149,9 +165,11 @@ class VideoLearningRequestRepositoryContractTest {
         requests.attachMaterialTask(workspaceId, parent.requestId(), taskId);
         tasks.startTask(taskId);
         jdbc.update("""
-                insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
-                values (?, ?, 'noteweave.video.material', ?, '{}', 'PROCESSING')
-                """, java.util.UUID.randomUUID().toString(), taskId, taskId);
+                insert into task_outbox(id, task_id, topic, message_key, payload_json,
+                                        status, lease_owner, lease_until)
+                values (?, ?, 'noteweave.artifact.job', ?, '{}', 'PROCESSING', ?, ?)
+                """, java.util.UUID.randomUUID().toString(), taskId, taskId,
+                "cancel-delivery", java.sql.Timestamp.from(java.time.Instant.now().plusSeconds(300)));
 
         var cancelled = requests.requestCancellation(workspaceId, parent.requestId(), "local-user");
         assertThat(cancelled.cancellationRequested()).isTrue();
@@ -160,6 +178,12 @@ class VideoLearningRequestRepositoryContractTest {
                 String.class, taskId)).isEqualTo("RUNNING");
         assertThat(jdbc.queryForObject("select status from task_outbox where task_id = ?",
                 String.class, taskId)).isEqualTo("PROCESSING");
+        assertThat(materialTasks.complete(taskId, "cancel-delivery", "", ""))
+                .isEqualTo("CANCELLED");
+        assertThat(jdbc.queryForObject("select task_status from task where id = ?",
+                String.class, taskId)).isEqualTo("CANCELLED");
+        assertThat(jdbc.queryForObject("select status from task_outbox where task_id = ?",
+                String.class, taskId)).isEqualTo("SENT");
     }
 
     @Test
@@ -227,15 +251,29 @@ class VideoLearningRequestRepositoryContractTest {
         assertThatThrownBy(() -> requests.markMaterialReady(workspaceId,
                 parent.requestId(), receipt.id(), knowledge.id()))
                 .hasMessageContaining("Workspace");
-        tasks.completeTask(taskId, "READY", "资料已冻结", receipt.id());
+        jdbc.update("""
+                insert into task_outbox(id, task_id, topic, message_key, payload_json,
+                                        status, lease_owner, lease_until)
+                values (?, ?, 'noteweave.artifact.job', ?, '{}', 'PROCESSING', ?, ?)
+                """, java.util.UUID.randomUUID().toString(), taskId, parent.requestId(),
+                "material-delivery", java.sql.Timestamp.from(java.time.Instant.now().plusSeconds(300)));
+        assertThatThrownBy(() -> materialTasks.complete(taskId, "material-delivery",
+                "wrong-bundle", knowledge.id())).hasMessageContaining("Workspace");
+        assertThat(jdbc.queryForObject("select task_status from task where id = ?",
+                String.class, taskId)).isEqualTo("RUNNING");
         jdbc.update("update workspace_member set status = 'SUSPENDED' where workspace_id = ? and user_id = ?",
                 workspaceId, "local-user");
-        assertThatThrownBy(() -> requests.markMaterialReady(workspaceId,
-                parent.requestId(), receipt.id(), knowledge.id()))
+        assertThatThrownBy(() -> materialTasks.complete(taskId, "material-delivery",
+                receipt.id(), knowledge.id()))
                 .hasMessageContaining("Workspace");
+        assertThat(jdbc.queryForObject("select task_status from task where id = ?",
+                String.class, taskId)).isEqualTo("RUNNING");
         jdbc.update("update workspace_member set status = 'ACTIVE' where workspace_id = ? and user_id = ?",
                 workspaceId, "local-user");
-        requests.markMaterialReady(workspaceId, parent.requestId(), receipt.id(), knowledge.id());
+        assertThat(materialTasks.complete(taskId, "material-delivery",
+                receipt.id(), knowledge.id())).isEqualTo("READY");
+        assertThat(jdbc.queryForObject("select status from task_outbox where task_id = ?",
+                String.class, taskId)).isEqualTo("SENT");
         assertThat(requests.view(workspaceId, parent.requestId()).materialState()).isEqualTo("READY");
         assertThat(requests.missingChoices(workspaceId, parent.requestId()))
                 .containsExactly("knowledge_blog");

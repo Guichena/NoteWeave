@@ -5,6 +5,7 @@ import com.noteweave.common.Ids;
 import com.noteweave.task.TaskService;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Map;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -86,6 +87,35 @@ public class VideoLearningRequestRepository {
                   )
                 """, taskId, requestId, workspaceId, taskId, workspaceId);
         if (updated != 1) throw invalid("material task was already attached or request cancelled");
+    }
+
+    public VideoMaterialTaskInput workerInput(String taskId) {
+        List<VideoMaterialTaskInput> inputs = jdbc.query("""
+                select r.id, r.workspace_id, r.video_url, r.part_no, r.language,
+                       r.frame_density, r.asr_fallback, r.template_version
+                from video_learning_request r
+                join task t on t.id = r.material_task_id
+                join workspace w on w.id = r.workspace_id and w.status = 'ACTIVE'
+                join users u on u.id = r.actor_user_id and u.status = 'ACTIVE'
+                join workspace_member m on m.workspace_id = r.workspace_id
+                    and m.user_id = r.actor_user_id and m.status = 'ACTIVE'
+                    and m.role in ('OWNER', 'EDITOR')
+                where t.id = ? and t.workspace_id = r.workspace_id
+                  and t.task_type = 'VIDEO_MATERIAL'
+                  and t.target_type = 'VIDEO_LEARNING_REQUEST' and t.target_id = r.id
+                  and t.task_status in ('PENDING', 'RUNNING', 'WAITING')
+                  and r.material_state in ('QUEUED', 'RUNNING')
+                  and r.cancellation_requested = false
+                """, (rs, index) -> {
+            String requestId = rs.getString(1);
+            return new VideoMaterialTaskInput("video-material-input.v1", taskId,
+                    requestId, rs.getString(2), requestId, rs.getString(8), Map.of(
+                    "url", rs.getString(3), "part", String.valueOf(rs.getInt(4)),
+                    "language", rs.getString(5), "frame_density", rs.getString(6),
+                    "asr_fallback", rs.getString(7)));
+        }, taskId);
+        if (inputs.size() != 1) throw invalid("material task input is unavailable");
+        return inputs.get(0);
     }
 
     @Transactional

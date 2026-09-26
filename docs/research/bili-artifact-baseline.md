@@ -393,3 +393,9 @@ V123 给 `artifact_video_material_bundle` 增加互斥来源：保留旧 `artifa
 新增显式四选父请求 POST、幂等客户端请求 ID、同事务 `VIDEO_MATERIAL` Task 与 Outbox，素材任务占用 Artifact 工作量配额；子 Artifact Job 仍须等待资料 READY。Outbox Kafka 发布器给资料任务发 `video-material-command.v1`，旧命令继续发 `artifact-command.v1`，命令只含 Task ID 与投递令牌，不带 URL 或用户正文。创建入口由 `noteweave.video-learning.enabled` 控制，默认 **false**，因为 Worker 尚未消费资料任务命令，当前不能对用户开放功能。
 
 `VideoLearningRequestCreationContractTest` **1 passed**（父请求/Task/Outbox 同事务、重复请求不重建、未创建占位 PDF Job）；`KafkaArtifactOutboxPublisherTest` **3 passed**（旧协议兼容、新协议和隐私字段不外泄）；`VideoLearningRequestRepositoryContractTest` **6 passed**。尚需 Worker 专用采集执行、回调终态和子 Job 协调，再开启入口灰度。
+
+## P6 素材 Worker 的 Host 接收边界
+
+新增独立内部 Worker 路由：持有效 Outbox 投递令牌领取冻结输入时启动 `VIDEO_MATERIAL` Task；Bundle、Plan 各自经已有 Host 内容门禁冻结；完成回调在同一事务内依次将 Task 置 COMPLETED、将父请求置 READY 并确认 Outbox。任一 Bundle/Plan ID 不符或创建者权限已撤销时整笔事务回滚，Task 仍 RUNNING、Outbox 仍 PROCESSING。失败回调标记 Task/父请求 FAILED；若父请求已申请取消，完成或失败回调转为 CANCELLED 并确认 Outbox，不发布 READY。终态回调使用任务类型绑定的 HMAC Token，且额外核对活跃投递令牌。
+
+`VideoLearningRequestCreationContractTest` **1 passed**（领输入、冻结输入身份、鉴权失败回调、Outbox 确认），`VideoLearningRequestRepositoryContractTest` **7 passed**（含默认关闭、非法 Bundle 回滚、权限撤销回滚、成功 READY、运行中取消）。最后追加非法 Bundle 回滚断言后单独复跑后者 **7 passed，0 failed/0 error/0 skipped**。Worker 目前尚未识别 `video-material-command.v1`，采集 Graph 与异步恢复仍需接入；生产开关继续关闭。
