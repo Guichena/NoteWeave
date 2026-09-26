@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from app.config import resolve_mcp_sandbox_root
 from app.custom_mcp_executor import _call_custom_mcp_tool
 from app.models import ArtifactTaskInput
@@ -46,7 +48,9 @@ def export_artifact_if_required(
         },
     )
     pdf_status = str(result.get("pdf_status", "UNKNOWN"))
-    file_name = f"{output_stem}.pdf" if pdf_status == "COMPILED" else ""
+    # The controlled renderer may normalize the requested stem (including CJK
+    # titles). Use the name it actually wrote, so the Host fetches those bytes.
+    file_name = Path(str(result.get("pdf_path") or "")).name if pdf_status == "COMPILED" else ""
     return {
         "status": pdf_status,
         "format": "PDF",

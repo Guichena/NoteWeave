@@ -13,6 +13,7 @@ import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.springframework.http.HttpStatus;
@@ -121,12 +122,56 @@ public class ArtifactExportService {
             throw new BusinessException("ARTIFACT_REQUIRED_FILE_MISSING",
                     "PDF 讲义缺少已编译文件", HttpStatus.CONFLICT);
         }
+        if (!"bilibili_course_note_pdf".equals(skillKey) && !pdfFileName.isBlank()) {
+            throw new BusinessException("ARTIFACT_FILE_ROLE_INVALID",
+                    "当前 Skill 不允许交付 PDF 文件", HttpStatus.CONFLICT);
+        }
         if (!pdfFileName.isBlank()) {
             byte[] pdf = fetchWorkerExport(taskId, pdfFileName);
             verifyPdf(pdf);
             files.add(new PreparedFile(PDF, pdfFileName, "application/pdf", pdf, sha256(pdf)));
         }
+        requireCandidateFileManifest(request, files);
         return List.copyOf(files);
+    }
+
+    private void requireCandidateFileManifest(WorkerCompleteRequest request, List<PreparedFile> files) {
+        Object candidate = request.resultPayload() == null ? null : request.resultPayload().get("candidate");
+        if (candidate == null) return; // Historical Worker callbacks did not carry a manifest.
+        if (!(candidate instanceof Map<?, ?> envelope)
+                || !(envelope.get("required_files") instanceof List<?> declared)
+                || declared.size() != files.size()) {
+            throw invalidManifest();
+        }
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (Object item : declared) {
+            if (!(item instanceof Map<?, ?> entry)) throw invalidManifest();
+            String role = String.valueOf(entry.get("role"));
+            if (!seen.add(role)) throw invalidManifest();
+            PreparedFile actual = files.stream()
+                    .filter(file -> file.role().equals(role)).findFirst().orElse(null);
+            if (actual == null || !actual.checksum().equals(entry.get("checksum_sha256"))
+                    || !actual.mediaType().equals(entry.get("media_type"))
+                    || !isIntegralNumber(entry.get("size_bytes"))
+                    || !(entry.get("size_bytes") instanceof Number size)
+                    || size.longValue() != actual.content().length
+                    || !"".equals(entry.get("variant"))
+                    || !isIntegralNumber(entry.get("sequence_no"))
+                    || !(entry.get("sequence_no") instanceof Number sequence)
+                    || sequence.intValue() != 0
+                    || (PDF.equals(actual.format()) && !actual.fileName().equals(entry.get("file_name")))) {
+                throw invalidManifest();
+            }
+        }
+    }
+
+    private BusinessException invalidManifest() {
+        return new BusinessException("ARTIFACT_FILE_MANIFEST_INVALID",
+                "Candidate 文件清单与实际交付文件不一致", HttpStatus.CONFLICT);
+    }
+
+    private boolean isIntegralNumber(Object value) {
+        return value instanceof Integer || value instanceof Long;
     }
 
     public List<PreparedFile> prepareRollbackFiles(String sourceVersionId) {

@@ -40,6 +40,7 @@ from app.error_sanitizer import sanitize_error_message
 from app.custom_mcp_executor import submit_custom_mcp_acquisition_operation
 from app.generation_runtime import ArtifactConfigurationRequiredError, generate_artifact_sections
 from app.export_runtime import export_artifact_if_required
+from app.candidate_file_manifest import build_required_files
 from app.llm_client import build_default_llm_client
 from app.verifier import build_output_contract_trace, verify_artifact_output
 from app.writeback_runtime import register_writeback_request
@@ -356,16 +357,6 @@ def _run_artifact_task(
     result.result_payload["verification"] = verification.model_dump(mode="json")
     if verification.status == "FAIL":
         raise ArtifactOutputContractViolationError(verification.failed_checks)
-    content_sha256 = hashlib.sha256(rendered_markdown.encode("utf-8")).hexdigest()
-    candidate_id = hashlib.sha256(
-        f"{task_input.task_id}:{task_input.input_snapshot_id}:{content_sha256}".encode("utf-8")
-    ).hexdigest()
-    result.result_payload["candidate"] = {
-        "candidate_id": candidate_id,
-        "task_id": task_input.task_id,
-        "input_snapshot_id": task_input.input_snapshot_id,
-        "content_sha256": content_sha256,
-    }
     export_trace = export_artifact_if_required(
         task_input=task_input,
         title=artifact_title,
@@ -375,6 +366,18 @@ def _run_artifact_task(
     if task_input.input_payload.skill_key.strip().lower() == "bilibili_course_note_pdf":
         if export_trace["status"] != "COMPILED":
             raise ArtifactOutputContractViolationError(["required PDF export did not compile"])
+    required_files = build_required_files(rendered_markdown, export_trace)
+    content_sha256 = hashlib.sha256(rendered_markdown.encode("utf-8")).hexdigest()
+    candidate_id = hashlib.sha256(
+        f"{task_input.task_id}:{task_input.input_snapshot_id}:{content_sha256}".encode("utf-8")
+    ).hexdigest()
+    result.result_payload["candidate"] = {
+        "candidate_id": candidate_id,
+        "task_id": task_input.task_id,
+        "input_snapshot_id": task_input.input_snapshot_id,
+        "content_sha256": content_sha256,
+        "required_files": required_files,
+    }
     writeback_request = (
         None if task_input.input_snapshot_id else register_writeback_request(
             task_input=task_input,

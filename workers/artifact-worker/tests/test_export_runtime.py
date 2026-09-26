@@ -28,8 +28,8 @@ def test_bilibili_pdf_skill_should_surface_compiled_export(monkeypatch) -> None:
     )
 
     assert trace["status"] == "COMPILED"
-    assert trace["file_name"] == "Course-Notes.pdf"
-    assert trace["download_path"].endswith("/Course-Notes.pdf")
+    assert trace["file_name"] == "course-notes.pdf"
+    assert trace["download_path"].endswith("/course-notes.pdf")
 
 
 def test_non_pdf_skill_should_not_invoke_binary_export() -> None:

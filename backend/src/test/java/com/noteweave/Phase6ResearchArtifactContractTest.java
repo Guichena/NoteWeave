@@ -1134,6 +1134,68 @@ class Phase6ResearchArtifactContractTest {
     }
 
     @Test
+    void candidateManifestMustMatchTheMarkdownPublishedByHost() throws Exception {
+        String workspaceId = createWorkspace();
+        MvcResult create = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "resume_highlight",
+                                "user_requirement", "Verify the required file manifest",
+                                "inputs", Map.of("language", "en")
+                        ))))
+                .andExpect(status().isOk()).andReturn();
+        String taskId = objectMapper.readTree(create.getResponse().getContentAsString())
+                .path("data").path("task_id").asText();
+        String snapshotId = objectMapper.readTree(mockMvc.perform(get(
+                        "/internal/worker/artifact-tasks/{taskId}/input", taskId))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString())
+                .path("data").path("input_snapshot_id").asText();
+        String markdown = "# Manifest gated content";
+        String contentHash = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest(markdown.getBytes(StandardCharsets.UTF_8)));
+        String candidateId = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest((taskId + ":" + snapshotId + ":" + contentHash)
+                        .getBytes(StandardCharsets.UTF_8)));
+        Map<String, Object> candidate = new LinkedHashMap<>(Map.of(
+                "task_id", taskId, "input_snapshot_id", snapshotId,
+                "content_sha256", contentHash, "candidate_id", candidateId));
+        candidate.put("required_files", List.of(Map.of(
+                "role", "PRIMARY_MARKDOWN", "variant", "", "sequence_no", 0,
+                "file_name", "content.md", "media_type", "text/markdown; charset=UTF-8",
+                "size_bytes", markdown.getBytes(StandardCharsets.UTF_8).length,
+                "checksum_sha256", "0".repeat(64))));
+        Map<String, Object> result = Map.of(
+                "result_type", "MARKDOWN", "result_title", "Manifest test",
+                "result_payload", Map.of("markdown", markdown, "candidate", candidate,
+                        "verification", Map.of("status", "PASS")),
+                "trace_summary", "manifest test", "citations", List.of());
+        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "manifest-invalid:" + taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(result)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ARTIFACT_FILE_MANIFEST_INVALID"));
+        Integer visible = jdbcTemplate.queryForObject("""
+                select count(*) from artifact_version v
+                join artifact_job_run r on r.artifact_job_id = v.artifact_job_id
+                where r.task_id = ?
+                """, Integer.class, taskId);
+        assertThat(visible).isZero();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> file = (Map<String, Object>) ((List<?>) candidate.get("required_files")).get(0);
+        Map<String, Object> validFile = new LinkedHashMap<>(file);
+        validFile.put("checksum_sha256", contentHash);
+        candidate.put("required_files", List.of(validFile));
+        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "manifest-valid:" + taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(result)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("COMPLETED"));
+    }
+
+    @Test
     void completedArtifactVersionShouldBeSavedAsWorkspaceSourceIdempotently() throws Exception {
         String workspaceId = createWorkspace();
         MvcResult createResult = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
