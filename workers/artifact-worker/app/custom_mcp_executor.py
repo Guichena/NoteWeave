@@ -182,6 +182,8 @@ def _build_tool_arguments(operation: dict[str, object]) -> dict[str, object]:
             "fallback_to_transcription": True,
             "allow_auto_subtitles": True,
         }
+    if tool_name == "capture_bilibili_frames":
+        return {"video_url": input_locator, "max_frames": 16, "interval_ms": 30_000}
     if tool_name == "transcribe_local_audio":
         return {
             "input_path": input_locator,

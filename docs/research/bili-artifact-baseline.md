@@ -131,3 +131,9 @@ Worker 复查又发现冻结 Bundle 与额外外部 URL 同时存在时，专用
 ## P2 抽帧回执转冻结 Bundle 候选
 
 新增 Worker `merge_captured_video_frames`，把已有 MCP 抽帧回执与字幕阶段 Bundle 组合。它核对 BVID、分 P、实际时长、缺口和文件清单，从 Worker 沙箱读图并用 Bundle 契约校验真实图片字节，然后仅把 File ID、摘要和时间引用放入 Bundle；画面暂存到 Host 既有的受控任务导出口。每帧有一个按时间命名的证据节点，关联同时间的字幕段。这些节点是**时间段证据容器**，不冒充完成的语义知识树。重复调用内容摘要稳定，错误分集、文件摘要、沙箱路径和覆盖缺口均拒绝。定向合成测试 **18 passed**。这一批仍未把 `CAPTURE_FRAMES` 注册到生产采集计划、异步回执或字幕合并回调，不能声称自动采集已接通。
+
+## P2 字幕后可恢复的抽帧阶段
+
+发布 Catalog、生产 Action、Provider Registry 和系统 MCP 注册了 `CAPTURE_VIDEO_FRAMES`。仅新 `bilibili_course_note_pdf` URL 采集计划在 `EXTRACT_TRANSCRIPT` 后加入 `CAPTURE_FRAMES`，两个 Operation 各有独立请求、回调令牌与可恢复等待；已冻结 Bundle 输入仍不触发视频 Provider。画面调用最多 16 帧，固定 30 秒基础采样，MCP 自身仍校验实际分集、时长与实际画面时间。Worker 在两项回执齐备后把字幕与画面合成一次 Host Bundle 提交，逐帧暂存到受控导出口，再生成含图 PDF 和文件 Manifest。系统 Provider 恢复仍沿已有持久化 Operation Outcome 与 Host ACK；自定义字幕 Provider 的回执也可与内建画面 Provider 合并。
+
+首轮 Worker 回归有 5 项旧测试假定字幕 ACK 即完成；改为分别断言字幕 ACK 后仍等待、不会提前提交素材/Version、画面 ACK 后完成。另有一次 Windows 临时配置文件替换拒绝，重跑未复现。合成回放用 PDF 解析器检查最终文件含真实图片对象，检查 Host 导出口的 PNG 字节与 Bundle 时间引用。最终 Worker 全套 **300 passed，43.03 秒**；Host `Phase6ResearchArtifactContractTest` **48 个用例，40 执行通过、8 个既有跳过**，`ArtifactSkillCatalogPublicationTest` **2 passed**，三份发布 Catalog 的 SHA-256 一致。真实 B 站抓取、Docker/ffmpeg、跨进程 Provider 崩溃恢复、MinIO 联调与语义知识树/视觉观察仍未实测或实现；时间节点当前仅做可追溯的画面分配。

@@ -6,6 +6,7 @@ from io import BytesIO
 from types import SimpleNamespace
 import pytest
 from PIL import Image
+from pypdf import PdfReader
 
 import app.callback as callback_module
 from app.callback import (
@@ -267,7 +268,9 @@ def test_fetch_frozen_material_frames_checks_scope_media_type_and_bytes(monkeypa
         client.fetch_video_material_files("task-1", bundle)
 
 
-def test_verified_provider_material_is_bound_to_candidate(tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize("provider_server", ["builtin-bilibili-mcp", "custom-subtitle-mcp"])
+def test_verified_provider_material_is_bound_to_candidate(tmp_path, monkeypatch,
+                                                          provider_server) -> None:
     monkeypatch.setenv("NOTEWEAVE_MCP_SANDBOX_ROOT", str(tmp_path))
     subtitle = tmp_path / "part-2.srt"
     subtitle.write_text("1\n00:00:00,000 --> 00:00:02,000\nverified subtitle", encoding="utf-8")
@@ -281,7 +284,7 @@ def test_verified_provider_material_is_bound_to_candidate(tmp_path, monkeypatch)
                "acquisition_mode": "remote_cc_subtitle_fetch",
                "selected_subtitle_path": str(subtitle)}
     monkeypatch.setattr(callback_module, "list_acquisition_operations", lambda **_: [{
-        "server_id": "builtin-bilibili-mcp", "operation_key": "EXTRACT_TRANSCRIPT",
+        "server_id": provider_server, "operation_key": "EXTRACT_TRANSCRIPT",
         "request_id": "request-1",
     }])
     monkeypatch.setattr(callback_module, "get_acquisition_result_payload", lambda _: payload)
@@ -545,11 +548,24 @@ def test_duplicate_acquisition_ack_should_retry_complete_delivery_after_transpor
             ]
         }
 
+        first_ack = acknowledge_acquisition_operation_with_callbacks(
+            callback_token=callback_token, final_status="ACKNOWLEDGED",
+            provider_payload=provider_payload, client=client,
+        )
+        assert first_ack.resumed_tasks[0].status == "WAITING_FOR_PROVIDER"
+        frame_operation = next(operation for operation in
+                               list_acquisition_operations(task_id="task-a-waiting")
+                               if operation["operation_key"] == "CAPTURE_FRAMES")
+        frame_token = dispatch_acquisition_operation(frame_operation["request_id"])["operation"]["callback_token"]
+        frame_payload = {"normalized_video_id": "BV1NoteWeaveDemo", "part": 1,
+                         "duration_ms": 5000, "frames": [], "files": [],
+                         "coverage_gaps": ["NO_FRAMES"], "missing_requested_ms": []}
+
         with pytest.raises(RuntimeError, match="complete callback unavailable"):
             acknowledge_acquisition_operation_with_callbacks(
-                callback_token=callback_token,
+                callback_token=frame_token,
                 final_status="ACKNOWLEDGED",
-                provider_payload=provider_payload,
+                provider_payload=frame_payload,
                 client=client,
             )
 
@@ -559,9 +575,9 @@ def test_duplicate_acquisition_ack_should_retry_complete_delivery_after_transpor
         cached_version_id = cached_delivery["result"]["version_snapshot"]["version_id"]
         client.should_fail_complete = False
         retry_response = acknowledge_acquisition_operation_with_callbacks(
-            callback_token=callback_token,
+            callback_token=frame_token,
             final_status="ACKNOWLEDGED",
-            provider_payload=provider_payload,
+            provider_payload=frame_payload,
             client=client,
         )
     finally:
@@ -647,7 +663,21 @@ def test_host_deferred_provider_ack_resumes_only_after_fenced_resume(monkeypatch
 
         resumed = resume_waiting_artifact_task_with_callbacks(
             "task-a-waiting", client=client, request_id=operation["request_id"])
-        assert resumed.status == "COMPLETED"
+        assert resumed.status == "WAITING_FOR_PROVIDER"
+        assert client.completed_results == []
+        frames = next(op for op in list_acquisition_operations(task_id="task-a-waiting")
+                      if op["operation_key"] == "CAPTURE_FRAMES")
+        frame_token = dispatch_acquisition_operation(frames["request_id"])["operation"]["callback_token"]
+        acknowledge_acquisition_operation_with_callbacks(
+            callback_token=frame_token, final_status="ACKNOWLEDGED",
+            provider_payload={"normalized_video_id": "BV1NoteWeaveDemo", "part": 1,
+                              "duration_ms": 5000, "frames": [], "files": [],
+                              "coverage_gaps": ["NO_FRAMES"], "missing_requested_ms": []},
+            client=client, defer_resume=True,
+        )
+        final = resume_waiting_artifact_task_with_callbacks(
+            "task-a-waiting", client=client, request_id=frames["request_id"])
+        assert final.status == "COMPLETED"
         assert len(client.completed_results) == 1
     finally:
         clear_artifact_repository()
@@ -665,7 +695,9 @@ def test_resumed_video_worker_publishes_full_subtitle_before_candidate_callback(
 ) -> None:
     monkeypatch.setenv("NOTEWEAVE_ALLOW_PORTABLE_PDF_FALLBACK", "true")
     monkeypatch.setenv("NOTEWEAVE_MCP_SANDBOX_ROOT", str(tmp_path))
-    monkeypatch.setattr(callback_module, "_dispatch_system_provider_operations", lambda *_: [])
+    dispatched = []
+    monkeypatch.setattr(callback_module, "submit_system_mcp_acquisition_operation",
+                        lambda request_id, **_: dispatched.append(request_id) or {})
     clear_artifact_repository()
     clear_acquisition_runtime()
     clear_waiting_tasks()
@@ -676,6 +708,13 @@ def test_resumed_video_worker_publishes_full_subtitle_before_candidate_callback(
     reset_capability_provider_status()
     subtitle = tmp_path / "part-2.srt"
     subtitle.write_text("1\n00:00:00,000 --> 00:00:02,000\ncontrolled transcript", encoding="utf-8")
+    image_buffer = BytesIO()
+    Image.new("RGB", (4, 4), "green").save(image_buffer, format="PNG")
+    image_bytes = image_buffer.getvalue()
+    image_digest = hashlib.sha256(image_bytes).hexdigest()
+    captured_image = tmp_path / "frames" / "frame1.png"
+    captured_image.parent.mkdir()
+    captured_image.write_bytes(image_bytes)
     task = _build_waiting_task_input()
     task.input_snapshot_id = "snapshot-1"
     task.input_payload.inputs = {
@@ -706,6 +745,7 @@ def test_resumed_video_worker_publishes_full_subtitle_before_candidate_callback(
     try:
         client = FakeJavaClient()
         assert run_artifact_task_with_callbacks(task.task_id, client).status == "WAITING_FOR_PROVIDER"
+        assert dispatched == [f"fetch-{task.task_id}-input-url-1-extract_transcript"]
         operation = next(op for op in list_acquisition_operations(task_id=task.task_id)
                          if op["operation_key"] == "EXTRACT_TRANSCRIPT")
         token = dispatch_acquisition_operation(operation["request_id"])["operation"]["callback_token"]
@@ -720,9 +760,38 @@ def test_resumed_video_worker_publishes_full_subtitle_before_candidate_callback(
         )
         assert resume_waiting_artifact_task_with_callbacks(
             task.task_id, client=client, request_id=operation["request_id"]
+        ).status == "WAITING_FOR_PROVIDER"
+        assert client.material is None
+        assert dispatched[-1] == f"fetch-{task.task_id}-input-url-1-capture_frames"
+        frames = next(op for op in list_acquisition_operations(task_id=task.task_id)
+                      if op["operation_key"] == "CAPTURE_FRAMES")
+        frame_token = dispatch_acquisition_operation(frames["request_id"])["operation"]["callback_token"]
+        acknowledge_acquisition_operation_with_callbacks(
+            callback_token=frame_token, final_status="ACKNOWLEDGED", defer_resume=True,
+            provider_payload={"normalized_video_id": "BV1234567890", "part": 2,
+                              "duration_ms": 5000,
+                              "frames": [{"frame_id": "f1", "part": 2, "at_ms": 1000,
+                                          "file_id": "frame1", "checksum_sha256": image_digest,
+                                          "dedupe_of": ""}],
+                              "files": [{"file_id": "frame1", "role": "VIDEO_FRAME",
+                                         "media_type": "image/png", "size_bytes": len(image_bytes),
+                                         "checksum_sha256": image_digest,
+                                         "path": str(captured_image)}],
+                              "coverage_gaps": [], "missing_requested_ms": []},
+            client=client,
+        )
+        assert resume_waiting_artifact_task_with_callbacks(
+            task.task_id, client=client, request_id=frames["request_id"]
         ).status == "COMPLETED"
         assert client.material is not None
         assert client.material.part == 2
+        assert client.material.frames[0].at_ms == 1000
+        assert (tmp_path / "bilibili-render-pdf" / "exports" / task.task_id
+                / "frame1.png").read_bytes() == image_bytes
+        assert client.completed.result_payload["export_trace"]["frame_file_ids"] == ["frame1"]
+        pdf_path = (tmp_path / "bilibili-render-pdf" / "exports" / task.task_id
+                    / client.completed.result_payload["export_trace"]["file_name"])
+        assert any(page.images for page in PdfReader(pdf_path).pages)
         assert client.completed.result_payload["candidate"]["video_material"]["id"] == "material-1"
     finally:
         clear_artifact_repository()
@@ -880,6 +949,17 @@ def test_acquisition_ack_with_callbacks_should_resume_waiting_task_and_complete_
             },
             client=client,
         )
+        assert ack_response.resumed_tasks[0].status == "WAITING_FOR_PROVIDER"
+        frames = next(op for op in list_acquisition_operations(task_id="task-a-waiting")
+                      if op["operation_key"] == "CAPTURE_FRAMES")
+        frame_token = dispatch_acquisition_operation(frames["request_id"])["operation"]["callback_token"]
+        frame_ack = acknowledge_acquisition_operation_with_callbacks(
+            callback_token=frame_token, final_status="ACKNOWLEDGED",
+            provider_payload={"normalized_video_id": "BV1NoteWeaveDemo", "part": 1,
+                              "duration_ms": 5000, "frames": [], "files": [],
+                              "coverage_gaps": ["NO_FRAMES"], "missing_requested_ms": []},
+            client=client,
+        )
         completed_version = get_artifact_version_detail(
             target_id=client.completed_results[0].job_snapshot.target_id,
             version_id=client.completed_results[0].version_snapshot.version_id,
@@ -914,9 +994,9 @@ def test_acquisition_ack_with_callbacks_should_resume_waiting_task_and_complete_
     assert ack_response.receipt["completed_at"]
     assert ack_response.receipt["dispatch_count"] == 1
     assert len(ack_response.resumed_tasks) == 1
-    assert ack_response.resumed_tasks[0].status == "COMPLETED"
-    assert len(client.progress_events) == 6
-    assert [event.phase for event in client.progress_events[1:]] == [
+    assert frame_ack.resumed_tasks[0].status == "COMPLETED"
+    assert len(client.progress_events) == 7
+    assert [event.phase for event in client.progress_events[2:]] == [
         "RESOLVING",
         "ACQUIRING",
         "COMPOSING",
@@ -925,51 +1005,51 @@ def test_acquisition_ack_with_callbacks_should_resume_waiting_task_and_complete_
     ]
     assert len(client.completed_results) == 1
     assert client.completed_results[0].job_snapshot.status == "COMPLETED"
-    assert client.completed_results[0].result_payload["resume_scope"]["matched_operation_key"] == "EXTRACT_TRANSCRIPT"
+    assert client.completed_results[0].result_payload["resume_scope"]["matched_operation_key"] == "CAPTURE_FRAMES"
     assert client.completed_results[0].result_payload["acquisition_callback_trace"]["status"] == "ATTACHED"
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["receipt_id"]
-        == ack_response.receipt["receipt_id"]
+        == frame_ack.receipt["receipt_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["delivery_id"]
-        == ack_response.receipt["delivery_id"]
+        == frame_ack.receipt["delivery_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["provider_job_id"]
-        == ack_response.receipt["provider_job_id"]
+        == frame_ack.receipt["provider_job_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["request_id"]
-        == ack_response.receipt["request_id"]
+        == frame_ack.receipt["request_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["task_id"]
-        == ack_response.receipt["task_id"]
+        == frame_ack.receipt["task_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["source_id"]
-        == ack_response.receipt["source_id"]
+        == frame_ack.receipt["source_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["operation_key"]
-        == ack_response.receipt["operation_key"]
+        == frame_ack.receipt["operation_key"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["operation"]["provider_id"]
-        == ack_response.operation["provider_id"]
+        == frame_ack.operation["provider_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["operation"]["server_id"]
-        == ack_response.operation["server_id"]
+        == frame_ack.operation["server_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["operation"]["tool_name"]
-        == ack_response.operation["tool_name"]
+        == frame_ack.operation["tool_name"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["operation"]["callback_token"]
-        == ack_response.operation["callback_token"]
+        == frame_ack.operation["callback_token"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["operation"]["provider_status"]
@@ -993,6 +1073,6 @@ def test_acquisition_ack_with_callbacks_should_resume_waiting_task_and_complete_
     assert completed_version["runtime_trace"]["acquisition_callback_trace"]["status"] == "ATTACHED"
     assert (
         completed_version["runtime_trace"]["acquisition_callback_trace"]["receipt"]["receipt_id"]
-        == ack_response.receipt["receipt_id"]
+        == frame_ack.receipt["receipt_id"]
     )
     assert client.failures == []

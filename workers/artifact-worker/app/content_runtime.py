@@ -62,6 +62,9 @@ def build_content_acquisition_plan(task_input: ArtifactTaskInput) -> ContentAcqu
 
     if "VIDEO_URL" in routes:
         required_capabilities = ["EXTRACT_TRANSCRIPT"]
+        capture_frames = task_input.input_payload.skill_key.strip().lower() == "bilibili_course_note_pdf"
+        if capture_frames:
+            required_capabilities.append("CAPTURE_VIDEO_FRAMES")
         return ContentAcquisitionPlan(
             strategy_key=f"acq-{task_input.task_id}",
             primary_strategy="VIDEO_TRANSCRIPT_PIPELINE",
@@ -80,6 +83,13 @@ def build_content_acquisition_plan(task_input: ArtifactTaskInput) -> ContentAcqu
                     capability_name="EXTRACT_TRANSCRIPT",
                     status="PLANNED",
                 ),
+                *([ContentAcquisitionStep(
+                    step_id=f"{task_input.task_id}-capture-frames",
+                    step_type="CAPTURE_FRAMES",
+                    description="Capture verified video frames after transcript acquisition.",
+                    capability_name="CAPTURE_VIDEO_FRAMES",
+                    status="PLANNED",
+                )] if capture_frames else []),
                 ContentAcquisitionStep(
                     step_id=f"{task_input.task_id}-normalize",
                     step_type="NORMALIZE_TO_CCO",
@@ -781,6 +791,10 @@ def _adapt_source_inputs(task_input: ArtifactTaskInput, action_key: str) -> list
         )
         planned_operations = _resolve_planned_operations(adapter_route)
         required_capabilities = _resolve_source_required_capabilities(adapter_route)
+        if adapter_route == "VIDEO_URL" and task_input.input_payload.skill_key.strip().lower() \
+                == "bilibili_course_note_pdf":
+            planned_operations.insert(-1, "CAPTURE_FRAMES")
+            required_capabilities.append("CAPTURE_VIDEO_FRAMES")
         normalization_target_kind = _resolve_normalization_target_kind(
             action_key,
             normalized_source_type,
@@ -1032,6 +1046,7 @@ def _resolve_operation_capability(operation_key: str) -> str:
     return {
         "READ_EXTERNAL_CONTENT": "READ_WEB_PAGE",
         "EXTRACT_TRANSCRIPT": "EXTRACT_TRANSCRIPT",
+        "CAPTURE_FRAMES": "CAPTURE_VIDEO_FRAMES",
         "TRANSCRIBE_AUDIO": "TRANSCRIBE_AUDIO",
     }.get(operation_key, "")
 
@@ -1065,6 +1080,8 @@ def _is_bilibili_pdf_async_provider(
     if skill_key != "bilibili_course_note_pdf":
         return False
     if capability_name == "EXTRACT_TRANSCRIPT" and server_id == "builtin-bilibili-mcp":
+        return True
+    if capability_name == "CAPTURE_VIDEO_FRAMES" and server_id == "builtin-bilibili-mcp":
         return True
     if capability_name == "TRANSCRIBE_AUDIO" and server_id in {"builtin-asr", "builtin-media"}:
         return True

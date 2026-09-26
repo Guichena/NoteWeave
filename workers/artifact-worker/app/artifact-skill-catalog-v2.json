@@ -297,7 +297,8 @@
         "GENERATE_STRUCTURED_TEXT",
         "VERIFY_OUTPUT",
         "EXTRACT_TRANSCRIPT",
-        "TRANSCRIBE_AUDIO"
+        "TRANSCRIBE_AUDIO",
+        "CAPTURE_VIDEO_FRAMES"
       ],
       "action_key": "COURSE_NOTES"
     },
@@ -567,7 +568,8 @@
         "GENERATE_STRUCTURED_TEXT",
         "VERIFY_OUTPUT",
         "EXTRACT_TRANSCRIPT",
-        "TRANSCRIBE_AUDIO"
+        "TRANSCRIBE_AUDIO",
+        "CAPTURE_VIDEO_FRAMES"
       ],
       "action_key": "COURSE_NOTES"
     }

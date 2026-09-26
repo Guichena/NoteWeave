@@ -398,6 +398,7 @@ PRODUCTION_ACTIONS = {
             "VERIFY_OUTPUT",
             "EXTRACT_TRANSCRIPT",
             "TRANSCRIBE_AUDIO",
+            "CAPTURE_VIDEO_FRAMES",
         ],
         output_sections=[
             "\u8bfe\u7a0b\u6982\u8981",
@@ -1045,6 +1046,15 @@ CAPABILITY_BINDINGS = {
         approval_mode="REQUIRED",
         risk_level="MEDIUM",
         allowed_actions=["VIDEO_SUMMARY", "COURSE_NOTES"],
+    ),
+    "CAPTURE_VIDEO_FRAMES": CapabilityBinding(
+        capability_name="CAPTURE_VIDEO_FRAMES",
+        server_id="builtin-bilibili-mcp",
+        tool_name="capture_bilibili_frames",
+        scope_type="MEDIA_PROCESSING",
+        approval_mode="REQUIRED",
+        risk_level="MEDIUM",
+        allowed_actions=["COURSE_NOTES"],
     ),
     "TRANSCRIBE_AUDIO": CapabilityBinding(
         capability_name="TRANSCRIBE_AUDIO",

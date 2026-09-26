@@ -842,7 +842,11 @@ def test_build_execution_plan_should_allow_skill_first_bilibili_request_with_url
     assert plan.action_key == "COURSE_NOTES"
     assert plan.content_acquisition_plan.primary_strategy == "VIDEO_TRANSCRIPT_PIPELINE"
     assert plan.content_acquisition_plan.route_summary == {"VIDEO_URL": 1}
-    assert plan.content_acquisition_plan.required_capabilities == ["EXTRACT_TRANSCRIPT"]
+    assert plan.content_acquisition_plan.required_capabilities == [
+        "EXTRACT_TRANSCRIPT", "CAPTURE_VIDEO_FRAMES"]
+    assert [operation for operation in plan.content_acquisition_plan.source_plans[0].planned_operations
+            if operation in {"EXTRACT_TRANSCRIPT", "CAPTURE_FRAMES"}] == [
+                "EXTRACT_TRANSCRIPT", "CAPTURE_FRAMES"]
     assert plan.content_acquisition_plan.source_plans[0].source_id == "input-url-1"
     assert plan.content_acquisition_plan.source_plans[0].adapter_route == "VIDEO_URL"
 

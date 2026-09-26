@@ -8,6 +8,8 @@ import pytest
 from PIL import Image
 
 from app.models import ArtifactTaskInput
+from app.custom_mcp_executor import _build_tool_arguments
+from app.system_mcp_registry import SYSTEM_BILIBILI_SERVER_ID, resolve_system_mcp_server
 from app.video_material_bundle import frozen_video_input_digest
 from app.video_subtitle_material import subtitle_only_bundle
 from app.video_visual_material import merge_captured_video_frames
@@ -63,6 +65,19 @@ def test_capture_receipt_merges_timed_subtitle_and_stages_host_readable_frame(tm
             / "frame-1.png").read_bytes() == content
     assert merge_captured_video_frames(task, subtitle, capture).content_digest() == merged.content_digest()
     assert "path" not in merged.model_dump_json()
+
+
+def test_system_provider_maps_frame_operation_to_bounded_mcp_call():
+    server = resolve_system_mcp_server(SYSTEM_BILIBILI_SERVER_ID)
+    assert any(tool.capability_name == "CAPTURE_VIDEO_FRAMES"
+               and tool.tool_name == "capture_bilibili_frames" for tool in server.tools)
+    assert _build_tool_arguments({
+        "tool_name": "capture_bilibili_frames",
+        "input_locator": "https://www.bilibili.com/video/BV1234567890?p=2",
+    }) == {
+        "video_url": "https://www.bilibili.com/video/BV1234567890?p=2",
+        "max_frames": 16, "interval_ms": 30_000,
+    }
 
 
 @pytest.mark.parametrize("change,expected", [

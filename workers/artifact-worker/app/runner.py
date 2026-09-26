@@ -1015,6 +1015,7 @@ def _resolve_async_provider_capabilities(
             capability_name = {
                 "READ_EXTERNAL_CONTENT": "READ_WEB_PAGE",
                 "EXTRACT_TRANSCRIPT": "EXTRACT_TRANSCRIPT",
+                "CAPTURE_FRAMES": "CAPTURE_VIDEO_FRAMES",
                 "TRANSCRIBE_AUDIO": "TRANSCRIBE_AUDIO",
             }.get(operation_key, "")
             if not capability_name:

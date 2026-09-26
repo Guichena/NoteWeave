@@ -34,6 +34,7 @@ from app.candidate_file_manifest import build_required_files
 from app.export_runtime import export_artifact_if_required, validate_frozen_video_scope
 from app.video_material_bundle import VideoMaterialBundleV1
 from app.video_subtitle_material import subtitle_bundle_from_provider
+from app.video_visual_material import merge_captured_video_frames
 from app.material_resolver import select_frozen_windows
 from app.runner import run_artifact_task
 from app.system_mcp_executor import submit_system_mcp_acquisition_operation
@@ -468,57 +469,82 @@ def _attach_frozen_video_material(
         if bundle.frames:
             contents = callback_client.fetch_video_material_files(task_id, bundle, referenced_id)
             frame_paths = _stage_frozen_video_frames(task_id, referenced_id, bundle, contents)
-            sections = [ArtifactSectionDraft.model_validate(item)
-                        for item in result.result_payload.get("sections", [])]
-            headings = {section.heading.strip().casefold() for section in sections}
-            segments = {segment.segment_id: segment for segment in bundle.transcript_segments}
-            for node in bundle.knowledge_nodes:
-                if not node.frame_ids or node.title.strip().casefold() in headings:
-                    continue
-                evidence = [segments[segment_id].corrected_text
-                            for segment_id in node.transcript_segment_ids]
-                sections.append(ArtifactSectionDraft(
-                    heading=node.title,
-                    body="\n\n".join(evidence) if evidence else
-                         f"Video frame evidence at {node.start_ms / 1000:.1f}–{node.end_ms / 1000:.1f} s.",
-                    source_refs=[f"video-material:{bundle.bundle_id}:{node.node_id}"],
-                ))
-                headings.add(node.title.strip().casefold())
-            export_trace = export_artifact_if_required(
-                task_input=task_input, title=result.result_title,
-                sections=sections, video_material=bundle, frame_files=frame_paths,
-            )
-            if export_trace.get("status") != "COMPILED":
-                raise ValueError("frozen frame PDF did not compile")
-            result.result_payload["export_trace"] = export_trace
-            markdown = str(result.result_payload.get("markdown") or "")
-            candidate["required_files"] = build_required_files(markdown, export_trace)
+            _rerender_pdf_with_frozen_frames(task_input, result, bundle, frame_paths)
         candidate["video_material"] = {
             "id": referenced_id, "bundle_id": bundle.bundle_id,
             "bundle_version": bundle.bundle_version,
             "content_digest": bundle.content_digest(),
         }
         return
+    capture_payload: dict[str, object] | None = None
+    subtitle_payload: dict[str, object] | None = None
+    has_capture_stage = False
     for operation in list_acquisition_operations(task_id=task_id):
-        if (operation.get("server_id") != SYSTEM_BILIBILI_SERVER_ID
-                or operation.get("operation_key") != "EXTRACT_TRANSCRIPT"):
-            continue
+        operation_key = operation.get("operation_key")
         payload = get_acquisition_result_payload(str(operation.get("request_id", "")))
-        if not isinstance(payload, dict):
-            continue
-        bundle = subtitle_bundle_from_provider(task_input, payload)
-        if bundle is None:
-            continue
-        receipt = callback_client.publish_video_material(task_id, bundle)
-        candidate = result.result_payload.get("candidate")
-        if not isinstance(candidate, dict):
-            raise ValueError("video material requires a Worker Candidate")
-        candidate["video_material"] = {
-            "id": receipt["id"], "bundle_id": receipt["bundle_id"],
-            "bundle_version": receipt["bundle_version"],
-            "content_digest": receipt["content_digest"],
-        }
+        if operation_key == "CAPTURE_FRAMES" \
+                and operation.get("server_id") == SYSTEM_BILIBILI_SERVER_ID:
+            has_capture_stage = True
+            if isinstance(payload, dict):
+                capture_payload = payload
+        elif operation_key == "EXTRACT_TRANSCRIPT" and isinstance(payload, dict):
+            subtitle_payload = payload
+    if subtitle_payload is None:
         return
+    if has_capture_stage and capture_payload is None:
+        raise ValueError("frame capture stage is missing its acknowledged receipt")
+    bundle = subtitle_bundle_from_provider(task_input, subtitle_payload)
+    if bundle is None:
+        return
+    if capture_payload is not None:
+        bundle = merge_captured_video_frames(task_input, bundle, capture_payload)
+    receipt = callback_client.publish_video_material(task_id, bundle)
+    candidate = result.result_payload.get("candidate")
+    if not isinstance(candidate, dict):
+        raise ValueError("video material requires a Worker Candidate")
+    if bundle.frames:
+        root = resolve_mcp_sandbox_root() / "bilibili-render-pdf" / "exports" / task_id
+        frame_paths = {file.file_id: root / f"{file.file_id}.png" for file in bundle.files}
+        _rerender_pdf_with_frozen_frames(task_input, result, bundle, frame_paths)
+    candidate["video_material"] = {
+        "id": receipt["id"], "bundle_id": receipt["bundle_id"],
+        "bundle_version": receipt["bundle_version"],
+        "content_digest": receipt["content_digest"],
+    }
+
+
+def _rerender_pdf_with_frozen_frames(
+    task_input: ArtifactTaskInput, result: ArtifactTaskResult,
+    bundle: VideoMaterialBundleV1, frame_paths: dict[str, Path],
+) -> None:
+    candidate = result.result_payload.get("candidate")
+    if not isinstance(candidate, dict):
+        raise ValueError("frozen frame PDF requires a Worker Candidate")
+    sections = [ArtifactSectionDraft.model_validate(item)
+                for item in result.result_payload.get("sections", [])]
+    headings = {section.heading.strip().casefold() for section in sections}
+    segments = {segment.segment_id: segment for segment in bundle.transcript_segments}
+    for node in bundle.knowledge_nodes:
+        if not node.frame_ids or node.title.strip().casefold() in headings:
+            continue
+        evidence = [segments[segment_id].corrected_text
+                    for segment_id in node.transcript_segment_ids]
+        sections.append(ArtifactSectionDraft(
+            heading=node.title,
+            body="\n\n".join(evidence) if evidence else
+                 f"Video frame evidence at {node.start_ms / 1000:.1f}–{node.end_ms / 1000:.1f} s.",
+            source_refs=[f"video-material:{bundle.bundle_id}:{node.node_id}"],
+        ))
+        headings.add(node.title.strip().casefold())
+    export_trace = export_artifact_if_required(
+        task_input=task_input, title=result.result_title,
+        sections=sections, video_material=bundle, frame_files=frame_paths,
+    )
+    if export_trace.get("status") != "COMPILED":
+        raise ValueError("frozen frame PDF did not compile")
+    result.result_payload["export_trace"] = export_trace
+    markdown = str(result.result_payload.get("markdown") or "")
+    candidate["required_files"] = build_required_files(markdown, export_trace)
 
 
 def _stage_frozen_video_frames(
