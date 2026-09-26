@@ -69,3 +69,9 @@ Host 全批 `Phase6ResearchArtifactContractTest` **47 个用例，39 执行通�
 后续 Candidate 引用门禁批：同一任务已冻结素材时，完成回调必须在 Candidate 中引用准确的素材 ID、Bundle ID、版本和内容摘要；缺失或伪造引用均返回 `VIDEO_MATERIAL_REFERENCE_INVALID`，且不产生 Version，正确引用可发布。Host 全批 `Phase6ResearchArtifactContractTest` **47 个用例，39 执行通过、8 个既有跳过**，`ArtifactCandidateTest` **4 passed**，`ArtifactRollbackGateTest` **2 passed**。目前仍需解决异步 Provider 恢复时的投递令牌传递，才能把素材客户端接入生产执行流；通过引用门禁不代表素材采集已经自动运行。
 
 异步 Provider 与字幕自动冻结批：Host 请求 Worker 先持久化 Provider ACK、暂不在 ACK 调用内恢复，然后以当前 Outbox 投递令牌发起恢复；已终态 Task 的重复 ACK 不再恢复，暂无有效令牌则使 ACK 可重试。Worker 在完成回调前，仅从受控沙箱内的完整 SRT、实际视频时长和一致的 BVID/分集元数据建立字幕素材，并将 Host 回执写入 Candidate；预览、缺少时长或分集不符会跳过素材冻结。完整 Worker 恢复回放首次暴露 Host Run 无本地 Version ID 时仍更新 Worker 版本仓库，已修正为仅旧本地版本执行该 Trace 同步。修复后 Worker 全套 **279 passed，32.43 秒**；Host `Phase6ResearchArtifactContractTest` **47 个用例，39 执行通过、8 个既有跳过**，`ArtifactCandidateTest` **4 passed**、`ArtifactRollbackGateTest` **2 passed**、`ArtifactWorkerControlServiceTest` **3 passed**、`HttpArtifactWorkerControlClientTest` **2 passed**。回放使用合成字幕、Provider 回执和本地 PDF；真实 B 站获取、长期 Provider 等待、MinIO 故障与跨进程重试尚未实测。画面/知识树、素材跨任务复用及 PDF Bundle 输入仍未完成。
+
+## C1 主题和约束影子投影
+
+新增独立于旧前缀摘要的 v2 主题、连续片段和用户约束表；影子服务按 Conversation 行锁从消息 Ledger 重算并增量写入，A→B→A 可复用同一 `topic_id` 而维持三个不重叠片段，重复刷新不追加重复行。显式用户语句可记录格式、语言和否定约束；更正撤销同主题旧约束，助手文本不会成为约束，含糊“那个格式”保持 `UNRESOLVED`。删除消息时覆盖片段与锚点变 `STALE`，源约束撤销并清空文本。固定样本的首轮 Segmenter 测试曾把“对象什么时候回收？”误分为新主题，加入明确追问规则后通过。
+
+这一批是**影子实现**：没有接入 QA/Note/Wiki/Research/Artifact 编译入口，不产生 v2 Run 快照；旧 v1 路径继续运行。主题判定目前是保守规则，不足以宣称 C1 完整验收；候选主题解释、迟到判定栅栏、删除后的全量重建与旧快照脱敏仍需后续工作。最终回归：`TopicSegmenterV2Test` **5 passed**、`ConversationConstraintProjectorV2Test` **2 passed**、`ContextProjectionV2ContractTest` **3 passed**、`ConversationTurnModuleContractTest` **38 passed**；Flyway v113 在 Spring 集成测试中成功应用。

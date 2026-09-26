@@ -40,6 +40,7 @@ class ConversationTurnModuleContractTest {
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
     @Autowired JdbcTemplate jdbcTemplate;
+    @Autowired ConversationTopicProjectionV2Service topicProjectionV2Service;
     @Autowired ResearchAgentTaskCoordinatorService researchTaskCoordinator;
     @Autowired ResearchAgentTaskService researchAgentTaskService;
     @Autowired ResearchAgentIncrementalFinalizationService researchFinalizationService;
@@ -924,6 +925,79 @@ class ConversationTurnModuleContractTest {
         assertThat(jdbcTemplate.queryForObject(
                 "select summary_text from segment_summary_revision where id = ?", String.class, revisionId))
                 .isEmpty();
+    }
+
+    @Test
+    void shadowTopicProjectionReusesDisjointTopicAndDeletionRedactsItsDerivedRows() throws Exception {
+        String workspaceId = createWorkspace();
+        String conversationId = createConversation(workspaceId);
+        String firstMessageId = "";
+        String[] turns = {"解释缓存一致性。", "重点是写入顺序。", "改聊台南旅行。",
+                "住两晚。", "回到缓存一致性，第二种写入顺序呢？"};
+        for (int index = 0; index < turns.length; index++) {
+            JsonNode receipt = submit(conversationId, Map.of(
+                    "content", turns[index], "answer_mode", "QA",
+                    "client_request_id", "topic-shadow-" + index), 200);
+            if (index == 0) firstMessageId = receipt.path("message_id").asText();
+        }
+        TopicSegmenterV2.Projection first = topicProjectionV2Service.refresh(workspaceId, conversationId);
+        TopicSegmenterV2.Projection replay = topicProjectionV2Service.refresh(workspaceId, conversationId);
+        assertThat(first.segments()).hasSize(3).isEqualTo(replay.segments());
+        assertThat(first.segments().get(0).topicId()).isEqualTo(first.segments().get(2).topicId());
+        assertThat(first.segments().get(0).topicId()).isNotEqualTo(first.segments().get(1).topicId());
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from conversation_topic_segment_v2 where conversation_id = ?
+                """, Integer.class, conversationId)).isEqualTo(3);
+        jdbcTemplate.update("""
+                insert into conversation_constraint_v2(id, workspace_id, conversation_id,
+                    source_message_id, kind, scope, constraint_text, valid_from_seq,
+                    status, rule_version)
+                values (?, ?, ?, ?, 'FORMAT', 'CONVERSATION', 'private derived text', 1,
+                    'ACTIVE', 'topic-segmenter-v2-a1')
+                """, Ids.newId(), workspaceId, conversationId, firstMessageId);
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
+                        "/api/v2/workspaces/{workspaceId}/conversations/{conversationId}/messages/{messageId}",
+                        workspaceId, conversationId, firstMessageId))
+                .andExpect(status().isOk());
+
+        assertThat(jdbcTemplate.queryForObject("""
+                select decision_status from conversation_topic_segment_v2 where id = ?
+                """, String.class, first.segments().get(0).segmentId())).isEqualTo("STALE");
+        assertThat(jdbcTemplate.queryForObject("""
+                select status from conversation_topic_v2 where id = ?
+                """, String.class, first.segments().get(0).topicId())).isEqualTo("STALE");
+        assertThat(jdbcTemplate.queryForObject("""
+                select constraint_text from conversation_constraint_v2 where source_message_id = ?
+                """, String.class, firstMessageId)).isEmpty();
+    }
+
+    @Test
+    void shadowConstraintProjectionPersistsUserCorrectionAndNeverPromotesAssistantText() throws Exception {
+        String workspaceId = createWorkspace();
+        String conversationId = createConversation(workspaceId);
+        JsonNode first = submit(conversationId, Map.of(
+                "content", "这份报告用英文。", "answer_mode", "QA",
+                "client_request_id", "constraint-shadow-1"), 200);
+        submit(conversationId, Map.of(
+                "content", "先列三点。", "answer_mode", "QA",
+                "client_request_id", "constraint-shadow-2"), 200);
+        submit(conversationId, Map.of(
+                "content", "更正：不要英文，改用中文。", "answer_mode", "QA",
+                "client_request_id", "constraint-shadow-3"), 200);
+
+        topicProjectionV2Service.refresh(workspaceId, conversationId);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from conversation_constraint_v2 where conversation_id = ?
+                """, Integer.class, conversationId)).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject("""
+                select status from conversation_constraint_v2 where source_message_id = ?
+                """, String.class, first.path("message_id").asText())).isEqualTo("REVOKED");
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from conversation_constraint_v2 c
+                join conversation_message m on m.id = c.source_message_id
+                where c.conversation_id = ? and m.role <> 'USER'
+                """, Integer.class, conversationId)).isZero();
     }
 
     @Test

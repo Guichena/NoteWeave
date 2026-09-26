@@ -64,6 +64,24 @@ public class ConversationMessageDeletionService {
                     """, revisionId);
             replayRedactionService.redactDeletedSummaryRevision(revisionId);
         }
+        jdbcTemplate.update("""
+                update conversation_topic_segment_v2
+                set decision_status = 'STALE', source_digest = ?,
+                    lock_version = lock_version + 1, updated_at = current_timestamp
+                where workspace_id = ? and conversation_id = ?
+                  and start_seq <= (select message_seq from conversation_message where id = ?)
+                  and end_seq >= (select message_seq from conversation_message where id = ?)
+                """, EMPTY_CONTENT_SHA256, workspaceId, conversationId, messageId, messageId);
+        jdbcTemplate.update("""
+                update conversation_topic_v2 set status = 'STALE', anchor_digest = ?
+                where workspace_id = ? and conversation_id = ? and anchor_message_id = ?
+                """, EMPTY_CONTENT_SHA256, workspaceId, conversationId, messageId);
+        jdbcTemplate.update("""
+                update conversation_constraint_v2
+                set status = 'REVOKED', constraint_text = '', invalid_after_seq =
+                    (select message_seq from conversation_message where id = ?)
+                where workspace_id = ? and conversation_id = ? and source_message_id = ?
+                """, messageId, workspaceId, conversationId, messageId);
         return new DeletedConversationMessageResponse(messageId, "DELETED");
     }
 }
