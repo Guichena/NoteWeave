@@ -125,3 +125,5 @@ Host 与 Worker 的 Bundle v1 校验现在要求每个画面恰好归属一个�
 ## P2 复用输入同一性
 
 复查发现先前跨任务引用仅核对 Workspace/BVID/分 P，不足以阻止同一视频但字幕语言或采集选项不同的任务误用旧资料包。Host 现在比较父子 Run 冻结的规范化输入映射，排除仅用于选中已存资料包的 `video_material_bundle_id`；其余字段必须逐项一致。新增同视频同分 P、语言改为 `en` 的负例，仍允许原输入重用。首轮测试用了 Catalog 不允许的 `en-US`，创建时即被拒；改为目录允许的 `en` 后，Host 两个 P2 定向合同 **2 passed**。更大范围的 Host 合约回归在前一批已通过，本批未重跑全套。
+
+Worker 复查又发现冻结 Bundle 与额外外部 URL 同时存在时，专用计划会错误覆盖外部读取所需的 `READ_WEB_PAGE`。现在只有单一冻结视频路由走免 Provider 计划；混合路由保留外部读取能力，并由现有 Action 权限策略拒绝 PDF Skill 不允许的额外网页读取。首轮测试原预期 PDF 可运行，实际按权限策略返回 `action_scope_denied`；修正为验证该拒绝后，Worker Callback 定向 **19 passed**。这避免了把额外来源当作已读取证据，也不触发视频字幕重抓。

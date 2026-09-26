@@ -27,10 +27,10 @@ from app.capability_provider import (
     reset_capability_provider_status,
 )
 from app.capability_wait_queue import clear_waiting_tasks, get_waiting_task
-from app.models import ArtifactProgressEvent, ArtifactTaskInput, ArtifactTaskResult
+from app.models import ArtifactProgressEvent, ArtifactTaskInput, ArtifactTaskResult, SourceScopeItem
 from app.runner import run_artifact_task
 from app.compiler import build_execution_plan
-from app.content_runtime import build_canonical_content_objects
+from app.content_runtime import build_canonical_content_objects, build_content_acquisition_plan
 from app.video_material_bundle import frozen_video_input_digest
 from app.video_subtitle_material import subtitle_only_bundle
 from app.video_material_bundle import VideoMaterialBundleV1
@@ -608,6 +608,15 @@ def test_referenced_video_bundle_uses_frozen_transcript_without_provider_fetch(m
     _, result = run_artifact_task(task)
     assert result.job_snapshot.status == "COMPLETED"
     assert "Frozen transcript evidence." in str(result.result_payload)
+    task.source_scope = [SourceScopeItem(
+        source_id="external-1", title="Additional reading", source_type="URL",
+        source_uri="https://example.com/article",
+    )]
+    mixed_plan = build_content_acquisition_plan(task)
+    assert mixed_plan.primary_strategy == "MIXED_CONTEXT_FUSION"
+    assert mixed_plan.required_capabilities == ["READ_WEB_PAGE"]
+    with pytest.raises(ValueError, match="action_scope_denied"):
+        build_execution_plan(task)
 
 
 def test_host_deferred_provider_ack_resumes_only_after_fenced_resume(monkeypatch) -> None:

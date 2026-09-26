@@ -45,7 +45,7 @@ def build_content_acquisition_plan(task_input: ArtifactTaskInput) -> ContentAcqu
         ContentAcquisitionSourcePlan(**descriptor["source_plan"])
         for descriptor in descriptors
     ]
-    if "FROZEN_VIDEO_BUNDLE" in routes:
+    if routes == {"FROZEN_VIDEO_BUNDLE"}:
         return ContentAcquisitionPlan(
             strategy_key=f"acq-{task_input.task_id}",
             primary_strategy="FROZEN_VIDEO_MATERIAL",
