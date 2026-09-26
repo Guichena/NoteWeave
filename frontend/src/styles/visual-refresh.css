@@ -10932,6 +10932,19 @@ body {
   white-space: nowrap;
 }
 
+.video-learning-request li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.artifact-rail .video-learning-request li button {
+  grid-column: 2;
+  justify-self: end;
+  width: auto;
+  padding: 5px 8px;
+  font-size: 0.73rem;
+}
+
 .artifact-rail .video-learning-status button,
 .artifact-rail .video-learning-refresh {
   width: auto;

@@ -231,13 +231,15 @@ public class VideoLearningRequestRepository {
         if (parents.size() != 1) throw invalid("parent request does not belong to Workspace");
         ParentView parent = parents.get(0);
         List<ChoiceView> choices = jdbc.query("""
-                select c.skill_key, c.artifact_job_id, j.status, j.task_id, t.task_status
+                select c.skill_key, c.artifact_job_id, j.status, j.task_id, t.task_status,
+                       j.latest_version_no
                 from video_learning_request_choice c
                 left join artifact_job j on j.id = c.artifact_job_id
                 left join task t on t.id = j.task_id
                 where c.request_id = ? order by c.skill_key
                 """, (rs, index) -> new ChoiceView(rs.getString(1), rs.getString(2),
-                projectedChildState(rs.getString(3), rs.getString(5)), rs.getString(4)),
+                projectedChildState(rs.getString(3), rs.getString(5)), rs.getString(4),
+                rs.getInt(6)),
                 requestId);
         return new ParentView(parent.requestId(), parent.materialState(), parent.materialTaskId(),
                 parent.materialBundleId(), parent.knowledgePlanId(),
@@ -317,7 +319,7 @@ public class VideoLearningRequestRepository {
                              boolean cancellationRequested, String videoUrl, int part,
                              List<ChoiceView> choices) {}
     public record ChoiceView(String skillKey, String artifactJobId, String status,
-                             String taskId) {}
+                             String taskId, int latestVersionNo) {}
     private record ParentInput(String videoUrl, int part, String frameDensity,
                                String asrFallback, String materialTaskId) {}
 }

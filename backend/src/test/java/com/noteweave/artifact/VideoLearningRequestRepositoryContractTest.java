@@ -306,6 +306,7 @@ class VideoLearningRequestRepositoryContractTest {
                 .filter(item -> "knowledge_blog".equals(item.skillKey())).findFirst().orElseThrow();
         assertThat(child.artifactJobId()).isNotBlank();
         assertThat(child.status()).isEqualTo("QUEUED");
+        assertThat(child.latestVersionNo()).isZero();
         assertThat(jdbc.queryForObject("select count(*) from artifact_job where workspace_id = ?",
                 Integer.class, workspaceId)).isEqualTo(1);
         assertThat(jdbc.queryForObject("select s.inputs_json from artifact_run_input_snapshot s "

@@ -437,3 +437,7 @@ Host 从已发布 Skill Catalog 读取实际版本，新增 `noteweave.video-lea
 ## P6 各类型 Version 文件的前端下载
 
 产物记录现在列出每个 `READY` 文件的下载动作，调用既有 Host `versions/{versionNo}/files/{fileId}` 校验端点；PPTX、Markdown、逐页 PNG 等可从最新或历史版本取回，`DEGRADED` 文件不显示下载按钮。保留原 `export.pdf` 调用和 PDF 按钮。首次定向前端测试 **11 passed**，但 TypeScript 构建发现审计视图只要求精简文件元数据、且独立动作测试缺新回调；增加完整文件元数据类型守卫并补测试夹具后，生产构建通过，定向 **12 passed**。Host 文件端点已由 P1 文件门禁覆盖；本批未做真实浏览器文件保存或 PPTX/PNG 人工预览。
+
+## P6 父选择直达已发布子版本
+
+父请求状态投影附上每项独立 Job 的 `latest_version_no`；前端在版本号大于 0 时提供“查看 vN”，调用已有历史版本读取与文件动作，从父选择直接进入对应产物审计。没有 Version 的排队或失败子项不显示该动作。Host `VideoLearningRequestRepositoryContractTest` **7 passed，0 failed/0 error/0 skipped**，Maven BUILD SUCCESS（1:03）；前端 `VideoLearningPanel.dom.test.tsx` **5 passed**，`pnpm build` 通过。此合同仅验证父子版本身份与 UI 路由；实际文件下载仍需浏览器联调。

@@ -3,6 +3,7 @@ import { ArtifactStudioActivity } from "./ArtifactStudioActivity";
 import { ArtifactStudioGrid } from "./ArtifactStudioGrid";
 import { ArtifactUtilityPanel } from "./ArtifactUtilityPanel";
 import { VideoLearningPanel } from "./VideoLearningPanel";
+import { buildArtifactHistoryVersionKey } from "./artifactHistory";
 import { buildInitialArtifactFormValues } from "./artifactStudio";
 import { type ArtifactRailProps } from "./ArtifactRailProps";
 
@@ -173,7 +174,13 @@ export function ArtifactRail(props: ArtifactRailProps) {
 
           {workspace ? (
             <VideoLearningPanel workspaceId={workspace.workspace_id}
-              onJobsChanged={props.refreshArtifactJobs} />
+              onJobsChanged={props.refreshArtifactJobs}
+              onOpenVersion={(artifactJobId, versionNo) =>
+                props.openArtifactHistoryVersion({
+                  key: buildArtifactHistoryVersionKey(artifactJobId, versionNo),
+                  artifactJobId, versionNo, skillKey: "", title: "", detail: "",
+                  updatedAt: "", status: ""
+                })} />
           ) : null}
 
           <ArtifactStudioActivity {...props} />

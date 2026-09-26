@@ -84,6 +84,7 @@ export type VideoLearningChoice = {
   artifact_job_id: string | null;
   status: string;
   task_id: string | null;
+  latest_version_no: number;
 };
 
 export type VideoLearningRequest = {

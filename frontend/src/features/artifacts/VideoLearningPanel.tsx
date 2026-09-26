@@ -28,9 +28,10 @@ function labelFor(status: string) {
   return LABELS[status] ?? status;
 }
 
-export function VideoLearningPanel({ workspaceId, onJobsChanged, api = artifactsApi }: {
+export function VideoLearningPanel({ workspaceId, onJobsChanged, onOpenVersion, api = artifactsApi }: {
   workspaceId: string;
   onJobsChanged?: () => void | Promise<unknown>;
+  onOpenVersion?: (artifactJobId: string, versionNo: number) => void | Promise<unknown>;
   api?: ArtifactsApi;
 }) {
   const [overview, setOverview] = useState<VideoLearningOverview | null>(null);
@@ -221,6 +222,14 @@ export function VideoLearningPanel({ workspaceId, onJobsChanged, api = artifacts
             <li key={choice.skill_key}>
               <span>{titleFor(choice.skill_key)}</span>
               <small>{labelFor(choice.status)}</small>
+              {choice.artifact_job_id && choice.latest_version_no > 0 ? (
+                <button type="button" className="secondary-button" disabled={busy}
+                  onClick={() => {
+                    if (choice.artifact_job_id) void onOpenVersion?.(choice.artifact_job_id, choice.latest_version_no);
+                  }}>
+                  查看 v{choice.latest_version_no}
+                </button>
+              ) : null}
             </li>
           ))}</ul>
           {item.choices.some((choice) => choice.artifact_job_id) ? (

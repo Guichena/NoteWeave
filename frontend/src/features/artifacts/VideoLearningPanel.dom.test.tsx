@@ -11,8 +11,8 @@ const parent: VideoLearningRequest = {
   material_bundle_id: null, knowledge_plan_id: null, cancellation_requested: false,
   video_url: "https://www.bilibili.com/video/BV1234567890?p=2", part: 2,
   choices: [
-    { skill_key: "knowledge_blog", artifact_job_id: null, status: "NOT_STARTED", task_id: null },
-    { skill_key: "interview_qa", artifact_job_id: null, status: "NOT_STARTED", task_id: null }
+    { skill_key: "knowledge_blog", artifact_job_id: null, status: "NOT_STARTED", task_id: null, latest_version_no: 0 },
+    { skill_key: "interview_qa", artifact_job_id: null, status: "NOT_STARTED", task_id: null, latest_version_no: 0 }
   ]
 };
 
@@ -79,5 +79,18 @@ describe("VideoLearningPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "创建 1 种产物" }));
     await waitFor(() => expect(api.createVideoLearning).toHaveBeenCalledOnce());
     expect(api.createVideoLearning.mock.calls[0][1].selected_skills).toEqual(["interview_qa"]);
+  });
+
+  it("opens the matching ready child version directly", async () => {
+    const onOpenVersion = vi.fn();
+    const ready = { ...parent, material_state: "READY", choices: [
+      { skill_key: "video_learning_deck", artifact_job_id: "deck-job", status: "COMPLETED",
+        task_id: "deck-task", latest_version_no: 2 }
+    ] };
+    const api = { listVideoLearning: vi.fn(async () => ({ enabled: false, requests: [ready] })) };
+    render(<VideoLearningPanel workspaceId="workspace" onOpenVersion={onOpenVersion}
+      api={api as unknown as ArtifactsApi} />);
+    fireEvent.click(await screen.findByRole("button", { name: "查看 v2" }));
+    expect(onOpenVersion).toHaveBeenCalledWith("deck-job", 2);
   });
 });
