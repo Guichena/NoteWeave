@@ -1,6 +1,7 @@
 package com.noteweave.conversation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
@@ -13,6 +14,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.BusinessException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,6 +36,7 @@ class ContextV2ActiveAnswerContractTest {
     @Autowired ObjectMapper mapper;
     @Autowired JdbcTemplate jdbc;
     @SpyBean ConversationContextCompilerV2Service compiler;
+    @Autowired ContextV2ShadowSnapshotService frozenSnapshots;
 
     @Test
     void qaNoteAndWikiConsumeTheProjectionFrozenBeforeGeneration() throws Exception {
@@ -133,6 +138,27 @@ class ContextV2ActiveAnswerContractTest {
         assertThat(jdbc.queryForObject("""
                 select replay_availability from run_input_snapshot where answer_run_id = ?
                 """, String.class, activeRun)).isEqualTo("METADATA_ONLY");
+    }
+
+    @Test
+    void malformedProjectionWithMatchingDigestIsRejectedAsCorrupt() throws Exception {
+        String workspace = workspace();
+        data(put("/api/v2/workspaces/{workspaceId}/context-v2-rollout", workspace)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsBytes(Map.of("mode", "ACTIVE"))));
+        String conversation = conversation(workspace, "corrupt");
+        JsonNode receipt = submit(conversation, "问题", "QA");
+        String invalidJson = "{}";
+        String digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                .digest(invalidJson.getBytes(StandardCharsets.UTF_8)));
+        jdbc.update("""
+                update context_v2_shadow_snapshot
+                set projection_json = ?, projection_sha256 = ? where answer_run_id = ?
+                """, invalidJson, digest, receipt.path("answer_run_id").asText());
+        assertThatThrownBy(() -> frozenSnapshots.readReadyForAnswer(workspace, conversation,
+                receipt.path("message_id").asText()))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("CONTEXT_V2_SNAPSHOT_CORRUPT"));
     }
 
     private String workspace() throws Exception {

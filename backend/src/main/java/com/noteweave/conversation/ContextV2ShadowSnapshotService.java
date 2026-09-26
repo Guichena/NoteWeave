@@ -134,7 +134,7 @@ public class ContextV2ShadowSnapshotService {
             return new FrozenAnswer(row.id(), row.sha256(), projection);
         } catch (BusinessException ex) {
             throw ex;
-        } catch (JsonProcessingException ex) {
+        } catch (JsonProcessingException | IllegalArgumentException ex) {
             throw new BusinessException("CONTEXT_V2_SNAPSHOT_CORRUPT",
                     "冻结的 Context v2 无法读取", HttpStatus.CONFLICT);
         }
