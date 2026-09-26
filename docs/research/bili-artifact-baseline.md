@@ -405,3 +405,9 @@ V123 给 `artifact_video_material_bundle` 增加互斥来源：保留旧 `artifa
 Worker 现识别独立的 `video-material-command.v1`，凭 Host 冻结的父请求输入复用已发布 B站 Skill 的字幕、抽帧和观察采集能力。`MATERIAL_ONLY` 分支在 Provider 等待和恢复后只构建 Bundle 与本地证据 Plan，不生成 PDF、Candidate 或 Artifact Version。Bundle/Plan 经父请求专用 Host 回调分别冻结，最后以任务类型 HMAC 和投递令牌完成 READY。内容门禁返回 409 时先尝试把当前有效投递终止为 FAILED；旧令牌重放仍由 Host 拒绝。系统 Provider 失败也分流至父请求的失败事务，非法 Provider 错误码收敛为固定码。等待恢复路径按资料任务完成，避免误走旧 Artifact Job 的发布回调。
 
 Worker 定向 `test_video_material_task.py test_artifact_kafka_consumer.py test_callback.py` **41 passed**；Worker 全量 `pytest -q` **360 passed，38.30 秒**。Host `ArtifactWorkerControlServiceTest` **4 passed，0 failed/0 error/0 skipped**。`git diff --check` 通过。以上为模拟 Provider 响应与 H2/本地合同，未进行真实 B站跨进程采集和第三方凭据调用；父请求子 Job 协调与 UI 尚未实现，功能开关保持默认关闭。
+
+## P6 READY 后子 Job 对账补建
+
+新增父请求选择协调器：逐项锁定 READY 父请求及其未链接选择，复核原创建者当前 Workspace 权限、父请求原冻结的 Bundle/Plan 摘要和采集策略，再沿用 Artifact Job 创建事务写入独立 Job、Run 输入快照、Task 与 Outbox，并在同一事务链接选择。失败回滚该选项；再次扫描只补缺项，不重建已链接的 Job。后台扫描默认可处理已经接受的请求，即使新请求入口后来关闭；测试配置关闭定时扫描以便确定性故障测试。创建时的 Memory 控制包和 Context v2 影子快照显式使用已复核的原创建者，不依赖后台线程的当前登录用户。三个派生产物的受控输入补上分集、抽帧密度和 ASR 策略，以便非默认策略的子 Job 与冻结资料包对账；Worker 接受旧目录摘要下的默认策略排队 Run，拒绝把旧摘要冒充新策略。
+
+首次 `VideoLearningRequestRepositoryContractTest` **7 passed**；追加两个子项的权限撤销、摘要损坏和恢复补建后复跑 **7 passed，0 failed/0 error/0 skipped**。联跑 `ArtifactContextV2ShadowSnapshotContractTest` 共 **9 passed**。Worker 目录与采集定向测试 **15 passed**；更新目录后的 Worker 全量 **361 passed，38.30 秒**。首次联跑 Maven 命令在 PowerShell 中未给带逗号的 `-Dtest` 参数加引号，**命令解析失败、未启动测试**；加引号后上述 9 项通过。`git diff --check` 通过。当前仍缺四选 UI、父请求完整跨进程联调、实际文件预览与灰度验收；入口开关仍默认关闭。

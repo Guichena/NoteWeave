@@ -8,7 +8,8 @@ from app.artifact_skill_catalog import CATALOG_DIGEST, list_artifact_skill_defin
 from app.main import _to_public_input_schema
 from app.registry import PRODUCTION_ACTIONS
 from app.models import ArtifactTaskInput
-from app.runner import run_artifact_task
+from app.runner import (PRE_VIDEO_POLICY_CATALOG_DIGEST,
+                        _require_published_catalog, run_artifact_task)
 import pytest
 
 
@@ -66,6 +67,22 @@ def test_worker_rejects_run_frozen_against_another_catalog_before_execution() ->
     })
     with pytest.raises(ValueError, match="catalog digest"):
         run_artifact_task(task)
+
+
+def test_queued_run_from_prior_catalog_keeps_default_video_policy() -> None:
+    task = ArtifactTaskInput.model_validate({
+        "task_id": "legacy-video-run", "workspace_id": "workspace", "target_id": "target",
+        "input_snapshot_id": "snapshot", "catalog_digest": PRE_VIDEO_POLICY_CATALOG_DIGEST,
+        "control_pack": {"pack_type": "artifact", "target_key": "knowledge_blog",
+                         "task_neighborhood": "ARTIFACT_SKILL_KNOWLEDGE_BLOG"},
+        "input_payload": {"skill_key": "knowledge_blog", "inputs": {
+            "url": "https://www.bilibili.com/video/BV1234567890",
+            "video_material_bundle_id": "bundle-1"}},
+    })
+    _require_published_catalog(task)
+    task.input_payload.inputs["frame_density"] = "HIGH"
+    with pytest.raises(ValueError, match="legacy catalog"):
+        _require_published_catalog(task)
 
 
 @pytest.mark.parametrize("mutation", [

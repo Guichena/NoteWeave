@@ -326,7 +326,10 @@
         "properties": {
           "url": { "type": "string" },
           "language": { "type": "string", "default": "zh-CN", "enum": ["zh-CN", "en", "zh-EN"] },
-          "video_material_bundle_id": { "type": "string" }
+          "video_material_bundle_id": { "type": "string" },
+          "part": { "type": "string" },
+          "frame_density": { "type": "string", "default": "STANDARD", "enum": ["LOW", "STANDARD", "HIGH"] },
+          "asr_fallback": { "type": "string", "default": "ALLOW", "enum": ["ALLOW", "DENY"] }
         },
         "required": ["url", "video_material_bundle_id"]
       },
@@ -347,7 +350,10 @@
         "properties": {
           "url": { "type": "string" },
           "language": { "type": "string", "default": "zh-CN", "enum": ["zh-CN", "en", "zh-EN"] },
-          "video_material_bundle_id": { "type": "string" }
+          "video_material_bundle_id": { "type": "string" },
+          "part": { "type": "string" },
+          "frame_density": { "type": "string", "default": "STANDARD", "enum": ["LOW", "STANDARD", "HIGH"] },
+          "asr_fallback": { "type": "string", "default": "ALLOW", "enum": ["ALLOW", "DENY"] }
         },
         "required": ["url", "video_material_bundle_id"]
       },
@@ -368,7 +374,10 @@
         "properties": {
           "url": { "type": "string" },
           "language": { "type": "string", "default": "zh-CN", "enum": ["zh-CN", "en", "zh-EN"] },
-          "video_material_bundle_id": { "type": "string" }
+          "video_material_bundle_id": { "type": "string" },
+          "part": { "type": "string" },
+          "frame_density": { "type": "string", "default": "STANDARD", "enum": ["LOW", "STANDARD", "HIGH"] },
+          "asr_fallback": { "type": "string", "default": "ALLOW", "enum": ["ALLOW", "DENY"] }
         },
         "required": ["url", "video_material_bundle_id"]
       },

@@ -58,10 +58,20 @@ PHASE_SEQUENCE = [
     ("EXPORTING", 100, "artifact draft exported"),
 ]
 
+# The prior published catalog omitted explicit acquisition policy on the three
+# derived video Skills. Its queued Runs retain this digest and default policy.
+PRE_VIDEO_POLICY_CATALOG_DIGEST = "8a7ad34dd197854251c65a234f1915e0b44fe9621d2d1caa4581b9eb3ca2eec8"
+
 
 def _require_published_catalog(task_input: ArtifactTaskInput) -> None:
-    if task_input.catalog_digest and task_input.catalog_digest != CATALOG_DIGEST:
+    if task_input.catalog_digest and task_input.catalog_digest not in {
+            CATALOG_DIGEST, PRE_VIDEO_POLICY_CATALOG_DIGEST}:
         raise ValueError("artifact Skill catalog digest does not match the frozen Run")
+    if task_input.catalog_digest == PRE_VIDEO_POLICY_CATALOG_DIGEST:
+        inputs = task_input.input_payload.inputs
+        if inputs.get("frame_density", "STANDARD") != "STANDARD" \
+                or inputs.get("asr_fallback", "ALLOW") != "ALLOW":
+            raise ValueError("legacy catalog Run cannot declare a new acquisition policy")
 
 
 def run_artifact_task(task_input: ArtifactTaskInput) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:

@@ -80,6 +80,20 @@ public class ArtifactJobService {
 
     @Transactional
     public ArtifactJobResponse createJob(String workspaceId, CreateArtifactJobRequest request) {
+        return createJobInternal(workspaceId, request, null);
+    }
+
+    /** Called only after the parent coordinator rechecks its frozen actor's current ACL. */
+    ArtifactJobResponse createJobForVerifiedActor(String workspaceId,
+            CreateArtifactJobRequest request, String actorUserId) {
+        if (actorUserId == null || actorUserId.isBlank()) {
+            throw new IllegalArgumentException("Verified Artifact actor is required");
+        }
+        return createJobInternal(workspaceId, request, actorUserId);
+    }
+
+    private ArtifactJobResponse createJobInternal(String workspaceId,
+            CreateArtifactJobRequest request, String actorUserId) {
         requireWorkspace(workspaceId);
         ArtifactSkillDefinition skill = artifactSkillCatalogService.resolveSkill(request.skillKey());
         String artifactJobId = Ids.newId();
@@ -104,7 +118,10 @@ public class ArtifactJobService {
                 "QUEUED",
                 "右侧产物 Skill 任务已创建"
         );
-        MemoryControlPackResponse controlPack = memoryCompilerService.compileArtifactControlPack(workspaceId, skillKey);
+        MemoryControlPackResponse controlPack = actorUserId == null
+                ? memoryCompilerService.compileArtifactControlPack(workspaceId, skillKey)
+                : memoryCompilerService.compileArtifactControlPackForActor(
+                        workspaceId, skillKey, actorUserId);
         artifactJobWriteRepository.persistInitialJob(
                 artifactJobId,
                 workspaceId,
@@ -128,7 +145,12 @@ public class ArtifactJobService {
                 )),
                 artifactSkillCatalogService.catalogDigest()
         );
-        contextV2ShadowSnapshots.freeze(workspaceId, taskId, userRequirement, skillKey);
+        if (actorUserId == null) {
+            contextV2ShadowSnapshots.freeze(workspaceId, taskId, userRequirement, skillKey);
+        } else {
+            contextV2ShadowSnapshots.freezeForActor(
+                    workspaceId, taskId, userRequirement, skillKey, actorUserId);
+        }
         memoryCompilerService.logPackUsage(
                 workspaceId,
                 "ARTIFACT",

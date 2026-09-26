@@ -39,6 +39,15 @@ public class ArtifactContextV2ShadowSnapshotService {
 
     public void freeze(String workspaceId, String taskId, String requirement, String skillKey) {
         if (!rollout.shadowEnabled(workspaceId)) return;
+        freezeForActor(workspaceId, taskId, requirement, skillKey, users.requireUserId());
+    }
+
+    void freezeForActor(String workspaceId, String taskId, String requirement,
+                        String skillKey, String actorUserId) {
+        if (!rollout.shadowEnabled(workspaceId)) return;
+        if (actorUserId == null || actorUserId.isBlank()) {
+            throw new IllegalArgumentException("Artifact actor is required");
+        }
         String inputSnapshotId = jdbc.query("""
                 select r.input_snapshot_id from artifact_job_run r
                 join artifact_run_input_snapshot s on s.id = r.input_snapshot_id
@@ -48,7 +57,7 @@ public class ArtifactContextV2ShadowSnapshotService {
         if (inputSnapshotId == null) {
             throw new IllegalStateException("Artifact Run input snapshot is missing or changed");
         }
-        ContextProjectionV2 projection = compiler.compile(workspaceId, users.requireUserId(),
+        ContextProjectionV2 projection = compiler.compile(workspaceId, actorUserId,
                 "", 0, requirement, "ARTIFACT:" + skillKey, SHADOW_BUDGET);
         for (ContextProjectionV2.MemoryRevision memory : projection.memoryRevisions()) {
             List<String> valid = jdbc.query("""

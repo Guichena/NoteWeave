@@ -30,6 +30,7 @@ class VideoLearningRequestRepositoryContractTest {
     @Autowired VideoLearningRequestRepository requests;
     @Autowired ArtifactVideoMaterialService videoMaterials;
     @Autowired VideoMaterialTaskService materialTasks;
+    @Autowired VideoLearningChildCoordinator childCoordinator;
 
     @Test
     void freezesOneToFourChoicesAndReplaysOnlyIdenticalRequest() throws Exception {
@@ -190,7 +191,7 @@ class VideoLearningRequestRepositoryContractTest {
     void materialOnlyTaskFreezesBundleWithoutPdfJob() throws Exception {
         String workspaceId = workspace();
         var parent = requests.createOrReplay(workspaceId, "local-user", "client-material",
-                draft(List.of("knowledge_blog")));
+                draft(List.of("knowledge_blog", "interview_qa")));
         String taskId = tasks.createTask(workspaceId, "VIDEO_MATERIAL",
                 "VIDEO_LEARNING_REQUEST", parent.requestId(), "QUEUED", "素材采集已创建");
         requests.attachMaterialTask(workspaceId, parent.requestId(), taskId);
@@ -276,8 +277,52 @@ class VideoLearningRequestRepositoryContractTest {
                 String.class, taskId)).isEqualTo("SENT");
         assertThat(requests.view(workspaceId, parent.requestId()).materialState()).isEqualTo("READY");
         assertThat(requests.missingChoices(workspaceId, parent.requestId()))
-                .containsExactly("knowledge_blog");
+                .containsExactly("interview_qa", "knowledge_blog");
+        var choice = new VideoLearningChildCoordinator.ChoiceKey(
+                workspaceId, parent.requestId(), "knowledge_blog");
+        jdbc.update("update workspace_member set status = 'SUSPENDED' where workspace_id = ? and user_id = ?",
+                workspaceId, "local-user");
+        assertThatThrownBy(() -> childCoordinator.reconcileChoice(choice))
+                .hasMessageContaining("权限");
+        assertThat(jdbc.queryForObject("select count(*) from artifact_job where workspace_id = ?",
+                Integer.class, workspaceId)).isZero();
+        jdbc.update("update workspace_member set status = 'ACTIVE' where workspace_id = ? and user_id = ?",
+                workspaceId, "local-user");
+        assertThat(childCoordinator.missingChoices(50)).contains(choice);
+        assertThat(childCoordinator.reconcileChoice(choice)).isTrue();
+        assertThat(childCoordinator.reconcileChoice(choice)).isFalse();
+        var child = requests.view(workspaceId, parent.requestId()).choices().stream()
+                .filter(item -> "knowledge_blog".equals(item.skillKey())).findFirst().orElseThrow();
+        assertThat(child.artifactJobId()).isNotBlank();
+        assertThat(child.status()).isEqualTo("QUEUED");
+        assertThat(jdbc.queryForObject("select count(*) from artifact_job where workspace_id = ?",
+                Integer.class, workspaceId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select s.inputs_json from artifact_run_input_snapshot s "
+                + "join artifact_job_run r on r.input_snapshot_id = s.id where r.task_id = ?",
+                String.class, child.taskId())).contains(receipt.id());
+        var remaining = new VideoLearningChildCoordinator.ChoiceKey(
+                workspaceId, parent.requestId(), "interview_qa");
+        jdbc.update("update workspace_member set status = 'SUSPENDED' where workspace_id = ? and user_id = ?",
+                workspaceId, "local-user");
+        assertThatThrownBy(() -> childCoordinator.reconcileChoice(remaining))
+                .hasMessageContaining("权限");
+        assertThat(jdbc.queryForObject("select count(*) from artifact_job where workspace_id = ?",
+                Integer.class, workspaceId)).isEqualTo(1);
+        jdbc.update("update workspace_member set status = 'ACTIVE' where workspace_id = ? and user_id = ?",
+                workspaceId, "local-user");
+        jdbc.update("update video_learning_request set material_content_digest = ? where id = ?",
+                "0".repeat(64), parent.requestId());
+        assertThatThrownBy(() -> childCoordinator.reconcileChoice(remaining))
+                .hasMessageContaining("摘要");
+        assertThat(jdbc.queryForObject("select count(*) from artifact_job where workspace_id = ?",
+                Integer.class, workspaceId)).isEqualTo(1);
+        jdbc.update("update video_learning_request set material_content_digest = ? where id = ?",
+                receipt.contentDigest(), parent.requestId());
+        assertThat(childCoordinator.reconcileChoice(remaining)).isTrue();
+        assertThat(jdbc.queryForObject("select count(*) from artifact_job where workspace_id = ?",
+                Integer.class, workspaceId)).isEqualTo(2);
         requests.requestCancellation(workspaceId, parent.requestId(), "local-user");
+        assertThat(childCoordinator.reconcileChoice(remaining)).isFalse();
         assertThat(requests.view(workspaceId, parent.requestId()).materialState()).isEqualTo("READY");
         assertThatThrownBy(() -> videoMaterials.submitParentMaterial(taskId, submission))
                 .hasMessageContaining("Workspace");
