@@ -447,3 +447,9 @@ Host 从已发布 Skill Catalog 读取实际版本，新增 `noteweave.video-lea
 父请求的失败选择新增原发起者专用重试入口。事务锁定父请求/选择与失败 Job，重新核对创建者权限、父资料 Bundle/Plan 身份和摘要、最后一轮冻结输入的回放状态；创建同 Job 的新 `RETRY` Run、独立 Task、预留 Version ID、输入快照与 Outbox，保留旧失败 Run 和兄弟 Job。当前运行中的同一选择重试返回 409，不重复建 Run。前端只在父资料 READY 且该选择 FAILED、父请求未取消时显示“重试”。这条路径沿用已冻结 Bundle，不重新采集视频。
 
 Host `VideoLearningRequestRepositoryContractTest`、`ArtifactCandidateTest`、`ArtifactRollbackGateTest` 联跑 **15 passed，0 failed/0 error/0 skipped**，Maven BUILD SUCCESS（55.072 秒）；前端 API/面板定向 **10 passed**，`pnpm build` 通过。合同包含非原发起者拒绝、冻结输入复用、双击冲突、兄弟 Outbox 保持 READY 和重试再次失败后取消的状态。真实 Worker 跨进程重试仍待 P6 联调。
+
+## C3 Answer 消费冻结 Context v2
+
+新增独立全局 `noteweave.context.v2.active-enabled` 门禁（默认关闭）和 Workspace `ACTIVE` 模式；QA、NOTE、WIKI 在生成前读取已冻结的 READY 投影，使用所选原文、主题摘要及用户约束组装检索问题，把用户约束送入回答控制段。Memory 控制包仍按独立域编译，不并入来源引用。Run 输入快照记录 v2 快照 ID、摘要、所选引用及预算；落库前重读持久化 JSON 并核对摘要。编译 FAILED 时回退 v1，记录失败码；Workspace 关回 OFF 后，新 Run 使用 v1，已冻结 Run 保留。删除被引用的消息后，影子投影变为无正文的 REDACTED，Run 回放降为 METADATA_ONLY。
+
+首次新合同 **1 failed**，原因是测试错误地假定无 Source 的 QA 会在助手正文回显输入；实际 QA 返回资料不足。改为核对组装结果与 Run 冻结身份后，新合同 **3 passed**。一次从 `backend` 目录直接调用 Maven 因根目录 `.mvn/settings.xml` 未找到而未执行测试；改为根目录 `-f backend/pom.xml`。随后 `ContextV2ActiveAnswerContractTest`、`ConversationRetrievalContextAssemblerV2Test`、`ContextV2ShadowSnapshotContractTest`、`ConversationTurnModuleContractTest` 联跑 **47 passed，0 failed/0 error/0 skipped**，Maven BUILD SUCCESS（1:13）。再加 ACTIVE→OFF 与删除传播合同，`ContextV2ActiveAnswerContractTest` **3 passed，0 failed/0 error/0 skipped**。这批只切换 Answer；Research 和 Artifact 尚未消费 v2，C4 真实用户正确率与生产灰度也未完成。

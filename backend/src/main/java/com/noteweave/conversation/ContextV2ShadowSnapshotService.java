@@ -95,6 +95,51 @@ public class ContextV2ShadowSnapshotService {
         }
     }
 
+    /** Read the exact projection frozen before generation when this Workspace consumes v2. */
+    public FrozenAnswer readReadyForAnswer(String workspaceId, String conversationId,
+                                           String queryMessageId) {
+        if (!rollout.activeEnabled(workspaceId)) return null;
+        List<FrozenRow> rows = jdbc.query("""
+                select s.id, s.status, s.projection_json, s.projection_sha256,
+                       s.cutoff_seq, t.actor_user_id
+                from context_v2_shadow_snapshot s
+                join turn_submission t on t.answer_run_id = s.answer_run_id
+                where s.workspace_id = ? and s.conversation_id = ?
+                  and s.query_message_id = ?
+                """, (rs, index) -> new FrozenRow(rs.getString(1), rs.getString(2),
+                rs.getString(3), rs.getString(4), rs.getInt(5), rs.getString(6)),
+                workspaceId, conversationId, queryMessageId);
+        if (rows.isEmpty() || "FAILED".equals(rows.get(0).status())) return null;
+        if (rows.size() != 1 || !"READY".equals(rows.get(0).status())) {
+            throw new BusinessException("CONTEXT_V2_SNAPSHOT_UNAVAILABLE",
+                    "冻结的 Context v2 已失效", HttpStatus.CONFLICT);
+        }
+        FrozenRow row = rows.get(0);
+        if (row.json() == null || !sha256(row.json()).equals(row.sha256())) {
+            throw new BusinessException("CONTEXT_V2_SNAPSHOT_CORRUPT",
+                    "冻结的 Context v2 摘要不匹配", HttpStatus.CONFLICT);
+        }
+        try {
+            ContextProjectionV2 projection = mapper.readValue(row.json(), ContextProjectionV2.class);
+            if (!workspaceId.equals(projection.workspaceId())
+                    || !conversationId.equals(projection.conversationId())
+                    || !row.actorId().equals(projection.actorId())
+                    || row.cutoffSeq() != projection.cutoffSeq()
+                    || !"FULL".equals(projection.replayAvailability())
+                    || projection.rawTail().stream().noneMatch(message ->
+                    queryMessageId.equals(message.messageId()))) {
+                throw new BusinessException("CONTEXT_V2_SNAPSHOT_CORRUPT",
+                        "冻结的 Context v2 身份不匹配", HttpStatus.CONFLICT);
+            }
+            return new FrozenAnswer(row.id(), row.sha256(), projection);
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (JsonProcessingException ex) {
+            throw new BusinessException("CONTEXT_V2_SNAPSHOT_CORRUPT",
+                    "冻结的 Context v2 无法读取", HttpStatus.CONFLICT);
+        }
+    }
+
     @Transactional
     public void recordFailure(String workspaceId, String conversationId,
                               String queryMessageId, String answerRunId, String failureCode) {
@@ -168,4 +213,8 @@ public class ContextV2ShadowSnapshotService {
 
     private record Ref(String type, String id) {}
     private record Snapshot(String id, String json) {}
+    private record FrozenRow(String id, String status, String json, String sha256,
+                             int cutoffSeq, String actorId) {}
+    public record FrozenAnswer(String snapshotId, String projectionSha256,
+                               ContextProjectionV2 projection) {}
 }
