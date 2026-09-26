@@ -154,7 +154,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
                         skill.displayName(),
                         buildDescription(skill.skillKey()),
                         "ACTIVE",
-                        skill.inputSchema(),
+                        publicInputSchema(skill.inputSchema()),
                         buildDefaultInputHints(skill.skillKey())
                 ))
                 .toList();
@@ -204,6 +204,15 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         LinkedHashMap<String, Object> properties = new LinkedHashMap<>();
         rawProperties.forEach((key, value) -> properties.put(String.valueOf(key), value));
         return properties;
+    }
+
+    private Map<String, Object> publicInputSchema(Map<String, Object> inputSchema) {
+        LinkedHashMap<String, Object> properties = new LinkedHashMap<>(readSchemaProperties(inputSchema));
+        properties.remove("video_url");
+        properties.remove("bilibili_url");
+        LinkedHashMap<String, Object> publicSchema = new LinkedHashMap<>(inputSchema);
+        publicSchema.put("properties", Map.copyOf(properties));
+        return Map.copyOf(publicSchema);
     }
 
     private List<String> readRequiredInputKeys(Map<String, Object> inputSchema) {
