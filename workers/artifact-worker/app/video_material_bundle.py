@@ -15,6 +15,14 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 BVID = re.compile(r"^BV[0-9A-Za-z]{10}$")
 
 
+def frozen_video_input_digest(input_snapshot_id: str, inputs: dict[str, object]) -> str:
+    """Bind material to Host's immutable Run input snapshot and normalized inputs."""
+    if not input_snapshot_id:
+        raise ValueError("video material requires a frozen input snapshot")
+    canonical = json.dumps(inputs, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(f"{input_snapshot_id}:{canonical}".encode("utf-8")).hexdigest()
+
+
 class BundleRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

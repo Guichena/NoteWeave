@@ -16,6 +16,7 @@ class ArtifactWorkerInputControllerTest {
     void productionMustRejectUnfencedInputEvenWhenDiagnosticFlagIsEnabled() {
         ArtifactWorkerInputController controller = new ArtifactWorkerInputController(
                 mock(ArtifactJobService.class),
+                mock(ArtifactVideoMaterialService.class),
                 mock(DurableOutboxDispatcher.class),
                 "production",
                 true
@@ -32,6 +33,7 @@ class ArtifactWorkerInputControllerTest {
         DurableOutboxDispatcher dispatcher = mock(DurableOutboxDispatcher.class);
         ArtifactWorkerInputController controller = new ArtifactWorkerInputController(
                 jobService,
+                mock(ArtifactVideoMaterialService.class),
                 dispatcher,
                 "development",
                 false
@@ -54,6 +56,7 @@ class ArtifactWorkerInputControllerTest {
         DurableOutboxDispatcher dispatcher = mock(DurableOutboxDispatcher.class);
         ArtifactWorkerInputController controller = new ArtifactWorkerInputController(
                 jobService,
+                mock(ArtifactVideoMaterialService.class),
                 dispatcher,
                 "development",
                 false
@@ -75,12 +78,37 @@ class ArtifactWorkerInputControllerTest {
         ArtifactJobService jobService = mock(ArtifactJobService.class);
         DurableOutboxDispatcher dispatcher = mock(DurableOutboxDispatcher.class);
         ArtifactWorkerInputController controller = new ArtifactWorkerInputController(
-                jobService, dispatcher, "production", false);
+                jobService, mock(ArtifactVideoMaterialService.class), dispatcher, "production", false);
 
         assertThatThrownBy(() -> controller.getSourceWindows(
                 "task-1", "source-1", "snapshot-1", "", 16, 65536, "stale-token"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("does not own the active outbox delivery");
         org.mockito.Mockito.verifyNoInteractions(jobService);
+    }
+
+    @Test
+    void videoMaterialReadAndWriteRequireActiveDelivery() {
+        ArtifactVideoMaterialService materials = mock(ArtifactVideoMaterialService.class);
+        DurableOutboxDispatcher dispatcher = mock(DurableOutboxDispatcher.class);
+        ArtifactWorkerInputController controller = new ArtifactWorkerInputController(
+                mock(ArtifactJobService.class), materials, dispatcher, "production", false);
+        ArtifactVideoMaterialService.Submission submission =
+                new ArtifactVideoMaterialService.Submission(java.util.Map.of(), "digest");
+
+        assertThatThrownBy(() -> controller.submitVideoMaterial("task-1", submission, "stale-token"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("does not own the active outbox delivery");
+        assertThatThrownBy(() -> controller.getVideoMaterial("task-1", "stale-token"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("does not own the active outbox delivery");
+        org.mockito.Mockito.verifyNoInteractions(materials);
+
+        when(dispatcher.renewTaskMessage("noteweave.artifact.job", "task-1", "delivery-1",
+                OutboxDispatchPolicy.ARTIFACT_LEASE_DURATION)).thenReturn(true);
+        controller.submitVideoMaterial("task-1", submission, "delivery-1");
+        controller.getVideoMaterial("task-1", "delivery-1");
+        verify(materials).submit("task-1", submission);
+        verify(materials).read("task-1");
     }
 }

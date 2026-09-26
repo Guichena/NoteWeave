@@ -5173,6 +5173,109 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
     }
 
     @Test
+    void subtitleMaterialBundleIsFrozenToVideoTaskAndIdempotent() throws Exception {
+        String workspaceId = createWorkspace();
+        MvcResult created = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "bilibili_course_note_pdf",
+                                "user_requirement", "freeze subtitle evidence",
+                                "inputs", Map.of("url", "https://www.bilibili.com/video/BV1234567890?p=2")))))
+                .andExpect(status().isOk()).andReturn();
+        String taskId = objectMapper.readTree(created.getResponse().getContentAsString())
+                .path("data").path("task_id").asText();
+        String inputSnapshotId = jdbcTemplate.queryForObject(
+                "select input_snapshot_id from artifact_job_run where task_id = ?",
+                String.class, taskId);
+        String frozenInputsJson = jdbcTemplate.queryForObject(
+                "select inputs_json from artifact_run_input_snapshot where id = ?",
+                String.class, inputSnapshotId);
+        String canonicalInputs = new ObjectMapper()
+                .configure(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+                .writeValueAsString(objectMapper.readValue(frozenInputsJson, Map.class));
+        String inputDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest((inputSnapshotId + ":"
+                        + canonicalInputs)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        Map<String, Object> bundle = new LinkedHashMap<>(Map.ofEntries(
+                Map.entry("schema_version", "video-material-v1"),
+                Map.entry("bundle_id", "bundle-" + taskId),
+                Map.entry("bundle_version", 1),
+                Map.entry("workspace_id", workspaceId),
+                Map.entry("bvid", "BV1234567890"),
+                Map.entry("part", 2),
+                Map.entry("duration_ms", 5000),
+                Map.entry("input_digest", inputDigest),
+                Map.entry("subtitle_source", "MANUAL"),
+                Map.entry("transcript_original", "原文"),
+                Map.entry("transcript_corrected", "纠错稿"),
+                Map.entry("transcript_segments", List.of(Map.of(
+                        "segment_id", "seg-1", "part", 2, "start_ms", 0, "end_ms", 2000,
+                        "original_text", "原文", "corrected_text", "纠错稿"))),
+                Map.entry("frames", List.of()),
+                Map.entry("knowledge_nodes", List.of()),
+                Map.entry("files", List.of()),
+                Map.entry("coverage_gaps", List.of("NO_FRAMES"))));
+        String digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest(new ObjectMapper()
+                        .configure(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+                        .writeValueAsBytes(bundle)));
+        Map<String, Object> submission = Map.of("bundle", bundle, "content_digest", digest);
+        String path = "/internal/worker/artifact-tasks/{taskId}/video-material";
+        MvcResult first = mockMvc.perform(post(path, taskId).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(submission)))
+                .andExpect(status().isOk()).andReturn();
+        String id = objectMapper.readTree(first.getResponse().getContentAsString())
+                .path("data").path("id").asText();
+        mockMvc.perform(post(path, taskId).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(submission)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.id").value(id));
+        mockMvc.perform(get(path, taskId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.part").value(2))
+                .andExpect(jsonPath("$.data.transcript_corrected").value("纠错稿"));
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from artifact_video_material_bundle where task_id = ?",
+                Integer.class, taskId)).isEqualTo(1);
+        Map<String, Object> wrongPart = new LinkedHashMap<>(bundle);
+        wrongPart.put("part", 1);
+        mockMvc.perform(post(path, taskId).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "bundle", wrongPart, "content_digest", digest))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VIDEO_MATERIAL_INVALID"));
+        Map<String, Object> wrongInput = new LinkedHashMap<>(bundle);
+        wrongInput.put("input_digest", "a".repeat(64));
+        String wrongInputDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest(new ObjectMapper()
+                        .configure(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+                        .writeValueAsBytes(wrongInput)));
+        mockMvc.perform(post(path, taskId).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "bundle", wrongInput, "content_digest", wrongInputDigest))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VIDEO_MATERIAL_INVALID"));
+        Map<String, Object> otherWorkspace = new LinkedHashMap<>(bundle);
+        otherWorkspace.put("workspace_id", "another-workspace");
+        mockMvc.perform(post(path, taskId).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "bundle", otherWorkspace, "content_digest", digest))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VIDEO_MATERIAL_INVALID"));
+        Map<String, Object> conflicting = new LinkedHashMap<>(bundle);
+        conflicting.put("bundle_id", "other-bundle");
+        String conflictingDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest(new ObjectMapper()
+                        .configure(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+                        .writeValueAsBytes(conflicting)));
+        mockMvc.perform(post(path, taskId).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "bundle", conflicting, "content_digest", conflictingDigest))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VIDEO_MATERIAL_CONFLICT"));
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     void candidateManifestPublishesMultiplePreviewFilesIndependently() throws Exception {
         String workspaceId = createWorkspace();

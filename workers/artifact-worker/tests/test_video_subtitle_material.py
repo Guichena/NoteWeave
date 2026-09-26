@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from app.video_subtitle_material import parse_srt_segments, subtitle_only_bundle
+from app.video_material_bundle import frozen_video_input_digest
 from app.content_runtime import _build_text_from_acquisition_payload
 from app.acquisition_runtime import _extract_provider_payload_text
 
@@ -15,6 +16,16 @@ cache yizhi
 00:00:03,000 --> 00:00:04,750
 write ordering
 """
+
+
+def test_frozen_video_input_digest_uses_snapshot_and_canonical_inputs() -> None:
+    inputs = {"url": "https://www.bilibili.com/video/BV1234567890?p=2", "language": "zh-CN"}
+    digest = frozen_video_input_digest("snapshot-1", inputs)
+    assert digest == frozen_video_input_digest("snapshot-1", dict(reversed(list(inputs.items()))))
+    assert digest != frozen_video_input_digest("snapshot-2", inputs)
+    assert digest != frozen_video_input_digest("snapshot-1", {**inputs, "language": "en"})
+    with pytest.raises(ValueError, match="frozen input snapshot"):
+        frozen_video_input_digest("", inputs)
 
 
 def _bundle(**changes):

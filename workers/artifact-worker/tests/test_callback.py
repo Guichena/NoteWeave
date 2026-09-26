@@ -24,6 +24,7 @@ from app.capability_provider import (
 from app.capability_wait_queue import clear_waiting_tasks, get_waiting_task
 from app.models import ArtifactProgressEvent, ArtifactTaskInput, ArtifactTaskResult
 from app.runner import run_artifact_task
+from app.video_subtitle_material import subtitle_only_bundle
 
 
 def _build_resume_task_input() -> ArtifactTaskInput:
@@ -151,6 +152,50 @@ class FakeCallbackClient:
                 "error_message": error_message,
             }
         )
+
+
+def test_video_material_client_publishes_and_reads_frozen_bundle(monkeypatch) -> None:
+    bundle = subtitle_only_bundle(
+        bundle_id="bundle-1", bundle_version=1, workspace_id="ws-1",
+        bvid="BV1234567890", part=2, duration_ms=5000,
+        input_digest="a" * 64, subtitle_source="MANUAL",
+        srt_text="1\n00:00:00,000 --> 00:00:02,000\noriginal",
+    )
+    requests = []
+
+    class FakeResponse:
+        def __init__(self, data):
+            self.data = data
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def read(self):
+            return json.dumps({"success": True, "data": self.data}).encode("utf-8")
+
+    def fake_urlopen(req, timeout):
+        requests.append(req)
+        if req.get_method() == "GET":
+            return FakeResponse(bundle.model_dump(mode="json"))
+        return FakeResponse({
+            "id": "material-1", "task_id": "task-1", "workspace_id": "ws-1",
+            "bundle_id": bundle.bundle_id, "bundle_version": 1,
+            "content_digest": bundle.content_digest(),
+        })
+
+    monkeypatch.setattr(callback_module, "credential_safe_urlopen", fake_urlopen)
+    client = JavaArtifactCallbackClient("http://java-host:8081", delivery_token="delivery-1")
+    receipt = client.publish_video_material("task-1", bundle)
+    assert receipt["id"] == "material-1"
+    assert client.fetch_video_material("task-1") == bundle
+    assert [req.get_method() for req in requests] == ["POST", "GET"]
+    assert all("/artifact-tasks/task-1/video-material" in req.full_url for req in requests)
+    assert all(req.get_header("X-noteweave-outbox-delivery-token") == "delivery-1"
+               for req in requests)
+    assert json.loads(requests[0].data)["content_digest"] == bundle.content_digest()
 
 
 def test_java_artifact_callback_client_should_send_internal_auth_token(monkeypatch) -> None:

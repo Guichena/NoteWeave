@@ -24,6 +24,7 @@ from app.capability_wait_queue import (
     wake_waiting_task,
 )
 from app.models import ArtifactProgressEvent, ArtifactTaskInput, ArtifactTaskResult
+from app.video_material_bundle import VideoMaterialBundleV1
 from app.material_resolver import select_frozen_windows
 from app.runner import run_artifact_task
 from app.system_mcp_executor import submit_system_mcp_acquisition_operation
@@ -128,6 +129,25 @@ class JavaArtifactCallbackClient:
             if cursor:
                 source.source_metadata["material_scan_next_cursor"] = cursor
         return task_input
+
+    def publish_video_material(self, task_id: str, bundle: VideoMaterialBundleV1) -> dict[str, object]:
+        digest = bundle.content_digest()
+        receipt = _unwrap_api_response(self._request(
+            "POST", f"/internal/worker/artifact-tasks/{quote(task_id, safe='')}/video-material",
+            {"bundle": bundle.model_dump(mode="json"), "content_digest": digest},
+        ))
+        if (receipt.get("task_id") != task_id or receipt.get("bundle_id") != bundle.bundle_id
+                or receipt.get("workspace_id") != bundle.workspace_id
+                or receipt.get("bundle_version") != bundle.bundle_version
+                or receipt.get("content_digest") != digest):
+            raise ValueError("Host video material receipt does not match the submitted bundle")
+        return receipt
+
+    def fetch_video_material(self, task_id: str) -> VideoMaterialBundleV1:
+        material = _unwrap_api_response(self._request(
+            "GET", f"/internal/worker/artifact-tasks/{quote(task_id, safe='')}/video-material"
+        ))
+        return VideoMaterialBundleV1.model_validate(material)
 
     def send_progress(self, task_id: str, event: ArtifactProgressEvent) -> None:
         payload = event.model_dump(mode="json")
