@@ -192,6 +192,50 @@ class ContextV2ResearchContractTest {
     }
 
     @Test
+    void sourceCatalogHidesRevokedResearchReportEvenWhenCatalogWasCached() throws Exception {
+        String workspace = workspace();
+        active(workspace);
+        String conversation = conversation(workspace);
+        JsonNode receipt = submit(conversation, "仅限本轮研究的内容", "DEEP_RESEARCH");
+        String runId = receipt.path("research_run_id").asText();
+        String sourceId = Ids.newId();
+        String fileId = Ids.newId();
+        jdbc.update("""
+                insert into file_object(id, workspace_id, object_key, sha256, file_size, mime_type)
+                values (?, ?, ?, ?, 1, 'text/markdown')
+                """, fileId, workspace, "test/research/" + sourceId, "0".repeat(64));
+        jdbc.update("""
+                insert into source(id, workspace_id, file_object_id, title, source_type,
+                                   status, parse_status, index_status, generated_by, generated_ref_id)
+                values (?, ?, ?, 'Frozen report', 'GENERATED_RESEARCH_REPORT',
+                        'READY', 'PARSED', 'INDEXED', 'research_agent', ?)
+                """, sourceId, workspace, fileId, runId);
+        jdbc.update("update workspace set source_catalog_version = source_catalog_version + 1 where id = ?",
+                workspace);
+        assertThat(data(get("/api/v2/workspaces/{workspaceId}/sources", workspace)).toString())
+                .contains(sourceId);
+
+        String originalSnapshot = jdbc.queryForObject("""
+                select snapshot_json from run_input_snapshot where research_run_id = ?
+                """, String.class, runId);
+        JsonNode damaged = mapper.readTree(originalSnapshot);
+        ((com.fasterxml.jackson.databind.node.ObjectNode) damaged)
+                .put("context_v2_projection_sha256", "0".repeat(64));
+        jdbc.update("update run_input_snapshot set snapshot_json = ? where research_run_id = ?",
+                mapper.writeValueAsString(damaged), runId);
+        mvc.perform(get("/api/v2/workspaces/{workspaceId}/sources", workspace))
+                .andExpect(status().isConflict());
+        jdbc.update("update run_input_snapshot set snapshot_json = ? where research_run_id = ?",
+                originalSnapshot, runId);
+
+        mvc.perform(delete("/api/v2/workspaces/{workspaceId}/conversations/{conversationId}/messages/{messageId}",
+                workspace, conversation, receipt.path("message_id").asText()))
+                .andExpect(status().isOk());
+        assertThat(data(get("/api/v2/workspaces/{workspaceId}/sources", workspace)).toString())
+                .doesNotContain(sourceId, "Frozen report");
+    }
+
+    @Test
     void checkpointResumeCopiesTheSameFrozenProjectionWithANewRunIdentity() throws Exception {
         String workspace = workspace();
         active(workspace);

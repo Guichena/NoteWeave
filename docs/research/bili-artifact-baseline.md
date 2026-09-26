@@ -501,3 +501,7 @@ V126 为 Artifact 的已冻结 Context 投影增加按 Run 固定的 `consumptio
 ## C3 Research 列表的损坏快照门禁
 
 Research 列表仍由 SQL 排除已降为 `METADATA_ONLY` 的 v2 Run；对余下带 v2 快照 ID 的行，在报告摘要装配前重新验证冻结投影、SHA-256 与执行问题。损坏快照现在让列表返回冲突，避免只在详情/Worker 入口阻断。v1 行不额外触发 v2 编译。`ContextV2ResearchContractTest` **6 passed**、`ResearchRunListQueryCountTest` **3 passed**，合计 **9 passed，0 failed/0 error/0 skipped**；Maven 退出码 0。此门禁仍未覆盖已派生 Source 的所有通用检索入口。
+
+## C3 派生 Research Source 目录读取门禁
+
+通用 Source 目录现在对 `research_agent` 派生条目按原 Research Run 校验冻结 Context；已降为 `METADATA_ONLY` 的 v2 来源从目录过滤，即使目录本身曾被缓存也会逐次应用可见性规则。其他来源与没有 v2 快照的历史 Research 条目保持兼容；损坏或缺失的 v2 来源不会被当成可读记录。集成合同先列出派生条目，破坏投影摘要后确认目录冲突，恢复摘要，再删除原问题并复读相同目录，验证条目消失。`ContextV2ResearchContractTest` **7 passed**、`SourceServiceCacheTest` **3 passed**，共 **10 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。此批只覆盖通用目录，未覆盖 Source 正文、文件、通用检索及派生 Wiki 的所有读取路径。

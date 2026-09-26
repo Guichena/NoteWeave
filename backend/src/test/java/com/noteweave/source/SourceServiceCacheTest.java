@@ -2,6 +2,7 @@ package com.noteweave.source;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -43,6 +44,8 @@ class SourceServiceCacheTest {
         cache = mock(SourceCatalogCache.class);
         wikiCommandPort = mock(SourceWikiCommandPort.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
+        var researchGate = mock(com.noteweave.research.ResearchGeneratedSourceReadGate.class);
+        when(researchGate.visible(anyString(), anyString(), anyString())).thenReturn(true);
         service = new SourceService(
                 jdbcTemplate,
                 mock(WorkspaceAccessGuard.class),
@@ -53,7 +56,8 @@ class SourceServiceCacheTest {
                 new SimpleMeterRegistry(),
                 mock(com.noteweave.task.TaskCommandPort.class),
                 eventPublisher,
-                mock(com.noteweave.conversation.RunReplayRedactionService.class));
+                mock(com.noteweave.conversation.RunReplayRedactionService.class),
+                researchGate);
     }
 
     @Test

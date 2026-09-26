@@ -2,6 +2,7 @@ package com.noteweave.source;
 
 import com.noteweave.common.BusinessException;
 import com.noteweave.conversation.RunReplayRedactionService;
+import com.noteweave.research.ResearchGeneratedSourceReadGate;
 import com.noteweave.security.WorkspaceAccessGuard;
 import com.noteweave.security.WorkspacePermission;
 import com.noteweave.security.AuditActorProvider;
@@ -30,6 +31,7 @@ public class SourceService {
     private final TaskCommandPort taskCommandPort;
     private final ApplicationEventPublisher eventPublisher;
     private final RunReplayRedactionService runReplayRedactionService;
+    private final ResearchGeneratedSourceReadGate researchGeneratedSourceReadGate;
 
     public SourceService(
             JdbcTemplate jdbcTemplate,
@@ -41,7 +43,8 @@ public class SourceService {
             MeterRegistry meterRegistry,
             TaskCommandPort taskCommandPort,
             ApplicationEventPublisher eventPublisher,
-            RunReplayRedactionService runReplayRedactionService
+            RunReplayRedactionService runReplayRedactionService,
+            ResearchGeneratedSourceReadGate researchGeneratedSourceReadGate
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.workspaceAccessGuard = workspaceAccessGuard;
@@ -53,13 +56,17 @@ public class SourceService {
         this.taskCommandPort = taskCommandPort;
         this.eventPublisher = eventPublisher;
         this.runReplayRedactionService = runReplayRedactionService;
+        this.researchGeneratedSourceReadGate = researchGeneratedSourceReadGate;
     }
 
     public List<SourceResponse> listSources(String workspaceId) {
         workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.WORKSPACE_READ);
         long catalogVersion = sourceCatalogVersionService.current(workspaceId);
         return sourceCatalogCache.get(workspaceId, catalogVersion)
-                .orElseGet(() -> loadSources(workspaceId, catalogVersion));
+                .orElseGet(() -> loadSources(workspaceId, catalogVersion)).stream()
+                .filter(source -> researchGeneratedSourceReadGate.visible(
+                        workspaceId, source.generatedBy(), source.generatedRefId()))
+                .toList();
     }
 
     private List<SourceResponse> loadSources(String workspaceId, long catalogVersion) {
