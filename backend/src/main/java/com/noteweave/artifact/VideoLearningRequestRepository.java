@@ -22,9 +22,10 @@ public class VideoLearningRequestRepository {
     }
 
     @Transactional
-    public ParentReceipt createOrReplay(String workspaceId, String clientRequestId,
+    public ParentReceipt createOrReplay(String workspaceId, String actorId, String clientRequestId,
                                         VideoLearningRequestDraft draft) {
-        if (clientRequestId == null || clientRequestId.isBlank()
+        if (actorId == null || actorId.isBlank()
+                || clientRequestId == null || clientRequestId.isBlank()
                 || clientRequestId.length() > 120 || draft == null) {
             throw invalid("request identity is missing");
         }
@@ -33,21 +34,23 @@ public class VideoLearningRequestRepository {
         try {
             jdbc.update("""
                     insert into video_learning_request(
-                        id, workspace_id, client_request_id, request_digest, video_url,
+                        id, workspace_id, actor_user_id, client_request_id, request_digest, video_url,
                         part_no, language, frame_density, asr_fallback, template_version,
                         user_requirement, material_state)
-                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'QUEUED')
-                    """, id, workspaceId, clientRequestId, digest, draft.videoUrl(),
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'QUEUED')
+                    """, id, workspaceId, actorId, clientRequestId, digest, draft.videoUrl(),
                     draft.part(), draft.language(), draft.frameDensity(), draft.asrFallback(),
                     draft.templateVersion(), draft.userRequirement());
         } catch (DuplicateKeyException conflict) {
             List<ParentReceipt> existing = jdbc.query("""
-                    select id, request_digest, material_state from video_learning_request
+                    select id, actor_user_id, request_digest, material_state from video_learning_request
                     where workspace_id = ? and client_request_id = ?
                     """, (rs, index) -> new ParentReceipt(rs.getString("id"),
-                    rs.getString("request_digest"), rs.getString("material_state"), true),
+                    rs.getString("actor_user_id"), rs.getString("request_digest"),
+                    rs.getString("material_state"), true),
                     workspaceId, clientRequestId);
-            if (existing.size() != 1 || !digest.equals(existing.get(0).requestDigest())) {
+            if (existing.size() != 1 || !actorId.equals(existing.get(0).actorId())
+                    || !digest.equals(existing.get(0).requestDigest())) {
                 throw new BusinessException("VIDEO_LEARNING_REQUEST_CONFLICT",
                         "同一请求 ID 已用于不同的视频学习选择", HttpStatus.CONFLICT);
             }
@@ -59,7 +62,7 @@ public class VideoLearningRequestRepository {
                     values (?, ?)
                     """, id, skill);
         }
-        return new ParentReceipt(id, digest, "QUEUED", false);
+        return new ParentReceipt(id, actorId, digest, "QUEUED", false);
     }
 
     @Transactional
@@ -110,6 +113,26 @@ public class VideoLearningRequestRepository {
                 """, (rs, index) -> rs.getString(1), requestId, workspaceId);
     }
 
+    /** Background coordination must recheck the original actor's current ACL. */
+    public String requireActorMayOperate(String workspaceId, String requestId) {
+        List<String> actors = jdbc.query("""
+                select r.actor_user_id from video_learning_request r
+                join workspace w on w.id = r.workspace_id
+                join users u on u.id = r.actor_user_id
+                join workspace_member m on m.workspace_id = r.workspace_id
+                    and m.user_id = r.actor_user_id
+                where r.id = ? and r.workspace_id = ? and r.material_state = 'READY'
+                  and r.cancellation_requested = false
+                  and w.status = 'ACTIVE' and u.status = 'ACTIVE'
+                  and m.status = 'ACTIVE' and m.role in ('OWNER', 'EDITOR')
+                """, (rs, index) -> rs.getString(1), requestId, workspaceId);
+        if (actors.size() != 1) {
+            throw new BusinessException("VIDEO_LEARNING_ACTOR_REVOKED",
+                    "请求发起者已失去工作台产物执行权限", HttpStatus.FORBIDDEN);
+        }
+        return actors.get(0);
+    }
+
     @Transactional
     public void attachChild(String workspaceId, String requestId, String skillKey,
                             String artifactJobId) {
@@ -135,7 +158,7 @@ public class VideoLearningRequestRepository {
         return new BusinessException("VIDEO_LEARNING_STATE_INVALID", detail, HttpStatus.CONFLICT);
     }
 
-    public record ParentReceipt(String requestId, String requestDigest,
+    public record ParentReceipt(String requestId, String actorId, String requestDigest,
                                 String materialState, boolean replayed) {}
     private record ParentInput(String videoUrl, int part, String frameDensity,
                                String asrFallback) {}

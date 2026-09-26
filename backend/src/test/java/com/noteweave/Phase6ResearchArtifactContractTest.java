@@ -5824,7 +5824,7 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
                 videoMaterialService.submitKnowledgePlan(taskId, submission);
         assertThat(videoMaterialService.submitKnowledgePlan(taskId, submission).id()).isEqualTo(frozen.id());
         assertThat(videoMaterialService.readKnowledgePlan(taskId, receipt.id())).isEqualTo(plan);
-        var parentRequest = videoLearningRequests.createOrReplay(workspaceId,
+        var parentRequest = videoLearningRequests.createOrReplay(workspaceId, "local-user",
                 "observed-material-parent-" + taskId, new VideoLearningRequestDraft(
                         "https://www.bilibili.com/video/BV1234567890?p=2", 2, "en",
                         "STANDARD", "ALLOW", "original-v1", "Derive both materials",
@@ -5837,9 +5837,25 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
                 """, parentRequest.requestId());
         assertThat(parentMaterial.get("material_content_digest")).isEqualTo(digest);
         assertThat(parentMaterial.get("knowledge_plan_content_digest")).isEqualTo(planDigest);
+        assertThat(videoLearningRequests.requireActorMayOperate(workspaceId, parentRequest.requestId()))
+                .isEqualTo("local-user");
+        jdbcTemplate.update("""
+                update workspace_member set status = 'SUSPENDED'
+                where workspace_id = ? and user_id = 'local-user'
+                """, workspaceId);
+        try {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                    videoLearningRequests.requireActorMayOperate(workspaceId, parentRequest.requestId()))
+                    .hasMessageContaining("权限");
+        } finally {
+            jdbcTemplate.update("""
+                    update workspace_member set status = 'ACTIVE'
+                    where workspace_id = ? and user_id = 'local-user'
+                    """, workspaceId);
+        }
         assertThat(videoLearningRequests.missingChoices(workspaceId, parentRequest.requestId()))
                 .containsExactly("interview_qa", "knowledge_blog");
-        var wrongDensity = videoLearningRequests.createOrReplay(workspaceId,
+        var wrongDensity = videoLearningRequests.createOrReplay(workspaceId, "local-user",
                 "wrong-density-" + taskId, new VideoLearningRequestDraft(
                         "https://www.bilibili.com/video/BV1234567890?p=2", 2, "en",
                         "HIGH", "ALLOW", "original-v1", "different capture policy",
@@ -5848,7 +5864,7 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
                         videoLearningRequests.markMaterialReady(workspaceId, wrongDensity.requestId(),
                                 receipt.id(), frozen.id()))
                 .hasMessageContaining("Workspace");
-        var wrongPart = videoLearningRequests.createOrReplay(workspaceId,
+        var wrongPart = videoLearningRequests.createOrReplay(workspaceId, "local-user",
                 "wrong-part-" + taskId, new VideoLearningRequestDraft(
                         "https://www.bilibili.com/video/BV1234567890", 1, "en",
                         "STANDARD", "ALLOW", "original-v1", "different part",
@@ -5857,7 +5873,7 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
                         videoLearningRequests.markMaterialReady(workspaceId, wrongPart.requestId(),
                                 receipt.id(), frozen.id()))
                 .hasMessageContaining("Workspace");
-        var corruptedPlan = videoLearningRequests.createOrReplay(workspaceId,
+        var corruptedPlan = videoLearningRequests.createOrReplay(workspaceId, "local-user",
                 "corrupt-plan-" + taskId, new VideoLearningRequestDraft(
                         "https://www.bilibili.com/video/BV1234567890?p=2", 2, "en",
                         "STANDARD", "ALLOW", "original-v1", "same acquisition",

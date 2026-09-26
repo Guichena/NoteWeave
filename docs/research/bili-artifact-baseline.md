@@ -367,3 +367,7 @@ V120 新增 `video_learning_request` 和 `video_learning_request_choice`：父�
 ## P6 父请求的素材 READY 门禁
 
 V121 为父请求增加 Bundle 和 KnowledgePlan 内容摘要。READY 转移现在锁定父请求，并核对同 Workspace 的 Bundle/Plan 关联、BVID、分集、冻结采集密度与 ASR 策略，重新读取并核对两份入库 JSON 的 SHA-256，再用 Host 的知识计划验证器复核证据引用。通过后在同一事务中固定两个 ID 与摘要。已冻结的合成 OCR 素材可使父请求 READY，并把博客、问答分别关联到独立 Job；采集密度、分集不符或 Plan 摘要篡改均被拒。H2 Flyway 应用至 V121；`VideoLearningRequestRepositoryContractTest` **3 passed**，`Phase6ResearchArtifactContractTest#observedVideoMaterialBindsOcrEvidenceToFrozenFrameBytes` **1 passed**（含 READY、两子 Job、三类拒绝）。素材 Task 派发与父子自动协调仍未接入，入口未开放。
+
+## P6 父请求执行者身份冻结
+
+V122 在父请求记录创建者 User ID；同一客户端请求 ID 的重放还需匹配原创建者。为后台协调预备的读取边界会在子 Job 调度前重新检查 Workspace、用户及成员状态，并要求当前角色为 OWNER 或 EDITOR。测试中先以 `local-user` 创建并 READY，随后将该成员置为 SUSPENDED，读取立即拒绝；恢复 ACTIVE 后仍可关联两项独立产物。`VideoLearningRequestRepositoryContractTest` **3 passed**，合成 OCR 素材的 `Phase6ResearchArtifactContractTest#observedVideoMaterialBindsOcrEvidenceToFrozenFrameBytes` **1 passed**；Flyway 已应用到 V122。后台协调器尚未调用这条门禁，不能把它当成完整 ACL 恢复保障。

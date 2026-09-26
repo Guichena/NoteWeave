@@ -32,8 +32,8 @@ class VideoLearningRequestRepositoryContractTest {
     void freezesOneToFourChoicesAndReplaysOnlyIdenticalRequest() throws Exception {
         String workspaceId = workspace();
         VideoLearningRequestDraft draft = draft(List.of("interview_qa", "knowledge_blog"));
-        var first = requests.createOrReplay(workspaceId, "client-1", draft);
-        var replay = requests.createOrReplay(workspaceId, "client-1",
+        var first = requests.createOrReplay(workspaceId, "local-user", "client-1", draft);
+        var replay = requests.createOrReplay(workspaceId, "local-user", "client-1",
                 draft(List.of("knowledge_blog", "interview_qa")));
         assertThat(first.replayed()).isFalse();
         assertThat(replay.replayed()).isTrue();
@@ -47,7 +47,7 @@ class VideoLearningRequestRepositoryContractTest {
         assertThatThrownBy(() -> requests.markMaterialReady(workspaceId, first.requestId(),
                 "missing-bundle", "missing-plan"))
                 .hasMessageContaining("Workspace");
-        assertThatThrownBy(() -> requests.createOrReplay(workspaceId, "client-1",
+        assertThatThrownBy(() -> requests.createOrReplay(workspaceId, "local-user", "client-1",
                 draft(List.of("video_learning_deck"))))
                 .hasMessageContaining("不同");
         assertThat(jdbc.queryForObject("""
@@ -59,7 +59,8 @@ class VideoLearningRequestRepositoryContractTest {
     void materialTaskCanBeAttachedOnceAndCannotLeakAcrossWorkspaces() throws Exception {
         String workspaceId = workspace();
         String otherWorkspace = workspace();
-        var receipt = requests.createOrReplay(workspaceId, "client-task", draft(List.of("knowledge_blog")));
+        var receipt = requests.createOrReplay(workspaceId, "local-user", "client-task",
+                draft(List.of("knowledge_blog")));
         String taskId = tasks.createTask(workspaceId, "VIDEO_MATERIAL",
                 "VIDEO_LEARNING_REQUEST", receipt.requestId(), "QUEUED", "素材采集已创建");
         assertThatThrownBy(() -> requests.attachMaterialTask(otherWorkspace,
