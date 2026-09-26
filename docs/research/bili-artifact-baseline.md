@@ -541,3 +541,7 @@ Version 详情、PDF/文件下载、回滚、保存为 Source 与知识库写回
 ## C3 派生 Research Source 的 Wiki 当前版本读取门禁
 
 Wiki 当前版本的列表、搜索、相关页和详情，按当前引用的 Source ID 批量复核可读性；详情即使命中页面内容缓存也重新验证来源。混合来源页面只要有一项撤销就不返回，相关页的 5 条限制在过滤后执行。`KnowledgeQueryServiceTest` 增加缓存命中后撤销的回归合同；首次编译因 Spring JDBC `query` 回调重载不明确而失败，指定 `RowCallbackHandler` 后复跑通过。最终联跑 `KnowledgeQueryServiceTest` **7**、`ContextV2ResearchContractTest` **7**，共 **14 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。独立的历史 Wiki Version 服务、Wiki 首页索引统计和既有答案引用仍未覆盖；本合同的 Wiki 来源可读性为模拟门禁，真实 Research Run 门禁由 Research 合同覆盖。
+
+## C3 历史 Knowledge Version 引用门禁
+
+将引用来源的 Workspace/Version 查询抽为共用门禁。Knowledge 历史版本列表在展示摘要前过滤撤销引用，历史详情在返回正文及 Citation 前再校验；当前版本继续复用该门禁。新增合同使旧版本正文仍留存于数据库但对撤销后的读取不可见。联跑 `KnowledgeQueryServiceTest` **7**、`KnowledgeVersionServiceTest` **4**、`KnowledgeGovernanceServiceTest` **6**、`KnowledgeCommandServiceTest` **4**、`ContextV2ResearchContractTest` **7**，共 **28 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。版本引用查询仍依赖已持久化 Citation；无引用的手工版本保持可读。

@@ -1,19 +1,14 @@
 package com.noteweave.knowledge;
 
 import com.noteweave.common.BusinessException;
-import com.noteweave.research.ResearchGeneratedSourceReadGate;
 import com.noteweave.workspace.WorkspaceQueryPort;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import io.micrometer.core.instrument.MeterRegistry;
-import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -26,7 +21,7 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
     private final KnowledgeGovernanceService knowledgeGovernanceService;
     private final WikiPageVersionCache wikiPageVersionCache;
     private final MeterRegistry meterRegistry;
-    private final ResearchGeneratedSourceReadGate generatedSourceGate;
+    private final KnowledgeCitationReadGate citationReadGate;
 
     public KnowledgeQueryService(
             JdbcTemplate jdbcTemplate,
@@ -35,7 +30,7 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
             KnowledgeGovernanceService knowledgeGovernanceService,
             WikiPageVersionCache wikiPageVersionCache,
             MeterRegistry meterRegistry,
-            ResearchGeneratedSourceReadGate generatedSourceGate
+            KnowledgeCitationReadGate citationReadGate
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.wikiSearchEngine = wikiSearchEngine;
@@ -43,7 +38,7 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
         this.knowledgeGovernanceService = knowledgeGovernanceService;
         this.wikiPageVersionCache = wikiPageVersionCache;
         this.meterRegistry = meterRegistry;
-        this.generatedSourceGate = generatedSourceGate;
+        this.citationReadGate = citationReadGate;
     }
 
     public WikiHomeResponse getWikiHome(String workspaceId) {
@@ -190,7 +185,7 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
                         item.workspaceId(), item.itemId(), item.latestVersionId())
                         .orElseGet(() -> loadVersionSnapshot(item, true))
                 : loadVersionSnapshot(item, false);
-        requireVersionCitationsReadable(item.workspaceId(), snapshot.versionId());
+        citationReadGate.requireReadable(item.workspaceId(), snapshot.versionId());
         return new KnowledgeItemDetailResponse(
                 item.itemId(),
                 item.itemType(),
@@ -301,7 +296,7 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
 
     public List<KnowledgePageHit> findRelevantWikiPages(String workspaceId, String query) {
         List<KnowledgePageHit> pages = wikiSearchEngine.findRelevantPages(workspaceId, query);
-        Set<String> readable = readableVersionIds(workspaceId,
+        Set<String> readable = citationReadGate.readableVersionIds(workspaceId,
                 pages.stream().map(KnowledgePageHit::versionId).toList());
         return pages.stream().filter(page -> readable.contains(page.versionId()))
                 .limit(5).toList();
@@ -334,46 +329,9 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
     }
 
     private List<WikiSearchRow> readableWikiRows(String workspaceId, List<WikiSearchRow> rows) {
-        Set<String> readable = readableVersionIds(workspaceId,
+        Set<String> readable = citationReadGate.readableVersionIds(workspaceId,
                 rows.stream().map(WikiSearchRow::versionId).toList());
         return rows.stream().filter(row -> readable.contains(row.versionId())).toList();
-    }
-
-    private void requireVersionCitationsReadable(String workspaceId, String versionId) {
-        if (!readableVersionIds(workspaceId, List.of(versionId)).contains(versionId)) {
-            throw new BusinessException("KNOWLEDGE_SOURCE_REVOKED",
-                    "知识版本引用的资料已撤销", HttpStatus.CONFLICT);
-        }
-    }
-
-    private Set<String> readableVersionIds(String workspaceId, List<String> versionIds) {
-        List<String> ids = versionIds.stream().distinct().toList();
-        if (ids.isEmpty()) return Set.of();
-        Map<String, Set<String>> sourcesByVersion = new LinkedHashMap<>();
-        List<Object> parameters = new java.util.ArrayList<>();
-        parameters.add(workspaceId);
-        parameters.addAll(ids);
-        jdbcTemplate.query("""
-                select kvc.knowledge_version_id, c.source_id
-                from knowledge_version_citation kvc
-                join knowledge_version v on v.id = kvc.knowledge_version_id
-                join knowledge_item i on i.id = v.item_id
-                join citation c on c.id = kvc.citation_id
-                where i.workspace_id = ? and kvc.knowledge_version_id in (%s)
-                """.formatted(String.join(",", java.util.Collections.nCopies(ids.size(), "?"))),
-                (org.springframework.jdbc.core.RowCallbackHandler) rs ->
-                        sourcesByVersion.computeIfAbsent(rs.getString(1), ignored -> new LinkedHashSet<>())
-                                .add(rs.getString(2)), parameters.toArray());
-        List<String> sourceIds = sourcesByVersion.values().stream().flatMap(Set::stream)
-                .filter(id -> id != null && !id.isBlank()).distinct().toList();
-        Set<String> readableSources = generatedSourceGate.readableSourceIds(workspaceId, sourceIds);
-        LinkedHashSet<String> readableVersions = new LinkedHashSet<>();
-        for (String versionId : ids) {
-            if (readableSources.containsAll(sourcesByVersion.getOrDefault(versionId, Set.of()))) {
-                readableVersions.add(versionId);
-            }
-        }
-        return Set.copyOf(readableVersions);
     }
 
     private List<KnowledgeCitationResponse> citationsForVersion(String versionId) {

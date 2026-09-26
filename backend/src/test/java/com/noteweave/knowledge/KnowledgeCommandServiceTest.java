@@ -6,8 +6,10 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.noteweave.security.AuditActorProvider;
+import com.noteweave.research.ResearchGeneratedSourceReadGate;
 import com.noteweave.workspace.WorkspaceQueryPort;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -34,8 +36,13 @@ class KnowledgeCommandServiceTest {
         when(actorProvider.currentOrSystem("KNOWLEDGE")).thenReturn("actor");
         KnowledgeWikiMutationService mutationService =
                 new KnowledgeWikiMutationService(jdbcTemplate);
+        ResearchGeneratedSourceReadGate sourceGate = mock(ResearchGeneratedSourceReadGate.class);
+        when(sourceGate.readableSourceIds(org.mockito.ArgumentMatchers.eq("workspace"),
+                org.mockito.ArgumentMatchers.anyList()))
+                .thenAnswer(invocation -> Set.copyOf(invocation.getArgument(1)));
         KnowledgeVersionService versionService = new KnowledgeVersionService(
-                jdbcTemplate, actorProvider, mutationService);
+                jdbcTemplate, actorProvider, mutationService,
+                new KnowledgeCitationReadGate(jdbcTemplate, sourceGate));
         commandService = new KnowledgeCommandService(
                 jdbcTemplate,
                 workspaceQueryPort,

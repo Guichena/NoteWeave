@@ -65,7 +65,8 @@ class KnowledgeQueryServiceTest {
                 workspaceQueryPort,
                 governanceService,
                 pageVersionCache,
-                new SimpleMeterRegistry(), generatedSourceGate);
+                new SimpleMeterRegistry(),
+                new KnowledgeCitationReadGate(jdbcTemplate, generatedSourceGate));
     }
 
     @AfterEach
