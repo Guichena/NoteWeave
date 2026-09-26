@@ -263,6 +263,12 @@ public class ArtifactVideoMaterialService {
             throw new BusinessException("VIDEO_MATERIAL_REFERENCE_INVALID",
                     "Candidate video material reference does not match the frozen bundle", HttpStatus.CONFLICT);
         }
+        if (!(resultPayload.get("content_ir") instanceof Map<?, ?>)
+                || !(candidate instanceof Map<?, ?> bound)
+                || !(bound.get("content_ir_digest") instanceof String)) {
+            throw new BusinessException("ARTIFACT_CONTENT_IR_REQUIRED",
+                    "Frozen video material requires typed content IR", HttpStatus.CONFLICT);
+        }
     }
 
     private void validateBundle(ArtifactJobTaskRow run, Map<String, Object> bundle) {

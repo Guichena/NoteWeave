@@ -85,3 +85,7 @@ Worker 在内容/引用验证通过后，将产物类型、标题、章节、引
 `V114__artifact_video_material_file.sql` 将画面文件元数据与用户产物 `artifact_file` 分开。Host 对收到的 Bundle 校验画面 File ID、格式、摘要、大小、分集、时间位置、去重引用、知识节点引用及显式覆盖缺口；从 Worker 受控导出接口读取 PNG/JPEG，实际解码并核对字节后写到独立的 `artifacts/video-material/` 前缀。文件与 Bundle 元数据同一数据库事务发布，回滚时清理已写对象；同内容重试返回原 Bundle 回执。读取文件仍需当前 Outbox 投递令牌，且再次核对存储摘要。
 
 合成画面的 Host 契约测试覆盖成功冻结、重复提交、跨分集/时间引用拒绝、事务回滚后对象清理和文件读回。`Phase6ResearchArtifactContractTest` **48 个用例，40 执行通过、8 个既有跳过**；`ArtifactWorkerInputControllerTest` **5 passed**。随后增加独立前缀的 24 小时老化对象巡检：只删除没有 `artifact_video_material_file` 引用的旧画面对象，跳过已提交、近期和其他前缀的对象；`ArtifactVideoMaterialCleanupTest` **1 passed**，同批 Artifact 回归仍为 **48 个用例，40 执行通过、8 个既有跳过**、控制器 **5 passed**。尚未接入真实视频画面采集、视觉分析和 PDF 画面输入；这些不能算 P2 完成。
+
+## P1/P2 冻结视频素材的 IR 必填门禁
+
+Worker 已在内容校验后产生 `artifact-content-v1`；Host 原先只在回调携带它时验证。现在已冻结视频素材的 Candidate 必须同时携带 IR 与其摘要：缺失会在发布 Version 前拒绝，格式及内容一致性仍走 `ArtifactContentIr` 校验。历史无素材包回调继续兼容。定向合成回放覆盖缺 IR 拒绝、完整 IR 发布，`Phase6ResearchArtifactContractTest` **48 个用例，40 执行通过、8 个既有跳过**；`ArtifactCandidateTest` **5 passed**；孤儿文件回归 **1 passed**。这尚未将 IR 对所有新 Skill Run 设为必填。

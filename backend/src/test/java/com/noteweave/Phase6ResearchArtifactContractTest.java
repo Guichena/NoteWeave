@@ -5310,6 +5310,28 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
                 "bundle_id", bundle.get("bundle_id"), "bundle_version", 1,
                 "content_digest", digest));
         mockMvc.perform(post(completionPath, taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "material-missing-ir:" + taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(completion)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ARTIFACT_CONTENT_IR_REQUIRED"));
+        String markdownDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest(markdown.getBytes(StandardCharsets.UTF_8)));
+        List<Map<String, Object>> sections = List.of(Map.of("heading", "Notes",
+                "body", "Frozen subtitle notes", "source_refs", List.of()));
+        Map<String, Object> ir = new LinkedHashMap<>(Map.of(
+                "schema_version", "artifact-content-v1", "artifact_type", "BILIBILI_COURSE_NOTE_PDF",
+                "title", "Frozen subtitle notes", "sections", sections,
+                "markdown_sha256", markdownDigest));
+        String irDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest(new ObjectMapper()
+                        .configure(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+                        .writeValueAsBytes(ir)));
+        ir.put("content_digest", irDigest);
+        candidate.put("content_ir_digest", irDigest);
+        payload.put("sections", sections);
+        payload.put("content_ir", ir);
+        mockMvc.perform(post(completionPath, taskId)
                         .header("X-NoteWeave-Idempotency-Key", "material-valid-ref:" + taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(completion)))
