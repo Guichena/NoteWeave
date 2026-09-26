@@ -357,3 +357,9 @@ Host `ArtifactContextV2ShadowSnapshotContractTest` **2 passed**（含影子关�
 ## P2/P3 跨语言素材复用修正
 
 核对 Worker 的视频采集与资料包模型后，`language` 只控制输出文章、问答、PPTX 或 PDF 的呈现，不控制字幕和画面采集。Host 原来把它当作素材身份的一部分，导致中文 PDF 冻结的 Bundle 无法供英文独立产物复用。复用校验现排除输出语言，继续核对 BVID、分集、Workspace、采集策略及 Bundle 摘要。原契约中“不同语言必拒绝”的断言与实际数据边界冲突，已改为验证英文 PDF 和英文博客复用同一冻结 Bundle。`Phase6ResearchArtifactContractTest#subtitleMaterialBundleIsFrozenToVideoTaskAndIdempotent` **1 passed**。这只消除错误拒绝；英文内容质量与四选入口仍待验收。
+
+## P6 父请求身份与选择持久化底座
+
+V120 新增 `video_learning_request` 和 `video_learning_request_choice`：父请求冻结 Workspace、B站 URL/分集、输出语言、采集策略、模板版本、用户要求及 1–4 个明确选择；选项表对父请求与 Skill Key 唯一，子 Job 链接唯一。`VideoLearningRequestDraft` 规范化分集 URL，并按长度前缀对完整请求计算 SHA-256。仓储以 Workspace + 客户端请求 ID 幂等重放，同 ID 不同内容冲突；素材 Task 绑定与子 Job 绑定使用条件更新，素材未 READY 时不返回待创建子项。Flyway H2 迁移应用到 V120，`VideoLearningRequestRepositoryContractTest` **3 passed**，覆盖相同请求重放、选项去重、跨 Workspace 素材 Task 拒绝、无 Bundle/Plan 禁止 READY 及非法 URL/选择。
+
+这一批只有未对外开放的持久化底座。素材 Task 的 Worker Graph、Outbox、Bundle/Plan 就绪复核、父子协调器、取消和 UI 仍未实现；不能把它当成可创建的“四选”功能。下一批需要把父请求绑定的素材身份与采集策略对账后再开放 READY 转移。
