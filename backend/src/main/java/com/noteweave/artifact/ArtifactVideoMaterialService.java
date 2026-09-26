@@ -230,7 +230,8 @@ public class ArtifactVideoMaterialService {
         } catch (Exception ex) {
             throw scopeInvalid();
         }
-        if (!Set.of("bilibili_course_note_pdf", "knowledge_blog", "interview_qa")
+        if (!Set.of("bilibili_course_note_pdf", "knowledge_blog", "interview_qa",
+                "video_learning_deck")
                     .contains(run.skillKey())
                 || bundleRowId == null || bundleRowId.isBlank()
                 || !bundleRowId.equals(inputs.get("video_material_bundle_id"))) throw scopeInvalid();
@@ -479,6 +480,10 @@ public class ArtifactVideoMaterialService {
             VideoDerivedTextValidator.validate(run.skillKey(), resultPayload,
                     readBundleById(receipt.id()), plan, receipt.contentDigest(), digest(plan),
                     string(inputs.get("language")));
+        } else if ("video_learning_deck".equals(run.skillKey())) {
+            Map<String, Object> plan = readPlanByBundleId(receipt.id());
+            VideoDeckValidator.validate(resultPayload, readBundleById(receipt.id()), plan,
+                    receipt.contentDigest(), digest(plan));
         }
     }
 

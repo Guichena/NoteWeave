@@ -307,3 +307,9 @@ Host 集成回放创建两个独立 Job，引同一个 PDF Job 冻结的素材�
 新增 `video_learning_deck` 专用 Worker 入口，从 Host 冻结 Bundle/Plan 生成通用内容 IR、页清单和 Markdown；回调前按受控文件 ID 读取画面并与冻结摘要核对，渲染原图 PPTX 及逐页预览，最后把 Markdown、PPTX 与每页 PNG 的角色、序号、MIME、大小和摘要写入同一个 Candidate。清单在 Worker 侧打开 ZIP 和 PNG、检查每页对应的文件数与路径。若预览转换失败，不发送完成回调。这里的测试用合成 PDF/PNG 代替缺失的 LibreOffice，明确只覆盖 Candidate 组装；实际转换另由上一批的 PowerPoint 冒烟记录覆盖。
 
 定向 **7 passed，0.79 秒**；Worker 全套 **348 passed，33.42 秒**。Host 对页清单的专用验证、发布目录注册、真实视频与部署转换器验收仍待完成，因此这批尚未开放生产 Skill。
+
+## P4 Host 页清单与冻结证据复核
+
+新增 Host `VideoDeckValidator`，以 Host 已入库的 Bundle/Plan 重建每页的节点、时间、原画面文件 ID/SHA、已抽取主张、证据引用与缺口，并校验 Worker 页序、IR 摘要、Markdown、通用内容章节、导出回执和每页文件角色清单。受控引用读取允许 `video_learning_deck` 作为独立 Skill 使用相同冻结资料。Python 产生的跨语言固定 Candidate 在 Java 验证通过；伪造画面文件 ID 和删掉 PNG 预览均被拒绝。尚未校验 PPTX 内部逐页画面与预览 PNG 的语义对应，因此暂不注册生产 Skill。
+
+`VideoDeckValidatorTest` **1 passed**；`Phase6ResearchArtifactContractTest` **52 用例，44 执行通过、8 个既有跳过**；`ArtifactCandidateTest` **6 passed**；`ArtifactRollbackGateTest` **2 passed**。Host 编译通过。部署转换器和真实视频页预览仍未验收。

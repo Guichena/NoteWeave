@@ -1,0 +1,223 @@
+{
+  "bundle": {
+    "schema_version": "video-material-v1",
+    "bundle_id": "deck-bundle",
+    "bundle_version": 1,
+    "workspace_id": "workspace-1",
+    "bvid": "BV1234567890",
+    "part": 2,
+    "duration_ms": 10000,
+    "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "subtitle_source": "MANUAL",
+    "transcript_original": "cache consistency",
+    "transcript_corrected": "cache consistency",
+    "transcript_segments": [
+      {
+        "segment_id": "s1",
+        "part": 2,
+        "start_ms": 1000,
+        "end_ms": 4000,
+        "original_text": "cache consistency",
+        "corrected_text": "cache consistency"
+      }
+    ],
+    "frames": [
+      {
+        "frame_id": "f1",
+        "part": 2,
+        "at_ms": 2500,
+        "file_id": "file-1",
+        "checksum_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "dedupe_of": ""
+      }
+    ],
+    "knowledge_nodes": [
+      {
+        "node_id": "n1",
+        "title": "Frame evidence",
+        "start_ms": 1000,
+        "end_ms": 4000,
+        "transcript_segment_ids": [
+          "s1"
+        ],
+        "frame_ids": [
+          "f1"
+        ],
+        "missing": []
+      }
+    ],
+    "frame_observations": null,
+    "files": [
+      {
+        "file_id": "file-1",
+        "role": "VIDEO_FRAME",
+        "media_type": "image/png",
+        "size_bytes": 100,
+        "checksum_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    ],
+    "coverage_gaps": []
+  },
+  "plan": {
+    "schema_version": "video-knowledge-plan-v1",
+    "bundle_content_digest": "af9924160138381e912a1a7ed48c9df206fd774eea2bd633d585094bdfb5a9e1",
+    "bvid": "BV1234567890",
+    "part": 2,
+    "duration_ms": 10000,
+    "nodes": [
+      {
+        "node_id": "root",
+        "parent_id": "",
+        "kind": "TOPIC",
+        "title": "Cache",
+        "start_ms": 0,
+        "end_ms": 10000,
+        "transcript_segment_ids": [],
+        "frame_ids": [],
+        "terms": [],
+        "claims": [],
+        "missing": []
+      },
+      {
+        "node_id": "concept",
+        "parent_id": "root",
+        "kind": "CONCEPT",
+        "title": "Consistency",
+        "start_ms": 1000,
+        "end_ms": 4000,
+        "transcript_segment_ids": [
+          "s1"
+        ],
+        "frame_ids": [
+          "f1"
+        ],
+        "terms": [
+          "cache"
+        ],
+        "claims": [
+          {
+            "text": "cache consistency",
+            "status": "EXTRACTED",
+            "evidence_refs": [
+              "segment:s1"
+            ]
+          }
+        ],
+        "missing": []
+      }
+    ]
+  },
+  "bundle_digest": "af9924160138381e912a1a7ed48c9df206fd774eea2bd633d585094bdfb5a9e1",
+  "plan_digest": "139aa0966f49de970ea9ea603825369f0ddf9d860273172f8d9be2e88d99f254",
+  "payload": {
+    "markdown": "# Cache\n\n## 1. Consistency\n\n- Video: BV1234567890 P2 @ 2.5s\n- Original frame: f1 (bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb)\n- cache consistency\n- Evidence: segment:s1\n",
+    "sections": [
+      {
+        "heading": "Consistency",
+        "body": "cache consistency",
+        "source_refs": [
+          "segment:s1",
+          "frame:f1"
+        ]
+      }
+    ],
+    "video_deck_ir": {
+      "schema_version": "video-deck-ir-v1",
+      "bundle_content_digest": "af9924160138381e912a1a7ed48c9df206fd774eea2bd633d585094bdfb5a9e1",
+      "plan_content_digest": "139aa0966f49de970ea9ea603825369f0ddf9d860273172f8d9be2e88d99f254",
+      "bvid": "BV1234567890",
+      "part": 2,
+      "title": "Cache",
+      "slides": [
+        {
+          "sequence_no": 1,
+          "node_id": "concept",
+          "title": "Consistency",
+          "frame_id": "f1",
+          "file_id": "file-1",
+          "image_checksum_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "at_ms": 2500,
+          "part": 2,
+          "claims": [
+            "cache consistency"
+          ],
+          "evidence_refs": [
+            "segment:s1"
+          ],
+          "coverage_gaps": []
+        }
+      ],
+      "content_digest": "1263c2bf92d46de402f16a39ce65ecaf7ed35e0e1b22f7827839163b798e17aa"
+    },
+    "content_ir": {
+      "schema_version": "artifact-content-v1",
+      "artifact_type": "SLIDE_DECK",
+      "title": "Cache",
+      "sections": [
+        {
+          "heading": "Consistency",
+          "body": "cache consistency",
+          "source_refs": [
+            "segment:s1",
+            "frame:f1"
+          ]
+        }
+      ],
+      "markdown_sha256": "8b9b20620fad1b969df21cc4ad34923bd3bc9364e2d9699252a10399a860da88",
+      "content_digest": "03d681a10c8b4056285503c0cd46e7621cd044838027c2fdadf4c424bc65852e"
+    },
+    "verification": {
+      "status": "PASS",
+      "failed_checks": []
+    },
+    "export_trace": {
+      "status": "COMPILED",
+      "format": "PPTX",
+      "file_name": "learning-deck.pptx",
+      "preview_count": 1
+    },
+    "knowledge_plan": {
+      "schema_version": "video-knowledge-plan-v1",
+      "bundle_content_digest": "af9924160138381e912a1a7ed48c9df206fd774eea2bd633d585094bdfb5a9e1",
+      "content_digest": "139aa0966f49de970ea9ea603825369f0ddf9d860273172f8d9be2e88d99f254",
+      "mode": "FROZEN_PLAN"
+    },
+    "candidate": {
+      "candidate_id": "f9e10d32fc44e4cf11133105dff13e50f15d02c9df1473dcc754950c82546b82",
+      "task_id": "task-deck-fixture",
+      "input_snapshot_id": "snapshot-deck-fixture",
+      "catalog_digest": "b4a00c680a857f2696e9bdde1bc06d9f9f847456adb9f8bcc5f6f45303f16b94",
+      "content_sha256": "8b9b20620fad1b969df21cc4ad34923bd3bc9364e2d9699252a10399a860da88",
+      "content_ir_digest": "03d681a10c8b4056285503c0cd46e7621cd044838027c2fdadf4c424bc65852e",
+      "required_files": [
+        {
+          "role": "PRIMARY_MARKDOWN",
+          "variant": "",
+          "sequence_no": 0,
+          "file_name": "content.md",
+          "media_type": "text/markdown; charset=UTF-8",
+          "size_bytes": 191,
+          "checksum_sha256": "8b9b20620fad1b969df21cc4ad34923bd3bc9364e2d9699252a10399a860da88"
+        },
+        {
+          "role": "PRIMARY_PPTX",
+          "variant": "original",
+          "sequence_no": 0,
+          "file_name": "learning-deck.pptx",
+          "media_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          "size_bytes": 1234,
+          "checksum_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "role": "SLIDE_PREVIEW",
+          "variant": "original",
+          "sequence_no": 1,
+          "file_name": "slide-001.png",
+          "media_type": "image/png",
+          "size_bytes": 1234,
+          "checksum_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ]
+    }
+  }
+}
