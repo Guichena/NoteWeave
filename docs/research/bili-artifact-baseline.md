@@ -353,3 +353,7 @@ Worker 在 LibreOffice 将 PPTX 转成 PDF 后，使用 `pypdf` 逐页提取实�
 Worker 输入现在可选携带 `context_v2_shadow`，包括与当前 `input_snapshot_id` 绑定的影子快照 ID、完整投影 SHA-256、编译器版本、所选 Memory Revision ID 和回放可用性。Host 取出时重新计算投影摘要；篡改后拒绝提供 Worker 输入。关闭影子模式的旧 Run 返回空字段，Worker 继续使用 v1 `input_payload` 和控制包生成，影子字段仅供诊断，不替代生产 Context。Python 输入模型显式解析该字段。
 
 Host `ArtifactContextV2ShadowSnapshotContractTest` **2 passed**（含影子关闭、冻结身份和摘要篡改），`ArtifactWorkerInputControllerTest` **5 passed**。Worker 首轮新用例因夹具省略既有控制包必填字段而 **1 failed**；补齐后新用例 **1 passed**，与 callback 兼容批合跑 **24 passed，39.74 秒**。这仍不是 C3 的 v2 生成接入；Worker 不消费影子文字，Artifact 也尚无会话来源的冻结主题引用。
+
+## P2/P3 跨语言素材复用修正
+
+核对 Worker 的视频采集与资料包模型后，`language` 只控制输出文章、问答、PPTX 或 PDF 的呈现，不控制字幕和画面采集。Host 原来把它当作素材身份的一部分，导致中文 PDF 冻结的 Bundle 无法供英文独立产物复用。复用校验现排除输出语言，继续核对 BVID、分集、Workspace、采集策略及 Bundle 摘要。原契约中“不同语言必拒绝”的断言与实际数据边界冲突，已改为验证英文 PDF 和英文博客复用同一冻结 Bundle。`Phase6ResearchArtifactContractTest#subtitleMaterialBundleIsFrozenToVideoTaskAndIdempotent` **1 passed**。这只消除错误拒绝；英文内容质量与四选入口仍待验收。

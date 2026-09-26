@@ -275,6 +275,8 @@ public class ArtifactVideoMaterialService {
     private static Map<String, Object> acquisitionInputs(Map<String, Object> inputs) {
         Map<String, Object> acquisition = new TreeMap<>(inputs);
         acquisition.remove("video_material_bundle_id");
+        // Output language changes the rendered artifact, not the acquired transcript or frames.
+        acquisition.remove("language");
         String url = string(acquisition.get("url"));
         Matcher partInUrl = Pattern.compile("[?&]p=([0-9]+)(?:&|$)").matcher(url);
         String effectivePart = partInUrl.find() ? partInUrl.group(1) : "1";

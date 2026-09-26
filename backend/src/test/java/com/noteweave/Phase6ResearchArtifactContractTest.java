@@ -5663,16 +5663,27 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "skill_key", "bilibili_course_note_pdf",
-                                "user_requirement", "different subtitle language",
+                                "user_requirement", "different output language",
                                 "inputs", Map.of("url", "https://www.bilibili.com/video/BV1234567890?p=2",
                                         "language", "en", "video_material_bundle_id", id)))))
                 .andExpect(status().isOk()).andReturn();
         String differentLanguageTaskId = objectMapper.readTree(
                 differentLanguage.getResponse().getContentAsString()).path("data").path("task_id").asText();
-        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
-                        videoMaterialService.readReferenced(differentLanguageTaskId, id))
-                .isInstanceOf(com.noteweave.common.BusinessException.class)
-                .hasMessageContaining("Workspace");
+        assertThat(videoMaterialService.readReferenced(differentLanguageTaskId, id).get("bundle_id"))
+                .isEqualTo(bundle.get("bundle_id"));
+        MvcResult englishBlog = mockMvc.perform(post(
+                        "/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "knowledge_blog",
+                                "user_requirement", "write from the same frozen video in English",
+                                "inputs", Map.of("url", "https://www.bilibili.com/video/BV1234567890?p=2",
+                                        "language", "en", "video_material_bundle_id", id)))))
+                .andExpect(status().isOk()).andReturn();
+        String englishBlogTaskId = objectMapper.readTree(englishBlog.getResponse().getContentAsString())
+                .path("data").path("task_id").asText();
+        assertThat(videoMaterialService.readReferenced(englishBlogTaskId, id).get("bundle_id"))
+                .isEqualTo(bundle.get("bundle_id"));
         Map<String, Object> childCandidate = new LinkedHashMap<>(artifactCandidate(
                 childTaskId, markdown, "course.pdf"));
         childCandidate.put("video_material", candidate.get("video_material"));
