@@ -29,6 +29,18 @@ public class ConversationTopicProjectionV2Service {
 
     @Transactional
     public TopicSegmenterV2.Projection refresh(String workspaceId, String conversationId) {
+        return refreshAtCutoff(workspaceId, conversationId, null);
+    }
+
+    /** Freeze the query prefix while the immediately following assistant placeholder is pending. */
+    @Transactional
+    public TopicSegmenterV2.Projection refreshForInputCutoff(String workspaceId,
+                                                               String conversationId, int cutoffSeq) {
+        return refreshAtCutoff(workspaceId, conversationId, cutoffSeq);
+    }
+
+    private TopicSegmenterV2.Projection refreshAtCutoff(String workspaceId,
+                                                        String conversationId, Integer cutoffSeq) {
         List<String> locked = jdbc.query("""
                 select id from conversation where id = ? and workspace_id = ? for update
                 """, (rs, index) -> rs.getString(1), conversationId, workspaceId);
@@ -36,13 +48,17 @@ public class ConversationTopicProjectionV2Service {
             throw new BusinessException("CONVERSATION_NOT_FOUND", "Conversation does not belong to Workspace",
                     HttpStatus.NOT_FOUND);
         }
+        if (cutoffSeq != null) {
+            ConversationInputCutoff.requirePendingAssistant(jdbc, workspaceId, conversationId, cutoffSeq);
+        }
         List<MessageRow> rows = jdbc.query("""
                 select id, message_seq, role, content, content_hash, context_status
                 from conversation_message where conversation_id = ? and workspace_id = ?
+                  and (? is null or message_seq <= ?)
                 order by message_seq
                 """, (rs, index) -> new MessageRow(rs.getString("id"), rs.getInt("message_seq"),
                 rs.getString("role"), rs.getString("content"), rs.getString("content_hash"),
-                rs.getString("context_status")), conversationId, workspaceId);
+                rs.getString("context_status")), conversationId, workspaceId, cutoffSeq, cutoffSeq);
         if (rows.stream().anyMatch(row -> !"CURRENT".equals(row.contextStatus()))) {
             throw new BusinessException("CONTEXT_TOPIC_REDACTED",
                     "Deleted messages require topic redaction before shadow projection refresh",

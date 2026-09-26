@@ -61,8 +61,11 @@ public class ConversationContextCompilerV2Service {
                 select max(message_seq) from conversation_message
                 where workspace_id = ? and conversation_id = ?
                 """, Integer.class, workspaceId, conversationId);
-        if ((ledgerHead == null ? 0 : ledgerHead) != cutoffSeq)
-            throw invalid("shadow compilation requires the current ledger head");
+        if ((ledgerHead == null ? 0 : ledgerHead) != cutoffSeq) {
+            if (ledgerHead == null || ledgerHead != cutoffSeq + 1)
+                throw invalid("shadow compilation requires the current input boundary");
+            ConversationInputCutoff.requirePendingAssistant(jdbc, workspaceId, conversationId, cutoffSeq);
+        }
         List<MessageRow> rows = jdbc.query("""
                 select id, message_seq, role, content, context_status
                 from conversation_message where workspace_id = ? and conversation_id = ?

@@ -1031,6 +1031,56 @@ class ConversationTurnModuleContractTest {
     }
 
     @Test
+    void shadowInputCutoffExcludesPendingAssistantAndRejectsLaterRecompile() throws Exception {
+        String workspaceId = createWorkspace();
+        String conversationId = createConversation(workspaceId);
+        String queryId = Ids.newId();
+        String placeholderId = Ids.newId();
+        String query = "Explain the frozen input boundary";
+        String queryHash = java.util.HexFormat.of().formatHex(
+                java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(query.getBytes(StandardCharsets.UTF_8)));
+        String emptyHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        jdbcTemplate.update("""
+                insert into conversation_message(id, conversation_id, workspace_id, message_seq,
+                    role, answer_mode, content, content_hash, context_status)
+                values (?, ?, ?, 1, 'USER', 'QA', ?, ?, 'CURRENT')
+                """, queryId, conversationId, workspaceId, query, queryHash);
+        jdbcTemplate.update("""
+                insert into conversation_message(id, conversation_id, workspace_id, message_seq,
+                    role, answer_mode, content, content_hash, context_status, reply_to_message_id)
+                values (?, ?, ?, 2, 'ASSISTANT', 'QA', '', ?, 'PENDING', ?)
+                """, placeholderId, conversationId, workspaceId, emptyHash, queryId);
+
+        TopicSegmenterV2.Projection frozen = topicProjectionV2Service.refreshForInputCutoff(
+                workspaceId, conversationId, 1);
+        assertThat(frozen.segments()).hasSize(1);
+        assertThat(frozen.segments().get(0).endSeq()).isEqualTo(1);
+        ContextProjectionV2 projection = contextCompilerV2Service.compile(workspaceId,
+                com.noteweave.security.CurrentUserProvider.LOCAL_USER_ID, conversationId,
+                1, query, "QA", 10_000);
+        assertThat(projection.rawTail()).extracting(ContextProjectionV2.RawMessage::messageId)
+                .containsExactly(queryId);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> topicProjectionV2Service.refresh(
+                workspaceId, conversationId)).isInstanceOf(com.noteweave.common.BusinessException.class);
+
+        String answer = "Frozen response";
+        String answerHash = java.util.HexFormat.of().formatHex(
+                java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(answer.getBytes(StandardCharsets.UTF_8)));
+        jdbcTemplate.update("""
+                update conversation_message set content = ?, content_hash = ?, context_status = 'CURRENT'
+                where id = ?
+                """, answer, answerHash, placeholderId);
+        assertThat(topicProjectionV2Service.refresh(workspaceId, conversationId)
+                .segments().get(0).endSeq()).isEqualTo(2);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> contextCompilerV2Service.compile(
+                workspaceId, com.noteweave.security.CurrentUserProvider.LOCAL_USER_ID,
+                conversationId, 1, query, "QA", 10_000))
+                .isInstanceOf(com.noteweave.common.BusinessException.class);
+    }
+
+    @Test
     void shadowConstraintProjectionPersistsUserCorrectionAndNeverPromotesAssistantText() throws Exception {
         String workspaceId = createWorkspace();
         String conversationId = createConversation(workspaceId);
