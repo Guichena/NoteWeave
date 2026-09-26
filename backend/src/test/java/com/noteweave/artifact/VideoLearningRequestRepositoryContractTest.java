@@ -210,6 +210,14 @@ class VideoLearningRequestRepositoryContractTest {
                         Map.entry("frame_ids", List.of()), Map.entry("terms", List.of()),
                         Map.entry("claims", List.of()),
                         Map.entry("missing", List.of("NO_SUBTITLE", "NO_FRAMES")))));
+        jdbc.update("update workspace_member set status = 'SUSPENDED' where workspace_id = ? and user_id = ?",
+                workspaceId, "local-user");
+        assertThatThrownBy(() -> videoMaterials.submitParentKnowledgePlan(taskId,
+                new ArtifactVideoMaterialService.KnowledgeSubmission(
+                        receipt.id(), plan, sha256(canonical(plan)))))
+                .hasMessageContaining("Workspace");
+        jdbc.update("update workspace_member set status = 'ACTIVE' where workspace_id = ? and user_id = ?",
+                workspaceId, "local-user");
         var knowledge = videoMaterials.submitParentKnowledgePlan(taskId,
                 new ArtifactVideoMaterialService.KnowledgeSubmission(
                         receipt.id(), plan, sha256(canonical(plan))));
@@ -220,6 +228,13 @@ class VideoLearningRequestRepositoryContractTest {
                 parent.requestId(), receipt.id(), knowledge.id()))
                 .hasMessageContaining("Workspace");
         tasks.completeTask(taskId, "READY", "资料已冻结", receipt.id());
+        jdbc.update("update workspace_member set status = 'SUSPENDED' where workspace_id = ? and user_id = ?",
+                workspaceId, "local-user");
+        assertThatThrownBy(() -> requests.markMaterialReady(workspaceId,
+                parent.requestId(), receipt.id(), knowledge.id()))
+                .hasMessageContaining("Workspace");
+        jdbc.update("update workspace_member set status = 'ACTIVE' where workspace_id = ? and user_id = ?",
+                workspaceId, "local-user");
         requests.markMaterialReady(workspaceId, parent.requestId(), receipt.id(), knowledge.id());
         assertThat(requests.view(workspaceId, parent.requestId()).materialState()).isEqualTo("READY");
         assertThat(requests.missingChoices(workspaceId, parent.requestId()))

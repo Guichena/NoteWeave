@@ -385,3 +385,5 @@ V122 在父请求记录创建者 User ID；同一客户端请求 ID 的重放还
 V123 给 `artifact_video_material_bundle` 增加互斥来源：保留旧 `artifact_job_id`，新增 `video_learning_request_id`，同一行只能归属一个。Host 新增父资料 Task 的 Bundle 与 KnowledgePlan 冻结入口，沿用摘要、字幕、画面、证据闭包和幂等冲突校验；父请求的 READY 门禁对独立来源要求 Bundle 的 Task/父 ID 精确一致，且 Task 已 COMPLETED。下游子 Job 读取父资料时仍核对 Workspace、父请求冻结摘要、BVID、分集和采集策略；父请求取消不撤回已有 READY 资料。
 
 首次定向测试在嵌套 JDBC lambda 中复用了变量名，**编译失败**；修正后 V123 在 H2 成功应用。`VideoLearningRequestRepositoryContractTest` **6 passed**，覆盖无占位 PDF Job 冻结、相同内容重放、不同内容冲突、Plan 重放、Task 未完成时 READY 拒绝、完成后 READY、取消后保持 READY；旧 PDF Bundle 的 `Phase6ResearchArtifactContractTest#observedVideoMaterialBindsOcrEvidenceToFrozenFrameBytes` **1 passed**。新父资料入口目前仅是内部 Service；专用 Worker 命令、回调、对外创建 API 和子 Job 协调尚未实现。
+
+随后给父资料 Bundle/Plan 写入和父 READY 晋升增加创建者当前权限复核：Workspace、用户及成员必须 ACTIVE，角色仍为 OWNER/EDITOR。契约在 Bundle 已冻结后暂停成员权限，Plan 提交被拒；恢复后 Plan 成功；Task 完成后再次暂停，READY 晋升被拒，恢复后才成功。`VideoLearningRequestRepositoryContractTest` **6 passed，0 failed/0 error/0 skipped**。

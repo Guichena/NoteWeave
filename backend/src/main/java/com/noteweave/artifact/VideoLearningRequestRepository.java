@@ -93,7 +93,13 @@ public class VideoLearningRequestRepository {
                                   String bundleId, String planId) {
         List<ParentInput> parents = jdbc.query("""
                 select video_url, part_no, frame_density, asr_fallback, material_task_id
-                from video_learning_request where id = ? and workspace_id = ? for update
+                from video_learning_request r
+                join workspace w on w.id = r.workspace_id and w.status = 'ACTIVE'
+                join users u on u.id = r.actor_user_id and u.status = 'ACTIVE'
+                join workspace_member m on m.workspace_id = r.workspace_id
+                    and m.user_id = r.actor_user_id and m.status = 'ACTIVE'
+                    and m.role in ('OWNER', 'EDITOR')
+                where r.id = ? and r.workspace_id = ? for update
                 """, (rs, index) -> new ParentInput(rs.getString(1), rs.getInt(2),
                 rs.getString(3), rs.getString(4), rs.getString(5)), requestId, workspaceId);
         if (parents.size() != 1) throw invalid("parent request does not belong to Workspace");

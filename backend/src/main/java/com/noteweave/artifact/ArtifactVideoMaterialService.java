@@ -141,6 +141,11 @@ public class ArtifactVideoMaterialService {
                        r.frame_density, r.asr_fallback
                 from video_learning_request r
                 join task t on t.id = r.material_task_id
+                join workspace w on w.id = r.workspace_id and w.status = 'ACTIVE'
+                join users u on u.id = r.actor_user_id and u.status = 'ACTIVE'
+                join workspace_member m on m.workspace_id = r.workspace_id
+                    and m.user_id = r.actor_user_id and m.status = 'ACTIVE'
+                    and m.role in ('OWNER', 'EDITOR')
                 where t.id = ? and t.workspace_id = r.workspace_id
                   and t.task_type = 'VIDEO_MATERIAL'
                   and t.target_type = 'VIDEO_LEARNING_REQUEST' and t.target_id = r.id
