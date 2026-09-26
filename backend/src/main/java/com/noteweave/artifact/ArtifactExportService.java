@@ -38,6 +38,7 @@ public class ArtifactExportService {
     private final ObjectStorage objectStorage;
     private final ArtifactWorkerExportClient artifactWorkerClient;
     private final ArtifactSkillCatalogService skillCatalog;
+    private final ArtifactMemoryRevisionGuard memoryRevisionGuard;
     private final String exportBucket;
     private String orphanScanCursor = "";
 
@@ -47,6 +48,7 @@ public class ArtifactExportService {
             ObjectStorage objectStorage,
             ArtifactWorkerExportClient artifactWorkerClient,
             ArtifactSkillCatalogService skillCatalog,
+            ArtifactMemoryRevisionGuard memoryRevisionGuard,
             com.noteweave.config.NoteWeaveProperties properties
     ) {
         this.jdbcTemplate = jdbcTemplate;
@@ -54,6 +56,7 @@ public class ArtifactExportService {
         this.objectStorage = objectStorage;
         this.artifactWorkerClient = artifactWorkerClient;
         this.skillCatalog = skillCatalog;
+        this.memoryRevisionGuard = memoryRevisionGuard;
         this.exportBucket = properties.storage().minio().bucketExport();
     }
 
@@ -535,6 +538,7 @@ public class ArtifactExportService {
 
     private void requireVersionSourcesVisible(ExportRow version) {
         if (version.originTaskId() == null || version.originTaskId().isBlank()) return;
+        memoryRevisionGuard.requireActive(version.originTaskId());
         List<String> scopes = jdbcTemplate.queryForList("""
                 select s.source_scope_snapshot_json
                 from artifact_job_run r

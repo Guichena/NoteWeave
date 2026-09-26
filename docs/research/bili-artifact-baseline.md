@@ -339,3 +339,9 @@ Worker 在 LibreOffice 将 PPTX 转成 PDF 后，使用 `pypdf` 逐页提取实�
 新增 V119 影子快照与 Memory Revision 引用表。Workspace 同时开启全局影子配置和本地 SHADOW 模式时，Artifact 初次创建及再生成在 Run 输入快照写入的同一事务内编译独立 v2 Context，校验所选 Memory Revision 仍为当前 ACTIVE，并按 `input_snapshot_id` 冻结完整投影与 SHA-256。独立请求的会话 ID 为空、cutoff 为 0；每个 Run 单独编译，不读取会话最新 Head。Memory Revision 撤销后按精确引用脱敏影子投影。Worker 仍消费原 `artifact-input-v1` 快照，影子模式不是 v2 生产启用。
 
 后端编译通过；Flyway 在 H2 测试库将 102 个迁移应用至 V119。`ArtifactContextV2ShadowSnapshotContractTest` **2 passed**（关闭/开启模式、独立 Run 冻结及 Memory 撤销传播）；`RunReplayRedactionServiceTest` **3 passed**。尚未扩展 Worker 输入合同以消费 v2、覆盖会话关联的 Artifact/Research/QA/Note/Wiki 生产迁移，也未验证已发布文件包含被删内容时的下载阻断。当前影子编译失败会使已选择 SHADOW 的 Artifact 创建事务失败；生产默认关闭。
+
+## C3 Artifact 冻结 Memory 撤销门禁
+
+现有 v1 控制包在 Run 创建时记录了精确 Memory Revision 用量，但 Worker 获取输入、继续读取 Source 窗口、提交 Candidate 和下载已发布文件之前没有检查 Revision 是否仍有效。新增按 `memory_usage_log` 冻结引用与当前 ACTIVE Revision 对比的门禁；撤销或更新后拒绝上述路径。撤销传播同时清空对应 Artifact Run 输入快照、Run 记录和当前 Job 中的 v1 控制包，并把 Run 快照设为 `METADATA_ONLY`；v2 影子快照按同一 Revision 精确引用脱敏。历史没有 Run 或没有 Revision 用量记录的版本维持兼容。
+
+`ArtifactContextV2ShadowSnapshotContractTest` **2 passed**，其中撤销测试确认 Worker 输入被拒、v1 控制包清空及 v2 投影脱敏；`RunReplayRedactionServiceTest` **3 passed**。Artifact/Research 集成回归 `Phase6ResearchArtifactContractTest` **53 个用例，45 执行通过、8 个既有跳过**。下载边界代码共用同一门禁，但尚未有真实 READY 文件在 Memory 撤销前后的专用下载故障测试；这项仍需补足。

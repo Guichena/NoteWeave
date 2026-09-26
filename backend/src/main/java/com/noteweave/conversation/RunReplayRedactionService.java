@@ -101,6 +101,29 @@ public class RunReplayRedactionService {
                 update run_input_snapshot set replay_availability = 'METADATA_ONLY'
                 where replay_availability = 'FULL' and snapshot_json like ?
                 """, "%" + revisionId + "%");
+        jdbcTemplate.update("""
+                update artifact_run_input_snapshot
+                set control_pack_json = null, replay_availability = 'METADATA_ONLY'
+                where id in (
+                    select r.input_snapshot_id from artifact_job_run r
+                    join memory_usage_log u on u.target_id = r.task_id
+                    where u.target_type = 'ARTIFACT_JOB_RUN' and u.memory_revision_id = ?
+                )
+                """, revisionId);
+        jdbcTemplate.update("""
+                update artifact_job_run set control_pack_json = null
+                where task_id in (
+                    select target_id from memory_usage_log
+                    where target_type = 'ARTIFACT_JOB_RUN' and memory_revision_id = ?
+                )
+                """, revisionId);
+        jdbcTemplate.update("""
+                update artifact_job set control_pack_json = null
+                where task_id in (
+                    select target_id from memory_usage_log
+                    where target_type = 'ARTIFACT_JOB_RUN' and memory_revision_id = ?
+                )
+                """, revisionId);
         if (shadowSnapshots != null) shadowSnapshots.redactReference("MEMORY_REVISION", revisionId);
         if (artifactShadowSnapshots != null) artifactShadowSnapshots.redactMemoryRevision(revisionId);
     }

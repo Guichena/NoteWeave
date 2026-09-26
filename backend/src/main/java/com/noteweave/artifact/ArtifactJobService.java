@@ -44,6 +44,7 @@ public class ArtifactJobService {
     private final GeneratedSourceService generatedSourceService;
     private final KnowledgeCommandService knowledgeCommandService;
     private final ArtifactContextV2ShadowSnapshotService contextV2ShadowSnapshots;
+    private final ArtifactMemoryRevisionGuard memoryRevisionGuard;
 
     public ArtifactJobService(
             JdbcTemplate jdbcTemplate,
@@ -58,7 +59,8 @@ public class ArtifactJobService {
             ArtifactVideoMaterialService videoMaterialService,
             GeneratedSourceService generatedSourceService,
             KnowledgeCommandService knowledgeCommandService,
-            ArtifactContextV2ShadowSnapshotService contextV2ShadowSnapshots
+            ArtifactContextV2ShadowSnapshotService contextV2ShadowSnapshots,
+            ArtifactMemoryRevisionGuard memoryRevisionGuard
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -73,6 +75,7 @@ public class ArtifactJobService {
         this.generatedSourceService = generatedSourceService;
         this.knowledgeCommandService = knowledgeCommandService;
         this.contextV2ShadowSnapshots = contextV2ShadowSnapshots;
+        this.memoryRevisionGuard = memoryRevisionGuard;
     }
 
     @Transactional
@@ -394,6 +397,7 @@ public class ArtifactJobService {
 
     public ArtifactWorkerInputResponse getWorkerInput(String taskId) {
         ArtifactJobTaskRow row = findByTaskId(taskId);
+        memoryRevisionGuard.requireActive(taskId);
         Map<String, Object> inputs = artifactPayloadReadModelAssembler.readInputs(row.inputsJson());
         return new ArtifactWorkerInputResponse(
                 row.taskId(),
@@ -436,6 +440,7 @@ public class ArtifactJobService {
         String markdown = extractMarkdown(request.resultPayload());
         requireVerifiedCandidate(request);
         requireFrozenSourcesVisible(row);
+        memoryRevisionGuard.requireActive(taskId);
         videoMaterialService.validateCandidateReference(taskId, request.resultPayload());
         ArtifactCandidate candidate = ArtifactCandidate.from(taskId, row.inputSnapshotId(),
                 catalogDigestFrom(row.compilerVersion()), expectedArtifactType(row), request, markdown);
@@ -482,6 +487,7 @@ public class ArtifactJobService {
                 .findFirst().orElseThrow(() -> new BusinessException(
                         "ARTIFACT_WINDOW_SCOPE_DENIED", "资料不属于该 Run 的冻结范围", HttpStatus.FORBIDDEN));
         requireFrozenSourcesVisible(run);
+        memoryRevisionGuard.requireActive(taskId);
         int afterChunkNo = -1;
         int afterWindowNo = -1;
         if (cursor != null && !cursor.isBlank()) {

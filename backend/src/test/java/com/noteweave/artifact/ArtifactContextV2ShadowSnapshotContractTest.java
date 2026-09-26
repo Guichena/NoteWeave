@@ -1,6 +1,7 @@
 package com.noteweave.artifact;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -31,6 +32,7 @@ class ArtifactContextV2ShadowSnapshotContractTest {
     @Autowired ObjectMapper mapper;
     @Autowired JdbcTemplate jdbc;
     @Autowired MemoryRuntime memoryRuntime;
+    @Autowired ArtifactJobService jobs;
 
     @Test
     void independentArtifactRunsFreezeSeparateContextOnlyWhenShadowEnabled() throws Exception {
@@ -70,6 +72,7 @@ class ArtifactContextV2ShadowSnapshotContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsString(Map.of("decision", "ACCEPT"))));
         String taskId = createJob(workspaceId, "Use approved preferences");
+        assertThat(jobs.getWorkerInput(taskId).taskId()).isEqualTo(taskId);
         String before = projectionJson(taskId);
         assertThat(mapper.readValue(before, ContextProjectionV2.class).memoryRevisions())
                 .extracting(ContextProjectionV2.MemoryRevision::revisionId)
@@ -90,6 +93,18 @@ class ArtifactContextV2ShadowSnapshotContractTest {
                 """, String.class, taskId)).isEqualTo("REDACTED");
         assertThat(mapper.readValue(after, ContextProjectionV2.class).memoryRevisions().get(0).text())
                 .isEmpty();
+        assertThatThrownBy(() -> jobs.getWorkerInput(taskId))
+                .hasMessageContaining("Memory");
+        assertThat(jdbc.queryForObject("""
+                select s.replay_availability from artifact_job_run r
+                join artifact_run_input_snapshot s on s.id = r.input_snapshot_id
+                where r.task_id = ?
+                """, String.class, taskId)).isEqualTo("METADATA_ONLY");
+        assertThat(jdbc.queryForObject("""
+                select s.control_pack_json from artifact_job_run r
+                join artifact_run_input_snapshot s on s.id = r.input_snapshot_id
+                where r.task_id = ?
+                """, String.class, taskId)).isNull();
     }
 
     private String createJob(String workspaceId, String requirement) throws Exception {
