@@ -455,3 +455,13 @@ Host `VideoLearningRequestRepositoryContractTest`、`ArtifactCandidateTest`、`A
 首次新合同 **1 failed**，原因是测试错误地假定无 Source 的 QA 会在助手正文回显输入；实际 QA 返回资料不足。改为核对组装结果与 Run 冻结身份后，新合同 **3 passed**。一次从 `backend` 目录直接调用 Maven 因根目录 `.mvn/settings.xml` 未找到而未执行测试；改为根目录 `-f backend/pom.xml`。随后 `ContextV2ActiveAnswerContractTest`、`ConversationRetrievalContextAssemblerV2Test`、`ContextV2ShadowSnapshotContractTest`、`ConversationTurnModuleContractTest` 联跑 **47 passed，0 failed/0 error/0 skipped**，Maven BUILD SUCCESS（1:13）。再加 ACTIVE→OFF 与删除传播合同，`ContextV2ActiveAnswerContractTest` **3 passed，0 failed/0 error/0 skipped**。这批只切换 Answer；Research 和 Artifact 尚未消费 v2，C4 真实用户正确率与生产灰度也未完成。
 
 追加损坏投影合同：即使持久化 JSON 与攻击者替换的 SHA-256 一致，解析失败也返回 `CONTEXT_V2_SNAPSHOT_CORRUPT`，避免把损坏快照交给生成。`ContextV2ActiveAnswerContractTest` **4 passed，0 failed/0 error/0 skipped**（Maven 退出码 0）。核对 Research 发现其会话 Run 的 v1 引用由 `RunInputSnapshotService` 事后重选，而实际研究执行只使用本轮问题；下批必须同时改矩阵初始化、任务协调器和角色 Worker 的冻结执行输入，不能仅替换快照元数据。
+
+## C3 Research 消费冻结 Context v2
+
+会话 Research 在全局 `noteweave.context.v2.active-enabled`、独立的 `research-active-enabled` 与 Workspace `ACTIVE` 同时满足时，于建 Run 前冻结主题、原文及用户约束，并把同一投影及摘要写入 `run_input_snapshot`。原问题继续保存在 `research_run.question`；新 `execution_question` 使用冻结投影生成，供矩阵初始化、任务协调与角色 Worker 消费。当前问题放在末尾，避免 Brief 字数截断丢失本轮问题。独立全局 Research 开关默认关闭，不随 Answer 灰度自动打开；编译失败时记录原因并回退 v1。重试 Run 复制原快照至新的快照 ID，保留原问题与冻结执行输入，不重选会话 Head。
+
+读取冻结 Brief 时复核 Run/快照身份、投影摘要、完整可回放性、当前问题和重新渲染的执行问题。消息删除或 Memory 撤销只精确脱敏受影响的 v2 投影，使其回放降为 `METADATA_ONLY`；规划、领取、心跳、提交、报告发布、Research 明细和 Collection 读取均拒绝失效快照，列表不返回失效 v2 Run。原有 v1 路径保持兼容。没有清除既有 Research 报告、Trace、派生 Source 的持久化内容；这些外部读取/下载路径仍需单独审计和门禁，不能把本批视为完整删除传播验收。
+
+测试迭代中，首次合同因待回复助手行缺少 `PENDING` 关联和编译失败后事务被标记回滚，返回 HTTP 500；补齐关联并将编译尝试置于嵌套事务后通过。一次测试将 JSON 的 `raw_tail` 错读为驼峰字段，修正断言。随后 Research 合同从 **3 passed** 扩展到 **6 passed**，覆盖真实任务消费、编译失败回退、损坏摘要拒绝、消息删除、Memory 撤销与检查点重试。扩大联跑曾达到 **165 passed，0 failed/0 error/0 skipped**，覆盖会话、Research Task/协调/提交/最终化。最终配置及读取门禁改动后，`ContextV2ResearchContractTest` **6**、`ContextV2ActiveAnswerContractTest` **5**、`ResearchRunListQueryCountTest` **3**、`ResearchArtifactServiceTest` **2**、`ResearchAgentIncrementalFinalizationServiceTest` **10**，合计 **26 passed，0 failed/0 error/0 skipped**，Maven 退出码 0；Flyway 成功应用 V125，`git diff --check` 通过。这些是 H2/模拟合同，尚未做生产灰度或真实外部研究回放。
+
+自动审批拒绝了清空 Research 问题、报告、Trace、规划行并取消任务/Run 的广泛清理改动，理由是会不可逆地破坏已有研究记录；该改动未执行。本批改为投影精确脱敏和消费/读取门禁。后续如需清理既有产物正文，须在明确保留与删除策略后另行处理。

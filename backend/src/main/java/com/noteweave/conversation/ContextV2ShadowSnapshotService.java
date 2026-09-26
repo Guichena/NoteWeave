@@ -11,12 +11,13 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Shadow only: freezes v2 Context before the pending assistant answer is generated. */
+/** Freezes Answer shadow Context and prepares Research Context at its input cutoff. */
 @Service
 public class ContextV2ShadowSnapshotService {
     private static final int SHADOW_BUDGET_BYTES = 32_768;
@@ -26,16 +27,20 @@ public class ContextV2ShadowSnapshotService {
     private final ConversationTopicProjectionV2Service topics;
     private final ConversationContextCompilerV2Service compiler;
     private final ContextV2RolloutService rollout;
+    private final boolean researchActiveEnabled;
 
     public ContextV2ShadowSnapshotService(JdbcTemplate jdbc, ObjectMapper mapper,
                                           ConversationTopicProjectionV2Service topics,
                                           ConversationContextCompilerV2Service compiler,
-                                          ContextV2RolloutService rollout) {
+                                          ContextV2RolloutService rollout,
+                                          @Value("${noteweave.context.v2.research-active-enabled:false}")
+                                          boolean researchActiveEnabled) {
         this.jdbc = jdbc;
         this.mapper = mapper;
         this.topics = topics;
         this.compiler = compiler;
         this.rollout = rollout;
+        this.researchActiveEnabled = researchActiveEnabled;
     }
 
     @Transactional
@@ -54,22 +59,7 @@ public class ContextV2ShadowSnapshotService {
         topics.refreshForInputCutoff(workspaceId, conversationId, cutoff);
         ContextProjectionV2 projection = compiler.compile(workspaceId, actorId, conversationId,
                 cutoff, currentInput, taskPurpose, SHADOW_BUDGET_BYTES);
-        for (ContextProjectionV2.MemoryRevision memory : projection.memoryRevisions()) {
-            List<String> valid = jdbc.query("""
-                    select i.id from memory_item i
-                    join memory_runtime_revision r on r.id = i.current_revision_id
-                    where i.id = ? and r.id = ? and i.workspace_id = ?
-                      and i.status = 'ACTIVE' and r.status = 'ACTIVE'
-                      and r.valid_from <= current_timestamp
-                      and (r.valid_until is null or r.valid_until > current_timestamp)
-                    for update
-                    """, (rs, index) -> rs.getString(1),
-                    memory.memoryId(), memory.revisionId(), workspaceId);
-            if (valid.size() != 1) {
-                throw new BusinessException("CONTEXT_MEMORY_CHANGED",
-                        "Memory revision changed while freezing Context", HttpStatus.CONFLICT);
-            }
-        }
+        requireCurrentMemories(workspaceId, projection);
         String snapshotId = Ids.newId();
         String json = write(projection);
         jdbc.update("""
@@ -92,6 +82,37 @@ public class ContextV2ShadowSnapshotService {
                     insert into context_v2_shadow_ref(snapshot_id, ref_type, ref_id)
                     values (?, ?, ?)
                     """, snapshotId, ref.type(), ref.id());
+        }
+    }
+
+    /** Compile Research once inside the turn transaction, before its worker task is visible. */
+    public ContextProjectionV2 compileResearch(String workspaceId, String actorId,
+                                               String conversationId, int cutoff,
+                                               String currentInput) {
+        if (!researchActiveEnabled || !rollout.activeEnabled(workspaceId)) return null;
+        topics.refreshForInputCutoff(workspaceId, conversationId, cutoff);
+        ContextProjectionV2 projection = compiler.compile(workspaceId, actorId, conversationId,
+                cutoff, currentInput, "RESEARCH", SHADOW_BUDGET_BYTES);
+        requireCurrentMemories(workspaceId, projection);
+        return projection;
+    }
+
+    private void requireCurrentMemories(String workspaceId, ContextProjectionV2 projection) {
+        for (ContextProjectionV2.MemoryRevision memory : projection.memoryRevisions()) {
+            List<String> valid = jdbc.query("""
+                    select i.id from memory_item i
+                    join memory_runtime_revision r on r.id = i.current_revision_id
+                    where i.id = ? and r.id = ? and i.workspace_id = ?
+                      and i.status = 'ACTIVE' and r.status = 'ACTIVE'
+                      and r.valid_from <= current_timestamp
+                      and (r.valid_until is null or r.valid_until > current_timestamp)
+                    for update
+                    """, (rs, index) -> rs.getString(1),
+                    memory.memoryId(), memory.revisionId(), workspaceId);
+            if (valid.size() != 1) {
+                throw new BusinessException("CONTEXT_MEMORY_CHANGED",
+                        "Memory revision changed while freezing Context", HttpStatus.CONFLICT);
+            }
         }
     }
 

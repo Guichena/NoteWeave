@@ -77,6 +77,7 @@ class ResearchAgentCompletionCommitter {
     private final ObjectProvider<ResearchAgentCompletionFaultInjector> faultInjectors;
     private final ResearchAgentCompletionMetrics completionMetrics;
     private final ResearchAgentRoleResultService roleResultService;
+    private final ResearchContextV2Gate contextGate;
 
     ResearchAgentCompletionCommitter(
             JdbcTemplate jdbcTemplate,
@@ -89,7 +90,8 @@ class ResearchAgentCompletionCommitter {
             ResearchEvidenceQualificationService evidenceQualificationService,
             ObjectProvider<ResearchAgentCompletionFaultInjector> faultInjectors,
             ResearchAgentCompletionMetrics completionMetrics,
-            ResearchAgentRoleResultService roleResultService
+            ResearchAgentRoleResultService roleResultService,
+            ResearchContextV2Gate contextGate
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -103,6 +105,7 @@ class ResearchAgentCompletionCommitter {
         this.faultInjectors = faultInjectors;
         this.completionMetrics = completionMetrics;
         this.roleResultService = roleResultService;
+        this.contextGate = contextGate;
     }
 
     @Transactional(propagation = Propagation.REQUIRED)
@@ -248,6 +251,7 @@ class ResearchAgentCompletionCommitter {
                 """, rs -> rs.next() ? new RunRow(
                 rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4)) : null, runId);
         if (row == null) throw new BusinessException("RESEARCH_AGENT_RUN_NOT_FOUND", "Research run does not exist");
+        contextGate.requireReadable(runId);
         return row;
     }
 

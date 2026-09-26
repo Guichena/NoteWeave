@@ -44,6 +44,7 @@ public class ResearchRunQueryService {
     private final ResearchCheckpointProcessAssembler researchCheckpointProcessAssembler;
     private final ResearchReportReadModelAssembler researchReportReadModelAssembler;
     private final ResearchRunQueryPayloadReader payloadReader;
+    private final ResearchContextV2Gate contextGate;
 
     public ResearchRunQueryService(
             JdbcTemplate jdbcTemplate,
@@ -83,6 +84,7 @@ public class ResearchRunQueryService {
         );
         this.researchReportReadModelAssembler = new ResearchReportReadModelAssembler(objectMapper);
         this.payloadReader = new ResearchRunQueryPayloadReader(objectMapper);
+        this.contextGate = null;
     }
 
     @Autowired
@@ -104,7 +106,8 @@ public class ResearchRunQueryService {
             ResearchCounterfactualSummaryAssembler researchCounterfactualSummaryAssembler,
             ResearchClosedLoopStateAssembler researchClosedLoopStateAssembler,
             ResearchCheckpointProcessAssembler researchCheckpointProcessAssembler,
-            ResearchReportReadModelAssembler researchReportReadModelAssembler
+            ResearchReportReadModelAssembler researchReportReadModelAssembler,
+            ResearchContextV2Gate contextGate
     ) {
         this.workspaceService = workspaceService;
         this.taskService = taskService;
@@ -123,6 +126,7 @@ public class ResearchRunQueryService {
         this.researchCheckpointProcessAssembler = researchCheckpointProcessAssembler;
         this.researchReportReadModelAssembler = researchReportReadModelAssembler;
         this.payloadReader = new ResearchRunQueryPayloadReader(objectMapper);
+        this.contextGate = contextGate;
     }
 
     public List<ResearchRunSummaryResponse> listRuns(String workspaceId) {
@@ -373,6 +377,7 @@ public class ResearchRunQueryService {
     public ResearchRunDetailResponse getRunDetail(String workspaceId, String researchRunId) {
         requireWorkspace(workspaceId);
         ResearchRunDetailRow row = researchRunReadRepository.findDetail(workspaceId, researchRunId);
+        if (contextGate != null) contextGate.requireReadable(researchRunId);
 
         ResearchRunReadBundle readBundle = researchRunReadRepository.loadBatch(List.of(row.researchRunId()));
         List<ResearchTraceResponse> traces = values(readBundle.tracesByRunId(), row.researchRunId());
@@ -464,6 +469,7 @@ public class ResearchRunQueryService {
     public List<ResearchCheckpointSummaryResponse> listCheckpoints(String workspaceId, String researchRunId) {
         requireWorkspace(workspaceId);
         requireResearchRun(workspaceId, researchRunId);
+        if (contextGate != null) contextGate.requireReadable(researchRunId);
         return loadPersistedCheckpoints(researchRunId).stream()
                 .map(researchCheckpointReadModelAssembler::toSummary)
                 .toList();

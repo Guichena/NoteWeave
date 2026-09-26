@@ -6,7 +6,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.noteweave.artifact.ArtifactContextV2ShadowSnapshotService;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -79,6 +82,7 @@ public class RunReplayRedactionService {
     }
 
     public void redactDeletedConversationMessage(String workspaceId, String messageId) {
+        redactFrozenResearchProjection("MESSAGE", messageId);
         String reference = "%" + messageId + "%";
         jdbcTemplate.update("""
                 update run_input_snapshot set replay_availability = 'METADATA_ONLY'
@@ -89,6 +93,7 @@ public class RunReplayRedactionService {
     }
 
     public void redactDeletedSummaryRevision(String revisionId) {
+        redactFrozenResearchProjection("TOPIC_SUMMARY", revisionId);
         jdbcTemplate.update("""
                 update run_input_snapshot set replay_availability = 'METADATA_ONLY'
                 where replay_availability = 'FULL' and snapshot_json like ?
@@ -97,6 +102,7 @@ public class RunReplayRedactionService {
     }
 
     public void redactDeletedMemoryRevision(String revisionId) {
+        redactFrozenResearchProjection("MEMORY_REVISION", revisionId);
         jdbcTemplate.update("""
                 update run_input_snapshot set replay_availability = 'METADATA_ONLY'
                 where replay_availability = 'FULL' and snapshot_json like ?
@@ -127,6 +133,64 @@ public class RunReplayRedactionService {
         if (shadowSnapshots != null) shadowSnapshots.redactReference("MEMORY_REVISION", revisionId);
         if (artifactShadowSnapshots != null) artifactShadowSnapshots.redactMemoryRevision(revisionId);
     }
+
+    /** Remove only frozen v2 projection text; preserve Research output and audit records. */
+    private void redactFrozenResearchProjection(String refType, String refId) {
+        List<ResearchProjectionRow> rows = jdbcTemplate.query("""
+                select id, snapshot_json from run_input_snapshot
+                where execution_kind = 'RESEARCH' and replay_availability = 'FULL'
+                  and compiler_version = ? and snapshot_json like ?
+                """, (rs, index) -> new ResearchProjectionRow(rs.getString(1), rs.getString(2)),
+                ContextWindowPlannerV2.COMPILER_VERSION, "%" + refId + "%");
+        for (ResearchProjectionRow row : rows) {
+            ObjectNode snapshot;
+            ContextProjectionV2 projection;
+            try {
+                snapshot = (ObjectNode) objectMapper.readTree(row.snapshotJson());
+                projection = objectMapper.treeToValue(snapshot.path("context_v2_projection"),
+                        ContextProjectionV2.class);
+            } catch (JsonProcessingException | ClassCastException ex) {
+                throw new IllegalStateException("Stored Research Context projection is invalid", ex);
+            }
+            boolean referenced = switch (refType) {
+                case "MESSAGE" -> projection.rawTail().stream()
+                        .anyMatch(message -> refId.equals(message.messageId()))
+                        || projection.constraints().stream()
+                        .anyMatch(rule -> refId.equals(rule.sourceMessageId()));
+                case "TOPIC_SUMMARY" -> projection.topicSummaries().stream()
+                        .anyMatch(summary -> refId.equals(summary.revisionId()));
+                case "MEMORY_REVISION" -> projection.memoryRevisions().stream()
+                        .anyMatch(memory -> refId.equals(memory.revisionId()));
+                default -> false;
+            };
+            if (!referenced) continue;
+            ContextProjectionV2 redacted = projection.redacted();
+            snapshot.set("context_v2_projection", objectMapper.valueToTree(redacted));
+            try {
+                String redactedJson = objectMapper.writeValueAsString(redacted);
+                snapshot.put("context_v2_projection_sha256", sha256(redactedJson));
+                snapshot.put("context_v2_redacted_reason", "SENSITIVE_REFERENCE_REDACTED");
+                jdbcTemplate.update("""
+                        update run_input_snapshot
+                        set snapshot_json = ?, replay_availability = 'METADATA_ONLY'
+                        where id = ? and replay_availability = 'FULL'
+                        """, objectMapper.writeValueAsString(snapshot), row.id());
+            } catch (JsonProcessingException ex) {
+                throw new IllegalStateException("Cannot redact Research Context projection", ex);
+            }
+        }
+    }
+
+    private static String sha256(String value) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception ex) {
+            throw new IllegalStateException("SHA-256 unavailable", ex);
+        }
+    }
+
+    private record ResearchProjectionRow(String id, String snapshotJson) {}
 
     private void redactArtifactSnapshots(String workspaceId, String sourceId) {
         DeletedSourceIdentity deleted = loadDeletedSourceIdentity(workspaceId, sourceId);

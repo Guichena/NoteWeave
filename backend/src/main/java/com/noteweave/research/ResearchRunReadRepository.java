@@ -42,6 +42,12 @@ public class ResearchRunReadRepository {
                        final_report_title, final_report_markdown, report_source_id, created_at, updated_at
                 from research_run
                 where workspace_id = ?
+                  and (context_snapshot_id is null or exists (
+                    select 1 from run_input_snapshot frozen
+                    where frozen.id = research_run.context_snapshot_id
+                      and frozen.research_run_id = research_run.id
+                      and frozen.replay_availability = 'FULL'
+                  ))
                 order by updated_at desc, created_at desc, id desc
                 limit ? offset ?
                 """, (rs, rowNum) -> new ResearchRunListRow(

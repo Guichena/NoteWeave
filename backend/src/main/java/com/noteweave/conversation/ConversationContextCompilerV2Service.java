@@ -17,7 +17,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Database-backed shadow compiler. Callers must persist its result before a task consumes it. */
+/** Database-backed compiler. Callers persist its result before a task consumes it. */
 @Service
 public class ConversationContextCompilerV2Service {
     private final JdbcTemplate jdbc;

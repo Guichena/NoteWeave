@@ -18,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +32,7 @@ public class ResearchArtifactService {
     private final SourceParseService sourceParseService;
     private final WikiIngestService wikiIngestService;
     private final SourceCatalogVersionService sourceCatalogVersionService;
+    private final ResearchContextV2Gate contextGate;
 
     public ResearchArtifactService(
             JdbcTemplate jdbcTemplate,
@@ -41,6 +43,21 @@ public class ResearchArtifactService {
             WikiIngestService wikiIngestService,
             SourceCatalogVersionService sourceCatalogVersionService
     ) {
+        this(jdbcTemplate, objectMapper, workspaceService, storage, sourceParseService,
+                wikiIngestService, sourceCatalogVersionService, null);
+    }
+
+    @Autowired
+    public ResearchArtifactService(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
+            WorkspaceService workspaceService,
+            ObjectStorage storage,
+            SourceParseService sourceParseService,
+            WikiIngestService wikiIngestService,
+            SourceCatalogVersionService sourceCatalogVersionService,
+            ResearchContextV2Gate contextGate
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.workspaceService = workspaceService;
@@ -48,11 +65,13 @@ public class ResearchArtifactService {
         this.sourceParseService = sourceParseService;
         this.wikiIngestService = wikiIngestService;
         this.sourceCatalogVersionService = sourceCatalogVersionService;
+        this.contextGate = contextGate;
     }
 
     @Transactional
     public SaveResearchReportSourceResponse saveReportAsSource(String workspaceId, String researchRunId) {
         requireWorkspace(workspaceId);
+        requireFrozenContext(researchRunId);
         SaveReportRow row = loadSaveReportRow(workspaceId, researchRunId);
         if (row.reportSourceId() != null && !row.reportSourceId().isBlank()) {
             return loadSavedReportSource(workspaceId, row.reportSourceId());
@@ -111,6 +130,7 @@ public class ResearchArtifactService {
     public ResearchEvidenceManifestResponse evidenceManifest(String workspaceId, String researchRunId) {
         requireWorkspace(workspaceId);
         requireResearchRun(workspaceId, researchRunId);
+        requireFrozenContext(researchRunId);
         ResearchEvidenceManifestResponse header = jdbcTemplate.query("""
                 select id, report_content_hash, created_at
                 from research_evidence_manifest
@@ -184,6 +204,7 @@ public class ResearchArtifactService {
     }
 
     public RunArtifactView loadRunArtifactView(String workspaceId, String researchRunId) {
+        requireFrozenContext(researchRunId);
         SaveReportRow row = loadSaveReportRow(workspaceId, researchRunId);
         SaveResearchReportSourceResponse savedReportSource = blankToNull(row.reportSourceId()) == null
                 ? null
@@ -193,6 +214,10 @@ public class ResearchArtifactService {
         ResearchRunArtifactResponse researchArtifact = buildResearchArtifact(
                 researchRunId, row.finalReportTitle(), null, reportFile, savedReportSource);
         return new RunArtifactView(reportFile, researchArtifact, savedReportSource);
+    }
+
+    private void requireFrozenContext(String researchRunId) {
+        if (contextGate != null) contextGate.requireReadable(researchRunId);
     }
 
     public ResearchReportFileResponse buildReportFileResponse(

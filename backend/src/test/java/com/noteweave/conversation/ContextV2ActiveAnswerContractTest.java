@@ -161,6 +161,24 @@ class ContextV2ActiveAnswerContractTest {
                         failure -> assertThat(failure.code()).isEqualTo("CONTEXT_V2_SNAPSHOT_CORRUPT"));
     }
 
+    @Test
+    void answerActiveGateDoesNotEnableResearchConsumption() throws Exception {
+        String workspace = workspace();
+        data(put("/api/v2/workspaces/{workspaceId}/context-v2-rollout", workspace)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsBytes(Map.of("mode", "ACTIVE"))));
+        JsonNode receipt = submit(conversation(workspace, "research-gate"),
+                "研究缓存一致性", "DEEP_RESEARCH");
+        String runId = receipt.path("research_run_id").asText();
+        assertThat(jdbc.queryForObject("""
+                select compiler_version from run_input_snapshot where research_run_id = ?
+                """, String.class, runId)).isEqualTo("research-input-v1");
+        assertThat(jdbc.queryForObject("""
+                select count(*) from research_run
+                where id = ? and execution_question is null and context_snapshot_id is null
+                """, Integer.class, runId)).isEqualTo(1);
+    }
+
     private String workspace() throws Exception {
         return data(post("/api/v2/workspaces")
                 .contentType(MediaType.APPLICATION_JSON)

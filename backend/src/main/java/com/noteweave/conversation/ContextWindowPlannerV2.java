@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 
-/** Shadow C2 selection over already authorized, frozen references. No task consumes it yet. */
+/** C2 selection over already authorized references at a frozen input cutoff. */
 public final class ContextWindowPlannerV2 {
     public static final String COMPILER_VERSION = "context-window-v2-shadow-a1";
     private static final int TARGET_RAW_TAIL = 8;

@@ -30,6 +30,12 @@ public class ResearchRunService {
         return commandService.createRun(workspaceId, request);
     }
 
+    @Transactional
+    public ResearchRunResponse createConversationRun(String workspaceId, CreateResearchRunRequest request,
+                                                     String executionQuestion, String contextSnapshotId) {
+        return commandService.createRun(workspaceId, request, executionQuestion, contextSnapshotId);
+    }
+
     public List<ResearchRunSummaryResponse> listRuns(String workspaceId) {
         return queryService.listRuns(workspaceId);
     }

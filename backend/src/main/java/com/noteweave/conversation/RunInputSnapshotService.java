@@ -154,7 +154,10 @@ public class RunInputSnapshotService {
     public void recordResearchSnapshot(
             String workspaceId,
             TurnReceipt receipt,
-            SubmitTurnCommand command
+            SubmitTurnCommand command,
+            String contextSnapshotId,
+            ContextProjectionV2 projection,
+            String fallbackCode
     ) {
         if (exists("RESEARCH", receipt.researchRunId())) {
             return;
@@ -173,11 +176,54 @@ public class RunInputSnapshotService {
         snapshot.put("conversation_lock_version", frozen.path("conversation_lock_version").asInt());
         snapshot.put("expected_history_head_message_id", nullableText(frozen, "expected_history_head_message_id"));
         snapshot.put("research_profile", "balanced");
-        appendContextProjection(
-                snapshot,
-                contextProjectionService.select(workspaceId, command.conversationId(), cutoff),
-                researchMemoryReferences(workspaceId, receipt.researchRunId())
-        );
+        List<MemoryReferenceResponse> memoryRefs = researchMemoryReferences(workspaceId, receipt.researchRunId());
+        String compilerVersion = "research-input-v1";
+        String promptVersion = null;
+        Map<String, Object> tokenBudget = new LinkedHashMap<>();
+        tokenBudget.put("maximum_output_tokens", 0);
+        if (projection == null) {
+            appendContextProjection(snapshot,
+                    contextProjectionService.select(workspaceId, command.conversationId(), cutoff),
+                    memoryRefs);
+            if (fallbackCode != null) snapshot.put("context_v2_fallback_code", fallbackCode);
+        } else {
+            if (contextSnapshotId == null || !workspaceId.equals(projection.workspaceId())
+                    || !command.conversationId().equals(projection.conversationId())
+                    || cutoff != projection.cutoffSeq()
+                    || !command.content().equals(projection.currentInput())
+                    || !"FULL".equals(projection.replayAvailability())) {
+                throw new BusinessException("CONTEXT_V2_RESEARCH_SNAPSHOT_INVALID",
+                        "Research execution Context identity is invalid", HttpStatus.CONFLICT);
+            }
+            String linkedId = jdbcTemplate.queryForObject("""
+                    select context_snapshot_id from research_run
+                    where id = ? and workspace_id = ? and query_message_id = ?
+                    """, String.class, receipt.researchRunId(), workspaceId, receipt.messageId());
+            if (!contextSnapshotId.equals(linkedId)) {
+                throw new BusinessException("CONTEXT_V2_RESEARCH_SNAPSHOT_INVALID",
+                        "Research execution Context is not linked to this Run", HttpStatus.CONFLICT);
+            }
+            compilerVersion = projection.compilerVersion();
+            promptVersion = "research-context-question-v2-a1";
+            snapshot.put("context_v2_projection", projection);
+            snapshot.put("context_v2_projection_sha256", sha256(writeJson(projection)));
+            snapshot.put("context_v2_raw_message_refs", projection.rawTail().stream()
+                    .map(message -> Map.of("message_id", message.messageId(),
+                            "message_seq", message.seq(), "content_sha256", message.contentSha256()))
+                    .toList());
+            snapshot.put("context_v2_topic_summary_refs", projection.topicSummaries().stream()
+                    .map(summary -> Map.of("segment_id", summary.segmentId(),
+                            "summary_revision_id", summary.revisionId(),
+                            "content_sha256", summary.contentSha256()))
+                    .toList());
+            snapshot.put("context_v2_constraint_refs", projection.constraints().stream()
+                    .map(rule -> Map.of("constraint_id", rule.constraintId(),
+                            "source_message_id", rule.sourceMessageId(), "scope", rule.scope()))
+                    .toList());
+            snapshot.put("memory_revision_refs", memoryRefs);
+            tokenBudget.put("context_v2_budget_bytes", projection.tokenBudget());
+            tokenBudget.put("context_v2_selected_bytes", projection.selectedTokens());
+        }
         try {
             jdbcTemplate.update("""
                     insert into run_input_snapshot(
@@ -185,16 +231,25 @@ public class RunInputSnapshotService {
                         conversation_id, query_message_id, assistant_message_id,
                         requested_turn_mode, history_head_message_id, conversation_cutoff_seq,
                         retrieval_config_json, snapshot_json, compiler_version, prompt_version, token_budget_json
-                    ) values (?, ?, 'RESEARCH', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?)
-                    """, Ids.newId(), workspaceId, receipt.researchRunId(), command.conversationId(),
+                    ) values (?, ?, 'RESEARCH', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, contextSnapshotId == null ? Ids.newId() : contextSnapshotId,
+                    workspaceId, receipt.researchRunId(), command.conversationId(),
                     receipt.messageId(), receipt.assistantMessageId(), command.requestedTurnMode(),
                     nullableText(frozen, "history_head_message_id"), cutoff,
                     objectMapper.writeValueAsString(retrievalConfig), objectMapper.writeValueAsString(snapshot),
-                    "research-input-v1", objectMapper.writeValueAsString(Map.of("maximum_output_tokens", 0)));
+                    compilerVersion, promptVersion, objectMapper.writeValueAsString(tokenBudget));
         } catch (DuplicateKeyException ignored) {
             // An idempotent retry found the original Research snapshot.
         } catch (JsonProcessingException ex) {
             throw new IllegalStateException("Cannot persist run input snapshot", ex);
+        }
+    }
+
+    private String writeJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("Cannot serialize frozen Research Context", ex);
         }
     }
 
