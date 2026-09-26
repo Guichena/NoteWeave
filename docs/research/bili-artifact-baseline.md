@@ -75,3 +75,7 @@ Host 全批 `Phase6ResearchArtifactContractTest` **47 个用例，39 执行通�
 新增独立于旧前缀摘要的 v2 主题、连续片段和用户约束表；影子服务按 Conversation 行锁从消息 Ledger 重算并增量写入，A→B→A 可复用同一 `topic_id` 而维持三个不重叠片段，重复刷新不追加重复行。显式用户语句可记录格式、语言和否定约束；更正撤销同主题旧约束，助手文本不会成为约束，含糊“那个格式”保持 `UNRESOLVED`。删除消息时覆盖片段与锚点变 `STALE`，源约束撤销并清空文本。固定样本的首轮 Segmenter 测试曾把“对象什么时候回收？”误分为新主题，加入明确追问规则后通过。
 
 这一批是**影子实现**：没有接入 QA/Note/Wiki/Research/Artifact 编译入口，不产生 v2 Run 快照；旧 v1 路径继续运行。主题判定目前是保守规则，不足以宣称 C1 完整验收；候选主题解释、迟到判定栅栏、删除后的全量重建与旧快照脱敏仍需后续工作。最终回归：`TopicSegmenterV2Test` **5 passed**、`ConversationConstraintProjectorV2Test` **2 passed**、`ContextProjectionV2ContractTest` **3 passed**、`ConversationTurnModuleContractTest` **38 passed**；Flyway v113 在 Spring 集成测试中成功应用。
+
+## P1 类型化内容 IR 增量门禁
+
+Worker 在内容/引用验证通过后，将产物类型、标题、章节、引用和已渲染 Markdown 摘要封装成 `artifact-content-v1`，再执行文件渲染；Candidate 带 IR 摘要。Host 对带 IR 的回调核对字段、章节与结果载荷、标题、Markdown SHA-256 和规范化 IR 摘要，不一致则拒绝 Version。固定 Java/Python 摘要向量一致。旧 Worker 的无 IR 回调仍兼容，**新 Run 尚未强制要求 IR**，因此不能把此增量视为所有历史 Skill 均已完成类型化输出迁移。Worker 全套 **280 passed，36.81 秒**；Host `ArtifactCandidateTest` **5 passed**，`Phase6ResearchArtifactContractTest` **47 个用例，39 执行通过、8 个既有跳过**。

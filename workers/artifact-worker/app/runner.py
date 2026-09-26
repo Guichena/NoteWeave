@@ -42,6 +42,7 @@ from app.custom_mcp_executor import submit_custom_mcp_acquisition_operation
 from app.generation_runtime import ArtifactConfigurationRequiredError, generate_artifact_sections
 from app.export_runtime import export_artifact_if_required
 from app.candidate_file_manifest import build_required_files
+from app.artifact_content_ir import build_content_ir
 from app.llm_client import build_default_llm_client
 from app.verifier import build_output_contract_trace, verify_artifact_output
 from app.writeback_runtime import register_writeback_request
@@ -365,6 +366,11 @@ def _run_artifact_task(
     result.result_payload["verification"] = verification.model_dump(mode="json")
     if verification.status == "FAIL":
         raise ArtifactOutputContractViolationError(verification.failed_checks)
+    content_ir = build_content_ir(
+        artifact_type=plan.artifact_type, title=artifact_title,
+        sections=repaired_sections, markdown=rendered_markdown,
+    )
+    result.result_payload["content_ir"] = content_ir.model_dump(mode="json")
     export_trace = export_artifact_if_required(
         task_input=task_input,
         title=artifact_title,
@@ -385,6 +391,7 @@ def _run_artifact_task(
         "input_snapshot_id": task_input.input_snapshot_id,
         "catalog_digest": task_input.catalog_digest,
         "content_sha256": content_sha256,
+        "content_ir_digest": content_ir.content_digest,
         "required_files": required_files,
     }
 
