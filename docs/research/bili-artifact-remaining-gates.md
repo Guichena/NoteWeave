@@ -9,7 +9,7 @@
 | P1.5 A3 | 受控 Source Snapshot 窗口分页、预算、来源引用、旧 `sample_text` 兼容 | 用实际长文档量测后段事实召回与人工质量 |
 | P2 | 独立视频 Bundle、字幕/画面观察、文件摘要、知识 Plan、父资料 Task 与复用分支；离线 Provider 合同 | 有许可真实视频的完整采集、OCR/观察质量、无字幕 ASR 与分集画面回放 |
 | P3 | 博客、问答的独立 Skill、IR、证据 Verifier、Markdown/Version、局部 Repair 合同 | 真实资料下的结论一致性、文章质量及实际模型 Repair 样本 |
-| P4 | 原画面 PPTX、逐页文件清单、Host 校验与目录；PowerPoint 桌面端合成单页打开及版面压力回放 | 真实画面、多页、容器 LibreOffice 转换、逐页预览与 PPTX 视觉一致性、人工可读性验收 |
+| P4 | 原画面 PPTX、逐页文件清单、Host 校验与目录；PowerPoint 桌面端合成双页打开及版面压力回放 | 真实画面与真实多页、容器 LibreOffice 转换、逐页预览与 PPTX 视觉一致性、人工可读性验收 |
 | P5 | 尚未开放 | P4 稳定后才试点动画、第二模板和原生图形版，并逐页人工核对 |
 | P6 | 四选 UI、独立父子状态/重试/取消/历史版本下载、Workspace 与 Skill Version 开关、子项对账补建 | Docker/Kafka/对象存储跨进程中断恢复，实际文件浏览器保存，资料 Bundle 持有与可证明安全的清理，灰度样本及回滚演练 |
 | C0–C2 | Context v2 Schema、主题回跳与约束、摘要修订、预算选择、合成标注样本 | 扩大真实会话的人工标注与误选统计 |

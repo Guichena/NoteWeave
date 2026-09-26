@@ -484,6 +484,8 @@ V126 为 Artifact 的已冻结 Context 投影增加按 Run 固定的 `consumptio
 
 随后以同一合成资料增加第二张竖版画面与独立字幕/主张，生成 2 页 PPTX；PowerPoint 成功逐页导出 PNG。人工检查第 2 页的竖版原画面完整保留比例与边缘、页序/时间码为 `2/2` 与 `6.5s`，标题和正文均在页内。这补充了合成多页的桌面端预览，仍未验证容器转换器或真实视频画面。
 
+将双页合成场景固化为 Worker 回归：横版与竖版原画面分别绑定 `f1`、`f2`，PPTX 验证两页图片摘要及无裁边，文件 Manifest 含顺序为 1、2 的两张预览。`test_video_deck_ir.py` **12 passed，0 failed**。预览 PNG 在此合同中仍是合成占位文件，实际部署转换器的逐页视觉一致性尚未验证。
+
 ## C4 老会话按需回填合同
 
 在 Workspace 为 OFF 时先创建一轮 QA，随后切至 SHADOW 并提交新问题；原有影子合同现在读取第二轮冻结投影，确认第一轮用户消息仍在有序 Raw Tail、本轮 cutoff 为 3、选中预算未超额。再切回 OFF，后续新 Run 不创建 v2 影子快照；已有冻结投影仍保留。定向 `ContextV2ShadowSnapshotContractTest#workspaceModeCanOptIntoShadowAndTurnItOffWithoutEnablingActive` **1 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。此处证明本地旧会话在下一轮输入时回填；尚无批量历史回填、真实用户标注或灰度误选率统计。

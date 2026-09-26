@@ -130,6 +130,65 @@ def test_fixed_template_reduces_long_title_and_rejects_unreadable_density() -> N
         _body_font_size(["证" * 320])
 
 
+def test_two_page_deck_preserves_landscape_and_portrait_frames(
+        tmp_path, monkeypatch) -> None:
+    first_output = BytesIO()
+    second_output = BytesIO()
+    Image.new("RGB", (1280, 720), "navy").save(first_output, format="PNG")
+    Image.new("RGB", (720, 1280), "forestgreen").save(second_output, format="PNG")
+    frames = {"file-1": first_output.getvalue(), "file-2": second_output.getvalue()}
+    bundle, plan = _frozen_source(frames["file-1"])
+    bundle_data = bundle.model_dump(mode="json")
+    bundle_data["files"].append({
+        "file_id": "file-2", "role": "VIDEO_FRAME", "media_type": "image/png",
+        "size_bytes": len(frames["file-2"]),
+        "checksum_sha256": hashlib.sha256(frames["file-2"]).hexdigest(),
+    })
+    bundle_data["frames"].append({
+        "frame_id": "f2", "part": 2, "at_ms": 6500, "file_id": "file-2",
+        "checksum_sha256": hashlib.sha256(frames["file-2"]).hexdigest(),
+    })
+    bundle_data["transcript_original"] = "cache consistency\nread repair"
+    bundle_data["transcript_corrected"] = "cache consistency\nread repair"
+    bundle_data["transcript_segments"].append({
+        "segment_id": "s2", "part": 2, "start_ms": 5000, "end_ms": 8000,
+        "original_text": "read repair", "corrected_text": "read repair",
+    })
+    bundle_data["knowledge_nodes"].append({
+        "node_id": "n2", "title": "Repair evidence", "start_ms": 5000,
+        "end_ms": 8000, "transcript_segment_ids": ["s2"], "frame_ids": ["f2"],
+    })
+    multi_bundle = VideoMaterialBundleV1.model_validate(bundle_data)
+    plan_data = plan.model_dump(mode="json")
+    plan_data["bundle_content_digest"] = multi_bundle.content_digest()
+    plan_data["nodes"].append({
+        "node_id": "repair", "parent_id": "root", "kind": "CONCEPT",
+        "title": "Read repair", "start_ms": 5000, "end_ms": 8000,
+        "transcript_segment_ids": ["s2"], "frame_ids": ["f2"],
+        "terms": ["repair"],
+        "claims": [{"text": "read repair", "status": "EXTRACTED",
+                    "evidence_refs": ["segment:s2"]}],
+    })
+    multi_plan = VideoKnowledgePlanV1.model_validate(plan_data)
+    ir = build_video_deck_ir(multi_bundle, multi_plan)
+    assert [(slide.sequence_no, slide.frame_id) for slide in ir.slides] == [
+        (1, "f1"), (2, "f2")]
+    monkeypatch.setenv("NOTEWEAVE_MCP_SANDBOX_ROOT", str(tmp_path))
+    deck = render_original_video_deck("two-page", ir, multi_bundle, multi_plan,
+                                      frames.__getitem__)
+    verify_original_video_deck(deck, ir)
+    previews = []
+    for index in (1, 2):
+        preview = deck.parent / f"slide-{index:03d}.png"
+        Image.new("RGB", (1600, 900), "white").save(preview)
+        previews.append(preview)
+    manifest = build_video_deck_required_files(
+        render_video_deck_markdown(ir), deck, previews)
+    assert [(file["role"], file["sequence_no"]) for file in manifest] == [
+        ("PRIMARY_MARKDOWN", 0), ("PRIMARY_PPTX", 0),
+        ("SLIDE_PREVIEW", 1), ("SLIDE_PREVIEW", 2)]
+
+
 @pytest.mark.skipif(not shutil.which("pdfinfo") or not shutil.which("pdftoppm"),
                     reason="Poppler preview tools are unavailable")
 def test_deck_pdf_rasterizer_checks_every_page(tmp_path) -> None:
