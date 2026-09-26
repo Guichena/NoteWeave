@@ -372,6 +372,10 @@ def resume_waiting_artifact_task_with_callbacks(
         if not _is_waiting_status(result.job_snapshot.status):
             cache_waiting_task_delivery(task_id, events, result)
         response = _emit_callbacks_for_result(task_id, events, result, callback_client, task_input)
+    except ValueError as exc:
+        _report_execution_failure(callback_client, task_id, "WORKER_RESUME", exc)
+        release_waiting_task_claim(task_id)
+        raise
     except Exception:
         release_waiting_task_claim(task_id)
         raise
@@ -490,12 +494,14 @@ def _attach_frozen_video_material(
         elif operation_key == "EXTRACT_TRANSCRIPT" and isinstance(payload, dict):
             subtitle_payload = payload
     if subtitle_payload is None:
+        if has_capture_stage:
+            raise ValueError("video transcript stage has no acknowledged provider payload")
         return
     if has_capture_stage and capture_payload is None:
         raise ValueError("frame capture stage is missing its acknowledged receipt")
     bundle = subtitle_bundle_from_provider(task_input, subtitle_payload)
     if bundle is None:
-        return
+        raise ValueError("acknowledged video transcript has no complete, verifiable subtitle material")
     if capture_payload is not None:
         bundle = merge_captured_video_frames(task_input, bundle, capture_payload)
     receipt = callback_client.publish_video_material(task_id, bundle)

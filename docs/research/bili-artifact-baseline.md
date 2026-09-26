@@ -143,3 +143,9 @@ Worker 复查又发现冻结 Bundle 与额外外部 URL 同时存在时，专用
 PDF Skill 发布输入新增 `frame_density`（LOW/STANDARD/HIGH，默认 STANDARD）与 `asr_fallback`（ALLOW/DENY，默认 ALLOW）。Host 在 Run 输入快照冻结并用 Catalog 枚举校验；Worker 将策略解析为逐 Operation 的 `tool_arguments` 并持久化，字幕工具按策略决定是否允许转写兜底，抽帧工具按密度设置间隔与上限。历史资料包的复用比较忽略两个默认值，以便旧快照仍可被同设置的新 Run 引用；非默认值仍需严格相等。
 
 新增 Host 契约验证有效值冻结与无效值拒绝，`Phase6ResearchArtifactContractTest#videoAcquisitionPolicyIsFrozenAndInvalidValuesAreRejected` **1 passed**。Worker Callback 定向 **21 passed**，全套 **301 passed，37.50 秒**。首次定向测试失败源于新增测试误嵌入相邻用例、并误读 `ArtifactTaskResult.status`；修正测试后通过。三份发布 Catalog 原始字节 SHA-256 一致。尚未在真实 B 站或 Docker Provider 环境验证这些策略的实际下载/转写效果。
+
+## P2 不完整字幕回执发布门禁
+
+自动视频采集完成时，若字幕 Operation 没有实际 Provider 回执，或回执只有预览、缺少可验证的完整字幕文件与视频元数据，Worker 会拒绝 Candidate 完成并向 Host 发送非重试任务失败。原先这两种情况会跳过素材冻结，仍可能发布没有 Bundle 引用的 PDF。明确返回 `no_subtitle_available` 且元数据完整的回执仍可冻结为带 `NO_SUBTITLE` 缺口的资料包；此门禁针对不完整或无法验证的回执。
+
+合成测试覆盖预览、空回执、失败回调及既有异步恢复：Worker Callback **23 passed**，全套 **303 passed，40.45 秒**。本批未更改 Host 协议；真实 Provider 的 ASR 失败路径仍需有凭据的视频回放验证。

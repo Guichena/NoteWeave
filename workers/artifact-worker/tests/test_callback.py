@@ -232,6 +232,50 @@ def test_video_acquisition_policy_is_persisted_on_operations() -> None:
         clear_waiting_tasks()
 
 
+def test_acknowledged_video_preview_cannot_complete_without_frozen_material(monkeypatch) -> None:
+    task = _build_waiting_task_input()
+    task.input_snapshot_id = "snapshot-preview"
+    _, result = run_artifact_task(_build_resume_task_input())
+    operations = [
+        {"operation_key": "EXTRACT_TRANSCRIPT", "request_id": "subtitle-1"},
+        {"operation_key": "CAPTURE_FRAMES", "server_id": callback_module.SYSTEM_BILIBILI_SERVER_ID,
+         "request_id": "frames-1"},
+    ]
+    monkeypatch.setattr(callback_module, "list_acquisition_operations", lambda **_: operations)
+    monkeypatch.setattr(callback_module, "get_acquisition_result_payload", lambda request_id: {
+        "subtitle-1": {"subtitle_preview": ["Only a preview; no verified SRT or video metadata"]},
+        "frames-1": {"normalized_video_id": "BV1NoteWeaveDemo", "part": 1,
+                     "duration_ms": 5000, "frames": [], "files": [],
+                     "coverage_gaps": ["NO_FRAMES"], "missing_requested_ms": []},
+    }[request_id])
+    client = JavaArtifactCallbackClient("http://java-host:8081", delivery_token="delivery-1")
+    with pytest.raises(ValueError, match="no complete, verifiable subtitle material"):
+        callback_module._attach_frozen_video_material(task.task_id, task, result, client)
+    monkeypatch.setattr(callback_module, "get_acquisition_result_payload", lambda request_id: None)
+    with pytest.raises(ValueError, match="no acknowledged provider payload"):
+        callback_module._attach_frozen_video_material(task.task_id, task, result, client)
+
+
+def test_resume_reports_invalid_frozen_material_as_task_failure(monkeypatch) -> None:
+    _, result = run_artifact_task(_build_resume_task_input())
+    client = FakeCallbackClient(_build_resume_task_input())
+    released = []
+    monkeypatch.setattr(callback_module, "get_waiting_task", lambda task_id: None)
+    monkeypatch.setattr(callback_module, "wake_waiting_task", lambda *_, **__: ([], result))
+    monkeypatch.setattr(callback_module, "cache_waiting_task_delivery", lambda *_, **__: None)
+    monkeypatch.setattr(callback_module, "release_waiting_task_claim", released.append)
+
+    def reject_material(*_):
+        raise ValueError("acknowledged video transcript has no complete, verifiable subtitle material")
+
+    monkeypatch.setattr(callback_module, "_emit_callbacks_for_result", reject_material)
+    with pytest.raises(ValueError, match="no complete, verifiable subtitle material"):
+        resume_waiting_artifact_task_with_callbacks("task-a-callback", client=client)
+    assert client.failures[0]["phase"] == "WORKER_RESUME"
+    assert client.failures[0]["error_code"] == "VALUEERROR"
+    assert released == ["task-a-callback"]
+
+
 def test_fetch_frozen_material_frames_checks_scope_media_type_and_bytes(monkeypatch) -> None:
     output = BytesIO()
     Image.new("RGB", (2, 2), "blue").save(output, format="PNG")
