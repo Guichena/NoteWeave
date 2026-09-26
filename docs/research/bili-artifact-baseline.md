@@ -265,3 +265,9 @@ Worker 原先把任何非空 `source_refs` 都统计为已覆盖，即使引用�
 新增管理员只读接口，对同一 Answer Run 的 v1 `run_input_snapshot` 与 v2 影子快照逐类比较消息、摘要和 Memory Revision 标识，并返回编译器版本、回放状态、影子失败原因及 v2 约束数量。响应只含引用标识和计数，不返回正文；缺少影子快照、编译失败和 v1 未就绪均有明确状态。读取前重新校验 v2 冻结 JSON 的 SHA-256，篡改摘要返回 `CONTEXT_V2_SHADOW_CORRUPT`。接口把 `accuracy_status` 标为 `GOLD_LABELS_UNAVAILABLE`，因此差异不能自动判定为误选或漏选。
 
 READY、FAILED、REDACTED、OFF 和摘要篡改的定向契约通过；最终 `ContextV2ShadowSnapshotContractTest` **5 passed**、`ConversationTurnModuleContractTest` **39 passed**、固定样本回放 **1 passed**，合计 **45 passed**。这只是可核对的 v1/v2 引用差异，不是 C4 的真实用户正确率、灰度基线或生产 v2 启用门禁。
+
+## P3 两种文字产物的冻结证据 IR 基础
+
+新增 `VideoDerivedTextV1`：博客章节与面试问答各有专用结构、独立内容摘要和 Markdown 摘要，问答固定简答、详答、相关知识。两种产物均从同一份冻结 `VideoMaterialBundleV1` 与 `VideoKnowledgePlanV1` 派生，只复制已被知识计划校验过的 `EXTRACTED` 主张及证据引用；`UNVERIFIED` 只呈现明确缺口。本地证据窗口计划没有语义主张，会被拒绝生成，避免空索引被误当作学习文章或问答。Verifier 对照冻结 Bundle/Plan、重新确定性派生并比对 Markdown，篡改主张、引用或渲染会失败。
+
+首轮定向测试 **3 failed、1 passed**，定位到构造预览 IR 时嵌套模型未被解析；修复后另有 **1 failed、20 passed**，是伪造测试未同步更新 Markdown 摘要，随后改为完整伪造场景。最终定向 **21 passed**，Worker 全套 **333 passed，34.66 秒**。此批只是 P3 的内容契约基础；尚未注册生产 Skill、创建独立 Job/Version 或接入本地 Repair。外部语义规划的数据发送仍未获授权，本地证据窗口不足以触发这两种产物的 READY。
