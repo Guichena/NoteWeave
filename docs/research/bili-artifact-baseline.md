@@ -481,3 +481,7 @@ V126 为 Artifact 的已冻结 Context 投影增加按 Run 固定的 `consumptio
 ## P4 PowerPoint 实际渲染与版面门禁
 
 本机 PowerPoint 可打开 Worker 生成的原画面 PPTX。以冻结的合成 PNG、字幕与含证据引用的 Plan 生成普通及长标题/密集正文两份单页演示文稿，PowerPoint COM 均成功打开并导出 1280×720 PNG。首次压力预览中，长标题超出右侧页边；根据实际渲染把标题按中英文显示宽度选择字号，正文按估算行高选字号，超出最低可读字号时明确拒绝生成。重新导出的压力页标题完整可见，原画面未裁边，正文在页内。`test_video_deck_ir.py` **11 passed**；Worker 全套 **362 passed，41.46 秒**。这是合成图片、单页、PowerPoint 桌面端的视觉检查；未验证真实 B站画面、多页版面、容器内 LibreOffice 转换或逐页 PNG 与 PPTX 的部署一致性。P4 仍不能宣称完成。
+
+## C4 老会话按需回填合同
+
+在 Workspace 为 OFF 时先创建一轮 QA，随后切至 SHADOW 并提交新问题；原有影子合同现在读取第二轮冻结投影，确认第一轮用户消息仍在有序 Raw Tail、本轮 cutoff 为 3、选中预算未超额。再切回 OFF，后续新 Run 不创建 v2 影子快照；已有冻结投影仍保留。定向 `ContextV2ShadowSnapshotContractTest#workspaceModeCanOptIntoShadowAndTurnItOffWithoutEnablingActive` **1 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。此处证明本地旧会话在下一轮输入时回填；尚无批量历史回填、真实用户标注或灰度误选率统计。

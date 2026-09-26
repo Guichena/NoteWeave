@@ -66,6 +66,13 @@ class ContextV2ShadowSnapshotContractTest {
                 .content(mapper.writeValueAsString(Map.of("content", "Mode shadow",
                         "answer_mode", "QA", "client_request_id", "rollout-on-2"))));
         assertThat(shadowCount(on.path("answer_run_id").asText())).isEqualTo(1);
+        ContextProjectionV2 backfilled = mapper.readValue(jdbc.queryForObject("""
+                select projection_json from context_v2_shadow_snapshot where answer_run_id = ?
+                """, String.class, on.path("answer_run_id").asText()), ContextProjectionV2.class);
+        assertThat(backfilled.rawTail()).extracting(ContextProjectionV2.RawMessage::text)
+                .contains("Mode off", "Mode shadow");
+        assertThat(backfilled.cutoffSeq()).isEqualTo(3);
+        assertThat(backfilled.selectedTokens()).isLessThanOrEqualTo(backfilled.tokenBudget());
 
         JsonNode disabled = data(put("/api/v2/workspaces/{workspaceId}/context-v2-rollout", workspaceId)
                 .contentType(MediaType.APPLICATION_JSON)
