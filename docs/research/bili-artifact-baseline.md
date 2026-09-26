@@ -291,3 +291,9 @@ Host 集成回放创建两个独立 Job，引同一个 PDF Job 冻结的素材�
 专用派生 IR 现在显式冻结 `language`；中文、英文和中英双语分别渲染来源摘要、术语、证据、缺口和问答三段式标题。Worker 从已冻结 Skill 输入取语言，Host 发布前核对语言与该 Run 的输入一致，并校验派生标题等于通用内容 IR 标题。局部 Repair 接口只接受与原 Bundle/Plan/Skill/语言/标题完全相同的草稿，逐节点对照已核验的 `EXTRACTED` 主张，最多重建 3 个错误节点或术语项；外来节点、重复节点和身份篡改直接失败。Worker 执行函数在收到内部草稿时走这条 Repair 路径并记录动作，最终仍由证据和 Markdown Verifier 复核。
 
 语言与 Repair 定向 Worker **12 passed**，Host 本地化发布与篡改门禁定向通过；最终 Worker 全套 **341 passed，39.55 秒**。Host Artifact 回归 `Phase6ResearchArtifactContractTest` **52 个用例，44 执行通过、8 个既有跳过**，Candidate **6 passed**、回滚 **2 passed**、Worker 输入 **5 passed**、目录 **2 passed**、专用验证器 **1 passed**。目前生产生成器是确定性派生，不产生需要修复的模型草稿；局部 Repair 的故障回放通过内部草稿入口验证，真实模型 Repair Yield 尚无样本。文章化写作和真实视频验收仍未完成。
+
+## P4 原图 PPTX 的页清单与结构校验基础
+
+新增 `VideoDeckIRV1`，从冻结视频资料包和知识计划确定性生成页序、原画面文件摘要、时间、节点、已抽取主张与证据引用。资料只有画面索引而没有语义主张时拒绝成稿。固定模板以 `python-pptx` 嵌入原始画面字节，按长宽比适配且不裁边；标题、主张和证据备注保持可编辑。写出后重新打开 PPTX，核对页数、尺寸、每页画面 SHA-256、裁切/出界和文字。篡改页画面引用与文件字节的故障用例均被拒绝。
+
+定向 **4 passed，0.48 秒**；Worker 全套 **345 passed，32.66 秒**。当前机器未装 LibreOffice，尚未生成或人工检查实际逐页 PPTX 渲染预览；固定文本长度门禁也不能代替视觉溢出检查。因此这批只证明 IR 与 PPTX 结构基础，未注册生产 `video_learning_deck` Skill，也未把 PPTX 或预览纳入 Host 文件提交门禁。
