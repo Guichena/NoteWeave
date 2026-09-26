@@ -344,7 +344,7 @@ public class ArtifactExportService {
             try {
                 ExportRow version = loadVersionById(versionId);
                 List<ArtifactFileMetadataResponse> files = listFiles(versionId);
-                if (files.isEmpty()) continue;
+                requireCompletePublishedFileSet(version, files);
                 for (ArtifactFileMetadataResponse file : files) {
                     byte[] existing;
                     try {
@@ -369,6 +369,43 @@ public class ArtifactExportService {
             } catch (RuntimeException ex) {
                 log.warn("Artifact file reconciliation deferred; versionId={}", versionId, ex);
             }
+        }
+    }
+
+    private void requireCompletePublishedFileSet(ExportRow version,
+                                                 List<ArtifactFileMetadataResponse> files) {
+        if (files.stream().noneMatch(file -> MARKDOWN.equals(file.fileFormat())
+                && "READY".equals(file.status()))) {
+            throw new BusinessException("ARTIFACT_REQUIRED_FILE_MISSING",
+                    "已发布版本缺少 Markdown 文件", HttpStatus.CONFLICT);
+        }
+        String pdfName = readCompiledFileNameIfPresent(version.resultPayloadJson());
+        if (!pdfName.isBlank() && files.stream().noneMatch(file -> PDF.equals(file.fileFormat())
+                && pdfName.equals(file.fileName()) && "READY".equals(file.status()))) {
+            throw new BusinessException("ARTIFACT_REQUIRED_FILE_MISSING",
+                    "已发布版本缺少 PDF 文件", HttpStatus.CONFLICT);
+        }
+        try {
+            JsonNode required = objectMapper.readTree(version.resultPayloadJson())
+                    .path("candidate").path("required_files");
+            if (!required.isArray()) return; // Historical versions predate manifests.
+            for (JsonNode expected : required) {
+                boolean present = files.stream().anyMatch(file ->
+                        expected.path("role").asText().equals(file.fileRole())
+                        && expected.path("variant").asText().equals(file.variant())
+                        && expected.path("sequence_no").asInt(-1) == file.sequenceNo()
+                        && expected.path("checksum_sha256").asText().equals(file.checksumSha256())
+                        && "READY".equals(file.status()));
+                if (!present) {
+                    throw new BusinessException("ARTIFACT_REQUIRED_FILE_MISSING",
+                            "已发布版本缺少 Candidate 声明的文件", HttpStatus.CONFLICT);
+                }
+            }
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new BusinessException("ARTIFACT_FILE_MANIFEST_INVALID",
+                    "已发布版本的文件清单无效", HttpStatus.CONFLICT);
         }
     }
 

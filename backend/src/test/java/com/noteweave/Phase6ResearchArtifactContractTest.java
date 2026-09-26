@@ -1196,6 +1196,36 @@ class Phase6ResearchArtifactContractTest {
     }
 
     @Test
+    void reconciliationMustNotMarkVersionReadyWhenRequiredFileMetadataIsNotReady() throws Exception {
+        String workspaceId = createWorkspace();
+        MvcResult create = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "resume_highlight",
+                                "user_requirement", "Exercise file reconciliation completeness",
+                                "inputs", Map.of("language", "en")
+                        ))))
+                .andExpect(status().isOk()).andReturn();
+        JsonNode created = objectMapper.readTree(create.getResponse().getContentAsString()).path("data");
+        String taskId = created.path("task_id").asText();
+        completeArtifact(taskId, "Reconciliation check", "# Reconciliation check");
+        String versionId = jdbcTemplate.queryForObject("""
+                select id from artifact_version where artifact_job_id = ?
+                """, String.class, created.path("artifact_job_id").asText());
+        jdbcTemplate.update("update artifact_file set status = 'MISSING' where artifact_version_id = ?", versionId);
+        jdbcTemplate.update("update artifact_version set delivery_status = 'DEGRADED' where id = ?", versionId);
+
+        artifactExportService.reconcileDegradedFiles();
+        assertThat(jdbcTemplate.queryForObject("select delivery_status from artifact_version where id = ?",
+                String.class, versionId)).isEqualTo("DEGRADED");
+
+        jdbcTemplate.update("update artifact_file set status = 'READY' where artifact_version_id = ?", versionId);
+        artifactExportService.reconcileDegradedFiles();
+        assertThat(jdbcTemplate.queryForObject("select delivery_status from artifact_version where id = ?",
+                String.class, versionId)).isEqualTo("READY");
+    }
+
+    @Test
     void completedArtifactVersionShouldBeSavedAsWorkspaceSourceIdempotently() throws Exception {
         String workspaceId = createWorkspace();
         MvcResult createResult = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
