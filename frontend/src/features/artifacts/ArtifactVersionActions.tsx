@@ -52,7 +52,7 @@ export function ArtifactVersionActions({
 
   return (
     <>
-      <span className="artifact-version-preview">{auditView.preview || "已生成产物版本，可继续查看或用于后续沉淀。"}</span>
+      <span className="artifact-version-preview">{stripMarkdown(auditView.preview) || "已生成产物版本，可继续查看或用于后续沉淀。"}</span>
       <small className="artifact-version-meta">
         {auditView.scopeLabel} · v{version.version_no} · {formatRelativeTime(version.created_at)}
       </small>
@@ -138,4 +138,9 @@ export function ArtifactVersionActions({
       ) : null}
     </>
   );
+}
+
+/** 预览只需要一句话，去掉 Markdown 标记符号。 */
+function stripMarkdown(value: string | undefined) {
+  return (value ?? "").replace(/[#>*`_]+/g, " ").replace(/\s+/g, " ").trim();
 }

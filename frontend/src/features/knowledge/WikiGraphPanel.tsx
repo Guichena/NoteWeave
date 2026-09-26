@@ -1,3 +1,4 @@
+import { formatWikiKind } from "./wikiUtils";
 import { useEffect, useMemo, useState } from "react";
 import {
   ExternalLink,
@@ -348,7 +349,7 @@ export function WikiGraphPanel(props: WikiGraphPanelProps) {
       {activeNode ? (
         <div className="wiki-graph-selection" aria-live="polite">
           <div>
-            <span>{activeNode.page_kind || "TOPIC"}</span>
+            <span>{formatWikiKind(activeNode.page_kind)}</span>
             <strong>{activeNode.title}</strong>
             <small>
               {activeNode.unresolved
@@ -413,7 +414,7 @@ export function WikiGraphPanel(props: WikiGraphPanelProps) {
                 disabled={props.isBusy || !props.workspace}
                 onClick={() => void props.toggleWikiGraphKind(kind)}
               >
-                {kind}
+                {formatWikiKind(kind)}
               </button>
             ))}
           </div>
@@ -435,7 +436,7 @@ export function WikiGraphPanel(props: WikiGraphPanelProps) {
                   key={`graph-search-${page.item_id}`}
                   onClick={() => void props.openWikiGraphPage(page.item_id)}
                 >
-                  <span><strong>{page.title}</strong><small>{page.page_kind || "TOPIC"} · v{page.latest_version_no}</small></span>
+                  <span><strong>{page.title}</strong><small>{formatWikiKind(page.page_kind)} · v{page.latest_version_no}</small></span>
                   <Focus size={14} aria-hidden="true" />
                 </button>
               ))}

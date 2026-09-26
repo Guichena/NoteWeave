@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
-import { ArrowUp, Layers3, LibraryBig, PanelLeft } from "lucide-react";
+import { ArrowUp, Files, Layers3, LibraryBig } from "lucide-react";
 import { isSourceReadableOnly, isSourceSearchable } from "../sources/model";
 import { type AnswerMode } from "../../routes";
 import { modeExamplePrompts, modeQuestionPlaceholder } from "../shell/modeContext";
@@ -15,7 +15,13 @@ const LazyArtifactRail = lazy(() => import("../artifacts/ArtifactRail").then((mo
   default: module.ArtifactRail
 })));
 
-type NotebookPanel = "sources" | "studio" | null;
+type PanelTab = "sources" | "studio";
+
+/** 宽屏默认展开右侧面板；窄屏默认收起，避免挤压对话。 */
+function prefersOpenPanel() {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  return window.matchMedia("(min-width: 1200px)").matches;
+}
 
 export type ChatWorkbenchProps = {
   mode: AnswerMode;
@@ -64,7 +70,8 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
     uploadBusy = false
   } = props;
   const composerBusy = chatBusy;
-  const [openPanel, setOpenPanel] = useState<NotebookPanel>(null);
+  const [panelOpen, setPanelOpen] = useState(prefersOpenPanel);
+  const [panelTab, setPanelTab] = useState<PanelTab>("sources");
   const conversationRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const examples = modeExamplePrompts(mode);
@@ -114,15 +121,16 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
   }, [question]);
 
   useEffect(() => {
-    if (!openPanel) return;
+    if (!panelOpen) return;
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape" && !event.defaultPrevented) {
-        setOpenPanel(null);
-      }
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      // 仅在面板以抽屉形式覆盖对话时响应 Esc
+      if (typeof window.matchMedia === "function" && window.matchMedia("(min-width: 1200px)").matches) return;
+      setPanelOpen(false);
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [openPanel]);
+  }, [panelOpen]);
 
   function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -131,9 +139,19 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
     }
   }
 
-  function togglePanel(panel: Exclude<NotebookPanel, null>) {
-    setOpenPanel((current) => (current === panel ? null : panel));
-    if (panel === "studio") setArtifactComposerOpen(false);
+  function showPanel(tab: PanelTab) {
+    if (panelOpen && panelTab === tab) {
+      setPanelOpen(false);
+    } else {
+      setPanelTab(tab);
+      setPanelOpen(true);
+    }
+    if (tab === "studio") setArtifactComposerOpen(false);
+  }
+
+  function closePanel() {
+    setPanelOpen(false);
+    setArtifactComposerOpen(false);
   }
 
   function applyExample(example: string) {
@@ -142,51 +160,34 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
   }
 
   return (
-    <section className="notebook layout" data-open-panel={openPanel ?? undefined}>
-      {openPanel ? (
-        <button
-          type="button"
-          className="notebook-drawer-backdrop"
-          aria-label="关闭侧栏"
-          onClick={() => setOpenPanel(null)}
-        />
-      ) : null}
-
-      <ChatSourcesPane
-        sources={sources}
-        workspace={workspace}
-        conversationCount={conversationCount}
-        onOpenSourceLibrary={onOpenSourceLibrary}
-        selectedSourceIds={selectedQaSourceIds}
-        onChangeSelectedSourceIds={(next) => setSelectedQaSourceIds(next)}
-        scopeApplies={mode === "qa"}
-        uploadSourceFile={uploadSourceFile}
-        uploadBusy={uploadBusy}
-        disabled={composerBusy}
-        onClose={() => setOpenPanel(null)}
-      />
-
-      <div className="chat-panel notebook-pane">
-        <header className="pane-header chat-pane-header">
-          <button
-            type="button"
-            className="pane-toggle sources-toggle"
-            aria-label="打开来源"
-            aria-expanded={openPanel === "sources"}
-            onClick={() => togglePanel("sources")}
-          >
-            <PanelLeft size={16} aria-hidden="true" />
-            <span>来源</span>
-            <span className="pane-toggle-count">{sources.length}</span>
-          </button>
-          <h2 className="pane-title">对话</h2>
-          <div className="pane-header-actions">
+    <section
+      className={`chat-page layout${panelOpen ? " is-panel-open" : ""}`}
+      data-panel-tab={panelOpen ? panelTab : undefined}
+    >
+      <div className="chat-panel">
+        <header className="page-header chat-header">
+          <div className="page-header-title">
+            <h2>{conversation?.title || "新对话"}</h2>
+            <small>{workspace?.name || "未选择工作台"} · 共享 {sources.length} 个来源 · {conversationCount} 个对话</small>
+          </div>
+          <div className="page-header-actions panel-switch" role="group" aria-label="侧边面板">
             <button
               type="button"
-              className="pane-toggle studio-toggle"
+              className="panel-switch-button"
+              aria-label="打开来源"
+              aria-pressed={panelOpen && panelTab === "sources"}
+              onClick={() => showPanel("sources")}
+            >
+              <Files size={16} aria-hidden="true" />
+              <span>来源</span>
+              <span className="panel-switch-count">{sources.length}</span>
+            </button>
+            <button
+              type="button"
+              className="panel-switch-button"
               aria-label="打开产物"
-              aria-expanded={openPanel === "studio"}
-              onClick={() => togglePanel("studio")}
+              aria-pressed={panelOpen && panelTab === "studio"}
+              onClick={() => showPanel("studio")}
               disabled={!workspace}
             >
               <Layers3 size={16} aria-hidden="true" />
@@ -199,11 +200,11 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
           {messages.length === 0 ? (
             <div className="chat-welcome">
               <BrandMark className="chat-welcome-mark" size={40} />
-              <h2 className="chat-welcome-title">{workspace?.name || "开始一本新的笔记本"}</h2>
+              <h2 className="chat-welcome-title">今天想从资料里弄清楚什么？</h2>
               <p className="chat-welcome-meta">
                 {sources.length > 0
-                  ? `${sources.length} 个来源 · ${searchableSources.length} 个可检索`
-                  : "还没有来源"}
+                  ? `「${workspace?.name || "当前工作台"}」的 ${sources.length} 个来源由所有对话共享，其中 ${searchableSources.length} 个可检索`
+                  : "这个工作台还没有来源"}
               </p>
               {sources.length > 0 ? (
                 <div className="chat-example-list" aria-label="示例问题">
@@ -221,7 +222,7 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
                 </div>
               ) : (
                 <div className="chat-welcome-empty">
-                  <p>添加 PDF、Markdown 或文本资料，NoteWeave 会基于它们回答并给出引用。</p>
+                  <p>添加 PDF、Markdown 或文本资料后，这个工作台下的每个对话都能基于它们回答并给出引用。</p>
                   <button type="button" className="secondary-button chat-empty-library-action" onClick={onOpenSourceLibrary}>
                     <LibraryBig size={15} aria-hidden="true" />
                     前往资料库添加资料
@@ -268,8 +269,11 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
               <button
                 type="button"
                 className="composer-scope"
-                title="在左侧“来源”中调整本次问答范围"
-                onClick={() => togglePanel("sources")}
+                title="在“来源”面板中调整本次问答范围"
+                onClick={() => {
+                  setPanelTab("sources");
+                  setPanelOpen(true);
+                }}
               >
                 {scopeSummary}
               </button>
@@ -291,21 +295,43 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
         </div>
       </div>
 
-      <aside className="studio-pane notebook-pane" aria-label="产物">
-        <Suspense fallback={(
-          <div className="artifact-rail artifact-rail-loading" role="status">
-            <span className="view-loading-spinner" aria-hidden="true" />
-            <span>正在加载产物…</span>
-          </div>
-        )}>
-          <LazyArtifactRail
-            {...artifactRailProps}
-            onCloseArtifactRail={() => {
-              setOpenPanel(null);
-              setArtifactComposerOpen(false);
-            }}
+      {panelOpen ? (
+        <button
+          type="button"
+          className="context-panel-backdrop"
+          aria-label="关闭侧边面板"
+          onClick={closePanel}
+        />
+      ) : null}
+
+      <aside className="context-panel" aria-label="来源与产物" hidden={!panelOpen}>
+        <div className="context-panel-view" hidden={panelTab !== "sources"}>
+          <ChatSourcesPane
+            sources={sources}
+            workspace={workspace}
+            conversationCount={conversationCount}
+            onOpenSourceLibrary={onOpenSourceLibrary}
+            selectedSourceIds={selectedQaSourceIds}
+            onChangeSelectedSourceIds={(next) => setSelectedQaSourceIds(next)}
+            scopeApplies={mode === "qa"}
+            uploadSourceFile={uploadSourceFile}
+            uploadBusy={uploadBusy}
+            disabled={composerBusy}
+            onClose={closePanel}
           />
-        </Suspense>
+        </div>
+        <div className="context-panel-view studio-pane" hidden={panelTab !== "studio"}>
+          {panelOpen && panelTab === "studio" ? (
+            <Suspense fallback={(
+              <div className="artifact-rail artifact-rail-loading" role="status">
+                <span className="view-loading-spinner" aria-hidden="true" />
+                <span>正在加载产物…</span>
+              </div>
+            )}>
+              <LazyArtifactRail {...artifactRailProps} onCloseArtifactRail={closePanel} />
+            </Suspense>
+          ) : null}
+        </div>
       </aside>
     </section>
   );

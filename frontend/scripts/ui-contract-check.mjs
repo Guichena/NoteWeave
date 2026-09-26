@@ -59,8 +59,8 @@ for (const item of forbiddenSnippets) {
 const requiredSnippets = [
   { label: "品牌标题", source: shellSource, snippet: "<h1 className=\"brand-name\">NoteWeave</h1>" },
   { label: "WorkbenchShell", source: appSource, snippet: "WorkbenchShell" },
-  { label: "顶栏导航", source: shellSource, snippet: "app-nav" },
-  { label: "笔记本会话切换", source: shellSource, snippet: "ConversationSwitcher" },
+  { label: "侧边栏导航", source: shellSource, snippet: "app-sidebar" },
+  { label: "工作台下的多对话列表", source: shellSource, snippet: "sidebar-conversation" },
   { label: "Chat 资料区", source: chatSourcesPaneSource, snippet: "sources-pane" },
   { label: "source-drawer 兼容 class", source: chatSourcesPaneSource, snippet: "source-drawer" },
   {
@@ -172,4 +172,4 @@ for (const view of navViews) {
   }
 }
 
-console.log("UI contract check passed (top bar shell + notebook sources/chat/studio + scoped busy).");
+console.log("UI contract check passed (sidebar shell + chat with sources/studio panel + scoped busy).");

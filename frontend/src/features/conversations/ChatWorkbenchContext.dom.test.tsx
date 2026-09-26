@@ -16,16 +16,20 @@ afterEach(() => {
 });
 
 describe("ChatWorkbench notebook surface", () => {
-  it("renders sources, conversation and studio side by side", async () => {
+  it("renders the conversation with a switchable sources / studio panel", async () => {
     render(<ChatWorkbench {...buildProps()} />);
 
-    expect(screen.getByRole("complementary", { name: "来源" })).toBeTruthy();
-    expect(screen.getByRole("complementary", { name: "产物" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "对话" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "企业研究工作台" })).toBeTruthy();
-    expect(screen.getByText("1 个来源 · 1 个可检索")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "政策研究会话" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "今天想从资料里弄清楚什么？" })).toBeTruthy();
     expect(screen.queryByRole("dialog", { name: "产物工作台" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "打开来源" }));
+    expect(screen.getByRole("complementary", { name: "来源与产物" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "来源" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "打开产物" }));
     await waitFor(() => expect(document.querySelector(".studio-pane .artifact-rail")).toBeTruthy());
+    expect(screen.queryByRole("region", { name: "来源" })).toBeNull();
   });
 
   it("keeps an empty welcome state at the top and scrolls only after messages exist", () => {
@@ -55,6 +59,7 @@ describe("ChatWorkbench notebook surface", () => {
       sources: [{ source_id: "source-1", title: "本地资料.md", status: "READY", index_status: "DISABLED" }],
       question: "这份资料讲了什么？"
     })} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开来源" }));
 
     expect(screen.getByText("1 份仅可阅读 · 无检索索引")).toBeTruthy();
     expect(screen.getByRole("button", { name: "等待可检索资料" }).hasAttribute("disabled")).toBe(true);
@@ -70,6 +75,7 @@ describe("ChatWorkbench notebook surface", () => {
       ],
       setSelectedQaSourceIds
     })} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开来源" }));
 
     const checkboxA = screen.getByRole("checkbox", { name: "在问答中使用 A.pdf" }) as HTMLInputElement;
     expect(checkboxA.checked).toBe(true);
@@ -88,16 +94,18 @@ describe("ChatWorkbench notebook surface", () => {
     expect(screen.queryByRole("menu", { name: "选择回答模式" })).toBeNull();
   });
 
-  it("opens the Studio drawer on its overview and closes it with Escape", async () => {
+  it("opens the Studio on its overview and toggles the panel from the header", async () => {
     const setArtifactComposerOpen = vi.fn();
     render(<ChatWorkbench {...buildProps({ setArtifactComposerOpen })} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "打开产物" }));
+    const studio = screen.getByRole("button", { name: "打开产物" });
+    fireEvent.click(studio);
     expect(setArtifactComposerOpen).toHaveBeenCalledWith(false);
-    expect(document.querySelector(".notebook")?.getAttribute("data-open-panel")).toBe("studio");
+    expect(document.querySelector(".chat-page")?.getAttribute("data-panel-tab")).toBe("studio");
+    await waitFor(() => expect(screen.getByRole("button", { name: "关闭产物工作台" })).toBeTruthy());
 
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(document.querySelector(".notebook")?.hasAttribute("data-open-panel")).toBe(false);
+    fireEvent.click(studio);
+    expect(document.querySelector(".chat-page")?.hasAttribute("data-panel-tab")).toBe(false);
   });
 });
 

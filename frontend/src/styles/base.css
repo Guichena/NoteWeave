@@ -851,6 +851,17 @@ details > summary::-webkit-details-marker {
   }
 }
 
+@keyframes nw-drawer-in {
+  from {
+    opacity: 0.4;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @keyframes nw-backdrop-in {
   from {
     opacity: 0;

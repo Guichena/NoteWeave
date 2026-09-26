@@ -1,162 +1,128 @@
-import type { WikiWorkbenchProps } from "./buildWikiWorkbenchProps";
-import { formatSourceIndexStatus, formatSourceProcessingStatus } from "../sources/model";
-import { BookOpenText, Link2, LibraryBig } from "lucide-react";
+import { ArrowRight, Sparkles, TriangleAlert, Wrench } from "lucide-react";
+import { WikiGraphPanel } from "./WikiGraphPanel";
+import { formatWikiKind } from "./wikiUtils";
+import type { WikiRelationsPanelProps } from "./wikiRelationsPanel.contract";
 
-type WikiOverviewPanelProps =
-  Pick<WikiWorkbenchProps, "isBusy" | "workspace">
-  & Pick<WikiWorkbenchProps["data"], "wikiIndex" | "wikiRebuildAdvice">
-  & Pick<WikiWorkbenchProps["derived"], "wikiAdviceAction">
-  & Pick<WikiWorkbenchProps["helpers"],
-    | "formatDateTime"
-    | "renderWikiRecentUpdateCard"
-    | "renderWikiTaskCard"
-    | "getWikiIssuePrimaryAction"
-  >
-  & Pick<WikiWorkbenchProps["actions"], "getRecentSourceAction" | "openWikiPageById" | "autoFixWiki">;
+type WikiOverviewPanelProps = WikiRelationsPanelProps & {
+  onOpenManage: () => void;
+};
 
+/** 知识总览：几个关键数字 + 知识图谱 + 最近更新 + 需要处理的事项。 */
 export function WikiOverviewPanel(props: WikiOverviewPanelProps) {
+  const index = props.wikiIndex;
+  const pages = props.wikiHome?.pages ?? [];
+  const issues = props.wikiIssues ?? [];
+  const recentUpdates = (index?.recent_updates?.length ? index.recent_updates : pages).slice(0, 6);
+  const advice = props.wikiAdviceAction;
+
   return (
-    <>
-      <div className="wiki-overview-hero">
-        <div className="wiki-overview-heading">
-          <span className="wiki-overview-icon" aria-hidden="true"><BookOpenText size={20} /></span>
-          <div>
-            <span className="wiki-overview-kicker">工作台知识</span>
-            <h2>工作台总览</h2>
-          </div>
-        </div>
+    <div className="wiki-overview">
+      <header className="wiki-overview-hero">
+        <p className="wiki-overview-kicker">{props.workspace?.name || "当前工作台"} · 知识库</p>
+        <h2>知识总览</h2>
         <p className="wiki-overview-lead">
-          汇总这个工作台里由资料自动沉淀、以及人工维护的知识页面。先在这里核对构建状态和维护提醒，再进入具体页面查看版本、引用与关系。
+          资料解析后会自动沉淀为知识页，页面之间通过链接相互引用。从左侧目录打开任意页面阅读，或在图谱里探索它们的关系。
         </p>
-        <div className="wiki-overview-metrics" aria-label="Wiki 内容概况">
-          <span><LibraryBig size={15} aria-hidden="true" /><strong>{props.wikiIndex?.ready_source_count ?? 0}</strong><small>已解析资料</small></span>
-          <span><BookOpenText size={15} aria-hidden="true" /><strong>{props.wikiIndex?.page_count ?? 0}</strong><small>知识页面</small></span>
-          <span><Link2 size={15} aria-hidden="true" /><strong>{props.wikiIndex?.link_count ?? 0}</strong><small>页面关系</small></span>
+      </header>
+
+      <dl className="wiki-stat-row" aria-label="知识库概况">
+        <div>
+          <dt>知识页面</dt>
+          <dd>{index?.page_count ?? pages.length}</dd>
         </div>
-      </div>
-      <div className="wiki-maintenance">
-        <strong>构建状态</strong>
-        <span>
-          {props.wikiIndex?.wiki_enabled ? "工作台级 Wiki 构建已开启" : "工作台级 Wiki 构建未开启"} ·
-          已解析资料 {props.wikiIndex?.ready_source_count ?? 0} ·
-          页面 {props.wikiIndex?.page_count ?? 0} ·
-          待处理任务 {props.wikiIndex?.pending_task_count ?? 0}
-        </span>
-      </div>
-      <div className="wiki-maintenance">
-        <strong>页面构成</strong>
-        <span>
-          资料驱动页面 {props.wikiIndex?.source_backed_page_count ?? 0} ·
-          人工维护页面 {props.wikiIndex?.manual_page_count ?? 0} ·
-          链接 {props.wikiIndex?.link_count ?? 0} ·
-          断链 {props.wikiIndex?.unresolved_link_count ?? 0}
-        </span>
-      </div>
-      <div className="wiki-maintenance">
-        <strong>构建建议</strong>
-        <span>{props.wikiRebuildAdvice?.message ?? "当前工作台会在这里显示 Wiki 的自动构建建议。"}</span>
-        {props.wikiAdviceAction ? (
-          <button className="secondary-button" disabled={props.isBusy || !props.workspace} onClick={props.wikiAdviceAction.run}>
-            {props.wikiAdviceAction.label}
+        <div>
+          <dt>页面关系</dt>
+          <dd>{index?.link_count ?? 0}</dd>
+        </div>
+        <div>
+          <dt>来源引用</dt>
+          <dd>{index?.citation_count ?? 0}</dd>
+        </div>
+        <div className={issues.length > 0 ? "is-attention" : undefined}>
+          <dt>待处理</dt>
+          <dd>{issues.length}</dd>
+        </div>
+      </dl>
+
+      {advice ? (
+        <div className="wiki-callout">
+          <Sparkles size={17} aria-hidden="true" />
+          <p>{props.wikiRebuildAdvice?.message || "知识库有可执行的构建建议。"}</p>
+          <button type="button" className="secondary-button" disabled={props.isBusy || !props.workspace} onClick={advice.run}>
+            {advice.label}
           </button>
-        ) : null}
-      </div>
-      <div className="wiki-citations">
-        <strong>页面类型分布</strong>
-        <span>{props.wikiIndex ? Object.entries(props.wikiIndex.pages_by_kind).map(([kind, count]) => `${kind}:${count}`).join(" / ") || "暂无页面" : "暂无页面"}</span>
-      </div>
-      <div className="wiki-citations">
-        <strong>最近更新页面</strong>
-        {props.wikiIndex?.recent_updates?.length ? props.wikiIndex.recent_updates.map((page) => props.renderWikiRecentUpdateCard(page, `index-page-${page.item_id}`)) : <span>当前还没有已沉淀的 Wiki 页面。</span>}
-      </div>
-      <div className="wiki-citations">
-        <strong>最近资料变化</strong>
-        {props.wikiIndex?.recent_sources?.length ? props.wikiIndex.recent_sources.map((source) => {
-          const sourceAction = props.getRecentSourceAction(source);
-          return (
-            <div className="link-card" key={`index-source-${source.source_id}`}>
-              <strong>{source.title}</strong>
-              <span className="wiki-source-status-line">
-                <span className="wiki-source-state is-readable">{formatSourceProcessingStatus(source.status)}</span>
-                <span className={`wiki-source-state${source.index_status.trim().toUpperCase() === "INDEXED" ? " is-indexed" : " is-unindexed"}`}>
-                  {formatSourceIndexStatus(source.index_status)}
-                </span>
-                <time>{props.formatDateTime(source.updated_at)}</time>
-              </span>
-              {source.related_pages.length ? (
-                <div className="wiki-inline-actions">
-                  {source.related_pages.map((page) => (
-                    <button
-                      key={`source-page-${source.source_id}-${page.item_id}`}
-                      className="secondary-button"
-                      disabled={props.isBusy}
-                      onClick={() => void props.openWikiPageById(page.item_id)}
-                    >
-                      打开 {page.title}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <>
-                  <span>当前资料尚未关联到可打开的 Wiki 页面。</span>
-                  {sourceAction ? (
-                    <div className="wiki-inline-actions">
-                      <button className="secondary-button" disabled={props.isBusy} onClick={sourceAction.run}>
-                        {sourceAction.label}
+        </div>
+      ) : null}
+
+      <section className="wiki-overview-section wiki-overview-graph">
+        <WikiGraphPanel {...props} />
+      </section>
+
+      <section className="wiki-overview-section">
+        <div className="wiki-section-heading">
+          <h3>最近更新</h3>
+        </div>
+        {recentUpdates.length > 0 ? (
+          <ul className="wiki-recent-list">
+            {recentUpdates.map((page) => (
+              <li key={`recent-${page.item_id}`}>
+                <button
+                  type="button"
+                  className="wiki-recent-row"
+                  disabled={props.isBusy}
+                  onClick={() => void props.selectWikiPage(page, "ego")}
+                >
+                  <span className="wiki-recent-title">{page.title}</span>
+                  <span className="wiki-recent-summary">{page.summary || `${page.citation_count} 条引用 · ${page.backlink_count} 个反链`}</span>
+                  <span className="wiki-recent-meta">
+                    <span className="wiki-kind-tag">{formatWikiKind(page.page_kind)}</span>
+                    <time>{props.formatDateTime(page.updated_at)}</time>
+                  </span>
+                  <ArrowRight className="wiki-recent-arrow" size={15} aria-hidden="true" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="phase-note">当前还没有已沉淀的 Wiki 页面。</p>
+        )}
+      </section>
+
+      {issues.length > 0 ? (
+        <section className="wiki-overview-section">
+          <div className="wiki-section-heading">
+            <h3>需要处理</h3>
+            <button type="button" className="ghost-button" onClick={props.onOpenManage}>
+              <Wrench size={14} aria-hidden="true" />全部 {issues.length} 项
+            </button>
+          </div>
+          <ul className="wiki-issue-list">
+            {issues.slice(0, 3).map((issue, index) => {
+              const issueAction = props.getWikiIssuePrimaryAction(issue);
+              return (
+                <li key={`overview-issue-${issue.issue_type}-${index}`} className="wiki-issue-row">
+                  <TriangleAlert size={15} aria-hidden="true" />
+                  <div>
+                    <strong>{issue.title || issue.issue_type}</strong>
+                    <span>{issue.message}</span>
+                  </div>
+                  <div className="wiki-issue-actions">
+                    {issue.auto_fixable ? (
+                      <button type="button" className="secondary-button" disabled={props.isBusy || !props.workspace} onClick={() => void props.autoFixWiki()}>
+                        自动补缺
                       </button>
-                    </div>
-                  ) : null}
-                </>
-              )}
-            </div>
-          );
-        }) : <span>当前工作台还没有资料。</span>}
-      </div>
-      <details className="maintenance-drawer">
-        <summary>
-          <strong>维护提醒</strong>
-          <span>
-            待处理任务 {props.wikiIndex?.pending_task_count ?? 0} ·
-            自动补缺 {props.wikiIndex?.auto_fixable_issue_count ?? 0} ·
-            人工确认 {props.wikiIndex?.manual_review_issue_count ?? 0}
-          </span>
-        </summary>
-        <div className="wiki-citations">
-          <strong>最近 Wiki 任务</strong>
-          {props.wikiIndex?.recent_tasks?.length ? props.wikiIndex.recent_tasks.map((task) => props.renderWikiTaskCard(task, `index-task-${task.task_id}`)) : <span>当前还没有 Wiki 相关任务记录。</span>}
-        </div>
-        <div className="wiki-citations">
-          <strong>优先维护项</strong>
-          {props.wikiIndex?.top_issues?.length ? props.wikiIndex.top_issues.map((issue, index) => {
-            const issueAction = props.getWikiIssuePrimaryAction(issue);
-            return (
-              <div className="link-card" key={`index-issue-${issue.issue_type}-${index}`}>
-                <strong>{issue.issue_type} / {issue.severity}</strong>
-                <span>{issue.message}</span>
-                <span>{issue.auto_fixable ? "可自动补缺" : "需人工确认"}</span>
-                <span>{issue.suggested_action}</span>
-                <div className="wiki-inline-actions">
-                  {issue.auto_fixable ? (
-                    <button className="secondary-button" disabled={props.isBusy || !props.workspace} onClick={() => void props.autoFixWiki()}>
-                      自动补缺
-                    </button>
-                  ) : null}
-                  {issueAction ? (
-                    <button className="secondary-button" disabled={props.isBusy} onClick={issueAction.run}>
-                      {issueAction.label}
-                    </button>
-                  ) : null}
-                  {issue.item_id ? (
-                    <button className="secondary-button" disabled={props.isBusy} onClick={() => void props.openWikiPageById(issue.item_id!)}>
-                      打开相关页面
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            );
-          }) : <span>当前没有需要优先处理的维护项。</span>}
-        </div>
-      </details>
-    </>
+                    ) : issueAction ? (
+                      <button type="button" className="secondary-button" disabled={props.isBusy} onClick={issueAction.run}>
+                        {issueAction.label}
+                      </button>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
+    </div>
   );
 }

@@ -544,7 +544,7 @@ describe("workspace component wiring", () => {
   it("mounts the Memory review workbench empty state", () => {
     render(<MemoryReviewWorkbench workspaceId="workspace" />);
 
-    expect(screen.getAllByText("01 · 候选").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole("heading", { name: "审核队列" })).toBeTruthy();
     expect(screen.getByLabelText("0 条待审核")).toBeTruthy();
     expect(screen.getByText("等待新的 Memory revision")).toBeTruthy();
     expect(screen.getByRole("list", { name: "候选到审核决策的阶段" })).toBeTruthy();

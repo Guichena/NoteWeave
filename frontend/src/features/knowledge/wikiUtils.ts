@@ -138,3 +138,21 @@ export function buildGraphSearchHits(pages: WikiPage[], keywordRaw: string, limi
       || (page.page_kind || "TOPIC").toLowerCase().includes(keyword))
     .slice(0, limit);
 }
+
+const WIKI_KIND_LABELS: Record<string, string> = {
+  OVERVIEW: "总览",
+  TOPIC: "主题",
+  CONCEPT: "概念",
+  COMPARISON: "对比",
+  ENTITY: "实体",
+  SOURCE_SUMMARY: "资料摘要",
+  NOTE: "笔记",
+  PERSON: "人物",
+  EVENT: "事件"
+};
+
+/** 把后端页面类型转换成界面上的中文名称；未知类型保留原值。 */
+export function formatWikiKind(kind: string | null | undefined) {
+  const normalized = (kind || "TOPIC").toUpperCase();
+  return WIKI_KIND_LABELS[normalized] ?? normalized;
+}

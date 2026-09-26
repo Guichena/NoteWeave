@@ -8,7 +8,8 @@ import {
   MessageSquareText,
   Moon,
   Network,
-  NotebookPen,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Settings2,
   SquarePen,
@@ -18,9 +19,9 @@ import {
 } from "lucide-react";
 import { getAuthSession, logoutAuthSession } from "../../shared/api/auth";
 import { applyTheme, getInitialTheme, type ThemeMode } from "../../shared/theme";
+import { formatRelativeTime } from "../../shared/util/datetime";
 import type { AppView } from "./viewRoute";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
-import { ConversationSwitcher } from "./ConversationSwitcher";
 import { BrandMark } from "./BrandMark";
 import { WorkspaceCreateDialog } from "../workspace/WorkspaceCreateDialog";
 import { type CreateWorkspaceInput } from "../workspace/api";
@@ -35,10 +36,10 @@ export type WorkbenchNavItem = {
 };
 
 export const WORKBENCH_NAV_ITEMS: WorkbenchNavItem[] = [
-  { view: "chat", label: "笔记本", letter: "C", title: "笔记本：来源、对话与产物", icon: NotebookPen },
+  { view: "chat", label: "对话", letter: "C", title: "对话", icon: MessageSquareText },
   { view: "library", label: "资料库", letter: "L", title: "工作台资料库", icon: LibraryBig },
-  { view: "research", label: "研究", letter: "R", title: "Deep Research 工作台", icon: FlaskConical },
-  { view: "wiki", label: "Wiki", letter: "W", title: "Wiki 知识库", icon: Network },
+  { view: "research", label: "深度研究", letter: "R", title: "Deep Research 工作台", icon: FlaskConical },
+  { view: "wiki", label: "知识库", letter: "W", title: "Wiki 知识库", icon: Network },
   { view: "memory", label: "记忆", letter: "M", title: "Memory 审核", icon: BrainCircuit }
 ];
 
@@ -66,6 +67,15 @@ export type WorkbenchShellProps = {
 };
 
 const ERROR_STATUS_PATTERN = /失败|错误|无法|不可用|异常/;
+const SIDEBAR_COLLAPSED_KEY = "noteweave.sidebar.collapsed";
+
+function readSidebarCollapsed() {
+  try {
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 export function WorkbenchShell({
   view,
@@ -90,6 +100,7 @@ export function WorkbenchShell({
   children
 }: WorkbenchShellProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(readSidebarCollapsed);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [workspaceCreateOpen, setWorkspaceCreateOpen] = useState(false);
   const [conversationCreateOpen, setConversationCreateOpen] = useState(false);
@@ -99,15 +110,23 @@ export function WorkbenchShell({
   const conversationCreateTriggerRef = useRef<HTMLElement | null>(null);
   const accountTriggerRef = useRef<HTMLButtonElement | null>(null);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
-  const conversationCreateFallbackRef = useRef<HTMLButtonElement | null>(null);
+  const newConversationRef = useRef<HTMLButtonElement | null>(null);
   const authSession = getAuthSession();
   const accountName = authSession?.user.display_name || authSession?.user.username || "";
   const statusIsError = ERROR_STATUS_PATTERN.test(status);
-  const showConversationCrumb = view === "chat" && Boolean(workspaceId);
+  const sidebarCollapsed = collapsed && !mobileNavOpen;
 
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
+    } catch {
+      // 仅为个人偏好，存不下也无妨
+    }
+  }, [collapsed]);
 
   useEffect(() => {
     if (!mobileNavOpen) return;
@@ -190,144 +209,128 @@ export function WorkbenchShell({
     }
   }
 
+  const shellClassName = [
+    "workbench-shell",
+    sidebarCollapsed ? "is-sidebar-collapsed" : "",
+    mobileNavOpen ? "is-mobile-nav-open" : ""
+  ].filter(Boolean).join(" ");
+
   return (
-    <div className="workbench-shell" data-view={view}>
+    <div className={shellClassName} data-view={view}>
       <a className="skip-link" href="#workbench-main-content">跳到主要内容</a>
 
-      <header className="app-topbar">
-        <div className="topbar-lead">
-          <button
-            type="button"
-            className="mobile-menu-toggle icon-button"
-            aria-expanded={mobileNavOpen}
-            aria-controls="app-nav"
-            aria-label={mobileNavOpen ? "关闭主导航" : "打开主导航"}
-            onClick={() => setMobileNavOpen((current) => !current)}
-          >
-            <Menu size={18} aria-hidden="true" />
-          </button>
+      {mobileNavOpen ? (
+        <div className="mobile-drawer-backdrop" aria-hidden="true" onClick={() => setMobileNavOpen(false)} />
+      ) : null}
+
+      <aside id="app-sidebar" className="app-sidebar" aria-label="主导航">
+        <div className="sidebar-header">
           <div className="brand" title="NoteWeave">
             <BrandMark className="brand-mark" />
             <h1 className="brand-name">NoteWeave</h1>
           </div>
-          <span className="topbar-sep" aria-hidden="true" />
-          <WorkspaceSwitcher
-            workspaces={workspaces}
-            workspaceId={workspaceId}
-            disabled={shellBusy || sessionLoading || workspaces.length === 0}
-            onSwitchWorkspace={onSwitchWorkspace}
-            onCreateWorkspace={() => openWorkspaceCreate(accountTriggerRef.current)}
-          />
-          {showConversationCrumb ? (
-            <>
-              <span className="topbar-sep is-conversation" aria-hidden="true" />
-              <ConversationSwitcher
-                conversations={conversations}
-                conversationId={conversationId}
-                conversationTitle={conversationTitle}
-                disabled={shellBusy || sessionLoading}
-                onSwitchConversation={onSwitchConversation}
-                onCreateConversation={(trigger) => openConversationCreate(trigger)}
-              />
-              <button
-                ref={conversationCreateFallbackRef}
-                type="button"
-                className="icon-button topbar-new-conversation"
-                aria-label="新建会话"
-                title="新建会话"
-                disabled={shellBusy || sessionLoading || !workspaceId}
-                onClick={(event) => openConversationCreate(event.currentTarget)}
-              >
-                <SquarePen size={16} aria-hidden="true" />
-              </button>
-            </>
-          ) : null}
+          {mobileNavOpen ? (
+            <button
+              type="button"
+              className="icon-button sidebar-close"
+              aria-label="关闭导航"
+              onClick={() => setMobileNavOpen(false)}
+            >
+              <X size={18} aria-hidden="true" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="icon-button sidebar-collapse"
+              aria-label={collapsed ? "展开侧边栏" : "收起侧边栏"}
+              title={collapsed ? "展开侧边栏" : "收起侧边栏"}
+              onClick={() => setCollapsed((current) => !current)}
+            >
+              {collapsed ? <PanelLeftOpen size={17} aria-hidden="true" /> : <PanelLeftClose size={17} aria-hidden="true" />}
+            </button>
+          )}
         </div>
 
-        {mobileNavOpen ? (
-          <div className="mobile-drawer-backdrop" aria-hidden="true" onClick={() => setMobileNavOpen(false)} />
-        ) : null}
-        <nav
-          id="app-nav"
-          className={`app-nav${mobileNavOpen ? " is-mobile-open" : ""}`}
-          aria-label="主导航"
+        <WorkspaceSwitcher
+          workspaces={workspaces}
+          workspaceId={workspaceId}
+          meta={workspaceId ? `${sourceCount} 份资料 · ${conversations.length} 个对话` : "暂无工作台"}
+          disabled={shellBusy || sessionLoading || workspaces.length === 0}
+          onSwitchWorkspace={onSwitchWorkspace}
+          onCreateWorkspace={() => openWorkspaceCreate(accountTriggerRef.current)}
+        />
+
+        <button
+          ref={newConversationRef}
+          type="button"
+          className="sidebar-new-chat"
+          aria-label="新建会话"
+          title="新建会话"
+          disabled={shellBusy || sessionLoading || !workspaceId}
+          onClick={(event) => openConversationCreate(event.currentTarget)}
         >
-          {mobileNavOpen ? (
-            <div className="app-nav-drawer-header">
-              <div className="brand">
-                <BrandMark className="brand-mark" />
-                <span className="brand-name">NoteWeave</span>
-              </div>
+          <SquarePen size={16} aria-hidden="true" />
+          <span className="sidebar-label">新对话</span>
+        </button>
+
+        <nav className="sidebar-nav">
+          {WORKBENCH_NAV_ITEMS.filter((item) => item.view !== "chat").map((item) => {
+            const Icon = item.icon;
+            const active = view === item.view;
+            return (
               <button
+                key={item.view}
                 type="button"
-                className="icon-button"
-                aria-label="关闭导航"
-                onClick={() => setMobileNavOpen(false)}
+                className={active ? "sidebar-nav-item active" : "sidebar-nav-item"}
+                title={item.title}
+                aria-label={item.title}
+                aria-current={active ? "page" : undefined}
+                disabled={sessionLoading || (shellBusy && !active)}
+                onClick={() => handleNavClick(item.view)}
               >
-                <X size={18} aria-hidden="true" />
+                <Icon size={17} strokeWidth={1.9} aria-hidden="true" />
+                <span className="sidebar-label">{item.label}</span>
+                {item.view === "library" && sourceCount > 0 ? (
+                  <span className="sidebar-count" aria-hidden="true">{sourceCount}</span>
+                ) : null}
               </button>
-            </div>
-          ) : null}
-          <div className="app-nav-items">
-            {WORKBENCH_NAV_ITEMS.map((item) => {
-              const Icon = item.icon;
-              const active = view === item.view;
-              return (
-                <button
-                  key={item.view}
-                  type="button"
-                  className={active ? "app-nav-item active" : "app-nav-item"}
-                  title={item.title}
-                  aria-label={item.title}
-                  aria-current={active ? "page" : undefined}
-                  disabled={sessionLoading || (shellBusy && !active)}
-                  onClick={() => handleNavClick(item.view)}
-                >
-                  <Icon size={16} strokeWidth={1.9} aria-hidden="true" />
-                  <span className="app-nav-label">{item.label}</span>
-                  {item.view === "library" && sourceCount > 0 ? (
-                    <span className="app-nav-count" aria-hidden="true">{sourceCount}</span>
-                  ) : null}
-                </button>
-              );
-            })}
+            );
+          })}
+        </nav>
+
+        <section className="sidebar-conversations" aria-label="工作台会话">
+          <div className="sidebar-section-title">
+            <span>对话</span>
+            <small>共享当前工作台资料库</small>
           </div>
-          {workspaceId ? (
-            <section className="app-nav-conversations" aria-label="工作台会话">
-              <div className="app-nav-section-title">
-                <span>会话</span>
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label="新建会话（导航）"
-                  disabled={shellBusy || sessionLoading}
-                  onClick={(event) => openConversationCreate(event.currentTarget)}
-                >
-                  <Plus size={15} aria-hidden="true" />
-                </button>
-              </div>
-              <p className="app-nav-section-note">共享当前工作台资料库</p>
-              {conversations.map((item) => (
+          <div className="sidebar-conversation-list" aria-label="对话列表">
+            {conversations.length === 0 ? (
+              <p className="sidebar-empty">{workspaceId ? "还没有对话" : "先创建一个工作台"}</p>
+            ) : conversations.map((item) => {
+              const active = item.conversation_id === conversationId && view === "chat";
+              return (
                 <button
                   key={item.conversation_id}
                   type="button"
-                  className={item.conversation_id === conversationId ? "app-nav-conversation active" : "app-nav-conversation"}
+                  className={active ? "sidebar-conversation active" : "sidebar-conversation"}
+                  aria-current={active ? "page" : undefined}
+                  title={item.title}
                   disabled={shellBusy || sessionLoading}
                   onClick={() => {
-                    onSwitchConversation(item.conversation_id);
+                    if (item.conversation_id !== conversationId) onSwitchConversation(item.conversation_id);
                     if (view !== "chat") onNavigate("chat");
                     setMobileNavOpen(false);
                   }}
                 >
-                  <MessageSquareText size={14} aria-hidden="true" />
-                  <span>{item.title}</span>
+                  <span className="sidebar-conversation-title">{item.title}</span>
+                  {item.last_active_at ? <small>{formatRelativeTime(item.last_active_at)}</small> : null}
                 </button>
-              ))}
-            </section>
-          ) : null}
-        </nav>
+              );
+            })}
+          </div>
+        </section>
 
-        <div className="topbar-trail">
+        <div className="sidebar-footer">
           <p
             className={`shell-status status-line${shellBusy ? " is-busy" : ""}${statusIsError ? " is-error" : ""}`}
             role="status"
@@ -336,15 +339,6 @@ export function WorkbenchShell({
             <span className="shell-status-dot" aria-hidden="true" />
             <span className="shell-status-text">{status}</span>
           </p>
-          <button
-            type="button"
-            className="icon-button theme-toggle-btn"
-            aria-label="切换明暗主题"
-            title={theme === "dark" ? "切换到浅色" : "切换到深色"}
-            onClick={() => setTheme((prev) => (prev === "light" ? "dark" : "light"))}
-          >
-            {theme === "dark" ? <Sun size={17} aria-hidden="true" /> : <Moon size={17} aria-hidden="true" />}
-          </button>
           <div className="account-menu">
             <button
               ref={accountTriggerRef}
@@ -357,6 +351,10 @@ export function WorkbenchShell({
             >
               <span className="account-avatar" aria-hidden="true">
                 {accountName ? accountName.slice(0, 1).toUpperCase() : <Settings2 size={15} />}
+              </span>
+              <span className="account-copy sidebar-label">
+                <strong>{accountName || "设置"}</strong>
+                <small>{workspaceName || "NoteWeave"}</small>
               </span>
             </button>
             {accountMenuOpen ? (
@@ -371,6 +369,18 @@ export function WorkbenchShell({
                   type="button"
                   role="menuitem"
                   className="account-menu-item"
+                  disabled={shellBusy || sessionLoading || !workspaceId}
+                  onClick={() => {
+                    setAccountMenuOpen(false);
+                    onToggleSettings();
+                  }}
+                >
+                  <Settings2 size={15} aria-hidden="true" />{settingsOpen ? "关闭设置" : "工作台设置"}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="account-menu-item"
                   disabled={shellBusy}
                   onClick={() => openWorkspaceCreate(accountTriggerRef.current)}
                 >
@@ -379,14 +389,12 @@ export function WorkbenchShell({
                 <button
                   type="button"
                   role="menuitem"
-                  className="account-menu-item"
-                  disabled={shellBusy || sessionLoading || !workspaceId}
-                  onClick={() => {
-                    setAccountMenuOpen(false);
-                    onToggleSettings();
-                  }}
+                  className="account-menu-item theme-toggle-btn"
+                  aria-label="切换明暗主题"
+                  onClick={() => setTheme((prev) => (prev === "light" ? "dark" : "light"))}
                 >
-                  <Settings2 size={15} aria-hidden="true" />{settingsOpen ? "关闭设置" : "工作台设置"}
+                  {theme === "dark" ? <Sun size={15} aria-hidden="true" /> : <Moon size={15} aria-hidden="true" />}
+                  {theme === "dark" ? "浅色模式" : "深色模式"}
                 </button>
                 {authSession ? (
                   <>
@@ -406,7 +414,70 @@ export function WorkbenchShell({
             ) : null}
           </div>
         </div>
-      </header>
+      </aside>
+
+      <div className="workbench-main">
+        <header className="mobile-topbar">
+          <button
+            type="button"
+            className="icon-button mobile-menu-toggle"
+            aria-expanded={mobileNavOpen}
+            aria-controls="app-sidebar"
+            aria-label={mobileNavOpen ? "关闭主导航" : "打开主导航"}
+            onClick={() => setMobileNavOpen((current) => !current)}
+          >
+            <Menu size={18} aria-hidden="true" />
+          </button>
+          <strong className="mobile-topbar-title">
+            {view === "chat" ? (conversationTitle || workspaceName || "NoteWeave") : workspaceName || "NoteWeave"}
+          </strong>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="新建会话（移动端）"
+            disabled={shellBusy || sessionLoading || !workspaceId}
+            onClick={(event) => openConversationCreate(event.currentTarget)}
+          >
+            <SquarePen size={17} aria-hidden="true" />
+          </button>
+        </header>
+
+        <main id="workbench-main-content" className="workbench-canvas">
+          {sessionLoading ? (
+            <section
+              className="workspace-session-loading"
+              role="status"
+              aria-label="正在恢复工作台会话"
+              aria-busy="true"
+              aria-live="polite"
+            >
+              <div className="view-loading-body">
+                <span className="view-loading-spinner" aria-hidden="true" />
+                <span>正在恢复工作台与会话…</span>
+              </div>
+              <div className="view-loading-skeleton" aria-hidden="true">
+                <div className="skeleton-line w-40" />
+                <div className="skeleton-line w-70" />
+                <div className="skeleton-line w-55" />
+              </div>
+            </section>
+          ) : !workspaceId ? (
+            <section className="workspace-zero-state" aria-labelledby="workspace-zero-title">
+              <BrandMark className="workspace-zero-mark" />
+              <h2 id="workspace-zero-title">先建立你的研究边界</h2>
+              <p>一个工作台就是一个资料库：上传的资料由其中的所有对话、研究与知识页共享。</p>
+              <button
+                type="button"
+                className="primary-action workspace-zero-create"
+                disabled={shellBusy}
+                onClick={(event) => openWorkspaceCreate(event.currentTarget)}
+              >
+                <Plus size={16} aria-hidden="true" />创建第一个工作台
+              </button>
+            </section>
+          ) : children}
+        </main>
+      </div>
 
       {settingsPanel ? (
         <div className="settings-sheet-layer">
@@ -420,42 +491,6 @@ export function WorkbenchShell({
         </div>
       ) : null}
 
-      <main id="workbench-main-content" className="workbench-canvas">
-        {sessionLoading ? (
-          <section
-            className="workspace-session-loading"
-            role="status"
-            aria-label="正在恢复工作台会话"
-            aria-busy="true"
-            aria-live="polite"
-          >
-            <div className="view-loading-body">
-              <span className="view-loading-spinner" aria-hidden="true" />
-              <span>正在恢复工作台与会话…</span>
-            </div>
-            <div className="view-loading-skeleton" aria-hidden="true">
-              <div className="skeleton-line w-40" />
-              <div className="skeleton-line w-70" />
-              <div className="skeleton-line w-55" />
-            </div>
-          </section>
-        ) : !workspaceId ? (
-          <section className="workspace-zero-state" aria-labelledby="workspace-zero-title">
-            <BrandMark className="workspace-zero-mark" />
-            <h2 id="workspace-zero-title">先建立你的研究边界</h2>
-            <p>一个工作台就是一本笔记本：资料、会话、研究、Wiki 与记忆都归属于它。</p>
-            <button
-              type="button"
-              className="primary-action workspace-zero-create"
-              disabled={shellBusy}
-              onClick={(event) => openWorkspaceCreate(event.currentTarget)}
-            >
-              <Plus size={16} aria-hidden="true" />创建第一个工作台
-            </button>
-          </section>
-        ) : children}
-      </main>
-
       {workspaceCreateOpen ? (
         <WorkspaceCreateDialog
           busy={shellBusy}
@@ -467,7 +502,7 @@ export function WorkbenchShell({
         <ConversationCreateDialog
           workspaceName={workspaceName}
           busy={shellBusy}
-          onClose={() => closeCreateDialog(setConversationCreateOpen, conversationCreateTriggerRef, conversationCreateFallbackRef)}
+          onClose={() => closeCreateDialog(setConversationCreateOpen, conversationCreateTriggerRef, newConversationRef)}
           onCreate={onCreateConversation}
         />
       ) : null}

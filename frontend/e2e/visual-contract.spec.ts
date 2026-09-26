@@ -18,21 +18,21 @@ for (const viewport of [
     await assertNoHorizontalOverflow(page);
 
     const shellMetrics = await page.evaluate(() => {
-      const navItems = [...document.querySelectorAll<HTMLElement>(".app-nav-item")];
-      const topbar = document.querySelector<HTMLElement>(".app-topbar")?.getBoundingClientRect();
+      const navItems = [...document.querySelectorAll<HTMLElement>(".sidebar-nav-item")];
+      const sidebar = document.querySelector<HTMLElement>(".app-sidebar")?.getBoundingClientRect();
       return {
         fontFamily: getComputedStyle(document.body).fontFamily,
-        topbarHeight: topbar?.height ?? 0,
+        sidebarWidth: sidebar?.width ?? 0,
         navItemHeights: navItems.map((item) => item.getBoundingClientRect().height),
         navItemFontSize: navItems[0] ? Number.parseFloat(getComputedStyle(navItems[0]).fontSize) : 0
       };
     });
     expect(shellMetrics.fontFamily).toMatch(/Inter|Segoe UI|PingFang SC|Microsoft YaHei/);
-    expect(shellMetrics.topbarHeight).toBeGreaterThanOrEqual(48);
-    expect(shellMetrics.topbarHeight).toBeLessThanOrEqual(64);
-    expect(shellMetrics.navItemHeights.length).toBe(5);
-    expect(shellMetrics.navItemHeights.every((height) => height >= 30 && height <= 44)).toBe(true);
-    expect(shellMetrics.navItemFontSize).toBeGreaterThanOrEqual(12);
+    expect(shellMetrics.sidebarWidth).toBeGreaterThanOrEqual(56);
+    expect(shellMetrics.sidebarWidth).toBeLessThanOrEqual(280);
+    expect(shellMetrics.navItemHeights.length).toBe(4);
+    expect(shellMetrics.navItemHeights.every((height) => height >= 32 && height <= 44)).toBe(true);
+    expect(shellMetrics.navItemFontSize).toBeGreaterThanOrEqual(13);
     expect(shellMetrics.navItemFontSize).toBeLessThanOrEqual(15);
 
     await assertChatProportions(page, viewport.width);
@@ -83,11 +83,11 @@ async function assertAuthLayout(page: Page, viewportWidth: number) {
 
 async function assertChatProportions(page: Page, viewportWidth: number) {
   await expect(page.locator(".chat-panel")).toBeVisible();
-  await expect(page.locator(".sources-pane")).toBeVisible();
-  if (viewportWidth >= 1280) {
-    await expect(page.locator(".studio-pane")).toBeVisible();
+  if (viewportWidth >= 1200) {
+    await expect(page.locator(".sources-pane")).toBeVisible();
   } else {
-    await expect(page.locator(".studio-toggle")).toBeVisible();
+    await page.getByRole("button", { name: "打开来源" }).click();
+    await expect(page.locator(".sources-pane")).toBeVisible();
   }
   const metrics = await elementMetrics(page, [
     ".answer-mode-trigger",
@@ -110,9 +110,7 @@ async function assertChatProportions(page: Page, viewportWidth: number) {
 }
 
 async function assertArtifactProportions(page: Page, viewportWidth: number) {
-  if (viewportWidth < 1280) {
-    await page.getByRole("button", { name: "打开产物", exact: true }).click();
-  }
+  await page.getByRole("button", { name: "打开产物", exact: true }).click();
   await expect(page.locator(".studio-pane .artifact-rail")).toBeVisible();
   await expect(page.locator(".artifact-action-card").first()).toBeVisible();
 
@@ -130,10 +128,9 @@ async function assertArtifactProportions(page: Page, viewportWidth: number) {
   expect(metrics.cardHeights.every((height) => height >= 80)).toBe(true);
   expect(metrics.clippedTitles).toEqual([]);
   expect(metrics.titleFontSizes.every((size) => size >= 13)).toBe(true);
-  if (viewportWidth < 1280) {
-    await page.getByRole("button", { name: "关闭产物工作台", exact: true }).click();
-    await expect(page.locator(".studio-pane")).toBeHidden();
-  }
+  await page.getByRole("button", { name: "关闭产物工作台", exact: true }).click();
+  await expect(page.locator(".context-panel")).toBeHidden();
+  void viewportWidth;
 }
 
 async function assertLibraryProportions(page: Page, viewportWidth: number) {
@@ -246,23 +243,19 @@ async function assertMemoryProportions(page: Page, viewportWidth: number) {
   expect(metrics[1]?.height).toBeGreaterThanOrEqual(30);
   const metadata = await elementMetrics(page, [
     ".memory-panel-heading > span",
-    ".memory-empty-kicker",
-    ".memory-review-flow small",
-    ".memory-review-flow li span:not(.memory-review-flow-icon)",
-    ".memory-review-handoff > div > span"
+    ".memory-queue-note",
+    ".memory-review-flow li span",
+    ".memory-runtime-policy dt"
   ]);
   expect(metadata.every((item) => !item || item.fontSize >= 11)).toBe(true);
-  if (viewportWidth >= 1280) {
+  if (viewportWidth >= 900) {
     const columns = await elementMetrics(page, [
       ".memory-queue-panel",
-      ".memory-review-panel",
-      ".memory-version-panel"
+      ".memory-review-panel"
     ]);
     expect(columns.every(Boolean)).toBe(true);
     expect(columns[0]!.y).toBeCloseTo(columns[1]!.y, 0);
-    expect(columns[1]!.y).toBeCloseTo(columns[2]!.y, 0);
     expect(columns[0]!.x).toBeLessThan(columns[1]!.x);
-    expect(columns[1]!.x).toBeLessThan(columns[2]!.x);
   }
   await assertNoHorizontalOverflow(page);
 }

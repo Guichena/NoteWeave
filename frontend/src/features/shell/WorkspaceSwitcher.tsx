@@ -11,19 +11,21 @@ type WorkspaceSwitcherProps = {
   workspaces: WorkspaceSummary[];
   workspaceId: string;
   disabled: boolean;
+  meta?: string;
   onSwitchWorkspace: (workspaceId: string) => void;
   onCreateWorkspace: () => void;
 };
 
 const DEFAULT_RESULT_LIMIT = 24;
 const SEARCH_RESULT_LIMIT = 40;
-const DESKTOP_POPOVER_WIDTH = 320;
+const DESKTOP_POPOVER_WIDTH = 280;
 const VIEWPORT_GUTTER = 12;
 
 export function WorkspaceSwitcher({
   workspaces,
   workspaceId,
   disabled,
+  meta,
   onSwitchWorkspace,
   onCreateWorkspace
 }: WorkspaceSwitcherProps) {
@@ -87,7 +89,7 @@ export function WorkspaceSwitcher({
       const root = rootRef.current;
       if (!root) return;
       const rect = root.getBoundingClientRect();
-      const width = Math.min(DESKTOP_POPOVER_WIDTH, window.innerWidth - VIEWPORT_GUTTER * 2);
+      const width = Math.min(Math.max(rect.width, DESKTOP_POPOVER_WIDTH), window.innerWidth - VIEWPORT_GUTTER * 2);
       const left = Math.max(
         VIEWPORT_GUTTER,
         Math.min(rect.left, window.innerWidth - width - VIEWPORT_GUTTER)
@@ -128,15 +130,21 @@ export function WorkspaceSwitcher({
       <button
         ref={triggerRef}
         type="button"
-        className="crumb-trigger workspace-switcher-trigger"
+        className="workspace-switcher-trigger"
         aria-label="切换工作台"
         aria-haspopup="dialog"
         aria-expanded={open}
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
       >
-        <span className="crumb-text" title={selectedWorkspace?.name}>{selectedWorkspace?.name || "未创建工作台"}</span>
-        <ChevronsUpDown className="crumb-chevron" size={14} aria-hidden="true" />
+        <span className="workspace-switcher-avatar" aria-hidden="true">
+          {(selectedWorkspace?.name || "N").slice(0, 1)}
+        </span>
+        <span className="workspace-switcher-copy">
+          <strong title={selectedWorkspace?.name}>{selectedWorkspace?.name || "未创建工作台"}</strong>
+          <small>{meta ?? (workspaces.length > 0 ? `${workspaces.length} 个工作台` : "暂无工作台")}</small>
+        </span>
+        <ChevronsUpDown className="workspace-switcher-chevron" size={14} aria-hidden="true" />
       </button>
 
       {open ? createPortal((

@@ -112,8 +112,8 @@ export function ChatSourcesPane({
   }
 
   return (
-    <aside
-      className={`sources-pane source-drawer notebook-pane${dragActive ? " is-drag-active" : ""}`}
+    <section
+      className={`sources-pane source-drawer panel-view${dragActive ? " is-drag-active" : ""}`}
       aria-label="来源"
       onDragEnter={(event) => {
         if (!canUpload || !event.dataTransfer.types.includes("Files")) return;
@@ -143,7 +143,7 @@ export function ChatSourcesPane({
             <Settings2 size={16} aria-hidden="true" />
           </button>
           {onClose ? (
-            <button type="button" className="icon-button pane-close" aria-label="收起来源" onClick={onClose}>
+            <button type="button" className="icon-button pane-close" aria-label="收起面板" title="收起面板" onClick={onClose}>
               <X size={17} aria-hidden="true" />
             </button>
           ) : null}
@@ -266,6 +266,6 @@ export function ChatSourcesPane({
           <strong>松开即可添加到来源</strong>
         </div>
       ) : null}
-    </aside>
+    </section>
   );
 }

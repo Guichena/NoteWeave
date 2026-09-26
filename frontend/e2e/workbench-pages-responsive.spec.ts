@@ -24,41 +24,32 @@ for (const viewport of [
 
     await expect.poll(async () => (
       await page.locator(".wiki-empty-workbench").isVisible()
-      || await page.getByRole("button", { name: "打开关系面板" }).isVisible()
+      || await page.getByRole("button", { name: /管理/ }).isVisible()
     )).toBe(true);
     const wikiIsEmpty = await page.locator(".wiki-empty-workbench").isVisible();
     if (wikiIsEmpty) {
       await expect(page.getByRole("heading", { name: "准备工作台知识网络" })).toBeVisible();
       await expect(page.locator('[aria-label="Wiki 构建流程"]')).toBeVisible();
       await expect(page.getByRole("complementary", { name: "Wiki 准备状态" })).toBeVisible();
-    } else if (viewport.width >= 961) {
-      await page.getByRole("button", { name: "打开关系面板" }).click();
-      const relations = page.getByRole("complementary", { name: "Wiki 关系面板" });
-      await expect(relations).toBeVisible();
-      await expect(page.getByRole("group", { name: "图谱视角" })).toBeVisible();
-      await expect.poll(async () => {
-        const box = await relations.boundingBox();
-        return box ? box.x + box.width : Number.POSITIVE_INFINITY;
-      }).toBeLessThanOrEqual(viewport.width);
-      const bounds = await relations.boundingBox();
-      expect(bounds).not.toBeNull();
-      expect(bounds!.x).toBeGreaterThanOrEqual(0);
-      await page.getByRole("button", { name: "关闭关系面板", exact: true }).click();
     } else {
-      await page.getByRole("button", { name: "打开关系面板" }).click();
-      const relations = page.getByRole("complementary", { name: "Wiki 关系面板" });
-      await expect(relations).toBeVisible();
+      // 总览里直接展示知识图谱
       await expect(page.getByRole("group", { name: "图谱视角" })).toBeVisible();
-      await expect.poll(async () => {
-        const box = await relations.boundingBox();
-        return box ? box.x + box.width : Number.POSITIVE_INFINITY;
-      }).toBeLessThanOrEqual(viewport.width);
-      const bounds = await relations.boundingBox();
+      // 管理抽屉收纳维护工具，打开后不应溢出视口
+      await page.getByRole("button", { name: /管理/ }).click();
+      const manage = page.getByRole("dialog", { name: "知识库管理" });
+      await expect(manage).toBeVisible();
+      const bounds = await manage.boundingBox();
       expect(bounds).not.toBeNull();
       expect(bounds!.x).toBeGreaterThanOrEqual(0);
       expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
-      await page.getByRole("button", { name: "关闭关系面板", exact: true }).click();
+      await page.getByRole("button", { name: "关闭知识库管理" }).first().click();
+      await expect(manage).toHaveCount(0);
+      // 打开第一个页面：文档 + 关系栏
+      await page.locator(".wiki-page-card").first().click();
+      await expect(page.locator(".wiki-page-detail h2")).toBeVisible();
+      await expect(page.getByRole("complementary", { name: "Wiki 关系面板" })).toBeVisible();
     }
+    await expectNoHorizontalOverflow(page);
 
     await navigateFromRail(page, "Memory 审核", viewport.width);
     await expect(page.locator(".memory-workbench")).toBeVisible();
@@ -67,12 +58,7 @@ for (const viewport of [
     await expect(page.getByText("进入审核队列", { exact: true })).toBeVisible();
     await expect(page.getByText("核对来源与冲突", { exact: true })).toBeVisible();
     await expect(page.getByText(/进入运行时/).first()).toBeVisible();
-    if (viewport.width >= 961) {
-      await expect(page.locator(".memory-runtime-inline")).toBeVisible();
-      await expect(page.locator(".memory-version-panel")).toBeHidden();
-    } else {
-      await expect(page.getByLabel("运行时约束")).toHaveCount(1);
-    }
+    await expect(page.getByLabel("运行时约束")).toHaveCount(1);
     await expectNoHorizontalOverflow(page);
 
     await page.goto("/library");

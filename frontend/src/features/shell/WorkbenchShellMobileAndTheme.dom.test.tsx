@@ -46,13 +46,14 @@ describe("WorkbenchShell Mobile & Theme", () => {
   it("toggles theme between light and dark", () => {
     render(<WorkbenchShell {...defaultProps}><div>Content</div></WorkbenchShell>);
 
-    const themeBtn = screen.getAllByRole("button", { name: "切换明暗主题" })[0];
+    fireEvent.click(screen.getByRole("button", { name: "账户与工作台菜单" }));
+    const themeBtn = screen.getByRole("menuitem", { name: "切换明暗主题" });
     expect(document.documentElement.hasAttribute("data-theme")).toBe(true);
 
     fireEvent.click(themeBtn);
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
 
-    fireEvent.click(themeBtn);
+    fireEvent.click(screen.getByRole("menuitem", { name: "切换明暗主题" }));
     expect(document.documentElement.getAttribute("data-theme")).toBe("light");
   });
 

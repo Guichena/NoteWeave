@@ -29,17 +29,17 @@ for (const viewport of [
     ).toBeVisible();
 
     if (viewport.width >= 900) {
-      // 宽屏：来源常驻；≥1280 时产物也常驻
-      await expect(page.locator(".sources-pane")).toBeVisible();
-      await expect(page.getByRole("button", { name: "打开资料库" })).toBeVisible();
-      if (viewport.width >= 1280) {
-        await expect(page.locator(".studio-pane")).toBeVisible();
+      // 宽屏：侧边栏显示工作台下的多个对话；≥1200 时右侧来源面板默认展开
+      await expect(page.locator(".app-sidebar")).toBeVisible();
+      await expect(page.locator(".sidebar-conversation").first()).toBeVisible();
+      if (viewport.width >= 1200) {
+        await expect(page.locator(".sources-pane")).toBeVisible();
       } else {
-        await expect(page.locator(".studio-pane")).toBeHidden();
+        await expect(page.locator(".context-panel")).toBeHidden();
         await page.getByRole("button", { name: "打开产物" }).click();
         await expect(page.locator(".studio-pane")).toBeVisible();
         await page.keyboard.press("Escape");
-        await expect(page.locator(".studio-pane")).toBeHidden();
+        await expect(page.locator(".context-panel")).toBeHidden();
       }
       await assertWorkspaceSwitcherFits(page, viewport.width);
       expect(consoleErrors).toEqual([]);
@@ -47,31 +47,32 @@ for (const viewport of [
     }
 
     const mobileLayout = await page.evaluate(() => {
-      const nav = document.querySelector<HTMLElement>(".app-nav");
+      const sidebar = document.querySelector<HTMLElement>(".app-sidebar");
       const composer = document.querySelector<HTMLElement>(".composer-box");
       const modeTrigger = document.querySelector<HTMLElement>(".answer-mode-trigger");
       return {
-        navRight: nav?.getBoundingClientRect().right ?? Number.POSITIVE_INFINITY,
-        navPosition: nav ? getComputedStyle(nav).position : "missing",
+        sidebarRight: sidebar?.getBoundingClientRect().right ?? Number.POSITIVE_INFINITY,
+        sidebarPosition: sidebar ? getComputedStyle(sidebar).position : "missing",
         composerTop: composer?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY,
         composerBottom: composer?.getBoundingClientRect().bottom ?? Number.NEGATIVE_INFINITY,
         modeTop: modeTrigger?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY,
         modeBottom: modeTrigger?.getBoundingClientRect().bottom ?? Number.NEGATIVE_INFINITY
       };
     });
-    expect(mobileLayout.navRight).toBeLessThanOrEqual(0.5);
-    expect(mobileLayout.navPosition).toBe("fixed");
+    expect(mobileLayout.sidebarRight).toBeLessThanOrEqual(0.5);
+    expect(mobileLayout.sidebarPosition).toBe("fixed");
     expect(mobileLayout.modeTop).toBeGreaterThanOrEqual(mobileLayout.composerTop);
     expect(mobileLayout.modeBottom).toBeLessThanOrEqual(mobileLayout.composerBottom);
 
-    await expect(page.locator(".sources-pane")).toBeHidden();
+    await expect(page.locator(".context-panel")).toBeHidden();
     await page.getByRole("button", { name: "打开来源" }).click();
     await expect(page.locator(".sources-pane")).toBeVisible();
     await page.keyboard.press("Escape");
-    await expect(page.locator(".sources-pane")).toBeHidden();
+    await expect(page.locator(".context-panel")).toBeHidden();
 
     await page.getByRole("button", { name: "打开主导航" }).click();
     await expect(page.getByText("共享当前工作台资料库", { exact: true })).toBeVisible();
+    await assertWorkspaceSwitcherFits(page, viewport.width);
     await page.getByRole("button", { name: "工作台资料库" }).click();
     await expect(page).toHaveURL(/\/library$/);
     await expect(page.locator(".source-library-page")).toBeVisible();
@@ -79,7 +80,6 @@ for (const viewport of [
     await expect(formatRow).toContainText("PDF");
     await expect(formatRow).toContainText("MD");
     await expectNoHorizontalOverflow(page);
-    await assertWorkspaceSwitcherFits(page, viewport.width);
     expect(consoleErrors).toEqual([]);
   });
 }

@@ -5,10 +5,10 @@
 .source-library-page {
   display: grid;
   align-content: start;
-  gap: 20px;
-  max-width: 1200px;
+  gap: 24px;
+  max-width: 1160px;
   margin: 0 auto;
-  padding: 18px 12px 40px;
+  padding: 36px clamp(20px, 4vw, 48px) 48px;
 }
 
 .source-library-hero {
@@ -42,9 +42,8 @@
   display: grid;
   gap: 2px;
   padding: 10px 14px;
-  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--surface);
+  background: var(--surface-2);
   font-size: var(--text-xs);
 }
 
@@ -74,9 +73,8 @@
   display: grid;
   gap: 2px;
   padding: 14px 16px;
-  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--surface);
+  background: var(--surface-2);
 }
 
 .source-library-metrics dt {
@@ -115,10 +113,6 @@
 .source-library-catalog {
   display: grid;
   gap: 12px;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  background: var(--surface);
 }
 
 .source-library-catalog-header {
@@ -402,6 +396,11 @@
   background: var(--surface);
 }
 
+.source-library-availability {
+  border: 0;
+  background: var(--surface-2);
+}
+
 .source-library-tool-heading {
   display: flex;
   align-items: center;
@@ -442,7 +441,7 @@
   padding: 26px 16px;
   border: 1.5px dashed var(--border-strong);
   border-radius: var(--radius-lg);
-  background: var(--surface-2);
+  background: var(--surface);
   text-align: center;
   transition: border-color var(--duration) var(--ease), background var(--duration) var(--ease);
 }
@@ -463,7 +462,7 @@
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: var(--surface);
+  background: var(--surface-2);
   color: var(--ink-2);
   box-shadow: var(--shadow-xs);
 }
@@ -611,7 +610,7 @@
 
 @media (max-width: 767px) {
   .source-library-page {
-    padding: 12px 2px 32px;
+    padding: 20px 14px 32px;
   }
 
   .source-library-hero-copy h2 {

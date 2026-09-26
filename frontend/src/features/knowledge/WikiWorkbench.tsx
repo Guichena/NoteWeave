@@ -4,7 +4,8 @@ import { WikiIndexPanel } from "./WikiIndexPanel";
 import { WikiOverviewPanel } from "./WikiOverviewPanel";
 import { WikiPageDetailPanel } from "./WikiPageDetailPanel";
 import { WikiRelationsPanel } from "./WikiRelationsPanel";
-import { RefreshCw, TriangleAlert } from "lucide-react";
+import { ChevronRight, RefreshCw, TriangleAlert, Wrench } from "lucide-react";
+import { WikiMaintenancePanel, type MaintenanceTab } from "./WikiMaintenancePanel";
 import { WikiEmptyWorkbench } from "./WikiEmptyWorkbench";
 
 export type { WikiWorkbenchProps };
@@ -20,16 +21,17 @@ export function WikiWorkbench({
   helpers,
   derived
 }: WikiWorkbenchProps) {
-  const [relationsOpen, setRelationsOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
+  const [manageTab, setManageTab] = useState<MaintenanceTab>("issues");
 
   useEffect(() => {
-    if (!relationsOpen) return;
+    if (!manageOpen) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setRelationsOpen(false);
+      if (event.key === "Escape") setManageOpen(false);
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [relationsOpen]);
+  }, [manageOpen]);
 
   const props = {
     isBusy,
@@ -109,51 +111,105 @@ export function WikiWorkbench({
     );
   }
 
-  return (
-      <section className={`wiki-workbench${relationsOpen ? " relations-open" : ""}`}>
-        <WikiIndexPanel
-          isBusy={props.isBusy}
-          wikiHome={wikiHome}
-          wikiIndex={props.wikiIndex}
-          relationsOpen={relationsOpen}
-          onOpenRelations={() => setRelationsOpen(true)}
-          wikiSearch={props.wikiSearch}
-          setWikiSearch={props.setWikiSearch}
-          wikiKindFilter={props.wikiKindFilter}
-          setWikiKindFilter={props.setWikiKindFilter}
-          availableWikiKinds={props.availableWikiKinds}
-          visibleWikiPages={props.visibleWikiPages}
-          groupedWikiPages={props.groupedWikiPages}
-          selectedWikiItemId={props.selectedWikiItemId}
-          selectedWikiPage={props.selectedWikiPage}
-          wikiRebuildAdvice={props.wikiRebuildAdvice}
-          openWikiIndex={props.openWikiIndex}
-          selectWikiPage={props.selectWikiPage}
-        />
+  const manageProps = {
+    ...props,
+    prepareWikiLinkRepair: (targetTitle: string, sourceTitle: string) => {
+      props.prepareWikiLinkRepair(targetTitle, sourceTitle);
+      setManageTab("draft");
+      setManageOpen(true);
+    }
+  };
 
-        {props.selectedWikiPage ? (
-          <WikiPageDetailPanel
-            isBusy={isBusy}
-            workspace={workspace}
-            selection={selection}
-            draft={draft}
-            actions={actions}
-            helpers={helpers}
-          />
-        ) : (
-          <article className="wiki-page">
-            <WikiOverviewPanel {...props} />
-          </article>
-        )}
-        {relationsOpen ? (
+  return (
+    <section className={`wiki-workbench${manageOpen ? " is-manage-open" : ""}`}>
+      <WikiIndexPanel
+        isBusy={props.isBusy}
+        wikiHome={wikiHome}
+        wikiSearch={props.wikiSearch}
+        setWikiSearch={props.setWikiSearch}
+        wikiKindFilter={props.wikiKindFilter}
+        setWikiKindFilter={props.setWikiKindFilter}
+        availableWikiKinds={props.availableWikiKinds}
+        visibleWikiPages={props.visibleWikiPages}
+        groupedWikiPages={props.groupedWikiPages}
+        selectedWikiItemId={props.selectedWikiItemId}
+        selectedWikiPage={props.selectedWikiPage}
+        wikiRebuildAdvice={props.wikiRebuildAdvice}
+        openWikiIndex={props.openWikiIndex}
+        selectWikiPage={props.selectWikiPage}
+      />
+
+      <div className="wiki-main">
+        <header className="wiki-main-header">
+          <nav className="wiki-breadcrumb" aria-label="知识库位置">
+            {props.selectedWikiPage ? (
+              <>
+                <button type="button" className="wiki-breadcrumb-link" disabled={props.isBusy} onClick={() => void props.openWikiIndex()}>
+                  知识库
+                </button>
+                <ChevronRight size={14} aria-hidden="true" />
+                <span title={props.selectedWikiPage.title}>{props.selectedWikiPage.title}</span>
+              </>
+            ) : <span>知识库总览</span>}
+          </nav>
           <button
             type="button"
-            className="wiki-relations-backdrop"
-            aria-label="点击背景关闭关系面板"
-            onClick={() => setRelationsOpen(false)}
+            className="secondary-button wiki-manage-trigger"
+            aria-expanded={manageOpen}
+            onClick={() => {
+              setManageTab("issues");
+              setManageOpen(true);
+            }}
+          >
+            <Wrench size={14} aria-hidden="true" />
+            管理
+            {wikiIssues.length > 0 ? <span className="wiki-manage-badge">{wikiIssues.length}</span> : null}
+          </button>
+        </header>
+
+        {props.selectedWikiPage ? (
+          <div className="wiki-page-layout">
+            <WikiPageDetailPanel
+              isBusy={isBusy}
+              workspace={workspace}
+              selection={selection}
+              draft={draft}
+              actions={actions}
+              helpers={helpers}
+              pages={wikiHome.pages}
+              onRepairLink={manageProps.prepareWikiLinkRepair}
+            />
+            <WikiRelationsPanel {...manageProps} />
+          </div>
+        ) : (
+          <article className="wiki-page wiki-overview-page">
+            <WikiOverviewPanel
+              {...manageProps}
+              onOpenManage={() => {
+                setManageTab("issues");
+                setManageOpen(true);
+              }}
+            />
+          </article>
+        )}
+      </div>
+
+      {manageOpen ? (
+        <>
+          <button
+            type="button"
+            className="wiki-manage-backdrop"
+            aria-label="关闭知识库管理"
+            onClick={() => setManageOpen(false)}
           />
-        ) : null}
-        <WikiRelationsPanel {...props} onCloseRelations={() => setRelationsOpen(false)} />
-      </section>
+          <WikiMaintenancePanel
+            {...manageProps}
+            key={manageTab}
+            initialTab={manageTab}
+            onClose={() => setManageOpen(false)}
+          />
+        </>
+      ) : null}
+    </section>
   );
 }

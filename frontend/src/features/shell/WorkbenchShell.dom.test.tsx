@@ -7,7 +7,7 @@ import { WorkbenchShell } from "./WorkbenchShell";
 afterEach(cleanup);
 
 describe("WorkbenchShell", () => {
-  it("renders the top navigation and notifies navigation", () => {
+  it("renders the sidebar navigation and notifies navigation", () => {
     const onNavigate = vi.fn();
     render(
       <WorkbenchShell

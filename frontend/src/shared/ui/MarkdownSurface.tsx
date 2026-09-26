@@ -8,6 +8,9 @@ type MarkdownSurfaceProps = {
   citations?: string[];
   activeCitation?: number | null;
   onCitationClick?: (index: number) => void;
+  /** 传入后，[[页面标题]] 会渲染成可点击的 Wiki 链接；返回 false 表示页面不存在。 */
+  onWikiLinkClick?: (title: string) => boolean | void;
+  resolveWikiLink?: (title: string) => boolean;
 };
 
 type InlineContext = {
@@ -15,6 +18,8 @@ type InlineContext = {
   citations?: string[];
   activeCitation?: number | null;
   onCitationClick?: (index: number) => void;
+  onWikiLinkClick?: (title: string) => boolean | void;
+  resolveWikiLink?: (title: string) => boolean;
 };
 
 function headingId(value: string) {
@@ -32,9 +37,11 @@ export function MarkdownSurface({
   compactCitations = false,
   citations,
   activeCitation = null,
-  onCitationClick
+  onCitationClick,
+  onWikiLinkClick,
+  resolveWikiLink
 }: MarkdownSurfaceProps) {
-  const inline: InlineContext = { compactCitations, citations, activeCitation, onCitationClick };
+  const inline: InlineContext = { compactCitations, citations, activeCitation, onCitationClick, onWikiLinkClick, resolveWikiLink };
   const lines = content.replaceAll("\r\n", "\n").split("\n");
   const blocks: ReactNode[] = [];
   let index = 0;
@@ -180,10 +187,11 @@ function normalizeTableRow(cells: string[], columnCount: number) {
 }
 
 function renderInlineMarkdown(value: string, context: InlineContext) {
-  const { compactCitations, citations, activeCitation, onCitationClick } = context;
+  const { compactCitations, citations, activeCitation, onCitationClick, onWikiLinkClick, resolveWikiLink } = context;
   const numberedCitations = Boolean(citations && citations.length > 0);
   const parts = [
     "`[^`]+`",
+    "\\[\\[[^\\]]+\\]\\]",
     "\\*\\*[^*]+\\*\\*",
     "\\[[^\\]]+\\]\\(https?:\\/\\/[^\\s)]+\\)",
     ...(compactCitations ? ["\\[evidence(?::|-)[^\\]]+\\]"] : []),
@@ -194,6 +202,25 @@ function renderInlineMarkdown(value: string, context: InlineContext) {
   return tokens.map((token, index) => {
     if (token.startsWith("`") && token.endsWith("`") && token.length > 1) {
       return <code key={index}>{token.slice(1, -1)}</code>;
+    }
+    if (/^\[\[[^\]]+\]\]$/.test(token)) {
+      const title = token.slice(2, -2).split("|")[0].trim();
+      const label = token.slice(2, -2).split("|").pop()?.trim() || title;
+      if (!onWikiLinkClick) {
+        return <span key={index} className="wikilink">{label}</span>;
+      }
+      const resolved = resolveWikiLink ? resolveWikiLink(title) : true;
+      return (
+        <button
+          type="button"
+          key={index}
+          className={resolved ? "wikilink" : "wikilink is-unresolved"}
+          title={resolved ? `打开《${title}》` : `《${title}》尚未创建`}
+          onClick={() => onWikiLinkClick(title)}
+        >
+          {label}
+        </button>
+      );
     }
     if (token.startsWith("**") && token.endsWith("**") && token.length > 4) {
       return <strong key={index}>{token.slice(2, -2)}</strong>;

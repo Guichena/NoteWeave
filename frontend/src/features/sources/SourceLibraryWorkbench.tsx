@@ -6,8 +6,6 @@ import {
   FileSearch,
   FileText,
   Files,
-  Link2,
-  MessagesSquare,
   Search,
   Trash2,
   Upload
@@ -124,12 +122,7 @@ export function SourceLibraryWorkbench(props: SourceLibraryWorkbenchProps) {
       <header className="source-library-hero">
         <div className="source-library-hero-copy">
           <h2 id="source-library-title">资料库</h2>
-          <p>资料绑定当前工作台，由所有会话、Research 和 Wiki 共享。解析完成不等于已经建立检索索引。</p>
-        </div>
-        <div className="source-library-workspace" aria-label="资料库归属">
-          <span><Link2 size={14} aria-hidden="true" />当前工作台</span>
-          <strong title={workspace?.name || "未选择工作台"}>{workspace?.name || "未选择工作台"}</strong>
-          <small><MessagesSquare size={13} aria-hidden="true" />{conversationCount} 个会话共享</small>
+          <p>「{workspace?.name || "当前工作台"}」的资料由 {conversationCount} 个对话、深度研究与知识库共享。建立检索索引后才能参与问答。</p>
         </div>
       </header>
 
