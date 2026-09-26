@@ -85,7 +85,8 @@ class ArtifactJobWriteRepository {
             String taskId,
             String artifactJobId,
             int runNo,
-            int sourceVersionNo,
+            String triggerType,
+            Integer sourceVersionNo,
             String userRequirement,
             String inputsJson,
             String sourceScopeJson,
@@ -112,11 +113,12 @@ class ArtifactJobWriteRepository {
                     task_id, artifact_job_id, run_no, trigger_type, source_version_no,
                     user_requirement, inputs_json, source_scope_json, control_pack_json, input_snapshot_id,
                     reserved_version_id
-                ) values (?, ?, ?, 'REGENERATE', ?, ?, ?, ?, ?, ?, ?)
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 taskId,
                 artifactJobId,
                 runNo,
+                triggerType,
                 sourceVersionNo,
                 userRequirement,
                 inputsJson,

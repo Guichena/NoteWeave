@@ -43,6 +43,11 @@ export class ArtifactsApi {
       `/api/v2/workspaces/${workspaceId}/video-learning-bundles/${requestId}/cancel`, {});
   }
 
+  retryVideoLearningChoice(workspaceId: string, requestId: string, skillKey: string) {
+    return this.client.post<VideoLearningRequest>(
+      `/api/v2/workspaces/${workspaceId}/video-learning-bundles/${requestId}/choices/${encodeURIComponent(skillKey)}/retry`, {});
+  }
+
   getVersion(workspaceId: string, artifactJobId: string, versionNo: number, init?: RequestInit) {
     return this.client.get<ArtifactVersionDetail>(this.versionPath(workspaceId, artifactJobId, versionNo), init);
   }

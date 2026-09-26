@@ -71,7 +71,7 @@ describe("ArtifactsApi", () => {
     expect(get.mock.calls.every(([, init]) => init?.signal === controller.signal)).toBe(true);
   });
 
-  it("uses the parent video route for list, create and cancellation", async () => {
+  it("uses the parent video route for list, create, cancellation and choice retry", async () => {
     const get = vi.fn(async (_path: string) => ({ enabled: false, requests: [] }));
     const post = vi.fn(async (_path: string, _body?: unknown) => ({}));
     const api = new ArtifactsApi({ get, post } as unknown as ApiClient);
@@ -83,10 +83,12 @@ describe("ArtifactsApi", () => {
       selected_skills: ["knowledge_blog"]
     });
     await api.cancelVideoLearning("workspace", "parent-1");
+    await api.retryVideoLearningChoice("workspace", "parent-1", "knowledge_blog");
     expect(get).toHaveBeenCalledWith("/api/v2/workspaces/workspace/video-learning-bundles", undefined);
     expect(post.mock.calls.map(([path]) => path)).toEqual([
       "/api/v2/workspaces/workspace/video-learning-bundles",
-      "/api/v2/workspaces/workspace/video-learning-bundles/parent-1/cancel"
+      "/api/v2/workspaces/workspace/video-learning-bundles/parent-1/cancel",
+      "/api/v2/workspaces/workspace/video-learning-bundles/parent-1/choices/knowledge_blog/retry"
     ]);
   });
 });

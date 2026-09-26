@@ -441,3 +441,9 @@ Host 从已发布 Skill Catalog 读取实际版本，新增 `noteweave.video-lea
 ## P6 父选择直达已发布子版本
 
 父请求状态投影附上每项独立 Job 的 `latest_version_no`；前端在版本号大于 0 时提供“查看 vN”，调用已有历史版本读取与文件动作，从父选择直接进入对应产物审计。没有 Version 的排队或失败子项不显示该动作。Host `VideoLearningRequestRepositoryContractTest` **7 passed，0 failed/0 error/0 skipped**，Maven BUILD SUCCESS（1:03）；前端 `VideoLearningPanel.dom.test.tsx` **5 passed**，`pnpm build` 通过。此合同仅验证父子版本身份与 UI 路由；实际文件下载仍需浏览器联调。
+
+## P6 失败子产物独立重试
+
+父请求的失败选择新增原发起者专用重试入口。事务锁定父请求/选择与失败 Job，重新核对创建者权限、父资料 Bundle/Plan 身份和摘要、最后一轮冻结输入的回放状态；创建同 Job 的新 `RETRY` Run、独立 Task、预留 Version ID、输入快照与 Outbox，保留旧失败 Run 和兄弟 Job。当前运行中的同一选择重试返回 409，不重复建 Run。前端只在父资料 READY 且该选择 FAILED、父请求未取消时显示“重试”。这条路径沿用已冻结 Bundle，不重新采集视频。
+
+Host `VideoLearningRequestRepositoryContractTest`、`ArtifactCandidateTest`、`ArtifactRollbackGateTest` 联跑 **15 passed，0 failed/0 error/0 skipped**，Maven BUILD SUCCESS（55.072 秒）；前端 API/面板定向 **10 passed**，`pnpm build` 通过。合同包含非原发起者拒绝、冻结输入复用、双击冲突、兄弟 Outbox 保持 READY 和重试再次失败后取消的状态。真实 Worker 跨进程重试仍待 P6 联调。

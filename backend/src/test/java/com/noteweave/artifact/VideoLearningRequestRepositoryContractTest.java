@@ -347,6 +347,40 @@ class VideoLearningRequestRepositoryContractTest {
         assertThat(sibling.status()).isEqualTo("QUEUED");
         assertThat(jdbc.queryForObject("select status from task_outbox where task_id = ?",
                 String.class, sibling.taskId())).isEqualTo("READY");
+        assertThatThrownBy(() -> childCoordinator.retryFailedChoice(
+                workspaceId, parent.requestId(), "knowledge_blog", "another-user"))
+                .hasMessageContaining("原请求");
+        String retryResponse = mvc.perform(post(
+                        "/api/v2/workspaces/{workspaceId}/video-learning-bundles/{requestId}/choices/{skillKey}/retry",
+                        workspaceId, parent.requestId(), "knowledge_blog"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        var retried = mapper.readTree(retryResponse).path("data").path("choices");
+        String retryTaskId = "";
+        for (var item : retried) {
+            if ("knowledge_blog".equals(item.path("skill_key").asText())) {
+                retryTaskId = item.path("task_id").asText();
+                assertThat(item.path("status").asText()).isEqualTo("QUEUED");
+            }
+        }
+        assertThat(retryTaskId).isNotBlank().isNotEqualTo(child.taskId());
+        assertThat(jdbc.queryForMap("""
+                select run_no, trigger_type, source_version_no from artifact_job_run where task_id = ?
+                """, retryTaskId)).containsEntry("run_no", 2)
+                .containsEntry("trigger_type", "RETRY")
+                .containsEntry("source_version_no", null);
+        assertThat(jdbc.queryForObject("""
+                select inputs_json from artifact_job_run where task_id = ?
+                """, String.class, retryTaskId)).contains(receipt.id());
+        mvc.perform(post(
+                        "/api/v2/workspaces/{workspaceId}/video-learning-bundles/{requestId}/choices/{skillKey}/retry",
+                        workspaceId, parent.requestId(), "knowledge_blog"))
+                .andExpect(status().isConflict());
+        assertThat(jdbc.queryForObject("""
+                select count(*) from artifact_job_run where artifact_job_id = ?
+                """, Integer.class, child.artifactJobId())).isEqualTo(2);
+        workerCallbacks.fail(retryTaskId,
+                new WorkerFailRequest("FAILED", "TEST_OUTPUT_FAILURE", "retry failed", false),
+                "independent-child-retry-failure");
         requests.requestCancellation(workspaceId, parent.requestId(), "local-user");
         assertThat(childCoordinator.reconcileChoice(remaining)).isFalse();
         assertThat(requests.view(workspaceId, parent.requestId()).materialState()).isEqualTo("READY");

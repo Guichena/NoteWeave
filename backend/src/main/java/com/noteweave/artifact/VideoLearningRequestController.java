@@ -20,15 +20,18 @@ public class VideoLearningRequestController {
     private final VideoLearningRequestService service;
     private final WorkspaceAccessGuard access;
     private final CurrentUserProvider users;
+    private final VideoLearningChildCoordinator children;
 
     public VideoLearningRequestController(VideoLearningRequestRepository requests,
                                           VideoLearningRequestService service,
                                           WorkspaceAccessGuard access,
-                                          CurrentUserProvider users) {
+                                          CurrentUserProvider users,
+                                          VideoLearningChildCoordinator children) {
         this.requests = requests;
         this.service = service;
         this.access = access;
         this.users = users;
+        this.children = children;
     }
 
     @PostMapping
@@ -59,6 +62,15 @@ public class VideoLearningRequestController {
         access.requirePermission(workspaceId, WorkspacePermission.EXECUTION_OPERATE);
         return ApiResponse.success(requests.requestCancellation(
                 workspaceId, requestId, users.requireUserId()));
+    }
+
+    @PostMapping("/{requestId}/choices/{skillKey}/retry")
+    ApiResponse<VideoLearningRequestRepository.ParentView> retryChoice(
+            @PathVariable String workspaceId, @PathVariable String requestId,
+            @PathVariable String skillKey) {
+        access.requirePermission(workspaceId, WorkspacePermission.EXECUTION_OPERATE);
+        return ApiResponse.success(children.retryFailedChoice(
+                workspaceId, requestId, skillKey, users.requireUserId()));
     }
 
     public record Overview(boolean enabled,

@@ -93,4 +93,24 @@ describe("VideoLearningPanel", () => {
     fireEvent.click(await screen.findByRole("button", { name: "查看 v2" }));
     expect(onOpenVersion).toHaveBeenCalledWith("deck-job", 2);
   });
+
+  it("retries only the failed child from the frozen ready parent", async () => {
+    const failed = { ...parent, material_state: "READY", choices: [
+      { skill_key: "knowledge_blog", artifact_job_id: "blog-job", status: "FAILED",
+        task_id: "failed-task", latest_version_no: 0 },
+      { skill_key: "interview_qa", artifact_job_id: "qa-job", status: "QUEUED",
+        task_id: "qa-task", latest_version_no: 0 }
+    ] };
+    const api = {
+      listVideoLearning: vi.fn(async () => ({ enabled: false, requests: [failed] })),
+      retryVideoLearningChoice: vi.fn(async () => ({ ...failed, choices: [
+        { ...failed.choices[0], status: "QUEUED", task_id: "retry-task" }, failed.choices[1]
+      ] }))
+    };
+    render(<VideoLearningPanel workspaceId="workspace" api={api as unknown as ArtifactsApi} />);
+    fireEvent.click(await screen.findByRole("button", { name: "重试" }));
+    await waitFor(() => expect(api.retryVideoLearningChoice).toHaveBeenCalledWith(
+      "workspace", "parent-1", "knowledge_blog"));
+    expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
+  });
 });

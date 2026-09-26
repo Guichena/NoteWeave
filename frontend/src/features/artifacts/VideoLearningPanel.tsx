@@ -130,6 +130,23 @@ export function VideoLearningPanel({ workspaceId, onJobsChanged, onOpenVersion, 
     }
   }
 
+  async function retryChoice(item: VideoLearningRequest, skillKey: string) {
+    setBusy(true);
+    setError("");
+    try {
+      const updated = await api.retryVideoLearningChoice(workspaceId, item.request_id, skillKey);
+      setOverview((current) => current
+        ? { ...current, requests: current.requests.map((request) =>
+            request.request_id === updated.request_id ? updated : request) }
+        : current);
+      await onJobsChanged?.();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "子产物重试失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!workspaceId || (!overview?.enabled && !overview?.requests.length)) return null;
 
   return (
@@ -222,6 +239,11 @@ export function VideoLearningPanel({ workspaceId, onJobsChanged, onOpenVersion, 
             <li key={choice.skill_key}>
               <span>{titleFor(choice.skill_key)}</span>
               <small>{labelFor(choice.status)}</small>
+              {choice.status === "FAILED" && choice.artifact_job_id
+                  && item.material_state === "READY" && !item.cancellation_requested ? (
+                <button type="button" className="secondary-button" disabled={busy}
+                  onClick={() => void retryChoice(item, choice.skill_key)}>重试</button>
+              ) : null}
               {choice.artifact_job_id && choice.latest_version_no > 0 ? (
                 <button type="button" className="secondary-button" disabled={busy}
                   onClick={() => {

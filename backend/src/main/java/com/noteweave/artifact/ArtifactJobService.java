@@ -191,6 +191,7 @@ public class ArtifactJobService {
                 taskId,
                 artifactJobId,
                 nextRunNo,
+                "REGENERATE",
                 sourceVersionNo,
                 requirement,
                 Json.write(objectMapper, inputs),
@@ -218,6 +219,50 @@ public class ArtifactJobService {
                 taskId,
                 artifactPayloadReadModelAssembler.readControlPack(row.controlPackJson())
         );
+        return new ArtifactJobResponse(artifactJobId, taskId, row.skillKey(), "QUEUED");
+    }
+
+    /** Retry a failed Job from its last frozen input without requiring a published Version. */
+    @Transactional
+    ArtifactJobResponse retryFailedJob(String workspaceId, String artifactJobId) {
+        requireWorkspace(workspaceId);
+        List<String> statuses = jdbcTemplate.query("""
+                select status from artifact_job where id = ? and workspace_id = ? for update
+                """, (rs, index) -> rs.getString(1), artifactJobId, workspaceId);
+        if (statuses.size() != 1 || !"FAILED".equals(statuses.get(0))) {
+            throw new BusinessException("ARTIFACT_JOB_RETRY_CONFLICT",
+                    "仅失败的产物任务可按冻结输入重试", HttpStatus.CONFLICT);
+        }
+        ArtifactRegenerationRow row = loadRegenerationRow(workspaceId, artifactJobId);
+        if (row.inputSnapshotId() == null || row.controlPackJson().isBlank()) {
+            throw new BusinessException("ARTIFACT_JOB_RETRY_INPUT_UNAVAILABLE",
+                    "冻结输入已不可用于重试", HttpStatus.CONFLICT);
+        }
+        Integer replayable = jdbcTemplate.queryForObject("""
+                select count(*) from artifact_run_input_snapshot
+                where id = ? and workspace_id = ? and artifact_job_id = ?
+                  and replay_availability = 'FULL'
+                """, Integer.class, row.inputSnapshotId(), workspaceId, artifactJobId);
+        if (replayable == null || replayable != 1) {
+            throw new BusinessException("ARTIFACT_JOB_RETRY_INPUT_UNAVAILABLE",
+                    "冻结输入已不可用于重试", HttpStatus.CONFLICT);
+        }
+        artifactSkillCatalogService.resolveSkill(row.skillKey());
+        String taskId = taskService.createTask(workspaceId, "ARTIFACT_JOB", "ARTIFACT_JOB",
+                artifactJobId, "QUEUED", "失败产物按冻结输入重试");
+        artifactJobWriteRepository.persistRegeneration(taskId, artifactJobId,
+                row.latestRunNo() + 1, "RETRY", null, row.userRequirement(), row.inputsJson(),
+                row.sourceScopeJson(), row.controlPackJson(), row.inputSnapshotId(), workspaceId,
+                Json.write(objectMapper, Map.of(
+                        "task_id", taskId, "task_type", "ARTIFACT_JOB",
+                        "workspace_id", workspaceId, "target_type", "ARTIFACT_JOB",
+                        "target_id", artifactJobId, "payload_version", "v1",
+                        "trace_id", artifactJobId + ":retry-" + (row.latestRunNo() + 1),
+                        "created_at", System.currentTimeMillis())),
+                artifactSkillCatalogService.catalogDigest());
+        contextV2ShadowSnapshots.freeze(workspaceId, taskId, row.userRequirement(), row.skillKey());
+        memoryCompilerService.logPackUsage(workspaceId, "ARTIFACT", "ARTIFACT_JOB_RUN", taskId,
+                artifactPayloadReadModelAssembler.readControlPack(row.controlPackJson()));
         return new ArtifactJobResponse(artifactJobId, taskId, row.skillKey(), "QUEUED");
     }
 

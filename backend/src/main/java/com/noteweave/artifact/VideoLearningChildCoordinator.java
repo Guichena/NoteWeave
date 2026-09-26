@@ -84,9 +84,53 @@ public class VideoLearningChildCoordinator {
         return true;
     }
 
+    @Transactional
+    public VideoLearningRequestRepository.ParentView retryFailedChoice(
+            String workspaceId, String requestId, String skillKey, String actorUserId) {
+        List<RetryParent> parents = jdbc.query("""
+                select r.video_url, r.part_no, r.frame_density, r.asr_fallback,
+                       r.material_bundle_id, r.knowledge_plan_id, r.material_task_id,
+                       r.material_content_digest, r.knowledge_plan_content_digest,
+                       c.artifact_job_id
+                from video_learning_request r
+                join video_learning_request_choice c on c.request_id = r.id
+                where r.id = ? and r.workspace_id = ? and c.skill_key = ?
+                  and r.material_state = 'READY' and r.cancellation_requested = false
+                  and c.artifact_job_id is not null
+                for update
+                """, (rs, index) -> new RetryParent(rs.getString(1), rs.getInt(2),
+                rs.getString(3), rs.getString(4), rs.getString(5), rs.getString(6),
+                rs.getString(7), rs.getString(8), rs.getString(9), rs.getString(10)),
+                requestId, workspaceId, skillKey);
+        if (parents.size() != 1) {
+            throw new BusinessException("VIDEO_LEARNING_CHOICE_RETRY_CONFLICT",
+                    "所选子产物当前不可重试", HttpStatus.CONFLICT);
+        }
+        String originalActor = requests.requireActorMayOperate(workspaceId, requestId);
+        if (!originalActor.equals(actorUserId)) {
+            throw new BusinessException("VIDEO_LEARNING_CHOICE_RETRY_FORBIDDEN",
+                    "只有原请求发起者可以重试子产物", HttpStatus.FORBIDDEN);
+        }
+        RetryParent parent = parents.get(0);
+        var frozen = materials.requireParentMaterial(workspaceId, parent.bundleId(), parent.planId(),
+                requestId, parent.materialTaskId(), parent.videoUrl(), parent.part(),
+                parent.frameDensity(), parent.asrFallback());
+        if (!frozen.bundleDigest().equals(parent.bundleDigest())
+                || !frozen.planDigest().equals(parent.planDigest())) {
+            throw new BusinessException("VIDEO_MATERIAL_DEGRADED",
+                    "父请求冻结的素材摘要已改变", HttpStatus.CONFLICT);
+        }
+        jobs.retryFailedJob(workspaceId, parent.artifactJobId());
+        return requests.view(workspaceId, requestId);
+    }
+
     public record ChoiceKey(String workspaceId, String requestId, String skillKey) {}
     private record Parent(String workspaceId, String requestId, String videoUrl,
                           int part, String language, String frameDensity, String asrFallback,
                           String userRequirement, String bundleId, String planId,
                           String materialTaskId, String bundleDigest, String planDigest) {}
+    private record RetryParent(String videoUrl, int part, String frameDensity,
+                               String asrFallback, String bundleId, String planId,
+                               String materialTaskId, String bundleDigest,
+                               String planDigest, String artifactJobId) {}
 }
