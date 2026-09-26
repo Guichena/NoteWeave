@@ -259,3 +259,9 @@ Worker 原先把任何非空 `source_refs` 都统计为已覆盖，即使引用�
 新增 `context_v2_workspace_rollout` 和管理员读写接口，缺省 `OFF`，目前只允许 `OFF`、`SHADOW`；`ACTIVE` 明确拒绝。全局配置 `noteweave.context.v2.shadow-enabled:false` 仍是总闸，Workspace 设为 SHADOW 也不能绕开全局关闭。影子快照服务仅在两层开关都允许时运行。启用、关闭、再次启用与 ACTIVE 拒绝在同一 Workspace 会话中回放；默认全局关闭的会话测试也把 Workspace 设为 SHADOW，确认不会产生影子记录。
 
 最终 `ContextV2ShadowSnapshotContractTest` **5 passed**、`ConversationTurnModuleContractTest` **39 passed**、命令构造 **3 passed**、回放脱敏 **3 passed**，合计 **50 passed**。这是影子采样开关，尚无生产 v2 Context 消费、v1/v2 实际任务输入差异指标或 Workspace 灰度放量门禁。
+
+## C4 实际 Answer 冻结引用差异读取
+
+新增管理员只读接口，对同一 Answer Run 的 v1 `run_input_snapshot` 与 v2 影子快照逐类比较消息、摘要和 Memory Revision 标识，并返回编译器版本、回放状态、影子失败原因及 v2 约束数量。响应只含引用标识和计数，不返回正文；缺少影子快照、编译失败和 v1 未就绪均有明确状态。读取前重新校验 v2 冻结 JSON 的 SHA-256，篡改摘要返回 `CONTEXT_V2_SHADOW_CORRUPT`。接口把 `accuracy_status` 标为 `GOLD_LABELS_UNAVAILABLE`，因此差异不能自动判定为误选或漏选。
+
+READY、FAILED、REDACTED、OFF 和摘要篡改的定向契约通过；最终 `ContextV2ShadowSnapshotContractTest` **5 passed**、`ConversationTurnModuleContractTest` **39 passed**、固定样本回放 **1 passed**，合计 **45 passed**。这只是可核对的 v1/v2 引用差异，不是 C4 的真实用户正确率、灰度基线或生产 v2 启用门禁。

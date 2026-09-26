@@ -14,9 +14,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v2/workspaces/{workspaceId}/context-v2-rollout")
 public class ContextV2RolloutController {
     private final ContextV2RolloutService service;
+    private final ContextV2ShadowDiffService diffs;
 
-    public ContextV2RolloutController(ContextV2RolloutService service) {
+    public ContextV2RolloutController(ContextV2RolloutService service,
+                                      ContextV2ShadowDiffService diffs) {
         this.service = service;
+        this.diffs = diffs;
     }
 
     @GetMapping
@@ -31,4 +34,10 @@ public class ContextV2RolloutController {
     }
 
     public record RolloutRequest(@NotBlank String mode) {}
+
+    @GetMapping("/runs/{answerRunId}/diff")
+    ApiResponse<ContextV2ShadowDiffService.ShadowDiff> diff(@PathVariable String workspaceId,
+                                                              @PathVariable String answerRunId) {
+        return ApiResponse.success(diffs.get(workspaceId, answerRunId));
+    }
 }

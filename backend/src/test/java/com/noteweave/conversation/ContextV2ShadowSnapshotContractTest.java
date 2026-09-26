@@ -56,6 +56,9 @@ class ContextV2ShadowSnapshotContractTest {
                 .content(mapper.writeValueAsString(Map.of("content", "Mode off",
                         "answer_mode", "QA", "client_request_id", "rollout-off-1"))));
         assertThat(shadowCount(off.path("answer_run_id").asText())).isZero();
+        assertThat(data(get("/api/v2/workspaces/{workspaceId}/context-v2-rollout/runs/{runId}/diff",
+                workspaceId, off.path("answer_run_id").asText()))
+                .path("gap_code").asText()).isEqualTo("SHADOW_NOT_RECORDED");
 
         enableShadow(workspaceId);
         JsonNode on = data(post("/api/v2/conversations/{conversationId}/messages", conversationId)
@@ -118,6 +121,23 @@ class ContextV2ShadowSnapshotContractTest {
                 select count(*) from context_v2_shadow_ref
                 where snapshot_id = ? and ref_type = 'MESSAGE' and ref_id = ?
                 """, Integer.class, snapshotId, queryId)).isEqualTo(1);
+        JsonNode diff = data(get("/api/v2/workspaces/{workspaceId}/context-v2-rollout/runs/{runId}/diff",
+                workspaceId, runId));
+        assertThat(diff.path("shadow_status").asText()).isEqualTo("READY");
+        assertThat(diff.path("v1_compiler_version").asText()).isEqualTo("segment-projection-v1");
+        assertThat(diff.path("v2_compiler_version").asText()).isEqualTo("context-window-v2-shadow-a1");
+        assertThat(diff.path("messages").path("only_v2").toString()).contains(queryId);
+        assertThat(diff.toString()).doesNotContain(privateText);
+        jdbc.update("""
+                update context_v2_shadow_snapshot set projection_sha256 = ? where id = ?
+                """, "0".repeat(64), snapshotId);
+        mvc.perform(get("/api/v2/workspaces/{workspaceId}/context-v2-rollout/runs/{runId}/diff",
+                        workspaceId, runId))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONTEXT_V2_SHADOW_CORRUPT"));
+        jdbc.update("""
+                update context_v2_shadow_snapshot set projection_sha256 = ? where id = ?
+                """, sha256(json), snapshotId);
 
         mvc.perform(delete("/api/v2/workspaces/{workspaceId}/conversations/{conversationId}/messages/{messageId}",
                 workspaceId, conversationId, queryId)).andExpect(status().isOk());
@@ -133,6 +153,8 @@ class ContextV2ShadowSnapshotContractTest {
         assertThat(redacted.replayAvailability()).isEqualTo("METADATA_ONLY");
         assertThat(redacted.currentInput()).isEmpty();
         assertThat(redacted.rawTail().get(0).text()).isEmpty();
+        assertThat(data(get("/api/v2/workspaces/{workspaceId}/context-v2-rollout/runs/{runId}/diff",
+                workspaceId, runId)).path("shadow_status").asText()).isEqualTo("REDACTED");
         assertThat(jdbc.queryForObject("""
                 select projection_sha256 from context_v2_shadow_snapshot where id = ?
                 """, String.class, snapshotId)).isEqualTo(sha256(redactedJson));
@@ -169,6 +191,9 @@ class ContextV2ShadowSnapshotContractTest {
         assertThat(jdbc.queryForObject("""
                 select count(*) from run_input_snapshot where answer_run_id = ?
                 """, Integer.class, receipt.path("answer_run_id").asText())).isEqualTo(1);
+        assertThat(data(get("/api/v2/workspaces/{workspaceId}/context-v2-rollout/runs/{runId}/diff",
+                workspaceId, receipt.path("answer_run_id").asText()))
+                .path("gap_code").asText()).isEqualTo("CONTEXT_BUDGET_EXCEEDED");
     }
 
     @Test
