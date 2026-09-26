@@ -230,7 +230,8 @@ public class ArtifactVideoMaterialService {
         } catch (Exception ex) {
             throw scopeInvalid();
         }
-        if (!"bilibili_course_note_pdf".equals(run.skillKey())
+        if (!Set.of("bilibili_course_note_pdf", "knowledge_blog", "interview_qa")
+                    .contains(run.skillKey())
                 || bundleRowId == null || bundleRowId.isBlank()
                 || !bundleRowId.equals(inputs.get("video_material_bundle_id"))) throw scopeInvalid();
         List<Receipt> rows = jdbc.query("""
@@ -472,6 +473,11 @@ public class ArtifactVideoMaterialService {
                 || !(bound.get("content_ir_digest") instanceof String)) {
             throw new BusinessException("ARTIFACT_CONTENT_IR_REQUIRED",
                     "Frozen video material requires typed content IR", HttpStatus.CONFLICT);
+        }
+        if (Set.of("knowledge_blog", "interview_qa").contains(run.skillKey())) {
+            Map<String, Object> plan = readPlanByBundleId(receipt.id());
+            VideoDerivedTextValidator.validate(run.skillKey(), resultPayload,
+                    readBundleById(receipt.id()), plan, receipt.contentDigest(), digest(plan));
         }
     }
 

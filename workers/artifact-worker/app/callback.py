@@ -354,6 +354,11 @@ def run_artifact_task_with_callbacks(
             bundle = callback_client.fetch_video_material(task_id, referenced_id)
             validate_frozen_video_scope(task_input, bundle)
             task_input.frozen_video_material = bundle.model_dump(mode="json")
+            if task_input.input_payload.skill_key in {"knowledge_blog", "interview_qa"}:
+                plan = callback_client.fetch_video_knowledge_plan(
+                    task_id, referenced_id, referenced=True)
+                plan.verify_against_bundle(bundle)
+                task_input.frozen_video_knowledge_plan = plan.model_dump(mode="json")
         events, result = run_artifact_task(task_input)
     except Exception as exc:
         if _report_execution_failure(callback_client, task_id, "WORKER_EXECUTION", exc):
@@ -496,7 +501,7 @@ def _attach_frozen_video_material(
         candidate = result.result_payload.get("candidate")
         if not isinstance(candidate, dict):
             raise ValueError("referenced video material requires a Worker Candidate")
-        if bundle.frames:
+        if bundle.frames and task_input.input_payload.skill_key == "bilibili_course_note_pdf":
             contents = callback_client.fetch_video_material_files(task_id, bundle, referenced_id)
             frame_paths = _stage_frozen_video_frames(task_id, referenced_id, bundle, contents)
             _rerender_pdf_with_frozen_frames(task_input, result, bundle, frame_paths)

@@ -277,3 +277,11 @@ READY、FAILED、REDACTED、OFF 和摘要篡改的定向契约通过；最终 `C
 Host 从 `artifact_video_material_bundle` 和 `artifact_video_knowledge_plan` 读取已冻结 JSON 时，现会用规范 JSON 重算 SHA-256 并与入库摘要比较。原始 Task 与受控引用 Task 共用这条读取门禁；库内 JSON 被改写时返回明确的 `VIDEO_MATERIAL_DEGRADED` 或 `VIDEO_KNOWLEDGE_PLAN_DEGRADED`，不继续把损坏资料交给派生产物。新增故障回放，分别篡改计划和资料包 JSON，并验证恢复原内容后可以读取。
 
 定向 Host 测试 **1 passed**；Artifact 契约回归 `Phase6ResearchArtifactContractTest` **52 个用例，44 执行通过、8 个既有跳过**，`ArtifactCandidateTest` **6 passed**、`ArtifactRollbackGateTest` **2 passed**、`ArtifactWorkerInputControllerTest` **5 passed**。这验证读取时的内容完整性，不代表 P3 已接入独立 Job、Version 或 READY。
+
+## P3 博客与问答的独立生产链路首批
+
+在权威 v2 Skill 目录、Host 和 Worker 三份相同字节目录中注册 `knowledge_blog`、`interview_qa`，各要求 `url` 与冻结 `video_material_bundle_id`，共享同一采集语言范围校验。Worker 在执行前通过 Host 受控引用端点读取 Bundle 和已冻结知识计划，用专用确定性分支分别生成专用 IR、Markdown、通用内容 IR、Worker Candidate 与 Markdown 文件清单；该分支不调用外部 LLM。本地证据窗口计划没有语义主张时直接失败。Host 完成回调在发布前复核 Bundle/Plan 摘要、知识计划证据、派生 IR 的章节或问答结构、逐条主张、术语、缺口、引用、Markdown 和通用章节。旧 B 站 PDF 的帧渲染仍只在 PDF Skill 上触发。
+
+Host 集成回放创建两个独立 Job，引同一个 PDF Job 冻结的素材和语义计划；博客先成功生成 READY Version 和 READY Markdown，伪造问答简答的回调被拒且未影响博客版本，修复后的问答回调再生成自己的 READY Version 和 READY Markdown。初次目录回归因权威参考目录仍是旧字节、旧测试要求 Skill 集合完全相等而 **2 failed**，更新参考目录和兼容断言后通过；初次跨 Skill 引用因新 Skill 缺少冻结采集语言而失败，补入同一默认语言后通过。Worker 全套首次 **2 failed、333 passed**，失败均为旧目录精确数量断言；最终 **336 passed，32.95 秒**。Host 最终 `Phase6ResearchArtifactContractTest` **52 个用例，44 执行通过、8 个既有跳过**，另有 Candidate **6 passed**、回滚 **2 passed**、Worker 输入 **5 passed**、目录 **2 passed**、专用验证器 **1 passed**。
+
+此批证明手工已冻结且含 `EXTRACTED` 主张的计划可派生独立版本。生产自动规划仍只冻结无语义主张的本地证据窗口，因外部语义规划数据外发未获授权，不会自动生成文章或问答 READY；当前输出是带证据的确定性摘录模板，尚缺完整的文章化写作、局部 Repair、模板语言本地化和 P3 的真实视频验收，不能据此宣称 P3 全部完成。

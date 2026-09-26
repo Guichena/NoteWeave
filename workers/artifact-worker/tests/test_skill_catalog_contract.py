@@ -32,7 +32,8 @@ def test_worker_public_skill_catalog_should_match_cross_language_contract() -> N
         }
         for skill_key, definition in contract["skills"].items()
     }
-    assert actual.keys() == expected.keys()
+    assert expected.keys() <= actual.keys()
+    assert {"knowledge_blog", "interview_qa"} <= actual.keys()
     for skill_key, legacy in expected.items():
         assert set(legacy["properties"]) <= set(actual[skill_key]["properties"])
         assert actual[skill_key]["required"] == legacy["required"]
@@ -47,7 +48,7 @@ def test_published_skill_catalog_matches_both_runtime_copies_and_action_registry
     assert source == host == worker
     assert CATALOG_DIGEST == hashlib.sha256(source).hexdigest()
     entries = json.loads(source)["skills"]
-    assert len(entries) == len({entry["skill_key"] for entry in entries}) == 12
+    assert len(entries) == len({entry["skill_key"] for entry in entries}) == 14
     for entry in entries:
         action = PRODUCTION_ACTIONS[entry["action_key"]]
         assert entry["graph_key"] == action.default_skill_graph_key

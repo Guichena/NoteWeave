@@ -274,6 +274,8 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
             case "wiki_page" -> "沉淀成定义、机制、引用和相关页面齐全的知识页草稿";
             case "mindmap_from_workspace" -> "把当前工作台资料整理为可缩放、可折叠的交互式思维导图";
             case "bilibili_course_note_pdf" -> "面向 B 站视频链接生成图文讲义与 PDF 讲义任务";
+            case "knowledge_blog" -> "从冻结的视频资料和知识规划生成带证据的学习文章";
+            case "interview_qa" -> "从冻结的视频资料和知识规划生成三段式面试问答";
             case "report_draft" -> "生成结构化报告草稿";
             case "faq_draft" -> "生成 FAQ 草稿";
             case "structured_note" -> "生成结构化笔记";
@@ -418,6 +420,8 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
             case "wiki_page" -> List.of("定义先行", "补充关键机制", "保留相关页面建议");
             case "mindmap_from_workspace" -> List.of("4 到 7 条主分支", "节点使用短语", "保留来源线索");
             case "bilibili_course_note_pdf" -> List.of("填写 B 站视频链接", "保留章节结构", "输出讲义 PDF");
+            case "knowledge_blog" -> List.of("引用冻结视频资料包", "保留逐条证据", "输出学习文章");
+            case "interview_qa" -> List.of("引用冻结视频资料包", "简答、详答、相关知识", "输出面试问答");
             case "report_draft" -> List.of("问题-方法-效果", "保留关键证据", "适合方案沉淀");
             case "faq_draft" -> List.of("面向帮助中心", "问题答案成对", "补充使用说明");
             case "structured_note" -> List.of("沉淀主题快照", "保留关键摘录", "补充后续问题");

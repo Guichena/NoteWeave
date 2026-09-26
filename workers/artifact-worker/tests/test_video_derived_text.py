@@ -10,6 +10,10 @@ from app.video_derived_text import (
 )
 from app.video_knowledge_plan import VideoKnowledgePlanV1, build_local_evidence_plan
 from app.video_material_bundle import VideoMaterialBundleV1
+from app.artifact_skill_catalog import CATALOG_DIGEST
+from app.models import ArtifactTaskInput
+from app.runner import run_artifact_task
+from app.callback import JavaArtifactCallbackClient, run_artifact_task_with_callbacks
 
 
 def _source() -> tuple[VideoMaterialBundleV1, VideoKnowledgePlanV1]:
@@ -91,3 +95,82 @@ def test_each_artifact_fails_independently_on_invalid_shape() -> None:
         VideoDerivedTextV1.model_validate(fields)
     derive_video_text(bundle, plan, "interview_qa").verify_against(
         bundle, plan, render_derived_markdown(derive_video_text(bundle, plan, "interview_qa")))
+
+
+@pytest.mark.parametrize("skill_key,action", [
+    ("knowledge_blog", "KNOWLEDGE_BLOG"),
+    ("interview_qa", "INTERVIEW_QA"),
+])
+def test_published_derived_skill_builds_an_independent_host_candidate(
+        skill_key: str, action: str) -> None:
+    bundle, plan = _source()
+    task = ArtifactTaskInput.model_validate({
+        "task_id": f"task-{skill_key}", "workspace_id": bundle.workspace_id,
+        "target_id": f"job-{skill_key}", "input_snapshot_id": f"snapshot-{skill_key}",
+        "catalog_digest": CATALOG_DIGEST,
+        "control_pack": {"pack_type": "ARTIFACT", "target_key": skill_key,
+                         "task_neighborhood": "ARTIFACT"},
+        "input_payload": {"skill_key": skill_key,
+                          "inputs": {"url": "https://www.bilibili.com/video/BV1234567890",
+                                     "video_material_bundle_id": "bundle-row-1"}},
+        "frozen_video_material": bundle.model_dump(mode="json"),
+        "frozen_video_knowledge_plan": plan.model_dump(mode="json"),
+    })
+    events, result = run_artifact_task(task)
+    assert result.job_snapshot.status == "COMPLETED"
+    assert result.version_snapshot.artifact_type == action
+    assert result.result_payload["content_ir"]["artifact_type"] == action
+    assert result.result_payload["verification"]["status"] == "PASS"
+    assert result.result_payload["candidate"]["required_files"][0]["role"] == "PRIMARY_MARKDOWN"
+    assert events[-1].progress_percent == 100
+    assert result.result_payload["derived_text_ir"]["plan_content_digest"] == plan.content_digest()
+    task.frozen_video_knowledge_plan = build_local_evidence_plan(bundle).model_dump(mode="json")
+    with pytest.raises(ValueError, match="no verified semantic claims"):
+        run_artifact_task(task)
+
+
+def test_callback_fetches_frozen_plan_and_attaches_bundle_to_candidate() -> None:
+    bundle, plan = _source()
+    task = ArtifactTaskInput.model_validate({
+        "task_id": "task-blog", "workspace_id": bundle.workspace_id,
+        "target_id": "job-blog", "input_snapshot_id": "snapshot-blog",
+        "catalog_digest": CATALOG_DIGEST,
+        "control_pack": {"pack_type": "ARTIFACT", "target_key": "knowledge_blog",
+                         "task_neighborhood": "ARTIFACT"},
+        "input_payload": {"skill_key": "knowledge_blog",
+                          "inputs": {"url": "https://www.bilibili.com/video/BV1234567890",
+                                     "language": "zh-CN",
+                                     "video_material_bundle_id": "bundle-row-1"}},
+    })
+
+    class Host(JavaArtifactCallbackClient):
+        def __init__(self):
+            super().__init__("http://host.local")
+            self.completed = []
+            self.plan_reads = 0
+
+        def fetch_task_input(self, task_id):
+            return task
+
+        def fetch_video_material(self, task_id, bundle_row_id=""):
+            assert bundle_row_id == "bundle-row-1"
+            return bundle
+
+        def fetch_video_knowledge_plan(self, task_id, bundle_row_id, *, referenced=False):
+            assert referenced is True
+            self.plan_reads += 1
+            return plan
+
+        def send_progress(self, task_id, event):
+            pass
+
+        def send_complete(self, task_id, result):
+            self.completed.append(result)
+
+    host = Host()
+    response = run_artifact_task_with_callbacks(task.task_id, host)
+    assert response.status == "COMPLETED"
+    assert host.plan_reads == 1
+    assert len(host.completed) == 1
+    assert host.completed[0].result_payload["candidate"]["video_material"]["id"] == \
+        "bundle-row-1"

@@ -123,7 +123,7 @@ def validate_frozen_video_scope(task_input: ArtifactTaskInput, bundle: VideoMate
             or bundle.workspace_id != task_input.workspace_id \
             or (not referenced_id and bundle.input_digest != frozen_video_input_digest(
                 task_input.input_snapshot_id, task_input.input_payload.inputs)):
-        raise ValueError("PDF video material does not match its frozen Run input")
+        raise ValueError("video material does not match its frozen Run input")
 
 
 def _resolve_video_url(task_input: ArtifactTaskInput) -> str:

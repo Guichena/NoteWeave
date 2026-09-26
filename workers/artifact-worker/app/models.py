@@ -88,6 +88,7 @@ class ArtifactTaskInput(BaseModel):
     input_payload: ArtifactTaskInputPayload
     # Worker-local material fetched through the Host's fenced reference endpoint.
     frozen_video_material: dict[str, object] = Field(default_factory=dict)
+    frozen_video_knowledge_plan: dict[str, object] = Field(default_factory=dict)
 
 
 class ArtifactSkillDefinition(BaseModel):

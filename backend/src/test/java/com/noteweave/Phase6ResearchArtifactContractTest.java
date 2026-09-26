@@ -177,7 +177,8 @@ class Phase6ResearchArtifactContractTest {
                     "required", List.copyOf(required)
             ));
         });
-        assertThat(actualContract.keySet()).isEqualTo(expectedContract.keySet());
+        assertThat(actualContract.keySet()).containsAll(expectedContract.keySet())
+                .contains("knowledge_blog", "interview_qa");
         expectedContract.forEach((key, legacy) -> {
             assertThat(actualContract.get(key).get("properties"))
                     .containsAll(legacy.get("properties"));
@@ -5273,6 +5274,57 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
         return artifactCandidate(taskId, markdown, pdfFileName, List.of());
     }
 
+    private Map<String, Object> videoDerivedCompletion(
+            String taskId, String skillKey, ArtifactVideoMaterialService.Receipt source,
+            String bundleDigest, String planDigest) throws Exception {
+        String title = "Visible material";
+        String claim = "Visible heading";
+        String question = "What does the source say about Observed heading?";
+        String prefix = "# " + title + "\n\nSource: " + bundleDigest
+                + "\nKnowledge plan: " + planDigest + "\n\n## Terms\n\nVisible\n\n";
+        String markdown = prefix + ("knowledge_blog".equals(skillKey)
+                ? "## Observed heading\n\nVisible heading\nEvidence: frame:f1\n"
+                : "## " + question + "\n\n### Short answer\n\nVisible heading\n\n"
+                + "### Detailed answer\n\nVisible heading\nEvidence: frame:f1\n\n"
+                + "### Related knowledge\n\nVisible\n");
+        Map<String, Object> citedClaim = Map.of("text", claim, "evidence_refs", List.of("frame:f1"));
+        Map<String, Object> item = "knowledge_blog".equals(skillKey)
+                ? Map.of("node_id", "concept", "heading", "Observed heading",
+                        "claims", List.of(citedClaim), "gaps", List.of())
+                : Map.of("node_id", "concept", "question", question,
+                        "short_answer", claim, "detailed_answer", List.of(citedClaim),
+                        "related_knowledge", List.of("Visible"), "gaps", List.of());
+        String markdownDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest(markdown.getBytes(StandardCharsets.UTF_8)));
+        Map<String, Object> ir = new LinkedHashMap<>(Map.of(
+                "schema_version", "video-derived-text-v1", "artifact_type", skillKey,
+                "bundle_content_digest", bundleDigest, "plan_content_digest", planDigest,
+                "title", title, "terms", List.of("Visible"),
+                "blog_sections", "knowledge_blog".equals(skillKey) ? List.of(item) : List.of(),
+                "interview_questions", "interview_qa".equals(skillKey) ? List.of(item) : List.of(),
+                "markdown_sha256", markdownDigest));
+        ObjectMapper canonicalMapper = new ObjectMapper()
+                .configure(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
+        ir.put("content_digest", java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest(canonicalMapper.writeValueAsBytes(ir))));
+        Map<String, Object> section = Map.of("heading",
+                "knowledge_blog".equals(skillKey) ? "Observed heading" : question,
+                "body", claim, "source_refs", List.of("frame:f1"));
+        Map<String, Object> payload = new LinkedHashMap<>(Map.of(
+                "markdown", markdown, "sections", List.of(section),
+                "derived_text_ir", ir, "verification", Map.of("status", "PASS"),
+                "export_trace", Map.of("status", "SKIPPED", "format", "MARKDOWN", "file_name", "")));
+        Map<String, Object> candidate = new LinkedHashMap<>(artifactCandidate(taskId, markdown, ""));
+        candidate.put("video_material", Map.of("id", source.id(),
+                "bundle_id", source.bundleId(), "bundle_version", source.bundleVersion(),
+                "content_digest", source.contentDigest()));
+        addSyntheticContentIr(payload, candidate, title, markdown);
+        payload.put("candidate", candidate);
+        return Map.of("result_type", "MARKDOWN", "result_title", title,
+                "result_payload", payload, "trace_summary", "frozen video derived text",
+                "citations", List.of());
+    }
+
     private Map<String, Object> artifactCandidate(String taskId, String markdown, String pdfFileName,
                                                    List<String> previewNames) throws Exception {
         Map<String, Object> snapshot = jdbcTemplate.queryForMap("""
@@ -5701,6 +5753,84 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
                 videoMaterialService.submitKnowledgePlan(taskId, submission);
         assertThat(videoMaterialService.submitKnowledgePlan(taskId, submission).id()).isEqualTo(frozen.id());
         assertThat(videoMaterialService.readKnowledgePlan(taskId, receipt.id())).isEqualTo(plan);
+        List<String> derivedTasks = new ArrayList<>();
+        for (String skillKey : List.of("knowledge_blog", "interview_qa")) {
+            MvcResult derivedJob = mockMvc.perform(post(
+                            "/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of(
+                                    "skill_key", skillKey, "user_requirement", "derive frozen evidence",
+                                    "inputs", Map.of("url",
+                                            "https://www.bilibili.com/video/BV1234567890?p=2",
+                                            "video_material_bundle_id", receipt.id())))))
+                    .andExpect(status().isOk()).andReturn();
+            String derivedTask = objectMapper.readTree(derivedJob.getResponse().getContentAsString())
+                    .path("data").path("task_id").asText();
+            derivedTasks.add(derivedTask);
+            assertThat(videoMaterialService.readReferenced(derivedTask, receipt.id())).isEqualTo(bundle);
+            assertThat(videoMaterialService.readReferencedKnowledgePlan(derivedTask, receipt.id()))
+                    .isEqualTo(plan);
+        }
+        assertThat(derivedTasks).hasSize(2).doesNotHaveDuplicates();
+        Map<String, Object> blogCompletion = videoDerivedCompletion(
+                derivedTasks.get(0), "knowledge_blog", receipt, digest, planDigest);
+        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", derivedTasks.get(0))
+                        .header("X-NoteWeave-Idempotency-Key", "derived-blog:" + derivedTasks.get(0))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(blogCompletion)))
+                .andExpect(status().isOk());
+        Map<String, Object> qaCompletion = videoDerivedCompletion(
+                derivedTasks.get(1), "interview_qa", receipt, digest, planDigest);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> qaPayload = (Map<String, Object>) qaCompletion.get("result_payload");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> qaIr = (Map<String, Object>) qaPayload.get("derived_text_ir");
+        Map<String, Object> forgedIr = new LinkedHashMap<>(qaIr);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> question = (Map<String, Object>) ((List<?>) qaIr.get("interview_questions")).get(0);
+        Map<String, Object> forgedQuestion = new LinkedHashMap<>(question);
+        forgedQuestion.put("short_answer", "The diagram proves an unsupported theorem");
+        forgedIr.put("interview_questions", List.of(forgedQuestion));
+        forgedIr.remove("content_digest");
+        forgedIr.put("content_digest", java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest(canonicalMapper.writeValueAsBytes(forgedIr))));
+        Map<String, Object> forgedPayload = new LinkedHashMap<>(qaPayload);
+        forgedPayload.put("derived_text_ir", forgedIr);
+        Map<String, Object> forgedCompletion = new LinkedHashMap<>(qaCompletion);
+        forgedCompletion.put("result_payload", forgedPayload);
+        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", derivedTasks.get(1))
+                        .header("X-NoteWeave-Idempotency-Key", "derived-qa-forged:" + derivedTasks.get(1))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(forgedCompletion)))
+                .andExpect(status().isConflict());
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from artifact_version where artifact_job_id =
+                (select artifact_job_id from artifact_job_run where task_id = ?)
+                """, Integer.class, derivedTasks.get(0))).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from artifact_version where artifact_job_id =
+                (select artifact_job_id from artifact_job_run where task_id = ?)
+                """, Integer.class, derivedTasks.get(1))).isZero();
+        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", derivedTasks.get(1))
+                        .header("X-NoteWeave-Idempotency-Key", "derived-qa-valid:" + derivedTasks.get(1))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(qaCompletion)))
+                .andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from artifact_version where artifact_job_id =
+                (select artifact_job_id from artifact_job_run where task_id = ?)
+                """, Integer.class, derivedTasks.get(1))).isEqualTo(1);
+        for (String derivedTask : derivedTasks) {
+            assertThat(jdbcTemplate.queryForObject("""
+                    select delivery_status from artifact_version where origin_task_id = ?
+                    """, String.class, derivedTask)).isEqualTo("READY");
+            assertThat(jdbcTemplate.queryForObject("""
+                    select count(*) from artifact_file f
+                    join artifact_version v on v.id = f.artifact_version_id
+                    where v.origin_task_id = ? and f.file_role = 'PRIMARY_MARKDOWN'
+                      and f.status = 'READY'
+                    """, Integer.class, derivedTask)).isEqualTo(1);
+        }
         Map<String, Object> badChild = new LinkedHashMap<>(child);
         badChild.put("claims", List.of(Map.of("text", "Invisible theorem", "status", "EXTRACTED",
                 "evidence_refs", List.of("frame:f1"))));
