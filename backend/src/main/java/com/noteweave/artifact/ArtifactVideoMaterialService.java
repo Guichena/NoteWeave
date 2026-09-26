@@ -1,6 +1,7 @@
 package com.noteweave.artifact;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
 import com.noteweave.config.NoteWeaveProperties;
@@ -42,6 +43,7 @@ public class ArtifactVideoMaterialService {
     private final ObjectStorage storage;
     private final String bucket;
     private String orphanScanCursor = "";
+    private String versionHoldScanCursor = "";
 
     public ArtifactVideoMaterialService(ArtifactJobReadRepository jobs, JdbcTemplate jdbc,
                                         ObjectMapper mapper, ArtifactWorkerExportClient workerFiles,
@@ -683,6 +685,71 @@ public class ArtifactVideoMaterialService {
         if (updated != 1) throw new BusinessException("VIDEO_MATERIAL_VERSION_HOLD_CONFLICT",
                 "Published Version cannot hold its frozen material", HttpStatus.CONFLICT);
     }
+
+    /** Backfill only historical Versions whose frozen Run and Candidate agree on one Bundle. */
+    @Scheduled(fixedDelayString = "${noteweave.artifact.video-material-hold-reconcile-delay-ms:3600000}")
+    public synchronized int reconcileLegacyVersionHolds() {
+        List<LegacyVersion> versions = jdbc.query("""
+                select v.id, aj.id, aj.workspace_id,
+                       coalesce(v.origin_task_id, aj.task_id), v.result_payload_json
+                from artifact_version v
+                join artifact_job aj on aj.id = v.artifact_job_id
+                where v.material_bundle_id is null and v.id > ?
+                  and v.skill_key in ('bilibili_course_note_pdf', 'knowledge_blog',
+                                      'interview_qa', 'video_learning_deck')
+                order by v.id limit 100
+                """, (rs, index) -> new LegacyVersion(rs.getString(1), rs.getString(2),
+                rs.getString(3), rs.getString(4), rs.getString(5)), versionHoldScanCursor);
+        int restored = 0;
+        for (LegacyVersion version : versions) {
+            versionHoldScanCursor = version.versionId();
+            String bundleId = verifiedHistoricalBundle(version);
+            if (bundleId == null) continue;
+            restored += jdbc.update("""
+                    update artifact_version set material_bundle_id = ?
+                    where id = ? and material_bundle_id is null
+                    """, bundleId, version.versionId());
+        }
+        if (versions.size() < 100) versionHoldScanCursor = "";
+        return restored;
+    }
+
+    private String verifiedHistoricalBundle(LegacyVersion version) {
+        try {
+            JsonNode reference = mapper.readTree(version.payloadJson())
+                    .path("candidate").path("video_material");
+            String id = reference.path("id").asText();
+            if (id.isBlank()) return null;
+            List<Receipt> bundles = jdbc.query("""
+                    select id, bundle_id, bundle_version, content_digest, workspace_id, task_id
+                    from artifact_video_material_bundle where id = ? and workspace_id = ?
+                    """, (rs, index) -> new Receipt(rs.getString(1), rs.getString(2),
+                    rs.getInt(3), rs.getString(4), rs.getString(5), rs.getString(6)),
+                    id, version.workspaceId());
+            if (bundles.size() != 1) return null;
+            Receipt bundle = bundles.get(0);
+            if (!bundle.bundleId().equals(reference.path("bundle_id").asText())
+                    || bundle.bundleVersion() != reference.path("bundle_version").asInt(-1)
+                    || !bundle.contentDigest().equals(reference.path("content_digest").asText())) {
+                return null;
+            }
+            List<String> frozenInputs = jdbc.query("""
+                    select s.inputs_json from artifact_job_run r
+                    join artifact_run_input_snapshot s on s.id = r.input_snapshot_id
+                    where r.task_id = ? and r.artifact_job_id = ?
+                    """, (rs, index) -> rs.getString(1), version.taskId(), version.jobId());
+            if (frozenInputs.size() != 1) return null;
+            String referencedBundleId = mapper.readTree(frozenInputs.get(0))
+                    .path("video_material_bundle_id").asText();
+            return bundle.taskId().equals(version.taskId()) || bundle.id().equals(referencedBundleId)
+                    ? bundle.id() : null;
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private record LegacyVersion(String versionId, String jobId, String workspaceId,
+                                 String taskId, String payloadJson) {}
 
     private void validateBundle(String workspaceId, String inputSnapshotId, String taskId,
                                 String inputsJson, Map<String, Object> bundle) {

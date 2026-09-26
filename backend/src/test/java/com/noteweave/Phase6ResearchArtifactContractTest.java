@@ -6158,6 +6158,35 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
                   and v.version_no = 2 and f.status = 'READY'
                 """, String.class, deckJob)).containsExactlyInAnyOrder(
                         "PRIMARY_MARKDOWN", "PRIMARY_PPTX", "SLIDE_PREVIEW");
+        jdbcTemplate.update("update artifact_version set material_bundle_id = null where artifact_job_id = ?",
+                deckJob);
+        assertThat(videoMaterialService.reconcileLegacyVersionHolds()).isGreaterThanOrEqualTo(2);
+        assertThat(jdbcTemplate.queryForList("""
+                select material_bundle_id from artifact_version
+                where artifact_job_id = ? order by version_no
+                """, String.class, deckJob)).containsExactly(material.id(), material.id());
+        assertThat(videoMaterialService.reconcileLegacyVersionHolds()).isZero();
+        String rollbackPayload = jdbcTemplate.queryForObject("""
+                select result_payload_json from artifact_version
+                where artifact_job_id = ? and version_no = 2
+                """, String.class, deckJob);
+        JsonNode damagedPayload = objectMapper.readTree(rollbackPayload);
+        ((com.fasterxml.jackson.databind.node.ObjectNode) damagedPayload.path("candidate")
+                .path("video_material")).put("content_digest", "0".repeat(64));
+        jdbcTemplate.update("""
+                update artifact_version set material_bundle_id = null, result_payload_json = ?
+                where artifact_job_id = ? and version_no = 2
+                """, objectMapper.writeValueAsString(damagedPayload), deckJob);
+        assertThat(videoMaterialService.reconcileLegacyVersionHolds()).isZero();
+        assertThat(jdbcTemplate.queryForObject("""
+                select material_bundle_id from artifact_version
+                where artifact_job_id = ? and version_no = 2
+                """, String.class, deckJob)).isNull();
+        jdbcTemplate.update("""
+                update artifact_version set result_payload_json = ?
+                where artifact_job_id = ? and version_no = 2
+                """, rollbackPayload, deckJob);
+        assertThat(videoMaterialService.reconcileLegacyVersionHolds()).isEqualTo(1);
     }
 
     @Test
