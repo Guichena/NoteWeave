@@ -139,20 +139,25 @@ export function buildGraphSearchHits(pages: WikiPage[], keywordRaw: string, limi
     .slice(0, limit);
 }
 
-const WIKI_KIND_LABELS: Record<string, string> = {
-  OVERVIEW: "总览",
-  TOPIC: "主题",
-  CONCEPT: "概念",
-  COMPARISON: "对比",
-  ENTITY: "实体",
-  SOURCE_SUMMARY: "资料摘要",
-  NOTE: "笔记",
-  PERSON: "人物",
-  EVENT: "事件"
-};
-
-/** 把后端页面类型转换成界面上的中文名称；未知类型保留原值。 */
+/** 页面类型直接展示后端原值（TOPIC / CONCEPT / SOURCE_SUMMARY…），只做空值兜底。 */
 export function formatWikiKind(kind: string | null | undefined) {
-  const normalized = (kind || "TOPIC").toUpperCase();
-  return WIKI_KIND_LABELS[normalized] ?? normalized;
+  return (kind || "TOPIC").toUpperCase();
+}
+
+/** 页面类型对应的配色分组，用于图谱节点与类型标签。 */
+export function wikiKindTone(kind: string | null | undefined) {
+  switch ((kind || "TOPIC").toUpperCase()) {
+    case "TOPIC":
+    case "OVERVIEW":
+      return "blue";
+    case "CONCEPT":
+      return "violet";
+    case "SOURCE_SUMMARY":
+      return "green";
+    case "COMPARISON":
+    case "ENTITY":
+      return "gold";
+    default:
+      return "rose";
+  }
 }

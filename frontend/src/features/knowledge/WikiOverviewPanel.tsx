@@ -55,7 +55,7 @@ export function WikiOverviewPanel(props: WikiOverviewPanelProps) {
       ) : null}
 
       <section className="wiki-overview-section wiki-overview-graph">
-        <WikiGraphPanel {...props} />
+        <WikiGraphPanel {...props} variant="wide" />
       </section>
 
       <section className="wiki-overview-section">
