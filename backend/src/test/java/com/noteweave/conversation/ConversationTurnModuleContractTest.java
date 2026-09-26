@@ -42,6 +42,7 @@ class ConversationTurnModuleContractTest {
     @Autowired JdbcTemplate jdbcTemplate;
     @Autowired ConversationTopicProjectionV2Service topicProjectionV2Service;
     @Autowired ConversationTopicSummaryV2Service topicSummaryV2Service;
+    @Autowired ConversationContextCompilerV2Service contextCompilerV2Service;
     @Autowired ResearchAgentTaskCoordinatorService researchTaskCoordinator;
     @Autowired ResearchAgentTaskService researchAgentTaskService;
     @Autowired ResearchAgentIncrementalFinalizationService researchFinalizationService;
@@ -981,6 +982,20 @@ class ConversationTurnModuleContractTest {
                 new PromoteSegmentSummaryRequest(summaryText, summaryHash));
         assertThat(topicSummaryV2Service.ready(workspaceId, conversationId, 10))
                 .extracting(ContextProjectionV2.TopicSummary::revisionId).contains(revisionId);
+        ContextProjectionV2 frozenShadow = contextCompilerV2Service.compile(workspaceId,
+                com.noteweave.security.CurrentUserProvider.LOCAL_USER_ID, conversationId,
+                10, "What about the second write order?", "QA", 20_000);
+        assertThat(frozenShadow.topicSummaries())
+                .extracting(ContextProjectionV2.TopicSummary::revisionId).contains(revisionId);
+        assertThat(frozenShadow.rawTail()).extracting(ContextProjectionV2.RawMessage::seq)
+                .containsExactly(3, 4, 5, 6, 7, 8, 9, 10);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> contextCompilerV2Service.compile(
+                workspaceId, "different-actor", conversationId, 10, "Follow up", "QA", 20_000))
+                .isInstanceOf(com.noteweave.common.BusinessException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> contextCompilerV2Service.compile(
+                workspaceId, com.noteweave.security.CurrentUserProvider.LOCAL_USER_ID,
+                conversationId, 8, "Stale cutoff", "QA", 20_000))
+                .isInstanceOf(com.noteweave.common.BusinessException.class);
         jdbcTemplate.update("""
                 insert into conversation_constraint_v2(id, workspace_id, conversation_id,
                     source_message_id, kind, scope, constraint_text, valid_from_seq,
@@ -1003,6 +1018,10 @@ class ConversationTurnModuleContractTest {
         assertThat(jdbcTemplate.queryForObject("""
                 select summary_text from conversation_topic_summary_revision_v2 where id = ?
                 """, String.class, revisionId)).isEmpty();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> contextCompilerV2Service.compile(
+                workspaceId, com.noteweave.security.CurrentUserProvider.LOCAL_USER_ID,
+                conversationId, 10, "After deletion", "QA", 20_000))
+                .isInstanceOf(com.noteweave.common.BusinessException.class);
         assertThat(jdbcTemplate.queryForObject("""
                 select status from conversation_topic_v2 where id = ?
                 """, String.class, first.segments().get(0).topicId())).isEqualTo("STALE");

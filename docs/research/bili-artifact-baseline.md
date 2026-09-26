@@ -219,3 +219,9 @@ Host 原本只校验通用 `artifact-content-v1` 的内容摘要、Markdown 摘�
 Worker 原先把任何非空 `source_refs` 都统计为已覆盖，即使引用标题不在本次取得的资料中。现在覆盖统计只接受本次 Canonical Content Object 的标题，且该 CCO 必须带 `source:` 来源 trace；未知标题标为 `INVALID_REF`，章节计入缺证据。合并 CCO 可作为引用标题，但必须能追溯到其组成来源，不能把没有来源的任意合并标题当作证据。外部来源与已入库 Source 使用同一检查。
 
 首轮 Runner 105 项中 14 项失败，原因是现有生成节点合法引用了 `Mixed Context Bundle`；核对运行时 CCO 的来源 trace 后补充该允许条件。最终 Runner **105 passed**，Worker 全套 **329 passed，36.24 秒**。此检查证明引用标识存在于本次 Worker 已取得的资料，不证明正文所有事实正确；P3/P4 仍需逐条主张与具体证据的专用校验。
+
+## C2 数据库影子编译入口
+
+新增只读 `ConversationContextCompilerV2Service`，以 Workspace 成员权限和当前登录执行者校验为入口，仅允许在当前消息 Head 冻结完整、无删除/待处理消息的 Ledger 前缀。它读取 v2 主题片段、READY 摘要、用户约束和 Runtime Memory 当前有效修订，再调用纯窗口选择器；无会话的独立请求只带当前输入和有效 Memory。片段缺口、陈旧投影、旧 cutoff 和已删除消息显式失败，防止从后来扩展的主题投影重建旧 Run 的历史上下文。契约在 A→B→A 样本上验证 8 条连续 Raw Tail、早期同主题摘要、执行者不匹配、旧 cutoff 和删除后的拒绝。
+
+定向契约 **1 passed**；完整 `ConversationTurnModuleContractTest` **38 passed**、`ContextWindowPlannerV2Test` **5 passed**、`ContextProjectionV2ContractTest` **3 passed**，合计 **46 passed**。结果仍仅是影子编译，没有持久化 v2 Run 输入快照或切换生产 QA/Note/Wiki/Research/Artifact；Memory 撤销后的新编译由 Runtime 当前状态过滤，已冻结任务的撤销传播需在 C3 单独验收。
