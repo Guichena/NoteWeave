@@ -89,6 +89,32 @@ public class ArtifactVideoMaterialService {
         }, taskId);
     }
 
+    /** A published material must be cited by the Candidate that consumes it. */
+    void validateCandidateReference(String taskId, Map<String, Object> resultPayload) {
+        List<Receipt> frozen = jdbc.query("""
+                select id, bundle_id, bundle_version, content_digest, workspace_id, task_id
+                from artifact_video_material_bundle where task_id = ? and bundle_version = 1
+                """, (rs, index) -> new Receipt(rs.getString("id"), rs.getString("bundle_id"),
+                rs.getInt("bundle_version"), rs.getString("content_digest"),
+                rs.getString("workspace_id"), rs.getString("task_id")), taskId);
+        Object candidate = resultPayload == null ? null : resultPayload.get("candidate");
+        Object rawReference = candidate instanceof Map<?, ?> value ? value.get("video_material") : null;
+        if (frozen.isEmpty() && rawReference == null) return;
+        if (frozen.size() != 1 || !(rawReference instanceof Map<?, ?> reference)
+                || !reference.keySet().equals(Set.of("id", "bundle_id", "bundle_version", "content_digest"))) {
+            throw new BusinessException("VIDEO_MATERIAL_REFERENCE_INVALID",
+                    "Candidate must cite its frozen video material", HttpStatus.CONFLICT);
+        }
+        Receipt receipt = frozen.get(0);
+        if (!receipt.id().equals(reference.get("id"))
+                || !receipt.bundleId().equals(reference.get("bundle_id"))
+                || receipt.bundleVersion() != number(reference.get("bundle_version"))
+                || !receipt.contentDigest().equals(reference.get("content_digest"))) {
+            throw new BusinessException("VIDEO_MATERIAL_REFERENCE_INVALID",
+                    "Candidate video material reference does not match the frozen bundle", HttpStatus.CONFLICT);
+        }
+    }
+
     private void validateBundle(ArtifactJobTaskRow run, Map<String, Object> bundle) {
         if (bundle == null || !bundle.keySet().equals(Set.of(
                 "schema_version", "bundle_id", "bundle_version", "workspace_id", "bvid", "part",

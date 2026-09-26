@@ -5273,6 +5273,47 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
                                 "bundle", conflicting, "content_digest", conflictingDigest))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VIDEO_MATERIAL_CONFLICT"));
+
+        String markdown = "# Frozen subtitle notes";
+        Map<String, Object> candidate = new LinkedHashMap<>(artifactCandidate(taskId, markdown, "course.pdf"));
+        Map<String, Object> payload = new LinkedHashMap<>(Map.of(
+                "markdown", markdown,
+                "verification", Map.of("status", "PASS"),
+                "export_trace", Map.of("status", "COMPILED", "file_name", "course.pdf"),
+                "candidate", candidate));
+        Map<String, Object> completion = new LinkedHashMap<>(Map.of(
+                "result_type", "MARKDOWN", "result_title", "Frozen subtitle notes",
+                "result_payload", payload, "trace_summary", "bundle reference gate",
+                "citations", List.of()));
+        String completionPath = "/internal/worker/tasks/{taskId}/complete";
+        mockMvc.perform(post(completionPath, taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "material-missing-ref:" + taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(completion)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VIDEO_MATERIAL_REFERENCE_INVALID"));
+        Map<String, Object> wrongReference = Map.of("id", "another-bundle",
+                "bundle_id", bundle.get("bundle_id"), "bundle_version", 1,
+                "content_digest", digest);
+        candidate.put("video_material", wrongReference);
+        mockMvc.perform(post(completionPath, taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "material-wrong-ref:" + taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(completion)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VIDEO_MATERIAL_REFERENCE_INVALID"));
+        candidate.put("video_material", Map.of("id", id,
+                "bundle_id", bundle.get("bundle_id"), "bundle_version", 1,
+                "content_digest", digest));
+        mockMvc.perform(post(completionPath, taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "material-valid-ref:" + taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(completion)))
+                .andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from artifact_version where artifact_job_id =
+                (select artifact_job_id from artifact_job_run where task_id = ?)
+                """, Integer.class, taskId)).isEqualTo(1);
     }
 
     @Test

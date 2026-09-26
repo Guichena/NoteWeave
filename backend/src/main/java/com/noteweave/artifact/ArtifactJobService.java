@@ -40,6 +40,7 @@ public class ArtifactJobService {
     private final ArtifactPayloadReadModelAssembler artifactPayloadReadModelAssembler;
     private final MemoryCompilerService memoryCompilerService;
     private final ArtifactSkillCatalogService artifactSkillCatalogService;
+    private final ArtifactVideoMaterialService videoMaterialService;
     private final GeneratedSourceService generatedSourceService;
     private final KnowledgeCommandService knowledgeCommandService;
 
@@ -53,6 +54,7 @@ public class ArtifactJobService {
             ArtifactPayloadReadModelAssembler artifactPayloadReadModelAssembler,
             MemoryCompilerService memoryCompilerService,
             ArtifactSkillCatalogService artifactSkillCatalogService,
+            ArtifactVideoMaterialService videoMaterialService,
             GeneratedSourceService generatedSourceService,
             KnowledgeCommandService knowledgeCommandService
     ) {
@@ -65,6 +67,7 @@ public class ArtifactJobService {
         this.artifactPayloadReadModelAssembler = artifactPayloadReadModelAssembler;
         this.memoryCompilerService = memoryCompilerService;
         this.artifactSkillCatalogService = artifactSkillCatalogService;
+        this.videoMaterialService = videoMaterialService;
         this.generatedSourceService = generatedSourceService;
         this.knowledgeCommandService = knowledgeCommandService;
     }
@@ -430,6 +433,7 @@ public class ArtifactJobService {
         requireFrozenSourcesVisible(row);
         ArtifactCandidate candidate = ArtifactCandidate.from(taskId, row.inputSnapshotId(),
                 catalogDigestFrom(row.compilerVersion()), request, markdown);
+        videoMaterialService.validateCandidateReference(taskId, request.resultPayload());
         int claimed = artifactJobWriteRepository.claimCompletion(row.artifactJobId(), taskId);
         if (claimed != 1) {
             throw new BusinessException(
