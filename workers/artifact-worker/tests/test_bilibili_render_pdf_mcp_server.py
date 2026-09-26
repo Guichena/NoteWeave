@@ -61,6 +61,7 @@ def test_tools_list_should_expose_expected_skill_surface() -> None:
     assert "render_latex_pdf" in names
     assert "capture_bilibili_frames" in names
     assert "analyze_frame" in names
+    assert "analyze_frames" in names
 
 
 def test_analyze_frame_mcp_passes_only_frozen_frame_identity(tmp_path, monkeypatch) -> None:
@@ -83,6 +84,30 @@ def test_analyze_frame_mcp_passes_only_frozen_frame_identity(tmp_path, monkeypat
         "sandbox_root": tmp_path.resolve(), "task_id": "task-1",
         "file_id": "frame-1", "checksum_sha256": "a" * 64,
     }
+
+
+def test_analyze_frames_mcp_reports_one_receipt_for_exact_manifest(tmp_path, monkeypatch) -> None:
+    server = _sandboxed_server(tmp_path)
+    seen = []
+
+    def fake_observe(**kwargs):
+        seen.append(kwargs)
+        return {"schema_version": "frame-observation-v1",
+                "file_id": kwargs["file_id"], "observations": []}
+
+    monkeypatch.setattr(mcp_module, "observe_staged_frame", fake_observe)
+    result = server._analyze_frames({"task_id": "task-1", "files": [
+        {"file_id": "frame-1", "checksum_sha256": "a" * 64},
+        {"file_id": "frame-2", "checksum_sha256": "b" * 64},
+    ]})
+    assert result["schema_version"] == "frame-observation-batch-v1"
+    assert [item["file_id"] for item in result["frames"]] == ["frame-1", "frame-2"]
+    assert all(item["stage"] == "CAPTURED" for item in seen)
+    with pytest.raises(ValueError, match="duplicated"):
+        server._analyze_frames({"task_id": "task-1", "files": [
+            {"file_id": "frame-1", "checksum_sha256": "a" * 64},
+            {"file_id": "frame-1", "checksum_sha256": "a" * 64},
+        ]})
 
 
 def test_capture_bilibili_frames_keeps_part_identity_and_file_manifest(

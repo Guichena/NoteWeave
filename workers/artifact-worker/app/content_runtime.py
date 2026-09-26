@@ -67,6 +67,7 @@ def build_content_acquisition_plan(task_input: ArtifactTaskInput) -> ContentAcqu
         capture_frames = task_input.input_payload.skill_key.strip().lower() == "bilibili_course_note_pdf"
         if capture_frames:
             required_capabilities.append("CAPTURE_VIDEO_FRAMES")
+            required_capabilities.append("ANALYZE_FRAME")
         return ContentAcquisitionPlan(
             strategy_key=f"acq-{task_input.task_id}",
             primary_strategy="VIDEO_TRANSCRIPT_PIPELINE",
@@ -90,6 +91,13 @@ def build_content_acquisition_plan(task_input: ArtifactTaskInput) -> ContentAcqu
                     step_type="CAPTURE_FRAMES",
                     description="Capture verified video frames after transcript acquisition.",
                     capability_name="CAPTURE_VIDEO_FRAMES",
+                    status="PLANNED",
+                )] if capture_frames else []),
+                *([ContentAcquisitionStep(
+                    step_id=f"{task_input.task_id}-analyze-frames",
+                    step_type="ANALYZE_FRAMES",
+                    description="Observe verified video frame text after capture.",
+                    capability_name="ANALYZE_FRAME",
                     status="PLANNED",
                 )] if capture_frames else []),
                 ContentAcquisitionStep(
@@ -797,7 +805,9 @@ def _adapt_source_inputs(task_input: ArtifactTaskInput, action_key: str) -> list
         if adapter_route == "VIDEO_URL" and task_input.input_payload.skill_key.strip().lower() \
                 == "bilibili_course_note_pdf":
             planned_operations.insert(-1, "CAPTURE_FRAMES")
+            planned_operations.insert(-1, "ANALYZE_FRAMES")
             required_capabilities.append("CAPTURE_VIDEO_FRAMES")
+            required_capabilities.append("ANALYZE_FRAME")
         normalization_target_kind = _resolve_normalization_target_kind(
             action_key,
             normalized_source_type,
@@ -1050,6 +1060,7 @@ def _resolve_operation_capability(operation_key: str) -> str:
         "READ_EXTERNAL_CONTENT": "READ_WEB_PAGE",
         "EXTRACT_TRANSCRIPT": "EXTRACT_TRANSCRIPT",
         "CAPTURE_FRAMES": "CAPTURE_VIDEO_FRAMES",
+        "ANALYZE_FRAMES": "ANALYZE_FRAME",
         "TRANSCRIBE_AUDIO": "TRANSCRIBE_AUDIO",
     }.get(operation_key, "")
 
@@ -1083,6 +1094,22 @@ def _video_operation_arguments(
         return {"video_url": _resolve_input_locator(descriptor),
                 "interval_ms": interval_ms, "max_frames": max_frames,
                 "output_dir": str(output_dir)}
+    if operation_key == "ANALYZE_FRAMES":
+        source_id = str(descriptor["source_plan"]["source_id"])
+        capture_request_id = _build_operation_request_id(
+            task_id=task_input.task_id, source_id=source_id, operation_key="CAPTURE_FRAMES")
+        capture_payload = get_acquisition_result_payload(capture_request_id)
+        files = capture_payload.get("files", []) if isinstance(capture_payload, dict) else []
+        if not isinstance(files, list) or len(files) > 32 \
+                or any(not isinstance(item, dict) or not {
+                    "file_id", "checksum_sha256"
+                } <= set(item) for item in files):
+            raise ValueError("captured frame receipt has no file manifest")
+        return {"task_id": task_input.task_id, "files": [
+            {"file_id": str(item["file_id"]),
+             "checksum_sha256": str(item["checksum_sha256"])}
+            for item in files
+        ]}
     return {}
 
 
@@ -1117,6 +1144,8 @@ def _is_bilibili_pdf_async_provider(
     if capability_name == "EXTRACT_TRANSCRIPT" and server_id == "builtin-bilibili-mcp":
         return True
     if capability_name == "CAPTURE_VIDEO_FRAMES" and server_id == "builtin-bilibili-mcp":
+        return True
+    if capability_name == "ANALYZE_FRAME" and server_id == "builtin-bilibili-mcp":
         return True
     if capability_name == "TRANSCRIBE_AUDIO" and server_id in {"builtin-asr", "builtin-media"}:
         return True

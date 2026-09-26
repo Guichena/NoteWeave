@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 from PIL import Image
 
-from app.video_frame_observation import observe_staged_frame
+from app.video_frame_observation import observe_staged_frame, verify_frame_observation_batch
 
 
 TSV = (
@@ -42,6 +43,25 @@ def test_observe_staged_frame_returns_grounded_text_and_uncertainty(tmp_path) ->
     ]
     assert result["coverage_gaps"] == ["VISUAL_SEMANTICS_UNVERIFIED"]
     assert calls[0][0][1] == str(path)
+
+
+def test_observe_captured_frame_reads_only_task_scoped_capture(tmp_path) -> None:
+    captured = tmp_path / "bilibili-render-pdf" / "frames" / "task-1" / "images"
+    captured.mkdir(parents=True)
+    path = captured / "frame-1.png"
+    Image.new("RGB", (2, 2), "red").save(path)
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def fake_ocr(command, **kwargs):
+        assert command[1] == str(path)
+        return subprocess.CompletedProcess(command, 0, TSV, "")
+
+    result = observe_staged_frame(
+        sandbox_root=tmp_path, task_id="task-1", file_id="frame-1",
+        checksum_sha256=digest, stage="CAPTURED",
+        tesseract_path="tesseract", run=fake_ocr,
+    )
+    assert result["observations"][0]["text"] == "Hello world"
 
 
 def test_observe_staged_frame_rejects_wrong_digest_and_unsafe_identity(tmp_path) -> None:
@@ -86,3 +106,30 @@ def test_observe_staged_frame_reports_no_text_and_rejects_invalid_ocr(tmp_path) 
             sandbox_root=tmp_path, task_id="task-1", file_id="frame-1",
             checksum_sha256=digest, tesseract_path="tesseract", run=broken_ocr,
         )
+
+
+def test_observation_receipt_requires_exact_frame_manifest_and_grounded_text() -> None:
+    file = SimpleNamespace(file_id="frame-1", checksum_sha256="a" * 64,
+                           media_type="image/png")
+    frame = {
+        "schema_version": "frame-observation-v1", "task_id": "task-1",
+        "file_id": "frame-1", "checksum_sha256": "a" * 64,
+        "media_type": "image/png", "width": 4, "height": 3,
+        "observations": [{"kind": "TEXT", "text": "Visible text",
+                          "confidence": 91.0, "uncertain": False}],
+        "coverage_gaps": ["VISUAL_SEMANTICS_UNVERIFIED"],
+    }
+    payload = {"schema_version": "frame-observation-batch-v1", "task_id": "task-1",
+               "frames": [frame], "coverage_gaps": []}
+    assert len(verify_frame_observation_batch(
+        task_id="task-1", files=[file], payload=payload)) == 64
+    with pytest.raises(ValueError, match="captured file"):
+        verify_frame_observation_batch(
+            task_id="task-1", files=[file],
+            payload={**payload, "frames": [{**frame, "checksum_sha256": "b" * 64}]})
+    with pytest.raises(ValueError, match="text evidence"):
+        verify_frame_observation_batch(
+            task_id="task-1", files=[file],
+            payload={**payload, "frames": [{**frame, "observations": [
+                {"kind": "CHART", "text": "unverified values", "confidence": 91,
+                 "uncertain": False}]}]})

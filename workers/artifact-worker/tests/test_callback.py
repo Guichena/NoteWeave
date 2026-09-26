@@ -164,6 +164,21 @@ class FakeCallbackClient:
         )
 
 
+def _ack_frame_observation(task_id: str, client, *, frames=None, defer_resume=False):
+    entries = [] if frames is None else frames
+    operation = next(op for op in list_acquisition_operations(task_id=task_id)
+                     if op["operation_key"] == "ANALYZE_FRAMES")
+    token = dispatch_acquisition_operation(operation["request_id"])["operation"]["callback_token"]
+    response = acknowledge_acquisition_operation_with_callbacks(
+        callback_token=token, final_status="ACKNOWLEDGED",
+        provider_payload={"schema_version": "frame-observation-batch-v1",
+                          "task_id": task_id, "frames": entries,
+                          "coverage_gaps": ["NO_FRAMES"] if not entries else []},
+        client=client, defer_resume=defer_resume,
+    )
+    return operation, response
+
+
 def test_video_material_client_publishes_and_reads_frozen_bundle(monkeypatch) -> None:
     bundle = subtitle_only_bundle(
         bundle_id="bundle-1", bundle_version=1, workspace_id="ws-1",
@@ -636,12 +651,22 @@ def test_duplicate_acquisition_ack_should_retry_complete_delivery_after_transpor
                          "duration_ms": 5000, "frames": [], "files": [],
                          "coverage_gaps": ["NO_FRAMES"], "missing_requested_ms": []}
 
+        frame_ack = acknowledge_acquisition_operation_with_callbacks(
+            callback_token=frame_token, final_status="ACKNOWLEDGED",
+            provider_payload=frame_payload, client=client,
+        )
+        assert frame_ack.resumed_tasks[0].status == "WAITING_FOR_PROVIDER"
+        observation = next(op for op in list_acquisition_operations(task_id="task-a-waiting")
+                           if op["operation_key"] == "ANALYZE_FRAMES")
+        observation_token = dispatch_acquisition_operation(
+            observation["request_id"])["operation"]["callback_token"]
+        observation_payload = {"schema_version": "frame-observation-batch-v1",
+                               "task_id": "task-a-waiting", "frames": [],
+                               "coverage_gaps": ["NO_FRAMES"]}
         with pytest.raises(RuntimeError, match="complete callback unavailable"):
             acknowledge_acquisition_operation_with_callbacks(
-                callback_token=frame_token,
-                final_status="ACKNOWLEDGED",
-                provider_payload=frame_payload,
-                client=client,
+                callback_token=observation_token, final_status="ACKNOWLEDGED",
+                provider_payload=observation_payload, client=client,
             )
 
         waiting_record = get_waiting_task("task-a-waiting")
@@ -650,9 +675,9 @@ def test_duplicate_acquisition_ack_should_retry_complete_delivery_after_transpor
         cached_version_id = cached_delivery["result"]["version_snapshot"]["version_id"]
         client.should_fail_complete = False
         retry_response = acknowledge_acquisition_operation_with_callbacks(
-            callback_token=frame_token,
+            callback_token=observation_token,
             final_status="ACKNOWLEDGED",
-            provider_payload=frame_payload,
+            provider_payload=observation_payload,
             client=client,
         )
     finally:
@@ -750,8 +775,13 @@ def test_host_deferred_provider_ack_resumes_only_after_fenced_resume(monkeypatch
                               "coverage_gaps": ["NO_FRAMES"], "missing_requested_ms": []},
             client=client, defer_resume=True,
         )
-        final = resume_waiting_artifact_task_with_callbacks(
+        after_frames = resume_waiting_artifact_task_with_callbacks(
             "task-a-waiting", client=client, request_id=frames["request_id"])
+        assert after_frames.status == "WAITING_FOR_PROVIDER"
+        observation, _ = _ack_frame_observation(
+            "task-a-waiting", client, defer_resume=True)
+        final = resume_waiting_artifact_task_with_callbacks(
+            "task-a-waiting", client=client, request_id=observation["request_id"])
         assert final.status == "COMPLETED"
         assert len(client.completed_results) == 1
     finally:
@@ -857,6 +887,19 @@ def test_resumed_video_worker_publishes_full_subtitle_before_candidate_callback(
         )
         assert resume_waiting_artifact_task_with_callbacks(
             task.task_id, client=client, request_id=frames["request_id"]
+        ).status == "WAITING_FOR_PROVIDER"
+        observation_operation = next(op for op in list_acquisition_operations(task_id=task.task_id)
+                                     if op["operation_key"] == "ANALYZE_FRAMES")
+        assert observation_operation["tool_arguments"]["files"] == [
+            {"file_id": "frame1", "checksum_sha256": image_digest}]
+        observation, _ = _ack_frame_observation(task.task_id, client, defer_resume=True,
+            frames=[{"schema_version": "frame-observation-v1", "task_id": task.task_id,
+                     "file_id": "frame1", "checksum_sha256": image_digest,
+                     "media_type": "image/png", "width": 4, "height": 4,
+                     "observations": [],
+                     "coverage_gaps": ["NO_READABLE_TEXT", "VISUAL_SEMANTICS_UNVERIFIED"]}])
+        assert resume_waiting_artifact_task_with_callbacks(
+            task.task_id, client=client, request_id=observation["request_id"]
         ).status == "COMPLETED"
         assert client.material is not None
         assert client.material.part == 2
@@ -1035,6 +1078,9 @@ def test_acquisition_ack_with_callbacks_should_resume_waiting_task_and_complete_
                               "coverage_gaps": ["NO_FRAMES"], "missing_requested_ms": []},
             client=client,
         )
+        assert frame_ack.resumed_tasks[0].status == "WAITING_FOR_PROVIDER"
+        _, observation_ack = _ack_frame_observation("task-a-waiting", client)
+        assert observation_ack.resumed_tasks[0].status == "COMPLETED"
         completed_version = get_artifact_version_detail(
             target_id=client.completed_results[0].job_snapshot.target_id,
             version_id=client.completed_results[0].version_snapshot.version_id,
@@ -1069,9 +1115,10 @@ def test_acquisition_ack_with_callbacks_should_resume_waiting_task_and_complete_
     assert ack_response.receipt["completed_at"]
     assert ack_response.receipt["dispatch_count"] == 1
     assert len(ack_response.resumed_tasks) == 1
-    assert frame_ack.resumed_tasks[0].status == "COMPLETED"
-    assert len(client.progress_events) == 7
-    assert [event.phase for event in client.progress_events[2:]] == [
+    assert frame_ack.resumed_tasks[0].status == "WAITING_FOR_PROVIDER"
+    assert observation_ack.resumed_tasks[0].status == "COMPLETED"
+    assert len(client.progress_events) == 8
+    assert [event.phase for event in client.progress_events[3:]] == [
         "RESOLVING",
         "ACQUIRING",
         "COMPOSING",
@@ -1080,51 +1127,51 @@ def test_acquisition_ack_with_callbacks_should_resume_waiting_task_and_complete_
     ]
     assert len(client.completed_results) == 1
     assert client.completed_results[0].job_snapshot.status == "COMPLETED"
-    assert client.completed_results[0].result_payload["resume_scope"]["matched_operation_key"] == "CAPTURE_FRAMES"
+    assert client.completed_results[0].result_payload["resume_scope"]["matched_operation_key"] == "ANALYZE_FRAMES"
     assert client.completed_results[0].result_payload["acquisition_callback_trace"]["status"] == "ATTACHED"
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["receipt_id"]
-        == frame_ack.receipt["receipt_id"]
+        == observation_ack.receipt["receipt_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["delivery_id"]
-        == frame_ack.receipt["delivery_id"]
+        == observation_ack.receipt["delivery_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["provider_job_id"]
-        == frame_ack.receipt["provider_job_id"]
+        == observation_ack.receipt["provider_job_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["request_id"]
-        == frame_ack.receipt["request_id"]
+        == observation_ack.receipt["request_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["task_id"]
-        == frame_ack.receipt["task_id"]
+        == observation_ack.receipt["task_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["source_id"]
-        == frame_ack.receipt["source_id"]
+        == observation_ack.receipt["source_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["operation_key"]
-        == frame_ack.receipt["operation_key"]
+        == observation_ack.receipt["operation_key"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["operation"]["provider_id"]
-        == frame_ack.operation["provider_id"]
+        == observation_ack.operation["provider_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["operation"]["server_id"]
-        == frame_ack.operation["server_id"]
+        == observation_ack.operation["server_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["operation"]["tool_name"]
-        == frame_ack.operation["tool_name"]
+        == observation_ack.operation["tool_name"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["operation"]["callback_token"]
-        == frame_ack.operation["callback_token"]
+        == observation_ack.operation["callback_token"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["operation"]["provider_status"]
@@ -1148,6 +1195,6 @@ def test_acquisition_ack_with_callbacks_should_resume_waiting_task_and_complete_
     assert completed_version["runtime_trace"]["acquisition_callback_trace"]["status"] == "ATTACHED"
     assert (
         completed_version["runtime_trace"]["acquisition_callback_trace"]["receipt"]["receipt_id"]
-        == frame_ack.receipt["receipt_id"]
+        == observation_ack.receipt["receipt_id"]
     )
     assert client.failures == []

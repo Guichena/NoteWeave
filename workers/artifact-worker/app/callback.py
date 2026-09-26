@@ -35,6 +35,7 @@ from app.export_runtime import export_artifact_if_required, validate_frozen_vide
 from app.video_material_bundle import VideoMaterialBundleV1
 from app.video_subtitle_material import subtitle_bundle_from_provider
 from app.video_visual_material import merge_captured_video_frames
+from app.video_frame_observation import verify_frame_observation_batch
 from app.material_resolver import select_frozen_windows
 from app.runner import run_artifact_task
 from app.system_mcp_executor import submit_system_mcp_acquisition_operation
@@ -482,7 +483,9 @@ def _attach_frozen_video_material(
         return
     capture_payload: dict[str, object] | None = None
     subtitle_payload: dict[str, object] | None = None
+    observation_payload: dict[str, object] | None = None
     has_capture_stage = False
+    has_observation_stage = False
     for operation in list_acquisition_operations(task_id=task_id):
         operation_key = operation.get("operation_key")
         payload = get_acquisition_result_payload(str(operation.get("request_id", "")))
@@ -491,6 +494,11 @@ def _attach_frozen_video_material(
             has_capture_stage = True
             if isinstance(payload, dict):
                 capture_payload = payload
+        elif operation_key == "ANALYZE_FRAMES" \
+                and operation.get("server_id") == SYSTEM_BILIBILI_SERVER_ID:
+            has_observation_stage = True
+            if isinstance(payload, dict):
+                observation_payload = payload
         elif operation_key == "EXTRACT_TRANSCRIPT" and isinstance(payload, dict):
             subtitle_payload = payload
     if subtitle_payload is None:
@@ -504,6 +512,11 @@ def _attach_frozen_video_material(
         raise ValueError("acknowledged video transcript has no complete, verifiable subtitle material")
     if capture_payload is not None:
         bundle = merge_captured_video_frames(task_input, bundle, capture_payload)
+    if has_observation_stage:
+        if observation_payload is None:
+            raise ValueError("frame observation stage is missing its acknowledged receipt")
+        result.result_payload["frame_observation_digest"] = verify_frame_observation_batch(
+            task_id=task_id, files=bundle.files, payload=observation_payload)
     receipt = callback_client.publish_video_material(task_id, bundle)
     candidate = result.result_payload.get("candidate")
     if not isinstance(candidate, dict):

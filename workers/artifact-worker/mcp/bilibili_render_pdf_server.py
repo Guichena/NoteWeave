@@ -187,6 +187,20 @@ class BilibiliRenderPdfServer:
                 }, required=["task_id", "file_id", "checksum_sha256"]),
             },
             {
+                "name": "analyze_frames",
+                "description": "OCR the digest-verified frames from one task's completed capture receipt.",
+                "inputSchema": _object_schema({
+                    "task_id": _string_schema("Host-controlled Artifact task ID."),
+                    "files": {"type": "array", "maxItems": 32, "items": {
+                        "type": "object", "properties": {
+                            "file_id": {"type": "string"},
+                            "checksum_sha256": {"type": "string"},
+                        }, "required": ["file_id", "checksum_sha256"],
+                        "additionalProperties": False,
+                    }},
+                }, required=["task_id", "files"]),
+            },
+            {
                 "name": "render_latex_pdf",
                 "description": "Render a controlled LaTeX note package from structured course-note content.",
                 "inputSchema": _object_schema(
@@ -243,6 +257,8 @@ class BilibiliRenderPdfServer:
             return _tool_result(self._capture_bilibili_frames(arguments))
         if tool_name == "analyze_frame":
             return _tool_result(self._analyze_frame(arguments))
+        if tool_name == "analyze_frames":
+            return _tool_result(self._analyze_frames(arguments))
         if tool_name == "render_latex_pdf":
             return _tool_result(self._render_latex_pdf(arguments))
         raise ValueError(f"Unknown tool: {tool_name}")
@@ -254,6 +270,29 @@ class BilibiliRenderPdfServer:
             file_id=_required_string(arguments, "file_id"),
             checksum_sha256=_required_string(arguments, "checksum_sha256"),
         )
+
+    def _analyze_frames(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        task_id = _required_string(arguments, "task_id")
+        files = arguments.get("files")
+        if not isinstance(files, list) or len(files) > 32:
+            raise ValueError("frame observation requires at most 32 manifest files")
+        seen: set[str] = set()
+        observations = []
+        for item in files:
+            if not isinstance(item, dict) or set(item) != {"file_id", "checksum_sha256"}:
+                raise ValueError("frame observation manifest has unknown fields")
+            file_id = str(item["file_id"])
+            if file_id in seen:
+                raise ValueError("frame observation file ID is duplicated")
+            seen.add(file_id)
+            observations.append(observe_staged_frame(
+                sandbox_root=self.sandbox_root, task_id=task_id,
+                file_id=file_id, checksum_sha256=str(item["checksum_sha256"]),
+                stage="CAPTURED",
+            ))
+        return {"schema_version": "frame-observation-batch-v1", "task_id": task_id,
+                "frames": observations,
+                "coverage_gaps": ["NO_FRAMES"] if not observations else []}
 
     def _get_bilibili_subtitle(self, arguments: dict[str, Any]) -> dict[str, Any]:
         video_url = _required_string(arguments, "video_url")

@@ -161,3 +161,9 @@ PDF Skill 新增可选字符串 `part`，Host 仅接受 1–1000 的规范十进
 系统 MCP 增加 `analyze_frame` 工具入口，按 Task ID、画面 File ID 和冻结 SHA-256 读取 Worker 沙箱中的已暂存 PNG/JPEG；限制路径、符号链接、大小、像素和 OCR 输出。Tesseract 只产实际识别出的文字行、置信度和不确定标记；没有文字时记录 `NO_READABLE_TEXT`，始终记录 `VISUAL_SEMANTICS_UNVERIFIED`，不把 OCR 结果冒充代码、表格或图表的语义理解。Docker Worker 依赖增加 Tesseract 英文和简体中文包。另将抽帧 MCP 输出目录绑定 Task ID，避免同视频并发任务共享默认 BVID 目录。
 
 定向合成测试验证正确摘要、错误摘要、越界标识、无文字、OCR 失败、MCP 调用参数及双任务目录隔离，**40 passed**；Worker 全套 **307 passed，39.36 秒**。Windows 测试使用注入式 OCR 回执，未运行真实 Tesseract；Docker 镜像也未构建。`analyze_frame` 尚未加入自动采集计划、独立 Operation Receipt 或冻结 Bundle，因此本批只是 P2 观察工具与隔离基础，不代表视觉观察链路已完成。
+
+## P2 独立画面观察 Operation Receipt
+
+PDF 的视频 URL 采集顺序现为 `EXTRACT_TRANSCRIPT` → `CAPTURE_FRAMES` → `ANALYZE_FRAMES`，三阶段各有独立的持久化请求、回调令牌和等待/恢复边界。`ANALYZE_FRAME` 能力绑定系统 MCP 的 `analyze_frames`，仅把已确认的抽帧文件 ID、SHA-256 和 Task ID 传给工具；工具从该 Task 的捕获目录读取，不接受回执提供的任意路径。Worker 完成 Candidate 前要求观察 ACK，逐项核对任务、文件全集、摘要、MIME、文字置信度、不确定标记及覆盖缺口，并把规范化观察回执摘要放入结果载荷。观察只是 OCR 文字证据；没有图表、代码或表格的可信语义判断。
+
+首轮定向测试有 4 项仍以抽帧 ACK 作为完成点；改为观察 ACK 后提交，并核对观察 Operation 的工具参数与 Trace。首次 Worker 全套又有 2 个旧阶段断言失败；更新后全套 **310 passed，56.70 秒**。其后加强观察回执的字段、MIME 与低置信度校验，相关定向 **7 passed**。Host `Phase6ResearchArtifactContractTest` **50 个用例，42 执行通过、8 个既有跳过**，`ArtifactSkillCatalogPublicationTest` **2 passed**。三份发布 Catalog SHA-256 均为 `B16402352C2839CA29FF1535DBE4BD41E5B397C37335742C148A2B717581D186`。观察结果目前在 Operation Receipt/结果 Trace 中，尚未作为不可变 Bundle 的类型化字段、与字幕生成语义知识树或通过真实 Tesseract/Docker 视频回放；这些 P2 门禁仍未完成。

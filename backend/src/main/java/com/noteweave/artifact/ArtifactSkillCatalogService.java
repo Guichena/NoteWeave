@@ -104,7 +104,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
                 || !(entry.get("capability_allowlist") instanceof List<?> capabilities)
                 || !Set.of("READ_WORKSPACE_DOC", "GENERATE_STRUCTURED_TEXT", "VERIFY_OUTPUT",
                         "READ_WEB_PAGE", "EXTRACT_TRANSCRIPT", "TRANSCRIBE_AUDIO",
-                        "CAPTURE_VIDEO_FRAMES").containsAll(capabilities)) {
+                        "CAPTURE_VIDEO_FRAMES", "ANALYZE_FRAME").containsAll(capabilities)) {
             throw new IllegalStateException("unsupported artifact Skill publication policy");
         }
         Object required = schema.containsKey("required") ? schema.get("required") : List.of();

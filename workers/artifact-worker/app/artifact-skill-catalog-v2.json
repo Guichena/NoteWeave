@@ -311,7 +311,8 @@
         "VERIFY_OUTPUT",
         "EXTRACT_TRANSCRIPT",
         "TRANSCRIBE_AUDIO",
-        "CAPTURE_VIDEO_FRAMES"
+        "CAPTURE_VIDEO_FRAMES",
+        "ANALYZE_FRAME"
       ],
       "action_key": "COURSE_NOTES"
     },
@@ -582,7 +583,8 @@
         "VERIFY_OUTPUT",
         "EXTRACT_TRANSCRIPT",
         "TRANSCRIBE_AUDIO",
-        "CAPTURE_VIDEO_FRAMES"
+        "CAPTURE_VIDEO_FRAMES",
+        "ANALYZE_FRAME"
       ],
       "action_key": "COURSE_NOTES"
     }
