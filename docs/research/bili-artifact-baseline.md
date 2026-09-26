@@ -89,3 +89,9 @@ Worker 在内容/引用验证通过后，将产物类型、标题、章节、引
 ## P1/P2 冻结视频素材的 IR 必填门禁
 
 Worker 已在内容校验后产生 `artifact-content-v1`；Host 原先只在回调携带它时验证。现在已冻结视频素材的 Candidate 必须同时携带 IR 与其摘要：缺失会在发布 Version 前拒绝，格式及内容一致性仍走 `ArtifactContentIr` 校验。历史无素材包回调继续兼容。定向合成回放覆盖缺 IR 拒绝、完整 IR 发布，`Phase6ResearchArtifactContractTest` **48 个用例，40 执行通过、8 个既有跳过**；`ArtifactCandidateTest` **5 passed**；孤儿文件回归 **1 passed**。这尚未将 IR 对所有新 Skill Run 设为必填。
+
+## C2 影子窗口选择器
+
+在 C0 契约和 C1 主题投影之上新增纯函数式 `ContextWindowPlannerV2`，只接收已冻结、已授权的消息/摘要/约束/Memory 引用。优先保留当前输入、适用的有效用户约束、传入的 Memory Revision 和最近 8 条连续原文；当前片段缺 READY 摘要时扩大原文，超过 256 条或预算不足会明确报错。同主题旧片段摘要只在其 READY、位于原文窗口之前且活动主题判定确定时纳入；异主题和不确定主题均留可解释的排除决定。预算暂以 UTF-8 字节数作为保守单位，尚未固定模型 tokenizer。
+
+首轮测试发现活动片段为 `UNCERTAIN` 时仍带入旧同主题摘要，修正后 `ContextWindowPlannerV2Test` **3 passed**；同批 C0/C1 契约 **10 passed**，合计 **13 passed**。该组件还未读取数据库、做执行者权限检查、增量 Summary Revision、Memory 状态指纹或接入 QA/Note/Wiki/Research/Artifact；因此只是 C2 影子选择层，不能宣称任务上下文已迁移。
