@@ -22,6 +22,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
     private final Map<String, ArtifactSkillDefinition> skillsByKey;
     private final Map<String, String> aliases;
     private final Map<String, String> actionBindings;
+    private final Map<String, List<String>> requiredFileRoles;
     private final String catalogDigest;
 
     public ArtifactSkillCatalogService() {
@@ -58,15 +59,33 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
                 catalogAliases.put(String.valueOf(key), String.valueOf(value)));
         this.aliases = Map.copyOf(catalogAliases);
         Map<String, String> bindings = new LinkedHashMap<>();
+        Map<String, List<String>> requiredRoles = new LinkedHashMap<>();
         for (Object rawEntry : (List<?>) catalog.get("skills")) {
             Map<?, ?> entry = (Map<?, ?>) rawEntry;
-            bindings.put(String.valueOf(entry.get("skill_key")), String.valueOf(entry.get("action_key")));
+            String key = String.valueOf(entry.get("skill_key"));
+            bindings.put(key, String.valueOf(entry.get("action_key")));
+            if (!(entry.get("required_file_roles") instanceof List<?> roles)) {
+                throw new IllegalStateException("Skill has no required file roles: " + key);
+            }
+            List<String> names = roles.stream().map(String::valueOf).toList();
+            if (names.isEmpty() || names.size() != Set.copyOf(names).size()
+                    || !names.contains("PRIMARY_MARKDOWN")
+                    || !Set.of("PRIMARY_MARKDOWN", "PRIMARY_PDF", "PRIMARY_PPTX", "SOURCE_MD", "SLIDE_PREVIEW")
+                            .containsAll(names)) {
+                throw new IllegalStateException("invalid required file roles: " + key);
+            }
+            requiredRoles.put(key, names);
         }
         this.actionBindings = Map.copyOf(bindings);
+        this.requiredFileRoles = Map.copyOf(requiredRoles);
     }
 
     public String catalogDigest() {
         return catalogDigest;
+    }
+
+    public List<String> requiredFileRoles(String skillKey) {
+        return requiredFileRoles.get(resolveSkill(skillKey).skillKey());
     }
 
     public ArtifactSkillDefinition resolveSkill(String skillKey) {

@@ -37,6 +37,7 @@ public class ArtifactExportService {
     private final ObjectMapper objectMapper;
     private final ObjectStorage objectStorage;
     private final ArtifactWorkerExportClient artifactWorkerClient;
+    private final ArtifactSkillCatalogService skillCatalog;
     private final String exportBucket;
 
     public ArtifactExportService(
@@ -44,12 +45,14 @@ public class ArtifactExportService {
             ObjectMapper objectMapper,
             ObjectStorage objectStorage,
             ArtifactWorkerExportClient artifactWorkerClient,
+            ArtifactSkillCatalogService skillCatalog,
             com.noteweave.config.NoteWeaveProperties properties
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.objectStorage = objectStorage;
         this.artifactWorkerClient = artifactWorkerClient;
+        this.skillCatalog = skillCatalog;
         this.exportBucket = properties.storage().minio().bucketExport();
     }
 
@@ -118,11 +121,12 @@ public class ArtifactExportService {
                 """, String.class, taskId);
         String payloadJson = Json.write(objectMapper, request.resultPayload());
         String pdfFileName = readCompiledFileNameIfPresent(payloadJson);
-        if ("bilibili_course_note_pdf".equals(skillKey) && pdfFileName.isBlank()) {
+        boolean pdfRequired = skillCatalog.requiredFileRoles(skillKey).contains("PRIMARY_PDF");
+        if (pdfRequired && pdfFileName.isBlank()) {
             throw new BusinessException("ARTIFACT_REQUIRED_FILE_MISSING",
                     "PDF 讲义缺少已编译文件", HttpStatus.CONFLICT);
         }
-        if (!"bilibili_course_note_pdf".equals(skillKey) && !pdfFileName.isBlank()) {
+        if (!pdfRequired && !pdfFileName.isBlank()) {
             throw new BusinessException("ARTIFACT_FILE_ROLE_INVALID",
                     "当前 Skill 不允许交付 PDF 文件", HttpStatus.CONFLICT);
         }
@@ -217,6 +221,16 @@ public class ArtifactExportService {
             throw new IllegalStateException("Artifact files must publish in the Version transaction");
         }
         ExportRow row = loadVersionById(versionId);
+        String skillKey = jdbcTemplate.queryForObject(
+                "select skill_key from artifact_version where id = ?", String.class, versionId);
+        java.util.Set<String> presentRoles = new java.util.HashSet<>(jdbcTemplate.queryForList(
+                "select file_role from artifact_file where artifact_version_id = ? and status = 'READY'",
+                String.class, versionId));
+        for (PreparedFile file : files) presentRoles.add(file.role());
+        if (!presentRoles.containsAll(skillCatalog.requiredFileRoles(skillKey))) {
+            throw new BusinessException("ARTIFACT_REQUIRED_FILE_MISSING",
+                    "已发布 Skill 的必需文件角色不齐", HttpStatus.CONFLICT);
+        }
         java.util.Set<String> fileKeys = new java.util.HashSet<>();
         for (PreparedFile file : files) {
             String key = file.role() + ":" + file.variant() + ":" + file.sequenceNo();

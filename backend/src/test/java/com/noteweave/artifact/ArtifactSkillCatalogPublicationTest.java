@@ -23,5 +23,10 @@ class ArtifactSkillCatalogPublicationTest {
         assertThat(worker).isEqualTo(source);
         assertThat(new ArtifactSkillCatalogService().catalogDigest()).isEqualTo(
                 HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(source)));
+        ArtifactSkillCatalogService catalog = new ArtifactSkillCatalogService();
+        assertThat(catalog.requiredFileRoles("bilibili_course_note_pdf"))
+                .containsExactly("PRIMARY_MARKDOWN", "PRIMARY_PDF");
+        assertThat(catalog.requiredFileRoles("study_guide"))
+                .containsExactly("PRIMARY_MARKDOWN");
     }
 }
