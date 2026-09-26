@@ -250,7 +250,8 @@ class TestResearchOutboxPublisherConfig {
                     "status", "COMPILED", "file_name", "worker-course-notes.pdf"));
             resultPayload.put("verification", Map.of("status", "PASS"));
             if (resumeCandidates.containsKey(taskId)) {
-                resultPayload.put("candidate", resumeCandidates.get(taskId));
+                attachSyntheticContentIr(resultPayload, resumeCandidates.get(taskId),
+                        stub.resultTitle(), stub.markdown());
             }
             Map<String, Object> pendingRuntimeTrace = pendingRuntimeTraceByTaskId.remove(taskId);
             if (pendingRuntimeTrace != null && !pendingRuntimeTrace.isEmpty()) {
@@ -446,6 +447,36 @@ class TestResearchOutboxPublisherConfig {
 
         void stubCandidate(String taskId, Map<String, Object> candidate) {
             resumeCandidates.put(taskId, candidate);
+        }
+
+        private static void attachSyntheticContentIr(Map<String, Object> payload,
+                                                     Map<String, Object> sourceCandidate,
+                                                     String title, String markdown) {
+            try {
+                List<Map<String, Object>> sections = List.of(Map.of(
+                        "heading", title, "body", markdown, "source_refs", List.of()));
+                Map<String, Object> ir = new LinkedHashMap<>(Map.of(
+                        "schema_version", "artifact-content-v1", "artifact_type", "COURSE_NOTES",
+                        "title", title, "sections", sections,
+                        "markdown_sha256", digest(markdown.getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+                byte[] irBytes = new com.fasterxml.jackson.databind.ObjectMapper()
+                        .configure(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+                        .writeValueAsBytes(ir);
+                String irDigest = digest(irBytes);
+                ir.put("content_digest", irDigest);
+                Map<String, Object> candidate = new LinkedHashMap<>(sourceCandidate);
+                candidate.put("content_ir_digest", irDigest);
+                payload.put("sections", sections);
+                payload.put("content_ir", ir);
+                payload.put("candidate", candidate);
+            } catch (Exception ex) {
+                throw new IllegalStateException("synthetic Artifact content IR failed", ex);
+            }
+        }
+
+        private static String digest(byte[] content) throws Exception {
+            return java.util.HexFormat.of().formatHex(
+                    java.security.MessageDigest.getInstance("SHA-256").digest(content));
         }
 
         void stubAcquisitionAck(

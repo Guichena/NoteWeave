@@ -431,9 +431,9 @@ public class ArtifactJobService {
         String markdown = extractMarkdown(request.resultPayload());
         requireVerifiedCandidate(request);
         requireFrozenSourcesVisible(row);
+        videoMaterialService.validateCandidateReference(taskId, request.resultPayload());
         ArtifactCandidate candidate = ArtifactCandidate.from(taskId, row.inputSnapshotId(),
                 catalogDigestFrom(row.compilerVersion()), request, markdown);
-        videoMaterialService.validateCandidateReference(taskId, request.resultPayload());
         int claimed = artifactJobWriteRepository.claimCompletion(row.artifactJobId(), taskId);
         if (claimed != 1) {
             throw new BusinessException(

@@ -65,6 +65,20 @@ class ArtifactCandidateTest {
     }
 
     @Test
+    void publishedRunCannotCompleteWithoutTypedContentIr() throws Exception {
+        ArtifactCandidate expected = ArtifactCandidate.from(
+                "task-1", "snapshot-1", request(Map.of("markdown", MARKDOWN)), MARKDOWN);
+        Map<String, Object> candidate = Map.of(
+                "task_id", "task-1", "input_snapshot_id", "snapshot-1",
+                "catalog_digest", "published-digest", "content_sha256", expected.contentSha256(),
+                "candidate_id", expected.candidateId());
+        assertThatThrownBy(() -> ArtifactCandidate.from("task-1", "snapshot-1", "published-digest",
+                request(Map.of("markdown", MARKDOWN, "candidate", candidate)), MARKDOWN))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("requires typed content IR");
+    }
+
+    @Test
     void typedContentMustMatchSectionsMarkdownAndCandidateDigest() throws Exception {
         Map<String, Object> section = Map.of("heading", "Overview", "body", "Grounded content",
                 "source_refs", List.of("source-1"));

@@ -39,7 +39,8 @@ record ArtifactCandidate(String candidateId, String digest, String contentSha256
                         "Candidate does not match the frozen Run input and content", HttpStatus.CONFLICT);
             }
         }
-        ArtifactContentIr.validate(request, markdown, raw instanceof Map<?, ?> map ? map : null);
+        ArtifactContentIr.validate(request, markdown, raw instanceof Map<?, ?> map ? map : null,
+                !expectedCatalogDigest.isBlank());
         try {
             Object canonical = canonicalValue(Map.of(
                     "result_type", request.resultType(),

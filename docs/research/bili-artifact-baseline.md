@@ -173,3 +173,9 @@ PDF 的视频 URL 采集顺序现为 `EXTRACT_TRANSCRIPT` → `CAPTURE_FRAMES` �
 在既有 `video-material-v1` 上增加可选 `frame_observations`；旧 Bundle 省略该字段，Worker 摘要仍按旧字段计算，保留历史资料包的内容身份。新自动采集任务在观察 ACK 校验后把每张画面的 OCR 文字、置信度、显式不确定与覆盖缺口写进一次性提交的 Bundle。Worker 与 Host 都要求观察文件集合恰好等于画面文件集合，并核对 Task、File ID、摘要、MIME、字段与文字类型；Host 在读取 Worker PNG/JPEG 时还将观察宽高与实际解码图像比较。新字段进入 Bundle 内容摘要，Candidate 仍引用整个冻结 Bundle 的准确摘要。
 
 定向 Worker Callback/Bundle **40 passed**；Host 新契约验证错误画面摘要和伪造尺寸拒绝、有效观察随 Bundle 冻结。最终 Worker 全套 **311 passed，60.86 秒**；Host `Phase6ResearchArtifactContractTest` **51 个用例，43 执行通过、8 个既有跳过**、`ArtifactSkillCatalogPublicationTest` **2 passed**、`ArtifactWorkerInputControllerTest` **5 passed**。旧无观察字段的合成资料包合同仍通过。此字段只保存实际 OCR 文字证据，尚无可验收的图表/代码/表格理解或语义知识树；真实 Tesseract 与 Docker/MinIO 端到端仍未验收。
+
+## P1 新 Run 类型化内容 IR 必填
+
+Host 对带发布 Catalog 摘要的新 Run，要求 Candidate 同时携带 `artifact-content-v1` 和准确的 `content_ir_digest`；缺失在认领完成任务及创建 Version 前返回 `ARTIFACT_CONTENT_IR_REQUIRED`。旧无发布摘要的历史快照仍可按原回调回放。视频素材引用检查先于 Candidate 检查，保持缺失/伪造素材引用的专用错误；Worker 原有全 Skill 内容生成路径已在验证通过、文件渲染前生成 IR。测试新增缺 IR 不产生 Version、完整 IR 可提交的 Host 合同，更新合成 Worker 回调夹具。
+
+首次全批有 15 项旧合成回调因无 IR 而失败；迁移共享夹具后仅两项直接 Manifest 回调未携带 IR，补齐后通过。再一次全批出现既有孤儿对象巡检测试的一次调用未扫到目标：巡检是游标分页，测试改为最多 100 轮内验证最终清理且仍保留近期/已引用/前缀外对象。最终 Host `Phase6ResearchArtifactContractTest` **52 个用例，44 执行通过、8 个既有跳过**，`ArtifactCandidateTest` **6 passed**，`ArtifactRollbackGateTest` **2 passed**，`ArtifactSkillCatalogPublicationTest` **2 passed**，`ArtifactWorkerInputControllerTest` **5 passed**。类型化 IR 目前仍是通用章节契约，`artifact_type` 尚未与每个 Skill 的专用输出 Schema 绑定；P3/P4 的产物专用 IR 不因此视为完成。

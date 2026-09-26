@@ -12,7 +12,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import org.springframework.http.HttpStatus;
 
-/** Validates the optional v1 typed content emitted by new Workers before Version publication. */
+/** Validates typed content before Version publication; legacy snapshots remain replayable. */
 final class ArtifactContentIr {
     private static final Set<String> FIELDS = Set.of(
             "schema_version", "artifact_type", "title", "sections", "markdown_sha256", "content_digest");
@@ -20,11 +20,16 @@ final class ArtifactContentIr {
 
     private ArtifactContentIr() {}
 
-    static void validate(WorkerCompleteRequest request, String markdown, Map<?, ?> candidate) {
+    static void validate(WorkerCompleteRequest request, String markdown, Map<?, ?> candidate,
+                         boolean required) {
         Map<String, Object> payload = request.resultPayload();
         Object raw = payload == null ? null : payload.get("content_ir");
         Object claimedDigest = candidate == null ? null : candidate.get("content_ir_digest");
-        if (raw == null && claimedDigest == null) return;
+        if (raw == null && claimedDigest == null) {
+            if (required) throw new BusinessException("ARTIFACT_CONTENT_IR_REQUIRED",
+                    "Published artifact Run requires typed content IR", HttpStatus.CONFLICT);
+            return;
+        }
         if (!(raw instanceof Map<?, ?> ir) || !ir.keySet().equals(FIELDS)
                 || !"artifact-content-v1".equals(ir.get("schema_version"))
                 || !(ir.get("artifact_type") instanceof String type) || type.isBlank()

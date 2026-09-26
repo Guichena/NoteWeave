@@ -739,6 +739,47 @@ void artifactJobShouldCreateTaskExposeWorkerInputAndPersistVersion() throws Exce
     }
 
     @Test
+    void publishedArtifactRunRequiresTypedContentBeforeVersionCommit() throws Exception {
+        String workspaceId = createWorkspace();
+        MvcResult created = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "skill_key", "resume_highlight", "user_requirement", "typed output gate",
+                                "inputs", Map.of("language", "en")))))
+                .andExpect(status().isOk()).andReturn();
+        String taskId = objectMapper.readTree(created.getResponse().getContentAsString())
+                .path("data").path("task_id").asText();
+        Map<String, Object> completion = Map.of(
+                "result_type", "MARKDOWN", "result_title", "Typed highlight",
+                "result_payload", Map.of("markdown", "# Typed highlight\n\nGrounded content."),
+                "trace_summary", "typed content gate", "citations", List.of());
+        String validJson = artifactCompletionJson(taskId, completion);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> missing = objectMapper.readValue(validJson, Map.class);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) missing.get("result_payload");
+        payload.remove("content_ir");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> candidate = (Map<String, Object>) payload.get("candidate");
+        candidate.remove("content_ir_digest");
+        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "missing-ir:" + taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(missing)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ARTIFACT_CONTENT_IR_REQUIRED"));
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from artifact_version where artifact_job_id =
+                (select artifact_job_id from artifact_job_run where task_id = ?)
+                """, Integer.class, taskId)).isZero();
+        mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
+                        .header("X-NoteWeave-Idempotency-Key", "valid-ir:" + taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validJson))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void explicitVideoPartNormalizesUrlAndRejectsConflicts() throws Exception {
         String workspaceId = createWorkspace();
         String url = "https://www.bilibili.com/video/BV1234567890";
@@ -1291,10 +1332,13 @@ void artifactCallbacksShouldBeIdempotentAfterTaskReachesTerminalState() throws E
                 "file_name", "content.md", "media_type", "text/markdown; charset=UTF-8",
                 "size_bytes", markdown.getBytes(StandardCharsets.UTF_8).length,
                 "checksum_sha256", "0".repeat(64))));
+        Map<String, Object> manifestPayload = new LinkedHashMap<>(Map.of(
+                "markdown", markdown, "candidate", candidate,
+                "verification", Map.of("status", "PASS")));
+        addSyntheticContentIr(manifestPayload, candidate, "Manifest test", markdown);
         Map<String, Object> result = Map.of(
                 "result_type", "MARKDOWN", "result_title", "Manifest test",
-                "result_payload", Map.of("markdown", markdown, "candidate", candidate,
-                        "verification", Map.of("status", "PASS")),
+                "result_payload", manifestPayload,
                 "trace_summary", "manifest test", "citations", List.of());
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
                         .header("X-NoteWeave-Idempotency-Key", "manifest-invalid:" + taskId)
@@ -5251,10 +5295,39 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
         String pdfFileName = "COMPILED".equals(export.get("status"))
                 ? String.valueOf(export.getOrDefault("file_name", "")) : "";
         payload.putIfAbsent("verification", Map.of("status", "PASS"));
-        payload.put("candidate", artifactCandidate(taskId, markdown, pdfFileName));
+        Map<String, Object> candidate = new LinkedHashMap<>(artifactCandidate(taskId, markdown, pdfFileName));
+        addSyntheticContentIr(payload, candidate, String.valueOf(completion.get("result_title")), markdown);
+        payload.put("candidate", candidate);
         Map<String, Object> updated = new LinkedHashMap<>(completion);
         updated.put("result_payload", payload);
         return objectMapper.writeValueAsString(updated);
+    }
+
+    private void addSyntheticContentIr(Map<String, Object> payload, Map<String, Object> candidate,
+                                       String title, String markdown) throws Exception {
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> sections = payload.get("sections") instanceof List<?> existing
+                && !existing.isEmpty() && existing.stream().allMatch(item ->
+                item instanceof Map<?, ?> section && section.keySet().equals(
+                        java.util.Set.of("heading", "body", "source_refs")))
+                ? (List<Map<String, Object>>) existing
+                : List.of(Map.of(
+                    "heading", title.isBlank() ? "Artifact" : title,
+                    "body", markdown.isBlank() ? "Synthetic verified content" : markdown,
+                    "source_refs", List.of()));
+        payload.put("sections", sections);
+        String markdownDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest(markdown.getBytes(StandardCharsets.UTF_8)));
+        Map<String, Object> ir = new LinkedHashMap<>(Map.of(
+                "schema_version", "artifact-content-v1", "artifact_type", "TEST_ARTIFACT",
+                "title", title, "sections", sections, "markdown_sha256", markdownDigest));
+        String irDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest(new ObjectMapper()
+                        .configure(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+                        .writeValueAsBytes(ir)));
+        ir.put("content_digest", irDigest);
+        payload.put("content_ir", ir);
+        candidate.put("content_ir_digest", irDigest);
     }
 
     @Test
@@ -5725,13 +5798,14 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
         JsonNode job = objectMapper.readTree(created.getResponse().getContentAsString()).path("data");
         String taskId = job.path("task_id").asText();
         String markdown = "# Course notes with visual evidence";
-        Map<String, Object> candidate = artifactCandidate(taskId, markdown, "course.pdf",
-                List.of("slide-1.png", "slide-2.png"));
-        Map<String, Object> payload = Map.of(
+        Map<String, Object> candidate = new LinkedHashMap<>(artifactCandidate(taskId, markdown, "course.pdf",
+                List.of("slide-1.png", "slide-2.png")));
+        Map<String, Object> payload = new LinkedHashMap<>(Map.of(
                 "markdown", markdown,
                 "verification", Map.of("status", "PASS"),
                 "export_trace", Map.of("status", "COMPILED", "file_name", "course.pdf"),
-                "candidate", candidate);
+                "candidate", candidate));
+        addSyntheticContentIr(payload, candidate, "Visual course notes", markdown);
         Map<String, Object> request = Map.of(
                 "result_type", "MARKDOWN", "result_title", "Visual course notes",
                 "result_payload", payload, "trace_summary", "multiple preview contract",
@@ -5812,7 +5886,9 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
         Files.setLastModifiedTime(outside, old);
         Files.setLastModifiedTime(referenced, old);
 
-        artifactExportService.cleanupOrphanedStagedFiles();
+        for (int scan = 0; scan < 100 && Files.exists(orphan); scan++) {
+            artifactExportService.cleanupOrphanedStagedFiles();
+        }
         assertThat(Files.exists(orphan)).isFalse();
         assertThat(Files.exists(recent)).isTrue();
         assertThat(Files.exists(outside)).isTrue();
