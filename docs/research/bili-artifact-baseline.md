@@ -425,3 +425,7 @@ Host `VideoLearningRequestRepositoryContractTest` **7 passed，0 failed/0 error/
 ## P6 Workspace 灰度开关
 
 新建父请求同时受全局 `noteweave.video-learning.enabled`（默认 `false`）与 `noteweave.video-learning.workspace-allowlist`（逗号分隔，空值表示全部 Workspace）控制。列表中的 `enabled` 与创建事务使用同一 Workspace 判定；关闭入口不会阻断已接受请求的后台协调。子 Job 创建前锁定原创建者权限读，避免权限撤销与创建事务交错。`VideoLearningRolloutPolicyTest`、`VideoLearningRequestRepositoryContractTest`、`VideoLearningRequestCreationContractTest` 联跑 **9 passed，0 failed/0 error/0 skipped**，Maven BUILD SUCCESS（55.573 秒）。
+
+## P6 子产物独立失败门禁
+
+同一 READY 资料包补建博客与问答 Job 后，调用真实 Worker 失败回调使博客 Task/Job FAILED。父资料仍 READY，问答仍 QUEUED 且其 Outbox 仍 READY；随后取消父请求，已 FAILED 的博客状态保持 FAILED，未开始的问答可按取消事务处理。扩展 `VideoLearningRequestRepositoryContractTest`，**7 passed，0 failed/0 error/0 skipped**，Maven BUILD SUCCESS（42.090 秒）。该测试验证 Host 父子状态及故障隔离；尚未执行真实视频跨进程端到端回放。

@@ -8,6 +8,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.task.TaskService;
+import com.noteweave.worker.WorkerFailRequest;
+import com.noteweave.worker.WorkerTaskCallbackService;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -31,6 +33,7 @@ class VideoLearningRequestRepositoryContractTest {
     @Autowired ArtifactVideoMaterialService videoMaterials;
     @Autowired VideoMaterialTaskService materialTasks;
     @Autowired VideoLearningChildCoordinator childCoordinator;
+    @Autowired WorkerTaskCallbackService workerCallbacks;
 
     @Test
     void freezesOneToFourChoicesAndReplaysOnlyIdenticalRequest() throws Exception {
@@ -329,9 +332,26 @@ class VideoLearningRequestRepositoryContractTest {
         assertThat(childCoordinator.reconcileChoice(remaining)).isTrue();
         assertThat(jdbc.queryForObject("select count(*) from artifact_job where workspace_id = ?",
                 Integer.class, workspaceId)).isEqualTo(2);
+        var failedChild = workerCallbacks.fail(child.taskId(),
+                new WorkerFailRequest("FAILED", "TEST_OUTPUT_FAILURE", "first output failed", false),
+                "independent-child-failure");
+        assertThat(failedChild.status()).isEqualTo("FAILED");
+        var projected = requests.view(workspaceId, parent.requestId());
+        assertThat(projected.materialState()).isEqualTo("READY");
+        assertThat(projected.choices().stream()
+                .filter(item -> "knowledge_blog".equals(item.skillKey())).findFirst().orElseThrow()
+                .status()).isEqualTo("FAILED");
+        var sibling = projected.choices().stream()
+                .filter(item -> "interview_qa".equals(item.skillKey())).findFirst().orElseThrow();
+        assertThat(sibling.status()).isEqualTo("QUEUED");
+        assertThat(jdbc.queryForObject("select status from task_outbox where task_id = ?",
+                String.class, sibling.taskId())).isEqualTo("READY");
         requests.requestCancellation(workspaceId, parent.requestId(), "local-user");
         assertThat(childCoordinator.reconcileChoice(remaining)).isFalse();
         assertThat(requests.view(workspaceId, parent.requestId()).materialState()).isEqualTo("READY");
+        assertThat(requests.view(workspaceId, parent.requestId()).choices().stream()
+                .filter(item -> "knowledge_blog".equals(item.skillKey())).findFirst().orElseThrow()
+                .status()).isEqualTo("FAILED");
         assertThatThrownBy(() -> videoMaterials.submitParentMaterial(taskId, submission))
                 .hasMessageContaining("Workspace");
     }
