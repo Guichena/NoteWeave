@@ -5,8 +5,11 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -36,11 +39,54 @@ class ContextV2ShadowSnapshotContractTest {
     @SpyBean ConversationContextCompilerV2Service compiler;
 
     @Test
+    void workspaceModeCanOptIntoShadowAndTurnItOffWithoutEnablingActive() throws Exception {
+        String workspaceId = data(post("/api/v2/workspaces")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of("name", "shadow-rollout",
+                        "description", "workspace switch")))).path("workspace_id").asText();
+        JsonNode initial = data(get("/api/v2/workspaces/{workspaceId}/context-v2-rollout", workspaceId));
+        assertThat(initial.path("mode").asText()).isEqualTo("OFF");
+        assertThat(initial.path("shadow_effective").asBoolean()).isFalse();
+        String conversationId = data(post("/api/v2/workspaces/{workspaceId}/conversations", workspaceId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of("title", "shadow-rollout",
+                        "conversation_type", "WORKSPACE_CHAT")))).path("conversation_id").asText();
+        JsonNode off = data(post("/api/v2/conversations/{conversationId}/messages", conversationId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of("content", "Mode off",
+                        "answer_mode", "QA", "client_request_id", "rollout-off-1"))));
+        assertThat(shadowCount(off.path("answer_run_id").asText())).isZero();
+
+        enableShadow(workspaceId);
+        JsonNode on = data(post("/api/v2/conversations/{conversationId}/messages", conversationId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of("content", "Mode shadow",
+                        "answer_mode", "QA", "client_request_id", "rollout-on-2"))));
+        assertThat(shadowCount(on.path("answer_run_id").asText())).isEqualTo(1);
+
+        JsonNode disabled = data(put("/api/v2/workspaces/{workspaceId}/context-v2-rollout", workspaceId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of("mode", "OFF"))));
+        assertThat(disabled.path("shadow_effective").asBoolean()).isFalse();
+        JsonNode after = data(post("/api/v2/conversations/{conversationId}/messages", conversationId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of("content", "Mode off again",
+                        "answer_mode", "QA", "client_request_id", "rollout-off-3"))));
+        assertThat(shadowCount(after.path("answer_run_id").asText())).isZero();
+        mvc.perform(put("/api/v2/workspaces/{workspaceId}/context-v2-rollout", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(Map.of("mode", "ACTIVE"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("CONTEXT_V2_ROLLOUT_MODE_INVALID"));
+    }
+
+    @Test
     void answerFreezesInputBeforeAssistantAndDeletionClearsShadowText() throws Exception {
         String workspaceId = data(post("/api/v2/workspaces")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsString(Map.of("name", "shadow-freeze",
                         "description", "v2 frozen input")))).path("workspace_id").asText();
+        enableShadow(workspaceId);
         String conversationId = data(post("/api/v2/workspaces/{workspaceId}/conversations", workspaceId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsString(Map.of("title", "shadow-freeze",
@@ -98,6 +144,7 @@ class ContextV2ShadowSnapshotContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsString(Map.of("name", "shadow-gap",
                         "description", "fallback contract")))).path("workspace_id").asText();
+        enableShadow(workspaceId);
         String conversationId = data(post("/api/v2/workspaces/{workspaceId}/conversations", workspaceId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsString(Map.of("title", "shadow-gap",
@@ -130,6 +177,7 @@ class ContextV2ShadowSnapshotContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsString(Map.of("name", "shadow-memory-revoke",
                         "description", "revocation contract")))).path("workspace_id").asText();
+        enableShadow(workspaceId);
         var proposal = memoryRuntime.observe(new ExecutionObservation(
                 "shadow-revoke-" + System.nanoTime(), workspaceId, "WORKSPACE",
                 "preference:shadow-revoke", "Private memory sentinel for shadow",
@@ -183,6 +231,7 @@ class ContextV2ShadowSnapshotContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsString(Map.of("name", "shadow-summary-delete",
                         "description", "summary redaction contract")))).path("workspace_id").asText();
+        enableShadow(workspaceId);
         String conversationId = data(post("/api/v2/workspaces/{workspaceId}/conversations", workspaceId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsString(Map.of("title", "shadow-summary-delete",
@@ -247,6 +296,20 @@ class ContextV2ShadowSnapshotContractTest {
             throws Exception {
         return mapper.readTree(mvc.perform(request).andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString()).path("data");
+    }
+
+    private void enableShadow(String workspaceId) throws Exception {
+        JsonNode mode = data(put("/api/v2/workspaces/{workspaceId}/context-v2-rollout", workspaceId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of("mode", "SHADOW"))));
+        assertThat(mode.path("mode").asText()).isEqualTo("SHADOW");
+        assertThat(mode.path("shadow_effective").asBoolean()).isTrue();
+    }
+
+    private int shadowCount(String answerRunId) {
+        return jdbc.queryForObject("""
+                select count(*) from context_v2_shadow_snapshot where answer_run_id = ?
+                """, Integer.class, answerRunId);
     }
 
     private String sha256(String value) throws Exception {

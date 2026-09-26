@@ -253,3 +253,9 @@ Worker 原先把任何非空 `source_refs` 都统计为已覆盖，即使引用�
 沿实际 Memory 审核 API 验证 ACTIVE 修订进入 Answer 影子快照后，复审 REVOKE 会保留 Revision 标识并清空快照里的 Memory 文本；沿 A→B→A 会话验证 READY 的早期 A 摘要被回跳 Answer 选中后，删除摘要覆盖的旧消息会使修订 STALE、快照 REDACTED，且冻结摘要正文无法再回放。首轮 Memory 测试返回 `MEMORY_RUNTIME_REVISION_NOT_REVIEWABLE`：当前审核规则只接受 `REVIEW_REQUIRED` 或 `STALE` 的 ACTIVE 修订复审；测试先置入合法复审状态再撤销，没有放宽产品门禁。冻结与删除共用 Conversation 锁，Memory 修订在影子快照提交前加锁复核，减少撤销和冻结交错时的敏感文本残留风险。
 
 定向 Memory 撤销 **3 passed**，旧摘要删除 **1 passed**；最终 `ContextV2ShadowSnapshotContractTest` **4 passed**、`ConversationTurnModuleContractTest` **39 passed**、`MemoryRuntimeContractTest` **16 passed**、`RunReplayRedactionServiceTest` **3 passed**，合计 **62 passed**。真实 MySQL 多进程竞态仍需故障注入验证；影子投影尚未用于回答生成或 Worker。
+
+## C4 Workspace 影子开关与全局关闭门禁
+
+新增 `context_v2_workspace_rollout` 和管理员读写接口，缺省 `OFF`，目前只允许 `OFF`、`SHADOW`；`ACTIVE` 明确拒绝。全局配置 `noteweave.context.v2.shadow-enabled:false` 仍是总闸，Workspace 设为 SHADOW 也不能绕开全局关闭。影子快照服务仅在两层开关都允许时运行。启用、关闭、再次启用与 ACTIVE 拒绝在同一 Workspace 会话中回放；默认全局关闭的会话测试也把 Workspace 设为 SHADOW，确认不会产生影子记录。
+
+最终 `ContextV2ShadowSnapshotContractTest` **5 passed**、`ConversationTurnModuleContractTest` **39 passed**、命令构造 **3 passed**、回放脱敏 **3 passed**，合计 **50 passed**。这是影子采样开关，尚无生产 v2 Context 消费、v1/v2 实际任务输入差异指标或 Workspace 灰度放量门禁。

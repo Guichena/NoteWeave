@@ -10,7 +10,6 @@ import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.HttpStatus;
@@ -26,24 +25,24 @@ public class ContextV2ShadowSnapshotService {
     private final ObjectMapper mapper;
     private final ConversationTopicProjectionV2Service topics;
     private final ConversationContextCompilerV2Service compiler;
-    private final boolean enabled;
+    private final ContextV2RolloutService rollout;
 
     public ContextV2ShadowSnapshotService(JdbcTemplate jdbc, ObjectMapper mapper,
                                           ConversationTopicProjectionV2Service topics,
                                           ConversationContextCompilerV2Service compiler,
-                                          @Value("${noteweave.context.v2.shadow-enabled:false}") boolean enabled) {
+                                          ContextV2RolloutService rollout) {
         this.jdbc = jdbc;
         this.mapper = mapper;
         this.topics = topics;
         this.compiler = compiler;
-        this.enabled = enabled;
+        this.rollout = rollout;
     }
 
     @Transactional
     public void freezeAnswer(String workspaceId, String actorId, String conversationId,
                              String queryMessageId, String answerRunId,
                              String currentInput, String taskPurpose) {
-        if (!enabled || exists(answerRunId)) return;
+        if (!rollout.shadowEnabled(workspaceId) || exists(answerRunId)) return;
         Integer cutoff = jdbc.queryForObject("""
                 select m.message_seq from answer_run r
                 join conversation_message m on m.id = r.query_message_id
@@ -99,7 +98,7 @@ public class ContextV2ShadowSnapshotService {
     @Transactional
     public void recordFailure(String workspaceId, String conversationId,
                               String queryMessageId, String answerRunId, String failureCode) {
-        if (!enabled || exists(answerRunId)) return;
+        if (!rollout.shadowEnabled(workspaceId) || exists(answerRunId)) return;
         Integer cutoff = jdbc.queryForObject("""
                 select message_seq from conversation_message
                 where id = ? and workspace_id = ? and conversation_id = ?

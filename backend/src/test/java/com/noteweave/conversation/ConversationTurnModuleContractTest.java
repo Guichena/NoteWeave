@@ -43,6 +43,7 @@ class ConversationTurnModuleContractTest {
     @Autowired ConversationTopicProjectionV2Service topicProjectionV2Service;
     @Autowired ConversationTopicSummaryV2Service topicSummaryV2Service;
     @Autowired ConversationContextCompilerV2Service contextCompilerV2Service;
+    @Autowired ContextV2RolloutService contextRolloutV2Service;
     @Autowired ResearchAgentTaskCoordinatorService researchTaskCoordinator;
     @Autowired ResearchAgentTaskService researchAgentTaskService;
     @Autowired ResearchAgentIncrementalFinalizationService researchFinalizationService;
@@ -51,7 +52,9 @@ class ConversationTurnModuleContractTest {
 
     @Test
     void sameAnswerSubmissionReturnsTheOriginalReceipt() throws Exception {
-        String conversationId = createConversation(createWorkspace());
+        String workspaceId = createWorkspace();
+        assertThat(contextRolloutV2Service.set(workspaceId, "SHADOW").shadowEffective()).isFalse();
+        String conversationId = createConversation(workspaceId);
         Map<String, Object> request = Map.of(
                 "content", "Explain the first invariant",
                 "answer_mode", "QA",
