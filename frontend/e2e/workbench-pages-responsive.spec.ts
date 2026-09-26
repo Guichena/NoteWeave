@@ -18,7 +18,7 @@ for (const viewport of [
     await loginIfRequired(page);
     await expect(page.locator(".workbench-shell")).toBeVisible();
 
-    await navigateFromRail(page, "Wiki 治理工作台", viewport.width);
+    await navigateFromRail(page, "Wiki 知识库", viewport.width);
     await expect(page.locator(".wiki-workbench")).toBeVisible();
     await expectNoHorizontalOverflow(page);
 
@@ -60,7 +60,7 @@ for (const viewport of [
       await page.getByRole("button", { name: "关闭关系面板", exact: true }).click();
     }
 
-    await navigateFromRail(page, "Memory 人工审核", viewport.width);
+    await navigateFromRail(page, "Memory 审核", viewport.width);
     await expect(page.locator(".memory-workbench")).toBeVisible();
     await expect(page.getByLabel("0 条待审核")).toBeVisible();
     await expect(page.getByRole("list", { name: "候选到审核决策的阶段" })).toBeVisible();

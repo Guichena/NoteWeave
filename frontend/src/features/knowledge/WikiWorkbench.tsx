@@ -142,7 +142,6 @@ export function WikiWorkbench({
           />
         ) : (
           <article className="wiki-page">
-            <p className="section-label">Wiki Index</p>
             <WikiOverviewPanel {...props} />
           </article>
         )}

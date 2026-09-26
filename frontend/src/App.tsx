@@ -353,7 +353,8 @@ export function App() {
       artifactComposerOpen: catalog.composerOpen,
       setArtifactComposerOpen: catalog.setComposerOpen,
       artifactRailProps,
-      onOpenSourceLibrary: () => navigateWorkbenchView("library")
+      onOpenSourceLibrary: () => navigateWorkbenchView("library"),
+      uploadBusy
     })
     : null;
   const sourceLibraryProps = view === "library" && taskPresentation

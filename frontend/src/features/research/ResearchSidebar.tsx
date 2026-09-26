@@ -49,7 +49,7 @@ export function ResearchSidebar(props: ResearchSidebarProps) {
   return (
           <aside className="research-index">
             <div className="research-index-scroll">
-            <p className="section-label">Deep Research</p>
+            <p className="section-label">深度研究</p>
             <h2>独立研究工作台</h2>
             <p className="phase-note">
               只读取此处显式填写的问题与勾选资料范围，不会从聊天上下文隐式升级。

@@ -15,6 +15,7 @@ type BuildChatWorkbenchPropsInput = {
   setArtifactComposerOpen: (open: boolean) => void;
   artifactRailProps: import("../artifacts/ArtifactRailProps").ArtifactRailProps;
   onOpenSourceLibrary: () => void;
+  uploadBusy?: boolean;
 };
 
 export function buildChatWorkbenchProps(input: BuildChatWorkbenchPropsInput): ChatWorkbenchProps {
@@ -28,7 +29,8 @@ export function buildChatWorkbenchProps(input: BuildChatWorkbenchPropsInput): Ch
     artifactComposerOpen,
     setArtifactComposerOpen,
     artifactRailProps,
-    onOpenSourceLibrary
+    onOpenSourceLibrary,
+    uploadBusy = false
   } = input;
 
   return {
@@ -50,6 +52,8 @@ export function buildChatWorkbenchProps(input: BuildChatWorkbenchPropsInput): Ch
     setArtifactComposerOpen,
     artifactComposerOpen,
     artifactRailProps,
-    onOpenSourceLibrary
+    onOpenSourceLibrary,
+    uploadSourceFile: chat.uploadSourceFile,
+    uploadBusy
   };
 }

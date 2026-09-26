@@ -47,7 +47,7 @@ async function openFinalReport(page: Page) {
   const switcher = page.locator(".workspace-switcher-trigger");
   if (!await switcher.getByText(workspaceName, { exact: false }).isVisible().catch(() => false)) {
     await switcher.click();
-    const search = page.locator(".workspace-switcher-search input");
+    const search = page.getByRole("searchbox", { name: "搜索工作台" });
     await search.fill(workspaceName);
     await page.getByRole("option", { name: new RegExp(workspaceName) }).click();
   }

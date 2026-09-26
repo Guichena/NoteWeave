@@ -15,18 +15,17 @@ afterEach(() => {
   }
 });
 
-describe("ChatWorkbench context surface", () => {
-  it("connects the welcome state to the real workspace and QA scope", () => {
+describe("ChatWorkbench notebook surface", () => {
+  it("renders sources, conversation and studio side by side", async () => {
     render(<ChatWorkbench {...buildProps()} />);
 
-    expect(screen.getAllByText("1 / 1 份可检索").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("企业研究工作台").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByRole("heading", { name: "政策研究会话" })).toBeTruthy();
-    expect(screen.getByText("1 份工作台资料")).toBeTruthy();
-    expect(screen.getByText("2 个会话")).toBeTruthy();
-    expect(screen.getByText("1 份资料 · 2 个会话共用")).toBeTruthy();
-    expect(screen.getByLabelText("工作台资料与当前会话的关系")).toBeTruthy();
-    expect(screen.getByText("基于工作台资料回答，展示引用与证据；回答不入库。")).toBeTruthy();
+    expect(screen.getByRole("complementary", { name: "来源" })).toBeTruthy();
+    expect(screen.getByRole("complementary", { name: "产物" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "对话" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "企业研究工作台" })).toBeTruthy();
+    expect(screen.getByText("1 个来源 · 1 个可检索")).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "产物工作台" })).toBeNull();
+    await waitFor(() => expect(document.querySelector(".studio-pane .artifact-rail")).toBeTruthy());
   });
 
   it("keeps an empty welcome state at the top and scrolls only after messages exist", () => {
@@ -57,17 +56,31 @@ describe("ChatWorkbench context surface", () => {
       question: "这份资料讲了什么？"
     })} />);
 
-    expect(screen.getAllByText("1 份仅可阅读 · 无检索索引").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/1 份资料仅可阅读，建立索引后才能参与 RAG/)).toBeTruthy();
+    expect(screen.getByText("1 份仅可阅读 · 无检索索引")).toBeTruthy();
     expect(screen.getByRole("button", { name: "等待可检索资料" }).hasAttribute("disabled")).toBe(true);
-    expect(screen.queryByText("指定本次 QA 的资料范围（可选）")).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: "在问答中使用 本地资料.md" })).toBeNull();
   });
 
-  it("selects the next answer mode from the composer instead of the session header", () => {
+  it("maps source checkboxes to the QA scope", () => {
+    const setSelectedQaSourceIds = vi.fn();
+    render(<ChatWorkbench {...buildProps({
+      sources: [
+        { source_id: "a", title: "A.pdf", status: "READY", index_status: "INDEXED" },
+        { source_id: "b", title: "B.pdf", status: "READY", index_status: "INDEXED" }
+      ],
+      setSelectedQaSourceIds
+    })} />);
+
+    const checkboxA = screen.getByRole("checkbox", { name: "在问答中使用 A.pdf" }) as HTMLInputElement;
+    expect(checkboxA.checked).toBe(true);
+    fireEvent.click(checkboxA);
+    expect(setSelectedQaSourceIds).toHaveBeenCalledWith(["b"]);
+  });
+
+  it("selects the next answer mode from the composer", () => {
     const setMode = vi.fn();
     render(<ChatWorkbench {...buildProps({ setMode })} />);
 
-    expect(screen.queryByRole("tablist", { name: "回答模式" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "回答模式：问答 RAG" }));
     expect(screen.getByRole("menu", { name: "选择回答模式" })).toBeTruthy();
     fireEvent.click(screen.getByRole("menuitemradio", { name: /Wiki/ }));
@@ -75,42 +88,16 @@ describe("ChatWorkbench context surface", () => {
     expect(screen.queryByRole("menu", { name: "选择回答模式" })).toBeNull();
   });
 
-  it("opens Artifact Studio on its overview instead of forcing the first composer", async () => {
+  it("opens the Studio drawer on its overview and closes it with Escape", async () => {
     const setArtifactComposerOpen = vi.fn();
     render(<ChatWorkbench {...buildProps({ setArtifactComposerOpen })} />);
 
     fireEvent.click(screen.getByRole("button", { name: "打开产物" }));
     expect(setArtifactComposerOpen).toHaveBeenCalledWith(false);
-    expect(document.querySelector(".layout")?.classList.contains("layout-with-inspector")).toBe(false);
-    expect(screen.getByLabelText("资料库摘要")).toBeTruthy();
-    expect(document.querySelector(".artifact-rail")).toBeTruthy();
-    expect(screen.getByRole("dialog", { name: "产物工作台" }).getAttribute("aria-modal")).toBe("true");
+    expect(document.querySelector(".notebook")?.getAttribute("data-open-panel")).toBe("studio");
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "关闭产物工作台" })).toBeTruthy());
-    fireEvent.click(screen.getByRole("button", { name: "关闭产物工作台" }));
-    expect(screen.queryByRole("dialog", { name: "产物工作台" })).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "打开产物" }));
-    fireEvent.click(document.querySelector(".artifact-modal-backdrop") as HTMLElement);
-    expect(screen.queryByRole("dialog", { name: "产物工作台" })).toBeNull();
-  });
-
-  it("keeps Artifact Studio open when a nested dialog handles Escape", async () => {
-    render(<ChatWorkbench {...buildProps()} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "打开产物" }));
-    await waitFor(() => expect(screen.getByRole("dialog", { name: "产物工作台" })).toBeTruthy());
-
-    const handleNestedDialogEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") event.preventDefault();
-    };
-    window.addEventListener("keydown", handleNestedDialogEscape, true);
     fireEvent.keyDown(window, { key: "Escape" });
-    window.removeEventListener("keydown", handleNestedDialogEscape, true);
-
-    expect(screen.getByRole("dialog", { name: "产物工作台" })).toBeTruthy();
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(screen.queryByRole("dialog", { name: "产物工作台" })).toBeNull();
+    expect(document.querySelector(".notebook")?.hasAttribute("data-open-panel")).toBe(false);
   });
 });
 

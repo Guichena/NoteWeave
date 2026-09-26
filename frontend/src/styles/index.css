@@ -1,0 +1,15 @@
+/*
+ * NoteWeave 样式入口（唯一）。
+ * 顺序：tokens → base primitives → 外壳 → 各页面。
+ */
+@import "./tokens.css";
+@import "./base.css";
+@import "./shell.css";
+@import "./dialogs.css";
+@import "./notebook.css";
+@import "./studio.css";
+@import "./library.css";
+@import "./research.css";
+@import "./wiki.css";
+@import "./memory.css";
+@import "./auth.css";

@@ -184,7 +184,7 @@ export function WikiGraphPanel(props: WikiGraphPanelProps) {
     <section className="wiki-graph-shell" aria-labelledby="wiki-graph-title">
       <header className="wiki-graph-header">
         <div>
-          <span className="wiki-graph-kicker">Knowledge graph</span>
+          <span className="wiki-graph-kicker">知识图谱</span>
           <strong id="wiki-graph-title">知识关系图</strong>
         </div>
         <span className="wiki-graph-count" aria-label="图谱规模">
@@ -230,6 +230,7 @@ export function WikiGraphPanel(props: WikiGraphPanelProps) {
             <div className="wiki-graph-tools" role="group" aria-label="图谱缩放">
               <button
                 type="button"
+                className="icon-button"
                 aria-label="缩小图谱"
                 title="缩小图谱"
                 onClick={() => setZoom((value) => Math.max(0.78, Number((value - 0.12).toFixed(2))))}
@@ -237,11 +238,12 @@ export function WikiGraphPanel(props: WikiGraphPanelProps) {
               >
                 <ZoomOut size={14} aria-hidden="true" />
               </button>
-              <button type="button" aria-label="重置图谱缩放" title="重置图谱缩放" onClick={() => setZoom(1)}>
+              <button type="button" className="icon-button" aria-label="重置图谱缩放" title="重置图谱缩放" onClick={() => setZoom(1)}>
                 <LocateFixed size={14} aria-hidden="true" />
               </button>
               <button
                 type="button"
+                className="icon-button"
                 aria-label="放大图谱"
                 title="放大图谱"
                 onClick={() => setZoom((value) => Math.min(1.42, Number((value + 0.12).toFixed(2))))}

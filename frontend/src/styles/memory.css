@@ -1,0 +1,362 @@
+/* ============================================================
+ * Memory 审核：队列 | 审核 | 生效规则
+ * ============================================================ */
+
+.memory-workbench {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr) 300px;
+  gap: var(--pane-gap);
+  height: 100%;
+  min-height: 0;
+}
+
+.memory-queue-panel,
+.memory-review-panel,
+.memory-version-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  padding: 18px 16px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+}
+
+.memory-review-panel {
+  padding: 24px clamp(20px, 3vw, 40px);
+}
+
+.memory-panel-heading,
+.memory-runtime-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.memory-panel-heading h2,
+.memory-runtime-heading h2 {
+  font-size: var(--text-lg);
+}
+
+.memory-panel-heading > span {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 22px;
+  text-align: center;
+}
+
+.memory-runtime-heading > span {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.memory-queue-panel > .secondary-button {
+  align-self: flex-start;
+}
+
+.memory-queue-list {
+  display: grid;
+  gap: 6px;
+}
+
+.memory-review-card {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--ink);
+  text-align: left;
+  transition: background var(--duration) var(--ease), border-color var(--duration) var(--ease);
+}
+
+.memory-review-card:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.memory-review-card.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.memory-review-card > span {
+  color: var(--muted);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+}
+
+.memory-review-card strong {
+  font-size: var(--text-md);
+  font-weight: 550;
+  line-height: 1.45;
+}
+
+.memory-review-card small {
+  color: var(--muted);
+  font-size: var(--text-2xs);
+}
+
+.memory-runtime-inline {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+}
+
+.memory-runtime-inline-index {
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.memory-runtime-inline > div {
+  display: grid;
+  gap: 2px;
+  font-size: var(--text-sm);
+}
+
+.memory-runtime-inline span {
+  color: var(--muted);
+}
+
+.memory-error {
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.memory-review-panel > h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 500;
+}
+
+.memory-statement-card {
+  display: grid;
+  gap: 6px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.memory-statement-card strong {
+  font-size: var(--text-lg);
+  font-weight: 550;
+  line-height: 1.55;
+}
+
+.memory-statement-card span,
+.memory-statement-card small {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  overflow-wrap: anywhere;
+}
+
+.memory-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.memory-metric-card {
+  display: grid;
+  gap: 2px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+
+.memory-metric-card small {
+  color: var(--muted);
+  font-size: var(--text-2xs);
+}
+
+.memory-metric-card strong {
+  overflow: hidden;
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory-decision-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.memory-review-loading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px 14px;
+  padding: 18px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+}
+
+.memory-review-loading-icon {
+  color: var(--muted);
+}
+
+.memory-review-loading p {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.memory-review-loading-line {
+  grid-column: 1 / -1;
+  height: 10px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+}
+
+.memory-review-loading-line.is-short {
+  width: 55%;
+}
+
+.memory-empty-state {
+  display: grid;
+  gap: 18px;
+  max-width: 620px;
+  margin-top: 8px;
+}
+
+.memory-empty-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.memory-empty-kicker {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.memory-empty-heading strong {
+  font-size: var(--text-lg);
+}
+
+.memory-review-flow {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.memory-review-flow li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.memory-review-flow li.is-current {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.memory-review-flow li > div,
+.memory-review-handoff > div {
+  display: grid;
+  gap: 2px;
+  font-size: var(--text-sm);
+}
+
+.memory-review-flow small,
+.memory-review-handoff small {
+  color: var(--muted);
+  font-size: var(--text-2xs);
+}
+
+.memory-review-flow span:not(.memory-review-flow-icon),
+.memory-review-handoff span {
+  color: var(--muted);
+}
+
+.memory-review-flow-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.memory-review-handoff {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.memory-runtime-policy {
+  display: grid;
+  gap: 1px;
+}
+
+.memory-runtime-policy > div {
+  display: grid;
+  gap: 2px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.memory-runtime-policy dt {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.memory-runtime-policy dd {
+  font-size: var(--text-sm);
+  font-weight: 550;
+}
+
+@media (max-width: 1279px) {
+  .memory-workbench {
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
+
+  .memory-version-panel {
+    grid-column: 1 / -1;
+  }
+
+  .memory-workbench {
+    height: auto;
+  }
+}
+
+@media (max-width: 899px) {
+  .memory-workbench {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .memory-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

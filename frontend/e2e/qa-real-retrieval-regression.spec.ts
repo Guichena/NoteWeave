@@ -12,7 +12,7 @@ test("QA retrieves an indexed workspace source and renders its citation", async 
   await expect(page.locator(".workbench-shell")).toBeVisible();
   await selectWorkspace(page, workspaceName);
 
-  await page.getByRole("button", { name: "Chat · QA / Note / Wiki", exact: true }).click();
+  await page.getByRole("button", { name: "笔记本：来源、对话与产物", exact: true }).click();
   const modeButton = page.getByRole("button", { name: "回答模式：问答 RAG", exact: true });
   if (!await modeButton.isVisible().catch(() => false)) {
     await page.getByRole("button", { name: /^回答模式：/ }).click();
@@ -20,7 +20,7 @@ test("QA retrieves an indexed workspace source and renders its citation", async 
   }
   const assistantCount = await page.locator(".bubble.assistant").count();
   const marker = `qa-index-regression-${Date.now()}`;
-  await page.locator(".composer-block textarea").fill(
+  await page.locator(".composer-box textarea").fill(
     `According to the workspace source, what is the project codename and planned release date? ${marker}`
   );
   const sendButton = page.locator(".composer-send-button");
@@ -45,12 +45,19 @@ test("QA honors a changed source scope across consecutive questions", async ({ p
   await loginIfRequired(page);
   await expect(page.locator(".workbench-shell")).toBeVisible();
   await selectWorkspace(page, workspaceName);
-  await page.getByRole("button", { name: "Chat · QA / Note / Wiki", exact: true }).click();
+  await page.getByRole("button", { name: "笔记本：来源、对话与产物", exact: true }).click();
 
-  const scope = page.locator(".qa-scope-options");
-  await page.getByText("指定本次 QA 的资料范围（可选）", { exact: true }).click();
-  await scope.getByRole("button", { name: "frontend-source.md", exact: true }).click();
-  await expect(page.locator(".qa-scope-hint")).toContainText("已限定 1 份可检索资料");
+  // 在“来源”栏里只保留 frontend-source.md 的勾选
+  const sourceChecks = page.locator(".sources-pane .source-row-check");
+  const target = page.getByRole("checkbox", { name: "在问答中使用 frontend-source.md", exact: true });
+  await expect(target).toBeChecked();
+  for (const check of await sourceChecks.all()) {
+    const label = await check.getAttribute("aria-label");
+    if (label !== "在问答中使用 frontend-source.md" && await check.isChecked()) {
+      await check.uncheck();
+    }
+  }
+  await expect(page.locator(".composer-scope")).toContainText("已选 1 /");
 
   const first = await askQuestion(page,
     `What is the secondary keyword in the selected source? scoped-first-${Date.now()}`);
@@ -69,7 +76,7 @@ test("QA honors a changed source scope across consecutive questions", async ({ p
 
 async function askQuestion(page: Page, question: string) {
   const assistantCount = await page.locator(".bubble.assistant").count();
-  await page.locator(".composer-block textarea").fill(question);
+  await page.locator(".composer-box textarea").fill(question);
   const sendButton = page.locator(".composer-send-button");
   await expect(sendButton).toBeEnabled();
   await sendButton.click();
@@ -90,7 +97,7 @@ async function selectWorkspace(page: Page, name: string) {
   const trigger = page.locator(".workspace-switcher-trigger");
   if (await trigger.getByText(name, { exact: false }).isVisible().catch(() => false)) return;
   await trigger.click();
-  await page.locator(".workspace-switcher-search input").fill(name);
+  await page.getByRole("searchbox", { name: "搜索工作台" }).fill(name);
   await page.getByRole("option", { name: new RegExp(name) }).click();
   await expect(trigger).toContainText(name);
 }

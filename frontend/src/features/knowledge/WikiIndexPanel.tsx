@@ -42,7 +42,7 @@ export const WikiIndexPanel = memo(function WikiIndexPanel(props: WikiIndexPanel
   return (
     <aside className="wiki-index">
       <div className="wiki-index-header">
-        <p className="section-label">Wiki Index</p>
+        <p className="section-label">知识总览</p>
         <div className="wiki-index-title-row">
           <h2 className="wiki-index-title">知识网络</h2>
           <button

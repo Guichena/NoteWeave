@@ -21,7 +21,7 @@ test("Wiki answer streams, renders evidence cards, and survives refresh", async 
   await page.getByRole("button", { name: /回答模式：/ }).click();
   await page.getByRole("menuitemradio", { name: /^Wiki/ }).click();
   const assistantCount = await page.locator(".bubble.assistant").count();
-  await page.locator(".composer-block textarea").fill(question);
+  await page.locator(".composer-box textarea").fill(question);
   const created = page.waitForResponse((response) =>
     /\/api\/v2\/conversations\/[^/]+\/messages$/.test(response.url())
       && response.request().method() === "POST"

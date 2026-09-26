@@ -282,7 +282,7 @@ export function WikiRelationsPanel(props: WikiRelationsPanelProps) {
         </div>
       );
     })}
-    <p className="section-label">Wiki Log</p>
+    <p className="section-label">变更记录</p>
     {props.wikiLog.slice(0, 4).map((entry) => (
       <div className="link-card" key={entry.id}>
         <strong>{entry.event_type}</strong>

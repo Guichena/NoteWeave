@@ -102,7 +102,7 @@ export function ResearchProcessOverview({
 }: ResearchProcessOverviewProps) {
   return (
     <>
-      <p className="section-label">Research Flow</p>
+      <p className="section-label">研究流程</p>
       {processSummary ? (
         <div className="task-card">
           <strong>Research Process</strong>

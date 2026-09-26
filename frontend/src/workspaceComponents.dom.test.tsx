@@ -155,7 +155,7 @@ describe("workspace component wiring", () => {
       setArtifactFormValues
     })} />);
 
-    expect(screen.getByRole("heading", { name: "产物工作台" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "产物" })).toBeTruthy();
     expect(screen.queryByText("创建产物")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /学习指南/ }));
     expect(setSelectedArtifactSkillKey).toHaveBeenCalledWith("study_guide");
@@ -295,7 +295,7 @@ describe("workspace component wiring", () => {
       }
     } as any)} />);
 
-    expect(screen.getByText("Research Run")).toBeTruthy();
+    expect(screen.getByText("研究运行")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "从一个问题开始，留下可核验的报告" })).toBeTruthy();
   });
 
@@ -544,7 +544,7 @@ describe("workspace component wiring", () => {
   it("mounts the Memory review workbench empty state", () => {
     render(<MemoryReviewWorkbench workspaceId="workspace" />);
 
-    expect(screen.getAllByText("01 · Candidate").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("01 · 候选").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByLabelText("0 条待审核")).toBeTruthy();
     expect(screen.getByText("等待新的 Memory revision")).toBeTruthy();
     expect(screen.getByRole("list", { name: "候选到审核决策的阶段" })).toBeTruthy();

@@ -236,6 +236,7 @@ export function useChatSessionController({
         });
         throw error;
       }
+      setQuestion((current) => (current.trim() === trimmed ? "" : current));
       const buffered = answerRunStoreRef.current.get(sent.answer_run_id);
       if (mode === "note") {
         setLastNoteAssistantMessageId(sent.assistant_message_id);

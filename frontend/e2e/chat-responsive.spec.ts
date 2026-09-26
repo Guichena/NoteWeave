@@ -24,81 +24,61 @@ for (const viewport of [
       documentWidth: document.documentElement.scrollWidth
     }));
     expect(metrics.documentWidth).toBeLessThanOrEqual(metrics.viewportWidth);
-    const welcomeKnowledgePath = page.getByLabel("工作台资料与当前会话的关系");
-    if (await welcomeKnowledgePath.isVisible()) {
-      await expect(welcomeKnowledgePath).toContainText(/\d+ 份资料 · \d+ 个会话共用/);
-    } else {
-      await expect(page.locator(".chat-session-meta")).toContainText(/\d+ 份工作台资料/);
-      await expect(page.locator(".chat-session-meta")).toContainText(/\d+ 个会话/);
-      await expect(
-        page.locator(".conversation .bubble").first().or(page.locator(".chat-welcome"))
-      ).toBeVisible();
-    }
+    await expect(
+      page.locator(".conversation .message-row").first().or(page.locator(".chat-welcome"))
+    ).toBeVisible();
 
-    if (viewport.width >= 768) {
-      if (viewport.width >= 1200) {
-        await expect(page.locator(".sources-pane")).toBeVisible();
-      } else {
-        await expect(page.locator(".sources-pane")).toBeHidden();
-      }
-      await expect(page.locator(".chat-session-header h2")).not.toHaveText("等待会话");
+    if (viewport.width >= 900) {
+      // 宽屏：来源常驻；≥1280 时产物也常驻
+      await expect(page.locator(".sources-pane")).toBeVisible();
       await expect(page.getByRole("button", { name: "打开资料库" })).toBeVisible();
-      await assertWorkspaceSwitcherFits(page, viewport.width);
-      const welcome = page.locator(".chat-welcome");
-      if (await welcome.isVisible()) {
-        const bounds = await page.evaluate(() => {
-          const conversation = document.querySelector(".conversation")?.getBoundingClientRect();
-          const panel = document.querySelector(".chat-welcome")?.getBoundingClientRect();
-          return conversation && panel
-            ? { conversationBottom: conversation.bottom, welcomeBottom: panel.bottom }
-            : null;
-        });
-        expect(bounds).not.toBeNull();
-        expect(bounds!.welcomeBottom).toBeLessThanOrEqual(bounds!.conversationBottom);
+      if (viewport.width >= 1280) {
+        await expect(page.locator(".studio-pane")).toBeVisible();
+      } else {
+        await expect(page.locator(".studio-pane")).toBeHidden();
+        await page.getByRole("button", { name: "打开产物" }).click();
+        await expect(page.locator(".studio-pane")).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(page.locator(".studio-pane")).toBeHidden();
       }
+      await assertWorkspaceSwitcherFits(page, viewport.width);
       expect(consoleErrors).toEqual([]);
       return;
     }
 
     const mobileLayout = await page.evaluate(() => {
-      const rail = document.querySelector<HTMLElement>(".global-rail");
-      const main = document.querySelector<HTMLElement>(".workbench-main");
-      const welcome = document.querySelector<HTMLElement>(".chat-welcome");
-      const composer = document.querySelector<HTMLElement>(".composer-dock");
+      const nav = document.querySelector<HTMLElement>(".app-nav");
+      const composer = document.querySelector<HTMLElement>(".composer-box");
       const modeTrigger = document.querySelector<HTMLElement>(".answer-mode-trigger");
-      const sourcesToggle = document.querySelector<HTMLElement>(".mobile-sources-toggle");
       return {
-        mainTop: main?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY,
-        railRight: rail?.getBoundingClientRect().right ?? Number.POSITIVE_INFINITY,
-        railPosition: rail ? getComputedStyle(rail).position : "missing",
-        welcomeBottom: welcome?.getBoundingClientRect().bottom ?? 0,
+        navRight: nav?.getBoundingClientRect().right ?? Number.POSITIVE_INFINITY,
+        navPosition: nav ? getComputedStyle(nav).position : "missing",
         composerTop: composer?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY,
-        modeTop: modeTrigger?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY,
-        modeBottom: modeTrigger?.getBoundingClientRect().bottom ?? Number.NEGATIVE_INFINITY,
         composerBottom: composer?.getBoundingClientRect().bottom ?? Number.NEGATIVE_INFINITY,
-        sourcesTop: sourcesToggle?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY
+        modeTop: modeTrigger?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY,
+        modeBottom: modeTrigger?.getBoundingClientRect().bottom ?? Number.NEGATIVE_INFINITY
       };
     });
-    expect(mobileLayout.mainTop).toBeLessThan(80);
-    expect(mobileLayout.railRight).toBeLessThanOrEqual(0.5);
-    expect(mobileLayout.railPosition).toBe("fixed");
-    expect(mobileLayout.composerTop).toBeGreaterThanOrEqual(mobileLayout.welcomeBottom);
+    expect(mobileLayout.navRight).toBeLessThanOrEqual(0.5);
+    expect(mobileLayout.navPosition).toBe("fixed");
     expect(mobileLayout.modeTop).toBeGreaterThanOrEqual(mobileLayout.composerTop);
     expect(mobileLayout.modeBottom).toBeLessThanOrEqual(mobileLayout.composerBottom);
-    expect(mobileLayout.sourcesTop).toBeLessThan(mobileLayout.composerTop);
 
-    const sourcesToggle = page.locator(".mobile-sources-toggle");
-    await expect(sourcesToggle).toBeVisible();
-    await sourcesToggle.click();
+    await expect(page.locator(".sources-pane")).toBeHidden();
+    await page.getByRole("button", { name: "打开来源" }).click();
+    await expect(page.locator(".sources-pane")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".sources-pane")).toBeHidden();
+
+    await page.getByRole("button", { name: "打开主导航" }).click();
+    await expect(page.getByText("共享当前工作台资料库", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "工作台资料库" }).click();
     await expect(page).toHaveURL(/\/library$/);
     await expect(page.locator(".source-library-page")).toBeVisible();
     const formatRow = page.getByLabel("支持的资料格式");
     await expect(formatRow).toContainText("PDF");
     await expect(formatRow).toContainText("MD");
     await expectNoHorizontalOverflow(page);
-
-    await page.getByRole("button", { name: "打开主导航" }).click();
-    await expect(page.getByText("共享当前工作台资料库", { exact: true })).toBeVisible();
     await assertWorkspaceSwitcherFits(page, viewport.width);
     expect(consoleErrors).toEqual([]);
   });

@@ -10,7 +10,7 @@ describe("SourceLibraryWorkbench", () => {
   it("separates parsed sources from indexed sources", () => {
     render(<SourceLibraryWorkbench {...buildProps()} />);
 
-    expect(screen.getByRole("heading", { name: "工作台资料库" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "资料库" })).toBeTruthy();
     expect(screen.getByText("可参与 Chat / RAG").nextElementSibling?.textContent).toBe("1");
     expect(screen.getByText("可用于 Research").nextElementSibling?.textContent).toBe("2");
     expect(screen.getAllByText("已解析").length).toBeGreaterThan(0);

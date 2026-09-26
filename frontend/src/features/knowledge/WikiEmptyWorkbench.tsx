@@ -31,7 +31,7 @@ export function WikiEmptyWorkbench({
     <section className="wiki-workbench wiki-empty-workbench" aria-labelledby="wiki-empty-title">
       <article className="wiki-empty-main">
         <span className="wiki-empty-mark" aria-hidden="true"><Network size={24} /></span>
-        <p className="section-label">Workspace knowledge</p>
+        <p className="section-label">工作台知识</p>
         <h2 id="wiki-empty-title">准备工作台知识网络</h2>
         <p>Wiki 会把资料与人工维护内容组织为可追踪版本、引用和页面关系。</p>
 
@@ -55,7 +55,7 @@ export function WikiEmptyWorkbench({
       </article>
 
       <aside className="wiki-empty-context" aria-label="Wiki 准备状态">
-        <p className="section-label">Current workspace</p>
+        <p className="section-label">当前工作台</p>
         <strong title={workspaceName}>{workspaceName}</strong>
         <dl>
           <div><dt>已解析资料</dt><dd>{readySourceCount}</dd></div>

@@ -67,7 +67,7 @@ export function ResearchReportPanel(props: ResearchReportPanelProps) {
   const evidenceMetrics = deriveResearchEvidenceMetrics(currentResearchRun, currentResearchCollection);
   return (
           <article className="research-page">
-            <p className="section-label">Research Run</p>
+            <p className="section-label">研究运行</p>
             {currentResearchRun ? (
               <>
                 <h2>{currentResearchRun.final_report_title || currentResearchRun.question}</h2>

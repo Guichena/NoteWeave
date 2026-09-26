@@ -96,8 +96,8 @@ test("desktop library, Research, and Artifact controls enforce their real prereq
     await expect(launchResearch).toBeEnabled();
   }
 
-  await page.getByRole("button", { name: "Chat · QA / Note / Wiki", exact: true }).click();
-  await page.getByRole("button", { name: "打开产物", exact: true }).click();
+  await page.getByRole("button", { name: "笔记本：来源、对话与产物", exact: true }).click();
+  await ensureStudioVisible(page);
   await page.locator(".artifact-action-card").first().click();
   const artifactComposer = page.locator(".artifact-composer-view");
   await expect(artifactComposer).toBeVisible();
@@ -145,4 +145,11 @@ function readSimpleEnv(path: string) {
   } catch {
     return {};
   }
+}
+
+/** 宽屏下产物栏常驻；较窄时通过“打开产物”抽屉打开。 */
+async function ensureStudioVisible(page: Page) {
+  const toggle = page.getByRole("button", { name: "打开产物", exact: true });
+  if (await toggle.isVisible()) await toggle.click();
+  await expect(page.locator(".studio-pane .artifact-rail")).toBeVisible();
 }

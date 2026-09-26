@@ -41,7 +41,7 @@ export function MemoryReviewWorkbench({ workspaceId }: MemoryReviewWorkbenchProp
   return (
     <section className="memory-workbench">
       <aside className="memory-queue-panel">
-        <p className="section-label">01 · Candidate</p>
+        <p className="section-label">01 · 候选</p>
         <div className="memory-panel-heading">
           <h2>统一审核队列</h2>
           <span aria-label={`${queue.length} 条待审核`}>{queue.length}</span>
@@ -84,7 +84,7 @@ export function MemoryReviewWorkbench({ workspaceId }: MemoryReviewWorkbenchProp
       </aside>
 
       <article className="memory-review-panel">
-        <p className="section-label">02 · Review</p>
+        <p className="section-label">02 · 审核</p>
         <div className="memory-runtime-inline">
           <span className="memory-runtime-inline-index">03</span>
           <div>
@@ -138,7 +138,7 @@ export function MemoryReviewWorkbench({ workspaceId }: MemoryReviewWorkbenchProp
               {decisionOptions(selectedItem).map((option) => (
                 <button
                   key={option.decision}
-                  className={option.tone === "danger" ? "memory-danger-button" : option.tone === "secondary" ? "secondary-button" : ""}
+                  className={option.tone === "danger" ? "memory-danger-button" : option.tone === "secondary" ? "secondary-button" : "primary-action"}
                   disabled={mutating}
                   onClick={() => void submitDecision(selectedItem, option.decision)}
                 >
@@ -165,7 +165,7 @@ export function MemoryReviewWorkbench({ workspaceId }: MemoryReviewWorkbenchProp
               <li className={queue.length > 0 ? "is-current" : "is-waiting"}>
                 <span className="memory-review-flow-icon" aria-hidden="true"><Inbox size={17} /></span>
                 <div>
-                  <small>01 · Candidate</small>
+                  <small>01 · 候选</small>
                   <strong>进入审核队列</strong>
                   <span>{queue.length} 条待审核</span>
                 </div>
@@ -173,7 +173,7 @@ export function MemoryReviewWorkbench({ workspaceId }: MemoryReviewWorkbenchProp
               <li>
                 <span className="memory-review-flow-icon" aria-hidden="true"><ScanSearch size={17} /></span>
                 <div>
-                  <small>02 · Review</small>
+                  <small>02 · 审核</small>
                   <strong>核对来源与冲突</strong>
                   <span>人工决定接受或拒绝</span>
                 </div>
@@ -182,7 +182,7 @@ export function MemoryReviewWorkbench({ workspaceId }: MemoryReviewWorkbenchProp
             <div className="memory-review-handoff" aria-label="审核后的运行时去向">
               <ArrowRight size={18} aria-hidden="true" />
               <div>
-                <small>Next · Runtime</small>
+                <small>下一步 · 生效</small>
                 <strong>审核通过后进入运行时</strong>
                 <span>右侧显示唯一生效版本与召回约束。</span>
               </div>
@@ -192,7 +192,7 @@ export function MemoryReviewWorkbench({ workspaceId }: MemoryReviewWorkbenchProp
       </article>
 
       <aside className="memory-version-panel">
-        <p className="section-label">03 · Runtime</p>
+        <p className="section-label">03 · 生效</p>
         <div className="memory-runtime-heading">
           <span aria-hidden="true"><BadgeCheck size={18} /></span>
           <h2>运行时生效</h2>

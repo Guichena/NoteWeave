@@ -16,7 +16,8 @@ const wikiIssueActionsSource = read("src/features/knowledge/useWikiIssueActions.
 const researchControllerSource = read("src/features/research/useResearchWorkbenchController.ts");
 const chatControllerSource = read("src/features/conversations/useChatSessionController.ts");
 const routesSource = read("src/routes.tsx");
-const stylesSource = read("src/styles.css");
+const stylesSource = read("src/styles/index.css") + read("src/styles/shell.css");
+const mainSource = read("src/main.tsx");
 
 const surfaceSource = [
   appSource,
@@ -43,6 +44,12 @@ const forbiddenSnippets = [
   { file: "App.tsx", source: appSource, snippet: 'className="workspace-card"' }
 ];
 
+forbiddenSnippets.push(
+  { file: "ChatWorkbench.tsx", source: chatWorkbenchSource, snippet: "createPortal" },
+  { file: "ChatWorkbench.tsx", source: chatWorkbenchSource, snippet: "mode-context-line" },
+  { file: "main.tsx", source: mainSource, snippet: "visual-refresh.css" }
+);
+
 for (const item of forbiddenSnippets) {
   if (item.source.includes(item.snippet)) {
     throw new Error(`${item.file} 仍残留旧宣传式、占位或已废弃壳层: ${item.snippet}`);
@@ -50,9 +57,10 @@ for (const item of forbiddenSnippets) {
 }
 
 const requiredSnippets = [
-  { label: "品牌标题", source: shellSource, snippet: "<h1 className=\"global-rail-brand-text\">NoteWeave</h1>" },
+  { label: "品牌标题", source: shellSource, snippet: "<h1 className=\"brand-name\">NoteWeave</h1>" },
   { label: "WorkbenchShell", source: appSource, snippet: "WorkbenchShell" },
-  { label: "左导航", source: shellSource, snippet: "global-rail" },
+  { label: "顶栏导航", source: shellSource, snippet: "app-nav" },
+  { label: "笔记本会话切换", source: shellSource, snippet: "ConversationSwitcher" },
   { label: "Chat 资料区", source: chatSourcesPaneSource, snippet: "sources-pane" },
   { label: "source-drawer 兼容 class", source: chatSourcesPaneSource, snippet: "source-drawer" },
   {
@@ -61,14 +69,14 @@ const requiredSnippets = [
     snippet: 'lazy(() => import("../artifacts/ArtifactRail")'
   },
   {
-    label: "Artifact 按需 Suspense",
+    label: "产物常驻右栏",
     source: chatWorkbenchSource,
-    snippet: "artifactRailOpen ? ("
+    snippet: "studio-pane"
   },
   {
-    label: "模式情境条",
+    label: "来源勾选接入 QA 范围",
     source: chatWorkbenchSource,
-    snippet: "mode-context-line"
+    snippet: "selectedSourceIds={selectedQaSourceIds}"
   },
   {
     label: "Research 工作台组合",
@@ -124,7 +132,8 @@ const requiredSnippets = [
     label: "shell 样式",
     source: stylesSource,
     snippet: ".workbench-shell"
-  }
+  },
+  { label: "单一样式入口", source: mainSource, snippet: "./styles/index.css" }
 ];
 
 for (const item of requiredSnippets) {
@@ -163,4 +172,4 @@ for (const view of navViews) {
   }
 }
 
-console.log("UI contract check passed (workbench shell + Chat sources + scoped busy).");
+console.log("UI contract check passed (top bar shell + notebook sources/chat/studio + scoped busy).");

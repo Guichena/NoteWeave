@@ -63,7 +63,7 @@ export const ResearchWorkbenchView = memo(function ResearchWorkbenchView({
     <section className={`research-workbench${currentResearchRun ? "" : " is-empty"}${statusOpen ? " status-open" : ""}`}>
       <Suspense fallback={(
         <aside className="research-index research-sidebar-loading">
-          <p className="section-label">Deep Research</p>
+          <p className="section-label">深度研究</p>
           <span>正在加载独立研究控制台…</span>
         </aside>
       )}>
@@ -72,7 +72,7 @@ export const ResearchWorkbenchView = memo(function ResearchWorkbenchView({
 
       <Suspense fallback={(
         <article className="research-page research-report-loading">
-          <p className="section-label">Research Run</p>
+          <p className="section-label">研究运行</p>
           <span>正在加载研究主报告…</span>
         </article>
       )}>
@@ -101,7 +101,7 @@ export const ResearchWorkbenchView = memo(function ResearchWorkbenchView({
         />
       ) : null}
       <aside className="research-side" id="research-status-panel" aria-label="研究运行状态">
-        <p className="section-label">Research Detail</p>
+        <p className="section-label">研究详情</p>
         <button
           type="button"
           className="research-status-close secondary-button"
@@ -223,7 +223,7 @@ export const ResearchWorkbenchView = memo(function ResearchWorkbenchView({
         >
           <Suspense fallback={(
             <aside className="research-detail-dialog research-detail-loading" aria-busy="true" aria-live="polite">
-              <p className="section-label">Research Detail</p>
+              <p className="section-label">研究详情</p>
               <div className="view-loading-body">
                 <span className="view-loading-spinner" aria-hidden="true" />
                 <span>正在加载研究详情工作台…</span>

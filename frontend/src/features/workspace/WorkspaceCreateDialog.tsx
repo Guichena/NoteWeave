@@ -54,7 +54,6 @@ export function WorkspaceCreateDialog({ busy, onClose, onCreate }: WorkspaceCrea
         <header className="workspace-create-header">
           <span className="workspace-create-mark" aria-hidden="true"><BookOpenText size={20} /></span>
           <div>
-            <p>New workspace</p>
             <h2 id={titleId}>创建研究工作台</h2>
           </div>
           <button type="button" className="workspace-create-close" aria-label="关闭" disabled={busy} onClick={onClose}>

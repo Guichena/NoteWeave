@@ -18,32 +18,33 @@ for (const viewport of [
     await assertNoHorizontalOverflow(page);
 
     const shellMetrics = await page.evaluate(() => {
-      const railItems = [...document.querySelectorAll<HTMLElement>(".global-rail-item")];
-      const first = railItems[0];
-      const rootStyle = getComputedStyle(document.body);
+      const navItems = [...document.querySelectorAll<HTMLElement>(".app-nav-item")];
+      const topbar = document.querySelector<HTMLElement>(".app-topbar")?.getBoundingClientRect();
       return {
-        fontFamily: rootStyle.fontFamily,
-        railItemHeights: railItems.map((item) => item.getBoundingClientRect().height),
-        railItemFontSize: first ? Number.parseFloat(getComputedStyle(first).fontSize) : 0
+        fontFamily: getComputedStyle(document.body).fontFamily,
+        topbarHeight: topbar?.height ?? 0,
+        navItemHeights: navItems.map((item) => item.getBoundingClientRect().height),
+        navItemFontSize: navItems[0] ? Number.parseFloat(getComputedStyle(navItems[0]).fontSize) : 0
       };
     });
-    expect(shellMetrics.fontFamily).toMatch(/Segoe UI|PingFang SC|Microsoft YaHei/);
-    expect(shellMetrics.railItemHeights.every((height) => height >= 44 && height <= 50)).toBe(true);
-    expect(shellMetrics.railItemFontSize).toBeGreaterThanOrEqual(12);
-    expect(shellMetrics.railItemFontSize).toBeLessThanOrEqual(14);
-
-    await assertGlobalRailProportions(page);
+    expect(shellMetrics.fontFamily).toMatch(/Inter|Segoe UI|PingFang SC|Microsoft YaHei/);
+    expect(shellMetrics.topbarHeight).toBeGreaterThanOrEqual(48);
+    expect(shellMetrics.topbarHeight).toBeLessThanOrEqual(64);
+    expect(shellMetrics.navItemHeights.length).toBe(5);
+    expect(shellMetrics.navItemHeights.every((height) => height >= 30 && height <= 44)).toBe(true);
+    expect(shellMetrics.navItemFontSize).toBeGreaterThanOrEqual(12);
+    expect(shellMetrics.navItemFontSize).toBeLessThanOrEqual(15);
 
     await assertChatProportions(page, viewport.width);
-    await assertArtifactProportions(page);
+    await assertArtifactProportions(page, viewport.width);
     await navigateFromRail(page, "工作台资料库");
     await assertLibraryProportions(page, viewport.width);
     await navigateFromRail(page, "Deep Research 工作台");
     await assertResearchProportions(page);
     await assertResearchPalette(page);
-    await navigateFromRail(page, "Wiki 治理工作台");
+    await navigateFromRail(page, "Wiki 知识库");
     await assertWikiProportions(page);
-    await navigateFromRail(page, "Memory 人工审核");
+    await navigateFromRail(page, "Memory 审核");
     await assertMemoryProportions(page, viewport.width);
   });
 }
@@ -82,55 +83,57 @@ async function assertAuthLayout(page: Page, viewportWidth: number) {
 
 async function assertChatProportions(page: Page, viewportWidth: number) {
   await expect(page.locator(".chat-panel")).toBeVisible();
-  if (viewportWidth >= 1200) {
-    await expect(page.locator(".sources-pane")).toBeVisible();
+  await expect(page.locator(".sources-pane")).toBeVisible();
+  if (viewportWidth >= 1280) {
+    await expect(page.locator(".studio-pane")).toBeVisible();
   } else {
-    await expect(page.locator(".sources-pane")).toBeHidden();
-    await expect(page.locator(".mobile-sources-toggle")).toBeVisible();
+    await expect(page.locator(".studio-toggle")).toBeVisible();
   }
   const metrics = await elementMetrics(page, [
     ".answer-mode-trigger",
-    ".composer-actions .composer-send-button",
-    ".composer-actions .artifact-rail-trigger"
+    ".composer-send-button",
+    ".source-add-button",
+    ".composer-box"
   ]);
-  expect(metrics[0]?.height).toBeGreaterThanOrEqual(39.5);
-  expect(metrics[1]?.height).toBeGreaterThanOrEqual(39.5);
-  expect(metrics[2]?.height).toBeGreaterThanOrEqual(39.5);
+  expect(metrics[0]?.height).toBeGreaterThanOrEqual(28);
+  expect(metrics[1]?.height).toBeGreaterThanOrEqual(34);
+  expect(metrics[2]?.height).toBeGreaterThanOrEqual(36);
+  expect(metrics[3]?.width).toBeGreaterThan(320);
   const metadata = await elementMetrics(page, [
-    ".chat-session-meta",
-    ".mode-context-metric",
-    ".source-list-heading > span",
-    ".chat-knowledge-node small",
-    ".chat-knowledge-node strong"
+    ".source-row-copy small",
+    ".pane-footnote",
+    ".chat-welcome-meta",
+    ".composer-scope"
   ]);
-  expect(metadata.every((item) => !item || item.fontSize >= 12)).toBe(true);
+  expect(metadata.every((item) => !item || item.fontSize >= 11)).toBe(true);
   await assertNoHorizontalOverflow(page);
 }
 
-async function assertArtifactProportions(page: Page) {
-  await page.getByRole("button", { name: "打开产物", exact: true }).click();
-  await expect(page.locator(".artifact-rail")).toBeVisible();
-  await expect(page.getByRole("dialog", { name: "产物工作台" })).toBeVisible();
-  await expect(page.getByRole("dialog", { name: "产物工作台" })).toHaveAttribute("aria-modal", "true");
+async function assertArtifactProportions(page: Page, viewportWidth: number) {
+  if (viewportWidth < 1280) {
+    await page.getByRole("button", { name: "打开产物", exact: true }).click();
+  }
+  await expect(page.locator(".studio-pane .artifact-rail")).toBeVisible();
   await expect(page.locator(".artifact-action-card").first()).toBeVisible();
 
   const metrics = await page.evaluate(() => {
     const cards = [...document.querySelectorAll<HTMLElement>(".artifact-action-card")];
-    const text = [...document.querySelectorAll<HTMLElement>(".artifact-action-summary, .artifact-action-meta")];
+    const titles = [...document.querySelectorAll<HTMLElement>(".artifact-action-copy strong")];
     return {
       cardHeights: cards.map((element) => element.getBoundingClientRect().height),
-      clippedText: text.filter((element) => (
-        element.scrollWidth > element.clientWidth + 1 || element.scrollHeight > element.clientHeight + 1
-      )).map((element) => element.textContent?.trim() ?? ""),
-      metadataFontSizes: text.map((element) => Number.parseFloat(getComputedStyle(element).fontSize))
+      clippedTitles: titles.filter((element) => element.scrollWidth > element.clientWidth + 1)
+        .map((element) => element.textContent?.trim() ?? ""),
+      titleFontSizes: titles.map((element) => Number.parseFloat(getComputedStyle(element).fontSize))
     };
   });
 
   expect(metrics.cardHeights.every((height) => height >= 80)).toBe(true);
-  expect(metrics.clippedText).toEqual([]);
-  expect(metrics.metadataFontSizes.every((size) => size >= 12)).toBe(true);
-  await page.getByRole("button", { name: "关闭产物工作台", exact: true }).click();
-  await expect(page.getByRole("dialog", { name: "产物工作台" })).toBeHidden();
+  expect(metrics.clippedTitles).toEqual([]);
+  expect(metrics.titleFontSizes.every((size) => size >= 13)).toBe(true);
+  if (viewportWidth < 1280) {
+    await page.getByRole("button", { name: "关闭产物工作台", exact: true }).click();
+    await expect(page.locator(".studio-pane")).toBeHidden();
+  }
 }
 
 async function assertLibraryProportions(page: Page, viewportWidth: number) {
@@ -142,21 +145,21 @@ async function assertLibraryProportions(page: Page, viewportWidth: number) {
     ".source-upload-dropzone"
   ]);
   expect(metrics[0]?.fontSize).toBeGreaterThanOrEqual(26);
-  expect(metrics[0]?.fontSize).toBeLessThanOrEqual(32);
+  expect(metrics[0]?.fontSize).toBeLessThanOrEqual(36);
   expect(metrics[1]?.width).toBeGreaterThan(260);
   expect(metrics[2]?.width).toBeGreaterThan(260);
   expect(metrics[3]?.height).toBeGreaterThanOrEqual(104);
-  if (viewportWidth >= 1100) expect(metrics[1]!.x).toBeLessThan(metrics[2]!.x);
+  if (viewportWidth >= 1024) expect(metrics[1]!.x).toBeLessThan(metrics[2]!.x);
   const filterMetrics = await elementMetrics(page, [".source-library-filter-row button", ".source-delete-button", ".source-library-statuses > span"]);
   if (filterMetrics[0]) {
-    expect(filterMetrics[0].height).toBeGreaterThanOrEqual(39.5);
+    expect(filterMetrics[0].height).toBeGreaterThanOrEqual(28);
     expect(filterMetrics[0].fontSize).toBeGreaterThanOrEqual(12);
   } else {
     const emptyAction = await elementMetrics(page, [".source-library-empty-action"]);
-    expect(emptyAction[0]?.height).toBeGreaterThanOrEqual(40);
+    expect(emptyAction[0]?.height).toBeGreaterThanOrEqual(36);
   }
-  if (filterMetrics[1]) expect(filterMetrics[1].height).toBeGreaterThanOrEqual(39.5);
-  if (filterMetrics[2]) expect(filterMetrics[2].fontSize).toBeGreaterThanOrEqual(12);
+  if (filterMetrics[1]) expect(filterMetrics[1].height).toBeGreaterThanOrEqual(30);
+  if (filterMetrics[2]) expect(filterMetrics[2].fontSize).toBeGreaterThanOrEqual(11);
   await assertNoHorizontalOverflow(page);
 }
 
@@ -169,14 +172,14 @@ async function assertResearchProportions(page: Page) {
     ".research-inline-actions button",
     ".research-filter-row button"
   ]);
-  expect(metrics[0]?.fontSize).toBeGreaterThanOrEqual(20);
+  expect(metrics[0]?.fontSize).toBeGreaterThanOrEqual(18);
   expect(metrics[0]?.fontSize).toBeLessThanOrEqual(26);
   expect(metrics[1]?.fontSize).toBeGreaterThanOrEqual(26);
-  expect(metrics[1]?.fontSize).toBeLessThanOrEqual(32);
-  expect(metrics[2]?.height).toBeGreaterThanOrEqual(40);
-  expect(metrics[3]?.height).toBeGreaterThanOrEqual(39.5);
+  expect(metrics[1]?.fontSize).toBeLessThanOrEqual(36);
+  expect(metrics[2]?.height).toBeGreaterThanOrEqual(34);
+  expect(metrics[3]?.height).toBeGreaterThanOrEqual(28);
   const metadata = await elementMetrics(page, [".research-launchboard-context dt", ".research-launchboard-context div > small", ".research-launchboard-flow small"]);
-  expect(metadata.every((item) => !item || item.fontSize >= 12)).toBe(true);
+  expect(metadata.every((item) => !item || item.fontSize >= 11)).toBe(true);
   await assertNoHorizontalOverflow(page);
 }
 
@@ -189,8 +192,8 @@ async function assertResearchPalette(page: Page) {
     const root = document.querySelector<HTMLElement>('.workbench-shell[data-view="research"]');
     const primary = document.querySelector<HTMLElement>(".research-launchboard-actions .primary-action");
     const primaryStyle = primary ? getComputedStyle(primary) : null;
-    const ink = root ? getComputedStyle(root).getPropertyValue("--nw-color-ink").trim() : "";
-    const domain = root ? getComputedStyle(root).getPropertyValue("--nw-domain-color").trim() : "";
+    const ink = root ? getComputedStyle(root).getPropertyValue("--primary").trim() : "";
+    const domain = root ? getComputedStyle(root).getPropertyValue("--accent").trim() : "";
     const colorProbe = document.createElement("span");
     colorProbe.style.backgroundColor = domain;
     document.body.append(colorProbe);
@@ -204,7 +207,7 @@ async function assertResearchPalette(page: Page) {
       index: background(".research-index"),
       paper: background(".research-page"),
       context: background(".research-launchboard-context"),
-      flow: background(".research-launchboard-flow"),
+      flow: background(".research-launchboard-flow > div:last-child"),
       ink,
       resolvedInk,
       domain,
@@ -226,11 +229,11 @@ async function assertWikiProportions(page: Page) {
   await expect(page.locator(".wiki-workbench")).toBeVisible();
   if (await page.locator(".wiki-empty-workbench").isVisible()) {
     const metrics = await elementMetrics(page, [".wiki-empty-main h2", ".wiki-empty-action"]);
-    expect(metrics[0]?.fontSize).toBeGreaterThanOrEqual(26);
-    expect(metrics[0]?.fontSize).toBeLessThanOrEqual(32);
-    if (metrics[1]) expect(metrics[1].height).toBeGreaterThanOrEqual(39.5);
+    expect(metrics[0]?.fontSize).toBeGreaterThanOrEqual(24);
+    expect(metrics[0]?.fontSize).toBeLessThanOrEqual(36);
+    if (metrics[1]) expect(metrics[1].height).toBeGreaterThanOrEqual(36);
     const metadata = await elementMetrics(page, [".wiki-empty-flow small", ".wiki-empty-context dt", ".wiki-empty-advice span"]);
-    expect(metadata.every((item) => !item || item.fontSize >= 12)).toBe(true);
+    expect(metadata.every((item) => !item || item.fontSize >= 11)).toBe(true);
   }
   await assertNoHorizontalOverflow(page);
 }
@@ -238,10 +241,9 @@ async function assertWikiProportions(page: Page) {
 async function assertMemoryProportions(page: Page, viewportWidth: number) {
   await expect(page.locator(".memory-workbench")).toBeVisible();
   const metrics = await elementMetrics(page, [".memory-workbench h2", ".memory-workbench button"]);
-  expect(metrics[0]?.fontSize).toBeGreaterThanOrEqual(20);
+  expect(metrics[0]?.fontSize).toBeGreaterThanOrEqual(16);
   expect(metrics[0]?.fontSize).toBeLessThanOrEqual(26);
-  // Chromium may report a nominal 40px CSS height as 39.999984px.
-  expect(metrics[1]?.height).toBeGreaterThanOrEqual(39.5);
+  expect(metrics[1]?.height).toBeGreaterThanOrEqual(30);
   const metadata = await elementMetrics(page, [
     ".memory-panel-heading > span",
     ".memory-empty-kicker",
@@ -249,8 +251,8 @@ async function assertMemoryProportions(page: Page, viewportWidth: number) {
     ".memory-review-flow li span:not(.memory-review-flow-icon)",
     ".memory-review-handoff > div > span"
   ]);
-  expect(metadata.every((item) => !item || item.fontSize >= 12)).toBe(true);
-  if (viewportWidth > 1120) {
+  expect(metadata.every((item) => !item || item.fontSize >= 11)).toBe(true);
+  if (viewportWidth >= 1280) {
     const columns = await elementMetrics(page, [
       ".memory-queue-panel",
       ".memory-review-panel",
@@ -263,32 +265,6 @@ async function assertMemoryProportions(page: Page, viewportWidth: number) {
     expect(columns[1]!.x).toBeLessThan(columns[2]!.x);
   }
   await assertNoHorizontalOverflow(page);
-}
-
-async function assertGlobalRailProportions(page: Page) {
-  const metrics = await page.evaluate(() => {
-    const measure = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)].map((element) => {
-      const bounds = element.getBoundingClientRect();
-      return {
-        height: bounds.height,
-        width: bounds.width,
-        fontSize: Number.parseFloat(getComputedStyle(element).fontSize)
-      };
-    });
-    return {
-      footerButtons: measure(".global-rail-actions button"),
-      logout: measure(".global-rail-logout"),
-      createConversation: measure(".global-rail-icon-button"),
-      auxiliaryText: measure(".workspace-switcher-label, .global-rail-conversation-note, .global-rail-conversation-copy small"),
-      workspaceSummaryClipped: [...document.querySelectorAll<HTMLElement>(".workspace-switcher-copy small")]
-        .some((element) => element.scrollWidth > element.clientWidth + 1 || element.scrollHeight > element.clientHeight + 1)
-    };
-  });
-  expect(metrics.footerButtons.every((item) => item.height >= 39.5 && item.fontSize >= 12)).toBe(true);
-  expect(metrics.logout.every((item) => item.height >= 39.5 && item.fontSize >= 12)).toBe(true);
-  expect(metrics.createConversation.every((item) => item.height >= 39.5 && item.width >= 39.5)).toBe(true);
-  expect(metrics.auxiliaryText.every((item) => item.fontSize >= 12)).toBe(true);
-  expect(metrics.workspaceSummaryClipped).toBe(false);
 }
 
 async function elementMetrics(page: Page, selectors: string[]) {

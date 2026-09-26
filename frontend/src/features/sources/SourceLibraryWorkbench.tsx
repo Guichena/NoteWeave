@@ -24,6 +24,9 @@ import {
   isSourceSearchable,
   type SourceAsset
 } from "./model";
+import { SOURCE_FILE_ACCEPT, SUPPORTED_SOURCE_FORMATS, validateSourceFile } from "./sourceFiles";
+
+export { validateSourceFile };
 
 type SourceFilter = "all" | "searchable" | "readable" | "processing";
 
@@ -50,17 +53,6 @@ export type SourceLibraryWorkbenchProps = {
   sourcesBusy: boolean;
 };
 
-const SUPPORTED_SOURCE_FORMATS = ["PDF", "MD", "TXT", "JSON", "CSV"] as const;
-const SUPPORTED_SOURCE_EXTENSIONS = new Set(["pdf", "md", "markdown", "txt", "json", "csv"]);
-const SUPPORTED_SOURCE_MIME_TYPES = new Set([
-  "application/pdf",
-  "text/markdown",
-  "text/plain",
-  "application/json",
-  "text/csv",
-  "application/csv"
-]);
-const MAX_SOURCE_FILE_BYTES = 128 * 1024 * 1024;
 
 export function SourceLibraryWorkbench(props: SourceLibraryWorkbenchProps) {
   const {
@@ -131,8 +123,7 @@ export function SourceLibraryWorkbench(props: SourceLibraryWorkbenchProps) {
     <section className="source-library-page workbench-page" aria-labelledby="source-library-title">
       <header className="source-library-hero">
         <div className="source-library-hero-copy">
-          <p className="section-label">Workspace library</p>
-          <h2 id="source-library-title">工作台资料库</h2>
+          <h2 id="source-library-title">资料库</h2>
           <p>资料绑定当前工作台，由所有会话、Research 和 Wiki 共享。解析完成不等于已经建立检索索引。</p>
         </div>
         <div className="source-library-workspace" aria-label="资料库归属">
@@ -169,8 +160,7 @@ export function SourceLibraryWorkbench(props: SourceLibraryWorkbenchProps) {
         <div className="source-library-catalog">
           <div className="source-library-catalog-header">
             <div>
-              <p className="section-label">Library index</p>
-              <h3>资料目录</h3>
+              <h3>全部来源</h3>
             </div>
             {sources.length > 0 ? (
               <label className="source-library-search">
@@ -279,7 +269,7 @@ export function SourceLibraryWorkbench(props: SourceLibraryWorkbenchProps) {
               ref={fileInputRef}
               className="source-file-input"
               type="file"
-              accept=".pdf,.md,.markdown,.txt,.json,.csv,application/pdf,text/markdown,text/plain,application/json,text/csv"
+              accept={SOURCE_FILE_ACCEPT}
               multiple
               onChange={handleFileChange}
             />
@@ -364,18 +354,6 @@ export function SourceLibraryWorkbench(props: SourceLibraryWorkbenchProps) {
       </div>
     </section>
   );
-}
-
-export function validateSourceFile(file: File) {
-  if (file.size > MAX_SOURCE_FILE_BYTES) {
-    return `《${file.name}》超过 128 MB，未开始上传。`;
-  }
-  const extension = file.name.includes(".") ? file.name.split(".").pop()?.toLocaleLowerCase() ?? "" : "";
-  const mimeType = file.type.toLocaleLowerCase();
-  if (!SUPPORTED_SOURCE_EXTENSIONS.has(extension) && !SUPPORTED_SOURCE_MIME_TYPES.has(mimeType)) {
-    return `《${file.name}》格式不受支持，请选择 PDF、MD、TXT、JSON 或 CSV 文件。`;
-  }
-  return "";
 }
 
 function sourceStatusTone(status: string) {

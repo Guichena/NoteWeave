@@ -1,8 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
-  BookOpenText,
   BrainCircuit,
-  FileStack,
   FlaskConical,
   LibraryBig,
   LogOut,
@@ -10,18 +8,20 @@ import {
   MessageSquareText,
   Moon,
   Network,
+  NotebookPen,
   Plus,
   Settings2,
-  Sparkles,
+  SquarePen,
   Sun,
   X,
   type LucideIcon
 } from "lucide-react";
 import { getAuthSession, logoutAuthSession } from "../../shared/api/auth";
 import { applyTheme, getInitialTheme, type ThemeMode } from "../../shared/theme";
-import { formatRelativeTime } from "../../shared/util/datetime";
 import type { AppView } from "./viewRoute";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
+import { ConversationSwitcher } from "./ConversationSwitcher";
+import { BrandMark } from "./BrandMark";
 import { WorkspaceCreateDialog } from "../workspace/WorkspaceCreateDialog";
 import { type CreateWorkspaceInput } from "../workspace/api";
 import { ConversationCreateDialog } from "../conversations/ConversationCreateDialog";
@@ -35,20 +35,12 @@ export type WorkbenchNavItem = {
 };
 
 export const WORKBENCH_NAV_ITEMS: WorkbenchNavItem[] = [
-  { view: "chat", label: "对话", letter: "C", title: "Chat · QA / Note / Wiki", icon: MessageSquareText },
+  { view: "chat", label: "笔记本", letter: "C", title: "笔记本：来源、对话与产物", icon: NotebookPen },
   { view: "library", label: "资料库", letter: "L", title: "工作台资料库", icon: LibraryBig },
   { view: "research", label: "研究", letter: "R", title: "Deep Research 工作台", icon: FlaskConical },
-  { view: "wiki", label: "Wiki", letter: "W", title: "Wiki 治理工作台", icon: Network },
-  { view: "memory", label: "记忆", letter: "M", title: "Memory 人工审核", icon: BrainCircuit }
+  { view: "wiki", label: "Wiki", letter: "W", title: "Wiki 知识库", icon: Network },
+  { view: "memory", label: "记忆", letter: "M", title: "Memory 审核", icon: BrainCircuit }
 ];
-
-const VIEW_BADGE: Record<AppView, string> = {
-  chat: "对话",
-  library: "资料库",
-  research: "深度研究",
-  wiki: "Wiki",
-  memory: "Memory"
-};
 
 export type WorkbenchShellProps = {
   view: AppView;
@@ -73,6 +65,8 @@ export type WorkbenchShellProps = {
   children: ReactNode;
 };
 
+const ERROR_STATUS_PATTERN = /失败|错误|无法|不可用|异常/;
+
 export function WorkbenchShell({
   view,
   status,
@@ -96,15 +90,20 @@ export function WorkbenchShell({
   children
 }: WorkbenchShellProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [workspaceCreateOpen, setWorkspaceCreateOpen] = useState(false);
   const [conversationCreateOpen, setConversationCreateOpen] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
   const [loggingOut, setLoggingOut] = useState(false);
   const workspaceCreateTriggerRef = useRef<HTMLElement | null>(null);
   const conversationCreateTriggerRef = useRef<HTMLElement | null>(null);
-  const workspaceCreateFallbackRef = useRef<HTMLButtonElement | null>(null);
+  const accountTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const conversationCreateFallbackRef = useRef<HTMLButtonElement | null>(null);
   const authSession = getAuthSession();
+  const accountName = authSession?.user.display_name || authSession?.user.username || "";
+  const statusIsError = ERROR_STATUS_PATTERN.test(status);
+  const showConversationCrumb = view === "chat" && Boolean(workspaceId);
 
   useEffect(() => {
     applyTheme(theme);
@@ -113,31 +112,56 @@ export function WorkbenchShell({
   useEffect(() => {
     if (!mobileNavOpen) return;
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setMobileNavOpen(false);
-      }
+      if (event.key === "Escape") setMobileNavOpen(false);
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [mobileNavOpen]);
 
-  function handleToggleTheme() {
-    setTheme((prev) => (prev === "light" ? "dark" : "light"));
-  }
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+    function closeOnOutsidePointer(event: PointerEvent) {
+      const target = event.target as Node;
+      if (!accountMenuRef.current?.contains(target) && !accountTriggerRef.current?.contains(target)) {
+        setAccountMenuOpen(false);
+      }
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setAccountMenuOpen(false);
+      accountTriggerRef.current?.focus();
+    }
+    window.addEventListener("pointerdown", closeOnOutsidePointer);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("pointerdown", closeOnOutsidePointer);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [accountMenuOpen]);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !event.defaultPrevented) onToggleSettings();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [settingsOpen, onToggleSettings]);
 
   function handleNavClick(nextView: AppView) {
     onNavigate(nextView);
     setMobileNavOpen(false);
   }
 
-  function openWorkspaceCreate(trigger?: HTMLElement) {
+  function openWorkspaceCreate(trigger?: HTMLElement | null) {
     workspaceCreateTriggerRef.current = trigger
       ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
     setMobileNavOpen(false);
+    setAccountMenuOpen(false);
     setWorkspaceCreateOpen(true);
   }
 
-  function openConversationCreate(trigger?: HTMLElement) {
+  function openConversationCreate(trigger?: HTMLElement | null) {
     conversationCreateTriggerRef.current = trigger
       ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
     setMobileNavOpen(false);
@@ -169,217 +193,273 @@ export function WorkbenchShell({
   return (
     <div className="workbench-shell" data-view={view}>
       <a className="skip-link" href="#workbench-main-content">跳到主要内容</a>
-      {mobileNavOpen ? (
-        <div
-          className="mobile-drawer-backdrop"
-          aria-hidden="true"
-          onClick={() => setMobileNavOpen(false)}
-        />
-      ) : null}
 
-      <aside className={`global-rail${mobileNavOpen ? " is-mobile-open" : ""}`} aria-label="主导航">
-        <div className="global-rail-header-row">
-          <div className="global-rail-brand" title="NoteWeave">
-            <span className="global-rail-brand-mark" aria-hidden="true"><BookOpenText size={20} strokeWidth={1.8} /></span>
-            <div className="global-rail-brand-copy">
-              <h1 className="global-rail-brand-text">NoteWeave</h1>
-              <span>Research notebook</span>
-            </div>
+      <header className="app-topbar">
+        <div className="topbar-lead">
+          <button
+            type="button"
+            className="mobile-menu-toggle icon-button"
+            aria-expanded={mobileNavOpen}
+            aria-controls="app-nav"
+            aria-label={mobileNavOpen ? "关闭主导航" : "打开主导航"}
+            onClick={() => setMobileNavOpen((current) => !current)}
+          >
+            <Menu size={18} aria-hidden="true" />
+          </button>
+          <div className="brand" title="NoteWeave">
+            <BrandMark className="brand-mark" />
+            <h1 className="brand-name">NoteWeave</h1>
           </div>
-          {mobileNavOpen ? (
-            <button
-              ref={conversationCreateFallbackRef}
-              type="button"
-              className="mobile-close-btn"
-              aria-label="关闭导航"
-              onClick={() => setMobileNavOpen(false)}
-            >
-              <X size={18} aria-hidden="true" />
-            </button>
-          ) : null}
-        </div>
-
-        <nav className="global-rail-nav">
-          {WORKBENCH_NAV_ITEMS.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.view}
-                type="button"
-                className={view === item.view ? "global-rail-item active" : "global-rail-item"}
-                title={item.title}
-                aria-label={item.title}
-                aria-current={view === item.view ? "page" : undefined}
-                disabled={sessionLoading || (shellBusy && item.view !== view)}
-                onClick={() => handleNavClick(item.view)}
-              >
-                <span className="global-rail-letter" aria-hidden="true"><Icon size={18} strokeWidth={1.8} /></span>
-                <span className="global-rail-label">{item.label}</span>
-                {item.view === "library" ? (
-                  <span className="global-rail-item-count" aria-hidden="true">{sourceCount}</span>
-                ) : null}
-              </button>
-            );
-          })}
-        </nav>
-
-        <section className="global-rail-context" aria-label="工作台与对话">
+          <span className="topbar-sep" aria-hidden="true" />
           <WorkspaceSwitcher
             workspaces={workspaces}
             workspaceId={workspaceId}
             disabled={shellBusy || sessionLoading || workspaces.length === 0}
             onSwitchWorkspace={onSwitchWorkspace}
-            onCreateWorkspace={openWorkspaceCreate}
+            onCreateWorkspace={() => openWorkspaceCreate(accountTriggerRef.current)}
           />
-          <div className="global-rail-conversation-header">
-            <span>工作台会话</span>
-            <small>{conversations.length}</small>
-            <button
-              type="button"
-              className="global-rail-icon-button"
-              aria-label="新建会话"
-              title="新建会话"
-              disabled={shellBusy || sessionLoading || !workspaceId}
-              onClick={(event) => openConversationCreate(event.currentTarget)}
-            >
-              <Plus size={15} aria-hidden="true" />
-            </button>
-          </div>
-          <p className="global-rail-conversation-note">共享当前工作台资料库</p>
-          <div className="global-rail-conversation-list" aria-label="对话列表">
-            {conversations.length === 0 ? (
-              <p className="global-rail-empty">还没有对话</p>
-            ) : conversations.map((item) => (
-              <button
-                key={item.conversation_id}
-                type="button"
-                className={item.conversation_id === conversationId
-                  ? "global-rail-conversation active"
-                  : "global-rail-conversation"}
-                aria-current={item.conversation_id === conversationId ? "page" : undefined}
-                title={item.title}
+          {showConversationCrumb ? (
+            <>
+              <span className="topbar-sep is-conversation" aria-hidden="true" />
+              <ConversationSwitcher
+                conversations={conversations}
+                conversationId={conversationId}
+                conversationTitle={conversationTitle}
                 disabled={shellBusy || sessionLoading}
-                onClick={() => onSwitchConversation(item.conversation_id)}
+                onSwitchConversation={onSwitchConversation}
+                onCreateConversation={(trigger) => openConversationCreate(trigger)}
+              />
+              <button
+                ref={conversationCreateFallbackRef}
+                type="button"
+                className="icon-button topbar-new-conversation"
+                aria-label="新建会话"
+                title="新建会话"
+                disabled={shellBusy || sessionLoading || !workspaceId}
+                onClick={(event) => openConversationCreate(event.currentTarget)}
               >
-                <MessageSquareText size={14} aria-hidden="true" />
-                <span className="global-rail-conversation-copy">
-                  <strong>{item.title}</strong>
-                  {item.last_active_at ? <small>{formatRelativeTime(item.last_active_at)}</small> : null}
-                </span>
+                <SquarePen size={16} aria-hidden="true" />
               </button>
-            ))}
-          </div>
-        </section>
+            </>
+          ) : null}
+        </div>
 
-        <div className="global-rail-footer">
-          <div className="global-rail-actions">
-            <button ref={workspaceCreateFallbackRef} type="button" className="secondary-button" disabled={shellBusy} onClick={(event) => openWorkspaceCreate(event.currentTarget)}>
-              <Plus size={15} aria-hidden="true" />新建工作台
-            </button>
-            <button
-              type="button"
-              className="secondary-button"
-              disabled={shellBusy || sessionLoading || !workspaceId}
-              onClick={onToggleSettings}
-            >
-              <Settings2 size={15} aria-hidden="true" />{settingsOpen ? "关闭设置" : "工作台设置"}
-            </button>
-            <button
-              type="button"
-              className="secondary-button theme-toggle-btn"
-              aria-label="切换明暗主题"
-              onClick={handleToggleTheme}
-            >
-              {theme === "dark" ? <Sun size={15} aria-hidden="true" /> : <Moon size={15} aria-hidden="true" />}
-              {theme === "dark" ? "浅色" : "深色"}
-            </button>
-          </div>
-          {authSession ? (
-            <div className="global-rail-account">
-              <span title={authSession.user.email}>
-                {authSession.user.display_name || authSession.user.username}
-              </span>
+        {mobileNavOpen ? (
+          <div className="mobile-drawer-backdrop" aria-hidden="true" onClick={() => setMobileNavOpen(false)} />
+        ) : null}
+        <nav
+          id="app-nav"
+          className={`app-nav${mobileNavOpen ? " is-mobile-open" : ""}`}
+          aria-label="主导航"
+        >
+          {mobileNavOpen ? (
+            <div className="app-nav-drawer-header">
+              <div className="brand">
+                <BrandMark className="brand-mark" />
+                <span className="brand-name">NoteWeave</span>
+              </div>
               <button
                 type="button"
-                className="global-rail-logout"
-                disabled={loggingOut}
-                onClick={() => void handleLogout()}
+                className="icon-button"
+                aria-label="关闭导航"
+                onClick={() => setMobileNavOpen(false)}
               >
-                <LogOut size={14} aria-hidden="true" />{loggingOut ? "退出中" : "退出"}
+                <X size={18} aria-hidden="true" />
               </button>
             </div>
           ) : null}
-        </div>
-      </aside>
+          <div className="app-nav-items">
+            {WORKBENCH_NAV_ITEMS.map((item) => {
+              const Icon = item.icon;
+              const active = view === item.view;
+              return (
+                <button
+                  key={item.view}
+                  type="button"
+                  className={active ? "app-nav-item active" : "app-nav-item"}
+                  title={item.title}
+                  aria-label={item.title}
+                  aria-current={active ? "page" : undefined}
+                  disabled={sessionLoading || (shellBusy && !active)}
+                  onClick={() => handleNavClick(item.view)}
+                >
+                  <Icon size={16} strokeWidth={1.9} aria-hidden="true" />
+                  <span className="app-nav-label">{item.label}</span>
+                  {item.view === "library" && sourceCount > 0 ? (
+                    <span className="app-nav-count" aria-hidden="true">{sourceCount}</span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+          {workspaceId ? (
+            <section className="app-nav-conversations" aria-label="工作台会话">
+              <div className="app-nav-section-title">
+                <span>会话</span>
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label="新建会话（导航）"
+                  disabled={shellBusy || sessionLoading}
+                  onClick={(event) => openConversationCreate(event.currentTarget)}
+                >
+                  <Plus size={15} aria-hidden="true" />
+                </button>
+              </div>
+              <p className="app-nav-section-note">共享当前工作台资料库</p>
+              {conversations.map((item) => (
+                <button
+                  key={item.conversation_id}
+                  type="button"
+                  className={item.conversation_id === conversationId ? "app-nav-conversation active" : "app-nav-conversation"}
+                  disabled={shellBusy || sessionLoading}
+                  onClick={() => {
+                    onSwitchConversation(item.conversation_id);
+                    if (view !== "chat") onNavigate("chat");
+                    setMobileNavOpen(false);
+                  }}
+                >
+                  <MessageSquareText size={14} aria-hidden="true" />
+                  <span>{item.title}</span>
+                </button>
+              ))}
+            </section>
+          ) : null}
+        </nav>
 
-      <div className="workbench-main">
-        <div className="context-strip" role="status">
-          <div className="context-strip-lead">
+        <div className="topbar-trail">
+          <p
+            className={`shell-status status-line${shellBusy ? " is-busy" : ""}${statusIsError ? " is-error" : ""}`}
+            role="status"
+            title={status}
+          >
+            <span className="shell-status-dot" aria-hidden="true" />
+            <span className="shell-status-text">{status}</span>
+          </p>
+          <button
+            type="button"
+            className="icon-button theme-toggle-btn"
+            aria-label="切换明暗主题"
+            title={theme === "dark" ? "切换到浅色" : "切换到深色"}
+            onClick={() => setTheme((prev) => (prev === "light" ? "dark" : "light"))}
+          >
+            {theme === "dark" ? <Sun size={17} aria-hidden="true" /> : <Moon size={17} aria-hidden="true" />}
+          </button>
+          <div className="account-menu">
+            <button
+              ref={accountTriggerRef}
+              type="button"
+              className="account-trigger"
+              aria-label="账户与工作台菜单"
+              aria-haspopup="menu"
+              aria-expanded={accountMenuOpen}
+              onClick={() => setAccountMenuOpen((current) => !current)}
+            >
+              <span className="account-avatar" aria-hidden="true">
+                {accountName ? accountName.slice(0, 1).toUpperCase() : <Settings2 size={15} />}
+              </span>
+            </button>
+            {accountMenuOpen ? (
+              <div ref={accountMenuRef} className="account-popover" role="menu" aria-label="账户与工作台菜单">
+                {authSession ? (
+                  <div className="account-identity">
+                    <strong>{accountName}</strong>
+                    {authSession.user.email ? <small>{authSession.user.email}</small> : null}
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="account-menu-item"
+                  disabled={shellBusy}
+                  onClick={() => openWorkspaceCreate(accountTriggerRef.current)}
+                >
+                  <Plus size={15} aria-hidden="true" />新建工作台
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="account-menu-item"
+                  disabled={shellBusy || sessionLoading || !workspaceId}
+                  onClick={() => {
+                    setAccountMenuOpen(false);
+                    onToggleSettings();
+                  }}
+                >
+                  <Settings2 size={15} aria-hidden="true" />{settingsOpen ? "关闭设置" : "工作台设置"}
+                </button>
+                {authSession ? (
+                  <>
+                    <span className="account-menu-divider" aria-hidden="true" />
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="account-menu-item"
+                      disabled={loggingOut}
+                      onClick={() => void handleLogout()}
+                    >
+                      <LogOut size={15} aria-hidden="true" />{loggingOut ? "退出中" : "退出登录"}
+                    </button>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </header>
+
+      {settingsPanel ? (
+        <div className="settings-sheet-layer">
+          <button
+            type="button"
+            className="settings-sheet-backdrop"
+            aria-label="关闭工作台设置"
+            onClick={onToggleSettings}
+          />
+          <div className="settings-sheet">{settingsPanel}</div>
+        </div>
+      ) : null}
+
+      <main id="workbench-main-content" className="workbench-canvas">
+        {sessionLoading ? (
+          <section
+            className="workspace-session-loading"
+            role="status"
+            aria-label="正在恢复工作台会话"
+            aria-busy="true"
+            aria-live="polite"
+          >
+            <div className="view-loading-body">
+              <span className="view-loading-spinner" aria-hidden="true" />
+              <span>正在恢复工作台与会话…</span>
+            </div>
+            <div className="view-loading-skeleton" aria-hidden="true">
+              <div className="skeleton-line w-40" />
+              <div className="skeleton-line w-70" />
+              <div className="skeleton-line w-55" />
+            </div>
+          </section>
+        ) : !workspaceId ? (
+          <section className="workspace-zero-state" aria-labelledby="workspace-zero-title">
+            <BrandMark className="workspace-zero-mark" />
+            <h2 id="workspace-zero-title">先建立你的研究边界</h2>
+            <p>一个工作台就是一本笔记本：资料、会话、研究、Wiki 与记忆都归属于它。</p>
             <button
               type="button"
-              className="mobile-menu-toggle"
-              aria-expanded={mobileNavOpen}
-              aria-label={mobileNavOpen ? "关闭主导航" : "打开主导航"}
-              onClick={() => setMobileNavOpen(!mobileNavOpen)}
+              className="primary-action workspace-zero-create"
+              disabled={shellBusy}
+              onClick={(event) => openWorkspaceCreate(event.currentTarget)}
             >
-              <Menu className="mobile-menu-icon" size={18} aria-hidden="true" />
+              <Plus size={16} aria-hidden="true" />创建第一个工作台
             </button>
-            <span className="context-view-badge">{VIEW_BADGE[view]}</span>
-            <strong>{workspaceName || (sessionLoading ? "正在恢复…" : "未选择工作台")}</strong>
-            <span>{view === "library"
-              ? `${sourceCount} 份资料，共享给 ${conversations.length} 个会话`
-              : conversationTitle || "暂无会话"}</span>
-            {sessionLoading ? <span className="context-loading-dot" aria-hidden="true" /> : null}
-          </div>
-          <p
-            className={`status-line context-strip-status${shellBusy ? " is-busy" : ""}${/失败|错误|无法/.test(status) ? " is-error" : ""}`}
-          >
-            {status}
-          </p>
-        </div>
-        {settingsPanel}
-        <div id="workbench-main-content" className="workbench-canvas">
-          {sessionLoading ? (
-            <section
-              className="workbench-page view-loading workspace-session-loading"
-              role="status"
-              aria-label="正在恢复工作台会话"
-              aria-busy="true"
-              aria-live="polite"
-            >
-              <p className="section-label">Workspace session</p>
-              <div className="view-loading-body">
-                <span className="view-loading-spinner" aria-hidden="true" />
-                <span>正在恢复工作台与会话...</span>
-              </div>
-              <div className="view-loading-skeleton" aria-hidden="true">
-                <div className="skeleton-line w-40" />
-                <div className="skeleton-line w-70" />
-                <div className="skeleton-line w-55" />
-              </div>
-            </section>
-          ) : !workspaceId ? (
-            <section className="workspace-zero-state" aria-labelledby="workspace-zero-title">
-              <div className="workspace-zero-mark" aria-hidden="true"><BookOpenText size={27} /></div>
-              <p className="section-label">Start a workspace</p>
-              <h2 id="workspace-zero-title">先建立你的研究边界</h2>
-              <p>资料、多个会话、Research、Wiki 和记忆都会归属于同一个工作台。</p>
-              <div className="workspace-zero-flow" aria-label="工作台使用流程">
-                <span><FileStack size={16} aria-hidden="true" />集中资料</span>
-                <span><MessageSquareText size={16} aria-hidden="true" />独立对话</span>
-                <span><Sparkles size={16} aria-hidden="true" />沉淀结论</span>
-              </div>
-              <button type="button" className="workspace-zero-create" disabled={shellBusy} onClick={(event) => openWorkspaceCreate(event.currentTarget)}>
-                <Plus size={16} aria-hidden="true" />创建第一个工作台
-              </button>
-            </section>
-          ) : children}
-        </div>
-      </div>
+          </section>
+        ) : children}
+      </main>
+
       {workspaceCreateOpen ? (
         <WorkspaceCreateDialog
           busy={shellBusy}
-          onClose={() => closeCreateDialog(setWorkspaceCreateOpen, workspaceCreateTriggerRef, workspaceCreateFallbackRef)}
+          onClose={() => closeCreateDialog(setWorkspaceCreateOpen, workspaceCreateTriggerRef, accountTriggerRef)}
           onCreate={onCreateWorkspace}
         />
       ) : null}

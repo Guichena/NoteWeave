@@ -17,17 +17,17 @@ test("real login, workspace creation, and every workbench surface are wired", as
   await expect(page.locator(".research-page-shell")).toBeVisible();
   await expect(page.locator(".research-index")).toBeVisible();
 
-  await navigateFromRail(page, "Wiki 治理工作台");
+  await navigateFromRail(page, "Wiki 知识库");
   await expect(page.locator(".wiki-workbench")).toBeVisible();
 
-  await navigateFromRail(page, "Memory 人工审核");
+  await navigateFromRail(page, "Memory 审核");
   await expect(page.locator(".memory-workbench")).toBeVisible();
 
-  await navigateFromRail(page, "Chat · QA / Note / Wiki");
+  await navigateFromRail(page, "笔记本：来源、对话与产物");
   await expect(page.locator(".chat-panel")).toBeVisible();
-  await page.getByRole("button", { name: "打开产物" }).click();
+  await ensureStudioVisible(page);
   await expect(page.locator(".artifact-rail")).toBeVisible();
-  await expect(page.locator(".artifact-studio-header")).toContainText("产物工作台");
+  await expect(page.locator(".artifact-studio-header")).toContainText("产物");
 });
 
 test("real source ingestion and research task reach terminal UI state through task SSE", async ({ page }) => {
@@ -151,7 +151,7 @@ test("real QA guard, Note, and Wiki chat modes follow their available capabiliti
   await createWorkspace(page);
 
   await expect(page.getByRole("button", { name: "回答模式：问答 RAG", exact: true })).toBeVisible();
-  await page.locator(".composer-block textarea").fill(`qa-playwright-${Date.now()}`);
+  await page.locator(".composer-box textarea").fill(`qa-playwright-${Date.now()}`);
   await expect(page.getByRole("button", { name: "等待可检索资料" })).toBeDisabled();
   await submitChatMode(page, "Note", `note-playwright-${Date.now()}`);
   await submitChatMode(page, "Wiki", `wiki-playwright-${Date.now()}`);
@@ -161,7 +161,7 @@ test("real Wiki creation, Memory refresh, and workspace settings persist", async
   await createWorkspace(page);
   const marker = `playwright-wiki-${Date.now()}`;
 
-  await navigateFromRail(page, "Wiki 治理工作台");
+  await navigateFromRail(page, "Wiki 知识库");
   await expect(page.locator(".wiki-workbench")).toBeVisible();
   if (await page.locator(".wiki-empty-workbench").isVisible()) {
     await expect(page.getByRole("heading", { name: "准备工作台知识网络" })).toBeVisible();
@@ -179,7 +179,7 @@ test("real Wiki creation, Memory refresh, and workspace settings persist", async
     await expect(page.locator(".wiki-page-card").filter({ hasText: marker })).toBeVisible();
   }
 
-  await navigateFromRail(page, "Memory 人工审核");
+  await navigateFromRail(page, "Memory 审核");
   await expect(page.locator(".memory-workbench")).toBeVisible();
   const memoryRefreshed = page.waitForResponse((response) =>
     /\/api\/v2\/workspaces\/[^/]+\/memory\/review$/.test(response.url())
@@ -219,7 +219,7 @@ test("real Wiki creation, Memory refresh, and workspace settings persist", async
 test("real Artifact task reaches a terminal UI state or exposes provider wait", async ({ page }) => {
   test.setTimeout(180_000);
   await createWorkspace(page);
-  await page.getByRole("button", { name: "打开产物" }).click();
+  await ensureStudioVisible(page);
   const artifactComposer = page.locator(".artifact-composer-view");
   const artifactSkillCard = page.locator(".artifact-action-card").first();
   await expect(artifactComposer.or(artifactSkillCard)).toBeVisible();
@@ -276,7 +276,8 @@ async function loginIfRequired(page: Page) {
 }
 
 async function createWorkspace(page: Page) {
-  const createButton = page.locator(".global-rail-actions button").first();
+  await page.getByRole("button", { name: "账户与工作台菜单" }).click();
+  const createButton = page.getByRole("menuitem", { name: "新建工作台" });
   await expect(createButton).toBeEnabled();
   await createButton.click();
   const dialog = page.getByRole("dialog", { name: "创建研究工作台" });
@@ -285,7 +286,7 @@ async function createWorkspace(page: Page) {
   await dialog.getByLabel("用途说明").fill("真实浏览器回归用工作台");
   await dialog.getByRole("button", { name: "创建工作台", exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.locator(".global-rail-context")).toContainText("Playwright 工作台");
+  await expect(page.locator(".workspace-switcher-trigger")).toContainText("Playwright 工作台");
 }
 
 async function navigateFromRail(page: Page, name: string) {
@@ -330,7 +331,7 @@ async function submitChatMode(page: Page, modeLabel: string, marker: string) {
   await page.getByRole("button", { name: /^回答模式：/ }).click();
   await page.getByRole("menuitemradio", { name: new RegExp(`^${modeLabel}`) }).click();
   const assistantCount = await page.locator(".bubble.assistant").count();
-  await page.locator(".composer-block textarea").fill(
+  await page.locator(".composer-box textarea").fill(
     `Return one concise conclusion for the real demo. Marker: ${marker}`
   );
   const answerCreated = page.waitForResponse((response) =>
@@ -379,4 +380,11 @@ function readSimpleEnv(path: string) {
   } catch {
     return {};
   }
+}
+
+/** 宽屏下产物栏常驻；较窄时通过“打开产物”抽屉打开。 */
+async function ensureStudioVisible(page: Page) {
+  const toggle = page.getByRole("button", { name: "打开产物", exact: true });
+  if (await toggle.isVisible()) await toggle.click();
+  await expect(page.locator(".studio-pane .artifact-rail")).toBeVisible();
 }

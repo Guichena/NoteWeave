@@ -54,7 +54,7 @@ export const ArtifactStudioGrid = memo(function ArtifactStudioGrid({
               type="button"
               role="tab"
               aria-selected={selectedFilter.key === filter.key}
-              className={selectedFilter.key === filter.key ? "is-active" : undefined}
+              className={selectedFilter.key === filter.key ? "artifact-filter-tab is-active" : "artifact-filter-tab"}
               onClick={() => setActiveFilter(filter.key)}
             >
               {filter.label}
@@ -129,29 +129,20 @@ function ArtifactSkillButton({
   const SkillIcon = resolveArtifactSkillIcon(skill.key);
   return (
     <button
+      type="button"
       className={`artifact-action-card tone-${skill.tone}`}
       disabled={isBusy}
+      title={skill.summary}
       onClick={() => onSelectSkill(skill)}
     >
       <span className="artifact-action-icon" aria-hidden="true">
-        <SkillIcon size={18} strokeWidth={1.8} />
+        <SkillIcon size={17} strokeWidth={1.9} />
       </span>
       <span className="artifact-action-copy">
-        <span className="artifact-action-heading">
-          <strong>{skill.title}</strong>
-          <small>{skill.artifactType}</small>
-        </span>
+        <strong>{skill.title}</strong>
         <span className="artifact-action-summary">{skill.summary}</span>
-        <span className="artifact-action-footer">
-          <span className="artifact-action-meta">{skill.sourceHint} · {skill.runtimeHint}</span>
-          {skill.badges?.length ? (
-            <span className="artifact-badge-row">
-              {skill.badges.map((badge) => <small key={badge} className="artifact-badge">{badge}</small>)}
-            </span>
-          ) : null}
-        </span>
       </span>
-      <ChevronRight className="artifact-action-arrow" size={17} aria-hidden="true" />
+      <ChevronRight className="artifact-action-arrow" size={15} aria-hidden="true" />
     </button>
   );
 }

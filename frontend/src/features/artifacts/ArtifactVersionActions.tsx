@@ -52,9 +52,9 @@ export function ArtifactVersionActions({
 
   return (
     <>
-      <span>{auditView.preview || "已生成产物版本，可继续查看或用于后续沉淀。"}</span>
-      <small>
-        {auditView.scopeLabel} · Skill {version.skill_key} · v{version.version_no} · {formatRelativeTime(version.created_at)}
+      <span className="artifact-version-preview">{auditView.preview || "已生成产物版本，可继续查看或用于后续沉淀。"}</span>
+      <small className="artifact-version-meta">
+        {auditView.scopeLabel} · v{version.version_no} · {formatRelativeTime(version.created_at)}
       </small>
       {isMindMapArtifact(version.skill_key) ? (
         <ArtifactMindMapPreview
@@ -63,45 +63,55 @@ export function ArtifactVersionActions({
         />
       ) : null}
       {version.files && version.files.length > 0 ? (
-        <small>
-          文件状态 {version.files.map((file) => `${file.file_format} · ${file.status} · ${file.storage_backend} · ${file.size_bytes}B`).join(" / ")}
+        <small className="artifact-version-files">
+          文件 {version.files.map((file) => `${file.file_format} · ${file.status} · ${file.size_bytes}B`).join(" / ")}
         </small>
       ) : null}
-      <button
-        className="secondary-button"
-        onClick={() => void saveArtifactVersionAsSource(version)}
-        disabled={isBusy}
-      >
-        {artifactSavedSourceByVersionId[saveKey] ? "已保存为资料" : "保存为资料"}
-      </button>
-      <button
-        className="secondary-button"
-        onClick={() => void writeArtifactVersionToKnowledge(version, "NOTE")}
-        disabled={isBusy}
-      >
-        {artifactWritebackByVersionId[saveKey]?.includes("NOTE") ? "已写入 Note" : "写入 Note"}
-      </button>
-      <button
-        className="secondary-button"
-        onClick={() => void writeArtifactVersionToKnowledge(version, "WIKI")}
-        disabled={isBusy}
-      >
-        {artifactWritebackByVersionId[saveKey]?.includes("WIKI") ? "已写入 Wiki" : "写入 Wiki"}
-      </button>
-      <button className="secondary-button" onClick={() => void regenerateArtifactVersion(version)} disabled={isBusy}>
-        再生成
-      </button>
-      <button className="secondary-button" onClick={() => void compareArtifactWithPreviousVersion(version)} disabled={isBusy || !canCompare}>
-        与上一版比较
-      </button>
-      <button className="secondary-button" onClick={() => void rollbackArtifactVersion(version)} disabled={isBusy}>
-        追加式回滚
-      </button>
-      {version.runtime_trace?.export_trace?.status === "COMPILED" ? (
-        <button className="secondary-button" onClick={() => void downloadArtifactVersionPdf(version)}>
-          下载 PDF
+      <div className="artifact-version-actions">
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => void saveArtifactVersionAsSource(version)}
+          disabled={isBusy}
+        >
+          {artifactSavedSourceByVersionId[saveKey] ? "已保存为资料" : "保存为资料"}
         </button>
-      ) : null}
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => void writeArtifactVersionToKnowledge(version, "NOTE")}
+          disabled={isBusy}
+        >
+          {artifactWritebackByVersionId[saveKey]?.includes("NOTE") ? "已写入 Note" : "写入 Note"}
+        </button>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => void writeArtifactVersionToKnowledge(version, "WIKI")}
+          disabled={isBusy}
+        >
+          {artifactWritebackByVersionId[saveKey]?.includes("WIKI") ? "已写入 Wiki" : "写入 Wiki"}
+        </button>
+        {version.runtime_trace?.export_trace?.status === "COMPILED" ? (
+          <button type="button" className="secondary-button" onClick={() => void downloadArtifactVersionPdf(version)}>
+            下载 PDF
+          </button>
+        ) : null}
+      </div>
+      <details className="artifact-more-actions">
+        <summary>版本操作</summary>
+        <div className="artifact-version-actions">
+          <button type="button" className="secondary-button" onClick={() => void regenerateArtifactVersion(version)} disabled={isBusy}>
+            再生成
+          </button>
+          <button type="button" className="secondary-button" onClick={() => void compareArtifactWithPreviousVersion(version)} disabled={isBusy || !canCompare}>
+            与上一版比较
+          </button>
+          <button type="button" className="secondary-button" onClick={() => void rollbackArtifactVersion(version)} disabled={isBusy}>
+            追加式回滚
+          </button>
+        </div>
+      </details>
       {auditView.runtimeSummary.length > 0 ? (
         <div className="artifact-runtime-trace">
           {auditView.runtimeSummary.map((item) => (

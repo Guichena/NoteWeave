@@ -21,15 +21,13 @@ export function WikiOverviewPanel(props: WikiOverviewPanelProps) {
         <div className="wiki-overview-heading">
           <span className="wiki-overview-icon" aria-hidden="true"><BookOpenText size={20} /></span>
           <div>
-            <span className="wiki-overview-kicker">Workspace knowledge</span>
+            <span className="wiki-overview-kicker">工作台知识</span>
             <h2>工作台总览</h2>
           </div>
         </div>
-        <div className="wiki-summary">
-          Wiki 汇总当前工作台中由资料与人工维护沉淀的知识页面。
-
-          {"\n\n"}先在总览核对构建状态和维护提醒，再进入具体页面查看版本、引用与关系。
-        </div>
+        <p className="wiki-overview-lead">
+          汇总这个工作台里由资料自动沉淀、以及人工维护的知识页面。先在这里核对构建状态和维护提醒，再进入具体页面查看版本、引用与关系。
+        </p>
         <div className="wiki-overview-metrics" aria-label="Wiki 内容概况">
           <span><LibraryBig size={15} aria-hidden="true" /><strong>{props.wikiIndex?.ready_source_count ?? 0}</strong><small>已解析资料</small></span>
           <span><BookOpenText size={15} aria-hidden="true" /><strong>{props.wikiIndex?.page_count ?? 0}</strong><small>知识页面</small></span>

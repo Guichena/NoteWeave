@@ -55,8 +55,8 @@ export function ArtifactUtilityPanel(props: ArtifactUtilityPanelProps) {
         <span className="artifact-utility-heading">
           <Wrench size={17} aria-hidden="true" />
           <span>
-            <strong>工作台工具</strong>
-            <small>跨工作台导航与 Note 入库</small>
+            <strong>更多工具</strong>
+            <small>研究、Wiki、记忆与笔记入库</small>
           </span>
         </span>
         <ChevronDown className="artifact-utility-chevron" size={17} aria-hidden="true" />
@@ -123,6 +123,7 @@ export function ArtifactUtilityPanel(props: ArtifactUtilityPanelProps) {
               </button>
               <button
                 type="button"
+                className="primary-action"
                 onClick={() => void saveNoteAnswerAsSource()}
                 disabled={isBusy || !workspace || !lastNoteAssistantMessageId}
               >

@@ -116,7 +116,7 @@ export function ResearchDetailWorkbench({
     >
       <div className="research-detail-header">
         <div>
-          <p className="section-label">Research workbench</p>
+          <p className="section-label">研究工作台</p>
           <h3 id="research-detail-title">{run.final_report_title || run.question || "Deep Research"}</h3>
           <small>{run.status} · {run.source_scope.length} 个来源 · {checkpoints.length} 个 checkpoint</small>
         </div>

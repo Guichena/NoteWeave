@@ -55,7 +55,7 @@ export function ResearchLaunchboard({
           <BookOpenCheck size={23} />
         </div>
         <div className="research-launchboard-copy">
-          <span className="process-lane-badge">Workspace research</span>
+          <span className="process-lane-badge">工作台研究</span>
           <h2>从一个问题开始，留下可核验的报告</h2>
           <p>
             研究问题、资料范围和检索模式都在左侧明确设置。启动后，搜索、阅读和证据会归属于当前工作台。
