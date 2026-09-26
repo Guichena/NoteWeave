@@ -377,3 +377,5 @@ V122 在父请求记录创建者 User ID；同一客户端请求 ID 的重放还
 新增父请求 GET 与取消接口。GET 从素材 Task 和各子 Job/Task 推导独立状态；未创建的子项保持 `NOT_STARTED`。取消只将尚未投递的 Outbox 置为 `CANCELLED`，通过 Task 状态机终止仍为 PENDING 的任务；已被消费者接管的 Outbox 与 Task 保持原状态，同时冻结父请求取消意图，阻止后续子 Job 补建。已 READY 的素材和子 Version 不在取消时回撤。取消限原请求创建者，仍需当前 Workspace 执行权限。
 
 首次 Maven 测试因断言使用 Java 驼峰字段而非 API 的 snake_case 序列化，**5 用例中 1 failed**；修正测试后编译发现局部变量遮蔽注入的 `TaskService`，修正后再次执行 `VideoLearningRequestRepositoryContractTest` **5 passed，0 failed/0 error/0 skipped**，覆盖 GET 投影、HTTP 取消、幂等重复取消、非创建者拒绝、未投递停止及已接管任务保留。当前运行中的 Worker 只收到持久化取消意图，尚未接入协作取消回调；父请求创建入口、素材专用 Worker Task/Outbox、后台子 Job 协调仍未开放。
+
+素材 Task 绑定追加数据库条件：Task 必须是同 Workspace、`VIDEO_MATERIAL` 类型、以该父请求为 `VIDEO_LEARNING_REQUEST` 目标且仍 PENDING；仅靠传入 Task ID 不可绑定其他父请求或伪装的 Artifact Task。契约新增错误目标与错误类型场景，`VideoLearningRequestRepositoryContractTest` **5 passed，0 failed/0 error/0 skipped**。

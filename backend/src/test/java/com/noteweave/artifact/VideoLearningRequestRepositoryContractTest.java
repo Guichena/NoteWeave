@@ -64,6 +64,15 @@ class VideoLearningRequestRepositoryContractTest {
                 draft(List.of("knowledge_blog")));
         String taskId = tasks.createTask(workspaceId, "VIDEO_MATERIAL",
                 "VIDEO_LEARNING_REQUEST", receipt.requestId(), "QUEUED", "素材采集已创建");
+        String wrongTarget = tasks.createTask(workspaceId, "VIDEO_MATERIAL",
+                "VIDEO_LEARNING_REQUEST", java.util.UUID.randomUUID().toString(),
+                "QUEUED", "另一父请求的素材任务");
+        assertThatThrownBy(() -> requests.attachMaterialTask(workspaceId,
+                receipt.requestId(), wrongTarget)).hasMessageContaining("material task");
+        String wrongType = tasks.createTask(workspaceId, "ARTIFACT_JOB",
+                "VIDEO_LEARNING_REQUEST", receipt.requestId(), "QUEUED", "错误任务类型");
+        assertThatThrownBy(() -> requests.attachMaterialTask(workspaceId,
+                receipt.requestId(), wrongType)).hasMessageContaining("material task");
         assertThatThrownBy(() -> requests.attachMaterialTask(otherWorkspace,
                 receipt.requestId(), taskId)).hasMessageContaining("material task");
         requests.attachMaterialTask(workspaceId, receipt.requestId(), taskId);

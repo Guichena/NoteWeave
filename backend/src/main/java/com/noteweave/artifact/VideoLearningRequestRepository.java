@@ -77,7 +77,14 @@ public class VideoLearningRequestRepository {
                 set material_task_id = ?, updated_at = current_timestamp
                 where id = ? and workspace_id = ? and material_task_id is null
                   and material_state = 'QUEUED' and cancellation_requested = false
-                """, taskId, requestId, workspaceId);
+                  and exists (
+                    select 1 from task t where t.id = ? and t.workspace_id = ?
+                      and t.task_type = 'VIDEO_MATERIAL'
+                      and t.target_type = 'VIDEO_LEARNING_REQUEST'
+                      and t.target_id = video_learning_request.id
+                      and t.task_status = 'PENDING'
+                  )
+                """, taskId, requestId, workspaceId, taskId, workspaceId);
         if (updated != 1) throw invalid("material task was already attached or request cancelled");
     }
 
