@@ -100,6 +100,22 @@ def test_bundle_rejects_unrecognized_fields_and_conflicting_coverage() -> None:
         VideoMaterialBundleV1.model_validate(value)
 
 
+@pytest.mark.parametrize("change,expected", [
+    (lambda value: value.update(knowledge_nodes=[]), "every video frame"),
+    (lambda value: value["knowledge_nodes"].append({
+        "node_id": "node-2", "title": "cache CONSISTENCY", "start_ms": 1000,
+        "end_ms": 4000, "frame_ids": ["frame-1"]}), "titles must be unique"),
+    (lambda value: value["knowledge_nodes"].append({
+        "node_id": "node-2", "title": "Another node", "start_ms": 1000,
+        "end_ms": 4000, "frame_ids": ["frame-1"]}), "multiple knowledge nodes"),
+])
+def test_bundle_requires_one_unambiguous_knowledge_node_per_frame(change, expected) -> None:
+    value = _bundle()
+    change(value)
+    with pytest.raises(ValidationError, match=expected):
+        VideoMaterialBundleV1.model_validate(value)
+
+
 def test_bundle_checks_frame_bytes_and_image_format_through_file_id() -> None:
     output = BytesIO()
     Image.new("RGB", (2, 2), "red").save(output, format="PNG")

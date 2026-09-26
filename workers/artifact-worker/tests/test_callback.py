@@ -223,6 +223,8 @@ def test_fetch_frozen_material_frames_checks_scope_media_type_and_bytes(monkeypa
                    "size_bytes": len(image), "checksum_sha256": digest}],
         "frames": [{"frame_id": "f1", "part": 2, "at_ms": 1000,
                     "file_id": "frame1", "checksum_sha256": digest}],
+        "knowledge_nodes": [{"node_id": "n1", "title": "Frame evidence",
+                             "start_ms": 0, "end_ms": 2000, "frame_ids": ["f1"]}],
     })
     returned = {"bytes": image, "media_type": "image/png"}
     requests = []

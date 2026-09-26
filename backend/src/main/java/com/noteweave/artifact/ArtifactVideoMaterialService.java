@@ -490,6 +490,8 @@ public class ArtifactVideoMaterialService {
             segments.put(string(segment.get("segment_id")), segment);
         }
         Set<String> nodeIds = new HashSet<>();
+        Set<String> nodeTitles = new HashSet<>();
+        Set<String> assignedFrames = new HashSet<>();
         for (Object raw : nodes) {
             if (!(raw instanceof Map<?, ?> node)
                     || !node.keySet().equals(Set.of("node_id", "title", "start_ms", "end_ms",
@@ -497,6 +499,7 @@ public class ArtifactVideoMaterialService {
                     || string(node.get("node_id")).isBlank()
                     || !nodeIds.add(string(node.get("node_id")))
                     || string(node.get("title")).isBlank()
+                    || !nodeTitles.add(string(node.get("title")).trim().toLowerCase(java.util.Locale.ROOT))
                     || number(node.get("start_ms")) < 0
                     || number(node.get("end_ms")) <= number(node.get("start_ms"))
                     || number(node.get("end_ms")) > number(bundle.get("duration_ms"))
@@ -516,11 +519,13 @@ public class ArtifactVideoMaterialService {
             for (Object ref : frameRefs) {
                 Map<?, ?> frame = frameById.get(ref);
                 if (frame == null || number(frame.get("at_ms")) < number(node.get("start_ms"))
-                        || number(frame.get("at_ms")) > number(node.get("end_ms"))) {
+                        || number(frame.get("at_ms")) > number(node.get("end_ms"))
+                        || !assignedFrames.add(string(ref))) {
                     throw invalid("knowledge node frame reference is outside its time range");
                 }
             }
         }
+        if (!assignedFrames.equals(frameById.keySet())) throw invalid("video frame has no knowledge node");
     }
 
     private String digest(Map<String, Object> bundle) {

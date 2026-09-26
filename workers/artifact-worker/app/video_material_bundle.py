@@ -116,6 +116,9 @@ class VideoMaterialBundleV1(BundleRecord):
         if self.frames and "NO_FRAMES" in self.coverage_gaps:
             raise ValueError("frame coverage gap contradicts captured frames")
         unique(self.knowledge_nodes, "node_id")
+        node_titles = [node.title.strip().casefold() for node in self.knowledge_nodes]
+        if any(not title for title in node_titles) or len(node_titles) != len(set(node_titles)):
+            raise ValueError("knowledge node titles must be unique and nonempty")
         for file in self.files:
             if not SHA256.fullmatch(file.checksum_sha256):
                 raise ValueError("material file checksum must be SHA-256")
@@ -142,6 +145,7 @@ class VideoMaterialBundleV1(BundleRecord):
                     raise ValueError("frame dedupe reference contains a cycle")
                 seen.add(parent_id)
                 parent_id = frames[parent_id].dedupe_of
+        assigned_frames: set[str] = set()
         for node in self.knowledge_nodes:
             if node.start_ms >= node.end_ms or node.end_ms > self.duration_ms:
                 raise ValueError("knowledge node time range is invalid")
@@ -154,8 +158,13 @@ class VideoMaterialBundleV1(BundleRecord):
                 frame = frames.get(frame_id)
                 if frame is None or not node.start_ms <= frame.at_ms <= node.end_ms:
                     raise ValueError("knowledge node frame reference is outside its part or time range")
+                if frame_id in assigned_frames:
+                    raise ValueError("video frame is assigned to multiple knowledge nodes")
+                assigned_frames.add(frame_id)
             if not node.transcript_segment_ids and not node.frame_ids and not node.missing:
                 raise ValueError("knowledge node without evidence needs an explicit gap")
+        if assigned_frames != set(frames):
+            raise ValueError("every video frame must belong to one knowledge node")
         return self
 
     def content_digest(self) -> str:

@@ -117,3 +117,7 @@ PDF MCP 渲染输入扩展 `video_part`、`video_duration_ms` 与逐章节 `imag
 发布 Catalog 为 B 站 PDF Skill 增加可选 `video_material_bundle_id`；旧字段与必填 `url` 保持兼容。Host 只对冻结输入中明确指定该 ID、且 Workspace/BVID/分 P 一致的当前 Task 开放 Bundle 和画面文件读取；端点受当前 Outbox 投递令牌保护。Candidate 必须引用该 Bundle 的准确 ID、版本和摘要，并携带内容 IR。Worker 在编译前向 Host 获取资料包，把纠错字幕与时间段写入 CCO，采集计划改为本地规范化，不再发起 `EXTRACT_TRANSCRIPT`。若有画面，则按 Host File ID 读回并校验，缺少同名章节时为 PDF 补充有出处的知识节点章节，重新渲染并更新文件 Manifest。
 
 首轮 Host 全批有 1 个旧目录断言失败，首轮 Worker 全批也有 1 个同类失败；两端旧 v1 契约断言已改为检查旧属性仍存在、旧必填项不变，并单独检查新增可选字段。最终 Host `Phase6ResearchArtifactContractTest` **48 个用例，40 执行通过、8 个既有跳过**，`ArtifactWorkerInputControllerTest` **5 passed**，`ArtifactCandidateTest` **5 passed**；Worker 全套 **289 passed，67.72 秒**，其中包含无 Provider 重提取的冻结字幕运行与含帧补章节测试。三份 Catalog 字节 SHA-256 一致。当前仍缺真实 B 站的字幕/抽帧链路、画面 Capability 的异步恢复、完整视觉知识树和真实 XeLaTeX/MinIO 端到端验收；此批仅闭合已有 Bundle 的安全复用。
+
+## P2 知识节点画面引用闭包
+
+Host 与 Worker 的 Bundle v1 校验现在要求每个画面恰好归属一个知识节点，且节点标题在去首尾空白与大小写归一后唯一，避免 PDF 按标题分派时重复或漏图。Host 定向合同测试补未分配画面、重复标题负例；Worker 模型测试补未分配、重复标题、重复画面三种负例。首轮 Worker 定向测试暴露旧客户端夹具含画面却无节点，补齐夹具后定向 **34 passed**。最终 Worker 全套 **292 passed，92.85 秒**；Host `Phase6ResearchArtifactContractTest` **48 个用例，40 执行通过、8 个既有跳过**。目前仍没有自动生成类型化知识树或视觉观察能力；该提交只锁定素材契约。

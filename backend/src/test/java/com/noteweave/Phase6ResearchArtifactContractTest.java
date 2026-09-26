@@ -5485,6 +5485,30 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
                 new ArtifactVideoMaterialService.Submission(outOfRangeNode, outOfRangeDigest)))
                 .isInstanceOf(com.noteweave.common.BusinessException.class)
                 .hasMessageContaining("outside its time range");
+        Map<String, Object> unassigned = new LinkedHashMap<>(bundle);
+        unassigned.put("knowledge_nodes", List.of());
+        String unassignedDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest(new ObjectMapper()
+                        .configure(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+                        .writeValueAsBytes(unassigned)));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> videoMaterialService.submit(taskId,
+                new ArtifactVideoMaterialService.Submission(unassigned, unassignedDigest)))
+                .isInstanceOf(com.noteweave.common.BusinessException.class)
+                .hasMessageContaining("no knowledge node");
+        Map<String, Object> duplicateNode = Map.of("node_id", "n2", "title", " 画面 ",
+                "start_ms", 0, "end_ms", 2000, "transcript_segment_ids", List.of(),
+                "frame_ids", List.of(), "missing", List.of("NO_FRAME"));
+        Map<String, Object> duplicateTitle = new LinkedHashMap<>(bundle);
+        duplicateTitle.put("knowledge_nodes", List.of(
+                ((List<Map<String, Object>>) bundle.get("knowledge_nodes")).get(0), duplicateNode));
+        String duplicateDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest(new ObjectMapper()
+                        .configure(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+                        .writeValueAsBytes(duplicateTitle)));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> videoMaterialService.submit(taskId,
+                new ArtifactVideoMaterialService.Submission(duplicateTitle, duplicateDigest)))
+                .isInstanceOf(com.noteweave.common.BusinessException.class)
+                .hasMessageContaining("knowledge node is invalid");
         MvcResult child = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspaceId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
