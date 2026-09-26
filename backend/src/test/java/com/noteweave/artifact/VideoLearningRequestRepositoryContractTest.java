@@ -46,7 +46,7 @@ class VideoLearningRequestRepositoryContractTest {
         assertThat(requests.missingChoices(workspaceId, first.requestId())).isEmpty();
         assertThatThrownBy(() -> requests.markMaterialReady(workspaceId, first.requestId(),
                 "missing-bundle", "missing-plan"))
-                .hasMessageContaining("Bundle and Plan");
+                .hasMessageContaining("Workspace");
         assertThatThrownBy(() -> requests.createOrReplay(workspaceId, "client-1",
                 draft(List.of("video_learning_deck"))))
                 .hasMessageContaining("不同");

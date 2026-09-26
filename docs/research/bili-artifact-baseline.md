@@ -363,3 +363,7 @@ Host `ArtifactContextV2ShadowSnapshotContractTest` **2 passed**（含影子关�
 V120 新增 `video_learning_request` 和 `video_learning_request_choice`：父请求冻结 Workspace、B站 URL/分集、输出语言、采集策略、模板版本、用户要求及 1–4 个明确选择；选项表对父请求与 Skill Key 唯一，子 Job 链接唯一。`VideoLearningRequestDraft` 规范化分集 URL，并按长度前缀对完整请求计算 SHA-256。仓储以 Workspace + 客户端请求 ID 幂等重放，同 ID 不同内容冲突；素材 Task 绑定与子 Job 绑定使用条件更新，素材未 READY 时不返回待创建子项。Flyway H2 迁移应用到 V120，`VideoLearningRequestRepositoryContractTest` **3 passed**，覆盖相同请求重放、选项去重、跨 Workspace 素材 Task 拒绝、无 Bundle/Plan 禁止 READY 及非法 URL/选择。
 
 这一批只有未对外开放的持久化底座。素材 Task 的 Worker Graph、Outbox、Bundle/Plan 就绪复核、父子协调器、取消和 UI 仍未实现；不能把它当成可创建的“四选”功能。下一批需要把父请求绑定的素材身份与采集策略对账后再开放 READY 转移。
+
+## P6 父请求的素材 READY 门禁
+
+V121 为父请求增加 Bundle 和 KnowledgePlan 内容摘要。READY 转移现在锁定父请求，并核对同 Workspace 的 Bundle/Plan 关联、BVID、分集、冻结采集密度与 ASR 策略，重新读取并核对两份入库 JSON 的 SHA-256，再用 Host 的知识计划验证器复核证据引用。通过后在同一事务中固定两个 ID 与摘要。已冻结的合成 OCR 素材可使父请求 READY，并把博客、问答分别关联到独立 Job；采集密度、分集不符或 Plan 摘要篡改均被拒。H2 Flyway 应用至 V121；`VideoLearningRequestRepositoryContractTest` **3 passed**，`Phase6ResearchArtifactContractTest#observedVideoMaterialBindsOcrEvidenceToFrozenFrameBytes` **1 passed**（含 READY、两子 Job、三类拒绝）。素材 Task 派发与父子自动协调仍未接入，入口未开放。

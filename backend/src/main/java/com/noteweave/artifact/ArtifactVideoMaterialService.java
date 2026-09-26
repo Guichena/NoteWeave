@@ -203,6 +203,46 @@ public class ArtifactVideoMaterialService {
         }
     }
 
+    /** Parent READY gate: a Plan and Bundle must match the frozen acquisition identity. */
+    ParentMaterialIdentity requireParentMaterial(String workspaceId, String bundleRowId, String planId,
+                               String videoUrl, int part, String frameDensity, String asrFallback) {
+        List<ParentMaterialRow> rows = jdbc.query("""
+                select b.bvid, b.part_no, b.content_digest, p.content_digest, r.inputs_json
+                from artifact_video_material_bundle b
+                join artifact_video_knowledge_plan p on p.bundle_id = b.id
+                join artifact_job_run r on r.task_id = b.task_id
+                where b.id = ? and p.id = ? and b.workspace_id = ? and b.bundle_version = 1
+                """, (rs, index) -> new ParentMaterialRow(rs.getString(1), rs.getInt(2),
+                rs.getString(3), rs.getString(4), rs.getString(5)), bundleRowId, planId, workspaceId);
+        if (rows.size() != 1) throw scopeInvalid();
+        ParentMaterialRow row = rows.get(0);
+        Matcher video = Pattern.compile("^https://www\\.bilibili\\.com/video/"
+                + "(BV[0-9A-Za-z]{10})(?:\\?[^#]*)?$").matcher(videoUrl);
+        if (!video.matches() || !video.group(1).equals(row.bvid()) || part != row.part()) {
+            throw scopeInvalid();
+        }
+        try {
+            Map<String, Object> original = mapper.readValue(row.inputsJson(),
+                    new com.fasterxml.jackson.core.type.TypeReference<>() {});
+            if (!frameDensity.equals(string(original.getOrDefault("frame_density", "STANDARD")))
+                    || !asrFallback.equals(string(original.getOrDefault("asr_fallback", "ALLOW")))) {
+                throw scopeInvalid();
+            }
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw scopeInvalid();
+        }
+        Map<String, Object> bundle = readBundleById(bundleRowId);
+        Map<String, Object> plan = readPlanByBundleId(bundleRowId);
+        VideoKnowledgePlanValidator.validate(plan, bundle, row.contentDigest());
+        return new ParentMaterialIdentity(row.contentDigest(), row.planDigest());
+    }
+
+    record ParentMaterialIdentity(String bundleDigest, String planDigest) {}
+    private record ParentMaterialRow(String bvid, int part, String contentDigest, String planDigest,
+                                     String inputsJson) {}
+
     public MaterialBytes readReferencedFile(String taskId, String bundleRowId, String fileId) {
         resolveReferenced(taskId, bundleRowId);
         List<MaterialBytes> rows = jdbc.query("""

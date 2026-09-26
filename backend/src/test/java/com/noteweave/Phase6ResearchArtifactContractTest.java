@@ -16,6 +16,8 @@ import com.noteweave.artifact.ArtifactExportService;
 import com.noteweave.artifact.ArtifactWorkerExportClient;
 import com.noteweave.artifact.ArtifactVideoMaterialService;
 import com.noteweave.artifact.ArtifactVersionDetailResponse;
+import com.noteweave.artifact.VideoLearningRequestDraft;
+import com.noteweave.artifact.VideoLearningRequestRepository;
 import com.noteweave.answer.ConversationEventMux;
 import com.noteweave.answer.ConversationLiveEvent;
 import com.noteweave.infra.LocalObjectStorage;
@@ -73,6 +75,9 @@ class Phase6ResearchArtifactContractTest {
 
     @Autowired
     private ArtifactVideoMaterialService videoMaterialService;
+
+    @Autowired
+    private VideoLearningRequestRepository videoLearningRequests;
 
     @Autowired
     private org.springframework.transaction.PlatformTransactionManager transactionManager;
@@ -5819,6 +5824,55 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
                 videoMaterialService.submitKnowledgePlan(taskId, submission);
         assertThat(videoMaterialService.submitKnowledgePlan(taskId, submission).id()).isEqualTo(frozen.id());
         assertThat(videoMaterialService.readKnowledgePlan(taskId, receipt.id())).isEqualTo(plan);
+        var parentRequest = videoLearningRequests.createOrReplay(workspaceId,
+                "observed-material-parent-" + taskId, new VideoLearningRequestDraft(
+                        "https://www.bilibili.com/video/BV1234567890?p=2", 2, "en",
+                        "STANDARD", "ALLOW", "original-v1", "Derive both materials",
+                        List.of("knowledge_blog", "interview_qa")));
+        videoLearningRequests.markMaterialReady(workspaceId, parentRequest.requestId(),
+                receipt.id(), frozen.id());
+        Map<String, Object> parentMaterial = jdbcTemplate.queryForMap("""
+                select material_content_digest, knowledge_plan_content_digest
+                from video_learning_request where id = ?
+                """, parentRequest.requestId());
+        assertThat(parentMaterial.get("material_content_digest")).isEqualTo(digest);
+        assertThat(parentMaterial.get("knowledge_plan_content_digest")).isEqualTo(planDigest);
+        assertThat(videoLearningRequests.missingChoices(workspaceId, parentRequest.requestId()))
+                .containsExactly("interview_qa", "knowledge_blog");
+        var wrongDensity = videoLearningRequests.createOrReplay(workspaceId,
+                "wrong-density-" + taskId, new VideoLearningRequestDraft(
+                        "https://www.bilibili.com/video/BV1234567890?p=2", 2, "en",
+                        "HIGH", "ALLOW", "original-v1", "different capture policy",
+                        List.of("knowledge_blog")));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        videoLearningRequests.markMaterialReady(workspaceId, wrongDensity.requestId(),
+                                receipt.id(), frozen.id()))
+                .hasMessageContaining("Workspace");
+        var wrongPart = videoLearningRequests.createOrReplay(workspaceId,
+                "wrong-part-" + taskId, new VideoLearningRequestDraft(
+                        "https://www.bilibili.com/video/BV1234567890", 1, "en",
+                        "STANDARD", "ALLOW", "original-v1", "different part",
+                        List.of("knowledge_blog")));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        videoLearningRequests.markMaterialReady(workspaceId, wrongPart.requestId(),
+                                receipt.id(), frozen.id()))
+                .hasMessageContaining("Workspace");
+        var corruptedPlan = videoLearningRequests.createOrReplay(workspaceId,
+                "corrupt-plan-" + taskId, new VideoLearningRequestDraft(
+                        "https://www.bilibili.com/video/BV1234567890?p=2", 2, "en",
+                        "STANDARD", "ALLOW", "original-v1", "same acquisition",
+                        List.of("knowledge_blog")));
+        jdbcTemplate.update("update artifact_video_knowledge_plan set content_digest = ? where id = ?",
+                "0".repeat(64), frozen.id());
+        try {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                            videoLearningRequests.markMaterialReady(workspaceId,
+                                    corruptedPlan.requestId(), receipt.id(), frozen.id()))
+                    .hasMessageContaining("摘要不匹配");
+        } finally {
+            jdbcTemplate.update("update artifact_video_knowledge_plan set content_digest = ? where id = ?",
+                    planDigest, frozen.id());
+        }
         List<String> derivedTasks = new ArrayList<>();
         for (String skillKey : List.of("knowledge_blog", "interview_qa")) {
             MvcResult derivedJob = mockMvc.perform(post(
@@ -5832,12 +5886,18 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
                     .andExpect(status().isOk()).andReturn();
             String derivedTask = objectMapper.readTree(derivedJob.getResponse().getContentAsString())
                     .path("data").path("task_id").asText();
+            String derivedJobId = objectMapper.readTree(derivedJob.getResponse().getContentAsString())
+                    .path("data").path("artifact_job_id").asText();
+            videoLearningRequests.attachChild(workspaceId, parentRequest.requestId(), skillKey,
+                    derivedJobId);
             derivedTasks.add(derivedTask);
             assertThat(videoMaterialService.readReferenced(derivedTask, receipt.id())).isEqualTo(bundle);
             assertThat(videoMaterialService.readReferencedKnowledgePlan(derivedTask, receipt.id()))
                     .isEqualTo(plan);
         }
         assertThat(derivedTasks).hasSize(2).doesNotHaveDuplicates();
+        assertThat(videoLearningRequests.missingChoices(workspaceId, parentRequest.requestId()))
+                .isEmpty();
         Map<String, Object> blogCompletion = videoDerivedCompletion(
                 derivedTasks.get(0), "knowledge_blog", receipt, digest, planDigest);
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", derivedTasks.get(0))

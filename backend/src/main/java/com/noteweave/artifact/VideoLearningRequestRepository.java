@@ -13,9 +13,12 @@ import org.springframework.transaction.annotation.Transactional;
 @Repository
 public class VideoLearningRequestRepository {
     private final JdbcTemplate jdbc;
+    private final ArtifactVideoMaterialService videoMaterials;
 
-    public VideoLearningRequestRepository(JdbcTemplate jdbc) {
+    public VideoLearningRequestRepository(JdbcTemplate jdbc,
+                                          ArtifactVideoMaterialService videoMaterials) {
         this.jdbc = jdbc;
+        this.videoMaterials = videoMaterials;
     }
 
     @Transactional
@@ -73,20 +76,27 @@ public class VideoLearningRequestRepository {
     @Transactional
     public void markMaterialReady(String workspaceId, String requestId,
                                   String bundleId, String planId) {
-        Integer valid = jdbc.queryForObject("""
-                select count(*) from artifact_video_material_bundle b
-                join artifact_video_knowledge_plan p on p.bundle_id = b.id
-                where b.id = ? and p.id = ? and b.workspace_id = ?
-                """, Integer.class, bundleId, planId, workspaceId);
-        if (valid == null || valid != 1) throw invalid("frozen Bundle and Plan do not match Workspace");
+        List<ParentInput> parents = jdbc.query("""
+                select video_url, part_no, frame_density, asr_fallback
+                from video_learning_request where id = ? and workspace_id = ? for update
+                """, (rs, index) -> new ParentInput(rs.getString(1), rs.getInt(2),
+                rs.getString(3), rs.getString(4)), requestId, workspaceId);
+        if (parents.size() != 1) throw invalid("parent request does not belong to Workspace");
+        ParentInput parent = parents.get(0);
+        ArtifactVideoMaterialService.ParentMaterialIdentity identity =
+                videoMaterials.requireParentMaterial(workspaceId, bundleId, planId,
+                parent.videoUrl(), parent.part(), parent.frameDensity(), parent.asrFallback());
         int updated = jdbc.update("""
                 update video_learning_request
-                set material_bundle_id = ?, knowledge_plan_id = ?, material_state = 'READY',
+                set material_bundle_id = ?, knowledge_plan_id = ?,
+                    material_content_digest = ?, knowledge_plan_content_digest = ?,
+                    material_state = 'READY',
                     updated_at = current_timestamp
                 where id = ? and workspace_id = ? and material_state in ('QUEUED', 'RUNNING')
                   and cancellation_requested = false
                   and material_bundle_id is null and knowledge_plan_id is null
-                """, bundleId, planId, requestId, workspaceId);
+                """, bundleId, planId, identity.bundleDigest(), identity.planDigest(),
+                requestId, workspaceId);
         if (updated != 1) throw invalid("material request cannot accept a new Bundle");
     }
 
@@ -127,4 +137,6 @@ public class VideoLearningRequestRepository {
 
     public record ParentReceipt(String requestId, String requestDigest,
                                 String materialState, boolean replayed) {}
+    private record ParentInput(String videoUrl, int part, String frameDensity,
+                               String asrFallback) {}
 }
