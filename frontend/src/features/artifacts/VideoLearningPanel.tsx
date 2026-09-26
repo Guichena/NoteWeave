@@ -45,6 +45,8 @@ export function VideoLearningPanel({ workspaceId, onJobsChanged, api = artifacts
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const requestId = useRef(crypto.randomUUID());
+  const available = overview?.available_skills ?? OUTPUTS.map((output) => output.key);
+  const effectiveSelected = selected.filter((key) => available.includes(key));
 
   useEffect(() => {
     if (!workspaceId) {
@@ -87,7 +89,7 @@ export function VideoLearningPanel({ workspaceId, onJobsChanged, api = artifacts
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!workspaceId || selected.length === 0 || busy) return;
+    if (!workspaceId || effectiveSelected.length === 0 || busy) return;
     setBusy(true);
     setError("");
     try {
@@ -96,7 +98,7 @@ export function VideoLearningPanel({ workspaceId, onJobsChanged, api = artifacts
         video_url: videoUrl.trim(),
         part: Number(part), language, frame_density: density,
         asr_fallback: asr, template_version: "original-v1",
-        user_requirement: requirement.trim(), selected_skills: selected
+        user_requirement: requirement.trim(), selected_skills: effectiveSelected
       });
       setOverview((current) => current
         ? { ...current, requests: [created,
@@ -166,9 +168,10 @@ export function VideoLearningPanel({ workspaceId, onJobsChanged, api = artifacts
                 <legend>选择产物</legend>
                 {OUTPUTS.map((output) => (
                   <label key={output.key}>
-                    <input type="checkbox" checked={selected.includes(output.key)}
+                    <input type="checkbox" checked={effectiveSelected.includes(output.key)}
+                      disabled={!available.includes(output.key)}
                       onChange={() => toggleSkill(output.key)} />
-                    <span>{output.title}</span><small>{output.format}</small>
+                    <span>{output.title}</span><small>{available.includes(output.key) ? output.format : "暂停新建"}</small>
                   </label>
                 ))}
               </fieldset>
@@ -192,9 +195,9 @@ export function VideoLearningPanel({ workspaceId, onJobsChanged, api = artifacts
                   placeholder="写下希望重点理解或练习的内容"
                   onChange={(event) => changed(() => setRequirement(event.target.value))} />
               </label>
-              <p className="video-learning-cost">一次资料采集，加上 {selected.length} 个独立产物任务。</p>
-              <button type="submit" disabled={busy || selected.length === 0 || !requirement.trim()}>
-                {busy ? "正在创建" : `创建 ${selected.length} 种产物`}
+              <p className="video-learning-cost">一次资料采集，加上 {effectiveSelected.length} 个独立产物任务。</p>
+              <button type="submit" disabled={busy || effectiveSelected.length === 0 || !requirement.trim()}>
+                {busy ? "正在创建" : `创建 ${effectiveSelected.length} 种产物`}
               </button>
             </form>
           ) : null}

@@ -42,6 +42,7 @@ public class VideoLearningRequestController {
     ApiResponse<Overview> list(@PathVariable String workspaceId) {
         access.requirePermission(workspaceId, WorkspacePermission.WORKSPACE_READ);
         return ApiResponse.success(new Overview(service.isEnabled(workspaceId),
+                service.availableSkills(workspaceId),
                 requests.recentForActor(workspaceId, users.requireUserId())));
     }
 
@@ -61,5 +62,6 @@ public class VideoLearningRequestController {
     }
 
     public record Overview(boolean enabled,
+                           List<String> availableSkills,
                            List<VideoLearningRequestRepository.ParentView> requests) {}
 }

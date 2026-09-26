@@ -26,6 +26,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
     private final Map<String, String> aliases;
     private final Map<String, String> actionBindings;
     private final Map<String, List<String>> requiredFileRoles;
+    private final Map<String, String> publishedVersions;
     private final String catalogDigest;
 
     public ArtifactSkillCatalogService() {
@@ -64,9 +65,11 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         this.aliases = Map.copyOf(catalogAliases);
         Map<String, String> bindings = new LinkedHashMap<>();
         Map<String, List<String>> requiredRoles = new LinkedHashMap<>();
+        Map<String, String> versions = new LinkedHashMap<>();
         for (Object rawEntry : (List<?>) catalog.get("skills")) {
             Map<?, ?> entry = (Map<?, ?>) rawEntry;
             String key = String.valueOf(entry.get("skill_key"));
+            versions.put(key, String.valueOf(entry.get("version")));
             bindings.put(key, String.valueOf(entry.get("action_key")));
             if (!(entry.get("required_file_roles") instanceof List<?> roles)) {
                 throw new IllegalStateException("Skill has no required file roles: " + key);
@@ -82,10 +85,15 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         }
         this.actionBindings = Map.copyOf(bindings);
         this.requiredFileRoles = Map.copyOf(requiredRoles);
+        this.publishedVersions = Map.copyOf(versions);
     }
 
     public String catalogDigest() {
         return catalogDigest;
+    }
+
+    public String publishedVersion(String skillKey) {
+        return publishedVersions.get(resolveSkill(skillKey).skillKey());
     }
 
     public List<String> requiredFileRoles(String skillKey) {

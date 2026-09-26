@@ -25,6 +25,9 @@ public record VideoLearningRequestDraft(
 ) {
     private static final Set<String> SKILLS = Set.of("knowledge_blog", "interview_qa",
             "video_learning_deck", "bilibili_course_note_pdf");
+    public static List<String> supportedSkills() {
+        return SKILLS.stream().sorted().toList();
+    }
     private static final Pattern BVID_PATH = Pattern.compile("/video/BV[0-9A-Za-z]{10}/?");
 
     public VideoLearningRequestDraft {

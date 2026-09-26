@@ -100,6 +100,7 @@ export type VideoLearningRequest = {
 
 export type VideoLearningOverview = {
   enabled: boolean;
+  available_skills?: string[];
   requests: VideoLearningRequest[];
 };
 

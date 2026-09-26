@@ -9,6 +9,7 @@ import com.noteweave.security.WorkspaceAccessGuard;
 import com.noteweave.security.WorkspacePermission;
 import com.noteweave.task.TaskService;
 import java.util.Map;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -38,7 +39,11 @@ public class VideoLearningRequestService {
     }
 
     public boolean isEnabled(String workspaceId) {
-        return rollout.allows(workspaceId);
+        return !rollout.availableSkills(workspaceId).isEmpty();
+    }
+
+    public List<String> availableSkills(String workspaceId) {
+        return rollout.availableSkills(workspaceId);
     }
 
     @Transactional
@@ -54,6 +59,10 @@ public class VideoLearningRequestService {
                     "视频学习请求不能为空", HttpStatus.BAD_REQUEST);
         }
         VideoLearningRequestDraft draft = request.draft();
+        if (!rollout.allows(workspaceId, draft.selectedSkills())) {
+            throw new BusinessException("VIDEO_LEARNING_SKILL_VERSION_BLOCKED",
+                    "所选产物版本暂未开放", HttpStatus.SERVICE_UNAVAILABLE);
+        }
         String actorId = users.requireUserId();
         var parent = requests.createOrReplay(workspaceId, actorId,
                 request.clientRequestId(), draft);

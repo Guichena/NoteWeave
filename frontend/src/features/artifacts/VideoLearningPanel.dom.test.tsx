@@ -61,4 +61,23 @@ describe("VideoLearningPanel", () => {
     await waitFor(() => expect(api.cancelVideoLearning).toHaveBeenCalledWith("workspace", "parent-1"));
     expect(await screen.findByText("资料 已取消")).toBeTruthy();
   });
+
+  it("disables a blocked output version while keeping other choices available", async () => {
+    const api = {
+      listVideoLearning: vi.fn(async () => ({ enabled: true,
+        available_skills: ["interview_qa"], requests: [] })),
+      createVideoLearning: vi.fn(async (_workspaceId: string, _input: CreateVideoLearningInput) => parent)
+    };
+    render(<VideoLearningPanel workspaceId="workspace" api={api as unknown as ArtifactsApi} />);
+    fireEvent.click(await screen.findByRole("button", { name: /一个视频，生成多种产物/ }));
+    expect(screen.getByLabelText(/知识博客/)).toHaveProperty("disabled", true);
+    fireEvent.change(screen.getByLabelText("B站视频链接"), {
+      target: { value: "https://www.bilibili.com/video/BV1234567890" }
+    });
+    fireEvent.change(screen.getByLabelText("学习重点"), { target: { value: "练习问答" } });
+    fireEvent.click(screen.getByLabelText(/面试问答/));
+    fireEvent.click(screen.getByRole("button", { name: "创建 1 种产物" }));
+    await waitFor(() => expect(api.createVideoLearning).toHaveBeenCalledOnce());
+    expect(api.createVideoLearning.mock.calls[0][1].selected_skills).toEqual(["interview_qa"]);
+  });
 });

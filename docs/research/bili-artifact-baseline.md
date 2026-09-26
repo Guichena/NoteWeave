@@ -429,3 +429,7 @@ Host `VideoLearningRequestRepositoryContractTest` **7 passed，0 failed/0 error/
 ## P6 子产物独立失败门禁
 
 同一 READY 资料包补建博客与问答 Job 后，调用真实 Worker 失败回调使博客 Task/Job FAILED。父资料仍 READY，问答仍 QUEUED 且其 Outbox 仍 READY；随后取消父请求，已 FAILED 的博客状态保持 FAILED，未开始的问答可按取消事务处理。扩展 `VideoLearningRequestRepositoryContractTest`，**7 passed，0 failed/0 error/0 skipped**，Maven BUILD SUCCESS（42.090 秒）。该测试验证 Host 父子状态及故障隔离；尚未执行真实视频跨进程端到端回放。
+
+## P6 Skill Version 新建门禁
+
+Host 从已发布 Skill Catalog 读取实际版本，新增 `noteweave.video-learning.blocked-skill-versions` 配置（逗号分隔 `skill_key@version`）。父请求创建事务拒绝包含被关闭版本的选择，拒绝时不创建父记录、Task 或 Outbox；列表返回当前 Workspace 可新建的 Skill，前端禁用相应勾选项。该开关只管新请求，协调器仍处理已接受父请求。现有发布目录的四个视频产物版本均为 `1.0.0`；配置不存在时保持全开放（仍受全局和 Workspace 门禁）。Host 定向 `VideoLearningRolloutPolicyTest`、`VideoLearningSkillVersionRolloutContractTest`、`VideoLearningRequestCreationContractTest` **4 passed，0 failed/0 error/0 skipped**，Maven BUILD SUCCESS（1:01）；前端 `VideoLearningPanel.dom.test.tsx` **4 passed**，`pnpm build` 通过。
