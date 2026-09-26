@@ -64,7 +64,7 @@ class VideoDerivedTextValidatorTest {
             Map<String, Object> ir = new LinkedHashMap<>(Map.of(
                     "schema_version", "video-derived-text-v1", "artifact_type", skill,
                     "bundle_content_digest", BUNDLE_DIGEST, "plan_content_digest", planDigest,
-                    "title", "Cache", "terms", List.of("cache"),
+                    "title", "Cache", "language", "en", "terms", List.of("cache"),
                     "blog_sections", "knowledge_blog".equals(skill) ? List.of(blog) : List.of(),
                     "interview_questions", "interview_qa".equals(skill) ? List.of(qa) : List.of(),
                     "markdown_sha256", hash(markdown)));
@@ -73,8 +73,18 @@ class VideoDerivedTextValidatorTest {
                     ? "Consistency" : "What does the source say about Consistency?",
                     "body", "cache consistency", "source_refs", List.of("segment:s1"));
             Map<String, Object> payload = new LinkedHashMap<>(Map.of(
-                    "derived_text_ir", ir, "markdown", markdown, "sections", List.of(section)));
-            VideoDerivedTextValidator.validate(skill, payload, bundle, plan, BUNDLE_DIGEST, planDigest);
+                    "derived_text_ir", ir, "markdown", markdown, "sections", List.of(section),
+                    "content_ir", Map.of("title", "Cache")));
+            VideoDerivedTextValidator.validate(skill, payload, bundle, plan,
+                    BUNDLE_DIGEST, planDigest, "en");
+            assertThatThrownBy(() -> VideoDerivedTextValidator.validate(
+                    skill, payload, bundle, plan, BUNDLE_DIGEST, planDigest, "zh-CN"))
+                    .isInstanceOf(BusinessException.class).hasMessageContaining("冻结证据");
+            payload.put("content_ir", Map.of("title", "Forged title"));
+            assertThatThrownBy(() -> VideoDerivedTextValidator.validate(
+                    skill, payload, bundle, plan, BUNDLE_DIGEST, planDigest, "en"))
+                    .isInstanceOf(BusinessException.class).hasMessageContaining("冻结证据");
+            payload.put("content_ir", Map.of("title", "Cache"));
 
             Map<String, Object> forgedClaim = Map.of("text", "cache always consistent",
                     "evidence_refs", List.of("segment:s1"));
@@ -91,7 +101,7 @@ class VideoDerivedTextValidatorTest {
             changedIr.put("content_digest", digest(changedIr));
             payload.put("derived_text_ir", changedIr);
             assertThatThrownBy(() -> VideoDerivedTextValidator.validate(
-                    skill, payload, bundle, plan, BUNDLE_DIGEST, planDigest))
+                    skill, payload, bundle, plan, BUNDLE_DIGEST, planDigest, "en"))
                     .isInstanceOf(BusinessException.class).hasMessageContaining("冻结证据");
         }
     }

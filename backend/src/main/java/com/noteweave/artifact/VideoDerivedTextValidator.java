@@ -16,19 +16,22 @@ import org.springframework.http.HttpStatus;
 /** Checks every published derived claim against the immutable Host knowledge plan. */
 final class VideoDerivedTextValidator {
     private static final Set<String> FIELDS = Set.of("schema_version", "artifact_type",
-            "bundle_content_digest", "plan_content_digest", "title", "terms", "blog_sections",
+            "language", "bundle_content_digest", "plan_content_digest", "title", "terms", "blog_sections",
             "interview_questions", "markdown_sha256", "content_digest");
 
     private VideoDerivedTextValidator() {}
 
     static void validate(String skillKey, Map<String, Object> payload,
                          Map<String, Object> bundle, Map<String, Object> plan,
-                         String bundleDigest, String planDigest) {
+                         String bundleDigest, String planDigest, String expectedLanguage) {
         VideoKnowledgePlanValidator.validate(plan, bundle, bundleDigest);
         Object raw = payload.get("derived_text_ir");
         if (!(raw instanceof Map<?, ?> ir) || !ir.keySet().equals(FIELDS)
                 || !"video-derived-text-v1".equals(ir.get("schema_version"))
                 || !skillKey.equals(ir.get("artifact_type"))
+                || !(ir.get("language") instanceof String language)
+                || !Set.of("zh-CN", "en", "zh-EN").contains(language)
+                || !expectedLanguage.equals(ir.get("language"))
                 || !bundleDigest.equals(ir.get("bundle_content_digest"))
                 || !planDigest.equals(ir.get("plan_content_digest"))
                 || !(payload.get("markdown") instanceof String markdown)
@@ -41,6 +44,7 @@ final class VideoDerivedTextValidator {
             if (!"content_digest".equals(key)) content.put(String.valueOf(key), canonical(value));
         });
         if (!hashJson(content).equals(ir.get("content_digest"))) throw invalid();
+        if (!ir.get("title").equals(map(payload.get("content_ir")).get("title"))) throw invalid();
         if (!bundleDigest.equals(plan.get("bundle_content_digest"))) throw invalid();
         List<?> nodes = list(plan.get("nodes"));
         if (nodes.isEmpty() || !text(map(nodes.get(0)).get("title")).equals(ir.get("title")))
@@ -91,7 +95,7 @@ final class VideoDerivedTextValidator {
                         || !gaps.equals(item.get("gaps"))) throw invalid();
                 heading = text(item.get("heading"));
             } else {
-                heading = "What does the source say about " + text(node.get("title")) + "?";
+                heading = question(text(node.get("title")), expectedLanguage);
                 if (!item.keySet().equals(Set.of("node_id", "question", "short_answer",
                         "detailed_answer", "related_knowledge", "gaps"))
                         || !node.get("node_id").equals(item.get("node_id"))
@@ -107,48 +111,71 @@ final class VideoDerivedTextValidator {
             if (!heading.equals(section.get("heading")) || !body.equals(section.get("body"))
                     || !refs.equals(section.get("source_refs"))) throw invalid();
         }
-        if (!render(ir, blog, qa, terms).equals(markdown)) throw invalid();
+        if (!render(ir, blog, qa, terms, expectedLanguage).equals(markdown)) throw invalid();
     }
 
-    private static String render(Map<?, ?> ir, List<?> blog, List<?> qa, List<?> terms) {
+    private static String question(String title, String language) {
+        return switch (language) {
+            case "zh-CN" -> "资料如何解释" + title + "？";
+            case "zh-EN" -> "资料如何解释" + title + "？ / What does the source say about " + title + "?";
+            default -> "What does the source say about " + title + "?";
+        };
+    }
+
+    private static String[] labels(String language) {
+        return switch (language) {
+            case "zh-CN" -> new String[] {"素材摘要", "知识规划摘要", "术语", "证据", "覆盖缺口",
+                    "简要回答", "详细问答", "相关知识", "暂无已核实术语。"};
+            case "zh-EN" -> new String[] {"素材摘要 / Source", "知识规划摘要 / Knowledge plan",
+                    "术语 / Terms", "证据 / Evidence", "覆盖缺口 / Coverage gap",
+                    "简要回答 / Short answer", "详细问答 / Detailed answer",
+                    "相关知识 / Related knowledge", "暂无已核实术语 / No verified terms."};
+            default -> new String[] {"Source", "Knowledge plan", "Terms", "Evidence", "Coverage gap",
+                    "Short answer", "Detailed answer", "Related knowledge", "No verified terms."};
+        };
+    }
+
+    private static String render(Map<?, ?> ir, List<?> blog, List<?> qa, List<?> terms,
+                                 String language) {
+        String[] label = labels(language);
         List<String> lines = new ArrayList<>(List.of("# " + text(ir.get("title")), "",
-                "Source: " + text(ir.get("bundle_content_digest")),
-                "Knowledge plan: " + text(ir.get("plan_content_digest")), ""));
+                label[0] + ": " + text(ir.get("bundle_content_digest")),
+                label[1] + ": " + text(ir.get("plan_content_digest")), ""));
         if (!terms.isEmpty()) {
-            lines.addAll(List.of("## Terms", "", join(terms), ""));
+            lines.addAll(List.of("## " + label[2], "", join(terms), ""));
         }
         if ("knowledge_blog".equals(ir.get("artifact_type"))) {
             for (Object raw : blog) {
                 Map<?, ?> item = map(raw);
                 lines.addAll(List.of("## " + text(item.get("heading")), ""));
-                appendClaims(lines, list(item.get("claims")));
-                appendGaps(lines, list(item.get("gaps")));
+                appendClaims(lines, list(item.get("claims")), label[3]);
+                appendGaps(lines, list(item.get("gaps")), label[4]);
             }
         } else {
             for (Object raw : qa) {
                 Map<?, ?> item = map(raw);
-                lines.addAll(List.of("## " + text(item.get("question")), "", "### Short answer", "",
-                        text(item.get("short_answer")), "", "### Detailed answer", ""));
-                appendClaims(lines, list(item.get("detailed_answer")));
+                lines.addAll(List.of("## " + text(item.get("question")), "", "### " + label[5], "",
+                        text(item.get("short_answer")), "", "### " + label[6], ""));
+                appendClaims(lines, list(item.get("detailed_answer")), label[3]);
                 List<?> related = list(item.get("related_knowledge"));
-                lines.addAll(List.of("### Related knowledge", "",
-                        related.isEmpty() ? "No verified terms." : join(related), ""));
-                appendGaps(lines, list(item.get("gaps")));
+                lines.addAll(List.of("### " + label[7], "",
+                        related.isEmpty() ? label[8] : join(related), ""));
+                appendGaps(lines, list(item.get("gaps")), label[4]);
             }
         }
         return String.join("\n", lines).stripTrailing() + "\n";
     }
 
-    private static void appendClaims(List<String> lines, List<?> claims) {
+    private static void appendClaims(List<String> lines, List<?> claims, String evidenceLabel) {
         for (Object raw : claims) {
             Map<?, ?> claim = map(raw);
             lines.addAll(List.of(text(claim.get("text")),
-                    "Evidence: " + join(list(claim.get("evidence_refs"))), ""));
+                    evidenceLabel + ": " + join(list(claim.get("evidence_refs"))), ""));
         }
     }
 
-    private static void appendGaps(List<String> lines, List<?> gaps) {
-        for (Object gap : gaps) lines.addAll(List.of("Coverage gap: " + text(gap), ""));
+    private static void appendGaps(List<String> lines, List<?> gaps, String gapLabel) {
+        for (Object gap : gaps) lines.addAll(List.of(gapLabel + ": " + text(gap), ""));
     }
 
     private static String join(List<?> values) {

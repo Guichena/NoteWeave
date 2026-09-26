@@ -285,3 +285,9 @@ Host 从 `artifact_video_material_bundle` 和 `artifact_video_knowledge_plan` �
 Host 集成回放创建两个独立 Job，引同一个 PDF Job 冻结的素材和语义计划；博客先成功生成 READY Version 和 READY Markdown，伪造问答简答的回调被拒且未影响博客版本，修复后的问答回调再生成自己的 READY Version 和 READY Markdown。初次目录回归因权威参考目录仍是旧字节、旧测试要求 Skill 集合完全相等而 **2 failed**，更新参考目录和兼容断言后通过；初次跨 Skill 引用因新 Skill 缺少冻结采集语言而失败，补入同一默认语言后通过。Worker 全套首次 **2 failed、333 passed**，失败均为旧目录精确数量断言；最终 **336 passed，32.95 秒**。Host 最终 `Phase6ResearchArtifactContractTest` **52 个用例，44 执行通过、8 个既有跳过**，另有 Candidate **6 passed**、回滚 **2 passed**、Worker 输入 **5 passed**、目录 **2 passed**、专用验证器 **1 passed**。
 
 此批证明手工已冻结且含 `EXTRACTED` 主张的计划可派生独立版本。生产自动规划仍只冻结无语义主张的本地证据窗口，因外部语义规划数据外发未获授权，不会自动生成文章或问答 READY；当前输出是带证据的确定性摘录模板，尚缺完整的文章化写作、局部 Repair、模板语言本地化和 P3 的真实视频验收，不能据此宣称 P3 全部完成。
+
+## P3 模板语言绑定与节点局部 Repair
+
+专用派生 IR 现在显式冻结 `language`；中文、英文和中英双语分别渲染来源摘要、术语、证据、缺口和问答三段式标题。Worker 从已冻结 Skill 输入取语言，Host 发布前核对语言与该 Run 的输入一致，并校验派生标题等于通用内容 IR 标题。局部 Repair 接口只接受与原 Bundle/Plan/Skill/语言/标题完全相同的草稿，逐节点对照已核验的 `EXTRACTED` 主张，最多重建 3 个错误节点或术语项；外来节点、重复节点和身份篡改直接失败。Worker 执行函数在收到内部草稿时走这条 Repair 路径并记录动作，最终仍由证据和 Markdown Verifier 复核。
+
+语言与 Repair 定向 Worker **12 passed**，Host 本地化发布与篡改门禁定向通过；最终 Worker 全套 **341 passed，39.55 秒**。Host Artifact 回归 `Phase6ResearchArtifactContractTest` **52 个用例，44 执行通过、8 个既有跳过**，Candidate **6 passed**、回滚 **2 passed**、Worker 输入 **5 passed**、目录 **2 passed**、专用验证器 **1 passed**。目前生产生成器是确定性派生，不产生需要修复的模型草稿；局部 Repair 的故障回放通过内部草稿入口验证，真实模型 Repair Yield 尚无样本。文章化写作和真实视频验收仍未完成。

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from copy import deepcopy
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -38,6 +39,7 @@ class InterviewQuestion(DerivedRecord):
 class VideoDerivedTextV1(DerivedRecord):
     schema_version: Literal["video-derived-text-v1"] = "video-derived-text-v1"
     artifact_type: Literal["knowledge_blog", "interview_qa"]
+    language: Literal["zh-CN", "en", "zh-EN"]
     bundle_content_digest: str
     plan_content_digest: str
     title: str
@@ -70,7 +72,7 @@ class VideoDerivedTextV1(DerivedRecord):
                 or self.markdown_sha256 != hashlib.sha256(markdown.encode("utf-8")).hexdigest() \
                 or markdown != render_derived_markdown(self):
             raise ValueError("derived text differs from frozen inputs or rendering")
-        expected = derive_video_text(bundle, plan, self.artifact_type)
+        expected = derive_video_text(bundle, plan, self.artifact_type, self.language)
         if self != expected:
             raise ValueError("derived text contains claims outside the frozen plan")
 
@@ -81,37 +83,62 @@ def _digest(value: dict[str, object]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+_LABELS = {
+    "en": ("Source", "Knowledge plan", "Terms", "Evidence", "Coverage gap",
+           "Short answer", "Detailed answer", "Related knowledge", "No verified terms."),
+    "zh-CN": ("素材摘要", "知识规划摘要", "术语", "证据", "覆盖缺口",
+              "简要回答", "详细问答", "相关知识", "暂无已核实术语。"),
+    "zh-EN": ("素材摘要 / Source", "知识规划摘要 / Knowledge plan", "术语 / Terms",
+              "证据 / Evidence", "覆盖缺口 / Coverage gap", "简要回答 / Short answer",
+              "详细问答 / Detailed answer", "相关知识 / Related knowledge",
+              "暂无已核实术语 / No verified terms."),
+}
+
+
+def _question(title: str, language: str) -> str:
+    if language == "zh-CN":
+        return f"资料如何解释{title}？"
+    if language == "zh-EN":
+        return f"资料如何解释{title}？ / What does the source say about {title}?"
+    return f"What does the source say about {title}?"
+
+
 def render_derived_markdown(ir: VideoDerivedTextV1) -> str:
-    lines = [f"# {ir.title}", "", f"Source: {ir.bundle_content_digest}",
-             f"Knowledge plan: {ir.plan_content_digest}", ""]
+    source, plan_label, terms_label, evidence, gap_label, short, detailed, related, no_terms = \
+        _LABELS[ir.language]
+    lines = [f"# {ir.title}", "", f"{source}: {ir.bundle_content_digest}",
+             f"{plan_label}: {ir.plan_content_digest}", ""]
     if ir.terms:
-        lines.extend(["## Terms", "", ", ".join(ir.terms), ""])
+        lines.extend([f"## {terms_label}", "", ", ".join(ir.terms), ""])
     if ir.artifact_type == "knowledge_blog":
         for section in ir.blog_sections:
             lines.extend([f"## {section.heading}", ""])
             for claim in section.claims:
-                lines.extend([claim.text, f"Evidence: {', '.join(claim.evidence_refs)}", ""])
+                lines.extend([claim.text, f"{evidence}: {', '.join(claim.evidence_refs)}", ""])
             for gap in section.gaps:
-                lines.extend([f"Coverage gap: {gap}", ""])
+                lines.extend([f"{gap_label}: {gap}", ""])
     else:
         for question in ir.interview_questions:
-            lines.extend([f"## {question.question}", "", "### Short answer", "",
-                          question.short_answer, "", "### Detailed answer", ""])
+            lines.extend([f"## {question.question}", "", f"### {short}", "",
+                          question.short_answer, "", f"### {detailed}", ""])
             for claim in question.detailed_answer:
-                lines.extend([claim.text, f"Evidence: {', '.join(claim.evidence_refs)}", ""])
-            lines.extend(["### Related knowledge", "",
-                          ", ".join(question.related_knowledge) or "No verified terms.", ""])
+                lines.extend([claim.text, f"{evidence}: {', '.join(claim.evidence_refs)}", ""])
+            lines.extend([f"### {related}", "",
+                          ", ".join(question.related_knowledge) or no_terms, ""])
             for gap in question.gaps:
-                lines.extend([f"Coverage gap: {gap}", ""])
+                lines.extend([f"{gap_label}: {gap}", ""])
     return "\n".join(lines).rstrip() + "\n"
 
 
 def derive_video_text(bundle: VideoMaterialBundleV1, plan: VideoKnowledgePlanV1,
-                      artifact_type: Literal["knowledge_blog", "interview_qa"]
+                      artifact_type: Literal["knowledge_blog", "interview_qa"],
+                      language: Literal["zh-CN", "en", "zh-EN"] = "en",
                       ) -> VideoDerivedTextV1:
     plan.verify_against_bundle(bundle)
     if artifact_type not in {"knowledge_blog", "interview_qa"}:
         raise ValueError("unsupported video derived text type")
+    if language not in _LABELS:
+        raise ValueError("unsupported video derived text language")
     semantic_nodes = [node for node in plan.nodes if node.kind in {"CONCEPT", "EXAMPLE"}
                       and any(claim.status == "EXTRACTED" for claim in node.claims)]
     if not semantic_nodes:
@@ -129,11 +156,12 @@ def derive_video_text(bundle: VideoMaterialBundleV1, plan: VideoKnowledgePlanV1,
                                         claims=claims, gaps=gaps))
         else:
             questions.append(InterviewQuestion(
-                node_id=node.node_id, question=f"What does the source say about {node.title}?",
+                node_id=node.node_id, question=_question(node.title, language),
                 short_answer=claims[0].text, detailed_answer=claims,
                 related_knowledge=node.terms, gaps=gaps))
     fields: dict[str, object] = {
         "artifact_type": artifact_type,
+        "language": language,
         "bundle_content_digest": bundle.content_digest(),
         "plan_content_digest": plan.content_digest(),
         "title": plan.nodes[0].title,
@@ -149,3 +177,47 @@ def derive_video_text(bundle: VideoMaterialBundleV1, plan: VideoKnowledgePlanV1,
         render_derived_markdown(preview).encode("utf-8")).hexdigest()
     fields["content_digest"] = _digest({"schema_version": "video-derived-text-v1", **fields})
     return VideoDerivedTextV1.model_validate(fields)
+
+
+def repair_video_derived_text(
+    draft: dict[str, object], bundle: VideoMaterialBundleV1,
+    plan: VideoKnowledgePlanV1, artifact_type: Literal["knowledge_blog", "interview_qa"],
+    language: Literal["zh-CN", "en", "zh-EN"], *, max_repairs: int = 3,
+) -> tuple[VideoDerivedTextV1, list[str]]:
+    """Rebuild bounded invalid nodes from frozen evidence; never repair source identity."""
+    expected = derive_video_text(bundle, plan, artifact_type, language)
+    clean = expected.model_dump(mode="json")
+    if not isinstance(draft, dict) or set(draft) != set(clean):
+        raise ValueError("derived text repair cannot change the output schema")
+    for key in ("schema_version", "artifact_type", "language", "bundle_content_digest",
+                "plan_content_digest", "title"):
+        if draft[key] != clean[key]:
+            raise ValueError("derived text repair cannot change frozen identity")
+    active = "blog_sections" if artifact_type == "knowledge_blog" else "interview_questions"
+    inactive = "interview_questions" if artifact_type == "knowledge_blog" else "blog_sections"
+    if draft[inactive] != [] or not isinstance(draft[active], list):
+        raise ValueError("derived text repair cannot switch artifact structure")
+    repaired = deepcopy(clean)
+    actions: list[str] = []
+    if draft["terms"] != clean["terms"]:
+        actions.append("terms")
+    raw_nodes = draft[active]
+    node_ids = [item.get("node_id") if isinstance(item, dict) else None
+                for item in raw_nodes]
+    if any(not isinstance(node_id, str) for node_id in node_ids) \
+            or len(node_ids) != len(set(node_ids)) or any(
+            node_id not in {item["node_id"] for item in clean[active]}
+            for node_id in node_ids):
+        raise ValueError("derived text repair contains duplicate or foreign node IDs")
+    by_id = {item["node_id"]: item for item in raw_nodes}
+    for expected_node in clean[active]:
+        node_id = expected_node["node_id"]
+        if by_id.get(node_id) != expected_node:
+            actions.append(f"node:{node_id}")
+    if len(actions) > max_repairs:
+        raise ValueError("derived text local repair limit exceeded")
+    if not actions and (draft["markdown_sha256"] != clean["markdown_sha256"]
+                        or draft["content_digest"] != clean["content_digest"]):
+        actions.append("digest")
+    # Deterministic output includes fresh Markdown and IR digests after local repair.
+    return VideoDerivedTextV1.model_validate(repaired), actions

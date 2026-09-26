@@ -5279,14 +5279,14 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
             String bundleDigest, String planDigest) throws Exception {
         String title = "Visible material";
         String claim = "Visible heading";
-        String question = "What does the source say about Observed heading?";
-        String prefix = "# " + title + "\n\nSource: " + bundleDigest
-                + "\nKnowledge plan: " + planDigest + "\n\n## Terms\n\nVisible\n\n";
+        String question = "资料如何解释Observed heading？";
+        String prefix = "# " + title + "\n\n素材摘要: " + bundleDigest
+                + "\n知识规划摘要: " + planDigest + "\n\n## 术语\n\nVisible\n\n";
         String markdown = prefix + ("knowledge_blog".equals(skillKey)
-                ? "## Observed heading\n\nVisible heading\nEvidence: frame:f1\n"
-                : "## " + question + "\n\n### Short answer\n\nVisible heading\n\n"
-                + "### Detailed answer\n\nVisible heading\nEvidence: frame:f1\n\n"
-                + "### Related knowledge\n\nVisible\n");
+                ? "## Observed heading\n\nVisible heading\n证据: frame:f1\n"
+                : "## " + question + "\n\n### 简要回答\n\nVisible heading\n\n"
+                + "### 详细问答\n\nVisible heading\n证据: frame:f1\n\n"
+                + "### 相关知识\n\nVisible\n");
         Map<String, Object> citedClaim = Map.of("text", claim, "evidence_refs", List.of("frame:f1"));
         Map<String, Object> item = "knowledge_blog".equals(skillKey)
                 ? Map.of("node_id", "concept", "heading", "Observed heading",
@@ -5299,7 +5299,7 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
         Map<String, Object> ir = new LinkedHashMap<>(Map.of(
                 "schema_version", "video-derived-text-v1", "artifact_type", skillKey,
                 "bundle_content_digest", bundleDigest, "plan_content_digest", planDigest,
-                "title", title, "terms", List.of("Visible"),
+                "title", title, "language", "zh-CN", "terms", List.of("Visible"),
                 "blog_sections", "knowledge_blog".equals(skillKey) ? List.of(item) : List.of(),
                 "interview_questions", "interview_qa".equals(skillKey) ? List.of(item) : List.of(),
                 "markdown_sha256", markdownDigest));

@@ -1,18 +1,21 @@
 from __future__ import annotations
 
 import hashlib
+from copy import deepcopy
 
 import pytest
 from pydantic import ValidationError
 
 from app.video_derived_text import (
     VideoDerivedTextV1, derive_video_text, render_derived_markdown,
+    repair_video_derived_text,
 )
 from app.video_knowledge_plan import VideoKnowledgePlanV1, build_local_evidence_plan
 from app.video_material_bundle import VideoMaterialBundleV1
 from app.artifact_skill_catalog import CATALOG_DIGEST
 from app.models import ArtifactTaskInput
 from app.runner import run_artifact_task
+from app.video_derived_runtime import run_video_derived_text_task
 from app.callback import JavaArtifactCallbackClient, run_artifact_task_with_callbacks
 
 
@@ -66,6 +69,63 @@ def test_local_evidence_index_cannot_be_published_as_semantic_output() -> None:
     bundle, _ = _source()
     with pytest.raises(ValueError, match="no verified semantic claims"):
         derive_video_text(bundle, build_local_evidence_plan(bundle), "knowledge_blog")
+
+
+@pytest.mark.parametrize("language,heading", [
+    ("zh-CN", "### 简要回答"),
+    ("en", "### Short answer"),
+    ("zh-EN", "### 简要回答 / Short answer"),
+])
+def test_question_template_follows_frozen_skill_language(
+        language: str, heading: str) -> None:
+    bundle, plan = _source()
+    qa = derive_video_text(bundle, plan, "interview_qa", language)
+    markdown = render_derived_markdown(qa)
+    assert heading in markdown
+    assert qa.language == language
+    qa.verify_against(bundle, plan, markdown)
+    with pytest.raises(ValueError, match="differs from frozen inputs"):
+        qa.verify_against(bundle, plan, markdown.replace(heading, "### Forged heading"))
+
+
+def test_local_repair_rebuilds_only_invalid_node_from_same_frozen_plan() -> None:
+    bundle, original = _source()
+    plan_json = original.model_dump(mode="json")
+    plan_json["nodes"].append({
+        "node_id": "example", "parent_id": "root", "kind": "EXAMPLE",
+        "title": "Cache example", "start_ms": 1000, "end_ms": 4000,
+        "transcript_segment_ids": ["s1"], "terms": ["consistency"],
+        "claims": [{"text": "consistency", "status": "EXTRACTED",
+                    "evidence_refs": ["segment:s1"]}],
+    })
+    plan = VideoKnowledgePlanV1.model_validate(plan_json)
+    expected = derive_video_text(bundle, plan, "knowledge_blog", "zh-CN")
+    draft = expected.model_dump(mode="json")
+    untouched = draft["blog_sections"][1].copy()
+    draft["blog_sections"][0]["claims"][0]["text"] = "unsupported theorem"
+
+    repaired, actions = repair_video_derived_text(
+        draft, bundle, plan, "knowledge_blog", "zh-CN")
+    assert actions == ["node:concept"]
+    assert repaired == expected
+    assert repaired.blog_sections[1].model_dump(mode="json") == untouched
+    repaired.verify_against(bundle, plan, render_derived_markdown(repaired))
+    with pytest.raises(ValueError, match="limit exceeded"):
+        repair_video_derived_text(draft, bundle, plan, "knowledge_blog",
+                                  "zh-CN", max_repairs=0)
+
+
+def test_local_repair_rejects_foreign_identity_and_node() -> None:
+    bundle, plan = _source()
+    expected = derive_video_text(bundle, plan, "interview_qa", "en")
+    draft = expected.model_dump(mode="json")
+    draft["plan_content_digest"] = "0" * 64
+    with pytest.raises(ValueError, match="frozen identity"):
+        repair_video_derived_text(draft, bundle, plan, "interview_qa", "en")
+    draft = expected.model_dump(mode="json")
+    draft["interview_questions"][0]["node_id"] = "foreign"
+    with pytest.raises(ValueError, match="foreign node"):
+        repair_video_derived_text(draft, bundle, plan, "interview_qa", "en")
 
 
 def test_forged_claim_or_rendering_is_rejected() -> None:
@@ -124,6 +184,13 @@ def test_published_derived_skill_builds_an_independent_host_candidate(
     assert result.result_payload["candidate"]["required_files"][0]["role"] == "PRIMARY_MARKDOWN"
     assert events[-1].progress_percent == 100
     assert result.result_payload["derived_text_ir"]["plan_content_digest"] == plan.content_digest()
+    draft = deepcopy(result.result_payload["derived_text_ir"])
+    branch = "blog_sections" if skill_key == "knowledge_blog" else "interview_questions"
+    claims = "claims" if skill_key == "knowledge_blog" else "detailed_answer"
+    draft[branch][0][claims][0]["text"] = "unsupported theorem"
+    _, repaired_result = run_video_derived_text_task(task, draft=draft)
+    assert repaired_result.result_payload["local_repair"]["actions"] == ["node:concept"]
+    assert repaired_result.result_payload["derived_text_ir"] == result.result_payload["derived_text_ir"]
     task.frozen_video_knowledge_plan = build_local_evidence_plan(bundle).model_dump(mode="json")
     with pytest.raises(ValueError, match="no verified semantic claims"):
         run_artifact_task(task)

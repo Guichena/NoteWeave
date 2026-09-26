@@ -8,7 +8,9 @@ from app.models import (
     ArtifactJobSnapshot, ArtifactProgressEvent, ArtifactSectionDraft,
     ArtifactTaskInput, ArtifactTaskResult, ArtifactVersionSnapshot,
 )
-from app.video_derived_text import derive_video_text, render_derived_markdown
+from app.video_derived_text import (
+    derive_video_text, render_derived_markdown, repair_video_derived_text,
+)
 from app.video_knowledge_plan import VideoKnowledgePlanV1
 from app.video_material_bundle import VideoMaterialBundleV1
 
@@ -18,6 +20,7 @@ _ACTIONS = {"knowledge_blog": "KNOWLEDGE_BLOG", "interview_qa": "INTERVIEW_QA"}
 
 def run_video_derived_text_task(
     task_input: ArtifactTaskInput,
+    *, draft: dict[str, object] | None = None,
 ) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
     """Derive one independent Candidate using only Host-frozen video evidence."""
     skill_key = task_input.input_payload.skill_key
@@ -29,7 +32,13 @@ def run_video_derived_text_task(
         raise ValueError("derived text requires a published Skill and frozen video inputs")
     bundle = VideoMaterialBundleV1.model_validate(task_input.frozen_video_material)
     plan = VideoKnowledgePlanV1.model_validate(task_input.frozen_video_knowledge_plan)
-    ir = derive_video_text(bundle, plan, skill_key)
+    language = str(task_input.input_payload.inputs.get("language") or "zh-CN")
+    if draft is None:
+        ir = derive_video_text(bundle, plan, skill_key, language)
+        repair_actions: list[str] = []
+    else:
+        ir, repair_actions = repair_video_derived_text(
+            draft, bundle, plan, skill_key, language)
     markdown = render_derived_markdown(ir)
     ir.verify_against(bundle, plan, markdown)
     sections: list[ArtifactSectionDraft] = []
@@ -62,6 +71,8 @@ def run_video_derived_text_task(
         "derived_text_ir": ir.model_dump(mode="json"),
         "content_ir": content_ir.model_dump(mode="json"),
         "verification": {"status": "PASS", "failed_checks": []},
+        "local_repair": {"action_count": len(repair_actions),
+                         "actions": repair_actions},
         "export_trace": {"status": "SKIPPED", "format": "MARKDOWN", "file_name": ""},
         "knowledge_plan": {
             "schema_version": plan.schema_version,

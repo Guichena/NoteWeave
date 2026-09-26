@@ -477,7 +477,8 @@ public class ArtifactVideoMaterialService {
         if (Set.of("knowledge_blog", "interview_qa").contains(run.skillKey())) {
             Map<String, Object> plan = readPlanByBundleId(receipt.id());
             VideoDerivedTextValidator.validate(run.skillKey(), resultPayload,
-                    readBundleById(receipt.id()), plan, receipt.contentDigest(), digest(plan));
+                    readBundleById(receipt.id()), plan, receipt.contentDigest(), digest(plan),
+                    string(inputs.get("language")));
         }
     }
 
