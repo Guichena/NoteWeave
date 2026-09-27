@@ -15,7 +15,7 @@ class HttpArtifactWorkerExportClient implements ArtifactWorkerExportClient {
 
     HttpArtifactWorkerExportClient(
             NoteWeaveProperties properties,
-            @Value("${noteweave.internal.auth-token:}") String internalAuthToken,
+            @Value("${noteweave.internal.artifact-auth-token:${noteweave.internal.auth-token:}}") String internalAuthToken,
             @Value("${noteweave.worker.connect-timeout-seconds:3}") long connectTimeoutSeconds,
             @Value("${noteweave.worker.read-timeout-seconds:30}") long readTimeoutSeconds) {
         worker = ArtifactWorkerRestClientFactory.create(properties.worker().artifactBaseUrl(),
