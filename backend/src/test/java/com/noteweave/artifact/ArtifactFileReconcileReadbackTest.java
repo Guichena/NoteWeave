@@ -56,6 +56,7 @@ class ArtifactFileReconcileReadbackTest {
                         'PRIMARY_MARKDOWN', '', 0)
                 """, markdown.length, digest);
         ObjectStorage storage = mock(ObjectStorage.class);
+        ArtifactWorkerExportClient workerExports = mock(ArtifactWorkerExportClient.class);
         byte[] corrupted = "wrong".getBytes(StandardCharsets.UTF_8);
         when(storage.read("export", "artifact/recovered.md"))
                 .thenReturn(corrupted, corrupted, corrupted, markdown);
@@ -66,7 +67,7 @@ class ArtifactFileReconcileReadbackTest {
         when(storageConfig.minio()).thenReturn(minio);
         when(minio.bucketExport()).thenReturn("export");
         ArtifactExportService service = new ArtifactExportService(
-                jdbc, new ObjectMapper(), storage, mock(ArtifactWorkerExportClient.class),
+                jdbc, new ObjectMapper(), storage, workerExports,
                 mock(ArtifactSkillCatalogService.class), mock(ArtifactMemoryRevisionGuard.class),
                 mock(ArtifactContextV2ShadowSnapshotService.class),
                 mock(ResearchGeneratedSourceReadGate.class), properties);
@@ -76,6 +77,25 @@ class ArtifactFileReconcileReadbackTest {
         service.reconcileDegradedFiles();
         assertThat(deliveryStatus(jdbc)).isEqualTo("READY");
         verify(storage, times(2)).write(eq("export"), eq("artifact/recovered.md"), eq(markdown));
+
+        byte[] source = "# Independent source".getBytes(StandardCharsets.UTF_8);
+        String sourceDigest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(source));
+        jdbc.update("""
+                insert into artifact_file(id, artifact_version_id, file_format, file_name, media_type,
+                                          storage_backend, bucket_name, object_key, size_bytes,
+                                          checksum_sha256, status, error_message, file_role, variant, sequence_no)
+                values ('source-file', 'version', 'MARKDOWN', 'source.md', 'text/markdown',
+                        'local', 'export', 'artifact/source.md', ?, ?, 'READY', '',
+                        'SOURCE_MD', '', 0)
+                """, source.length, sourceDigest);
+        jdbc.update("update artifact_version set delivery_status = 'DEGRADED' where id = 'version'");
+        when(storage.read("export", "artifact/recovered.md")).thenReturn(markdown);
+        when(storage.read("export", "artifact/source.md")).thenReturn(corrupted, source);
+        when(workerExports.fetch("task", "source.md")).thenReturn(source);
+        service.reconcileDegradedFiles();
+        assertThat(deliveryStatus(jdbc)).isEqualTo("READY");
+        verify(workerExports).fetch("task", "source.md");
+        verify(storage).write(eq("export"), eq("artifact/source.md"), eq(source));
     }
 
     private String deliveryStatus(JdbcTemplate jdbc) {

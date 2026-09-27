@@ -479,11 +479,9 @@ public class ArtifactExportService {
                         existing = new byte[0];
                     }
                     if (sha256(existing).equals(file.checksumSha256())) continue;
-                    byte[] recovered = MARKDOWN.equals(file.fileFormat())
+                    byte[] recovered = "PRIMARY_MARKDOWN".equals(file.fileRole())
                             ? version.contentMarkdown().getBytes(StandardCharsets.UTF_8)
-                            : PDF.equals(file.fileFormat())
-                                    ? fetchWorkerExport(version.originTaskId(), file.fileName())
-                                    : new byte[0];
+                            : fetchWorkerExport(version.originTaskId(), file.fileName());
                     if (!sha256(recovered).equals(file.checksumSha256())) {
                         throw new BusinessException("ARTIFACT_FILE_RECONCILE_MISMATCH",
                                 "恢复文件与已提交摘要不匹配", HttpStatus.CONFLICT);

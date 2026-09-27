@@ -573,3 +573,5 @@ Wiki Evidence Retriever 向 Citation ID 查询传入 Workspace；查询在返回
 ## P1 A1/A2 文件恢复读回门禁
 
 `reconcileDegradedFiles` 恢复缺失或损坏的对象后，读回同一对象并与已提交文件摘要核对；读回不匹配时 Version 保持 `DEGRADED`，下一轮重试读回正确才改为 `READY`。H2 加模拟对象存储的故障测试 `ArtifactFileReconcileReadbackTest` **1 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。邻接的 `Phase6ResearchArtifactContractTest` 文件元数据完整性及历史版本再生成/比较/回滚合同 **2 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。这里的对象读回由测试替身模拟，尚非真实对象存储或跨进程崩溃恢复验证。
+
+恢复来源随后按文件角色修正：主 Markdown 从 Version 正文重建；`SOURCE_MD`、PDF、PPTX 和逐页预览使用原任务的 Worker 文件接口取回，并再次核对已提交摘要。故障用例增加独立 `SOURCE_MD` 丢失与取回验证；联跑 `ArtifactFileReconcileReadbackTest` **1**、邻接 `Phase6ResearchArtifactContractTest` **2**，共 **3 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。辅助文件能否跨进程恢复仍取决于 Worker 文件的保留时间，真实存储与 Worker 过期场景待验证。
