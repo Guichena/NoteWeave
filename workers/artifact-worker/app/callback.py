@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from app.config import load_settings, resolve_mcp_sandbox_root
 from app.error_sanitizer import sanitize_error_message
-from app.llm_client import credential_safe_urlopen
+from app.llm_client import build_default_llm_client, credential_safe_urlopen
 from app.acquisition_runtime import (
     acknowledge_acquisition_operation, get_acquisition_result_payload,
     list_acquisition_operations,
@@ -34,7 +34,9 @@ from app.candidate_file_manifest import build_required_files, build_video_deck_r
 from app.export_runtime import export_artifact_if_required, validate_frozen_video_scope
 from app.video_material_bundle import VideoMaterialBundleV1
 from app.video_material_task import VideoMaterialTaskInput
-from app.video_knowledge_plan import VideoKnowledgePlanV1, build_local_evidence_plan
+from app.video_knowledge_plan import (
+    VideoKnowledgePlanV1, build_local_evidence_plan, plan_video_knowledge,
+)
 from app.video_deck_ir import VideoDeckIRV1
 from app.video_deck_render import render_original_video_deck
 from app.video_deck_preview import render_original_video_deck_previews
@@ -463,7 +465,12 @@ def _emit_material_callbacks_for_result(
     else:
         bundle = _collect_parent_video_material(task_id, task_input)
         receipt = client.publish_parent_material(task_id, bundle)
-        plan = build_local_evidence_plan(bundle)
+        try:
+            plan = _plan_frozen_video_material(bundle)
+        except ValueError as exc:
+            logger.warning("Parent video knowledge planning failed for task %s: %s", task_id,
+                           sanitize_error_message(str(exc)))
+            plan = build_local_evidence_plan(bundle)
         plan_receipt = client.publish_parent_plan(task_id, str(receipt["id"]), plan)
         client.complete_parent_material(task_id, str(receipt["id"]), str(plan_receipt["id"]))
     return ArtifactWorkerExecutionResponse(
@@ -749,6 +756,13 @@ def _attach_frozen_video_material(
     }
 
 
+def _plan_frozen_video_material(bundle: VideoMaterialBundleV1) -> VideoKnowledgePlanV1:
+    client = build_default_llm_client()
+    if client is None:
+        return build_local_evidence_plan(bundle)
+    return plan_video_knowledge(bundle, client)
+
+
 def _freeze_local_evidence_plan(
     task_id: str, result: ArtifactTaskResult, callback_client: ArtifactCallbackClient,
     bundle: VideoMaterialBundleV1, bundle_row_id: str,
@@ -762,9 +776,11 @@ def _freeze_local_evidence_plan(
             result.result_payload["knowledge_plan_gap"] = "HOST_PLAN_LOOKUP_UNAVAILABLE"
             return
         try:
-            plan = build_local_evidence_plan(bundle)
-        except ValueError:
-            result.result_payload["knowledge_plan_gap"] = "EVIDENCE_WINDOW_LIMIT"
+            plan = _plan_frozen_video_material(bundle)
+        except ValueError as exc:
+            logger.warning("Knowledge planning failed for task %s: %s", task_id,
+                           sanitize_error_message(str(exc)))
+            result.result_payload["knowledge_plan_gap"] = "KNOWLEDGE_PLANNING_FAILED"
             return
         try:
             frozen = callback_client.publish_video_knowledge_plan(task_id, bundle_row_id, plan)

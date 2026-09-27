@@ -592,4 +592,6 @@ Wiki Evidence Retriever 向 Citation ID 查询传入 Workspace；查询在返回
 
 将 `small` ASR 与这 8 张画面交给 `subtitle_only_bundle`、`merge_captured_video_frames`、`build_local_evidence_plan`：Bundle **233 段字幕、8 张画面、8 个摘要校验文件**，本地证据 Plan **11 节点**，均通过冻结引用和字节校验。Bundle 摘要 `c434bd6149490f0f4c7ff1db95e71dbaa6990d6261bf47d92c91d3e8201d0ffb`，Plan 摘要 `9e034d39cfd9396830dd8b669b9436f0f92353df340e0ac7031d7c8d6ca919ec`。对应 Worker 合同 **47 passed，0 failed**（字幕/画面/Bundle/Plan 40，画面合并 7）。音频、字幕、视频、画面及 Bundle/Plan JSON 仅在 Git 忽略的 `workers/artifact-worker/runtime/real-BV1MZYT6pEzy/`，未提交或发布。用户提供链接可用于本次本地试跑，进一步分发或复用许可尚未核实。
 
-本机没有 Tesseract OCR，且未配置视频知识规划的 LLM Provider；此回放未经过 Java Host 发布，也未生成可验收的博客、问答、PPTX 或 PDF。真实样本因此证明资料采集与冻结链路的一部分，**不证明 P0/P2/P3/P4 完成**。
+本机没有 Tesseract OCR；首次试跑的改造工作树进程未加载主工作目录的模型环境变量。此回放未经过 Java Host 发布，也未生成可验收的博客、问答、PPTX 或 PDF。真实样本因此证明资料采集与冻结链路的一部分，**不证明 P0/P2/P3/P4 完成**。
+
+后续核对确认主工作目录 `.env` 已配置 Artifact 模型，改造工作树没有自己的 `.env`，之前称“未配置 Provider”是误判。代码检查还发现父视频资料完成路径及普通视频资料发布路径均直接使用 `build_local_evidence_plan`，没有调用已实现的 `plan_video_knowledge`。现已接通配置模型时的语义规划；模型失败时父资料仍冻结本地证据索引，普通视频资料不发布伪语义 Plan。针对回调与规划的合同测试 **43 passed**。使用主工作目录配置做实际请求：小型 JSON 请求约 19.5 秒成功；全视频 233 段字幕在 60 秒和 180 秒分别超时，截取真实视频前 10 段字幕的规划请求在 90 秒超时。可用性瓶颈是视频规划请求的时延/输出复杂度，不能归因于模型未配置；语义 Plan、博客、问答、PPTX 的真实效果仍未验收。

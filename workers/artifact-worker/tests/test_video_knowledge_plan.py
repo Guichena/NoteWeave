@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
+import app.callback as callback_module
 from app.llm_client import FakeLlmClient
 from app.callback import ArtifactCallbackHttpError, _freeze_local_evidence_plan
 from app.video_knowledge_plan import (
@@ -198,3 +199,81 @@ def test_local_plan_freeze_failure_keeps_pdf_path_available() -> None:
     result = SimpleNamespace(result_payload={})
     _freeze_local_evidence_plan("task-1", result, Store(), _bundle(), "row-1")
     assert result.result_payload["knowledge_plan_gap"] == "HOST_PLAN_LOOKUP_UNAVAILABLE"
+
+
+def test_host_freezes_semantic_plan_when_model_is_configured(monkeypatch) -> None:
+    bundle = _bundle()
+    model = FakeLlmClient({"video_knowledge_plan": json.dumps(_plan(bundle))})
+    monkeypatch.setattr(callback_module, "build_default_llm_client", lambda: model)
+
+    class Store:
+        plan = None
+
+        def fetch_video_knowledge_plan(self, task_id, bundle_row_id):
+            if self.plan is None:
+                raise ArtifactCallbackHttpError(404, "not frozen")
+            return self.plan
+
+        def publish_video_knowledge_plan(self, task_id, bundle_row_id, plan):
+            self.plan = plan
+            return {"id": "plan-1"}
+
+    store = Store()
+    result = SimpleNamespace(result_payload={})
+    _freeze_local_evidence_plan("task-1", result, store, bundle, "row-1")
+
+    assert result.result_payload["knowledge_plan"]["mode"] == "FROZEN_PLAN"
+    assert store.plan.nodes[1].claims[0].text == "cache 一致性"
+    assert len(model.calls) == 1
+
+    _freeze_local_evidence_plan("task-1", SimpleNamespace(result_payload={}),
+                                store, bundle, "row-1")
+    assert len(model.calls) == 1
+
+
+def test_invalid_model_plan_is_not_published_as_semantic_content(monkeypatch) -> None:
+    bundle = _bundle()
+    monkeypatch.setattr(callback_module, "build_default_llm_client", lambda:
+                        FakeLlmClient({"video_knowledge_plan": "{"}))
+
+    class Store:
+        def fetch_video_knowledge_plan(self, task_id, bundle_row_id):
+            raise ArtifactCallbackHttpError(404, "not frozen")
+
+        def publish_video_knowledge_plan(self, task_id, bundle_row_id, plan):
+            pytest.fail("invalid semantic plan must not be frozen")
+
+    result = SimpleNamespace(result_payload={})
+    _freeze_local_evidence_plan("task-1", result, Store(), bundle, "row-1")
+
+    assert result.result_payload["knowledge_plan_gap"] == "KNOWLEDGE_PLANNING_FAILED"
+    assert "knowledge_plan" not in result.result_payload
+
+
+def test_parent_material_completes_with_evidence_index_when_model_times_out(monkeypatch) -> None:
+    bundle = _bundle()
+    monkeypatch.setattr(callback_module, "_collect_parent_video_material", lambda *_: bundle)
+    monkeypatch.setattr(callback_module, "_plan_frozen_video_material", lambda *_:
+                        (_ for _ in ()).throw(ValueError("planner timed out")))
+
+    class Store:
+        plan = None
+        completed = False
+
+        def publish_parent_material(self, task_id, material):
+            assert material is bundle
+            return {"id": "material-1"}
+
+        def publish_parent_plan(self, task_id, material_id, plan):
+            self.plan = plan
+            return {"id": "plan-1"}
+
+        def complete_parent_material(self, task_id, material_id, plan_id):
+            self.completed = True
+
+    store = Store()
+    result = SimpleNamespace(job_snapshot=SimpleNamespace(status="COMPLETED"))
+    callback_module._emit_material_callbacks_for_result("task-1", [], result, store, None)
+
+    assert store.completed
+    assert all(not node.claims for node in store.plan.nodes)
