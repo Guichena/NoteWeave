@@ -1,6 +1,6 @@
 # B站 Artifact 与 Context 剩余门禁（2026-09-27）
 
-2026-09-28 追加：真实 BV 已经 Kafka/Worker/Host 保存 Bundle 与证据 Plan，并建成四个独立子 Job；四项均受语义 Plan 或 PDF LLM 输出阻断，没有 READY Version。导出文件认证问题已修复并通过 1 项定向合同，详见 `bili-artifact-baseline.md`。
+2026-09-28 追加：真实 BV 已经 Kafka/Worker/Host 保存 Bundle 与证据 Plan，并建成四个独立子 Job；四项均受语义 Plan 或 PDF LLM 输出阻断，没有 READY Version。导出文件认证问题已修复；修复后 Backend 全量 **1133 项、0 failed、0 error、11 skipped**，详见 `bili-artifact-baseline.md`。
 
 本清单按已运行的合同与实际环境记录，详细结果见 `bili-artifact-baseline.md`。计划中的目标设计不等于已交付能力。当前生产入口 `noteweave.video-learning.enabled`、Context v2 的全局 ACTIVE、Research ACTIVE 与 Artifact ACTIVE 均默认关闭。
 
