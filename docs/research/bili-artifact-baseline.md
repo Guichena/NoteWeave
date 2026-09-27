@@ -565,3 +565,7 @@ Wiki Evidence Retriever 向 Citation ID 查询传入 Workspace；查询在返回
 ## C3 Artifact 已发布文件清单门禁
 
 `/versions/{versionNo}/files` 在返回文件名、对象键和状态前，复用已发布 Version 的冻结输入、Source 与 Research Context 可读性校验。撤销后的派生 Research 来源会阻断文件清单，与详情及文件下载一致。定向联跑 `ContextV2ResearchContractTest` **7**（74.00 秒）、`ArtifactContextV2ActiveContractTest` **1**（28.02 秒）、`ArtifactRollbackGateTest` **2**，共 **10 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。该合同的 Version 文件为模拟记录，没有真实对象存储字节。
+
+## C3 Artifact Version 列表标题门禁
+
+历史 Version 保留在数据库；列表在返回标题前逐个复核冻结来源。明确的 Source/Memory/Research Context 撤销使该 Version 从列表隐藏；Research 摘要损坏继续失败，不把完整性异常伪装成空列表。`ContextV2ResearchContractTest` 覆盖可读、摘要损坏和撤销三态；与 `ArtifactContextV2ActiveContractTest`、`ArtifactRollbackGateTest` 联跑共 **10 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。收紧异常分类后再跑 Research 合同 **7**、Artifact ACTIVE 合同 **1**，共 **8 passed，0 failed/0 error/0 skipped**；Artifact Context v2 的通用不可用错误仍显式失败。

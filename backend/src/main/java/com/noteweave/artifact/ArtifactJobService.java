@@ -390,6 +390,8 @@ public class ArtifactJobService {
         requireWorkspace(workspaceId);
         requireArtifactJob(workspaceId, artifactJobId);
         return artifactJobReadRepository.listVersions(workspaceId, artifactJobId).stream()
+                .filter(row -> exportService.versionVisibleForListing(
+                        workspaceId, artifactJobId, row.versionNo()))
                 .map(row -> new ArtifactVersionSummaryResponse(
                         row.versionId(), row.artifactJobId(), row.skillKey(), row.versionNo(),
                         row.title(), row.createdAt()))

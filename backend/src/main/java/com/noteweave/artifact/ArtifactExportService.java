@@ -547,6 +547,19 @@ public class ArtifactExportService {
         requireVersionSourcesVisible(loadVersion(workspaceId, artifactJobId, versionNo));
     }
 
+    public boolean versionVisibleForListing(String workspaceId, String artifactJobId, int versionNo) {
+        try {
+            requireVersionReadable(workspaceId, artifactJobId, versionNo);
+            return true;
+        } catch (BusinessException failure) {
+            return switch (failure.code()) {
+                case "ARTIFACT_SOURCE_REVOKED", "ARTIFACT_MEMORY_REVOKED",
+                     "RESEARCH_SOURCE_CONTEXT_REDACTED" -> false;
+                default -> throw failure;
+            };
+        }
+    }
+
     private void requireVersionSourcesVisible(ExportRow version) {
         if (version.originTaskId() == null || version.originTaskId().isBlank()) return;
         memoryRevisionGuard.requireActive(version.originTaskId());

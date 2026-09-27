@@ -279,6 +279,9 @@ class ContextV2ResearchContractTest {
                 """, Ids.newId(), artifactJobId, artifactTaskId);
         assertThat(artifactJobs.getVersionDetail(workspace, artifactJobId, 1).contentMarkdown())
                 .contains("Derived report");
+        assertThat(artifactJobs.listVersions(workspace, artifactJobId))
+                .extracting(com.noteweave.artifact.ArtifactVersionSummaryResponse::title)
+                .containsExactly("Derived version");
 
         String originalSnapshot = jdbc.queryForObject("""
                 select snapshot_json from run_input_snapshot where research_run_id = ?
@@ -302,6 +305,9 @@ class ContextV2ResearchContractTest {
                 .isInstanceOfSatisfying(BusinessException.class,
                         failure -> assertThat(failure.code()).isEqualTo("RESEARCH_CONTEXT_SNAPSHOT_MISMATCH"));
         assertThatThrownBy(() -> artifactJobs.getVersionDetail(workspace, artifactJobId, 1))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("RESEARCH_CONTEXT_SNAPSHOT_MISMATCH"));
+        assertThatThrownBy(() -> artifactJobs.listVersions(workspace, artifactJobId))
                 .isInstanceOfSatisfying(BusinessException.class,
                         failure -> assertThat(failure.code()).isEqualTo("RESEARCH_CONTEXT_SNAPSHOT_MISMATCH"));
         jdbc.update("update run_input_snapshot set snapshot_json = ? where research_run_id = ?",
@@ -333,6 +339,7 @@ class ContextV2ResearchContractTest {
         assertThatThrownBy(() -> artifactJobs.getVersionDetail(workspace, artifactJobId, 1))
                 .isInstanceOfSatisfying(BusinessException.class,
                         failure -> assertThat(failure.code()).isEqualTo("RESEARCH_SOURCE_CONTEXT_REDACTED"));
+        assertThat(artifactJobs.listVersions(workspace, artifactJobId)).isEmpty();
         assertThatThrownBy(() -> artifactExports.downloadFile(workspace, artifactJobId, 1, "no-file"))
                 .isInstanceOfSatisfying(BusinessException.class,
                         failure -> assertThat(failure.code()).isEqualTo("RESEARCH_SOURCE_CONTEXT_REDACTED"));
