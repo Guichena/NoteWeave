@@ -11,7 +11,7 @@
 | P3 | 博客、问答的独立 Skill、IR、证据 Verifier、Markdown/Version、局部 Repair 合同 | 真实资料下的结论一致性、文章质量及实际模型 Repair 样本 |
 | P4 | 原画面 PPTX、逐页文件清单、Host 校验与目录、按需加载的逐页预览界面；PowerPoint 桌面端合成双页打开及版面压力回放 | 真实画面与真实多页、容器 LibreOffice 转换、逐页预览与 PPTX 视觉一致性、人工可读性验收 |
 | P5 | 尚未开放 | P4 稳定后才试点动画、第二模板和原生图形版，并逐页人工核对 |
-| P6 | 四选 UI、独立父子状态/重试/取消/历史版本下载、Workspace 与 Skill Version 开关、子项对账补建；新 Version 显式持有素材 Bundle，历史 Version 仅在冻结引用闭合时回填 | Docker/Kafka/对象存储跨进程中断恢复，实际文件浏览器保存，无法自动回填的旧 Version 审计与可证明安全的 Bundle 清理，灰度样本及回滚演练 |
+| P6 | 四选 UI、独立父子状态/重试/取消/历史版本下载、Workspace 与 Skill Version 开关、子项对账补建；新 Version 显式持有素材 Bundle，历史 Version 仅在冻结引用闭合时回填；Chrome 验证前端 Blob 保存动作 | Docker/Kafka/对象存储跨进程中断恢复、带真实后端的 Version 页面文件保存、无法自动回填的旧 Version 审计与 Bundle 清理、灰度样本及回滚演练 |
 | C0–C2 | Context v2 Schema、主题回跳与约束、摘要修订、预算选择、合成标注样本 | 扩大真实会话的人工标注与误选统计 |
 | C3 | Answer、Research、Artifact 分别消费冻结 v2 投影；Research/Artifact 独立全局门禁，Memory 撤销与输入读取阻断；派生 Research Source 目录、后续 Research、QA/NOTE、Artifact 输入与带冻结输入的已发布 Artifact Version 列表/详情/文件清单/下载/写回过滤撤销来源；Wiki 当前/历史版本、首页链接、索引标题、Citation ID 提取与新 Knowledge 写入过滤已撤销引用；答案生成前拒绝撤销的 Research Citation 文本 | 已发布 Research 正文及文件、无冻结输入的旧 Artifact Version、Wiki 索引聚合计数和既有答案正文/引用展示等读取路径和删除策略；搜索索引清理、真实 Worker 缓存及跨进程撤销传播 |
 | C4 | Workspace 开关、Answer v1/v2 引用差异与最近 Run 汇总、OFF→SHADOW 旧会话下一轮回填、v1 回退记录 | 真实标注会话的误选/漏约束指标、灰度阈值和生产回滚演练；批量历史迁移不在现有合同中 |

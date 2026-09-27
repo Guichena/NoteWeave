@@ -579,3 +579,7 @@ Wiki Evidence Retriever 向 Citation ID 查询传入 Workspace；查询在返回
 ## P4 逐页预览界面
 
 `video_learning_deck` 的 Version 记录现在可展开逐页 PNG 预览，按页通过已有文件下载接口取图；用户可上一页/下一页浏览，离开页面时释放浏览器对象 URL。PPTX 与 PNG 原有下载入口保留。前端 `ArtifactSlidePreview.dom.test.tsx`、`ArtifactVersionActions.dom.test.tsx`、`ArtifactStudioActivity.dom.test.tsx` 首轮 **5 passed**；补充活动界面的真实接线断言后复跑预览与活动界面 **5 passed**，均 0 failed；`pnpm exec tsc -b --pretty false` 退出码 0。此处验证了 DOM 交互和类型检查，真实多页画面的视觉验收仍未完成。
+
+## P6 浏览器文件保存检查
+
+使用本机 Chrome 和本地 Vite 页面执行 Playwright：调用前端现用的 `downloadBlob`，确认浏览器发出下载事件、建议文件名为 `slide-notes.md`，实际保存字节为 `# saved artifact\n`。首次运行因 Playwright 自带 Chromium 未安装而未启动；改用已安装 Chrome 后 `artifact-browser-save.spec.ts` **1 passed**，TypeScript 构建检查退出码 0。此项验证浏览器保存动作，不等于已在带真实后端的 Artifact Version 页面完成文件下载；该全链路仍待验收。
