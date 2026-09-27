@@ -73,6 +73,21 @@ class InternalServiceAuthContractTest {
     }
 
     @Test
+    void videoMaterialRoutesShouldUseArtifactWorkerToken() throws Exception {
+        String path = "/internal/worker/video-material-tasks/missing/input";
+        mockMvc.perform(get(path)
+                        .header(InternalServiceAuthFilter.HEADER_NAME, "test-internal-secret"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get(path)
+                        .header(InternalServiceAuthFilter.HEADER_NAME, "test-research-secret"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get(path)
+                        .header(InternalServiceAuthFilter.HEADER_NAME, "test-artifact-secret"))
+                .andExpect(result -> org.junit.jupiter.api.Assertions.assertNotEquals(
+                        401, result.getResponse().getStatus()));
+    }
+
+    @Test
     void suppliedCorrelationIdShouldBePreservedAcrossResponseAndApiEnvelope() throws Exception {
         mockMvc.perform(get("/api/v2/skills").header("X-Correlation-ID", "contract-correlation-1"))
                 .andExpect(status().isOk())

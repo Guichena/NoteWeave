@@ -17,8 +17,10 @@ class HttpArtifactWorkerControlClientTest {
     void providerAckRequestsHostOwnedResumeInsteadOfWorkerAutoResume() throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
         AtomicReference<String> deferResume = new AtomicReference<>("");
+        AtomicReference<String> requestBody = new AtomicReference<>("");
         server.createContext("/callbacks/acquisition/ack", exchange -> {
             deferResume.set(exchange.getRequestHeaders().getFirst("X-NoteWeave-Defer-Resume"));
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             byte[] body = """
                     {"operation":null,"receipt":null,"resumed_tasks":[]}
                     """.getBytes(StandardCharsets.UTF_8);
@@ -39,6 +41,10 @@ class HttpArtifactWorkerControlClientTest {
             client.acknowledgeAcquisition(new ArtifactAcquisitionAckRequest(
                     "provider-token", "ACKNOWLEDGED", "", "", "", java.util.Map.of()));
             assertThat(deferResume.get()).isEqualTo("true");
+            assertThat(mapper.readTree(requestBody.get()).path("callback_token").asText())
+                    .isEqualTo("provider-token");
+            assertThat(mapper.readTree(requestBody.get()).path("final_status").asText())
+                    .isEqualTo("ACKNOWLEDGED");
         } finally {
             server.stop(0);
         }
@@ -48,8 +54,10 @@ class HttpArtifactWorkerControlClientTest {
     void shouldParseDirectFastApiControlResponseWithoutJavaApiEnvelope() throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
         AtomicReference<String> receivedToken = new AtomicReference<>("");
+        AtomicReference<String> requestBody = new AtomicReference<>("");
         server.createContext("/tasks/task-1/resume", exchange -> {
             receivedToken.set(exchange.getRequestHeaders().getFirst("X-NoteWeave-Internal-Token"));
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             byte[] body = """
                     {"task_id":"task-1","status":"COMPLETED","progress_events":5,"result_title":"Course Notes"}
                     """.getBytes(StandardCharsets.UTF_8);
@@ -86,6 +94,8 @@ class HttpArtifactWorkerControlClientTest {
             assertThat(response.status()).isEqualTo("COMPLETED");
             assertThat(response.progressEvents()).isEqualTo(5);
             assertThat(receivedToken.get()).isEqualTo("worker-shared-secret");
+            assertThat(objectMapper.readTree(requestBody.get()).path("request_id").asText())
+                    .isEqualTo("request-1");
         } finally {
             server.stop(0);
         }

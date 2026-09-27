@@ -3,7 +3,9 @@ package com.noteweave.worker;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.config.NoteWeaveProperties;
+import com.noteweave.common.Json;
 import com.noteweave.infra.outbox.DurableOutboxDispatcher;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -50,7 +52,8 @@ public class HttpArtifactWorkerControlClient implements ArtifactWorkerControlCli
         String responseBody = restClient.post()
                 .uri("/tasks/{taskId}/resume", taskId)
                 .header(DurableOutboxDispatcher.DELIVERY_TOKEN_HEADER, request.deliveryToken())
-                .body(request)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Json.write(objectMapper, request))
                 .retrieve()
                 .body(String.class);
         return parseApiData(responseBody, ArtifactWorkerExecutionResponse.class);
@@ -61,7 +64,8 @@ public class HttpArtifactWorkerControlClient implements ArtifactWorkerControlCli
         String responseBody = restClient.post()
                 .uri("/callbacks/acquisition/ack")
                 .header("X-NoteWeave-Defer-Resume", "true")
-                .body(request)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Json.write(objectMapper, request))
                 .retrieve()
                 .body(String.class);
         return parseApiData(responseBody, ArtifactAcquisitionAckResponse.class);

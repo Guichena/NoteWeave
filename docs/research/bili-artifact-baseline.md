@@ -611,3 +611,11 @@ Wiki Evidence Retriever 向 Citation ID 查询传入 Workspace；查询在返回
 首次启动期间 Ubuntu WSL 实例在前台命令结束后反复关机，Docker daemon 随之停止，MySQL 断连使 Backend 启动失败。保持一个前台 WSL 会话后，Backend、MySQL、Artifact Worker 均达到 healthy。此项验证了镜像和基础渲染运行时，尚未验证真实 BV 素材经 Kafka、MinIO、Host 发布、Version 页面下载的完整跨进程链路，也没有验证真实模型效果。
 
 后续尝试仅在隔离栈打开视频功能开关时，Compose 重建 Backend 报 Docker 旧进程为 zombie、无法停止；已清理本次重建留下的 `Created` 临时容器，原隔离 Backend 仍保持 healthy。未重启 Docker daemon，以免中断主项目 Compose 栈；所以本次没有把视频 API 或真实文件下载记为通过。
+
+## P6 WSL Docker 四选请求及故障回执
+
+2026-09-28 隔离栈 Backend 启用视频入口，使用现有 bootstrap 账号新建独立验收 Workspace。登录、Workspace 列表、视频入口均返回 HTTP 200；视频入口 `enabled=true`，列出 `bilibili_course_note_pdf`、`interview_qa`、`knowledge_blog`、`video_learning_deck` 四个 Skill。隔离环境配额服务返回 `WORKLOAD_QUOTA_UNAVAILABLE`，仅在隔离 override 关闭配额后，同一四选请求创建成功，父任务由 `QUEUED` 到 `RUNNING`，四个子项均保持 `NOT_STARTED`。
+
+真实 Kafka 消费暴露两处代码问题并已修复：`/internal/worker/video-material-tasks/` 未归入 Artifact 内部 Token 路由，Worker 获取输入被 401 拒绝；Host 向 FastAPI 转发 Provider ACK 时用默认 camelCase JSON，Worker 返回 422。修复后内部认证合同 **5/5**、Host→Worker 控制客户端合同 **2/2** 通过，真实回执进入 Worker `/callbacks/acquisition/ack` 为 HTTP 200。Worker 公开 operation 不带 `task_id`，Host 改从 receipt 取任务 ID；失败回执重复投递时跳过已终态任务。控制服务合同 **5/5** 通过。隔离容器中对已持久化的同一失败回执首次重放返回 HTTP 200，父任务变 `FAILED`；再次重放仍为 HTTP 200，四个子项保持 `NOT_STARTED`，Bundle/Plan/Version 均未误发布。
+
+本次真实 BV 采集在 Worker 内由 `yt-dlp` 访问 B站时 TLS 握手超时，无法形成 Bundle。提出让 Docker 网关转发 WSL 本机代理的脚本被自动审批拒绝，理由是它会让 Docker 网络内其他容器连接该代理，访问面超出单条视频验收；未执行或换方式绕过。因此生产容器的真实视频成功发布、逐页预览和前端 Version 下载仍未通过。此次故障验证的是认证、回执、终态和幂等失败路径，不能算作四种产物成功链路。

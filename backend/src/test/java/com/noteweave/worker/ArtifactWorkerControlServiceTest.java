@@ -82,6 +82,25 @@ class ArtifactWorkerControlServiceTest {
         verifyNoInteractions(callbacks);
     }
 
+    @Test
+    void failedProviderReplayKeepsTerminalParentMaterialTaskUnchanged() {
+        ArtifactAcquisitionAckRequest request = new ArtifactAcquisitionAckRequest(
+                "provider-token", "FAILED", "", "SUBTITLE_UNAVAILABLE", "", Map.of());
+        var receipt = new ArtifactAcquisitionReceiptResponse(
+                "receipt-1", "request-1", "task-1", "input-url-1", "EXTRACT_TRANSCRIPT",
+                "", "", "FAILED", "FAILED", "", "", "", "",
+                "SUBTITLE_UNAVAILABLE", "", 1);
+        when(client.acknowledgeAcquisition(request)).thenReturn(new ArtifactAcquisitionAckResponse(
+                acknowledged().operation(), receipt, List.of()));
+        when(tasks.getTaskRef("task-1")).thenReturn(new TaskService.TaskRef(
+                "task-1", "workspace-1", "VIDEO_MATERIAL", "FAILED",
+                "VIDEO_LEARNING_REQUEST", "parent-1"));
+
+        service.acknowledgeAcquisition(request);
+
+        verifyNoInteractions(materials, outbox, callbacks);
+    }
+
     private ArtifactAcquisitionAckRequest request() {
         return new ArtifactAcquisitionAckRequest("provider-token", "ACKNOWLEDGED", "", "", "", Map.of());
     }
@@ -93,7 +112,7 @@ class ArtifactWorkerControlServiceTest {
 
     private ArtifactAcquisitionAckResponse acknowledged() {
         ArtifactAcquisitionOperationResponse operation = new ArtifactAcquisitionOperationResponse(
-                "request-1", "task-1", "EXTRACT_TRANSCRIPT", "builtin-bilibili-mcp",
+                "request-1", null, "EXTRACT_TRANSCRIPT", "builtin-bilibili-mcp",
                 "builtin-bilibili-mcp", "get_bilibili_subtitle", "", "", "", "",
                 "AVAILABLE", "HEALTHY", "SUCCEEDED", "ACKNOWLEDGED", 1, List.of());
         ArtifactAcquisitionReceiptResponse receipt = new ArtifactAcquisitionReceiptResponse(

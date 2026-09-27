@@ -57,8 +57,8 @@ public class ArtifactWorkerControlService {
         if (response != null && response.receipt() != null && response.operation() != null
                 && "ACKNOWLEDGED".equalsIgnoreCase(blankIfNull(response.receipt().callbackStatus()))
                 && (response.resumedTasks() == null || response.resumedTasks().isEmpty())
-                && !blankIfNull(response.operation().taskId()).isBlank()) {
-            String taskId = response.operation().taskId();
+                && !acknowledgedTaskId(response).isBlank()) {
+            String taskId = acknowledgedTaskId(response);
             if (Set.of("COMPLETED", "FAILED", "CANCELLED")
                     .contains(taskService.getTaskRef(taskId).taskStatus().toUpperCase())) {
                 return response;
@@ -78,6 +78,13 @@ public class ArtifactWorkerControlService {
         return value == null ? "" : value;
     }
 
+    private String acknowledgedTaskId(ArtifactAcquisitionAckResponse response) {
+        String receiptTaskId = response.receipt() == null ? ""
+                : blankIfNull(response.receipt().taskId());
+        return receiptTaskId.isBlank() && response.operation() != null
+                ? blankIfNull(response.operation().taskId()) : receiptTaskId;
+    }
+
     private void propagateProviderFailureIfNeeded(
             ArtifactAcquisitionAckResponse response,
             ArtifactAcquisitionAckRequest request
@@ -89,7 +96,7 @@ public class ArtifactWorkerControlService {
         if (!"FAILED".equals(callbackStatus)) {
             return;
         }
-        String taskId = response.operation() == null ? "" : blankIfNull(response.operation().taskId());
+        String taskId = acknowledgedTaskId(response);
         if (taskId.isBlank()) {
             return;
         }
@@ -108,8 +115,13 @@ public class ArtifactWorkerControlService {
             errorMessage = "provider callback reported acquisition failure";
         }
         errorMessage = SensitiveErrorMessageSanitizer.sanitize(errorMessage);
+        TaskService.TaskRef task = taskService.getTaskRef(taskId);
+        if (Set.of("COMPLETED", "FAILED", "CANCELLED")
+                .contains(task.taskStatus().toUpperCase())) {
+            return;
+        }
         String deliveryToken = activeDeliveryToken(taskId);
-        if ("VIDEO_MATERIAL".equals(taskService.getTaskRef(taskId).taskType())) {
+        if ("VIDEO_MATERIAL".equals(task.taskType())) {
             String materialErrorCode = errorCode.matches("[A-Z][A-Z0-9_]{0,79}")
                     ? errorCode : "PROVIDER_CALLBACK_FAILED";
             videoMaterialTaskService.fail(taskId, deliveryToken, materialErrorCode);
