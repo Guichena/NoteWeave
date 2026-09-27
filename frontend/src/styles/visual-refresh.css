@@ -7362,6 +7362,33 @@ button.primary-action:hover:not(:disabled) {
   background: color-mix(in oklch, var(--nw-domain-soft, var(--nw-color-primary-soft)) 34%, var(--nw-color-surface-raised));
 }
 
+.artifact-slide-preview {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.artifact-slide-preview-content {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.artifact-slide-preview-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.artifact-slide-preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--nw-radius-control);
+  background: var(--nw-color-surface-raised);
+}
+
 .artifact-composer-view {
   gap: 17px;
   min-height: 0;

@@ -59,6 +59,7 @@ function activityProps(
       formatRelativeTime: () => "刚刚"
     }),
     latestArtifactVersion,
+    workspace: null,
     artifactJobsLoading: false,
     isBusy: false,
     formatRelativeTime: () => "刚刚",
@@ -81,6 +82,20 @@ function activityProps(
 }
 
 describe("ArtifactStudioActivity", () => {
+  it("offers the slide preview from a ready deck version", () => {
+    const props = activityProps();
+    props.workspace = { workspace_id: "workspace-1", name: "Notes", status: "ACTIVE" };
+    props.latestArtifactVersion!.skill_key = "video_learning_deck";
+    props.latestArtifactVersion!.files = [
+      { file_id: "slide-1", file_format: "PNG", file_name: "slide-001.png",
+        media_type: "image/png", storage_backend: "local", bucket_name: "",
+        object_key: "", size_bytes: 512, checksum_sha256: "a".repeat(64),
+        status: "READY", error_message: "", created_at: "2026-08-02T00:00:00Z" }
+    ];
+    render(<ArtifactStudioActivity {...props} />);
+    expect(screen.getByRole("button", { name: "预览逐页画面（1 页）" })).toBeTruthy();
+  });
+
   it("offers each READY version file and excludes degraded files", () => {
     const props = activityProps();
     props.latestArtifactVersion!.files = [

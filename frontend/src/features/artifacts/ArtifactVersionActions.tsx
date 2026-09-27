@@ -4,6 +4,7 @@ import type {
   ArtifactVersionAuditViewVersion
 } from "./artifactVersionAudit";
 import { ArtifactMindMapPreview, isMindMapArtifact } from "./ArtifactMindMapPreview";
+import { ArtifactSlidePreview } from "./ArtifactSlidePreview";
 import type { ArtifactFileMetadata } from "./model";
 
 type ArtifactVersionActionTarget = ArtifactVersionAuditViewVersion & {
@@ -35,11 +36,13 @@ type ArtifactVersionActionsProps = Pick<
     "preview" | "scopeLabel" | "detailToggleLabel" | "runtimeSummary" | "detailSections"
   >;
   detailsOpen?: boolean;
+  workspaceId?: string;
 };
 
 export function ArtifactVersionActions({
   version,
   auditView,
+  workspaceId = "",
   detailsOpen = false,
   isBusy,
   formatRelativeTime,
@@ -115,6 +118,11 @@ export function ArtifactVersionActions({
           下载 {file.file_format}{file.file_format === "PNG" ? ` · ${file.file_name}` : ""}
         </button>
       ))}
+      {version.skill_key === "video_learning_deck" && workspaceId && version.files ? (
+        <ArtifactSlidePreview workspaceId={workspaceId}
+          artifactJobId={version.artifact_job_id} versionNo={version.version_no}
+          files={version.files.filter(downloadableFile)} />
+      ) : null}
       {auditView.runtimeSummary.length > 0 ? (
         <div className="artifact-runtime-trace">
           {auditView.runtimeSummary.map((item) => (
