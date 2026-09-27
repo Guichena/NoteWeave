@@ -336,6 +336,9 @@ class ContextV2ResearchContractTest {
         assertThatThrownBy(() -> artifactExports.downloadFile(workspace, artifactJobId, 1, "no-file"))
                 .isInstanceOfSatisfying(BusinessException.class,
                         failure -> assertThat(failure.code()).isEqualTo("RESEARCH_SOURCE_CONTEXT_REDACTED"));
+        assertThatThrownBy(() -> artifactExports.listVersionFiles(workspace, artifactJobId, 1))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("RESEARCH_SOURCE_CONTEXT_REDACTED"));
         assertThatThrownBy(() -> artifactJobs.saveVersionAsSource(workspace, artifactJobId, 1))
                 .isInstanceOfSatisfying(BusinessException.class,
                         failure -> assertThat(failure.code()).isEqualTo("RESEARCH_SOURCE_CONTEXT_REDACTED"));

@@ -561,3 +561,7 @@ Wiki Evidence Retriever 向 Citation ID 查询传入 Workspace；查询在返回
 ## C3 Knowledge 新版本写入的 Citation 来源门禁
 
 新建 Note/Wiki 或追加版本在插入 Version 前，逐个核对 Citation ID 属于同一 Workspace，所指 Source 仍为 READY，派生 Research 原 Run 可读。撤销后返回 `KNOWLEDGE_CITATION_REVOKED`，不继续复制引用。首次联跑 **30 项中 1 error**：`KnowledgeGovernanceServiceTest` 过去只传伪 Citation ID，未创建对应引用行；补齐夹具并增加真实 Research Source 集成合同后，`KnowledgeCommandServiceTest` **5**、`KnowledgeVersionServiceTest` **4**、`KnowledgeGovernanceServiceTest` **6**、`KnowledgeQueryServiceTest` **8**、`ContextV2ResearchContractTest` **7**，共 **30 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。合同证实撤销前可绑定真实来源，撤销后新 Wiki 写入拒绝且未创建新 Item；已存正文的保留/删除策略仍待定。
+
+## C3 Artifact 已发布文件清单门禁
+
+`/versions/{versionNo}/files` 在返回文件名、对象键和状态前，复用已发布 Version 的冻结输入、Source 与 Research Context 可读性校验。撤销后的派生 Research 来源会阻断文件清单，与详情及文件下载一致。定向联跑 `ContextV2ResearchContractTest` **7**（74.00 秒）、`ArtifactContextV2ActiveContractTest` **1**（28.02 秒）、`ArtifactRollbackGateTest` **2**，共 **10 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。该合同的 Version 文件为模拟记录，没有真实对象存储字节。

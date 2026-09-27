@@ -659,7 +659,9 @@ public class ArtifactExportService {
 
     public List<ArtifactFileMetadataResponse> listVersionFiles(
             String workspaceId, String artifactJobId, int versionNo) {
-        return listFiles(loadVersion(workspaceId, artifactJobId, versionNo).versionId());
+        ExportRow version = loadVersion(workspaceId, artifactJobId, versionNo);
+        requireVersionSourcesVisible(version);
+        return listFiles(version.versionId());
     }
 
     public ArtifactDownloadFile downloadFile(String workspaceId, String artifactJobId,
