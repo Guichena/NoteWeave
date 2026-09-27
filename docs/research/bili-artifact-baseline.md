@@ -569,3 +569,7 @@ Wiki Evidence Retriever 向 Citation ID 查询传入 Workspace；查询在返回
 ## C3 Artifact Version 列表标题门禁
 
 历史 Version 保留在数据库；列表在返回标题前逐个复核冻结来源。明确的 Source/Memory/Research Context 撤销使该 Version 从列表隐藏；Research 摘要损坏继续失败，不把完整性异常伪装成空列表。`ContextV2ResearchContractTest` 覆盖可读、摘要损坏和撤销三态；与 `ArtifactContextV2ActiveContractTest`、`ArtifactRollbackGateTest` 联跑共 **10 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。收紧异常分类后再跑 Research 合同 **7**、Artifact ACTIVE 合同 **1**，共 **8 passed，0 failed/0 error/0 skipped**；Artifact Context v2 的通用不可用错误仍显式失败。
+
+## P1 A1/A2 文件恢复读回门禁
+
+`reconcileDegradedFiles` 恢复缺失或损坏的对象后，读回同一对象并与已提交文件摘要核对；读回不匹配时 Version 保持 `DEGRADED`，下一轮重试读回正确才改为 `READY`。H2 加模拟对象存储的故障测试 `ArtifactFileReconcileReadbackTest` **1 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。邻接的 `Phase6ResearchArtifactContractTest` 文件元数据完整性及历史版本再生成/比较/回滚合同 **2 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。这里的对象读回由测试替身模拟，尚非真实对象存储或跨进程崩溃恢复验证。

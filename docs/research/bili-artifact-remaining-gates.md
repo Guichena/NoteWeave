@@ -5,7 +5,7 @@
 | 工作包 | 已有可验证能力 | 剩余门禁 |
 | --- | --- | --- |
 | P0 | 合成字幕、ASR 回退、PDF 与多分集素材的固定离线回放 | 冻结有使用许可的真实短视频、无字幕视频、多分集视频，记录采集时间、字幕/画面质量与文件样本 |
-| P1 A1/A2 | Host 预留 Version、Candidate 幂等提交、内容与文件先验、READY/DEGRADED、回滚；旧 Skill、历史 Version 与 PDF 下载兼容 | 真实对象存储及跨进程崩溃后的暂存物对账与恢复 |
+| P1 A1/A2 | Host 预留 Version、Candidate 幂等提交、内容与文件先验、READY/DEGRADED、文件恢复后的读回摘要校验、回滚；旧 Skill、历史 Version 与 PDF 下载兼容 | 真实对象存储及跨进程崩溃后的暂存物对账与恢复 |
 | P1.5 A3 | 受控 Source Snapshot 窗口分页、预算、来源引用、旧 `sample_text` 兼容；仓库真实长文档的后段事实进入 Worker Citation | 用户实际长资料下的 Host→Worker 全链回放、人工质量及线上 Provider 效果 |
 | P2 | 独立视频 Bundle、字幕/画面观察、文件摘要、知识 Plan、父资料 Task 与复用分支；离线 Provider 合同 | 有许可真实视频的完整采集、OCR/观察质量、无字幕 ASR 与分集画面回放 |
 | P3 | 博客、问答的独立 Skill、IR、证据 Verifier、Markdown/Version、局部 Repair 合同 | 真实资料下的结论一致性、文章质量及实际模型 Repair 样本 |

@@ -489,6 +489,11 @@ public class ArtifactExportService {
                                 "恢复文件与已提交摘要不匹配", HttpStatus.CONFLICT);
                     }
                     objectStorage.write(file.bucketName(), file.objectKey(), recovered);
+                    byte[] persisted = objectStorage.read(file.bucketName(), file.objectKey());
+                    if (!sha256(persisted).equals(file.checksumSha256())) {
+                        throw new BusinessException("ARTIFACT_FILE_RECONCILE_MISMATCH",
+                                "恢复文件写入后摘要不匹配", HttpStatus.CONFLICT);
+                    }
                 }
                 jdbcTemplate.update("update artifact_version set delivery_status = 'READY' where id = ?",
                         versionId);
