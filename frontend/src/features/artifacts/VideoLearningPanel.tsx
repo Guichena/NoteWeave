@@ -155,14 +155,14 @@ export function VideoLearningPanel({ workspaceId, onJobsChanged, onOpenVersion, 
   return (
     <section className="video-learning-panel" aria-labelledby="video-learning-heading">
       <div className="artifact-section-heading">
-        <h3 className="section-label" id="video-learning-heading">视频资料包</h3>
+        <h3 className="section-label" id="video-learning-heading">视频产物</h3>
         <Video size={16} aria-hidden="true" />
       </div>
       {overview?.enabled ? (
         <>
           <button className="video-learning-toggle secondary-button" type="button"
             aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
-            <span>一个视频，生成多种产物</span>
+            <span>选择要生成的视频产物</span>
             {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
           </button>
           {expanded ? (
@@ -186,7 +186,7 @@ export function VideoLearningPanel({ workspaceId, onJobsChanged, onOpenVersion, 
                 </label>
               </div>
               <fieldset className="video-learning-choices">
-                <legend>选择产物</legend>
+                <legend>独立产物，可单选或多选</legend>
                 {OUTPUTS.map((output) => (
                   <label key={output.key}>
                     <input type="checkbox" checked={effectiveSelected.includes(output.key)}
@@ -217,7 +217,7 @@ export function VideoLearningPanel({ workspaceId, onJobsChanged, onOpenVersion, 
                   onChange={(event) => changed(() => setRequirement(event.target.value))} />
               </label>
               <p className="video-learning-cost" aria-live="polite">
-                资源预估：1 次资料采集，加上 {effectiveSelected.length} 个独立产物任务。<br />
+                资源预估：素材采集 1 次，产物任务 {effectiveSelected.length} 个；每项独立保存和重试。<br />
                 画面按{densityLabel}密度采集；{visualOutputs.length > 0
                   ? `${visualOutputs.length} 种产物会使用原画面。`
                   : "当前选择以文字内容为主。"}<br />
@@ -238,16 +238,16 @@ export function VideoLearningPanel({ workspaceId, onJobsChanged, onOpenVersion, 
             {item.video_url.match(/BV[0-9A-Za-z]{10}/)?.[0] ?? "B站视频"} · 第 {item.part} 集
           </p>
           <div className="video-learning-status">
-            <strong>资料 {labelFor(item.material_state)}</strong>
+            <strong>素材准备：{labelFor(item.material_state)}</strong>
             {!item.cancellation_requested && item.material_state !== "FAILED"
                 && item.choices.some((choice) => ACTIVE.has(choice.status)) ? (
               <button type="button" className="secondary-button" disabled={busy}
                 onClick={() => void cancel(item)}>取消未开始任务</button>
             ) : null}
           </div>
-          <ul>{item.choices.map((choice) => (
-            <li key={choice.skill_key}>
-              <span>{titleFor(choice.skill_key)}</span>
+          <ul aria-label="独立产物">{item.choices.map((choice) => (
+            <li key={choice.skill_key} className="video-learning-output">
+              <strong>{titleFor(choice.skill_key)}</strong>
               <small>{labelFor(choice.status)}</small>
               {choice.status === "FAILED" && choice.artifact_job_id
                   && item.material_state === "READY" && !item.cancellation_requested ? (

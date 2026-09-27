@@ -10942,8 +10942,7 @@ body {
   border-top: 1px solid var(--nw-color-border-soft);
 }
 
-.video-learning-status,
-.video-learning-request li {
+.video-learning-status {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -10951,7 +10950,7 @@ body {
 }
 
 .video-learning-status strong,
-.video-learning-request li span {
+.video-learning-output strong {
   font-size: 0.8rem;
 }
 
@@ -10959,12 +10958,15 @@ body {
   white-space: nowrap;
 }
 
-.video-learning-request li {
+.video-learning-output {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
+  padding: 9px 10px;
+  border: 1px solid var(--nw-color-border-soft);
+  border-radius: var(--nw-radius-control);
 }
 
-.artifact-rail .video-learning-request li button {
+.artifact-rail .video-learning-output button {
   grid-column: 2;
   justify-self: end;
   width: auto;
@@ -10988,7 +10990,7 @@ body {
   list-style: none;
 }
 
-.video-learning-request li small {
+.video-learning-output small {
   color: var(--nw-color-muted);
   font-size: 0.73rem;
 }

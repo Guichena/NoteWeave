@@ -31,7 +31,7 @@ describe("VideoLearningPanel", () => {
       createVideoLearning: vi.fn(async (_workspaceId: string, _input: CreateVideoLearningInput) => parent)
     };
     render(<VideoLearningPanel workspaceId="workspace" api={api as unknown as ArtifactsApi} />);
-    fireEvent.click(await screen.findByRole("button", { name: /一个视频，生成多种产物/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /选择要生成的视频产物/ }));
     fireEvent.change(screen.getByLabelText("B站视频链接"), {
       target: { value: "https://www.bilibili.com/video/BV1234567890?p=2" }
     });
@@ -45,19 +45,20 @@ describe("VideoLearningPanel", () => {
       user_requirement: "理解关键概念"
     });
     expect(await screen.findByText("BV1234567890 · 第 2 集")).toBeTruthy();
-    expect(screen.getByText("资料 排队中")).toBeTruthy();
+    expect(screen.getByText("素材准备：排队中")).toBeTruthy();
+    expect(screen.getByRole("list", { name: "独立产物" }).querySelectorAll("li")).toHaveLength(2);
   });
 
   it("updates collection and output cost factors before submission", async () => {
     const api = { listVideoLearning: vi.fn(async () => ({ enabled: true, requests: [] })) };
     render(<VideoLearningPanel workspaceId="workspace" api={api as unknown as ArtifactsApi} />);
-    fireEvent.click(await screen.findByRole("button", { name: /一个视频，生成多种产物/ }));
-    expect(screen.getByText(/1 次资料采集，加上 1 个独立产物任务/)).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: /选择要生成的视频产物/ }));
+    expect(screen.getByText(/素材采集 1 次，产物任务 1 个/)).toBeTruthy();
     expect(screen.getByText(/当前选择以文字内容为主/)).toBeTruthy();
     fireEvent.click(screen.getByLabelText(/学习演示文稿/));
     fireEvent.change(screen.getByLabelText("画面密度"), { target: { value: "HIGH" } });
     fireEvent.change(screen.getByLabelText("无字幕时"), { target: { value: "DENY" } });
-    expect(screen.getByText(/2 个独立产物任务/)).toBeTruthy();
+    expect(screen.getByText(/产物任务 2 个/)).toBeTruthy();
     expect(screen.getByText(/画面按丰富密度采集；1 种产物会使用原画面/)).toBeTruthy();
     expect(screen.getByText(/缺少字幕时不转录，可能留下资料缺口/)).toBeTruthy();
   });
@@ -70,10 +71,10 @@ describe("VideoLearningPanel", () => {
     };
     render(<VideoLearningPanel workspaceId="workspace" api={api as unknown as ArtifactsApi} />);
     expect(await screen.findByText("BV1234567890 · 第 2 集")).toBeTruthy();
-    expect(screen.queryByText("一个视频，生成多种产物")).toBeNull();
+    expect(screen.queryByText("选择要生成的视频产物")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "取消未开始任务" }));
     await waitFor(() => expect(api.cancelVideoLearning).toHaveBeenCalledWith("workspace", "parent-1"));
-    expect(await screen.findByText("资料 已取消")).toBeTruthy();
+    expect(await screen.findByText("素材准备：已取消")).toBeTruthy();
   });
 
   it("disables a blocked output version while keeping other choices available", async () => {
@@ -83,7 +84,7 @@ describe("VideoLearningPanel", () => {
       createVideoLearning: vi.fn(async (_workspaceId: string, _input: CreateVideoLearningInput) => parent)
     };
     render(<VideoLearningPanel workspaceId="workspace" api={api as unknown as ArtifactsApi} />);
-    fireEvent.click(await screen.findByRole("button", { name: /一个视频，生成多种产物/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /选择要生成的视频产物/ }));
     expect(screen.getByLabelText(/知识博客/)).toHaveProperty("disabled", true);
     fireEvent.change(screen.getByLabelText("B站视频链接"), {
       target: { value: "https://www.bilibili.com/video/BV1234567890" }
