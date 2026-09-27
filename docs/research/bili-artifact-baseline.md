@@ -625,3 +625,11 @@ Wiki Evidence Retriever 向 Citation ID 查询传入 Workspace；查询在返回
 Frontend `pnpm test`：**72 个文件、256 passed**；Artifact Worker `.venv\\Scripts\\python.exe -m pytest -q`：**367 passed**。Backend 首次完整 `mvn test`：**1132 项、5 failed、11 skipped**。其中一项架构断言把 Windows CRLF 当成配置错误，另有三项旧合同仍要求删除来源后 Worker 取得 `METADATA_ONLY` 输入，与当前 C3 读取门禁冲突；第五项架构断言发现 `ArtifactJobService` 中新增的三处直接 SQL。将换行断言兼容 Windows、更新旧合同为拒绝读取，并将直接 SQL 移入既有 Repository 后，再跑 Backend 全量测试：**1132 项、0 failed、0 error、11 skipped**，Maven 退出码 0。前后端与 Worker 的完整单元/合同回归至此通过；这不代替真实模型与跨进程成功链路验收。
 
 把本地冻结 Bundle 派生的实际 **8 页原画面 PPTX** 拷入隔离 Artifact Worker，容器 LibreOffice 转成 PDF，`pdfinfo` 读回 **8 页**、文件约 **636 KB**。这补齐了 P4 的容器转换页数检查；真实模型 Plan 的教学内容、逐页预览一致性和 Host Version 下载仍待验收。
+
+## 2026-09-28 真实 BV 直连重试与导出认证修复
+
+此轮 Worker 选用 `audio.srt`，转录模式为 `bundled_faster_whisper`，即实际走 ASR 回退；206 段不能称为直接提取到的视频 CC 字幕。
+
+隔离 Worker 对用户提供的 BV 页面直连返回 HTTP 200。新四选请求 `8322de5f-4ea1-42a4-a8c3-109b6bcbe632` 经 Kafka 开始采集；Worker 持久化记录显示字幕提取 **206 段**，画面采集、画面观察和规范化阶段全部 `COMPLETED`。随后 Host 的 `/video-material-tasks/{taskId}/bundle` 返回 HTTP 502，父任务 `FAILED`，四个子项仍 `NOT_STARTED`。Worker 堆栈和 Host 访问日志显示 Host 回读 `/tasks/{taskId}/exports/frame-1-000.png` 得到 **401**：`HttpArtifactWorkerExportClient` 误用通用内部令牌，而 Worker 路由要求 Artifact 专用令牌。客户端改用与控制客户端相同的 Artifact 令牌配置，新增 HTTP 合同 **1 passed**，修复版 Backend 已打包并在隔离栈健康启动。
+
+修复后同一 BV 的独立重试请求 `027506b3-c12d-4601-889c-69786adfd41c` 完成真实字幕、画面、观察与规范化；Host 成功保存 Bundle 和 Plan，父任务变 `READY`，四个独立子 Job 均建立。此 Plan 在真实模型规划失败后回退为本地证据索引，**没有经模型核实的语义主张**。四个子项随后分别 `FAILED`，Version 均为 0：博客和问答报 `frozen knowledge plan has no verified semantic claims`，原画面 PPTX 报 `original-image deck requires verified semantic claims`，PDF 报 `Artifact LLM returned no usable content; extractive fallback is disabled`。用户界面 API 保留各子项独立状态和错误信息。此轮证明真实视频经 WSL Docker/Kafka/Worker/Host 到 Bundle/Plan 的发布链路及失败隔离，**不证明四种产物 READY 或真实模型质量**。按用户此前要求，模型输出效果门禁继续单列，不为让验收通过而放松证据校验。
