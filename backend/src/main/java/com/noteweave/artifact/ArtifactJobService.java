@@ -24,7 +24,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,7 +32,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class ArtifactJobService {
 
     private final ObjectMapper objectMapper;
-    private final JdbcTemplate jdbcTemplate;
     private final WorkspaceService workspaceService;
     private final TaskService taskService;
     private final ArtifactJobReadRepository artifactJobReadRepository;
@@ -50,7 +48,6 @@ public class ArtifactJobService {
     private final ArtifactExportService exportService;
 
     public ArtifactJobService(
-            JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
             WorkspaceService workspaceService,
             TaskService taskService,
@@ -67,7 +64,6 @@ public class ArtifactJobService {
             ResearchGeneratedSourceReadGate generatedSourceGate,
             ArtifactExportService exportService
     ) {
-        this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.workspaceService = workspaceService;
         this.taskService = taskService;
@@ -233,9 +229,7 @@ public class ArtifactJobService {
     @Transactional
     ArtifactJobResponse retryFailedJob(String workspaceId, String artifactJobId) {
         requireWorkspace(workspaceId);
-        List<String> statuses = jdbcTemplate.query("""
-                select status from artifact_job where id = ? and workspace_id = ? for update
-                """, (rs, index) -> rs.getString(1), artifactJobId, workspaceId);
+        List<String> statuses = artifactJobWriteRepository.lockJobStatuses(artifactJobId, workspaceId);
         if (statuses.size() != 1 || !"FAILED".equals(statuses.get(0))) {
             throw new BusinessException("ARTIFACT_JOB_RETRY_CONFLICT",
                     "仅失败的产物任务可按冻结输入重试", HttpStatus.CONFLICT);
@@ -245,12 +239,8 @@ public class ArtifactJobService {
             throw new BusinessException("ARTIFACT_JOB_RETRY_INPUT_UNAVAILABLE",
                     "冻结输入已不可用于重试", HttpStatus.CONFLICT);
         }
-        Integer replayable = jdbcTemplate.queryForObject("""
-                select count(*) from artifact_run_input_snapshot
-                where id = ? and workspace_id = ? and artifact_job_id = ?
-                  and replay_availability = 'FULL'
-                """, Integer.class, row.inputSnapshotId(), workspaceId, artifactJobId);
-        if (replayable == null || replayable != 1) {
+        if (!artifactJobWriteRepository.hasFullInputSnapshot(
+                row.inputSnapshotId(), workspaceId, artifactJobId)) {
             throw new BusinessException("ARTIFACT_JOB_RETRY_INPUT_UNAVAILABLE",
                     "冻结输入已不可用于重试", HttpStatus.CONFLICT);
         }
@@ -632,11 +622,7 @@ public class ArtifactJobService {
         ArtifactCandidate candidate = ArtifactCandidate.from(taskId, row.inputSnapshotId(),
                 catalogDigestFrom(row.compilerVersion()), expectedArtifactType(row), request,
                 extractMarkdown(request.resultPayload()));
-        List<Map<String, Object>> receipts = jdbcTemplate.query("""
-                select candidate_id, candidate_digest from artifact_candidate_receipt where task_id = ?
-                """, (rs, index) -> Map.<String, Object>of(
-                "candidate_id", rs.getString("candidate_id"),
-                "candidate_digest", rs.getString("candidate_digest")), taskId);
+        List<Map<String, Object>> receipts = artifactJobWriteRepository.candidateReceipts(taskId);
         if (receipts.size() != 1 || !candidate.candidateId().equals(receipts.get(0).get("candidate_id"))
                 || !candidate.digest().equals(receipts.get(0).get("candidate_digest"))) {
             throw new BusinessException("ARTIFACT_CANDIDATE_CONFLICT",
@@ -664,14 +650,8 @@ public class ArtifactJobService {
                 throw new BusinessException("ARTIFACT_SOURCE_SNAPSHOT_MISSING",
                         "产物输入缺少冻结 Source Snapshot", HttpStatus.CONFLICT);
             }
-            Integer visible = jdbcTemplate.queryForObject("""
-                    select count(*) from source s
-                    join source_snapshot ss on ss.source_id = s.id
-                    where s.workspace_id = ? and s.id = ? and s.status = 'READY'
-                      and ss.id = ? and ss.parse_status = 'PARSED'
-                      and ss.index_status in ('INDEXED', 'DISABLED')
-                    """, Integer.class, row.workspaceId(), source.sourceId(), source.sourceSnapshotId());
-            if (visible == null || visible != 1) {
+            if (!artifactJobWriteRepository.hasReadableSourceSnapshot(
+                    row.workspaceId(), source.sourceId(), source.sourceSnapshotId())) {
                 throw new BusinessException("ARTIFACT_SOURCE_REVOKED",
                         "冻结资料已删除、撤权或不可用", HttpStatus.CONFLICT);
             }

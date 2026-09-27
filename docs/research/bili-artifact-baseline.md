@@ -619,3 +619,9 @@ Wiki Evidence Retriever 向 Citation ID 查询传入 Workspace；查询在返回
 真实 Kafka 消费暴露两处代码问题并已修复：`/internal/worker/video-material-tasks/` 未归入 Artifact 内部 Token 路由，Worker 获取输入被 401 拒绝；Host 向 FastAPI 转发 Provider ACK 时用默认 camelCase JSON，Worker 返回 422。修复后内部认证合同 **5/5**、Host→Worker 控制客户端合同 **2/2** 通过，真实回执进入 Worker `/callbacks/acquisition/ack` 为 HTTP 200。Worker 公开 operation 不带 `task_id`，Host 改从 receipt 取任务 ID；失败回执重复投递时跳过已终态任务。控制服务合同 **5/5** 通过。隔离容器中对已持久化的同一失败回执首次重放返回 HTTP 200，父任务变 `FAILED`；再次重放仍为 HTTP 200，四个子项保持 `NOT_STARTED`，Bundle/Plan/Version 均未误发布。
 
 本次真实 BV 采集在 Worker 内由 `yt-dlp` 访问 B站时 TLS 握手超时，无法形成 Bundle。提出让 Docker 网关转发 WSL 本机代理的脚本被自动审批拒绝，理由是它会让 Docker 网络内其他容器连接该代理，访问面超出单条视频验收；未执行或换方式绕过。因此生产容器的真实视频成功发布、逐页预览和前端 Version 下载仍未通过。此次故障验证的是认证、回执、终态和幂等失败路径，不能算作四种产物成功链路。
+
+## 2026-09-28 全量回归与容器原画面 PPTX
+
+Frontend `pnpm test`：**72 个文件、256 passed**；Artifact Worker `.venv\\Scripts\\python.exe -m pytest -q`：**367 passed**。Backend 首次完整 `mvn test`：**1132 项、5 failed、11 skipped**。其中一项架构断言把 Windows CRLF 当成配置错误，另有三项旧合同仍要求删除来源后 Worker 取得 `METADATA_ONLY` 输入，与当前 C3 读取门禁冲突；第五项架构断言发现 `ArtifactJobService` 中新增的三处直接 SQL。将换行断言兼容 Windows、更新旧合同为拒绝读取，并将直接 SQL 移入既有 Repository 后，再跑 Backend 全量测试：**1132 项、0 failed、0 error、11 skipped**，Maven 退出码 0。前后端与 Worker 的完整单元/合同回归至此通过；这不代替真实模型与跨进程成功链路验收。
+
+把本地冻结 Bundle 派生的实际 **8 页原画面 PPTX** 拷入隔离 Artifact Worker，容器 LibreOffice 转成 PDF，`pdfinfo` 读回 **8 页**、文件约 **636 KB**。这补齐了 P4 的容器转换页数检查；真实模型 Plan 的教学内容、逐页预览一致性和 Host Version 下载仍待验收。

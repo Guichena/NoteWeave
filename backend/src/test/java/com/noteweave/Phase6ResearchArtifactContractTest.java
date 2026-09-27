@@ -995,11 +995,8 @@ void artifactJobShouldCreateTaskExposeWorkerInputAndPersistVersion() throws Exce
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/internal/worker/artifact-tasks/{taskId}/input", taskId))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.replay_availability").value("METADATA_ONLY"))
-                .andExpect(jsonPath("$.data.source_scope[0].source_id").value(sourceId))
-                .andExpect(jsonPath("$.data.source_scope[0].sample_text").value(""))
-                .andExpect(jsonPath("$.data.source_scope[0].summary").value(""));
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ARTIFACT_SOURCE_REVOKED"));
 
         mockMvc.perform(post("/internal/worker/tasks/{taskId}/complete", taskId)
                         .header("X-NoteWeave-Idempotency-Key", "revoked-source:" + taskId)
@@ -1163,8 +1160,8 @@ void artifactJobShouldCreateTaskExposeWorkerInputAndPersistVersion() throws Exce
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/internal/worker/artifact-tasks/{taskId}/input", artifactTaskId))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.replay_availability").value("METADATA_ONLY"));
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ARTIFACT_UPSTREAM_REVOKED"));
     }
 
     @Test
@@ -1258,8 +1255,8 @@ void artifactJobShouldCreateTaskExposeWorkerInputAndPersistVersion() throws Exce
                                         "revision_id", snapshotId
                                 ))
                         ))))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("ARTIFACT_UPSTREAM_REF_INVALID"));
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("RESEARCH_SOURCE_ORIGIN_INVALID"));
     }
 
     @Test

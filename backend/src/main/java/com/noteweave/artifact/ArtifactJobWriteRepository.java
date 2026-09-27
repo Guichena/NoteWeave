@@ -1,6 +1,8 @@
 package com.noteweave.artifact;
 
 import com.noteweave.common.Ids;
+import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -11,6 +13,40 @@ class ArtifactJobWriteRepository {
 
     ArtifactJobWriteRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
+    }
+
+    List<Map<String, Object>> candidateReceipts(String taskId) {
+        return jdbcTemplate.query("""
+                select candidate_id, candidate_digest from artifact_candidate_receipt where task_id = ?
+                """, (rs, index) -> Map.<String, Object>of(
+                "candidate_id", rs.getString("candidate_id"),
+                "candidate_digest", rs.getString("candidate_digest")), taskId);
+    }
+
+    List<String> lockJobStatuses(String artifactJobId, String workspaceId) {
+        return jdbcTemplate.query("""
+                select status from artifact_job where id = ? and workspace_id = ? for update
+                """, (rs, index) -> rs.getString(1), artifactJobId, workspaceId);
+    }
+
+    boolean hasFullInputSnapshot(String inputSnapshotId, String workspaceId, String artifactJobId) {
+        Integer count = jdbcTemplate.queryForObject("""
+                select count(*) from artifact_run_input_snapshot
+                where id = ? and workspace_id = ? and artifact_job_id = ?
+                  and replay_availability = 'FULL'
+                """, Integer.class, inputSnapshotId, workspaceId, artifactJobId);
+        return count != null && count == 1;
+    }
+
+    boolean hasReadableSourceSnapshot(String workspaceId, String sourceId, String snapshotId) {
+        Integer count = jdbcTemplate.queryForObject("""
+                select count(*) from source s
+                join source_snapshot ss on ss.source_id = s.id
+                where s.workspace_id = ? and s.id = ? and s.status = 'READY'
+                  and ss.id = ? and ss.parse_status = 'PARSED'
+                  and ss.index_status in ('INDEXED', 'DISABLED')
+                """, Integer.class, workspaceId, sourceId, snapshotId);
+        return count != null && count == 1;
     }
 
     void persistInitialJob(
