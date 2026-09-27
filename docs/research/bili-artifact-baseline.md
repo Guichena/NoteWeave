@@ -609,3 +609,5 @@ Wiki Evidence Retriever 向 Citation ID 查询传入 Workspace；查询在返回
 本分支 Backend、Frontend、Research Worker、Artifact Worker 四个镜像均构建成功；其中 Backend 生产源码编译 634 个 Java 文件并完成 JAR，Frontend `tsc -b && vite build` 成功。隔离栈的 MySQL、Redis、Kafka、MinIO、Elasticsearch、Backend、Frontend、Artifact Worker 启动；Backend `/actuator/health` 返回 `UP`。Worker 中 `LibreOffice 25.2.3.2`、`ffmpeg 7.1.5`、`tesseract 5.5.0` 可运行；容器内生成的最小 1 页 PPTX 经 LibreOffice 转为 1 页 PDF，`pdfinfo` 读回页数为 1。
 
 首次启动期间 Ubuntu WSL 实例在前台命令结束后反复关机，Docker daemon 随之停止，MySQL 断连使 Backend 启动失败。保持一个前台 WSL 会话后，Backend、MySQL、Artifact Worker 均达到 healthy。此项验证了镜像和基础渲染运行时，尚未验证真实 BV 素材经 Kafka、MinIO、Host 发布、Version 页面下载的完整跨进程链路，也没有验证真实模型效果。
+
+后续尝试仅在隔离栈打开视频功能开关时，Compose 重建 Backend 报 Docker 旧进程为 zombie、无法停止；已清理本次重建留下的 `Created` 临时容器，原隔离 Backend 仍保持 healthy。未重启 Docker daemon，以免中断主项目 Compose 栈；所以本次没有把视频 API 或真实文件下载记为通过。
