@@ -595,3 +595,9 @@ Wiki Evidence Retriever 向 Citation ID 查询传入 Workspace；查询在返回
 本机没有 Tesseract OCR；首次试跑的改造工作树进程未加载主工作目录的模型环境变量。此回放未经过 Java Host 发布，也未生成可验收的博客、问答、PPTX 或 PDF。真实样本因此证明资料采集与冻结链路的一部分，**不证明 P0/P2/P3/P4 完成**。
 
 后续核对确认主工作目录 `.env` 已配置 Artifact 模型，改造工作树没有自己的 `.env`，之前称“未配置 Provider”是误判。代码检查还发现父视频资料完成路径及普通视频资料发布路径均直接使用 `build_local_evidence_plan`，没有调用已实现的 `plan_video_knowledge`。现已接通配置模型时的语义规划；模型失败时父资料仍冻结本地证据索引，普通视频资料不发布伪语义 Plan。针对回调与规划的合同测试 **43 passed**。使用主工作目录配置做实际请求：小型 JSON 请求约 19.5 秒成功；全视频 233 段字幕在 60 秒和 180 秒分别超时，截取真实视频前 10 段字幕的规划请求在 90 秒超时。可用性瓶颈是视频规划请求的时延/输出复杂度，不能归因于模型未配置；语义 Plan、博客、问答、PPTX 的真实效果仍未验收。
+
+## P3/P4 冻结资料的下游条件回放
+
+按用户要求暂将语义规划视作已成功，不改模型请求。2026-09-27 用上述真实 Bundle 的 **233 段 ASR、8 张原画面和 8 个文件摘要**，构造一份仅供合同回放的语义 Plan：8 个 `CONCEPT` 节点各逐字引用一段现有字幕，另以 2 个字幕窗口覆盖所有字幕；Plan 通过 `verify_against_bundle`。由此分别生成并复核博客 **8 节**、面试问答 **8 条**、原图 PPTX **8 页**；`verify_against`、`verify_original_video_deck` 均通过，P3/P4 相关合同 **24 passed，0 failed**。本机 PowerPoint 打开 PPTX 并导出 **8/8** 张 PNG；抽看第 1、4、8 页，原画面完整、版式无明显溢出。
+
+这份 Plan **不是模型真实成功输出**，字幕也未经人工纠错，因而这里只证明冻结证据后的三个独立渲染路径可用，不证明文章论述、问答质量或 PPTX 教学内容合格。第 8 页实际是视频推广/关注画面，显示均匀抽帧会把非教学页面带入产物。生成的 Plan、Markdown、PPTX、PowerPoint PNG 均保存在 Git 忽略的 `runtime/real-BV1MZYT6pEzy/`，未发布为 Host Version。
