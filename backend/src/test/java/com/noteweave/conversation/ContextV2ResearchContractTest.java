@@ -25,6 +25,7 @@ import com.noteweave.chat.NoteRecallRepository;
 import com.noteweave.artifact.ArtifactJobService;
 import com.noteweave.artifact.ArtifactExportService;
 import com.noteweave.artifact.ArtifactKnowledgeWritebackRequest;
+import com.noteweave.knowledge.KnowledgeCommandService;
 import com.noteweave.storage.ObjectStorage;
 import com.noteweave.memory.ExecutionObservation;
 import com.noteweave.memory.MemoryRuntime;
@@ -61,6 +62,7 @@ class ContextV2ResearchContractTest {
     @Autowired NoteRecallRepository noteRecallRepository;
     @Autowired ArtifactJobService artifactJobs;
     @Autowired ArtifactExportService artifactExports;
+    @Autowired KnowledgeCommandService knowledgeCommands;
     @Autowired ObjectStorage storage;
     @Autowired MemoryRuntime memory;
     @SpyBean ConversationContextCompilerV2Service compiler;
@@ -238,6 +240,12 @@ class ContextV2ResearchContractTest {
                 insert into source_window(id, source_chunk_id, window_no, content)
                 values (?, ?, 0, 'Frozen report body')
                 """, Ids.newId(), chunkId);
+        String citationId = Ids.newId();
+        jdbc.update("""
+                insert into citation(id, workspace_id, source_id, source_snapshot_id,
+                                     source_chunk_id, title, quote_text)
+                values (?, ?, ?, ?, ?, 'Frozen report', 'Frozen report body')
+                """, citationId, workspace, sourceId, sourceSnapshotId, chunkId);
         jdbc.update("update workspace set source_catalog_version = source_catalog_version + 1 where id = ?",
                 workspace);
         assertThat(data(get("/api/v2/workspaces/{workspaceId}/sources", workspace)).toString())
@@ -249,6 +257,8 @@ class ContextV2ResearchContractTest {
         assertThat(noteRecallRepository.findCurrentSources(workspace))
                 .extracting(com.noteweave.chat.NoteRetrievalService.CandidateSource::sourceId)
                 .contains(sourceId);
+        knowledgeCommands.upsertWikiPage(workspace, "Research-derived Wiki",
+                "Frozen report body", java.util.List.of(citationId));
         String artifactTaskId = data(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspace)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsBytes(Map.of(
@@ -313,6 +323,10 @@ class ContextV2ResearchContractTest {
         assertThat(noteRecallRepository.findCurrentSources(workspace))
                 .extracting(com.noteweave.chat.NoteRetrievalService.CandidateSource::sourceId)
                 .doesNotContain(sourceId);
+        assertThatThrownBy(() -> knowledgeCommands.upsertWikiPage(workspace, "Revoked Wiki",
+                "Frozen report body", java.util.List.of(citationId)))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("KNOWLEDGE_CITATION_REVOKED"));
         assertThatThrownBy(() -> artifactJobs.getWorkerInput(artifactTaskId))
                 .isInstanceOfSatisfying(BusinessException.class,
                         failure -> assertThat(failure.code()).isEqualTo("RESEARCH_SOURCE_CONTEXT_REDACTED"));

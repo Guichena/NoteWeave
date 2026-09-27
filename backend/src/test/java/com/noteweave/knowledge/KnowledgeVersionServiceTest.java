@@ -96,6 +96,11 @@ class KnowledgeVersionServiceTest {
         assertThatThrownBy(() -> versionService.citationIdsForVersion(appended.latestVersionId()))
                 .isInstanceOfSatisfying(com.noteweave.common.BusinessException.class,
                         failure -> assertThat(failure.code()).isEqualTo("KNOWLEDGE_SOURCE_REVOKED"));
+        assertThatThrownBy(() -> versionService.appendVersion("item-note",
+                new AppendKnowledgeVersionRequest("another derived version", null,
+                        List.of("citation-a"))))
+                .isInstanceOfSatisfying(com.noteweave.common.BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("KNOWLEDGE_CITATION_REVOKED"));
         assertThat(jdbcTemplate.queryForObject(
                 "select content from knowledge_version where id = ?", String.class,
                 appended.latestVersionId())).isEqualTo("derived content");
@@ -207,6 +212,7 @@ class KnowledgeVersionServiceTest {
         jdbcTemplate.execute("""
                 create table citation(
                     id varchar(36) primary key,
+                    workspace_id varchar(36) not null default 'workspace',
                     source_id varchar(36) not null,
                     title varchar(300) not null,
                     quote_text varchar(1000) not null,

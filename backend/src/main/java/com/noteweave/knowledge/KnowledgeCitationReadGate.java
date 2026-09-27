@@ -33,6 +33,25 @@ public class KnowledgeCitationReadGate {
         }
     }
 
+    public void requireCitationIdsReadable(String workspaceId, List<String> citationIds) {
+        List<String> ids = citationIds.stream().distinct().toList();
+        if (ids.isEmpty()) return;
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(workspaceId);
+        parameters.addAll(ids);
+        List<String> sourceIds = jdbc.queryForList("""
+                select source_id from citation
+                where workspace_id = ? and id in (%s)
+                """.formatted(String.join(",", Collections.nCopies(ids.size(), "?"))),
+                String.class, parameters.toArray());
+        if (sourceIds.size() != ids.size()
+                || !generatedSourceGate.readableSourceIds(workspaceId, sourceIds)
+                        .containsAll(sourceIds)) {
+            throw new BusinessException("KNOWLEDGE_CITATION_REVOKED",
+                    "知识引用的资料已撤销或不属于当前工作台", HttpStatus.CONFLICT);
+        }
+    }
+
     public Set<String> readableVersionIds(String workspaceId, List<String> versionIds) {
         List<String> ids = versionIds.stream().distinct().toList();
         if (ids.isEmpty()) return Set.of();

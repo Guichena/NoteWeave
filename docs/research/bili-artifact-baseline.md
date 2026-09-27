@@ -557,3 +557,7 @@ Wiki 首页及相关页的链接须两端页面当前版本可读；索引“最
 ## C3 Wiki 检索与 Citation ID 提取之间的撤销门禁
 
 Wiki Evidence Retriever 向 Citation ID 查询传入 Workspace；查询在返回 ID 前重新验证每个版本的归属与来源可读性。已选页面若在检索后撤销，拒绝整个证据组装，避免把旧页面正文与 Citation ID 带入答案。历史版本改写复制 Citation ID 的入口也复核原 Version，阻止已撤销引用继续传播。首次联跑 **32 项中 1 error**：`KnowledgeCommandServiceTest` 的简化 H2 Schema 缺少 `citation` 表；补齐夹具后 `KnowledgeQueryServiceTest` **8**、`KnowledgeVersionServiceTest` **4**、`WikiEvidenceRetrieverTest` **3**、`KnowledgeGovernanceServiceTest` **6**、`KnowledgeCommandServiceTest` **4**、`ContextV2ResearchContractTest` **7**，共 **32 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。该测试覆盖同步读取边界，不等于生产级并发隔离证明。
+
+## C3 Knowledge 新版本写入的 Citation 来源门禁
+
+新建 Note/Wiki 或追加版本在插入 Version 前，逐个核对 Citation ID 属于同一 Workspace，所指 Source 仍为 READY，派生 Research 原 Run 可读。撤销后返回 `KNOWLEDGE_CITATION_REVOKED`，不继续复制引用。首次联跑 **30 项中 1 error**：`KnowledgeGovernanceServiceTest` 过去只传伪 Citation ID，未创建对应引用行；补齐夹具并增加真实 Research Source 集成合同后，`KnowledgeCommandServiceTest` **5**、`KnowledgeVersionServiceTest` **4**、`KnowledgeGovernanceServiceTest` **6**、`KnowledgeQueryServiceTest` **8**、`ContextV2ResearchContractTest` **7**，共 **30 passed，0 failed/0 error/0 skipped**，Maven 退出码 0。合同证实撤销前可绑定真实来源，撤销后新 Wiki 写入拒绝且未创建新 Item；已存正文的保留/删除策略仍待定。

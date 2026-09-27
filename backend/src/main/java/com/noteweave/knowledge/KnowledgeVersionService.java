@@ -52,6 +52,7 @@ public class KnowledgeVersionService {
         }
         List<String> citationIds = citationIdsFromRequest(
                 item.workspaceId(), request.sourceMessageId(), request.citationIds());
+        citationReadGate.requireCitationIdsReadable(item.workspaceId(), citationIds);
         Integer currentVersion = jdbcTemplate.queryForObject("""
                 select coalesce(max(version_no), 0)
                 from knowledge_version

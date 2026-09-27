@@ -1,6 +1,7 @@
 package com.noteweave.knowledge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -20,6 +21,7 @@ class KnowledgeCommandServiceTest {
     private JdbcTemplate jdbcTemplate;
     private KnowledgeCommandService commandService;
     private WorkspaceQueryPort workspaceQueryPort;
+    private ResearchGeneratedSourceReadGate sourceGate;
 
     @BeforeEach
     void setUp() {
@@ -36,19 +38,21 @@ class KnowledgeCommandServiceTest {
         when(actorProvider.currentOrSystem("KNOWLEDGE")).thenReturn("actor");
         KnowledgeWikiMutationService mutationService =
                 new KnowledgeWikiMutationService(jdbcTemplate);
-        ResearchGeneratedSourceReadGate sourceGate = mock(ResearchGeneratedSourceReadGate.class);
+        sourceGate = mock(ResearchGeneratedSourceReadGate.class);
         when(sourceGate.readableSourceIds(org.mockito.ArgumentMatchers.eq("workspace"),
                 org.mockito.ArgumentMatchers.anyList()))
                 .thenAnswer(invocation -> Set.copyOf(invocation.getArgument(1)));
+        KnowledgeCitationReadGate citationGate = new KnowledgeCitationReadGate(jdbcTemplate, sourceGate);
         KnowledgeVersionService versionService = new KnowledgeVersionService(
                 jdbcTemplate, actorProvider, mutationService,
-                new KnowledgeCitationReadGate(jdbcTemplate, sourceGate));
+                citationGate);
         commandService = new KnowledgeCommandService(
                 jdbcTemplate,
                 workspaceQueryPort,
                 actorProvider,
                 versionService,
-                mutationService);
+                mutationService,
+                citationGate);
     }
 
     @Test
@@ -96,6 +100,21 @@ class KnowledgeCommandServiceTest {
                 .containsEntry("TARGET_TITLE", "Related Page")
                 .containsEntry("RELATION_TYPE", "WIKI_LINK")
                 .containsEntry("RELATION_STATUS", "RESOLVED");
+    }
+
+    @Test
+    void revokedMessageCitationMustNotCreateKnowledgeItem() {
+        seedAssistantMessageWithCitations();
+        when(sourceGate.readableSourceIds(org.mockito.ArgumentMatchers.eq("workspace"),
+                org.mockito.ArgumentMatchers.anyList())).thenReturn(Set.of());
+
+        assertThatThrownBy(() -> commandService.createItem("workspace",
+                new KnowledgeItemRequest("WIKI", "Revoked Page", "derived content", "message")))
+                .isInstanceOfSatisfying(com.noteweave.common.BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("KNOWLEDGE_CITATION_REVOKED"));
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from knowledge_item where title = 'Revoked Page'", Integer.class))
+                .isZero();
     }
 
     @Test
@@ -170,6 +189,10 @@ class KnowledgeCommandServiceTest {
 
     private void seedAssistantMessageWithCitations() {
         jdbcTemplate.update("""
+                insert into citation(id, source_id)
+                values ('citation-a', 'source'), ('citation-b', 'source')
+                """);
+        jdbcTemplate.update("""
                 insert into conversation_message(id, workspace_id, role, content)
                 values ('message', 'workspace', 'ASSISTANT', 'answer')
                 """);
@@ -217,6 +240,7 @@ class KnowledgeCommandServiceTest {
         jdbcTemplate.execute("""
                 create table citation(
                     id varchar(36) primary key,
+                    workspace_id varchar(36) not null default 'workspace',
                     source_id varchar(36) not null
                 )
                 """);
