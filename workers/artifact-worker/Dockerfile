@@ -6,6 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 RUN cp /etc/apt/sources.list.d/debian.sources /tmp/debian.sources \
     && awk 'BEGIN { RS=""; ORS="\n\n" } $0 !~ /debian-security/' /tmp/debian.sources > /etc/apt/sources.list.d/debian.sources \
+    && sed -i 's#http://deb.debian.org#https://deb.debian.org#g' /etc/apt/sources.list.d/debian.sources \
     && apt-get -o Acquire::Retries=5 update \
     && apt-get -o Acquire::Retries=5 install --no-install-recommends -y \
         fonts-arphic-gbsn00lp \
@@ -22,6 +23,7 @@ RUN cp /etc/apt/sources.list.d/debian.sources /tmp/debian.sources \
     && rm -rf /var/lib/apt/lists/*
 RUN cp /etc/apt/sources.list.d/debian.sources /tmp/debian.sources \
     && awk 'BEGIN { RS=""; ORS="\n\n" } $0 !~ /debian-security/' /tmp/debian.sources > /etc/apt/sources.list.d/debian.sources \
+    && sed -i 's#http://deb.debian.org#https://deb.debian.org#g' /etc/apt/sources.list.d/debian.sources \
     && apt-get -o Acquire::Retries=5 update \
     && apt-get -o Acquire::Retries=5 install --no-install-recommends -y texlive-fonts-recommended \
     && mv /tmp/debian.sources /etc/apt/sources.list.d/debian.sources \

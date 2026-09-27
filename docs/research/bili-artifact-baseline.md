@@ -601,3 +601,11 @@ Wiki Evidence Retriever 向 Citation ID 查询传入 Workspace；查询在返回
 按用户要求暂将语义规划视作已成功，不改模型请求。2026-09-27 用上述真实 Bundle 的 **233 段 ASR、8 张原画面和 8 个文件摘要**，构造一份仅供合同回放的语义 Plan：8 个 `CONCEPT` 节点各逐字引用一段现有字幕，另以 2 个字幕窗口覆盖所有字幕；Plan 通过 `verify_against_bundle`。由此分别生成并复核博客 **8 节**、面试问答 **8 条**、原图 PPTX **8 页**；`verify_against`、`verify_original_video_deck` 均通过，P3/P4 相关合同 **24 passed，0 failed**。本机 PowerPoint 打开 PPTX 并导出 **8/8** 张 PNG；抽看第 1、4、8 页，原画面完整、版式无明显溢出。
 
 这份 Plan **不是模型真实成功输出**，字幕也未经人工纠错，因而这里只证明冻结证据后的三个独立渲染路径可用，不证明文章论述、问答质量或 PPTX 教学内容合格。第 8 页实际是视频推广/关注画面，显示均匀抽帧会把非教学页面带入产物。PowerPoint 导出的 8 页用于本地 Candidate 文件清单校验：总计 **10 个文件项**（Markdown 1、PPTX 1、逐页预览 8），页序 1–8、格式与摘要检查通过。此检查没有走生产容器的 LibreOffice 转换或 Host 下载。生成的 Plan、Markdown、PPTX、PowerPoint PNG 均保存在 Git 忽略的 `runtime/real-BV1MZYT6pEzy/`，未发布为 Host Version。
+
+## P6 WSL Docker 构建与隔离启动
+
+2026-09-27 改用 Ubuntu WSL2 内的 Docker Engine 27.5.1、Compose 2.32.4。主项目 Compose 栈已占用固定容器名和主机端口；本工作树使用 Git 忽略的隔离 override、独立卷和内部端口启动，没有停止主项目容器。首次构建时本机代理需供 Maven、Corepack、apt 使用；代理设置仅存在于本地构建过程，已从正式 Maven/前端配置撤回。Artifact Worker Dockerfile 将 Debian apt 源改为 HTTPS 后构建成功。
+
+本分支 Backend、Frontend、Research Worker、Artifact Worker 四个镜像均构建成功；其中 Backend 生产源码编译 634 个 Java 文件并完成 JAR，Frontend `tsc -b && vite build` 成功。隔离栈的 MySQL、Redis、Kafka、MinIO、Elasticsearch、Backend、Frontend、Artifact Worker 启动；Backend `/actuator/health` 返回 `UP`。Worker 中 `LibreOffice 25.2.3.2`、`ffmpeg 7.1.5`、`tesseract 5.5.0` 可运行；容器内生成的最小 1 页 PPTX 经 LibreOffice 转为 1 页 PDF，`pdfinfo` 读回页数为 1。
+
+首次启动期间 Ubuntu WSL 实例在前台命令结束后反复关机，Docker daemon 随之停止，MySQL 断连使 Backend 启动失败。保持一个前台 WSL 会话后，Backend、MySQL、Artifact Worker 均达到 healthy。此项验证了镜像和基础渲染运行时，尚未验证真实 BV 素材经 Kafka、MinIO、Host 发布、Version 页面下载的完整跨进程链路，也没有验证真实模型效果。

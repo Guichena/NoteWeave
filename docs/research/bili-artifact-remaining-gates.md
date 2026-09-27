@@ -18,4 +18,4 @@
 | C3 | Answer、Research、Artifact 分别消费冻结 v2 投影；Research/Artifact 独立全局门禁，Memory 撤销与输入读取阻断；派生 Research Source 目录、后续 Research、QA/NOTE、Artifact 输入与带冻结输入的已发布 Artifact Version 列表/详情/文件清单/下载/写回过滤撤销来源；Wiki 当前/历史版本、首页链接、索引标题、Citation ID 提取与新 Knowledge 写入过滤已撤销引用；答案生成前拒绝撤销的 Research Citation 文本 | 已发布 Research 正文及文件、无冻结输入的旧 Artifact Version、Wiki 索引聚合计数和既有答案正文/引用展示等读取路径和删除策略；搜索索引清理、真实 Worker 缓存及跨进程撤销传播 |
 | C4 | Workspace 开关、Answer v1/v2 引用差异与最近 Run 汇总、OFF→SHADOW 旧会话下一轮回填、v1 回退记录 | 真实标注会话的误选/漏约束指标、灰度阈值和生产回滚演练；批量历史迁移不在现有合同中 |
 
-环境核对：本机 PowerPoint 可打开并导出合成与真实画面 PPTX；`docker info` 无法连接 Docker Desktop Linux Engine，未检测到 LibreOffice。用户已提供真实 B站 BV 样本供本地测试，其进一步分发或复用许可尚未核实。一次广泛清空 Research 问题、报告、Trace 与任务状态的改动被自动审批拒绝，未执行；现有实现只精确脱敏冻结投影并阻断所覆盖的消费和读取入口，不能声称完成所有已发布内容的删除传播。
+环境核对：本机 PowerPoint 可打开并导出合成与真实画面 PPTX；Ubuntu WSL2 Docker Engine 可用，本分支四个应用镜像已构建，隔离栈 Backend 健康，Worker 的 LibreOffice 将最小 PPTX 转成 1 页 PDF。完整 Kafka/MinIO/Host/前端下载链路仍待验证。用户已提供真实 B站 BV 样本供本地测试，其进一步分发或复用许可尚未核实。一次广泛清空 Research 问题、报告、Trace 与任务状态的改动被自动审批拒绝，未执行；现有实现只精确脱敏冻结投影并阻断所覆盖的消费和读取入口，不能声称完成所有已发布内容的删除传播。
