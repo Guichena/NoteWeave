@@ -583,3 +583,13 @@ Wiki Evidence Retriever 向 Citation ID 查询传入 Workspace；查询在返回
 ## P6 浏览器文件保存检查
 
 使用本机 Chrome 和本地 Vite 页面执行 Playwright：调用前端现用的 `downloadBlob`，确认浏览器发出下载事件、建议文件名为 `slide-notes.md`，实际保存字节为 `# saved artifact\n`。首次运行因 Playwright 自带 Chromium 未安装而未启动；改用已安装 Chrome 后 `artifact-browser-save.spec.ts` **1 passed**，TypeScript 构建检查退出码 0。此项验证浏览器保存动作，不等于已在带真实后端的 Artifact Version 页面完成文件下载；该全链路仍待验收。
+
+## P0/P2 用户提供 BV1MZYT6pEzy 的真实资料回放
+
+2026-09-27 对用户提供的 [视频](https://www.bilibili.com/video/BV1MZYT6pEzy/) 做本地试跑。B站公开元数据返回《面试官：RAG权限管控怎么设计？》、约 311 秒、单分集；公开视频页面无法由 Web 抓取，但 Worker 的 `yt-dlp` 元数据与音频下载成功。字幕适配器未找到手工或自动字幕，ASR 回退成功。`tiny` 模型生成 85 段，`small` 模型生成 233 段，后者覆盖 0–310.32 秒；抽检均有 RAG、权限、向量、校验等术语的错听，不能直接作为已核实语义主张。
+
+首次画面采集得到 0/8：临时指向的 Conda 包缓存内 `ffmpeg.exe` 在 Windows 加载阶段以 `-1073741515` 退出，因缺失 DLL 没有解码画面。仓库专用 Conda 环境安装又因 conda-forge TLS 握手失败而未完成。改用 Worker 虚拟环境中的自包含 ffmpeg 后，原 `capture_local_video` 函数在同一已下载视频上取得 **8/8** 张 PNG，时间点为 0、45、90、135、180、225、270、310.167 秒；抽看首、中、末张确认是原课程画面，末张为推广/关注页，说明均匀采样不能保证每页都适合学习产物。
+
+将 `small` ASR 与这 8 张画面交给 `subtitle_only_bundle`、`merge_captured_video_frames`、`build_local_evidence_plan`：Bundle **233 段字幕、8 张画面、8 个摘要校验文件**，本地证据 Plan **11 节点**，均通过冻结引用和字节校验。Bundle 摘要 `c434bd6149490f0f4c7ff1db95e71dbaa6990d6261bf47d92c91d3e8201d0ffb`，Plan 摘要 `9e034d39cfd9396830dd8b669b9436f0f92353df340e0ac7031d7c8d6ca919ec`。对应 Worker 合同 **47 passed，0 failed**（字幕/画面/Bundle/Plan 40，画面合并 7）。音频、字幕、视频、画面及 Bundle/Plan JSON 仅在 Git 忽略的 `workers/artifact-worker/runtime/real-BV1MZYT6pEzy/`，未提交或发布。用户提供链接可用于本次本地试跑，进一步分发或复用许可尚未核实。
+
+本机没有 Tesseract OCR，且未配置视频知识规划的 LLM Provider；此回放未经过 Java Host 发布，也未生成可验收的博客、问答、PPTX 或 PDF。真实样本因此证明资料采集与冻结链路的一部分，**不证明 P0/P2/P3/P4 完成**。
