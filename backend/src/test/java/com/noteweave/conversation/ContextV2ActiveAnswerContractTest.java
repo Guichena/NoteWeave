@@ -105,6 +105,15 @@ class ContextV2ActiveAnswerContractTest {
         String privateText = "私有上下文-" + System.nanoTime();
         JsonNode active = submit(conversation, privateText, "QA");
         String activeRun = active.path("answer_run_id").asText();
+        String answerMessageId = jdbc.queryForObject("""
+                select m.id from conversation_message m
+                join answer_run r on r.assistant_request_id = m.assistant_request_id
+                where r.id = ? and m.role = 'ASSISTANT'
+                """, String.class, activeRun);
+        jdbc.update("update conversation_message set content = 'Historical frozen answer' where id = ?",
+                answerMessageId);
+        assertThat(data(get("/api/v2/workspaces/{workspaceId}/conversations/{conversationId}/messages",
+                workspace, conversation)).toString()).contains("Historical frozen answer");
         String shadowId = mapper.readTree((String) jdbc.queryForMap("""
                 select snapshot_json from run_input_snapshot where answer_run_id = ?
                 """, activeRun).get("snapshot_json"))
@@ -138,6 +147,10 @@ class ContextV2ActiveAnswerContractTest {
         assertThat(jdbc.queryForObject("""
                 select replay_availability from run_input_snapshot where answer_run_id = ?
                 """, String.class, activeRun)).isEqualTo("METADATA_ONLY");
+        assertThat(data(get("/api/v2/workspaces/{workspaceId}/conversations/{conversationId}/messages",
+                workspace, conversation)).toString())
+                .doesNotContain("Historical frozen answer")
+                .contains("\"context_status\":\"REDACTED\"");
     }
 
     @Test

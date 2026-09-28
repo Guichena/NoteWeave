@@ -268,6 +268,22 @@ class ContextV2ResearchContractTest {
                 .contains(sourceId);
         knowledgeCommands.upsertWikiPage(workspace, "Research-derived Wiki",
                 "Frozen report body", java.util.List.of(citationId));
+        String historicalAnswerId = Ids.newId();
+        int nextMessageSeq = jdbc.queryForObject("""
+                select coalesce(max(message_seq), 0) + 1 from conversation_message
+                where conversation_id = ?
+                """, Integer.class, conversation);
+        jdbc.update("""
+                insert into conversation_message(id, conversation_id, workspace_id,
+                                                 message_seq, role, answer_mode, content)
+                values (?, ?, ?, ?, 'ASSISTANT', 'QA', 'Historical cited answer body')
+                """, historicalAnswerId, conversation, workspace, nextMessageSeq);
+        jdbc.update("""
+                insert into message_citation(id, message_id, citation_id, sort_order)
+                values (?, ?, ?, 0)
+                """, Ids.newId(), historicalAnswerId, citationId);
+        assertThat(data(get("/api/v2/workspaces/{workspaceId}/conversations/{conversationId}/messages",
+                workspace, conversation)).toString()).contains("Historical cited answer body");
         JsonNode beforeWikiStats = data(get("/api/v2/workspaces/{workspaceId}/wiki-stats", workspace));
         assertThat(beforeWikiStats.path("page_count").asInt()).isEqualTo(1);
         assertThat(beforeWikiStats.path("citation_count").asInt()).isEqualTo(1);
@@ -333,6 +349,10 @@ class ContextV2ResearchContractTest {
                 .andExpect(status().isOk());
         assertThat(data(get("/api/v2/workspaces/{workspaceId}/sources", workspace)).toString())
                 .doesNotContain(sourceId, "Frozen report");
+        assertThat(data(get("/api/v2/workspaces/{workspaceId}/conversations/{conversationId}/messages",
+                workspace, conversation)).toString())
+                .doesNotContain("Historical cited answer body")
+                .contains("\"context_status\":\"REDACTED\"");
         JsonNode afterWikiStats = data(get("/api/v2/workspaces/{workspaceId}/wiki-stats", workspace));
         assertThat(afterWikiStats.path("page_count").asInt()).isZero();
         assertThat(afterWikiStats.path("citation_count").asInt()).isZero();

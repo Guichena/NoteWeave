@@ -663,3 +663,7 @@ Wiki 聚合计数复用已通过 Citation 读取门禁的当前页面，页面�
 在隔离 WSL Docker 前端临时映射 `127.0.0.1:18765`，通过 Edge 注册一次性验收账号、进入已有隔离 Workspace，产物工作台显示 `study_guide` 回滚 Version 2 的 `MARKDOWN · READY · minio · 4902B` 文件。点击“下载 MARKDOWN”后 UI 显示“MARKDOWN 已开始下载”；Windows 下载目录实际生成 `学习指南.md`，大小 **4,902 字节**，SHA-256 为 `741449ffd0a863f05d926a29b73d2d2b6cd1a9a667965e6d62c9e9b89231abd5`，与该 Version 的隔离数据库文件记录一致。验收后撤除临时前端端口映射，并将一次性账号的 Workspace 成员状态改为 `REVOKED`；未碰主项目 Compose 栈。
 
 `ArtifactFileReconcileReadbackTest` 增补非 Markdown `SOURCE_MD` 对象损坏且 Worker 导出文件过期场景：对账仍保持 Version `DEGRADED`，不误报 READY。该定向测试 **1/1 passed**；`Phase6ResearchArtifactContractTest#orphanCleanupDeletesOnlyOldUnreferencedStagedObjects` **1/1 passed**，确认旧无引用暂存对象被清除、近期及已引用对象保留；两个 Maven 运行均 `BUILD SUCCESS`。这不等于过期后的非 Markdown 文件可以恢复，也不是提交瞬间进程崩溃的真实注入。
+
+## 2026-09-28 历史 Answer 读取撤销门禁
+
+会话消息列表读取时检查关联 Answer 的冻结输入快照是否已变为 `METADATA_ONLY`，并批量复核 Message Citation 的 Source 是否仍可读。命中任一路径的 Assistant 消息在响应中保留 ID/顺序，正文替换为撤销说明，`context_status=REDACTED`、原 `content_hash` 不再返回；数据库里的原消息不做广泛清空。现有 Research 派生 Source 撤销合同增加一条历史带引用 Answer，撤销前可读、撤销后原正文不再返回：**1/1 passed**。现有 Answer ACTIVE→OFF 再删消息合同增加冻结快照撤销后的历史正文断言：**1/1 passed**。`ConversationTurnModuleContractTest` 正常会话回归 **39/39 passed**。三次 Maven 运行均 `BUILD SUCCESS`。无引用且无冻结输入的旧 Answer 仍无法从现有持久化数据判断其原始来源，未计入覆盖。
