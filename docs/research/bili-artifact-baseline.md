@@ -669,3 +669,9 @@ Wiki 聚合计数复用已通过 Citation 读取门禁的当前页面，页面�
 会话消息列表读取时检查关联 Answer 的冻结输入快照是否已变为 `METADATA_ONLY`，并批量复核 Message Citation 的 Source 是否仍可读。命中任一路径的 Assistant 消息在响应中保留 ID/顺序，正文替换为撤销说明，`context_status=REDACTED`、原 `content_hash` 不再返回；数据库里的原消息不做广泛清空。现有 Research 派生 Source 撤销合同增加一条历史带引用 Answer，撤销前可读、撤销后原正文不再返回：**1/1 passed**。现有 Answer ACTIVE→OFF 再删消息合同增加冻结快照撤销后的历史正文断言：**1/1 passed**。`ConversationTurnModuleContractTest` 正常会话回归 **39/39 passed**。三次 Maven 运行均 `BUILD SUCCESS`。无引用且无冻结输入的旧 Answer 仍无法从现有持久化数据判断其原始来源，未计入覆盖。
 
 本次变更后 Backend 全量回归最终 **1133 tests、0 failures、0 errors、11 skipped，BUILD SUCCESS**。首次全量运行有 1 个新增测试夹具竞态：异步 Answer 在夹具写入“历史正文”后完成并覆盖该字段；合同改为等待 Answer 到终态后再写入，第二次全量运行通过。生产读取逻辑未因这个测试竞态改变。
+
+## 2026-09-28 隔离 Backend 提交崩溃与 Kafka 中断重放
+
+仅操作 `bili-artifact-test-*` 隔离栈。先在 MySQL 为目标 Artifact Job 的 `artifact_version` INSERT 安装临时 90 秒暂停触发器；公开 API 发起从 Version 1 回滚，在 `SHOW FULL PROCESSLIST` 确认目标 INSERT 处于 `User sleep` 时，对隔离 Backend 发 `SIGKILL`。重启 Backend 后，目标 Job 的 `latest_version_no` 和版本行数均为 **3/3**，没有 Version 4；临时触发器已删除，Backend 恢复 healthy。第一次用 30 秒暂停的预演只有客户端超时，服务端最终正常提交 Version 3，故不计为崩溃成功。此次实测证明回滚版本数据库事务在提交前进程崩溃时没有半成品行；没有在文件写入与数据库提交之间注入崩溃，因此不能据此声称跨 MinIO 暂存的 READY 发布完全通过。
+
+仅停止隔离 Kafka 后，使用已有 READY Source 创建 `study_guide` Job `5bdabcdb-ec02-4125-b8ce-fd2f8ad81e45`，API 返回 **200**，Task `2bef130f-4981-44bc-aa81-e4ac84d883ba` 和 outbox 均落库；停机期间 Task `PENDING`、Job `QUEUED`。Backend 日志记录第一次发送失败 `RETRY_SCHEDULED`，outbox 尝试次数随后到 **2**。恢复 Kafka 并等待健康后，Worker 对同一 Task 调用内部输入和 Source Windows 接口均返回 200；outbox 最终 `SENT`，`sent_at=2026-09-28 11:59:16`。Task/Job 最终 `FAILED`，原因是 `CONFIGURATION_REQUIRED: Artifact LLM returned no usable content; extractive fallback is disabled`，不是 Kafka 投递失败。本次证明 Kafka 中断后 outbox 持久化、重试、恢复投递与 Worker 接收；不证明模型产物 READY。测试结束隔离 Kafka、Backend、Worker、MySQL、Redis、Elasticsearch、MinIO、Frontend 均 healthy。
