@@ -173,6 +173,15 @@ class ContextV2ResearchContractTest {
         String executionQuestion = jdbc.queryForObject("""
                 select execution_question from research_run where id = ?
                 """, String.class, runId);
+        String publishedBody = "# Published private report " + System.nanoTime();
+        jdbc.update("""
+                update research_run set final_report_title = 'Private report', final_report_markdown = ?
+                where id = ?
+                """, publishedBody, runId);
+        assertThat(data(get("/api/v2/workspaces/{workspaceId}/research-runs/{runId}", workspace, runId))
+                .path("final_report_markdown").asText()).isEqualTo(publishedBody);
+        assertThat(data(get("/api/v2/workspaces/{workspaceId}/research-runs", workspace)).toString())
+                .contains(runId, "Private report");
         coordinator.planAndEnqueue(runId);
         String taskId = jdbc.queryForObject("""
                 select id from research_agent_task where research_run_id = ? order by task_key limit 1

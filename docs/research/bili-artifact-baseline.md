@@ -651,3 +651,7 @@ Frontend `pnpm test`：**72 个文件、256 passed**；Artifact Worker `.venv\\S
 公开回滚接口将 Version 1 复制为 **Version 2**，新版本文件下载 HTTP **200**、大小 **4,902 字节**，SHA-256 与源版本一致。仅重启隔离 Backend 与 MinIO 并等待双方健康后，再分别下载 Version 1/2：均 HTTP 200、附件头、大小与 SHA-256 通过。此项验证已发布 Markdown Version 的跨进程持久性、公开下载与成功回滚；尚未覆盖提交到一半时的进程崩溃、Worker 导出文件过期后的非 Markdown 恢复，或真实浏览器保存动作。
 
 复跑 `Phase6ResearchArtifactContractTest#artifactWindowPagesMustUseFrozenSnapshotAndRejectRevokedSource`：**1 passed、0 failed/0 error/0 skipped**，Maven `BUILD SUCCESS`。合同覆盖冻结窗口分页、输入快照及 Source 撤销后的拒绝读取。
+
+## 2026-09-28 C3 已发布 Research 正文撤销合同
+
+在 `ContextV2ResearchContractTest#deletingSelectedMessageRedactsProjectionAndBlocksPlanning` 中，先为冻结 Context 的 Research Run 写入已发布 Markdown 正文，确认公开详情返回该正文、列表展示报告标题；删除被选中的会话消息后，公开详情返回 HTTP **409**，列表不再包含该 Run。前端 Markdown 导出使用详情中的 `final_report_markdown`，因此这条路径在撤销后无法重新取得正文。定向 Maven 运行 **1 passed、0 failed/0 error/0 skipped，BUILD SUCCESS**。这只覆盖冻结 Context 的 Research Run；未覆盖历史无快照 Run、已下载到客户端的副本和其他独立读取路径。
