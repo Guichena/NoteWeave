@@ -62,7 +62,8 @@ class KnowledgeGovernanceServiceTest {
                 new KnowledgeWikiSearchEngine(jdbcTemplate),
                 versionService,
                 mutationService,
-                commandService);
+                commandService,
+                citationGate);
     }
 
     @Test

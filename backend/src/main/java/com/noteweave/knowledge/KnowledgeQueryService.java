@@ -58,12 +58,14 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
     public WikiIndexResponse getWikiIndex(String workspaceId) {
         requireWorkspace(workspaceId);
         WikiStatsResponse stats = knowledgeGovernanceService.getWikiStats(workspaceId);
-        int readySourceCount = count("""
-                select count(*) from source
+        int readySourceCount = (int) jdbcTemplate.query("""
+                select coalesce(generated_by, ''), coalesce(generated_ref_id, '') from source
                 where workspace_id = ? and status = 'READY'
-                """, workspaceId);
-        int sourceBackedPageCount = count("""
-                select count(*)
+                """, (rs, rowNum) -> new String[] {rs.getString(1), rs.getString(2)},
+                workspaceId).stream().filter(source -> generatedSourceGate.visible(
+                workspaceId, source[0], source[1])).count();
+        List<String> sourceBackedPageIds = jdbcTemplate.queryForList("""
+                select i.id
                 from knowledge_item i
                 join knowledge_version v on v.id = i.latest_version_id
                 where i.workspace_id = ?
@@ -73,7 +75,9 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
                       select 1 from knowledge_version_citation kvc
                       where kvc.knowledge_version_id = v.id
                   )
-                """, workspaceId);
+                """, String.class, workspaceId);
+        int sourceBackedPageCount = citationReadGate.readableWikiItemIds(
+                workspaceId, sourceBackedPageIds).size();
         int manualPageCount = Math.max(0, stats.pageCount() - sourceBackedPageCount);
         List<RecentSource> sourceRows = jdbcTemplate.query("""
                 select id, title, status, index_status, updated_at,

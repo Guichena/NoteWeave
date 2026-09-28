@@ -268,6 +268,12 @@ class ContextV2ResearchContractTest {
                 .contains(sourceId);
         knowledgeCommands.upsertWikiPage(workspace, "Research-derived Wiki",
                 "Frozen report body", java.util.List.of(citationId));
+        JsonNode beforeWikiStats = data(get("/api/v2/workspaces/{workspaceId}/wiki-stats", workspace));
+        assertThat(beforeWikiStats.path("page_count").asInt()).isEqualTo(1);
+        assertThat(beforeWikiStats.path("citation_count").asInt()).isEqualTo(1);
+        JsonNode beforeWikiIndex = data(get("/api/v2/workspaces/{workspaceId}/wiki-index", workspace));
+        assertThat(beforeWikiIndex.path("source_backed_page_count").asInt()).isEqualTo(1);
+        assertThat(beforeWikiIndex.path("ready_source_count").asInt()).isEqualTo(1);
         String artifactTaskId = data(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspace)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsBytes(Map.of(
@@ -327,6 +333,12 @@ class ContextV2ResearchContractTest {
                 .andExpect(status().isOk());
         assertThat(data(get("/api/v2/workspaces/{workspaceId}/sources", workspace)).toString())
                 .doesNotContain(sourceId, "Frozen report");
+        JsonNode afterWikiStats = data(get("/api/v2/workspaces/{workspaceId}/wiki-stats", workspace));
+        assertThat(afterWikiStats.path("page_count").asInt()).isZero();
+        assertThat(afterWikiStats.path("citation_count").asInt()).isZero();
+        JsonNode afterWikiIndex = data(get("/api/v2/workspaces/{workspaceId}/wiki-index", workspace));
+        assertThat(afterWikiIndex.path("source_backed_page_count").asInt()).isZero();
+        assertThat(afterWikiIndex.path("ready_source_count").asInt()).isZero();
         assertThatThrownBy(() -> researchSourceScope.load(workspace,
                 mapper.writeValueAsString(java.util.List.of(sourceId))))
                 .isInstanceOfSatisfying(BusinessException.class,

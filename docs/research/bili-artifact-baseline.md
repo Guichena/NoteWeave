@@ -655,3 +655,5 @@ Frontend `pnpm test`：**72 个文件、256 passed**；Artifact Worker `.venv\\S
 ## 2026-09-28 C3 已发布 Research 正文撤销合同
 
 在 `ContextV2ResearchContractTest#deletingSelectedMessageRedactsProjectionAndBlocksPlanning` 中，先为冻结 Context 的 Research Run 写入已发布 Markdown 正文，确认公开详情返回该正文、列表展示报告标题；删除被选中的会话消息后，公开详情返回 HTTP **409**，列表不再包含该 Run。前端 Markdown 导出使用详情中的 `final_report_markdown`，因此这条路径在撤销后无法重新取得正文。定向 Maven 运行 **1 passed、0 failed/0 error/0 skipped，BUILD SUCCESS**。这只覆盖冻结 Context 的 Research Run；未覆盖历史无快照 Run、已下载到客户端的副本和其他独立读取路径。
+
+Wiki 聚合计数复用已通过 Citation 读取门禁的当前页面，页面、链接、引用和问题计数不再包含已撤销来源的页面；索引中的可见 READY Source 数及来源支撑页数也按同一撤销规则过滤。`KnowledgeGovernanceServiceTest` **6/6**、`KnowledgeQueryServiceTest` **8/8** 通过；强化后的 `ContextV2ResearchContractTest#sourceCatalogHidesRevokedResearchReportEvenWhenCatalogWasCached` **1/1** 通过，确认撤销前 Wiki 页面/引用/可见来源/来源支撑页均为 1，撤销后均为 0。合计 **15 passed、0 failed/0 error/0 skipped**，Maven `BUILD SUCCESS`。未把其他历史答案读取路径计入本次覆盖。
