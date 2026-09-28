@@ -657,3 +657,9 @@ Frontend `pnpm test`：**72 个文件、256 passed**；Artifact Worker `.venv\\S
 在 `ContextV2ResearchContractTest#deletingSelectedMessageRedactsProjectionAndBlocksPlanning` 中，先为冻结 Context 的 Research Run 写入已发布 Markdown 正文，确认公开详情返回该正文、列表展示报告标题；删除被选中的会话消息后，公开详情返回 HTTP **409**，列表不再包含该 Run。前端 Markdown 导出使用详情中的 `final_report_markdown`，因此这条路径在撤销后无法重新取得正文。定向 Maven 运行 **1 passed、0 failed/0 error/0 skipped，BUILD SUCCESS**。这只覆盖冻结 Context 的 Research Run；未覆盖历史无快照 Run、已下载到客户端的副本和其他独立读取路径。
 
 Wiki 聚合计数复用已通过 Citation 读取门禁的当前页面，页面、链接、引用和问题计数不再包含已撤销来源的页面；索引中的可见 READY Source 数及来源支撑页数也按同一撤销规则过滤。`KnowledgeGovernanceServiceTest` **6/6**、`KnowledgeQueryServiceTest` **8/8** 通过；强化后的 `ContextV2ResearchContractTest#sourceCatalogHidesRevokedResearchReportEvenWhenCatalogWasCached` **1/1** 通过，确认撤销前 Wiki 页面/引用/可见来源/来源支撑页均为 1，撤销后均为 0。合计 **15 passed、0 failed/0 error/0 skipped**，Maven `BUILD SUCCESS`。未把其他历史答案读取路径计入本次覆盖。
+
+## 2026-09-28 真实浏览器 Version 保存与文件过期边界
+
+在隔离 WSL Docker 前端临时映射 `127.0.0.1:18765`，通过 Edge 注册一次性验收账号、进入已有隔离 Workspace，产物工作台显示 `study_guide` 回滚 Version 2 的 `MARKDOWN · READY · minio · 4902B` 文件。点击“下载 MARKDOWN”后 UI 显示“MARKDOWN 已开始下载”；Windows 下载目录实际生成 `学习指南.md`，大小 **4,902 字节**，SHA-256 为 `741449ffd0a863f05d926a29b73d2d2b6cd1a9a667965e6d62c9e9b89231abd5`，与该 Version 的隔离数据库文件记录一致。验收后撤除临时前端端口映射，并将一次性账号的 Workspace 成员状态改为 `REVOKED`；未碰主项目 Compose 栈。
+
+`ArtifactFileReconcileReadbackTest` 增补非 Markdown `SOURCE_MD` 对象损坏且 Worker 导出文件过期场景：对账仍保持 Version `DEGRADED`，不误报 READY。该定向测试 **1/1 passed**；`Phase6ResearchArtifactContractTest#orphanCleanupDeletesOnlyOldUnreferencedStagedObjects` **1/1 passed**，确认旧无引用暂存对象被清除、近期及已引用对象保留；两个 Maven 运行均 `BUILD SUCCESS`。这不等于过期后的非 Markdown 文件可以恢复，也不是提交瞬间进程崩溃的真实注入。

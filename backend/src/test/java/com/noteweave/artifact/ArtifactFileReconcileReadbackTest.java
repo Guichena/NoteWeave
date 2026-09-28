@@ -20,7 +20,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 class ArtifactFileReconcileReadbackTest {
     @Test
-    void keepsVersionDegradedUntilRecoveredObjectCanBeReadBackWithItsCommittedDigest() throws Exception {
+    void reconcilesVerifiedFilesButKeepsExpiredWorkerExportsDegraded() throws Exception {
         JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
                 "jdbc:h2:mem:artifact-readback-" + System.nanoTime() + ";DB_CLOSE_DELAY=-1", "sa", ""));
         jdbc.execute("create table artifact_job(id varchar(36) primary key, task_id varchar(36))");
@@ -96,6 +96,13 @@ class ArtifactFileReconcileReadbackTest {
         assertThat(deliveryStatus(jdbc)).isEqualTo("READY");
         verify(workerExports).fetch("task", "source.md");
         verify(storage).write(eq("export"), eq("artifact/source.md"), eq(source));
+
+        jdbc.update("update artifact_version set delivery_status = 'DEGRADED' where id = 'version'");
+        when(storage.read("export", "artifact/source.md")).thenReturn(corrupted);
+        when(workerExports.fetch("task", "source.md"))
+                .thenThrow(new IllegalStateException("Worker export expired"));
+        service.reconcileDegradedFiles();
+        assertThat(deliveryStatus(jdbc)).isEqualTo("DEGRADED");
     }
 
     private String deliveryStatus(JdbcTemplate jdbc) {
