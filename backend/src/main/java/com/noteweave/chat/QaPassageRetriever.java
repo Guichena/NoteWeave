@@ -112,6 +112,8 @@ public class QaPassageRetriever {
                         workspaceId, query, allowedSources);
                 return new RetrievalResult(hybrid.chunks(), hybrid.degraded(),
                         hybrid.degradationReasons(), hybrid.measurements());
+            } catch (BusinessException ex) {
+                throw ex;
             } catch (Exception ex) {
                 degradationReasons.add("qa_hybrid_retrieval_error");
                 String errorCode = ex instanceof com.noteweave.retrieval.provider.RetrievalProviderException provider
@@ -200,6 +202,8 @@ public class QaPassageRetriever {
             } else if (scopedSearchHits.isEmpty()) {
                 degradationReasons.add("qa_primary_no_scoped_hits");
             }
+        } catch (BusinessException ex) {
+            throw ex;
         } catch (Exception ex) {
             degradationReasons.add("qa_primary_search_error");
             if (!mysqlFallbackEnabled) {
@@ -285,6 +289,9 @@ public class QaPassageRetriever {
                 0,
                 ""
         ), params.toArray());
+        Set<String> readableSourceIds = retrievalHydrator.readableSourceIds(workspaceId,
+                candidates.stream().map(RetrievedChunk::sourceId).toList());
+        candidates = candidates.stream().filter(chunk -> readableSourceIds.contains(chunk.sourceId())).toList();
         Set<String> terms = extractTerms(query);
         List<RetrievedChunk> scopedCandidates = candidates.stream()
                 .filter(chunk -> allowedSources.isEmpty() || allowedSources.contains(chunk.sourceId()))

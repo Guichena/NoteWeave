@@ -1,6 +1,7 @@
 package com.noteweave.chat;
 
 import com.noteweave.chat.NoteRetrievalService.ReadingWindow;
+import com.noteweave.research.ResearchGeneratedSourceReadGate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -8,15 +9,24 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
 public class RetrievalHydrator {
 
     private final JdbcTemplate jdbcTemplate;
+    private final ResearchGeneratedSourceReadGate generatedSourceGate;
 
     public RetrievalHydrator(JdbcTemplate jdbcTemplate) {
+        this(jdbcTemplate, null);
+    }
+
+    @Autowired
+    public RetrievalHydrator(JdbcTemplate jdbcTemplate,
+                             ResearchGeneratedSourceReadGate generatedSourceGate) {
         this.jdbcTemplate = jdbcTemplate;
+        this.generatedSourceGate = generatedSourceGate;
     }
 
     public Map<String, PassageOwnership> hydratePassageOwnership(
@@ -56,8 +66,16 @@ public class RetrievalHydrator {
                 rs.getString("generated_ref_id")
         ), parameters.toArray());
         Map<String, PassageOwnership> byChunkId = new LinkedHashMap<>();
-        rows.forEach(row -> byChunkId.put(row.chunkId(), row));
+        rows.stream().filter(row -> generatedSourceGate == null || generatedSourceGate.visible(
+                workspaceId, row.generatedBy(), row.generatedRefId()))
+                .forEach(row -> byChunkId.put(row.chunkId(), row));
         return Map.copyOf(byChunkId);
+    }
+
+    public Set<String> readableSourceIds(String workspaceId, List<String> sourceIds) {
+        List<String> ids = distinctIds(sourceIds);
+        return generatedSourceGate == null ? Set.copyOf(ids)
+                : generatedSourceGate.readableSourceIds(workspaceId, ids);
     }
 
     public Map<String, List<AdjacentPassage>> hydrateAdjacentPassages(
@@ -66,6 +84,11 @@ public class RetrievalHydrator {
     ) {
         List<String> ids = distinctIds(anchorChunkIds);
         if (ids.isEmpty()) return Map.of();
+        if (generatedSourceGate != null) {
+            Set<String> readableAnchors = hydratePassageOwnership(workspaceId, ids).keySet();
+            ids = ids.stream().filter(readableAnchors::contains).toList();
+            if (ids.isEmpty()) return Map.of();
+        }
         List<Object> parameters = parameters(workspaceId, ids);
         List<AdjacentPassage> rows = jdbcTemplate.query("""
                 select anchor.id as anchor_chunk_id, anchor.chunk_no as anchor_chunk_no,
@@ -154,6 +177,8 @@ public class RetrievalHydrator {
         ), parameters.toArray());
         Map<String, List<ReadingWindow>> bySourceId = new LinkedHashMap<>();
         for (ReadingWindow row : rows) {
+            if (generatedSourceGate != null && !generatedSourceGate.visible(
+                    workspaceId, row.generatedBy(), row.generatedRefId())) continue;
             List<ReadingWindow> sourceWindows = bySourceId.computeIfAbsent(
                     row.sourceId(), ignored -> new ArrayList<>());
             if (sourceWindows.size() < 16) {

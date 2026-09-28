@@ -1,7 +1,13 @@
 package com.noteweave.artifact;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.capability.CapabilityCatalogPort;
 import com.noteweave.common.BusinessException;
+import java.io.InputStream;
+import java.net.URI;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -9,54 +15,117 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 
 @Service
 public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
 
-    private static final List<Map<String, String>> LANGUAGE_OPTIONS = List.of(
-            Map.of("const", "zh-CN", "title", "中文（简体）"),
-            Map.of("const", "en", "title", "English"),
-            Map.of("const", "zh-EN", "title", "中英双语")
-    );
-
     private final Map<String, ArtifactSkillDefinition> skillsByKey;
     private final Map<String, String> aliases;
     private final Map<String, String> actionBindings;
+    private final Map<String, List<String>> requiredFileRoles;
+    private final Map<String, String> publishedVersions;
+    private final String catalogDigest;
 
     public ArtifactSkillCatalogService() {
+        Map<String, Object> catalog;
+        byte[] catalogBytes;
+        try (InputStream input = ArtifactSkillCatalogService.class.getResourceAsStream(
+                "/artifact-skill-catalog-v2.json")) {
+            if (input == null) throw new IllegalStateException("published artifact Skill catalog is missing");
+            catalogBytes = input.readAllBytes();
+            catalog = new ObjectMapper().readValue(catalogBytes, new TypeReference<>() {});
+            catalogDigest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(catalogBytes));
+        } catch (Exception error) {
+            throw new IllegalStateException("cannot load published artifact Skill catalog", error);
+        }
+        if (!Integer.valueOf(2).equals(catalog.get("catalog_version"))) {
+            throw new IllegalStateException("unsupported artifact Skill catalog version");
+        }
         Map<String, ArtifactSkillDefinition> skills = new LinkedHashMap<>();
-        register(skills, new ArtifactSkillDefinition("resume_highlight", "简历亮点描述", languageOnlySchema()));
-        register(skills, new ArtifactSkillDefinition("study_guide", "学习指南", languageOnlySchema()));
-        register(skills, new ArtifactSkillDefinition("quiz_pack", "测验题集", languageOnlySchema()));
-        register(skills, new ArtifactSkillDefinition("wiki_page", "Wiki 页面", languageOnlySchema()));
-        register(skills, new ArtifactSkillDefinition("mindmap_from_workspace", "思维导图", mindMapSchema()));
-        register(skills, new ArtifactSkillDefinition("bilibili_course_note_pdf", "B站讲义 PDF", languageAndUrlSchema(true)));
-        register(skills, new ArtifactSkillDefinition("report_draft", "结构化报告", languageOnlySchema()));
-        register(skills, new ArtifactSkillDefinition("faq_draft", "FAQ 草稿", languageOnlySchema()));
-        register(skills, new ArtifactSkillDefinition("structured_note", "结构化笔记", languageOnlySchema()));
-        register(skills, new ArtifactSkillDefinition("video_summary", "视频总结", languageAndUrlSchema(true)));
-        register(skills, new ArtifactSkillDefinition("audio_minutes", "音频纪要", languageOnlySchema()));
-        register(skills, new ArtifactSkillDefinition("course_notes", "课程笔记", languageAndUrlSchema(false)));
+        for (Object rawEntry : (List<?>) catalog.get("skills")) {
+            if (!(rawEntry instanceof Map<?, ?> entry) || !(entry.get("input_schema") instanceof Map<?, ?> schema)) {
+                throw new IllegalStateException("invalid artifact Skill catalog entry");
+            }
+            validatePublishedEntry(entry, schema);
+            String key = String.valueOf(entry.get("skill_key"));
+            Map<String, Object> inputSchema = new LinkedHashMap<>();
+            schema.forEach((field, value) -> inputSchema.put(String.valueOf(field), value));
+            if (skills.putIfAbsent(key, new ArtifactSkillDefinition(
+                    key, String.valueOf(entry.get("display_name")), Map.copyOf(inputSchema))) != null) {
+                throw new IllegalStateException("duplicate artifact Skill key: " + key);
+            }
+        }
         this.skillsByKey = Map.copyOf(skills);
-        this.aliases = Map.of(
-                "resume_highlights", "resume_highlight",
-                "bilibili_pdf", "bilibili_course_note_pdf"
-        );
-        this.actionBindings = Map.ofEntries(
-                Map.entry("resume_highlight", "RESUME_HIGHLIGHT"),
-                Map.entry("study_guide", "STUDY_GUIDE"),
-                Map.entry("quiz_pack", "QUIZ"),
-                Map.entry("wiki_page", "WIKI_PAGE"),
-                Map.entry("mindmap_from_workspace", "MINDMAP"),
-                Map.entry("bilibili_course_note_pdf", "COURSE_NOTES"),
-                Map.entry("report_draft", "REPORT"),
-                Map.entry("faq_draft", "FAQ"),
-                Map.entry("structured_note", "STRUCTURED_NOTE"),
-                Map.entry("video_summary", "VIDEO_SUMMARY"),
-                Map.entry("audio_minutes", "AUDIO_MINUTES"),
-                Map.entry("course_notes", "COURSE_NOTES")
-        );
+        Map<String, String> catalogAliases = new LinkedHashMap<>();
+        ((Map<?, ?>) catalog.get("aliases")).forEach((key, value) ->
+                catalogAliases.put(String.valueOf(key), String.valueOf(value)));
+        this.aliases = Map.copyOf(catalogAliases);
+        Map<String, String> bindings = new LinkedHashMap<>();
+        Map<String, List<String>> requiredRoles = new LinkedHashMap<>();
+        Map<String, String> versions = new LinkedHashMap<>();
+        for (Object rawEntry : (List<?>) catalog.get("skills")) {
+            Map<?, ?> entry = (Map<?, ?>) rawEntry;
+            String key = String.valueOf(entry.get("skill_key"));
+            versions.put(key, String.valueOf(entry.get("version")));
+            bindings.put(key, String.valueOf(entry.get("action_key")));
+            if (!(entry.get("required_file_roles") instanceof List<?> roles)) {
+                throw new IllegalStateException("Skill has no required file roles: " + key);
+            }
+            List<String> names = roles.stream().map(String::valueOf).toList();
+            if (names.isEmpty() || names.size() != Set.copyOf(names).size()
+                    || !names.contains("PRIMARY_MARKDOWN")
+                    || !Set.of("PRIMARY_MARKDOWN", "PRIMARY_PDF", "PRIMARY_PPTX", "SOURCE_MD", "SLIDE_PREVIEW")
+                            .containsAll(names)) {
+                throw new IllegalStateException("invalid required file roles: " + key);
+            }
+            requiredRoles.put(key, names);
+        }
+        this.actionBindings = Map.copyOf(bindings);
+        this.requiredFileRoles = Map.copyOf(requiredRoles);
+        this.publishedVersions = Map.copyOf(versions);
+    }
+
+    public String catalogDigest() {
+        return catalogDigest;
+    }
+
+    public String publishedVersion(String skillKey) {
+        return publishedVersions.get(resolveSkill(skillKey).skillKey());
+    }
+
+    public List<String> requiredFileRoles(String skillKey) {
+        return requiredFileRoles.get(resolveSkill(skillKey).skillKey());
+    }
+
+    static void validatePublishedEntry(Map<?, ?> entry, Map<?, ?> schema) {
+        if (!entry.keySet().equals(Set.of("skill_key", "version", "display_name", "description",
+                "input_schema", "output_schema_ref", "graph_key", "prompt_recipe_id",
+                "required_file_roles", "capability_allowlist", "action_key"))
+                || !"1.0.0".equals(entry.get("version"))
+                || !"artifact-content-v1".equals(entry.get("output_schema_ref"))
+                || !schema.keySet().stream().allMatch(Set.of("type", "properties", "required")::contains)
+                || !"object".equals(schema.get("type"))
+                || !(schema.get("properties") instanceof Map<?, ?> properties)
+                || !(entry.get("capability_allowlist") instanceof List<?> capabilities)
+                || !Set.of("READ_WORKSPACE_DOC", "GENERATE_STRUCTURED_TEXT", "VERIFY_OUTPUT",
+                        "READ_WEB_PAGE", "EXTRACT_TRANSCRIPT", "TRANSCRIBE_AUDIO",
+                        "CAPTURE_VIDEO_FRAMES", "ANALYZE_FRAME").containsAll(capabilities)) {
+            throw new IllegalStateException("unsupported artifact Skill publication policy");
+        }
+        Object required = schema.containsKey("required") ? schema.get("required") : List.of();
+        if (!(required instanceof List<?> requiredKeys) || !properties.keySet().containsAll(requiredKeys)) {
+            throw new IllegalStateException("published Skill has invalid required inputs");
+        }
+        for (Object rawField : properties.values()) {
+            if (!(rawField instanceof Map<?, ?> field)
+                    || !field.keySet().stream().allMatch(Set.of("type", "default", "oneOf", "enum")::contains)
+                    || !"string".equals(field.get("type"))) {
+                throw new IllegalStateException("unsupported published Skill input field");
+            }
+        }
     }
 
     public ArtifactSkillDefinition resolveSkill(String skillKey) {
@@ -115,6 +184,24 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
                 normalized.put(key, normalizedValue);
             }
         }
+        if (schemaProperties.containsKey("url")) {
+            String canonicalUrl = String.valueOf(normalized.getOrDefault("url", "")).trim();
+            for (String alias : List.of("video_url", "bilibili_url")) {
+                Object rawAlias = normalized.remove(alias);
+                if (rawAlias == null) continue;
+                String aliasUrl = String.valueOf(rawAlias).trim();
+                if (aliasUrl.isEmpty()) continue;
+                if (!canonicalUrl.isEmpty() && !canonicalUrl.equals(aliasUrl)) {
+                    throw new BusinessException("ARTIFACT_SKILL_INPUT_CONFLICT",
+                            "产物视频链接字段不一致：url 与 " + alias);
+                }
+                canonicalUrl = aliasUrl;
+            }
+            if ("bilibili_course_note_pdf".equals(skill.skillKey()) && normalized.containsKey("part")) {
+                canonicalUrl = resolveVideoPart(canonicalUrl, String.valueOf(normalized.get("part")));
+            }
+            if (!canonicalUrl.isEmpty()) normalized.put("url", canonicalUrl);
+        }
 
         List<String> missingRequiredKeys = readRequiredInputKeys(skill.inputSchema()).stream()
                 .filter(requiredKey -> isMissingRequiredValue(requiredKey, schemaProperties.get(requiredKey), normalized.get(requiredKey)))
@@ -129,6 +216,37 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         return Map.copyOf(normalized);
     }
 
+    private static String resolveVideoPart(String url, String requestedPart) {
+        if (!requestedPart.matches("[1-9][0-9]{0,3}") || Integer.parseInt(requestedPart) > 1_000) {
+            throw new BusinessException("ARTIFACT_SKILL_INPUT_PART_INVALID", "视频分集必须为 1–1000");
+        }
+        URI parsed;
+        try { parsed = URI.create(url); }
+        catch (IllegalArgumentException ex) {
+            throw new BusinessException("ARTIFACT_SKILL_INPUT_PART_INVALID", "视频链接格式不正确");
+        }
+        if (!("http".equals(parsed.getScheme()) || "https".equals(parsed.getScheme()))
+                || !("bilibili.com".equals(parsed.getHost())
+                        || "www.bilibili.com".equals(parsed.getHost()))
+                || parsed.getPath() == null
+                || !parsed.getPath().matches("/video/BV[0-9A-Za-z]{10}/?")
+                || parsed.getRawFragment() != null) {
+            throw new BusinessException("ARTIFACT_SKILL_INPUT_PART_INVALID", "分集只适用于 B 站视频链接");
+        }
+        Matcher existing = Pattern.compile("(?:^|&)p=([^&]*)")
+                .matcher(parsed.getRawQuery() == null ? "" : parsed.getRawQuery());
+        if (existing.find()) {
+            String value = existing.group(1);
+            if (!value.matches("[1-9][0-9]{0,3}") || Integer.parseInt(value) > 1_000
+                    || Integer.parseInt(value) != Integer.parseInt(requestedPart) || existing.find()) {
+                throw new BusinessException("ARTIFACT_SKILL_INPUT_CONFLICT", "视频链接分集与 part 输入不一致");
+            }
+            return url;
+        }
+        if ("1".equals(requestedPart)) return url;
+        return url + (parsed.getRawQuery() == null ? "?" : "&") + "p=" + requestedPart;
+    }
+
     public List<ArtifactSkillSummaryResponse> listSkills() {
         return skillsByKey.values().stream()
                 .map(skill -> new ArtifactSkillSummaryResponse(
@@ -136,14 +254,10 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
                         skill.displayName(),
                         buildDescription(skill.skillKey()),
                         "ACTIVE",
-                        skill.inputSchema(),
+                        publicInputSchema(skill.inputSchema()),
                         buildDefaultInputHints(skill.skillKey())
                 ))
                 .toList();
-    }
-
-    private void register(Map<String, ArtifactSkillDefinition> skills, ArtifactSkillDefinition skill) {
-        skills.put(skill.skillKey(), skill);
     }
 
     private String canonicalSkillKey(String value) {
@@ -168,6 +282,8 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
             case "wiki_page" -> "沉淀成定义、机制、引用和相关页面齐全的知识页草稿";
             case "mindmap_from_workspace" -> "把当前工作台资料整理为可缩放、可折叠的交互式思维导图";
             case "bilibili_course_note_pdf" -> "面向 B 站视频链接生成图文讲义与 PDF 讲义任务";
+            case "knowledge_blog" -> "从冻结的视频资料和知识规划生成带证据的学习文章";
+            case "interview_qa" -> "从冻结的视频资料和知识规划生成三段式面试问答";
             case "report_draft" -> "生成结构化报告草稿";
             case "faq_draft" -> "生成 FAQ 草稿";
             case "structured_note" -> "生成结构化笔记";
@@ -186,6 +302,15 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         LinkedHashMap<String, Object> properties = new LinkedHashMap<>();
         rawProperties.forEach((key, value) -> properties.put(String.valueOf(key), value));
         return properties;
+    }
+
+    private Map<String, Object> publicInputSchema(Map<String, Object> inputSchema) {
+        LinkedHashMap<String, Object> properties = new LinkedHashMap<>(readSchemaProperties(inputSchema));
+        properties.remove("video_url");
+        properties.remove("bilibili_url");
+        LinkedHashMap<String, Object> publicSchema = new LinkedHashMap<>(inputSchema);
+        publicSchema.put("properties", Map.copyOf(properties));
+        return Map.copyOf(publicSchema);
     }
 
     private List<String> readRequiredInputKeys(Map<String, Object> inputSchema) {
@@ -295,59 +420,6 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         return Set.copyOf(values);
     }
 
-    private Map<String, Object> languageOnlySchema() {
-        return Map.of(
-                "type", "object",
-                "properties", Map.of(
-                        "language", languageSchema()
-                )
-        );
-    }
-
-    private Map<String, Object> mindMapSchema() {
-        Map<String, Object> properties = new LinkedHashMap<>();
-        properties.put("language", languageSchema());
-        properties.put("layout", Map.of(
-                "type", "string",
-                "default", "balanced",
-                "oneOf", List.of(
-                        Map.of("const", "balanced", "title", "均衡分支"),
-                        Map.of("const", "compact", "title", "紧凑概览")
-                )
-        ));
-        properties.put("depth", Map.of(
-                "type", "string",
-                "default", "3",
-                "oneOf", List.of(
-                        Map.of("const", "2", "title", "2 层，快速浏览"),
-                        Map.of("const", "3", "title", "3 层，推荐"),
-                        Map.of("const", "4", "title", "4 层，详细")
-                )
-        ));
-        return Map.of("type", "object", "properties", Map.copyOf(properties));
-    }
-
-    private Map<String, Object> languageAndUrlSchema(boolean required) {
-        Map<String, Object> properties = new LinkedHashMap<>();
-        properties.put("language", languageSchema());
-        properties.put("url", Map.of("type", "string"));
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", properties);
-        if (required) {
-            schema.put("required", List.of("url"));
-        }
-        return Map.copyOf(schema);
-    }
-
-    private Map<String, Object> languageSchema() {
-        return Map.of(
-                "type", "string",
-                "default", "zh-CN",
-                "oneOf", LANGUAGE_OPTIONS
-        );
-    }
-
     private List<String> buildDefaultInputHints(String skillKey) {
         return switch (skillKey) {
             case "resume_highlight" -> List.of("强调架构设计", "强调工程复杂度", "适合校招简历");
@@ -356,6 +428,8 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
             case "wiki_page" -> List.of("定义先行", "补充关键机制", "保留相关页面建议");
             case "mindmap_from_workspace" -> List.of("4 到 7 条主分支", "节点使用短语", "保留来源线索");
             case "bilibili_course_note_pdf" -> List.of("填写 B 站视频链接", "保留章节结构", "输出讲义 PDF");
+            case "knowledge_blog" -> List.of("引用冻结视频资料包", "保留逐条证据", "输出学习文章");
+            case "interview_qa" -> List.of("引用冻结视频资料包", "简答、详答、相关知识", "输出面试问答");
             case "report_draft" -> List.of("问题-方法-效果", "保留关键证据", "适合方案沉淀");
             case "faq_draft" -> List.of("面向帮助中心", "问题答案成对", "补充使用说明");
             case "structured_note" -> List.of("沉淀主题快照", "保留关键摘录", "补充后续问题");

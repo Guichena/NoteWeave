@@ -1,24 +1,34 @@
 package com.noteweave.chat;
 
 import com.noteweave.chat.NoteRetrievalService.CandidateSource;
+import com.noteweave.research.ResearchGeneratedSourceReadGate;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
 public class NoteRecallRepository {
     private final JdbcTemplate jdbcTemplate;
+    private final ResearchGeneratedSourceReadGate generatedSourceGate;
 
     public NoteRecallRepository(JdbcTemplate jdbcTemplate) {
+        this(jdbcTemplate, null);
+    }
+
+    @Autowired
+    public NoteRecallRepository(JdbcTemplate jdbcTemplate,
+                                ResearchGeneratedSourceReadGate generatedSourceGate) {
         this.jdbcTemplate = jdbcTemplate;
+        this.generatedSourceGate = generatedSourceGate;
     }
 
     public List<CandidateSource> findCurrentSources(String workspaceId) {
-        return jdbcTemplate.query("""
+        List<CandidateSource> sources = jdbcTemplate.query("""
                 select s.id, s.title, s.source_type, s.updated_at,
                        coalesce(s.generated_by, '') as generated_by,
                        coalesce(s.generated_ref_id, '') as generated_ref_id,
@@ -59,6 +69,10 @@ public class NoteRecallRepository {
                 "",
                 ""
         ), workspaceId);
+        return generatedSourceGate == null ? sources : sources.stream()
+                .filter(source -> generatedSourceGate.visible(
+                        workspaceId, source.generatedBy(), source.generatedRefId()))
+                .toList();
     }
 
     public Map<String, Set<String>> sourceIdsByNote(String workspaceId) {

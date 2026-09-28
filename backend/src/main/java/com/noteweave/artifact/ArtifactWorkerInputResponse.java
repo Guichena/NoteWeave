@@ -10,11 +10,13 @@ public record ArtifactWorkerInputResponse(
         String workspaceId,
         String targetId,
         String inputSnapshotId,
+        String catalogDigest,
         String replayAvailability,
         List<WorkerSourceScopeItemResponse> sourceScope,
         List<ArtifactUpstreamRefRequest> upstreamRefs,
         WorkerContextSnapshotResponse contextSnapshot,
         MemoryControlPackResponse controlPack,
-        ArtifactWorkerInputPayload inputPayload
+        ArtifactWorkerInputPayload inputPayload,
+        ArtifactContextV2ShadowInputResponse contextV2Shadow
 ) {
 }

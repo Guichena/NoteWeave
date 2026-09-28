@@ -16,15 +16,18 @@ public class KnowledgeVersionService {
     private final JdbcTemplate jdbcTemplate;
     private final AuditActorProvider auditActorProvider;
     private final KnowledgeWikiMutationService wikiMutationService;
+    private final KnowledgeCitationReadGate citationReadGate;
 
     public KnowledgeVersionService(
             JdbcTemplate jdbcTemplate,
             AuditActorProvider auditActorProvider,
-            KnowledgeWikiMutationService wikiMutationService
+            KnowledgeWikiMutationService wikiMutationService,
+            KnowledgeCitationReadGate citationReadGate
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.auditActorProvider = auditActorProvider;
         this.wikiMutationService = wikiMutationService;
+        this.citationReadGate = citationReadGate;
     }
 
     @Transactional
@@ -49,6 +52,7 @@ public class KnowledgeVersionService {
         }
         List<String> citationIds = citationIdsFromRequest(
                 item.workspaceId(), request.sourceMessageId(), request.citationIds());
+        citationReadGate.requireCitationIdsReadable(item.workspaceId(), citationIds);
         Integer currentVersion = jdbcTemplate.queryForObject("""
                 select coalesce(max(version_no), 0)
                 from knowledge_version
@@ -86,7 +90,7 @@ public class KnowledgeVersionService {
 
     public List<KnowledgeVersionSummaryResponse> listItemVersions(String itemId) {
         KnowledgeItemRef item = loadKnowledgeItem(itemId, false);
-        return jdbcTemplate.query("""
+        List<KnowledgeVersionSummaryResponse> versions = jdbcTemplate.query("""
                 select v.id, v.version_no, coalesce(v.summary, '') as summary,
                        v.source_message_id, v.created_at, count(kvc.id) as citation_count
                 from knowledge_version v
@@ -102,6 +106,9 @@ public class KnowledgeVersionService {
                 rs.getInt("citation_count"),
                 toInstant(rs.getTimestamp("created_at"))
         ), item.itemId());
+        var readable = citationReadGate.readableVersionIds(item.workspaceId(),
+                versions.stream().map(KnowledgeVersionSummaryResponse::versionId).toList());
+        return versions.stream().filter(version -> readable.contains(version.versionId())).toList();
     }
 
     public KnowledgeVersionDetailResponse getItemVersionDetail(
@@ -121,6 +128,7 @@ public class KnowledgeVersionService {
                         "KNOWLEDGE_VERSION_NOT_FOUND", "知识版本不存在");
             }
             String versionId = rs.getString("id");
+            citationReadGate.requireReadable(item.workspaceId(), versionId);
             return new KnowledgeVersionDetailResponse(
                     versionId,
                     item.itemId(),
@@ -135,6 +143,15 @@ public class KnowledgeVersionService {
     }
 
     public List<String> citationIdsForVersion(String versionId) {
+        List<String> workspaces = jdbcTemplate.queryForList("""
+                select i.workspace_id from knowledge_version v
+                join knowledge_item i on i.id = v.item_id
+                where v.id = ? and i.status = 'ACTIVE'
+                """, String.class, versionId);
+        if (workspaces.size() != 1) {
+            throw new BusinessException("KNOWLEDGE_VERSION_NOT_FOUND", "知识版本不存在");
+        }
+        citationReadGate.requireReadable(workspaces.get(0), versionId);
         return jdbcTemplate.queryForList("""
                 select citation_id
                 from knowledge_version_citation

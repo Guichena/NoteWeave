@@ -1,170 +1,84 @@
 from __future__ import annotations
 
+import hashlib
+import json
+from pathlib import Path
+
 from app.models import ArtifactSkillDefinition
-
-_LANGUAGE_OPTIONS = [
-    {"const": "zh-CN", "title": "中文（简体）"},
-    {"const": "en", "title": "English"},
-    {"const": "zh-EN", "title": "中英双语"},
-]
+from app.registry import PRODUCTION_ACTIONS, PROMPT_RECIPES, SKILL_GRAPH_TEMPLATES
 
 
-def _language_schema() -> dict[str, object]:
-    return {
-        "type": "string",
-        "default": "zh-CN",
-        "oneOf": list(_LANGUAGE_OPTIONS),
-    }
+_ENTRY_FIELDS = {
+    "skill_key", "version", "display_name", "description", "input_schema",
+    "output_schema_ref", "graph_key", "prompt_recipe_id", "required_file_roles",
+    "capability_allowlist", "action_key",
+}
+_FILE_ROLES = {"PRIMARY_MARKDOWN", "PRIMARY_PDF", "PRIMARY_PPTX", "SOURCE_MD", "SLIDE_PREVIEW"}
 
 
-def _language_only_schema() -> dict[str, object]:
-    return {
-        "type": "object",
-        "properties": {
-            "language": _language_schema(),
-        },
-    }
+def validate_published_catalog(catalog: dict[str, object]) -> None:
+    if set(catalog) != {"catalog_version", "skills", "aliases"} or catalog.get("catalog_version") != 2:
+        raise ValueError("unsupported artifact Skill catalog shape or version")
+    entries = catalog.get("skills")
+    aliases = catalog.get("aliases")
+    if not isinstance(entries, list) or not isinstance(aliases, dict):
+        raise ValueError("artifact Skill catalog entries or aliases are invalid")
+    keys: set[str] = set()
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) != _ENTRY_FIELDS:
+            raise ValueError("unknown or missing published Skill fields")
+        key = entry["skill_key"]
+        action = PRODUCTION_ACTIONS.get(entry["action_key"])
+        if not isinstance(key, str) or not key or key in keys or action is None \
+                or entry["version"] != "1.0.0":
+            raise ValueError("unknown Skill key, action, or publication version")
+        keys.add(key)
+        if entry["graph_key"] != action.default_skill_graph_key \
+                or entry["graph_key"] not in SKILL_GRAPH_TEMPLATES \
+                or entry["prompt_recipe_id"] != action.default_prompt_recipe_id \
+                or entry["prompt_recipe_id"] not in PROMPT_RECIPES \
+                or entry["capability_allowlist"] != action.supported_capabilities:
+            raise ValueError("published Skill execution policy disagrees with production action")
+        roles = entry["required_file_roles"]
+        if not isinstance(roles, list) or not roles or len(roles) != len(set(roles)) \
+                or "PRIMARY_MARKDOWN" not in roles or not set(roles) <= _FILE_ROLES:
+            raise ValueError("invalid published Skill file roles")
+        schema = entry["input_schema"]
+        if not isinstance(schema, dict) or not set(schema) <= {"type", "properties", "required"} \
+                or schema.get("type") != "object" or not isinstance(schema.get("properties"), dict):
+            raise ValueError("unsupported published Skill input schema")
+        properties = schema["properties"]
+        if not set(schema.get("required", [])) <= set(properties):
+            raise ValueError("required Skill input is not declared")
+        for field in properties.values():
+            if not isinstance(field, dict) or not set(field) <= {"type", "default", "oneOf", "enum"} \
+                    or field.get("type") != "string":
+                raise ValueError("unsupported published Skill input field")
+    if any(not isinstance(alias, str) or not isinstance(target, str) or target not in keys
+           for alias, target in aliases.items()):
+        raise ValueError("published Skill alias points outside the catalog")
 
 
-def _mindmap_schema() -> dict[str, object]:
-    return {
-        "type": "object",
-        "properties": {
-            "language": _language_schema(),
-            "layout": {
-                "type": "string",
-                "default": "balanced",
-                "oneOf": [
-                    {"const": "balanced", "title": "均衡分支"},
-                    {"const": "compact", "title": "紧凑概览"},
-                ],
-            },
-            "depth": {
-                "type": "string",
-                "default": "3",
-                "oneOf": [
-                    {"const": "2", "title": "2 层，快速浏览"},
-                    {"const": "3", "title": "3 层，推荐"},
-                    {"const": "4", "title": "4 层，详细"},
-                ],
-            },
-        },
-    }
-
-
-def _language_and_url_schema(
-    *,
-    required: bool,
-    alias_keys: list[str],
-) -> dict[str, object]:
-    properties: dict[str, object] = {
-        "url": {"type": "string"},
-        "language": _language_schema(),
-    }
-    for alias_key in alias_keys:
-        properties[alias_key] = {"type": "string"}
-    schema: dict[str, object] = {
-        "type": "object",
-        "properties": properties,
-    }
-    if required:
-        schema["required"] = ["url"]
-    return schema
-
+_CATALOG_BYTES = Path(__file__).with_name("artifact-skill-catalog-v2.json").read_bytes()
+CATALOG_DIGEST = hashlib.sha256(_CATALOG_BYTES).hexdigest()
+_CATALOG = json.loads(_CATALOG_BYTES)
+validate_published_catalog(_CATALOG)
 
 _ARTIFACT_SKILLS = {
-    "resume_highlight": ArtifactSkillDefinition(
-        skill_key="resume_highlight",
-        display_name="简历亮点描述",
-        description="从当前工作台资料中生成适合简历书写的项目亮点",
-        input_schema=_language_only_schema(),
-    ),
-    "study_guide": ArtifactSkillDefinition(
-        skill_key="study_guide",
-        display_name="学习指南",
-        description="按知识点、关键概念和练习建议生成结构化学习材料",
-        input_schema=_language_only_schema(),
-    ),
-    "quiz_pack": ArtifactSkillDefinition(
-        skill_key="quiz_pack",
-        display_name="测验题集",
-        description="围绕当前资料生成题目、答案解析和评分要点",
-        input_schema=_language_only_schema(),
-    ),
-    "wiki_page": ArtifactSkillDefinition(
-        skill_key="wiki_page",
-        display_name="Wiki 页面",
-        description="沉淀成定义、机制、引用和相关页面齐全的知识页草稿",
-        input_schema=_language_only_schema(),
-    ),
-    "mindmap_from_workspace": ArtifactSkillDefinition(
-        skill_key="mindmap_from_workspace",
-        display_name="思维导图",
-        description="把当前工作台资料整理为可缩放、可折叠的交互式思维导图",
-        input_schema=_mindmap_schema(),
-    ),
-    "bilibili_course_note_pdf": ArtifactSkillDefinition(
-        skill_key="bilibili_course_note_pdf",
-        display_name="B站讲义 PDF",
-        description="面向 B 站视频链接生成图文讲义与 PDF 讲义任务",
-        input_schema=_language_and_url_schema(required=True, alias_keys=["video_url", "bilibili_url"]),
-    ),
-    "report_draft": ArtifactSkillDefinition(
-        skill_key="report_draft",
-        display_name="结构化报告",
-        description="生成结构化报告草稿",
-        input_schema=_language_only_schema(),
-    ),
-    "faq_draft": ArtifactSkillDefinition(
-        skill_key="faq_draft",
-        display_name="FAQ 草稿",
-        description="生成 FAQ 草稿",
-        input_schema=_language_only_schema(),
-    ),
-    "structured_note": ArtifactSkillDefinition(
-        skill_key="structured_note",
-        display_name="结构化笔记",
-        description="生成结构化笔记",
-        input_schema=_language_only_schema(),
-    ),
-    "video_summary": ArtifactSkillDefinition(
-        skill_key="video_summary",
-        display_name="视频总结",
-        description="生成视频总结",
-        input_schema=_language_and_url_schema(required=True, alias_keys=["video_url"]),
-    ),
-    "audio_minutes": ArtifactSkillDefinition(
-        skill_key="audio_minutes",
-        display_name="音频纪要",
-        description="生成音频纪要",
-        input_schema=_language_only_schema(),
-    ),
-    "course_notes": ArtifactSkillDefinition(
-        skill_key="course_notes",
-        display_name="课程笔记",
-        description="生成课程笔记",
-        input_schema=_language_and_url_schema(required=False, alias_keys=["video_url"]),
-    ),
+    entry["skill_key"]: ArtifactSkillDefinition(
+        skill_key=entry["skill_key"],
+        display_name=entry["display_name"],
+        description=entry["description"],
+        input_schema=entry["input_schema"],
+    )
+    for entry in _CATALOG["skills"]
 }
+if len(_ARTIFACT_SKILLS) != len(_CATALOG["skills"]):
+    raise RuntimeError("duplicate artifact Skill key in catalog")
 
-_ALIASES = {
-    "resume_highlights": "resume_highlight",
-    "bilibili_pdf": "bilibili_course_note_pdf",
-}
-
+_ALIASES = _CATALOG["aliases"]
 _SKILL_ACTION_BINDINGS = {
-    "resume_highlight": "RESUME_HIGHLIGHT",
-    "study_guide": "STUDY_GUIDE",
-    "quiz_pack": "QUIZ",
-    "wiki_page": "WIKI_PAGE",
-    "mindmap_from_workspace": "MINDMAP",
-    "bilibili_course_note_pdf": "COURSE_NOTES",
-    "report_draft": "REPORT",
-    "faq_draft": "FAQ",
-    "structured_note": "STRUCTURED_NOTE",
-    "video_summary": "VIDEO_SUMMARY",
-    "audio_minutes": "AUDIO_MINUTES",
-    "course_notes": "COURSE_NOTES",
+    entry["skill_key"]: entry["action_key"] for entry in _CATALOG["skills"]
 }
 
 
@@ -188,14 +102,9 @@ def try_resolve_artifact_skill_definition(skill_key: str) -> ArtifactSkillDefini
 
 
 def resolve_artifact_skill_action_key(skill_key: str) -> str:
-    canonical_skill_key = _resolve_canonical_skill_key(skill_key)
-    return _SKILL_ACTION_BINDINGS.get(canonical_skill_key, "")
+    return _SKILL_ACTION_BINDINGS.get(_resolve_canonical_skill_key(skill_key), "")
 
 
 def _resolve_canonical_skill_key(value: str) -> str:
-    normalized_skill_key = _normalize_skill_key(value)
+    normalized_skill_key = value.strip().lower().replace("-", "_").replace(" ", "_")
     return _ALIASES.get(normalized_skill_key, normalized_skill_key)
-
-
-def _normalize_skill_key(value: str) -> str:
-    return value.strip().lower().replace("-", "_").replace(" ", "_")

@@ -60,6 +60,15 @@ public class MemoryCompilerService {
     }
 
     public MemoryControlPackResponse compileArtifactControlPack(String workspaceId, String skillKey) {
+        return compileArtifactControlPackForActor(workspaceId, skillKey,
+                currentUserProvider.requireUserId());
+    }
+
+    public MemoryControlPackResponse compileArtifactControlPackForActor(
+            String workspaceId, String skillKey, String actorUserId) {
+        if (actorUserId == null || actorUserId.isBlank()) {
+            throw new IllegalArgumentException("Artifact actor is required");
+        }
         List<String> degradationReasons = new ArrayList<>();
         CapabilityCatalogPort catalog = capabilityCatalogProvider.getIfAvailable();
         String normalizedSkillKey;
@@ -86,7 +95,7 @@ public class MemoryCompilerService {
                 List.of(
                         "产物事实必须来自工作台资料池或已保存为资料的系统产物",
                         "Memory 不作为产物生成原材料"
-                ), degradationReasons);
+                ), degradationReasons, actorUserId);
     }
 
     public MemoryControlPackResponse compileResearchControlPack(String workspaceId, String profileKey) {
@@ -157,7 +166,21 @@ public class MemoryCompilerService {
             List<String> evidencePolicy,
             List<String> degradationReasons
     ) {
-        String currentUserId = currentUserProvider.requireUserId();
+        return compilePack(workspaceId, packType, targetKey, taskNeighborhood,
+                allowedNeighborhoods, evidencePolicy, degradationReasons,
+                currentUserProvider.requireUserId());
+    }
+
+    private MemoryControlPackResponse compilePack(
+            String workspaceId,
+            String packType,
+            String targetKey,
+            String taskNeighborhood,
+            Set<String> allowedNeighborhoods,
+            List<String> evidencePolicy,
+            List<String> degradationReasons,
+            String currentUserId
+    ) {
         List<MemoryCompilerReadRepository.StateRow> stateRows = loadStateRows(workspaceId);
         List<MemoryCompilerReadRepository.StateRow> eligibleState = stateRows.stream()
                 .filter(row -> compilerPolicy.scopeAllowed(

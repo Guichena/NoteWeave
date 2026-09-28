@@ -1,6 +1,8 @@
 package com.noteweave.chat;
 
 import com.noteweave.conversation.ConversationContextProjectionService;
+import com.noteweave.conversation.ContextProjectionV2;
+import com.noteweave.conversation.ContextV2ShadowSnapshotService;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -28,7 +30,8 @@ class ConversationRetrievalContextAssembler {
                 0,
                 "",
                 "",
-                new ConversationContextProjectionService.Projection(List.of(), List.of())
+                new ConversationContextProjectionService.Projection(List.of(), List.of()),
+                null
         );
     }
 
@@ -77,8 +80,42 @@ class ConversationRetrievalContextAssembler {
                 workingTurns.size(),
                 topicAnchor,
                 topicSummary,
-                inputProjection
+                inputProjection,
+                null
         );
+    }
+
+    Context assembleV2(String currentUserMessageId, String currentQuestion,
+                       ContextV2ShadowSnapshotService.FrozenAnswer frozen) {
+        ContextProjectionV2 projection = frozen.projection();
+        String trimmedQuestion = currentQuestion == null ? "" : currentQuestion.trim();
+        if (!trimmedQuestion.equals(projection.currentInput().trim())) {
+            throw new IllegalArgumentException("Frozen Context input differs from the current request");
+        }
+        List<ContextProjectionV2.RawMessage> history = projection.rawTail().stream()
+                .filter(message -> !currentUserMessageId.equals(message.messageId()))
+                .toList();
+        boolean hasContext = !history.isEmpty() || !projection.topicSummaries().isEmpty()
+                || !projection.constraints().isEmpty();
+        if (!hasContext) {
+            return new Context(trimmedQuestion, trimmedQuestion, false, 0, "", "",
+                    new ConversationContextProjectionService.Projection(List.of(), List.of()), frozen);
+        }
+        String summary = projection.topicSummaries().stream()
+                .map(ContextProjectionV2.TopicSummary::text)
+                .reduce((first, second) -> first + "\n" + second).orElse("");
+        StringBuilder question = new StringBuilder("当前问题：").append(trimmedQuestion);
+        if (!summary.isBlank()) question.append("\n已冻结的相关主题摘要：\n").append(summary);
+        question.append("\n连续原文窗口：");
+        for (ContextProjectionV2.RawMessage message : history) {
+            question.append("\n- ").append(message.role()).append("：").append(message.text());
+        }
+        if (!projection.constraints().isEmpty()) {
+            question.append("\n当前有效的用户约束：");
+            projection.constraints().forEach(rule -> question.append("\n- ").append(rule.text()));
+        }
+        return new Context(trimmedQuestion, question.toString(), true, history.size(), "",
+                summary, new ConversationContextProjectionService.Projection(List.of(), List.of()), frozen);
     }
 
     String classifyQuestion(String content) {
@@ -341,7 +378,8 @@ class ConversationRetrievalContextAssembler {
             int windowTurnCount,
             String topicAnchor,
             String topicSummary,
-            ConversationContextProjectionService.Projection inputProjection
+            ConversationContextProjectionService.Projection inputProjection,
+            ContextV2ShadowSnapshotService.FrozenAnswer frozenV2
     ) {
     }
 

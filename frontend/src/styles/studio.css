@@ -890,3 +890,204 @@
     display: none;
   }
 }
+
+/* Video learning panel + deck slide preview (merged from codex/bili-artifact-upgrades) */
+.artifact-slide-preview {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.artifact-slide-preview-content {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.artifact-slide-preview-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.artifact-slide-preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.video-learning-panel {
+  display: grid;
+  gap: 10px;
+  margin-block: 16px;
+  padding: 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.video-learning-panel .artifact-section-heading {
+  margin: 0;
+}
+
+.video-learning-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+}
+
+.video-learning-form {
+  display: grid;
+  gap: 12px;
+}
+
+.video-learning-form .rail-field {
+  min-width: 0;
+}
+
+.video-learning-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.video-learning-pair :is(input, select) {
+  width: 100%;
+  min-width: 0;
+}
+
+.video-learning-choices {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.video-learning-choices legend {
+  margin-bottom: 7px;
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.video-learning-choices label {
+  display: flex;
+  min-width: 0;
+  min-height: 44px;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.76rem;
+}
+
+.video-learning-choices label:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.video-learning-choices label small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.video-learning-choices input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.video-learning-choices label span {
+  white-space: nowrap;
+}
+
+.video-learning-cost,
+.video-learning-source {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.video-learning-request {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.video-learning-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.video-learning-status strong,
+.video-learning-output strong {
+  font-size: 0.8rem;
+}
+
+.video-learning-status strong {
+  white-space: nowrap;
+}
+
+.video-learning-output {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 9px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+}
+
+.artifact-rail .video-learning-output button {
+  grid-column: 2;
+  justify-self: end;
+  width: auto;
+  padding: 5px 8px;
+  font-size: 0.73rem;
+}
+
+.artifact-rail .video-learning-status button,
+.artifact-rail .video-learning-refresh {
+  width: auto;
+  flex: none;
+  padding: 6px 8px;
+  font-size: 0.73rem;
+}
+
+.video-learning-request ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.video-learning-output small {
+  color: var(--muted);
+  font-size: 0.73rem;
+}
+
+.video-learning-refresh {
+  justify-self: start;
+}
+
+@media (max-width: 375px) {
+  .video-learning-choices {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+

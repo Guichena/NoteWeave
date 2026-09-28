@@ -12,6 +12,7 @@ import com.noteweave.worker.ArtifactAcquisitionReceiptResponse;
 import com.noteweave.worker.WorkerCompleteRequest;
 import com.noteweave.worker.WorkerProgressRequest;
 import com.noteweave.worker.WorkerTaskCallbackService;
+import com.noteweave.artifact.ArtifactWorkerExportClient;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
@@ -34,6 +35,50 @@ import java.io.IOException;
 
 @TestConfiguration
 class TestResearchOutboxPublisherConfig {
+
+    @Bean
+    @Primary
+    ArtifactWorkerExportClient artifactWorkerExportClient() {
+        java.util.concurrent.ConcurrentHashMap<String, byte[]> exports = new java.util.concurrent.ConcurrentHashMap<>();
+        return (taskId, fileName) -> {
+            if (fileName.startsWith("missing-")) {
+                throw new com.noteweave.common.BusinessException(
+                        "ARTIFACT_EXPORT_FETCH_FAILED", "worker export unavailable",
+                        org.springframework.http.HttpStatus.BAD_GATEWAY);
+            }
+            return exports.computeIfAbsent(taskId + ":" + fileName, key -> {
+                if ("learning-deck.pptx".equals(fileName) || "file-1.png".equals(fileName)) {
+                    String resource = "learning-deck.pptx".equals(fileName)
+                            ? "/video-deck-v1.pptx" : "/video-deck-frame-v1.png";
+                    try (var input = getClass().getResourceAsStream(resource)) {
+                        if (input == null) throw new IllegalStateException("deck fixture is missing");
+                        return input.readAllBytes();
+                    } catch (java.io.IOException ex) {
+                        throw new IllegalStateException("test deck fixture cannot be read", ex);
+                    }
+                }
+                if (fileName.endsWith(".png")) {
+                    try (java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream()) {
+                        java.awt.image.BufferedImage image = new java.awt.image.BufferedImage(
+                                2, 2, java.awt.image.BufferedImage.TYPE_INT_RGB);
+                        javax.imageio.ImageIO.write(image, "png", output);
+                        return output.toByteArray();
+                    } catch (java.io.IOException ex) {
+                        throw new IllegalStateException("test PNG generation failed", ex);
+                    }
+                }
+                try (org.apache.pdfbox.pdmodel.PDDocument document =
+                             new org.apache.pdfbox.pdmodel.PDDocument();
+                     java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream()) {
+                    document.addPage(new org.apache.pdfbox.pdmodel.PDPage());
+                    document.save(output);
+                    return output.toByteArray();
+                } catch (java.io.IOException ex) {
+                    throw new IllegalStateException("test PDF generation failed", ex);
+                }
+            });
+        };
+    }
 
     @Bean
     OncePerRequestFilter artifactWorkerCallbackHeaders(JdbcTemplate jdbcTemplate) {
@@ -194,6 +239,7 @@ class TestResearchOutboxPublisherConfig {
         private final List<ResumeInvocation> resumeInvocations = new ArrayList<>();
         private final List<ArtifactAcquisitionAckRequest> acquisitionAckRequests = new ArrayList<>();
         private final Map<String, ResumeStub> resumeStubs = new HashMap<>();
+        private final Map<String, Map<String, Object>> resumeCandidates = new HashMap<>();
         private final Map<String, AcquisitionAckStub> acquisitionAckStubs = new HashMap<>();
         private final Map<String, Map<String, Object>> pendingRuntimeTraceByTaskId = new HashMap<>();
 
@@ -210,6 +256,13 @@ class TestResearchOutboxPublisherConfig {
             }
             Map<String, Object> resultPayload = new LinkedHashMap<>();
             resultPayload.put("markdown", stub.markdown());
+            resultPayload.put("export_trace", Map.of(
+                    "status", "COMPILED", "file_name", "worker-course-notes.pdf"));
+            resultPayload.put("verification", Map.of("status", "PASS"));
+            if (resumeCandidates.containsKey(taskId)) {
+                attachSyntheticContentIr(resultPayload, resumeCandidates.get(taskId),
+                        stub.resultTitle(), stub.markdown());
+            }
             Map<String, Object> pendingRuntimeTrace = pendingRuntimeTraceByTaskId.remove(taskId);
             if (pendingRuntimeTrace != null && !pendingRuntimeTrace.isEmpty()) {
                 resultPayload.putAll(pendingRuntimeTrace);
@@ -402,6 +455,40 @@ class TestResearchOutboxPublisherConfig {
             resumeStubs.put(taskId, new ResumeStub(resultTitle, markdown, traceSummary, citations, "provider callback 已到达，开始整理讲义内容"));
         }
 
+        void stubCandidate(String taskId, Map<String, Object> candidate) {
+            resumeCandidates.put(taskId, candidate);
+        }
+
+        private static void attachSyntheticContentIr(Map<String, Object> payload,
+                                                     Map<String, Object> sourceCandidate,
+                                                     String title, String markdown) {
+            try {
+                List<Map<String, Object>> sections = List.of(Map.of(
+                        "heading", title, "body", markdown, "source_refs", List.of()));
+                Map<String, Object> ir = new LinkedHashMap<>(Map.of(
+                        "schema_version", "artifact-content-v1", "artifact_type", "COURSE_NOTES",
+                        "title", title, "sections", sections,
+                        "markdown_sha256", digest(markdown.getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+                byte[] irBytes = new com.fasterxml.jackson.databind.ObjectMapper()
+                        .configure(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+                        .writeValueAsBytes(ir);
+                String irDigest = digest(irBytes);
+                ir.put("content_digest", irDigest);
+                Map<String, Object> candidate = new LinkedHashMap<>(sourceCandidate);
+                candidate.put("content_ir_digest", irDigest);
+                payload.put("sections", sections);
+                payload.put("content_ir", ir);
+                payload.put("candidate", candidate);
+            } catch (Exception ex) {
+                throw new IllegalStateException("synthetic Artifact content IR failed", ex);
+            }
+        }
+
+        private static String digest(byte[] content) throws Exception {
+            return java.util.HexFormat.of().formatHex(
+                    java.security.MessageDigest.getInstance("SHA-256").digest(content));
+        }
+
         void stubAcquisitionAck(
                 String callbackToken,
                 String taskId,
@@ -507,6 +594,7 @@ class TestResearchOutboxPublisherConfig {
             resumeInvocations.clear();
             acquisitionAckRequests.clear();
             resumeStubs.clear();
+            resumeCandidates.clear();
             acquisitionAckStubs.clear();
             pendingRuntimeTraceByTaskId.clear();
         }

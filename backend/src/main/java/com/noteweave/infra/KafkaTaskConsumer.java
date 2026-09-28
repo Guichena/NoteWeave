@@ -10,6 +10,7 @@ import com.noteweave.source.SourceParseService.SourceParseDisposition;
 import com.noteweave.task.TaskService;
 import com.noteweave.conversation.PromoteSegmentSummaryRequest;
 import com.noteweave.conversation.SegmentSummaryPromotionService;
+import com.noteweave.conversation.ConversationTopicSummaryV2Service;
 import com.noteweave.common.RequestContext;
 import java.util.Map;
 import java.util.List;
@@ -44,12 +45,13 @@ public class KafkaTaskConsumer {
     private final ObjectMapper objectMapper;
     private final SourceRetrievalProjectionCoordinator projectionCoordinator;
     private final SegmentSummaryPromotionService segmentSummaryPromotionService;
+    private final ConversationTopicSummaryV2Service topicSummaryV2Service;
 
     public KafkaTaskConsumer(SourceParseService sourceParseService,
                              WikiIngestService wikiIngestService,
                              TaskService taskService,
                              ObjectMapper objectMapper) {
-        this(sourceParseService, wikiIngestService, taskService, objectMapper, null, null);
+        this(sourceParseService, wikiIngestService, taskService, objectMapper, null, null, null);
     }
 
     public KafkaTaskConsumer(SourceParseService sourceParseService,
@@ -57,7 +59,17 @@ public class KafkaTaskConsumer {
                              TaskService taskService,
                              ObjectMapper objectMapper,
                              SourceRetrievalProjectionCoordinator projectionCoordinator) {
-        this(sourceParseService, wikiIngestService, taskService, objectMapper, projectionCoordinator, null);
+        this(sourceParseService, wikiIngestService, taskService, objectMapper, projectionCoordinator, null, null);
+    }
+
+    public KafkaTaskConsumer(SourceParseService sourceParseService,
+                             WikiIngestService wikiIngestService,
+                             TaskService taskService,
+                             ObjectMapper objectMapper,
+                             SourceRetrievalProjectionCoordinator projectionCoordinator,
+                             SegmentSummaryPromotionService segmentSummaryPromotionService) {
+        this(sourceParseService, wikiIngestService, taskService, objectMapper, projectionCoordinator,
+                segmentSummaryPromotionService, null);
     }
 
     @Autowired
@@ -66,13 +78,15 @@ public class KafkaTaskConsumer {
                              TaskService taskService,
                              ObjectMapper objectMapper,
                              SourceRetrievalProjectionCoordinator projectionCoordinator,
-                             SegmentSummaryPromotionService segmentSummaryPromotionService) {
+                             SegmentSummaryPromotionService segmentSummaryPromotionService,
+                             ConversationTopicSummaryV2Service topicSummaryV2Service) {
         this.sourceParseService = sourceParseService;
         this.wikiIngestService = wikiIngestService;
         this.taskService = taskService;
         this.objectMapper = objectMapper;
         this.projectionCoordinator = projectionCoordinator;
         this.segmentSummaryPromotionService = segmentSummaryPromotionService;
+        this.topicSummaryV2Service = topicSummaryV2Service;
     }
 
     @KafkaListener(topics = "${noteweave.kafka.topics.source-parse}",
@@ -161,9 +175,7 @@ public class KafkaTaskConsumer {
                    containerFactory = "kafkaListenerContainerFactory")
     public void onConversationSummary(ConsumerRecord<String, String> record) {
         handle("conversation.summary", record, payload -> {
-            if (segmentSummaryPromotionService == null) {
-                throw new IllegalStateException("conversation summary promotion service is unavailable");
-            }
+            boolean v2 = Integer.valueOf(2).equals(payload.get("summary_projection_version"));
             String segmentId = text(payload.get("segment_id"));
             String revisionId = text(payload.get("summary_revision_id"));
             requirePayloadValue(segmentId, "segment_id");
@@ -175,27 +187,28 @@ public class KafkaTaskConsumer {
             String summary = messages.stream()
                     .filter(Map.class::isInstance)
                     .map(Map.class::cast)
-                    .map(message -> summarizeMessage(text(message.get("role")), text(message.get("content"))))
+                    .map(message -> ConversationTopicSummaryV2Service.summarizeMessage(
+                            text(message.get("role")), text(message.get("content"))))
                     .filter(value -> !value.isBlank())
                     .collect(java.util.stream.Collectors.joining("\n"));
             if (summary.isBlank()) {
                 throw new IllegalArgumentException("conversation.summary payload contains no summary content");
             }
-            segmentSummaryPromotionService.promote(
-                    segmentId,
-                    revisionId,
-                    new PromoteSegmentSummaryRequest(summary, sha256(summary))
-            );
+            if (v2) {
+                if (topicSummaryV2Service == null) {
+                    throw new IllegalStateException("topic summary v2 service is unavailable");
+                }
+                if (summary.length() > 16_000) summary = summary.substring(0, 16_000);
+                topicSummaryV2Service.promote(segmentId, revisionId,
+                        new PromoteSegmentSummaryRequest(summary, sha256(summary)));
+            } else {
+                if (segmentSummaryPromotionService == null) {
+                    throw new IllegalStateException("conversation summary promotion service is unavailable");
+                }
+                segmentSummaryPromotionService.promote(segmentId, revisionId,
+                        new PromoteSegmentSummaryRequest(summary, sha256(summary)));
+            }
         });
-    }
-
-    private String summarizeMessage(String role, String content) {
-        String normalized = content == null ? "" : content.replace('\r', ' ').replace('\n', ' ').trim();
-        if (normalized.isBlank()) {
-            return "";
-        }
-        String bounded = normalized.substring(0, Math.min(600, normalized.length()));
-        return (role == null || role.isBlank() ? "message" : role.toLowerCase(java.util.Locale.ROOT)) + ": " + bounded;
     }
 
     private String sha256(String value) {

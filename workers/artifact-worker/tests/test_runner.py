@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from types import SimpleNamespace
 
 import app.action_compat as action_compat_module
 import app.compiler as compiler_module
@@ -9,7 +10,7 @@ import app.registry as registry_module
 import app.runner as runner_module
 from app.action_compat import resolve_action_compatibility, resolve_action_key_from_skill_key
 from app.compiler import build_execution_plan
-from app.artifact_skill_catalog import list_artifact_skill_definitions, resolve_artifact_skill_definition
+from app.artifact_skill_catalog import CATALOG_DIGEST, list_artifact_skill_definitions, resolve_artifact_skill_definition
 from app.content_runtime import build_canonical_content_objects
 from app.composer import render_markdown, resolve_artifact_title
 from app.intent_compiler import compile_execution_spec
@@ -23,7 +24,9 @@ from app.models import (
     ArtifactSkillDefinition,
     ArtifactTaskInput,
     ArtifactTaskResult,
+    CanonicalContentObject,
     ArtifactVersionSnapshot,
+    ArtifactVerificationResult,
     CustomProductionActionRegistration,
     CustomPromptRecipeRegistration,
     CustomSkillDefinitionRegistration,
@@ -237,6 +240,38 @@ def test_run_artifact_task_should_fail_closed_on_invalid_llm_output(
 
     assert error.value.error_code == "CONFIGURATION_REQUIRED"
     assert "no usable content" in str(error.value)
+
+
+def test_failed_final_content_gate_never_invokes_renderer(monkeypatch: pytest.MonkeyPatch) -> None:
+    task_input = _build_resume_task_input()
+    render_calls: list[str] = []
+    monkeypatch.setattr(runner_module, "export_artifact_if_required",
+                        lambda **kwargs: render_calls.append("render"))
+    monkeypatch.setattr(runner_module, "verify_artifact_output",
+                        lambda *args: ArtifactVerificationResult(
+                            status="FAIL", failed_checks=["missing evidence"]))
+
+    with pytest.raises(runner_module.ArtifactOutputContractViolationError):
+        run_artifact_task(task_input)
+
+    assert render_calls == []
+
+
+def test_candidate_is_bound_to_task_snapshot_and_markdown() -> None:
+    task_input = _build_resume_task_input()
+    task_input.input_snapshot_id = "snapshot-fixed"
+    task_input.catalog_digest = CATALOG_DIGEST
+    _, result = run_artifact_task(task_input)
+    candidate = result.result_payload["candidate"]
+
+    assert candidate["task_id"] == task_input.task_id
+    assert candidate["input_snapshot_id"] == "snapshot-fixed"
+    assert candidate["catalog_digest"] == CATALOG_DIGEST
+    assert candidate["content_sha256"]
+    assert candidate["candidate_id"]
+    assert result.version_snapshot.version_id == ""
+    assert result.result_payload["artifact_commit"]["commit_status"] == "DEFERRED_TO_HOST"
+    assert "writeback_request" not in result.result_payload
 
 
 def test_run_artifact_task_without_llm_or_source_content_should_be_blocked(
@@ -809,7 +844,11 @@ def test_build_execution_plan_should_allow_skill_first_bilibili_request_with_url
     assert plan.action_key == "COURSE_NOTES"
     assert plan.content_acquisition_plan.primary_strategy == "VIDEO_TRANSCRIPT_PIPELINE"
     assert plan.content_acquisition_plan.route_summary == {"VIDEO_URL": 1}
-    assert plan.content_acquisition_plan.required_capabilities == ["EXTRACT_TRANSCRIPT"]
+    assert plan.content_acquisition_plan.required_capabilities == [
+        "EXTRACT_TRANSCRIPT", "CAPTURE_VIDEO_FRAMES", "ANALYZE_FRAME"]
+    assert [operation for operation in plan.content_acquisition_plan.source_plans[0].planned_operations
+            if operation in {"EXTRACT_TRANSCRIPT", "CAPTURE_FRAMES", "ANALYZE_FRAMES"}] == [
+                "EXTRACT_TRANSCRIPT", "CAPTURE_FRAMES", "ANALYZE_FRAMES"]
     assert plan.content_acquisition_plan.source_plans[0].source_id == "input-url-1"
     assert plan.content_acquisition_plan.source_plans[0].adapter_route == "VIDEO_URL"
 
@@ -3949,3 +3988,28 @@ def test_run_artifact_task_should_emit_writeback_preview_for_allowed_mode() -> N
     assert preview["target_locator_preview"].startswith("workspace-source://")
     assert result.result_payload["writeback_request"]["request_id"] == preview["request_id"]
     assert "- Writeback gate: ALLOW (SAVE_AS_SOURCE)" in result.result_payload["markdown"]
+
+
+def test_evidence_coverage_rejects_unknown_source_reference() -> None:
+    task_input = _build_resume_task_input()
+    material = CanonicalContentObject(
+        cco_id="cco-1", kind="WORKSPACE_SOURCE", title="Verified source",
+        plain_text="verified text", source_trace=["workspace:ws-artifact-1", "source:src-1"],
+    )
+    plan = SimpleNamespace(evidence_gate=SimpleNamespace(required_citation_density="HIGH"))
+    sections = [ArtifactSectionDraft(
+        heading="Claim", body="A factual claim", source_refs=["Invented source"])]
+
+    report = runner_module._build_evidence_coverage(
+        task_input=task_input, plan=plan, sections=sections, content_objects=[material])
+
+    assert report.status == "FAIL"
+    assert report.covered_section_count == 0
+    assert report.sections_missing_evidence == ["Claim"]
+    assert report.section_evidence[0]["invalid_refs"] == ["Invented source"]
+
+    sections[0].source_refs = ["Verified source"]
+    valid = runner_module._build_evidence_coverage(
+        task_input=task_input, plan=plan, sections=sections, content_objects=[material])
+    assert valid.status == "PASS"
+    assert valid.supporting_source_ids == ["src-1"]

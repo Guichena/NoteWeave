@@ -38,7 +38,7 @@ public class WorkerTaskCallbackAuthenticator {
             throw new BusinessException("TASK_NOT_FOUND", "Task does not exist", HttpStatus.NOT_FOUND);
         }
         String secret = switch (taskType) {
-            case "ARTIFACT_JOB" -> artifactSecret;
+            case "ARTIFACT_JOB", "VIDEO_MATERIAL" -> artifactSecret;
             default -> throw new BusinessException(
                     "WORKER_CALLBACK_TASK_TYPE_INVALID",
                     "Task is not owned by an external worker callback",

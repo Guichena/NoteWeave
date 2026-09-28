@@ -38,17 +38,20 @@ public class ResearchAgentTaskService {
     private final ObjectMapper objectMapper;
     private final ResearchAgentTaskSnapshotCanonicalizer snapshotCanonicalizer;
     private final ResearchAgentRoleCapabilityRegistry roleCapabilities;
+    private final ResearchContextV2Gate contextGate;
 
     public ResearchAgentTaskService(
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
             ResearchAgentTaskSnapshotCanonicalizer snapshotCanonicalizer,
-            ResearchAgentRoleCapabilityRegistry roleCapabilities
+            ResearchAgentRoleCapabilityRegistry roleCapabilities,
+            ResearchContextV2Gate contextGate
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.snapshotCanonicalizer = snapshotCanonicalizer;
         this.roleCapabilities = roleCapabilities;
+        this.contextGate = contextGate;
     }
 
     @Transactional
@@ -62,6 +65,7 @@ public class ResearchAgentTaskService {
             return snapshot(existing);
         }
         requireRunnableRun(command.researchRunId());
+        contextGate.requireReadable(command.researchRunId());
         String taskId = Ids.newId();
         try {
             jdbcTemplate.update("""
@@ -96,6 +100,7 @@ public class ResearchAgentTaskService {
         if (!run.runnableIncremental()) {
             throw new BusinessException("RESEARCH_AGENT_TASK_NOT_CLAIMABLE", "Research agent task is not claimable");
         }
+        contextGate.requireReadable(discovered.researchRunId());
         int leaseSeconds = leaseSeconds(command.leaseSeconds());
         int claimed = jdbcTemplate.update("""
                 update research_agent_task
@@ -126,6 +131,7 @@ public class ResearchAgentTaskService {
         if (!run.runnableIncremental()) {
             throw new BusinessException("RESEARCH_AGENT_TASK_STALE_LEASE", "Research agent lease is stale or owned by another worker");
         }
+        contextGate.requireReadable(discovered.researchRunId());
         int leaseSeconds = leaseSeconds(command.leaseSeconds());
         int updated = jdbcTemplate.update("""
                 update research_agent_task

@@ -156,10 +156,10 @@ class ArtifactJobReadRepository {
         return jdbcTemplate.query("""
                 select id, file_format, file_name, media_type, storage_backend, bucket_name,
                        object_key, size_bytes, checksum_sha256, status, created_at
-                       , coalesce(error_message, '') as error_message
+                       , coalesce(error_message, '') as error_message, file_role, variant, sequence_no
                 from artifact_file
                 where artifact_version_id = ?
-                order by file_format asc, created_at asc
+                order by file_role asc, variant asc, sequence_no asc
                 """, (rs, rowNum) -> new ArtifactFileMetadataResponse(
                 rs.getString("id"),
                 rs.getString("file_format"),
@@ -172,14 +172,15 @@ class ArtifactJobReadRepository {
                 rs.getString("checksum_sha256"),
                 rs.getString("status"),
                 rs.getString("error_message"),
-                instant(rs.getTimestamp("created_at"))
+                instant(rs.getTimestamp("created_at")),
+                rs.getString("file_role"), rs.getString("variant"), rs.getInt("sequence_no")
         ), artifactVersionId);
     }
 
     ArtifactJobTaskRow findByTaskId(String taskId) {
         return jdbcTemplate.query("""
                 select aj.id, aj.workspace_id, r.task_id, aj.skill_key, aj.style_profile_key, aj.context_snapshot_id,
-                       s.id as input_snapshot_id, s.user_requirement, s.inputs_json,
+                       s.id as input_snapshot_id, s.compiler_version, s.user_requirement, s.inputs_json,
                        s.source_scope_snapshot_json, s.upstream_refs_json, s.control_pack_json,
                        s.replay_availability, aj.latest_version_no
                 from artifact_job_run r
@@ -198,6 +199,7 @@ class ArtifactJobReadRepository {
                     rs.getString("style_profile_key"),
                     rs.getString("context_snapshot_id"),
                     rs.getString("input_snapshot_id"),
+                    rs.getString("compiler_version"),
                     blank(rs.getString("user_requirement")),
                     blank(rs.getString("inputs_json")),
                     blank(rs.getString("source_scope_snapshot_json")),
@@ -238,7 +240,8 @@ class ArtifactJobReadRepository {
     ArtifactRollbackRow loadRollbackRow(String workspaceId, String artifactJobId, int versionNo) {
         return jdbcTemplate.query("""
                 select av.skill_key, av.title, av.content_markdown, av.result_payload_json,
-                       av.citations_json, coalesce(av.origin_task_id, aj.task_id) as origin_task_id
+                       av.citations_json, coalesce(av.origin_task_id, aj.task_id) as origin_task_id,
+                       av.material_bundle_id
                 from artifact_version av
                 join artifact_job aj on aj.id = av.artifact_job_id
                 where aj.workspace_id = ? and aj.id = ? and av.version_no = ?
@@ -252,7 +255,8 @@ class ArtifactJobReadRepository {
                     blank(rs.getString("content_markdown")),
                     blank(rs.getString("result_payload_json")),
                     blank(rs.getString("citations_json")),
-                    blank(rs.getString("origin_task_id"))
+                    blank(rs.getString("origin_task_id")),
+                    rs.getString("material_bundle_id")
             );
         }, workspaceId, artifactJobId, versionNo);
     }
@@ -329,6 +333,35 @@ class ArtifactJobReadRepository {
         }, workspaceId, sourceId);
     }
 
+    List<ArtifactSourceWindowRow> readSourceWindows(String workspaceId, String sourceId,
+                                                   String snapshotId, int afterChunkNo,
+                                                   int afterWindowNo, int limit) {
+        return jdbcTemplate.query("""
+                select sw.id, sc.chunk_no, sw.window_no,
+                       coalesce(sc.heading, '') as heading,
+                       coalesce(sw.location_info, sc.location_info, '') as location_info,
+                       sw.content
+                from source_window sw
+                join source_chunk sc on sc.id = sw.source_chunk_id
+                join source_snapshot ss on ss.id = sc.source_snapshot_id
+                join source s on s.id = sc.source_id
+                where s.workspace_id = ? and s.id = ? and s.status = 'READY'
+                  and ss.id = ? and ss.source_id = s.id
+                  and ss.parse_status = 'PARSED'
+                  and ss.index_status in ('INDEXED', 'DISABLED')
+                  and (sc.chunk_no > ? or (sc.chunk_no = ? and sw.window_no > ?))
+                order by sc.chunk_no, sw.window_no
+                limit ?
+                """, (rs, index) -> new ArtifactSourceWindowRow(
+                rs.getString("id"), rs.getInt("chunk_no"), rs.getInt("window_no"),
+                rs.getString("heading"), rs.getString("location_info"), rs.getString("content")),
+                workspaceId, sourceId, snapshotId,
+                afterChunkNo, afterChunkNo, afterWindowNo, limit);
+    }
+
+    record ArtifactSourceWindowRow(String windowId, int chunkNo, int windowNo,
+                                   String heading, String locationInfo, String content) { }
+
     void requireJob(String workspaceId, String artifactJobId) {
         Integer count = jdbcTemplate.queryForObject("""
                 select count(*)
@@ -401,6 +434,7 @@ record ArtifactJobTaskRow(
         String styleProfileKey,
         String contextSnapshotId,
         String inputSnapshotId,
+        String compilerVersion,
         String userRequirement,
         String inputsJson,
         String sourceScopeJson,
@@ -428,7 +462,8 @@ record ArtifactRollbackRow(
         String contentMarkdown,
         String resultPayloadJson,
         String citationsJson,
-        String originTaskId
+        String originTaskId,
+        String materialBundleId
 ) {
 }
 

@@ -40,6 +40,10 @@ class ConversationTurnModuleContractTest {
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
     @Autowired JdbcTemplate jdbcTemplate;
+    @Autowired ConversationTopicProjectionV2Service topicProjectionV2Service;
+    @Autowired ConversationTopicSummaryV2Service topicSummaryV2Service;
+    @Autowired ConversationContextCompilerV2Service contextCompilerV2Service;
+    @Autowired ContextV2RolloutService contextRolloutV2Service;
     @Autowired ResearchAgentTaskCoordinatorService researchTaskCoordinator;
     @Autowired ResearchAgentTaskService researchAgentTaskService;
     @Autowired ResearchAgentIncrementalFinalizationService researchFinalizationService;
@@ -48,7 +52,9 @@ class ConversationTurnModuleContractTest {
 
     @Test
     void sameAnswerSubmissionReturnsTheOriginalReceipt() throws Exception {
-        String conversationId = createConversation(createWorkspace());
+        String workspaceId = createWorkspace();
+        assertThat(contextRolloutV2Service.set(workspaceId, "SHADOW").shadowEffective()).isFalse();
+        String conversationId = createConversation(workspaceId);
         Map<String, Object> request = Map.of(
                 "content", "Explain the first invariant",
                 "answer_mode", "QA",
@@ -70,6 +76,9 @@ class ConversationTurnModuleContractTest {
         assertThat(first.path("execution_kind").asText()).isEqualTo("ANSWER");
         assertThat(first.path("reused").asBoolean()).isFalse();
         assertThat(second.path("reused").asBoolean()).isTrue();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from context_v2_shadow_snapshot where answer_run_id = ?
+                """, Integer.class, first.path("answer_run_id").asText())).isZero();
     }
 
     @Test
@@ -924,6 +933,185 @@ class ConversationTurnModuleContractTest {
         assertThat(jdbcTemplate.queryForObject(
                 "select summary_text from segment_summary_revision where id = ?", String.class, revisionId))
                 .isEmpty();
+    }
+
+    @Test
+    void shadowTopicProjectionReusesDisjointTopicAndDeletionRedactsItsDerivedRows() throws Exception {
+        String workspaceId = createWorkspace();
+        String conversationId = createConversation(workspaceId);
+        String firstMessageId = "";
+        String[] turns = {"解释缓存一致性。", "重点是写入顺序。", "改聊台南旅行。",
+                "住两晚。", "回到缓存一致性，第二种写入顺序呢？"};
+        for (int index = 0; index < turns.length; index++) {
+            JsonNode receipt = submit(conversationId, Map.of(
+                    "content", turns[index], "answer_mode", "QA",
+                    "client_request_id", "topic-shadow-" + index), 200);
+            if (index == 0) firstMessageId = receipt.path("message_id").asText();
+        }
+        TopicSegmenterV2.Projection first = topicProjectionV2Service.refresh(workspaceId, conversationId);
+        TopicSegmenterV2.Projection replay = topicProjectionV2Service.refresh(workspaceId, conversationId);
+        assertThat(first.segments()).hasSize(3).isEqualTo(replay.segments());
+        assertThat(first.segments().get(0).topicId()).isEqualTo(first.segments().get(2).topicId());
+        assertThat(first.segments().get(0).topicId()).isNotEqualTo(first.segments().get(1).topicId());
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from conversation_topic_segment_v2 where conversation_id = ?
+                """, Integer.class, conversationId)).isEqualTo(3);
+        String firstSegmentId = first.segments().get(0).segmentId();
+        String revisionId = jdbcTemplate.queryForObject("""
+                select id from conversation_topic_summary_revision_v2
+                where segment_id = ? and status = 'BUILDING'
+                """, String.class, firstSegmentId);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from task_outbox where message_key = ? and status = 'READY'
+                """, Integer.class, revisionId)).isEqualTo(1);
+        String summaryText = jdbcTemplate.query("""
+                select role, content from conversation_message
+                where conversation_id = ? and message_seq between ? and ? order by message_seq
+                """, (rs, rowNum) -> ConversationTopicSummaryV2Service.summarizeMessage(
+                        rs.getString(1), rs.getString(2)), conversationId,
+                first.segments().get(0).startSeq(),
+                jdbcTemplate.queryForObject("""
+                        select end_seq from conversation_topic_summary_revision_v2 where id = ?
+                        """, Integer.class, revisionId)).stream()
+                .filter(value -> !value.isBlank()).collect(java.util.stream.Collectors.joining("\n"));
+        String summaryHash = java.util.HexFormat.of().formatHex(
+                java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(summaryText.getBytes(StandardCharsets.UTF_8)));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> topicSummaryV2Service.promote(
+                firstSegmentId, revisionId,
+                new PromoteSegmentSummaryRequest("Forged summary", summaryHash)))
+                .isInstanceOf(com.noteweave.common.BusinessException.class);
+        assertThat(jdbcTemplate.queryForObject("""
+                select status from conversation_topic_summary_revision_v2 where id = ?
+                """, String.class, revisionId)).isEqualTo("BUILDING");
+        topicSummaryV2Service.promote(firstSegmentId, revisionId,
+                new PromoteSegmentSummaryRequest(summaryText, summaryHash));
+        assertThat(topicSummaryV2Service.ready(workspaceId, conversationId, 10))
+                .extracting(ContextProjectionV2.TopicSummary::revisionId).contains(revisionId);
+        ContextProjectionV2 frozenShadow = contextCompilerV2Service.compile(workspaceId,
+                com.noteweave.security.CurrentUserProvider.LOCAL_USER_ID, conversationId,
+                10, "What about the second write order?", "QA", 20_000);
+        assertThat(frozenShadow.topicSummaries())
+                .extracting(ContextProjectionV2.TopicSummary::revisionId).contains(revisionId);
+        assertThat(frozenShadow.rawTail()).extracting(ContextProjectionV2.RawMessage::seq)
+                .containsExactly(3, 4, 5, 6, 7, 8, 9, 10);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> contextCompilerV2Service.compile(
+                workspaceId, "different-actor", conversationId, 10, "Follow up", "QA", 20_000))
+                .isInstanceOf(com.noteweave.common.BusinessException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> contextCompilerV2Service.compile(
+                workspaceId, com.noteweave.security.CurrentUserProvider.LOCAL_USER_ID,
+                conversationId, 8, "Stale cutoff", "QA", 20_000))
+                .isInstanceOf(com.noteweave.common.BusinessException.class);
+        jdbcTemplate.update("""
+                insert into conversation_constraint_v2(id, workspace_id, conversation_id,
+                    source_message_id, kind, scope, constraint_text, valid_from_seq,
+                    status, rule_version)
+                values (?, ?, ?, ?, 'FORMAT', 'CONVERSATION', 'private derived text', 1,
+                    'ACTIVE', 'topic-segmenter-v2-a1')
+                """, Ids.newId(), workspaceId, conversationId, firstMessageId);
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
+                        "/api/v2/workspaces/{workspaceId}/conversations/{conversationId}/messages/{messageId}",
+                        workspaceId, conversationId, firstMessageId))
+                .andExpect(status().isOk());
+
+        assertThat(jdbcTemplate.queryForObject("""
+                select decision_status from conversation_topic_segment_v2 where id = ?
+                """, String.class, first.segments().get(0).segmentId())).isEqualTo("STALE");
+        assertThat(jdbcTemplate.queryForObject("""
+                select status from conversation_topic_summary_revision_v2 where id = ?
+                """, String.class, revisionId)).isEqualTo("STALE");
+        assertThat(jdbcTemplate.queryForObject("""
+                select summary_text from conversation_topic_summary_revision_v2 where id = ?
+                """, String.class, revisionId)).isEmpty();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> contextCompilerV2Service.compile(
+                workspaceId, com.noteweave.security.CurrentUserProvider.LOCAL_USER_ID,
+                conversationId, 10, "After deletion", "QA", 20_000))
+                .isInstanceOf(com.noteweave.common.BusinessException.class);
+        assertThat(jdbcTemplate.queryForObject("""
+                select status from conversation_topic_v2 where id = ?
+                """, String.class, first.segments().get(0).topicId())).isEqualTo("STALE");
+        assertThat(jdbcTemplate.queryForObject("""
+                select constraint_text from conversation_constraint_v2 where source_message_id = ?
+                """, String.class, firstMessageId)).isEmpty();
+    }
+
+    @Test
+    void shadowInputCutoffExcludesPendingAssistantAndRejectsLaterRecompile() throws Exception {
+        String workspaceId = createWorkspace();
+        String conversationId = createConversation(workspaceId);
+        String queryId = Ids.newId();
+        String placeholderId = Ids.newId();
+        String query = "Explain the frozen input boundary";
+        String queryHash = java.util.HexFormat.of().formatHex(
+                java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(query.getBytes(StandardCharsets.UTF_8)));
+        String emptyHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        jdbcTemplate.update("""
+                insert into conversation_message(id, conversation_id, workspace_id, message_seq,
+                    role, answer_mode, content, content_hash, context_status)
+                values (?, ?, ?, 1, 'USER', 'QA', ?, ?, 'CURRENT')
+                """, queryId, conversationId, workspaceId, query, queryHash);
+        jdbcTemplate.update("""
+                insert into conversation_message(id, conversation_id, workspace_id, message_seq,
+                    role, answer_mode, content, content_hash, context_status, reply_to_message_id)
+                values (?, ?, ?, 2, 'ASSISTANT', 'QA', '', ?, 'PENDING', ?)
+                """, placeholderId, conversationId, workspaceId, emptyHash, queryId);
+
+        TopicSegmenterV2.Projection frozen = topicProjectionV2Service.refreshForInputCutoff(
+                workspaceId, conversationId, 1);
+        assertThat(frozen.segments()).hasSize(1);
+        assertThat(frozen.segments().get(0).endSeq()).isEqualTo(1);
+        ContextProjectionV2 projection = contextCompilerV2Service.compile(workspaceId,
+                com.noteweave.security.CurrentUserProvider.LOCAL_USER_ID, conversationId,
+                1, query, "QA", 10_000);
+        assertThat(projection.rawTail()).extracting(ContextProjectionV2.RawMessage::messageId)
+                .containsExactly(queryId);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> topicProjectionV2Service.refresh(
+                workspaceId, conversationId)).isInstanceOf(com.noteweave.common.BusinessException.class);
+
+        String answer = "Frozen response";
+        String answerHash = java.util.HexFormat.of().formatHex(
+                java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(answer.getBytes(StandardCharsets.UTF_8)));
+        jdbcTemplate.update("""
+                update conversation_message set content = ?, content_hash = ?, context_status = 'CURRENT'
+                where id = ?
+                """, answer, answerHash, placeholderId);
+        assertThat(topicProjectionV2Service.refresh(workspaceId, conversationId)
+                .segments().get(0).endSeq()).isEqualTo(2);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> contextCompilerV2Service.compile(
+                workspaceId, com.noteweave.security.CurrentUserProvider.LOCAL_USER_ID,
+                conversationId, 1, query, "QA", 10_000))
+                .isInstanceOf(com.noteweave.common.BusinessException.class);
+    }
+
+    @Test
+    void shadowConstraintProjectionPersistsUserCorrectionAndNeverPromotesAssistantText() throws Exception {
+        String workspaceId = createWorkspace();
+        String conversationId = createConversation(workspaceId);
+        JsonNode first = submit(conversationId, Map.of(
+                "content", "这份报告用英文。", "answer_mode", "QA",
+                "client_request_id", "constraint-shadow-1"), 200);
+        submit(conversationId, Map.of(
+                "content", "先列三点。", "answer_mode", "QA",
+                "client_request_id", "constraint-shadow-2"), 200);
+        submit(conversationId, Map.of(
+                "content", "更正：不要英文，改用中文。", "answer_mode", "QA",
+                "client_request_id", "constraint-shadow-3"), 200);
+
+        topicProjectionV2Service.refresh(workspaceId, conversationId);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from conversation_constraint_v2 where conversation_id = ?
+                """, Integer.class, conversationId)).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject("""
+                select status from conversation_constraint_v2 where source_message_id = ?
+                """, String.class, first.path("message_id").asText())).isEqualTo("REVOKED");
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from conversation_constraint_v2 c
+                join conversation_message m on m.id = c.source_message_id
+                where c.conversation_id = ? and m.role <> 'USER'
+                """, Integer.class, conversationId)).isZero();
     }
 
     @Test

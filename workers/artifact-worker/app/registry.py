@@ -114,6 +114,30 @@ def _default_bilibili_render_pdf_blueprint() -> CustomMcpServerRegistration:
 
 
 PRODUCTION_ACTIONS = {
+    "SLIDE_DECK": ProductionAction(
+        action_key="SLIDE_DECK", display_name="视频学习 PPTX",
+        artifact_type="SLIDE_DECK", default_style_profile_key="TEACHING",
+        default_skill_graph_key="video_deck_v1",
+        default_prompt_recipe_id="video_deck_frozen_v1",
+        required_evidence_level="HIGH", supported_capabilities=["VERIFY_OUTPUT"],
+        output_sections=["原画面与证据页"],
+    ),
+    "KNOWLEDGE_BLOG": ProductionAction(
+        action_key="KNOWLEDGE_BLOG", display_name="视频知识博客",
+        artifact_type="KNOWLEDGE_BLOG", default_style_profile_key="TEACHING",
+        default_skill_graph_key="video_derived_text_v1",
+        default_prompt_recipe_id="knowledge_blog_frozen_v1",
+        required_evidence_level="HIGH", supported_capabilities=["VERIFY_OUTPUT"],
+        output_sections=["证据章节"],
+    ),
+    "INTERVIEW_QA": ProductionAction(
+        action_key="INTERVIEW_QA", display_name="视频面试问答",
+        artifact_type="INTERVIEW_QA", default_style_profile_key="INTERVIEW",
+        default_skill_graph_key="video_derived_text_v1",
+        default_prompt_recipe_id="interview_qa_frozen_v1",
+        required_evidence_level="HIGH", supported_capabilities=["VERIFY_OUTPUT"],
+        output_sections=["简要回答", "详细问答", "相关知识"],
+    ),
     "REPORT": ProductionAction(
         action_key="REPORT",
         display_name="\u7ed3\u6784\u5316\u62a5\u544a",
@@ -398,6 +422,8 @@ PRODUCTION_ACTIONS = {
             "VERIFY_OUTPUT",
             "EXTRACT_TRANSCRIPT",
             "TRANSCRIBE_AUDIO",
+            "CAPTURE_VIDEO_FRAMES",
+            "ANALYZE_FRAME",
         ],
         output_sections=[
             "\u8bfe\u7a0b\u6982\u8981",
@@ -509,6 +535,27 @@ STYLE_PROFILES = {
 
 
 PROMPT_RECIPES = {
+    "video_deck_frozen_v1": PromptRecipe(
+        recipe_id="video_deck_frozen_v1", recipe_name="Frozen Original-Image Deck",
+        supported_actions=["SLIDE_DECK"], generation_mode="DETERMINISTIC_EVIDENCE_DERIVATION",
+        system_intent="Place only verified original frames and extracted claims into editable slides.",
+        citation_policy=["Every slide keeps its frozen frame and claim evidence references."],
+        repair_hints=["Reject a slide that differs from the frozen evidence plan."],
+    ),
+    "knowledge_blog_frozen_v1": PromptRecipe(
+        recipe_id="knowledge_blog_frozen_v1", recipe_name="Frozen Video Blog",
+        supported_actions=["KNOWLEDGE_BLOG"], generation_mode="DETERMINISTIC_EVIDENCE_DERIVATION",
+        system_intent="Render only extracted claims from the Host-frozen video knowledge plan.",
+        citation_policy=["Every claim keeps its exact frozen evidence references."],
+        repair_hints=["Rebuild only invalid sections from the frozen plan."],
+    ),
+    "interview_qa_frozen_v1": PromptRecipe(
+        recipe_id="interview_qa_frozen_v1", recipe_name="Frozen Video Interview QA",
+        supported_actions=["INTERVIEW_QA"], generation_mode="DETERMINISTIC_EVIDENCE_DERIVATION",
+        system_intent="Render three-part answers only from Host-frozen extracted claims.",
+        citation_policy=["Detailed answers keep exact frozen evidence references."],
+        repair_hints=["Rebuild only invalid questions from the frozen plan."],
+    ),
     "report_writer_v1": PromptRecipe(
         recipe_id="report_writer_v1",
         recipe_name="Report Writer",
@@ -837,6 +884,31 @@ SKILL_DEFINITIONS = {
 
 
 SKILL_GRAPH_TEMPLATES = {
+    "video_deck_v1": SkillGraphTemplate(
+        graph_key="video_deck_v1", graph_name="Frozen Original-Image Video Deck",
+        action_type="SLIDE_DECK", nodes=[
+            SkillGraphNode(node_id="layout", skill_key="frozen_video_deck_layout",
+                           purpose="Map original frames and extracted claims to ordered slides."),
+            SkillGraphNode(node_id="render", skill_key="original_frame_pptx_renderer",
+                           purpose="Render editable text with unchanged source frames."),
+            SkillGraphNode(node_id="verify", skill_key="evidence_guard",
+                           purpose="Verify PPTX and every preview against the frozen slide list."),
+        ],
+        edges=[SkillGraphEdge(from_node="layout", to_node="render", edge_type="PREREQUISITE"),
+               SkillGraphEdge(from_node="render", to_node="verify", edge_type="PREREQUISITE")],
+        schema_contract=["video-deck-ir-v1", "artifact-content-v1"],
+    ),
+    "video_derived_text_v1": SkillGraphTemplate(
+        graph_key="video_derived_text_v1", graph_name="Frozen Video Text Derivation",
+        action_type="VIDEO_DERIVED_TEXT", nodes=[
+            SkillGraphNode(node_id="derive", skill_key="frozen_video_deriver",
+                           purpose="Derive text from the frozen Bundle and plan."),
+            SkillGraphNode(node_id="verify", skill_key="evidence_guard",
+                           purpose="Verify each claim and the deterministic rendering."),
+        ],
+        edges=[SkillGraphEdge(from_node="derive", to_node="verify", edge_type="PREREQUISITE")],
+        schema_contract=["video-derived-text-v1", "artifact-content-v1"],
+    ),
     "generic_artifact_v1": SkillGraphTemplate(
         graph_key="generic_artifact_v1",
         graph_name="Generic Artifact Graph",
@@ -1045,6 +1117,24 @@ CAPABILITY_BINDINGS = {
         approval_mode="REQUIRED",
         risk_level="MEDIUM",
         allowed_actions=["VIDEO_SUMMARY", "COURSE_NOTES"],
+    ),
+    "CAPTURE_VIDEO_FRAMES": CapabilityBinding(
+        capability_name="CAPTURE_VIDEO_FRAMES",
+        server_id="builtin-bilibili-mcp",
+        tool_name="capture_bilibili_frames",
+        scope_type="MEDIA_PROCESSING",
+        approval_mode="REQUIRED",
+        risk_level="MEDIUM",
+        allowed_actions=["COURSE_NOTES"],
+    ),
+    "ANALYZE_FRAME": CapabilityBinding(
+        capability_name="ANALYZE_FRAME",
+        server_id="builtin-bilibili-mcp",
+        tool_name="analyze_frames",
+        scope_type="MEDIA_PROCESSING",
+        approval_mode="REQUIRED",
+        risk_level="MEDIUM",
+        allowed_actions=["COURSE_NOTES"],
     ),
     "TRANSCRIBE_AUDIO": CapabilityBinding(
         capability_name="TRANSCRIBE_AUDIO",

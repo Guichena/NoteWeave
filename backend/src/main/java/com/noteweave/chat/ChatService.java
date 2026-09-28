@@ -20,6 +20,8 @@ import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
 import com.noteweave.conversation.EffectiveRetrievalConfig;
 import com.noteweave.conversation.ConversationContextProjectionService;
+import com.noteweave.conversation.ContextV2RolloutService;
+import com.noteweave.conversation.ContextV2ShadowSnapshotService;
 import com.noteweave.memory.MemoryCompilerService;
 import com.noteweave.memory.MemoryControlPackResponse;
 import com.noteweave.quota.WorkloadQuotaService;
@@ -54,6 +56,8 @@ public class ChatService {
     private final WorkloadQuotaService workloadQuotaService;
     private final ConversationContextProjectionService contextProjectionService;
     private final ConversationRetrievalContextAssembler conversationContextAssembler;
+    private final ContextV2RolloutService contextV2Rollout;
+    private final ContextV2ShadowSnapshotService contextV2Snapshots;
 
     public ChatService(
             JdbcTemplate jdbcTemplate,
@@ -69,7 +73,9 @@ public class ChatService {
             AnswerStrategyContractValidator strategyContractValidator,
             WorkloadQuotaService workloadQuotaService,
             ConversationContextProjectionService contextProjectionService,
-            ConversationRetrievalContextAssembler conversationContextAssembler
+            ConversationRetrievalContextAssembler conversationContextAssembler,
+            ContextV2RolloutService contextV2Rollout,
+            ContextV2ShadowSnapshotService contextV2Snapshots
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.memoryCompilerService = memoryCompilerService;
@@ -85,6 +91,8 @@ public class ChatService {
         this.workloadQuotaService = workloadQuotaService;
         this.contextProjectionService = contextProjectionService;
         this.conversationContextAssembler = conversationContextAssembler;
+        this.contextV2Rollout = contextV2Rollout;
+        this.contextV2Snapshots = contextV2Snapshots;
     }
 
     public PreparedAnswerMaterial compilePreparedAnswer(
@@ -108,6 +116,7 @@ public class ChatService {
                 draft.evidenceBundle(),
                 draft.promptSpec(),
                 draft.contextProjection(),
+                draft.frozenContextV2(),
                 draft.maximumOutputTokens()
         );
     }
@@ -236,10 +245,11 @@ public class ChatService {
                 Integer.toString(conversationContext.windowTurnCount()));
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_TOPIC_ANCHOR, conversationContext.topicAnchor());
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_TOPIC_SUMMARY, conversationContext.topicSummary());
+        String v2UserControls = renderV2UserConstraints(conversationContext.frozenV2());
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_HAS_CHAT_CONTROLS,
-                Boolean.toString(chatControlPack.hasControls()));
+                Boolean.toString(chatControlPack.hasControls() || !v2UserControls.isBlank()));
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_CHAT_CONTROL_SECTION,
-                renderChatControlSection(chatControlPack));
+                renderChatControlSection(chatControlPack) + v2UserControls);
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_TEMPLATE_LABEL, templateLabel(mode));
         AnswerContext context = new AnswerContext(
                 workspaceId,
@@ -283,6 +293,7 @@ public class ChatService {
                 bundle,
                 prompt,
                 conversationContext.inputProjection(),
+                conversationContext.frozenV2(),
                 policy.maximumOutputTokens()
         );
     }
@@ -354,6 +365,14 @@ public class ChatService {
         return builder.toString();
     }
 
+    static String renderV2UserConstraints(ContextV2ShadowSnapshotService.FrozenAnswer frozen) {
+        if (frozen == null || frozen.projection().constraints().isEmpty()) return "";
+        StringBuilder builder = new StringBuilder("## 当前有效的用户约束（冻结会话）\n");
+        frozen.projection().constraints().forEach(rule -> builder.append("- ")
+                .append(rule.text()).append("\n"));
+        return builder.append("\n").toString();
+    }
+
     private void appendControlLine(StringBuilder builder, String prefix, List<String> values) {
         if (values == null || values.isEmpty()) {
             return;
@@ -386,6 +405,14 @@ public class ChatService {
     private ConversationRetrievalContextAssembler.Context buildConversationContext(
             String workspaceId, String conversationId, String currentUserMessageId, String currentQuestion) {
         String trimmedQuestion = currentQuestion == null ? "" : currentQuestion.trim();
+        if (contextV2Rollout.activeEnabled(workspaceId)) {
+            var frozen = contextV2Snapshots.readReadyForAnswer(
+                    workspaceId, conversationId, currentUserMessageId);
+            if (frozen != null) {
+                return conversationContextAssembler.assembleV2(
+                        currentUserMessageId, trimmedQuestion, frozen);
+            }
+        }
         if (!conversationContextAssembler.requiresHistory(trimmedQuestion)) {
             return conversationContextAssembler.empty(trimmedQuestion);
         }
@@ -412,6 +439,7 @@ public class ChatService {
             EvidenceBundle evidenceBundle,
             PromptSpec promptSpec,
             ConversationContextProjectionService.Projection contextProjection,
+            ContextV2ShadowSnapshotService.FrozenAnswer frozenContextV2,
             int maximumOutputTokens
     ) {
         private String promptVersion() {
@@ -427,6 +455,7 @@ public class ChatService {
             EvidenceBundle evidenceBundle,
             PromptSpec promptSpec,
             ConversationContextProjectionService.Projection contextProjection,
+            ContextV2ShadowSnapshotService.FrozenAnswer frozenContextV2,
             int maximumOutputTokens
     ) {
         public PreparedAnswerMaterial {

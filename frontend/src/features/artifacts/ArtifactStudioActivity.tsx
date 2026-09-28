@@ -26,10 +26,12 @@ type ArtifactStudioActivityProps = Pick<
   | "compareArtifactWithPreviousVersion"
   | "rollbackArtifactVersion"
   | "downloadArtifactVersionPdf"
+  | "downloadArtifactVersionFile"
   | "resolveArtifactSkillTitle"
   | "summarizeRunStatus"
   | "openArtifactHistoryVersion"
   | "artifactHistoryLoadingKey"
+  | "workspace"
 > & {
   artifactStudioSkills: ArtifactRailProps["artifactStudioSkills"];
 };
@@ -107,6 +109,7 @@ export function ArtifactStudioActivity(props: ArtifactStudioActivityProps) {
                 <strong>{latestArtifactVersion.title || resolveArtifactSkillTitle(latestArtifactVersion.skill_key)}</strong>
                 <ArtifactVersionActions
                   version={latestArtifactVersion}
+                  workspaceId={props.workspace?.workspace_id}
                   auditView={artifactSidebarState.latestAuditView}
                   isBusy={isBusy}
                   formatRelativeTime={formatRelativeTime}
@@ -119,6 +122,7 @@ export function ArtifactStudioActivity(props: ArtifactStudioActivityProps) {
                   compareArtifactWithPreviousVersion={props.compareArtifactWithPreviousVersion}
                   rollbackArtifactVersion={props.rollbackArtifactVersion}
                   downloadArtifactVersionPdf={props.downloadArtifactVersionPdf}
+                  downloadArtifactVersionFile={props.downloadArtifactVersionFile}
                 />
               </div>
             </div>
@@ -164,6 +168,7 @@ export function ArtifactStudioActivity(props: ArtifactStudioActivityProps) {
                 </strong>
                 <ArtifactVersionActions
                   version={historyDetailVersion}
+                  workspaceId={props.workspace?.workspace_id}
                   auditView={artifactSidebarState.historyViewer}
                   detailsOpen
                   isBusy={isBusy}
@@ -177,6 +182,7 @@ export function ArtifactStudioActivity(props: ArtifactStudioActivityProps) {
                   compareArtifactWithPreviousVersion={props.compareArtifactWithPreviousVersion}
                   rollbackArtifactVersion={props.rollbackArtifactVersion}
                   downloadArtifactVersionPdf={props.downloadArtifactVersionPdf}
+                  downloadArtifactVersionFile={props.downloadArtifactVersionFile}
                 />
               </div>
             </div>

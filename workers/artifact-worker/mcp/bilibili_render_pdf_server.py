@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -10,6 +11,15 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlparse
+
+WORKER_ROOT = Path(__file__).resolve().parents[1]
+if str(WORKER_ROOT) not in sys.path:
+    sys.path.insert(0, str(WORKER_ROOT))
+
+from app.video_frame_capture import capture_local_video
+from app.video_frame_observation import observe_staged_frame
+from PIL import Image
 
 
 MCP_PROTOCOL_VERSION = "2025-06-18"
@@ -157,6 +167,40 @@ class BilibiliRenderPdfServer:
                 ),
             },
             {
+                "name": "capture_bilibili_frames",
+                "description": "Capture bounded, timestamped PNG frames from one Bilibili video part into the controlled sandbox.",
+                "inputSchema": _object_schema({
+                    "video_url": _string_schema("Bilibili BV video URL, optionally with one ?p=N part."),
+                    "output_dir": _string_schema("Optional sandbox output directory."),
+                    "cookies_file": _string_schema("Optional sandbox Netscape cookies file."),
+                    "interval_ms": {"type": "integer", "minimum": 1000, "default": 30000},
+                    "max_frames": {"type": "integer", "minimum": 1, "maximum": 32, "default": 32},
+                }, required=["video_url"]),
+            },
+            {
+                "name": "analyze_frame",
+                "description": "OCR one digest-verified staged video frame; report visible text and uncertainty without claiming visual semantics.",
+                "inputSchema": _object_schema({
+                    "task_id": _string_schema("Host-controlled Artifact task ID."),
+                    "file_id": _string_schema("Frozen video frame file ID."),
+                    "checksum_sha256": _string_schema("SHA-256 from the frozen frame manifest."),
+                }, required=["task_id", "file_id", "checksum_sha256"]),
+            },
+            {
+                "name": "analyze_frames",
+                "description": "OCR the digest-verified frames from one task's completed capture receipt.",
+                "inputSchema": _object_schema({
+                    "task_id": _string_schema("Host-controlled Artifact task ID."),
+                    "files": {"type": "array", "maxItems": 32, "items": {
+                        "type": "object", "properties": {
+                            "file_id": {"type": "string"},
+                            "checksum_sha256": {"type": "string"},
+                        }, "required": ["file_id", "checksum_sha256"],
+                        "additionalProperties": False,
+                    }},
+                }, required=["task_id", "files"]),
+            },
+            {
                 "name": "render_latex_pdf",
                 "description": "Render a controlled LaTeX note package from structured course-note content.",
                 "inputSchema": _object_schema(
@@ -166,6 +210,8 @@ class BilibiliRenderPdfServer:
                         "video_channel": _string_schema("Optional speaker or channel name."),
                         "video_publish_date": _string_schema("Optional publish date."),
                         "video_duration": _string_schema("Optional video duration."),
+                        "video_part": {"type": "integer", "minimum": 1},
+                        "video_duration_ms": {"type": "integer", "minimum": 1},
                         "cover_image_path": _string_schema("Optional local cover image path."),
                         "output_dir": _string_schema("Optional output directory."),
                         "output_stem": _string_schema("Optional output filename stem."),
@@ -177,6 +223,15 @@ class BilibiliRenderPdfServer:
                                 "properties": {
                                     "heading": {"type": "string"},
                                     "body": {"type": "string"},
+                                    "image_refs": {"type": "array", "items": {"type": "object",
+                                        "properties": {
+                                            "file_id": {"type": "string"},
+                                            "path": {"type": "string"},
+                                            "checksum_sha256": {"type": "string"},
+                                            "part": {"type": "integer"},
+                                            "at_ms": {"type": "integer"},
+                                        }, "required": ["file_id", "path", "checksum_sha256", "part", "at_ms"],
+                                        "additionalProperties": False}},
                                 },
                                 "required": ["heading", "body"],
                                 "additionalProperties": False,
@@ -198,9 +253,46 @@ class BilibiliRenderPdfServer:
             return _tool_result(self._get_bilibili_subtitle(arguments))
         if tool_name == "transcribe_local_audio":
             return _tool_result(self._transcribe_local_audio(arguments))
+        if tool_name == "capture_bilibili_frames":
+            return _tool_result(self._capture_bilibili_frames(arguments))
+        if tool_name == "analyze_frame":
+            return _tool_result(self._analyze_frame(arguments))
+        if tool_name == "analyze_frames":
+            return _tool_result(self._analyze_frames(arguments))
         if tool_name == "render_latex_pdf":
             return _tool_result(self._render_latex_pdf(arguments))
         raise ValueError(f"Unknown tool: {tool_name}")
+
+    def _analyze_frame(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        return observe_staged_frame(
+            sandbox_root=self.sandbox_root,
+            task_id=_required_string(arguments, "task_id"),
+            file_id=_required_string(arguments, "file_id"),
+            checksum_sha256=_required_string(arguments, "checksum_sha256"),
+        )
+
+    def _analyze_frames(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        task_id = _required_string(arguments, "task_id")
+        files = arguments.get("files")
+        if not isinstance(files, list) or len(files) > 32:
+            raise ValueError("frame observation requires at most 32 manifest files")
+        seen: set[str] = set()
+        observations = []
+        for item in files:
+            if not isinstance(item, dict) or set(item) != {"file_id", "checksum_sha256"}:
+                raise ValueError("frame observation manifest has unknown fields")
+            file_id = str(item["file_id"])
+            if file_id in seen:
+                raise ValueError("frame observation file ID is duplicated")
+            seen.add(file_id)
+            observations.append(observe_staged_frame(
+                sandbox_root=self.sandbox_root, task_id=task_id,
+                file_id=file_id, checksum_sha256=str(item["checksum_sha256"]),
+                stage="CAPTURED",
+            ))
+        return {"schema_version": "frame-observation-batch-v1", "task_id": task_id,
+                "frames": observations,
+                "coverage_gaps": ["NO_FRAMES"] if not observations else []}
 
     def _get_bilibili_subtitle(self, arguments: dict[str, Any]) -> dict[str, Any]:
         video_url = _required_string(arguments, "video_url")
@@ -350,6 +442,84 @@ class BilibiliRenderPdfServer:
             ],
         }
 
+    def _capture_bilibili_frames(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        raw_url = _required_string(arguments, "video_url")
+        parsed = urlparse(raw_url)
+        match = re.fullmatch(r"/video/(BV[0-9A-Za-z]{10})/?", parsed.path)
+        parts = parse_qs(parsed.query).get("p", ["1"])
+        if (parsed.scheme not in {"https", "http"}
+                or parsed.hostname not in {"bilibili.com", "www.bilibili.com"}
+                or match is None or len(parts) != 1 or not parts[0].isdigit()
+                or int(parts[0]) < 1 or int(parts[0]) > 1000):
+            raise ValueError("capture requires one Bilibili BV video and part")
+        part = int(parts[0])
+        bvid = match.group(1)
+        interval_ms = arguments.get("interval_ms", 30_000)
+        max_frames = arguments.get("max_frames", 32)
+        if isinstance(interval_ms, bool) or not isinstance(interval_ms, int) \
+                or isinstance(max_frames, bool) or not isinstance(max_frames, int):
+            raise ValueError("frame capture policy must use integers")
+        cookies = self._resolve_optional_input_file(
+            str(arguments.get("cookies_file") or ""), "cookies_file")
+        cookies_file = str(cookies) if cookies else ""
+        output_dir = self._resolve_output_dir(
+            str(arguments.get("output_dir") or ""), bucket="frames", stem=f"{bvid}-p{part}")
+        self._ensure_yt_dlp_available()
+        metadata = self._fetch_video_metadata(raw_url, cookies_file=cookies_file)
+        observed = urlparse(str(metadata.get("webpage_url", "")))
+        observed_parts = parse_qs(observed.query).get("p", ["1"])
+        duration = metadata.get("duration")
+        if (metadata.get("id") != bvid or observed.hostname not in {
+                "bilibili.com", "www.bilibili.com"}
+                or not re.fullmatch(rf"/video/{bvid}/?", observed.path)
+                or observed_parts != [str(part)]
+                or isinstance(duration, bool) or not isinstance(duration, (int, float))
+                or not (0 < duration <= 86_400)):
+            raise ValueError("video metadata does not match the requested part and duration")
+        duration_ms = round(duration * 1000)
+        video_dir = output_dir / "video"
+        video_dir.mkdir(parents=True, exist_ok=True)
+        command = self._build_yt_dlp_command(
+            "--no-playlist", "--max-filesize", "1G", "--socket-timeout", "20",
+            "--retries", "2", "-f", "bestvideo[height<=1080]/best[height<=1080]",
+            "-o", str(video_dir / "video.%(ext)s"), raw_url,
+            cookies_file=cookies_file,
+        )
+        completed = subprocess.run(
+            command, cwd=str(video_dir), capture_output=True, text=True,
+            timeout=600, check=False,
+        )
+        videos = [path for path in video_dir.iterdir()
+                  if path.is_file() and not path.is_symlink()
+                  and path.name.startswith("video.") and path.suffix.lower() in {
+                      ".mp4", ".webm", ".mkv"}]
+        if completed.returncode != 0 or len(videos) != 1 \
+                or not 0 < videos[0].stat().st_size <= 1_000_000_000:
+            raise ValueError("video stream download failed or exceeded the capture limit")
+        captured = capture_local_video(
+            video_path=videos[0], output_dir=output_dir / "images",
+            sandbox_root=self.sandbox_root, part=part, duration_ms=duration_ms,
+            interval_ms=interval_ms, max_frames=max_frames,
+        )
+        files = {frame.file_id: {
+            "file_id": frame.file_id, "role": "VIDEO_FRAME", "media_type": "image/png",
+            "size_bytes": frame.size_bytes, "checksum_sha256": frame.checksum_sha256,
+            "path": str(frame.path),
+        } for frame in captured.frames}
+        return {
+            "normalized_video_id": bvid, "part": part, "duration_ms": duration_ms,
+            "metadata": metadata,
+            "frames": [{
+                "frame_id": frame.frame_id, "part": frame.part, "at_ms": frame.at_ms,
+                "file_id": frame.file_id, "checksum_sha256": frame.checksum_sha256,
+                "dedupe_of": frame.dedupe_of,
+            } for frame in captured.frames],
+            "files": list(files.values()),
+            "coverage_gaps": (["NO_FRAMES"] if not captured.frames else [])
+                + (["FRAME_CAPTURE_PARTIAL"] if captured.missing_requested_ms else []),
+            "missing_requested_ms": list(captured.missing_requested_ms),
+        }
+
     def _transcribe_local_audio(self, arguments: dict[str, Any]) -> dict[str, Any]:
         input_path = self._resolve_input_path(_required_string(arguments, "input_path"), "input_path")
         if not input_path.exists():
@@ -387,6 +557,8 @@ class BilibiliRenderPdfServer:
         sections = arguments.get("sections")
         if not isinstance(sections, list) or not sections:
             raise ValueError("sections is required")
+        sections = self._validated_pdf_sections(
+            sections, arguments.get("video_part"), arguments.get("video_duration_ms"))
 
         output_dir = (
             self._resolve_output_path(str(arguments.get("output_dir")), "output_dir")
@@ -397,6 +569,22 @@ class BilibiliRenderPdfServer:
         output_stem = _sanitize_stem(str(arguments.get("output_stem") or title))
         tex_path = output_dir / f"{output_stem}.tex"
         pdf_path = output_dir / f"{output_stem}.pdf"
+        evidence_dir = output_dir / "evidence"
+        for section in sections:
+            for ref in section["image_refs"]:
+                with Image.open(ref["path"]) as image:
+                    suffix = ".png" if image.format == "PNG" else ".jpg"
+                staged = evidence_dir / f"{ref['file_id']}{suffix}"
+                evidence_dir.mkdir(parents=True, exist_ok=True)
+                if staged.is_symlink() or (staged.exists() and
+                        hashlib.sha256(staged.read_bytes()).hexdigest() != ref["checksum_sha256"]):
+                    raise ValueError("PDF evidence staging conflicts with a different image")
+                if not staged.exists():
+                    shutil.copyfile(ref["path"], staged)
+                if hashlib.sha256(staged.read_bytes()).hexdigest() != ref["checksum_sha256"]:
+                    raise ValueError("PDF staged evidence digest differs from frozen image")
+                ref["path"] = str(staged)
+                ref["tex_path"] = f"evidence/{staged.name}"
 
         latex = self._build_latex_document(
             title=title,
@@ -469,6 +657,67 @@ class BilibiliRenderPdfServer:
             "notes": notes,
         }
 
+    def _validated_pdf_sections(
+        self, sections: list[dict[str, Any]], video_part: object,
+        duration_ms: object,
+    ) -> list[dict[str, Any]]:
+        checked: list[dict[str, Any]] = []
+        total_refs = 0
+        for section in sections:
+            if not isinstance(section, dict) or not isinstance(section.get("heading"), str) \
+                    or not isinstance(section.get("body"), str):
+                raise ValueError("PDF section heading and body are required")
+            raw_refs = section.get("image_refs", [])
+            if not isinstance(raw_refs, list) or len(raw_refs) > 16:
+                raise ValueError("PDF image references exceed section limit")
+            total_refs += len(raw_refs)
+            if total_refs > 32:
+                raise ValueError("PDF image references exceed document limit")
+            refs = []
+            for raw in raw_refs:
+                if not isinstance(raw, dict) or set(raw) != {
+                    "file_id", "path", "checksum_sha256", "part", "at_ms"
+                } or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", str(raw.get("file_id", ""))) \
+                        or isinstance(video_part, bool) or not isinstance(video_part, int) \
+                        or not 1 <= video_part <= 1000 \
+                        or isinstance(duration_ms, bool) or not isinstance(duration_ms, int) \
+                        or not 1 <= duration_ms <= 86_400_000 \
+                        or isinstance(raw.get("part"), bool) \
+                        or not isinstance(raw.get("part"), int) \
+                        or raw.get("part") != video_part \
+                        or not isinstance(raw.get("at_ms"), int) \
+                        or isinstance(raw.get("at_ms"), bool) \
+                        or not 0 <= raw["at_ms"] < duration_ms \
+                        or not re.fullmatch(r"[0-9a-f]{64}", str(raw.get("checksum_sha256", ""))):
+                    raise ValueError("PDF image reference has invalid identity, part or time")
+                path = self._resolve_sandbox_image(str(raw["path"]))
+                content = path.read_bytes()
+                if len(content) < 1 or len(content) > 16_000_000 \
+                        or hashlib.sha256(content).hexdigest() != raw["checksum_sha256"]:
+                    raise ValueError("PDF image bytes do not match frozen evidence")
+                try:
+                    with Image.open(path) as image:
+                        if image.format not in {"PNG", "JPEG"} \
+                                or image.width * image.height > 50_000_000:
+                            raise ValueError("PDF image is not a bounded PNG or JPEG")
+                        image.verify()
+                except OSError as exc:
+                    raise ValueError("PDF image is not decodable") from exc
+                refs.append({**raw, "path": str(path)})
+            checked.append({"heading": section["heading"], "body": section["body"],
+                            "image_refs": refs})
+        return checked
+
+    def _resolve_sandbox_image(self, value: str) -> Path:
+        path = Path(value).expanduser()
+        if not path.is_absolute() or ".." in path.parts:
+            raise ValueError("PDF image path must be absolute inside the MCP sandbox")
+        self._reject_symlink_components(path, "PDF image")
+        resolved = path.resolve()
+        if not resolved.is_relative_to(self.sandbox_root) or not resolved.is_file():
+            raise ValueError("PDF image must be a sandbox file")
+        return resolved
+
     def _build_latex_document(
         self,
         *,
@@ -489,7 +738,15 @@ class BilibiliRenderPdfServer:
         for item in sections:
             heading = _latex_escape(str(item.get("heading") or "Untitled Section"))
             section_body = _latex_escape(str(item.get("body") or "")).replace("\n", "\n\n")
-            body.append(f"\\section{{{heading}}}\n{section_body}\n")
+            figures = []
+            for ref in item.get("image_refs", []):
+                figures.append(
+                    "\\begin{figure}[htbp]\n\\centering\n"
+                    f"\\includegraphics[width=0.85\\linewidth,height=0.35\\textheight,keepaspectratio]{{{ref['tex_path']}}}\n"
+                    f"\\caption{{Frame {_latex_escape(ref['file_id'])} at {ref['at_ms']} ms}}\n"
+                    "\\end{figure}\n"
+                )
+            body.append(f"\\section{{{heading}}}\n{section_body}\n" + "\n".join(figures))
         body_text = "\n".join(body).strip() + "\n"
 
         replacements = {
@@ -512,6 +769,9 @@ class BilibiliRenderPdfServer:
         if marker_index != -1 and end_index != -1 and marker_index < end_index:
             prefix = template[:marker_index]
             suffix = template[end_index:]
+            if any(item.get("image_refs") for item in sections) and "\\usepackage{graphicx}" not in prefix:
+                prefix = prefix.replace("\\begin{document}",
+                                        "\\usepackage{graphicx}\n\\begin{document}", 1)
             return prefix + body_text + "\n" + suffix
         return template + "\n" + body_text
 
@@ -1087,6 +1347,8 @@ def _render_portable_cjk_pdf(
             video_url=video_url,
         )
     except ModuleNotFoundError:
+        if any(section.get("image_refs") for section in sections):
+            raise RuntimeError("ReportLab is required to render PDF frame evidence")
         # Development-only structural fallback; deployment installs ReportLab and a CJK font.
         pass
     else:
@@ -1182,6 +1444,7 @@ def _render_reportlab_cjk_pdf(
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
     from reportlab.pdfgen import canvas
+    from reportlab.lib.utils import ImageReader
 
     font_path = _resolve_cjk_font_path()
     font_name = "NoteWeaveCJK"
@@ -1238,6 +1501,18 @@ def _render_reportlab_cjk_pdf(
         body = str(section.get("body") or "")
         for paragraph in body.splitlines() or [""]:
             draw_text(paragraph, 11, leading=18)
+        for ref in section.get("image_refs", []):
+            with Image.open(ref["path"]) as image:
+                width, height = image.size
+            scale = min((page_width - 100) / width, 300 / height)
+            rendered_width, rendered_height = width * scale, height * scale
+            if y < rendered_height + 75:
+                new_page()
+            document.drawImage(ImageReader(ref["path"]), 50, y - rendered_height,
+                               width=rendered_width, height=rendered_height,
+                               preserveAspectRatio=True)
+            y -= rendered_height + 8
+            draw_text(f"Frame {ref['file_id']} · {ref['at_ms']} ms", 9, leading=14)
         y -= 8
     draw_footer()
     document.save()

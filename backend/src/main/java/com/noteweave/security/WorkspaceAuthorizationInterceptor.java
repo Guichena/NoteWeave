@@ -81,7 +81,8 @@ public class WorkspaceAuthorizationInterceptor implements HandlerInterceptor {
         if (path.contains("/memory/signals")) {
             return WorkspacePermission.ANSWER_RUN;
         }
-        if (path.contains("/research-runs") || path.contains("/artifact-jobs")) {
+        if (path.contains("/research-runs") || path.contains("/artifact-jobs")
+                || path.contains("/video-learning-bundles")) {
             return WorkspacePermission.EXECUTION_OPERATE;
         }
         return WorkspacePermission.WORKSPACE_ADMIN;

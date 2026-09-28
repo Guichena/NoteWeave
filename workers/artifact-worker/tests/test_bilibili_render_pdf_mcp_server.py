@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+from PIL import Image
+
+import mcp.bilibili_render_pdf_server as mcp_module
 from mcp.bilibili_render_pdf_server import BilibiliRenderPdfServer
+from app.video_frame_capture import CapturedFrame, CaptureResult
 
 
 def _sandboxed_server(root: Path) -> BilibiliRenderPdfServer:
@@ -52,6 +59,137 @@ def test_tools_list_should_expose_expected_skill_surface() -> None:
     assert "get_bilibili_subtitle" in names
     assert "transcribe_local_audio" in names
     assert "render_latex_pdf" in names
+    assert "capture_bilibili_frames" in names
+    assert "analyze_frame" in names
+    assert "analyze_frames" in names
+
+
+def test_analyze_frame_mcp_passes_only_frozen_frame_identity(tmp_path, monkeypatch) -> None:
+    server = _sandboxed_server(tmp_path)
+    observed = {}
+
+    def fake_observe(**kwargs):
+        observed.update(kwargs)
+        return {"schema_version": "frame-observation-v1", "observations": []}
+
+    monkeypatch.setattr(mcp_module, "observe_staged_frame", fake_observe)
+    response = server.handle_message({
+        "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+        "params": {"name": "analyze_frame", "arguments": {
+            "task_id": "task-1", "file_id": "frame-1", "checksum_sha256": "a" * 64,
+        }},
+    })
+    assert response["result"]["isError"] is False
+    assert observed == {
+        "sandbox_root": tmp_path.resolve(), "task_id": "task-1",
+        "file_id": "frame-1", "checksum_sha256": "a" * 64,
+    }
+
+
+def test_analyze_frames_mcp_reports_one_receipt_for_exact_manifest(tmp_path, monkeypatch) -> None:
+    server = _sandboxed_server(tmp_path)
+    seen = []
+
+    def fake_observe(**kwargs):
+        seen.append(kwargs)
+        return {"schema_version": "frame-observation-v1",
+                "file_id": kwargs["file_id"], "observations": []}
+
+    monkeypatch.setattr(mcp_module, "observe_staged_frame", fake_observe)
+    result = server._analyze_frames({"task_id": "task-1", "files": [
+        {"file_id": "frame-1", "checksum_sha256": "a" * 64},
+        {"file_id": "frame-2", "checksum_sha256": "b" * 64},
+    ]})
+    assert result["schema_version"] == "frame-observation-batch-v1"
+    assert [item["file_id"] for item in result["frames"]] == ["frame-1", "frame-2"]
+    assert all(item["stage"] == "CAPTURED" for item in seen)
+    with pytest.raises(ValueError, match="duplicated"):
+        server._analyze_frames({"task_id": "task-1", "files": [
+            {"file_id": "frame-1", "checksum_sha256": "a" * 64},
+            {"file_id": "frame-1", "checksum_sha256": "a" * 64},
+        ]})
+
+
+def test_capture_bilibili_frames_keeps_part_identity_and_file_manifest(
+        tmp_path: Path, monkeypatch) -> None:
+    server = _sandboxed_server(tmp_path)
+    server._ensure_yt_dlp_available = lambda: None
+    server._fetch_video_metadata = lambda url, cookies_file="": {
+        "id": "BV1234567890", "webpage_url": "https://www.bilibili.com/video/BV1234567890?p=2",
+        "duration": 60,
+    }
+    observed = {}
+
+    def fake_download(command, **kwargs):
+        observed["command"] = command
+        (Path(kwargs["cwd"]) / "video.mp4").write_bytes(b"local test video")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    def fake_capture(**kwargs):
+        observed["capture"] = kwargs
+        path = kwargs["output_dir"] / "frame-2-000.png"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (2, 2), "red").save(path, format="PNG")
+        content = path.read_bytes()
+        return CaptureResult((CapturedFrame(
+            "f-2-000", 2, 1000, "frame-2-000", hashlib.sha256(content).hexdigest(),
+            len(content), path,
+        ),), (30_000,))
+
+    monkeypatch.setattr(mcp_module.subprocess, "run", fake_download)
+    monkeypatch.setattr(mcp_module, "capture_local_video", fake_capture)
+    result = server._capture_bilibili_frames({
+        "video_url": "https://www.bilibili.com/video/BV1234567890?p=2",
+        "interval_ms": 30_000, "max_frames": 4,
+    })
+    assert result["normalized_video_id"] == "BV1234567890"
+    assert result["part"] == 2
+    assert result["frames"][0]["at_ms"] == 1000
+    assert result["files"][0]["checksum_sha256"] == result["frames"][0]["checksum_sha256"]
+    assert result["coverage_gaps"] == ["FRAME_CAPTURE_PARTIAL"]
+    assert observed["capture"]["sandbox_root"] == tmp_path.resolve()
+    assert "--no-playlist" in observed["command"]
+
+    server._fetch_video_metadata = lambda url, cookies_file="": {
+        "id": "BV1234567890", "webpage_url": "https://www.bilibili.com/video/BV1234567890?p=1",
+        "duration": 60,
+    }
+    with pytest.raises(ValueError, match="requested part"):
+        server._capture_bilibili_frames({
+            "video_url": "https://www.bilibili.com/video/BV1234567890?p=2",
+        })
+
+
+def test_pdf_renderer_embeds_verified_frame_and_rejects_wrong_part_or_digest(
+        tmp_path: Path, monkeypatch) -> None:
+    server = _sandboxed_server(tmp_path)
+    image_path = tmp_path / "frame.png"
+    Image.new("RGB", (64, 32), "blue").save(image_path, format="PNG")
+    digest = hashlib.sha256(image_path.read_bytes()).hexdigest()
+    ref = {"file_id": "frame-2-001", "path": str(image_path),
+           "checksum_sha256": digest, "part": 2, "at_ms": 1200}
+    arguments = {
+        "title": "Frame Evidence", "video_part": 2, "video_duration_ms": 5000,
+        "output_dir": str(tmp_path / "exports"), "output_stem": "frame-evidence",
+        "sections": [{"heading": "Concept", "body": "Verified explanation",
+                      "image_refs": [ref]}],
+    }
+    monkeypatch.setattr(mcp_module.shutil, "which", lambda name: None)
+    result = server._render_latex_pdf(arguments)
+    pdf = Path(result["pdf_path"]).read_bytes()
+    tex = Path(result["tex_path"]).read_text(encoding="utf-8")
+    assert pdf.startswith(b"%PDF-") and b"/Subtype /Image" in pdf
+    assert r"\includegraphics" in tex and "frame-2-001" in tex
+    assert (tmp_path / "exports" / "evidence" / "frame-2-001.png").is_file()
+
+    wrong_part = {**ref, "part": 1}
+    with pytest.raises(ValueError, match="part or time"):
+        server._render_latex_pdf({**arguments, "sections": [
+            {"heading": "Concept", "body": "Verified explanation", "image_refs": [wrong_part]}]})
+    wrong_digest = {**ref, "checksum_sha256": "0" * 64}
+    with pytest.raises(ValueError, match="do not match"):
+        server._render_latex_pdf({**arguments, "sections": [
+            {"heading": "Concept", "body": "Verified explanation", "image_refs": [wrong_digest]}]})
 
 
 def test_get_bilibili_subtitle_should_fetch_remote_subtitle_artifact(tmp_path: Path) -> None:

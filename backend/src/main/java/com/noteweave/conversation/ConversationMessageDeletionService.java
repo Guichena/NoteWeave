@@ -25,6 +25,11 @@ public class ConversationMessageDeletionService {
     @Transactional
     public DeletedConversationMessageResponse delete(String workspaceId, String conversationId, String messageId) {
         conversationService.requireConversation(workspaceId, conversationId);
+        // Shadow freezing takes the same conversation lock before reading the ledger. Serializing
+        // deletion prevents a frozen FULL snapshot from committing after its redaction scan.
+        jdbcTemplate.queryForObject("""
+                select id from conversation where id = ? and workspace_id = ? for update
+                """, String.class, conversationId, workspaceId);
         int changed = jdbcTemplate.update("""
                 update conversation_message set content = '', content_hash = ?, context_status = 'DELETED'
                 where id = ? and workspace_id = ? and conversation_id = ? and context_status <> 'DELETED'
@@ -64,6 +69,39 @@ public class ConversationMessageDeletionService {
                     """, revisionId);
             replayRedactionService.redactDeletedSummaryRevision(revisionId);
         }
+        List<String> coveringV2RevisionIds = jdbcTemplate.query("""
+                select id from conversation_topic_summary_revision_v2
+                where workspace_id = ? and conversation_id = ?
+                  and status in ('BUILDING', 'READY')
+                  and start_seq <= (select message_seq from conversation_message where id = ?)
+                  and end_seq >= (select message_seq from conversation_message where id = ?)
+                """, (rs, rowNum) -> rs.getString("id"), workspaceId, conversationId, messageId, messageId);
+        for (String revisionId : coveringV2RevisionIds) {
+            jdbcTemplate.update("""
+                    update conversation_topic_summary_revision_v2
+                    set status = 'STALE', summary_text = '', content_hash = null
+                    where id = ? and status in ('BUILDING', 'READY')
+                    """, revisionId);
+            replayRedactionService.redactDeletedSummaryRevision(revisionId);
+        }
+        jdbcTemplate.update("""
+                update conversation_topic_segment_v2
+                set decision_status = 'STALE', source_digest = ?,
+                    lock_version = lock_version + 1, updated_at = current_timestamp
+                where workspace_id = ? and conversation_id = ?
+                  and start_seq <= (select message_seq from conversation_message where id = ?)
+                  and end_seq >= (select message_seq from conversation_message where id = ?)
+                """, EMPTY_CONTENT_SHA256, workspaceId, conversationId, messageId, messageId);
+        jdbcTemplate.update("""
+                update conversation_topic_v2 set status = 'STALE', anchor_digest = ?
+                where workspace_id = ? and conversation_id = ? and anchor_message_id = ?
+                """, EMPTY_CONTENT_SHA256, workspaceId, conversationId, messageId);
+        jdbcTemplate.update("""
+                update conversation_constraint_v2
+                set status = 'REVOKED', constraint_text = '', invalid_after_seq =
+                    (select message_seq from conversation_message where id = ?)
+                where workspace_id = ? and conversation_id = ? and source_message_id = ?
+                """, messageId, workspaceId, conversationId, messageId);
         return new DeletedConversationMessageResponse(messageId, "DELETED");
     }
 }

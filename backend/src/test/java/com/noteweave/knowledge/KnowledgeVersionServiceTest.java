@@ -1,11 +1,14 @@
 package com.noteweave.knowledge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.noteweave.security.AuditActorProvider;
+import com.noteweave.research.ResearchGeneratedSourceReadGate;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,6 +23,7 @@ class KnowledgeVersionServiceTest {
     private JdbcTemplate jdbcTemplate;
     private KnowledgeVersionService versionService;
     private TransactionTemplate transactionTemplate;
+    private ResearchGeneratedSourceReadGate sourceGate;
 
     @BeforeEach
     void setUp() {
@@ -34,10 +38,15 @@ class KnowledgeVersionServiceTest {
         createSchema();
         AuditActorProvider actorProvider = mock(AuditActorProvider.class);
         when(actorProvider.currentOrSystem("KNOWLEDGE")).thenReturn("actor");
+        sourceGate = mock(ResearchGeneratedSourceReadGate.class);
+        when(sourceGate.readableSourceIds(org.mockito.ArgumentMatchers.eq("workspace"),
+                org.mockito.ArgumentMatchers.anyList()))
+                .thenAnswer(invocation -> Set.copyOf(invocation.getArgument(1)));
         versionService = new KnowledgeVersionService(
                 jdbcTemplate,
                 actorProvider,
-                new KnowledgeWikiMutationService(jdbcTemplate));
+                new KnowledgeWikiMutationService(jdbcTemplate),
+                new KnowledgeCitationReadGate(jdbcTemplate, sourceGate));
     }
 
     @Test
@@ -67,6 +76,34 @@ class KnowledgeVersionServiceTest {
         assertThat(detail.citations())
                 .extracting(KnowledgeCitationResponse::citationId)
                 .containsExactly("citation-b", "citation-a");
+    }
+
+    @Test
+    void revokedCitationMustHideHistoricalSummaryAndBody() {
+        seedItem("item-note", "NOTE", "Note", "version-1", "old content");
+        seedCitation("citation-a", "Source A");
+        KnowledgeItemResponse appended = versionService.appendVersion("item-note",
+                new AppendKnowledgeVersionRequest("derived content", null, List.of("citation-a")));
+        when(sourceGate.readableSourceIds(org.mockito.ArgumentMatchers.eq("workspace"),
+                org.mockito.ArgumentMatchers.anyList())).thenReturn(Set.of());
+
+        assertThat(versionService.listItemVersions("item-note"))
+                .extracting(KnowledgeVersionSummaryResponse::versionId)
+                .containsExactly("version-1");
+        assertThatThrownBy(() -> versionService.getItemVersionDetail("item-note", 2))
+                .isInstanceOfSatisfying(com.noteweave.common.BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("KNOWLEDGE_SOURCE_REVOKED"));
+        assertThatThrownBy(() -> versionService.citationIdsForVersion(appended.latestVersionId()))
+                .isInstanceOfSatisfying(com.noteweave.common.BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("KNOWLEDGE_SOURCE_REVOKED"));
+        assertThatThrownBy(() -> versionService.appendVersion("item-note",
+                new AppendKnowledgeVersionRequest("another derived version", null,
+                        List.of("citation-a"))))
+                .isInstanceOfSatisfying(com.noteweave.common.BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("KNOWLEDGE_CITATION_REVOKED"));
+        assertThat(jdbcTemplate.queryForObject(
+                "select content from knowledge_version where id = ?", String.class,
+                appended.latestVersionId())).isEqualTo("derived content");
     }
 
     @Test
@@ -175,6 +212,7 @@ class KnowledgeVersionServiceTest {
         jdbcTemplate.execute("""
                 create table citation(
                     id varchar(36) primary key,
+                    workspace_id varchar(36) not null default 'workspace',
                     source_id varchar(36) not null,
                     title varchar(300) not null,
                     quote_text varchar(1000) not null,

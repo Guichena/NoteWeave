@@ -3,6 +3,8 @@ import { ArrowLeft, LoaderCircle, Sparkles, X } from "lucide-react";
 import { ArtifactStudioActivity } from "./ArtifactStudioActivity";
 import { ArtifactStudioGrid } from "./ArtifactStudioGrid";
 import { ArtifactUtilityPanel } from "./ArtifactUtilityPanel";
+import { VideoLearningPanel } from "./VideoLearningPanel";
+import { buildArtifactHistoryVersionKey } from "./artifactHistory";
 import { buildInitialArtifactFormValues } from "./artifactStudio";
 import { type ArtifactRailProps } from "./ArtifactRailProps";
 
@@ -158,6 +160,17 @@ export function ArtifactRail(props: ArtifactRailProps) {
             )}
             {!artifactSkillsLoading && artifactStudioSkills.length === 0 ? (
               <p className="artifact-quiet-state">产物目录暂不可用，无法创建产物任务。</p>
+            ) : null}
+
+            {workspace ? (
+              <VideoLearningPanel workspaceId={workspace.workspace_id}
+                onJobsChanged={props.refreshArtifactJobs}
+                onOpenVersion={(artifactJobId, versionNo) =>
+                  props.openArtifactHistoryVersion({
+                    key: buildArtifactHistoryVersionKey(artifactJobId, versionNo),
+                    artifactJobId, versionNo, skillKey: "", title: "", detail: "",
+                    updatedAt: "", status: ""
+                  })} />
             ) : null}
 
             <ArtifactStudioActivity {...props} />

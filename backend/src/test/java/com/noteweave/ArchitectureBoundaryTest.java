@@ -141,7 +141,8 @@ class ArchitectureBoundaryTest {
 
     @Test
     void elasticsearchHealthMustFollowTheElasticsearchFeatureFlag() throws IOException {
-        String application = Files.readString(Path.of("src/main/resources/application.yml"));
+        String application = Files.readString(Path.of("src/main/resources/application.yml"))
+                .replace("\r\n", "\n");
 
         assertThat(application)
                 .contains("enabled: ${NOTEWEAVE_ES_ENABLED:true}")

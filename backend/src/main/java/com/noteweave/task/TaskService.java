@@ -201,7 +201,7 @@ public class TaskService implements TaskCommandPort {
 
     private String workload(String taskType) {
         return switch (taskType == null ? "" : taskType) {
-            case "ARTIFACT_JOB" -> "artifact";
+            case "ARTIFACT_JOB", "VIDEO_MATERIAL" -> "artifact";
             case "RESEARCH_RUN" -> "research";
             default -> null;
         };

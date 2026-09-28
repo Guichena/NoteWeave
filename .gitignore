@@ -19,6 +19,7 @@ node_modules/
 .conda/
 reference/*
 !reference/artifact-skill-catalog-v1.json
+!reference/artifact-skill-catalog-v2.json
 __pycache__/
 .pytest_cache/
 

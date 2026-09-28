@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 
-from app.artifact_skill_catalog import list_artifact_skill_definitions
+from app.artifact_skill_catalog import CATALOG_DIGEST, list_artifact_skill_definitions, validate_published_catalog
 from app.main import _to_public_input_schema
+from app.registry import PRODUCTION_ACTIONS
+from app.models import ArtifactTaskInput
+from app.runner import (PRE_VIDEO_POLICY_CATALOG_DIGEST,
+                        _require_published_catalog, run_artifact_task)
+import pytest
 
 
 def test_worker_public_skill_catalog_should_match_cross_language_contract() -> None:
@@ -27,4 +33,68 @@ def test_worker_public_skill_catalog_should_match_cross_language_contract() -> N
         }
         for skill_key, definition in contract["skills"].items()
     }
-    assert actual == expected
+    assert expected.keys() <= actual.keys()
+    assert {"knowledge_blog", "interview_qa", "video_learning_deck"} <= actual.keys()
+    for skill_key, legacy in expected.items():
+        assert set(legacy["properties"]) <= set(actual[skill_key]["properties"])
+        assert actual[skill_key]["required"] == legacy["required"]
+    assert "video_material_bundle_id" in actual["bilibili_course_note_pdf"]["properties"]
+
+
+def test_published_skill_catalog_matches_both_runtime_copies_and_action_registry() -> None:
+    root = Path(__file__).resolve().parents[3]
+    source = (root / "reference" / "artifact-skill-catalog-v2.json").read_bytes()
+    host = (root / "backend" / "src" / "main" / "resources" / "artifact-skill-catalog-v2.json").read_bytes()
+    worker = (root / "workers" / "artifact-worker" / "app" / "artifact-skill-catalog-v2.json").read_bytes()
+    assert source == host == worker
+    assert CATALOG_DIGEST == hashlib.sha256(source).hexdigest()
+    entries = json.loads(source)["skills"]
+    assert len(entries) == len({entry["skill_key"] for entry in entries}) == 15
+    for entry in entries:
+        action = PRODUCTION_ACTIONS[entry["action_key"]]
+        assert entry["graph_key"] == action.default_skill_graph_key
+        assert entry["prompt_recipe_id"] == action.default_prompt_recipe_id
+        assert entry["capability_allowlist"] == action.supported_capabilities
+
+
+def test_worker_rejects_run_frozen_against_another_catalog_before_execution() -> None:
+    task = ArtifactTaskInput.model_validate({
+        "task_id": "catalog-mismatch", "workspace_id": "workspace", "target_id": "target",
+        "input_snapshot_id": "snapshot", "catalog_digest": "0" * 64,
+        "control_pack": {"pack_type": "artifact", "target_key": "study_guide",
+                         "task_neighborhood": "ARTIFACT_SKILL_STUDY_GUIDE"},
+        "input_payload": {"skill_key": "study_guide"},
+    })
+    with pytest.raises(ValueError, match="catalog digest"):
+        run_artifact_task(task)
+
+
+def test_queued_run_from_prior_catalog_keeps_default_video_policy() -> None:
+    task = ArtifactTaskInput.model_validate({
+        "task_id": "legacy-video-run", "workspace_id": "workspace", "target_id": "target",
+        "input_snapshot_id": "snapshot", "catalog_digest": PRE_VIDEO_POLICY_CATALOG_DIGEST,
+        "control_pack": {"pack_type": "artifact", "target_key": "knowledge_blog",
+                         "task_neighborhood": "ARTIFACT_SKILL_KNOWLEDGE_BLOG"},
+        "input_payload": {"skill_key": "knowledge_blog", "inputs": {
+            "url": "https://www.bilibili.com/video/BV1234567890",
+            "video_material_bundle_id": "bundle-1"}},
+    })
+    _require_published_catalog(task)
+    task.input_payload.inputs["frame_density"] = "HIGH"
+    with pytest.raises(ValueError, match="legacy catalog"):
+        _require_published_catalog(task)
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda catalog: catalog["skills"][0].update({"version": "999.0.0"}),
+    lambda catalog: catalog["skills"][0].update({"arbitrary_script": "run.py"}),
+    lambda catalog: catalog["skills"][0].update({"capability_allowlist": ["ARBITRARY_TOOL"]}),
+    lambda catalog: catalog["skills"][0]["input_schema"]["properties"].update(
+        {"dangerous": {"type": "object"}}),
+])
+def test_published_catalog_rejects_unknown_policy(mutation) -> None:
+    root = Path(__file__).resolve().parents[3]
+    catalog = json.loads((root / "reference" / "artifact-skill-catalog-v2.json").read_text(encoding="utf-8"))
+    mutation(catalog)
+    with pytest.raises(ValueError):
+        validate_published_catalog(catalog)

@@ -19,16 +19,19 @@ public class ResearchAgentIncrementalFinalizationService {
     private final ResearchCollectionService researchCollectionService;
     private final ConversationResearchProjectionService conversationResearchProjectionService;
     private final TaskService taskService;
+    private final ResearchContextV2Gate contextGate;
 
     public ResearchAgentIncrementalFinalizationService(JdbcTemplate jdbcTemplate,
                                                          ResearchAgentIncrementalFinalizationFaultInjector faultInjector,
                                                          ResearchCollectionService researchCollectionService,
                                                          ConversationResearchProjectionService conversationResearchProjectionService,
-                                                         TaskService taskService) {
+                                                         TaskService taskService,
+                                                         ResearchContextV2Gate contextGate) {
         this.jdbcTemplate = jdbcTemplate; this.faultInjector = faultInjector;
         this.researchCollectionService = researchCollectionService;
         this.conversationResearchProjectionService = conversationResearchProjectionService;
         this.taskService = taskService;
+        this.contextGate = contextGate;
     }
 
     @Transactional
@@ -42,6 +45,7 @@ public class ResearchAgentIncrementalFinalizationService {
                 rs.getString(5), rs.getString(6), rs.getString(7), rs.getString(8),
                 rs.getString(9), rs.getString(10)) : null, runId);
         if (run == null || !"INCREMENTAL_V1".equals(run.mode())) throw new BusinessException("RESEARCH_AGENT_FINALIZATION_GATE_REJECTED", "Incremental finalization requires an incremental run");
+        contextGate.requireReadable(runId);
         if ("COMPLETED".equals(run.status())) {
             Artifact artifact = requireArtifact(run.id());
             if (!artifact.digest().equals(sha256(run.markdown()))) {

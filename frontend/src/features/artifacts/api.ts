@@ -7,7 +7,10 @@ import {
   type ArtifactSavedSourceResponse,
   type ArtifactVersionComparison,
   type ArtifactVersionDetail,
-  type CreateArtifactJobInput
+  type CreateArtifactJobInput,
+  type CreateVideoLearningInput,
+  type VideoLearningOverview,
+  type VideoLearningRequest
 } from "./model";
 
 export class ArtifactsApi {
@@ -23,6 +26,26 @@ export class ArtifactsApi {
 
   createJob(workspaceId: string, input: CreateArtifactJobInput) {
     return this.client.post<ArtifactJobCreateResponse>(`/api/v2/workspaces/${workspaceId}/artifact-jobs`, input);
+  }
+
+  listVideoLearning(workspaceId: string, init?: RequestInit) {
+    return this.client.get<VideoLearningOverview>(
+      `/api/v2/workspaces/${workspaceId}/video-learning-bundles`, init);
+  }
+
+  createVideoLearning(workspaceId: string, input: CreateVideoLearningInput) {
+    return this.client.post<VideoLearningRequest>(
+      `/api/v2/workspaces/${workspaceId}/video-learning-bundles`, input);
+  }
+
+  cancelVideoLearning(workspaceId: string, requestId: string) {
+    return this.client.post<VideoLearningRequest>(
+      `/api/v2/workspaces/${workspaceId}/video-learning-bundles/${requestId}/cancel`, {});
+  }
+
+  retryVideoLearningChoice(workspaceId: string, requestId: string, skillKey: string) {
+    return this.client.post<VideoLearningRequest>(
+      `/api/v2/workspaces/${workspaceId}/video-learning-bundles/${requestId}/choices/${encodeURIComponent(skillKey)}/retry`, {});
   }
 
   getVersion(workspaceId: string, artifactJobId: string, versionNo: number, init?: RequestInit) {
@@ -74,6 +97,10 @@ export class ArtifactsApi {
 
   exportPdf(workspaceId: string, artifactJobId: string, versionNo: number) {
     return this.client.blob(`${this.versionPath(workspaceId, artifactJobId, versionNo)}/export.pdf`);
+  }
+
+  downloadFile(workspaceId: string, artifactJobId: string, versionNo: number, fileId: string) {
+    return this.client.blob(`${this.versionPath(workspaceId, artifactJobId, versionNo)}/files/${encodeURIComponent(fileId)}`);
   }
 
   private versionPath(workspaceId: string, artifactJobId: string, versionNo: number) {

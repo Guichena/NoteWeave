@@ -3,9 +3,10 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime, timezone
 import hashlib
+import re
 
 from app.action_compat import resolve_action_compatibility
-from app.io_limits import ContentSizeLimitError, read_text_file_limited
+from app.io_limits import ContentSizeLimitError, read_provider_text_in_sandbox
 from app.capability_provider import (
     get_capability_provider_approval_status,
     get_capability_provider_discovery_status,
@@ -14,6 +15,7 @@ from app.capability_provider import (
     list_capability_provider_candidates,
 )
 from app.artifact_skill_catalog import try_resolve_artifact_skill_definition
+from app.config import resolve_mcp_sandbox_root
 from app.models import (
     AcquisitionOperationReceipt,
     AcquisitionProviderAttempt,
@@ -32,6 +34,7 @@ from app.models import (
 )
 from app.registry import resolve_style_profile
 from app.acquisition_runtime import get_acquisition_result_payload
+from app.video_material_bundle import VideoMaterialBundleV1
 from app.provider_job_status import resolve_provider_job_status
 
 
@@ -44,11 +47,27 @@ def build_content_acquisition_plan(task_input: ArtifactTaskInput) -> ContentAcqu
         ContentAcquisitionSourcePlan(**descriptor["source_plan"])
         for descriptor in descriptors
     ]
+    if routes == {"FROZEN_VIDEO_BUNDLE"}:
+        return ContentAcquisitionPlan(
+            strategy_key=f"acq-{task_input.task_id}",
+            primary_strategy="FROZEN_VIDEO_MATERIAL",
+            steps=[ContentAcquisitionStep(
+                step_id=f"{task_input.task_id}-normalize-frozen-video",
+                step_type="NORMALIZE_TO_CCO",
+                description="Normalize the Host-frozen video transcript without a provider fetch.",
+            )],
+            route_summary=route_summary, source_plans=source_plans,
+            notes=["Video material was fetched from the frozen Host Bundle reference."],
+        )
     has_external_web = any(route in {"WEB_URL", "VIDEO_URL"} for route in routes)
     has_card_context = "CARD_CONTEXT" in routes
 
     if "VIDEO_URL" in routes:
         required_capabilities = ["EXTRACT_TRANSCRIPT"]
+        capture_frames = task_input.input_payload.skill_key.strip().lower() == "bilibili_course_note_pdf"
+        if capture_frames:
+            required_capabilities.append("CAPTURE_VIDEO_FRAMES")
+            required_capabilities.append("ANALYZE_FRAME")
         return ContentAcquisitionPlan(
             strategy_key=f"acq-{task_input.task_id}",
             primary_strategy="VIDEO_TRANSCRIPT_PIPELINE",
@@ -67,6 +86,20 @@ def build_content_acquisition_plan(task_input: ArtifactTaskInput) -> ContentAcqu
                     capability_name="EXTRACT_TRANSCRIPT",
                     status="PLANNED",
                 ),
+                *([ContentAcquisitionStep(
+                    step_id=f"{task_input.task_id}-capture-frames",
+                    step_type="CAPTURE_FRAMES",
+                    description="Capture verified video frames after transcript acquisition.",
+                    capability_name="CAPTURE_VIDEO_FRAMES",
+                    status="PLANNED",
+                )] if capture_frames else []),
+                *([ContentAcquisitionStep(
+                    step_id=f"{task_input.task_id}-analyze-frames",
+                    step_type="ANALYZE_FRAMES",
+                    description="Observe verified video frame text after capture.",
+                    capability_name="ANALYZE_FRAME",
+                    status="PLANNED",
+                )] if capture_frames else []),
                 ContentAcquisitionStep(
                     step_id=f"{task_input.task_id}-normalize",
                     step_type="NORMALIZE_TO_CCO",
@@ -547,6 +580,7 @@ def build_acquisition_receipt(
                     status=operation_status,
                     request_id=request_id,
                     input_locator=_resolve_input_locator(descriptor),
+                    tool_arguments=_video_operation_arguments(task_input, operation_key, descriptor),
                     requested_at=_utc_now(),
                     completed_at=completed_at,
                     provider_receipt_id=_resolve_operation_provider_receipt_id(
@@ -754,6 +788,8 @@ def describe_input_adapter_routes(task_input: ArtifactTaskInput) -> list[str]:
 
 def _adapt_source_inputs(task_input: ArtifactTaskInput, action_key: str) -> list[dict[str, object]]:
     descriptors: list[dict[str, object]] = []
+    frozen_bundle = (VideoMaterialBundleV1.model_validate(task_input.frozen_video_material)
+                     if task_input.frozen_video_material else None)
     for source in _resolve_effective_sources(task_input):
         normalized_source_type = source.source_type.strip().upper() or "DOCUMENT_TEXT"
         adapter_route = _resolve_adapter_route(normalized_source_type, source.source_uri)
@@ -766,20 +802,55 @@ def _adapt_source_inputs(task_input: ArtifactTaskInput, action_key: str) -> list
         )
         planned_operations = _resolve_planned_operations(adapter_route)
         required_capabilities = _resolve_source_required_capabilities(adapter_route)
+        if adapter_route == "VIDEO_URL" and task_input.input_payload.skill_key.strip().lower() \
+                == "bilibili_course_note_pdf":
+            planned_operations.insert(-1, "CAPTURE_FRAMES")
+            planned_operations.insert(-1, "ANALYZE_FRAMES")
+            required_capabilities.append("CAPTURE_VIDEO_FRAMES")
+            required_capabilities.append("ANALYZE_FRAME")
         normalization_target_kind = _resolve_normalization_target_kind(
             action_key,
             normalized_source_type,
             adapter_route,
         )
-        plain_text = source.sample_text.strip() or source.summary.strip() or source.title
+        selected_windows = [
+            window for window in source.material_windows
+            if isinstance(window, dict) and str(window.get("content", "")).strip()
+        ]
+        plain_text = (
+            "\n\n".join(str(window["content"]) for window in selected_windows)
+            if selected_windows else source.sample_text.strip() or source.summary.strip() or source.title
+        )
+        if frozen_bundle is not None and adapter_route == "VIDEO_URL":
+            adapter_route = "FROZEN_VIDEO_BUNDLE"
+            normalization_target_kind = "TRANSCRIPT"
+            planned_operations = ["NORMALIZE_TO_CCO"]
+            required_capabilities = []
+            plain_text = frozen_bundle.transcript_corrected
         metadata: dict[str, object] = {
             "original_source_type": normalized_source_type,
             "adapter_route": adapter_route,
             "source_platform": source_platform,
             "source_uri": source.source_uri,
             "related_source_ids": list(source.related_source_ids),
+            "selected_source_window_ids": [
+                str(window.get("window_id", "")) for window in selected_windows
+            ],
+            "selected_source_window_locations": [
+                str(window.get("location_info", "")) for window in selected_windows
+            ],
+            "material_gap": source.material_gap,
             **source.source_metadata,
         }
+        if adapter_route == "FROZEN_VIDEO_BUNDLE":
+            metadata.update({
+                "video_material_bundle_id": frozen_bundle.bundle_id,
+                "video_material_digest": frozen_bundle.content_digest(),
+                "subtitle_source": frozen_bundle.subtitle_source,
+                "coverage_gaps": list(frozen_bundle.coverage_gaps),
+                "timed_segments": [segment.model_dump(mode="json")
+                                   for segment in frozen_bundle.transcript_segments],
+            })
         descriptors.append(
             {
                 "source": source,
@@ -988,8 +1059,58 @@ def _resolve_operation_capability(operation_key: str) -> str:
     return {
         "READ_EXTERNAL_CONTENT": "READ_WEB_PAGE",
         "EXTRACT_TRANSCRIPT": "EXTRACT_TRANSCRIPT",
+        "CAPTURE_FRAMES": "CAPTURE_VIDEO_FRAMES",
+        "ANALYZE_FRAMES": "ANALYZE_FRAME",
         "TRANSCRIBE_AUDIO": "TRANSCRIBE_AUDIO",
     }.get(operation_key, "")
+
+
+def _video_operation_arguments(
+    task_input: ArtifactTaskInput, operation_key: str, descriptor: dict[str, object],
+) -> dict[str, object]:
+    if task_input.input_payload.skill_key.strip().lower() != "bilibili_course_note_pdf":
+        return {}
+    inputs = task_input.input_payload.inputs
+    if operation_key == "EXTRACT_TRANSCRIPT":
+        asr_fallback = str(inputs.get("asr_fallback", "ALLOW"))
+        if asr_fallback not in {"ALLOW", "DENY"}:
+            raise ValueError("unsupported frozen ASR fallback policy")
+        return {
+            "video_url": _resolve_input_locator(descriptor),
+            "fallback_to_transcription": asr_fallback == "ALLOW",
+            "allow_auto_subtitles": True,
+        }
+    if operation_key == "CAPTURE_FRAMES":
+        policy = {"LOW": (60_000, 8), "STANDARD": (30_000, 16),
+                  "HIGH": (15_000, 32)}
+        density = str(inputs.get("frame_density", "STANDARD"))
+        if density not in policy:
+            raise ValueError("unsupported frozen frame density")
+        interval_ms, max_frames = policy[density]
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", task_input.task_id):
+            raise ValueError("video capture requires a safe frozen task ID")
+        output_dir = (resolve_mcp_sandbox_root() / "bilibili-render-pdf"
+                      / "frames" / task_input.task_id)
+        return {"video_url": _resolve_input_locator(descriptor),
+                "interval_ms": interval_ms, "max_frames": max_frames,
+                "output_dir": str(output_dir)}
+    if operation_key == "ANALYZE_FRAMES":
+        source_id = str(descriptor["source_plan"]["source_id"])
+        capture_request_id = _build_operation_request_id(
+            task_id=task_input.task_id, source_id=source_id, operation_key="CAPTURE_FRAMES")
+        capture_payload = get_acquisition_result_payload(capture_request_id)
+        files = capture_payload.get("files", []) if isinstance(capture_payload, dict) else []
+        if not isinstance(files, list) or len(files) > 32 \
+                or any(not isinstance(item, dict) or not {
+                    "file_id", "checksum_sha256"
+                } <= set(item) for item in files):
+            raise ValueError("captured frame receipt has no file manifest")
+        return {"task_id": task_input.task_id, "files": [
+            {"file_id": str(item["file_id"]),
+             "checksum_sha256": str(item["checksum_sha256"])}
+            for item in files
+        ]}
+    return {}
 
 
 def _requires_async_provider_execution(
@@ -1022,6 +1143,10 @@ def _is_bilibili_pdf_async_provider(
         return False
     if capability_name == "EXTRACT_TRANSCRIPT" and server_id == "builtin-bilibili-mcp":
         return True
+    if capability_name == "CAPTURE_VIDEO_FRAMES" and server_id == "builtin-bilibili-mcp":
+        return True
+    if capability_name == "ANALYZE_FRAME" and server_id == "builtin-bilibili-mcp":
+        return True
     if capability_name == "TRANSCRIBE_AUDIO" and server_id in {"builtin-asr", "builtin-media"}:
         return True
     return False
@@ -1051,18 +1176,6 @@ def _resolve_source_acquisition_payload(
 def _build_text_from_acquisition_payload(
     payload: dict[str, object],
 ) -> tuple[str, dict[str, object]]:
-    subtitle_preview = payload.get("subtitle_preview")
-    if isinstance(subtitle_preview, list):
-        preview_lines = [str(line).strip() for line in subtitle_preview if str(line).strip()]
-        if preview_lines:
-            return (
-                "\n".join(preview_lines),
-                {
-                    "acquisition_mode": str(payload.get("acquisition_mode", "")),
-                    "selected_subtitle_path": str(payload.get("selected_subtitle_path", "")),
-                    "subtitle_file_count": len(payload.get("subtitle_files") or []),
-                },
-            )
     transcription = payload.get("transcription") or {}
     artifacts = transcription.get("artifacts") or {}
     for key in ("txt_files", "srt_files"):
@@ -1090,6 +1203,18 @@ def _build_text_from_acquisition_payload(
                     "selected_subtitle_path": selected_subtitle_path,
                 },
             )
+    subtitle_preview = payload.get("subtitle_preview")
+    if isinstance(subtitle_preview, list):
+        preview_lines = [str(line).strip() for line in subtitle_preview if str(line).strip()]
+        if preview_lines:
+            return (
+                "\n".join(preview_lines),
+                {
+                    "acquisition_mode": str(payload.get("acquisition_mode", "")),
+                    "subtitle_file_count": len(payload.get("subtitle_files") or []),
+                    "material_gap": "FULL_SUBTITLE_FILE_UNAVAILABLE",
+                },
+            )
     return "", {}
 
 
@@ -1098,8 +1223,8 @@ def _read_text_file(path_value: object) -> str:
     if not path:
         return ""
     try:
-        return read_text_file_limited(path)
-    except (OSError, ContentSizeLimitError):
+        return read_provider_text_in_sandbox(path)
+    except (OSError, ContentSizeLimitError, ValueError):
         return ""
 
 

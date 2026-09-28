@@ -42,4 +42,24 @@ class LocalObjectStorageTest {
         assertThatThrownBy(() -> storage.exists("noteweave-source", "../outside.txt"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void stagedInventoryPaginatesWithinPrefix() {
+        NoteWeaveProperties properties = new NoteWeaveProperties(
+                new NoteWeaveProperties.Storage("local", tempDir, null),
+                null, null, null, null, null);
+        LocalObjectStorage storage = new LocalObjectStorage(properties);
+        storage.write("noteweave-export", "artifacts/staged/task/a.md", new byte[]{1});
+        storage.write("noteweave-export", "artifacts/staged/task/b.md", new byte[]{2});
+        storage.write("noteweave-export", "artifacts/other/c.md", new byte[]{3});
+
+        var first = storage.list("noteweave-export", "artifacts/staged/", "", 1);
+        var second = storage.list("noteweave-export", "artifacts/staged/", first.get(0).key(), 1);
+        assertThat(first).extracting(com.noteweave.storage.ObjectStorage.StoredObject::key)
+                .containsExactly("artifacts/staged/task/a.md");
+        assertThat(second).extracting(com.noteweave.storage.ObjectStorage.StoredObject::key)
+                .containsExactly("artifacts/staged/task/b.md");
+        assertThatThrownBy(() -> storage.list("noteweave-export", "../", "", 1))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 }

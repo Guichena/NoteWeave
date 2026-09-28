@@ -5,6 +5,7 @@ import com.noteweave.storage.ObjectStorage;
 import io.minio.BucketExistsArgs;
 import io.minio.GetObjectArgs;
 import io.minio.MakeBucketArgs;
+import io.minio.ListObjectsArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
@@ -16,6 +17,7 @@ import java.io.InputStream;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.ArrayList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -124,6 +126,26 @@ public class MinioObjectStorage implements ObjectStorage {
         } catch (Exception ex) {
             throw new IllegalStateException("minio delete failed: " + bucket + "/" + objectKey, ex);
         }
+    }
+
+    @Override
+    public List<StoredObject> list(String bucket, String prefix, String afterKey, int limit) {
+        if (limit < 1 || limit > 10_000 || !prefix.endsWith("/") || prefix.contains("..")) {
+            throw new IllegalArgumentException("invalid object inventory prefix or limit");
+        }
+        ArrayList<StoredObject> objects = new ArrayList<>();
+        try {
+            for (var result : client.listObjects(ListObjectsArgs.builder()
+                    .bucket(bucket).prefix(prefix).startAfter(afterKey == null ? "" : afterKey)
+                    .recursive(true).build())) {
+                var item = result.get();
+                objects.add(new StoredObject(item.objectName(), item.lastModified().toInstant()));
+                if (objects.size() >= limit) break;
+            }
+        } catch (Exception ex) {
+            throw new IllegalStateException("minio list failed: " + bucket + "/" + prefix, ex);
+        }
+        return List.copyOf(objects);
     }
 
     @Override

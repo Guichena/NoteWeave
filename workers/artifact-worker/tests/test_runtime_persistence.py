@@ -276,6 +276,22 @@ def test_export_download_should_reject_path_traversal() -> None:
     assert exc_info.value.status_code == 404
 
 
+def test_export_download_allows_controlled_preview_and_deck_files(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("app.main.resolve_mcp_sandbox_root", lambda settings: tmp_path)
+    export_root = tmp_path / "bilibili-render-pdf" / "exports" / "task-1"
+    export_root.mkdir(parents=True)
+    (export_root / "slide-1.png").write_bytes(b"png fixture")
+    (export_root / "lesson.pptx").write_bytes(b"pptx fixture")
+
+    assert download_task_export("task-1", "slide-1.png").media_type == "image/png"
+    assert download_task_export("task-1", "lesson.pptx").media_type \
+        == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    with pytest.raises(HTTPException):
+        download_task_export("task-1", "../slide-1.png")
+    with pytest.raises(HTTPException):
+        download_task_export("task-1", "private.tex")
+
+
 def test_restart_recovery_should_redispatch_waiting_system_mcp_operation(monkeypatch) -> None:
     submitted: list[tuple[str, str]] = []
     monkeypatch.setattr(

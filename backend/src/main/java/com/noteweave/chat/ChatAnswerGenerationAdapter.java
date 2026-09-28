@@ -3,6 +3,7 @@ package com.noteweave.chat;
 import com.noteweave.answer.AnswerGenerationGateway;
 import com.noteweave.answer.AnswerGenerationMaterial;
 import com.noteweave.common.BusinessException;
+import com.noteweave.research.ResearchGeneratedSourceReadGate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
@@ -17,14 +18,17 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
     private final JdbcTemplate jdbcTemplate;
     private final ChatLlmClient chatLlmClient;
     private final boolean templateFallbackEnabled;
+    private final ResearchGeneratedSourceReadGate generatedSourceGate;
 
     public ChatAnswerGenerationAdapter(
             JdbcTemplate jdbcTemplate,
             ChatLlmClient chatLlmClient,
+            ResearchGeneratedSourceReadGate generatedSourceGate,
             @Value("${noteweave.llm.template-fallback-enabled:false}") boolean templateFallbackEnabled
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.chatLlmClient = chatLlmClient;
+        this.generatedSourceGate = generatedSourceGate;
         this.templateFallbackEnabled = templateFallbackEnabled;
     }
 
@@ -171,9 +175,13 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
                 left join source s on s.id = c.source_id
                 where c.workspace_id = ? and mc.message_id = ?
                 order by mc.sort_order asc
-                """, (rs, rowNum) -> displayTitle(
-                rs.getString("title"), rs.getString("generated_by"), rs.getString("generated_ref_id"))
-                + " | " + rs.getString("quote_text"), workspaceId, messageId);
+                """, (rs, rowNum) -> {
+            String generatedBy = rs.getString("generated_by");
+            String generatedRefId = rs.getString("generated_ref_id");
+            generatedSourceGate.requireReadable(workspaceId, generatedBy, generatedRefId);
+            return displayTitle(rs.getString("title"), generatedBy, generatedRefId)
+                    + " | " + rs.getString("quote_text");
+        }, workspaceId, messageId);
     }
 
     private String displayTitle(String title, String generatedBy, String generatedRefId) {

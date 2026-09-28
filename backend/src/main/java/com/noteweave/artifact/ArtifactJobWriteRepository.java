@@ -1,6 +1,8 @@
 package com.noteweave.artifact;
 
 import com.noteweave.common.Ids;
+import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -11,6 +13,40 @@ class ArtifactJobWriteRepository {
 
     ArtifactJobWriteRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
+    }
+
+    List<Map<String, Object>> candidateReceipts(String taskId) {
+        return jdbcTemplate.query("""
+                select candidate_id, candidate_digest from artifact_candidate_receipt where task_id = ?
+                """, (rs, index) -> Map.<String, Object>of(
+                "candidate_id", rs.getString("candidate_id"),
+                "candidate_digest", rs.getString("candidate_digest")), taskId);
+    }
+
+    List<String> lockJobStatuses(String artifactJobId, String workspaceId) {
+        return jdbcTemplate.query("""
+                select status from artifact_job where id = ? and workspace_id = ? for update
+                """, (rs, index) -> rs.getString(1), artifactJobId, workspaceId);
+    }
+
+    boolean hasFullInputSnapshot(String inputSnapshotId, String workspaceId, String artifactJobId) {
+        Integer count = jdbcTemplate.queryForObject("""
+                select count(*) from artifact_run_input_snapshot
+                where id = ? and workspace_id = ? and artifact_job_id = ?
+                  and replay_availability = 'FULL'
+                """, Integer.class, inputSnapshotId, workspaceId, artifactJobId);
+        return count != null && count == 1;
+    }
+
+    boolean hasReadableSourceSnapshot(String workspaceId, String sourceId, String snapshotId) {
+        Integer count = jdbcTemplate.queryForObject("""
+                select count(*) from source s
+                join source_snapshot ss on ss.source_id = s.id
+                where s.workspace_id = ? and s.id = ? and s.status = 'READY'
+                  and ss.id = ? and ss.parse_status = 'PARSED'
+                  and ss.index_status in ('INDEXED', 'DISABLED')
+                """, Integer.class, workspaceId, sourceId, snapshotId);
+        return count != null && count == 1;
     }
 
     void persistInitialJob(
@@ -24,7 +60,8 @@ class ArtifactJobWriteRepository {
             String controlPackJson,
             String sourceScopeSnapshotJson,
             String upstreamRefsJson,
-            String taskPayloadJson
+            String taskPayloadJson,
+            String catalogDigest
     ) {
         jdbcTemplate.update("""
                 insert into artifact_job(
@@ -49,7 +86,7 @@ class ArtifactJobWriteRepository {
                 insert into artifact_run_input_snapshot(
                     id, workspace_id, artifact_job_id, user_requirement, inputs_json,
                     source_scope_snapshot_json, upstream_refs_json, control_pack_json, compiler_version
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, 'artifact-input-v1')
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 inputSnapshotId,
                 workspaceId,
@@ -58,13 +95,15 @@ class ArtifactJobWriteRepository {
                 inputsJson,
                 sourceScopeSnapshotJson,
                 upstreamRefsJson,
-                controlPackJson
+                controlPackJson,
+                "artifact-input-v1@sha256:" + catalogDigest
         );
         jdbcTemplate.update("""
                 insert into artifact_job_run(
                     task_id, artifact_job_id, run_no, trigger_type, source_version_no,
-                    user_requirement, inputs_json, source_scope_json, control_pack_json, input_snapshot_id
-                ) values (?, ?, 1, 'INITIAL', null, ?, ?, ?, ?, ?)
+                    user_requirement, inputs_json, source_scope_json, control_pack_json, input_snapshot_id,
+                    reserved_version_id
+                ) values (?, ?, 1, 'INITIAL', null, ?, ?, ?, ?, ?, ?)
                 """,
                 taskId,
                 artifactJobId,
@@ -72,7 +111,8 @@ class ArtifactJobWriteRepository {
                 inputsJson,
                 sourceScopeJson,
                 controlPackJson,
-                inputSnapshotId
+                inputSnapshotId,
+                Ids.newId()
         );
         enqueueTask(taskId, workspaceId, artifactJobId, taskPayloadJson);
     }
@@ -81,30 +121,47 @@ class ArtifactJobWriteRepository {
             String taskId,
             String artifactJobId,
             int runNo,
-            int sourceVersionNo,
+            String triggerType,
+            Integer sourceVersionNo,
             String userRequirement,
             String inputsJson,
             String sourceScopeJson,
             String controlPackJson,
             String inputSnapshotId,
             String workspaceId,
-            String taskPayloadJson
+            String taskPayloadJson,
+            String catalogDigest
     ) {
+        String regeneratedSnapshotId = Ids.newId();
+        jdbcTemplate.update("""
+                insert into artifact_run_input_snapshot(
+                    id, workspace_id, artifact_job_id, user_requirement, inputs_json,
+                    source_scope_snapshot_json, upstream_refs_json, control_pack_json, compiler_version
+                )
+                select ?, workspace_id, artifact_job_id, ?, ?,
+                       source_scope_snapshot_json, upstream_refs_json, control_pack_json, ?
+                from artifact_run_input_snapshot
+                where id = ? and workspace_id = ? and artifact_job_id = ?
+                """, regeneratedSnapshotId, userRequirement, inputsJson,
+                "artifact-input-v1@sha256:" + catalogDigest, inputSnapshotId, workspaceId, artifactJobId);
         jdbcTemplate.update("""
                 insert into artifact_job_run(
                     task_id, artifact_job_id, run_no, trigger_type, source_version_no,
-                    user_requirement, inputs_json, source_scope_json, control_pack_json, input_snapshot_id
-                ) values (?, ?, ?, 'REGENERATE', ?, ?, ?, ?, ?, ?)
+                    user_requirement, inputs_json, source_scope_json, control_pack_json, input_snapshot_id,
+                    reserved_version_id
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 taskId,
                 artifactJobId,
                 runNo,
+                triggerType,
                 sourceVersionNo,
                 userRequirement,
                 inputsJson,
                 sourceScopeJson,
                 controlPackJson,
-                inputSnapshotId
+                regeneratedSnapshotId,
+                Ids.newId()
         );
         jdbcTemplate.update("""
                 update artifact_job
@@ -169,15 +226,17 @@ class ArtifactJobWriteRepository {
                 """, status, taskId);
     }
 
-    int claimCompletion(String artifactJobId) {
+    int claimCompletion(String artifactJobId, String taskId) {
         return jdbcTemplate.update("""
                 update artifact_job
                 set status = 'FINALIZING', updated_at = current_timestamp
-                where id = ? and (status in ('QUEUED', 'RUNNING') or status like 'WAITING_FOR_%')
-                """, artifactJobId);
+                where id = ? and task_id = ?
+                  and (status in ('QUEUED', 'RUNNING') or status like 'WAITING_FOR_%')
+                """, artifactJobId, taskId);
     }
 
-    String appendCompletedVersion(
+    void appendCompletedVersion(
+            String versionId,
             String artifactJobId,
             String skillKey,
             int versionNo,
@@ -188,7 +247,6 @@ class ArtifactJobWriteRepository {
             String citationsJson,
             String originTaskId
     ) {
-        String versionId = Ids.newId();
         jdbcTemplate.update("""
                 insert into artifact_version(
                     id, artifact_job_id, skill_key, version_no, title, content_markdown, result_payload_json,
@@ -206,7 +264,21 @@ class ArtifactJobWriteRepository {
                 citationsJson,
                 originTaskId
         );
-        return versionId;
+    }
+
+    String reservedVersionId(String taskId) {
+        return jdbcTemplate.queryForObject(
+                "select reserved_version_id from artifact_job_run where task_id = ?",
+                String.class, taskId);
+    }
+
+    void recordCandidateReceipt(String taskId, String candidateId, String digest,
+                                String versionId, String inputSnapshotId) {
+        jdbcTemplate.update("""
+                insert into artifact_candidate_receipt(
+                    task_id, candidate_id, candidate_digest, artifact_version_id, input_snapshot_id
+                ) values (?, ?, ?, ?, ?)
+                """, taskId, candidateId, digest, versionId, inputSnapshotId);
     }
 
     int completeJob(String artifactJobId, String resultTitle, int versionNo) {
