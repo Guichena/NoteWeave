@@ -641,3 +641,13 @@ Frontend `pnpm test`：**72 个文件、256 passed**；Artifact Worker `.venv\\S
 对已发布的真实 BV Bundle，在隔离 MySQL 读取 `artifact_video_material_file` 清单，共 **12** 个 PNG 对象。逐个从隔离 MinIO 读回，比对实际字节长度和 SHA-256：**12/12 一致**。仅重启 `bili-artifact-test-minio`，待健康检查恢复后重新读回同一清单，仍 **12/12 一致**。未操作主项目 Compose 栈，也未移动或删除对象。这验证了素材文件在隔离 MinIO 进程重启后的持久性与数据库摘要一致性；不等同于已发布 Artifact Version 的跨进程暂存恢复或浏览器下载。
 
 定向复跑 `ArtifactFileReconcileReadbackTest` **1**、`ArtifactRollbackGateTest` **2**、`ArtifactCandidateTest` **6**，共 **9 passed、0 failed/0 error/0 skipped**，Maven 退出码 0。前两组分别是模拟对象读回损坏后的 DEGRADED→READY 对账及缺少回滚源文件时不创建 Version 的服务合同；尚未用真实 READY Version 对 MinIO 做缺文件故障注入。
+
+## 2026-09-28 真实长 Source、Version 下载与回滚故障回放
+
+在隔离 Workspace 通过真实上传 API 提交仓库的 `docs/Artifact-Skill执行架构.md`（**24,953 字节**）。Source 异步解析/索引期间创建 Artifact Job 被 `ARTIFACT_SOURCE_SCOPE_INVALID` 拒绝；转为 `READY/PARSED/INDEXED` 后重试成功。数据库显示 **76 个 Source Window**；“Workflow History”位于 chunk 17 的两个窗口，ID 为 `8dd87bdc-3e0a-46a2-bdee-8ef36ad70227`、`c8cfa772-4a49-400c-babd-8a6c2f791dfe`。实际 `study_guide` Job 由 Worker 完成并发布 **Version 1 / READY**，冻结输入快照和预留 Version ID 均有记录。产物正文包含 Temporal 迁移、Workflow History 与 Activity 幂等；Version Citation 属于同一 Source，引用的 12 个 Window ID 包含上述两个后段窗口。该回放验证了真实上传 Source→Host 冻结→Worker 生成→后段 Citation→Version 的链路；不替代人工内容质量审阅。
+
+公开 Version API 返回详情与 1 个 `PRIMARY_MARKDOWN` 文件；下载 HTTP **200**、附件头存在，**4,902 字节**与文件表大小及 SHA-256 一致。仅在隔离 MinIO 中备份并暂时移走这个 Version 的单个对象，公开下载返回 HTTP **409 `ARTIFACT_FILE_DEGRADED`**；脚本在同次执行中恢复对象，随后下载重新 HTTP 200 且摘要一致。未在数据库采样到瞬时 DEGRADED 行，不能给出降级持续时间；服务端定时对账可能已在采样前恢复。
+
+公开回滚接口将 Version 1 复制为 **Version 2**，新版本文件下载 HTTP **200**、大小 **4,902 字节**，SHA-256 与源版本一致。仅重启隔离 Backend 与 MinIO 并等待双方健康后，再分别下载 Version 1/2：均 HTTP 200、附件头、大小与 SHA-256 通过。此项验证已发布 Markdown Version 的跨进程持久性、公开下载与成功回滚；尚未覆盖提交到一半时的进程崩溃、Worker 导出文件过期后的非 Markdown 恢复，或真实浏览器保存动作。
+
+复跑 `Phase6ResearchArtifactContractTest#artifactWindowPagesMustUseFrozenSnapshotAndRejectRevokedSource`：**1 passed、0 failed/0 error/0 skipped**，Maven `BUILD SUCCESS`。合同覆盖冻结窗口分页、输入快照及 Source 撤销后的拒绝读取。
