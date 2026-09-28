@@ -105,6 +105,14 @@ class ContextV2ActiveAnswerContractTest {
         String privateText = "私有上下文-" + System.nanoTime();
         JsonNode active = submit(conversation, privateText, "QA");
         String activeRun = active.path("answer_run_id").asText();
+        String answerStatus = "";
+        for (int attempt = 0; attempt < 100; attempt++) {
+            answerStatus = jdbc.queryForObject("select status from answer_run where id = ?",
+                    String.class, activeRun);
+            if (java.util.List.of("COMPLETED", "FAILED", "CANCELLED").contains(answerStatus)) break;
+            Thread.sleep(50);
+        }
+        assertThat(answerStatus).isIn("COMPLETED", "FAILED", "CANCELLED");
         String answerMessageId = jdbc.queryForObject("""
                 select m.id from conversation_message m
                 join answer_run r on r.assistant_request_id = m.assistant_request_id

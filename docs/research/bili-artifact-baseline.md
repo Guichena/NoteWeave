@@ -667,3 +667,5 @@ Wiki 聚合计数复用已通过 Citation 读取门禁的当前页面，页面�
 ## 2026-09-28 历史 Answer 读取撤销门禁
 
 会话消息列表读取时检查关联 Answer 的冻结输入快照是否已变为 `METADATA_ONLY`，并批量复核 Message Citation 的 Source 是否仍可读。命中任一路径的 Assistant 消息在响应中保留 ID/顺序，正文替换为撤销说明，`context_status=REDACTED`、原 `content_hash` 不再返回；数据库里的原消息不做广泛清空。现有 Research 派生 Source 撤销合同增加一条历史带引用 Answer，撤销前可读、撤销后原正文不再返回：**1/1 passed**。现有 Answer ACTIVE→OFF 再删消息合同增加冻结快照撤销后的历史正文断言：**1/1 passed**。`ConversationTurnModuleContractTest` 正常会话回归 **39/39 passed**。三次 Maven 运行均 `BUILD SUCCESS`。无引用且无冻结输入的旧 Answer 仍无法从现有持久化数据判断其原始来源，未计入覆盖。
+
+本次变更后 Backend 全量回归最终 **1133 tests、0 failures、0 errors、11 skipped，BUILD SUCCESS**。首次全量运行有 1 个新增测试夹具竞态：异步 Answer 在夹具写入“历史正文”后完成并覆盖该字段；合同改为等待 Answer 到终态后再写入，第二次全量运行通过。生产读取逻辑未因这个测试竞态改变。
