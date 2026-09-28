@@ -2,6 +2,8 @@
 
 2026-09-28 追加：真实 BV 已经 Kafka/Worker/Host 保存 Bundle 与证据 Plan，并建成四个独立子 Job；四项均受语义 Plan 或 PDF LLM 输出阻断，没有 READY Version。导出文件认证问题已修复；修复后 Backend 全量 **1133 项、0 failed、0 error、11 skipped**，详见 `bili-artifact-baseline.md`。
 
+同日继续：真实 Bundle 的 **12 个** MinIO PNG 对象与数据库大小、SHA-256 清单一致；单独重启隔离 MinIO 后仍 **12/12** 一致。文件对账、回滚和 Candidate 定向合同 **9/9 通过**。真实 Artifact Version 暂存恢复、缺文件 DEGRADED 与浏览器保存仍待独立验收。
+
 本清单按已运行的合同与实际环境记录，详细结果见 `bili-artifact-baseline.md`。计划中的目标设计不等于已交付能力。当前生产入口 `noteweave.video-learning.enabled`、Context v2 的全局 ACTIVE、Research ACTIVE 与 Artifact ACTIVE 均默认关闭。
 
 2026-09-27 用户要求当前批次先跳过依赖真实模型输出的质量门禁，继续前后端功能接入。视频素材 Bundle 仍作为内部复用对象；用户界面以四种独立产物和各自状态、重试、Version 为主。模型效果门禁仅延期，不记为通过。
@@ -9,7 +11,7 @@
 | 工作包 | 已有可验证能力 | 剩余门禁 |
 | --- | --- | --- |
 | P0 | 合成样本回放；用户提供的单分集 BV1MZYT6pEzy 完成真实 ASR、8 张画面采集及质量抽检 | 冻结许可状态；补齐真实短视频、无字幕视频、多分集视频的完整样本与耗时/质量记录 |
-| P1 A1/A2 | Host 预留 Version、Candidate 幂等提交、内容与文件先验、READY/DEGRADED、按角色恢复文件并读回摘要、回滚；旧 Skill、历史 Version 与 PDF 下载兼容 | 真实对象存储、Worker 文件过期及跨进程崩溃后的暂存物对账与恢复 |
+| P1 A1/A2 | Host 预留 Version、Candidate 幂等提交、内容与文件先验、READY/DEGRADED、按角色恢复文件并读回摘要、回滚；旧 Skill、历史 Version 与 PDF 下载兼容；真实素材的 12 个 MinIO 对象在服务重启后仍与数据库摘要一致 | 真实 READY Artifact Version 的对象存储、Worker 文件过期及跨进程崩溃后的暂存物对账与恢复 |
 | P1.5 A3 | 受控 Source Snapshot 窗口分页、预算、来源引用、旧 `sample_text` 兼容；仓库真实长文档的后段事实进入 Worker Citation | 用户实际长资料下的 Host→Worker 全链回放、人工质量及线上 Provider 效果 |
 | P2 | 独立视频 Bundle、字幕/画面观察、文件摘要、知识 Plan、父资料 Task 与复用分支；用户提供 BV 在 WSL Docker 中经 ASR、画面观察、Kafka 与 Host 发布 Bundle 和证据 Plan，父资料 Task 到 READY；生产回调已接通配置模型的语义规划 | 已配置模型的真实视频语义规划仍未成功，当前回退证据 Plan 缺语义主张；字幕错听修订、OCR 人工质量与多分集回放 |
 | P3 | 博客、问答的独立 Skill、IR、证据 Verifier、Markdown/Version、局部 Repair 合同；真实 Bundle + 测试语义 Plan 的博客 8 节、问答 8 条通过下游校验 | 真实模型 Plan 下的结论一致性、文章和问答质量及实际模型 Repair 样本 |

@@ -635,3 +635,9 @@ Frontend `pnpm test`：**72 个文件、256 passed**；Artifact Worker `.venv\\S
 修复后同一 BV 的独立重试请求 `027506b3-c12d-4601-889c-69786adfd41c` 完成真实字幕、画面、观察与规范化；Host 成功保存 Bundle 和 Plan，父任务变 `READY`，四个独立子 Job 均建立。此 Plan 在真实模型规划失败后回退为本地证据索引，**没有经模型核实的语义主张**。四个子项随后分别 `FAILED`，Version 均为 0：博客和问答报 `frozen knowledge plan has no verified semantic claims`，原画面 PPTX 报 `original-image deck requires verified semantic claims`，PDF 报 `Artifact LLM returned no usable content; extractive fallback is disabled`。用户界面 API 保留各子项独立状态和错误信息。此轮证明真实视频经 WSL Docker/Kafka/Worker/Host 到 Bundle/Plan 的发布链路及失败隔离，**不证明四种产物 READY 或真实模型质量**。按用户此前要求，模型输出效果门禁继续单列，不为让验收通过而放松证据校验。
 
 导出认证修复后再次运行 Backend 完整 `mvn test`：**1133 项、0 failed、0 error、11 skipped**，Maven 退出码 0；新增的 `HttpArtifactWorkerExportClientTest` 包含在内。
+
+## 2026-09-28 隔离 MinIO 重启与素材对象读回
+
+对已发布的真实 BV Bundle，在隔离 MySQL 读取 `artifact_video_material_file` 清单，共 **12** 个 PNG 对象。逐个从隔离 MinIO 读回，比对实际字节长度和 SHA-256：**12/12 一致**。仅重启 `bili-artifact-test-minio`，待健康检查恢复后重新读回同一清单，仍 **12/12 一致**。未操作主项目 Compose 栈，也未移动或删除对象。这验证了素材文件在隔离 MinIO 进程重启后的持久性与数据库摘要一致性；不等同于已发布 Artifact Version 的跨进程暂存恢复或浏览器下载。
+
+定向复跑 `ArtifactFileReconcileReadbackTest` **1**、`ArtifactRollbackGateTest` **2**、`ArtifactCandidateTest` **6**，共 **9 passed、0 failed/0 error/0 skipped**，Maven 退出码 0。前两组分别是模拟对象读回损坏后的 DEGRADED→READY 对账及缺少回滚源文件时不创建 Version 的服务合同；尚未用真实 READY Version 对 MinIO 做缺文件故障注入。
