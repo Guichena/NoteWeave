@@ -1,19 +1,12 @@
 import { createElement, type ReactNode } from "react";
 import { formatRelativeTime } from "../../shared/util/datetime";
 import { isArtifactFormReady, type ArtifactStudioField, type ArtifactStudioSkill } from "./artifactStudio";
-import { buildArtifactSidebarState } from "./artifactSidebar";
-import { summarizeRunStatus } from "../../runStatus";
 import { artifactVersionSaveKey } from "./versionKey";
 import { resolveArtifactSkillTitle } from "./skillCatalog";
 import { ArtifactField } from "./ArtifactField";
 import type { ArtifactRailProps } from "./ArtifactRailProps";
+import type { ArtifactJobSummary, ArtifactVersionDetail } from "./model";
 import type { Workspace } from "../workspace/model";
-import type { ArtifactHistoryJobSummary } from "./artifactHistory";
-import type { ArtifactHistoryViewerVersion } from "./artifactHistoryViewer";
-import type {
-  ArtifactSidebarResearchRunSummary,
-  ArtifactSidebarWorkspaceTask
-} from "./artifactSidebar";
 
 type BuildArtifactRailPropsInput = {
   catalog: {
@@ -41,15 +34,13 @@ type BuildArtifactRailPropsInput = {
   workspace: Workspace | null;
   artifactBusy: boolean;
   artifactWorkspace: {
-    artifactJobs: ArtifactHistoryJobSummary[];
+    artifactJobs: ArtifactJobSummary[];
     jobsLoading: boolean;
-    latestArtifactVersion: ArtifactRailProps["latestArtifactVersion"];
-    selectedArtifactHistoryVersion: ArtifactHistoryViewerVersion | null;
-    selectedArtifactHistoryKey: string;
+    latestArtifactVersion: ArtifactVersionDetail | null;
+    selectedArtifactHistoryVersion: ArtifactVersionDetail | null;
     artifactSavedSourceByVersionId: Record<string, string>;
     artifactWritebackByVersionId: Record<string, string[]>;
     artifactHistoryLoadingKey: string;
-    clear: () => void;
     loadJobs: () => Promise<unknown>;
     openArtifactHistoryVersion: ArtifactRailProps["openArtifactHistoryVersion"];
     saveArtifactVersionAsSource: ArtifactRailProps["saveArtifactVersionAsSource"];
@@ -60,17 +51,7 @@ type BuildArtifactRailPropsInput = {
     downloadArtifactVersionPdf: ArtifactRailProps["downloadArtifactVersionPdf"];
     downloadArtifactVersionFile: ArtifactRailProps["downloadArtifactVersionFile"];
   };
-  researchSummary: ArtifactSidebarResearchRunSummary | null | undefined;
-  latestTask: ArtifactSidebarWorkspaceTask | null | undefined;
   sourcesCount: number;
-  wiki: {
-    wikiEnabled: boolean;
-    wikiIndex: { page_count?: number; pending_task_count?: number } | null;
-    wikiHome: { pages: Array<{ updated_at?: string }> } | null;
-    wikiRebuildAdvice: { message?: string } | null | undefined;
-    openWikiHome: () => void | Promise<void>;
-    toggleWikiEnabled: () => void | Promise<void>;
-  };
   chat: {
     sourceDraftTitle: string;
     setSourceDraftTitle: (value: string) => void;
@@ -81,47 +62,10 @@ type BuildArtifactRailPropsInput = {
     saveNoteAnswerAsSource: () => void | Promise<void>;
     lastNoteAssistantMessageId: string;
   };
-  openResearchWorkbench: () => void | Promise<void>;
-  openMemoryWorkbench: () => void;
 };
 
 export function buildArtifactRailProps(input: BuildArtifactRailPropsInput): ArtifactRailProps {
-  const {
-    catalog,
-    composer,
-    workspace,
-    artifactBusy,
-    artifactWorkspace,
-    researchSummary,
-    latestTask,
-    sourcesCount,
-    wiki,
-    chat,
-    openResearchWorkbench,
-    openMemoryWorkbench
-  } = input;
-
-  const selectedArtifactSkill = catalog.selectedSkill;
-  const artifactSidebarState = buildArtifactSidebarState({
-    artifactJobs: artifactWorkspace.artifactJobs,
-    latestArtifactVersion: artifactWorkspace.latestArtifactVersion,
-    selectedArtifactHistoryVersion: artifactWorkspace.selectedArtifactHistoryVersion,
-    selectedArtifactHistoryKey: artifactWorkspace.selectedArtifactHistoryKey,
-    currentResearchRunSummary: researchSummary,
-    latestTask,
-    workspaceReady: Boolean(workspace),
-    wikiState: workspace
-      ? {
-          enabled: wiki.wikiEnabled,
-          pageCount: wiki.wikiIndex?.page_count ?? wiki.wikiHome?.pages.length ?? 0,
-          pendingTaskCount: wiki.wikiIndex?.pending_task_count ?? 0,
-          updatedAt: wiki.wikiHome?.pages[0]?.updated_at ?? ""
-        }
-      : null,
-    sourcesCount,
-    resolveArtifactSkillTitle: (skillKey) => resolveArtifactSkillTitle(skillKey, catalog.skills),
-    formatRelativeTime
-  });
+  const { catalog, composer, workspace, artifactBusy, artifactWorkspace, sourcesCount, chat } = input;
 
   function renderArtifactField(field: ArtifactStudioField): ReactNode {
     return createElement(ArtifactField, {
@@ -135,7 +79,7 @@ export function buildArtifactRailProps(input: BuildArtifactRailPropsInput): Arti
     artifactComposerOpen: catalog.composerOpen,
     isBusy: artifactBusy,
     setArtifactComposerOpen: catalog.setComposerOpen,
-    selectedArtifactSkill,
+    selectedArtifactSkill: catalog.selectedSkill,
     renderArtifactField,
     artifactCustomInstruction: catalog.customInstruction,
     setArtifactCustomInstruction: catalog.setCustomInstruction,
@@ -149,12 +93,13 @@ export function buildArtifactRailProps(input: BuildArtifactRailPropsInput): Arti
     clearArtifactComposerError: composer.clearComposerError,
     artifactStudioSkills: catalog.skills,
     artifactSkillsLoading: catalog.loading,
+    artifactJobs: artifactWorkspace.artifactJobs,
     artifactJobsLoading: artifactWorkspace.jobsLoading,
     refreshArtifactJobs: artifactWorkspace.loadJobs,
     sourceCount: sourcesCount,
     setSelectedArtifactSkillKey: catalog.setSelectedSkillKey,
     setArtifactFormValues: catalog.setFormValues,
-    artifactSidebarState,
+    selectedArtifactHistoryVersion: artifactWorkspace.selectedArtifactHistoryVersion,
     latestArtifactVersion: artifactWorkspace.latestArtifactVersion,
     formatRelativeTime,
     saveArtifactVersionAsSource: artifactWorkspace.saveArtifactVersionAsSource,
@@ -168,14 +113,8 @@ export function buildArtifactRailProps(input: BuildArtifactRailPropsInput): Arti
     downloadArtifactVersionPdf: artifactWorkspace.downloadArtifactVersionPdf,
     downloadArtifactVersionFile: artifactWorkspace.downloadArtifactVersionFile,
     resolveArtifactSkillTitle: (skillKey: string) => resolveArtifactSkillTitle(skillKey, catalog.skills),
-    summarizeRunStatus,
     openArtifactHistoryVersion: artifactWorkspace.openArtifactHistoryVersion,
     artifactHistoryLoadingKey: artifactWorkspace.artifactHistoryLoadingKey,
-    openWikiHome: wiki.openWikiHome,
-    openResearchWorkbench,
-    openMemoryWorkbench,
-    toggleWikiEnabled: wiki.toggleWikiEnabled,
-    wikiEnabled: wiki.wikiEnabled,
     sourceDraftTitle: chat.sourceDraftTitle,
     setSourceDraftTitle: chat.setSourceDraftTitle,
     sourceDraftContent: chat.sourceDraftContent,
@@ -183,7 +122,6 @@ export function buildArtifactRailProps(input: BuildArtifactRailPropsInput): Arti
     sourceDraftRewriteMode: chat.sourceDraftRewriteMode,
     rewriteNoteSourceDraft: chat.rewriteNoteSourceDraft,
     saveNoteAnswerAsSource: chat.saveNoteAnswerAsSource,
-    lastNoteAssistantMessageId: chat.lastNoteAssistantMessageId,
-    wikiRebuildAdvice: wiki.wikiRebuildAdvice
+    lastNoteAssistantMessageId: chat.lastNoteAssistantMessageId
   };
 }

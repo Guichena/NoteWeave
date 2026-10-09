@@ -70,16 +70,18 @@ export function WorkspaceSwitcher({
     }
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
+      // 捕获阶段先关掉切换器并标记事件已消费，外层的移动端抽屉与侧边面板才不会被一起关掉。
+      event.preventDefault();
       setOpen(false);
       setQuery("");
       triggerRef.current?.focus();
     }
     window.addEventListener("pointerdown", closeOnOutsidePointer);
-    window.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("keydown", closeOnEscape, true);
     return () => {
       window.clearTimeout(focusTimer);
       window.removeEventListener("pointerdown", closeOnOutsidePointer);
-      window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("keydown", closeOnEscape, true);
     };
   }, [open]);
 

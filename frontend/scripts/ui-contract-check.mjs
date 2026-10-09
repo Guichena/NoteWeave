@@ -7,7 +7,8 @@ const appSource = read("src/App.tsx");
 const chatWorkbenchSource = read("src/features/conversations/ChatWorkbench.tsx");
 const chatSourcesPaneSource = read("src/features/conversations/ChatSourcesPane.tsx");
 const artifactRailSource = read("src/features/artifacts/ArtifactRail.tsx");
-const artifactUtilitySource = read("src/features/artifacts/ArtifactUtilityPanel.tsx");
+const noteSourceToolSource = read("src/features/artifacts/NoteSourceDraftTool.tsx");
+const wikiMaintenanceSource = read("src/features/knowledge/WikiMaintenancePanel.tsx");
 const researchWorkbenchSource = read("src/features/research/ResearchWorkbenchView.tsx");
 const shellSource = read("src/features/shell/WorkbenchShell.tsx");
 const shellBusySource = read("src/features/shell/useShellBusy.ts");
@@ -24,7 +25,8 @@ const surfaceSource = [
   chatWorkbenchSource,
   chatSourcesPaneSource,
   artifactRailSource,
-  artifactUtilitySource,
+  noteSourceToolSource,
+  wikiMaintenanceSource,
   researchWorkbenchSource,
   shellSource,
   wikiControllerSource,
@@ -81,16 +83,16 @@ const requiredSnippets = [
   {
     label: "Research 工作台组合",
     source: researchWorkbenchSource,
-    snippet: "LazyResearchSidebar"
+    snippet: "ResearchRunView"
   },
   {
-    label: "Note 入库入口",
-    source: artifactUtilitySource,
-    snippet: "保存最新回答为 Note"
+    label: "精读回答入库入口",
+    source: noteSourceToolSource,
+    snippet: "把精读回答存为资料"
   },
   {
     label: "Wiki 构建开关文案",
-    source: artifactUtilitySource,
+    source: wikiMaintenanceSource,
     snippet: "开启 Wiki 构建"
   },
   {
@@ -146,8 +148,8 @@ const requiredRouteSnippets = [
   'key: "qa"',
   'key: "note"',
   'key: "wiki"',
-  'label: "问答 RAG"',
-  'label: "Note"',
+  'label: "问答"',
+  'label: "精读"',
   'label: "Wiki"'
 ];
 

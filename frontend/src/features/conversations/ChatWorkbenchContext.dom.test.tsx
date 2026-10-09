@@ -50,7 +50,7 @@ describe("ChatWorkbench notebook surface", () => {
     render(<ChatWorkbench {...buildProps({ sources: [], onOpenSourceLibrary })} />);
 
     expect(screen.queryByRole("button", { name: "这份资料的核心结论是什么？" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "前往资料库添加资料" }));
+    fireEvent.click(screen.getByRole("button", { name: "添加资料" }));
     expect(onOpenSourceLibrary).toHaveBeenCalledOnce();
   });
 
@@ -87,11 +87,16 @@ describe("ChatWorkbench notebook surface", () => {
     const setMode = vi.fn();
     render(<ChatWorkbench {...buildProps({ setMode })} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "回答模式：问答 RAG" }));
-    expect(screen.getByRole("menu", { name: "选择回答模式" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("menuitemradio", { name: /Wiki/ }));
+    const group = screen.getByRole("radiogroup", { name: "回答模式" });
+    expect(screen.getByRole("radio", { name: /问答/ }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText(/问答：关键词与语义混合检索/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("radio", { name: /Wiki/ }));
     expect(setMode).toHaveBeenCalledWith("wiki");
-    expect(screen.queryByRole("menu", { name: "选择回答模式" })).toBeNull();
+
+    setMode.mockClear();
+    fireEvent.keyDown(group, { key: "ArrowRight" });
+    expect(setMode).toHaveBeenCalledWith("note");
   });
 
   it("opens the Studio on its overview and toggles the panel from the header", async () => {
@@ -133,7 +138,7 @@ function buildProps(overrides: Record<string, unknown> = {}) {
     messages: [],
     question: "",
     setQuestion: vi.fn(),
-    currentRouteLabel: "问答 RAG",
+    currentRouteLabel: "问答",
     selectedQaSourceIds: [],
     setSelectedQaSourceIds: vi.fn(),
     toggleQaScope: vi.fn(),
@@ -161,12 +166,8 @@ function buildProps(overrides: Record<string, unknown> = {}) {
       sourceCount: 1,
       setSelectedArtifactSkillKey: vi.fn(),
       setArtifactFormValues: vi.fn(),
-      artifactSidebarState: {
-        runs: [],
-        historyItems: [],
-        latestAuditView: {},
-        historyViewer: { activeKey: null, activeVersion: null }
-      },
+      artifactJobs: [],
+      selectedArtifactHistoryVersion: null,
       latestArtifactVersion: null,
       formatRelativeTime: vi.fn(() => "刚刚"),
       saveArtifactVersionAsSource: vi.fn(),
@@ -179,14 +180,8 @@ function buildProps(overrides: Record<string, unknown> = {}) {
       rollbackArtifactVersion: vi.fn(),
       downloadArtifactVersionPdf: vi.fn(),
       resolveArtifactSkillTitle: vi.fn(() => "产物"),
-      summarizeRunStatus: vi.fn(() => "就绪"),
       openArtifactHistoryVersion: vi.fn(),
       artifactHistoryLoadingKey: "",
-      openWikiHome: vi.fn(),
-      openResearchWorkbench: vi.fn(),
-      openMemoryWorkbench: vi.fn(),
-      toggleWikiEnabled: vi.fn(),
-      wikiEnabled: false,
       sourceDraftTitle: "",
       setSourceDraftTitle: vi.fn(),
       sourceDraftContent: "",

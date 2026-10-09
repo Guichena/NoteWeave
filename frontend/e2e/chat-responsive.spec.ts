@@ -1,8 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-
-const credentials = loadCredentials();
+import {
+  expectNoHorizontalOverflow,
+  loginIfRequired,
+  openChat,
+  openSidebar,
+  useFixtureWorkspace
+} from "./helpers";
 
 for (const viewport of [
   { width: 1280, height: 720, name: "desktop" },
@@ -10,6 +13,7 @@ for (const viewport of [
   { width: 375, height: 812, name: "mobile" }
 ]) {
   test(`Chat keeps its workspace context usable on ${viewport.name}`, async ({ page }) => {
+    test.setTimeout(240_000);
     const consoleErrors: string[] = [];
     page.on("console", (message) => {
       if (message.type() === "error") consoleErrors.push(message.text());
@@ -18,6 +22,9 @@ for (const viewport of [
     await page.goto("/");
     await loginIfRequired(page);
     await expect(page.locator(".workbench-shell")).toBeVisible();
+    // 右侧来源面板只有工作台里有资料时才有内容，先切到带资料的夹具工作台。
+    await useFixtureWorkspace(page, viewport.width);
+    await openChat(page, viewport.width);
 
     const metrics = await page.evaluate(() => ({
       viewportWidth: window.innerWidth,
@@ -29,7 +36,7 @@ for (const viewport of [
     ).toBeVisible();
 
     if (viewport.width >= 900) {
-      // 宽屏：侧边栏显示工作台下的多个对话；≥1200 时右侧来源面板默认展开
+      // 宽屏：侧边栏显示工作台下的多个对话；≥1200 且工作台有资料时右侧来源面板默认展开
       await expect(page.locator(".app-sidebar")).toBeVisible();
       await expect(page.locator(".sidebar-conversation").first()).toBeVisible();
       if (viewport.width >= 1200) {
@@ -46,10 +53,16 @@ for (const viewport of [
       return;
     }
 
+    // 抽屉收起有 220ms 过渡，等它真的滑出视口再量位置
+    await expect(page.locator(".workbench-shell.is-mobile-nav-open")).toHaveCount(0);
+    await expect.poll(async () => page.evaluate(() => (
+      document.querySelector<HTMLElement>(".app-sidebar")?.getBoundingClientRect().right ?? Number.POSITIVE_INFINITY
+    ))).toBeLessThanOrEqual(0.5);
+
     const mobileLayout = await page.evaluate(() => {
       const sidebar = document.querySelector<HTMLElement>(".app-sidebar");
       const composer = document.querySelector<HTMLElement>(".composer-box");
-      const modeTrigger = document.querySelector<HTMLElement>(".answer-mode-trigger");
+      const modeTrigger = document.querySelector<HTMLElement>(".answer-mode-switch");
       return {
         sidebarRight: sidebar?.getBoundingClientRect().right ?? Number.POSITIVE_INFINITY,
         sidebarPosition: sidebar ? getComputedStyle(sidebar).position : "missing",
@@ -61,6 +74,10 @@ for (const viewport of [
     });
     expect(mobileLayout.sidebarRight).toBeLessThanOrEqual(0.5);
     expect(mobileLayout.sidebarPosition).toBe("fixed");
+    // 三个元素都必须真的存在，否则下面的包含关系判断会变成空断言
+    expect(Number.isFinite(mobileLayout.composerTop)).toBe(true);
+    expect(Number.isFinite(mobileLayout.modeTop)).toBe(true);
+    expect(Number.isFinite(mobileLayout.modeBottom)).toBe(true);
     expect(mobileLayout.modeTop).toBeGreaterThanOrEqual(mobileLayout.composerTop);
     expect(mobileLayout.modeBottom).toBeLessThanOrEqual(mobileLayout.composerBottom);
 
@@ -70,10 +87,11 @@ for (const viewport of [
     await page.keyboard.press("Escape");
     await expect(page.locator(".context-panel")).toBeHidden();
 
-    await page.getByRole("button", { name: "打开主导航" }).click();
-    await expect(page.getByText("共享当前工作台资料库", { exact: true })).toBeVisible();
+    await openSidebar(page, viewport.width);
+    // Esc 关掉工作台切换器之后，主导航抽屉必须留在原地
     await assertWorkspaceSwitcherFits(page, viewport.width);
-    await page.getByRole("button", { name: "工作台资料库" }).click();
+    await expect(page.locator(".workbench-shell.is-mobile-nav-open")).toHaveCount(1);
+    await page.getByRole("button", { name: "工作台资料库", exact: true }).click();
     await expect(page).toHaveURL(/\/library$/);
     await expect(page.locator(".source-library-page")).toBeVisible();
     const formatRow = page.getByLabel("支持的资料格式");
@@ -96,55 +114,4 @@ async function assertWorkspaceSwitcherFits(page: Page, viewportWidth: number) {
   expect(documentWidth).toBeLessThanOrEqual(viewportWidth);
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
-}
-
-async function loginIfRequired(page: Page) {
-  const loginForm = page.locator(".auth-card");
-  if (!await loginForm.isVisible()) {
-    return;
-  }
-  await loginForm.locator('input[autocomplete="username"]').fill(credentials.username);
-  await loginForm.locator('input[autocomplete="current-password"]').fill(credentials.password);
-  await loginForm.locator('button[type="submit"], button').last().click();
-}
-
-async function expectNoHorizontalOverflow(page: Page) {
-  const metrics = await page.evaluate(() => ({
-    viewportWidth: window.innerWidth,
-    documentWidth: document.documentElement.scrollWidth
-  }));
-  expect(metrics.documentWidth).toBeLessThanOrEqual(metrics.viewportWidth);
-}
-
-function loadCredentials() {
-  const fileValues = readSimpleEnv(resolve(process.cwd(), "..", ".env"));
-  const username = process.env.NOTEWEAVE_E2E_USERNAME
-    ?? process.env.NOTEWEAVE_BOOTSTRAP_USERNAME
-    ?? fileValues.NOTEWEAVE_BOOTSTRAP_USERNAME;
-  const password = process.env.NOTEWEAVE_E2E_PASSWORD
-    ?? process.env.NOTEWEAVE_BOOTSTRAP_PASSWORD
-    ?? fileValues.NOTEWEAVE_BOOTSTRAP_PASSWORD;
-  if (!username || !password) {
-    throw new Error(
-      "Real Playwright E2E requires NOTEWEAVE_E2E_USERNAME/PASSWORD or bootstrap credentials in ../.env"
-    );
-  }
-  return { username, password };
-}
-
-function readSimpleEnv(path: string) {
-  try {
-    return Object.fromEntries(
-      readFileSync(path, "utf8")
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter((line) => line && !line.startsWith("#") && line.includes("="))
-        .map((line) => {
-          const separator = line.indexOf("=");
-          return [line.slice(0, separator).trim(), line.slice(separator + 1).trim()];
-        })
-    ) as Record<string, string>;
-  } catch {
-    return {};
-  }
 }

@@ -6,6 +6,7 @@ import type {
 } from "./model";
 
 const OUTPUTS = [
+  { key: "video_summary", title: "视频摘要", format: "Markdown" },
   { key: "knowledge_blog", title: "知识博客", format: "Markdown" },
   { key: "interview_qa", title: "面试问答", format: "Markdown" },
   { key: "video_learning_deck", title: "学习演示文稿", format: "PPTX" },
@@ -154,16 +155,17 @@ export function VideoLearningPanel({ workspaceId, onJobsChanged, onOpenVersion, 
 
   return (
     <section className="video-learning-panel" aria-labelledby="video-learning-heading">
-      <div className="artifact-section-heading">
-        <h3 className="section-label" id="video-learning-heading">视频产物</h3>
-        <Video size={16} aria-hidden="true" />
-      </div>
+      <h3 className="artifact-group-label" id="video-learning-heading">视频学习</h3>
       {overview?.enabled ? (
         <>
-          <button className="video-learning-toggle secondary-button" type="button"
+          <button className="video-learning-toggle" type="button"
             aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
-            <span>选择要生成的视频产物</span>
-            {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            <span className="video-learning-toggle-icon" aria-hidden="true"><Video size={16} /></span>
+            <span className="video-learning-toggle-copy">
+              <strong>选择要生成的视频产物</strong>
+              <small>一次采集 B 站视频素材，生成博客、问答、演示文稿和讲义</small>
+            </span>
+            {expanded ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
           </button>
           {expanded ? (
             <form className="video-learning-form" onSubmit={(event) => void submit(event)}>

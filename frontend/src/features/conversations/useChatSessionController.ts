@@ -153,6 +153,8 @@ export function useChatSessionController({
   const {
     uploadSource,
     uploadSourceFile,
+    uploads,
+    dismissUpload,
     deleteSource,
     prepareNoteSourceDraft,
     rewriteNoteSourceDraft,
@@ -325,6 +327,8 @@ export function useChatSessionController({
     currentRoute,
     uploadSource,
     uploadSourceFile,
+    uploads,
+    dismissUpload,
     deleteSource,
     rewriteNoteSourceDraft,
     saveNoteAnswerAsSource,

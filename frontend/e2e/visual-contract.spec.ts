@@ -1,20 +1,21 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-
-const credentials = loadCredentials();
+import { loginIfRequired, navigateFromSidebar, useFixtureWorkspace } from "./helpers";
 
 for (const viewport of [
   { width: 1280, height: 720, name: "desktop" },
   { width: 1024, height: 768, name: "compact desktop" }
 ]) {
   test(`desktop visual proportions remain coherent on ${viewport.name}`, async ({ page }) => {
+    test.setTimeout(240_000);
     await page.setViewportSize(viewport);
     await page.goto("/");
     await assertAuthLayout(page, viewport.width);
-    await login(page);
+    await loginIfRequired(page);
 
     await expect(page.locator(".workbench-shell")).toBeVisible();
+    // 来源面板、资料目录都需要工作台里真的有资料，先切到夹具工作台
+    await useFixtureWorkspace(page, viewport.width);
+    await openChatFromSidebar(page);
     await assertNoHorizontalOverflow(page);
 
     const shellMetrics = await page.evaluate(() => {
@@ -37,14 +38,14 @@ for (const viewport of [
 
     await assertChatProportions(page, viewport.width);
     await assertArtifactProportions(page, viewport.width);
-    await navigateFromRail(page, "工作台资料库");
+    await navigateFromSidebar(page, "工作台资料库", viewport.width);
     await assertLibraryProportions(page, viewport.width);
-    await navigateFromRail(page, "Deep Research 工作台");
+    await navigateFromSidebar(page, "Deep Research 工作台", viewport.width);
     await assertResearchProportions(page);
     await assertResearchPalette(page);
-    await navigateFromRail(page, "Wiki 知识库");
+    await navigateFromSidebar(page, "Wiki 知识库", viewport.width);
     await assertWikiProportions(page);
-    await navigateFromRail(page, "Memory 审核");
+    await navigateFromSidebar(page, "Memory 审核", viewport.width);
     await assertMemoryProportions(page, viewport.width);
   });
 }
@@ -90,7 +91,7 @@ async function assertChatProportions(page: Page, viewportWidth: number) {
     await expect(page.locator(".sources-pane")).toBeVisible();
   }
   const metrics = await elementMetrics(page, [
-    ".answer-mode-trigger",
+    ".answer-mode-switch",
     ".composer-send-button",
     ".source-add-button",
     ".composer-box"
@@ -110,6 +111,11 @@ async function assertChatProportions(page: Page, viewportWidth: number) {
 }
 
 async function assertArtifactProportions(page: Page, viewportWidth: number) {
+  // 1200px 以下来源面板是带遮罩的抽屉，遮罩会挡住顶部的产物开关，先把抽屉收起来
+  if (await page.locator(".context-panel-backdrop").isVisible()) {
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".context-panel")).toBeHidden();
+  }
   await page.getByRole("button", { name: "打开产物", exact: true }).click();
   await expect(page.locator(".studio-pane .artifact-rail")).toBeVisible();
   await expect(page.locator(".artifact-action-card").first()).toBeVisible();
@@ -125,7 +131,8 @@ async function assertArtifactProportions(page: Page, viewportWidth: number) {
     };
   });
 
-  expect(metrics.cardHeights.every((height) => height >= 80)).toBe(true);
+  // 类型卡片为紧凑的单行图标卡，保证触控高度即可
+  expect(metrics.cardHeights.every((height) => height >= 44)).toBe(true);
   expect(metrics.clippedTitles).toEqual([]);
   expect(metrics.titleFontSizes.every((size) => size >= 13)).toBe(true);
   await page.getByRole("button", { name: "关闭产物工作台", exact: true }).click();
@@ -143,17 +150,22 @@ async function assertLibraryProportions(page: Page, viewportWidth: number) {
   ]);
   expect(metrics[0]?.fontSize).toBeGreaterThanOrEqual(26);
   expect(metrics[0]?.fontSize).toBeLessThanOrEqual(36);
-  expect(metrics[1]?.width).toBeGreaterThan(260);
   expect(metrics[2]?.width).toBeGreaterThan(260);
   expect(metrics[3]?.height).toBeGreaterThanOrEqual(104);
-  if (viewportWidth >= 1024) expect(metrics[1]!.x).toBeLessThan(metrics[2]!.x);
-  const filterMetrics = await elementMetrics(page, [".source-library-filter-row button", ".source-delete-button", ".source-library-statuses > span"]);
+  // 空资料库只保留居中的上传卡片；有资料时目录在左、上传工具在右。
+  if (metrics[1]) {
+    expect(metrics[1].width).toBeGreaterThan(260);
+    // 1199px 以下改为单栏堆叠，资料目录排在上传工具上方
+    if (viewportWidth >= 1200) {
+      expect(metrics[1].x).toBeLessThan(metrics[2]!.x);
+    } else {
+      expect(metrics[1].y).toBeGreaterThanOrEqual(metrics[2]!.y);
+    }
+  }
+  const filterMetrics = await elementMetrics(page, [".source-library-filter-row button", ".source-delete-button", ".source-status-badge"]);
   if (filterMetrics[0]) {
     expect(filterMetrics[0].height).toBeGreaterThanOrEqual(28);
     expect(filterMetrics[0].fontSize).toBeGreaterThanOrEqual(12);
-  } else {
-    const emptyAction = await elementMetrics(page, [".source-library-empty-action"]);
-    expect(emptyAction[0]?.height).toBeGreaterThanOrEqual(36);
   }
   if (filterMetrics[1]) expect(filterMetrics[1].height).toBeGreaterThanOrEqual(30);
   if (filterMetrics[2]) expect(filterMetrics[2].fontSize).toBeGreaterThanOrEqual(11);
@@ -162,20 +174,21 @@ async function assertLibraryProportions(page: Page, viewportWidth: number) {
 
 async function assertResearchProportions(page: Page) {
   await expect(page.locator(".research-page-shell")).toBeVisible();
-  await expect(page.locator(".research-launchboard h2, .research-page h2").first()).toBeVisible();
+  // 工作台里已有研究记录时会直接打开最近一条运行，这里要量的是新建研究的表单
+  await expect(page.locator(".research-runs")).toBeVisible();
+  await page.getByRole("button", { name: "新研究" }).click();
+  await expect(page.locator(".research-composer")).toBeVisible();
+  await expect(page.locator(".research-composer-intro h2, .research-run-heading h2").first()).toBeVisible();
   const metrics = await elementMetrics(page, [
-    ".research-index h2",
-    ".research-launchboard h2, .research-page h2",
-    ".research-inline-actions button",
-    ".research-filter-row button"
+    ".research-composer-intro h2, .research-run-heading h2",
+    ".research-new-button",
+    ".research-mode-switch button, .research-run-tabs button"
   ]);
-  expect(metrics[0]?.fontSize).toBeGreaterThanOrEqual(18);
-  expect(metrics[0]?.fontSize).toBeLessThanOrEqual(26);
-  expect(metrics[1]?.fontSize).toBeGreaterThanOrEqual(26);
-  expect(metrics[1]?.fontSize).toBeLessThanOrEqual(36);
-  expect(metrics[2]?.height).toBeGreaterThanOrEqual(34);
-  expect(metrics[3]?.height).toBeGreaterThanOrEqual(28);
-  const metadata = await elementMetrics(page, [".research-launchboard-context dt", ".research-launchboard-context div > small", ".research-launchboard-flow small"]);
+  expect(metrics[0]?.fontSize).toBeGreaterThanOrEqual(22);
+  expect(metrics[0]?.fontSize).toBeLessThanOrEqual(36);
+  expect(metrics[1]?.height).toBeGreaterThanOrEqual(34);
+  expect(metrics[2]?.height).toBeGreaterThanOrEqual(24);
+  const metadata = await elementMetrics(page, [".research-composer-hint", ".research-runs-list small", ".research-run-metrics dt"]);
   expect(metadata.every((item) => !item || item.fontSize >= 11)).toBe(true);
   await assertNoHorizontalOverflow(page);
 }
@@ -187,7 +200,7 @@ async function assertResearchPalette(page: Page) {
       return element ? getComputedStyle(element).backgroundColor : "";
     };
     const root = document.querySelector<HTMLElement>('.workbench-shell[data-view="research"]');
-    const primary = document.querySelector<HTMLElement>(".research-launchboard-actions .primary-action");
+    const primary = document.querySelector<HTMLElement>(".research-start-button");
     const primaryStyle = primary ? getComputedStyle(primary) : null;
     const ink = root ? getComputedStyle(root).getPropertyValue("--primary").trim() : "";
     const domain = root ? getComputedStyle(root).getPropertyValue("--accent").trim() : "";
@@ -201,10 +214,9 @@ async function assertResearchPalette(page: Page) {
     return {
       theme: document.documentElement.dataset.theme,
       canvas: background(".workbench-canvas"),
-      index: background(".research-index"),
-      paper: background(".research-page"),
-      context: background(".research-launchboard-context"),
-      flow: background(".research-launchboard-flow > div:last-child"),
+      runs: background(".research-runs"),
+      composer: background(".research-composer-box"),
+      modes: background(".research-mode-switch"),
       ink,
       resolvedInk,
       domain,
@@ -219,7 +231,7 @@ async function assertResearchPalette(page: Page) {
   expect(palette.domain).not.toBe("");
   expect(palette.primary).toBe(palette.resolvedInk);
   expect(palette.primaryColor).not.toBe(palette.primary);
-  expect(new Set([palette.canvas, palette.index, palette.paper, palette.context, palette.flow]).size).toBeGreaterThanOrEqual(3);
+  expect(new Set([palette.canvas, palette.runs, palette.composer, palette.modes]).size).toBeGreaterThanOrEqual(3);
 }
 
 async function assertWikiProportions(page: Page) {
@@ -229,7 +241,7 @@ async function assertWikiProportions(page: Page) {
     expect(metrics[0]?.fontSize).toBeGreaterThanOrEqual(24);
     expect(metrics[0]?.fontSize).toBeLessThanOrEqual(36);
     if (metrics[1]) expect(metrics[1].height).toBeGreaterThanOrEqual(36);
-    const metadata = await elementMetrics(page, [".wiki-empty-flow small", ".wiki-empty-context dt", ".wiki-empty-advice span"]);
+    const metadata = await elementMetrics(page, [".wiki-empty-main > p", ".wiki-empty-manual > summary"]);
     expect(metadata.every((item) => !item || item.fontSize >= 11)).toBe(true);
   }
   await assertNoHorizontalOverflow(page);
@@ -237,25 +249,23 @@ async function assertWikiProportions(page: Page) {
 
 async function assertMemoryProportions(page: Page, viewportWidth: number) {
   await expect(page.locator(".memory-workbench")).toBeVisible();
-  const metrics = await elementMetrics(page, [".memory-workbench h2", ".memory-workbench button"]);
-  expect(metrics[0]?.fontSize).toBeGreaterThanOrEqual(16);
-  expect(metrics[0]?.fontSize).toBeLessThanOrEqual(26);
+  const metrics = await elementMetrics(page, [".memory-hero h2", ".memory-composer .primary-action"]);
+  expect(metrics[0]?.fontSize).toBeGreaterThanOrEqual(22);
+  expect(metrics[0]?.fontSize).toBeLessThanOrEqual(36);
   expect(metrics[1]?.height).toBeGreaterThanOrEqual(30);
   const metadata = await elementMetrics(page, [
-    ".memory-panel-heading > span",
-    ".memory-queue-note",
-    ".memory-review-flow li span",
-    ".memory-runtime-policy dt"
+    ".memory-layers dd",
+    ".memory-section-heading > span",
+    ".memory-kind-switch button",
+    ".memory-scope-select select"
   ]);
   expect(metadata.every((item) => !item || item.fontSize >= 11)).toBe(true);
+  // 宽屏下记忆与资料的分工以两栏对照展示
   if (viewportWidth >= 900) {
-    const columns = await elementMetrics(page, [
-      ".memory-queue-panel",
-      ".memory-review-panel"
-    ]);
-    expect(columns.every(Boolean)).toBe(true);
-    expect(columns[0]!.y).toBeCloseTo(columns[1]!.y, 0);
-    expect(columns[0]!.x).toBeLessThan(columns[1]!.x);
+    const layers = await elementMetrics(page, [".memory-layers > div:first-child", ".memory-layers > div:last-child"]);
+    expect(layers.every(Boolean)).toBe(true);
+    expect(layers[0]!.y).toBeCloseTo(layers[1]!.y, 0);
+    expect(layers[0]!.x).toBeLessThan(layers[1]!.x);
   }
   await assertNoHorizontalOverflow(page);
 }
@@ -276,8 +286,10 @@ async function elementMetrics(page: Page, selectors: string[]) {
   }), selectors);
 }
 
-async function navigateFromRail(page: Page, name: string) {
-  await page.getByRole("button", { name, exact: true }).click();
+/** 对话视图没有导航项，从侧边栏的会话条目进入。 */
+async function openChatFromSidebar(page: Page) {
+  await page.locator(".sidebar-conversation").first().click();
+  await expect(page.locator(".chat-panel")).toBeVisible();
 }
 
 async function assertNoHorizontalOverflow(page: Page) {
@@ -288,39 +300,5 @@ async function assertNoHorizontalOverflow(page: Page) {
   expect(metrics.documentWidth).toBeLessThanOrEqual(metrics.viewportWidth);
 }
 
-async function login(page: Page) {
-  const loginForm = page.locator(".auth-card");
-  if (!await loginForm.isVisible()) return;
-  await loginForm.locator('input[autocomplete="username"]').fill(credentials.username);
-  await loginForm.locator('input[autocomplete="current-password"]').fill(credentials.password);
-  await loginForm.locator('button[type="submit"], button').last().click();
-}
 
-function loadCredentials() {
-  const fileValues = readSimpleEnv(resolve(process.cwd(), "..", ".env"));
-  const username = process.env.NOTEWEAVE_E2E_USERNAME
-    ?? process.env.NOTEWEAVE_BOOTSTRAP_USERNAME
-    ?? fileValues.NOTEWEAVE_BOOTSTRAP_USERNAME;
-  const password = process.env.NOTEWEAVE_E2E_PASSWORD
-    ?? process.env.NOTEWEAVE_BOOTSTRAP_PASSWORD
-    ?? fileValues.NOTEWEAVE_BOOTSTRAP_PASSWORD;
-  if (!username || !password) throw new Error("Real Playwright E2E requires NoteWeave bootstrap credentials");
-  return { username, password };
-}
 
-function readSimpleEnv(path: string) {
-  try {
-    return Object.fromEntries(
-      readFileSync(path, "utf8")
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter((line) => line && !line.startsWith("#") && line.includes("="))
-        .map((line) => {
-          const separator = line.indexOf("=");
-          return [line.slice(0, separator).trim(), line.slice(separator + 1).trim()];
-        })
-    ) as Record<string, string>;
-  } catch {
-    return {};
-  }
-}

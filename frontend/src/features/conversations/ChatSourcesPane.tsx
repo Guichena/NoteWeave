@@ -1,5 +1,5 @@
 import { useRef, useState, type ChangeEvent, type DragEvent } from "react";
-import {
+import { AudioLines,
   CircleAlert,
   FileSpreadsheet,
   FileText,
@@ -42,7 +42,8 @@ const SOURCE_KIND_ICONS: Record<ReturnType<typeof sourceKind>, LucideIcon> = {
   doc: FileText,
   data: FileSpreadsheet,
   web: Globe,
-  note: NotebookPen
+  note: NotebookPen,
+  media: AudioLines
 };
 
 export function ChatSourcesPane({

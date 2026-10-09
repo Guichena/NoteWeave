@@ -6,7 +6,7 @@ import type { ShellRun } from "../shell/useShellBusy";
 import { sourcesApi, type SourcesApi } from "../sources/api";
 import { type SourceAsset } from "../sources/model";
 import { artifactsApi, type ArtifactsApi } from "./api";
-import { type ArtifactFileMetadata, type ArtifactJobSummary } from "./model";
+import { type ArtifactFileMetadata, type ArtifactJobSummary, type ArtifactVersionComparison } from "./model";
 import { useArtifactState } from "./useArtifactState";
 import { artifactVersionSaveKey } from "./versionKey";
 
@@ -185,17 +185,20 @@ export function useArtifactWorkspace({
   const compareArtifactWithPreviousVersion = useCallback(async (version: ArtifactVersionRef) => {
     if (!workspaceId || version.version_no <= 1) {
       setStatus("当前版本没有可比较的上一版本");
-      return;
+      return null;
     }
+    let comparison: ArtifactVersionComparison | null = null;
     await run("比较产物版本", async () => {
-      const comparison = await api.compareVersions(
+      const result = await api.compareVersions(
         workspaceId,
         version.artifact_job_id,
         version.version_no - 1,
         version.version_no
       );
-      setStatus(comparison.summary);
+      comparison = result;
+      setStatus(result.summary);
     }, "artifact");
+    return comparison;
   }, [workspaceId, run, api, setStatus]);
 
   const downloadArtifactVersionPdf = useCallback(async (version: ArtifactPdfVersion) => {

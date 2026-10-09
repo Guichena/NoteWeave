@@ -53,6 +53,15 @@ export type ArtifactVersionDetail = {
   created_at: string;
 };
 
+export type ArtifactVersionSummary = {
+  version_id: string;
+  artifact_job_id: string;
+  skill_key: string;
+  version_no: number;
+  title: string;
+  created_at: string;
+};
+
 export type ArtifactVersionComparison = {
   from_version_no: number;
   to_version_no: number;

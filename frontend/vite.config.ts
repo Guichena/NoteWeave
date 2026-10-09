@@ -1,7 +1,9 @@
 import { configDefaults, defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import { loadEnv } from "vite";
+import { fileURLToPath } from "node:url";
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react()],
   test: {
     exclude: [...configDefaults.exclude, "e2e/**"]
@@ -9,7 +11,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://localhost:8081"
+      // 可在 .env.local 中改为其他后端地址，例如 compose 栈中的 nginx。
+      "/api": loadEnv(mode, fileURLToPath(new URL(".", import.meta.url)), "NOTEWEAVE_").NOTEWEAVE_API_PROXY || "http://localhost:8081"
     }
   },
   build: {
@@ -27,4 +30,4 @@ export default defineConfig({
       }
     }
   }
-});
+}));

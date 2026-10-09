@@ -1,4 +1,5 @@
 import { apiClient, type ApiClient } from "../../shared/api";
+import { type AnswerEvidenceManifest } from "./evidence";
 import {
   type AnswerRunSnapshot,
   type SendAnswerInput,
@@ -18,6 +19,12 @@ export class AnswersApi {
   getRun(workspaceId: string, runId: string) {
     return this.client.get<AnswerRunSnapshot>(
       `/api/v2/workspaces/${workspaceId}/answer-runs/${runId}`
+    );
+  }
+
+  getEvidence(workspaceId: string, runId: string) {
+    return this.client.get<AnswerEvidenceManifest>(
+      `/api/v2/workspaces/${workspaceId}/answer-runs/${runId}/evidence`
     );
   }
 }

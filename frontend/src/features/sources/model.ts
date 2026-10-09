@@ -8,6 +8,23 @@ export type SourceAsset = {
   generated_by: string;
   generated_ref_id: string;
   updated_at: string;
+  /** 解析完成后才有；旧版后端不返回这些字段。 */
+  chunk_count?: number | null;
+  page_count?: number | null;
+  /** 最近一次资料解析任务。 */
+  task_id?: string | null;
+  /** 最新快照所处（或失败时停在）的处理阶段：EXTRACTING / CHUNKING / EMBEDDING / INDEXING / READY。 */
+  processing_stage?: string | null;
+  /** 检索索引已自动重试的次数与下次自动重试的时间。 */
+  index_attempt_count?: number | null;
+  next_index_retry_at?: string | null;
+};
+
+/** 重新处理的结果：从解析阶段（PARSE）或向量化阶段（INDEX）重新开始。 */
+export type SourceReprocessResult = {
+  source_id: string;
+  task_id: string;
+  restart_from: "PARSE" | "INDEX";
 };
 
 export function isSourceReady(source: Pick<SourceAsset, "status">): boolean {
@@ -101,34 +118,35 @@ export type SavedAnswerSource = {
   generated_ref_id: string;
 };
 
+// 后端全局使用 SNAKE_CASE 序列化，这里的字段名与响应保持一致。
 export type RetrievalCoverage = {
-  sourceCount: number;
-  readySourceCount: number;
-  qaReadySourceCount: number;
-  noteReadySourceCount: number;
+  source_count: number;
+  ready_source_count: number;
+  qa_ready_source_count: number;
+  note_ready_source_count: number;
 };
 
 export type RetrievalIndexBuild = {
   id: string;
-  projectionType: "QA_CHUNK" | "NOTE_SOURCE";
-  targetIndex: string;
+  projection_type: "QA_CHUNK" | "NOTE_SOURCE";
+  target_index: string;
   status: string;
-  expectedCount: number;
-  readyCount: number;
-  failedCount: number;
-  lastErrorCode?: string;
+  expected_count: number;
+  ready_count: number;
+  failed_count: number;
+  last_error_code?: string | null;
 };
 
 export type RetrievalIndexStatus = {
-  workspaceId: string;
+  workspace_id: string;
   coverage: RetrievalCoverage;
   builds: RetrievalIndexBuild[];
-  projections: Array<{ projectionType: string; status: string; count: number }>;
+  projections: Array<{ projection_type: string; status: string; count: number }>;
 };
 
 export type RetrievalBackfillResult = {
-  workspaceId: string;
-  qaBuild: RetrievalIndexBuild;
-  noteBuild: RetrievalIndexBuild;
-  failedSourceIds: string[];
+  workspace_id: string;
+  qa_build: RetrievalIndexBuild;
+  note_build: RetrievalIndexBuild;
+  failed_source_ids: string[];
 };

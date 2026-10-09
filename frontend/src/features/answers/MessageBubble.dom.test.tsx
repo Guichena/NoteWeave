@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MessageBubble } from "./MessageBubble";
 
 afterEach(cleanup);
@@ -130,5 +130,56 @@ describe("MessageBubble failed answers", () => {
 
     expect(screen.getByText("解释细节")).toBeTruthy();
     expect(document.querySelector(".message-card")).toBeNull();
+  });
+});
+
+describe("MessageBubble 检索链路与证据", () => {
+  it("标注回答所用的检索方式，展开引用时读取证据清单并展示位置和摘录", async () => {
+    const loadEvidence = vi.fn(async () => [{
+      rank: 1,
+      evidence_id: "note-window:c1:12",
+      kind: "PASSAGE",
+      source_id: "s1",
+      passage_id: "c1",
+      knowledge_item_id: null,
+      title: "RAG 检索链路设计.md",
+      excerpt: "命中锚点窗口后向前后各扩展一个窗口",
+      location: "第 5 节",
+      character_cost: 20
+    }]);
+    render(
+      <MessageBubble
+        loadEvidence={loadEvidence}
+        message={{
+          role: "assistant",
+          answerMode: "note",
+          answerStatus: "COMPLETED",
+          answerRunId: "run-1",
+          content: "先定位、再连续阅读 [1]。",
+          citations: ["RAG 检索链路设计.md | 命中锚点窗口后向前后各扩展一个窗口"]
+        }}
+      />
+    );
+
+    expect(screen.getByText("精读 · 原文窗口")).toBeTruthy();
+    expect(loadEvidence).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /来源 1/ }));
+    expect(loadEvidence).toHaveBeenCalledWith("run-1");
+    expect(await screen.findByText("阅读窗口 · 第 5 节")).toBeTruthy();
+    expect(screen.getAllByText("命中锚点窗口后向前后各扩展一个窗口").length).toBeGreaterThan(0);
+  });
+
+  it("点击回答中的 Wiki 链接跳转到对应页面", () => {
+    const onOpenWikiPage = vi.fn();
+    render(
+      <MessageBubble
+        onOpenWikiPage={onOpenWikiPage}
+        message={{ role: "assistant", answerMode: "wiki", answerStatus: "COMPLETED", content: "参见 [[混合检索]]。" }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "混合检索" }));
+    expect(onOpenWikiPage).toHaveBeenCalledWith("混合检索");
   });
 });

@@ -4,7 +4,8 @@ import { isSourceReadableOnly, isSourceSearchable } from "../sources/model";
 import { type AnswerMode } from "../../routes";
 import { modeExamplePrompts, modeQuestionPlaceholder } from "../shell/modeContext";
 import { BrandMark } from "../shell/BrandMark";
-import { MessageBubble } from "../answers/MessageBubble";
+import { MessageBubble, type EvidenceLoader } from "../answers/MessageBubble";
+import { routes } from "../../routes";
 import { type Message } from "../answers/messageTypes";
 import { type SourceAsset } from "../sources/model";
 import { type Workspace } from "../workspace/model";
@@ -45,6 +46,9 @@ export type ChatWorkbenchProps = {
   onOpenSourceLibrary: () => void;
   uploadSourceFile?: (file: File) => Promise<void>;
   uploadBusy?: boolean;
+  loadAnswerEvidence?: EvidenceLoader;
+  /** 点击回答中的 [[页面]] 时跳转到对应的 Wiki 页面。 */
+  onOpenWikiPage?: (title: string) => void;
 };
 
 export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchProps) {
@@ -67,10 +71,22 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
     artifactRailProps,
     onOpenSourceLibrary,
     uploadSourceFile,
-    uploadBusy = false
+    uploadBusy = false,
+    loadAnswerEvidence,
+    onOpenWikiPage
   } = props;
   const composerBusy = chatBusy;
-  const [panelOpen, setPanelOpen] = useState(prefersOpenPanel);
+  const activeRoute = routes.find((route) => route.key === mode) ?? routes[0];
+  // 工作台没有资料时侧边面板没有内容可展示（欢迎区已提供上传入口），
+  // 因此等资料首次加载出来后再自动展开。
+  const [panelOpen, setPanelOpen] = useState(() => sources.length > 0 && prefersOpenPanel());
+  const hasSources = sources.length > 0;
+  const panelAutoOpenedRef = useRef(hasSources);
+  useEffect(() => {
+    if (!hasSources || panelAutoOpenedRef.current) return;
+    panelAutoOpenedRef.current = true;
+    if (prefersOpenPanel()) setPanelOpen(true);
+  }, [hasSources]);
   const [panelTab, setPanelTab] = useState<PanelTab>("sources");
   const conversationRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -168,7 +184,6 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
         <header className="page-header chat-header">
           <div className="page-header-title">
             <h2>{conversation?.title || "新对话"}</h2>
-            <small>{workspace?.name || "未选择工作台"} · 共享 {sources.length} 个来源 · {conversationCount} 个对话</small>
           </div>
           <div className="page-header-actions panel-switch" role="group" aria-label="侧边面板">
             <button
@@ -203,8 +218,8 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
               <h2 className="chat-welcome-title">今天想从资料里弄清楚什么？</h2>
               <p className="chat-welcome-meta">
                 {sources.length > 0
-                  ? `「${workspace?.name || "当前工作台"}」的 ${sources.length} 个来源由所有对话共享，其中 ${searchableSources.length} 个可检索`
-                  : "这个工作台还没有来源"}
+                  ? `基于 ${searchableSources.length} 个可检索来源回答，并附上引用`
+                  : "添加资料后，就能围绕它们提问并获得带引用的回答"}
               </p>
               {sources.length > 0 ? (
                 <div className="chat-example-list" aria-label="示例问题">
@@ -222,10 +237,9 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
                 </div>
               ) : (
                 <div className="chat-welcome-empty">
-                  <p>添加 PDF、Markdown 或文本资料后，这个工作台下的每个对话都能基于它们回答并给出引用。</p>
                   <button type="button" className="secondary-button chat-empty-library-action" onClick={onOpenSourceLibrary}>
                     <LibraryBig size={15} aria-hidden="true" />
-                    前往资料库添加资料
+                    添加资料
                   </button>
                 </div>
               )}
@@ -236,7 +250,7 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
                 <div key={`${message.role}-${index}`} className={`bubble message-row ${message.role}`}>
                   {message.role === "assistant" ? <BrandMark className="message-avatar" size={26} /> : null}
                   <div className="message-content">
-                    <MessageBubble message={message} />
+                    <MessageBubble message={message} loadEvidence={loadAnswerEvidence} onOpenWikiPage={onOpenWikiPage} />
                   </div>
                 </div>
               ))}
@@ -290,7 +304,7 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
             </div>
           </div>
           <p className="composer-footnote">
-            {qaUnavailable ? qaUnavailableNote : "回答基于所选来源生成，请结合引用核对。Enter 发送，Shift + Enter 换行"}
+            {activeRoute.label}：{activeRoute.description}
           </p>
         </div>
       </div>

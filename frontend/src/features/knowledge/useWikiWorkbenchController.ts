@@ -207,6 +207,31 @@ export function useWikiWorkbenchController({
     await selectWikiPage(page);
   }
 
+  /**
+   * 从对话等页面按标题跳转到 Wiki 页面。先在当前视图加载页面列表，再切换到 Wiki，
+   * 这样切换后的自动加载会跳过，不会覆盖刚选中的页面。
+   */
+  async function openWikiPageByTitle(title: string) {
+    if (!workspace) {
+      return;
+    }
+    const target = title.trim().toLowerCase();
+    await run("打开 Wiki 页面", async () => {
+      const home = wikiHome ?? await refreshWikiFromServer("", {
+        mode: wikiGraphMode,
+        graphKinds: wikiGraphKindFilters
+      });
+      setView("wiki");
+      navigateAppView("wiki");
+      const page = home?.pages.find((entry) => entry.title.trim().toLowerCase() === target);
+      if (page) {
+        await selectWikiPage(page);
+      } else {
+        setStatus(`知识库中还没有「${title}」页面`);
+      }
+    }, "wiki");
+  }
+
   async function prepareWikiIssueRepair(issue: WikiIssue) {
     if (issue.issue_type === "BROKEN_LINK") {
       const sourceTitle = wikiHome?.pages.find((page) => page.item_id === issue.item_id)?.title;
@@ -334,6 +359,7 @@ export function useWikiWorkbenchController({
   const wikiAdviceAction = getWikiAdviceAction();
 
   return {
+    openWikiPageByTitle,
     wikiHome,
     wikiIndex,
     wikiEnabled,

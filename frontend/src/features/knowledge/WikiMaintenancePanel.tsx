@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link2, Sparkles, WandSparkles, X } from "lucide-react";
+import { Link2, Power, Sparkles, WandSparkles, X } from "lucide-react";
 import type { WikiRelationsPanelProps } from "./wikiRelationsPanel.contract";
 
 export type MaintenanceTab = "issues" | "draft" | "activity";
@@ -39,6 +39,13 @@ export function WikiMaintenancePanel(props: WikiMaintenancePanelProps) {
           <button type="button" className="wiki-manage-action" onClick={props.autoFixWiki} disabled={props.isBusy || !props.workspace}>
             <WandSparkles size={17} aria-hidden="true" />
             <span><strong>自动补缺</strong><small>{props.autoFixableIssues.length} 个问题可自动处理</small></span>
+          </button>
+          <button type="button" className="wiki-manage-action" onClick={() => void props.toggleWikiEnabled()} disabled={props.isBusy || !props.workspace}>
+            <Power size={17} aria-hidden="true" />
+            <span>
+              <strong>{props.wikiEnabled ? "关闭 Wiki 构建" : "开启 Wiki 构建"}</strong>
+              <small>{props.wikiEnabled ? "资料更新后会自动整理进知识库" : "开启后已有资料会自动整理进知识库"}</small>
+            </span>
           </button>
           {props.wikiAdviceAction ? (
             <button type="button" className="wiki-manage-action" onClick={props.wikiAdviceAction.run} disabled={props.isBusy || !props.workspace}>

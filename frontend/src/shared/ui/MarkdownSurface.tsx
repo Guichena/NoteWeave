@@ -11,6 +11,11 @@ type MarkdownSurfaceProps = {
   /** 传入后，[[页面标题]] 会渲染成可点击的 Wiki 链接；返回 false 表示页面不存在。 */
   onWikiLinkClick?: (title: string) => boolean | void;
   resolveWikiLink?: (title: string) => boolean;
+  /** 与 compactCitations 配合：传入后 [evidence:xxx] 渲染为带编号、可点击的证据角标。 */
+  onEvidenceClick?: (evidenceId: string) => void;
+  /** 证据编号顺序，通常为报告中首次出现的顺序。 */
+  evidenceOrder?: string[];
+  activeEvidence?: string | null;
 };
 
 type InlineContext = {
@@ -20,6 +25,9 @@ type InlineContext = {
   onCitationClick?: (index: number) => void;
   onWikiLinkClick?: (title: string) => boolean | void;
   resolveWikiLink?: (title: string) => boolean;
+  onEvidenceClick?: (evidenceId: string) => void;
+  evidenceOrder?: string[];
+  activeEvidence?: string | null;
 };
 
 function headingId(value: string) {
@@ -39,9 +47,15 @@ export function MarkdownSurface({
   activeCitation = null,
   onCitationClick,
   onWikiLinkClick,
-  resolveWikiLink
+  resolveWikiLink,
+  onEvidenceClick,
+  evidenceOrder,
+  activeEvidence = null
 }: MarkdownSurfaceProps) {
-  const inline: InlineContext = { compactCitations, citations, activeCitation, onCitationClick, onWikiLinkClick, resolveWikiLink };
+  const inline: InlineContext = {
+    compactCitations, citations, activeCitation, onCitationClick, onWikiLinkClick, resolveWikiLink,
+    onEvidenceClick, evidenceOrder, activeEvidence
+  };
   const lines = content.replaceAll("\r\n", "\n").split("\n");
   const blocks: ReactNode[] = [];
   let index = 0;
@@ -187,7 +201,10 @@ function normalizeTableRow(cells: string[], columnCount: number) {
 }
 
 function renderInlineMarkdown(value: string, context: InlineContext) {
-  const { compactCitations, citations, activeCitation, onCitationClick, onWikiLinkClick, resolveWikiLink } = context;
+  const {
+    compactCitations, citations, activeCitation, onCitationClick, onWikiLinkClick, resolveWikiLink,
+    onEvidenceClick, evidenceOrder, activeEvidence
+  } = context;
   const numberedCitations = Boolean(citations && citations.length > 0);
   const parts = [
     "`[^`]+`",
@@ -199,7 +216,25 @@ function renderInlineMarkdown(value: string, context: InlineContext) {
   ];
   const pattern = new RegExp(`(${parts.join("|")})`, "g");
   const tokens = value.split(pattern);
+  // 引用角标后紧跟的标点与角标放在同一个不换行单元里，避免标点单独折到下一行。
+  const trailing: string[] = [];
+  tokens.forEach((token, index) => {
+    const isCitation = (compactCitations && /^\[evidence(?::|-)[^\]]+\]$/.test(token))
+      || (numberedCitations && /^\[\d{1,2}\]$/.test(token));
+    const next = tokens[index + 1];
+    if (isCitation && next && TRAILING_PUNCTUATION.test(next)) {
+      trailing[index] = next[0];
+      tokens[index + 1] = next.slice(1);
+    }
+  });
   return tokens.map((token, index) => {
+    const node = renderInlineToken(token, index);
+    return trailing[index]
+      ? <span className="citation-nowrap" key={`nowrap-${index}`}>{node}{trailing[index]}</span>
+      : node;
+  });
+
+  function renderInlineToken(token: string, index: number) {
     if (token.startsWith("`") && token.endsWith("`") && token.length > 1) {
       return <code key={index}>{token.slice(1, -1)}</code>;
     }
@@ -226,6 +261,22 @@ function renderInlineMarkdown(value: string, context: InlineContext) {
       return <strong key={index}>{token.slice(2, -2)}</strong>;
     }
     if (compactCitations && /^\[evidence(?::|-)[^\]]+\]$/.test(token)) {
+      const evidenceId = token.slice(1, -1).replace(/^evidence[:-]/, "").trim();
+      if (onEvidenceClick) {
+        const order = evidenceOrder?.indexOf(evidenceId) ?? -1;
+        const label = order >= 0 ? String(order + 1) : "证据";
+        return (
+          <button
+            type="button"
+            key={index}
+            className={`citation-chip${activeEvidence === evidenceId ? " is-active" : ""}`}
+            aria-label={`查看证据 ${label}`}
+            onClick={() => onEvidenceClick(evidenceId)}
+          >
+            {label}
+          </button>
+        );
+      }
       return <sup className="research-citation-ref" title={token.slice(1, -1)} key={index}>[证据]</sup>;
     }
     if (numberedCitations && /^\[\d{1,2}\]$/.test(token)) {
@@ -249,5 +300,7 @@ function renderInlineMarkdown(value: string, context: InlineContext) {
       return <a key={index} href={link[2]} target="_blank" rel="noreferrer">{link[1]}</a>;
     }
     return <Fragment key={index}>{token}</Fragment>;
-  });
+  }
 }
+
+const TRAILING_PUNCTUATION = /^[。，、；：！？）」』》.,;:!?)]/;

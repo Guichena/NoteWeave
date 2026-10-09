@@ -7,6 +7,7 @@ import {
   type ArtifactSavedSourceResponse,
   type ArtifactVersionComparison,
   type ArtifactVersionDetail,
+  type ArtifactVersionSummary,
   type CreateArtifactJobInput,
   type CreateVideoLearningInput,
   type VideoLearningOverview,
@@ -46,6 +47,11 @@ export class ArtifactsApi {
   retryVideoLearningChoice(workspaceId: string, requestId: string, skillKey: string) {
     return this.client.post<VideoLearningRequest>(
       `/api/v2/workspaces/${workspaceId}/video-learning-bundles/${requestId}/choices/${encodeURIComponent(skillKey)}/retry`, {});
+  }
+
+  listVersions(workspaceId: string, artifactJobId: string, init?: RequestInit) {
+    return this.client.get<ArtifactVersionSummary[]>(
+      `/api/v2/workspaces/${workspaceId}/artifact-jobs/${artifactJobId}/versions`, init);
   }
 
   getVersion(workspaceId: string, artifactJobId: string, versionNo: number, init?: RequestInit) {

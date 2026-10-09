@@ -1,32 +1,23 @@
-import { useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
-import {
-  Activity,
-  BookOpenCheck,
-  CircleAlert,
-  FileSearch,
-  FileText,
-  Files,
-  Search,
-  Trash2,
-  Upload
-} from "lucide-react";
-import { buildWaitContextNarrative, summarizeRunStatus, type WaitContextDetailLine } from "../../runStatus";
-import { formatRelativeTime } from "../../shared/util/datetime";
-import type { ExecutionEvent, ExecutionTask } from "../executions/model";
-import type { SignalChip } from "../research/model";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { CircleAlert, FileSearch, Search, Upload, X } from "lucide-react";
+import { ApiError } from "../../shared/api/error";
+import { executionsApi } from "../executions/api";
+import type { ExecutionSnapshot } from "../executions/model";
 import type { Workspace } from "../workspace/model";
-import {
-  formatSourceIndexStatus,
-  formatSourceProcessingStatus,
-  isSourceReadableOnly,
-  isSourceSearchable,
-  type SourceAsset
-} from "./model";
+import type { SourceUploadItem } from "../conversations/useChatSourceActions";
+import type { SourceAsset, SourceReprocessResult } from "./model";
+import { SourceLibraryRow, type RecoveryState } from "./SourceLibraryRow";
+import { buildSourcePipeline } from "./sourcePipeline";
 import { SOURCE_FILE_ACCEPT, SUPPORTED_SOURCE_FORMATS, validateSourceFile } from "./sourceFiles";
 
 export { validateSourceFile };
 
-type SourceFilter = "all" | "searchable" | "readable" | "processing";
+type SourceFilter = "all" | "searchable" | "readable" | "processing" | "failed";
+
+const IDLE_RECOVERY: RecoveryState = { running: false, message: "", tone: "normal" };
+
+/** 有资料仍在处理时，按这个间隔刷新列表以更新阶段。 */
+const PROCESSING_REFRESH_MS = 4000;
 
 export type SourceLibraryWorkbenchProps = {
   sources: SourceAsset[];
@@ -34,23 +25,15 @@ export type SourceLibraryWorkbenchProps = {
   setSourceText: (value: string) => void;
   uploadSource: () => void;
   uploadSourceFile: (file: File) => Promise<void>;
+  uploads: SourceUploadItem[];
+  dismissUpload: (id: string) => void;
   workspace: Workspace | null;
-  conversationCount: number;
-  latestTask: ExecutionTask | null;
-  latestWorkspaceTaskWaitSignals: SignalChip[];
-  latestWorkspaceTaskWaitDetails: WaitContextDetailLine[];
-  latestWorkspaceProgressEvent: ExecutionEvent | null;
-  taskEvents: ExecutionEvent[];
   deleteSource: (source: SourceAsset) => void;
-  buildSourceOriginBadge: (source: SourceAsset) => string;
-  buildGenericTaskRuntimeSnapshot: (
-    event: ExecutionEvent | null,
-    task: ExecutionTask | null
-  ) => string;
-  buildTaskEventNarrative: (event: ExecutionEvent, task: ExecutionTask | null) => string;
+  refreshSources: () => Promise<void>;
+  reprocessSource: (sourceId: string) => Promise<SourceReprocessResult>;
+  loadTask?: (taskId: string) => Promise<ExecutionSnapshot>;
   sourcesBusy: boolean;
 };
-
 
 export function SourceLibraryWorkbench(props: SourceLibraryWorkbenchProps) {
   const {
@@ -59,37 +42,73 @@ export function SourceLibraryWorkbench(props: SourceLibraryWorkbenchProps) {
     setSourceText,
     uploadSource,
     uploadSourceFile,
+    uploads,
     workspace,
-    conversationCount,
-    latestTask,
-    latestWorkspaceTaskWaitSignals,
-    latestWorkspaceTaskWaitDetails,
-    latestWorkspaceProgressEvent,
-    taskEvents,
-    deleteSource,
-    buildSourceOriginBadge,
-    buildGenericTaskRuntimeSnapshot,
-    buildTaskEventNarrative,
+    refreshSources,
     sourcesBusy
   } = props;
+  const loadTask = props.loadTask ?? defaultLoadTask;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SourceFilter>("all");
-  const [pendingDeleteId, setPendingDeleteId] = useState("");
+  const [expandedId, setExpandedId] = useState("");
   const [fileValidationError, setFileValidationError] = useState("");
+  const [recovery, setRecovery] = useState<Record<string, RecoveryState>>({});
 
-  const searchableSourceCount = sources.filter(isSourceSearchable).length;
-  const readableOnlySourceCount = sources.filter(isSourceReadableOnly).length;
-  const processingSourceCount = sources.length - searchableSourceCount - readableOnlySourceCount;
+  const pipelines = useMemo(
+    () => new Map(sources.map((source) => [source.source_id, buildSourcePipeline(source)])),
+    [sources]
+  );
+  const counts = useMemo(() => {
+    const result = { searchable: 0, readable: 0, processing: 0, failed: 0 };
+    pipelines.forEach((pipeline) => { result[pipeline.state] += 1; });
+    return result;
+  }, [pipelines]);
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const visibleSources = useMemo(() => sources.filter((source) => {
+  const visibleSources = sources.filter((source) => {
     if (normalizedQuery && !source.title.toLocaleLowerCase().includes(normalizedQuery)) return false;
-    if (filter === "searchable") return isSourceSearchable(source);
-    if (filter === "readable") return isSourceReadableOnly(source);
-    if (filter === "processing") return !isSourceSearchable(source) && !isSourceReadableOnly(source);
-    return true;
-  }), [filter, normalizedQuery, sources]);
+    return filter === "all" || pipelines.get(source.source_id)?.state === filter;
+  });
+
+  // 资料解析与建立索引在后台异步完成，处理中时定期刷新列表。
+  const refreshRef = useRef(refreshSources);
+  refreshRef.current = refreshSources;
+  useEffect(() => {
+    if (counts.processing === 0) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void refreshRef.current().catch(() => undefined);
+    }, PROCESSING_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [counts.processing]);
+
+  // 重新处理单个资料：解析失败从解析阶段开始，只有索引失败时从向量化阶段开始
+  const reprocess = useCallback(async (sourceId: string) => {
+    setRecovery((current) => ({ ...current, [sourceId]: { running: true, message: "", tone: "normal" } }));
+    try {
+      const result = await props.reprocessSource(sourceId);
+      await refreshRef.current();
+      setRecovery((current) => ({
+        ...current,
+        [sourceId]: {
+          running: false,
+          message: result.restart_from === "PARSE" ? "已从解析阶段重新开始处理。" : "已从向量化阶段重新开始，已有的切片保留。",
+          tone: "normal"
+        }
+      }));
+    } catch (error) {
+      setRecovery((current) => ({
+        ...current,
+        [sourceId]: {
+          running: false,
+          message: error instanceof ApiError && error.status === 403
+            ? "你没有编辑这份资料的权限。"
+            : error instanceof Error ? error.message : "重新处理失败，请稍后再试。",
+          tone: "danger"
+        }
+      }));
+    }
+  }, [props.reprocessSource]);
 
   async function uploadFiles(files: FileList | File[]) {
     const selectedFiles = Array.from(files);
@@ -117,146 +136,86 @@ export function SourceLibraryWorkbench(props: SourceLibraryWorkbenchProps) {
     }
   }
 
+  const filters = ([
+    ["all", `全部 ${sources.length}`],
+    ["searchable", `可检索 ${counts.searchable}`],
+    ["readable", `仅可阅读 ${counts.readable}`],
+    ["processing", `处理中 ${counts.processing}`],
+    ["failed", `失败 ${counts.failed}`]
+  ] as Array<[SourceFilter, string]>).filter(([value]) => value !== "failed" || counts.failed > 0);
+  const hasItems = sources.length > 0 || uploads.length > 0;
+
   return (
     <section className="source-library-page workbench-page" aria-labelledby="source-library-title">
       <header className="source-library-hero">
         <div className="source-library-hero-copy">
           <h2 id="source-library-title">资料库</h2>
-          <p>「{workspace?.name || "当前工作台"}」的资料由 {conversationCount} 个对话、深度研究与知识库共享。建立检索索引后才能参与问答。</p>
+          <p>所有对话、深度研究与知识库共用这里的资料。上传后会在后台完成解析、切片、向量化和索引。</p>
         </div>
       </header>
 
-      <dl className="source-library-metrics" aria-label="资料状态总览">
-        <div>
-          <dt>全部资料</dt>
-          <dd>{sources.length}</dd>
-          <small>当前工作台</small>
-        </div>
-        <div className="is-searchable">
-          <dt>可参与 Chat / RAG</dt>
-          <dd>{searchableSourceCount}</dd>
-          <small>已解析并建立检索索引</small>
-        </div>
-        <div className="is-readable">
-          <dt>可用于 Research</dt>
-          <dd>{searchableSourceCount + readableOnlySourceCount}</dd>
-          <small>{readableOnlySourceCount} 份尚无检索索引</small>
-        </div>
-        <div className={processingSourceCount > 0 ? "is-processing" : ""}>
-          <dt>处理中或异常</dt>
-          <dd>{processingSourceCount}</dd>
-          <small>{processingSourceCount > 0 ? "请查看资料状态" : "没有待处理资料"}</small>
-        </div>
-      </dl>
-
-      <div className="source-library-layout">
-        <div className="source-library-catalog">
-          <div className="source-library-catalog-header">
-            <div>
-              <h3>全部来源</h3>
-            </div>
-            {sources.length > 0 ? (
+      <div className={`source-library-layout${hasItems ? "" : " is-empty"}`}>
+        {hasItems ? (
+          <div className="source-library-catalog">
+            <div className="source-library-catalog-header">
+              <div className="source-library-filter-row" role="group" aria-label="筛选资料状态">
+                {filters.map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={`${filter === value ? "active" : ""}${value === "failed" ? " is-failed" : ""}`}
+                    aria-pressed={filter === value}
+                    onClick={() => setFilter(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
               <label className="source-library-search">
                 <Search size={15} aria-hidden="true" />
                 <span className="sr-only">搜索资料</span>
                 <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题" />
               </label>
+            </div>
+
+            {uploads.length > 0 ? (
+              <ul className="source-upload-list" aria-label="正在上传">
+                {uploads.map((upload) => <SourceUploadRow key={upload.id} upload={upload} onDismiss={() => props.dismissUpload(upload.id)} />)}
+              </ul>
+            ) : null}
+
+            {visibleSources.length > 0 ? (
+              <div className="source-library-list" aria-label="工作台资料列表">
+                {visibleSources.map((source) => (
+                  <SourceLibraryRow
+                    key={source.source_id}
+                    source={source}
+                    expanded={expandedId === source.source_id}
+                    onToggle={() => setExpandedId((current) => current === source.source_id ? "" : source.source_id)}
+                    busy={sourcesBusy}
+                    onDelete={() => props.deleteSource(source)}
+                    loadTask={loadTask}
+                    recovery={recovery[source.source_id] ?? IDLE_RECOVERY}
+                    onReprocess={() => void reprocess(source.source_id)}
+                  />
+                ))}
+              </div>
+            ) : sources.length > 0 ? (
+              <div className="source-library-filter-empty">
+                <FileSearch size={22} aria-hidden="true" />
+                <strong>没有符合条件的资料</strong>
+                <p>更换状态筛选或清除搜索内容。</p>
+                <button type="button" className="secondary-button" onClick={() => { setQuery(""); setFilter("all"); }}>清除筛选</button>
+              </div>
             ) : null}
           </div>
-          {sources.length > 0 ? (
-            <div className="source-library-filter-row" role="group" aria-label="筛选资料状态">
-              {([
-                ["all", `全部 ${sources.length}`],
-                ["searchable", `可检索 ${searchableSourceCount}`],
-                ["readable", `仅可阅读 ${readableOnlySourceCount}`],
-                ["processing", `处理中 ${processingSourceCount}`]
-              ] as Array<[SourceFilter, string]>).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={filter === value ? "active" : ""}
-                  aria-pressed={filter === value}
-                  onClick={() => setFilter(value)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          ) : null}
+        ) : null}
 
-          {visibleSources.length > 0 ? (
-            <div className="source-library-list" aria-label="工作台资料列表">
-              {visibleSources.map((source) => {
-                const searchable = isSourceSearchable(source);
-                const readableOnly = isSourceReadableOnly(source);
-                const deletePending = pendingDeleteId === source.source_id;
-                return (
-                  <article className="source-library-row" key={source.source_id}>
-                    <span className={`source-library-file-icon${searchable ? " is-searchable" : readableOnly ? " is-readable" : " is-processing"}`} aria-hidden="true">
-                      <FileText size={18} />
-                    </span>
-                    <div className="source-library-row-copy">
-                      <strong title={source.title}>{source.title}</strong>
-                      <div className="source-library-statuses">
-                        <span className={sourceStatusTone(source.status)}>{formatSourceProcessingStatus(source.status)}</span>
-                        <span className={sourceIndexTone(source.index_status)}>{formatSourceIndexStatus(source.index_status)}</span>
-                        {source.generated_by === "research_agent" ? <span>{buildSourceOriginBadge(source)}</span> : null}
-                      </div>
-                    </div>
-                    <div className="source-library-row-meta">
-                      <small>{source.source_type || "资料"}</small>
-                      <time dateTime={source.updated_at}>{source.updated_at ? formatRelativeTime(source.updated_at) : "更新时间未知"}</time>
-                    </div>
-                    <div className="source-library-delete">
-                      {deletePending ? (
-                        <>
-                          <button type="button" className="source-delete-confirm" onClick={() => {
-                            setPendingDeleteId("");
-                            deleteSource(source);
-                          }} disabled={sourcesBusy}>确认删除</button>
-                          <button type="button" className="source-delete-cancel" onClick={() => setPendingDeleteId("")}>取消</button>
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          className="source-delete-button"
-                          aria-label={`删除资料 ${source.title}`}
-                          title="删除资料"
-                          onClick={() => setPendingDeleteId(source.source_id)}
-                          disabled={sourcesBusy}
-                        >
-                          <Trash2 size={15} aria-hidden="true" />
-                        </button>
-                      )}
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          ) : sources.length > 0 ? (
-            <div className="source-library-filter-empty">
-              <FileSearch size={22} aria-hidden="true" />
-              <strong>没有符合条件的资料</strong>
-              <p>更换状态筛选或清除搜索内容。</p>
-              <button type="button" className="secondary-button" onClick={() => { setQuery(""); setFilter("all"); }}>清除筛选</button>
-            </div>
-          ) : (
-            <div className="source-library-empty">
-              <Files size={24} aria-hidden="true" />
-              <strong>资料库还是空的</strong>
-              <p>从添加资料区上传第一份 PDF、Markdown 或文本资料，之后即可在同一工作台内共享。</p>
-              <button type="button" className="source-library-empty-action" disabled={sourcesBusy || !workspace} onClick={() => fileInputRef.current?.click()}>
-                <Upload size={16} aria-hidden="true" />选择第一份资料
-              </button>
-            </div>
-          )}
-        </div>
-
-        <aside className="source-library-tools" aria-label="添加资料与处理记录">
+        <aside className="source-library-tools" aria-label="添加资料">
           <section className="source-library-upload-tool">
             <div className="source-library-tool-heading">
               <span aria-hidden="true"><Upload size={17} /></span>
-              <div><strong>添加资料</strong><small>写入当前工作台</small></div>
+              <div><strong>添加资料</strong></div>
             </div>
             <input
               ref={fileInputRef}
@@ -278,8 +237,8 @@ export function SourceLibraryWorkbench(props: SourceLibraryWorkbenchProps) {
             >
               <span className="source-upload-icon" aria-hidden="true"><Upload size={19} /></span>
               <span className="source-upload-copy">
-                <strong>{sourcesBusy ? "正在处理资料" : "拖放或选择文件"}</strong>
-                <small>支持一次选择多个文件</small>
+                <strong>{sourcesBusy ? "正在上传" : "拖放或选择文件"}</strong>
+                <small>大文件分片上传，处理在后台进行，可以离开这个页面</small>
               </span>
             </button>
             <div className="source-format-row" aria-label="支持的资料格式">
@@ -301,58 +260,46 @@ export function SourceLibraryWorkbench(props: SourceLibraryWorkbenchProps) {
             </details>
             {!workspace ? <p className="source-library-warning"><CircleAlert size={15} aria-hidden="true" />请先创建或选择工作台。</p> : null}
           </section>
-
-          <section className="source-library-availability">
-            <div className="source-library-tool-heading">
-              <span aria-hidden="true"><BookOpenCheck size={17} /></span>
-              <div><strong>使用范围</strong><small>按真实后端状态判断</small></div>
-            </div>
-            <p><i className="is-searchable" />已建立索引的资料可参与 Chat / RAG。</p>
-            <p><i className="is-readable" />只完成解析的资料可作为 Research 输入，但不能参与检索问答。</p>
-          </section>
-
-          {latestTask ? (
-            <details className="source-task-disclosure">
-              <summary>
-                <span className="source-task-icon" aria-hidden="true"><Activity size={15} /></span>
-                <span className="source-task-summary-copy">
-                  <strong>最近处理记录</strong>
-                  <small>{summarizeRunStatus(latestTask.task_status)} · {latestTask.progress_phase}</small>
-                </span>
-              </summary>
-              <div className="source-task-detail">
-                <span>{latestTask.task_type}</span>
-                <span>{latestTask.progress_message}</span>
-                {buildWaitContextNarrative(latestTask.wait_context) ? <small>{buildWaitContextNarrative(latestTask.wait_context)}</small> : null}
-                {latestWorkspaceTaskWaitSignals.length > 0 ? (
-                  <div className="signal-chip-row artifact-wait-signal-row">
-                    {latestWorkspaceTaskWaitSignals.map((chip, index) => (
-                      <span key={`workspace-task-wait-signal-${index}`} className={`signal-chip tone-${chip.tone}`}>{chip.label}: {chip.value}</span>
-                    ))}
-                  </div>
-                ) : null}
-                {latestWorkspaceTaskWaitDetails.map((line, index) => (
-                  <small key={`workspace-task-wait-detail-${index}`} className="artifact-runtime-trace-line"><strong>{line.label}</strong> · {line.value}</small>
-                ))}
-                {buildGenericTaskRuntimeSnapshot(latestWorkspaceProgressEvent, latestTask) ? (
-                  <small>{buildGenericTaskRuntimeSnapshot(latestWorkspaceProgressEvent, latestTask)}</small>
-                ) : null}
-                {taskEvents.slice(-4).map((event, index) => (
-                  <small key={`${event.event}-${index}`}>{buildTaskEventNarrative(event, latestTask)}</small>
-                ))}
-              </div>
-            </details>
-          ) : null}
         </aside>
       </div>
     </section>
   );
 }
 
-function sourceStatusTone(status: string) {
-  return /FAILED|ERROR/.test(status.toUpperCase()) ? "is-error" : status.toUpperCase() === "READY" ? "is-ready" : "is-pending";
+function SourceUploadRow({ upload, onDismiss }: { upload: SourceUploadItem; onDismiss: () => void }) {
+  const percent = upload.totalBytes > 0 ? Math.round((upload.uploadedBytes / upload.totalBytes) * 100) : 0;
+  const failed = upload.state === "failed";
+  return (
+    <li className={`source-upload-row${failed ? " is-failed" : ""}`}>
+      <span className="source-upload-row-copy">
+        <strong title={upload.fileName}>{upload.fileName}</strong>
+        <small>
+          {failed
+            ? `上传失败：${upload.error}`
+            : `上传中 · 第 ${Math.min(upload.uploadedChunks + 1, upload.totalChunks)} / ${upload.totalChunks} 片 · ${formatBytes(upload.uploadedBytes)} / ${formatBytes(upload.totalBytes)}`}
+        </small>
+      </span>
+      {failed ? (
+        <button type="button" className="icon-button" aria-label={`移除 ${upload.fileName}`} onClick={onDismiss}>
+          <X size={15} aria-hidden="true" />
+        </button>
+      ) : (
+        <span className="source-upload-percent">{percent}%</span>
+      )}
+      <span className="source-upload-bar" role="progressbar" aria-label={`${upload.fileName} 上传进度`}
+        aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+        <span style={{ width: `${failed ? 100 : percent}%` }} />
+      </span>
+    </li>
+  );
 }
 
-function sourceIndexTone(status: string) {
-  return status.toUpperCase() === "INDEXED" ? "is-indexed" : /FAILED|ERROR/.test(status.toUpperCase()) ? "is-error" : "is-unindexed";
+function formatBytes(bytes: number) {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
+}
+
+function defaultLoadTask(taskId: string) {
+  return executionsApi.load(taskId);
 }

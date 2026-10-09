@@ -2,7 +2,7 @@
 
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { ResearchReportView, splitResearchReport } from "./ResearchReportView";
+import { localizeResearchAudit, ResearchReportView, splitResearchReport } from "./ResearchReportView";
 
 const report = `# Research report
 
@@ -32,7 +32,14 @@ describe("ResearchReportView", () => {
     expect(screen.getByText("引用与研究审计")).toBeTruthy();
     expect(document.querySelector(".research-reader-body")?.textContent).not.toContain("snapshot-a");
     expect(document.querySelector(".research-audit-markdown")?.textContent).toContain("snapshot-a");
+    expect(document.querySelector(".research-audit-markdown")?.textContent).toContain("快照：");
+    expect(document.querySelector(".research-audit-markdown")?.textContent).not.toContain("Snapshot:");
     expect(document.querySelector(".research-citation-ref")?.textContent).toBe("[证据]");
+  });
+
+  it("localizes audit field names for display only", () => {
+    expect(localizeResearchAudit("- Evidence: `e`\n- Exact quote: “q”\n  - Snapshot: `s`\n- URL: https://x"))
+      .toBe("- 证据：`e`\n- 原文引句：“q”\n  - 快照：`s`\n- 链接：https://x");
   });
 
   it("preserves reports that do not contain an audit appendix", () => {

@@ -329,6 +329,16 @@
   font-size: var(--text-2xs);
 }
 
+/* 常规的状态提示只对辅助技术可见；只有加载中和出错状态才在侧边栏中显示。 */
+.shell-status.is-idle {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 .shell-status-text {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -546,7 +556,9 @@
 /* ---------- Generic popover (workspace switcher) ---------- */
 
 .popover {
-  z-index: 80;
+  /* 浮层挂在 body 上，必须高于移动端导航抽屉（95）及其遮罩（94），
+     否则从抽屉里打开工作台切换器时会被抽屉整个盖住。 */
+  z-index: 96;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -762,7 +774,7 @@
 .workspace-zero-state h2 {
   font-family: var(--font-display);
   font-size: var(--text-3xl);
-  font-weight: 500;
+  font-weight: var(--weight-display);
   letter-spacing: -0.02em;
 }
 

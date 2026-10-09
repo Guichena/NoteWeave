@@ -1,20 +1,18 @@
-import { lazy, memo, Suspense, useEffect, useState } from "react";
+import { lazy, memo, Suspense, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Activity, X } from "lucide-react";
-import { summarizeRunStatus } from "../../runStatus";
 import type { ResearchWorkbenchViewProps as BuiltResearchWorkbenchViewProps } from "./buildResearchWorkbenchProps";
+import { ResearchComposer } from "./ResearchComposer";
+import { ResearchRunList } from "./ResearchRunList";
+import { ResearchRunView } from "./ResearchRunView";
 
 export type ResearchWorkbenchViewProps = BuiltResearchWorkbenchViewProps;
 
-const LazyResearchSidebar = lazy(() => import("./ResearchSidebar").then((module) => ({
-  default: module.ResearchSidebar
-})));
-const LazyResearchReportPanel = lazy(() => import("./ResearchReportPanel").then((module) => ({
-  default: module.ResearchReportPanel
-})));
+// 审计详情面向排查问题的场景，按需加载。
 const LazyResearchDetailWorkbench = lazy(() => import("./ResearchDetailWorkbench").then((module) => ({
   default: module.ResearchDetailWorkbench
 })));
+
+type TaskSnapshot = { result_ref?: string; progress_message?: string } | null;
 
 export const ResearchWorkbenchView = memo(function ResearchWorkbenchView({
   isBusy,
@@ -23,193 +21,73 @@ export const ResearchWorkbenchView = memo(function ResearchWorkbenchView({
   statusPanel,
   detail
 }: ResearchWorkbenchViewProps) {
-  const [statusOpen, setStatusOpen] = useState(false);
-  const {
-    currentResearchRunSummary,
-    currentResearchWaitContext,
-    currentResearchWaitSignals,
-    currentResearchWaitDetails,
-    latestResearchTask,
-    latestResearchTaskWaitSignals,
-    latestResearchTaskWaitDetails,
-    latestResearchProgressEvent,
-    currentResearchRun,
-    buildWaitContextNarrative,
-    buildResearchTaskRuntimeSnapshot,
-    setResearchDetailOpen
-  } = statusPanel;
-
-  const task = latestResearchTask as {
-    task_id?: string;
-    task_status?: string;
-    progress_phase?: string;
-    progress_message?: string;
-    wait_context?: unknown;
-  } | null;
+  const [composing, setComposing] = useState(false);
+  // 记录发起研究时所在的运行；出现新的运行 ID 说明启动成功，此时离开输入页。
+  const launchedFromRef = useRef<string | null>(null);
+  const run = report.currentResearchRun;
+  const currentRunId = sidebar.currentResearchRunId;
+  const showComposer = composing || !run;
 
   useEffect(() => {
-    if (!detail.researchDetailOpen && !statusOpen) return;
+    const launchedFrom = launchedFromRef.current;
+    if (launchedFrom === null || !currentRunId || currentRunId === launchedFrom) return;
+    launchedFromRef.current = null;
+    setComposing(false);
+  }, [currentRunId]);
+
+  useEffect(() => {
+    if (!detail.researchDetailOpen) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        if (detail.researchDetailOpen) detail.setResearchDetailOpen(false);
-        else setStatusOpen(false);
-      }
+      if (event.key === "Escape") detail.setResearchDetailOpen(false);
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [detail.researchDetailOpen, detail.setResearchDetailOpen, statusOpen]);
+  }, [detail.researchDetailOpen, detail.setResearchDetailOpen]);
+
+  const task = statusPanel.latestResearchTask as TaskSnapshot;
+  const progressMessage = run && task?.result_ref === run.research_run_id ? task.progress_message ?? "" : "";
 
   return (
-    <section className={`research-workbench${currentResearchRun ? "" : " is-empty"}${statusOpen ? " status-open" : ""}`}>
-      <Suspense fallback={(
-        <aside className="research-index research-sidebar-loading">
-          <p className="section-label">深度研究</p>
-          <span>正在加载独立研究控制台…</span>
-        </aside>
-      )}>
-        <LazyResearchSidebar {...sidebar} isBusy={isBusy} />
-      </Suspense>
+    <section className={`research-workbench${showComposer ? " is-composing" : ""}`}>
+      <ResearchRunList
+        runs={sidebar.researchRuns}
+        activeRunId={currentRunId}
+        composing={showComposer}
+        isBusy={isBusy}
+        onNewResearch={() => {
+          launchedFromRef.current = null;
+          setComposing(true);
+        }}
+        onOpenRun={(summary) => {
+          launchedFromRef.current = null;
+          setComposing(false);
+          void sidebar.openResearchRunHistoryItem(summary);
+        }}
+      />
 
-      <Suspense fallback={(
-        <article className="research-page research-report-loading">
-          <p className="section-label">研究运行</p>
-          <span>正在加载研究主报告…</span>
-        </article>
-      )}>
-        <LazyResearchReportPanel {...report} isBusy={isBusy} />
-      </Suspense>
-
-      {currentResearchRun ? (
-        <button
-          type="button"
-          className="research-status-toggle secondary-button"
-          aria-label="打开研究运行状态"
-          aria-controls="research-status-panel"
-          aria-expanded={statusOpen}
-          title="打开研究运行状态"
-          onClick={() => setStatusOpen(true)}
-        >
-          <Activity size={18} aria-hidden="true" />
-        </button>
-      ) : null}
-      {statusOpen ? (
-        <button
-          type="button"
-          className="research-status-backdrop"
-          aria-label="点击背景关闭研究运行状态"
-          onClick={() => setStatusOpen(false)}
-        />
-      ) : null}
-      <aside className="research-side" id="research-status-panel" aria-label="研究运行状态">
-        <p className="section-label">研究详情</p>
-        <button
-          type="button"
-          className="research-status-close secondary-button"
-          aria-label="关闭研究运行状态"
-          title="关闭研究运行状态"
-          onClick={() => setStatusOpen(false)}
-        >
-          <X size={17} aria-hidden="true" />
-        </button>
-        <div className="task-card">
-          <strong>研究详情</strong>
-          <span>主界面只保留研究主流程；checkpoint、verifier、trace、counterfactual 等高级信息统一放到详情弹窗。</span>
-          {currentResearchRunSummary ? (
-            <>
-              <small>
-                {currentResearchRunSummary.status}
-                {" · "}
-                {currentResearchRunSummary.profile_key || "DEFAULT"}
-                {" · checkpoints="}
-                {currentResearchRunSummary.checkpoint_count}
-              </small>
-              <small>
-                rows={currentResearchRunSummary.ledger_row_count}
-                {" · verified="}
-                {currentResearchRunSummary.verified_row_count}
-                {" · conflicted="}
-                {currentResearchRunSummary.conflicted_row_count}
-              </small>
-              {buildWaitContextNarrative(currentResearchWaitContext as any) ? (
-                <small>{buildWaitContextNarrative(currentResearchWaitContext as any)}</small>
-              ) : null}
-              {currentResearchWaitSignals.length > 0 ? (
-                <div className="signal-chip-row artifact-wait-signal-row">
-                  {currentResearchWaitSignals.map((chip, index) => (
-                    <span key={`current-research-wait-signal-${index}`} className={`signal-chip tone-${chip.tone}`}>
-                      {chip.label}: {chip.value}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-              {currentResearchWaitDetails.length > 0 ? (
-                <div className="artifact-runtime-trace">
-                  {currentResearchWaitDetails.map((line, index) => (
-                    <small key={`current-research-wait-detail-${index}`} className="artifact-runtime-trace-line">
-                      <strong>{line.label}</strong> · {line.value}
-                    </small>
-                  ))}
-                </div>
-              ) : null}
-            </>
-          ) : (
-            <small>选择一个 run 后可查看完整研究详情。</small>
-          )}
-          <div className="research-inline-actions">
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => setResearchDetailOpen(true)}
-              disabled={!currentResearchRun}
-            >
-              打开研究详情
-            </button>
-          </div>
-        </div>
-        {task ? (
-          <div className="task-card research-task-card" data-task-id={task.task_id || undefined}>
-            <strong>当前任务进度</strong>
-            <span>
-              {summarizeRunStatus(task.task_status || "")}
-              {" · "}
-              {task.progress_phase}
-            </span>
-            <small>{task.progress_message}</small>
-            {buildWaitContextNarrative(task.wait_context as any) ? (
-              <small>{buildWaitContextNarrative(task.wait_context as any)}</small>
-            ) : null}
-            {latestResearchTaskWaitSignals.length > 0 ? (
-              <div className="signal-chip-row artifact-wait-signal-row">
-                {latestResearchTaskWaitSignals.map((chip, index) => (
-                  <span key={`latest-research-task-wait-signal-${index}`} className={`signal-chip tone-${chip.tone}`}>
-                    {chip.label}: {chip.value}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-            {latestResearchTaskWaitDetails.length > 0 ? (
-              <div className="artifact-runtime-trace">
-                {latestResearchTaskWaitDetails.map((line, index) => (
-                  <small key={`latest-research-task-wait-detail-${index}`} className="artifact-runtime-trace-line">
-                    <strong>{line.label}</strong> · {line.value}
-                  </small>
-                ))}
-              </div>
-            ) : null}
-            {buildResearchTaskRuntimeSnapshot(
-              latestResearchProgressEvent as any,
-              latestResearchTask as any
-            ) ? (
-              <small>
-                {buildResearchTaskRuntimeSnapshot(
-                  latestResearchProgressEvent as any,
-                  latestResearchTask as any
-                )}
-              </small>
-            ) : null}
-          </div>
-        ) : null}
-      </aside>
+      <div className="research-main">
+        {showComposer || !run ? (
+          <ResearchComposer
+            {...sidebar}
+            isBusy={isBusy}
+            onStart={() => {
+              launchedFromRef.current = currentRunId || "";
+              void sidebar.startDeepResearch();
+            }}
+          />
+        ) : (
+          <ResearchRunView
+            run={run}
+            progressMessage={progressMessage}
+            isBusy={isBusy}
+            onExport={() => void report.exportResearchReportMarkdown()}
+            onSaveAsSource={() => void report.saveResearchReportAsSource()}
+            onRefresh={() => void report.refreshCurrentResearchRun()}
+            onOpenAudit={() => detail.setResearchDetailOpen(true)}
+            onResume={(checkpointNo) => void detail.resumeResearchFromCheckpoint(checkpointNo)}
+          />
+        )}
+      </div>
 
       {detail.researchDetailOpen && detail.currentResearchRun ? createPortal((
         <div
@@ -223,15 +101,10 @@ export const ResearchWorkbenchView = memo(function ResearchWorkbenchView({
         >
           <Suspense fallback={(
             <aside className="research-detail-dialog research-detail-loading" aria-busy="true" aria-live="polite">
-              <p className="section-label">研究详情</p>
+              <p className="section-label">审计详情</p>
               <div className="view-loading-body">
                 <span className="view-loading-spinner" aria-hidden="true" />
-                <span>正在加载研究详情工作台…</span>
-              </div>
-              <div className="view-loading-skeleton" aria-hidden="true">
-                <span className="skeleton-line w-70" />
-                <span className="skeleton-line w-55" />
-                <span className="skeleton-line w-40" />
+                <span>正在加载审计详情…</span>
               </div>
             </aside>
           )}>

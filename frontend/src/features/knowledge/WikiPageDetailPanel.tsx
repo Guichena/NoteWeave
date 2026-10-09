@@ -164,7 +164,7 @@ export function WikiPageDetailPanel({
             {citations.map((citation) => (
               <li key={citation.citation_id}>
                 <strong>{props.buildKnowledgeCitationLabel(citation)}</strong>
-                {citation.quote_text ? <q>{citation.quote_text}</q> : null}
+                {citation.quote_text ? <blockquote className="wiki-citation-quote">{citation.quote_text}</blockquote> : null}
               </li>
             ))}
           </ol>

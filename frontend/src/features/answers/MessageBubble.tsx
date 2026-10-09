@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
-import { Check, ChevronDown, Copy } from "lucide-react";
+import { Check, ChevronDown, Copy, MessageSquareText, Network, NotebookPen } from "lucide-react";
 import { type Message } from "./messageTypes";
 import { MarkdownSurface } from "../../shared/ui/MarkdownSurface";
+import { routes } from "../../routes";
+import { buildCitationViews, type AnswerEvidence } from "./evidence";
+
+/** 按回答运行读取证据清单；未提供时引用只展示标题和摘录。 */
+export type EvidenceLoader = (answerRunId: string) => Promise<AnswerEvidence[]>;
+
+const MODE_ICONS = { qa: MessageSquareText, note: NotebookPen, wiki: Network } as const;
 
 type MessageSection = {
   title: string;
@@ -29,17 +36,24 @@ type MessagePresentation = {
 
 const CITATION_SECTION_TITLES = new Set(["引用来源", "来源引用", "来源回链"]);
 
-export function MessageBubble({ message }: { message: Message }) {
+type MessageBubbleProps = {
+  message: Message;
+  loadEvidence?: EvidenceLoader;
+  onOpenWikiPage?: (title: string) => void;
+};
+
+export function MessageBubble({ message, loadEvidence, onOpenWikiPage }: MessageBubbleProps) {
   if (message.role !== "assistant" || !message.answerMode) {
     return <div className="bubble-body">{message.content}</div>;
   }
-  return <AssistantMessage message={message} />;
+  return <AssistantMessage message={message} loadEvidence={loadEvidence} onOpenWikiPage={onOpenWikiPage} />;
 }
 
-function AssistantMessage({ message }: { message: Message }) {
+function AssistantMessage({ message, loadEvidence, onOpenWikiPage }: MessageBubbleProps) {
   const [activeCitation, setActiveCitation] = useState<number | null>(null);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [manifest, setManifest] = useState<AnswerEvidence[] | null>(null);
   const isGenerating = message.answerStatus === "GENERATING";
   const isFailed = message.answerStatus === "FAILED" || message.answerStatus === "CANCELLED";
   const presentation = buildAssistantPresentation(message);
@@ -51,6 +65,20 @@ function AssistantMessage({ message }: { message: Message }) {
       : "此回答暂未返回正文。");
   const sources = !isFailed ? presentation.sources : null;
   const sourceItems = sources?.items ?? [];
+  const citationViews = buildCitationViews(sourceItems, manifest);
+  const route = routes.find((item) => item.key === message.answerMode) ?? routes[0];
+  const ModeIcon = MODE_ICONS[route.key];
+  const answerRunId = message.answerRunId;
+
+  // 第一次展开引用时再读取证据清单，避免每条历史消息都发请求。
+  useEffect(() => {
+    if (!sourcesOpen || manifest || !answerRunId || !loadEvidence || isGenerating) return;
+    let cancelled = false;
+    loadEvidence(answerRunId)
+      .then((items) => { if (!cancelled) setManifest(items); })
+      .catch(() => { if (!cancelled) setManifest([]); });
+    return () => { cancelled = true; };
+  }, [sourcesOpen, manifest, answerRunId, loadEvidence, isGenerating]);
 
   useEffect(() => {
     if (!copied) return;
@@ -85,13 +113,23 @@ function AssistantMessage({ message }: { message: Message }) {
           回答未完成：{message.answerError || "请稍后重试。"}
         </div>
       ) : null}
+      {!isFailed ? (
+        <div className="answer-meta">
+          <span className="answer-mode-tag" title={route.description}>
+            <ModeIcon size={13} aria-hidden="true" />
+            {route.label} · {route.strategy}
+          </span>
+          {sourceItems.length > 0 ? <span>{sourceItems.length} 条引用</span> : null}
+        </div>
+      ) : null}
       {!isFailed && presentation.leadTitle ? <div className="bubble-label">{presentation.leadTitle}</div> : null}
       <MarkdownSurface
         content={body}
         className="bubble-body"
-        citations={sourceItems.length > 0 ? sourceItems : undefined}
+        citations={citationViews.length > 0 ? citationViews.map((view) => view.title) : undefined}
         activeCitation={activeCitation}
         onCitationClick={focusCitation}
+        onWikiLinkClick={onOpenWikiPage}
       />
       {!isFailed && presentation.cards.length > 0 ? (
         <div className="bubble-cards">
@@ -118,8 +156,8 @@ function AssistantMessage({ message }: { message: Message }) {
             <span>{sourceItems.length > 0 ? `${sourceItems.length} 条来源` : "说明"}</span>
             {sourceItems.length > 0 ? (
               <span className="message-sources-peek" aria-hidden="true">
-                {sourceItems.slice(0, 3).map((item, index) => (
-                  <span key={`${item}-${index}`}>{shortSourceLabel(item)}</span>
+                {Array.from(new Set(citationViews.map((view) => view.title))).slice(0, 3).map((title) => (
+                  <span key={title}>{trimText(title, 18)}</span>
                 ))}
               </span>
             ) : null}
@@ -127,15 +165,21 @@ function AssistantMessage({ message }: { message: Message }) {
           </summary>
           {sourceItems.length > 0 ? (
             <ol className="message-source-list">
-              {sourceItems.map((item, index) => (
+              {citationViews.map((view) => (
                 <li
-                  key={`${item}-${index}`}
-                  className={activeCitation === index + 1 ? "is-active" : undefined}
+                  key={view.index}
+                  className={activeCitation === view.index ? "is-active" : undefined}
                 >
-                  <button type="button" className="citation-chip" onClick={() => focusCitation(index + 1)}>
-                    {index + 1}
+                  <button type="button" className="citation-chip" onClick={() => focusCitation(view.index)}>
+                    {view.index}
                   </button>
-                  <span>{item}</span>
+                  <div className="message-source-body">
+                    <strong>{view.title}</strong>
+                    {view.kindLabel || view.location ? (
+                      <small>{[view.kindLabel, view.location].filter(Boolean).join(" · ")}</small>
+                    ) : null}
+                    {view.quote ? <p>{view.quote}</p> : null}
+                  </div>
                 </li>
               ))}
             </ol>
@@ -160,10 +204,6 @@ function AssistantMessage({ message }: { message: Message }) {
   );
 }
 
-function shortSourceLabel(value: string) {
-  const cleaned = value.replace(/^\[\d+\]\s*/, "").split(/\s[·|]\s|\s\|\s/)[0] ?? value;
-  return trimText(cleaned.trim(), 18);
-}
 
 function buildAssistantPresentation(message: Message): MessagePresentation {
   const parsedSections = splitMarkdownSections(message.content, message.answerMode === "wiki");

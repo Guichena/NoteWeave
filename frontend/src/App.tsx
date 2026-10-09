@@ -14,7 +14,6 @@ import { useResearchWorkbenchController } from "./features/research/useResearchW
 import { buildResearchWorkbenchProps } from "./features/research/buildResearchWorkbenchProps";
 import { useExecutionRegistry } from "./features/executions/useExecutionRegistry";
 import { isExecutionTerminal } from "./features/executions/api";
-import { buildTaskWaitPresentation } from "./features/executions/taskPresentation";
 import { useArtifactWorkspace } from "./features/artifacts/useArtifactWorkspace";
 import { useArtifactStudioCatalog } from "./features/artifacts/useArtifactStudioCatalog";
 import { useArtifactComposerActions } from "./features/artifacts/useArtifactComposerActions";
@@ -131,7 +130,6 @@ export function App() {
   } = useExecutionRegistry(workspace?.workspace_id ?? "");
   const latestTaskExecution = getExecution(latestTaskId);
   const latestTask = latestTaskExecution?.task ?? null;
-  const taskEvents = latestTaskExecution?.events ?? [];
   const terminalSourceParseTasks = trackedTaskIds
     .map((taskId) => executionRecords[taskId]?.task)
     .filter((task) => task?.task_type === "SOURCE_PARSE" && isExecutionTerminal(task.task_status));
@@ -139,10 +137,15 @@ export function App() {
     .map((task) => `${task.task_id}:${task.task_status}`)
     .sort()
     .join("|");
-  // Only active view builds heavy props (avoids fake useMemo on unstable controller objects).
-  const taskPresentation = view === "chat" || view === "library"
-    ? buildTaskWaitPresentation(latestTask, taskEvents)
-    : null;
+  const workspaceId = workspace?.workspace_id ?? "";
+  const refreshSources = useCallback(async () => {
+    if (!workspaceId) return;
+    setSources(await sourcesApi.list(workspaceId));
+  }, [workspaceId]);
+  const reprocessSource = useCallback(
+    (sourceId: string) => sourcesApi.reprocessSource(workspaceId, sourceId),
+    [workspaceId]
+  );
 
   const wiki = useWikiWorkbenchController({
     workspace,
@@ -279,7 +282,7 @@ export function App() {
     loadJobs: artifactWorkspace.loadJobs
   });
 
-  const { openMemoryWorkbench, navigateWorkbenchView } = useWorkbenchNavigation({
+  const { navigateWorkbenchView } = useWorkbenchNavigation({
     view,
     setView,
     hasWorkspace: Boolean(workspace),
@@ -316,18 +319,8 @@ export function App() {
       composer: artifactComposer,
       workspace,
       artifactBusy,
-      artifactWorkspace: artifactWorkspace as Parameters<typeof buildArtifactRailProps>[0]["artifactWorkspace"],
-      researchSummary: research.currentResearchRunSummary,
-      latestTask,
+      artifactWorkspace,
       sourcesCount: artifactReadySources.length,
-      wiki: {
-        wikiEnabled: wiki.wikiEnabled,
-        wikiIndex: wiki.wikiIndex,
-        wikiHome: wiki.wikiHome,
-        wikiRebuildAdvice: wiki.wikiRebuildAdvice,
-        openWikiHome: wiki.openWikiHome,
-        toggleWikiEnabled: wiki.toggleWikiEnabled
-      },
       chat: {
         sourceDraftTitle: chat.sourceDraftTitle,
         setSourceDraftTitle: chat.setSourceDraftTitle,
@@ -337,9 +330,7 @@ export function App() {
         rewriteNoteSourceDraft: chat.rewriteNoteSourceDraft,
         saveNoteAnswerAsSource: chat.saveNoteAnswerAsSource,
         lastNoteAssistantMessageId: chat.lastNoteAssistantMessageId
-      },
-      openResearchWorkbench: research.openResearchWorkbench,
-      openMemoryWorkbench
+      }
     })
     : null;
   const chatProps = view === "chat" && artifactRailProps
@@ -354,19 +345,18 @@ export function App() {
       setArtifactComposerOpen: catalog.setComposerOpen,
       artifactRailProps,
       onOpenSourceLibrary: () => navigateWorkbenchView("library"),
+      onOpenWikiPage: (title) => void wiki.openWikiPageByTitle(title),
       uploadBusy
     })
     : null;
-  const sourceLibraryProps = view === "library" && taskPresentation
+  const sourceLibraryProps = view === "library"
     ? buildSourceLibraryWorkbenchProps({
       chat,
       sources,
       workspace,
-      conversationCount: conversations.length,
       uploadBusy,
-      latestTask,
-      taskEvents,
-      taskPresentation
+      refreshSources,
+      reprocessSource
     })
     : null;
 

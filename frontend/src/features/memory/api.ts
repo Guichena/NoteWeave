@@ -1,18 +1,32 @@
 import { apiClient, type ApiClient } from "../../shared/api";
 import {
+  type CreateMemorySignalInput,
+  type MemoryItem,
+  type MemoryPromotionResult,
   type MemoryReviewDecisionInput,
   type MemoryReviewDecisionResult,
-  type MemoryReviewItem
+  type MemorySignal
 } from "./model";
 
 export class MemoryApi {
   constructor(private readonly client: ApiClient = apiClient) {}
 
-  listReviews(workspaceId: string, init?: RequestInit) {
-    const path = `/api/v2/workspaces/${workspaceId}/memory/review`;
+  listItems(workspaceId: string, init?: RequestInit) {
+    const path = `/api/v2/workspaces/${workspaceId}/memory/items`;
     return init
-      ? this.client.get<MemoryReviewItem[]>(path, init)
-      : this.client.get<MemoryReviewItem[]>(path);
+      ? this.client.get<MemoryItem[]>(path, init)
+      : this.client.get<MemoryItem[]>(path);
+  }
+
+  createSignal(workspaceId: string, input: CreateMemorySignalInput) {
+    return this.client.post<MemorySignal>(`/api/v2/workspaces/${workspaceId}/memory/signals`, input);
+  }
+
+  promoteSignals(workspaceId: string, signalIds: string[]) {
+    return this.client.post<MemoryPromotionResult>(
+      `/api/v2/workspaces/${workspaceId}/memory/promotions`,
+      { signal_ids: signalIds }
+    );
   }
 
   decideReview(

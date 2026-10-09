@@ -1025,6 +1025,10 @@ details > summary::-webkit-details-marker {
   font-weight: 550;
 }
 
+.citation-nowrap {
+  white-space: nowrap;
+}
+
 /* Inline citation chip used by answers and reports */
 .citation-chip,
 .research-citation-ref {
@@ -1060,4 +1064,12 @@ button.citation-chip:hover,
     animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;
   }
+}
+
+/* 居中的空状态文案：均衡各行长度，避免最后一行只剩一两个字。 */
+.chat-welcome-meta,
+.wiki-empty-main > p,
+.memory-empty-state > p,
+.research-launchboard-copy p {
+  text-wrap: balance;
 }

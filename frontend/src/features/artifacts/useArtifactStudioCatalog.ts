@@ -40,8 +40,9 @@ export function useArtifactStudioCatalog(
             presentation[skill.skill_key]
           ))
           .sort((left, right) => {
-            const leftOrder = preferredOrder.get(left.key) ?? Number.MAX_SAFE_INTEGER;
-            const rightOrder = preferredOrder.get(right.key) ?? Number.MAX_SAFE_INTEGER;
+            // 目录里声明的顺序优先，其次是本地的兜底顺序
+            const leftOrder = left.order ?? preferredOrder.get(left.key) ?? Number.MAX_SAFE_INTEGER;
+            const rightOrder = right.order ?? preferredOrder.get(right.key) ?? Number.MAX_SAFE_INTEGER;
             return leftOrder === rightOrder
               ? left.title.localeCompare(right.title, "zh-CN")
               : leftOrder - rightOrder;

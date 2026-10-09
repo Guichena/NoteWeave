@@ -1,14 +1,17 @@
-import { expect, test, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-
-const credentials = loadCredentials();
+import { expect, test } from "@playwright/test";
+import {
+  expectNoHorizontalOverflow,
+  loginIfRequired,
+  navigateFromSidebar,
+  useFixtureWorkspace
+} from "./helpers";
 
 for (const viewport of [
   { width: 1024, height: 768, name: "compact desktop" },
   { width: 375, height: 812, name: "mobile" }
 ]) {
   test(`Wiki, Memory, and Library keep their domain layouts on ${viewport.name}`, async ({ page }) => {
+    test.setTimeout(240_000);
     const consoleErrors: string[] = [];
     page.on("console", (message) => {
       if (message.type() === "error") consoleErrors.push(message.text());
@@ -17,8 +20,10 @@ for (const viewport of [
     await page.goto("/");
     await loginIfRequired(page);
     await expect(page.locator(".workbench-shell")).toBeVisible();
+    // 资料库的双栏布局只有工作台里有资料时才成立，先切到带资料的夹具工作台。
+    await useFixtureWorkspace(page, viewport.width);
 
-    await navigateFromRail(page, "Wiki 知识库", viewport.width);
+    await navigateFromSidebar(page, "Wiki 知识库", viewport.width);
     await expect(page.locator(".wiki-workbench")).toBeVisible();
     await expectNoHorizontalOverflow(page);
 
@@ -29,8 +34,7 @@ for (const viewport of [
     const wikiIsEmpty = await page.locator(".wiki-empty-workbench").isVisible();
     if (wikiIsEmpty) {
       await expect(page.getByRole("heading", { name: "准备工作台知识网络" })).toBeVisible();
-      await expect(page.locator('[aria-label="Wiki 构建流程"]')).toBeVisible();
-      await expect(page.getByRole("complementary", { name: "Wiki 准备状态" })).toBeVisible();
+      await expect(page.getByText("手动创建首个页面")).toBeVisible();
     } else {
       // 总览里直接展示知识图谱
       await expect(page.getByRole("group", { name: "图谱视角" })).toBeVisible();
@@ -38,11 +42,16 @@ for (const viewport of [
       await page.getByRole("button", { name: /管理/ }).click();
       const manage = page.getByRole("dialog", { name: "知识库管理" });
       await expect(manage).toBeVisible();
+      // 抽屉从右侧滑入有 220ms 动画，等它停稳再量最终位置
+      await expect.poll(async () => {
+        const box = await manage.boundingBox();
+        return box ? Math.round(box.x + box.width) : Number.POSITIVE_INFINITY;
+      }).toBeLessThanOrEqual(viewport.width);
       const bounds = await manage.boundingBox();
       expect(bounds).not.toBeNull();
       expect(bounds!.x).toBeGreaterThanOrEqual(0);
-      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
-      await page.getByRole("button", { name: "关闭知识库管理" }).first().click();
+      // 遮罩和抽屉头部的图标按钮同名，必须点抽屉内的那个，否则会被抽屉挡住
+      await manage.getByRole("button", { name: "关闭知识库管理" }).click();
       await expect(manage).toHaveCount(0);
       // 打开第一个页面：文档 + 关系栏
       await page.locator(".wiki-page-card").first().click();
@@ -51,18 +60,16 @@ for (const viewport of [
     }
     await expectNoHorizontalOverflow(page);
 
-    await navigateFromRail(page, "Memory 审核", viewport.width);
+    await navigateFromSidebar(page, "Memory 审核", viewport.width);
     await expect(page.locator(".memory-workbench")).toBeVisible();
-    await expect(page.getByLabel("0 条待审核")).toBeVisible();
-    await expect(page.getByRole("list", { name: "候选到审核决策的阶段" })).toBeVisible();
-    await expect(page.getByText("进入审核队列", { exact: true })).toBeVisible();
-    await expect(page.getByText("核对来源与冲突", { exact: true })).toBeVisible();
-    await expect(page.getByText(/进入运行时/).first()).toBeVisible();
-    await expect(page.getByLabel("运行时约束")).toHaveCount(1);
+    await expect(page.getByLabel("记忆与资料的分工")).toBeVisible();
+    await expect(page.getByRole("form", { name: "添加偏好" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "生效中" })).toBeVisible();
     await expectNoHorizontalOverflow(page);
 
     await page.goto("/library");
     await expect(page.locator(".source-library-page")).toBeVisible();
+    await expect(page.locator(".source-library-catalog")).toBeVisible();
     await expectNoHorizontalOverflow(page);
     const libraryLayout = await page.evaluate(() => {
       const layout = document.querySelector<HTMLElement>(".source-library-layout");
@@ -76,63 +83,8 @@ for (const viewport of [
     });
     expect(libraryLayout.catalogWidth).toBeGreaterThan(200);
     expect(libraryLayout.toolsWidth).toBeGreaterThan(200);
-    if (viewport.width < 768) {
-      expect(libraryLayout.columns.split(" ")).toHaveLength(1);
-    }
+    // 1199px 以下资料目录与上传工具改为单栏堆叠
+    expect(libraryLayout.columns.split(" ")).toHaveLength(1);
     expect(consoleErrors).toEqual([]);
   });
-}
-
-async function navigateFromRail(page: Page, name: string, viewportWidth: number) {
-  if (viewportWidth < 768) {
-    await page.getByRole("button", { name: "打开主导航" }).click();
-  }
-  await page.getByRole("button", { name }).click();
-}
-
-async function expectNoHorizontalOverflow(page: Page) {
-  const metrics = await page.evaluate(() => ({
-    viewportWidth: window.innerWidth,
-    documentWidth: document.documentElement.scrollWidth
-  }));
-  expect(metrics.documentWidth).toBeLessThanOrEqual(metrics.viewportWidth);
-}
-
-async function loginIfRequired(page: Page) {
-  const loginForm = page.locator(".auth-card");
-  if (!await loginForm.isVisible()) return;
-  await loginForm.locator('input[autocomplete="username"]').fill(credentials.username);
-  await loginForm.locator('input[autocomplete="current-password"]').fill(credentials.password);
-  await loginForm.locator('button[type="submit"], button').last().click();
-}
-
-function loadCredentials() {
-  const fileValues = readSimpleEnv(resolve(process.cwd(), "..", ".env"));
-  const username = process.env.NOTEWEAVE_E2E_USERNAME
-    ?? process.env.NOTEWEAVE_BOOTSTRAP_USERNAME
-    ?? fileValues.NOTEWEAVE_BOOTSTRAP_USERNAME;
-  const password = process.env.NOTEWEAVE_E2E_PASSWORD
-    ?? process.env.NOTEWEAVE_BOOTSTRAP_PASSWORD
-    ?? fileValues.NOTEWEAVE_BOOTSTRAP_PASSWORD;
-  if (!username || !password) {
-    throw new Error("Real Playwright E2E requires NoteWeave bootstrap credentials");
-  }
-  return { username, password };
-}
-
-function readSimpleEnv(path: string) {
-  try {
-    return Object.fromEntries(
-      readFileSync(path, "utf8")
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter((line) => line && !line.startsWith("#") && line.includes("="))
-        .map((line) => {
-          const separator = line.indexOf("=");
-          return [line.slice(0, separator).trim(), line.slice(separator + 1).trim()];
-        })
-    ) as Record<string, string>;
-  } catch {
-    return {};
-  }
 }

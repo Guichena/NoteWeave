@@ -8,7 +8,8 @@ import {
   type SavedAnswerSource,
   type SourceAsset,
   type RetrievalIndexStatus,
-  type RetrievalBackfillResult
+  type RetrievalBackfillResult,
+  type SourceReprocessResult
 } from "./model";
 
 export class SourcesApi {
@@ -31,7 +32,7 @@ export class SourcesApi {
     return this.uploadBytes(workspaceId, bytes, fileName, "text/markdown");
   }
 
-  async uploadFile(workspaceId: string, file: File) {
+  async uploadFile(workspaceId: string, file: File, onProgress?: (progress: SourceUploadProgress) => void) {
     const mimeType = resolveSourceMimeType(file.name, file.type);
     if (!mimeType) {
       throw new Error("仅支持 PDF、Markdown、TXT、JSON 和 CSV 资料");
@@ -42,7 +43,7 @@ export class SourcesApi {
     if (file.size > MAX_SOURCE_FILE_SIZE) {
       throw new Error("单个资料文件不能超过 128MB");
     }
-    return this.uploadBlob(workspaceId, file, file.name, mimeType);
+    return this.uploadBlob(workspaceId, file, file.name, mimeType, onProgress);
   }
 
   private async uploadBytes(
@@ -58,7 +59,8 @@ export class SourcesApi {
     workspaceId: string,
     file: Blob,
     fileName: string,
-    mimeType: string
+    mimeType: string,
+    onProgress?: (progress: SourceUploadProgress) => void
   ) {
     const chunkSize = Math.min(MAX_SOURCE_CHUNK_SIZE, file.size);
     const totalChunks = Math.ceil(file.size / chunkSize);
@@ -81,6 +83,7 @@ export class SourcesApi {
         headers: { "Content-Type": "application/octet-stream" },
         body: chunk
       });
+      onProgress?.({ uploadedChunks: chunkIndex + 1, totalChunks, uploadedBytes: end, totalBytes: file.size });
     }
     return this.client.post<CompletedSourceUpload>(
       `/api/v2/uploads/${upload.upload_id}/complete`,
@@ -97,6 +100,12 @@ export class SourcesApi {
   retrievalStatus(workspaceId: string) {
     return this.client.get<RetrievalIndexStatus>(
       `/api/v2/workspaces/${workspaceId}/retrieval-indexes`
+    );
+  }
+
+  reprocessSource(workspaceId: string, sourceId: string) {
+    return this.client.post<SourceReprocessResult>(
+      `/api/v2/workspaces/${workspaceId}/sources/${sourceId}/reprocess`, {}
     );
   }
 
@@ -128,7 +137,15 @@ const SOURCE_MIME_BY_EXTENSION: Record<string, string> = {
   markdown: "text/markdown",
   txt: "text/plain",
   json: "application/json",
-  csv: "text/csv"
+  csv: "text/csv",
+  // 与后端 SourceMediaTypes 的规范 MIME 一致
+  mp3: "audio/mpeg",
+  m4a: "audio/mp4",
+  wav: "audio/wav",
+  ogg: "audio/ogg",
+  flac: "audio/flac",
+  webm: "audio/webm",
+  mp4: "video/mp4"
 };
 
 function resolveSourceMimeType(fileName: string, browserMimeType: string) {
@@ -137,5 +154,13 @@ function resolveSourceMimeType(fileName: string, browserMimeType: string) {
   void browserMimeType;
   return expected ?? "";
 }
+
+/** 分片上传进度：每个分片上传完成后回调一次。 */
+export type SourceUploadProgress = {
+  uploadedChunks: number;
+  totalChunks: number;
+  uploadedBytes: number;
+  totalBytes: number;
+};
 
 export const sourcesApi = new SourcesApi();

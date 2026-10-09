@@ -131,7 +131,9 @@ export function WorkbenchShell({
   useEffect(() => {
     if (!mobileNavOpen) return;
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setMobileNavOpen(false);
+      // 抽屉内的浮层（工作台切换器、账户菜单）会在捕获阶段先处理 Esc 并标记已消费，
+      // 此时只关掉那一层浮层，抽屉本身要留在原地。
+      if (event.key === "Escape" && !event.defaultPrevented) setMobileNavOpen(false);
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -147,14 +149,16 @@ export function WorkbenchShell({
     }
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
+      // 在捕获阶段先于外层监听器执行，并标记事件已消费，避免连带关闭移动端抽屉。
+      event.preventDefault();
       setAccountMenuOpen(false);
       accountTriggerRef.current?.focus();
     }
     window.addEventListener("pointerdown", closeOnOutsidePointer);
-    window.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("keydown", closeOnEscape, true);
     return () => {
       window.removeEventListener("pointerdown", closeOnOutsidePointer);
-      window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("keydown", closeOnEscape, true);
     };
   }, [accountMenuOpen]);
 
@@ -301,7 +305,6 @@ export function WorkbenchShell({
         <section className="sidebar-conversations" aria-label="工作台会话">
           <div className="sidebar-section-title">
             <span>对话</span>
-            <small>共享当前工作台资料库</small>
           </div>
           <div className="sidebar-conversation-list" aria-label="对话列表">
             {conversations.length === 0 ? (
@@ -332,7 +335,7 @@ export function WorkbenchShell({
 
         <div className="sidebar-footer">
           <p
-            className={`shell-status status-line${shellBusy ? " is-busy" : ""}${statusIsError ? " is-error" : ""}`}
+            className={`shell-status status-line${shellBusy ? " is-busy" : ""}${statusIsError ? " is-error" : ""}${!shellBusy && !statusIsError ? " is-idle" : ""}`}
             role="status"
             title={status}
           >

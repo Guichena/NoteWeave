@@ -19,6 +19,9 @@ export function WikiRelationsPanel(props: WikiRelationsPanelProps) {
             <p className="phase-note">当前页面暂无直接关系。</p>
           ) : null}
           {outgoing.length > 0 ? (
+            <h4 className="wiki-relation-group">链接到 · {outgoing.length}</h4>
+          ) : null}
+          {outgoing.length > 0 ? (
             <ul className="wiki-relation-list" aria-label="出链">
               {outgoing.map((link, index) => (
                 <li key={`${link.source_item_id}-${link.target_title}-${index}`}>
@@ -51,6 +54,9 @@ export function WikiRelationsPanel(props: WikiRelationsPanelProps) {
                 </li>
               ))}
             </ul>
+          ) : null}
+          {backlinks.length > 0 ? (
+            <h4 className="wiki-relation-group">被以下页面引用 · {backlinks.length}</h4>
           ) : null}
           {backlinks.length > 0 ? (
             <ul className="wiki-relation-list" aria-label="反链">
