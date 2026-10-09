@@ -168,6 +168,11 @@ public class ResearchRunCommandService {
         }
         if (!hydrate) {
             ResearchCheckpointRecord checkpoint = researchCheckpointStore.get(workspaceId, researchRunId, checkpointNo);
+            if (ResearchCheckpointStore.HYDRATION_SNAPSHOT_TYPE.equals(checkpoint.snapshotType())) {
+                // 账本快照只能水合恢复；没有可读的上下文快照对象可供 CONTEXT_RESTART 使用
+                throw new BusinessException("RESEARCH_CHECKPOINT_HYDRATION_REQUIRED",
+                        "This checkpoint can only be resumed by canonical-ledger hydration");
+            }
             ResearchCheckpointIntegrity.verify(
                     checkpoint,
                     storage.read("noteweave-derived", checkpoint.objectKey())

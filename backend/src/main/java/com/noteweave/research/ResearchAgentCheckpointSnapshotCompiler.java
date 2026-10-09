@@ -52,7 +52,8 @@ class ResearchAgentCheckpointSnapshotCompiler {
         payload.put("ledger_digest", command.ledgerHash());
         payload.put("matrix_plan", latestJson("""
                 select plan_json from research_matrix_plan
-                where research_run_id = ? order by created_at desc, id desc limit 1
+                where research_run_id = ? and plan_mode <> 'LOCAL_REPAIR'
+                order by created_at desc, id desc limit 1
                 """, runId));
         payload.put("branches", branches(runId));
         payload.put("rows", rows(runId));

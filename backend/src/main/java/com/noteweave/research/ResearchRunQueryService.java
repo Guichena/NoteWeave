@@ -485,8 +485,11 @@ public class ResearchRunQueryService {
         ResearchCheckpointRecord row = researchCheckpointStore.get(workspaceId, researchRunId, checkpointNo);
         ResearchArtifactService.RunArtifactView artifactView =
                 researchArtifactService.loadRunArtifactView(workspaceId, researchRunId);
-        byte[] checkpointPayload = storage.read("noteweave-derived", row.objectKey());
-        ResearchCheckpointIntegrity.verify(row, checkpointPayload);
+        boolean ledgerSnapshot = ResearchCheckpointStore.HYDRATION_SNAPSHOT_TYPE.equals(row.snapshotType());
+        byte[] checkpointPayload = ledgerSnapshot
+                ? researchCheckpointStore.hydrationSnapshotPayload(researchRunId, checkpointNo).getBytes(StandardCharsets.UTF_8)
+                : storage.read("noteweave-derived", row.objectKey());
+        if (!ledgerSnapshot) ResearchCheckpointIntegrity.verify(row, checkpointPayload);
         Map<String, Object> payload = payloadReader.readPayloadMap(new String(checkpointPayload, StandardCharsets.UTF_8));
         Map<String, Object> summary = payloadReader.readPayloadMap(row.summaryJson());
         sourceProvenanceEnricher.enrich(payload);

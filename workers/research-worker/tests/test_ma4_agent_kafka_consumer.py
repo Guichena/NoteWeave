@@ -633,6 +633,7 @@ def test_agent_consumer_factory_should_use_dedicated_topic_and_group(monkeypatch
         kafka_research_agent_topic = "research.agent.command"
         kafka_bootstrap_servers = "kafka:9092"
         kafka_research_agent_group_id = "research-agent-worker"
+        kafka_research_agent_max_poll_interval_seconds = 3600
 
     class FakeConsumer:
         def __init__(self, *topics, **kwargs) -> None:
@@ -647,6 +648,9 @@ def test_agent_consumer_factory_should_use_dedicated_topic_and_group(monkeypatch
     assert captured["topics"] == ("research.agent.command",)
     assert captured["kwargs"]["group_id"] == "research-agent-worker"
     assert captured["kwargs"]["enable_auto_commit"] is False
+    # 单元格同步执行可能超过 5 分钟，轮询间隔必须按配置放宽，且每次只取一条
+    assert captured["kwargs"]["max_poll_records"] == 1
+    assert captured["kwargs"]["max_poll_interval_ms"] == 3_600_000
 
 
 def test_agent_consumer_factory_should_fail_closed_when_sasl_credentials_are_missing(monkeypatch) -> None:
@@ -658,6 +662,7 @@ def test_agent_consumer_factory_should_fail_closed_when_sasl_credentials_are_mis
         kafka_research_agent_topic = "research.agent.command"
         kafka_bootstrap_servers = "kafka:9092"
         kafka_research_agent_group_id = "research-agent-worker"
+        kafka_research_agent_max_poll_interval_seconds = 3600
         kafka_security_protocol = "SASL_PLAINTEXT"
         kafka_sasl_username = ""
         kafka_sasl_password = ""

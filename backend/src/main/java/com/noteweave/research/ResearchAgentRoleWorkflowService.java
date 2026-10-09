@@ -269,7 +269,8 @@ class ResearchAgentRoleWorkflowService {
 
     private Map<String, Long> roleBudget(String role) {
         Map<String, Long> budget = new LinkedHashMap<>(zeroBudget());
-        if ("SYNTHESIS".equals(role)) budget.put("llm_calls", 1L);
+        // 报告合成允许一次带失败原因的重试
+        if ("SYNTHESIS".equals(role)) budget.put("llm_calls", 2L);
         return Map.copyOf(budget);
     }
 

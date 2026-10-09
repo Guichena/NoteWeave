@@ -215,6 +215,7 @@ public class ResearchRunReadRepository {
     }
 
     private Map<String, List<Map<String, Object>>> loadPersistedCellsByRunIds(List<String> researchRunIds) {
+        Map<String, Map<String, String>> columnLabels = loadColumnLabelsByRunIds(researchRunIds);
         return groupedValues(jdbcTemplate.query("""
                 select rc.research_run_id, rc.cell_key, rr.row_key, rb.branch_key, rc.column_key,
                        rc.candidate_value, rc.cell_status, rc.confidence_score, rc.evidence_refs_json,
@@ -229,7 +230,10 @@ public class ResearchRunReadRepository {
             cell.put("cell_id", rs.getString("cell_key"));
             cell.put("row_id", rs.getString("row_key"));
             cell.put("branch_id", blankIfNull(rs.getString("branch_key")));
-            cell.put("column_key", rs.getString("column_key"));
+            String columnKey = rs.getString("column_key");
+            cell.put("column_key", columnKey);
+            cell.put("column_label", ResearchDisplayLabels.of(columnKey,
+                    columnLabels.getOrDefault(rs.getString("research_run_id"), Map.of()).get(columnKey)));
             cell.put("candidate_value", blankIfNull(rs.getString("candidate_value")));
             cell.put("status", rs.getString("cell_status"));
             cell.put("confidence", rs.getBigDecimal("confidence_score"));
@@ -238,6 +242,34 @@ public class ResearchRunReadRepository {
             cell.put("repair_count", rs.getInt("repair_count"));
             return new RunValue<>(rs.getString("research_run_id"), cell);
         }, researchRunIds.toArray()));
+    }
+
+    /** 规划器写下的列 label，按 run 和列键索引；没有矩阵规划的 run 返回空表。 */
+    private Map<String, Map<String, String>> loadColumnLabelsByRunIds(List<String> researchRunIds) {
+        Map<String, Map<String, String>> labels = new LinkedHashMap<>();
+        List<Map<String, Object>> plans;
+        try {
+            plans = jdbcTemplate.queryForList("""
+                    select research_run_id, plan_json from research_matrix_plan
+                    where research_run_id in (%s)
+                    """.formatted(placeholders(researchRunIds.size())), researchRunIds.toArray());
+        } catch (org.springframework.dao.DataAccessException exception) {
+            return labels;
+        }
+        for (Map<String, Object> plan : plans) {
+            try {
+                Map<String, String> runLabels = labels.computeIfAbsent(
+                        String.valueOf(plan.get("research_run_id")), ignored -> new LinkedHashMap<>());
+                objectMapper.readTree(String.valueOf(plan.get("plan_json"))).path("columns").forEach(column -> {
+                    String key = column.path("key").asText("");
+                    String label = column.path("label").asText("");
+                    if (!key.isBlank() && !label.isBlank()) runLabels.putIfAbsent(key, label);
+                });
+            } catch (JsonProcessingException exception) {
+                // 规划记录损坏时只影响显示名，单元格仍按列键展示
+            }
+        }
+        return labels;
     }
 
     private Map<String, List<Map<String, Object>>> loadPersistedSourceEvidenceByRunIds(

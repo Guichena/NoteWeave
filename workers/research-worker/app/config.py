@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     kafka_research_agent_dlq_topic: str = "noteweave.research.agent.command.dlq"
     kafka_research_agent_group_id: str = "noteweave-research-agent-worker"
     kafka_consume_max_attempts: int = 3
+    # 单个研究单元格在消费循环内同步执行，耗时可能超过 kafka-python 默认的 5 分钟轮询间隔；
+    # 超时后消费者会被踢出消费组，偏移量提交失败并导致进程重启
+    kafka_research_agent_max_poll_interval_seconds: int = Field(default=3600, ge=60, le=21_600)
     # INCREMENTAL_V1 is the only automatic runtime mode. Historical local
     # modes remain parseable only for deterministic benchmark replay.
     research_agent_execution_mode: str = "INCREMENTAL_V1"

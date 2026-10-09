@@ -479,6 +479,30 @@ class ResearchAgentTaskCoordinatorServiceTest {
     }
 
     @Test
+    void shouldCompleteHonestlyWhenFailedTasksOnlyLackedEvidenceAndNoRepairTargetRemains() {
+        coordinator.planAndEnqueueForWave(runId, 1);
+        jdbcTemplate.update("""
+                update research_agent_task
+                set status = 'FAILED', terminal_reason = 'NO_SUPPORTED_CANDIDATE',
+                    terminal_at = current_timestamp
+                where research_run_id = ?
+                """, runId);
+        jdbcTemplate.update("""
+                update research_cell set repair_count = 2, active_task_id = null
+                where research_run_id = ?
+                """, runId);
+
+        var receipt = coordinatorTick.tick(runId, "scheduler-evidence-stop");
+
+        assertThat(receipt.outcome()).isEqualTo("FAILED_WAVE_STOPPED_COMPLETED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from research_run where id = ?", String.class, runId)).isEqualTo("COMPLETED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select final_report_markdown from research_run where id = ?", String.class, runId))
+                .contains("# 研究报告", "INSUFFICIENT_EVIDENCE");
+    }
+
+    @Test
     void shouldFailRunWhenCounterfactualRepairHasNoIndependentSeedSource() {
         coordinator.planAndEnqueueForWave(runId, 1);
         jdbcTemplate.update("""

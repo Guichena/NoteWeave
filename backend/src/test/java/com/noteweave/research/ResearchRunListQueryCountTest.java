@@ -105,7 +105,8 @@ class ResearchRunListQueryCountTest {
         long fiveRunQueryCount = queryCount(countingJdbcTemplate);
 
         assertThat(fiveRunQueryCount).isEqualTo(singleRunQueryCount);
-        assertThat(fiveRunQueryCount).isLessThanOrEqualTo(10);
+        // 检查点有两个来源（旧执行检查点 + INCREMENTAL_V1 账本快照），各一次批量查询
+        assertThat(fiveRunQueryCount).isLessThanOrEqualTo(11);
     }
 
     @Test

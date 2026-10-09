@@ -448,6 +448,23 @@ public class ResearchAgentRunCompletionGate {
                         .orElse("RESEARCH_AGENT_INFRASTRUCTURE_FAILURE"));
     }
 
+    /** Worker termination reasons that mean "searched, found no usable evidence" rather than a broken runtime. */
+    static final Set<String> EVIDENCE_TERMINATION_REASONS = Set.of("NO_SUPPORTED_CANDIDATE", "EVIDENCE_ONLY");
+
+    /**
+     * True when the Run has failed tasks and every one of them ended on an evidence outcome. Such a
+     * failed wave with no safe repair target left is a business result (missing evidence), so it must
+     * go through the completion decision instead of failing the whole Run; lease exhaustion, delivery
+     * failures and other runtime reasons keep failing it.
+     */
+    public boolean failedTasksAreEvidenceOutcomes(String runId) {
+        List<String> reasons = jdbcTemplate.queryForList("""
+                select coalesce(terminal_reason, '') from research_agent_task
+                where research_run_id = ? and status = 'FAILED'
+                """, String.class, runId);
+        return !reasons.isEmpty() && EVIDENCE_TERMINATION_REASONS.containsAll(reasons);
+    }
+
     public TableState loadTableState(String runId) {
         List<CellState> cells = jdbcTemplate.query("""
                 select cell_key, column_key, cell_status, candidate_value, evidence_refs_json

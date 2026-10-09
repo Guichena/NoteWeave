@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import signal
+import subprocess
 import sys
 import tempfile
 import time
@@ -366,6 +367,8 @@ def create_research_agent_kafka_consumer() -> object:
         group_id=settings.kafka_research_agent_group_id,
         enable_auto_commit=False,
         auto_offset_reset="earliest",
+        max_poll_records=1,
+        max_poll_interval_ms=settings.kafka_research_agent_max_poll_interval_seconds * 1000,
         **kafka_security_options(settings),
     )
 
@@ -572,9 +575,73 @@ def _report_failure_or_stop(reporter: AgentDeliveryFailureReporter | None, comma
         raise DeadLetterPublishError("Agent delivery failure projection failed; offset not committed") from (cause or exc)
 
 
+_CHILD_ENV = "NOTEWEAVE_RESEARCH_AGENT_CONSUMER_CHILD"
+
+
+def consumer_child_environments(base_env: dict[str, str], concurrency: int,
+                                base_instance_id: str, health_dir: Path) -> list[dict[str, str]]:
+    """每个子消费者的环境：同一消费组，独立的 worker 实例 ID（租约归属）和健康标记文件。"""
+    environments = []
+    for index in range(1, concurrency + 1):
+        env = dict(base_env)
+        env[_CHILD_ENV] = "1"
+        env["NOTEWEAVE_RESEARCH_AGENT_WORKER_INSTANCE_ID"] = f"{base_instance_id}-{index}"
+        env["NOTEWEAVE_RESEARCH_AGENT_HEALTH_FILE"] = str(health_dir / f"noteweave-research-agent-consumer-{index}.ready")
+        environments.append(env)
+    return environments
+
+
+def run_consumer_supervisor(concurrency: int) -> int:
+    """
+    启动 concurrency 个子消费者进程并看护它们。Kafka 按分区把任务分给同组消费者，
+    所以实际并行度还受 topic 分区数限制。任一子进程退出时停掉其余进程并返回它的退出码，
+    由容器重启策略整体拉起，避免部分消费者静默缺席。
+    """
+    settings = load_settings()
+    health_file = _health_file(settings)
+    environments = consumer_child_environments(
+        dict(os.environ), concurrency, settings.research_agent_worker_instance_id, health_file.parent)
+    children = [subprocess.Popen([sys.executable, "-m", "app.agent_kafka_consumer"], env=env)
+                for env in environments]
+
+    def forward(signum: int, _frame: object) -> None:
+        for child in children:
+            if child.poll() is None:
+                child.send_signal(signum)
+
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(signum, forward)
+    _write_health_marker(health_file)
+    exit_code = 0
+    try:
+        while True:
+            finished = [child for child in children if child.poll() is not None]
+            if finished:
+                exit_code = finished[0].returncode or 0
+                break
+            time.sleep(1)
+    finally:
+        _remove_health_marker(health_file)
+        for child in children:
+            if child.poll() is None:
+                child.terminate()
+        for child in children:
+            try:
+                child.wait(timeout=60)
+            except subprocess.TimeoutExpired:
+                child.kill()
+    return exit_code
+
+
 def main(executor: AgentExecutor | None = None) -> None:
     if "--healthcheck" in sys.argv[1:]:
         raise SystemExit(research_agent_healthcheck())
+    if executor is None and not os.environ.get(_CHILD_ENV):
+        settings = load_settings()
+        concurrency = max(1, int(settings.research_agent_max_concurrency))
+        if (settings.research_agent_consumer_enabled and concurrency > 1
+                and settings.research_agent_execution_mode == "INCREMENTAL_V1"):
+            raise SystemExit(run_consumer_supervisor(concurrency))
     try:
         if executor is None:
             run_research_agent_kafka_consumer_forever()

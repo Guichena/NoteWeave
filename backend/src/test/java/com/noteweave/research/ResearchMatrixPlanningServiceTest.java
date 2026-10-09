@@ -45,6 +45,22 @@ class ResearchMatrixPlanningServiceTest {
     }
 
     @Test
+    void scenarioQualifierBeforePossessiveShouldNotStickToTheLastEntity() {
+        ResearchIntentResponse intent = new ResearchIntentResponse(
+                "给出选型建议", "对比报告", List.of(), "", "STANDARD", "AUTO");
+
+        ResearchMatrixPlanningService.MatrixPlan plan = planner.plan(
+                "对比 Elasticsearch、Milvus 和 pgvector 在 RAG 混合检索场景下的能力、部署成本和适用规模", intent);
+        assertThat(plan.rows()).extracting(ResearchMatrixPlanningService.RowPlan::label)
+                .containsExactly("Elasticsearch", "Milvus", "pgvector");
+
+        // 以在字开头的实体名不能被当成场景限定语截掉
+        ResearchMatrixPlanningService.MatrixPlan online = planner.plan("对比在线学习和离线学习的效果", intent);
+        assertThat(online.rows()).extracting(ResearchMatrixPlanningService.RowPlan::label)
+                .containsExactly("在线学习", "离线学习");
+    }
+
+    @Test
     void overlargeComparisonIsExplicitlyBoundedToEightyCells() {
         String entities = IntStream.rangeClosed(1, 30)
                 .mapToObj(index -> "Entity" + index).collect(java.util.stream.Collectors.joining(", "));

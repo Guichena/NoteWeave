@@ -149,6 +149,37 @@ def test_invalid_json_and_missing_client_have_stable_fallback() -> None:
     assert invalid.markdown == unavailable.markdown
     assert invalid.reason == "NARRATIVE_INVALID_JSON"
     assert unavailable.reason == "LLM_UNAVAILABLE"
+    assert invalid.llm_calls == 2
+    assert unavailable.llm_calls == 0
+
+
+def test_invalid_first_answer_is_retried_with_the_failure_reason() -> None:
+    valid = json.dumps({
+        "title": "Latency findings",
+        "executive_summary": "The verified measurement establishes a clear baseline.",
+        "sections": [{
+            "heading": "Observed performance",
+            "paragraphs": [{
+                "text": "Version 2.1 records a measured latency of 50 ms.",
+                "cell_keys": ["latency"],
+                "evidence_keys": ["evidence-a"],
+            }],
+        }],
+        "limitations": ["The sample covers one release."],
+    })
+
+    class FlakyClient(FakeLlmClient):
+        def complete_json(self, purpose: str, payload: dict[str, object]) -> str:
+            self.calls.append((purpose, payload))
+            return "{truncated" if len(self.calls) == 1 else valid
+
+    client = FlakyClient({})
+    result = NarrativeReportPolisher(client).polish(INPUT)
+
+    # 第一次返回坏 JSON 时带上失败原因重试，第二次成功就用模型合成的正文
+    assert result.mode == "LLM"
+    assert result.llm_calls == 2
+    assert client.calls[1][1]["previous_attempt_error"] == "NARRATIVE_INVALID_JSON"
 
 
 def test_comparison_report_allows_versions_from_trusted_question_and_requires_table() -> None:
