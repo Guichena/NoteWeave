@@ -14,6 +14,29 @@ NoteWeave 是一个面向个人资料研究与长期知识沉淀的 AI 工作台
 | 产物框架 | 产物类型由 Skill 目录声明，Java Host 负责编排、校验和版本管理，Python Worker 负责生成与导出；通过系统 MCP 接入 B站字幕、抓帧、画面 OCR 与语音转写，支持视频摘要、知识博客、面试问答、PPTX 和 PDF 讲义。 |
 | Context 与 Memory | 长对话按话题切分窗口并做大模型增量摘要；从对话中提取记忆候选，经来源可信度、预期效用、风险、冲突四项门控后晋升；记忆只影响表达方式，事实只来自资料证据。 |
 
+## 运行效果
+
+以下截图使用前端开发模式自带的演示数据（`frontend/src/dev`，在 `frontend/.env.local` 中设置 `VITE_NOTEWEAVE_MOCK=1` 开启），界面与真实环境一致。
+
+<table>
+  <tr>
+    <td width="50%"><img src="./docs/images/screenshots/chat.png" alt="带引用的问答与精读"><br><sub>问答与精读：回答逐句标注引用，可展开资料定位、阅读窗口和摘录证据</sub></td>
+    <td width="50%"><img src="./docs/images/screenshots/research-report.png" alt="深度研究报告"><br><sub>深度研究报告：结论、关键差异和尚未确认的问题，引用可回溯到原文</sub></td>
+  </tr>
+  <tr>
+    <td><img src="./docs/images/screenshots/research-table.png" alt="研究表"><br><sub>研究表（Table-as-State）：逐格展示已验证、冲突、待修复和缺证据</sub></td>
+    <td><img src="./docs/images/screenshots/library.png" alt="资料库"><br><sub>资料库：每份资料的解析、切片、向量化、索引进度与失败重试</sub></td>
+  </tr>
+  <tr>
+    <td><img src="./docs/images/screenshots/wiki.png" alt="知识库"><br><sub>知识库：知识页分类、关系图谱与来源引用统计</sub></td>
+    <td><img src="./docs/images/screenshots/studio.png" alt="产物工作室"><br><sub>产物工作室：基于资料或音视频生成多种产物，视频学习入口与产物进度</sub></td>
+  </tr>
+  <tr>
+    <td><img src="./docs/images/screenshots/memory.png" alt="记忆"><br><sub>记忆：待确认候选展示四项门控检查结果，记忆只影响表达方式</sub></td>
+    <td></td>
+  </tr>
+</table>
+
 ## 架构说明
 
 ### 资料异步流水线

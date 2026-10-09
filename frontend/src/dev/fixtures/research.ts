@@ -48,12 +48,22 @@ const evidenceSeeds: Array<[key: string, title: string, url: string, quote: stri
 
 const rowTitles: Record<string, string> = { elasticsearch: "Elasticsearch", milvus: "Milvus", pgvector: "pgvector" };
 
+// 与后端一致：单元格携带规划器给出的列显示名
+const columnLabels: Record<string, string> = {
+  hybrid_search: "混合检索",
+  chinese_analyzer: "中文分词",
+  filtering: "过滤与权限",
+  ops_cost: "运维成本",
+  scale_limit: "规模上限"
+};
+
 function buildCells() {
   return cellSeeds.map(([row, column, value, status, refs, decision = "", repairs = 0]) => ({
     cell_id: `${row}:${column}`,
     row_id: row,
     branch_id: row === "milvus" && column === "chinese_analyzer" ? "cf-1" : "main",
     column_key: column,
+    column_label: columnLabels[column] ?? column,
     candidate_value: value,
     status,
     confidence: status === "VERIFIED" ? 0.86 : status === "MISSING" ? null : 0.55,
