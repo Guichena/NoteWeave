@@ -43,3 +43,6 @@ workers/**/exports/
 
 .DS_Store
 Thumbs.db
+
+# Vite 本地环境变量覆盖
+frontend/.env*.local

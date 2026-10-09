@@ -53,6 +53,7 @@ noteweave:
     v2:
       shadow-enabled: ${NOTEWEAVE_CONTEXT_V2_SHADOW_ENABLED:false}
       active-enabled: ${NOTEWEAVE_CONTEXT_V2_ACTIVE_ENABLED:false}
+      default-mode: ${NOTEWEAVE_CONTEXT_V2_DEFAULT_MODE:OFF}
       research-active-enabled: ${NOTEWEAVE_CONTEXT_V2_RESEARCH_ACTIVE_ENABLED:false}
       artifact-active-enabled: ${NOTEWEAVE_CONTEXT_V2_ARTIFACT_ACTIVE_ENABLED:false}
   research:
@@ -85,6 +86,9 @@ noteweave:
         capacity: ${NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_CAPACITY:24}
         refill-per-minute: ${NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_REFILL_PER_MINUTE:24}
   environment: ${NOTEWEAVE_ENVIRONMENT:local}
+  video-learning:
+    enabled: ${NOTEWEAVE_VIDEO_LEARNING_ENABLED:false}
+    workspace-allowlist: ${NOTEWEAVE_VIDEO_LEARNING_WORKSPACE_ALLOWLIST:}
   retrieval:
     qa:
       mysql-fallback-enabled: ${NOTEWEAVE_QA_MYSQL_FALLBACK_ENABLED:false}
@@ -179,10 +183,14 @@ noteweave:
     enabled: ${NOTEWEAVE_KAFKA_ENABLED:true}
     topics:
       source-parse: ${NOTEWEAVE_KAFKA_TOPIC_SOURCE_PARSE:noteweave.source.parse}
+      source-chunk: ${NOTEWEAVE_KAFKA_TOPIC_SOURCE_CHUNK:noteweave.source.chunk}
+      source-embed: ${NOTEWEAVE_KAFKA_TOPIC_SOURCE_EMBED:noteweave.source.embed}
+      source-index: ${NOTEWEAVE_KAFKA_TOPIC_SOURCE_INDEX:noteweave.source.index}
       retrieval-projection: ${NOTEWEAVE_KAFKA_TOPIC_RETRIEVAL_PROJECTION:noteweave.retrieval.projection}
       wiki-ingest: ${NOTEWEAVE_KAFKA_TOPIC_WIKI_INGEST:noteweave.wiki.ingest}
       wiki-retract: ${NOTEWEAVE_KAFKA_TOPIC_WIKI_RETRACT:noteweave.wiki.retract}
       conversation-summary: ${NOTEWEAVE_KAFKA_TOPIC_CONVERSATION_SUMMARY:noteweave.conversation.summary}
+      memory-extraction: ${NOTEWEAVE_KAFKA_TOPIC_MEMORY_EXTRACTION:noteweave.memory.extraction}
       research-agent-command: ${NOTEWEAVE_KAFKA_RESEARCH_AGENT_TOPIC:noteweave.research.agent.command}
     artifact-dlq-topic: ${NOTEWEAVE_KAFKA_ARTIFACT_DLQ_TOPIC:noteweave.artifact.job.dlq}
   elasticsearch:
