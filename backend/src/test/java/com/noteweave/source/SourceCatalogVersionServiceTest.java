@@ -12,10 +12,11 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 class SourceCatalogVersionServiceTest {
 
     private SourceCatalogVersionService service;
+    private DriverManagerDataSource dataSource;
 
     @BeforeEach
     void setUp() {
-        DriverManagerDataSource dataSource = new DriverManagerDataSource(
+        dataSource = new DriverManagerDataSource(
                 "jdbc:h2:mem:source-version-" + System.nanoTime()
                         + ";MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
@@ -41,5 +42,29 @@ class SourceCatalogVersionServiceTest {
         assertThatThrownBy(() -> service.bump("missing"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("工作台不存在");
+    }
+
+    @Test
+    void bumpInsideATransactionIsAppliedOnceAfterCommitAndDroppedOnRollback() {
+        var transactionManager = new org.springframework.jdbc.datasource.DataSourceTransactionManager(dataSource);
+        SourceCatalogVersionService transactional = new SourceCatalogVersionService(new JdbcTemplate(dataSource),
+                transactionManager);
+        var transaction = new org.springframework.transaction.support.TransactionTemplate(transactionManager);
+
+        transaction.executeWithoutResult(status -> {
+            transactional.bump("workspace-1");
+            transactional.bump("workspace-1");
+            // 事务提交前不持有工作台行的更新锁，版本号也还没变
+            assertThat(transactional.current("workspace-1")).isEqualTo(1);
+        });
+        assertThat(transactional.current("workspace-1")).isEqualTo(2);
+
+        transaction.executeWithoutResult(status -> {
+            transactional.bump("workspace-1");
+            status.setRollbackOnly();
+        });
+        assertThat(transactional.current("workspace-1")).isEqualTo(2);
+        assertThatThrownBy(() -> transaction.executeWithoutResult(status -> transactional.bump("missing")))
+                .isInstanceOf(BusinessException.class);
     }
 }

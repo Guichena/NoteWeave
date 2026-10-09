@@ -158,14 +158,25 @@ public class UploadService {
         if (chunkRows.size() != upload.totalChunks()) {
             throw new BusinessException("UPLOAD_CHUNK_INCOMPLETE", "上传分片尚未完整");
         }
-        byte[] merged = mergeChunks(chunkRows);
-        uploadSecurityPolicy.validateMergedContent(upload.mimeType(), upload.fileSize(), merged);
-        String sha256 = sha256(merged);
-        FileObjectRef fileObject = getOrCreateFileObject(upload, sha256, merged.length, merged);
+        // 分片逐个写入本地临时文件并同时计算 SHA-256，内存中最多只有一个分片（不超过 8MB）
+        MergedFile merged = mergeChunksToFile(chunkRows);
+        try {
+            return completeWithMergedFile(upload, uploadId, actor, merged);
+        } finally {
+            deleteQuietly(merged.path());
+        }
+    }
+
+    private CompleteUploadResponse completeWithMergedFile(UploadRow upload, String uploadId, String actor,
+                                                          MergedFile merged) {
+        uploadSecurityPolicy.validateMergedFile(upload.mimeType(), upload.fileSize(), merged.path());
+        String sha256 = merged.sha256();
+        FileObjectRef fileObject = getOrCreateFileObject(upload, sha256, upload.fileSize(), merged.path());
         String sourceId = Ids.newId();
         String snapshotId = Ids.newId();
         String objectKey = "workspace/%s/source/%s/snapshot/1/original/%s".formatted(upload.workspaceId(), sourceId, sanitize(upload.fileName()));
-        storage.write(BUCKET_SOURCE, objectKey, merged);
+        // 快照原件从文件对象服务端复制，不再经过应用内存
+        storage.copy(BUCKET_SOURCE, fileObject.objectKey(), BUCKET_SOURCE, objectKey);
         jdbcTemplate.update("""
                 insert into source(
                     id, workspace_id, file_object_id, title, source_type, status, parse_status, index_status,
@@ -197,7 +208,8 @@ public class UploadService {
                     """, Ids.newId(), taskId, sourceId, Json.write(objectMapper, payload));
         } else {
             taskCommandPort.startTask(taskId);
-            sourceParsePort.parseAndIndex(upload.workspaceId(), sourceId, snapshotId, merged);
+            // Kafka 关闭时只用于开发和测试，文件较小，直接读入内存同步解析
+            sourceParsePort.parseAndIndex(upload.workspaceId(), sourceId, snapshotId, readAll(merged.path()));
             Map<String, String> sourceState = jdbcTemplate.queryForObject("""
                     select parse_status, index_status from source
                     where workspace_id = ? and id = ?
@@ -255,27 +267,52 @@ public class UploadService {
         }, workspaceId, sourceId);
     }
 
-    private byte[] mergeChunks(List<Map<String, Object>> chunkRows) {
+    private MergedFile mergeChunksToFile(List<Map<String, Object>> chunkRows) {
+        java.nio.file.Path file = null;
         try {
-            ByteArrayOutputStream output = new ByteArrayOutputStream();
-            for (Map<String, Object> row : chunkRows) {
-                String objectKey = (String) row.get("object_key");
-                output.write(storage.read(BUCKET_SOURCE, objectKey));
+            file = java.nio.file.Files.createTempFile("noteweave-upload-", ".bin");
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            try (java.io.OutputStream output = new java.security.DigestOutputStream(
+                    new java.io.BufferedOutputStream(java.nio.file.Files.newOutputStream(file)), digest)) {
+                for (Map<String, Object> row : chunkRows) {
+                    output.write(storage.read(BUCKET_SOURCE, (String) row.get("object_key")));
+                }
             }
-            return output.toByteArray();
+            return new MergedFile(file, HexFormat.of().formatHex(digest.digest()));
         } catch (Exception ex) {
+            deleteQuietly(file);
             throw new BusinessException("UPLOAD_MERGE_FAILED", "上传分片合并失败");
         }
     }
 
-    private FileObjectRef getOrCreateFileObject(UploadRow upload, String sha256, long size, byte[] merged) {
+    private static byte[] readAll(java.nio.file.Path file) {
+        try {
+            return java.nio.file.Files.readAllBytes(file);
+        } catch (java.io.IOException ex) {
+            throw new BusinessException("UPLOAD_MERGE_FAILED", "上传分片合并失败");
+        }
+    }
+
+    private static void deleteQuietly(java.nio.file.Path file) {
+        if (file == null) return;
+        try {
+            java.nio.file.Files.deleteIfExists(file);
+        } catch (java.io.IOException ex) {
+            log.warn("Failed to delete merged upload temp file {}", file);
+        }
+    }
+
+    private record MergedFile(java.nio.file.Path path, String sha256) {
+    }
+
+    private FileObjectRef getOrCreateFileObject(UploadRow upload, String sha256, long size, java.nio.file.Path merged) {
         List<FileObjectRef> existing = jdbcTemplate.query("""
                 select id, object_key from file_object where workspace_id = ? and sha256 = ?
                 """, (rs, rowNum) -> new FileObjectRef(rs.getString("id"), rs.getString("object_key")), upload.workspaceId(), sha256);
         if (!existing.isEmpty()) {
             FileObjectRef ref = existing.get(0);
             if (!storage.exists(BUCKET_SOURCE, ref.objectKey())) {
-                storage.write(BUCKET_SOURCE, ref.objectKey(), merged);
+                storage.writeFile(BUCKET_SOURCE, ref.objectKey(), merged);
             }
             jdbcTemplate.update("""
                     update file_object set ref_count = ref_count + 1
@@ -285,7 +322,7 @@ public class UploadService {
         }
         String fileObjectId = Ids.newId();
         String objectKey = "workspace/%s/file_object/%s-%s".formatted(upload.workspaceId(), sha256, sanitize(upload.fileName()));
-        storage.write(BUCKET_SOURCE, objectKey, merged);
+        storage.writeFile(BUCKET_SOURCE, objectKey, merged);
         jdbcTemplate.update("""
                 insert into file_object(id, workspace_id, object_key, sha256, file_size, mime_type, ref_count)
                 values (?, ?, ?, ?, ?, ?, 1)

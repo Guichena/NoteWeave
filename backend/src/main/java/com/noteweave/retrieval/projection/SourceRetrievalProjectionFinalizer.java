@@ -80,7 +80,8 @@ public class SourceRetrievalProjectionFinalizer {
                 where workspace_id = ? and source_id = ? and source_snapshot_id = ?
                 """, workspaceId, sourceId, snapshotId);
         jdbcTemplate.update("""
-                update source_snapshot set index_status = 'INDEXED'
+                update source_snapshot
+                set index_status = 'INDEXED', processing_stage = 'READY', next_index_retry_at = null
                 where id = ? and source_id = ? and parse_status = 'PARSED'
                 """, snapshotId, sourceId);
         int sourceReady = jdbcTemplate.update("""
@@ -105,6 +106,11 @@ public class SourceRetrievalProjectionFinalizer {
         return staleSnapshots;
     }
 
+    /** 检索索引失败后自动重试的最大次数。 */
+    public static final int MAX_AUTO_RETRIES = 3;
+    private static final java.util.Set<String> NON_RETRYABLE_ERRORS = java.util.Set.of(
+            "EMBEDDING_PROVIDER_DISABLED", "EMBEDDING_DIMENSION_MISMATCH");
+
     @Transactional
     public void finalizeFailed(
             String workspaceId,
@@ -125,12 +131,20 @@ public class SourceRetrievalProjectionFinalizer {
         if (current.current() && !current.acceptsFailedTransition() && !current.failed()) {
             throw new IllegalStateException("Source is not awaiting retrieval projection failure finalization");
         }
+        // 可重试的失败按 1、2、4 分钟退避自动重试，最多 3 次；配置类错误重试也不会成功，直接停下
+        Integer attempts = jdbcTemplate.query(
+                "select index_attempt_count from source_snapshot where id = ? and source_id = ?",
+                rs -> rs.next() ? rs.getInt(1) : null, snapshotId, sourceId);
+        boolean autoRetry = attempts != null && attempts < MAX_AUTO_RETRIES
+                && !NON_RETRYABLE_ERRORS.contains(normalizedErrorCode);
+        java.sql.Timestamp nextRetryAt = autoRetry
+                ? java.sql.Timestamp.from(java.time.Instant.now().plusSeconds(60L << attempts)) : null;
         jdbcTemplate.update("""
                 update source_snapshot
-                set index_status = 'FAILED'
+                set index_status = 'FAILED', next_index_retry_at = ?
                 where id = ? and source_id = ?
                   and parse_status = 'PARSED' and index_status = 'INDEXING'
-                """, snapshotId, sourceId);
+                """, nextRetryAt, snapshotId, sourceId);
         jdbcTemplate.update("""
                 update source_chunk
                 set projection_status = 'FAILED', projected_at = null
@@ -161,9 +175,11 @@ public class SourceRetrievalProjectionFinalizer {
             taskService.failTask(
                     taskId,
                     "INDEX_FAILED",
-                    "资料解析已完成，但检索索引生成失败",
+                    autoRetry
+                            ? "资料解析已完成，但检索索引生成失败，将在 " + (1L << attempts) + " 分钟后自动重试"
+                            : "资料解析已完成，但检索索引生成失败",
                     normalizedErrorCode,
-                    false
+                    autoRetry
             );
         }
     }

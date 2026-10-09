@@ -76,6 +76,18 @@ public class KafkaConfig {
         return new KafkaAdmin(configs);
     }
 
+    /**
+     * 研究 Agent 任务按 task id 分区，分区数就是 Worker 端可并行消费的上限；
+     * 已存在且分区更少的 topic 会被 KafkaAdmin 扩容（分区只增不减）。
+     */
+    @Bean
+    public NewTopic researchAgentCommandTopic(
+            @Value("${noteweave.kafka.topics.research-agent-command:noteweave.research.agent.command}") String topic,
+            @Value("${noteweave.research.agent.command-partitions:3}") int partitions
+    ) {
+        return TopicBuilder.name(topic).partitions(Math.max(1, partitions)).replicas(1).build();
+    }
+
     @Bean
     public KafkaAdmin.NewTopics kafkaDeadLetterTopics(
             @Value("${noteweave.kafka.topics.source-parse:noteweave.source.parse}") String sourceParseTopic,
@@ -83,6 +95,10 @@ public class KafkaConfig {
             @Value("${noteweave.kafka.topics.wiki-ingest:noteweave.wiki.ingest}") String wikiIngestTopic,
             @Value("${noteweave.kafka.topics.wiki-retract:noteweave.wiki.retract}") String wikiRetractTopic,
             @Value("${noteweave.kafka.topics.conversation-summary:noteweave.conversation.summary}") String conversationSummaryTopic,
+            @Value("${noteweave.kafka.topics.memory-extraction:noteweave.memory.extraction}") String memoryExtractionTopic,
+            @Value("${noteweave.kafka.topics.source-chunk:noteweave.source.chunk}") String sourceChunkTopic,
+            @Value("${noteweave.kafka.topics.source-embed:noteweave.source.embed}") String sourceEmbedTopic,
+            @Value("${noteweave.kafka.topics.source-index:noteweave.source.index}") String sourceIndexTopic,
             @Value("${noteweave.kafka.artifact-dlq-topic:noteweave.artifact.job.dlq}") String artifactDlqTopic
     ) {
         return new KafkaAdmin.NewTopics(
@@ -92,7 +108,11 @@ public class KafkaConfig {
                 deadLetterTopic(retrievalProjectionTopic),
                 deadLetterTopic(wikiIngestTopic),
                 deadLetterTopic(wikiRetractTopic),
-                deadLetterTopic(conversationSummaryTopic)
+                deadLetterTopic(conversationSummaryTopic),
+                deadLetterTopic(memoryExtractionTopic),
+                deadLetterTopic(sourceChunkTopic),
+                deadLetterTopic(sourceEmbedTopic),
+                deadLetterTopic(sourceIndexTopic)
         );
     }
 

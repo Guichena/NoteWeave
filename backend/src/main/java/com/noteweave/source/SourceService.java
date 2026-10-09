@@ -7,19 +7,27 @@ import com.noteweave.security.WorkspaceAccessGuard;
 import com.noteweave.security.WorkspacePermission;
 import com.noteweave.security.AuditActorProvider;
 import com.noteweave.task.TaskCommandPort;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class SourceService {
+
+    private static final ObjectMapper METADATA_READER = new ObjectMapper();
 
     private final JdbcTemplate jdbcTemplate;
     private final WorkspaceAccessGuard workspaceAccessGuard;
@@ -73,25 +81,38 @@ public class SourceService {
         long startedAt = System.nanoTime();
         List<SourceResponse> sources;
         try {
+            Map<String, String> parseTaskIds = loadLatestParseTaskIds(workspaceId);
+            Map<String, SnapshotStage> stages = loadLatestSnapshotStages(workspaceId);
             sources = jdbcTemplate.query("""
                     select id, title, source_type, status, parse_status, index_status,
                            coalesce(generated_by, '') as generated_by,
                            coalesce(generated_ref_id, '') as generated_ref_id,
-                           updated_at
+                           updated_at, metadata_json
                     from source
                     where workspace_id = ? and status <> 'DELETED'
                     order by updated_at desc, id desc
-                    """, (rs, rowNum) -> new SourceResponse(
-                    rs.getString("id"),
-                    rs.getString("title"),
-                    rs.getString("source_type"),
-                    rs.getString("status"),
-                    rs.getString("parse_status"),
-                    rs.getString("index_status"),
-                    rs.getString("generated_by"),
-                    rs.getString("generated_ref_id"),
-                    toInstant(rs.getTimestamp("updated_at"))
-            ), workspaceId);
+                    """, (rs, rowNum) -> {
+                JsonNode metadata = readMetadata(rs.getString("metadata_json"));
+                String sourceId = rs.getString("id");
+                SnapshotStage stage = stages.getOrDefault(sourceId, SnapshotStage.NONE);
+                return new SourceResponse(
+                        sourceId,
+                        rs.getString("title"),
+                        rs.getString("source_type"),
+                        rs.getString("status"),
+                        rs.getString("parse_status"),
+                        rs.getString("index_status"),
+                        rs.getString("generated_by"),
+                        rs.getString("generated_ref_id"),
+                        toInstant(rs.getTimestamp("updated_at")),
+                        readCount(metadata, "chunk_count"),
+                        readCount(metadata, "page_count"),
+                        parseTaskIds.get(sourceId),
+                        stage.stage(),
+                        stage.attempts(),
+                        stage.nextRetryAt()
+                );
+            }, workspaceId);
         } catch (RuntimeException exception) {
             recordDatabaseLoad("error", startedAt);
             throw exception;
@@ -99,6 +120,55 @@ public class SourceService {
         recordDatabaseLoad("success", startedAt);
         sourceCatalogCache.put(workspaceId, catalogVersion, sources);
         return sources;
+    }
+
+    /** 每个资料最新快照的处理阶段与自动重试信息。 */
+    private Map<String, SnapshotStage> loadLatestSnapshotStages(String workspaceId) {
+        Map<String, SnapshotStage> stages = new HashMap<>();
+        jdbcTemplate.query("""
+                select ss.source_id, ss.processing_stage, ss.index_attempt_count, ss.next_index_retry_at
+                from source_snapshot ss
+                join source s on s.id = ss.source_id
+                where s.workspace_id = ? and s.status <> 'DELETED'
+                  and ss.version_no = (select max(x.version_no) from source_snapshot x where x.source_id = ss.source_id)
+                """, (RowCallbackHandler) rs -> stages.put(rs.getString(1), new SnapshotStage(
+                rs.getString(2), rs.getInt(3),
+                // 没有安排自动重试时保持为空，不能套用 updated_at 的缺省值
+                rs.getTimestamp(4) == null ? null : rs.getTimestamp(4).toInstant())), workspaceId);
+        return stages;
+    }
+
+    private record SnapshotStage(String stage, Integer attempts, java.time.Instant nextRetryAt) {
+        static final SnapshotStage NONE = new SnapshotStage(null, null, null);
+    }
+
+    /** 按创建顺序读取工作台内的资料解析任务，同一资料以最后一次为准。 */
+    private Map<String, String> loadLatestParseTaskIds(String workspaceId) {
+        Map<String, String> taskIds = new HashMap<>();
+        jdbcTemplate.query("""
+                select id, target_id
+                from task
+                where workspace_id = ? and target_type = 'SOURCE' and task_type = 'SOURCE_PARSE'
+                order by created_at, id
+                """, (RowCallbackHandler) rs -> taskIds.put(rs.getString("target_id"), rs.getString("id")),
+                workspaceId);
+        return taskIds;
+    }
+
+    private static JsonNode readMetadata(String metadataJson) {
+        if (metadataJson == null || metadataJson.isBlank()) {
+            return null;
+        }
+        try {
+            return METADATA_READER.readTree(metadataJson);
+        } catch (JsonProcessingException exception) {
+            return null;
+        }
+    }
+
+    private static Integer readCount(JsonNode metadata, String field) {
+        JsonNode value = metadata == null ? null : metadata.get(field);
+        return value != null && value.canConvertToInt() ? value.intValue() : null;
     }
 
     private void recordDatabaseLoad(String result, long startedAt) {

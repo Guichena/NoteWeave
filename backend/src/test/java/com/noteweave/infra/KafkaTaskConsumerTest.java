@@ -168,6 +168,28 @@ class KafkaTaskConsumerTest {
     }
 
     @Test
+    void conversationSummaryWithBaseSummaryOnlyAppendsTheNewTurns() {
+        SegmentSummaryPromotionService promotionService = mock(SegmentSummaryPromotionService.class);
+        KafkaTaskConsumer summaryConsumer = new KafkaTaskConsumer(
+                sourceParseService, wikiIngestService, taskService, new ObjectMapper(), null, promotionService);
+        ConsumerRecord<String, String> record = new ConsumerRecord<>(
+                "noteweave.conversation.summary", 0, 11L, "revision-2", """
+                {"segment_id":"segment-2","summary_revision_id":"revision-2",
+                 "base_summary_text":"earlier summary",
+                 "source_messages":[{"role":"USER","content":"New question"}]}
+                """);
+
+        summaryConsumer.onConversationSummary(record);
+
+        // 未配置大模型时按抽取式摘要处理：旧摘要加上新增消息
+        verify(promotionService).promote(org.mockito.ArgumentMatchers.eq("segment-2"),
+                org.mockito.ArgumentMatchers.eq("revision-2"),
+                org.mockito.ArgumentMatchers.argThat(request ->
+                        "earlier summary\nuser: New question".equals(request.summaryText())
+                                && "EXTRACTIVE".equals(request.summaryMethod())));
+    }
+
+    @Test
     void topicSummaryV2MessageRoutesToV2Promotion() {
         com.noteweave.conversation.ConversationTopicSummaryV2Service v2 =
                 mock(com.noteweave.conversation.ConversationTopicSummaryV2Service.class);

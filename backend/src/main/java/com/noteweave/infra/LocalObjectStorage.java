@@ -46,6 +46,37 @@ public class LocalObjectStorage implements ObjectStorage {
     }
 
     @Override
+    public void writeFile(String bucket, String objectKey, Path file) {
+        try {
+            Path target = resolveTarget(bucket, objectKey);
+            Files.createDirectories(target.getParent());
+            Files.copy(file, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException ex) {
+            throw new IllegalStateException("write object failed: " + bucket + "/" + objectKey, ex);
+        }
+    }
+
+    @Override
+    public void readToFile(String bucket, String objectKey, Path target) {
+        try {
+            Files.copy(resolveTarget(bucket, objectKey), target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException ex) {
+            throw new IllegalStateException("read object failed: " + bucket + "/" + objectKey, ex);
+        }
+    }
+
+    @Override
+    public void copy(String sourceBucket, String sourceKey, String targetBucket, String targetKey) {
+        try {
+            Path target = resolveTarget(targetBucket, targetKey);
+            Files.createDirectories(target.getParent());
+            Files.copy(resolveTarget(sourceBucket, sourceKey), target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException ex) {
+            throw new IllegalStateException("copy object failed: " + sourceBucket + "/" + sourceKey, ex);
+        }
+    }
+
+    @Override
     public boolean exists(String bucket, String objectKey) {
         return Files.exists(resolveTarget(bucket, objectKey));
     }

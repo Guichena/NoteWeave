@@ -31,10 +31,19 @@ import org.springframework.test.util.ReflectionTestUtils;
 class KafkaRetrievalProjectionFailureRecoveryTest {
 
     @Test
+    void researchAgentCommandTopicShouldHaveOnePartitionPerParallelConsumer() {
+        KafkaConfig config = new KafkaConfig();
+
+        assertThat(config.researchAgentCommandTopic("research.agent.command", 3).numPartitions()).isEqualTo(3);
+        assertThat(config.researchAgentCommandTopic("research.agent.command", 0).numPartitions()).isEqualTo(1);
+    }
+
+    @Test
     void kafkaConfigShouldProvisionEveryDeadLetterTopic() {
         KafkaAdmin.NewTopics topics = new KafkaConfig().kafkaDeadLetterTopics(
                 "source.parse", "retrieval.projection", "wiki.ingest", "wiki.retract",
-                "conversation.summary", "artifact.job.dlq");
+                "conversation.summary", "memory.extraction", "source.chunk", "source.embed", "source.index",
+                "artifact.job.dlq");
 
         @SuppressWarnings("unchecked")
         Collection<NewTopic> definitions = (Collection<NewTopic>) ReflectionTestUtils.invokeMethod(
@@ -48,6 +57,10 @@ class KafkaRetrievalProjectionFailureRecoveryTest {
                         "wiki.ingest.DLT",
                         "wiki.retract.DLT",
                         "conversation.summary.DLT",
+                        "memory.extraction.DLT",
+                        "source.chunk.DLT",
+                        "source.embed.DLT",
+                        "source.index.DLT",
                         "noteweave.artifact.job",
                         "artifact.job.dlq"
                 );
@@ -58,7 +71,8 @@ class KafkaRetrievalProjectionFailureRecoveryTest {
     void retrievalProjectionDeadLetterShouldPreserveProviderCodeAndFinalizeFailure() {
         SourceRetrievalProjectionFinalizer finalizer = mock(SourceRetrievalProjectionFinalizer.class);
         KafkaDeadLetterTaskRecovery recovery = new KafkaDeadLetterTaskRecovery(
-                new ObjectMapper(), finalizer, "retrieval.projection");
+                new ObjectMapper(), finalizer, mock(SourceParseFailureFinalizer.class),
+                "retrieval.projection", "source.parse");
         ConsumerRecord<String, String> record = new ConsumerRecord<>(
                 "retrieval.projection",
                 0,
@@ -307,7 +321,9 @@ class KafkaRetrievalProjectionFailureRecoveryTest {
         jdbcTemplate.execute("""
                 create table source_snapshot (
                     id varchar(36) primary key, source_id varchar(36), version_no int,
-                    parse_status varchar(32), index_status varchar(32)
+                    parse_status varchar(32), index_status varchar(32),
+                    processing_stage varchar(32), index_attempt_count int default 0 not null,
+                    next_index_retry_at timestamp
                 )
                 """);
         jdbcTemplate.update("""
@@ -361,7 +377,9 @@ class KafkaRetrievalProjectionFailureRecoveryTest {
         jdbcTemplate.execute("""
                 create table source_snapshot (
                     id varchar(36) primary key, source_id varchar(36), version_no int,
-                    parse_status varchar(32), index_status varchar(32)
+                    parse_status varchar(32), index_status varchar(32),
+                    processing_stage varchar(32), index_attempt_count int default 0 not null,
+                    next_index_retry_at timestamp
                 )
                 """);
         jdbcTemplate.update("""
@@ -436,7 +454,9 @@ class KafkaRetrievalProjectionFailureRecoveryTest {
                     source_id varchar(64) not null,
                     version_no int not null,
                     parse_status varchar(32) not null,
-                    index_status varchar(32) not null
+                    index_status varchar(32) not null,
+                    processing_stage varchar(32), index_attempt_count int default 0 not null,
+                    next_index_retry_at timestamp
                 )
                 """);
         jdbcTemplate.execute("""

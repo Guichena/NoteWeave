@@ -11,7 +11,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Finalizes source/snapshot/task together when the source-parse command cannot be delivered. */
+/**
+ * Finalizes source/snapshot/task together when the source-parse command cannot be delivered,
+ * or when the consumer exhausts its retries and the record is sent to the dead-letter topic.
+ */
 @Service
 public class SourceParseFailureFinalizer {
     private static final Logger log = LoggerFactory.getLogger(SourceParseFailureFinalizer.class);
@@ -40,9 +43,63 @@ public class SourceParseFailureFinalizer {
             return;
         }
         Map<String, Object> payload = readPayload(payloadJson);
-        String workspaceId = text(payload.get("workspaceId"));
-        String sourceId = text(payload.get("sourceId"));
-        String snapshotId = text(payload.get("snapshotId"));
+        markFailed(
+                task,
+                text(payload.get("workspaceId")),
+                text(payload.get("sourceId")),
+                text(payload.get("snapshotId")),
+                "SYSTEM:SOURCE_PARSE_OUTBOX",
+                "OUTBOX_DEAD_LETTER",
+                "Kafka Source Parse 投递耗尽，资料解析未执行",
+                "OUTBOX_DISPATCH_EXHAUSTED",
+                true
+        );
+    }
+
+    /**
+     * 消费者重试耗尽、消息进入死信队列时收尾。解析事务已经回滚，快照仍停在 PENDING，
+     * 这里把快照、当前资料和任务一起标记为失败，并保留原始错误码供前端展示。
+     * 同一条死信被重复处理时，任务已是终态，直接返回。
+     */
+    @Transactional
+    public void finalizeProcessingFailed(
+            String taskId,
+            String workspaceId,
+            String sourceId,
+            String snapshotId,
+            String errorCode,
+            String errorMessage,
+            boolean retryable
+    ) {
+        TaskService.TaskRef task = taskService.getTaskRef(taskId);
+        if (!eligible(task)) {
+            return;
+        }
+        markFailed(
+                task,
+                workspaceId,
+                sourceId,
+                snapshotId,
+                "SYSTEM:SOURCE_PARSE_CONSUMER",
+                "SOURCE_PARSE_FAILED",
+                "资料解析失败：" + abbreviate(errorMessage),
+                errorCode,
+                retryable
+        );
+    }
+
+    private void markFailed(
+            TaskService.TaskRef task,
+            String workspaceId,
+            String sourceId,
+            String snapshotId,
+            String actor,
+            String phase,
+            String message,
+            String errorCode,
+            boolean retryable
+    ) {
+        String taskId = task.taskId();
         if (blank(workspaceId) || blank(sourceId) || blank(snapshotId)
                 || !workspaceId.equals(task.workspaceId())
                 || !sourceId.equals(task.targetId())) {
@@ -70,7 +127,7 @@ public class SourceParseFailureFinalizer {
         int sourceFailed = jdbcTemplate.update("""
                 update source
                 set status = 'FAILED', parse_status = 'FAILED', index_status = 'FAILED',
-                    updated_by = 'SYSTEM:SOURCE_PARSE_OUTBOX', updated_at = current_timestamp
+                    updated_by = ?, updated_at = current_timestamp
                 where id = ? and workspace_id = ? and status <> 'DELETED'
                   and exists (
                       select 1 from source_snapshot snapshot
@@ -81,7 +138,7 @@ public class SourceParseFailureFinalizer {
                             where current_snapshot.source_id = source.id
                         )
                   )
-                """, sourceId, workspaceId, snapshotId);
+                """, actor, sourceId, workspaceId, snapshotId);
         if (sourceFailed == 1) {
             sourceCatalogVersionService.bump(workspaceId);
         }
@@ -89,13 +146,13 @@ public class SourceParseFailureFinalizer {
             log.info("Skip stale source-parse dead letter: taskId={}, sourceId={}, snapshotId={}",
                     taskId, sourceId, snapshotId);
         }
-        taskService.failTask(
-                taskId,
-                "OUTBOX_DEAD_LETTER",
-                "Kafka Source Parse 投递耗尽，资料解析未执行",
-                "OUTBOX_DISPATCH_EXHAUSTED",
-                true
-        );
+        taskService.failTask(taskId, phase, message, errorCode, retryable);
+    }
+
+    // 任务的 error_message 为 varchar(1000)，由错误码和说明拼接而成，这里给说明留出余量。
+    private String abbreviate(String message) {
+        String value = blank(message) ? "资料解析过程中出错" : message.trim();
+        return value.length() <= 400 ? value : value.substring(0, 400) + "…";
     }
 
     private Map<String, Object> readPayload(String payloadJson) {

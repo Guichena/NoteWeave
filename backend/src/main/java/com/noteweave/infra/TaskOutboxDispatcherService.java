@@ -69,11 +69,7 @@ public class TaskOutboxDispatcherService {
         this.sourceParseFailureFinalizer = sourceParseFailureFinalizer;
         NoteWeaveProperties.Topics configured = properties.kafka().topics();
         this.sourceParseTopic = configured.sourceParse();
-        this.topics = List.of(
-                configured.sourceParse(), configured.retrievalProjection(),
-                configured.wikiIngest(), configured.wikiRetract(),
-                configured.conversationSummary()
-        );
+        this.topics = configured.all();
     }
 
     @Scheduled(fixedDelayString = "${noteweave.kafka.outbox-redrive-delay-ms:1000}")
@@ -94,7 +90,8 @@ public class TaskOutboxDispatcherService {
                 )).get(10, TimeUnit.SECONDS),
                 message -> {
                     if (message.taskId() != null) {
-                        if (sourceParseFailureFinalizer != null && sourceParseTopic.equals(message.topic())) {
+                        if (sourceParseFailureFinalizer != null && (sourceParseTopic.equals(message.topic())
+                                || com.noteweave.source.SourcePipelineStages.TOPIC_CHUNK.equals(message.topic()))) {
                             sourceParseFailureFinalizer.finalizeDeliveryExhausted(
                                     message.taskId(), message.payloadJson());
                         } else {
@@ -115,13 +112,13 @@ public class TaskOutboxDispatcherService {
         int safeLimit = Math.max(1, Math.min(limit, 100));
         return jdbcTemplate.query("""
                 select id, task_id, topic, message_key, attempt_count, coalesce(last_error, '') last_error, dead_lettered_at
-                from task_outbox where status = 'DEAD_LETTER' and topic in (?, ?, ?, ?, ?)
+                from task_outbox where status = 'DEAD_LETTER' and topic in (%s)
                 order by dead_lettered_at desc, created_at desc limit ?
-                """, (rs, rowNum) -> new TaskOutboxDeadLetterResponse(
+                """.formatted(topicPlaceholders()), (rs, rowNum) -> new TaskOutboxDeadLetterResponse(
                 rs.getString("id"), rs.getString("task_id"), rs.getString("topic"), rs.getString("message_key"),
                 rs.getInt("attempt_count"), rs.getString("last_error"),
                 rs.getTimestamp("dead_lettered_at") == null ? Instant.EPOCH : rs.getTimestamp("dead_lettered_at").toInstant()
-        ), topics.get(0), topics.get(1), topics.get(2), topics.get(3), topics.get(4), safeLimit);
+        ), topicArguments(safeLimit));
     }
 
     @Transactional
@@ -148,9 +145,26 @@ public class TaskOutboxDispatcherService {
 
     private int count(String status) {
         Integer value = jdbcTemplate.queryForObject("""
-                select count(*) from task_outbox where status = ? and topic in (?, ?, ?, ?, ?)
-                """, Integer.class, status, topics.get(0), topics.get(1), topics.get(2), topics.get(3), topics.get(4));
+                select count(*) from task_outbox where status = ? and topic in (%s)
+                """.formatted(topicPlaceholders()), Integer.class, statusAndTopics(status));
         return value == null ? 0 : value;
+    }
+
+    private String topicPlaceholders() {
+        return String.join(", ", java.util.Collections.nCopies(topics.size(), "?"));
+    }
+
+    private Object[] topicArguments(int limit) {
+        java.util.ArrayList<Object> arguments = new java.util.ArrayList<>(topics);
+        arguments.add(limit);
+        return arguments.toArray();
+    }
+
+    private Object[] statusAndTopics(String status) {
+        java.util.ArrayList<Object> arguments = new java.util.ArrayList<>();
+        arguments.add(status);
+        arguments.addAll(topics);
+        return arguments.toArray();
     }
 
     private record OutboxRow(
