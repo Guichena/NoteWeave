@@ -82,7 +82,8 @@ class ContextWindowPlannerV2Test {
         List<ContextProjectionV2.RawMessage> messages = java.util.stream.IntStream.rangeClosed(1, 20)
                 .mapToObj(seq -> message(seq, "message " + seq)).toList();
         var active = segment("A1", "A", 1, 20, "CONFIDENT");
-        var partial = summary("A1", "A", 1, 5, "only first five messages");
+        // 摘要落后原文窗口 9 条，超过可补齐的范围，整段展开为原文
+        var partial = summary("A1", "A", 1, 3, "only first three messages");
         ContextProjectionV2 result = planner.compile(new ContextWindowPlannerV2.Input(
                 "workspace", "actor", "conversation", 20, "question", "QA", 500,
                 messages, List.of(active), List.of(partial), List.of(), List.of()));
@@ -105,6 +106,45 @@ class ContextWindowPlannerV2Test {
         assertThat(result.rawTail()).extracting(ContextProjectionV2.RawMessage::seq)
                 .containsExactly(13, 14, 15, 16, 17, 18, 19, 20);
         assertThat(result.topicSummaries()).containsExactly(complete);
+    }
+
+    @Test
+    void laggingIncrementalSummaryIsBridgedWithRawMessagesInsteadOfExpandingTheTopic() {
+        List<ContextProjectionV2.RawMessage> messages = java.util.stream.IntStream.rangeClosed(1, 20)
+                .mapToObj(seq -> message(seq, "message " + seq)).toList();
+        var active = segment("A1", "A", 1, 20, "CONFIDENT");
+        // 增量摘要留下多个版本；最新一版还在生成，已就绪的一版覆盖到第 10 条
+        var older = new ContextProjectionV2.TopicSummary("A", "A1", "revision-A1-1", 1, 6, "first six", digest("first six"));
+        var ready = new ContextProjectionV2.TopicSummary("A", "A1", "revision-A1-2", 1, 10, "first ten", digest("first ten"));
+        ContextProjectionV2 result = planner.compile(new ContextWindowPlannerV2.Input(
+                "workspace", "actor", "conversation", 20, "question", "QA", 500,
+                messages, List.of(active), List.of(older, ready), List.of(), List.of()));
+
+        assertThat(result.rawTail()).extracting(ContextProjectionV2.RawMessage::seq)
+                .containsExactly(11, 12, 13, 14, 15, 16, 17, 18, 19, 20);
+        assertThat(result.topicSummaries()).containsExactly(ready);
+        assertThat(result.degradationReasons()).containsExactly("CURRENT_SUMMARY_LAGGING_RAW_BRIDGED");
+    }
+
+    @Test
+    void uncertainActiveSegmentStillUsesItsOwnSummary() {
+        List<ContextProjectionV2.RawMessage> messages = java.util.stream.IntStream.rangeClosed(1, 20)
+                .mapToObj(seq -> message(seq, "message " + seq)).toList();
+        var first = segment("A1", "A", 1, 2, "CONFIDENT");
+        var active = segment("B1", "B", 3, 20, "UNCERTAIN");
+        var own = summary("B1", "B", 3, 12, "own earlier messages");
+        ContextProjectionV2 result = planner.compile(new ContextWindowPlannerV2.Input(
+                "workspace", "actor", "conversation", 20, "question", "QA", 500,
+                messages, List.of(first, active), List.of(summary("A1", "A", 1, 2, "other topic"), own),
+                List.of(), List.of()));
+
+        assertThat(result.rawTail()).extracting(ContextProjectionV2.RawMessage::seq)
+                .containsExactly(13, 14, 15, 16, 17, 18, 19, 20);
+        assertThat(result.topicSummaries()).containsExactly(own);
+        assertThat(result.decisions()).anySatisfy(decision -> {
+            assertThat(decision.refId()).isEqualTo("revision-A1");
+            assertThat(decision.reason()).isEqualTo("OTHER_TOPIC");
+        });
     }
 
     @Test

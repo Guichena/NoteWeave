@@ -10,23 +10,32 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Workspace opt-in; production consumption also requires a separate global gate. */
+/**
+ * Workspace opt-in; production consumption also requires a separate global gate.
+ * 没有单独配置过的工作区使用 default-mode；部署环境默认 ACTIVE，即回答时使用话题感知窗口，
+ * 冻结失败时自动退回 V1 前缀摘要窗口。
+ */
 @Service
 public class ContextV2RolloutService {
     private final JdbcTemplate jdbc;
     private final WorkspaceAccessGuard access;
     private final boolean globalShadowEnabled;
     private final boolean globalActiveEnabled;
+    private final String defaultMode;
 
     public ContextV2RolloutService(JdbcTemplate jdbc, WorkspaceAccessGuard access,
                                    @Value("${noteweave.context.v2.shadow-enabled:false}")
                                    boolean globalShadowEnabled,
                                    @Value("${noteweave.context.v2.active-enabled:false}")
-                                   boolean globalActiveEnabled) {
+                                   boolean globalActiveEnabled,
+                                   @Value("${noteweave.context.v2.default-mode:OFF}")
+                                   String defaultMode) {
         this.jdbc = jdbc;
         this.access = access;
         this.globalShadowEnabled = globalShadowEnabled;
         this.globalActiveEnabled = globalActiveEnabled;
+        String normalized = defaultMode == null ? "OFF" : defaultMode.trim().toUpperCase(java.util.Locale.ROOT);
+        this.defaultMode = java.util.Set.of("OFF", "SHADOW", "ACTIVE").contains(normalized) ? normalized : "OFF";
     }
 
     public RolloutState get(String workspaceId) {
@@ -76,7 +85,7 @@ public class ContextV2RolloutService {
     private String configuredMode(String workspaceId) {
         return jdbc.query("""
                 select mode from context_v2_workspace_rollout where workspace_id = ?
-                """, rs -> rs.next() ? rs.getString(1) : "OFF", workspaceId);
+                """, rs -> rs.next() ? rs.getString(1) : defaultMode, workspaceId);
     }
 
     public record RolloutState(String mode, boolean shadowEffective, boolean activeEffective) {}

@@ -50,7 +50,7 @@ public class ConversationContextCompilerV2Service {
             if (cutoffSeq != 0) throw invalid("independent context cannot have a conversation cutoff");
             return planner.compile(new ContextWindowPlannerV2.Input(workspaceId, actorId, "", 0,
                     currentInput, taskPurpose, tokenBudget, List.of(), List.of(), List.of(), List.of(),
-                    memoryReferences(workspaceId)));
+                    memoryReferences(workspaceId, actorId)));
         }
         Integer exists = jdbc.queryForObject("""
                 select count(*) from conversation where id = ? and workspace_id = ?
@@ -113,17 +113,32 @@ public class ConversationContextCompilerV2Service {
         return planner.compile(new ContextWindowPlannerV2.Input(workspaceId, actorId, conversationId,
                 cutoffSeq, currentInput, taskPurpose, tokenBudget, messages, segments,
                 summaries.ready(workspaceId, conversationId, cutoffSeq), constraints,
-                memoryReferences(workspaceId)));
+                memoryReferences(workspaceId, actorId)));
     }
 
-    private List<ContextProjectionV2.MemoryRevision> memoryReferences(String workspaceId) {
+    /**
+     * Independent (conversation-less) context for a background task acting for a user. There is no
+     * request session here: the caller must already have re-checked the actor's current Workspace ACL
+     * (e.g. VideoLearningRequestRepository.requireActorMayOperate) before calling.
+     */
+    @Transactional(readOnly = true)
+    public ContextProjectionV2 compileIndependentForVerifiedActor(String workspaceId, String actorId,
+                                                                  String currentInput, String taskPurpose,
+                                                                  int tokenBudget) {
+        if (actorId == null || actorId.isBlank()) throw invalid("verified actor is required");
+        return planner.compile(new ContextWindowPlannerV2.Input(workspaceId, actorId, "", 0,
+                currentInput, taskPurpose, tokenBudget, List.of(), List.of(), List.of(), List.of(),
+                memoryReferences(workspaceId, actorId)));
+    }
+
+    private List<ContextProjectionV2.MemoryRevision> memoryReferences(String workspaceId, String actorId) {
         List<ContextProjectionV2.MemoryRevision> result = new ArrayList<>();
-        for (MemoryReferenceResponse ref : memory.recall(new MemoryRuntimeQuery(workspaceId)).memoryReferences()) {
+        for (MemoryReferenceResponse ref : memory.recall(new MemoryRuntimeQuery(workspaceId, actorId)).memoryReferences()) {
             List<ContextProjectionV2.MemoryRevision> selected = jdbc.query("""
                     select i.id, r.id, r.display_text from memory_item i
                     join memory_runtime_revision r on r.id = i.current_revision_id
                     where i.id = ? and r.id = ? and i.workspace_id = ?
-                      and i.status = 'ACTIVE' and r.status = 'ACTIVE'
+                      and i.status = 'ACTIVE' and i.review_status = 'APPROVED' and r.status = 'ACTIVE'
                       and r.valid_from <= current_timestamp
                       and (r.valid_until is null or r.valid_until > current_timestamp)
                     """, (rs, index) -> new ContextProjectionV2.MemoryRevision(

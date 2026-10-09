@@ -66,7 +66,7 @@ class ContextV2ActiveAnswerContractTest {
                             select projection_sha256 from context_v2_shadow_snapshot where id = ?
                             """, String.class, shadowId));
             assertThat(mapper.readTree((String) snapshot.get("token_budget_json"))
-                    .path("context_v2_budget_bytes").asInt()).isGreaterThan(0);
+                    .path("context_v2_budget_tokens").asInt()).isGreaterThan(0);
             assertThat(jdbc.queryForObject("""
                     select status from context_v2_shadow_snapshot where id = ?
                     """, String.class, shadowId)).isEqualTo("READY");

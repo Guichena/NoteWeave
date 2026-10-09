@@ -47,6 +47,7 @@ public class ConversationTurnModule {
     private final ContextV2ShadowSnapshotService shadowSnapshots;
     private final TransactionTemplate transactionTemplate;
     private final TransactionTemplate nestedContextTransaction;
+    private com.noteweave.memory.MemoryConversationExtractionService memoryExtractionService;
 
     public ConversationTurnModule(
             JdbcTemplate jdbcTemplate,
@@ -95,6 +96,17 @@ public class ConversationTurnModule {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.nestedContextTransaction = new TransactionTemplate(transactionManager);
         this.nestedContextTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_NESTED);
+    }
+
+    /** 用户消息提交后，按需入队从对话中提取记忆候选的任务。 */
+    @Autowired(required = false)
+    void setMemoryExtractionService(com.noteweave.memory.MemoryConversationExtractionService service) {
+        this.memoryExtractionService = service;
+    }
+
+    private String submissionActor(String submissionId) {
+        return jdbcTemplate.query("select actor_user_id from turn_submission where id = ?",
+                rs -> rs.next() ? rs.getString(1) : null, submissionId);
     }
 
     public TurnReceipt submitNewTurn(SubmitTurnCommand command) {
@@ -346,6 +358,10 @@ public class ConversationTurnModule {
                 where id = ? and context_status = 'PENDING'
                 """, sha256(material.answer()), prepared.receipt().assistantMessageId());
         conversationSegmentBuildService.queueBuildForActivePrefix(prepared.workspaceId(), command.conversationId());
+        if (memoryExtractionService != null) {
+            memoryExtractionService.queueForUserMessage(prepared.workspaceId(), command.conversationId(),
+                    prepared.receipt().messageId(), submissionActor(prepared.receipt().submissionId()));
+        }
         if (recoveryLeaseOwner == null) {
             jdbcTemplate.update("""
                     update turn_submission

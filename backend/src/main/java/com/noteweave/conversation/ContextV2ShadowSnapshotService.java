@@ -20,7 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 /** Freezes Answer shadow Context and prepares Research Context at its input cutoff. */
 @Service
 public class ContextV2ShadowSnapshotService {
-    private static final int SHADOW_BUDGET_BYTES = 32_768;
+    /** 会话上下文（原文窗口、话题摘要、约束和记忆）的 token 预算，不含检索到的资料证据。 */
+    private static final int CONTEXT_BUDGET_TOKENS = 12_000;
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
@@ -58,7 +59,7 @@ public class ContextV2ShadowSnapshotService {
         if (cutoff == null) throw new IllegalArgumentException("Answer Run query identity is invalid");
         topics.refreshForInputCutoff(workspaceId, conversationId, cutoff);
         ContextProjectionV2 projection = compiler.compile(workspaceId, actorId, conversationId,
-                cutoff, currentInput, taskPurpose, SHADOW_BUDGET_BYTES);
+                cutoff, currentInput, taskPurpose, CONTEXT_BUDGET_TOKENS);
         requireCurrentMemories(workspaceId, projection);
         String snapshotId = Ids.newId();
         String json = write(projection);
@@ -92,7 +93,7 @@ public class ContextV2ShadowSnapshotService {
         if (!researchActiveEnabled || !rollout.activeEnabled(workspaceId)) return null;
         topics.refreshForInputCutoff(workspaceId, conversationId, cutoff);
         ContextProjectionV2 projection = compiler.compile(workspaceId, actorId, conversationId,
-                cutoff, currentInput, "RESEARCH", SHADOW_BUDGET_BYTES);
+                cutoff, currentInput, "RESEARCH", CONTEXT_BUDGET_TOKENS);
         requireCurrentMemories(workspaceId, projection);
         return projection;
     }
@@ -103,7 +104,7 @@ public class ContextV2ShadowSnapshotService {
                     select i.id from memory_item i
                     join memory_runtime_revision r on r.id = i.current_revision_id
                     where i.id = ? and r.id = ? and i.workspace_id = ?
-                      and i.status = 'ACTIVE' and r.status = 'ACTIVE'
+                      and i.status = 'ACTIVE' and i.review_status = 'APPROVED' and r.status = 'ACTIVE'
                       and r.valid_from <= current_timestamp
                       and (r.valid_until is null or r.valid_until > current_timestamp)
                     for update

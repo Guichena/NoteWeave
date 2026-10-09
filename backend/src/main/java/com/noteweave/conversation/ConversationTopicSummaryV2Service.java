@@ -11,7 +11,6 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -21,7 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 /** Immutable, segment-scoped v2 summary revisions built from frozen ledger rows. */
 @Service
 public class ConversationTopicSummaryV2Service {
-    static final String COMPILER_VERSION = "topic-summary-v2-extractive-a1";
+    static final String COMPILER_VERSION = "topic-summary-v2-incremental-a2";
     private static final String SUMMARY_TOPIC = "noteweave.conversation.summary";
     private static final int RAW_TAIL = 8;
 
@@ -49,7 +48,8 @@ public class ConversationTopicSummaryV2Service {
         int coveredEnd = lastSeq - RAW_TAIL;
         List<Segment> segments = jdbc.query("""
                 select id, topic_id, start_seq, end_seq from conversation_topic_segment_v2
-                where workspace_id = ? and conversation_id = ? and decision_status = 'CONFIDENT'
+                where workspace_id = ? and conversation_id = ?
+                  and decision_status in ('CONFIDENT', 'UNCERTAIN')
                   and start_seq <= ? order by start_seq
                 """, (rs, index) -> new Segment(rs.getString(1), rs.getString(2),
                 rs.getInt(3), rs.getInt(4)), workspaceId, conversationId, coveredEnd);
@@ -64,6 +64,10 @@ public class ConversationTopicSummaryV2Service {
             List<SourceMessage> messages = loadMessages(workspaceId, conversationId,
                     segment.startSeq(), end);
             if (messages.size() != end - segment.startSeq() + 1) continue;
+            // 增量摘要：同一话题段已有更短的 READY 摘要时，只把之后新增的消息交给摘要任务
+            BaseSummary base = latestReadyBefore(segment.id(), end);
+            List<SourceMessage> delta = base == null ? messages : messages.stream()
+                    .filter(message -> message.seq() > base.endSeq()).toList();
             String revisionId = Ids.newId();
             Integer maximum = jdbc.queryForObject("""
                     select max(revision_no) from conversation_topic_summary_revision_v2
@@ -74,10 +78,12 @@ public class ConversationTopicSummaryV2Service {
             jdbc.update("""
                     insert into conversation_topic_summary_revision_v2(
                         id, workspace_id, conversation_id, topic_id, segment_id, revision_no,
-                        start_seq, end_seq, source_digest, status, summary_text, compiler_version)
-                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BUILDING', '', ?)
+                        start_seq, end_seq, source_digest, status, summary_text, compiler_version,
+                        base_revision_id)
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BUILDING', '', ?, ?)
                     """, revisionId, workspaceId, conversationId, segment.topicId(), segment.id(),
-                    revisionNo, segment.startSeq(), end, digest, COMPILER_VERSION);
+                    revisionNo, segment.startSeq(), end, digest, COMPILER_VERSION,
+                    base == null ? null : base.revisionId());
             String taskId = tasks.createTask(workspaceId, "CONVERSATION_SUMMARY",
                     "TOPIC_SUMMARY_REVISION_V2", revisionId, "QUEUED",
                     "Conversation topic summary queued");
@@ -91,7 +97,12 @@ public class ConversationTopicSummaryV2Service {
             payload.put("covered_start_seq", segment.startSeq());
             payload.put("covered_end_seq", end);
             payload.put("source_digest", digest);
-            payload.put("source_messages", messages.stream().map(message -> Map.of(
+            if (base != null) {
+                payload.put("base_summary_revision_id", base.revisionId());
+                payload.put("base_covered_end_seq", base.endSeq());
+                payload.put("base_summary_text", base.text());
+            }
+            payload.put("source_messages", delta.stream().map(message -> Map.of(
                     "message_id", message.id(), "message_seq", message.seq(),
                     "role", message.role(), "content", message.text(),
                     "content_hash", sha256(message.text()))).toList());
@@ -124,7 +135,7 @@ public class ConversationTopicSummaryV2Service {
                 revision.startSeq(), revision.endSeq());
         if (revision.startSeq() != revision.segmentStart()
                 || revision.endSeq() > revision.segmentEnd()
-                || !"CONFIDENT".equals(revision.segmentStatus())
+                || !java.util.Set.of("CONFIDENT", "UNCERTAIN").contains(revision.segmentStatus())
                 || !"ACTIVE".equals(revision.topicStatus())
                 || messages.size() != revision.endSeq() - revision.startSeq() + 1
                 || !revision.sourceDigest().equals(sourceDigest(messages))) {
@@ -136,20 +147,17 @@ public class ConversationTopicSummaryV2Service {
             throw new BusinessException("CONTEXT_TOPIC_SUMMARY_STALE",
                     "Topic source changed before summary promotion", HttpStatus.CONFLICT);
         }
-        String expectedSummary = messages.stream()
-                .map(message -> summarizeMessage(message.role(), message.text()))
-                .filter(value -> !value.isBlank())
-                .collect(java.util.stream.Collectors.joining("\n"));
-        if (expectedSummary.length() > 16_000) expectedSummary = expectedSummary.substring(0, 16_000);
+        // 摘要可能由大模型生成，无法按原文重算；这里校验来源消息未变化、文本非空、长度受限且摘要哈希一致
         if (request == null || request.summaryText() == null || request.summaryText().isBlank()
-                || !expectedSummary.equals(request.summaryText())
+                || request.summaryText().length() > ConversationSummaryGenerator.MAX_SUMMARY_CHARS
                 || !sha256(request.summaryText()).equals(request.contentHash()))
             throw invalid("topic summary text or digest is invalid");
         int promoted = jdbc.update("""
                 update conversation_topic_summary_revision_v2
-                set status = 'READY', summary_text = ?, content_hash = ?, ready_at = current_timestamp
+                set status = 'READY', summary_text = ?, content_hash = ?, summary_method = ?,
+                    ready_at = current_timestamp
                 where id = ? and status = 'BUILDING'
-                """, request.summaryText(), request.contentHash(), revisionId);
+                """, request.summaryText(), request.contentHash(), request.summaryMethod(), revisionId);
         if (promoted != 1) throw invalid("topic summary promotion conflicted");
         for (String taskId : jdbc.query("""
                 select id from task where target_type = 'TOPIC_SUMMARY_REVISION_V2'
@@ -170,7 +178,7 @@ public class ConversationTopicSummaryV2Service {
                 join conversation_topic_segment_v2 s on s.id = r.segment_id
                 join conversation_topic_v2 t on t.id = r.topic_id
                 where r.workspace_id = ? and r.conversation_id = ? and r.end_seq <= ?
-                  and r.status = 'READY' and s.decision_status = 'CONFIDENT'
+                  and r.status = 'READY' and s.decision_status in ('CONFIDENT', 'UNCERTAIN')
                   and t.status = 'ACTIVE'
                 order by r.end_seq, r.revision_no
                 """, (rs, index) -> new ContextProjectionV2.TopicSummary(
@@ -199,11 +207,19 @@ public class ConversationTopicSummaryV2Service {
     }
 
     public static String summarizeMessage(String role, String content) {
-        String normalized = content == null ? "" : content.replace('\r', ' ').replace('\n', ' ').trim();
-        if (normalized.isBlank()) return "";
-        String bounded = normalized.substring(0, Math.min(600, normalized.length()));
-        return (role == null || role.isBlank() ? "message" : role.toLowerCase(Locale.ROOT))
-                + ": " + bounded;
+        return ConversationSummaryGenerator.summarizeMessage(role, content);
+    }
+
+    /** 同一话题段内覆盖范围更短、且已经 READY 的最新摘要，作为增量摘要的起点。 */
+    private BaseSummary latestReadyBefore(String segmentId, int end) {
+        List<BaseSummary> rows = jdbc.query("""
+                select id, end_seq, summary_text from conversation_topic_summary_revision_v2
+                where segment_id = ? and status = 'READY' and end_seq < ?
+                order by end_seq desc, revision_no desc
+                """, (rs, index) -> new BaseSummary(rs.getString(1), rs.getInt(2), rs.getString(3)),
+                segmentId, end);
+        return rows.isEmpty() || rows.get(0).text() == null || rows.get(0).text().isBlank()
+                ? null : rows.get(0);
     }
 
     private static String sha256(String value) {
@@ -220,6 +236,7 @@ public class ConversationTopicSummaryV2Service {
     }
 
     private record Segment(String id, String topicId, int startSeq, int endSeq) {}
+    private record BaseSummary(String revisionId, int endSeq, String text) {}
     private record SourceMessage(String id, int seq, String role, String text) {}
     private record Revision(String workspaceId, String conversationId, int startSeq, int endSeq,
                             String sourceDigest, String status, int segmentStart, int segmentEnd,

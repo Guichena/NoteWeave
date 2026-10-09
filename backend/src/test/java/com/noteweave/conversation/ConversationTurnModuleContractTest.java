@@ -1552,6 +1552,122 @@ class ConversationTurnModuleContractTest {
         assertThat(researchFinalizationService.finalizeIncrementalRun(researchRunId).idempotentReplay()).isFalse();
     }
 
+    @Test
+    void nextPrefixSummaryIsBuiltIncrementallyOnTopOfTheReadyOne() throws Exception {
+        String workspaceId = createWorkspace();
+        String conversationId = createConversation(workspaceId);
+        for (int index = 1; index <= 5; index++) {
+            submit(conversationId, Map.of(
+                    "content", "incremental-prefix turn " + index,
+                    "answer_mode", "QA",
+                    "client_request_id", "incremental-prefix-turn-" + index
+            ), 200);
+        }
+        String firstRevisionId = jdbcTemplate.queryForObject("""
+                select r.id from segment_summary_revision r
+                join conversation_segment s on s.id = r.segment_id
+                where s.conversation_id = ? and s.covered_end_seq = 3
+                """, String.class, conversationId);
+        String firstSegmentId = jdbcTemplate.queryForObject(
+                "select segment_id from segment_summary_revision where id = ?", String.class, firstRevisionId);
+        mockMvc.perform(post("/internal/conversation-segments/{segmentId}/summary-revisions/{revisionId}/promote",
+                        firstSegmentId, firstRevisionId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "summary_text", "first prefix summary",
+                                "content_hash", "d".repeat(64),
+                                "summary_method", "LLM_FULL"))))
+                .andExpect(status().isOk());
+
+        submit(conversationId, Map.of(
+                "content", "incremental-prefix turn 6",
+                "answer_mode", "QA",
+                "client_request_id", "incremental-prefix-turn-6"
+        ), 200);
+
+        // 第二版前缀摘要以第一版为起点，只把第 4、5 条消息交给摘要任务
+        Map<String, Object> second = jdbcTemplate.queryForMap("""
+                select r.id, r.base_revision_id from segment_summary_revision r
+                join conversation_segment s on s.id = r.segment_id
+                where s.conversation_id = ? and s.covered_end_seq = 5
+                """, conversationId);
+        assertThat(second.get("base_revision_id")).isEqualTo(firstRevisionId);
+        JsonNode payload = objectMapper.readTree(jdbcTemplate.queryForObject("""
+                select payload_json from task_outbox where message_key = ?
+                """, String.class, second.get("id")));
+        assertThat(payload.path("base_summary_text").asText()).isEqualTo("first prefix summary");
+        assertThat(payload.path("base_covered_end_seq").asInt()).isEqualTo(3);
+        assertThat(payload.path("covered_start_seq").asInt()).isEqualTo(1);
+        assertThat(payload.path("covered_end_seq").asInt()).isEqualTo(5);
+        assertThat(payload.path("source_messages").findValuesAsText("message_seq"))
+                .containsExactly("4", "5");
+        assertThat(jdbcTemplate.queryForObject(
+                "select summary_method from segment_summary_revision where id = ?", String.class, firstRevisionId))
+                .isEqualTo("LLM_FULL");
+    }
+
+    @Test
+    void topicSummaryIsExtendedIncrementallyWithinTheSameTopic() throws Exception {
+        String workspaceId = createWorkspace();
+        String conversationId = createConversation(workspaceId);
+        submit(conversationId, Map.of("content", "缓存一致性有哪些常见方案",
+                "answer_mode", "QA", "client_request_id", "incremental-topic-0"), 200);
+        for (int index = 1; index <= 4; index++) {
+            submit(conversationId, Map.of("content", "补充：缓存一致性第 " + index + " 点怎么做",
+                    "answer_mode", "QA", "client_request_id", "incremental-topic-" + index), 200);
+        }
+        var projection = topicProjectionV2Service.refresh(workspaceId, conversationId);
+        assertThat(projection.segments()).hasSize(1);
+        String segmentId = projection.segments().get(0).segmentId();
+        String firstRevisionId = jdbcTemplate.queryForObject("""
+                select id from conversation_topic_summary_revision_v2
+                where segment_id = ? and status = 'BUILDING'
+                """, String.class, segmentId);
+        String firstSummary = "- 用户在了解缓存一致性方案";
+        topicSummaryV2Service.promote(segmentId, firstRevisionId,
+                new PromoteSegmentSummaryRequest(firstSummary, sha256Hex(firstSummary), "LLM_FULL"));
+
+        for (int index = 5; index <= 6; index++) {
+            submit(conversationId, Map.of("content", "补充：缓存一致性第 " + index + " 点怎么做",
+                    "answer_mode", "QA", "client_request_id", "incremental-topic-" + index), 200);
+        }
+        topicProjectionV2Service.refresh(workspaceId, conversationId);
+
+        Map<String, Object> second = jdbcTemplate.queryForMap("""
+                select id, start_seq, end_seq, base_revision_id from conversation_topic_summary_revision_v2
+                where segment_id = ? and status = 'BUILDING'
+                """, segmentId);
+        assertThat(second.get("base_revision_id")).isEqualTo(firstRevisionId);
+        assertThat(((Number) second.get("start_seq")).intValue()).isEqualTo(1);
+        JsonNode payload = objectMapper.readTree(jdbcTemplate.queryForObject("""
+                select payload_json from task_outbox where message_key = ?
+                """, String.class, second.get("id")));
+        assertThat(payload.path("base_summary_text").asText()).isEqualTo(firstSummary);
+        int baseEnd = payload.path("base_covered_end_seq").asInt();
+        assertThat(payload.path("source_messages").findValuesAsText("message_seq"))
+                .isNotEmpty()
+                .allSatisfy(seq -> assertThat(Integer.parseInt(seq)).isGreaterThan(baseEnd));
+        assertThat(payload.path("covered_end_seq").asInt())
+                .isEqualTo(((Number) second.get("end_seq")).intValue());
+
+        // 增量生成的摘要不能按原文重算，但哈希不匹配时仍然拒绝晋升
+        String secondId = (String) second.get("id");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> topicSummaryV2Service.promote(segmentId, secondId,
+                        new PromoteSegmentSummaryRequest("forged", sha256Hex("different"), "LLM_INCREMENTAL")))
+                .isInstanceOf(com.noteweave.common.BusinessException.class);
+        String secondSummary = firstSummary + "\n- 补充了第 5、6 点";
+        topicSummaryV2Service.promote(segmentId, secondId,
+                new PromoteSegmentSummaryRequest(secondSummary, sha256Hex(secondSummary), "LLM_INCREMENTAL"));
+        assertThat(jdbcTemplate.queryForObject("""
+                select summary_method from conversation_topic_summary_revision_v2 where id = ?
+                """, String.class, secondId)).isEqualTo("LLM_INCREMENTAL");
+    }
+
+    private static String sha256Hex(String value) throws Exception {
+        return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(value.getBytes(StandardCharsets.UTF_8)));
+    }
+
     private JsonNode submit(String conversationId, Map<String, Object> request, int expectedStatus)
             throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v2/conversations/{conversationId}/messages", conversationId)

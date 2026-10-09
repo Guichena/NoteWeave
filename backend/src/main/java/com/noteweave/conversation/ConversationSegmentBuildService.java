@@ -64,11 +64,15 @@ public class ConversationSegmentBuildService {
             return;
         }
 
+        // 增量摘要：以覆盖范围更短的最新 READY 前缀摘要为起点，只把之后新增的消息交给摘要任务。
+        // 前缀摘要都从第 1 条消息开始，旧摘要覆盖的消息被删除时，新摘要所在的前缀也会一起失效。
+        BaseSummary base = latestReadyPrefixBefore(conversationId, coveredEnd);
+        int deltaStart = base == null ? 1 : base.coveredEndSeq() + 1;
         List<FrozenMessage> messages = jdbcTemplate.query("""
                 select id, message_seq, role, content, content_hash
                 from conversation_message
                 where conversation_id = ? and context_status = 'CURRENT'
-                  and message_seq between 1 and ?
+                  and message_seq between ? and ?
                 order by message_seq
                 """, (rs, rowNum) -> new FrozenMessage(
                 rs.getString("id"),
@@ -76,8 +80,8 @@ public class ConversationSegmentBuildService {
                 rs.getString("role"),
                 rs.getString("content"),
                 rs.getString("content_hash")
-        ), conversationId, coveredEnd);
-        if (messages.size() != coveredEnd) {
+        ), conversationId, deltaStart, coveredEnd);
+        if (messages.size() != coveredEnd - deltaStart + 1) {
             return;
         }
 
@@ -90,9 +94,9 @@ public class ConversationSegmentBuildService {
                 """, segmentId, workspaceId, conversationId, coveredEnd);
         jdbcTemplate.update("""
                 insert into segment_summary_revision(
-                    id, segment_id, revision_no, status, source_segment_version
-                ) values (?, ?, 1, 'BUILDING', 0)
-                """, revisionId, segmentId);
+                    id, segment_id, revision_no, status, source_segment_version, base_revision_id
+                ) values (?, ?, 1, 'BUILDING', 0, ?)
+                """, revisionId, segmentId, base == null ? null : base.revisionId());
 
         String taskId = taskService.createTask(
                 workspaceId,
@@ -111,6 +115,11 @@ public class ConversationSegmentBuildService {
         payload.put("source_segment_version", 0);
         payload.put("covered_start_seq", 1);
         payload.put("covered_end_seq", coveredEnd);
+        if (base != null) {
+            payload.put("base_summary_revision_id", base.revisionId());
+            payload.put("base_covered_end_seq", base.coveredEndSeq());
+            payload.put("base_summary_text", base.summaryText());
+        }
         payload.put("source_messages", messages.stream().map(message -> Map.of(
                 "message_id", message.messageId(),
                 "message_seq", message.messageSequence(),
@@ -148,6 +157,20 @@ public class ConversationSegmentBuildService {
         ), workspaceId, conversationId);
     }
 
+    private BaseSummary latestReadyPrefixBefore(String conversationId, int coveredEnd) {
+        List<BaseSummary> rows = jdbcTemplate.query("""
+                select r.id, s.covered_end_seq, r.summary_text
+                from conversation_segment s
+                join segment_summary_revision r on r.segment_id = s.id
+                where s.conversation_id = ? and s.covered_start_seq = 1 and s.covered_end_seq < ?
+                  and r.status = 'READY'
+                order by s.covered_end_seq desc, r.revision_no desc
+                """, (rs, rowNum) -> new BaseSummary(rs.getString(1), rs.getInt(2), rs.getString(3)),
+                conversationId, coveredEnd);
+        return rows.isEmpty() || rows.get(0).summaryText() == null || rows.get(0).summaryText().isBlank()
+                ? null : rows.get(0);
+    }
+
     private String sha256(String content) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
@@ -155,6 +178,9 @@ public class ConversationSegmentBuildService {
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException("SHA-256 unavailable", ex);
         }
+    }
+
+    private record BaseSummary(String revisionId, int coveredEndSeq, String summaryText) {
     }
 
     private record FrozenMessage(

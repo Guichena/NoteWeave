@@ -95,7 +95,7 @@ public class ConversationService {
         List<ConversationMessageResponse> messages = jdbcTemplate.query("""
                 select m.id, m.message_seq, m.role, m.answer_mode, m.content, m.reply_to_message_id,
                        m.context_status, m.content_hash, r.status as answer_status,
-                       r.error_message as answer_error, m.created_at
+                       r.error_message as answer_error, m.created_at, r.id as answer_run_id
                 from conversation_message m
                 left join answer_run r on r.assistant_request_id = m.assistant_request_id
                 where m.workspace_id = ? and m.conversation_id = ? and m.message_seq > ?
@@ -112,7 +112,9 @@ public class ConversationService {
                 rs.getString("content_hash"),
                 rs.getString("answer_status"),
                 rs.getString("answer_error"),
-                rs.getTimestamp("created_at").toInstant()
+                rs.getTimestamp("created_at").toInstant(),
+                rs.getString("answer_run_id"),
+                List.of()
         ), workspaceId, conversationId, safeAfter, safeLimit);
         if (messages.isEmpty()) return messages;
         List<String> ids = messages.stream().map(ConversationMessageResponse::messageId).toList();
@@ -128,15 +130,19 @@ public class ConversationService {
                   and s.replay_availability = 'METADATA_ONLY'
                 """.formatted(placeholders), String.class, parameters));
         Map<String, List<String>> sourcesByMessage = new HashMap<>();
+        Map<String, List<String>> citationsByMessage = new HashMap<>();
         jdbcTemplate.query("""
-                select mc.message_id, c.source_id
+                select mc.message_id, c.source_id, c.title, c.quote_text
                 from conversation_message m
                 join message_citation mc on mc.message_id = m.id
                 join citation c on c.id = mc.citation_id
                 where m.workspace_id = ? and m.id in (%s)
+                order by mc.message_id, mc.sort_order
                 """.formatted(placeholders), rs -> {
             sourcesByMessage.computeIfAbsent(rs.getString(1), ignored -> new ArrayList<>())
                     .add(rs.getString(2));
+            citationsByMessage.computeIfAbsent(rs.getString(1), ignored -> new ArrayList<>())
+                    .add(citationLine(rs.getString(3), rs.getString(4)));
         }, parameters);
         List<String> citedSources = sourcesByMessage.values().stream().flatMap(List::stream)
                 .filter(id -> id != null && !id.isBlank()).distinct().toList();
@@ -149,7 +155,22 @@ public class ConversationService {
                 ? new ConversationMessageResponse(message.messageId(), message.messageSeq(),
                     message.role(), message.requestedTurnMode(),
                     "此回答引用的资料已撤销，内容不可查看。", message.replyToMessageId(),
-                    "REDACTED", null, message.answerStatus(), null, message.createdAt())
-                : message).toList();
+                    "REDACTED", null, message.answerStatus(), null, message.createdAt(), null, List.of())
+                : withCitations(message, citationsByMessage.get(message.messageId()))).toList();
+    }
+
+    private ConversationMessageResponse withCitations(ConversationMessageResponse message, List<String> citations) {
+        if (citations == null || citations.isEmpty()) {
+            return message;
+        }
+        return new ConversationMessageResponse(message.messageId(), message.messageSeq(), message.role(),
+                message.requestedTurnMode(), message.content(), message.replyToMessageId(),
+                message.contextStatus(), message.contentHash(), message.answerStatus(), message.answerError(),
+                message.createdAt(), message.answerRunId(), citations);
+    }
+
+    private static String citationLine(String title, String quote) {
+        String safeTitle = title == null ? "" : title;
+        return quote == null || quote.isBlank() ? safeTitle : safeTitle + " | " + quote;
     }
 }

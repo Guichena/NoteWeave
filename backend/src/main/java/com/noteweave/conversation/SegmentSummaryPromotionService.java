@@ -48,9 +48,10 @@ public class SegmentSummaryPromotionService {
         }
         int promoted = jdbcTemplate.update("""
                 update segment_summary_revision
-                set status = 'READY', summary_text = ?, content_hash = ?, ready_at = current_timestamp
+                set status = 'READY', summary_text = ?, content_hash = ?, summary_method = ?,
+                    ready_at = current_timestamp
                 where id = ? and status = 'BUILDING'
-                """, request.summaryText(), request.contentHash(), revision.id());
+                """, request.summaryText(), request.contentHash(), request.summaryMethod(), revision.id());
         if (promoted != 1) {
             throw new BusinessException("SEGMENT_SUMMARY_PROMOTION_CONFLICT",
                     "Segment summary revision was changed concurrently", HttpStatus.CONFLICT);

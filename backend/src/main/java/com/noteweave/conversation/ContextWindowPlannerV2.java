@@ -10,9 +10,11 @@ import org.springframework.http.HttpStatus;
 
 /** C2 selection over already authorized references at a frozen input cutoff. */
 public final class ContextWindowPlannerV2 {
-    public static final String COMPILER_VERSION = "context-window-v2-shadow-a1";
+    public static final String COMPILER_VERSION = "context-window-v2-a2";
     private static final int TARGET_RAW_TAIL = 8;
     private static final int MAX_UNSUMMARIZED_MESSAGES = 256;
+    /** 摘要异步生成，通常比原文窗口落后一两轮；落后不超过这个条数时用原文补齐，不整段展开。 */
+    private static final int MAX_SUMMARY_LAG_MESSAGES = 8;
 
     public ContextProjectionV2 compile(Input input) {
         if (input == null || input.workspaceId().isBlank() || input.actorId().isBlank()
@@ -58,11 +60,22 @@ public final class ContextWindowPlannerV2 {
         List<String> degradation = new ArrayList<>();
         if (active != null && !raw.isEmpty() && active.startSeq() < raw.get(0).seq()) {
             int initialRawStart = raw.get(0).seq();
-            boolean hasCurrentSummary = input.readySummaries().stream().anyMatch(summary ->
-                    summary.segmentId().equals(active.segmentId())
+            // 当前话题段内覆盖到原文窗口之前、且最新的一版摘要
+            int summaryEnd = input.readySummaries().stream()
+                    .filter(summary -> summary.segmentId().equals(active.segmentId())
                             && summary.startSeq() == active.startSeq()
-                            && summary.endSeq() == initialRawStart - 1);
-            if (!hasCurrentSummary) {
+                            && summary.endSeq() < initialRawStart)
+                    .mapToInt(ContextProjectionV2.TopicSummary::endSeq)
+                    .max().orElse(-1);
+            int lag = summaryEnd < 0 ? Integer.MAX_VALUE : initialRawStart - 1 - summaryEnd;
+            if (lag > 0 && lag <= MAX_SUMMARY_LAG_MESSAGES) {
+                // 摘要与原文窗口之间差几条消息：原文窗口向前延伸到摘要之后，不遗漏也不重复
+                int bridgedStart = 0;
+                while (bridgedStart < messages.size()
+                        && messages.get(bridgedStart).seq() <= summaryEnd) bridgedStart++;
+                raw = messages.subList(bridgedStart, messages.size());
+                degradation.add("CURRENT_SUMMARY_LAGGING_RAW_BRIDGED");
+            } else if (lag > 0) {
                 int expandedStart = 0;
                 while (expandedStart < messages.size()
                         && messages.get(expandedStart).seq() < active.startSeq()) expandedStart++;
@@ -82,20 +95,29 @@ public final class ContextWindowPlannerV2 {
             decisions.add(new ContextProjectionV2.Decision("MESSAGE", item.messageId(),
                     "INCLUDE", "CONTIGUOUS_RAW_TAIL"));
         }
+        int rawStart = raw.isEmpty() ? input.cutoffSeq() + 1 : raw.get(0).seq();
+        // 每个话题段取覆盖到原文窗口之前的最新一版摘要（增量摘要会留下多个版本）
         Map<String, ContextProjectionV2.TopicSummary> bySegment = new HashMap<>();
         for (ContextProjectionV2.TopicSummary summary : input.readySummaries()) {
-            if (summary.endSeq() <= input.cutoffSeq()) bySegment.put(summary.segmentId(), summary);
+            if (summary.endSeq() > input.cutoffSeq()) continue;
+            ContextProjectionV2.TopicSummary current = bySegment.get(summary.segmentId());
+            boolean fitsWindow = summary.endSeq() < rawStart;
+            boolean currentFits = current != null && current.endSeq() < rawStart;
+            if (current == null || (fitsWindow && (!currentFits || summary.endSeq() >= current.endSeq()))
+                    || (!fitsWindow && !currentFits && summary.endSeq() >= current.endSeq())) {
+                bySegment.put(summary.segmentId(), summary);
+            }
         }
         ArrayList<ContextProjectionV2.TopicSummary> selected = new ArrayList<>();
-        int rawStart = raw.isEmpty() ? input.cutoffSeq() + 1 : raw.get(0).seq();
         for (TopicSegmenterV2.Segment segment : input.segments()) {
             ContextProjectionV2.TopicSummary summary = bySegment.get(segment.segmentId());
             if (summary == null) continue;
             String reason;
             if (active == null || !active.topicId().equals(segment.topicId())) {
                 reason = "OTHER_TOPIC";
-            } else if ("UNCERTAIN".equals(active.status())
-                    || "UNCERTAIN".equals(segment.status())) {
+            } else if (!segment.segmentId().equals(active.segmentId())
+                    && ("UNCERTAIN".equals(active.status()) || "UNCERTAIN".equals(segment.status()))) {
+                // 话题归属不确定时不引入其他段的摘要；当前段自身的摘要只覆盖本段更早的消息，可以使用
                 reason = "UNCERTAIN_TOPIC";
             } else if (summary.startSeq() != segment.startSeq()
                     || summary.endSeq() > segment.endSeq() || summary.endSeq() >= rawStart) {
@@ -117,9 +139,9 @@ public final class ContextWindowPlannerV2 {
                 input.tokenBudget(), used, degradation, "FULL");
     }
 
-    /** UTF-8 byte count is a conservative budget unit until a model tokenizer is pinned. */
+    /** 预算单位是估算的 token 数，估算规则见 ContextTokenEstimator。 */
     private static int tokens(String value) {
-        return value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        return ContextTokenEstimator.estimate(value);
     }
 
     private static boolean applies(ContextProjectionV2.UserConstraint constraint, String taskPurpose,

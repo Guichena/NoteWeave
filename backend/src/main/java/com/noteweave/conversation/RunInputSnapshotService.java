@@ -119,8 +119,8 @@ public class RunInputSnapshotService {
                             "source_message_id", rule.sourceMessageId(), "scope", rule.scope()))
                     .toList());
             snapshot.put("memory_revision_refs", memoryRefs);
-            tokenBudget.put("context_v2_budget_bytes", projection.tokenBudget());
-            tokenBudget.put("context_v2_selected_bytes", projection.selectedTokens());
+            tokenBudget.put("context_v2_budget_tokens", projection.tokenBudget());
+            tokenBudget.put("context_v2_selected_tokens", projection.selectedTokens());
         }
         try {
             jdbcTemplate.update("""
@@ -221,8 +221,8 @@ public class RunInputSnapshotService {
                             "source_message_id", rule.sourceMessageId(), "scope", rule.scope()))
                     .toList());
             snapshot.put("memory_revision_refs", memoryRefs);
-            tokenBudget.put("context_v2_budget_bytes", projection.tokenBudget());
-            tokenBudget.put("context_v2_selected_bytes", projection.selectedTokens());
+            tokenBudget.put("context_v2_budget_tokens", projection.tokenBudget());
+            tokenBudget.put("context_v2_selected_tokens", projection.selectedTokens());
         }
         try {
             jdbcTemplate.update("""

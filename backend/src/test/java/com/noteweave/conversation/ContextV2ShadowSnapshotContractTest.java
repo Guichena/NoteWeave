@@ -143,7 +143,7 @@ class ContextV2ShadowSnapshotContractTest {
                 workspaceId, runId));
         assertThat(diff.path("shadow_status").asText()).isEqualTo("READY");
         assertThat(diff.path("v1_compiler_version").asText()).isEqualTo("segment-projection-v1");
-        assertThat(diff.path("v2_compiler_version").asText()).isEqualTo("context-window-v2-shadow-a1");
+        assertThat(diff.path("v2_compiler_version").asText()).isEqualTo(ContextWindowPlannerV2.COMPILER_VERSION);
         assertThat(diff.path("messages").path("only_v2").toString()).contains(queryId);
         assertThat(diff.toString()).doesNotContain(privateText);
         jdbc.update("""
@@ -212,6 +212,48 @@ class ContextV2ShadowSnapshotContractTest {
         assertThat(data(get("/api/v2/workspaces/{workspaceId}/context-v2-rollout/runs/{runId}/diff",
                 workspaceId, receipt.path("answer_run_id").asText()))
                 .path("gap_code").asText()).isEqualTo("CONTEXT_BUDGET_EXCEEDED");
+    }
+
+    @Test
+    void memoryFlaggedForReviewMustStayOutOfTheAnswerContext() throws Exception {
+        String workspaceId = data(post("/api/v2/workspaces")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of("name", "shadow-memory-review-required",
+                        "description", "review gate contract")))).path("workspace_id").asText();
+        enableShadow(workspaceId);
+        var approved = memoryRuntime.observe(new ExecutionObservation(
+                "shadow-approved-" + System.nanoTime(), workspaceId, "WORKSPACE",
+                "preference:shadow-approved", "Approved memory for shadow context",
+                "USER_FEEDBACK", "shadow-approved"));
+        var flagged = memoryRuntime.observe(new ExecutionObservation(
+                "shadow-flagged-" + System.nanoTime(), workspaceId, "WORKSPACE",
+                "preference:shadow-flagged", "Flagged memory must not reach the prompt",
+                "USER_FEEDBACK", "shadow-flagged"));
+        for (String revisionId : java.util.List.of(approved.revisionId(), flagged.revisionId())) {
+            data(post("/api/v2/workspaces/{workspaceId}/memory/revisions/{revisionId}/review",
+                    workspaceId, revisionId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(mapper.writeValueAsString(Map.of("decision", "ACCEPT"))));
+        }
+        // 使用反馈变差后，记忆被标记为需要复核（与 MemoryOutcomePolicy 的结果一致）
+        jdbc.update("""
+                update memory_item set review_status = 'REVIEW_REQUIRED' where id = ?
+                """, flagged.memoryItemId());
+        String conversationId = data(post("/api/v2/workspaces/{workspaceId}/conversations", workspaceId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of("title", "shadow-memory-review-required",
+                        "conversation_type", "WORKSPACE_CHAT")))).path("conversation_id").asText();
+        JsonNode receipt = data(post("/api/v2/conversations/{conversationId}/messages", conversationId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of("content", "Answer with approved memory only",
+                        "answer_mode", "QA", "client_request_id", "shadow-memory-review-required-1"))));
+
+        ContextProjectionV2 frozen = mapper.readValue(jdbc.queryForObject("""
+                select projection_json from context_v2_shadow_snapshot where answer_run_id = ?
+                """, String.class, receipt.path("answer_run_id").asText()), ContextProjectionV2.class);
+        assertThat(frozen.memoryRevisions())
+                .extracting(ContextProjectionV2.MemoryRevision::revisionId)
+                .containsExactly(approved.revisionId());
     }
 
     @Test
