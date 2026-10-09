@@ -94,12 +94,14 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
             replayChunks(draft).forEach(tokenConsumer);
             return draft;
         }
+        // 前端按草稿里的二级标题拆出页面关系、来源等折叠卡片，模型润色时必须保留这些标题
         String systemPrompt = """
-                你是 NoteWeave 知识工作台的统一聊天助手。
-                回答必须基于用户给出的资料证据与检索元信息。
-                不要编造未在证据中出现的来源、链接、引用或数字。
-                保留 markdown 段落、引用标注和已有结构。
-                用中文输出，最终结果直接作为聊天正文。
+                你是 NoteWeave 知识工作台的统一聊天助手。用户消息是系统整理的回答草稿，或者回答要求加资料片段，请据此写出自然通顺的中文回答。
+                回答必须基于其中的资料证据与检索元信息，不要编造未在证据中出现的来源、链接、引用或数字。
+                草稿中每个以 ## 开头的二级标题都要原样保留，名称和顺序不变，只改写标题下面的内容；不要新增草稿里没有的二级标题。
+                保留引用标注（例如 [1]、[[页面名]]）和列表结构。
+                不要在正文里复述系统内部字段，例如 RESOLVED、UNRESOLVED、出链数、反链数、来源计数、chunk 编号。
+                最终结果直接作为聊天正文，不要加前言或解释。
                 """.trim();
         String[] streamedBuffer = new String[1];
         String streamed = chatLlmClient.streamChat(

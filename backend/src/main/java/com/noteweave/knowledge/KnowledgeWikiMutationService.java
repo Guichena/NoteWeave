@@ -31,6 +31,13 @@ public class KnowledgeWikiMutationService {
     }
 
     public String inferWikiPageKind(String title, String content) {
+        // Wiki ingest 生成的页面类型是确定的，按固定说明文字判断；
+        // 否则正文里偶然出现的索引、概念等字样会把概念页归成总览页，把资料页归成概念页
+        // Wiki Index 的目录会引用各页摘要（其中包含上述说明文字），所以先按标题判断
+        String body = content == null ? "" : content;
+        if ("Wiki Index".equalsIgnoreCase(title)) return "OVERVIEW";
+        if (body.contains(WikiIngestService.CONCEPT_PAGE_MARKER)) return "CONCEPT";
+        if (body.contains(WikiIngestService.SOURCE_PAGE_MARKER)) return "OVERVIEW";
         String normalized = ((title == null ? "" : title)
                 + "\n" + (content == null ? "" : content)).toLowerCase(Locale.ROOT);
         if (normalized.contains("对比") || normalized.contains("比较") || normalized.contains("vs")) {

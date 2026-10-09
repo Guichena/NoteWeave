@@ -41,6 +41,18 @@ class WikiIngestServiceTest {
     );
 
     @Test
+    void selectedConceptsShouldOnlyReadTheRelatedConceptSection() {
+        // 自动链接会把正文里出现的页面标题改成 [[标题]]，这些不算资料选中的概念
+        String content = "# [[cache]]-[[consistency]].md\n\n## 资料摘要\n\n[[缓存一致性方案]] 正文\n\n"
+                + "## 页面导航\n\n- [[Wiki Index]]\n\n## 关联概念\n\n- [[延迟双删]]\n- [[binlog 订阅]]\n\n"
+                + "## 关键内容\n\n写请求先更新数据库 [[写请求先更新数据库]]\n";
+
+        org.assertj.core.api.Assertions.assertThat(WikiIngestService.selectedConcepts(content))
+                .containsExactly("延迟双删", "binlog 订阅");
+        org.assertj.core.api.Assertions.assertThat(WikiIngestService.selectedConcepts("# 无概念\n\n## 页面导航\n")).isEmpty();
+    }
+
+    @Test
     void disabledWikiShouldCancelIngestTaskWithoutStartingWork() {
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq("workspace-1")))
                 .thenReturn(0);
