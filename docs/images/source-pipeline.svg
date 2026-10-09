@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 560" width="1200" height="560" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Source Han Sans SC, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="560" fill="#ffffff"/>
+  <text x="600" y="40" text-anchor="middle" font-size="24" font-weight="700" fill="#0f172a">资料异步处理流水线</text>
+  <text x="600" y="66" text-anchor="middle" font-size="13" fill="#475569">每个阶段消费一个独立的 Kafka topic，阶段之间只传递资料快照 ID，大对象经 MinIO 交接</text>
+
+  <!-- 阶段 -->
+  <g font-size="12">
+    <rect x="30" y="100" width="170" height="130" rx="12" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.6"/>
+    <text x="115" y="130" text-anchor="middle" font-size="16" font-weight="700" fill="#312e81">上传</text>
+    <text x="115" y="156" text-anchor="middle" fill="#3730a3">分片上传与断点续传</text>
+    <text x="115" y="178" text-anchor="middle" fill="#3730a3">流式计算 SHA-256</text>
+    <text x="115" y="200" text-anchor="middle" fill="#3730a3">单文件最大 128 MB</text>
+
+    <rect x="232" y="100" width="170" height="130" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.6"/>
+    <text x="317" y="130" text-anchor="middle" font-size="16" font-weight="700" fill="#065f46">解析 Parse</text>
+    <text x="317" y="156" text-anchor="middle" fill="#047857">PDF / 文档提取文本</text>
+    <text x="317" y="178" text-anchor="middle" fill="#047857">音视频转交转写</text>
+    <text x="317" y="204" text-anchor="middle" font-family="Consolas, Menlo, monospace" font-size="10.5" fill="#64748b">noteweave.source.parse</text>
+
+    <rect x="434" y="100" width="170" height="130" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.6"/>
+    <text x="519" y="130" text-anchor="middle" font-size="16" font-weight="700" fill="#065f46">切片 Chunk</text>
+    <text x="519" y="156" text-anchor="middle" fill="#047857">900 字窗口</text>
+    <text x="519" y="178" text-anchor="middle" fill="#047857">120 字重叠</text>
+    <text x="519" y="204" text-anchor="middle" font-family="Consolas, Menlo, monospace" font-size="10.5" fill="#64748b">noteweave.source.chunk</text>
+
+    <rect x="636" y="100" width="170" height="130" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.6"/>
+    <text x="721" y="130" text-anchor="middle" font-size="16" font-weight="700" fill="#065f46">向量化 Embed</text>
+    <text x="721" y="156" text-anchor="middle" fill="#047857">调用 Embedding</text>
+    <text x="721" y="178" text-anchor="middle" fill="#047857">向量写入对象存储</text>
+    <text x="721" y="204" text-anchor="middle" font-family="Consolas, Menlo, monospace" font-size="10.5" fill="#64748b">noteweave.source.embed</text>
+
+    <rect x="838" y="100" width="170" height="130" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.6"/>
+    <text x="923" y="130" text-anchor="middle" font-size="16" font-weight="700" fill="#065f46">索引 Index</text>
+    <text x="923" y="156" text-anchor="middle" fill="#047857">写入 ES 检索投影</text>
+    <text x="923" y="178" text-anchor="middle" fill="#047857">BM25 + kNN</text>
+    <text x="923" y="204" text-anchor="middle" font-family="Consolas, Menlo, monospace" font-size="10.5" fill="#64748b">noteweave.source.index</text>
+
+    <rect x="1040" y="100" width="130" height="130" rx="12" fill="#f1f5f9" stroke="#64748b" stroke-width="1.6"/>
+    <text x="1105" y="140" text-anchor="middle" font-size="16" font-weight="700" fill="#0f172a">可检索</text>
+    <text x="1105" y="168" text-anchor="middle" fill="#475569">INDEXED</text>
+    <text x="1105" y="192" text-anchor="middle" fill="#475569">问答 / 精读 / Wiki</text>
+  </g>
+  <g stroke="#475569" stroke-width="1.6">
+    <line x1="200" y1="165" x2="230" y2="165" marker-end="url(#arrow)"/>
+    <line x1="402" y1="165" x2="432" y2="165" marker-end="url(#arrow)"/>
+    <line x1="604" y1="165" x2="634" y2="165" marker-end="url(#arrow)"/>
+    <line x1="806" y1="165" x2="836" y2="165" marker-end="url(#arrow)"/>
+    <line x1="1008" y1="165" x2="1038" y2="165" marker-end="url(#arrow)"/>
+  </g>
+
+  <!-- 转写分支 -->
+  <rect x="232" y="290" width="440" height="104" rx="12" fill="#fff7ed" stroke="#ea580c" stroke-width="1.6"/>
+  <text x="252" y="318" font-size="15" font-weight="700" fill="#7c2d12">音视频转写（Artifact Worker）</text>
+  <g font-size="12.5" fill="#9a3412">
+    <text x="252" y="342">mp3 / m4a / wav / mp4 等先按文件头校验格式</text>
+    <text x="252" y="364">系统 MCP 调用 faster-whisper 生成带时间戳文字稿</text>
+    <text x="252" y="386">大模型按 60 行一批纠正识别错误，时间戳保持不变</text>
+  </g>
+  <g stroke="#ea580c" stroke-width="1.6" fill="none">
+    <line x1="317" y1="230" x2="317" y2="288" marker-end="url(#arrow)"/>
+    <path d="M672,342 L700,342 L700,248 L560,248 L540,232" marker-end="url(#arrow)"/>
+  </g>
+  <text x="326" y="264" font-size="12" fill="#9a3412">音视频资料</text>
+  <text x="706" y="300" font-size="12" fill="#9a3412">回调文字稿后进入切片</text>
+
+  <!-- 可靠性 -->
+  <rect x="30" y="430" width="1140" height="104" rx="12" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.4"/>
+  <text x="50" y="458" font-size="15" font-weight="700" fill="#0f172a">可靠性保障</text>
+  <g font-size="13" fill="#334155">
+    <text x="50" y="486">· 每个资料快照记录 processing_stage，重复投递的消息按阶段幂等跳过</text>
+    <text x="50" y="512">· 解析异常进入死信 topic，并回写失败状态与是否可重试，资料不会卡在处理中</text>
+    <text x="620" y="486">· 索引失败按 1、2、4 分钟退避自动重试，最多 3 次</text>
+    <text x="620" y="512">· 资料库支持单份资料重新处理；任务事件可在界面查看</text>
+  </g>
+</svg>

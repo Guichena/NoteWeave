@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" width="1200" height="700" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Source Han Sans SC, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="700" fill="#ffffff"/>
+  <text x="600" y="40" text-anchor="middle" font-size="24" font-weight="700" fill="#0f172a">Deep Research：验证驱动、可恢复的研究闭环</text>
+  <text x="600" y="66" text-anchor="middle" font-size="13" fill="#475569">Backend 持有研究表（Table-as-State）与全部判定，Research Worker 只执行子任务并提交候选与证据</text>
+
+  <!-- 规划 -->
+  <rect x="30" y="100" width="250" height="230" rx="12" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.6"/>
+  <text x="155" y="130" text-anchor="middle" font-size="16" font-weight="700" fill="#312e81">规划研究表</text>
+  <g font-size="12.5" fill="#3730a3">
+    <text x="48" y="158">解析研究意图与约束</text>
+    <text x="48" y="182">行：研究对象（如 Kafka、RabbitMQ）</text>
+    <text x="48" y="206">列：结论、关键证据、局限、影响</text>
+    <text x="48" y="230">每个格子是一个待验证字段</text>
+    <text x="48" y="254">状态：GAP → VERIFIED / 冲突</text>
+  </g>
+  <rect x="48" y="270" width="214" height="44" rx="8" fill="#ffffff" stroke="#a5b4fc"/>
+  <g font-size="11" fill="#3730a3" text-anchor="middle">
+    <text x="155" y="288">格子 ＝ 研究对象 × 字段</text>
+    <text x="155" y="305">逐格追踪候选、证据与判定</text>
+  </g>
+
+  <!-- 执行 -->
+  <rect x="330" y="100" width="300" height="140" rx="12" fill="#fff7ed" stroke="#ea580c" stroke-width="1.6"/>
+  <text x="480" y="130" text-anchor="middle" font-size="16" font-weight="700" fill="#7c2d12">并行执行格子子任务</text>
+  <g font-size="12.5" fill="#9a3412">
+    <text x="348" y="158">经 Kafka 分发，3 个消费进程并行</text>
+    <text x="348" y="182">联网检索 → 网页快照归档 → 抽取原文</text>
+    <text x="348" y="206">租约 + 心跳，进程中断后自动重投</text>
+    <text x="348" y="228">预算由 Backend 预留与结算</text>
+  </g>
+
+  <!-- 验证 -->
+  <rect x="680" y="100" width="250" height="140" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.6"/>
+  <text x="805" y="130" text-anchor="middle" font-size="16" font-weight="700" fill="#065f46">合并与验证</text>
+  <g font-size="12.5" fill="#047857">
+    <text x="698" y="158">候选必须引用原文证据</text>
+    <text x="698" y="182">本地 + 全局 Verifier 判定</text>
+    <text x="698" y="206">跨来源冲突单独标记</text>
+    <text x="698" y="228">通过的格子置为 VERIFIED</text>
+  </g>
+
+  <!-- 修复 -->
+  <rect x="505" y="300" width="300" height="118" rx="12" fill="#fef9c3" stroke="#ca8a04" stroke-width="1.6"/>
+  <text x="655" y="330" text-anchor="middle" font-size="16" font-weight="700" fill="#713f12">缺口与冲突的修复</text>
+  <g font-size="12.5" fill="#854d0e">
+    <text x="523" y="356">局部重规划：只针对未通过的格子</text>
+    <text x="523" y="380">受限反证：排除已用来源再检索</text>
+    <text x="523" y="404">每格修复次数有上限，避免无限循环</text>
+  </g>
+
+  <!-- 检查点 -->
+  <rect x="30" y="380" width="420" height="120" rx="12" fill="#f1f5f9" stroke="#64748b" stroke-width="1.6"/>
+  <text x="50" y="408" font-size="16" font-weight="700" fill="#0f172a">检查点与断点恢复</text>
+  <g font-size="12.5" fill="#334155">
+    <text x="50" y="434">每一波子任务结束后写入研究账本快照</text>
+    <text x="50" y="458">任务中断或取消后，可从任一检查点恢复</text>
+    <text x="50" y="482">已验证的格子直接带入新任务，只重做缺口</text>
+  </g>
+
+  <!-- 收尾 -->
+  <rect x="980" y="100" width="190" height="140" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.6"/>
+  <text x="1075" y="130" text-anchor="middle" font-size="16" font-weight="700" fill="#065f46">完成判定</text>
+  <g font-size="12.5" fill="#047857" text-anchor="middle">
+    <text x="1075" y="158">无运行中任务且</text>
+    <text x="1075" y="182">无可执行修复时</text>
+    <text x="1075" y="206">按格子状态判定</text>
+    <text x="1075" y="228">四种终态之一</text>
+  </g>
+
+  <rect x="860" y="300" width="310" height="140" rx="12" fill="#ffffff" stroke="#059669" stroke-width="1.6"/>
+  <text x="880" y="328" font-size="15" font-weight="700" fill="#065f46">证据充分：成文报告</text>
+  <g font-size="12.5" fill="#047857">
+    <text x="880" y="354">证据审计 → 大模型合成文章</text>
+    <text x="880" y="378">合成失败时带原因重试一次</text>
+    <text x="880" y="402">附引用审计：原文引句、快照、URL</text>
+    <text x="880" y="426">结论逐条回溯到证据</text>
+  </g>
+
+  <rect x="860" y="460" width="310" height="112" rx="12" fill="#ffffff" stroke="#db2777" stroke-width="1.6"/>
+  <text x="880" y="488" font-size="15" font-weight="700" fill="#831843">证据不足：诚实报告</text>
+  <g font-size="12.5" fill="#9d174d">
+    <text x="880" y="514">列出已核验的部分事实与证据</text>
+    <text x="880" y="538">逐格说明未解决原因</text>
+    <text x="880" y="562">不编造结论，也不整体判失败</text>
+  </g>
+
+  <!-- 箭头 -->
+  <g stroke="#475569" stroke-width="1.6" fill="none">
+    <line x1="280" y1="170" x2="328" y2="170" marker-end="url(#arrow)"/>
+    <line x1="630" y1="170" x2="678" y2="170" marker-end="url(#arrow)"/>
+    <line x1="930" y1="170" x2="978" y2="170" marker-end="url(#arrow)"/>
+    <path d="M805,240 L805,270 L700,270 L690,298" marker-end="url(#arrow)"/>
+    <path d="M560,300 L520,270 L480,270 L480,242" marker-end="url(#arrow)"/>
+    <path d="M1075,240 L1075,298" marker-end="url(#arrow)"/>
+    <path d="M1170,200 L1186,200 L1186,516 L1172,516" marker-end="url(#arrow)"/>
+  </g>
+  <text x="815" y="264" font-size="12" fill="#475569">缺口 / 冲突</text>
+  <text x="402" y="266" font-size="12" fill="#475569">下一波子任务</text>
+
+  <g stroke="#64748b" stroke-width="1.4" stroke-dasharray="6 5" fill="none">
+    <path d="M360,240 L360,378" marker-end="url(#arrow)"/>
+  </g>
+  <text x="368" y="330" font-size="12" fill="#475569">每波结束写快照</text>
+
+  <!-- 图例 -->
+  <g font-size="12" fill="#475569">
+    <rect x="30" y="610" width="1140" height="64" rx="10" fill="#f8fafc" stroke="#cbd5e1"/>
+    <text x="50" y="636">终态：COMPLETED_VERIFIED（全部核验）· COMPLETED_WITH_LIMITATIONS（必需字段已核验）· INSUFFICIENT_EVIDENCE（证据不足）· INFRASTRUCTURE_FAILURE（模型或检索服务不可用）</text>
+    <text x="50" y="660">只有模型或检索服务不可用才判为失败；找不到证据属于业务结果，仍然输出报告</text>
+  </g>
+</svg>
