@@ -18,4 +18,8 @@ public interface TaskCommandPort {
     void completeTask(String taskId, String phase, String message, String resultRef);
 
     void failTask(String taskId, String phase, String message, String errorCode, boolean retryable);
+
+    /** 记录多阶段任务进入的新阶段；任务不在运行中时忽略，不抛出异常。 */
+    default void recordStage(String taskId, String phase, String message) {
+    }
 }

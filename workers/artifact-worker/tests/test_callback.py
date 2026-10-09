@@ -1043,6 +1043,32 @@ def test_run_artifact_task_with_callbacks_should_not_turn_callback_delivery_fail
     assert client.failures == []
 
 
+@pytest.mark.parametrize(
+    ("host_code", "reported"),
+    [("ARTIFACT_CONTENT_IR_INVALID", True), ("WORKER_CALLBACK_DELIVERY_STALE", False)],
+)
+def test_run_artifact_task_with_callbacks_should_report_host_rejected_content_as_task_failure(
+    host_code: str, reported: bool,
+) -> None:
+    class RejectingClient(FakeCallbackClient):
+        def send_complete(self, task_id: str, result: ArtifactTaskResult) -> None:
+            raise callback_module.ArtifactCallbackHttpError(
+                409, '{"success":false,"code":"' + host_code + '","message":"rejected"}')
+
+    client = RejectingClient(_build_resume_task_input())
+
+    with pytest.raises(callback_module.ArtifactCallbackHttpError) as raised:
+        run_artifact_task_with_callbacks("task-a-callback", client)
+
+    # 内容被拒要落到失败终态；投递令牌过期属于旧投递，仍交给消费者跳过
+    assert bool(getattr(raised.value, "artifact_failure_reported", False)) is reported
+    if reported:
+        assert client.failures[0]["phase"] == "WORKER_COMPLETION"
+        assert client.failures[0]["error_code"] == host_code
+    else:
+        assert client.failures == []
+
+
 def test_acquisition_ack_with_callbacks_should_resume_waiting_task_and_complete_to_java(
     monkeypatch,
 ) -> None:

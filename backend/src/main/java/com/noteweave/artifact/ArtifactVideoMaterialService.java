@@ -399,7 +399,7 @@ public class ArtifactVideoMaterialService {
             throw scopeInvalid();
         }
         if (!Set.of("bilibili_course_note_pdf", "knowledge_blog", "interview_qa",
-                "video_learning_deck")
+                "video_learning_deck", "video_summary")
                     .contains(run.skillKey())
                 || bundleRowId == null || bundleRowId.isBlank()
                 || !bundleRowId.equals(inputs.get("video_material_bundle_id"))) throw scopeInvalid();

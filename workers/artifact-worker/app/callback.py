@@ -413,7 +413,25 @@ def run_artifact_task_with_callbacks(
         if _report_execution_failure(callback_client, task_id, "WORKER_EXECUTION", exc):
             setattr(exc, "artifact_failure_reported", True)
         raise
-    return _emit_callbacks_for_result(task_id, events, result, callback_client, task_input)
+    try:
+        return _emit_callbacks_for_result(task_id, events, result, callback_client, task_input)
+    except ArtifactCallbackHttpError as exc:
+        # 宿主拒收产物内容（内容 IR、候选、文件清单不合规）时重试也不会通过，必须上报失败；
+        # 否则消费者会把这个 409 当成旧投递跳过，任务会一直停在运行中
+        rejected_code = _rejected_artifact_content_code(exc)
+        if rejected_code:
+            setattr(exc, "error_code", rejected_code)
+            if _report_execution_failure(callback_client, task_id, "WORKER_COMPLETION", exc):
+                setattr(exc, "artifact_failure_reported", True)
+        raise
+
+
+def _rejected_artifact_content_code(exc: ArtifactCallbackHttpError) -> str:
+    """宿主以 409 拒收产物内容时返回其错误码；投递令牌过期等其他冲突返回空串。"""
+    if exc.status_code != 409:
+        return ""
+    match = re.search(r'"code"\s*:\s*"(ARTIFACT_[A-Z_]+)"', str(exc))
+    return match.group(1) if match else ""
 
 
 def run_video_material_task_with_callbacks(

@@ -157,7 +157,8 @@ def build_content_acquisition_plan(task_input: ArtifactTaskInput) -> ContentAcqu
             ],
         )
 
-    if action_key == "AUDIO_MINUTES" or "AUDIO_FILE" in routes:
+    # 只有原始音频文件需要转写；资料库里的音视频已在资料解析阶段转写成文字稿，按文档资料读取即可
+    if "AUDIO_FILE" in routes:
         required_capabilities = ["TRANSCRIBE_AUDIO"]
         return ContentAcquisitionPlan(
             strategy_key=f"acq-{task_input.task_id}",

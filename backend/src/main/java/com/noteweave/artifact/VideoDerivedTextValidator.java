@@ -138,9 +138,8 @@ final class VideoDerivedTextValidator {
     private static String render(Map<?, ?> ir, List<?> blog, List<?> qa, List<?> terms,
                                  String language) {
         String[] label = labels(language);
-        List<String> lines = new ArrayList<>(List.of("# " + text(ir.get("title")), "",
-                label[0] + ": " + text(ir.get("bundle_content_digest")),
-                label[1] + ": " + text(ir.get("plan_content_digest")), ""));
+        // Digests stay in the typed IR (checked above); the reader-facing markdown omits them.
+        List<String> lines = new ArrayList<>(List.of("# " + text(ir.get("title")), ""));
         if (!terms.isEmpty()) {
             lines.addAll(List.of("## " + label[2], "", join(terms), ""));
         }

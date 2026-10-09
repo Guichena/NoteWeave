@@ -71,10 +71,16 @@ class OpenAICompatibleLlmClient:
 
     def complete_json(self, purpose: str, payload: dict[str, object]) -> str:
         contract = (
-            "Return only a JSON object matching video-knowledge-plan-v1. "
+            "You proofread a speech-recognition transcript. Return only a JSON object "
+            "{\"lines\": [...]} with exactly as many lines as supplied, in the same order. "
+            "Fix only recognition errors: homophones, wrong technical terms, and punctuation. "
+            "Keep the leading [mm:ss] timestamp of every line unchanged; never add, drop, "
+            "merge, summarize, or reinterpret content."
+            if purpose == "transcript_correction" else
+            "Return only a JSON object shaped exactly like the supplied output_schema "
+            "(video-knowledge-outline-v1: a title plus a concepts array). "
             "Use only the supplied corrected subtitles and frame OCR. "
-            "An EXTRACTED claim must copy exact text from its cited evidence; "
-            "mark unsupported claims UNVERIFIED and list UNVERIFIED_CLAIM in node.missing."
+            "Every claim quote must be copied verbatim from the cited segment's corrected_text."
             if purpose == "video_knowledge_plan" else
             "Follow the requested outline and output contract. "
             "Return only valid JSON with a sections array; every section must contain "

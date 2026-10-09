@@ -133,6 +133,33 @@ def test_plan_rejects_cycle_and_multiple_roots() -> None:
         VideoKnowledgePlanV1.model_validate(value)
 
 
+def test_outline_is_assembled_into_a_contract_complete_plan_keeping_only_real_quotes() -> None:
+    bundle = _bundle()
+    outline = {"title": "缓存", "concepts": [{
+        "title": "一致性", "segment_ids": ["s1", "unknown"], "terms": ["一致性", "invented"],
+        "claims": [{"segment_id": "s1", "quote": "cache 一致性"},
+                   {"segment_id": "s1", "quote": "缓存永远强一致"}],
+    }]}
+    client = FakeLlmClient({"video_knowledge_plan": json.dumps(outline, ensure_ascii=False)})
+
+    plan = plan_video_knowledge(bundle, client)
+
+    concept = next(node for node in plan.nodes if node.kind == "CONCEPT")
+    assert [claim.text for claim in concept.claims] == ["cache 一致性"]
+    assert concept.terms == ["一致性"]
+    assert concept.transcript_segment_ids == ["s1"] and concept.frame_ids == ["f1"]
+    assert (concept.start_ms, concept.end_ms) == (1000, 4000)
+    assert client.calls[0][1]["contract"] == "video-knowledge-outline-v1"
+
+
+def test_outline_without_verifiable_claims_is_rejected_and_uncited_segments_stay_covered() -> None:
+    bundle = _bundle()
+    no_quotes = {"concepts": [{"title": "x", "segment_ids": ["s1"],
+                               "claims": [{"segment_id": "s1", "quote": "not in the subtitle"}]}]}
+    with pytest.raises(ValueError, match="no verifiable claim"):
+        plan_video_knowledge(bundle, FakeLlmClient({"video_knowledge_plan": json.dumps(no_quotes)}))
+
+
 def test_planner_rejects_unusable_response() -> None:
     bundle = _bundle()
     with pytest.raises(ValueError, match="no bounded plan"):

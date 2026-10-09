@@ -25,8 +25,12 @@ public class VideoLearningChildCoordinatorScheduler {
             try {
                 coordinator.reconcileChoice(choice);
             } catch (Exception failure) {
+                String detail = failure instanceof com.noteweave.common.BusinessException business
+                        ? business.code() + " " + business.getMessage()
+                        : failure.getClass().getSimpleName();
                 log.warn("Video learning child reconciliation failed for request {} skill {}: {}",
-                        choice.requestId(), choice.skillKey(), failure.getClass().getSimpleName());
+                        choice.requestId(), choice.skillKey(), detail);
+                log.debug("Video learning child reconciliation stack", failure);
             }
         }
     }

@@ -92,7 +92,7 @@ def merge_captured_video_frames(
                     if segment.start_ms <= end_ms and segment.end_ms >= start_ms]
         nodes.append({
             "node_id": f"frame-node-{index:03d}",
-            "title": f"Video evidence {index:03d} at {at_ms / 1000:.1f} s",
+            "title": f"画面 {index:02d} · {at_ms // 60000:02d}:{at_ms // 1000 % 60:02d}",
             "start_ms": start_ms, "end_ms": end_ms,
             "transcript_segment_ids": evidence,
             "frame_ids": [frame["frame_id"]],

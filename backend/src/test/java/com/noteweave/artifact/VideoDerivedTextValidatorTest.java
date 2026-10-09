@@ -53,9 +53,7 @@ class VideoDerivedTextValidatorTest {
                 "short_answer", "cache consistency", "detailed_answer", List.of(claim),
                 "related_knowledge", List.of("cache"), "gaps", List.of());
         for (String skill : List.of("knowledge_blog", "interview_qa")) {
-            String markdown = "# Cache\n\nSource: " + BUNDLE_DIGEST
-                    + "\nKnowledge plan: " + planDigest
-                    + "\n\n## Terms\n\ncache\n\n"
+            String markdown = "# Cache\n\n## Terms\n\ncache\n\n"
                     + ("knowledge_blog".equals(skill)
                     ? "## Consistency\n\ncache consistency\nEvidence: segment:s1\n"
                     : "## What does the source say about Consistency?\n\n### Short answer\n\n"

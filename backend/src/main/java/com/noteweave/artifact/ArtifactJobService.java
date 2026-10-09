@@ -113,14 +113,11 @@ public class ArtifactJobService {
                 .toList();
         List<ArtifactUpstreamRefRequest> upstreamRefs = validateUpstreamRefs(
                 workspaceId, request.upstreamRefs());
-        String taskId = taskService.createTask(
-                workspaceId,
-                "ARTIFACT_JOB",
-                "ARTIFACT_JOB",
-                artifactJobId,
-                "QUEUED",
-                "右侧产物 Skill 任务已创建"
-        );
+        String taskId = actorUserId == null
+                ? taskService.createTask(workspaceId, "ARTIFACT_JOB", "ARTIFACT_JOB", artifactJobId,
+                        "QUEUED", "右侧产物 Skill 任务已创建")
+                : taskService.createTaskForActor(workspaceId, "ARTIFACT_JOB", "ARTIFACT_JOB", artifactJobId,
+                        "QUEUED", "右侧产物 Skill 任务已创建", actorUserId);
         MemoryControlPackResponse controlPack = actorUserId == null
                 ? memoryCompilerService.compileArtifactControlPack(workspaceId, skillKey)
                 : memoryCompilerService.compileArtifactControlPackForActor(

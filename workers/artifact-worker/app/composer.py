@@ -14,52 +14,34 @@ def render_markdown(
     if plan.execution_spec.skill_key == MINDMAP_SKILL_KEY:
         return _render_mindmap_markdown(task_input, plan, sections)
 
+    # 正文只包含读者需要的内容：标题、各节正文和来源；生成目标、风格、写回闸门等运行信息放在 render_runtime_notes 里
     artifact_title = resolve_artifact_title(task_input, plan)
+    lines = [f"# {artifact_title}", ""]
+    for section in sections:
+        lines.extend([f"## {section.heading}", section.body])
+        if section.source_refs:
+            lines.append("")
+            lines.append("> 来源：" + "、".join(f"《{title}》" for title in section.source_refs))
+        lines.append("")
+    return "\n".join(lines).strip() + "\n"
+
+
+def render_runtime_notes(
+    task_input: ArtifactTaskInput,
+    plan: ArtifactExecutionPlan,
+) -> str:
+    """产物的运行信息：不进入正文，供生成过程面板展示和输出契约核对。"""
     source_titles = [item.title for item in task_input.source_scope[:3]]
     lines = [
-        f"# {artifact_title}",
-        "",
-        "## Generation Goal",
         f"- Skill: {plan.skill_key or task_input.input_payload.skill_key or 'legacy_action_request'}",
         f"- Goal: {plan.execution_spec.goal or task_input.input_payload.generation_brief or plan.action_display_name}",
         f"- Style profile: {plan.style_profile_key}",
         f"- Writeback gate: {plan.writeback_gate.decision} ({plan.writeback_gate.requested_mode})",
-        "",
-        "## Sections",
+        f"- Source scope: {', '.join(source_titles) if source_titles else 'workspace source pool'}",
     ]
-
-    for section in sections:
-        lines.extend(
-            [
-                f"### {section.heading}",
-                section.body,
-            ]
-        )
-        if section.source_refs:
-            lines.append(f"Source refs: {', '.join(section.source_refs)}")
-        lines.append("")
-
-    lines.extend(
-        [
-            "## Source Scope",
-            f"- {', '.join(source_titles) if source_titles else 'workspace source pool'}",
-        ]
-    )
-
-    if plan.notes:
-        lines.extend(["", "## Control Notes"])
-        for note in plan.notes:
-            lines.append(f"- {note}")
-
-    lines.extend(
-        [
-            "",
-            "## Runtime Keywords",
-            "- " + " / ".join(plan.required_phrases or ["Controlled Agentic Graph Harness"]),
-        ]
-    )
-
-    return "\n".join(lines).strip() + "\n"
+    lines.extend(f"- Control note: {note}" for note in plan.notes)
+    lines.append("- Runtime keywords: " + " / ".join(plan.required_phrases or ["Controlled Agentic Graph Harness"]))
+    return "\n".join(lines) + "\n"
 
 
 def resolve_artifact_title(

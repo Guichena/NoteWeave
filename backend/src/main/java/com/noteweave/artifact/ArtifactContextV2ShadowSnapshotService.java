@@ -44,11 +44,17 @@ public class ArtifactContextV2ShadowSnapshotService {
 
     public void freeze(String workspaceId, String taskId, String requirement, String skillKey) {
         if (!rollout.shadowEnabled(workspaceId)) return;
-        freezeForActor(workspaceId, taskId, requirement, skillKey, users.requireUserId());
+        freezeInternal(workspaceId, taskId, requirement, skillKey, users.requireUserId(), false);
     }
 
+    /** Background path (no request session): the caller has already re-checked the actor's ACL. */
     void freezeForActor(String workspaceId, String taskId, String requirement,
                         String skillKey, String actorUserId) {
+        freezeInternal(workspaceId, taskId, requirement, skillKey, actorUserId, true);
+    }
+
+    private void freezeInternal(String workspaceId, String taskId, String requirement,
+                                String skillKey, String actorUserId, boolean verifiedActor) {
         if (!rollout.shadowEnabled(workspaceId)) return;
         if (actorUserId == null || actorUserId.isBlank()) {
             throw new IllegalArgumentException("Artifact actor is required");
@@ -62,14 +68,17 @@ public class ArtifactContextV2ShadowSnapshotService {
         if (inputSnapshotId == null) {
             throw new IllegalStateException("Artifact Run input snapshot is missing or changed");
         }
-        ContextProjectionV2 projection = compiler.compile(workspaceId, actorUserId,
-                "", 0, requirement, "ARTIFACT:" + skillKey, SHADOW_BUDGET);
+        ContextProjectionV2 projection = verifiedActor
+                ? compiler.compileIndependentForVerifiedActor(workspaceId, actorUserId,
+                        requirement, "ARTIFACT:" + skillKey, SHADOW_BUDGET)
+                : compiler.compile(workspaceId, actorUserId,
+                        "", 0, requirement, "ARTIFACT:" + skillKey, SHADOW_BUDGET);
         for (ContextProjectionV2.MemoryRevision memory : projection.memoryRevisions()) {
             List<String> valid = jdbc.query("""
                     select i.id from memory_item i
                     join memory_runtime_revision r on r.id = i.current_revision_id
                     where i.id = ? and r.id = ? and i.workspace_id = ?
-                      and i.status = 'ACTIVE' and r.status = 'ACTIVE'
+                      and i.status = 'ACTIVE' and i.review_status = 'APPROVED' and r.status = 'ACTIVE'
                       and r.valid_from <= current_timestamp
                       and (r.valid_until is null or r.valid_until > current_timestamp)
                     for update

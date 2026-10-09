@@ -8,7 +8,7 @@ from app.capability_approval_queue import create_capability_request
 from app.capability_resolver import resolve_capability_bindings, resolve_capability_providers
 from app.capability_wait_queue import enqueue_waiting_task
 from app.compiler import build_execution_plan
-from app.composer import render_markdown, resolve_artifact_title
+from app.composer import render_markdown, render_runtime_notes, resolve_artifact_title
 from app.content_runtime import (
     _is_bilibili_pdf_async_provider,
     build_acquisition_receipt,
@@ -246,6 +246,7 @@ def _run_artifact_task(
     repaired_checks: list[str] = []
     artifact_title = resolve_artifact_title(task_input, plan)
     rendered_markdown = render_markdown(task_input, plan, repaired_sections)
+    runtime_notes = render_runtime_notes(task_input, plan)
     # Render only after the content and its evidence have passed the final gate.
     # A failed candidate must never create a user-facing export.
     export_trace = {"status": "PENDING_VALIDATION", "format": "PDF", "file_name": ""}
@@ -313,6 +314,7 @@ def _run_artifact_task(
         result_title=artifact_title,
         result_payload={
             "markdown": rendered_markdown,
+            "runtime_notes": runtime_notes,
             "execution_plan": plan.model_dump(mode="json"),
             "execution_spec": plan.execution_spec.model_dump(mode="json"),
             "runtime_plan": plan.runtime_plan.model_dump(mode="json"),

@@ -28,6 +28,9 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
     private final Map<String, List<String>> requiredFileRoles;
     private final Map<String, String> publishedVersions;
     private final String catalogDigest;
+    /** 目录里的描述与展示信息：前端的产物卡片和默认输入提示都从这里读取，新增产物不需要改代码。 */
+    private final Map<String, String> descriptions;
+    private final Map<String, Map<String, Object>> presentations;
 
     public ArtifactSkillCatalogService() {
         Map<String, Object> catalog;
@@ -83,6 +86,20 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
             }
             requiredRoles.put(key, names);
         }
+        Map<String, String> catalogDescriptions = new LinkedHashMap<>();
+        Map<String, Map<String, Object>> catalogPresentations = new LinkedHashMap<>();
+        for (Object rawEntry : (List<?>) catalog.get("skills")) {
+            Map<?, ?> entry = (Map<?, ?>) rawEntry;
+            String key = String.valueOf(entry.get("skill_key"));
+            catalogDescriptions.put(key, String.valueOf(entry.get("description")));
+            Map<String, Object> presentation = new LinkedHashMap<>();
+            if (entry.get("presentation") instanceof Map<?, ?> raw) {
+                raw.forEach((field, value) -> presentation.put(String.valueOf(field), value));
+            }
+            catalogPresentations.put(key, java.util.Collections.unmodifiableMap(presentation));
+        }
+        this.descriptions = Map.copyOf(catalogDescriptions);
+        this.presentations = Map.copyOf(catalogPresentations);
         this.actionBindings = Map.copyOf(bindings);
         this.requiredFileRoles = Map.copyOf(requiredRoles);
         this.publishedVersions = Map.copyOf(versions);
@@ -100,10 +117,20 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         return requiredFileRoles.get(resolveSkill(skillKey).skillKey());
     }
 
+    private static final Set<String> REQUIRED_ENTRY_FIELDS = Set.of("skill_key", "version", "display_name",
+            "description", "input_schema", "output_schema_ref", "graph_key", "prompt_recipe_id",
+            "required_file_roles", "capability_allowlist", "action_key");
+    /** presentation 是展示信息；definition 让新产物只在目录里声明动作和提示词配方，由 Worker 加载。 */
+    private static final Set<String> OPTIONAL_ENTRY_FIELDS = Set.of("presentation", "definition");
+
     static void validatePublishedEntry(Map<?, ?> entry, Map<?, ?> schema) {
-        if (!entry.keySet().equals(Set.of("skill_key", "version", "display_name", "description",
-                "input_schema", "output_schema_ref", "graph_key", "prompt_recipe_id",
-                "required_file_roles", "capability_allowlist", "action_key"))
+        Set<String> fields = new java.util.HashSet<>();
+        entry.keySet().forEach(field -> fields.add(String.valueOf(field)));
+        boolean knownFields = fields.containsAll(REQUIRED_ENTRY_FIELDS) && fields.stream()
+                .allMatch(field -> REQUIRED_ENTRY_FIELDS.contains(field) || OPTIONAL_ENTRY_FIELDS.contains(field));
+        if (!knownFields
+                || (entry.containsKey("presentation") && !validPresentation(entry.get("presentation")))
+                || (entry.containsKey("definition") && !(entry.get("definition") instanceof Map<?, ?>))
                 || !"1.0.0".equals(entry.get("version"))
                 || !"artifact-content-v1".equals(entry.get("output_schema_ref"))
                 || !schema.keySet().stream().allMatch(Set.of("type", "properties", "required")::contains)
@@ -126,6 +153,12 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
                 throw new IllegalStateException("unsupported published Skill input field");
             }
         }
+    }
+
+    private static boolean validPresentation(Object value) {
+        if (!(value instanceof Map<?, ?> presentation)) return false;
+        Object hints = presentation.get("default_input_hints");
+        return hints == null || (hints instanceof List<?> list && list.stream().allMatch(String.class::isInstance));
     }
 
     public ArtifactSkillDefinition resolveSkill(String skillKey) {
@@ -252,10 +285,11 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
                 .map(skill -> new ArtifactSkillSummaryResponse(
                         skill.skillKey(),
                         skill.displayName(),
-                        buildDescription(skill.skillKey()),
+                        descriptions.getOrDefault(skill.skillKey(), "NoteWeave 内置产物 Skill"),
                         "ACTIVE",
                         publicInputSchema(skill.inputSchema()),
-                        buildDefaultInputHints(skill.skillKey())
+                        defaultInputHints(skill.skillKey()),
+                        presentations.getOrDefault(skill.skillKey(), Map.of())
                 ))
                 .toList();
     }
@@ -272,26 +306,6 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
                         .toLowerCase(Locale.ROOT)
                         .replace('-', '_')
                         .replace(' ', '_');
-    }
-
-    private String buildDescription(String skillKey) {
-        return switch (skillKey) {
-            case "resume_highlight" -> "从当前工作台资料中生成适合简历书写的项目亮点";
-            case "study_guide" -> "按知识点、关键概念和练习建议生成结构化学习材料";
-            case "quiz_pack" -> "围绕当前资料生成题目、答案解析和评分要点";
-            case "wiki_page" -> "沉淀成定义、机制、引用和相关页面齐全的知识页草稿";
-            case "mindmap_from_workspace" -> "把当前工作台资料整理为可缩放、可折叠的交互式思维导图";
-            case "bilibili_course_note_pdf" -> "面向 B 站视频链接生成图文讲义与 PDF 讲义任务";
-            case "knowledge_blog" -> "从冻结的视频资料和知识规划生成带证据的学习文章";
-            case "interview_qa" -> "从冻结的视频资料和知识规划生成三段式面试问答";
-            case "report_draft" -> "生成结构化报告草稿";
-            case "faq_draft" -> "生成 FAQ 草稿";
-            case "structured_note" -> "生成结构化笔记";
-            case "video_summary" -> "生成视频总结";
-            case "audio_minutes" -> "生成音频纪要";
-            case "course_notes" -> "生成课程笔记";
-            default -> "NoteWeave 内置产物 Skill";
-        };
     }
 
     private Map<String, Object> readSchemaProperties(Map<String, Object> inputSchema) {
@@ -420,23 +434,11 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         return Set.copyOf(values);
     }
 
-    private List<String> buildDefaultInputHints(String skillKey) {
-        return switch (skillKey) {
-            case "resume_highlight" -> List.of("强调架构设计", "强调工程复杂度", "适合校招简历");
-            case "study_guide" -> List.of("突出关键概念", "加入练习路径", "适合新人上手");
-            case "quiz_pack" -> List.of("区分题型难度", "附标准答案", "保留评分要点");
-            case "wiki_page" -> List.of("定义先行", "补充关键机制", "保留相关页面建议");
-            case "mindmap_from_workspace" -> List.of("4 到 7 条主分支", "节点使用短语", "保留来源线索");
-            case "bilibili_course_note_pdf" -> List.of("填写 B 站视频链接", "保留章节结构", "输出讲义 PDF");
-            case "knowledge_blog" -> List.of("引用冻结视频资料包", "保留逐条证据", "输出学习文章");
-            case "interview_qa" -> List.of("引用冻结视频资料包", "简答、详答、相关知识", "输出面试问答");
-            case "report_draft" -> List.of("问题-方法-效果", "保留关键证据", "适合方案沉淀");
-            case "faq_draft" -> List.of("面向帮助中心", "问题答案成对", "补充使用说明");
-            case "structured_note" -> List.of("沉淀主题快照", "保留关键摘录", "补充后续问题");
-            case "video_summary" -> List.of("填写视频链接", "突出核心观点", "保留时间线摘要");
-            case "audio_minutes" -> List.of("总结会议结论", "补充行动项", "标注待确认问题");
-            case "course_notes" -> List.of("突出知识点", "补充重点难点", "附复习题");
-            default -> List.of("按当前 Skill 默认结构生成");
-        };
+    private List<String> defaultInputHints(String skillKey) {
+        Object hints = presentations.getOrDefault(skillKey, Map.of()).get("default_input_hints");
+        if (hints instanceof List<?> values && !values.isEmpty()) {
+            return values.stream().map(String::valueOf).toList();
+        }
+        return List.of("按当前 Skill 默认结构生成");
     }
 }

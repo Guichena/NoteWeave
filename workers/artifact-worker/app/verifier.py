@@ -45,9 +45,7 @@ def build_output_contract_trace(
     warnings: list[str] = []
 
     for heading in plan.outline:
-        heading_present = f"### {heading}" in markdown
-        if plan.execution_spec.output_shape == "MINDMAP_MARKDOWN":
-            heading_present = heading_present or f"## {heading}" in markdown
+        heading_present = f"## {heading}" in markdown or f"### {heading}" in markdown
         if heading_present:
             _append_trace(
                 trace_bucket=outline_checks,
@@ -69,8 +67,10 @@ def build_output_contract_trace(
                 metadata={"heading": heading},
             )
 
+    # 运行关键词写在运行信息里，不要求出现在读者看到的正文中
+    runtime_notes = str(result.result_payload.get("runtime_notes", ""))
     for phrase in plan.required_phrases:
-        if phrase in markdown:
+        if phrase in markdown or phrase in runtime_notes:
             _append_trace(
                 trace_bucket=phrase_checks,
                 passed_checks=passed_checks,

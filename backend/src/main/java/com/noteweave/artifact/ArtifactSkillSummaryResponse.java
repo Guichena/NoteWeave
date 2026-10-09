@@ -9,6 +9,8 @@ public record ArtifactSkillSummaryResponse(
         String description,
         String status,
         Map<String, Object> inputSchema,
-        List<String> defaultInputHints
+        List<String> defaultInputHints,
+        // 产物卡片的展示信息（摘要、分组、排序、徽标等），来自技能目录
+        Map<String, Object> presentation
 ) {
 }

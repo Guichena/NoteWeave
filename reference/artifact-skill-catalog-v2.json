@@ -40,7 +40,27 @@
         "GENERATE_STRUCTURED_TEXT",
         "VERIFY_OUTPUT"
       ],
-      "action_key": "RESUME_HIGHLIGHT"
+      "action_key": "RESUME_HIGHLIGHT",
+      "presentation": {
+        "summary": "把当前工作台资料整理成适合写进简历的项目亮点和影响表述。",
+        "default_input_hints": [
+          "强调架构设计",
+          "强调工程复杂度",
+          "适合校招简历"
+        ],
+        "group": "sources",
+        "order": 7,
+        "artifact_type": "Resume Highlights",
+        "source_hint": "当前工作台资料 / 最新回答",
+        "runtime_hint": "快速生成",
+        "style_hint": "结果导向、动词开头、突出指标与复杂度。",
+        "prompt_focus": "输出适合简历使用的项目亮点描述",
+        "tone": "blue",
+        "badges": [
+          "推荐",
+          "聊天生成"
+        ]
+      }
     },
     {
       "skill_key": "study_guide",
@@ -82,7 +102,27 @@
         "VERIFY_OUTPUT",
         "READ_WEB_PAGE"
       ],
-      "action_key": "STUDY_GUIDE"
+      "action_key": "STUDY_GUIDE",
+      "presentation": {
+        "summary": "按知识点、关键概念和练习建议生成结构化学习材料。",
+        "default_input_hints": [
+          "突出关键概念",
+          "加入练习路径",
+          "适合新人上手"
+        ],
+        "group": "sources",
+        "order": 4,
+        "artifact_type": "Study Guide",
+        "source_hint": "当前工作台资料",
+        "runtime_hint": "可扩展为异步",
+        "style_hint": "教学口吻、层次清晰、包含复习路径。",
+        "prompt_focus": "输出带章节结构的学习指南",
+        "tone": "gold",
+        "badges": [
+          "常用",
+          "结构化"
+        ]
+      }
     },
     {
       "skill_key": "quiz_pack",
@@ -124,7 +164,27 @@
         "VERIFY_OUTPUT",
         "READ_WEB_PAGE"
       ],
-      "action_key": "QUIZ"
+      "action_key": "QUIZ",
+      "presentation": {
+        "summary": "围绕当前资料生成题目、答案解析和评分要点。",
+        "default_input_hints": [
+          "区分题型难度",
+          "附标准答案",
+          "保留评分要点"
+        ],
+        "group": "sources",
+        "order": 6,
+        "artifact_type": "Quiz",
+        "source_hint": "当前工作台资料 / 选中资料",
+        "runtime_hint": "可扩展为异步",
+        "style_hint": "区分难度，附带标准答案和解析。",
+        "prompt_focus": "输出可直接使用的测验题集",
+        "tone": "green",
+        "badges": [
+          "练习",
+          "结构化"
+        ]
+      }
     },
     {
       "skill_key": "wiki_page",
@@ -166,7 +226,27 @@
         "VERIFY_OUTPUT",
         "READ_WEB_PAGE"
       ],
-      "action_key": "WIKI_PAGE"
+      "action_key": "WIKI_PAGE",
+      "presentation": {
+        "summary": "沉淀成定义、机制、引用和相关页面齐全的知识页草稿。",
+        "default_input_hints": [
+          "定义先行",
+          "补充关键机制",
+          "保留相关页面建议"
+        ],
+        "group": "sources",
+        "order": 3,
+        "artifact_type": "Wiki Page",
+        "source_hint": "当前工作台资料 / 已保存产物",
+        "runtime_hint": "建议校验后入库",
+        "style_hint": "定义明确、结构稳定、保留相关页面建议。",
+        "prompt_focus": "输出适合 Wiki 的知识页草稿",
+        "tone": "violet",
+        "badges": [
+          "知识沉淀",
+          "需校验"
+        ]
+      }
     },
     {
       "skill_key": "mindmap_from_workspace",
@@ -240,7 +320,27 @@
         "VERIFY_OUTPUT",
         "READ_WEB_PAGE"
       ],
-      "action_key": "MINDMAP"
+      "action_key": "MINDMAP",
+      "presentation": {
+        "summary": "把资料中的主题、概念和证据组织成可缩放、可折叠的知识分支。",
+        "default_input_hints": [
+          "4 到 7 条主分支",
+          "节点使用短语",
+          "保留来源线索"
+        ],
+        "group": "sources",
+        "order": 1,
+        "artifact_type": "Mind Map",
+        "source_hint": "当前工作台资料 / Wiki",
+        "runtime_hint": "交互式预览",
+        "style_hint": "保持单一根节点，主分支控制在 4 到 7 条，节点使用短语并保留来源线索。",
+        "prompt_focus": "输出适合交互式思维导图的层级化 Markdown",
+        "tone": "green",
+        "badges": [
+          "可视化",
+          "推荐"
+        ]
+      }
     },
     {
       "skill_key": "bilibili_course_note_pdf",
@@ -286,12 +386,19 @@
           "frame_density": {
             "type": "string",
             "default": "STANDARD",
-            "enum": ["LOW", "STANDARD", "HIGH"]
+            "enum": [
+              "LOW",
+              "STANDARD",
+              "HIGH"
+            ]
           },
           "asr_fallback": {
             "type": "string",
             "default": "ALLOW",
-            "enum": ["ALLOW", "DENY"]
+            "enum": [
+              "ALLOW",
+              "DENY"
+            ]
           }
         },
         "required": [
@@ -314,7 +421,27 @@
         "CAPTURE_VIDEO_FRAMES",
         "ANALYZE_FRAME"
       ],
-      "action_key": "COURSE_NOTES"
+      "action_key": "COURSE_NOTES",
+      "presentation": {
+        "summary": "面向 B 站视频链接生成图文讲义与 PDF 编译请求。",
+        "default_input_hints": [
+          "填写 B 站视频链接",
+          "保留章节结构",
+          "输出讲义 PDF"
+        ],
+        "group": "media",
+        "order": 12,
+        "artifact_type": "Course Note PDF",
+        "source_hint": "B站链接 / 内置能力",
+        "runtime_hint": "异步 + System MCP",
+        "style_hint": "专业讲义体，保留章节、图示和总结。",
+        "prompt_focus": "输出 B 站讲义 PDF 生成请求",
+        "tone": "rose",
+        "badges": [
+          "System MCP",
+          "异步"
+        ]
+      }
     },
     {
       "skill_key": "video_learning_deck",
@@ -324,21 +451,67 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "url": { "type": "string" },
-          "language": { "type": "string", "default": "zh-CN", "enum": ["zh-CN", "en", "zh-EN"] },
-          "video_material_bundle_id": { "type": "string" },
-          "part": { "type": "string" },
-          "frame_density": { "type": "string", "default": "STANDARD", "enum": ["LOW", "STANDARD", "HIGH"] },
-          "asr_fallback": { "type": "string", "default": "ALLOW", "enum": ["ALLOW", "DENY"] }
+          "url": {
+            "type": "string"
+          },
+          "language": {
+            "type": "string",
+            "default": "zh-CN",
+            "enum": [
+              "zh-CN",
+              "en",
+              "zh-EN"
+            ]
+          },
+          "video_material_bundle_id": {
+            "type": "string"
+          },
+          "part": {
+            "type": "string"
+          },
+          "frame_density": {
+            "type": "string",
+            "default": "STANDARD",
+            "enum": [
+              "LOW",
+              "STANDARD",
+              "HIGH"
+            ]
+          },
+          "asr_fallback": {
+            "type": "string",
+            "default": "ALLOW",
+            "enum": [
+              "ALLOW",
+              "DENY"
+            ]
+          }
         },
-        "required": ["url", "video_material_bundle_id"]
+        "required": [
+          "url",
+          "video_material_bundle_id"
+        ]
       },
       "output_schema_ref": "artifact-content-v1",
       "graph_key": "video_deck_v1",
       "prompt_recipe_id": "video_deck_frozen_v1",
-      "required_file_roles": ["PRIMARY_MARKDOWN", "PRIMARY_PPTX", "SLIDE_PREVIEW"],
-      "capability_allowlist": ["VERIFY_OUTPUT"],
-      "action_key": "SLIDE_DECK"
+      "required_file_roles": [
+        "PRIMARY_MARKDOWN",
+        "PRIMARY_PPTX",
+        "SLIDE_PREVIEW"
+      ],
+      "capability_allowlist": [
+        "VERIFY_OUTPUT"
+      ],
+      "action_key": "SLIDE_DECK",
+      "presentation": {
+        "summary": "从冻结的视频资料和知识规划生成原画面学习演示文稿与逐页预览",
+        "default_input_hints": [
+          "按当前 Skill 默认结构生成"
+        ],
+        "group": "video_material",
+        "order": 106
+      }
     },
     {
       "skill_key": "knowledge_blog",
@@ -348,21 +521,67 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "url": { "type": "string" },
-          "language": { "type": "string", "default": "zh-CN", "enum": ["zh-CN", "en", "zh-EN"] },
-          "video_material_bundle_id": { "type": "string" },
-          "part": { "type": "string" },
-          "frame_density": { "type": "string", "default": "STANDARD", "enum": ["LOW", "STANDARD", "HIGH"] },
-          "asr_fallback": { "type": "string", "default": "ALLOW", "enum": ["ALLOW", "DENY"] }
+          "url": {
+            "type": "string"
+          },
+          "language": {
+            "type": "string",
+            "default": "zh-CN",
+            "enum": [
+              "zh-CN",
+              "en",
+              "zh-EN"
+            ]
+          },
+          "video_material_bundle_id": {
+            "type": "string"
+          },
+          "part": {
+            "type": "string"
+          },
+          "frame_density": {
+            "type": "string",
+            "default": "STANDARD",
+            "enum": [
+              "LOW",
+              "STANDARD",
+              "HIGH"
+            ]
+          },
+          "asr_fallback": {
+            "type": "string",
+            "default": "ALLOW",
+            "enum": [
+              "ALLOW",
+              "DENY"
+            ]
+          }
         },
-        "required": ["url", "video_material_bundle_id"]
+        "required": [
+          "url",
+          "video_material_bundle_id"
+        ]
       },
       "output_schema_ref": "artifact-content-v1",
       "graph_key": "video_derived_text_v1",
       "prompt_recipe_id": "knowledge_blog_frozen_v1",
-      "required_file_roles": ["PRIMARY_MARKDOWN"],
-      "capability_allowlist": ["VERIFY_OUTPUT"],
-      "action_key": "KNOWLEDGE_BLOG"
+      "required_file_roles": [
+        "PRIMARY_MARKDOWN"
+      ],
+      "capability_allowlist": [
+        "VERIFY_OUTPUT"
+      ],
+      "action_key": "KNOWLEDGE_BLOG",
+      "presentation": {
+        "summary": "从冻结的视频资料和知识规划生成带证据的学习文章",
+        "default_input_hints": [
+          "引用冻结视频资料包",
+          "保留逐条证据",
+          "输出学习文章"
+        ],
+        "group": "video_material",
+        "order": 107
+      }
     },
     {
       "skill_key": "interview_qa",
@@ -372,21 +591,67 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "url": { "type": "string" },
-          "language": { "type": "string", "default": "zh-CN", "enum": ["zh-CN", "en", "zh-EN"] },
-          "video_material_bundle_id": { "type": "string" },
-          "part": { "type": "string" },
-          "frame_density": { "type": "string", "default": "STANDARD", "enum": ["LOW", "STANDARD", "HIGH"] },
-          "asr_fallback": { "type": "string", "default": "ALLOW", "enum": ["ALLOW", "DENY"] }
+          "url": {
+            "type": "string"
+          },
+          "language": {
+            "type": "string",
+            "default": "zh-CN",
+            "enum": [
+              "zh-CN",
+              "en",
+              "zh-EN"
+            ]
+          },
+          "video_material_bundle_id": {
+            "type": "string"
+          },
+          "part": {
+            "type": "string"
+          },
+          "frame_density": {
+            "type": "string",
+            "default": "STANDARD",
+            "enum": [
+              "LOW",
+              "STANDARD",
+              "HIGH"
+            ]
+          },
+          "asr_fallback": {
+            "type": "string",
+            "default": "ALLOW",
+            "enum": [
+              "ALLOW",
+              "DENY"
+            ]
+          }
         },
-        "required": ["url", "video_material_bundle_id"]
+        "required": [
+          "url",
+          "video_material_bundle_id"
+        ]
       },
       "output_schema_ref": "artifact-content-v1",
       "graph_key": "video_derived_text_v1",
       "prompt_recipe_id": "interview_qa_frozen_v1",
-      "required_file_roles": ["PRIMARY_MARKDOWN"],
-      "capability_allowlist": ["VERIFY_OUTPUT"],
-      "action_key": "INTERVIEW_QA"
+      "required_file_roles": [
+        "PRIMARY_MARKDOWN"
+      ],
+      "capability_allowlist": [
+        "VERIFY_OUTPUT"
+      ],
+      "action_key": "INTERVIEW_QA",
+      "presentation": {
+        "summary": "从冻结的视频资料和知识规划生成三段式面试问答",
+        "default_input_hints": [
+          "引用冻结视频资料包",
+          "简答、详答、相关知识",
+          "输出面试问答"
+        ],
+        "group": "video_material",
+        "order": 108
+      }
     },
     {
       "skill_key": "report_draft",
@@ -428,7 +693,27 @@
         "VERIFY_OUTPUT",
         "READ_WEB_PAGE"
       ],
-      "action_key": "REPORT"
+      "action_key": "REPORT",
+      "presentation": {
+        "summary": "把多份资料综合成问题、证据、判断和行动建议清晰的报告。",
+        "default_input_hints": [
+          "问题-方法-效果",
+          "保留关键证据",
+          "适合方案沉淀"
+        ],
+        "group": "sources",
+        "order": 2,
+        "artifact_type": "Report",
+        "source_hint": "当前工作台资料 / 研究结果",
+        "runtime_hint": "异步生成",
+        "style_hint": "先给结论，再展开证据、分歧和行动建议。",
+        "prompt_focus": "输出可审阅、可继续修订的结构化报告",
+        "tone": "blue",
+        "badges": [
+          "综合",
+          "可追溯"
+        ]
+      }
     },
     {
       "skill_key": "faq_draft",
@@ -470,7 +755,27 @@
         "VERIFY_OUTPUT",
         "READ_WEB_PAGE"
       ],
-      "action_key": "FAQ"
+      "action_key": "FAQ",
+      "presentation": {
+        "summary": "把资料重组为常见问题、直接答案和使用说明。",
+        "default_input_hints": [
+          "面向帮助中心",
+          "问题答案成对",
+          "补充使用说明"
+        ],
+        "group": "sources",
+        "order": 8,
+        "artifact_type": "FAQ",
+        "source_hint": "当前工作台资料",
+        "runtime_hint": "快速生成",
+        "style_hint": "问题具体，答案直接，补充边界和下一步。",
+        "prompt_focus": "输出面向读者问题的 FAQ 草稿",
+        "tone": "green",
+        "badges": [
+          "帮助中心",
+          "问答"
+        ]
+      }
     },
     {
       "skill_key": "structured_note",
@@ -512,7 +817,27 @@
         "VERIFY_OUTPUT",
         "READ_WEB_PAGE"
       ],
-      "action_key": "STRUCTURED_NOTE"
+      "action_key": "STRUCTURED_NOTE",
+      "presentation": {
+        "summary": "把散乱资料沉淀为主题、关键摘录、判断和后续问题。",
+        "default_input_hints": [
+          "沉淀主题快照",
+          "保留关键摘录",
+          "补充后续问题"
+        ],
+        "group": "sources",
+        "order": 5,
+        "artifact_type": "Note",
+        "source_hint": "当前工作台资料 / 最新回答",
+        "runtime_hint": "快速生成",
+        "style_hint": "结构轻量，保留关键摘录和未解决问题。",
+        "prompt_focus": "输出可继续沉淀的结构化笔记",
+        "tone": "violet",
+        "badges": [
+          "知识对象",
+          "可写回"
+        ]
+      }
     },
     {
       "skill_key": "video_summary",
@@ -545,6 +870,29 @@
           },
           "video_url": {
             "type": "string"
+          },
+          "video_material_bundle_id": {
+            "type": "string"
+          },
+          "part": {
+            "type": "string"
+          },
+          "frame_density": {
+            "type": "string",
+            "default": "STANDARD",
+            "enum": [
+              "LOW",
+              "STANDARD",
+              "HIGH"
+            ]
+          },
+          "asr_fallback": {
+            "type": "string",
+            "default": "ALLOW",
+            "enum": [
+              "ALLOW",
+              "DENY"
+            ]
           }
         },
         "required": [
@@ -564,7 +912,27 @@
         "EXTRACT_TRANSCRIPT",
         "READ_WEB_PAGE"
       ],
-      "action_key": "VIDEO_SUMMARY"
+      "action_key": "VIDEO_SUMMARY",
+      "presentation": {
+        "summary": "从视频链接提炼主题、时间线、关键观点和行动项。",
+        "default_input_hints": [
+          "填写视频链接",
+          "突出核心观点",
+          "保留时间线摘要"
+        ],
+        "group": "video_material",
+        "order": 10,
+        "artifact_type": "Video Brief",
+        "source_hint": "视频链接",
+        "runtime_hint": "异步生成",
+        "style_hint": "按时间线组织，区分原话、摘要和判断。",
+        "prompt_focus": "输出带时间线的可追溯视频总结",
+        "tone": "rose",
+        "badges": [
+          "媒体",
+          "时间线"
+        ]
+      }
     },
     {
       "skill_key": "audio_minutes",
@@ -607,7 +975,27 @@
         "TRANSCRIBE_AUDIO",
         "READ_WEB_PAGE"
       ],
-      "action_key": "AUDIO_MINUTES"
+      "action_key": "AUDIO_MINUTES",
+      "presentation": {
+        "summary": "整理会议结论、行动项、负责人和待确认问题。",
+        "default_input_hints": [
+          "总结会议结论",
+          "补充行动项",
+          "标注待确认问题"
+        ],
+        "group": "media",
+        "order": 11,
+        "artifact_type": "Minutes",
+        "source_hint": "当前工作台音频资料",
+        "runtime_hint": "异步生成",
+        "style_hint": "先结论后过程，行动项必须具体可跟进。",
+        "prompt_focus": "输出可执行的音频会议纪要",
+        "tone": "gold",
+        "badges": [
+          "会议",
+          "行动项"
+        ]
+      }
     },
     {
       "skill_key": "course_notes",
@@ -658,7 +1046,123 @@
         "CAPTURE_VIDEO_FRAMES",
         "ANALYZE_FRAME"
       ],
-      "action_key": "COURSE_NOTES"
+      "action_key": "COURSE_NOTES",
+      "presentation": {
+        "summary": "按章节整理知识点、重点难点、例子和复习题。",
+        "default_input_hints": [
+          "突出知识点",
+          "补充重点难点",
+          "附复习题"
+        ],
+        "group": "media",
+        "order": 9,
+        "artifact_type": "Course Notes",
+        "source_hint": "课程资料 / 可选视频链接",
+        "runtime_hint": "异步生成",
+        "style_hint": "按课程章节组织，加入复习提示和自测问题。",
+        "prompt_focus": "输出适合复习的课程笔记",
+        "tone": "gold",
+        "badges": [
+          "学习",
+          "章节"
+        ]
+      }
+    },
+    {
+      "skill_key": "reading_digest",
+      "version": "1.0.0",
+      "display_name": "精读摘要",
+      "description": "逐篇提炼资料的核心论点、证据、方法与局限，并列出值得追问的问题",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "language": {
+            "type": "string",
+            "default": "zh-CN",
+            "oneOf": [
+              {
+                "const": "zh-CN",
+                "title": "中文（简体）"
+              },
+              {
+                "const": "en",
+                "title": "English"
+              },
+              {
+                "const": "zh-EN",
+                "title": "中英双语"
+              }
+            ]
+          }
+        }
+      },
+      "output_schema_ref": "artifact-content-v1",
+      "graph_key": "generic_artifact_v1",
+      "prompt_recipe_id": "reading_digest_writer_v1",
+      "required_file_roles": [
+        "PRIMARY_MARKDOWN"
+      ],
+      "capability_allowlist": [
+        "READ_WORKSPACE_DOC",
+        "GENERATE_STRUCTURED_TEXT",
+        "VERIFY_OUTPUT"
+      ],
+      "action_key": "READING_DIGEST",
+      "presentation": {
+        "summary": "逐篇提炼核心论点、证据、方法与局限，列出值得追问的问题。",
+        "default_input_hints": [
+          "论点先行",
+          "证据逐条对应来源",
+          "列出待追问问题"
+        ],
+        "group": "sources",
+        "order": 6,
+        "artifact_type": "Reading Digest",
+        "source_hint": "当前工作台资料",
+        "runtime_hint": "快速生成",
+        "badges": [
+          "精读",
+          "可追溯"
+        ],
+        "style_hint": "先论点后证据，区分原文陈述和你的判断。",
+        "prompt_focus": "输出可以直接用于精读讨论的摘要",
+        "tone": "blue"
+      },
+      "definition": {
+        "action": {
+          "artifact_type": "READING_DIGEST",
+          "output_sections": [
+            "核心论点",
+            "关键证据",
+            "方法与假设",
+            "局限与争议",
+            "待追问问题"
+          ],
+          "resolver_keywords": [
+            "精读摘要",
+            "reading digest"
+          ],
+          "required_evidence_level": "HIGH"
+        },
+        "prompt_recipe": {
+          "recipe_name": "Reading Digest Writer",
+          "generation_mode": "CLOSE_READING",
+          "system_intent": "Condense each source into its central claims, supporting evidence, method, limitations and open questions.",
+          "section_guidance": {
+            "核心论点": "用一两句话写出资料最核心的主张。",
+            "关键证据": "逐条列出支撑论点的证据，并标注来源位置。",
+            "方法与假设": "说明资料采用的方法和隐含前提。",
+            "局限与争议": "指出证据不足、适用范围或可能的反例。",
+            "待追问问题": "列出读完之后仍需要追问或验证的问题。"
+          },
+          "citation_policy": [
+            "每条证据都必须能回到工作台资料的原文。"
+          ],
+          "repair_hints": [
+            "缺少证据时回到资料原文补齐，不要编造。"
+          ]
+        }
+      }
     }
   ],
   "aliases": {

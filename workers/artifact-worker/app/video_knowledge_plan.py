@@ -14,6 +14,11 @@ from app.video_material_bundle import VideoMaterialBundleV1
 SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
+def _clock(ms: int) -> str:
+    seconds = max(0, int(ms)) // 1000
+    return f"{seconds // 60:02d}:{seconds % 60:02d}"
+
+
 class PlanRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -154,12 +159,21 @@ def plan_video_knowledge(
     no circular digest dependency or change to historical Bundle v1 bytes.
     """
     payload: dict[str, object] = {
-        "contract": "video-knowledge-plan-v1",
+        "contract": "video-knowledge-outline-v1",
+        "output_schema": {
+            "title": "string, the video's main topic",
+            "concepts": [{
+                "title": "string, one knowledge point (max 60 chars)",
+                "segment_ids": ["segment_id values of the subtitle segments explaining it"],
+                "terms": ["key terms copied exactly from those segments"],
+                "claims": [{"segment_id": "one of segment_ids",
+                            "quote": "a sentence copied verbatim from that segment's corrected_text"}],
+            }],
+        },
         "rules": [
-            "Return one TOPIC root and nested CONCEPT, EXAMPLE or EVIDENCE_WINDOW nodes.",
-            "Cover every subtitle segment and frame exactly as the output contract requires.",
-            "Copy EXTRACTED claims verbatim from cited corrected subtitle or OCR text.",
-            "Use UNVERIFIED and node.missing=['UNVERIFIED_CLAIM'] for unsupported claims.",
+            "Return 3-12 concepts in video order; each concept cites consecutive subtitle segments.",
+            "Every quote must be an exact substring of the cited segment's corrected_text.",
+            "Use only the supplied corrected subtitles and frame OCR; never invent facts.",
             "Do not infer visual semantics from OCR text or the presence of a frame.",
         ],
         "bundle_content_digest": bundle.content_digest(),
@@ -180,9 +194,98 @@ def plan_video_knowledge(
         candidate = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise ValueError("video knowledge planner returned invalid JSON") from exc
-    plan = VideoKnowledgePlanV1.model_validate(candidate)
+    if isinstance(candidate, dict) and "concepts" in candidate and "nodes" not in candidate:
+        plan = build_plan_from_outline(bundle, candidate)
+    else:
+        plan = VideoKnowledgePlanV1.model_validate(candidate)
     plan.verify_against_bundle(bundle)
     return plan
+
+
+def build_plan_from_outline(bundle: VideoMaterialBundleV1, outline: dict[str, object]) -> VideoKnowledgePlanV1:
+    """Turn the model's semantic outline into a contract-complete plan.
+
+    The model only decides *meaning* (which segments form a concept, which sentences matter).
+    Everything the contract checks mechanically is derived here from frozen evidence: node time
+    ranges, full subtitle/frame coverage, and claims, which are kept only when the quote really
+    occurs in the cited segment. Nothing the model wrote is trusted as a fact on its own.
+    """
+    segments = sorted(bundle.transcript_segments, key=lambda item: (item.start_ms, item.segment_id))
+    by_id = {item.segment_id: item for item in segments}
+    observations = {item.file_id: item for item in bundle.frame_observations or []}
+    assigned: set[str] = set()
+    nodes: list[dict[str, object]] = []
+    raw_concepts = outline.get("concepts")
+    for raw in (raw_concepts if isinstance(raw_concepts, list) else [])[:20]:
+        if not isinstance(raw, dict):
+            continue
+        ids = [str(item) for item in raw.get("segment_ids") or [] if str(item) in by_id
+               and str(item) not in assigned]
+        ids = list(dict.fromkeys(ids))[:128]
+        if not ids:
+            continue
+        cited = [by_id[item] for item in ids]
+        start_ms = min(item.start_ms for item in cited)
+        end_ms = max(item.end_ms for item in cited)
+        texts = [item.corrected_text for item in cited]
+        claims = []
+        for claim in raw.get("claims") or []:
+            if not isinstance(claim, dict) or len(claims) >= 10:
+                continue
+            segment_id, quote = str(claim.get("segment_id", "")), str(claim.get("quote", "")).strip()
+            if segment_id in ids and quote and len(quote) <= 1_000 and quote in by_id[segment_id].corrected_text:
+                claims.append({"text": quote, "status": "EXTRACTED",
+                               "evidence_refs": [f"segment:{segment_id}"]})
+        terms = list(dict.fromkeys(
+            str(term).strip() for term in raw.get("terms") or []
+            if str(term).strip() and len(str(term).strip()) <= 100
+            and any(str(term).strip().casefold() in text.casefold() for text in texts)))[:20]
+        title = str(raw.get("title") or "").strip()[:160] or cited[0].corrected_text[:40] or "Concept"
+        assigned.update(ids)
+        nodes.append({"node_id": f"concept-{len(nodes) + 1:03d}", "parent_id": "root", "kind": "CONCEPT",
+                      "title": title, "start_ms": start_ms, "end_ms": end_ms,
+                      "transcript_segment_ids": ids, "terms": terms, "claims": claims})
+    # Segments the model did not place still have to be covered, as plain evidence windows.
+    leftover = [item for item in segments if item.segment_id not in assigned]
+    window: list = []
+    for item in leftover + [None]:
+        if item is not None and (not window or len(window) < 128):
+            window.append(item)
+            continue
+        if window:
+            nodes.append({"node_id": f"subtitle-window-{len(nodes) + 1:03d}", "parent_id": "root",
+                          "kind": "EVIDENCE_WINDOW",
+                          "title": f"字幕片段 {_clock(window[0].start_ms)}–{_clock(window[-1].end_ms)}",
+                          "start_ms": min(seg.start_ms for seg in window),
+                          "end_ms": max(seg.end_ms for seg in window),
+                          "transcript_segment_ids": [seg.segment_id for seg in window]})
+        window = [item] if item is not None else []
+    # Frames join the first concept whose time range holds them; the rest get their own window.
+    for frame in sorted(bundle.frames, key=lambda item: item.at_ms):
+        host = next((node for node in nodes if node["kind"] == "CONCEPT"
+                     and node["start_ms"] <= frame.at_ms <= node["end_ms"]
+                     and len(node.setdefault("frame_ids", [])) < 32), None)
+        if host is not None:
+            host["frame_ids"].append(frame.frame_id)
+            continue
+        start = min(frame.at_ms, bundle.duration_ms - 1)
+        nodes.append({"node_id": f"frame-window-{len(nodes) + 1:03d}", "parent_id": "root",
+                      "kind": "EVIDENCE_WINDOW", "title": f"画面 · {_clock(frame.at_ms)}",
+                      "start_ms": start, "end_ms": start + 1, "frame_ids": [frame.frame_id],
+                      "missing": ["VISUAL_SEMANTICS_UNVERIFIED"]})
+    if len(nodes) + 1 > 128:
+        raise ValueError("video knowledge outline exceeds the plan node limit")
+    topic = str(outline.get("title") or "").strip()[:160] or "Video knowledge"
+    nodes.insert(0, {"node_id": "root", "parent_id": "", "kind": "TOPIC", "title": topic,
+                     "start_ms": 0, "end_ms": bundle.duration_ms,
+                     "missing": [] if nodes else list(bundle.coverage_gaps) or ["NO_EVIDENCE"]})
+    if not any(node.get("claims") for node in nodes):
+        raise ValueError("video knowledge outline produced no verifiable claim")
+    return VideoKnowledgePlanV1.model_validate({
+        "bundle_content_digest": bundle.content_digest(),
+        "bvid": bundle.bvid, "part": bundle.part,
+        "duration_ms": bundle.duration_ms, "nodes": nodes,
+    })
 
 
 def build_local_evidence_plan(bundle: VideoMaterialBundleV1) -> VideoKnowledgePlanV1:
@@ -196,7 +299,7 @@ def build_local_evidence_plan(bundle: VideoMaterialBundleV1) -> VideoKnowledgePl
     for index, frame in enumerate(bundle.frames, start=1):
         nodes.append({
             "node_id": f"frame-window-{index:03d}", "parent_id": "source",
-            "kind": "EVIDENCE_WINDOW", "title": f"Frame at {frame.at_ms} ms",
+            "kind": "EVIDENCE_WINDOW", "title": f"画面 · {_clock(frame.at_ms)}",
             "start_ms": frame.at_ms,
             "end_ms": min(bundle.duration_ms, frame.at_ms + 1),
             "frame_ids": [frame.frame_id],
@@ -208,7 +311,7 @@ def build_local_evidence_plan(bundle: VideoMaterialBundleV1) -> VideoKnowledgePl
         nodes.append({
             "node_id": f"subtitle-window-{offset // 128 + 1:03d}",
             "parent_id": "source", "kind": "EVIDENCE_WINDOW",
-            "title": f"Subtitle cues {offset + 1}–{offset + len(group)}",
+            "title": f"字幕片段 {_clock(group[0].start_ms)}–{_clock(group[-1].end_ms)}",
             "start_ms": min(item.start_ms for item in group),
             "end_ms": max(item.end_ms for item in group),
             "transcript_segment_ids": [item.segment_id for item in group],

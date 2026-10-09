@@ -591,7 +591,8 @@ class BilibiliRenderPdfServer:
             video_url=str(arguments.get("video_url") or ""),
             video_channel=str(arguments.get("video_channel") or ""),
             video_publish_date=str(arguments.get("video_publish_date") or ""),
-            video_duration=str(arguments.get("video_duration") or ""),
+            video_duration=str(arguments.get("video_duration") or "")
+            or _format_clock_ms(arguments.get("video_duration_ms")),
             cover_image_path=str(self._resolve_optional_input_file(
                 str(arguments.get("cover_image_path") or ""), "cover_image_path"
             ) or ""),
@@ -743,7 +744,7 @@ class BilibiliRenderPdfServer:
                 figures.append(
                     "\\begin{figure}[htbp]\n\\centering\n"
                     f"\\includegraphics[width=0.85\\linewidth,height=0.35\\textheight,keepaspectratio]{{{ref['tex_path']}}}\n"
-                    f"\\caption{{Frame {_latex_escape(ref['file_id'])} at {ref['at_ms']} ms}}\n"
+                    f"\\caption{{视频画面 · {_format_clock_ms(ref['at_ms'])}}}\n"
                     "\\end{figure}\n"
                 )
             body.append(f"\\section{{{heading}}}\n{section_body}\n" + "\n".join(figures))
@@ -751,9 +752,10 @@ class BilibiliRenderPdfServer:
 
         replacements = {
             "notetitle": _latex_escape(title),
-            "videochannel": _latex_escape(video_channel or "[待补充]"),
-            "videopublishdate": _latex_escape(video_publish_date or "[待补充]"),
-            "videoduration": _latex_escape(video_duration or "[待补充]"),
+            # 素材包不含 UP 主和发布日期；缺省时不再输出"[待补充]"占位
+            "videochannel": _latex_escape(video_channel or "B站视频"),
+            "videopublishdate": _latex_escape(video_publish_date or ""),
+            "videoduration": _latex_escape(video_duration or ""),
             "videourl": _latex_escape(video_url),
             "videocoverpath": _latex_escape(cover_image_path),
         }
@@ -1284,6 +1286,16 @@ def _sanitize_stem(raw: str) -> str:
     return re.sub(r"[^0-9A-Za-z._-]+", "_", raw).strip("._") or "course_notes"
 
 
+def _format_clock_ms(value: object) -> str:
+    """毫秒转成 mm:ss（超过一小时为 h:mm:ss）；非法值返回空串。"""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+        return ""
+    seconds = int(value) // 1000
+    hours, rest = divmod(seconds, 3600)
+    minutes, secs = divmod(rest, 60)
+    return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes:02d}:{secs:02d}"
+
+
 def _latex_escape(text: str) -> str:
     replacements = {
         "\\": r"\textbackslash{}",
@@ -1512,7 +1524,7 @@ def _render_reportlab_cjk_pdf(
                                width=rendered_width, height=rendered_height,
                                preserveAspectRatio=True)
             y -= rendered_height + 8
-            draw_text(f"Frame {ref['file_id']} · {ref['at_ms']} ms", 9, leading=14)
+            draw_text(f"视频画面 · {_format_clock_ms(ref['at_ms'])}", 9, leading=14)
         y -= 8
     draw_footer()
     document.save()

@@ -36,6 +36,19 @@ class VideoLearningRequestRepositoryContractTest {
     @Autowired WorkerTaskCallbackService workerCallbacks;
 
     @Test
+    void freezesAllFiveOutputsIncludingVideoSummary() throws Exception {
+        String workspaceId = workspace();
+        var all = List.of("video_summary", "knowledge_blog", "interview_qa",
+                "video_learning_deck", "bilibili_course_note_pdf");
+        var created = requests.createOrReplay(workspaceId, "local-user", "client-all", draft(all));
+        assertThat(jdbc.queryForList("""
+                select skill_key from video_learning_request_choice
+                where request_id = ? order by skill_key
+                """, String.class, created.requestId()))
+                .containsExactlyInAnyOrderElementsOf(all);
+    }
+
+    @Test
     void freezesOneToFourChoicesAndReplaysOnlyIdenticalRequest() throws Exception {
         String workspaceId = workspace();
         VideoLearningRequestDraft draft = draft(List.of("interview_qa", "knowledge_blog"));

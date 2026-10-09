@@ -106,8 +106,8 @@ def _question(title: str, language: str) -> str:
 def render_derived_markdown(ir: VideoDerivedTextV1) -> str:
     source, plan_label, terms_label, evidence, gap_label, short, detailed, related, no_terms = \
         _LABELS[ir.language]
-    lines = [f"# {ir.title}", "", f"{source}: {ir.bundle_content_digest}",
-             f"{plan_label}: {ir.plan_content_digest}", ""]
+    # 摘要只保留在结构化 IR 里（宿主据此校验），读者看到的正文不再展示两串哈希
+    lines = [f"# {ir.title}", ""]
     if ir.terms:
         lines.extend([f"## {terms_label}", "", ", ".join(ir.terms), ""])
     if ir.artifact_type == "knowledge_blog":

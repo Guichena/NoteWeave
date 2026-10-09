@@ -49,12 +49,14 @@ def test_published_skill_catalog_matches_both_runtime_copies_and_action_registry
     assert source == host == worker
     assert CATALOG_DIGEST == hashlib.sha256(source).hexdigest()
     entries = json.loads(source)["skills"]
-    assert len(entries) == len({entry["skill_key"] for entry in entries}) == 15
+    assert len(entries) == len({entry["skill_key"] for entry in entries}) == 16
     for entry in entries:
         action = PRODUCTION_ACTIONS[entry["action_key"]]
         assert entry["graph_key"] == action.default_skill_graph_key
         assert entry["prompt_recipe_id"] == action.default_prompt_recipe_id
         assert entry["capability_allowlist"] == action.supported_capabilities
+        # 宿主按 action_key 校验内容 IR 的 artifact_type，目录声明的 Skill 也必须一致
+        assert action.artifact_type == entry["action_key"]
 
 
 def test_worker_rejects_run_frozen_against_another_catalog_before_execution() -> None:

@@ -23,7 +23,7 @@ public record VideoLearningRequestDraft(
         String userRequirement,
         List<String> selectedSkills
 ) {
-    private static final Set<String> SKILLS = Set.of("knowledge_blog", "interview_qa",
+    private static final Set<String> SKILLS = Set.of("video_summary", "knowledge_blog", "interview_qa",
             "video_learning_deck", "bilibili_course_note_pdf");
     public static List<String> supportedSkills() {
         return SKILLS.stream().sorted().toList();
@@ -38,7 +38,7 @@ public record VideoLearningRequestDraft(
                 || !"original-v1".equals(templateVersion)
                 || userRequirement == null || userRequirement.isBlank()
                 || userRequirement.length() > 4000 || selectedSkills == null
-                || selectedSkills.isEmpty() || selectedSkills.size() > 4
+                || selectedSkills.isEmpty() || selectedSkills.size() > SKILLS.size()
                 || selectedSkills.stream().anyMatch(skill -> skill == null || !SKILLS.contains(skill))
                 || selectedSkills.size() != Set.copyOf(selectedSkills).size()) {
             throw invalid();

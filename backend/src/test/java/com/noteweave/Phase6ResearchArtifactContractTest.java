@@ -5337,8 +5337,7 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
         String title = "Visible material";
         String claim = "Visible heading";
         String question = "资料如何解释Observed heading？";
-        String prefix = "# " + title + "\n\n素材摘要: " + bundleDigest
-                + "\n知识规划摘要: " + planDigest + "\n\n## 术语\n\nVisible\n\n";
+        String prefix = "# " + title + "\n\n## 术语\n\nVisible\n\n";
         String markdown = prefix + ("knowledge_blog".equals(skillKey)
                 ? "## Observed heading\n\nVisible heading\n证据: frame:f1\n"
                 : "## " + question + "\n\n### 简要回答\n\nVisible heading\n\n"

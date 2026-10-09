@@ -36,6 +36,7 @@ RUN pip install --no-cache-dir \
     "pypdf>=6.0,<7" \
     "python-pptx>=1.0.2,<2" \
     "faster-whisper>=1.2.1,<2" \
+    "av>=15,<16" \
     "reportlab>=4.2.0,<5" \
     "yt-dlp>=2025.6.30,<2027" \
     "uvicorn>=0.32.0,<1"

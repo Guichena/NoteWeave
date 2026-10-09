@@ -83,7 +83,45 @@ def subtitle_bundle_from_provider(
         input_digest=frozen_video_input_digest(
             task_input.input_snapshot_id, task_input.input_payload.inputs),
         subtitle_source=source, srt_text=srt,
+        corrections=machine_subtitle_corrections(srt, part=part, duration_ms=duration_ms,
+                                                 subtitle_source=source),
     )
+
+
+_CLOCK_PREFIX = re.compile(r"^\[(?:\d{2}:)?\d{2}:\d{2}\] ")
+
+
+def machine_subtitle_corrections(
+    srt_text: str, *, part: int, duration_ms: int, subtitle_source: str, client: object | None = None,
+) -> dict[str, str]:
+    """LLM-proofread ASR / auto-caption cues; manual subtitles are left exactly as published.
+
+    original_text keeps the recognizer output and only corrected_text changes, so citations can
+    still be traced back. Any failure keeps the original cue (same guard as source transcription).
+    """
+    if subtitle_source not in {"ASR", "AI_CAPTION"} or not srt_text.strip():
+        return {}
+    from app.llm_client import build_default_llm_client
+    from app.source_transcription import correct_transcript
+    corrector = client if client is not None else build_default_llm_client()
+    if corrector is None:
+        return {}
+    try:
+        segments = parse_srt_segments(srt_text, part=part, duration_ms=duration_ms)
+        lines = []
+        for segment in segments:
+            seconds = segment.start_ms // 1000
+            lines.append(f"[{seconds // 60:02d}:{seconds % 60:02d}] "
+                         + segment.original_text.replace("\n", " "))
+        corrected, _ = correct_transcript(lines, corrector)
+    except Exception:  # 校对是锦上添花，任何异常都退回识别原文
+        return {}
+    result: dict[str, str] = {}
+    for segment, line, fixed in zip(segments, lines, corrected):
+        text = _CLOCK_PREFIX.sub("", fixed, count=1).strip()
+        if fixed != line and text:
+            result[segment.segment_id] = text
+    return result
 
 
 def parse_srt_segments(srt_text: str, *, part: int, duration_ms: int) -> list[TranscriptSegment]:

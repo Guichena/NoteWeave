@@ -203,7 +203,19 @@ public class WorkloadQuotaService {
             count("rate", workload, "disabled", "none");
             return;
         }
-        String actorFingerprint = fingerprint(currentUserProvider.requireUserId());
+        requireRateFor(workspaceId, workload, currentUserProvider.requireUserId());
+    }
+
+    /** Rate-limits a background task against the user it acts for (already verified by the caller). */
+    public void requireRateFor(String workspaceId, String workload, String actorUserId) {
+        if (!enabled) {
+            count("rate", workload, "disabled", "none");
+            return;
+        }
+        if (actorUserId == null || actorUserId.isBlank()) {
+            throw new IllegalArgumentException("Workload rate actor is required");
+        }
+        String actorFingerprint = fingerprint(actorUserId);
         String key = rateKey(workspaceId, actorFingerprint, workload);
         Decision decision = redisRateDecision(key);
         String backend = "redis";

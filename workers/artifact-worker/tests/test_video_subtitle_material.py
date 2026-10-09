@@ -130,3 +130,35 @@ def test_preview_only_legacy_payload_reports_missing_full_file() -> None:
     text, metadata = _build_text_from_acquisition_payload({"subtitle_preview": ["one line"]})
     assert text == "one line"
     assert metadata["material_gap"] == "FULL_SUBTITLE_FILE_UNAVAILABLE"
+
+
+def test_machine_subtitles_are_llm_proofread_but_manual_ones_are_untouched() -> None:
+    import json as _json
+    from app.llm_client import FakeLlmClient
+    from app.video_subtitle_material import machine_subtitle_corrections, subtitle_only_bundle
+
+    srt = "1\n00:00:01,000 --> 00:00:03,000\n全线管控和象量检索\n\n2\n00:00:04,000 --> 00:00:06,000\nRAG 架构\n"
+    fixed = _json.dumps({"lines": ["[00:01] 权限管控和向量检索", "[00:04] RAG 架构"]}, ensure_ascii=False)
+    client = FakeLlmClient({"transcript_correction": fixed})
+
+    corrections = machine_subtitle_corrections(srt, part=1, duration_ms=10_000,
+                                               subtitle_source="ASR", client=client)
+    bundle = subtitle_only_bundle(bundle_id="b", bundle_version=1, workspace_id="w", bvid="BV1234567890",
+                                  part=1, duration_ms=10_000, input_digest="a" * 64,
+                                  subtitle_source="ASR", srt_text=srt, corrections=corrections)
+
+    assert [s.corrected_text for s in bundle.transcript_segments] == ["权限管控和向量检索", "RAG 架构"]
+    assert bundle.transcript_segments[0].original_text == "全线管控和象量检索"
+    assert machine_subtitle_corrections(srt, part=1, duration_ms=10_000,
+                                        subtitle_source="MANUAL", client=client) == {}
+
+
+def test_subtitle_correction_keeps_cue_when_model_breaks_the_timestamp() -> None:
+    import json as _json
+    from app.llm_client import FakeLlmClient
+    from app.video_subtitle_material import machine_subtitle_corrections
+
+    srt = "1\n00:00:01,000 --> 00:00:03,000\n象量检索\n"
+    client = FakeLlmClient({"transcript_correction": _json.dumps({"lines": ["[09:59] 向量检索"]})})
+    assert machine_subtitle_corrections(srt, part=1, duration_ms=10_000,
+                                        subtitle_source="ASR", client=client) == {}

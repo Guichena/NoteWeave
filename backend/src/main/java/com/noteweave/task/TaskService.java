@@ -120,9 +120,27 @@ public class TaskService implements TaskCommandPort {
 
     @Transactional
     public String createTask(String workspaceId, String taskType, String targetType, String targetId, String phase, String message) {
+        return createTaskInternal(workspaceId, taskType, targetType, targetId, phase, message, null);
+    }
+
+    /**
+     * Creates a task from a background coordinator acting for an already verified user: there is no
+     * request session, so the workload rate is charged to that user explicitly.
+     */
+    @Transactional
+    public String createTaskForActor(String workspaceId, String taskType, String targetType, String targetId,
+                                     String phase, String message, String actorUserId) {
+        if (actorUserId == null || actorUserId.isBlank()) {
+            throw new IllegalArgumentException("Task actor is required");
+        }
+        return createTaskInternal(workspaceId, taskType, targetType, targetId, phase, message, actorUserId);
+    }
+
+    private String createTaskInternal(String workspaceId, String taskType, String targetType, String targetId,
+                                      String phase, String message, String actorUserId) {
         String taskId = Ids.newId();
         String actor = actor();
-        acquireWorkloadQuota(workspaceId, taskType, taskId);
+        acquireWorkloadQuota(workspaceId, taskType, taskId, actorUserId);
         releaseLeaseOnRollback(workspaceId, taskType, taskId);
         taskStateRepository.insertTask(taskId, workspaceId, taskType, targetType, targetId, phase, message, actor);
         taskEventRepository.append(taskId, "TASK_CREATED", message);
@@ -135,12 +153,16 @@ public class TaskService implements TaskCommandPort {
                 : auditActorProvider.currentOrSystem("TASK");
     }
 
-    private void acquireWorkloadQuota(String workspaceId, String taskType, String taskId) {
+    private void acquireWorkloadQuota(String workspaceId, String taskType, String taskId, String actorUserId) {
         String workload = workload(taskType);
         if (workloadQuotaService == null || workload == null) {
             return;
         }
-        workloadQuotaService.requireRate(workspaceId, workload);
+        if (actorUserId == null) {
+            workloadQuotaService.requireRate(workspaceId, workload);
+        } else {
+            workloadQuotaService.requireRateFor(workspaceId, workload, actorUserId);
+        }
         workloadQuotaService.acquireLease(workspaceId, workload, taskId);
     }
 
@@ -240,6 +262,14 @@ public class TaskService implements TaskCommandPort {
         }
         taskEventRepository.append(taskId, "TASK_COMPLETED", message);
         releaseLeaseAfterCommit(taskId);
+    }
+
+    @Override
+    public void recordStage(String taskId, String phase, String message) {
+        if (taskId == null || !"RUNNING".equals(currentTaskStatus(taskId))) {
+            return;
+        }
+        recordProgress(taskId, phase, message, null, null, null);
     }
 
     @Transactional
