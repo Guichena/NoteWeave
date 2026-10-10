@@ -301,11 +301,12 @@ def _wake_waiting_task(
                     "receipt": dict(callback_receipt),
                     "operation": to_public_callback_operation(callback_operation),
                 }
-            sync_artifact_runtime_trace(
-                target_id=task_input.target_id,
-                version_id=result.version_snapshot.version_id,
-                result=result,
-            )
+            if result.version_snapshot.version_id:
+                sync_artifact_runtime_trace(
+                    target_id=task_input.target_id,
+                    version_id=result.version_snapshot.version_id,
+                    result=result,
+                )
     except Exception:
         release_waiting_task_claim(task_id)
         raise

@@ -12,7 +12,7 @@ SYSTEM_BILIBILI_SERVER_ID = "builtin-bilibili-mcp"
 
 def list_system_mcp_servers() -> list[CustomMcpServerRegistration]:
     worker_root = Path(__file__).resolve().parents[1]
-    server_script = worker_root / "mcp" / "bilibili_render_pdf_server.py"
+    server_script = worker_root / "mcp_servers" / "bilibili_render_pdf_server.py"
     return [
         CustomMcpServerRegistration(
             server_id=SYSTEM_BILIBILI_SERVER_ID,
@@ -36,6 +36,22 @@ def list_system_mcp_servers() -> list[CustomMcpServerRegistration]:
                     supported_actions=["VIDEO_SUMMARY", "COURSE_NOTES"],
                     preference_rank=200,
                     selection_reason_hint="system_bilibili_subtitle",
+                ),
+                CustomMcpToolRegistration(
+                    capability_name="CAPTURE_VIDEO_FRAMES",
+                    tool_name="capture_bilibili_frames",
+                    supported_routes=["VIDEO_URL"],
+                    supported_actions=["COURSE_NOTES"],
+                    preference_rank=200,
+                    selection_reason_hint="system_bilibili_frame_capture",
+                ),
+                CustomMcpToolRegistration(
+                    capability_name="ANALYZE_FRAME",
+                    tool_name="analyze_frames",
+                    supported_routes=["VIDEO_URL"],
+                    supported_actions=["COURSE_NOTES"],
+                    preference_rank=200,
+                    selection_reason_hint="system_bilibili_frame_observation",
                 ),
             ],
         )

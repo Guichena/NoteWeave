@@ -5,6 +5,7 @@ import com.noteweave.storage.ObjectStorage;
 import io.minio.BucketExistsArgs;
 import io.minio.GetObjectArgs;
 import io.minio.MakeBucketArgs;
+import io.minio.ListObjectsArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
@@ -16,6 +17,7 @@ import java.io.InputStream;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.ArrayList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -93,6 +95,48 @@ public class MinioObjectStorage implements ObjectStorage {
     }
 
     @Override
+    public void writeFile(String bucket, String objectKey, java.nio.file.Path file) {
+        // 按文件大小流式上传，SDK 会对大文件自动分段上传，不把整个文件读入内存
+        try (InputStream stream = java.nio.file.Files.newInputStream(file)) {
+            client.putObject(PutObjectArgs.builder()
+                    .bucket(bucket)
+                    .object(objectKey)
+                    .stream(stream, java.nio.file.Files.size(file), -1)
+                    .contentType(detectContentType(objectKey))
+                    .build());
+        } catch (Exception ex) {
+            throw new IllegalStateException("minio write failed: " + bucket + "/" + objectKey, ex);
+        }
+    }
+
+    @Override
+    public void readToFile(String bucket, String objectKey, java.nio.file.Path target) {
+        try (InputStream stream = client.getObject(GetObjectArgs.builder()
+                .bucket(bucket)
+                .object(objectKey)
+                .build())) {
+            java.nio.file.Files.copy(stream, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (Exception ex) {
+            throw new IllegalStateException("minio read failed: " + bucket + "/" + objectKey, ex);
+        }
+    }
+
+    @Override
+    public void copy(String sourceBucket, String sourceKey, String targetBucket, String targetKey) {
+        // 服务端复制，数据不经过应用
+        try {
+            client.copyObject(io.minio.CopyObjectArgs.builder()
+                    .bucket(targetBucket)
+                    .object(targetKey)
+                    .source(io.minio.CopySource.builder().bucket(sourceBucket).object(sourceKey).build())
+                    .build());
+        } catch (Exception ex) {
+            throw new IllegalStateException("minio copy failed: " + sourceBucket + "/" + sourceKey
+                    + " -> " + targetBucket + "/" + targetKey, ex);
+        }
+    }
+
+    @Override
     public boolean exists(String bucket, String objectKey) {
         try {
             client.statObject(io.minio.StatObjectArgs.builder()
@@ -124,6 +168,26 @@ public class MinioObjectStorage implements ObjectStorage {
         } catch (Exception ex) {
             throw new IllegalStateException("minio delete failed: " + bucket + "/" + objectKey, ex);
         }
+    }
+
+    @Override
+    public List<StoredObject> list(String bucket, String prefix, String afterKey, int limit) {
+        if (limit < 1 || limit > 10_000 || !prefix.endsWith("/") || prefix.contains("..")) {
+            throw new IllegalArgumentException("invalid object inventory prefix or limit");
+        }
+        ArrayList<StoredObject> objects = new ArrayList<>();
+        try {
+            for (var result : client.listObjects(ListObjectsArgs.builder()
+                    .bucket(bucket).prefix(prefix).startAfter(afterKey == null ? "" : afterKey)
+                    .recursive(true).build())) {
+                var item = result.get();
+                objects.add(new StoredObject(item.objectName(), item.lastModified().toInstant()));
+                if (objects.size() >= limit) break;
+            }
+        } catch (Exception ex) {
+            throw new IllegalStateException("minio list failed: " + bucket + "/" + prefix, ex);
+        }
+        return List.copyOf(objects);
     }
 
     @Override

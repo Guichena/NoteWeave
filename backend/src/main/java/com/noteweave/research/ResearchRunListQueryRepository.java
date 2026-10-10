@@ -48,6 +48,7 @@ record ResearchRunListRow(
         String finalReportMarkdown,
         String reportSourceId,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        String contextSnapshotId
 ) {
 }

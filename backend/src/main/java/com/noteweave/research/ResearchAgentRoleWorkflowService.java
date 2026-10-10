@@ -28,6 +28,7 @@ class ResearchAgentRoleWorkflowService {
     private final boolean synthesisEnabled;
     private final boolean wideDiscoveryEnabled;
     private final ResearchAgentFeatureFlagService featureFlags;
+    private final ResearchContextV2Gate contextGate;
 
     ResearchAgentRoleWorkflowService(
             JdbcTemplate jdbcTemplate,
@@ -37,6 +38,7 @@ class ResearchAgentRoleWorkflowService {
             ResearchAgentCommandOutboxService outboxService,
             ResearchAgentCompletionCanonicalizer canonicalizer,
             ResearchAgentFeatureFlagService featureFlags,
+            ResearchContextV2Gate contextGate,
             @Value("${noteweave.research.evidence-audit-v1:false}") boolean auditEnabled,
             @Value("${noteweave.research.worker-synthesis-v1:false}") boolean synthesisEnabled,
             @Value("${noteweave.research.wide-discovery-v1:false}") boolean wideDiscoveryEnabled
@@ -48,6 +50,7 @@ class ResearchAgentRoleWorkflowService {
         this.outboxService = outboxService;
         this.canonicalizer = canonicalizer;
         this.featureFlags = featureFlags;
+        this.contextGate = contextGate;
         this.auditEnabled = auditEnabled;
         this.synthesisEnabled = synthesisEnabled;
         this.wideDiscoveryEnabled = wideDiscoveryEnabled;
@@ -219,13 +222,16 @@ class ResearchAgentRoleWorkflowService {
     }
 
     private RunScope runScope(String runId) {
-        return jdbcTemplate.query("""
-                select id, question, research_intent_json, control_pack_json, source_scope_json
+        RunScope scope = jdbcTemplate.query("""
+                select id, coalesce(execution_question, question), research_intent_json,
+                       control_pack_json, source_scope_json
                 from research_run where id = ? for update
                 """, rs -> rs.next() ? new RunScope(
                 rs.getString(1), rs.getString(2), readMap(rs.getString(3)), readMap(rs.getString(4)),
                 readStringList(rs.getString(5))) : null,
                 runId);
+        if (scope != null) contextGate.requireReadable(runId);
+        return scope;
     }
 
     private List<CellScope> verifiedCells(String runId) {
@@ -263,7 +269,8 @@ class ResearchAgentRoleWorkflowService {
 
     private Map<String, Long> roleBudget(String role) {
         Map<String, Long> budget = new LinkedHashMap<>(zeroBudget());
-        if ("SYNTHESIS".equals(role)) budget.put("llm_calls", 1L);
+        // 报告合成允许一次带失败原因的重试
+        if ("SYNTHESIS".equals(role)) budget.put("llm_calls", 2L);
         return Map.copyOf(budget);
     }
 

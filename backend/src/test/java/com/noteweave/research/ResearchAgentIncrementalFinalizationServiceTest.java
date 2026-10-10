@@ -77,6 +77,17 @@ class ResearchAgentIncrementalFinalizationServiceTest {
     }
 
     @Test
+    void citationAuditHeadingsShowEntityAndColumnLabels() {
+        java.util.Map<String, String> labels = java.util.Map.of(
+                "entity-ae1b8c8635429669", "Elasticsearch", "key_evidence", "Key evidence");
+        assertThat(ResearchAgentIncrementalFinalizationService.cellHeading("entity-ae1b8c8635429669:key_evidence", labels))
+                .isEqualTo("Elasticsearch · Key evidence");
+        // 找不到显示名时保留原键，审计信息不能丢
+        assertThat(ResearchAgentIncrementalFinalizationService.cellHeading("entity-unknown:answer", labels))
+                .isEqualTo("entity-unknown:answer");
+    }
+
+    @Test
     void shouldFinalizeVerifiedIncrementalLedgerAndReplayTheSameReceipt() {
         var first = finalization.finalizeIncrementalRun(runId);
         var replay = finalization.finalizeIncrementalRun(runId);
@@ -90,6 +101,7 @@ class ResearchAgentIncrementalFinalizationServiceTest {
                 "Exact quote: “Verified citation excerpt”",
                 "research/external/finalization-test/snapshot-1",
                 "https://example.com/research");
+        assertThat(first.reportTitle()).startsWith("研究报告：");
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_report_artifact where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("select status from research_run where id = ?", String.class, runId)).isEqualTo("COMPLETED");
         assertThat(jdbcTemplate.queryForObject("select task_status from task where id = ?", String.class, parentTaskId)).isEqualTo("COMPLETED");
@@ -237,8 +249,8 @@ class ResearchAgentIncrementalFinalizationServiceTest {
         assertThat(report).contains(
                 "COMPLETED_WITH_LIMITATIONS",
                 "Verified answer",
-                "Cell: `entity-1:claim`",
-                "Candidate: `" + candidateId + "`",
+                "研究项：`entity-1:claim`",
+                "候选：`" + candidateId + "`",
                 "Evidence: `evidence-1`",
                 "Exact quote: “Verified citation excerpt”",
                 "research/external/finalization-test/snapshot-1",

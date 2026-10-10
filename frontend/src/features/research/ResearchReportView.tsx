@@ -1,10 +1,14 @@
 import { MarkdownSurface } from "../../shared/ui/MarkdownSurface";
+import { orderReportEvidence } from "./researchTable";
 
 type ResearchReportViewProps = {
   markdown: string;
   status?: string;
   sourceCount?: number;
   updatedAt?: string;
+  /** 传入后正文中的证据引用可点击，用于打开证据详情。 */
+  onEvidenceClick?: (evidenceId: string) => void;
+  activeEvidence?: string | null;
 };
 
 export function splitResearchReport(markdown: string) {
@@ -50,6 +54,18 @@ function splitLegacyResearchReport(markdown: string) {
   };
 }
 
+const AUDIT_FIELD_LABELS: Array<[RegExp, string]> = [
+  [/^(\s*-\s+)Evidence:\s*/gm, "$1证据："],
+  [/^(\s*-\s+)Exact quote:\s*/gm, "$1原文引句："],
+  [/^(\s*-\s+)Snapshot:\s*/gm, "$1快照："],
+  [/^(\s*-\s+)URL:\s*/gm, "$1链接："]
+];
+
+/** 报告里的审计字段名是后端契约（拆分逻辑依赖它们），只在展示时换成中文。 */
+export function localizeResearchAudit(audit: string) {
+  return AUDIT_FIELD_LABELS.reduce((text, [pattern, label]) => text.replace(pattern, label), audit);
+}
+
 export function extractResearchHeadings(markdown: string) {
   return markdown
     .split(/\r?\n/)
@@ -59,20 +75,30 @@ export function extractResearchHeadings(markdown: string) {
     });
 }
 
-export function ResearchReportView({ markdown, status, sourceCount, updatedAt }: ResearchReportViewProps) {
+export function ResearchReportView({
+  markdown,
+  status,
+  sourceCount,
+  updatedAt,
+  onEvidenceClick,
+  activeEvidence = null
+}: ResearchReportViewProps) {
   const { body, audit } = splitResearchReport(markdown);
   const headings = extractResearchHeadings(body);
+  const hasMeta = Boolean(status) || typeof sourceCount === "number" || Boolean(updatedAt);
 
   return (
     <section className="research-reader" aria-label="研究报告正文">
-      <header className="research-reader-meta">
-        <span className="research-reader-kicker">Deep research report</span>
-        <div className="research-reader-facts" aria-label="报告信息">
-          {status ? <span>{status}</span> : null}
-          {typeof sourceCount === "number" ? <span>{sourceCount} 个研究来源</span> : null}
-          {updatedAt ? <span>更新于 {updatedAt}</span> : null}
-        </div>
-      </header>
+      {hasMeta ? (
+        <header className="research-reader-meta">
+          <span className="research-reader-kicker">研究报告</span>
+          <div className="research-reader-facts" aria-label="报告信息">
+            {status ? <span>{status}</span> : null}
+            {typeof sourceCount === "number" ? <span>{sourceCount} 个研究来源</span> : null}
+            {updatedAt ? <span>更新于 {updatedAt}</span> : null}
+          </div>
+        </header>
+      ) : null}
 
       {headings.length > 1 ? (
         <nav className="research-reader-toc" aria-label="报告目录">
@@ -89,6 +115,9 @@ export function ResearchReportView({ markdown, status, sourceCount, updatedAt }:
         content={body}
         className="research-markdown-report research-reader-body"
         compactCitations
+        onEvidenceClick={onEvidenceClick}
+        evidenceOrder={onEvidenceClick ? orderReportEvidence(body) : undefined}
+        activeEvidence={activeEvidence}
       />
 
       {audit ? (
@@ -97,7 +126,7 @@ export function ResearchReportView({ markdown, status, sourceCount, updatedAt }:
             <span>引用与研究审计</span>
             <small>查看原始证据、网页快照和引用链</small>
           </summary>
-          <MarkdownSurface content={audit} className="research-audit-markdown" />
+          <MarkdownSurface content={localizeResearchAudit(audit)} className="research-audit-markdown" />
         </details>
       ) : null}
     </section>

@@ -19,16 +19,19 @@ public class ResearchAgentIncrementalFinalizationService {
     private final ResearchCollectionService researchCollectionService;
     private final ConversationResearchProjectionService conversationResearchProjectionService;
     private final TaskService taskService;
+    private final ResearchContextV2Gate contextGate;
 
     public ResearchAgentIncrementalFinalizationService(JdbcTemplate jdbcTemplate,
                                                          ResearchAgentIncrementalFinalizationFaultInjector faultInjector,
                                                          ResearchCollectionService researchCollectionService,
                                                          ConversationResearchProjectionService conversationResearchProjectionService,
-                                                         TaskService taskService) {
+                                                         TaskService taskService,
+                                                         ResearchContextV2Gate contextGate) {
         this.jdbcTemplate = jdbcTemplate; this.faultInjector = faultInjector;
         this.researchCollectionService = researchCollectionService;
         this.conversationResearchProjectionService = conversationResearchProjectionService;
         this.taskService = taskService;
+        this.contextGate = contextGate;
     }
 
     @Transactional
@@ -42,6 +45,7 @@ public class ResearchAgentIncrementalFinalizationService {
                 rs.getString(5), rs.getString(6), rs.getString(7), rs.getString(8),
                 rs.getString(9), rs.getString(10)) : null, runId);
         if (run == null || !"INCREMENTAL_V1".equals(run.mode())) throw new BusinessException("RESEARCH_AGENT_FINALIZATION_GATE_REJECTED", "Incremental finalization requires an incremental run");
+        contextGate.requireReadable(runId);
         if ("COMPLETED".equals(run.status())) {
             Artifact artifact = requireArtifact(run.id());
             if (!artifact.digest().equals(sha256(run.markdown()))) {
@@ -73,9 +77,9 @@ public class ResearchAgentIncrementalFinalizationService {
         List<Cell> cells = loadVerifiedCells(runId);
         cells.sort((left, right) -> ResearchAgentBinaryOrder.UTF8.compare(left.key(), right.key()));
         SynthesisCandidate synthesis = loadValidatedSynthesis(runId);
-        String markdown = synthesis == null ? render(run.question(), cells) : synthesis.markdown();
-        markdown = appendCitationAudit(markdown, cells);
-        String title = "Research report: " + run.question().substring(0, Math.min(240, run.question().length()));
+        String markdown = synthesis == null ? render(run.question(), cells, matrixLabels(jdbcTemplate, runId)) : synthesis.markdown();
+        markdown = appendCitationAudit(runId, markdown, cells);
+        String title = ResearchDisplayLabels.reportTitle(run.question());
         String artifactId = Ids.newId();
         String reportDigest = sha256(markdown);
         jdbcTemplate.update("""
@@ -188,17 +192,18 @@ public class ResearchAgentIncrementalFinalizationService {
         return second == null ? "" : second;
     }
 
-    private String render(String question, List<Cell> cells) {
-        StringBuilder result = new StringBuilder("# Research report\n\n").append(question).append("\n\n| Cell | Verified value | Evidence |\n|---|---|---|\n");
-        for (Cell cell : cells) result.append('|').append(markdownCell(cell.key()))
+    private String render(String question, List<Cell> cells, java.util.Map<String, String> labels) {
+        StringBuilder result = new StringBuilder("# 研究报告\n\n").append(question).append("\n\n| 研究项 | 已验证结论 | 证据 |\n|---|---|---|\n");
+        for (Cell cell : cells) result.append('|').append(markdownCell(cellHeading(cell.key(), labels)))
                 .append('|').append(markdownCell(cell.value()))
                 .append('|').append(markdownCell(cell.evidence())).append("|\n");
         return result.toString();
     }
 
-    private String appendCitationAudit(String markdown, List<Cell> cells) {
+    private String appendCitationAudit(String runId, String markdown, List<Cell> cells) {
         StringBuilder result = new StringBuilder(markdown == null ? "" : markdown.stripTrailing());
         result.append("\n\n## Citation audit\n\n");
+        java.util.Map<String, String> labels = matrixLabels(jdbcTemplate, runId);
         for (Cell cell : cells) {
             List<Evidence> evidence = jdbcTemplate.query("""
                     select se.evidence_key, se.source_id, se.source_title, se.quote_text,
@@ -210,7 +215,7 @@ public class ResearchAgentIncrementalFinalizationService {
                     rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
                     rs.getString(5), rs.getString(6), rs.getString(7), rs.getString(8)), cell.id());
             for (Evidence item : evidence) {
-                result.append("### ").append(markdownCell(cell.key())).append("\n\n")
+                result.append("### ").append(markdownCell(cellHeading(cell.key(), labels))).append("\n\n")
                         .append("- Evidence: `").append(markdownCell(item.key())).append("`\n")
                         .append("- Exact quote: “").append(markdownCell(nonBlank(item.quote(), item.claim()))).append("”\n")
                         .append("- Snapshot: `").append(markdownCell(item.snapshotKey())).append("`\n")
@@ -218,6 +223,40 @@ public class ResearchAgentIncrementalFinalizationService {
             }
         }
         return result.toString();
+    }
+
+    /** 研究矩阵里行和列的显示名，键为行键或列键。 */
+    static java.util.Map<String, String> matrixLabels(JdbcTemplate jdbcTemplate, String runId) {
+        java.util.Map<String, String> labels = new java.util.HashMap<>();
+        if (runId == null || runId.isBlank()) return labels;
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        for (String json : jdbcTemplate.queryForList(
+                "select plan_json from research_matrix_plan where research_run_id = ?", String.class, runId)) {
+            try {
+                com.fasterxml.jackson.databind.JsonNode plan = mapper.readTree(json);
+                if (plan.isTextual()) plan = mapper.readTree(plan.asText());
+                for (String group : List.of("rows", "columns")) {
+                    plan.path(group).forEach(node -> {
+                        String key = node.path("key").asText("");
+                        String label = node.path("label").asText("");
+                        if (!key.isBlank()) labels.putIfAbsent(key, ResearchDisplayLabels.of(key, label));
+                    });
+                }
+            } catch (Exception ignored) {
+                // 规划记录损坏时退回显示单元格键
+            }
+        }
+        return labels;
+    }
+
+    /** 单元格键形如 entity-xxx:answer，审计小节用 研究对象 · 字段 作为标题，缺少显示名时保留原键。 */
+    static String cellHeading(String cellKey, java.util.Map<String, String> labels) {
+        int separator = cellKey == null ? -1 : cellKey.lastIndexOf(':');
+        if (separator <= 0) return cellKey == null ? "" : cellKey;
+        String row = labels.get(cellKey.substring(0, separator));
+        String column = labels.get(cellKey.substring(separator + 1));
+        if (row == null || column == null) return cellKey;
+        return row + " · " + column;
     }
 
     private String markdownCell(String value) {

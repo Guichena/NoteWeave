@@ -30,6 +30,8 @@ class ResearchAgentLifecycleServiceTest {
 
     @BeforeEach
     void setUp() {
+        // 回收是全库范围的；先清掉其他测试类在共享库里留下的过期租约，下面的回收计数才只包含本用例的任务
+        lifecycleService.reapExpiredLeases();
         workspaceId = Ids.newId();
         parentTaskId = Ids.newId();
         runId = Ids.newId();

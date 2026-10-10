@@ -81,7 +81,11 @@ public record NoteWeaveProperties(
                 "noteweave.retrieval.projection",
                 "noteweave.wiki.ingest",
                 "noteweave.wiki.retract",
-                "noteweave.conversation.summary");
+                "noteweave.conversation.summary",
+                "noteweave.memory.extraction",
+                "noteweave.source.chunk",
+                "noteweave.source.embed",
+                "noteweave.source.index");
     }
 
     public record Storage(String backend, Path localRoot, Minio minio) {
@@ -112,8 +116,35 @@ public record NoteWeaveProperties(
             String retrievalProjection,
             String wikiIngest,
             String wikiRetract,
-            String conversationSummary
+            String conversationSummary,
+            String memoryExtraction,
+            String sourceChunk,
+            String sourceEmbed,
+            String sourceIndex
     ) {
+        @ConstructorBinding
+        public Topics {
+            memoryExtraction = defaultTopic(memoryExtraction, "noteweave.memory.extraction");
+            sourceChunk = defaultTopic(sourceChunk, "noteweave.source.chunk");
+            sourceEmbed = defaultTopic(sourceEmbed, "noteweave.source.embed");
+            sourceIndex = defaultTopic(sourceIndex, "noteweave.source.index");
+        }
+
+        public Topics(String sourceParse, String retrievalProjection, String wikiIngest,
+                      String wikiRetract, String conversationSummary) {
+            this(sourceParse, retrievalProjection, wikiIngest, wikiRetract, conversationSummary,
+                    null, null, null, null);
+        }
+
+        private static String defaultTopic(String value, String fallback) {
+            return value == null || value.isBlank() ? fallback : value;
+        }
+
+        /** 由任务 outbox 投递的全部主题。 */
+        public java.util.List<String> all() {
+            return java.util.List.of(sourceParse, retrievalProjection, wikiIngest, wikiRetract,
+                    conversationSummary, memoryExtraction, sourceChunk, sourceEmbed, sourceIndex);
+        }
     }
 
     public record Elasticsearch(

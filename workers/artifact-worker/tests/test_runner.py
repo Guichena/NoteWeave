@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from types import SimpleNamespace
 
 import app.action_compat as action_compat_module
 import app.compiler as compiler_module
@@ -9,7 +10,7 @@ import app.registry as registry_module
 import app.runner as runner_module
 from app.action_compat import resolve_action_compatibility, resolve_action_key_from_skill_key
 from app.compiler import build_execution_plan
-from app.artifact_skill_catalog import list_artifact_skill_definitions, resolve_artifact_skill_definition
+from app.artifact_skill_catalog import CATALOG_DIGEST, list_artifact_skill_definitions, resolve_artifact_skill_definition
 from app.content_runtime import build_canonical_content_objects
 from app.composer import render_markdown, resolve_artifact_title
 from app.intent_compiler import compile_execution_spec
@@ -23,7 +24,9 @@ from app.models import (
     ArtifactSkillDefinition,
     ArtifactTaskInput,
     ArtifactTaskResult,
+    CanonicalContentObject,
     ArtifactVersionSnapshot,
+    ArtifactVerificationResult,
     CustomProductionActionRegistration,
     CustomPromptRecipeRegistration,
     CustomSkillDefinitionRegistration,
@@ -211,6 +214,43 @@ def test_run_artifact_task_should_use_configured_llm_and_trace_generation_mode(
     assert fake.calls and fake.calls[0][0] == "artifact.generate"
 
 
+def test_skill_declared_only_in_the_catalog_runs_through_the_generic_graph(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 「精读摘要」只在技能目录里声明了动作和配方，没有任何代码改动
+    from app.artifact_skill_catalog import CATALOG_DECLARED_SKILLS
+    from app.registry import PRODUCTION_ACTIONS, PROMPT_RECIPES
+
+    assert "reading_digest" in CATALOG_DECLARED_SKILLS
+    assert PRODUCTION_ACTIONS["READING_DIGEST"].action_origin == "CATALOG"
+    assert PRODUCTION_ACTIONS["READING_DIGEST"].output_sections == [
+        "核心论点", "关键证据", "方法与假设", "局限与争议", "待追问问题"]
+    assert PROMPT_RECIPES["reading_digest_writer_v1"].supported_actions == ["READING_DIGEST"]
+    task_input = _build_task_input(
+        task_id="reading-digest-job",
+        target_id="artifact-reading-digest-1",
+        action_key="",
+        skill_key="reading_digest",
+        style_profile_key="default",
+        structure_constraints=[],
+        generation_brief="整理这篇论文的精读摘要。",
+        source_scope=[{"source_id": "src-paper", "title": "缓存一致性论文",
+                       "summary": "论文比较了先写数据库再删缓存与延迟双删两种方案。"}],
+    )
+    plan = build_execution_plan(task_input)
+    assert plan.action_key == "READING_DIGEST"
+    assert plan.skill_graph_key == "generic_artifact_v1"
+
+    sections = ",".join(
+        '{"heading": "%s", "body": "论文比较了两种写入顺序的一致性。", "source_refs": ["缓存一致性论文"]}' % heading
+        for heading in ["核心论点", "关键证据", "方法与假设", "局限与争议", "待追问问题"])
+    fake = FakeLlmClient({"artifact.generate": '{"sections": [%s]}' % sections})
+    monkeypatch.setattr(runner_module, "build_default_llm_client", lambda: fake)
+    _, result = run_artifact_task(task_input)
+    assert "核心论点" in result.result_payload["markdown"]
+    assert "待追问问题" in result.result_payload["markdown"]
+
+
 def test_run_artifact_task_should_fail_closed_without_llm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -237,6 +277,38 @@ def test_run_artifact_task_should_fail_closed_on_invalid_llm_output(
 
     assert error.value.error_code == "CONFIGURATION_REQUIRED"
     assert "no usable content" in str(error.value)
+
+
+def test_failed_final_content_gate_never_invokes_renderer(monkeypatch: pytest.MonkeyPatch) -> None:
+    task_input = _build_resume_task_input()
+    render_calls: list[str] = []
+    monkeypatch.setattr(runner_module, "export_artifact_if_required",
+                        lambda **kwargs: render_calls.append("render"))
+    monkeypatch.setattr(runner_module, "verify_artifact_output",
+                        lambda *args: ArtifactVerificationResult(
+                            status="FAIL", failed_checks=["missing evidence"]))
+
+    with pytest.raises(runner_module.ArtifactOutputContractViolationError):
+        run_artifact_task(task_input)
+
+    assert render_calls == []
+
+
+def test_candidate_is_bound_to_task_snapshot_and_markdown() -> None:
+    task_input = _build_resume_task_input()
+    task_input.input_snapshot_id = "snapshot-fixed"
+    task_input.catalog_digest = CATALOG_DIGEST
+    _, result = run_artifact_task(task_input)
+    candidate = result.result_payload["candidate"]
+
+    assert candidate["task_id"] == task_input.task_id
+    assert candidate["input_snapshot_id"] == "snapshot-fixed"
+    assert candidate["catalog_digest"] == CATALOG_DIGEST
+    assert candidate["content_sha256"]
+    assert candidate["candidate_id"]
+    assert result.version_snapshot.version_id == ""
+    assert result.result_payload["artifact_commit"]["commit_status"] == "DEFERRED_TO_HOST"
+    assert "writeback_request" not in result.result_payload
 
 
 def test_run_artifact_task_without_llm_or_source_content_should_be_blocked(
@@ -809,7 +881,11 @@ def test_build_execution_plan_should_allow_skill_first_bilibili_request_with_url
     assert plan.action_key == "COURSE_NOTES"
     assert plan.content_acquisition_plan.primary_strategy == "VIDEO_TRANSCRIPT_PIPELINE"
     assert plan.content_acquisition_plan.route_summary == {"VIDEO_URL": 1}
-    assert plan.content_acquisition_plan.required_capabilities == ["EXTRACT_TRANSCRIPT"]
+    assert plan.content_acquisition_plan.required_capabilities == [
+        "EXTRACT_TRANSCRIPT", "CAPTURE_VIDEO_FRAMES", "ANALYZE_FRAME"]
+    assert [operation for operation in plan.content_acquisition_plan.source_plans[0].planned_operations
+            if operation in {"EXTRACT_TRANSCRIPT", "CAPTURE_FRAMES", "ANALYZE_FRAMES"}] == [
+                "EXTRACT_TRANSCRIPT", "CAPTURE_FRAMES", "ANALYZE_FRAMES"]
     assert plan.content_acquisition_plan.source_plans[0].source_id == "input-url-1"
     assert plan.content_acquisition_plan.source_plans[0].adapter_route == "VIDEO_URL"
 
@@ -1196,12 +1272,12 @@ def test_run_artifact_task_should_generate_quiz_artifact() -> None:
     ) >= 3
     assert all(keyword in scoring_section["body"] for keyword in ("基础", "进阶", "挑战"))
     markdown = result.result_payload["markdown"]
-    assert markdown.count("### ") >= 4
-    assert "- Skill: quiz_pack" in markdown
+    assert markdown.count("## ") >= 4
+    assert "- Skill: quiz_pack" in (markdown + result.result_payload["runtime_notes"])
     assert "- Prompt recipe:" not in markdown
     assert "- Skill graph:" not in markdown
     assert "- Schema gate:" not in markdown
-    assert "Schema-Gated Skill Graph Runtime" in markdown
+    assert "Schema-Gated Skill Graph Runtime" in (markdown + result.result_payload["runtime_notes"])
     quiz_design_trace = next(
         trace
         for trace in result.result_payload["node_traces"]
@@ -1585,19 +1661,19 @@ def test_run_artifact_task_should_generate_resume_highlight_artifact() -> None:
     )
 
     markdown = result.result_payload["markdown"]
-    assert "### 一句话定位" in markdown
-    assert "### 简历亮点" in markdown
-    assert "### 关键词" in markdown
-    assert "- Skill: resume_highlight" in markdown
+    assert "## 一句话定位" in markdown
+    assert "## 简历亮点" in markdown
+    assert "## 关键词" in markdown
+    assert "- Skill: resume_highlight" in (markdown + result.result_payload["runtime_notes"])
     assert "- Skill binding:" not in markdown
     assert "- Skill request resolved via:" not in markdown
     assert "- Action:" not in markdown
     assert "- Prompt recipe:" not in markdown
     assert "- Skill graph:" not in markdown
     assert "- Schema gate:" not in markdown
-    assert "Controlled Agentic Graph Harness" in markdown
-    assert "Schema-Gated Skill Graph Runtime" in markdown
-    assert "Capability Union Policy" in markdown
+    assert "Controlled Agentic Graph Harness" in (markdown + result.result_payload["runtime_notes"])
+    assert "Schema-Gated Skill Graph Runtime" in (markdown + result.result_payload["runtime_notes"])
+    assert "Capability Union Policy" in (markdown + result.result_payload["runtime_notes"])
     assert "resolve skill request -> execution spec planning -> skill graph runtime" in result.trace_summary
     assert "internal production action binding" not in result.trace_summary
     assert result.citations[0]["title"] == "产物生成 Agent 编排升级设计"
@@ -1767,7 +1843,7 @@ def test_run_artifact_task_should_generate_multiple_default_artifacts(
 
     markdown = result.result_payload["markdown"]
     for heading in expected_headings:
-        assert f"### {heading}" in markdown
+        assert f"## {heading}" in markdown
 
 
 def test_run_artifact_task_should_emit_card_web_and_mixed_context_ccos() -> None:
@@ -2020,6 +2096,31 @@ def test_action_resolver_should_auto_select_audio_minutes_for_audio_file() -> No
     }
 
 
+def test_audio_minutes_over_transcribed_workspace_sources_reads_the_transcript() -> None:
+    # 资料库里的录音已在资料解析阶段转写成文字稿，生成纪要时按文档读取，不再等待转写能力
+    task_input = _build_task_input(
+        task_id="audio-minutes-transcript-job",
+        target_id="artifact-audio-minutes-transcript-1",
+        action_key="AUDIO_MINUTES",
+        style_profile_key="default",
+        structure_constraints=["输出总体摘要、主要议题、关键结论。"],
+        generation_brief="把这段会议录音整理成纪要。",
+        source_scope=[
+            {
+                "source_id": "src-transcript-1",
+                "title": "组会录音.mp3",
+                "summary": "[00:01] 今天讨论产物生成模块的设计。",
+            }
+        ],
+    )
+
+    plan = build_execution_plan(task_input)
+
+    assert plan.action_key == "AUDIO_MINUTES"
+    assert plan.content_acquisition_plan.primary_strategy != "AUDIO_TRANSCRIPT_PIPELINE"
+    assert "TRANSCRIBE_AUDIO" not in plan.content_acquisition_plan.required_capabilities
+
+
 def test_action_resolver_should_auto_select_faq_from_generation_brief_keywords() -> None:
     task_input = _build_task_input(
         task_id="auto-faq-job",
@@ -2131,9 +2232,9 @@ def test_custom_action_registration_should_extend_action_catalog_and_plan() -> N
     assert result.job_snapshot.action_key == "EXECUTIVE_SUMMARY"
     assert result.result_payload["artifact_version"]["artifact_type"] == "EXECUTIVE_SUMMARY"
     markdown = result.result_payload["markdown"]
-    assert "### 决策摘要" in markdown
-    assert "### 关键证据" in markdown
-    assert "### 推进建议" in markdown
+    assert "## 决策摘要" in markdown
+    assert "## 关键证据" in markdown
+    assert "## 推进建议" in markdown
 
 
 def test_action_resolver_should_match_custom_action_keywords() -> None:
@@ -3948,4 +4049,30 @@ def test_run_artifact_task_should_emit_writeback_preview_for_allowed_mode() -> N
     assert preview["request_id"].startswith("writeback-")
     assert preview["target_locator_preview"].startswith("workspace-source://")
     assert result.result_payload["writeback_request"]["request_id"] == preview["request_id"]
-    assert "- Writeback gate: ALLOW (SAVE_AS_SOURCE)" in result.result_payload["markdown"]
+    assert "- Writeback gate: ALLOW (SAVE_AS_SOURCE)" in result.result_payload["runtime_notes"]
+    assert "Writeback gate" not in result.result_payload["markdown"]
+
+
+def test_evidence_coverage_rejects_unknown_source_reference() -> None:
+    task_input = _build_resume_task_input()
+    material = CanonicalContentObject(
+        cco_id="cco-1", kind="WORKSPACE_SOURCE", title="Verified source",
+        plain_text="verified text", source_trace=["workspace:ws-artifact-1", "source:src-1"],
+    )
+    plan = SimpleNamespace(evidence_gate=SimpleNamespace(required_citation_density="HIGH"))
+    sections = [ArtifactSectionDraft(
+        heading="Claim", body="A factual claim", source_refs=["Invented source"])]
+
+    report = runner_module._build_evidence_coverage(
+        task_input=task_input, plan=plan, sections=sections, content_objects=[material])
+
+    assert report.status == "FAIL"
+    assert report.covered_section_count == 0
+    assert report.sections_missing_evidence == ["Claim"]
+    assert report.section_evidence[0]["invalid_refs"] == ["Invented source"]
+
+    sections[0].source_refs = ["Verified source"]
+    valid = runner_module._build_evidence_coverage(
+        task_input=task_input, plan=plan, sections=sections, content_objects=[material])
+    assert valid.status == "PASS"
+    assert valid.supporting_source_ids == ["src-1"]

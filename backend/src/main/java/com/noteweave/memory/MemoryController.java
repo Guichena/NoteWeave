@@ -23,6 +23,7 @@ public class MemoryController {
     private final MemoryOutcomeService memoryOutcomeService;
     private final MemoryShadowRecallService memoryShadowRecallService;
     private final CanonicalMemoryReviewService canonicalMemoryReviewService;
+    private final MemoryItemQueryService memoryItemQueryService;
     private final MemoryRuntime memoryRuntime;
 
     public MemoryController(
@@ -33,6 +34,7 @@ public class MemoryController {
             MemoryOutcomeService memoryOutcomeService,
             MemoryShadowRecallService memoryShadowRecallService,
             CanonicalMemoryReviewService canonicalMemoryReviewService,
+            MemoryItemQueryService memoryItemQueryService,
             MemoryRuntime memoryRuntime
     ) {
         this.memorySignalService = memorySignalService;
@@ -42,6 +44,7 @@ public class MemoryController {
         this.memoryOutcomeService = memoryOutcomeService;
         this.memoryShadowRecallService = memoryShadowRecallService;
         this.canonicalMemoryReviewService = canonicalMemoryReviewService;
+        this.memoryItemQueryService = memoryItemQueryService;
         this.memoryRuntime = memoryRuntime;
     }
 
@@ -99,6 +102,11 @@ public class MemoryController {
         return ApiResponse.success(memoryRuntime.observe(new ExecutionObservation(
                 request.observationId(), workspaceId, request.scope(), request.slotKey(),
                 request.displayText(), "USER_FEEDBACK", provenanceRef)));
+    }
+
+    @GetMapping("/items")
+    ApiResponse<java.util.List<MemoryItemResponse>> listItems(@PathVariable String workspaceId) {
+        return ApiResponse.success(memoryItemQueryService.listItems(workspaceId));
     }
 
     @GetMapping("/review")

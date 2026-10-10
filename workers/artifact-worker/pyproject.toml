@@ -5,8 +5,15 @@ requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115.0,<1",
   "kafka-python>=2.0.2,<4",
+  "mcp>=1.12,<2",
+  "openai>=2.0,<3",
   "pydantic-settings>=2.6.0,<3",
+  "Pillow>=11.0,<13",
+  "pypdf>=6.0,<7",
+  "python-pptx>=1.0.2,<2",
   "faster-whisper>=1.2.1,<2",
+  # faster-whisper 1.2.x passes av.open(metadata_errors=...), which PyAV 19 removed
+  "av>=15,<16",
   "reportlab>=4.2.0,<5",
   "uvicorn>=0.32.0,<1",
   "yt-dlp>=2025.6.30,<2027"

@@ -6,6 +6,9 @@ import urllib.error
 import urllib.request
 from typing import Protocol
 
+import httpx
+from openai import OpenAI, OpenAIError
+
 from app.config import load_settings
 from app.io_limits import MAX_LLM_RESPONSE_BYTES
 
@@ -31,6 +34,40 @@ class RejectCredentialRedirects(urllib.request.HTTPRedirectHandler):
 def credential_safe_urlopen(request: urllib.request.Request, *, timeout: float):
     opener = urllib.request.build_opener(RejectCredentialRedirects())
     return opener.open(request, timeout=timeout)
+
+
+class _CredentialSafeTransport(httpx.BaseTransport):
+    """SDK 的 HTTP 出口交给 credential_safe_urlopen：拒绝携带密钥的重定向，并限制响应体大小。"""
+
+    def __init__(self, default_timeout_seconds: float) -> None:
+        self.default_timeout_seconds = default_timeout_seconds
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        timeout = (request.extensions.get("timeout") or {}).get("read") or self.default_timeout_seconds
+        headers = {
+            key: value
+            for key, value in request.headers.items()
+            if key.lower() not in {"host", "connection", "accept-encoding", "content-length"}
+        }
+        url_request = urllib.request.Request(
+            str(request.url), data=request.read() or None, headers=headers, method=request.method
+        )
+        try:
+            with credential_safe_urlopen(url_request, timeout=timeout) as response:
+                body = response.read(MAX_LLM_RESPONSE_BYTES + 1)
+        except urllib.error.HTTPError as exc:
+            try:
+                error_body = exc.read(MAX_LLM_RESPONSE_BYTES) or b""
+            except Exception:
+                error_body = b""
+            return httpx.Response(exc.code, content=error_body, request=request)
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            raise httpx.ConnectError(str(exc), request=request) from exc
+        if len(body) > MAX_LLM_RESPONSE_BYTES:
+            raise httpx.ReadError(
+                f"Artifact LLM response exceeds the {MAX_LLM_RESPONSE_BYTES}-byte limit", request=request
+            )
+        return httpx.Response(200, headers={"content-type": "application/json"}, content=body, request=request)
 
 
 class LlmClient(Protocol):
@@ -68,58 +105,66 @@ class OpenAICompatibleLlmClient:
         self.model_name = model
         self.base_url = (base_url.strip() or "https://api.openai.com/v1").rstrip("/")
         self.timeout_seconds = timeout_seconds
+        self.client = OpenAI(
+            api_key=api_key,
+            base_url=self.base_url,
+            max_retries=0,
+            timeout=timeout_seconds,
+            http_client=httpx.Client(
+                transport=_CredentialSafeTransport(timeout_seconds),
+                follow_redirects=False,
+            ),
+        )
 
     def complete_json(self, purpose: str, payload: dict[str, object]) -> str:
-        request_payload = {
-            "model": self.model_name,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are the controlled generation node of NoteWeave Artifact Runtime. "
-                        "Use only the supplied source materials for factual claims. "
-                        "Follow the requested outline and output contract. "
-                        "Return only valid JSON with a sections array; every section must contain "
-                        "heading, body, and source_refs. source_refs may only use supplied source titles."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        {"purpose": purpose, "payload": payload},
-                        ensure_ascii=False,
-                    ),
-                },
-            ],
-            "response_format": {"type": "json_object"},
-        }
-        request = urllib.request.Request(
-            f"{self.base_url}/chat/completions",
-            data=json.dumps(request_payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}",
-            },
-            method="POST",
+        contract = (
+            "You proofread a speech-recognition transcript. Return only a JSON object "
+            "{\"lines\": [...]} with exactly as many lines as supplied, in the same order. "
+            "Fix only recognition errors: homophones, wrong technical terms, and punctuation. "
+            "Keep the leading [mm:ss] timestamp of every line unchanged; never add, drop, "
+            "merge, summarize, or reinterpret content."
+            if purpose == "transcript_correction" else
+            "Return only a JSON object shaped exactly like the supplied output_schema "
+            "(video-knowledge-outline-v1: a title plus a concepts array). "
+            "Use only the supplied corrected subtitles and frame OCR. "
+            "Every claim quote must be copied verbatim from the cited segment's corrected_text."
+            if purpose == "video_knowledge_plan" else
+            "Follow the requested outline and output contract. "
+            "Return only valid JSON with a sections array; every section must contain "
+            "heading, body, and source_refs. source_refs may only use supplied source titles."
         )
         try:
-            with credential_safe_urlopen(request, timeout=self.timeout_seconds) as response:
-                response_body = response.read(MAX_LLM_RESPONSE_BYTES + 1)
-                if len(response_body) > MAX_LLM_RESPONSE_BYTES:
-                    raise ValueError(
-                        f"Artifact LLM response exceeds the {MAX_LLM_RESPONSE_BYTES}-byte limit"
-                    )
-                data = json.loads(response_body.decode("utf-8"))
-        except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
+            completion = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are the controlled generation node of NoteWeave Artifact Runtime. "
+                            "Use only the supplied source materials for factual claims. "
+                            + contract
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": json.dumps(
+                            {"purpose": purpose, "payload": payload},
+                            ensure_ascii=False,
+                        ),
+                    },
+                ],
+                response_format={"type": "json_object"},
+            )
+        except (OpenAIError, ValueError) as exc:
             logger.warning("Artifact LLM completion failed for %s: %s", purpose, exc)
             return ""
-        choices = data.get("choices") if isinstance(data, dict) else None
+        choices = getattr(completion, "choices", None)
         if not isinstance(choices, list) or not choices:
             return ""
-        message = choices[0].get("message") if isinstance(choices[0], dict) else None
-        if not isinstance(message, dict):
+        message = getattr(choices[0], "message", None)
+        if message is None:
             return ""
-        return str(message.get("content") or "")
+        return str(getattr(message, "content", None) or "")
 
 
 def build_default_llm_client() -> LlmClient | None:

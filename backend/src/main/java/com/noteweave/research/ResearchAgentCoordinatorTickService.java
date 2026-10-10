@@ -95,7 +95,15 @@ public class ResearchAgentCoordinatorTickService {
                     ? (taskized ? "FAILED_WAVE_REPAIR_TASKIZED" : "FAILED_WAVE_STOPPED")
                     : (taskized ? "VERIFIER_REPAIR_TASKIZED" : "VERIFIER_REPAIR_STOPPED");
             if (!taskized) {
-                if (snapshot.failedTaskCount() > 0) {
+                // Tasks that only failed to find usable evidence, with the bounded repair budget
+                // spent, are the same honest evidence outcome as the verifier-only case below: the
+                // verified cells still deserve a report.  Runtime failures (lease exhaustion,
+                // delivery errors) and an empty counterfactual source scope still fail the Run.
+                boolean evidenceOnlyStop = snapshot.failedTaskCount() > 0
+                        && receipt.decisionKind() != ResearchAgentRepairStopPolicy.DecisionKind.COUNTERFACTUAL
+                        && receipt.decisionKind() != ResearchAgentRepairStopPolicy.DecisionKind.STOPPED_CANCELLED
+                        && completionGate.failedTasksAreEvidenceOutcomes(runId);
+                if (snapshot.failedTaskCount() > 0 && !evidenceOnlyStop) {
                     String terminalReason = receipt.decisionKind() == ResearchAgentRepairStopPolicy.DecisionKind.COUNTERFACTUAL
                             ? "RESEARCH_AGENT_COUNTERFACTUAL_SOURCE_SCOPE_EMPTY"
                             : "RESEARCH_AGENT_" + receipt.decisionKind().name();
@@ -114,7 +122,8 @@ public class ResearchAgentCoordinatorTickService {
                 }
                 honestReports.renderAndPersist(runId, decision);
                 lifecycle.completeRun(runId, decision.terminalState().name());
-                return new TickReceipt("VERIFIER_REPAIR_STOPPED_COMPLETED", snapshot, receipt.taskization());
+                return new TickReceipt(evidenceOnlyStop ? "FAILED_WAVE_STOPPED_COMPLETED" : "VERIFIER_REPAIR_STOPPED_COMPLETED",
+                        snapshot, receipt.taskization());
             }
             return new TickReceipt(outcome, snapshot, receipt.taskization());
         }

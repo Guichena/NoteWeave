@@ -51,6 +51,66 @@ class OpenAiCompatibleEmbeddingClientTest {
             assertThat(payload.path("model").asText()).isEqualTo("embedding-v1");
             assertThat(payload.path("dimensions").asInt()).isEqualTo(3);
             assertThat(payload.path("input").get(0).asText()).isEqualTo("semantic query");
+            assertThat(payload.path("encoding_format").asText()).isEqualTo("float");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void retriesTransientProviderErrorsThroughSdk() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        AtomicInteger requestCount = new AtomicInteger();
+        server.createContext("/v1/embeddings", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            if (requestCount.incrementAndGet() == 1) {
+                exchange.getResponseHeaders().add("Retry-After-Ms", "10");
+                exchange.sendResponseHeaders(503, -1);
+                exchange.close();
+                return;
+            }
+            byte[] body = """
+                    {"model":"embedding-v1","data":[{"index":0,"embedding":[0.1,0.2,0.3]}],"usage":{"total_tokens":3}}
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            OpenAiCompatibleEmbeddingClient client = new OpenAiCompatibleEmbeddingClient(
+                    new ObjectMapper(),
+                    properties(server, 3, 2, 100, 2));
+
+            assertThat(client.embedQuery("query").singleVector()).containsExactly(0.1f, 0.2f, 0.3f);
+            assertThat(requestCount.get()).isEqualTo(2);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void reportsNonRetryableHttpStatusWithoutRetrying() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        AtomicInteger requestCount = new AtomicInteger();
+        server.createContext("/v1/embeddings", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            requestCount.incrementAndGet();
+            exchange.sendResponseHeaders(401, -1);
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            OpenAiCompatibleEmbeddingClient client = new OpenAiCompatibleEmbeddingClient(
+                    new ObjectMapper(),
+                    properties(server, 3, 2, 100, 3));
+
+            assertThatThrownBy(() -> client.embedQuery("query"))
+                    .isInstanceOf(RetrievalProviderException.class)
+                    .hasMessageContaining("HTTP 401");
+            assertThat(requestCount.get()).isEqualTo(1);
         } finally {
             server.stop(0);
         }

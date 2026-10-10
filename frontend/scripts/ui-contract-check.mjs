@@ -7,7 +7,8 @@ const appSource = read("src/App.tsx");
 const chatWorkbenchSource = read("src/features/conversations/ChatWorkbench.tsx");
 const chatSourcesPaneSource = read("src/features/conversations/ChatSourcesPane.tsx");
 const artifactRailSource = read("src/features/artifacts/ArtifactRail.tsx");
-const artifactUtilitySource = read("src/features/artifacts/ArtifactUtilityPanel.tsx");
+const noteSourceToolSource = read("src/features/artifacts/NoteSourceDraftTool.tsx");
+const wikiMaintenanceSource = read("src/features/knowledge/WikiMaintenancePanel.tsx");
 const researchWorkbenchSource = read("src/features/research/ResearchWorkbenchView.tsx");
 const shellSource = read("src/features/shell/WorkbenchShell.tsx");
 const shellBusySource = read("src/features/shell/useShellBusy.ts");
@@ -16,14 +17,16 @@ const wikiIssueActionsSource = read("src/features/knowledge/useWikiIssueActions.
 const researchControllerSource = read("src/features/research/useResearchWorkbenchController.ts");
 const chatControllerSource = read("src/features/conversations/useChatSessionController.ts");
 const routesSource = read("src/routes.tsx");
-const stylesSource = read("src/styles.css");
+const stylesSource = read("src/styles/index.css") + read("src/styles/shell.css");
+const mainSource = read("src/main.tsx");
 
 const surfaceSource = [
   appSource,
   chatWorkbenchSource,
   chatSourcesPaneSource,
   artifactRailSource,
-  artifactUtilitySource,
+  noteSourceToolSource,
+  wikiMaintenanceSource,
   researchWorkbenchSource,
   shellSource,
   wikiControllerSource,
@@ -43,6 +46,12 @@ const forbiddenSnippets = [
   { file: "App.tsx", source: appSource, snippet: 'className="workspace-card"' }
 ];
 
+forbiddenSnippets.push(
+  { file: "ChatWorkbench.tsx", source: chatWorkbenchSource, snippet: "createPortal" },
+  { file: "ChatWorkbench.tsx", source: chatWorkbenchSource, snippet: "mode-context-line" },
+  { file: "main.tsx", source: mainSource, snippet: "visual-refresh.css" }
+);
+
 for (const item of forbiddenSnippets) {
   if (item.source.includes(item.snippet)) {
     throw new Error(`${item.file} 仍残留旧宣传式、占位或已废弃壳层: ${item.snippet}`);
@@ -50,9 +59,10 @@ for (const item of forbiddenSnippets) {
 }
 
 const requiredSnippets = [
-  { label: "品牌标题", source: shellSource, snippet: "<h1 className=\"global-rail-brand-text\">NoteWeave</h1>" },
+  { label: "品牌标题", source: shellSource, snippet: "<h1 className=\"brand-name\">NoteWeave</h1>" },
   { label: "WorkbenchShell", source: appSource, snippet: "WorkbenchShell" },
-  { label: "左导航", source: shellSource, snippet: "global-rail" },
+  { label: "侧边栏导航", source: shellSource, snippet: "app-sidebar" },
+  { label: "工作台下的多对话列表", source: shellSource, snippet: "sidebar-conversation" },
   { label: "Chat 资料区", source: chatSourcesPaneSource, snippet: "sources-pane" },
   { label: "source-drawer 兼容 class", source: chatSourcesPaneSource, snippet: "source-drawer" },
   {
@@ -61,28 +71,28 @@ const requiredSnippets = [
     snippet: 'lazy(() => import("../artifacts/ArtifactRail")'
   },
   {
-    label: "Artifact 按需 Suspense",
+    label: "产物常驻右栏",
     source: chatWorkbenchSource,
-    snippet: "artifactRailOpen ? ("
+    snippet: "studio-pane"
   },
   {
-    label: "模式情境条",
+    label: "来源勾选接入 QA 范围",
     source: chatWorkbenchSource,
-    snippet: "mode-context-line"
+    snippet: "selectedSourceIds={selectedQaSourceIds}"
   },
   {
     label: "Research 工作台组合",
     source: researchWorkbenchSource,
-    snippet: "LazyResearchSidebar"
+    snippet: "ResearchRunView"
   },
   {
-    label: "Note 入库入口",
-    source: artifactUtilitySource,
-    snippet: "保存最新回答为 Note"
+    label: "精读回答入库入口",
+    source: noteSourceToolSource,
+    snippet: "把精读回答存为资料"
   },
   {
     label: "Wiki 构建开关文案",
-    source: artifactUtilitySource,
+    source: wikiMaintenanceSource,
     snippet: "开启 Wiki 构建"
   },
   {
@@ -124,7 +134,8 @@ const requiredSnippets = [
     label: "shell 样式",
     source: stylesSource,
     snippet: ".workbench-shell"
-  }
+  },
+  { label: "单一样式入口", source: mainSource, snippet: "./styles/index.css" }
 ];
 
 for (const item of requiredSnippets) {
@@ -137,8 +148,8 @@ const requiredRouteSnippets = [
   'key: "qa"',
   'key: "note"',
   'key: "wiki"',
-  'label: "问答 RAG"',
-  'label: "Note"',
+  'label: "问答"',
+  'label: "精读"',
   'label: "Wiki"'
 ];
 
@@ -163,4 +174,4 @@ for (const view of navViews) {
   }
 }
 
-console.log("UI contract check passed (workbench shell + Chat sources + scoped busy).");
+console.log("UI contract check passed (sidebar shell + chat with sources/studio panel + scoped busy).");

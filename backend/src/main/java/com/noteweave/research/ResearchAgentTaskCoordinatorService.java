@@ -211,7 +211,8 @@ public class ResearchAgentTaskCoordinatorService {
 
     private RunScope requireIncrementalRunnableRun(String runId) {
         RunScope run = jdbcTemplate.query("""
-                select id, workspace_id, question, source_scope_json, research_intent_json, control_pack_json,
+                select id, workspace_id, coalesce(execution_question, question),
+                       source_scope_json, research_intent_json, control_pack_json,
                        retrieval_mode, status, agent_execution_mode
                 from research_run where id = ? for update
                 """, rs -> rs.next() ? new RunScope(

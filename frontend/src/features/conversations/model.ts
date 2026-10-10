@@ -27,6 +27,10 @@ export type ConversationMessage = {
   answer_status?: string | null;
   answer_error?: string | null;
   created_at: string;
+  /** 助手消息对应的回答运行 ID，用于读取证据清单。 */
+  answer_run_id?: string | null;
+  /** 引用文本，格式为 `标题 | 摘录`。 */
+  citations?: string[];
 };
 
 export type CreateConversationInput = {

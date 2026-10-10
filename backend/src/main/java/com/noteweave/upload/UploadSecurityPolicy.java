@@ -44,12 +44,13 @@ public class UploadSecurityPolicy {
             throw new BusinessException("UPLOAD_SIZE_PLAN_INVALID", "分片容量小于声明文件大小");
         }
         String extension = extension(fileName);
-        String expectedMime = EXTENSION_MIME.get(extension);
+        String expectedMime = EXTENSION_MIME.getOrDefault(extension,
+                com.noteweave.source.SourceMediaTypes.EXTENSION_MIME.get(extension));
         String actualMime = normalizeMime(request.mimeType());
         if (expectedMime == null || !expectedMime.equals(actualMime)) {
             throw new BusinessException(
                     "UPLOAD_FILE_TYPE_UNSUPPORTED",
-                    "仅支持 pdf、md、txt、json、csv 资料，且 MIME 必须匹配扩展名"
+                    "仅支持 pdf、md、txt、json、csv 文档和 mp3、m4a、wav、ogg、flac、webm、mp4 音视频，且 MIME 必须匹配扩展名"
             );
         }
     }
@@ -72,6 +73,10 @@ public class UploadSecurityPolicy {
             throw new BusinessException("UPLOAD_FILE_TOO_LARGE", "单文件最大允许 128MB");
         }
         String normalizedMime = normalizeMime(mimeType);
+        if (com.noteweave.source.SourceMediaTypes.isMedia(normalizedMime)) {
+            requireMediaSignature(normalizedMime, java.util.Arrays.copyOf(content, Math.min(content.length, 16)));
+            return;
+        }
         if ("application/pdf".equals(normalizedMime)) {
             if (!hasPdfSignature(content)) {
                 throw new BusinessException("UPLOAD_PDF_SIGNATURE_INVALID", "PDF 文件头无效");
@@ -91,6 +96,100 @@ public class UploadSecurityPolicy {
         }
         if (!EXTENSION_MIME.containsValue(normalizedMime)) {
             throw new BusinessException("UPLOAD_FILE_TYPE_UNSUPPORTED", "不支持该文件类型");
+        }
+    }
+
+    /**
+     * 与 {@link #validateMergedContent} 规则相同，但按块读取已合并到本地的文件，
+     * 128MB 的文件也只占用固定大小的缓冲区。
+     */
+    public void validateMergedFile(String mimeType, long declaredSize, java.nio.file.Path file) {
+        long actualSize;
+        try {
+            actualSize = java.nio.file.Files.size(file);
+        } catch (java.io.IOException ex) {
+            throw new BusinessException("UPLOAD_MERGE_FAILED", "上传分片合并失败");
+        }
+        if (actualSize != declaredSize) {
+            throw new BusinessException("UPLOAD_FILE_SIZE_MISMATCH", "合并文件大小与声明不一致");
+        }
+        if (actualSize > MAX_FILE_SIZE) {
+            throw new BusinessException("UPLOAD_FILE_TOO_LARGE", "单文件最大允许 128MB");
+        }
+        String normalizedMime = normalizeMime(mimeType);
+        try (java.io.InputStream input = java.nio.file.Files.newInputStream(file)) {
+            if (com.noteweave.source.SourceMediaTypes.isMedia(normalizedMime)) {
+                // 音视频是二进制内容，只核对文件头
+                requireMediaSignature(normalizedMime, input.readNBytes(16));
+                return;
+            }
+            if ("application/pdf".equals(normalizedMime)) {
+                if (!hasPdfSignature(input.readNBytes(5))) {
+                    throw new BusinessException("UPLOAD_PDF_SIGNATURE_INVALID", "PDF 文件头无效");
+                }
+                return;
+            }
+            validateUtf8Text(input);
+        } catch (java.io.IOException ex) {
+            throw new BusinessException("UPLOAD_MERGE_FAILED", "上传分片合并失败");
+        }
+        if (!EXTENSION_MIME.containsValue(normalizedMime)) {
+            throw new BusinessException("UPLOAD_FILE_TYPE_UNSUPPORTED", "不支持该文件类型");
+        }
+    }
+
+    /** 分块检查 NUL 字节并做严格的 UTF-8 解码；跨块的多字节字符由解码器保留到下一块。 */
+    private void validateUtf8Text(java.io.InputStream input) throws java.io.IOException {
+        java.nio.charset.CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT);
+        byte[] block = new byte[64 * 1024];
+        ByteBuffer pending = ByteBuffer.allocate(block.length + 8);
+        java.nio.CharBuffer sink = java.nio.CharBuffer.allocate(block.length);
+        int read;
+        while ((read = input.read(block)) != -1) {
+            if (containsNul(block, read)) {
+                throw new BusinessException("UPLOAD_BINARY_CONTENT_REJECTED", "文本资料不能包含 NUL 字节");
+            }
+            pending.put(block, 0, read);
+            pending.flip();
+            decodeInto(decoder, pending, sink, false);
+            pending.compact();
+        }
+        pending.flip();
+        decodeInto(decoder, pending, sink, true);
+        sink.clear();
+        if (decoder.flush(sink).isError()) {
+            throw new BusinessException("UPLOAD_TEXT_ENCODING_INVALID", "文本资料必须使用有效 UTF-8 编码");
+        }
+    }
+
+    private void decodeInto(java.nio.charset.CharsetDecoder decoder, ByteBuffer input,
+                            java.nio.CharBuffer sink, boolean endOfInput) {
+        while (true) {
+            sink.clear();
+            java.nio.charset.CoderResult result = decoder.decode(input, sink, endOfInput);
+            if (result.isError()) {
+                throw new BusinessException("UPLOAD_TEXT_ENCODING_INVALID", "文本资料必须使用有效 UTF-8 编码");
+            }
+            if (result.isUnderflow()) {
+                return;
+            }
+        }
+    }
+
+    private boolean containsNul(byte[] content, int length) {
+        for (int index = 0; index < length; index++) {
+            if (content[index] == 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void requireMediaSignature(String mimeType, byte[] head) {
+        if (!com.noteweave.source.SourceMediaTypes.hasSignature(mimeType, head)) {
+            throw new BusinessException("UPLOAD_MEDIA_SIGNATURE_INVALID", "音视频文件头与声明的格式不符");
         }
     }
 

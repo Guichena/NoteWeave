@@ -1,0 +1,79 @@
+{
+  "schema_version": "context-v2-gold-v1",
+  "annotation_note": "Synthetic cases. Raw tail stays continuous; excluding a topic means excluding its summary as evidence, not erasing recent raw messages.",
+  "cases": [
+    {
+      "id": "topic-return-a-b-a", "scenario": "A_TO_B_TO_A",
+      "messages": [
+        {"id":"a1","seq":1,"topic":"cache","text":"解释缓存一致性。"},
+        {"id":"a2","seq":2,"topic":"cache","text":"重点是写入顺序。"},
+        {"id":"b3","seq":3,"topic":"travel","text":"改聊台南旅行。"},
+        {"id":"b4","seq":4,"topic":"travel","text":"住两晚。"},
+        {"id":"b5","seq":5,"topic":"travel","text":"第一天看古迹。"},
+        {"id":"b6","seq":6,"topic":"travel","text":"第二天吃小吃。"},
+        {"id":"b7","seq":7,"topic":"travel","text":"坐火车。"},
+        {"id":"b8","seq":8,"topic":"travel","text":"预算三千。"},
+        {"id":"b9","seq":9,"topic":"travel","text":"不要开车。"},
+        {"id":"b10","seq":10,"topic":"travel","text":"住车站附近。"},
+        {"id":"a11","seq":11,"topic":"cache","text":"回到缓存一致性，第二种写入顺序呢？"}
+      ],
+      "constraints": [], "memory_revisions": [],
+      "expected": {"raw_tail_ids":["b4","b5","b6","b7","b8","b9","b10","a11"],"include_topic_segment_ids":["cache-1-2"],"exclude_topic_segment_ids":["travel-3-10"],"include_constraint_ids":[],"exclude_constraint_ids":[],"include_memory_revision_ids":[],"replay_availability":"FULL"}
+    },
+    {
+      "id": "similar-entities-distinct-topic", "scenario": "SIMILAR_ENTITIES_DISTINCT_TOPIC",
+      "messages": [
+        {"id":"s1","seq":1,"topic":"java-memory","text":"Java 堆内存怎么分配？"},
+        {"id":"s2","seq":2,"topic":"java-memory","text":"对象什么时候回收？"},
+        {"id":"s3","seq":3,"topic":"personal-memory","text":"我的学习记忆计划怎么安排？"},
+        {"id":"s4","seq":4,"topic":"personal-memory","text":"每周复习几次？"}
+      ],
+      "constraints": [], "memory_revisions": [],
+      "expected": {"raw_tail_ids":["s1","s2","s3","s4"],"include_topic_segment_ids":["personal-memory-3-4"],"exclude_topic_segment_ids":["java-memory-1-2"],"include_constraint_ids":[],"exclude_constraint_ids":[],"include_memory_revision_ids":[],"replay_availability":"FULL"}
+    },
+    {
+      "id": "negation-corrects-old-rule", "scenario": "NEGATION_AND_CORRECTION",
+      "messages": [
+        {"id":"n1","seq":1,"topic":"report","text":"这份报告用英文。"},
+        {"id":"n2","seq":2,"topic":"report","text":"先列三点。"},
+        {"id":"n3","seq":3,"topic":"report","text":"更正：不要英文，改用中文。"}
+      ],
+      "constraints": [
+        {"id":"language-english","source_message_id":"n1","scope":"CURRENT_REPORT","status":"REVOKED","superseded_by":"language-chinese"},
+        {"id":"language-chinese","source_message_id":"n3","scope":"CURRENT_REPORT","status":"ACTIVE"}
+      ], "memory_revisions": [],
+      "expected": {"raw_tail_ids":["n1","n2","n3"],"include_topic_segment_ids":[],"exclude_topic_segment_ids":[],"include_constraint_ids":["language-chinese"],"exclude_constraint_ids":["language-english"],"include_memory_revision_ids":[],"replay_availability":"FULL"}
+    },
+    {
+      "id": "cross-topic-format-preference", "scenario": "CROSS_TOPIC_FORMAT_CONSTRAINT",
+      "messages": [
+        {"id":"f1","seq":1,"topic":"global","text":"以后解释技术问题先给结论。"},
+        {"id":"f2","seq":2,"topic":"database","text":"解释索引选择。"},
+        {"id":"f3","seq":3,"topic":"network","text":"现在解释 TCP 重传。"}
+      ],
+      "constraints": [{"id":"conclusion-first","source_message_id":"f1","scope":"TECHNICAL_ANSWERS","status":"ACTIVE"}],
+      "memory_revisions": [{"id":"approved-format-rev-2","review_status":"APPROVED","scope":"TECHNICAL_ANSWERS"}],
+      "expected": {"raw_tail_ids":["f1","f2","f3"],"include_topic_segment_ids":[],"exclude_topic_segment_ids":["database-2-2"],"include_constraint_ids":["conclusion-first"],"exclude_constraint_ids":[],"include_memory_revision_ids":["approved-format-rev-2"],"replay_availability":"FULL"}
+    },
+    {
+      "id": "summary-lag-keeps-complete-raw", "scenario": "SUMMARY_LAG",
+      "messages": [
+        {"id":"l1","seq":1,"topic":"ledger","text":"第一步。"},{"id":"l2","seq":2,"topic":"ledger","text":"第二步。"},{"id":"l3","seq":3,"topic":"ledger","text":"第三步。"},
+        {"id":"l4","seq":4,"topic":"ledger","text":"第四步。"},{"id":"l5","seq":5,"topic":"ledger","text":"第五步。"},{"id":"l6","seq":6,"topic":"ledger","text":"第六步。"},
+        {"id":"l7","seq":7,"topic":"ledger","text":"第七步。"},{"id":"l8","seq":8,"topic":"ledger","text":"第八步。"},{"id":"l9","seq":9,"topic":"ledger","text":"第九步。"}
+      ],
+      "constraints": [], "memory_revisions": [],
+      "expected": {"raw_tail_ids":["l1","l2","l3","l4","l5","l6","l7","l8","l9"],"include_topic_segment_ids":[],"exclude_topic_segment_ids":[],"include_constraint_ids":[],"exclude_constraint_ids":[],"include_memory_revision_ids":[],"degradation_reason":"SUMMARY_NOT_READY","replay_availability":"FULL"}
+    },
+    {
+      "id": "deleted-source-redacts-replay", "scenario": "DELETION_AND_REDACTION",
+      "messages": [
+        {"id":"d1","seq":1,"topic":"private","text":"[deleted]"},
+        {"id":"d2","seq":2,"topic":"private","text":"这条消息仍在。"}
+      ],
+      "constraints": [{"id":"derived-from-d1","source_message_id":"d1","scope":"CONVERSATION","status":"REVOKED"}],
+      "memory_revisions": [],
+      "expected": {"raw_tail_ids":["d1","d2"],"include_topic_segment_ids":[],"exclude_topic_segment_ids":["private-1-2-stale"],"include_constraint_ids":[],"exclude_constraint_ids":["derived-from-d1"],"include_memory_revision_ids":[],"replay_availability":"METADATA_ONLY"}
+    }
+  ]
+}

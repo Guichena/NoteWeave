@@ -38,6 +38,7 @@ class ResearchAgentCheckpointHydrationCorrectnessTest {
     @Autowired private ResearchAgentCoordinatorSnapshotService snapshots;
     @Autowired private ResearchRunCommandService commandService;
     @Autowired private ObjectStorage storage;
+    @Autowired private ResearchCheckpointStore checkpointStore;
     @Autowired private PlatformTransactionManager transactionManager;
 
     private TransactionTemplate transactions;
@@ -81,6 +82,62 @@ class ResearchAgentCheckpointHydrationCorrectnessTest {
                 select count(*) from research_run
                 where id = ? and hydrated_from_research_run_id is null and hydrated_from_checkpoint_seq is null
                 """, Integer.class, secondDescendant)).isEqualTo(1);
+    }
+
+    /**
+     * Real ledgers carry decimals (confidence 0.90) and usually a later LOCAL_REPAIR plan row. The
+     * digest must survive the JSON round trip, and the descendant must get the base matrix plan.
+     */
+    @Test
+    void snapshotWithDecimalsAndARepairPlanHydratesTheBaseMatrix() {
+        Fixture fixture = seedHydratableRun(true, true);
+        jdbcTemplate.update("update research_cell set confidence_score = 0.90 where research_run_id = ?",
+                fixture.runId());
+        String basePlan = "{\"rows\":[{\"key\":\"subject\",\"label\":\"Subject\"}],"
+                + "\"columns\":[{\"key\":\"answer\",\"label\":\"Answer\"},{\"key\":\"limitations\",\"label\":\"Limitations\"}],"
+                + "\"cell_count\":2,\"bounded\":false,\"reason_codes\":[],\"planner_version\":\"intent-matrix.v2\"}";
+        jdbcTemplate.update("""
+                insert into research_matrix_plan(id, research_run_id, planner_version, plan_mode, plan_status,
+                    row_count, column_count, cell_count, bounded, reason_codes_json, plan_json, plan_digest, created_at)
+                values (?, ?, 'intent-matrix.v2', 'INTENT_MATRIX_V2', 'ACTIVE', 1, 2, 2, false, '[]', ?, ?,
+                    timestampadd(second, -10, current_timestamp))
+                """, Ids.newId(), fixture.runId(), basePlan, "sha256:" + "4".repeat(64));
+        jdbcTemplate.update("""
+                insert into research_matrix_plan(id, research_run_id, planner_version, plan_mode, plan_status,
+                    row_count, column_count, cell_count, bounded, reason_codes_json, plan_json, plan_digest)
+                values (?, ?, 'local-replan.v1', 'LOCAL_REPAIR', 'ACTIVE', 1, 2, 2, false, '[]',
+                    '{"schema_version":"research-local-replan.v1","affected_cells":["subject:answer"]}', ?)
+                """, Ids.newId(), fixture.runId(), "sha256:" + "5".repeat(64));
+        String checkpointId = insertCheckpoint(fixture.runId(), 2);
+        snapshotCompiler.compile(checkpointId, 2, new ResearchBudgetAndCheckpointService.CheckpointCommand(
+                fixture.runId(), 1, 1, 0, 0, LEDGER_DIGEST, 0L, 0L, 0L, Map.of(), Map.of()));
+        String descendant = seedRun(fixture.workspaceId(), true);
+
+        transactions.executeWithoutResult(status ->
+                hydrator.hydrate(fixture.workspaceId(), fixture.runId(), 2, descendant));
+
+        assertThat(cells(descendant)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "select cell_count from research_matrix_plan where research_run_id = ?", Integer.class, descendant))
+                .isEqualTo(2);
+    }
+
+    /** Incremental Runs expose their hydration snapshots as resumable checkpoints, and only those. */
+    @Test
+    void incrementalRunsListTheirLedgerSnapshotsAsResumableCheckpoints() {
+        Fixture authorized = seedHydratableRun(true, false);
+        Fixture unauthorized = seedHydratableRun(false, false);
+
+        List<ResearchCheckpointRecord> listed = checkpointStore.findAll(authorized.runId());
+        assertThat(listed).extracting(ResearchCheckpointRecord::checkpointNo).containsExactly(1);
+        assertThat(listed).extracting(ResearchCheckpointRecord::snapshotType)
+                .containsExactly(ResearchCheckpointStore.HYDRATION_SNAPSHOT_TYPE);
+        assertThat(checkpointStore.findAll(unauthorized.runId()))
+                .as("a checkpoint the Run cannot hydrate from must not be offered for resume")
+                .isEmpty();
+        assertThat(checkpointStore.get(authorized.workspaceId(), authorized.runId(), 1).snapshotType())
+                .isEqualTo(ResearchCheckpointStore.HYDRATION_SNAPSHOT_TYPE);
+        assertThat(checkpointStore.hydrationSnapshotPayload(authorized.runId(), 1)).contains("ledger_digest");
     }
 
     /**

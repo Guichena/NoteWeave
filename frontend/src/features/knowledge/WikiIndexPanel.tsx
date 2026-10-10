@@ -1,147 +1,126 @@
 import { memo } from "react";
-import { PanelRightOpen } from "lucide-react";
+import { LayoutGrid, Search } from "lucide-react";
+import { formatWikiKind } from "./wikiUtils";
+import type { WikiGraphMode } from "./model";
+
+type WikiIndexPage = {
+  item_id: string;
+  title: string;
+  page_kind?: string;
+  latest_version_no: number;
+  outgoing_count: number;
+  backlink_count: number;
+  citation_count: number;
+  unresolved_count: number;
+};
 
 type WikiIndexPanelProps = {
   isBusy: boolean;
-  wikiHome: { pages: Array<{ item_id: string; title: string; page_kind?: string; latest_version_no: number; outgoing_count: number; backlink_count: number; citation_count: number; unresolved_count: number }> };
-  wikiIndex?: {
-    pending_task_count?: number;
-    auto_fixable_issue_count?: number;
-    manual_review_issue_count?: number;
-  } | null;
-  relationsOpen?: boolean;
-  onOpenRelations?: () => void;
+  wikiHome: { pages: WikiIndexPage[] };
   wikiSearch: string;
   setWikiSearch: (value: string) => void;
   wikiKindFilter: string;
   setWikiKindFilter: (value: string) => void;
   availableWikiKinds: string[];
   visibleWikiPages: Array<{ item_id: string }>;
-  groupedWikiPages: Record<string, Array<{
-    item_id: string;
-    title: string;
-    page_kind?: string;
-    latest_version_no: number;
-    outgoing_count: number;
-    backlink_count: number;
-    citation_count: number;
-    unresolved_count: number;
-  }>>;
+  groupedWikiPages: Record<string, WikiIndexPage[]>;
   selectedWikiItemId?: string | null;
   selectedWikiPage?: { item_id: string } | null;
   wikiRebuildAdvice?: { message?: string } | null;
   openWikiIndex: () => void | Promise<void>;
-  selectWikiPage: (page: any) => void | Promise<void>;
+  selectWikiPage: (page: any, nextGraphMode?: WikiGraphMode) => void | Promise<void>;
 };
 
+/** Wiki 左侧目录：只保留找页面需要的东西——搜索、类型筛选、分组列表。 */
 export const WikiIndexPanel = memo(function WikiIndexPanel(props: WikiIndexPanelProps) {
-  const pending = props.wikiIndex?.pending_task_count ?? 0;
-  const autoFix = props.wikiIndex?.auto_fixable_issue_count ?? 0;
-  const manual = props.wikiIndex?.manual_review_issue_count ?? 0;
+  const pageCount = props.wikiHome.pages.length;
 
   return (
-    <aside className="wiki-index">
+    <aside className="wiki-index" aria-label="知识库目录">
       <div className="wiki-index-header">
-        <p className="section-label">Wiki Index</p>
-        <div className="wiki-index-title-row">
-          <h2 className="wiki-index-title">知识网络</h2>
-          <button
-            type="button"
-            className="wiki-relations-toggle secondary-button"
-            aria-label="打开关系面板"
-            aria-controls="wiki-relations-panel"
-            aria-expanded={props.relationsOpen}
-            title="打开关系面板"
-            onClick={props.onOpenRelations}
-          >
-            <PanelRightOpen size={17} aria-hidden="true" />
-          </button>
-        </div>
-        <p className="wiki-index-scope">当前工作台 · 独立知识索引</p>
+        <h2 className="wiki-index-title">知识库</h2>
+        <span>{pageCount} 页</span>
       </div>
-      <div className="wiki-inline-pills">
-        <span className={`status-chip${pending > 0 ? " tone-waiting" : ""}`}>待处理 {pending}</span>
-        <span className={`status-chip${autoFix > 0 ? " tone-active" : ""}`}>可自动修复 {autoFix}</span>
-        <span className={`status-chip${manual > 0 ? " tone-warn" : ""}`}>人工确认 {manual}</span>
-      </div>
-      <button
-        className={!props.selectedWikiItemId ? "active nav-button" : "nav-button"}
-        disabled={props.isBusy}
-        onClick={() => void props.openWikiIndex()}
-      >
-        <span>工作台总览</span>
-        <small>自动构建 · 页面分布 · 维护提醒</small>
-      </button>
+
       <label className="wiki-search-field">
+        <Search size={15} aria-hidden="true" />
         <span className="sr-only">搜索 Wiki 页面</span>
         <input
           value={props.wikiSearch}
           onChange={(event) => props.setWikiSearch(event.target.value)}
-          placeholder="搜索页面标题或摘要"
+          placeholder="搜索页面"
           aria-label="搜索 Wiki 页面"
         />
       </label>
-      <div className="wiki-kind-filter" role="group" aria-label="页面类型筛选">
-        <button
-          type="button"
-          className={props.wikiKindFilter === "ALL" ? "active filter-pill" : "filter-pill"}
-          disabled={props.isBusy}
-          onClick={() => props.setWikiKindFilter("ALL")}
-        >
-          全部
-        </button>
-        {props.availableWikiKinds.map((kind) => (
+
+      {props.availableWikiKinds.length > 1 ? (
+        <div className="wiki-kind-filter" role="group" aria-label="页面类型筛选">
           <button
             type="button"
-            key={kind}
-            className={props.wikiKindFilter === kind ? "active filter-pill" : "filter-pill"}
+            className={props.wikiKindFilter === "ALL" ? "wiki-kind-chip active" : "wiki-kind-chip"}
             disabled={props.isBusy}
-            onClick={() => props.setWikiKindFilter(kind)}
+            onClick={() => props.setWikiKindFilter("ALL")}
           >
-            {kind}
+            全部
           </button>
-        ))}
-      </div>
+          {props.availableWikiKinds.map((kind) => (
+            <button
+              type="button"
+              key={kind}
+              className={props.wikiKindFilter === kind ? "wiki-kind-chip active" : "wiki-kind-chip"}
+              disabled={props.isBusy}
+              onClick={() => props.setWikiKindFilter(kind)}
+            >
+              {formatWikiKind(kind)}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      <button
+        type="button"
+        className={!props.selectedWikiItemId ? "wiki-index-home active" : "wiki-index-home"}
+        disabled={props.isBusy}
+        onClick={() => void props.openWikiIndex()}
+      >
+        <LayoutGrid size={15} aria-hidden="true" />
+        <span>总览</span>
+      </button>
+
       <div className="wiki-page-list">
-        {props.wikiHome.pages.length === 0 && (
-          <div className="empty-panel">
-            <strong>还没有 Wiki 页面</strong>
-            <p>
-              {props.wikiRebuildAdvice?.message
-                ?? "在产物栏开启 Wiki 构建，或从资料上传后自动生成知识页。"}
-            </p>
-          </div>
-        )}
-        {props.wikiHome.pages.length > 0 && props.visibleWikiPages.length === 0 && (
-          <div className="empty-panel">
-            <strong>没有匹配页面</strong>
-            <p>试试清空搜索词，或切换页面类型筛选。</p>
-          </div>
-        )}
+        {pageCount === 0 ? (
+          <p className="wiki-index-empty">
+            {props.wikiRebuildAdvice?.message ?? "还没有 Wiki 页面。"}
+          </p>
+        ) : null}
+        {pageCount > 0 && props.visibleWikiPages.length === 0 ? (
+          <p className="wiki-index-empty">没有匹配的页面，试试清空搜索或切换类型。</p>
+        ) : null}
         {Object.entries(props.groupedWikiPages).map(([kind, pages]) => (
           <div key={`group-${kind}`} className="wiki-page-group">
             <div className="wiki-page-group-title">
-              <strong>{kind}</strong>
-              <small>{pages.length} 页</small>
+              <span>{formatWikiKind(kind)}</span>
+              <small>{pages.length}</small>
             </div>
-            {pages.map((page) => (
-              <button
-                type="button"
-                key={page.item_id}
-                className={page.item_id === props.selectedWikiPage?.item_id ? "active wiki-page-card" : "wiki-page-card"}
-                disabled={props.isBusy}
-                onClick={() => void props.selectWikiPage(page)}
-              >
-                <span className="wiki-page-card-title">{page.title}</span>
-                <small>{page.page_kind || "TOPIC"} · v{page.latest_version_no}</small>
-                <small className="wiki-page-card-meta">
-                  出链 {page.outgoing_count} · 反链 {page.backlink_count} · 引用 {page.citation_count}
+            {pages.map((page) => {
+              const active = page.item_id === props.selectedWikiPage?.item_id;
+              return (
+                <button
+                  type="button"
+                  key={page.item_id}
+                  className={active ? "wiki-page-card active" : "wiki-page-card"}
+                  aria-current={active ? "page" : undefined}
+                  disabled={props.isBusy}
+                  title={page.title}
+                  onClick={() => void props.selectWikiPage(page, "ego")}
+                >
+                  <span className="wiki-page-card-title">{page.title}</span>
                   {page.unresolved_count > 0 ? (
-                    <span className="wiki-break-hint"> · 断链 {page.unresolved_count}</span>
+                    <span className="wiki-page-card-flag" title={`${page.unresolved_count} 个断链`} aria-label={`${page.unresolved_count} 个断链`} />
                   ) : null}
-                </small>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         ))}
       </div>

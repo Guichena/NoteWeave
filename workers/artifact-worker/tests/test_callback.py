@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import json
+import hashlib
+from io import BytesIO
+from types import SimpleNamespace
 import pytest
+from PIL import Image
+from pypdf import PdfReader
 
 import app.callback as callback_module
 from app.callback import (
     JavaArtifactCallbackClient,
     _dispatch_system_provider_operations,
     acknowledge_acquisition_operation_with_callbacks,
+    resume_waiting_artifact_task_with_callbacks,
     run_artifact_task_with_callbacks,
     sanitize_error_message,
 )
@@ -22,8 +28,13 @@ from app.capability_provider import (
     reset_capability_provider_status,
 )
 from app.capability_wait_queue import clear_waiting_tasks, get_waiting_task
-from app.models import ArtifactProgressEvent, ArtifactTaskInput, ArtifactTaskResult
+from app.models import ArtifactProgressEvent, ArtifactTaskInput, ArtifactTaskResult, SourceScopeItem
 from app.runner import run_artifact_task
+from app.compiler import build_execution_plan
+from app.content_runtime import build_canonical_content_objects, build_content_acquisition_plan
+from app.video_material_bundle import frozen_video_input_digest
+from app.video_subtitle_material import subtitle_only_bundle
+from app.video_material_bundle import VideoMaterialBundleV1
 
 
 def _build_resume_task_input() -> ArtifactTaskInput:
@@ -151,6 +162,306 @@ class FakeCallbackClient:
                 "error_message": error_message,
             }
         )
+
+
+def _ack_frame_observation(task_id: str, client, *, frames=None, defer_resume=False):
+    entries = [] if frames is None else frames
+    operation = next(op for op in list_acquisition_operations(task_id=task_id)
+                     if op["operation_key"] == "ANALYZE_FRAMES")
+    token = dispatch_acquisition_operation(operation["request_id"])["operation"]["callback_token"]
+    response = acknowledge_acquisition_operation_with_callbacks(
+        callback_token=token, final_status="ACKNOWLEDGED",
+        provider_payload={"schema_version": "frame-observation-batch-v1",
+                          "task_id": task_id, "frames": entries,
+                          "coverage_gaps": ["NO_FRAMES"] if not entries else []},
+        client=client, defer_resume=defer_resume,
+    )
+    return operation, response
+
+
+def test_video_material_client_publishes_and_reads_frozen_bundle(monkeypatch) -> None:
+    bundle = subtitle_only_bundle(
+        bundle_id="bundle-1", bundle_version=1, workspace_id="ws-1",
+        bvid="BV1234567890", part=2, duration_ms=5000,
+        input_digest="a" * 64, subtitle_source="MANUAL",
+        srt_text="1\n00:00:00,000 --> 00:00:02,000\noriginal",
+    )
+
+
+    requests = []
+
+    class FakeResponse:
+        def __init__(self, data):
+            self.data = data
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def read(self):
+            return json.dumps({"success": True, "data": self.data}).encode("utf-8")
+
+    def fake_urlopen(req, timeout):
+        requests.append(req)
+        if req.get_method() == "GET":
+            return FakeResponse(bundle.model_dump(mode="json"))
+        return FakeResponse({
+            "id": "material-1", "task_id": "task-1", "workspace_id": "ws-1",
+            "bundle_id": bundle.bundle_id, "bundle_version": 1,
+            "content_digest": bundle.content_digest(),
+        })
+
+    monkeypatch.setattr(callback_module, "credential_safe_urlopen", fake_urlopen)
+    client = JavaArtifactCallbackClient("http://java-host:8081", delivery_token="delivery-1")
+    receipt = client.publish_video_material("task-1", bundle)
+    assert receipt["id"] == "material-1"
+    assert client.fetch_video_material("task-1") == bundle
+    assert client.fetch_video_material("task-1", "material-1") == bundle
+    assert [req.get_method() for req in requests] == ["POST", "GET", "GET"]
+    assert all("/artifact-tasks/task-1/video-material" in req.full_url for req in requests)
+    assert requests[-1].full_url.endswith("/video-material/references/material-1")
+    assert all(req.get_header("X-noteweave-outbox-delivery-token") == "delivery-1"
+               for req in requests)
+    assert json.loads(requests[0].data)["content_digest"] == bundle.content_digest()
+
+
+def test_video_acquisition_policy_is_persisted_on_operations() -> None:
+    clear_acquisition_runtime()
+    clear_waiting_tasks()
+    try:
+        task = _build_waiting_task_input()
+        task.input_payload.inputs.update({"frame_density": "HIGH", "asr_fallback": "DENY"})
+        _, result = run_artifact_task(task)
+        assert result.job_snapshot.status == "WAITING_FOR_PROVIDER"
+        operations = list_acquisition_operations(task_id=task.task_id)
+        transcript = next(op for op in operations if op["operation_key"] == "EXTRACT_TRANSCRIPT")
+        frames = next(op for op in operations if op["operation_key"] == "CAPTURE_FRAMES")
+        assert transcript["tool_arguments"]["fallback_to_transcription"] is False
+        assert transcript["tool_arguments"]["allow_auto_subtitles"] is True
+        assert frames["tool_arguments"]["interval_ms"] == 15_000
+        assert frames["tool_arguments"]["max_frames"] == 32
+        assert frames["tool_arguments"]["output_dir"].replace("\\", "/").endswith(
+            "frames/task-a-waiting")
+        second = _build_waiting_task_input()
+        second.task_id = "task-b-waiting"
+        _, second_result = run_artifact_task(second)
+        assert second_result.job_snapshot.status == "WAITING_FOR_PROVIDER"
+        second_frames = next(op for op in list_acquisition_operations(task_id=second.task_id)
+                             if op["operation_key"] == "CAPTURE_FRAMES")
+        assert second_frames["tool_arguments"]["output_dir"] != frames["tool_arguments"]["output_dir"]
+    finally:
+        clear_acquisition_runtime()
+        clear_waiting_tasks()
+
+
+def test_acknowledged_video_preview_cannot_complete_without_frozen_material(monkeypatch) -> None:
+    task = _build_waiting_task_input()
+    task.input_snapshot_id = "snapshot-preview"
+    _, result = run_artifact_task(_build_resume_task_input())
+    operations = [
+        {"operation_key": "EXTRACT_TRANSCRIPT", "request_id": "subtitle-1"},
+        {"operation_key": "CAPTURE_FRAMES", "server_id": callback_module.SYSTEM_BILIBILI_SERVER_ID,
+         "request_id": "frames-1"},
+    ]
+    monkeypatch.setattr(callback_module, "list_acquisition_operations", lambda **_: operations)
+    monkeypatch.setattr(callback_module, "get_acquisition_result_payload", lambda request_id: {
+        "subtitle-1": {"subtitle_preview": ["Only a preview; no verified SRT or video metadata"]},
+        "frames-1": {"normalized_video_id": "BV1NoteWeaveDemo", "part": 1,
+                     "duration_ms": 5000, "frames": [], "files": [],
+                     "coverage_gaps": ["NO_FRAMES"], "missing_requested_ms": []},
+    }[request_id])
+    client = JavaArtifactCallbackClient("http://java-host:8081", delivery_token="delivery-1")
+    with pytest.raises(ValueError, match="no complete, verifiable subtitle material"):
+        callback_module._attach_frozen_video_material(task.task_id, task, result, client)
+    monkeypatch.setattr(callback_module, "get_acquisition_result_payload", lambda request_id: None)
+    with pytest.raises(ValueError, match="no acknowledged provider payload"):
+        callback_module._attach_frozen_video_material(task.task_id, task, result, client)
+
+
+def test_resume_reports_invalid_frozen_material_as_task_failure(monkeypatch) -> None:
+    _, result = run_artifact_task(_build_resume_task_input())
+    client = FakeCallbackClient(_build_resume_task_input())
+    released = []
+    monkeypatch.setattr(callback_module, "get_waiting_task", lambda task_id: None)
+    monkeypatch.setattr(callback_module, "wake_waiting_task", lambda *_, **__: ([], result))
+    monkeypatch.setattr(callback_module, "cache_waiting_task_delivery", lambda *_, **__: None)
+    monkeypatch.setattr(callback_module, "release_waiting_task_claim", released.append)
+
+    def reject_material(*_):
+        raise ValueError("acknowledged video transcript has no complete, verifiable subtitle material")
+
+    monkeypatch.setattr(callback_module, "_emit_callbacks_for_result", reject_material)
+    with pytest.raises(ValueError, match="no complete, verifiable subtitle material"):
+        resume_waiting_artifact_task_with_callbacks("task-a-callback", client=client)
+    assert client.failures[0]["phase"] == "WORKER_RESUME"
+    assert client.failures[0]["error_code"] == "VALUEERROR"
+    assert released == ["task-a-callback"]
+
+
+def test_fetch_frozen_material_frames_checks_scope_media_type_and_bytes(monkeypatch) -> None:
+    output = BytesIO()
+    Image.new("RGB", (2, 2), "blue").save(output, format="PNG")
+    image = output.getvalue()
+    digest = hashlib.sha256(image).hexdigest()
+    bundle = VideoMaterialBundleV1.model_validate({
+        "bundle_id": "bundle-1", "bundle_version": 1, "workspace_id": "ws-1",
+        "bvid": "BV1234567890", "part": 2, "duration_ms": 5000,
+        "input_digest": "a" * 64, "subtitle_source": "NONE",
+        "coverage_gaps": ["NO_SUBTITLE"],
+        "files": [{"file_id": "frame1", "role": "VIDEO_FRAME", "media_type": "image/png",
+                   "size_bytes": len(image), "checksum_sha256": digest}],
+        "frames": [{"frame_id": "f1", "part": 2, "at_ms": 1000,
+                    "file_id": "frame1", "checksum_sha256": digest}],
+        "knowledge_nodes": [{"node_id": "n1", "title": "Frame evidence",
+                             "start_ms": 0, "end_ms": 2000, "frame_ids": ["f1"]}],
+    })
+    returned = {"bytes": image, "media_type": "image/png"}
+    requests = []
+
+    class FakeResponse:
+        @property
+        def headers(self):
+            return {"Content-Type": returned["media_type"]}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def read(self, limit):
+            return returned["bytes"][:limit]
+
+    def fake_urlopen(req, timeout):
+        requests.append(req)
+        return FakeResponse()
+
+    monkeypatch.setattr(callback_module, "credential_safe_urlopen", fake_urlopen)
+    client = JavaArtifactCallbackClient(
+        "http://java-host:8081", internal_auth_token="internal-1", delivery_token="delivery-1",
+    )
+    assert client.fetch_video_material_files("task-1", bundle) == {"frame1": image}
+    assert client.fetch_video_material_files("task-1", bundle, "bundle-row-1") == {"frame1": image}
+    assert requests[0].full_url.endswith("/artifact-tasks/task-1/video-material/files/frame1")
+    assert requests[1].full_url.endswith(
+        "/artifact-tasks/task-1/video-material/references/bundle-row-1/files/frame1")
+    assert requests[0].get_header("X-noteweave-internal-token") == "internal-1"
+    assert requests[0].get_header("X-noteweave-outbox-delivery-token") == "delivery-1"
+    returned["bytes"] = b"wrong"
+    with pytest.raises(ValueError, match="bytes do not match"):
+        client.fetch_video_material_files("task-1", bundle)
+    returned["bytes"] = image
+    returned["media_type"] = "image/jpeg"
+    with pytest.raises(ValueError, match="media type"):
+        client.fetch_video_material_files("task-1", bundle)
+
+
+@pytest.mark.parametrize("provider_server", ["builtin-bilibili-mcp", "custom-subtitle-mcp"])
+def test_verified_provider_material_is_bound_to_candidate(tmp_path, monkeypatch,
+                                                          provider_server) -> None:
+    monkeypatch.setenv("NOTEWEAVE_MCP_SANDBOX_ROOT", str(tmp_path))
+    subtitle = tmp_path / "part-2.srt"
+    subtitle.write_text("1\n00:00:00,000 --> 00:00:02,000\nverified subtitle", encoding="utf-8")
+    task = _build_waiting_task_input()
+    task.input_snapshot_id = "snapshot-1"
+    task.input_payload.inputs = {
+        "url": "https://www.bilibili.com/video/BV1234567890?p=2", "language": "zh-CN",
+    }
+    payload = {"normalized_video_id": "BV1234567890", "metadata": {"duration": 5,
+               "webpage_url": "https://www.bilibili.com/video/BV1234567890?p=2"},
+               "acquisition_mode": "remote_cc_subtitle_fetch",
+               "selected_subtitle_path": str(subtitle)}
+    monkeypatch.setattr(callback_module, "list_acquisition_operations", lambda **_: [{
+        "server_id": provider_server, "operation_key": "EXTRACT_TRANSCRIPT",
+        "request_id": "request-1",
+    }])
+    monkeypatch.setattr(callback_module, "get_acquisition_result_payload", lambda _: payload)
+    published = []
+
+    class FakeJavaClient(JavaArtifactCallbackClient):
+        def publish_video_material(self, task_id, bundle):
+            published.append(bundle)
+            return {"id": "material-1", "task_id": task_id,
+                    "workspace_id": bundle.workspace_id, "bundle_id": bundle.bundle_id,
+                    "bundle_version": bundle.bundle_version,
+                    "content_digest": bundle.content_digest()}
+
+        def fetch_video_knowledge_plan(self, task_id, bundle_row_id):
+            raise callback_module.ArtifactCallbackHttpError(404, "not frozen")
+
+        def publish_video_knowledge_plan(self, task_id, bundle_row_id, plan):
+            plan.verify_against_bundle(published[-1])
+            return {"id": "plan-1", "bundle_row_id": bundle_row_id,
+                    "content_digest": plan.content_digest()}
+
+    result = SimpleNamespace(result_payload={"candidate": {}})
+    callback_module._attach_frozen_video_material(
+        task.task_id, task, result, FakeJavaClient("http://java-host:8081"))
+
+    assert len(published) == 1
+    assert published[0].part == 2
+    assert result.result_payload["knowledge_plan"]["mode"] == "LOCAL_EVIDENCE_INDEX"
+    assert result.result_payload["candidate"]["video_material"] == {
+        "id": "material-1", "bundle_id": "video-material-task-a-waiting",
+        "bundle_version": 1, "content_digest": published[0].content_digest(),
+    }
+
+
+def test_referenced_bundle_frames_add_evidence_section_and_manifest(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("NOTEWEAVE_MCP_SANDBOX_ROOT", str(tmp_path))
+    task = _build_waiting_task_input()
+    task.input_snapshot_id = "child-snapshot"
+    task.input_payload.inputs = {
+        "url": "https://www.bilibili.com/video/BV1234567890?p=2",
+        "video_material_bundle_id": "material-parent",
+    }
+    output = BytesIO()
+    Image.new("RGB", (2, 2), "red").save(output, format="PNG")
+    frame_bytes = output.getvalue()
+    checksum = hashlib.sha256(frame_bytes).hexdigest()
+    bundle = VideoMaterialBundleV1.model_validate({
+        "bundle_id": "bundle-parent", "bundle_version": 1, "workspace_id": task.workspace_id,
+        "bvid": "BV1234567890", "part": 2, "duration_ms": 5000,
+        "input_digest": frozen_video_input_digest("parent-snapshot", {"url": task.input_payload.inputs["url"]}),
+        "subtitle_source": "NONE", "coverage_gaps": ["NO_SUBTITLE"],
+        "files": [{"file_id": "frame1", "role": "VIDEO_FRAME", "media_type": "image/png",
+                   "size_bytes": len(frame_bytes), "checksum_sha256": checksum}],
+        "frames": [{"frame_id": "f1", "part": 2, "at_ms": 1000,
+                    "file_id": "frame1", "checksum_sha256": checksum}],
+        "knowledge_nodes": [{"node_id": "n1", "title": "Verified frame",
+                             "start_ms": 0, "end_ms": 2000, "frame_ids": ["f1"]}],
+    })
+
+    class FakeJavaClient(JavaArtifactCallbackClient):
+        def fetch_video_material(self, task_id, bundle_row_id=""):
+            return bundle
+
+        def fetch_video_material_files(self, task_id, fetched, bundle_row_id=""):
+            fetched.verify_file_bytes(lambda _: frame_bytes)
+            return {"frame1": frame_bytes}
+
+    observed = {}
+
+    def fake_export(**kwargs):
+        observed.update(kwargs)
+        return {"status": "COMPILED", "frame_file_ids": ["frame1"]}
+
+    monkeypatch.setattr(callback_module, "export_artifact_if_required", fake_export)
+    monkeypatch.setattr(callback_module, "build_required_files", lambda markdown, trace: ["verified-pdf"])
+    result = SimpleNamespace(result_title="Course", result_payload={
+        "candidate": {}, "sections": [{"heading": "Introduction", "body": "Text"}],
+        "markdown": "# Course",
+    })
+    callback_module._attach_frozen_video_material(
+        task.task_id, task, result, FakeJavaClient("http://java-host:8081"))
+    assert [section.heading for section in observed["sections"]] == [
+        "Introduction", "Verified frame"]
+    assert "Video frame evidence" in observed["sections"][1].body
+    assert observed["frame_files"]["frame1"].read_bytes() == frame_bytes
+    assert result.result_payload["candidate"]["required_files"] == ["verified-pdf"]
+    assert result.result_payload["candidate"]["video_material"]["id"] == "material-parent"
 
 
 def test_java_artifact_callback_client_should_send_internal_auth_token(monkeypatch) -> None:
@@ -336,12 +647,35 @@ def test_duplicate_acquisition_ack_should_retry_complete_delivery_after_transpor
             ]
         }
 
+        first_ack = acknowledge_acquisition_operation_with_callbacks(
+            callback_token=callback_token, final_status="ACKNOWLEDGED",
+            provider_payload=provider_payload, client=client,
+        )
+        assert first_ack.resumed_tasks[0].status == "WAITING_FOR_PROVIDER"
+        frame_operation = next(operation for operation in
+                               list_acquisition_operations(task_id="task-a-waiting")
+                               if operation["operation_key"] == "CAPTURE_FRAMES")
+        frame_token = dispatch_acquisition_operation(frame_operation["request_id"])["operation"]["callback_token"]
+        frame_payload = {"normalized_video_id": "BV1NoteWeaveDemo", "part": 1,
+                         "duration_ms": 5000, "frames": [], "files": [],
+                         "coverage_gaps": ["NO_FRAMES"], "missing_requested_ms": []}
+
+        frame_ack = acknowledge_acquisition_operation_with_callbacks(
+            callback_token=frame_token, final_status="ACKNOWLEDGED",
+            provider_payload=frame_payload, client=client,
+        )
+        assert frame_ack.resumed_tasks[0].status == "WAITING_FOR_PROVIDER"
+        observation = next(op for op in list_acquisition_operations(task_id="task-a-waiting")
+                           if op["operation_key"] == "ANALYZE_FRAMES")
+        observation_token = dispatch_acquisition_operation(
+            observation["request_id"])["operation"]["callback_token"]
+        observation_payload = {"schema_version": "frame-observation-batch-v1",
+                               "task_id": "task-a-waiting", "frames": [],
+                               "coverage_gaps": ["NO_FRAMES"]}
         with pytest.raises(RuntimeError, match="complete callback unavailable"):
             acknowledge_acquisition_operation_with_callbacks(
-                callback_token=callback_token,
-                final_status="ACKNOWLEDGED",
-                provider_payload=provider_payload,
-                client=client,
+                callback_token=observation_token, final_status="ACKNOWLEDGED",
+                provider_payload=observation_payload, client=client,
             )
 
         waiting_record = get_waiting_task("task-a-waiting")
@@ -350,9 +684,9 @@ def test_duplicate_acquisition_ack_should_retry_complete_delivery_after_transpor
         cached_version_id = cached_delivery["result"]["version_snapshot"]["version_id"]
         client.should_fail_complete = False
         retry_response = acknowledge_acquisition_operation_with_callbacks(
-            callback_token=callback_token,
+            callback_token=observation_token,
             final_status="ACKNOWLEDGED",
-            provider_payload=provider_payload,
+            provider_payload=observation_payload,
             client=client,
         )
     finally:
@@ -370,6 +704,241 @@ def test_duplicate_acquisition_ack_should_retry_complete_delivery_after_transpor
     assert len(client.completed_results) == 1
     assert client.completed_results[0].version_snapshot.version_id == cached_version_id
     assert client.failures == []
+
+
+def test_referenced_video_bundle_uses_frozen_transcript_without_provider_fetch(monkeypatch) -> None:
+    monkeypatch.setenv("NOTEWEAVE_ALLOW_PORTABLE_PDF_FALLBACK", "true")
+    task = _build_waiting_task_input()
+    task.input_snapshot_id = "snapshot-child"
+    task.input_payload.inputs = {
+        "url": "https://www.bilibili.com/video/BV1234567890?p=2",
+        "language": "zh-CN", "video_material_bundle_id": "material-parent",
+    }
+    bundle = subtitle_only_bundle(
+        bundle_id="material-parent-bundle", bundle_version=1,
+        workspace_id=task.workspace_id, bvid="BV1234567890", part=2,
+        duration_ms=10_000, input_digest=frozen_video_input_digest(
+            "snapshot-parent", {"url": task.input_payload.inputs["url"]}),
+        subtitle_source="MANUAL",
+        srt_text="1\n00:00:01,000 --> 00:00:03,000\nFrozen transcript evidence.\n",
+    )
+    task.frozen_video_material = bundle.model_dump(mode="json")
+    plan = build_execution_plan(task)
+    assert plan.content_acquisition_plan.primary_strategy == "FROZEN_VIDEO_MATERIAL"
+    assert "EXTRACT_TRANSCRIPT" not in plan.lazy_loaded_capabilities
+    assert plan.content_acquisition_plan.source_plans[0].planned_operations == ["NORMALIZE_TO_CCO"]
+    content = build_canonical_content_objects(task)
+    assert any(item.kind == "TRANSCRIPT" and "Frozen transcript evidence." in item.plain_text
+               for item in content)
+    _, result = run_artifact_task(task)
+    assert result.job_snapshot.status == "COMPLETED"
+    assert "Frozen transcript evidence." in str(result.result_payload)
+    task.source_scope = [SourceScopeItem(
+        source_id="external-1", title="Additional reading", source_type="URL",
+        source_uri="https://example.com/article",
+    )]
+    mixed_plan = build_content_acquisition_plan(task)
+    assert mixed_plan.primary_strategy == "MIXED_CONTEXT_FUSION"
+    assert mixed_plan.required_capabilities == ["READ_WEB_PAGE"]
+    with pytest.raises(ValueError, match="action_scope_denied"):
+        build_execution_plan(task)
+
+
+def test_host_deferred_provider_ack_resumes_only_after_fenced_resume(monkeypatch) -> None:
+    monkeypatch.setenv("NOTEWEAVE_ALLOW_PORTABLE_PDF_FALLBACK", "true")
+    clear_artifact_repository()
+    clear_acquisition_runtime()
+    clear_waiting_tasks()
+    clear_approval_requests()
+    reset_capability_provider_discovery_status()
+    reset_capability_provider_health_status()
+    reset_capability_provider_approval_status()
+    reset_capability_provider_status()
+    try:
+        client = FakeCallbackClient(_build_waiting_task_input())
+        waiting = run_artifact_task_with_callbacks("task-a-waiting", client)
+        operation = next(op for op in list_acquisition_operations(task_id="task-a-waiting")
+                         if op["operation_key"] == "EXTRACT_TRANSCRIPT")
+        token = dispatch_acquisition_operation(operation["request_id"])["operation"]["callback_token"]
+        ack = acknowledge_acquisition_operation_with_callbacks(
+            callback_token=token, final_status="ACKNOWLEDGED",
+            provider_payload={"subtitle_preview": ["frozen provider result"]},
+            client=client, defer_resume=True,
+        )
+        assert waiting.status == "WAITING_FOR_PROVIDER"
+        assert ack.resumed_tasks == []
+        assert get_waiting_task("task-a-waiting") is not None
+        assert client.completed_results == []
+
+        resumed = resume_waiting_artifact_task_with_callbacks(
+            "task-a-waiting", client=client, request_id=operation["request_id"])
+        assert resumed.status == "WAITING_FOR_PROVIDER"
+        assert client.completed_results == []
+        frames = next(op for op in list_acquisition_operations(task_id="task-a-waiting")
+                      if op["operation_key"] == "CAPTURE_FRAMES")
+        frame_token = dispatch_acquisition_operation(frames["request_id"])["operation"]["callback_token"]
+        acknowledge_acquisition_operation_with_callbacks(
+            callback_token=frame_token, final_status="ACKNOWLEDGED",
+            provider_payload={"normalized_video_id": "BV1NoteWeaveDemo", "part": 1,
+                              "duration_ms": 5000, "frames": [], "files": [],
+                              "coverage_gaps": ["NO_FRAMES"], "missing_requested_ms": []},
+            client=client, defer_resume=True,
+        )
+        after_frames = resume_waiting_artifact_task_with_callbacks(
+            "task-a-waiting", client=client, request_id=frames["request_id"])
+        assert after_frames.status == "WAITING_FOR_PROVIDER"
+        observation, _ = _ack_frame_observation(
+            "task-a-waiting", client, defer_resume=True)
+        final = resume_waiting_artifact_task_with_callbacks(
+            "task-a-waiting", client=client, request_id=observation["request_id"])
+        assert final.status == "COMPLETED"
+        assert len(client.completed_results) == 1
+    finally:
+        clear_artifact_repository()
+        clear_acquisition_runtime()
+        clear_waiting_tasks()
+        clear_approval_requests()
+        reset_capability_provider_discovery_status()
+        reset_capability_provider_health_status()
+        reset_capability_provider_approval_status()
+        reset_capability_provider_status()
+
+
+def test_resumed_video_worker_publishes_full_subtitle_before_candidate_callback(
+    tmp_path, monkeypatch,
+) -> None:
+    monkeypatch.setenv("NOTEWEAVE_ALLOW_PORTABLE_PDF_FALLBACK", "true")
+    monkeypatch.setenv("NOTEWEAVE_MCP_SANDBOX_ROOT", str(tmp_path))
+    dispatched = []
+    monkeypatch.setattr(callback_module, "submit_system_mcp_acquisition_operation",
+                        lambda request_id, **_: dispatched.append(request_id) or {})
+    clear_artifact_repository()
+    clear_acquisition_runtime()
+    clear_waiting_tasks()
+    clear_approval_requests()
+    reset_capability_provider_discovery_status()
+    reset_capability_provider_health_status()
+    reset_capability_provider_approval_status()
+    reset_capability_provider_status()
+    subtitle = tmp_path / "part-2.srt"
+    subtitle.write_text("1\n00:00:00,000 --> 00:00:02,000\ncontrolled transcript", encoding="utf-8")
+    image_buffer = BytesIO()
+    Image.new("RGB", (4, 4), "green").save(image_buffer, format="PNG")
+    image_bytes = image_buffer.getvalue()
+    image_digest = hashlib.sha256(image_bytes).hexdigest()
+    captured_image = tmp_path / "frames" / "frame1.png"
+    captured_image.parent.mkdir()
+    captured_image.write_bytes(image_bytes)
+    task = _build_waiting_task_input()
+    task.input_snapshot_id = "snapshot-1"
+    task.input_payload.inputs = {
+        "url": "https://www.bilibili.com/video/BV1234567890?p=2", "language": "zh-CN",
+    }
+
+    class FakeJavaClient(JavaArtifactCallbackClient):
+        def __init__(self):
+            super().__init__("http://java-host:8081", delivery_token="delivery-1")
+            self.material = None
+            self.completed = None
+
+        def fetch_task_input(self, task_id):
+            return task
+
+        def send_progress(self, task_id, event):
+            pass
+
+        def publish_video_material(self, task_id, bundle):
+            self.material = bundle
+            return {"id": "material-1", "task_id": task_id, "workspace_id": bundle.workspace_id,
+                    "bundle_id": bundle.bundle_id, "bundle_version": bundle.bundle_version,
+                    "content_digest": bundle.content_digest()}
+
+        def fetch_video_knowledge_plan(self, task_id, bundle_row_id):
+            raise callback_module.ArtifactCallbackHttpError(404, "not frozen")
+
+        def publish_video_knowledge_plan(self, task_id, bundle_row_id, plan):
+            plan.verify_against_bundle(self.material)
+            return {"id": "plan-1", "bundle_row_id": bundle_row_id,
+                    "content_digest": plan.content_digest()}
+
+        def send_complete(self, task_id, result):
+            self.completed = result
+
+    try:
+        client = FakeJavaClient()
+        assert run_artifact_task_with_callbacks(task.task_id, client).status == "WAITING_FOR_PROVIDER"
+        assert dispatched == [f"fetch-{task.task_id}-input-url-1-extract_transcript"]
+        operation = next(op for op in list_acquisition_operations(task_id=task.task_id)
+                         if op["operation_key"] == "EXTRACT_TRANSCRIPT")
+        token = dispatch_acquisition_operation(operation["request_id"])["operation"]["callback_token"]
+        acknowledge_acquisition_operation_with_callbacks(
+            callback_token=token, final_status="ACKNOWLEDGED", defer_resume=True,
+            provider_payload={"normalized_video_id": "BV1234567890",
+                              "metadata": {"duration": 5,
+                                           "webpage_url": "https://www.bilibili.com/video/BV1234567890?p=2"},
+                              "acquisition_mode": "remote_cc_subtitle_fetch",
+                              "selected_subtitle_path": str(subtitle)},
+            client=client,
+        )
+        assert resume_waiting_artifact_task_with_callbacks(
+            task.task_id, client=client, request_id=operation["request_id"]
+        ).status == "WAITING_FOR_PROVIDER"
+        assert client.material is None
+        assert dispatched[-1] == f"fetch-{task.task_id}-input-url-1-capture_frames"
+        frames = next(op for op in list_acquisition_operations(task_id=task.task_id)
+                      if op["operation_key"] == "CAPTURE_FRAMES")
+        frame_token = dispatch_acquisition_operation(frames["request_id"])["operation"]["callback_token"]
+        acknowledge_acquisition_operation_with_callbacks(
+            callback_token=frame_token, final_status="ACKNOWLEDGED", defer_resume=True,
+            provider_payload={"normalized_video_id": "BV1234567890", "part": 2,
+                              "duration_ms": 5000,
+                              "frames": [{"frame_id": "f1", "part": 2, "at_ms": 1000,
+                                          "file_id": "frame1", "checksum_sha256": image_digest,
+                                          "dedupe_of": ""}],
+                              "files": [{"file_id": "frame1", "role": "VIDEO_FRAME",
+                                         "media_type": "image/png", "size_bytes": len(image_bytes),
+                                         "checksum_sha256": image_digest,
+                                         "path": str(captured_image)}],
+                              "coverage_gaps": [], "missing_requested_ms": []},
+            client=client,
+        )
+        assert resume_waiting_artifact_task_with_callbacks(
+            task.task_id, client=client, request_id=frames["request_id"]
+        ).status == "WAITING_FOR_PROVIDER"
+        observation_operation = next(op for op in list_acquisition_operations(task_id=task.task_id)
+                                     if op["operation_key"] == "ANALYZE_FRAMES")
+        assert observation_operation["tool_arguments"]["files"] == [
+            {"file_id": "frame1", "checksum_sha256": image_digest}]
+        observation, _ = _ack_frame_observation(task.task_id, client, defer_resume=True,
+            frames=[{"schema_version": "frame-observation-v1", "task_id": task.task_id,
+                     "file_id": "frame1", "checksum_sha256": image_digest,
+                     "media_type": "image/png", "width": 4, "height": 4,
+                     "observations": [],
+                     "coverage_gaps": ["NO_READABLE_TEXT", "VISUAL_SEMANTICS_UNVERIFIED"]}])
+        assert resume_waiting_artifact_task_with_callbacks(
+            task.task_id, client=client, request_id=observation["request_id"]
+        ).status == "COMPLETED"
+        assert client.material is not None
+        assert client.material.part == 2
+        assert client.material.frames[0].at_ms == 1000
+        assert client.material.frame_observations[0].file_id == "frame1"
+        assert client.material.frame_observations[0].checksum_sha256 == image_digest
+        assert (tmp_path / "bilibili-render-pdf" / "exports" / task.task_id
+                / "frame1.png").read_bytes() == image_bytes
+        assert client.completed.result_payload["export_trace"]["frame_file_ids"] == ["frame1"]
+        pdf_path = (tmp_path / "bilibili-render-pdf" / "exports" / task.task_id
+                    / client.completed.result_payload["export_trace"]["file_name"])
+        assert any(page.images for page in PdfReader(pdf_path).pages)
+        assert client.completed.result_payload["candidate"]["video_material"]["id"] == "material-1"
+    finally:
+        clear_artifact_repository()
+        clear_acquisition_runtime()
+        clear_waiting_tasks()
+        clear_approval_requests()
+        reset_capability_provider_discovery_status()
+        reset_capability_provider_health_status()
+        reset_capability_provider_approval_status()
+        reset_capability_provider_status()
 
 
 def test_run_artifact_task_with_callbacks_should_stop_at_waiting_progress_without_completing() -> None:
@@ -474,6 +1043,32 @@ def test_run_artifact_task_with_callbacks_should_not_turn_callback_delivery_fail
     assert client.failures == []
 
 
+@pytest.mark.parametrize(
+    ("host_code", "reported"),
+    [("ARTIFACT_CONTENT_IR_INVALID", True), ("WORKER_CALLBACK_DELIVERY_STALE", False)],
+)
+def test_run_artifact_task_with_callbacks_should_report_host_rejected_content_as_task_failure(
+    host_code: str, reported: bool,
+) -> None:
+    class RejectingClient(FakeCallbackClient):
+        def send_complete(self, task_id: str, result: ArtifactTaskResult) -> None:
+            raise callback_module.ArtifactCallbackHttpError(
+                409, '{"success":false,"code":"' + host_code + '","message":"rejected"}')
+
+    client = RejectingClient(_build_resume_task_input())
+
+    with pytest.raises(callback_module.ArtifactCallbackHttpError) as raised:
+        run_artifact_task_with_callbacks("task-a-callback", client)
+
+    # 内容被拒要落到失败终态；投递令牌过期属于旧投递，仍交给消费者跳过
+    assert bool(getattr(raised.value, "artifact_failure_reported", False)) is reported
+    if reported:
+        assert client.failures[0]["phase"] == "WORKER_COMPLETION"
+        assert client.failures[0]["error_code"] == host_code
+    else:
+        assert client.failures == []
+
+
 def test_acquisition_ack_with_callbacks_should_resume_waiting_task_and_complete_to_java(
     monkeypatch,
 ) -> None:
@@ -517,6 +1112,20 @@ def test_acquisition_ack_with_callbacks_should_resume_waiting_task_and_complete_
             },
             client=client,
         )
+        assert ack_response.resumed_tasks[0].status == "WAITING_FOR_PROVIDER"
+        frames = next(op for op in list_acquisition_operations(task_id="task-a-waiting")
+                      if op["operation_key"] == "CAPTURE_FRAMES")
+        frame_token = dispatch_acquisition_operation(frames["request_id"])["operation"]["callback_token"]
+        frame_ack = acknowledge_acquisition_operation_with_callbacks(
+            callback_token=frame_token, final_status="ACKNOWLEDGED",
+            provider_payload={"normalized_video_id": "BV1NoteWeaveDemo", "part": 1,
+                              "duration_ms": 5000, "frames": [], "files": [],
+                              "coverage_gaps": ["NO_FRAMES"], "missing_requested_ms": []},
+            client=client,
+        )
+        assert frame_ack.resumed_tasks[0].status == "WAITING_FOR_PROVIDER"
+        _, observation_ack = _ack_frame_observation("task-a-waiting", client)
+        assert observation_ack.resumed_tasks[0].status == "COMPLETED"
         completed_version = get_artifact_version_detail(
             target_id=client.completed_results[0].job_snapshot.target_id,
             version_id=client.completed_results[0].version_snapshot.version_id,
@@ -551,9 +1160,10 @@ def test_acquisition_ack_with_callbacks_should_resume_waiting_task_and_complete_
     assert ack_response.receipt["completed_at"]
     assert ack_response.receipt["dispatch_count"] == 1
     assert len(ack_response.resumed_tasks) == 1
-    assert ack_response.resumed_tasks[0].status == "COMPLETED"
-    assert len(client.progress_events) == 6
-    assert [event.phase for event in client.progress_events[1:]] == [
+    assert frame_ack.resumed_tasks[0].status == "WAITING_FOR_PROVIDER"
+    assert observation_ack.resumed_tasks[0].status == "COMPLETED"
+    assert len(client.progress_events) == 8
+    assert [event.phase for event in client.progress_events[3:]] == [
         "RESOLVING",
         "ACQUIRING",
         "COMPOSING",
@@ -562,51 +1172,51 @@ def test_acquisition_ack_with_callbacks_should_resume_waiting_task_and_complete_
     ]
     assert len(client.completed_results) == 1
     assert client.completed_results[0].job_snapshot.status == "COMPLETED"
-    assert client.completed_results[0].result_payload["resume_scope"]["matched_operation_key"] == "EXTRACT_TRANSCRIPT"
+    assert client.completed_results[0].result_payload["resume_scope"]["matched_operation_key"] == "ANALYZE_FRAMES"
     assert client.completed_results[0].result_payload["acquisition_callback_trace"]["status"] == "ATTACHED"
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["receipt_id"]
-        == ack_response.receipt["receipt_id"]
+        == observation_ack.receipt["receipt_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["delivery_id"]
-        == ack_response.receipt["delivery_id"]
+        == observation_ack.receipt["delivery_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["provider_job_id"]
-        == ack_response.receipt["provider_job_id"]
+        == observation_ack.receipt["provider_job_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["request_id"]
-        == ack_response.receipt["request_id"]
+        == observation_ack.receipt["request_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["task_id"]
-        == ack_response.receipt["task_id"]
+        == observation_ack.receipt["task_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["source_id"]
-        == ack_response.receipt["source_id"]
+        == observation_ack.receipt["source_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["operation_key"]
-        == ack_response.receipt["operation_key"]
+        == observation_ack.receipt["operation_key"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["operation"]["provider_id"]
-        == ack_response.operation["provider_id"]
+        == observation_ack.operation["provider_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["operation"]["server_id"]
-        == ack_response.operation["server_id"]
+        == observation_ack.operation["server_id"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["operation"]["tool_name"]
-        == ack_response.operation["tool_name"]
+        == observation_ack.operation["tool_name"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["operation"]["callback_token"]
-        == ack_response.operation["callback_token"]
+        == observation_ack.operation["callback_token"]
     )
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["operation"]["provider_status"]
@@ -630,6 +1240,6 @@ def test_acquisition_ack_with_callbacks_should_resume_waiting_task_and_complete_
     assert completed_version["runtime_trace"]["acquisition_callback_trace"]["status"] == "ATTACHED"
     assert (
         completed_version["runtime_trace"]["acquisition_callback_trace"]["receipt"]["receipt_id"]
-        == ack_response.receipt["receipt_id"]
+        == observation_ack.receipt["receipt_id"]
     )
     assert client.failures == []

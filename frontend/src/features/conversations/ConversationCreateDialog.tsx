@@ -50,7 +50,6 @@ export function ConversationCreateDialog({
         <header className="conversation-create-header">
           <span className="conversation-create-mark" aria-hidden="true"><MessageSquareText size={19} /></span>
           <div>
-            <p>New conversation</p>
             <h2 id={headingId}>新建独立会话</h2>
           </div>
           <button type="button" className="conversation-create-close" aria-label="关闭" disabled={busy} onClick={onClose}>

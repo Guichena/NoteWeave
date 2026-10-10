@@ -1,14 +1,11 @@
-import { lazy, memo, Suspense, useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { createPortal } from "react-dom";
-import { ArrowRight, LibraryBig, MessageSquareText, PanelRightOpen, Send } from "lucide-react";
+import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { ArrowUp, Files, Layers3, LibraryBig } from "lucide-react";
 import { isSourceReadableOnly, isSourceSearchable } from "../sources/model";
 import { type AnswerMode } from "../../routes";
-import {
-  modeContextLine,
-  modeExamplePrompts,
-  modeQuestionPlaceholder
-} from "../shell/modeContext";
-import { MessageBubble } from "../answers/MessageBubble";
+import { modeExamplePrompts, modeQuestionPlaceholder } from "../shell/modeContext";
+import { BrandMark } from "../shell/BrandMark";
+import { MessageBubble, type EvidenceLoader } from "../answers/MessageBubble";
+import { routes } from "../../routes";
 import { type Message } from "../answers/messageTypes";
 import { type SourceAsset } from "../sources/model";
 import { type Workspace } from "../workspace/model";
@@ -18,6 +15,14 @@ import { ChatSourcesPane } from "./ChatSourcesPane";
 const LazyArtifactRail = lazy(() => import("../artifacts/ArtifactRail").then((module) => ({
   default: module.ArtifactRail
 })));
+
+type PanelTab = "sources" | "studio";
+
+/** 宽屏默认展开右侧面板；窄屏默认收起，避免挤压对话。 */
+function prefersOpenPanel() {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  return window.matchMedia("(min-width: 1200px)").matches;
+}
 
 export type ChatWorkbenchProps = {
   mode: AnswerMode;
@@ -39,65 +44,82 @@ export type ChatWorkbenchProps = {
   artifactComposerOpen: boolean;
   artifactRailProps: import("../artifacts/ArtifactRailProps").ArtifactRailProps;
   onOpenSourceLibrary: () => void;
+  uploadSourceFile?: (file: File) => Promise<void>;
+  uploadBusy?: boolean;
+  loadAnswerEvidence?: EvidenceLoader;
+  /** 点击回答中的 [[页面]] 时跳转到对应的 Wiki 页面。 */
+  onOpenWikiPage?: (title: string) => void;
 };
 
 export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchProps) {
   const {
-  mode,
-  setMode,
-  sources,
-  chatBusy,
-  workspace,
-  messages,
-  question,
-  setQuestion,
-  currentRouteLabel,
-  selectedQaSourceIds,
-  setSelectedQaSourceIds,
-  toggleQaScope,
-  sendMessage,
-  conversation,
-  conversationCount,
-  setArtifactComposerOpen,
-  artifactComposerOpen,
-  artifactRailProps,
-  onOpenSourceLibrary
-
+    mode,
+    setMode,
+    sources,
+    chatBusy,
+    workspace,
+    messages,
+    question,
+    setQuestion,
+    currentRouteLabel,
+    selectedQaSourceIds,
+    setSelectedQaSourceIds,
+    sendMessage,
+    conversation,
+    conversationCount,
+    setArtifactComposerOpen,
+    artifactRailProps,
+    onOpenSourceLibrary,
+    uploadSourceFile,
+    uploadBusy = false,
+    loadAnswerEvidence,
+    onOpenWikiPage
   } = props;
   const composerBusy = chatBusy;
-  const [artifactRailOpen, setArtifactRailOpen] = useState(false);
+  const activeRoute = routes.find((route) => route.key === mode) ?? routes[0];
+  // 工作台没有资料时侧边面板没有内容可展示（欢迎区已提供上传入口），
+  // 因此等资料首次加载出来后再自动展开。
+  const [panelOpen, setPanelOpen] = useState(() => sources.length > 0 && prefersOpenPanel());
+  const hasSources = sources.length > 0;
+  const panelAutoOpenedRef = useRef(hasSources);
+  useEffect(() => {
+    if (!hasSources || panelAutoOpenedRef.current) return;
+    panelAutoOpenedRef.current = true;
+    if (prefersOpenPanel()) setPanelOpen(true);
+  }, [hasSources]);
+  const [panelTab, setPanelTab] = useState<PanelTab>("sources");
   const conversationRef = useRef<HTMLDivElement | null>(null);
-  const artifactTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const artifactModalRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const examples = modeExamplePrompts(mode);
   const searchableSources = sources.filter(isSourceSearchable);
   const readableOnlySourceCount = sources.filter(isSourceReadableOnly).length;
-  const workspaceSummary = workspace?.name || "未选择工作台";
-  const qaAvailabilitySummary = searchableSources.length > 0
-    ? `${searchableSources.length} / ${sources.length} 份可检索${readableOnlySourceCount > 0 ? ` · ${readableOnlySourceCount} 份仅可阅读` : ""}`
-    : readableOnlySourceCount > 0
-      ? `${readableOnlySourceCount} 份仅可阅读 · 无检索索引`
-      : sources.length > 0
-        ? `0 / ${sources.length} 份可检索`
-        : "等待上传资料";
-  const scopeSummary = selectedQaSourceIds.length > 0
-    ? `已限定 ${selectedQaSourceIds.length} 份资料`
-    : qaAvailabilitySummary;
+  const scopeCount = selectedQaSourceIds.length > 0 ? selectedQaSourceIds.length : searchableSources.length;
   const qaUnavailable = mode === "qa" && searchableSources.length === 0;
   const composerActionLabel = qaUnavailable
     ? "等待可检索资料"
     : composerBusy
       ? "回答中…"
       : `发送到 ${currentRouteLabel}`;
-  const qaScopeNarrative = selectedQaSourceIds.length > 0
-    ? `当前问答已限定 ${selectedQaSourceIds.length} 份可检索资料，回答会附带对应来源引用。`
+  const scopeSummary = mode !== "qa"
+    ? `${sources.length} 个来源`
     : searchableSources.length > 0
-      ? `当前使用此 Workspace 的 ${searchableSources.length} 份可检索资料，回答会附带对应来源引用。`
+      ? selectedQaSourceIds.length > 0
+        ? `已选 ${scopeCount} / ${searchableSources.length} 个来源`
+        : `${searchableSources.length} 个来源`
       : readableOnlySourceCount > 0
-        ? `当前无可检索资料；${readableOnlySourceCount} 份资料仅可阅读，建立索引后才能参与 RAG。`
+        ? `${readableOnlySourceCount} 份仅可阅读 · 无检索索引`
         : sources.length > 0
-          ? "资料仍在处理，检索索引建立后即可开始基于证据的问答。"
-          : "当前 Workspace 暂无资料，上传并完成检索索引后即可开始基于证据的问答。";
+          ? "来源处理中"
+          : "暂无来源";
+  const qaUnavailableNote = readableOnlySourceCount > 0
+    ? `${readableOnlySourceCount} 份资料仅可阅读，建立索引后才能参与问答。`
+    : sources.length > 0
+      ? "资料仍在处理，检索索引建立后即可开始提问。"
+      : "添加来源并完成索引后即可开始提问。";
+  const lastMessage = messages[messages.length - 1];
+  const showTyping = composerBusy
+    && !(lastMessage?.role === "assistant" && lastMessage.answerStatus === "GENERATING");
+  const canSend = !composerBusy && !qaUnavailable && Boolean(conversation) && Boolean(question.trim());
 
   useEffect(() => {
     const node = conversationRef.current;
@@ -107,252 +129,224 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
     node.scrollTop = node.scrollHeight;
   }, [messages.length, chatBusy]);
 
+  useLayoutEffect(() => {
+    const node = textareaRef.current;
+    if (!node) return;
+    node.style.height = "auto";
+    node.style.height = `${Math.min(node.scrollHeight, 220)}px`;
+  }, [question]);
+
+  useEffect(() => {
+    if (!panelOpen) return;
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      // 仅在面板以抽屉形式覆盖对话时响应 Esc
+      if (typeof window.matchMedia === "function" && window.matchMedia("(min-width: 1200px)").matches) return;
+      setPanelOpen(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [panelOpen]);
+
   function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
-      if (!composerBusy && !qaUnavailable && conversation && question.trim()) {
-        sendMessage();
-      }
+      if (canSend) sendMessage();
     }
   }
 
-  useEffect(() => {
-    if (!artifactRailOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    artifactModalRef.current?.focus();
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape" && !event.defaultPrevented) {
-        setArtifactRailOpen(false);
-        setArtifactComposerOpen(false);
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      document.body.style.overflow = previousOverflow;
-      artifactTriggerRef.current?.focus();
-    };
-  }, [artifactRailOpen]);
+  function showPanel(tab: PanelTab) {
+    if (panelOpen && panelTab === tab) {
+      setPanelOpen(false);
+    } else {
+      setPanelTab(tab);
+      setPanelOpen(true);
+    }
+    if (tab === "studio") setArtifactComposerOpen(false);
+  }
 
-  function toggleArtifactRail() {
-    const nextOpen = !artifactRailOpen;
-    setArtifactRailOpen(nextOpen);
+  function closePanel() {
+    setPanelOpen(false);
     setArtifactComposerOpen(false);
   }
 
-  return (
-    <section className="layout">
-      <ChatSourcesPane
-        sources={sources}
-        workspace={workspace}
-        conversationCount={conversationCount}
-        onOpenSourceLibrary={onOpenSourceLibrary}
-      />
+  function applyExample(example: string) {
+    setQuestion(example);
+    window.requestAnimationFrame(() => textareaRef.current?.focus());
+  }
 
+  return (
+    <section
+      className={`chat-page layout${panelOpen ? " is-panel-open" : ""}`}
+      data-panel-tab={panelOpen ? panelTab : undefined}
+    >
       <div className="chat-panel">
-        <header className="chat-session-header">
-          <div className="chat-session-identity">
-            <span className="chat-session-mark" aria-hidden="true"><MessageSquareText size={19} /></span>
-            <div className="chat-session-copy">
-              <p className="section-label">Current conversation</p>
-              <h2>{conversation?.title || "等待会话"}</h2>
-              <p className="chat-session-meta">
-                <span title={workspaceSummary}>{workspaceSummary}</span>
-                <span aria-hidden="true">·</span>
-                <span>{sources.length} 份工作台资料</span>
-                <span aria-hidden="true">·</span>
-                <span>{conversationCount} 个会话</span>
-              </p>
-            </div>
+        <header className="page-header chat-header">
+          <div className="page-header-title">
+            <h2>{conversation?.title || "新对话"}</h2>
           </div>
-          <div className="chat-header-bar">
+          <div className="page-header-actions panel-switch" role="group" aria-label="侧边面板">
             <button
               type="button"
-              className="mobile-sources-toggle secondary-button"
-              aria-label="打开资料库"
-              title="打开资料库"
-              onClick={onOpenSourceLibrary}
+              className="panel-switch-button"
+              aria-label="打开来源"
+              aria-pressed={panelOpen && panelTab === "sources"}
+              onClick={() => showPanel("sources")}
             >
-              <LibraryBig size={15} aria-hidden="true" />
-              资料 {sources.length}
+              <Files size={16} aria-hidden="true" />
+              <span>来源</span>
+              <span className="panel-switch-count">{sources.length}</span>
+            </button>
+            <button
+              type="button"
+              className="panel-switch-button"
+              aria-label="打开产物"
+              aria-pressed={panelOpen && panelTab === "studio"}
+              onClick={() => showPanel("studio")}
+              disabled={!workspace}
+            >
+              <Layers3 size={16} aria-hidden="true" />
+              <span>产物</span>
             </button>
           </div>
         </header>
-        <p className="mode-context-line">
-          <span className="mode-context-copy">{modeContextLine(mode)}</span>
-          <span className="mode-context-metric">{scopeSummary}</span>
-        </p>
 
         <div className="conversation" ref={conversationRef} aria-live="polite">
           {messages.length === 0 ? (
             <div className="chat-welcome">
-              <div className="chat-welcome-heading">
-                <span className="chat-welcome-icon" aria-hidden="true"><MessageSquareText size={22} /></span>
-                <div>
-                  <strong>从工作台资料开始提问</strong>
-                  <p>当前会话独立保存，回答会保留来源与证据位置。</p>
-                </div>
-              </div>
-              <div className="chat-knowledge-path" aria-label="工作台资料与当前会话的关系">
-                <div className="chat-knowledge-node is-library">
-                  <LibraryBig size={18} aria-hidden="true" />
-                  <span>
-                    <small>共享资料库</small>
-                    <strong>{sources.length} 份资料 · {conversationCount} 个会话共用</strong>
-                  </span>
-                </div>
-                <ArrowRight className="chat-knowledge-arrow" size={16} aria-hidden="true" />
-                <div className="chat-knowledge-node is-conversation">
-                  <MessageSquareText size={18} aria-hidden="true" />
-                  <span>
-                    <small>当前独立会话</small>
-                    <strong title={conversation?.title}>{conversation?.title || "等待会话"}</strong>
-                  </span>
-                </div>
-              </div>
+              <BrandMark className="chat-welcome-mark" size={40} />
+              <h2 className="chat-welcome-title">今天想从资料里弄清楚什么？</h2>
+              <p className="chat-welcome-meta">
+                {sources.length > 0
+                  ? `基于 ${searchableSources.length} 个可检索来源回答，并附上引用`
+                  : "添加资料后，就能围绕它们提问并获得带引用的回答"}
+              </p>
               {sources.length > 0 ? (
-                <div className="chat-example-row">
+                <div className="chat-example-list" aria-label="示例问题">
                   {examples.map((example) => (
                     <button
                       key={example}
                       type="button"
-                      className="chat-example-chip secondary-button"
+                      className="chat-example-chip"
                       disabled={!conversation || composerBusy}
-                      onClick={() => setQuestion(example)}
+                      onClick={() => applyExample(example)}
                     >
-                      <span>{example}</span>
-                      <ArrowRight size={14} aria-hidden="true" />
+                      {example}
                     </button>
                   ))}
                 </div>
               ) : (
-                <button type="button" className="chat-empty-library-action" onClick={onOpenSourceLibrary}>
-                  <LibraryBig size={16} aria-hidden="true" />
-                  前往资料库添加资料
-                  <ArrowRight size={14} aria-hidden="true" />
-                </button>
+                <div className="chat-welcome-empty">
+                  <button type="button" className="secondary-button chat-empty-library-action" onClick={onOpenSourceLibrary}>
+                    <LibraryBig size={15} aria-hidden="true" />
+                    添加资料
+                  </button>
+                </div>
               )}
             </div>
-          ) : null}
-          {messages.map((message, index) => (
-            <div key={`${message.role}-${index}`} className={`bubble ${message.role}`}>
-              <MessageBubble message={message} />
+          ) : (
+            <div className="message-list">
+              {messages.map((message, index) => (
+                <div key={`${message.role}-${index}`} className={`bubble message-row ${message.role}`}>
+                  {message.role === "assistant" ? <BrandMark className="message-avatar" size={26} /> : null}
+                  <div className="message-content">
+                    <MessageBubble message={message} loadEvidence={loadAnswerEvidence} onOpenWikiPage={onOpenWikiPage} />
+                  </div>
+                </div>
+              ))}
+              {showTyping ? (
+                <div className="bubble message-row assistant chat-typing" aria-label="正在生成回答">
+                  <BrandMark className="message-avatar is-thinking" size={26} />
+                  <div className="message-content">
+                    <span className="chat-typing-dots" aria-hidden="true"><i /><i /><i /></span>
+                  </div>
+                </div>
+              ) : null}
             </div>
-          ))}
-          {composerBusy ? (
-            <div className="bubble assistant chat-typing" aria-label="正在生成回答">
-              <span className="chat-typing-dot" />
-              <span className="chat-typing-dot" />
-              <span className="chat-typing-dot" />
-              <span>正在生成回答…</span>
-            </div>
-          ) : null}
+          )}
         </div>
 
         <div className="composer-dock">
-          <label className="input-block composer-block">
-            <span>{currentRouteLabel} 问题</span>
+          <div className={`composer-box${composerBusy ? " is-busy" : ""}`}>
             <textarea
+              ref={textareaRef}
+              aria-label={`${currentRouteLabel} 问题`}
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
               onKeyDown={handleComposerKeyDown}
               rows={1}
-              placeholder={modeQuestionPlaceholder(mode)}
+              placeholder={qaUnavailable ? qaUnavailableNote : modeQuestionPlaceholder(mode)}
               disabled={!conversation}
             />
-          </label>
-          {mode === "qa" ? (
-            <div className="qa-scope-hint">
-              <span>{qaScopeNarrative}</span>
-              {searchableSources.length > 0 ? (
-                <details>
-                  <summary>指定本次 QA 的资料范围（可选）</summary>
-                  <div className="qa-scope-options">
-                    {searchableSources.map((source) => (
-                      <button
-                        type="button"
-                        key={source.source_id}
-                        className={selectedQaSourceIds.includes(source.source_id) ? "active filter-pill" : "filter-pill"}
-                        onClick={() => toggleQaScope(source.source_id)}
-                        disabled={composerBusy}
-                      >
-                        {source.title}
-                      </button>
-                    ))}
-                    {selectedQaSourceIds.length > 0 ? (
-                      <button type="button" className="secondary-button" onClick={() => setSelectedQaSourceIds([])} disabled={composerBusy}>
-                        使用全部资料
-                      </button>
-                    ) : null}
-                  </div>
-                </details>
-              ) : null}
-            </div>
-          ) : null}
-          <div className="composer-actions">
-            <AnswerModeSelector mode={mode} setMode={setMode} disabled={composerBusy} />
-            <small className="composer-hint">Enter 发送 · Shift+Enter 换行</small>
-            <button
-              type="button"
-              className="primary-action composer-send-button"
-              aria-label={composerActionLabel}
-              title={composerActionLabel}
-              onClick={sendMessage}
-              disabled={composerBusy || qaUnavailable || !conversation || !question.trim()}
-            >
-              <Send size={16} aria-hidden="true" />
-            </button>
-            {!artifactRailOpen ? (
+            <div className="composer-toolbar">
+              <AnswerModeSelector mode={mode} setMode={setMode} disabled={composerBusy} />
               <button
                 type="button"
-                className="secondary-button artifact-rail-trigger"
-                aria-label="打开产物"
-                title="打开产物工作台"
-                onClick={toggleArtifactRail}
-                disabled={!workspace}
-                ref={artifactTriggerRef}
+                className="composer-scope"
+                title="在“来源”面板中调整本次问答范围"
+                onClick={() => {
+                  setPanelTab("sources");
+                  setPanelOpen(true);
+                }}
               >
-                <PanelRightOpen size={16} aria-hidden="true" />
-                产物
+                {scopeSummary}
               </button>
-            ) : null}
+              <button
+                type="button"
+                className="composer-send-button"
+                aria-label={composerActionLabel}
+                title={composerActionLabel}
+                onClick={sendMessage}
+                disabled={!canSend}
+              >
+                {composerBusy ? <span className="composer-send-spinner" aria-hidden="true" /> : <ArrowUp size={18} aria-hidden="true" />}
+              </button>
+            </div>
           </div>
+          <p className="composer-footnote">
+            {activeRoute.label}：{activeRoute.description}
+          </p>
         </div>
       </div>
 
-      {artifactRailOpen ? createPortal((
-        <div
-          className="artifact-modal-backdrop"
-          role="presentation"
-          onClick={toggleArtifactRail}
-        >
-          <div
-            ref={artifactModalRef}
-            className="artifact-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label="产物工作台"
-            tabIndex={-1}
-            onClick={(event) => event.stopPropagation()}
-          >
+      {panelOpen ? (
+        <button
+          type="button"
+          className="context-panel-backdrop"
+          aria-label="关闭侧边面板"
+          onClick={closePanel}
+        />
+      ) : null}
+
+      <aside className="context-panel" aria-label="来源与产物" hidden={!panelOpen}>
+        <div className="context-panel-view" hidden={panelTab !== "sources"}>
+          <ChatSourcesPane
+            sources={sources}
+            workspace={workspace}
+            conversationCount={conversationCount}
+            onOpenSourceLibrary={onOpenSourceLibrary}
+            selectedSourceIds={selectedQaSourceIds}
+            onChangeSelectedSourceIds={(next) => setSelectedQaSourceIds(next)}
+            scopeApplies={mode === "qa"}
+            uploadSourceFile={uploadSourceFile}
+            uploadBusy={uploadBusy}
+            disabled={composerBusy}
+            onClose={closePanel}
+          />
+        </div>
+        <div className="context-panel-view studio-pane" hidden={panelTab !== "studio"}>
+          {panelOpen && panelTab === "studio" ? (
             <Suspense fallback={(
-              <div className="artifact-rail artifact-rail-loading">
-                <p className="section-label">Artifact Studio</p>
-                <span>正在加载产物控制台…</span>
+              <div className="artifact-rail artifact-rail-loading" role="status">
+                <span className="view-loading-spinner" aria-hidden="true" />
+                <span>正在加载产物…</span>
               </div>
             )}>
-              <LazyArtifactRail
-                {...artifactRailProps}
-                onCloseArtifactRail={() => {
-                  setArtifactRailOpen(false);
-                  setArtifactComposerOpen(false);
-                }}
-              />
+              <LazyArtifactRail {...artifactRailProps} onCloseArtifactRail={closePanel} />
             </Suspense>
-          </div>
+          ) : null}
         </div>
-      ), document.body) : null}
+      </aside>
     </section>
   );
 });

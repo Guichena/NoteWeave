@@ -167,6 +167,50 @@ class KafkaTaskConsumerTest {
                 .matches("[0-9a-f]{64}");
     }
 
+    @Test
+    void conversationSummaryWithBaseSummaryOnlyAppendsTheNewTurns() {
+        SegmentSummaryPromotionService promotionService = mock(SegmentSummaryPromotionService.class);
+        KafkaTaskConsumer summaryConsumer = new KafkaTaskConsumer(
+                sourceParseService, wikiIngestService, taskService, new ObjectMapper(), null, promotionService);
+        ConsumerRecord<String, String> record = new ConsumerRecord<>(
+                "noteweave.conversation.summary", 0, 11L, "revision-2", """
+                {"segment_id":"segment-2","summary_revision_id":"revision-2",
+                 "base_summary_text":"earlier summary",
+                 "source_messages":[{"role":"USER","content":"New question"}]}
+                """);
+
+        summaryConsumer.onConversationSummary(record);
+
+        // 未配置大模型时按抽取式摘要处理：旧摘要加上新增消息
+        verify(promotionService).promote(org.mockito.ArgumentMatchers.eq("segment-2"),
+                org.mockito.ArgumentMatchers.eq("revision-2"),
+                org.mockito.ArgumentMatchers.argThat(request ->
+                        "earlier summary\nuser: New question".equals(request.summaryText())
+                                && "EXTRACTIVE".equals(request.summaryMethod())));
+    }
+
+    @Test
+    void topicSummaryV2MessageRoutesToV2Promotion() {
+        com.noteweave.conversation.ConversationTopicSummaryV2Service v2 =
+                mock(com.noteweave.conversation.ConversationTopicSummaryV2Service.class);
+        KafkaTaskConsumer summaryConsumer = new KafkaTaskConsumer(sourceParseService,
+                wikiIngestService, taskService, new ObjectMapper(), null, null, v2);
+        ConsumerRecord<String, String> record = new ConsumerRecord<>(
+                "noteweave.conversation.summary", 0, 10L, "revision-v2", """
+                {"summary_projection_version":2,"segment_id":"segment-v2",
+                 "summary_revision_id":"revision-v2",
+                 "source_messages":[{"role":"USER","content":"Frozen topic text"}]}
+                """);
+
+        summaryConsumer.onConversationSummary(record);
+
+        verify(v2).promote(org.mockito.ArgumentMatchers.eq("segment-v2"),
+                org.mockito.ArgumentMatchers.eq("revision-v2"),
+                org.mockito.ArgumentMatchers.argThat(request ->
+                        "user: Frozen topic text".equals(request.summaryText())
+                                && request.contentHash().matches("[0-9a-f]{64}")));
+    }
+
     private ConsumerRecord<String, String> sourceParseRecord(String taskId) {
         String taskJson = taskId == null ? "null" : "\"" + taskId + "\"";
         return new ConsumerRecord<>(

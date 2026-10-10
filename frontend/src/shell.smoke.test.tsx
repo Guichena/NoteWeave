@@ -34,11 +34,11 @@ describe("frontend shell smoke", () => {
     );
 
     expect(screen.getByRole("heading", { name: "NoteWeave" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Chat · QA / Note / Wiki" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "对话" })).toBeNull();
     expect(screen.getByRole("button", { name: "工作台资料库" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Deep Research 工作台" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Wiki 治理工作台" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Memory 人工审核" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Wiki 知识库" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Memory 审核" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "新建会话" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "会话" })).toBeTruthy();
     expect(screen.getByText("main-canvas")).toBeTruthy();

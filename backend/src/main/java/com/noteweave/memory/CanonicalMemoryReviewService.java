@@ -47,6 +47,11 @@ public class CanonicalMemoryReviewService {
 
     @Transactional
     public MemoryObjectResponse projectCandidate(MemoryCandidateService.CandidateRow candidate) {
+        return projectCandidate(candidate, currentUserProvider.requireUserId());
+    }
+
+    /** 由系统任务（例如从对话中提取候选）发起时，没有当前登录用户，需要显式给出记忆的所有者。 */
+    MemoryObjectResponse projectCandidate(MemoryCandidateService.CandidateRow candidate, String actor) {
         Integer existing = jdbcTemplate.queryForObject(
                 "select count(*) from memory_runtime_revision where id = ?",
                 Integer.class,
@@ -55,7 +60,6 @@ public class CanonicalMemoryReviewService {
             return candidateResponse(candidate);
         }
         boolean activate = "READY".equals(candidate.reviewStatus());
-        String actor = currentUserProvider.requireUserId();
         jdbcTemplate.update("""
                 insert into memory_item(
                     id, workspace_id, owner_user_id, memory_scope, scope_ref_key, slot_key,
@@ -140,7 +144,7 @@ public class CanonicalMemoryReviewService {
             MemoryReviewDecisionRequest request
     ) {
         workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.MEMORY_REVIEW);
-        ReviewRow row = lockReview(workspaceId, revisionId);
+        ReviewRow row = lockReview(workspaceId, revisionId, request.decision());
         return "PROPOSED".equals(row.revisionStatus())
                 ? reviewProposal(row, request)
                 : reviewActive(row, request);
@@ -158,7 +162,7 @@ public class CanonicalMemoryReviewService {
                     where id = ?
                     """, row.itemId());
             updateCandidateStatus(row, "REJECTED");
-            writeEvent(row.itemId(), "REVISION_REJECTED", row.revisionId());
+            writeEvent(row.itemId(), "REVISION_REJECTED", row.revisionId(), decisionPayload(request, null));
             return new MemoryRuntimeRevisionResponse(row.revisionId(), row.itemId(), "REJECTED", List.of());
         }
 
@@ -176,7 +180,7 @@ public class CanonicalMemoryReviewService {
         }
 
         List<String> revoked = "REPLACE_EXISTING".equals(request.decision())
-                ? revokeConflictingItems(row)
+                ? revokeConflictingItems(row, request)
                 : List.of();
         if ("REPLACE_EXISTING".equals(request.decision()) && revoked.isEmpty()) {
             throw new BusinessException(
@@ -193,7 +197,8 @@ public class CanonicalMemoryReviewService {
                     updated_at = current_timestamp where id = ?
                 """, row.revisionId(), row.itemId());
         updateCandidateStatus(row, "PROMOTED");
-        writeEvent(row.itemId(), "REVISION_REVIEWED", row.revisionId() + ":" + request.decision());
+        writeEvent(row.itemId(), "REVISION_REVIEWED", row.revisionId() + ":" + request.decision(),
+                decisionPayload(request, null));
         return new MemoryRuntimeRevisionResponse(row.revisionId(), row.itemId(), "ACTIVE", revoked);
     }
 
@@ -207,11 +212,14 @@ public class CanonicalMemoryReviewService {
                         lock_version = lock_version + 1, last_confirmed_at = current_timestamp,
                         updated_at = current_timestamp where id = ?
                     """, row.itemId());
-            writeEvent(row.itemId(), "ACTIVE_REVIEW_ACCEPTED", row.revisionId());
+            writeEvent(row.itemId(), "ACTIVE_REVIEW_ACCEPTED", row.revisionId(), decisionPayload(request, null));
             return new MemoryRuntimeRevisionResponse(row.revisionId(), row.itemId(), "ACTIVE", List.of());
         }
         if ("REVOKE".equals(request.decision())) {
-            revokeItem(row.itemId(), row.revisionId(), "ACTIVE_REVIEW_REVOKED");
+            // 未被标记复核的生效记忆由用户主动停用，单独记录事件类型
+            boolean flagged = "REVIEW_REQUIRED".equals(row.reviewStatus()) || "STALE".equals(row.itemStatus());
+            revokeItem(row.itemId(), row.revisionId(), flagged ? "ACTIVE_REVIEW_REVOKED" : "ACTIVE_USER_REVOKED",
+                    decisionPayload(request, null));
             return new MemoryRuntimeRevisionResponse(row.revisionId(), row.itemId(), "REVOKED", List.of(row.itemId()));
         }
         throw new BusinessException(
@@ -219,11 +227,11 @@ public class CanonicalMemoryReviewService {
                 "Active Memory review 仅支持 ACCEPT 或 REVOKE");
     }
 
-    private ReviewRow lockReview(String workspaceId, String revisionId) {
+    private ReviewRow lockReview(String workspaceId, String revisionId, String decision) {
         List<ReviewRow> rows = jdbcTemplate.query("""
                 select r.id, r.memory_item_id, r.status, r.display_text, r.provenance_type,
                        r.provenance_ref, r.normalized_value_json, i.status as item_status,
-                       i.review_status
+                       i.review_status, i.current_revision_id
                 from memory_runtime_revision r
                 join memory_item i on i.id = r.memory_item_id
                 where r.workspace_id = ? and r.id = ?
@@ -237,7 +245,8 @@ public class CanonicalMemoryReviewService {
                 rs.getString("provenance_ref"),
                 rs.getString("normalized_value_json"),
                 rs.getString("item_status"),
-                rs.getString("review_status")
+                rs.getString("review_status"),
+                rs.getString("id").equals(rs.getString("current_revision_id"))
         ), workspaceId, revisionId);
         if (rows.isEmpty()) {
             throw new BusinessException("MEMORY_RUNTIME_REVISION_NOT_FOUND", "Memory revision 不存在");
@@ -246,14 +255,16 @@ public class CanonicalMemoryReviewService {
         boolean proposed = "PROPOSED".equals(row.revisionStatus());
         boolean activeReview = "ACTIVE".equals(row.revisionStatus())
                 && ("REVIEW_REQUIRED".equals(row.reviewStatus()) || "STALE".equals(row.itemStatus()));
-        if (!proposed && !activeReview) {
+        // 当前生效的版本随时可以由用户停用，其余审核动作仍只对待确认或需复核的版本开放
+        boolean userRevoke = "ACTIVE".equals(row.revisionStatus()) && row.current() && "REVOKE".equals(decision);
+        if (!proposed && !activeReview && !userRevoke) {
             throw new BusinessException("MEMORY_RUNTIME_REVISION_NOT_REVIEWABLE", "Memory revision 当前不需要审核");
         }
         jdbcTemplate.queryForObject("select id from memory_item where id = ? for update", String.class, row.itemId());
         return row;
     }
 
-    private List<String> revokeConflictingItems(ReviewRow proposal) {
+    private List<String> revokeConflictingItems(ReviewRow proposal, MemoryReviewDecisionRequest request) {
         CandidatePayload incoming = candidatePayload(proposal.normalizedValueJson(), proposal.displayText());
         List<ActiveRow> activeRows = jdbcTemplate.query("""
                 select i.id, r.id as revision_id, r.display_text, r.normalized_value_json
@@ -276,7 +287,8 @@ public class CanonicalMemoryReviewService {
             if (!overlap.isEmpty()
                     && !incoming.candidateType().equals(existing.candidateType())
                     && statementMatcher.equivalent(incoming.statement(), existing.statement())) {
-                revokeItem(active.itemId(), active.revisionId(), "CONFLICT_REPLACED");
+                revokeItem(active.itemId(), active.revisionId(), "CONFLICT_REPLACED",
+                        decisionPayload(request, proposal.revisionId()));
                 revoked.add(active.itemId());
             }
         }
@@ -290,7 +302,7 @@ public class CanonicalMemoryReviewService {
                 row.itemId());
     }
 
-    private void revokeItem(String itemId, String revisionId, String eventType) {
+    private void revokeItem(String itemId, String revisionId, String eventType, String payloadJson) {
         jdbcTemplate.update("""
                 update memory_item set status = 'DELETED', review_status = 'REJECTED',
                     lock_version = lock_version + 1, updated_at = current_timestamp where id = ?
@@ -299,7 +311,7 @@ public class CanonicalMemoryReviewService {
                 update memory_runtime_revision set status = 'REJECTED', valid_until = current_timestamp
                 where id = ? and status = 'ACTIVE'
                 """, revisionId);
-        writeEvent(itemId, eventType, revisionId);
+        writeEvent(itemId, eventType, revisionId, payloadJson);
         replayRedactionService.redactDeletedMemoryRevision(revisionId);
     }
 
@@ -313,16 +325,33 @@ public class CanonicalMemoryReviewService {
     }
 
     private void writeEvent(String itemId, String eventType, String idempotencyKey) {
+        writeEvent(itemId, eventType, idempotencyKey, null);
+    }
+
+    private void writeEvent(String itemId, String eventType, String idempotencyKey, String payloadJson) {
         Integer existing = jdbcTemplate.queryForObject("""
                 select count(*) from memory_event
                 where memory_item_id = ? and event_type = ? and idempotency_key = ?
                 """, Integer.class, itemId, eventType, idempotencyKey);
         if (existing == null || existing == 0) {
             jdbcTemplate.update("""
-                    insert into memory_event(id, memory_item_id, event_type, idempotency_key)
-                    values (?, ?, ?, ?)
-                    """, Ids.newId(), itemId, eventType, idempotencyKey);
+                    insert into memory_event(id, memory_item_id, event_type, idempotency_key, payload_json)
+                    values (?, ?, ?, ?, ?)
+                    """, Ids.newId(), itemId, eventType, idempotencyKey, payloadJson);
         }
+    }
+
+    /** 审核事件记录决定与理由；冲突替换时同时记录替换它的新版本。 */
+    private String decisionPayload(MemoryReviewDecisionRequest request, String replacedByRevisionId) {
+        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("decision", request.decision());
+        if (request.reason() != null) {
+            payload.put("reason", request.reason());
+        }
+        if (replacedByRevisionId != null) {
+            payload.put("replaced_by_revision_id", replacedByRevisionId);
+        }
+        return Json.write(objectMapper, payload);
     }
 
     private MemoryObjectResponse candidateResponse(MemoryCandidateService.CandidateRow candidate) {
@@ -386,7 +415,8 @@ public class CanonicalMemoryReviewService {
             String provenanceRef,
             String normalizedValueJson,
             String itemStatus,
-            String reviewStatus
+            String reviewStatus,
+            boolean current
     ) { }
 
     private record ActiveRow(

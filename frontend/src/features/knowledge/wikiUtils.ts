@@ -138,3 +138,26 @@ export function buildGraphSearchHits(pages: WikiPage[], keywordRaw: string, limi
       || (page.page_kind || "TOPIC").toLowerCase().includes(keyword))
     .slice(0, limit);
 }
+
+/** 页面类型直接展示后端原值（TOPIC / CONCEPT / SOURCE_SUMMARY…），只做空值兜底。 */
+export function formatWikiKind(kind: string | null | undefined) {
+  return (kind || "TOPIC").toUpperCase();
+}
+
+/** 页面类型对应的配色分组，用于图谱节点与类型标签。 */
+export function wikiKindTone(kind: string | null | undefined) {
+  switch ((kind || "TOPIC").toUpperCase()) {
+    case "TOPIC":
+    case "OVERVIEW":
+      return "blue";
+    case "CONCEPT":
+      return "violet";
+    case "SOURCE_SUMMARY":
+      return "green";
+    case "COMPARISON":
+    case "ENTITY":
+      return "gold";
+    default:
+      return "rose";
+  }
+}

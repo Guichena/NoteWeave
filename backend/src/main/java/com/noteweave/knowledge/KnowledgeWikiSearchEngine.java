@@ -30,13 +30,11 @@ final class KnowledgeWikiSearchEngine {
         Set<String> terms = extractTerms(query);
         List<WikiSearchRow> rows = loadRows(workspaceId, terms);
         List<ScoredWikiRow> scored = rank(rows, terms).stream()
-                .limit(5)
                 .toList();
         if (!scored.isEmpty()) {
             return scored.stream().map(row -> row.row().toPageHit(row.score())).toList();
         }
         return loadRows(workspaceId).stream()
-                .limit(5)
                 .map(row -> row.toPageHit(0))
                 .toList();
     }

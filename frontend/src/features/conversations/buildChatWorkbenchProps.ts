@@ -1,3 +1,4 @@
+import { answersApi } from "../answers/api";
 import type { SourceAsset } from "../sources/model";
 import type { Workspace } from "../workspace/model";
 import type { Conversation } from "./model";
@@ -15,6 +16,8 @@ type BuildChatWorkbenchPropsInput = {
   setArtifactComposerOpen: (open: boolean) => void;
   artifactRailProps: import("../artifacts/ArtifactRailProps").ArtifactRailProps;
   onOpenSourceLibrary: () => void;
+  onOpenWikiPage?: (title: string) => void;
+  uploadBusy?: boolean;
 };
 
 export function buildChatWorkbenchProps(input: BuildChatWorkbenchPropsInput): ChatWorkbenchProps {
@@ -28,7 +31,9 @@ export function buildChatWorkbenchProps(input: BuildChatWorkbenchPropsInput): Ch
     artifactComposerOpen,
     setArtifactComposerOpen,
     artifactRailProps,
-    onOpenSourceLibrary
+    onOpenSourceLibrary,
+    onOpenWikiPage,
+    uploadBusy = false
   } = input;
 
   return {
@@ -50,6 +55,12 @@ export function buildChatWorkbenchProps(input: BuildChatWorkbenchPropsInput): Ch
     setArtifactComposerOpen,
     artifactComposerOpen,
     artifactRailProps,
-    onOpenSourceLibrary
+    onOpenSourceLibrary,
+    uploadSourceFile: chat.uploadSourceFile,
+    uploadBusy,
+    onOpenWikiPage,
+    loadAnswerEvidence: workspace
+      ? (answerRunId) => answersApi.getEvidence(workspace.workspace_id, answerRunId).then((manifest) => manifest.evidence)
+      : undefined
   };
 }

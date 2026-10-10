@@ -106,11 +106,10 @@ export function WorkspaceSettingsPanel({
     <section className="workspace-settings-panel" aria-label="工作台设置">
       <header className="workspace-settings-header">
         <div>
-          <p className="section-label">Workspace Settings</p>
           <h2>{showMembers ? "检索与成员" : "检索设置"}</h2>
           <p className="workspace-settings-intro">控制当前工作台的检索策略与访问权限。</p>
         </div>
-        <button className="secondary-button" onClick={onClose}>关闭</button>
+        <button type="button" className="secondary-button" onClick={onClose}>关闭</button>
       </header>
 
       {loading ? (

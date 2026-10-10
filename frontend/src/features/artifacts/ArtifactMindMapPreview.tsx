@@ -8,11 +8,13 @@ import {
   useState
 } from "react";
 import { createPortal } from "react-dom";
-import { Download, Focus, Network, X } from "lucide-react";
+import { Download, Focus, Maximize2, Network, X } from "lucide-react";
 
 type ArtifactMindMapPreviewProps = {
   title: string;
   markdown: string;
+  /** teaser 为一行摘要加打开按钮；inline 直接内嵌可缩放的导图，右上角保留全屏按钮。 */
+  variant?: "teaser" | "inline";
 };
 
 type MindMapCanvasHandle = {
@@ -64,7 +66,7 @@ export function summarizeMindMap(markdown: string, fallbackTitle: string) {
   return { root, branchCount: branches.length, branches: branches.slice(0, 3) };
 }
 
-export function ArtifactMindMapPreview({ title, markdown }: ArtifactMindMapPreviewProps) {
+export function ArtifactMindMapPreview({ title, markdown, variant = "teaser" }: ArtifactMindMapPreviewProps) {
   const [open, setOpen] = useState(false);
   const canvasRef = useRef<MindMapCanvasHandle>(null);
   const dialogRef = useRef<HTMLElement>(null);
@@ -193,6 +195,26 @@ export function ArtifactMindMapPreview({ title, markdown }: ArtifactMindMapPrevi
   ) : null;
 
   return (
+    variant === "inline" ? (
+      <>
+        <section className="artifact-mindmap-inline" aria-label="思维导图预览">
+          {open ? null : <MindMapCanvas markdown={mindMapDocument} title={summary.root} />}
+          <button
+            ref={triggerButtonRef}
+            type="button"
+            className="secondary-button artifact-mindmap-expand"
+            onClick={() => {
+              returnFocusRef.current = triggerButtonRef.current;
+              setOpen(true);
+            }}
+          >
+            <Maximize2 size={14} aria-hidden="true" />
+            <span>全屏查看</span>
+          </button>
+        </section>
+        {dialog}
+      </>
+    ) : (
     <>
       <section className="artifact-mindmap-teaser" aria-label="思维导图预览">
         <span className="artifact-mindmap-teaser-icon" aria-hidden="true"><Network size={18} /></span>
@@ -218,6 +240,7 @@ export function ArtifactMindMapPreview({ title, markdown }: ArtifactMindMapPrevi
       </section>
       {dialog}
     </>
+    )
   );
 }
 

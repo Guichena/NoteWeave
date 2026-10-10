@@ -11,19 +11,21 @@ type WorkspaceSwitcherProps = {
   workspaces: WorkspaceSummary[];
   workspaceId: string;
   disabled: boolean;
+  meta?: string;
   onSwitchWorkspace: (workspaceId: string) => void;
   onCreateWorkspace: () => void;
 };
 
 const DEFAULT_RESULT_LIMIT = 24;
 const SEARCH_RESULT_LIMIT = 40;
-const DESKTOP_POPOVER_WIDTH = 310;
+const DESKTOP_POPOVER_WIDTH = 280;
 const VIEWPORT_GUTTER = 12;
 
 export function WorkspaceSwitcher({
   workspaces,
   workspaceId,
   disabled,
+  meta,
   onSwitchWorkspace,
   onCreateWorkspace
 }: WorkspaceSwitcherProps) {
@@ -68,16 +70,18 @@ export function WorkspaceSwitcher({
     }
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
+      // 捕获阶段先关掉切换器并标记事件已消费，外层的移动端抽屉与侧边面板才不会被一起关掉。
+      event.preventDefault();
       setOpen(false);
       setQuery("");
       triggerRef.current?.focus();
     }
     window.addEventListener("pointerdown", closeOnOutsidePointer);
-    window.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("keydown", closeOnEscape, true);
     return () => {
       window.clearTimeout(focusTimer);
       window.removeEventListener("pointerdown", closeOnOutsidePointer);
-      window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("keydown", closeOnEscape, true);
     };
   }, [open]);
 
@@ -87,22 +91,17 @@ export function WorkspaceSwitcher({
       const root = rootRef.current;
       if (!root) return;
       const rect = root.getBoundingClientRect();
-      const mobile = window.innerWidth <= 767;
-      const width = mobile
-        ? rect.width
-        : Math.min(DESKTOP_POPOVER_WIDTH, window.innerWidth - VIEWPORT_GUTTER * 2);
-      const desiredLeft = mobile ? rect.left : rect.right + VIEWPORT_GUTTER;
+      const width = Math.min(Math.max(rect.width, DESKTOP_POPOVER_WIDTH), window.innerWidth - VIEWPORT_GUTTER * 2);
       const left = Math.max(
         VIEWPORT_GUTTER,
-        Math.min(desiredLeft, window.innerWidth - width - VIEWPORT_GUTTER)
+        Math.min(rect.left, window.innerWidth - width - VIEWPORT_GUTTER)
       );
-      const desiredTop = mobile ? rect.bottom + 6 : rect.top - 6;
-      const top = Math.max(VIEWPORT_GUTTER, Math.min(desiredTop, window.innerHeight - 172));
+      const top = Math.min(rect.bottom + 6, window.innerHeight - 172);
       setPopoverStyle({
         top,
         left,
         width,
-        maxHeight: Math.min(mobile ? 420 : 500, window.innerHeight - top - VIEWPORT_GUTTER),
+        maxHeight: Math.min(480, window.innerHeight - top - VIEWPORT_GUTTER),
         visibility: "visible"
       });
     }
@@ -130,7 +129,6 @@ export function WorkspaceSwitcher({
 
   return (
     <div className="workspace-switcher" ref={rootRef}>
-      <span className="workspace-switcher-label">WORKSPACE</span>
       <button
         ref={triggerRef}
         type="button"
@@ -141,12 +139,12 @@ export function WorkspaceSwitcher({
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
       >
-        <span className="workspace-switcher-icon" aria-hidden="true"><BookOpenText size={15} /></span>
+        <span className="workspace-switcher-avatar" aria-hidden="true">
+          {(selectedWorkspace?.name || "N").slice(0, 1)}
+        </span>
         <span className="workspace-switcher-copy">
           <strong title={selectedWorkspace?.name}>{selectedWorkspace?.name || "未创建工作台"}</strong>
-          <small>
-            {workspaces.length > 0 ? `${workspaces.length} 个工作台` : "暂无工作台"}
-          </small>
+          <small>{meta ?? (workspaces.length > 0 ? `${workspaces.length} 个工作台` : "暂无工作台")}</small>
         </span>
         <ChevronsUpDown className="workspace-switcher-chevron" size={14} aria-hidden="true" />
       </button>
@@ -154,16 +152,16 @@ export function WorkspaceSwitcher({
       {open ? createPortal((
         <div
           ref={popoverRef}
-          className="workspace-switcher-popover"
+          className="popover workspace-switcher-popover"
           role="dialog"
           aria-label="工作台切换器"
           style={popoverStyle}
         >
-          <div className="workspace-switcher-popover-header">
+          <div className="popover-header">
             <strong>切换工作台</strong>
             <span>{workspaces.length}</span>
           </div>
-          <label className="workspace-switcher-search">
+          <label className="popover-search">
             <Search size={14} aria-hidden="true" />
             <input
               ref={searchRef}
@@ -174,9 +172,9 @@ export function WorkspaceSwitcher({
               onChange={(event) => setQuery(event.target.value)}
             />
           </label>
-          <div className="workspace-switcher-results" role="listbox" aria-label="工作台列表">
+          <div className="popover-list" role="listbox" aria-label="工作台列表">
             {filteredWorkspaces.length === 0 ? (
-              <p className="workspace-switcher-empty">没有匹配的工作台</p>
+              <p className="popover-empty">没有匹配的工作台</p>
             ) : filteredWorkspaces.map((workspace) => {
               const selected = workspace.workspace_id === workspaceId;
               const duplicateName = (nameCounts.get(workspace.name) ?? 0) > 1;
@@ -186,24 +184,25 @@ export function WorkspaceSwitcher({
                   type="button"
                   role="option"
                   aria-selected={selected}
-                  className={selected ? "workspace-switcher-option active" : "workspace-switcher-option"}
+                  className={selected ? "popover-option active" : "popover-option"}
                   onClick={() => selectWorkspace(workspace.workspace_id)}
                 >
-                  <span className="workspace-switcher-option-copy">
+                  <BookOpenText size={15} aria-hidden="true" />
+                  <span className="popover-option-copy">
                     <strong>{workspace.name}</strong>
-                    <small>{duplicateName ? workspace.workspace_id.slice(0, 8) : "Workspace"}</small>
+                    {duplicateName ? <small>{workspace.workspace_id.slice(0, 8)}</small> : null}
                   </span>
                   {selected ? <Check size={15} aria-hidden="true" /> : null}
                 </button>
               );
             })}
           </div>
-          <small className="workspace-switcher-result-count">
+          <small className="popover-count">
             显示 {filteredWorkspaces.length} / {matchingWorkspaces.length}
           </small>
           <button
             type="button"
-            className="workspace-switcher-create"
+            className="popover-footer-action"
             onClick={() => {
               setOpen(false);
               setQuery("");

@@ -19,19 +19,22 @@ public class KnowledgeCommandService {
     private final AuditActorProvider auditActorProvider;
     private final KnowledgeVersionService knowledgeVersionService;
     private final KnowledgeWikiMutationService wikiMutationService;
+    private final KnowledgeCitationReadGate citationReadGate;
 
     public KnowledgeCommandService(
             JdbcTemplate jdbcTemplate,
             WorkspaceQueryPort workspaceQueryPort,
             AuditActorProvider auditActorProvider,
             KnowledgeVersionService knowledgeVersionService,
-            KnowledgeWikiMutationService wikiMutationService
+            KnowledgeWikiMutationService wikiMutationService,
+            KnowledgeCitationReadGate citationReadGate
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.workspaceQueryPort = workspaceQueryPort;
         this.auditActorProvider = auditActorProvider;
         this.knowledgeVersionService = knowledgeVersionService;
         this.wikiMutationService = wikiMutationService;
+        this.citationReadGate = citationReadGate;
     }
 
     @Transactional
@@ -167,6 +170,7 @@ public class KnowledgeCommandService {
     ) {
         List<String> normalizedCitationIds = citationIds == null
                 ? List.of() : List.copyOf(citationIds);
+        citationReadGate.requireCitationIdsReadable(workspaceId, normalizedCitationIds);
         String normalizedContent = content;
         String pageKind = null;
         if ("WIKI".equals(itemType)) {

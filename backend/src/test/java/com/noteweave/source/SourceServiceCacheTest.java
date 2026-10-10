@@ -2,6 +2,7 @@ package com.noteweave.source;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -43,6 +44,8 @@ class SourceServiceCacheTest {
         cache = mock(SourceCatalogCache.class);
         wikiCommandPort = mock(SourceWikiCommandPort.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
+        var researchGate = mock(com.noteweave.research.ResearchGeneratedSourceReadGate.class);
+        when(researchGate.visible(anyString(), anyString(), anyString())).thenReturn(true);
         service = new SourceService(
                 jdbcTemplate,
                 mock(WorkspaceAccessGuard.class),
@@ -53,7 +56,8 @@ class SourceServiceCacheTest {
                 new SimpleMeterRegistry(),
                 mock(com.noteweave.task.TaskCommandPort.class),
                 eventPublisher,
-                mock(com.noteweave.conversation.RunReplayRedactionService.class));
+                mock(com.noteweave.conversation.RunReplayRedactionService.class),
+                researchGate);
     }
 
     @Test
@@ -77,20 +81,71 @@ class SourceServiceCacheTest {
                     index_status varchar(32) not null,
                     generated_by varchar(80),
                     generated_ref_id varchar(36),
-                    updated_at timestamp not null
+                    updated_at timestamp not null,
+                    metadata_json text
                 )
+                """);
+        jdbcTemplate.execute("""
+                create table task(
+                    id varchar(36) primary key,
+                    workspace_id varchar(36) not null,
+                    task_type varchar(64) not null,
+                    target_type varchar(64),
+                    target_id varchar(36),
+                    created_at timestamp not null
+                )
+                """);
+        jdbcTemplate.execute("""
+                create table source_snapshot(
+                    id varchar(36) primary key,
+                    source_id varchar(36) not null,
+                    version_no int not null,
+                    processing_stage varchar(32),
+                    index_attempt_count int not null default 0,
+                    next_index_retry_at timestamp
+                )
+                """);
+        jdbcTemplate.update("""
+                insert into source_snapshot(id, source_id, version_no, processing_stage) values
+                    ('snapshot-1', 'source-1', 1, 'READY'),
+                    ('snapshot-2', 'source-2', 1, 'CHUNKING')
+                """);
+        jdbcTemplate.update("""
+                insert into source(
+                    id, workspace_id, title, source_type, status, parse_status, index_status, updated_at, metadata_json
+                ) values ('source-1', 'workspace-1', 'Source', 'USER_UPLOAD',
+                          'READY', 'PARSED', 'INDEXED', current_timestamp,
+                          '{"chunk_count":36,"char_count":28400,"page_count":12}')
                 """);
         jdbcTemplate.update("""
                 insert into source(
                     id, workspace_id, title, source_type, status, parse_status, index_status, updated_at
-                ) values ('source-1', 'workspace-1', 'Source', 'USER_UPLOAD',
-                          'READY', 'PARSED', 'INDEXED', current_timestamp)
+                ) values ('source-2', 'workspace-1', 'Pending', 'USER_UPLOAD',
+                          'PROCESSING', 'PENDING', 'PENDING', timestamp '2026-07-01 00:00:00')
+                """);
+        // source-1 被重新解析过一次，列表应返回最近一次解析任务
+        jdbcTemplate.update("""
+                insert into task(id, workspace_id, task_type, target_type, target_id, created_at) values
+                    ('task-old', 'workspace-1', 'SOURCE_PARSE', 'SOURCE', 'source-1', timestamp '2026-07-01 00:00:00'),
+                    ('task-new', 'workspace-1', 'SOURCE_PARSE', 'SOURCE', 'source-1', timestamp '2026-07-02 00:00:00'),
+                    ('task-wiki', 'workspace-1', 'WIKI_INGEST', 'SOURCE', 'source-1', timestamp '2026-07-03 00:00:00'),
+                    ('task-pending', 'workspace-1', 'SOURCE_PARSE', 'SOURCE', 'source-2', timestamp '2026-07-01 00:00:00')
                 """);
         when(cache.get("workspace-1", 1)).thenReturn(Optional.empty());
 
         List<SourceResponse> loaded = service.listSources("workspace-1");
 
-        assertThat(loaded).extracting(SourceResponse::sourceId).containsExactly("source-1");
+        assertThat(loaded).extracting(SourceResponse::sourceId).containsExactly("source-1", "source-2");
+        assertThat(loaded.get(0).chunkCount()).isEqualTo(36);
+        assertThat(loaded.get(0).pageCount()).isEqualTo(12);
+        assertThat(loaded.get(0).taskId()).isEqualTo("task-new");
+        // 尚未解析的资料没有切片信息，但能关联到正在进行的解析任务
+        assertThat(loaded.get(1).chunkCount()).isNull();
+        assertThat(loaded.get(1).pageCount()).isNull();
+        assertThat(loaded.get(1).taskId()).isEqualTo("task-pending");
+        // 列表带出最新快照所处的处理阶段
+        assertThat(loaded).extracting(SourceResponse::processingStage).containsExactly("READY", "CHUNKING");
+        assertThat(loaded).extracting(SourceResponse::nextIndexRetryAt).containsOnlyNulls();
         verify(cache).put(eq("workspace-1"), eq(1L), anyList());
     }
 
@@ -165,6 +220,6 @@ class SourceServiceCacheTest {
     private SourceResponse source(String sourceId) {
         return new SourceResponse(
                 sourceId, "Source", "USER_UPLOAD", "READY", "PARSED", "INDEXED",
-                "", "", Instant.parse("2026-07-14T10:00:00Z"));
+                "", "", Instant.parse("2026-07-14T10:00:00Z"), null, null, null);
     }
 }

@@ -4,12 +4,22 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ResearchWorkbenchView } from "./ResearchWorkbenchView";
 
-vi.mock("./ResearchSidebar", () => ({
-  ResearchSidebar: () => <aside>Research controls</aside>
+vi.mock("./ResearchComposer", () => ({
+  ResearchComposer: ({ onStart }: { onStart: () => void }) => (
+    <div>
+      <p>研究输入</p>
+      <button type="button" onClick={onStart}>开始</button>
+    </div>
+  )
 }));
 
-vi.mock("./ResearchReportPanel", () => ({
-  ResearchReportPanel: () => <article>Research report</article>
+vi.mock("./ResearchRunView", () => ({
+  ResearchRunView: ({ run, onOpenAudit }: { run: { question: string }; onOpenAudit: () => void }) => (
+    <article>
+      <h2>{run.question}</h2>
+      <button type="button" onClick={onOpenAudit}>审计详情</button>
+    </article>
+  )
 }));
 
 vi.mock("./ResearchDetailWorkbench", () => ({
@@ -22,13 +32,70 @@ vi.mock("./ResearchDetailWorkbench", () => ({
 
 afterEach(() => cleanup());
 
-describe("ResearchWorkbenchView overlays", () => {
-  it("renders detail through a portal and closes it with backdrop or Escape", async () => {
+const currentResearchRun = { research_run_id: "run-1", question: "Test research question" };
+const runSummary = {
+  research_run_id: "run-1",
+  question: "Test research question",
+  final_report_title: "",
+  status: "COMPLETED",
+  updated_at: "2026-09-20T10:00:00Z"
+};
+
+function renderView({
+  run = currentResearchRun as typeof currentResearchRun | null,
+  detailOpen = false,
+  setResearchDetailOpen = vi.fn(),
+  openResearchRunHistoryItem = vi.fn(),
+  startDeepResearch = vi.fn()
+} = {}) {
+  return render(
+    <ResearchWorkbenchView
+      {...({
+        isBusy: false,
+        sidebar: {
+          researchRuns: run ? [runSummary] : [],
+          currentResearchRunId: run?.research_run_id ?? "",
+          openResearchRunHistoryItem,
+          startDeepResearch
+        },
+        report: { currentResearchRun: run },
+        statusPanel: { latestResearchTask: null },
+        detail: {
+          researchDetailOpen: detailOpen,
+          currentResearchRun: run,
+          setResearchDetailOpen
+        }
+      } as any)}
+    />
+  );
+}
+
+describe("ResearchWorkbenchView", () => {
+  it("没有研究时展示输入页，有研究时展示运行页", () => {
+    const { unmount } = renderView({ run: null });
+    expect(screen.getByText("研究输入")).toBeTruthy();
+    expect(screen.getByText("还没有研究记录")).toBeTruthy();
+    unmount();
+
+    renderView();
+    expect(screen.getByRole("heading", { name: "Test research question" })).toBeTruthy();
+  });
+
+  it("可以在新研究和历史记录之间切换", () => {
+    const openResearchRunHistoryItem = vi.fn();
+    renderView({ openResearchRunHistoryItem });
+
+    fireEvent.click(screen.getByRole("button", { name: "新研究" }));
+    expect(screen.getByText("研究输入")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /Test research question/ }));
+    expect(openResearchRunHistoryItem).toHaveBeenCalledWith(runSummary);
+    expect(screen.getByRole("heading", { name: "Test research question" })).toBeTruthy();
+  });
+
+  it("通过 portal 渲染审计详情，并支持点击背景或 Esc 关闭", async () => {
     const setResearchDetailOpen = vi.fn();
-    const { container } = renderView({
-      detailOpen: true,
-      setResearchDetailOpen
-    });
+    const { container } = renderView({ detailOpen: true, setResearchDetailOpen });
 
     const dialog = await screen.findByRole("dialog", { name: "Research detail fixture" });
     expect(container.contains(dialog)).toBe(false);
@@ -42,60 +109,4 @@ describe("ResearchWorkbenchView overlays", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     expect(setResearchDetailOpen).toHaveBeenCalledWith(false);
   });
-
-  it("opens and closes the compact runtime status panel", () => {
-    renderView({ detailOpen: false, setResearchDetailOpen: vi.fn() });
-
-    const toggle = screen.getByRole("button", { name: "打开研究运行状态" });
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-
-    fireEvent.click(toggle);
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByRole("button", { name: "关闭研究运行状态" })).toBeTruthy();
-
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-  });
 });
-
-function renderView({
-  detailOpen,
-  setResearchDetailOpen
-}: {
-  detailOpen: boolean;
-  setResearchDetailOpen: (open: boolean) => void;
-}) {
-  const currentResearchRun = {
-    research_run_id: "run-1",
-    question: "Test research question"
-  };
-
-  return render(
-    <ResearchWorkbenchView
-      {...({
-        isBusy: false,
-        sidebar: {},
-        report: {},
-        statusPanel: {
-          currentResearchRunSummary: null,
-          currentResearchWaitContext: null,
-          currentResearchWaitSignals: [],
-          currentResearchWaitDetails: [],
-          latestResearchTask: null,
-          latestResearchTaskWaitSignals: [],
-          latestResearchTaskWaitDetails: [],
-          latestResearchProgressEvent: null,
-          currentResearchRun,
-          buildWaitContextNarrative: () => "",
-          buildResearchTaskRuntimeSnapshot: () => "",
-          setResearchDetailOpen
-        },
-        detail: {
-          researchDetailOpen: detailOpen,
-          currentResearchRun,
-          setResearchDetailOpen
-        }
-      } as any)}
-    />
-  );
-}

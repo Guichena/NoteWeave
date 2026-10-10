@@ -1,13 +1,16 @@
 package com.noteweave.knowledge;
 
 import com.noteweave.common.BusinessException;
+import com.noteweave.research.ResearchGeneratedSourceReadGate;
 import com.noteweave.workspace.WorkspaceQueryPort;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -20,6 +23,8 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
     private final KnowledgeGovernanceService knowledgeGovernanceService;
     private final WikiPageVersionCache wikiPageVersionCache;
     private final MeterRegistry meterRegistry;
+    private final KnowledgeCitationReadGate citationReadGate;
+    private final ResearchGeneratedSourceReadGate generatedSourceGate;
 
     public KnowledgeQueryService(
             JdbcTemplate jdbcTemplate,
@@ -27,7 +32,9 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
             WorkspaceQueryPort workspaceQueryPort,
             KnowledgeGovernanceService knowledgeGovernanceService,
             WikiPageVersionCache wikiPageVersionCache,
-            MeterRegistry meterRegistry
+            MeterRegistry meterRegistry,
+            KnowledgeCitationReadGate citationReadGate,
+            ResearchGeneratedSourceReadGate generatedSourceGate
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.wikiSearchEngine = wikiSearchEngine;
@@ -35,6 +42,8 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
         this.knowledgeGovernanceService = knowledgeGovernanceService;
         this.wikiPageVersionCache = wikiPageVersionCache;
         this.meterRegistry = meterRegistry;
+        this.citationReadGate = citationReadGate;
+        this.generatedSourceGate = generatedSourceGate;
     }
 
     public WikiHomeResponse getWikiHome(String workspaceId) {
@@ -49,12 +58,14 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
     public WikiIndexResponse getWikiIndex(String workspaceId) {
         requireWorkspace(workspaceId);
         WikiStatsResponse stats = knowledgeGovernanceService.getWikiStats(workspaceId);
-        int readySourceCount = count("""
-                select count(*) from source
+        int readySourceCount = (int) jdbcTemplate.query("""
+                select coalesce(generated_by, ''), coalesce(generated_ref_id, '') from source
                 where workspace_id = ? and status = 'READY'
-                """, workspaceId);
-        int sourceBackedPageCount = count("""
-                select count(*)
+                """, (rs, rowNum) -> new String[] {rs.getString(1), rs.getString(2)},
+                workspaceId).stream().filter(source -> generatedSourceGate.visible(
+                workspaceId, source[0], source[1])).count();
+        List<String> sourceBackedPageIds = jdbcTemplate.queryForList("""
+                select i.id
                 from knowledge_item i
                 join knowledge_version v on v.id = i.latest_version_id
                 where i.workspace_id = ?
@@ -64,18 +75,31 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
                       select 1 from knowledge_version_citation kvc
                       where kvc.knowledge_version_id = v.id
                   )
-                """, workspaceId);
+                """, String.class, workspaceId);
+        int sourceBackedPageCount = citationReadGate.readableWikiItemIds(
+                workspaceId, sourceBackedPageIds).size();
         int manualPageCount = Math.max(0, stats.pageCount() - sourceBackedPageCount);
-        List<WikiIndexSourceResponse> recentSources = jdbcTemplate.query("""
-                select id, title, status, index_status, updated_at
+        List<RecentSource> sourceRows = jdbcTemplate.query("""
+                select id, title, status, index_status, updated_at,
+                       coalesce(generated_by, ''), coalesce(generated_ref_id, '')
                 from source
                 where workspace_id = ? and status <> 'DELETED'
                 order by updated_at desc, id desc
-                limit 5
-                """, (rs, rowNum) -> {
+                limit 100
+                """, (rs, rowNum) -> new RecentSource(
+                rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
+                toInstant(rs.getTimestamp(5)), rs.getString(6), rs.getString(7)), workspaceId);
+        List<WikiIndexSourceResponse> recentSources = sourceRows.stream()
+                .filter(source -> generatedSourceGate.visible(
+                        workspaceId, source.generatedBy(), source.generatedRefId()))
+                .limit(5).map(source -> {
             List<WikiTaskRelatedPageResponse> relatedPages =
                     knowledgeGovernanceService.relatedWikiPagesForSource(
-                            workspaceId, rs.getString("id"), 3);
+                            workspaceId, source.id(), 3);
+            Set<String> readablePages = citationReadGate.readableWikiItemIds(workspaceId,
+                    relatedPages.stream().map(WikiTaskRelatedPageResponse::itemId).toList());
+            relatedPages = relatedPages.stream()
+                    .filter(page -> readablePages.contains(page.itemId())).toList();
             String recommendedAction;
             String focusItemId = "";
             String focusTitle = "";
@@ -89,16 +113,25 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
                 recommendedAction = "ENABLE_WIKI";
             }
             return new WikiIndexSourceResponse(
-                    rs.getString("id"),
-                    rs.getString("title"),
-                    rs.getString("status"),
-                    rs.getString("index_status"),
+                    source.id(),
+                    source.title(),
+                    source.status(),
+                    source.indexStatus(),
                     relatedPages,
                     recommendedAction,
                     focusItemId,
                     focusTitle,
-                    toInstant(rs.getTimestamp("updated_at")));
-        }, workspaceId);
+                    source.updatedAt());
+        }).toList();
+        Set<String> readableRecentPages = citationReadGate.readableWikiItemIds(workspaceId,
+                stats.recentUpdates().stream().map(KnowledgeItemResponse::itemId).toList());
+        List<KnowledgeItemResponse> recentUpdates = stats.recentUpdates().stream()
+                .filter(page -> readableRecentPages.contains(page.itemId())).toList();
+        List<WikiTaskSummaryResponse> recentTasks = stats.recentTasks().stream()
+                .filter(task -> wikiTaskReadable(workspaceId, task)).toList();
+        List<WikiIssueResponse> issues = knowledgeGovernanceService.lintWiki(workspaceId);
+        Set<String> readableIssuePages = citationReadGate.readableWikiItemIds(workspaceId,
+                issues.stream().map(WikiIssueResponse::itemId).toList());
         return new WikiIndexResponse(
                 workspaceId,
                 stats.wikiEnabled(),
@@ -115,15 +148,15 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
                 stats.manualReviewIssueCount(),
                 stats.pendingTaskCount(),
                 stats.pagesByKind(),
-                stats.recentUpdates(),
-                stats.recentTasks(),
+                recentUpdates,
+                recentTasks,
                 recentSources,
-                knowledgeGovernanceService.lintWiki(workspaceId).stream()
+                issues.stream().filter(issue -> readableIssuePages.contains(issue.itemId()))
                         .limit(5).toList());
     }
 
     public List<WikiLinkResponse> listWikiLinks(String workspaceId) {
-        return jdbcTemplate.query("""
+        List<WikiLinkResponse> links = jdbcTemplate.query("""
                 select source_item_id, target_item_id, target_title,
                        relation_type, relation_status, mention_count
                 from knowledge_item_link
@@ -137,11 +170,12 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
                 rs.getString("relation_status"),
                 rs.getInt("mention_count")
         ), workspaceId);
+        return readableLinks(workspaceId, links);
     }
 
     public List<KnowledgeItemResponse> listItems(String workspaceId, String itemType) {
         if ("WIKI".equalsIgnoreCase(itemType)) {
-            return wikiSearchEngine.loadRows(workspaceId).stream()
+            return readableWikiRows(workspaceId, wikiSearchEngine.loadRows(workspaceId)).stream()
                     .sorted(Comparator.comparing(WikiSearchRow::updatedAt).reversed())
                     .map(WikiSearchRow::toItemResponse)
                     .toList();
@@ -181,6 +215,7 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
                         item.workspaceId(), item.itemId(), item.latestVersionId())
                         .orElseGet(() -> loadVersionSnapshot(item, true))
                 : loadVersionSnapshot(item, false);
+        citationReadGate.requireReadable(item.workspaceId(), snapshot.versionId());
         return new KnowledgeItemDetailResponse(
                 item.itemId(),
                 item.itemType(),
@@ -193,8 +228,8 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
                 snapshot.summary(),
                 snapshot.sourceMessageId(),
                 snapshot.citations(),
-                wiki ? listOutgoingLinks(item.itemId()) : List.of(),
-                wiki ? listBacklinks(item.itemId()) : List.of(),
+                wiki ? listOutgoingLinks(item.workspaceId(), item.itemId()) : List.of(),
+                wiki ? listBacklinks(item.workspaceId(), item.itemId()) : List.of(),
                 snapshot.createdAt(),
                 item.updatedAt());
     }
@@ -284,13 +319,17 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
     }
 
     public List<KnowledgeItemResponse> searchWikiPages(String workspaceId, String query) {
-        return wikiSearchEngine.search(workspaceId, query).stream()
+        return readableWikiRows(workspaceId, wikiSearchEngine.search(workspaceId, query)).stream()
                 .map(WikiSearchRow::toItemResponse)
                 .toList();
     }
 
     public List<KnowledgePageHit> findRelevantWikiPages(String workspaceId, String query) {
-        return wikiSearchEngine.findRelevantPages(workspaceId, query);
+        List<KnowledgePageHit> pages = wikiSearchEngine.findRelevantPages(workspaceId, query);
+        Set<String> readable = citationReadGate.readableVersionIds(workspaceId,
+                pages.stream().map(KnowledgePageHit::versionId).toList());
+        return pages.stream().filter(page -> readable.contains(page.versionId()))
+                .limit(5).toList();
     }
 
     @Override
@@ -298,25 +337,35 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
         return findRelevantWikiPages(workspaceId, query).stream()
                 .map(page -> new WikiPageContext(
                         page,
-                        listOutgoingLinks(page.itemId()).stream().limit(5).toList(),
-                        listBacklinks(page.itemId()).stream().limit(5).toList(),
+                        listOutgoingLinks(workspaceId, page.itemId()).stream().limit(5).toList(),
+                        listBacklinks(workspaceId, page.itemId()).stream().limit(5).toList(),
                         citationsForVersion(page.versionId()).stream().limit(5).toList()
                 ))
                 .toList();
     }
 
     @Override
-    public List<String> citationIdsForWikiPages(List<KnowledgePageHit> pages) {
+    public List<String> citationIdsForWikiPages(String workspaceId, List<KnowledgePageHit> pages) {
         if (pages == null || pages.isEmpty()) {
             return List.of();
         }
-        List<String> versionIds = pages.stream().map(KnowledgePageHit::versionId).toList();
+        List<String> versionIds = pages.stream().map(KnowledgePageHit::versionId).distinct().toList();
+        if (citationReadGate.readableVersionIds(workspaceId, versionIds).size() != versionIds.size()) {
+            throw new BusinessException("KNOWLEDGE_SOURCE_REVOKED",
+                    "Wiki 引用的资料或版本已撤销", HttpStatus.CONFLICT);
+        }
         String placeholders = String.join(",", versionIds.stream().map(v -> "?").toList());
         return jdbcTemplate.queryForList("""
                 select citation_id from knowledge_version_citation
                 where knowledge_version_id in (%s)
                 order by sort_order asc
                 """.formatted(placeholders), String.class, versionIds.toArray());
+    }
+
+    private List<WikiSearchRow> readableWikiRows(String workspaceId, List<WikiSearchRow> rows) {
+        Set<String> readable = citationReadGate.readableVersionIds(workspaceId,
+                rows.stream().map(WikiSearchRow::versionId).toList());
+        return rows.stream().filter(row -> readable.contains(row.versionId())).toList();
     }
 
     private List<KnowledgeCitationResponse> citationsForVersion(String versionId) {
@@ -341,8 +390,8 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
         ), versionId);
     }
 
-    private List<WikiLinkResponse> listOutgoingLinks(String itemId) {
-        return jdbcTemplate.query("""
+    private List<WikiLinkResponse> listOutgoingLinks(String workspaceId, String itemId) {
+        List<WikiLinkResponse> links = jdbcTemplate.query("""
                 select source_item_id, target_item_id, target_title, relation_type, relation_status, mention_count
                 from knowledge_item_link
                 where source_item_id = ?
@@ -355,10 +404,11 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
                 rs.getString("relation_status"),
                 rs.getInt("mention_count")
         ), itemId);
+        return readableLinks(workspaceId, links);
     }
 
-    private List<WikiLinkResponse> listBacklinks(String itemId) {
-        return jdbcTemplate.query("""
+    private List<WikiLinkResponse> listBacklinks(String workspaceId, String itemId) {
+        List<WikiLinkResponse> links = jdbcTemplate.query("""
                 select l.source_item_id, l.target_item_id, coalesce(s.title, l.target_title) as source_title,
                        l.relation_type, l.relation_status, l.mention_count
                 from knowledge_item_link l
@@ -373,6 +423,43 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
                 rs.getString("relation_status"),
                 rs.getInt("mention_count")
         ), itemId);
+        return readableLinks(workspaceId, links);
+    }
+
+    private List<WikiLinkResponse> readableLinks(String workspaceId, List<WikiLinkResponse> links) {
+        List<String> itemIds = links.stream()
+                .flatMap(link -> java.util.stream.Stream.of(link.sourceItemId(), link.targetItemId()))
+                .filter(id -> id != null && !id.isBlank()).distinct().toList();
+        Set<String> readable = citationReadGate.readableWikiItemIds(workspaceId, itemIds);
+        return links.stream().filter(link -> readable.contains(link.sourceItemId())
+                        && (link.targetItemId() == null || readable.contains(link.targetItemId())))
+                .toList();
+    }
+
+    private boolean wikiTaskReadable(String workspaceId, WikiTaskSummaryResponse task) {
+        String targetType = task.targetType() == null ? "" : task.targetType();
+        if ("SOURCE".equalsIgnoreCase(targetType) && !sourceReadable(workspaceId, task.targetId())) {
+            return false;
+        }
+        List<String> pageIds = new java.util.ArrayList<>();
+        if ("WIKI".equalsIgnoreCase(targetType)) pageIds.add(task.targetId());
+        pageIds.addAll(task.relatedPages().stream().map(WikiTaskRelatedPageResponse::itemId).toList());
+        return citationReadGate.readableWikiItemIds(workspaceId, pageIds).size()
+                == pageIds.stream().filter(id -> id != null && !id.isBlank()).distinct().count();
+    }
+
+    private boolean sourceReadable(String workspaceId, String sourceId) {
+        if (sourceId == null || sourceId.isBlank()) return false;
+        List<RecentSource> rows = jdbcTemplate.query("""
+                select id, title, status, index_status, updated_at,
+                       coalesce(generated_by, ''), coalesce(generated_ref_id, '')
+                from source where workspace_id = ? and id = ? and status <> 'DELETED'
+                """, (rs, rowNum) -> new RecentSource(
+                rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
+                toInstant(rs.getTimestamp(5)), rs.getString(6), rs.getString(7)),
+                workspaceId, sourceId);
+        return rows.size() == 1 && generatedSourceGate.visible(workspaceId,
+                rows.get(0).generatedBy(), rows.get(0).generatedRefId());
     }
 
     private int count(String sql, String workspaceId) {
@@ -401,4 +488,7 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
             Instant updatedAt
     ) {
     }
+
+    private record RecentSource(String id, String title, String status, String indexStatus,
+                                Instant updatedAt, String generatedBy, String generatedRefId) {}
 }

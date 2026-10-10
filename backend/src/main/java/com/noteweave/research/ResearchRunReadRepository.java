@@ -39,9 +39,16 @@ public class ResearchRunReadRepository {
         return jdbcTemplate.query("""
                 select id, workspace_id, task_id, question, profile_key, source_scope_json,
                        resumed_from_research_run_id, resumed_from_checkpoint_no, status,
-                       final_report_title, final_report_markdown, report_source_id, created_at, updated_at
+                       final_report_title, final_report_markdown, report_source_id, created_at,
+                       updated_at, context_snapshot_id
                 from research_run
                 where workspace_id = ?
+                  and (context_snapshot_id is null or exists (
+                    select 1 from run_input_snapshot frozen
+                    where frozen.id = research_run.context_snapshot_id
+                      and frozen.research_run_id = research_run.id
+                      and frozen.replay_availability = 'FULL'
+                  ))
                 order by updated_at desc, created_at desc, id desc
                 limit ? offset ?
                 """, (rs, rowNum) -> new ResearchRunListRow(
@@ -58,7 +65,8 @@ public class ResearchRunReadRepository {
                 rs.getString("final_report_markdown"),
                 blank(rs.getString("report_source_id")),
                 instant(rs.getTimestamp("created_at")),
-                instant(rs.getTimestamp("updated_at"))
+                instant(rs.getTimestamp("updated_at")),
+                rs.getString("context_snapshot_id")
         ), workspaceId, limit, offset);
     }
 
@@ -207,6 +215,7 @@ public class ResearchRunReadRepository {
     }
 
     private Map<String, List<Map<String, Object>>> loadPersistedCellsByRunIds(List<String> researchRunIds) {
+        Map<String, Map<String, String>> columnLabels = loadColumnLabelsByRunIds(researchRunIds);
         return groupedValues(jdbcTemplate.query("""
                 select rc.research_run_id, rc.cell_key, rr.row_key, rb.branch_key, rc.column_key,
                        rc.candidate_value, rc.cell_status, rc.confidence_score, rc.evidence_refs_json,
@@ -221,7 +230,10 @@ public class ResearchRunReadRepository {
             cell.put("cell_id", rs.getString("cell_key"));
             cell.put("row_id", rs.getString("row_key"));
             cell.put("branch_id", blankIfNull(rs.getString("branch_key")));
-            cell.put("column_key", rs.getString("column_key"));
+            String columnKey = rs.getString("column_key");
+            cell.put("column_key", columnKey);
+            cell.put("column_label", ResearchDisplayLabels.of(columnKey,
+                    columnLabels.getOrDefault(rs.getString("research_run_id"), Map.of()).get(columnKey)));
             cell.put("candidate_value", blankIfNull(rs.getString("candidate_value")));
             cell.put("status", rs.getString("cell_status"));
             cell.put("confidence", rs.getBigDecimal("confidence_score"));
@@ -230,6 +242,34 @@ public class ResearchRunReadRepository {
             cell.put("repair_count", rs.getInt("repair_count"));
             return new RunValue<>(rs.getString("research_run_id"), cell);
         }, researchRunIds.toArray()));
+    }
+
+    /** 规划器写下的列 label，按 run 和列键索引；没有矩阵规划的 run 返回空表。 */
+    private Map<String, Map<String, String>> loadColumnLabelsByRunIds(List<String> researchRunIds) {
+        Map<String, Map<String, String>> labels = new LinkedHashMap<>();
+        List<Map<String, Object>> plans;
+        try {
+            plans = jdbcTemplate.queryForList("""
+                    select research_run_id, plan_json from research_matrix_plan
+                    where research_run_id in (%s)
+                    """.formatted(placeholders(researchRunIds.size())), researchRunIds.toArray());
+        } catch (org.springframework.dao.DataAccessException exception) {
+            return labels;
+        }
+        for (Map<String, Object> plan : plans) {
+            try {
+                Map<String, String> runLabels = labels.computeIfAbsent(
+                        String.valueOf(plan.get("research_run_id")), ignored -> new LinkedHashMap<>());
+                objectMapper.readTree(String.valueOf(plan.get("plan_json"))).path("columns").forEach(column -> {
+                    String key = column.path("key").asText("");
+                    String label = column.path("label").asText("");
+                    if (!key.isBlank() && !label.isBlank()) runLabels.putIfAbsent(key, label);
+                });
+            } catch (JsonProcessingException exception) {
+                // 规划记录损坏时只影响显示名，单元格仍按列键展示
+            }
+        }
+        return labels;
     }
 
     private Map<String, List<Map<String, Object>>> loadPersistedSourceEvidenceByRunIds(

@@ -1,49 +1,51 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-
-const credentials = loadCredentials();
+import { loginIfRequired, navigateFromSidebar, useFixtureWorkspace } from "./helpers";
 
 for (const viewport of [
   { width: 1280, height: 720, name: "desktop" },
   { width: 1024, height: 768, name: "compact desktop" }
 ]) {
   test(`desktop visual proportions remain coherent on ${viewport.name}`, async ({ page }) => {
+    test.setTimeout(240_000);
     await page.setViewportSize(viewport);
     await page.goto("/");
     await assertAuthLayout(page, viewport.width);
-    await login(page);
+    await loginIfRequired(page);
 
     await expect(page.locator(".workbench-shell")).toBeVisible();
+    // 来源面板、资料目录都需要工作台里真的有资料，先切到夹具工作台
+    await useFixtureWorkspace(page, viewport.width);
+    await openChatFromSidebar(page);
     await assertNoHorizontalOverflow(page);
 
     const shellMetrics = await page.evaluate(() => {
-      const railItems = [...document.querySelectorAll<HTMLElement>(".global-rail-item")];
-      const first = railItems[0];
-      const rootStyle = getComputedStyle(document.body);
+      const navItems = [...document.querySelectorAll<HTMLElement>(".sidebar-nav-item")];
+      const sidebar = document.querySelector<HTMLElement>(".app-sidebar")?.getBoundingClientRect();
       return {
-        fontFamily: rootStyle.fontFamily,
-        railItemHeights: railItems.map((item) => item.getBoundingClientRect().height),
-        railItemFontSize: first ? Number.parseFloat(getComputedStyle(first).fontSize) : 0
+        fontFamily: getComputedStyle(document.body).fontFamily,
+        sidebarWidth: sidebar?.width ?? 0,
+        navItemHeights: navItems.map((item) => item.getBoundingClientRect().height),
+        navItemFontSize: navItems[0] ? Number.parseFloat(getComputedStyle(navItems[0]).fontSize) : 0
       };
     });
-    expect(shellMetrics.fontFamily).toMatch(/Segoe UI|PingFang SC|Microsoft YaHei/);
-    expect(shellMetrics.railItemHeights.every((height) => height >= 44 && height <= 50)).toBe(true);
-    expect(shellMetrics.railItemFontSize).toBeGreaterThanOrEqual(12);
-    expect(shellMetrics.railItemFontSize).toBeLessThanOrEqual(14);
-
-    await assertGlobalRailProportions(page);
+    expect(shellMetrics.fontFamily).toMatch(/Inter|Segoe UI|PingFang SC|Microsoft YaHei/);
+    expect(shellMetrics.sidebarWidth).toBeGreaterThanOrEqual(56);
+    expect(shellMetrics.sidebarWidth).toBeLessThanOrEqual(280);
+    expect(shellMetrics.navItemHeights.length).toBe(4);
+    expect(shellMetrics.navItemHeights.every((height) => height >= 32 && height <= 44)).toBe(true);
+    expect(shellMetrics.navItemFontSize).toBeGreaterThanOrEqual(13);
+    expect(shellMetrics.navItemFontSize).toBeLessThanOrEqual(15);
 
     await assertChatProportions(page, viewport.width);
-    await assertArtifactProportions(page);
-    await navigateFromRail(page, "工作台资料库");
+    await assertArtifactProportions(page, viewport.width);
+    await navigateFromSidebar(page, "工作台资料库", viewport.width);
     await assertLibraryProportions(page, viewport.width);
-    await navigateFromRail(page, "Deep Research 工作台");
+    await navigateFromSidebar(page, "Deep Research 工作台", viewport.width);
     await assertResearchProportions(page);
     await assertResearchPalette(page);
-    await navigateFromRail(page, "Wiki 治理工作台");
+    await navigateFromSidebar(page, "Wiki 知识库", viewport.width);
     await assertWikiProportions(page);
-    await navigateFromRail(page, "Memory 人工审核");
+    await navigateFromSidebar(page, "Memory 审核", viewport.width);
     await assertMemoryProportions(page, viewport.width);
   });
 }
@@ -85,52 +87,57 @@ async function assertChatProportions(page: Page, viewportWidth: number) {
   if (viewportWidth >= 1200) {
     await expect(page.locator(".sources-pane")).toBeVisible();
   } else {
-    await expect(page.locator(".sources-pane")).toBeHidden();
-    await expect(page.locator(".mobile-sources-toggle")).toBeVisible();
+    await page.getByRole("button", { name: "打开来源" }).click();
+    await expect(page.locator(".sources-pane")).toBeVisible();
   }
   const metrics = await elementMetrics(page, [
-    ".answer-mode-trigger",
-    ".composer-actions .composer-send-button",
-    ".composer-actions .artifact-rail-trigger"
+    ".answer-mode-switch",
+    ".composer-send-button",
+    ".source-add-button",
+    ".composer-box"
   ]);
-  expect(metrics[0]?.height).toBeGreaterThanOrEqual(39.5);
-  expect(metrics[1]?.height).toBeGreaterThanOrEqual(39.5);
-  expect(metrics[2]?.height).toBeGreaterThanOrEqual(39.5);
+  expect(metrics[0]?.height).toBeGreaterThanOrEqual(28);
+  expect(metrics[1]?.height).toBeGreaterThanOrEqual(34);
+  expect(metrics[2]?.height).toBeGreaterThanOrEqual(36);
+  expect(metrics[3]?.width).toBeGreaterThan(320);
   const metadata = await elementMetrics(page, [
-    ".chat-session-meta",
-    ".mode-context-metric",
-    ".source-list-heading > span",
-    ".chat-knowledge-node small",
-    ".chat-knowledge-node strong"
+    ".source-row-copy small",
+    ".pane-footnote",
+    ".chat-welcome-meta",
+    ".composer-scope"
   ]);
-  expect(metadata.every((item) => !item || item.fontSize >= 12)).toBe(true);
+  expect(metadata.every((item) => !item || item.fontSize >= 11)).toBe(true);
   await assertNoHorizontalOverflow(page);
 }
 
-async function assertArtifactProportions(page: Page) {
+async function assertArtifactProportions(page: Page, viewportWidth: number) {
+  // 1200px 以下来源面板是带遮罩的抽屉，遮罩会挡住顶部的产物开关，先把抽屉收起来
+  if (await page.locator(".context-panel-backdrop").isVisible()) {
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".context-panel")).toBeHidden();
+  }
   await page.getByRole("button", { name: "打开产物", exact: true }).click();
-  await expect(page.locator(".artifact-rail")).toBeVisible();
-  await expect(page.getByRole("dialog", { name: "产物工作台" })).toBeVisible();
-  await expect(page.getByRole("dialog", { name: "产物工作台" })).toHaveAttribute("aria-modal", "true");
+  await expect(page.locator(".studio-pane .artifact-rail")).toBeVisible();
   await expect(page.locator(".artifact-action-card").first()).toBeVisible();
 
   const metrics = await page.evaluate(() => {
     const cards = [...document.querySelectorAll<HTMLElement>(".artifact-action-card")];
-    const text = [...document.querySelectorAll<HTMLElement>(".artifact-action-summary, .artifact-action-meta")];
+    const titles = [...document.querySelectorAll<HTMLElement>(".artifact-action-copy strong")];
     return {
       cardHeights: cards.map((element) => element.getBoundingClientRect().height),
-      clippedText: text.filter((element) => (
-        element.scrollWidth > element.clientWidth + 1 || element.scrollHeight > element.clientHeight + 1
-      )).map((element) => element.textContent?.trim() ?? ""),
-      metadataFontSizes: text.map((element) => Number.parseFloat(getComputedStyle(element).fontSize))
+      clippedTitles: titles.filter((element) => element.scrollWidth > element.clientWidth + 1)
+        .map((element) => element.textContent?.trim() ?? ""),
+      titleFontSizes: titles.map((element) => Number.parseFloat(getComputedStyle(element).fontSize))
     };
   });
 
-  expect(metrics.cardHeights.every((height) => height >= 80)).toBe(true);
-  expect(metrics.clippedText).toEqual([]);
-  expect(metrics.metadataFontSizes.every((size) => size >= 12)).toBe(true);
+  // 类型卡片为紧凑的单行图标卡，保证触控高度即可
+  expect(metrics.cardHeights.every((height) => height >= 44)).toBe(true);
+  expect(metrics.clippedTitles).toEqual([]);
+  expect(metrics.titleFontSizes.every((size) => size >= 13)).toBe(true);
   await page.getByRole("button", { name: "关闭产物工作台", exact: true }).click();
-  await expect(page.getByRole("dialog", { name: "产物工作台" })).toBeHidden();
+  await expect(page.locator(".context-panel")).toBeHidden();
+  void viewportWidth;
 }
 
 async function assertLibraryProportions(page: Page, viewportWidth: number) {
@@ -142,41 +149,47 @@ async function assertLibraryProportions(page: Page, viewportWidth: number) {
     ".source-upload-dropzone"
   ]);
   expect(metrics[0]?.fontSize).toBeGreaterThanOrEqual(26);
-  expect(metrics[0]?.fontSize).toBeLessThanOrEqual(32);
-  expect(metrics[1]?.width).toBeGreaterThan(260);
+  expect(metrics[0]?.fontSize).toBeLessThanOrEqual(36);
   expect(metrics[2]?.width).toBeGreaterThan(260);
   expect(metrics[3]?.height).toBeGreaterThanOrEqual(104);
-  if (viewportWidth >= 1100) expect(metrics[1]!.x).toBeLessThan(metrics[2]!.x);
-  const filterMetrics = await elementMetrics(page, [".source-library-filter-row button", ".source-delete-button", ".source-library-statuses > span"]);
-  if (filterMetrics[0]) {
-    expect(filterMetrics[0].height).toBeGreaterThanOrEqual(39.5);
-    expect(filterMetrics[0].fontSize).toBeGreaterThanOrEqual(12);
-  } else {
-    const emptyAction = await elementMetrics(page, [".source-library-empty-action"]);
-    expect(emptyAction[0]?.height).toBeGreaterThanOrEqual(40);
+  // 空资料库只保留居中的上传卡片；有资料时目录在左、上传工具在右。
+  if (metrics[1]) {
+    expect(metrics[1].width).toBeGreaterThan(260);
+    // 1199px 以下改为单栏堆叠，资料目录排在上传工具上方
+    if (viewportWidth >= 1200) {
+      expect(metrics[1].x).toBeLessThan(metrics[2]!.x);
+    } else {
+      expect(metrics[1].y).toBeGreaterThanOrEqual(metrics[2]!.y);
+    }
   }
-  if (filterMetrics[1]) expect(filterMetrics[1].height).toBeGreaterThanOrEqual(39.5);
-  if (filterMetrics[2]) expect(filterMetrics[2].fontSize).toBeGreaterThanOrEqual(12);
+  const filterMetrics = await elementMetrics(page, [".source-library-filter-row button", ".source-delete-button", ".source-status-badge"]);
+  if (filterMetrics[0]) {
+    expect(filterMetrics[0].height).toBeGreaterThanOrEqual(28);
+    expect(filterMetrics[0].fontSize).toBeGreaterThanOrEqual(12);
+  }
+  if (filterMetrics[1]) expect(filterMetrics[1].height).toBeGreaterThanOrEqual(30);
+  if (filterMetrics[2]) expect(filterMetrics[2].fontSize).toBeGreaterThanOrEqual(11);
   await assertNoHorizontalOverflow(page);
 }
 
 async function assertResearchProportions(page: Page) {
   await expect(page.locator(".research-page-shell")).toBeVisible();
-  await expect(page.locator(".research-launchboard h2, .research-page h2").first()).toBeVisible();
+  // 工作台里已有研究记录时会直接打开最近一条运行，这里要量的是新建研究的表单
+  await expect(page.locator(".research-runs")).toBeVisible();
+  await page.getByRole("button", { name: "新研究" }).click();
+  await expect(page.locator(".research-composer")).toBeVisible();
+  await expect(page.locator(".research-composer-intro h2, .research-run-heading h2").first()).toBeVisible();
   const metrics = await elementMetrics(page, [
-    ".research-index h2",
-    ".research-launchboard h2, .research-page h2",
-    ".research-inline-actions button",
-    ".research-filter-row button"
+    ".research-composer-intro h2, .research-run-heading h2",
+    ".research-new-button",
+    ".research-mode-switch button, .research-run-tabs button"
   ]);
-  expect(metrics[0]?.fontSize).toBeGreaterThanOrEqual(20);
-  expect(metrics[0]?.fontSize).toBeLessThanOrEqual(26);
-  expect(metrics[1]?.fontSize).toBeGreaterThanOrEqual(26);
-  expect(metrics[1]?.fontSize).toBeLessThanOrEqual(32);
-  expect(metrics[2]?.height).toBeGreaterThanOrEqual(40);
-  expect(metrics[3]?.height).toBeGreaterThanOrEqual(39.5);
-  const metadata = await elementMetrics(page, [".research-launchboard-context dt", ".research-launchboard-context div > small", ".research-launchboard-flow small"]);
-  expect(metadata.every((item) => !item || item.fontSize >= 12)).toBe(true);
+  expect(metrics[0]?.fontSize).toBeGreaterThanOrEqual(22);
+  expect(metrics[0]?.fontSize).toBeLessThanOrEqual(36);
+  expect(metrics[1]?.height).toBeGreaterThanOrEqual(34);
+  expect(metrics[2]?.height).toBeGreaterThanOrEqual(24);
+  const metadata = await elementMetrics(page, [".research-composer-hint", ".research-runs-list small", ".research-run-metrics dt"]);
+  expect(metadata.every((item) => !item || item.fontSize >= 11)).toBe(true);
   await assertNoHorizontalOverflow(page);
 }
 
@@ -187,10 +200,10 @@ async function assertResearchPalette(page: Page) {
       return element ? getComputedStyle(element).backgroundColor : "";
     };
     const root = document.querySelector<HTMLElement>('.workbench-shell[data-view="research"]');
-    const primary = document.querySelector<HTMLElement>(".research-launchboard-actions .primary-action");
+    const primary = document.querySelector<HTMLElement>(".research-start-button");
     const primaryStyle = primary ? getComputedStyle(primary) : null;
-    const ink = root ? getComputedStyle(root).getPropertyValue("--nw-color-ink").trim() : "";
-    const domain = root ? getComputedStyle(root).getPropertyValue("--nw-domain-color").trim() : "";
+    const ink = root ? getComputedStyle(root).getPropertyValue("--primary").trim() : "";
+    const domain = root ? getComputedStyle(root).getPropertyValue("--accent").trim() : "";
     const colorProbe = document.createElement("span");
     colorProbe.style.backgroundColor = domain;
     document.body.append(colorProbe);
@@ -201,10 +214,9 @@ async function assertResearchPalette(page: Page) {
     return {
       theme: document.documentElement.dataset.theme,
       canvas: background(".workbench-canvas"),
-      index: background(".research-index"),
-      paper: background(".research-page"),
-      context: background(".research-launchboard-context"),
-      flow: background(".research-launchboard-flow"),
+      runs: background(".research-runs"),
+      composer: background(".research-composer-box"),
+      modes: background(".research-mode-switch"),
       ink,
       resolvedInk,
       domain,
@@ -219,76 +231,43 @@ async function assertResearchPalette(page: Page) {
   expect(palette.domain).not.toBe("");
   expect(palette.primary).toBe(palette.resolvedInk);
   expect(palette.primaryColor).not.toBe(palette.primary);
-  expect(new Set([palette.canvas, palette.index, palette.paper, palette.context, palette.flow]).size).toBeGreaterThanOrEqual(3);
+  expect(new Set([palette.canvas, palette.runs, palette.composer, palette.modes]).size).toBeGreaterThanOrEqual(3);
 }
 
 async function assertWikiProportions(page: Page) {
   await expect(page.locator(".wiki-workbench")).toBeVisible();
   if (await page.locator(".wiki-empty-workbench").isVisible()) {
     const metrics = await elementMetrics(page, [".wiki-empty-main h2", ".wiki-empty-action"]);
-    expect(metrics[0]?.fontSize).toBeGreaterThanOrEqual(26);
-    expect(metrics[0]?.fontSize).toBeLessThanOrEqual(32);
-    if (metrics[1]) expect(metrics[1].height).toBeGreaterThanOrEqual(39.5);
-    const metadata = await elementMetrics(page, [".wiki-empty-flow small", ".wiki-empty-context dt", ".wiki-empty-advice span"]);
-    expect(metadata.every((item) => !item || item.fontSize >= 12)).toBe(true);
+    expect(metrics[0]?.fontSize).toBeGreaterThanOrEqual(24);
+    expect(metrics[0]?.fontSize).toBeLessThanOrEqual(36);
+    if (metrics[1]) expect(metrics[1].height).toBeGreaterThanOrEqual(36);
+    const metadata = await elementMetrics(page, [".wiki-empty-main > p", ".wiki-empty-manual > summary"]);
+    expect(metadata.every((item) => !item || item.fontSize >= 11)).toBe(true);
   }
   await assertNoHorizontalOverflow(page);
 }
 
 async function assertMemoryProportions(page: Page, viewportWidth: number) {
   await expect(page.locator(".memory-workbench")).toBeVisible();
-  const metrics = await elementMetrics(page, [".memory-workbench h2", ".memory-workbench button"]);
-  expect(metrics[0]?.fontSize).toBeGreaterThanOrEqual(20);
-  expect(metrics[0]?.fontSize).toBeLessThanOrEqual(26);
-  // Chromium may report a nominal 40px CSS height as 39.999984px.
-  expect(metrics[1]?.height).toBeGreaterThanOrEqual(39.5);
+  const metrics = await elementMetrics(page, [".memory-hero h2", ".memory-composer .primary-action"]);
+  expect(metrics[0]?.fontSize).toBeGreaterThanOrEqual(22);
+  expect(metrics[0]?.fontSize).toBeLessThanOrEqual(36);
+  expect(metrics[1]?.height).toBeGreaterThanOrEqual(30);
   const metadata = await elementMetrics(page, [
-    ".memory-panel-heading > span",
-    ".memory-empty-kicker",
-    ".memory-review-flow small",
-    ".memory-review-flow li span:not(.memory-review-flow-icon)",
-    ".memory-review-handoff > div > span"
+    ".memory-layers dd",
+    ".memory-section-heading > span",
+    ".memory-kind-switch button",
+    ".memory-scope-select select"
   ]);
-  expect(metadata.every((item) => !item || item.fontSize >= 12)).toBe(true);
-  if (viewportWidth > 1120) {
-    const columns = await elementMetrics(page, [
-      ".memory-queue-panel",
-      ".memory-review-panel",
-      ".memory-version-panel"
-    ]);
-    expect(columns.every(Boolean)).toBe(true);
-    expect(columns[0]!.y).toBeCloseTo(columns[1]!.y, 0);
-    expect(columns[1]!.y).toBeCloseTo(columns[2]!.y, 0);
-    expect(columns[0]!.x).toBeLessThan(columns[1]!.x);
-    expect(columns[1]!.x).toBeLessThan(columns[2]!.x);
+  expect(metadata.every((item) => !item || item.fontSize >= 11)).toBe(true);
+  // 宽屏下记忆与资料的分工以两栏对照展示
+  if (viewportWidth >= 900) {
+    const layers = await elementMetrics(page, [".memory-layers > div:first-child", ".memory-layers > div:last-child"]);
+    expect(layers.every(Boolean)).toBe(true);
+    expect(layers[0]!.y).toBeCloseTo(layers[1]!.y, 0);
+    expect(layers[0]!.x).toBeLessThan(layers[1]!.x);
   }
   await assertNoHorizontalOverflow(page);
-}
-
-async function assertGlobalRailProportions(page: Page) {
-  const metrics = await page.evaluate(() => {
-    const measure = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)].map((element) => {
-      const bounds = element.getBoundingClientRect();
-      return {
-        height: bounds.height,
-        width: bounds.width,
-        fontSize: Number.parseFloat(getComputedStyle(element).fontSize)
-      };
-    });
-    return {
-      footerButtons: measure(".global-rail-actions button"),
-      logout: measure(".global-rail-logout"),
-      createConversation: measure(".global-rail-icon-button"),
-      auxiliaryText: measure(".workspace-switcher-label, .global-rail-conversation-note, .global-rail-conversation-copy small"),
-      workspaceSummaryClipped: [...document.querySelectorAll<HTMLElement>(".workspace-switcher-copy small")]
-        .some((element) => element.scrollWidth > element.clientWidth + 1 || element.scrollHeight > element.clientHeight + 1)
-    };
-  });
-  expect(metrics.footerButtons.every((item) => item.height >= 39.5 && item.fontSize >= 12)).toBe(true);
-  expect(metrics.logout.every((item) => item.height >= 39.5 && item.fontSize >= 12)).toBe(true);
-  expect(metrics.createConversation.every((item) => item.height >= 39.5 && item.width >= 39.5)).toBe(true);
-  expect(metrics.auxiliaryText.every((item) => item.fontSize >= 12)).toBe(true);
-  expect(metrics.workspaceSummaryClipped).toBe(false);
 }
 
 async function elementMetrics(page: Page, selectors: string[]) {
@@ -307,8 +286,10 @@ async function elementMetrics(page: Page, selectors: string[]) {
   }), selectors);
 }
 
-async function navigateFromRail(page: Page, name: string) {
-  await page.getByRole("button", { name, exact: true }).click();
+/** 对话视图没有导航项，从侧边栏的会话条目进入。 */
+async function openChatFromSidebar(page: Page) {
+  await page.locator(".sidebar-conversation").first().click();
+  await expect(page.locator(".chat-panel")).toBeVisible();
 }
 
 async function assertNoHorizontalOverflow(page: Page) {
@@ -319,39 +300,5 @@ async function assertNoHorizontalOverflow(page: Page) {
   expect(metrics.documentWidth).toBeLessThanOrEqual(metrics.viewportWidth);
 }
 
-async function login(page: Page) {
-  const loginForm = page.locator(".auth-card");
-  if (!await loginForm.isVisible()) return;
-  await loginForm.locator('input[autocomplete="username"]').fill(credentials.username);
-  await loginForm.locator('input[autocomplete="current-password"]').fill(credentials.password);
-  await loginForm.locator('button[type="submit"], button').last().click();
-}
 
-function loadCredentials() {
-  const fileValues = readSimpleEnv(resolve(process.cwd(), "..", ".env"));
-  const username = process.env.NOTEWEAVE_E2E_USERNAME
-    ?? process.env.NOTEWEAVE_BOOTSTRAP_USERNAME
-    ?? fileValues.NOTEWEAVE_BOOTSTRAP_USERNAME;
-  const password = process.env.NOTEWEAVE_E2E_PASSWORD
-    ?? process.env.NOTEWEAVE_BOOTSTRAP_PASSWORD
-    ?? fileValues.NOTEWEAVE_BOOTSTRAP_PASSWORD;
-  if (!username || !password) throw new Error("Real Playwright E2E requires NoteWeave bootstrap credentials");
-  return { username, password };
-}
 
-function readSimpleEnv(path: string) {
-  try {
-    return Object.fromEntries(
-      readFileSync(path, "utf8")
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter((line) => line && !line.startsWith("#") && line.includes("="))
-        .map((line) => {
-          const separator = line.indexOf("=");
-          return [line.slice(0, separator).trim(), line.slice(separator + 1).trim()];
-        })
-    ) as Record<string, string>;
-  } catch {
-    return {};
-  }
-}

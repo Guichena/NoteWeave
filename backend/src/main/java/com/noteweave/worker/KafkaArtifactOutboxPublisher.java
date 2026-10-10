@@ -24,7 +24,7 @@ public class KafkaArtifactOutboxPublisher implements ArtifactOutboxPublisher {
     @Override
     public void publish(String topic, String messageKey, String payloadJson, String deliveryToken) {
         Map<String, Object> command = new LinkedHashMap<>();
-        command.put("schema_version", "artifact-command.v1");
+        command.put("schema_version", commandVersion(payloadJson));
         command.put("task_id", extractTaskId(payloadJson));
         command.put("delivery_token", requireText(deliveryToken, "Artifact delivery token is missing"));
         kafkaPublisher.publish(topic, messageKey, write(command));
@@ -36,6 +36,19 @@ public class KafkaArtifactOutboxPublisher implements ArtifactOutboxPublisher {
                     objectMapper.readTree(payloadJson).path("task_id").asText(""),
                     "Artifact outbox payload is missing task_id"
             );
+        } catch (JsonProcessingException exception) {
+            throw new IllegalArgumentException("Artifact outbox payload is invalid", exception);
+        }
+    }
+
+    private String commandVersion(String payloadJson) {
+        try {
+            String taskType = objectMapper.readTree(payloadJson).path("task_type").asText("");
+            return switch (taskType) {
+                case "", "ARTIFACT_JOB" -> "artifact-command.v1";
+                case "VIDEO_MATERIAL" -> "video-material-command.v1";
+                default -> throw new IllegalArgumentException("Unsupported artifact outbox task type");
+            };
         } catch (JsonProcessingException exception) {
             throw new IllegalArgumentException("Artifact outbox payload is invalid", exception);
         }

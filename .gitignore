@@ -19,6 +19,7 @@ node_modules/
 .conda/
 reference/*
 !reference/artifact-skill-catalog-v1.json
+!reference/artifact-skill-catalog-v2.json
 __pycache__/
 .pytest_cache/
 
@@ -42,3 +43,6 @@ workers/**/exports/
 
 .DS_Store
 Thumbs.db
+
+# Vite 本地环境变量覆盖
+frontend/.env*.local

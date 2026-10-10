@@ -1,0 +1,438 @@
+/* ============================================================
+ * Dialogs: 新建工作台 / 新建会话 / 工作台设置
+ * ============================================================ */
+
+.workspace-create-backdrop,
+.conversation-create-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: var(--overlay);
+  animation: nw-backdrop-in 160ms var(--ease);
+}
+
+.workspace-create-dialog,
+.conversation-create-dialog {
+  display: grid;
+  gap: 18px;
+  width: min(480px, 100%);
+  max-height: calc(100dvh - 40px);
+  padding: 24px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  animation: nw-dialog-in 200ms var(--ease);
+}
+
+.workspace-create-header,
+.conversation-create-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.workspace-create-header > div,
+.conversation-create-header > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.workspace-create-header h2,
+.conversation-create-header h2 {
+  font-size: var(--text-xl);
+  font-weight: 600;
+}
+
+.workspace-create-mark,
+.conversation-create-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.workspace-create-close,
+.conversation-create-close {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  color: var(--muted);
+}
+
+.workspace-create-close:hover:not(:disabled),
+.conversation-create-close:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.workspace-create-intro {
+  color: var(--ink-2);
+  font-size: var(--text-md);
+  line-height: 1.65;
+}
+
+.workspace-create-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.workspace-create-capabilities span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+}
+
+.conversation-create-context {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+}
+
+.conversation-create-context strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--text-md);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-create-context > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.conversation-create-context svg {
+  color: var(--muted);
+}
+
+.workspace-create-form,
+.conversation-create-form {
+  display: grid;
+  gap: 16px;
+}
+
+.workspace-create-form label,
+.conversation-create-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.workspace-create-form label > span,
+.conversation-create-form label > span {
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  font-weight: 550;
+}
+
+.workspace-create-form label small {
+  color: var(--faint);
+  font-weight: 400;
+}
+
+.workspace-create-actions,
+.conversation-create-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.conversation-create-actions {
+  justify-content: flex-end;
+}
+
+.workspace-create-actions > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.workspace-create-actions > div {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.workspace-create-submit,
+.conversation-create-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 18px;
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: var(--text-md);
+  font-weight: 550;
+}
+
+.workspace-create-submit:hover:not(:disabled),
+.conversation-create-submit:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.workspace-create-submit:disabled,
+.conversation-create-submit:disabled {
+  opacity: 0.38;
+}
+
+/* ---------- Workspace settings (inside the side sheet) ---------- */
+
+.workspace-settings-panel {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  padding: 20px;
+}
+
+.workspace-settings-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.workspace-settings-header h2 {
+  font-size: var(--text-xl);
+}
+
+.workspace-settings-intro {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.workspace-settings-state {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.workspace-settings-state > div {
+  display: grid;
+  gap: 2px;
+}
+
+.workspace-settings-state strong {
+  color: var(--ink);
+}
+
+.workspace-settings-state .view-loading-skeleton {
+  grid-column: 1 / -1;
+}
+
+.workspace-settings-state.is-note {
+  display: block;
+}
+
+.workspace-settings-state-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink-2);
+}
+
+.workspace-retrieval-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.workspace-retrieval-setting strong {
+  font-size: var(--text-md);
+}
+
+.workspace-retrieval-setting p {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.workspace-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.workspace-toggle input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.workspace-toggle-track {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  transition: background var(--duration) var(--ease);
+}
+
+.workspace-toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--duration) var(--ease);
+}
+
+.workspace-toggle input:checked + .workspace-toggle-track {
+  background: var(--accent);
+}
+
+.workspace-toggle input:checked + .workspace-toggle-track .workspace-toggle-thumb {
+  transform: translateX(16px);
+}
+
+.workspace-toggle input:focus-visible + .workspace-toggle-track {
+  box-shadow: var(--focus-ring);
+}
+
+.workspace-members {
+  display: grid;
+  gap: 14px;
+}
+
+.workspace-member-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px;
+  align-items: end;
+  gap: 10px;
+}
+
+.workspace-member-add label {
+  display: grid;
+  gap: 6px;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  font-weight: 550;
+}
+
+.workspace-member-add .primary-action {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+.workspace-select-control {
+  position: relative;
+  display: block;
+}
+
+.workspace-select-control > svg {
+  display: none;
+}
+
+.workspace-member-list {
+  display: grid;
+  gap: 2px;
+}
+
+.workspace-member-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border-soft);
+}
+
+.workspace-member-identity {
+  display: grid;
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.workspace-member-identity strong {
+  font-size: var(--text-md);
+  font-weight: 550;
+}
+
+.workspace-member-identity span {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+
+.workspace-member-row .workspace-select-control {
+  width: 110px;
+}
+
+.workspace-member-row select {
+  padding-top: 6px;
+  padding-bottom: 6px;
+  font-size: var(--text-sm);
+}
+
+.workspace-member-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.workspace-member-actions button:not([class]) {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: var(--text-xs);
+}
+
+.workspace-member-actions .danger-button {
+  min-height: 32px;
+  font-size: var(--text-xs);
+}
+
+.workspace-settings-error {
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}

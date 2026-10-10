@@ -39,7 +39,7 @@ class SynthesisExecutor:
             rendered = f"{value} (limited by unresolved evidence)" if guarded else value
             claims.append({"claim_text": rendered, "cell_key": cell_key, "evidence_keys": evidence_keys, "guarded": guarded})
         narrative_result = NarrativeReportPolisher(self.llm_client).polish(synthesis_input)
-        llm_calls = 1 if self.llm_client is not None else 0
+        llm_calls = narrative_result.llm_calls
         role_result = {
             "result_schema_version": "research-synthesis-candidate.v2",
             "role": "SYNTHESIS",

@@ -44,7 +44,7 @@ export function ResearchAuditOverview({
 }: ResearchAuditOverviewProps) {
   return (
     <>
-      <p className="section-label">Closed-Loop Audit</p>
+      <p className="section-label">闭环审计</p>
       <div className="checkpoint-structured-grid process-lane-grid">
         <div className="link-card process-lane-card tone-neutral"><small className="process-lane-badge">Verifier Gate / Final Loop Decision</small><strong>系统为什么允许继续、恢复或写报告</strong><span>{verifierGateLead}</span><small>{verifierGateDetail}</small><small>{verifierGateMetrics}</small></div>
         <div className="link-card process-lane-card tone-workspace"><small className="process-lane-badge">Counterfactual Branch Summary</small><strong>有没有走反证分支</strong><span>{counterfactualLead}</span><small>{counterfactualDetail}</small><small>{counterfactualMetrics}</small></div>

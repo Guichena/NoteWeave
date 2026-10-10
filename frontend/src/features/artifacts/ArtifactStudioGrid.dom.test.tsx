@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-import { ArtifactStudioGrid, resolveRecommendedSkills } from "./ArtifactStudioGrid";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ArtifactStudioGrid } from "./ArtifactStudioGrid";
 import type { ArtifactStudioSkill } from "./artifactStudio";
 
-function skill(key: string, title: string): ArtifactStudioSkill {
+function skill(key: string, title: string, required: string[] = []): ArtifactStudioSkill {
   return {
     key,
     title,
@@ -18,45 +18,41 @@ function skill(key: string, title: string): ArtifactStudioSkill {
     promptFocus: "",
     tone: "blue",
     supportsUrl: false,
+    inputSchema: { type: "object", properties: {}, required },
     defaultInputHints: [],
     inputFields: []
   };
 }
 
 const skills = [
-  skill("resume_highlight", "简历亮点"),
-  skill("study_guide", "学习指南"),
-  skill("wiki_page", "Wiki 页面"),
   skill("mindmap_from_workspace", "思维导图"),
   skill("report_draft", "结构化报告"),
-  skill("video_summary", "视频总结")
+  skill("video_summary", "视频总结", ["url"]),
+  skill("audio_minutes", "音频纪要"),
+  skill("knowledge_blog", "视频知识博客", ["url", "video_material_bundle_id"])
 ];
 
 describe("ArtifactStudioGrid", () => {
-  it("builds a cross-format recommended set instead of taking the first four entries", () => {
-    expect(resolveRecommendedSkills(skills).map((item) => item.key)).toEqual([
-      "mindmap_from_workspace",
-      "report_draft",
-      "wiki_page",
-      "study_guide"
-    ]);
+  afterEach(() => cleanup());
+
+  it("groups artifact types by input source and hides video-derived outputs", () => {
+    render(<ArtifactStudioGrid skills={skills} isBusy={false} onSelectSkill={vi.fn()} />);
+
+    const sourceGroup = screen.getByRole("region", { name: "基于资料产物类型" });
+    const mediaGroup = screen.getByRole("region", { name: "音视频产物类型" });
+    expect(within(sourceGroup).getAllByRole("button").map((button) => button.textContent)).toEqual(["思维导图", "结构化报告"]);
+    expect(within(mediaGroup).getAllByRole("button").map((button) => button.textContent)).toEqual(["视频总结", "音频纪要"]);
+    // 视频知识博客需要先准备视频素材，只能从视频学习入口创建
+    expect(screen.queryByRole("button", { name: "视频知识博客" })).toBeNull();
   });
 
-  it("filters the unified Studio by user purpose", () => {
+  it("opens the composer for the chosen type and shows its summary on hover", () => {
     const onSelectSkill = vi.fn();
     render(<ArtifactStudioGrid skills={skills} isBusy={false} onSelectSkill={onSelectSkill} />);
 
-    expect(screen.getByRole("button", { name: /思维导图/ })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /简历亮点/ })).toBeNull();
-
-    fireEvent.click(screen.getByRole("tab", { name: "交付" }));
-
-    expect(screen.getByRole("button", { name: /简历亮点/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /视频总结/ })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /思维导图/ })).toBeNull();
-    expect(screen.getByText("2 种可用")).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: /视频总结/ }));
-    expect(onSelectSkill).toHaveBeenCalledWith(expect.objectContaining({ key: "video_summary" }));
+    const report = screen.getByRole("button", { name: "结构化报告" });
+    expect(report.getAttribute("title")).toBe("结构化报告说明");
+    fireEvent.click(report);
+    expect(onSelectSkill).toHaveBeenCalledWith(expect.objectContaining({ key: "report_draft" }));
   });
 });

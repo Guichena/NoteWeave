@@ -1,256 +1,266 @@
-import { useState } from "react";
-import { ArrowRight, BadgeCheck, BrainCircuit, Inbox, LoaderCircle, RefreshCw, ScanSearch } from "lucide-react";
+import { useState, type FormEvent } from "react";
+import { BookOpen, Check, CircleAlert, LoaderCircle, MessageSquareQuote, Plus, RefreshCw } from "lucide-react";
+import { formatRelativeTime } from "../../shared/util/datetime";
+import type { MemoryApi } from "./api";
+import type { MemoryItem, MemoryReviewDecision } from "./model";
 import {
-  type MemoryReviewDecision,
-  type MemoryReviewItem
-} from "./model";
-import { useMemoryReview } from "./useMemoryReview";
+  MEMORY_NEIGHBORHOOD_OPTIONS,
+  buildGateChecks,
+  describeKind,
+  describeNeighborhoods,
+  describeSource,
+  formatScore,
+  groupMemories,
+  memoryActions
+} from "./memoryItems";
+import { errorMessage, useMemoryItems, type AddPreferenceInput } from "./useMemoryItems";
 
 type MemoryReviewWorkbenchProps = {
   workspaceId: string;
+  api?: MemoryApi;
 };
 
-export function MemoryReviewWorkbench({ workspaceId }: MemoryReviewWorkbenchProps) {
-  const [reason, setReason] = useState("");
-  const [notice, setNotice] = useState("");
-  const {
-    queue,
-    selectedRevisionId,
-    selectedItem,
-    queueLoading,
-    mutating,
-    error,
-    lastDecision,
-    refreshQueue,
-    selectReview,
-    decide
-  } = useMemoryReview(workspaceId);
+type AddResult = { tone: "ready" | "review"; text: string; item: MemoryItem | null };
 
-  async function submitDecision(item: MemoryReviewItem, decision: MemoryReviewDecision) {
-    setNotice("");
+/** 记忆页：说明记忆与资料的分工，添加偏好，确认候选记忆，管理生效中的记忆。 */
+export function MemoryReviewWorkbench({ workspaceId, api }: MemoryReviewWorkbenchProps) {
+  const { items, loading, error, pendingRevisionId, refresh, addPreference, decide } = useMemoryItems(workspaceId, api);
+  const [actionError, setActionError] = useState("");
+  const groups = groupMemories(items);
+  const pending = [...groups.proposal, ...groups.recheck];
+
+  async function submitDecision(item: MemoryItem, decision: MemoryReviewDecision) {
+    setActionError("");
     try {
-      const result = await decide(item, decision, reason);
-      setReason("");
-      const revoked = result.revoked_memory_item_ids.length > 0
-        ? `；撤销 ${result.revoked_memory_item_ids.length} 条冲突 Memory`
-        : "";
-      setNotice(`审核已提交：${decision} → ${result.status}${revoked}`);
-    } catch {}
+      await decide(item, decision);
+    } catch (failure) {
+      setActionError(errorMessage(failure));
+    }
   }
 
   return (
-    <section className="memory-workbench">
-      <aside className="memory-queue-panel">
-        <p className="section-label">01 · Candidate</p>
-        <div className="memory-panel-heading">
-          <h2>统一审核队列</h2>
-          <span aria-label={`${queue.length} 条待审核`}>{queue.length}</span>
+    <section className="memory-page memory-workbench workbench-page" aria-labelledby="memory-title">
+      <header className="memory-hero">
+        <div>
+          <h2 id="memory-title">记忆</h2>
+          <p>回答时会参照这些偏好调整语气、结构和用词。记忆只影响表达方式，事实和引用始终来自资料库。</p>
         </div>
-        <p className="phase-note">
-          仅显示当前运行时产生、需要人工判断的 revision；历史对象不会重复进入队列。
-        </p>
         <button
-          className="secondary-button"
-          disabled={queueLoading || mutating}
-          onClick={() => void refreshQueue()}
+          type="button"
+          className="icon-button"
+          aria-label="刷新记忆"
+          title="刷新"
+          disabled={loading || !workspaceId}
+          onClick={() => void refresh()}
         >
-          <RefreshCw className={queueLoading ? "is-spinning" : ""} size={15} aria-hidden="true" />
-          {queueLoading ? "刷新中…" : "刷新审核队列"}
+          <RefreshCw className={loading ? "is-spinning" : ""} size={16} aria-hidden="true" />
         </button>
-        <div className="memory-queue-list">
-          {queue.map((item) => (
-            <button
-              key={item.revision_id}
-              className={selectedRevisionId === item.revision_id ? "active memory-review-card" : "memory-review-card"}
-              disabled={mutating}
-              onClick={() => selectReview(item)}
-            >
-              <span>{item.review_kind} · {item.status}</span>
-              <strong>{item.display_text}</strong>
-              <small>{item.review_status} · {item.lifecycle_status}</small>
-              <small>utility {formatScore(item.utility_score)}</small>
-            </button>
-          ))}
-          {queueLoading ? (
-            <p className="phase-note">正在加载审核队列…</p>
-          ) : null}
-          {!queueLoading && queue.length === 0 ? (
-            <div className="empty-panel">
-              <strong>队列为空</strong>
-              <p>当前没有待审核的 Memory revision。运行产生新候选后会出现在这里。</p>
-            </div>
-          ) : null}
-        </div>
-      </aside>
+      </header>
 
-      <article className="memory-review-panel">
-        <p className="section-label">02 · Review</p>
-        <div className="memory-runtime-inline">
-          <span className="memory-runtime-inline-index">03</span>
-          <div>
-            <strong>运行时生效</strong>
-            <span>接受的 revision 成为当前版本；拒绝或撤销会同步退出编译、召回与回放。</span>
-          </div>
+      <dl className="memory-layers" aria-label="记忆与资料的分工">
+        <div>
+          <dt><MessageSquareQuote size={15} aria-hidden="true" />记忆 · 表达偏好</dt>
+          <dd>编入回答的表达控制，决定怎么说：语气、结构、术语和需要避免的写法。你在对话里提出的长期要求会自动整理成候选。</dd>
         </div>
-        {notice ? <p className="status-line" role="status">{notice}</p> : null}
-        {error ? <p className="memory-error" role="alert">{error}</p> : null}
-        {lastDecision ? (
-          <p className="phase-note">
-            最近决策：{lastDecision.status} · revision={lastDecision.revision_id}
-          </p>
-        ) : null}
-        {queueLoading && !selectedItem ? (
-          <div className="memory-review-loading" role="status" aria-live="polite">
-            <span className="memory-review-loading-icon" aria-hidden="true">
-              <LoaderCircle className="is-spinning" size={22} />
-            </span>
-            <div>
-              <strong>正在读取审核队列</strong>
-              <p>同步当前运行时的 Memory revision 与审核状态。</p>
-            </div>
-            <span className="memory-review-loading-line" aria-hidden="true" />
-            <span className="memory-review-loading-line is-short" aria-hidden="true" />
+        <div>
+          <dt><BookOpen size={15} aria-hidden="true" />资料 · 事实证据</dt>
+          <dd>来自资料库和知识库的原文，决定说什么，每个结论都附引用。</dd>
+        </div>
+      </dl>
+
+      <MemoryComposer disabled={!workspaceId} onAdd={addPreference} />
+
+      {error ? <p className="memory-error" role="alert">{error}</p> : null}
+      {actionError ? <p className="memory-error" role="alert">{actionError}</p> : null}
+
+      {pending.length > 0 ? (
+        <section className="memory-section" aria-labelledby="memory-pending-heading">
+          <div className="memory-section-heading">
+            <h3 id="memory-pending-heading">待确认</h3>
+            <span>{pending.length}</span>
+            <small>未通过自动检查的候选，以及使用效果变差的记忆</small>
           </div>
-        ) : selectedItem ? (
-          <>
-            <h2>{selectedItem.review_kind === "PROPOSAL" ? "新 Revision 审核" : "已生效 Memory 复核"}</h2>
-            <div className="memory-statement-card">
-              <strong>{selectedItem.display_text}</strong>
-              <span>revision={selectedItem.revision_id}</span>
-              <small>provenance={selectedItem.provenance_ref || "-"}</small>
-            </div>
-            <div className="memory-metric-grid">
-              <Metric label="Review" value={selectedItem.review_status} />
-              <Metric label="Lifecycle" value={selectedItem.lifecycle_status} />
-              <Metric label="Conflict" value={selectedItem.conflict_status} />
-              <Metric label="Utility" value={formatScore(selectedItem.utility_score)} />
-            </div>
-            <label className="input-block">
-              <span>审核理由</span>
-              <textarea
-                rows={3}
-                value={reason}
-                onChange={(event) => setReason(event.target.value)}
-                placeholder="说明接受、拒绝、替换或撤销的依据"
-              />
-            </label>
-            <div className="memory-decision-actions">
-              {decisionOptions(selectedItem).map((option) => (
-                <button
-                  key={option.decision}
-                  className={option.tone === "danger" ? "memory-danger-button" : option.tone === "secondary" ? "secondary-button" : ""}
-                  disabled={mutating}
-                  onClick={() => void submitDecision(selectedItem, option.decision)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </>
+          <ul className="memory-card-list">
+            {pending.map((item) => (
+              <li key={item.revision_id}>
+                <MemoryPendingCard item={item} busy={pendingRevisionId === item.revision_id} onDecide={submitDecision} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <section className="memory-section" aria-labelledby="memory-active-heading">
+        <div className="memory-section-heading">
+          <h3 id="memory-active-heading">生效中</h3>
+          {groups.active.length > 0 ? <span>{groups.active.length}</span> : null}
+        </div>
+        {groups.active.length > 0 ? (
+          <ul className="memory-active-list">
+            {groups.active.map((item) => (
+              <li key={item.revision_id}>
+                <MemoryActiveRow item={item} busy={pendingRevisionId === item.revision_id} onDecide={submitDecision} />
+              </li>
+            ))}
+          </ul>
+        ) : loading ? (
+          <p className="memory-quiet" role="status"><LoaderCircle className="is-spinning" size={14} aria-hidden="true" />正在读取记忆</p>
         ) : (
-          <div className="memory-empty-state" aria-label="Memory 审核流程">
-            <div className="memory-empty-heading">
-              <span className="empty-state-icon" aria-hidden="true"><BrainCircuit size={22} /></span>
-              <div className="empty-state-copy">
-                <span className="memory-empty-kicker">{queue.length} 条 revision 等待审核</span>
-                <strong>{queue.length > 0 ? "选择一条 Memory revision" : "等待新的 Memory revision"}</strong>
-                <p>
-                  {queue.length > 0
-                    ? "从左侧队列选择候选，随后核对来源、冲突状态和效用分数。"
-                    : "当前运行时没有待审核候选，新 revision 产生后会进入这条审核流程。"}
-                </p>
-              </div>
-            </div>
-            <ol className="memory-review-flow" aria-label="候选到审核决策的阶段">
-              <li className={queue.length > 0 ? "is-current" : "is-waiting"}>
-                <span className="memory-review-flow-icon" aria-hidden="true"><Inbox size={17} /></span>
-                <div>
-                  <small>01 · Candidate</small>
-                  <strong>进入审核队列</strong>
-                  <span>{queue.length} 条待审核</span>
-                </div>
-              </li>
-              <li>
-                <span className="memory-review-flow-icon" aria-hidden="true"><ScanSearch size={17} /></span>
-                <div>
-                  <small>02 · Review</small>
-                  <strong>核对来源与冲突</strong>
-                  <span>人工决定接受或拒绝</span>
-                </div>
-              </li>
-            </ol>
-            <div className="memory-review-handoff" aria-label="审核后的运行时去向">
-              <ArrowRight size={18} aria-hidden="true" />
-              <div>
-                <small>Next · Runtime</small>
-                <strong>审核通过后进入运行时</strong>
-                <span>右侧显示唯一生效版本与召回约束。</span>
-              </div>
-            </div>
-          </div>
+          <p className="memory-quiet">还没有生效的记忆。在对话里提出长期要求（例如以后先给结论），或在上方添加一条偏好。</p>
         )}
-      </article>
-
-      <aside className="memory-version-panel">
-        <p className="section-label">03 · Runtime</p>
-        <div className="memory-runtime-heading">
-          <span aria-hidden="true"><BadgeCheck size={18} /></span>
-          <h2>运行时生效</h2>
-        </div>
-        <p className="phase-note">
-          接受后 revision 成为该 Memory item 的 current revision；拒绝或撤销会同步从编译、召回和回放中移除。
-        </p>
-        <dl className="memory-runtime-policy" aria-label="运行时约束">
-          <div>
-            <dt>生效版本</dt>
-            <dd>当前已接受 revision</dd>
-          </div>
-          <div>
-            <dt>召回范围</dt>
-            <dd>仅限已接受内容</dd>
-          </div>
-          <div>
-            <dt>拒绝 / 撤销</dt>
-            <dd>同步退出运行时</dd>
-          </div>
-        </dl>
-      </aside>
+      </section>
     </section>
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function MemoryComposer({ disabled, onAdd }: {
+  disabled: boolean;
+  onAdd: (input: AddPreferenceInput) => Promise<MemoryItem | null>;
+}) {
+  const [text, setText] = useState("");
+  const [kind, setKind] = useState<AddPreferenceInput["kind"]>("PREFERENCE");
+  const [neighborhood, setNeighborhood] = useState("COMMON");
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<AddResult | null>(null);
+  const [failure, setFailure] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!text.trim() || submitting) return;
+    setSubmitting(true);
+    setFailure("");
+    setResult(null);
+    try {
+      const item = await onAdd({ text, kind, neighborhood });
+      setText("");
+      const failed = item?.gate ? buildGateChecks(item.gate).filter((check) => !check.passed) : [];
+      setResult(item?.revision_status === "ACTIVE"
+        ? { tone: "ready", text: "已生效：通过了来源、效用、风险和冲突四项检查。", item }
+        : { tone: "review", text: `需要确认：${failed.map((check) => check.hint).join("；") || "未通过自动检查"}。`, item });
+    } catch (error) {
+      setFailure(errorMessage(error));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
-    <div className="memory-metric-card">
-      <small>{label}</small>
-      <strong>{value}</strong>
-    </div>
+    <form className="memory-composer" onSubmit={(event) => void submit(event)} aria-label="添加偏好">
+      <label className="memory-composer-input">
+        <span className="sr-only">偏好内容</span>
+        <textarea
+          rows={2}
+          maxLength={500}
+          value={text}
+          disabled={disabled}
+          onChange={(event) => setText(event.target.value)}
+          placeholder={kind === "NEGATIVE" ? "例如：不要使用营销式的夸张措辞" : "例如：回答先给结论，再展开证据"}
+        />
+      </label>
+      <div className="memory-composer-row">
+        <div className="memory-kind-switch" role="radiogroup" aria-label="类型">
+          {([["PREFERENCE", "偏好"], ["NEGATIVE", "避免"]] as const).map(([value, label]) => (
+            <button key={value} type="button" role="radio" aria-checked={kind === value}
+              className={kind === value ? "is-active" : ""} onClick={() => setKind(value)}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <label className="memory-scope-select">
+          <span>适用于</span>
+          <select value={neighborhood} onChange={(event) => setNeighborhood(event.target.value)}>
+            {MEMORY_NEIGHBORHOOD_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </label>
+        <button type="submit" className="primary-action" disabled={disabled || submitting || !text.trim()}>
+          {submitting ? <LoaderCircle className="is-spinning" size={15} aria-hidden="true" /> : <Plus size={15} aria-hidden="true" />}
+          添加
+        </button>
+      </div>
+      {result ? (
+        <p className={`memory-add-result is-${result.tone}`} role="status">
+          {result.tone === "ready" ? <Check size={14} aria-hidden="true" /> : <CircleAlert size={14} aria-hidden="true" />}
+          {result.text}
+        </p>
+      ) : null}
+      {failure ? <p className="memory-error" role="alert">{failure}</p> : null}
+    </form>
   );
 }
 
-export function decisionOptions(item: MemoryReviewItem): Array<{
-  decision: MemoryReviewDecision;
-  label: string;
-  tone: "primary" | "secondary" | "danger";
-}> {
-  if (item.review_kind === "ACTIVE") {
-    return [
-      { decision: "ACCEPT", label: "确认继续使用", tone: "primary" },
-      { decision: "REVOKE", label: "撤销 Memory", tone: "danger" }
-    ];
-  }
-  if (item.conflict_status === "CONFLICTING_ACTIVE_MEMORY") {
-    return [
-      { decision: "REPLACE_EXISTING", label: "替换冲突 Memory", tone: "primary" },
-      { decision: "REJECT", label: "拒绝 Revision", tone: "danger" }
-    ];
-  }
-  return [
-    { decision: "ACCEPT", label: "接受 Revision", tone: "primary" },
-    { decision: "REJECT", label: "拒绝 Revision", tone: "danger" }
-  ];
+function MemoryPendingCard({ item, busy, onDecide }: {
+  item: MemoryItem;
+  busy: boolean;
+  onDecide: (item: MemoryItem, decision: MemoryReviewDecision) => void;
+}) {
+  const recheck = item.revision_status !== "PROPOSED";
+  const checks = !recheck && item.gate ? buildGateChecks(item.gate) : [];
+  return (
+    <article className={`memory-card${recheck ? " is-recheck" : ""}`}>
+      <p className="memory-card-text">{item.display_text}</p>
+      <p className="memory-card-meta">
+        <span className={`memory-kind-tag is-${item.candidate_type === "NEGATIVE" ? "negative" : "preference"}`}>{describeKind(item)}</span>
+        适用于{describeNeighborhoods(item.task_neighborhoods)} · 来自{describeSource(item)} · {formatRelativeTime(item.created_at)}
+      </p>
+      {recheck ? (
+        <p className="memory-card-note">
+          最近几次使用后的反馈不佳，效用降到 {formatScore(item.utility_score)}，已暂停在回答中使用。确认继续使用后恢复，也可以直接停用。
+        </p>
+      ) : checks.length > 0 ? (
+        <ul className="memory-gate-checks" aria-label="门控检查">
+          {checks.map((check) => (
+            <li key={check.key} className={check.passed ? "is-passed" : "is-failed"} title={check.passed ? "通过" : check.hint}>
+              {check.passed ? <Check size={12} strokeWidth={3} aria-hidden="true" /> : <CircleAlert size={12} aria-hidden="true" />}
+              <span>{check.label}</span>
+              <strong>{check.value}</strong>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {!recheck && checks.some((check) => !check.passed) ? (
+        <p className="memory-card-note">{checks.filter((check) => !check.passed).map((check) => check.hint).join("；")}。</p>
+      ) : null}
+      <div className="memory-card-actions">
+        {memoryActions(item).map((action) => (
+          <button key={action.decision} type="button" disabled={busy}
+            className={action.tone === "primary" ? "primary-action" : action.tone === "danger" ? "memory-danger-button" : "secondary-button"}
+            onClick={() => onDecide(item, action.decision)}>
+            {action.label}
+          </button>
+        ))}
+      </div>
+    </article>
+  );
 }
 
-function formatScore(value: number) {
-  return Number.isFinite(value) ? value.toFixed(2) : "0.00";
+function MemoryActiveRow({ item, busy, onDecide }: {
+  item: MemoryItem;
+  busy: boolean;
+  onDecide: (item: MemoryItem, decision: MemoryReviewDecision) => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <div className="memory-active-row">
+      <span className={`memory-kind-tag is-${item.candidate_type === "NEGATIVE" ? "negative" : "preference"}`}>{describeKind(item)}</span>
+      <div className="memory-active-copy">
+        <strong>{item.display_text}</strong>
+        <small>
+          适用于{describeNeighborhoods(item.task_neighborhoods)} · 来自{describeSource(item)}
+          {item.application_count > 0 ? ` · 已用于 ${item.application_count} 次回答` : " · 尚未使用"}
+          {item.memory_scope === "USER" ? " · 仅自己可见" : ""}
+        </small>
+      </div>
+      {confirming ? (
+        <span className="memory-active-confirm">
+          <button type="button" className="memory-danger-button" disabled={busy} onClick={() => onDecide(item, "REVOKE")}>确认停用</button>
+          <button type="button" className="secondary-button" onClick={() => setConfirming(false)}>取消</button>
+        </span>
+      ) : (
+        <button type="button" className="secondary-button memory-active-revoke" disabled={busy}
+          aria-label={`停用记忆：${item.display_text}`} onClick={() => setConfirming(true)}>
+          停用
+        </button>
+      )}
+    </div>
+  );
 }

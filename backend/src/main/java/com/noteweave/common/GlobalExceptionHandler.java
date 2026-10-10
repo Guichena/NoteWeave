@@ -21,9 +21,15 @@ public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(BusinessException.class)
-    ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException ex) {
+    ResponseEntity<ApiResponse<Void>> handleBusinessException(
+            BusinessException ex, jakarta.servlet.http.HttpServletRequest request) {
         if (ex.code().startsWith("RESEARCH_AGENT_COMPLETION")) {
             log.warn("Research agent completion rejected: code={}, reason={}", ex.code(), ex.getMessage());
+        } else if (request != null && request.getRequestURI() != null
+                && request.getRequestURI().startsWith("/internal/")) {
+            // Worker 回调被拒时没有用户界面可看，只能靠日志定位
+            log.warn("Internal callback rejected: path={}, code={}, reason={}",
+                    request.getRequestURI(), ex.code(), ex.getMessage());
         }
         return ResponseEntity.status(ex.status()).body(ApiResponse.error(ex.code(), ex.getMessage()));
     }

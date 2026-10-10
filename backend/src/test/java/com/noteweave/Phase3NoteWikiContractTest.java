@@ -805,6 +805,80 @@ class Phase3NoteWikiContractTest {
     }
 
     @Test
+    void rebuildShouldPruneOrphanedAutoConceptPagesButKeepUserEditedPages() throws Exception {
+        String workspaceId = createWorkspace();
+        uploadSource(workspaceId);
+        mockMvc.perform(put("/api/v2/workspaces/{workspaceId}/wiki-settings", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("wiki_enabled", true))))
+                .andExpect(status().isOk());
+        // 旧版概念抽取留下的自动概念页：没有任何资料页再链接到它
+        String staleId = insertWikiPage(workspaceId, "user_upload", "SYSTEM:KNOWLEDGE");
+        // 同样没有资料页引用，但用户编辑过，必须保留
+        String editedId = insertWikiPage(workspaceId, "手工整理的概念", "user-1");
+
+        mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/wiki/rebuild", workspaceId))
+                .andExpect(status().isOk());
+
+        assertThat(jdbcTemplate.queryForObject("select status from knowledge_item where id = ?", String.class, staleId))
+                .isEqualTo("DELETED");
+        assertThat(jdbcTemplate.queryForObject("select status from knowledge_item where id = ?", String.class, editedId))
+                .isEqualTo("ACTIVE");
+        // 资料页当前链接的概念页不受影响
+        Integer linkedConceptPages = jdbcTemplate.queryForObject("""
+                select count(*)
+                from knowledge_item_link l
+                join knowledge_item page on page.id = l.source_item_id
+                join knowledge_item concept on concept.id = l.target_item_id
+                join knowledge_version v on v.id = concept.latest_version_id
+                where page.workspace_id = ? and page.title = 'phase3.md'
+                  and concept.status = 'ACTIVE' and concept.page_kind = 'CONCEPT'
+                  and v.content like '%该概念页由工作台级 Wiki ingest 自动汇聚%'
+                """, Integer.class, workspaceId);
+        assertThat(linkedConceptPages).isPositive();
+        // 自动生成的资料页固定归为总览页，不受正文里概念二字影响
+        assertThat(jdbcTemplate.queryForObject("""
+                select page_kind from knowledge_item
+                where workspace_id = ? and title = 'phase3.md' and status = 'ACTIVE'
+                """, String.class, workspaceId)).isEqualTo("OVERVIEW");
+        assertThat(jdbcTemplate.queryForObject("""
+                select page_kind from knowledge_item
+                where workspace_id = ? and title = 'Wiki Index' and status = 'ACTIVE'
+                """, String.class, workspaceId)).isEqualTo("OVERVIEW");
+        // 资料页记录概念指纹，内容不变时重建沿用同一组概念
+        String sourcePage = jdbcTemplate.queryForObject("""
+                select v.content from knowledge_item i join knowledge_version v on v.id = i.latest_version_id
+                where i.workspace_id = ? and i.title = 'phase3.md' and i.status = 'ACTIVE'
+                """, String.class, workspaceId);
+        assertThat(sourcePage).contains("- concept_fingerprint: `");
+        java.util.List<String> conceptsBefore = com.noteweave.knowledge.WikiIngestService.selectedConcepts(sourcePage);
+        mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/wiki/rebuild", workspaceId))
+                .andExpect(status().isOk());
+        String rebuilt = jdbcTemplate.queryForObject("""
+                select v.content from knowledge_item i join knowledge_version v on v.id = i.latest_version_id
+                where i.workspace_id = ? and i.title = 'phase3.md' and i.status = 'ACTIVE'
+                """, String.class, workspaceId);
+        assertThat(com.noteweave.knowledge.WikiIngestService.selectedConcepts(rebuilt))
+                .isNotEmpty().isEqualTo(conceptsBefore);
+    }
+
+    private String insertWikiPage(String workspaceId, String title, String updatedBy) {
+        String itemId = java.util.UUID.randomUUID().toString();
+        String versionId = java.util.UUID.randomUUID().toString();
+        jdbcTemplate.update("""
+                insert into knowledge_item (id, workspace_id, item_type, page_kind, title, status, created_by, updated_by)
+                values (?, ?, 'WIKI', 'OVERVIEW', ?, 'ACTIVE', 'SYSTEM:KNOWLEDGE', ?)
+                """, itemId, workspaceId, title, updatedBy);
+        jdbcTemplate.update("""
+                insert into knowledge_version (id, item_id, version_no, content, summary)
+                values (?, ?, 1, ?, '')
+                """, versionId, itemId, "# " + title + "\n\n## 概念摘要\n\n该概念页由工作台级 Wiki ingest 自动汇聚，与 `"
+                + title + "` 相关的资料页和片段会持续回流到这里。\n");
+        jdbcTemplate.update("update knowledge_item set latest_version_id = ? where id = ?", versionId, itemId);
+        return itemId;
+    }
+
+    @Test
     void deletingSourceShouldRetractGeneratedWikiPageWhenWikiIsEnabled() throws Exception {
         String workspaceId = createWorkspace();
         Long catalogVersionBeforeUpload = jdbcTemplate.queryForObject(

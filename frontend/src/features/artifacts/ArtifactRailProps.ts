@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import type { ArtifactSidebarState } from "./artifactSidebar";
+import type { ArtifactRuntimeTrace } from "./artifactRuntimeTrace";
 import type { ArtifactStudioField, ArtifactStudioSkill } from "./artifactStudio";
-import type { ArtifactVersionDetail } from "./model";
+import type { ArtifactJobSummary, ArtifactVersionComparison, ArtifactVersionDetail } from "./model";
 import type { Workspace } from "../workspace/model";
 
 export type ArtifactRailProps = {
@@ -23,13 +23,15 @@ export type ArtifactRailProps = {
   clearArtifactComposerError: () => void;
   artifactStudioSkills: ArtifactStudioSkill[];
   artifactSkillsLoading: boolean;
+  artifactJobs: ArtifactJobSummary[];
   artifactJobsLoading: boolean;
+  refreshArtifactJobs?: () => Promise<unknown>;
   sourceCount: number;
   setSelectedArtifactSkillKey: (key: string) => void;
   setArtifactFormValues: (
     value: Record<string, string> | ((current: Record<string, string>) => Record<string, string>)
   ) => void;
-  artifactSidebarState: ArtifactSidebarState;
+  selectedArtifactHistoryVersion: ArtifactVersionDetail | null;
   latestArtifactVersion: ArtifactVersionDetail | null;
   formatRelativeTime: (value: string) => string;
   saveArtifactVersionAsSource: (version: { artifact_job_id: string; version_no: number }) => void | Promise<void>;
@@ -44,23 +46,21 @@ export type ArtifactRailProps = {
   compareArtifactWithPreviousVersion: (version: {
     artifact_job_id: string;
     version_no: number;
-  }) => void | Promise<void>;
+  }) => Promise<ArtifactVersionComparison | null | void> | void;
   rollbackArtifactVersion: (version: { artifact_job_id: string; version_no: number }) => void | Promise<void>;
   downloadArtifactVersionPdf: (version: {
     artifact_job_id: string;
     version_no: number;
-    runtime_trace?: unknown;
+    runtime_trace?: ArtifactRuntimeTrace | null;
     files?: Array<{ file_format: string; status: string }>;
   }) => void | Promise<void>;
+  downloadArtifactVersionFile: (version: {
+    artifact_job_id: string;
+    version_no: number;
+  }, file: import("./model").ArtifactFileMetadata) => void | Promise<void>;
   resolveArtifactSkillTitle: (skillKey: string, skills?: ArtifactStudioSkill[]) => string;
-  summarizeRunStatus: (status: string) => string;
   openArtifactHistoryVersion: (item: import("./artifactHistory").ArtifactHistoryItem) => void | Promise<void>;
   artifactHistoryLoadingKey: string;
-  openWikiHome: () => void | Promise<void>;
-  openResearchWorkbench: () => void | Promise<void>;
-  openMemoryWorkbench: () => void;
-  toggleWikiEnabled: () => void | Promise<void>;
-  wikiEnabled: boolean;
   sourceDraftTitle: string;
   setSourceDraftTitle: (value: string) => void;
   sourceDraftContent: string;
@@ -69,5 +69,4 @@ export type ArtifactRailProps = {
   rewriteNoteSourceDraft: () => void | Promise<void>;
   saveNoteAnswerAsSource: () => void | Promise<void>;
   lastNoteAssistantMessageId: string;
-  wikiRebuildAdvice: { message?: string } | null | undefined;
 };

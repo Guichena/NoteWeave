@@ -35,6 +35,8 @@ class ResearchMatrixPlanningService {
             "(?i)\\b(?:vs\\.?|versus)\\b|比较|对比|对照");
     private static final Pattern ENTITY_SEPARATOR = Pattern.compile(
             "(?i)\\s+(?:vs\\.?|versus|and)\\s+|、|，|,|和|与|及");
+    private static final Pattern SCENARIO_QUALIFIER = Pattern.compile(
+            "\\s*在[^、，,和与及]{1,40}?[下中里上时]$");
     private static final Pattern HIGH_RISK = Pattern.compile(
             "(?i)安全|风险|合规|法律|医疗|财务|隐私|security|safety|legal|medical|financial|privacy");
 
@@ -128,6 +130,8 @@ class ResearchMatrixPlanningService {
         if (marker.find() && marker.start() == 0) candidate = candidate.substring(marker.end()).strip();
         int possessive = candidate.indexOf('的');
         if (possessive > 0) candidate = candidate.substring(0, possessive);
+        // 去掉对象列表后面的场景限定语，例如 A、B 和 C 在 RAG 场景下；否则会粘在最后一个对象上
+        candidate = SCENARIO_QUALIFIER.matcher(candidate).replaceFirst("").strip();
         Set<String> labels = new LinkedHashSet<>();
         for (String raw : ENTITY_SEPARATOR.split(candidate)) {
             String label = raw.replaceAll("^[\\s:：?？]+|[\\s:：?？]+$", "").strip();

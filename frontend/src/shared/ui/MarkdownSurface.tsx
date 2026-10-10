@@ -4,6 +4,30 @@ type MarkdownSurfaceProps = {
   content: string;
   className?: string;
   compactCitations?: boolean;
+  /** 传入后，正文里的 [1]、[2] 会渲染成可点击的来源角标。 */
+  citations?: string[];
+  activeCitation?: number | null;
+  onCitationClick?: (index: number) => void;
+  /** 传入后，[[页面标题]] 会渲染成可点击的 Wiki 链接；返回 false 表示页面不存在。 */
+  onWikiLinkClick?: (title: string) => boolean | void;
+  resolveWikiLink?: (title: string) => boolean;
+  /** 与 compactCitations 配合：传入后 [evidence:xxx] 渲染为带编号、可点击的证据角标。 */
+  onEvidenceClick?: (evidenceId: string) => void;
+  /** 证据编号顺序，通常为报告中首次出现的顺序。 */
+  evidenceOrder?: string[];
+  activeEvidence?: string | null;
+};
+
+type InlineContext = {
+  compactCitations: boolean;
+  citations?: string[];
+  activeCitation?: number | null;
+  onCitationClick?: (index: number) => void;
+  onWikiLinkClick?: (title: string) => boolean | void;
+  resolveWikiLink?: (title: string) => boolean;
+  onEvidenceClick?: (evidenceId: string) => void;
+  evidenceOrder?: string[];
+  activeEvidence?: string | null;
 };
 
 function headingId(value: string) {
@@ -15,7 +39,23 @@ const orderedItemPattern = /^\d+[.)]\s+(.+)$/;
 const unorderedItemPattern = /^[-*+]\s+(.+)$/;
 const tableDividerCellPattern = /^:?-{3,}:?$/;
 
-export function MarkdownSurface({ content, className = "", compactCitations = false }: MarkdownSurfaceProps) {
+export function MarkdownSurface({
+  content,
+  className = "",
+  compactCitations = false,
+  citations,
+  activeCitation = null,
+  onCitationClick,
+  onWikiLinkClick,
+  resolveWikiLink,
+  onEvidenceClick,
+  evidenceOrder,
+  activeEvidence = null
+}: MarkdownSurfaceProps) {
+  const inline: InlineContext = {
+    compactCitations, citations, activeCitation, onCitationClick, onWikiLinkClick, resolveWikiLink,
+    onEvidenceClick, evidenceOrder, activeEvidence
+  };
   const lines = content.replaceAll("\r\n", "\n").split("\n");
   const blocks: ReactNode[] = [];
   let index = 0;
@@ -48,7 +88,7 @@ export function MarkdownSurface({ content, className = "", compactCitations = fa
     const heading = line.match(headingPattern);
     if (heading) {
       const level = heading[1].length;
-      const text = renderInlineMarkdown(heading[2], compactCitations);
+      const text = renderInlineMarkdown(heading[2], inline);
       const key = `heading-${blocks.length}`;
       blocks.push(level === 1
         ? <h2 id={headingId(heading[2])} key={key}>{text}</h2>
@@ -74,14 +114,14 @@ export function MarkdownSurface({ content, className = "", compactCitations = fa
         <div className="markdown-table-scroll" role="region" aria-label="报告对比表" tabIndex={0} key={`table-${blocks.length}`}>
           <table>
             <thead>
-              <tr>{tableHeader.map((cell, cellIndex) => <th scope="col" key={`head-${cellIndex}`}>{renderInlineMarkdown(cell, compactCitations)}</th>)}</tr>
+              <tr>{tableHeader.map((cell, cellIndex) => <th scope="col" key={`head-${cellIndex}`}>{renderInlineMarkdown(cell, inline)}</th>)}</tr>
             </thead>
             <tbody>
               {rows.map((row, rowIndex) => (
                 <tr key={`row-${rowIndex}`}>
                   {row.map((cell, cellIndex) => cellIndex === 0
-                    ? <th scope="row" key={`cell-${cellIndex}`}>{renderInlineMarkdown(cell, compactCitations)}</th>
-                    : <td key={`cell-${cellIndex}`}>{renderInlineMarkdown(cell, compactCitations)}</td>)}
+                    ? <th scope="row" key={`cell-${cellIndex}`}>{renderInlineMarkdown(cell, inline)}</th>
+                    : <td key={`cell-${cellIndex}`}>{renderInlineMarkdown(cell, inline)}</td>)}
                 </tr>
               ))}
             </tbody>
@@ -98,7 +138,7 @@ export function MarkdownSurface({ content, className = "", compactCitations = fa
         index += 1;
       }
       blocks.push(
-        <blockquote key={`quote-${blocks.length}`}>{renderInlineMarkdown(quoteLines.join(" "), compactCitations)}</blockquote>
+        <blockquote key={`quote-${blocks.length}`}>{renderInlineMarkdown(quoteLines.join(" "), inline)}</blockquote>
       );
       continue;
     }
@@ -111,7 +151,7 @@ export function MarkdownSurface({ content, className = "", compactCitations = fa
       while (index < lines.length) {
         const item = lines[index].trim().match(pattern);
         if (!item) break;
-        items.push(<li key={`item-${index}`}>{renderInlineMarkdown(item[1], compactCitations)}</li>);
+        items.push(<li key={`item-${index}`}>{renderInlineMarkdown(item[1], inline)}</li>);
         index += 1;
       }
       blocks.push(ordered
@@ -127,7 +167,7 @@ export function MarkdownSurface({ content, className = "", compactCitations = fa
       index += 1;
     }
     blocks.push(
-      <p key={`paragraph-${blocks.length}`}>{renderInlineMarkdown(paragraphLines.join(" "), compactCitations)}</p>
+      <p key={`paragraph-${blocks.length}`}>{renderInlineMarkdown(paragraphLines.join(" "), inline)}</p>
     );
   }
 
@@ -160,25 +200,107 @@ function normalizeTableRow(cells: string[], columnCount: number) {
   return Array.from({ length: columnCount }, (_, index) => cells[index] ?? "");
 }
 
-function renderInlineMarkdown(value: string, compactCitations = false) {
-  const pattern = compactCitations
-    ? /(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\(https?:\/\/[^\s)]+\)|\[evidence(?::|-)[^\]]+\])/g
-    : /(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\(https?:\/\/[^\s)]+\))/g;
+function renderInlineMarkdown(value: string, context: InlineContext) {
+  const {
+    compactCitations, citations, activeCitation, onCitationClick, onWikiLinkClick, resolveWikiLink,
+    onEvidenceClick, evidenceOrder, activeEvidence
+  } = context;
+  const numberedCitations = Boolean(citations && citations.length > 0);
+  const parts = [
+    "`[^`]+`",
+    "\\[\\[[^\\]]+\\]\\]",
+    "\\*\\*[^*]+\\*\\*",
+    "\\[[^\\]]+\\]\\(https?:\\/\\/[^\\s)]+\\)",
+    ...(compactCitations ? ["\\[evidence(?::|-)[^\\]]+\\]"] : []),
+    ...(numberedCitations ? ["\\[\\d{1,2}\\](?!\\()"] : [])
+  ];
+  const pattern = new RegExp(`(${parts.join("|")})`, "g");
   const tokens = value.split(pattern);
+  // 引用角标后紧跟的标点与角标放在同一个不换行单元里，避免标点单独折到下一行。
+  const trailing: string[] = [];
+  tokens.forEach((token, index) => {
+    const isCitation = (compactCitations && /^\[evidence(?::|-)[^\]]+\]$/.test(token))
+      || (numberedCitations && /^\[\d{1,2}\]$/.test(token));
+    const next = tokens[index + 1];
+    if (isCitation && next && TRAILING_PUNCTUATION.test(next)) {
+      trailing[index] = next[0];
+      tokens[index + 1] = next.slice(1);
+    }
+  });
   return tokens.map((token, index) => {
-    if (token.startsWith("`") && token.endsWith("`")) {
+    const node = renderInlineToken(token, index);
+    return trailing[index]
+      ? <span className="citation-nowrap" key={`nowrap-${index}`}>{node}{trailing[index]}</span>
+      : node;
+  });
+
+  function renderInlineToken(token: string, index: number) {
+    if (token.startsWith("`") && token.endsWith("`") && token.length > 1) {
       return <code key={index}>{token.slice(1, -1)}</code>;
     }
-    if (token.startsWith("**") && token.endsWith("**")) {
+    if (/^\[\[[^\]]+\]\]$/.test(token)) {
+      const title = token.slice(2, -2).split("|")[0].trim();
+      const label = token.slice(2, -2).split("|").pop()?.trim() || title;
+      if (!onWikiLinkClick) {
+        return <span key={index} className="wikilink">{label}</span>;
+      }
+      const resolved = resolveWikiLink ? resolveWikiLink(title) : true;
+      return (
+        <button
+          type="button"
+          key={index}
+          className={resolved ? "wikilink" : "wikilink is-unresolved"}
+          title={resolved ? `打开《${title}》` : `《${title}》尚未创建`}
+          onClick={() => onWikiLinkClick(title)}
+        >
+          {label}
+        </button>
+      );
+    }
+    if (token.startsWith("**") && token.endsWith("**") && token.length > 4) {
       return <strong key={index}>{token.slice(2, -2)}</strong>;
     }
     if (compactCitations && /^\[evidence(?::|-)[^\]]+\]$/.test(token)) {
+      const evidenceId = token.slice(1, -1).replace(/^evidence[:-]/, "").trim();
+      if (onEvidenceClick) {
+        const order = evidenceOrder?.indexOf(evidenceId) ?? -1;
+        const label = order >= 0 ? String(order + 1) : "证据";
+        return (
+          <button
+            type="button"
+            key={index}
+            className={`citation-chip${activeEvidence === evidenceId ? " is-active" : ""}`}
+            aria-label={`查看证据 ${label}`}
+            onClick={() => onEvidenceClick(evidenceId)}
+          >
+            {label}
+          </button>
+        );
+      }
       return <sup className="research-citation-ref" title={token.slice(1, -1)} key={index}>[证据]</sup>;
+    }
+    if (numberedCitations && /^\[\d{1,2}\]$/.test(token)) {
+      const citationNumber = Number(token.slice(1, -1));
+      const label = citations?.[citationNumber - 1] ?? `来源 ${citationNumber}`;
+      return (
+        <button
+          type="button"
+          key={index}
+          className={`citation-chip${activeCitation === citationNumber ? " is-active" : ""}`}
+          title={label}
+          aria-label={`来源 ${citationNumber}：${label}`}
+          onClick={() => onCitationClick?.(citationNumber)}
+        >
+          {citationNumber}
+        </button>
+      );
     }
     const link = token.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/);
     if (link) {
       return <a key={index} href={link[2]} target="_blank" rel="noreferrer">{link[1]}</a>;
     }
     return <Fragment key={index}>{token}</Fragment>;
-  });
+  }
 }
+
+const TRAILING_PUNCTUATION = /^[。，、；：！？）」』》.,;:!?)]/;

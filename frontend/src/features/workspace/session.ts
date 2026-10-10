@@ -15,6 +15,8 @@ export type RestoredMessage = {
   answerMode?: AnswerMode;
   answerStatus?: string;
   answerError?: string;
+  answerRunId?: string;
+  citations?: string[];
 };
 
 export type RestoredWorkspaceSession = {
@@ -123,6 +125,12 @@ function toRestoredMessage(message: ConversationMessage): RestoredMessage {
         : message.context_status === "PENDING" ? "GENERATING" : "COMPLETED");
     if (message.answer_error) {
       restored.answerError = message.answer_error;
+    }
+    if (message.answer_run_id) {
+      restored.answerRunId = message.answer_run_id;
+    }
+    if (message.citations && message.citations.length > 0) {
+      restored.citations = [...message.citations];
     }
   }
   return restored;

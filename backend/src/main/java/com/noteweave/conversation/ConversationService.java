@@ -5,8 +5,15 @@ import com.noteweave.common.Ids;
 import com.noteweave.security.WorkspaceAccessGuard;
 import com.noteweave.security.WorkspacePermission;
 import com.noteweave.security.AuditActorProvider;
+import com.noteweave.research.ResearchGeneratedSourceReadGate;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,15 +24,18 @@ public class ConversationService {
     private final JdbcTemplate jdbcTemplate;
     private final WorkspaceAccessGuard workspaceAccessGuard;
     private final AuditActorProvider auditActorProvider;
+    private final ResearchGeneratedSourceReadGate generatedSourceGate;
 
     public ConversationService(
             JdbcTemplate jdbcTemplate,
             WorkspaceAccessGuard workspaceAccessGuard,
-            AuditActorProvider auditActorProvider
+            AuditActorProvider auditActorProvider,
+            ResearchGeneratedSourceReadGate generatedSourceGate
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.workspaceAccessGuard = workspaceAccessGuard;
         this.auditActorProvider = auditActorProvider;
+        this.generatedSourceGate = generatedSourceGate;
     }
 
     @Transactional
@@ -82,10 +92,10 @@ public class ConversationService {
         requireConversation(workspaceId, conversationId);
         int safeAfter = Math.max(0, afterSequence);
         int safeLimit = Math.max(1, Math.min(limit, 200));
-        return jdbcTemplate.query("""
+        List<ConversationMessageResponse> messages = jdbcTemplate.query("""
                 select m.id, m.message_seq, m.role, m.answer_mode, m.content, m.reply_to_message_id,
                        m.context_status, m.content_hash, r.status as answer_status,
-                       r.error_message as answer_error, m.created_at
+                       r.error_message as answer_error, m.created_at, r.id as answer_run_id
                 from conversation_message m
                 left join answer_run r on r.assistant_request_id = m.assistant_request_id
                 where m.workspace_id = ? and m.conversation_id = ? and m.message_seq > ?
@@ -102,7 +112,65 @@ public class ConversationService {
                 rs.getString("content_hash"),
                 rs.getString("answer_status"),
                 rs.getString("answer_error"),
-                rs.getTimestamp("created_at").toInstant()
+                rs.getTimestamp("created_at").toInstant(),
+                rs.getString("answer_run_id"),
+                List.of()
         ), workspaceId, conversationId, safeAfter, safeLimit);
+        if (messages.isEmpty()) return messages;
+        List<String> ids = messages.stream().map(ConversationMessageResponse::messageId).toList();
+        String placeholders = String.join(",", Collections.nCopies(ids.size(), "?"));
+        Object[] parameters = new Object[ids.size() + 1];
+        parameters[0] = workspaceId;
+        for (int i = 0; i < ids.size(); i++) parameters[i + 1] = ids.get(i);
+        Set<String> redacted = new HashSet<>(jdbcTemplate.queryForList("""
+                select m.id from conversation_message m
+                join answer_run r on r.assistant_request_id = m.assistant_request_id
+                join run_input_snapshot s on s.answer_run_id = r.id
+                where m.workspace_id = ? and m.id in (%s)
+                  and s.replay_availability = 'METADATA_ONLY'
+                """.formatted(placeholders), String.class, parameters));
+        Map<String, List<String>> sourcesByMessage = new HashMap<>();
+        Map<String, List<String>> citationsByMessage = new HashMap<>();
+        jdbcTemplate.query("""
+                select mc.message_id, c.source_id, c.title, c.quote_text
+                from conversation_message m
+                join message_citation mc on mc.message_id = m.id
+                join citation c on c.id = mc.citation_id
+                where m.workspace_id = ? and m.id in (%s)
+                order by mc.message_id, mc.sort_order
+                """.formatted(placeholders), rs -> {
+            sourcesByMessage.computeIfAbsent(rs.getString(1), ignored -> new ArrayList<>())
+                    .add(rs.getString(2));
+            citationsByMessage.computeIfAbsent(rs.getString(1), ignored -> new ArrayList<>())
+                    .add(citationLine(rs.getString(3), rs.getString(4)));
+        }, parameters);
+        List<String> citedSources = sourcesByMessage.values().stream().flatMap(List::stream)
+                .filter(id -> id != null && !id.isBlank()).distinct().toList();
+        Set<String> readableSources = generatedSourceGate.readableSourceIds(workspaceId, citedSources);
+        sourcesByMessage.forEach((messageId, sourceIds) -> {
+            if (!readableSources.containsAll(sourceIds)) redacted.add(messageId);
+        });
+        return messages.stream().map(message -> redacted.contains(message.messageId())
+                && "ASSISTANT".equals(message.role())
+                ? new ConversationMessageResponse(message.messageId(), message.messageSeq(),
+                    message.role(), message.requestedTurnMode(),
+                    "此回答引用的资料已撤销，内容不可查看。", message.replyToMessageId(),
+                    "REDACTED", null, message.answerStatus(), null, message.createdAt(), null, List.of())
+                : withCitations(message, citationsByMessage.get(message.messageId()))).toList();
+    }
+
+    private ConversationMessageResponse withCitations(ConversationMessageResponse message, List<String> citations) {
+        if (citations == null || citations.isEmpty()) {
+            return message;
+        }
+        return new ConversationMessageResponse(message.messageId(), message.messageSeq(), message.role(),
+                message.requestedTurnMode(), message.content(), message.replyToMessageId(),
+                message.contextStatus(), message.contentHash(), message.answerStatus(), message.answerError(),
+                message.createdAt(), message.answerRunId(), citations);
+    }
+
+    private static String citationLine(String title, String quote) {
+        String safeTitle = title == null ? "" : title;
+        return quote == null || quote.isBlank() ? safeTitle : safeTitle + " | " + quote;
     }
 }

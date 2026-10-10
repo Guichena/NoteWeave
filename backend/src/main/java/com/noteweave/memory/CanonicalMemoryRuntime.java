@@ -33,7 +33,10 @@ public class CanonicalMemoryRuntime implements MemoryRuntime {
 
     @Override
     public MemoryRuntimePack recall(MemoryRuntimeQuery query) {
-        String currentUserId = currentUserProvider.requireUserId();
+        String currentUserId = query.verifiedActorUserId() == null || query.verifiedActorUserId().isBlank()
+                ? currentUserProvider.requireUserId()
+                : query.verifiedActorUserId();
+        // 与旧编译路径一致，只召回审核通过的记忆；使用反馈变差后被标记为需要复核的记忆暂停召回，重新确认后恢复
         List<RuntimeRow> rows = jdbcTemplate.query("""
                 select i.id,
                        r.id as memory_revision_id,
@@ -47,6 +50,7 @@ public class CanonicalMemoryRuntime implements MemoryRuntime {
                  and r.memory_item_id = i.id
                 where i.workspace_id = ?
                   and i.status = 'ACTIVE'
+                  and i.review_status = 'APPROVED'
                   and r.status = 'ACTIVE'
                   and r.valid_from <= current_timestamp
                   and (r.valid_until is null or r.valid_until > current_timestamp)

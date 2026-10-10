@@ -13,6 +13,7 @@ describe("ArtifactsApi", () => {
     await api.getVersion("workspace", "job", 3);
     await api.compareVersions("workspace", "job", 2, 3);
     await api.exportPdf("workspace", "job", 3);
+    await api.downloadFile("workspace", "job", 3, "file-1");
 
     expect(get.mock.calls.map(([path]) => path)).toEqual([
       "/api/v2/skills",
@@ -22,6 +23,9 @@ describe("ArtifactsApi", () => {
     ]);
     expect(blob).toHaveBeenCalledWith(
       "/api/v2/workspaces/workspace/artifact-jobs/job/versions/3/export.pdf"
+    );
+    expect(blob).toHaveBeenCalledWith(
+      "/api/v2/workspaces/workspace/artifact-jobs/job/versions/3/files/file-1"
     );
   });
 
@@ -65,5 +69,26 @@ describe("ArtifactsApi", () => {
     await api.getVersion("workspace", "job", 1, { signal: controller.signal });
 
     expect(get.mock.calls.every(([, init]) => init?.signal === controller.signal)).toBe(true);
+  });
+
+  it("uses the parent video route for list, create, cancellation and choice retry", async () => {
+    const get = vi.fn(async (_path: string) => ({ enabled: false, requests: [] }));
+    const post = vi.fn(async (_path: string, _body?: unknown) => ({}));
+    const api = new ArtifactsApi({ get, post } as unknown as ApiClient);
+    await api.listVideoLearning("workspace");
+    await api.createVideoLearning("workspace", {
+      client_request_id: "request-1", video_url: "https://www.bilibili.com/video/BV1234567890",
+      part: 1, language: "zh-CN", frame_density: "STANDARD", asr_fallback: "ALLOW",
+      template_version: "original-v1", user_requirement: "Study",
+      selected_skills: ["knowledge_blog"]
+    });
+    await api.cancelVideoLearning("workspace", "parent-1");
+    await api.retryVideoLearningChoice("workspace", "parent-1", "knowledge_blog");
+    expect(get).toHaveBeenCalledWith("/api/v2/workspaces/workspace/video-learning-bundles", undefined);
+    expect(post.mock.calls.map(([path]) => path)).toEqual([
+      "/api/v2/workspaces/workspace/video-learning-bundles",
+      "/api/v2/workspaces/workspace/video-learning-bundles/parent-1/cancel",
+      "/api/v2/workspaces/workspace/video-learning-bundles/parent-1/choices/knowledge_blog/retry"
+    ]);
   });
 });

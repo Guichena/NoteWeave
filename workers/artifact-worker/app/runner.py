@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from app.acquisition_runtime import get_acquisition_result_payload, register_acquisition_runtime
 from app.artifact_repository import commit_artifact_result, reserve_next_artifact_version
+from app.artifact_skill_catalog import CATALOG_DIGEST
+import hashlib
 from app.capability_approval_queue import create_capability_request
 from app.capability_resolver import resolve_capability_bindings, resolve_capability_providers
 from app.capability_wait_queue import enqueue_waiting_task
 from app.compiler import build_execution_plan
-from app.composer import render_markdown, resolve_artifact_title
+from app.composer import render_markdown, render_runtime_notes, resolve_artifact_title
 from app.content_runtime import (
     _is_bilibili_pdf_async_provider,
     build_acquisition_receipt,
@@ -39,9 +41,13 @@ from app.error_sanitizer import sanitize_error_message
 from app.custom_mcp_executor import submit_custom_mcp_acquisition_operation
 from app.generation_runtime import ArtifactConfigurationRequiredError, generate_artifact_sections
 from app.export_runtime import export_artifact_if_required
+from app.candidate_file_manifest import build_required_files
+from app.artifact_content_ir import build_content_ir
 from app.llm_client import build_default_llm_client
 from app.verifier import build_output_contract_trace, verify_artifact_output
 from app.writeback_runtime import register_writeback_request
+from app.video_derived_runtime import run_video_derived_text_task
+from app.video_deck_runtime import run_video_deck_task
 
 
 PHASE_SEQUENCE = [
@@ -52,8 +58,28 @@ PHASE_SEQUENCE = [
     ("EXPORTING", 100, "artifact draft exported"),
 ]
 
+# The prior published catalog omitted explicit acquisition policy on the three
+# derived video Skills. Its queued Runs retain this digest and default policy.
+PRE_VIDEO_POLICY_CATALOG_DIGEST = "8a7ad34dd197854251c65a234f1915e0b44fe9621d2d1caa4581b9eb3ca2eec8"
+
+
+def _require_published_catalog(task_input: ArtifactTaskInput) -> None:
+    if task_input.catalog_digest and task_input.catalog_digest not in {
+            CATALOG_DIGEST, PRE_VIDEO_POLICY_CATALOG_DIGEST}:
+        raise ValueError("artifact Skill catalog digest does not match the frozen Run")
+    if task_input.catalog_digest == PRE_VIDEO_POLICY_CATALOG_DIGEST:
+        inputs = task_input.input_payload.inputs
+        if inputs.get("frame_density", "STANDARD") != "STANDARD" \
+                or inputs.get("asr_fallback", "ALLOW") != "ALLOW":
+            raise ValueError("legacy catalog Run cannot declare a new acquisition policy")
+
 
 def run_artifact_task(task_input: ArtifactTaskInput) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
+    _require_published_catalog(task_input)
+    if task_input.input_payload.skill_key in {"knowledge_blog", "interview_qa"}:
+        return run_video_derived_text_task(task_input)
+    if task_input.input_payload.skill_key == "video_learning_deck":
+        return run_video_deck_task(task_input)
     return _run_artifact_task(task_input)
 
 
@@ -61,6 +87,7 @@ def resume_artifact_task(
     task_input: ArtifactTaskInput,
     resume_checkpoint: dict[str, object],
 ) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
+    _require_published_catalog(task_input)
     try:
         schema_version = int(resume_checkpoint.get("schema_version", 0))
     except (TypeError, ValueError) as exc:
@@ -201,6 +228,9 @@ def _run_artifact_task(
         # already-completed external operation remain checkpointed/durable.
         canonical_content_objects = build_canonical_content_objects(task_input)
         context_pack = build_context_pack(task_input, plan, canonical_content_objects)
+    if task_input.input_payload.writeback_mode == "MATERIAL_ONLY":
+        return _build_material_only_result(
+            task_input, plan, capability_resolution, canonical_content_objects)
     repaired_sections, node_traces, generation_trace = execute_skill_graph(
         task_input,
         plan,
@@ -216,11 +246,10 @@ def _run_artifact_task(
     repaired_checks: list[str] = []
     artifact_title = resolve_artifact_title(task_input, plan)
     rendered_markdown = render_markdown(task_input, plan, repaired_sections)
-    export_trace = export_artifact_if_required(
-        task_input=task_input,
-        title=artifact_title,
-        sections=repaired_sections,
-    )
+    runtime_notes = render_runtime_notes(task_input, plan)
+    # Render only after the content and its evidence have passed the final gate.
+    # A failed candidate must never create a user-facing export.
+    export_trace = {"status": "PENDING_VALIDATION", "format": "PDF", "file_name": ""}
 
     events = [
         ArtifactProgressEvent(
@@ -243,7 +272,12 @@ def _run_artifact_task(
         action_key=plan.action_key,
         status="COMPLETED",
     )
-    version_id, parent_version_id = reserve_next_artifact_version(task_input.target_id)
+    # The local version store is only a debug projection. A Host-created Run
+    # carries a frozen input snapshot and receives its Version ID from Host.
+    version_id, parent_version_id = (
+        ("", "") if task_input.input_snapshot_id
+        else reserve_next_artifact_version(task_input.target_id)
+    )
     version_snapshot = ArtifactVersionSnapshot(
         version_id=version_id,
         artifact_type=plan.artifact_type,
@@ -280,6 +314,7 @@ def _run_artifact_task(
         result_title=artifact_title,
         result_payload={
             "markdown": rendered_markdown,
+            "runtime_notes": runtime_notes,
             "execution_plan": plan.model_dump(mode="json"),
             "execution_spec": plan.execution_spec.model_dump(mode="json"),
             "runtime_plan": plan.runtime_plan.model_dump(mode="json"),
@@ -291,6 +326,20 @@ def _run_artifact_task(
                 cco.model_dump(mode="json") for cco in canonical_content_objects
             ],
             "context_pack": context_pack.model_dump(mode="json"),
+            "material_resolution": [
+                {
+                    "source_id": source.source_id,
+                    "source_snapshot_id": source.source_snapshot_id or str(
+                        source.source_metadata.get("source_snapshot_id", "")),
+                    "selected_window_ids": [
+                        str(window.get("window_id", "")) for window in source.material_windows
+                    ],
+                    "gap": source.material_gap,
+                    "scan_next_cursor": str(
+                        source.source_metadata.get("material_scan_next_cursor", "")),
+                }
+                for source in task_input.source_scope
+            ],
             "capability_resolution": capability_resolution.model_dump(mode="json"),
             "acquisition_receipt": acquisition_receipt.model_dump(mode="json"),
             "acquisition_runtime_snapshot": acquisition_runtime_snapshot,
@@ -312,29 +361,25 @@ def _run_artifact_task(
             "-> verifier / repair -> artifact version export"
         ),
         citations=[
-            {"title": item.title, "source_id": item.source_id}
+            {
+                "title": item.title,
+                "source_id": item.source_id,
+                "source_snapshot_id": item.source_snapshot_id or str(
+                    item.source_metadata.get("source_snapshot_id", "")),
+                "source_window_ids": [
+                    str(window.get("window_id", "")) for window in item.material_windows
+                ],
+            }
             for item in task_input.source_scope[:3]
         ],
         job_snapshot=job_snapshot,
         version_snapshot=version_snapshot,
     )
-    writeback_request = register_writeback_request(
-        task_input=task_input,
-        plan=plan,
-        result=result,
-        version_snapshot=version_snapshot,
-        writeback_preview=writeback_preview,
-    )
-    if writeback_request is not None:
-        result.result_payload["writeback_request"] = writeback_request.model_dump(mode="json")
-        result.result_payload["writeback_preview"]["request_id"] = writeback_request.request_id
-        result.result_payload["writeback_preview"]["target_locator_preview"] = (
-            writeback_request.target_locator_preview
-        )
     evidence_coverage = _build_evidence_coverage(
         task_input=task_input,
         plan=plan,
         sections=repaired_sections,
+        content_objects=canonical_content_objects,
     )
     result.result_payload["evidence_coverage"] = evidence_coverage.model_dump(mode="json")
     output_contract_trace = build_output_contract_trace(result, plan, repaired_checks)
@@ -343,6 +388,50 @@ def _run_artifact_task(
     result.result_payload["verification"] = verification.model_dump(mode="json")
     if verification.status == "FAIL":
         raise ArtifactOutputContractViolationError(verification.failed_checks)
+    content_ir = build_content_ir(
+        artifact_type=plan.artifact_type, title=artifact_title,
+        sections=repaired_sections, markdown=rendered_markdown,
+    )
+    result.result_payload["content_ir"] = content_ir.model_dump(mode="json")
+    export_trace = export_artifact_if_required(
+        task_input=task_input,
+        title=artifact_title,
+        sections=repaired_sections,
+    )
+    result.result_payload["export_trace"] = export_trace
+    if task_input.input_payload.skill_key.strip().lower() == "bilibili_course_note_pdf":
+        if export_trace["status"] != "COMPILED":
+            raise ArtifactOutputContractViolationError(["required PDF export did not compile"])
+    required_files = build_required_files(rendered_markdown, export_trace)
+    content_sha256 = hashlib.sha256(rendered_markdown.encode("utf-8")).hexdigest()
+    candidate_id = hashlib.sha256(
+        f"{task_input.task_id}:{task_input.input_snapshot_id}:{content_sha256}".encode("utf-8")
+    ).hexdigest()
+    result.result_payload["candidate"] = {
+        "candidate_id": candidate_id,
+        "task_id": task_input.task_id,
+        "input_snapshot_id": task_input.input_snapshot_id,
+        "catalog_digest": task_input.catalog_digest,
+        "content_sha256": content_sha256,
+        "content_ir_digest": content_ir.content_digest,
+        "required_files": required_files,
+    }
+
+    writeback_request = (
+        None if task_input.input_snapshot_id else register_writeback_request(
+            task_input=task_input,
+            plan=plan,
+            result=result,
+            version_snapshot=version_snapshot,
+            writeback_preview=writeback_preview,
+        )
+    )
+    if writeback_request is not None:
+        result.result_payload["writeback_request"] = writeback_request.model_dump(mode="json")
+        result.result_payload["writeback_preview"]["request_id"] = writeback_request.request_id
+        result.result_payload["writeback_preview"]["target_locator_preview"] = (
+            writeback_request.target_locator_preview
+        )
     result.result_payload["lifecycle_trace"] = _build_lifecycle_trace(
         events=events,
         status="COMPLETED",
@@ -368,12 +457,18 @@ def _run_artifact_task(
     )
     result.result_payload["retrieval_feedback"] = retrieval_feedback.model_dump(mode="json")
     result.result_payload["memory_promotion_preview"] = memory_promotion_preview.model_dump(mode="json")
-    commit_receipt = commit_artifact_result(
-        task_id=task_input.task_id,
-        workspace_id=task_input.workspace_id,
-        target_id=task_input.target_id,
-        result=result,
-        retrieval_feedback=retrieval_feedback,
+    commit_receipt = (
+        ArtifactCommitReceipt(
+            commit_status="DEFERRED_TO_HOST", version_id="", retrieval_entry_id="",
+            persisted_version_count=0, persisted_retrieval_count=0,
+        )
+        if task_input.input_snapshot_id else commit_artifact_result(
+            task_id=task_input.task_id,
+            workspace_id=task_input.workspace_id,
+            target_id=task_input.target_id,
+            result=result,
+            retrieval_feedback=retrieval_feedback,
+        )
     )
     result.result_payload["artifact_commit"] = commit_receipt.model_dump(mode="json")
     return events, result
@@ -385,6 +480,39 @@ class ArtifactOutputContractViolationError(RuntimeError):
     def __init__(self, failed_checks: list[str]) -> None:
         self.failed_checks = list(failed_checks)
         super().__init__("Artifact output contract failed: " + "; ".join(self.failed_checks))
+
+
+def _build_material_only_result(
+    task_input: ArtifactTaskInput,
+    plan: ArtifactExecutionPlan,
+    capability_resolution: ArtifactCapabilityResolution,
+    canonical_content_objects: list[CanonicalContentObject],
+) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
+    receipt = build_acquisition_receipt(
+        task_input, plan, capability_resolution, canonical_content_objects)
+    runtime = register_acquisition_runtime(
+        task_id=task_input.task_id, acquisition_receipt=receipt)
+    dispatches = _submit_async_custom_mcp_operations(receipt)
+    job = ArtifactJobSnapshot(
+        task_id=task_input.task_id, workspace_id=task_input.workspace_id,
+        target_id=task_input.target_id, action_key="VIDEO_MATERIAL", status="COMPLETED")
+    version = ArtifactVersionSnapshot(
+        version_id="", artifact_type="VIDEO_MATERIAL", title="Video material",
+        status="NOT_APPLICABLE", summary="Material-only task has no Artifact Version.")
+    result = ArtifactTaskResult(
+        result_title="Video material",
+        result_payload={
+            "acquisition_receipt": receipt.model_dump(mode="json"),
+            "acquisition_runtime_snapshot": runtime,
+            "acquisition_runtime_dispatches": dispatches,
+        },
+        trace_summary="video acquisition completed without Artifact generation or export",
+        job_snapshot=job,
+        version_snapshot=version,
+    )
+    return [ArtifactProgressEvent(
+        phase="ACQUIRING", progress_percent=85,
+        message="video acquisition receipt ready")], result
 
 
 def _build_waiting_result(
@@ -942,6 +1070,8 @@ def _resolve_async_provider_capabilities(
             capability_name = {
                 "READ_EXTERNAL_CONTENT": "READ_WEB_PAGE",
                 "EXTRACT_TRANSCRIPT": "EXTRACT_TRANSCRIPT",
+                "CAPTURE_FRAMES": "CAPTURE_VIDEO_FRAMES",
+                "ANALYZE_FRAMES": "ANALYZE_FRAME",
                 "TRANSCRIBE_AUDIO": "TRANSCRIBE_AUDIO",
             }.get(operation_key, "")
             if not capability_name:
@@ -1029,23 +1159,27 @@ def _build_evidence_coverage(
     task_input: ArtifactTaskInput,
     plan: object,
     sections: list[object],
+    content_objects: list[CanonicalContentObject],
 ) -> EvidenceCoverageReport:
-    source_title_to_id = {
-        source.title: source.source_id
-        for source in task_input.source_scope
-    }
+    source_title_to_ids: dict[str, list[str]] = {}
+    for item in content_objects:
+        ids = [trace.removeprefix("source:") for trace in item.source_trace
+               if trace.startswith("source:") and trace != "source:"]
+        if ids:
+            source_title_to_ids.setdefault(item.title, []).extend(ids)
     section_evidence: list[dict[str, object]] = []
     sections_missing_evidence: list[str] = []
     supporting_source_ids: list[str] = []
 
     for section in sections:
         source_refs = list(section.source_refs)
+        invalid_refs = [ref for ref in source_refs if ref not in source_title_to_ids]
         source_ids = [
-            source_title_to_id[source_ref]
+            source_id
             for source_ref in source_refs
-            if source_ref in source_title_to_id
+            for source_id in source_title_to_ids.get(source_ref, [])
         ]
-        if source_refs:
+        if source_refs and not invalid_refs:
             supporting_source_ids.extend(source_ids)
         else:
             sections_missing_evidence.append(section.heading)
@@ -1054,7 +1188,9 @@ def _build_evidence_coverage(
                 "section_heading": section.heading,
                 "source_refs": source_refs,
                 "source_ids": source_ids,
-                "evidence_status": "COVERED" if source_refs else "MISSING",
+                "evidence_status": "INVALID_REF" if invalid_refs else
+                    ("COVERED" if source_refs else "MISSING"),
+                "invalid_refs": invalid_refs,
             }
         )
 
@@ -1078,13 +1214,13 @@ def _build_evidence_coverage(
     ]
     if required_density == "HIGH":
         minimum_covered_sections = section_count
-        minimum_unique_sources = min(2, len(task_input.source_scope))
+        minimum_unique_sources = min(2, len(source_title_to_ids))
     elif required_density == "MEDIUM":
         minimum_covered_sections = section_count
-        minimum_unique_sources = 1 if task_input.source_scope else 0
+        minimum_unique_sources = 1 if source_title_to_ids else 0
     else:
         minimum_covered_sections = 1 if section_count else 0
-        minimum_unique_sources = 1 if task_input.source_scope else 0
+        minimum_unique_sources = 1 if source_title_to_ids else 0
 
     if covered_section_count < minimum_covered_sections:
         status = "FAIL"

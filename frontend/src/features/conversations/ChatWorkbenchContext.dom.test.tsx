@@ -15,18 +15,21 @@ afterEach(() => {
   }
 });
 
-describe("ChatWorkbench context surface", () => {
-  it("connects the welcome state to the real workspace and QA scope", () => {
+describe("ChatWorkbench notebook surface", () => {
+  it("renders the conversation with a switchable sources / studio panel", async () => {
     render(<ChatWorkbench {...buildProps()} />);
 
-    expect(screen.getAllByText("1 / 1 份可检索").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("企业研究工作台").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByRole("heading", { name: "政策研究会话" })).toBeTruthy();
-    expect(screen.getByText("1 份工作台资料")).toBeTruthy();
-    expect(screen.getByText("2 个会话")).toBeTruthy();
-    expect(screen.getByText("1 份资料 · 2 个会话共用")).toBeTruthy();
-    expect(screen.getByLabelText("工作台资料与当前会话的关系")).toBeTruthy();
-    expect(screen.getByText("基于工作台资料回答，展示引用与证据；回答不入库。")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "今天想从资料里弄清楚什么？" })).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "产物工作台" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "打开来源" }));
+    expect(screen.getByRole("complementary", { name: "来源与产物" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "来源" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "打开产物" }));
+    await waitFor(() => expect(document.querySelector(".studio-pane .artifact-rail")).toBeTruthy());
+    expect(screen.queryByRole("region", { name: "来源" })).toBeNull();
   });
 
   it("keeps an empty welcome state at the top and scrolls only after messages exist", () => {
@@ -47,7 +50,7 @@ describe("ChatWorkbench context surface", () => {
     render(<ChatWorkbench {...buildProps({ sources: [], onOpenSourceLibrary })} />);
 
     expect(screen.queryByRole("button", { name: "这份资料的核心结论是什么？" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "前往资料库添加资料" }));
+    fireEvent.click(screen.getByRole("button", { name: "添加资料" }));
     expect(onOpenSourceLibrary).toHaveBeenCalledOnce();
   });
 
@@ -56,61 +59,58 @@ describe("ChatWorkbench context surface", () => {
       sources: [{ source_id: "source-1", title: "本地资料.md", status: "READY", index_status: "DISABLED" }],
       question: "这份资料讲了什么？"
     })} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开来源" }));
 
-    expect(screen.getAllByText("1 份仅可阅读 · 无检索索引").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/1 份资料仅可阅读，建立索引后才能参与 RAG/)).toBeTruthy();
+    expect(screen.getByText("1 份仅可阅读 · 无检索索引")).toBeTruthy();
     expect(screen.getByRole("button", { name: "等待可检索资料" }).hasAttribute("disabled")).toBe(true);
-    expect(screen.queryByText("指定本次 QA 的资料范围（可选）")).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: "在问答中使用 本地资料.md" })).toBeNull();
   });
 
-  it("selects the next answer mode from the composer instead of the session header", () => {
+  it("maps source checkboxes to the QA scope", () => {
+    const setSelectedQaSourceIds = vi.fn();
+    render(<ChatWorkbench {...buildProps({
+      sources: [
+        { source_id: "a", title: "A.pdf", status: "READY", index_status: "INDEXED" },
+        { source_id: "b", title: "B.pdf", status: "READY", index_status: "INDEXED" }
+      ],
+      setSelectedQaSourceIds
+    })} />);
+    fireEvent.click(screen.getByRole("button", { name: "打开来源" }));
+
+    const checkboxA = screen.getByRole("checkbox", { name: "在问答中使用 A.pdf" }) as HTMLInputElement;
+    expect(checkboxA.checked).toBe(true);
+    fireEvent.click(checkboxA);
+    expect(setSelectedQaSourceIds).toHaveBeenCalledWith(["b"]);
+  });
+
+  it("selects the next answer mode from the composer", () => {
     const setMode = vi.fn();
     render(<ChatWorkbench {...buildProps({ setMode })} />);
 
-    expect(screen.queryByRole("tablist", { name: "回答模式" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "回答模式：问答 RAG" }));
-    expect(screen.getByRole("menu", { name: "选择回答模式" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("menuitemradio", { name: /Wiki/ }));
+    const group = screen.getByRole("radiogroup", { name: "回答模式" });
+    expect(screen.getByRole("radio", { name: /问答/ }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText(/问答：关键词与语义混合检索/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("radio", { name: /Wiki/ }));
     expect(setMode).toHaveBeenCalledWith("wiki");
-    expect(screen.queryByRole("menu", { name: "选择回答模式" })).toBeNull();
+
+    setMode.mockClear();
+    fireEvent.keyDown(group, { key: "ArrowRight" });
+    expect(setMode).toHaveBeenCalledWith("note");
   });
 
-  it("opens Artifact Studio on its overview instead of forcing the first composer", async () => {
+  it("opens the Studio on its overview and toggles the panel from the header", async () => {
     const setArtifactComposerOpen = vi.fn();
     render(<ChatWorkbench {...buildProps({ setArtifactComposerOpen })} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "打开产物" }));
+    const studio = screen.getByRole("button", { name: "打开产物" });
+    fireEvent.click(studio);
     expect(setArtifactComposerOpen).toHaveBeenCalledWith(false);
-    expect(document.querySelector(".layout")?.classList.contains("layout-with-inspector")).toBe(false);
-    expect(screen.getByLabelText("资料库摘要")).toBeTruthy();
-    expect(document.querySelector(".artifact-rail")).toBeTruthy();
-    expect(screen.getByRole("dialog", { name: "产物工作台" }).getAttribute("aria-modal")).toBe("true");
-
+    expect(document.querySelector(".chat-page")?.getAttribute("data-panel-tab")).toBe("studio");
     await waitFor(() => expect(screen.getByRole("button", { name: "关闭产物工作台" })).toBeTruthy());
-    fireEvent.click(screen.getByRole("button", { name: "关闭产物工作台" }));
-    expect(screen.queryByRole("dialog", { name: "产物工作台" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "打开产物" }));
-    fireEvent.click(document.querySelector(".artifact-modal-backdrop") as HTMLElement);
-    expect(screen.queryByRole("dialog", { name: "产物工作台" })).toBeNull();
-  });
-
-  it("keeps Artifact Studio open when a nested dialog handles Escape", async () => {
-    render(<ChatWorkbench {...buildProps()} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "打开产物" }));
-    await waitFor(() => expect(screen.getByRole("dialog", { name: "产物工作台" })).toBeTruthy());
-
-    const handleNestedDialogEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") event.preventDefault();
-    };
-    window.addEventListener("keydown", handleNestedDialogEscape, true);
-    fireEvent.keyDown(window, { key: "Escape" });
-    window.removeEventListener("keydown", handleNestedDialogEscape, true);
-
-    expect(screen.getByRole("dialog", { name: "产物工作台" })).toBeTruthy();
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(screen.queryByRole("dialog", { name: "产物工作台" })).toBeNull();
+    fireEvent.click(studio);
+    expect(document.querySelector(".chat-page")?.hasAttribute("data-panel-tab")).toBe(false);
   });
 });
 
@@ -138,7 +138,7 @@ function buildProps(overrides: Record<string, unknown> = {}) {
     messages: [],
     question: "",
     setQuestion: vi.fn(),
-    currentRouteLabel: "问答 RAG",
+    currentRouteLabel: "问答",
     selectedQaSourceIds: [],
     setSelectedQaSourceIds: vi.fn(),
     toggleQaScope: vi.fn(),
@@ -166,12 +166,8 @@ function buildProps(overrides: Record<string, unknown> = {}) {
       sourceCount: 1,
       setSelectedArtifactSkillKey: vi.fn(),
       setArtifactFormValues: vi.fn(),
-      artifactSidebarState: {
-        runs: [],
-        historyItems: [],
-        latestAuditView: {},
-        historyViewer: { activeKey: null, activeVersion: null }
-      },
+      artifactJobs: [],
+      selectedArtifactHistoryVersion: null,
       latestArtifactVersion: null,
       formatRelativeTime: vi.fn(() => "刚刚"),
       saveArtifactVersionAsSource: vi.fn(),
@@ -184,14 +180,8 @@ function buildProps(overrides: Record<string, unknown> = {}) {
       rollbackArtifactVersion: vi.fn(),
       downloadArtifactVersionPdf: vi.fn(),
       resolveArtifactSkillTitle: vi.fn(() => "产物"),
-      summarizeRunStatus: vi.fn(() => "就绪"),
       openArtifactHistoryVersion: vi.fn(),
       artifactHistoryLoadingKey: "",
-      openWikiHome: vi.fn(),
-      openResearchWorkbench: vi.fn(),
-      openMemoryWorkbench: vi.fn(),
-      toggleWikiEnabled: vi.fn(),
-      wikiEnabled: false,
       sourceDraftTitle: "",
       setSourceDraftTitle: vi.fn(),
       sourceDraftContent: "",

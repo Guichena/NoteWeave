@@ -102,6 +102,7 @@ from app.writeback_runtime import (
     list_writeback_requests,
 )
 from app.system_mcp_executor import recover_system_mcp_acquisition_operations
+from app.source_transcription import accept_source_transcription, recover_source_transcriptions
 
 settings = load_settings()
 configure_artifact_repository_backend(
@@ -116,6 +117,7 @@ configure_waiting_task_store(settings.artifact_wait_queue_file_path)
 @asynccontextmanager
 async def artifact_worker_lifespan(_: FastAPI):
     recover_system_mcp_acquisition_operations(java_base_url=settings.java_base_url)
+    recover_source_transcriptions()
     consumer_runtime = ArtifactKafkaConsumerRuntime(settings)
     consumer_runtime.start()
     app.state.artifact_consumer_runtime = consumer_runtime
@@ -160,7 +162,7 @@ def health() -> dict[str, str]:
 def download_task_export(task_id: str, file_name: str) -> FileResponse:
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", task_id):
         raise HTTPException(status_code=404, detail="artifact export not found")
-    if not re.fullmatch(r"[^/\\]{1,160}\.pdf", file_name):
+    if not re.fullmatch(r"[^/\\\x00-\x1f]{1,160}\.(?:pdf|png|pptx|md)", file_name, re.IGNORECASE):
         raise HTTPException(status_code=404, detail="artifact export not found")
     export_root = (
         resolve_mcp_sandbox_root(settings)
@@ -169,9 +171,16 @@ def download_task_export(task_id: str, file_name: str) -> FileResponse:
         / task_id
     ).resolve()
     export_path = (export_root / file_name).resolve()
-    if not export_path.is_relative_to(export_root) or not export_path.is_file():
+    if not export_path.is_relative_to(export_root) or not export_path.is_file() \
+            or export_path.stat().st_size > 100_000_000:
         raise HTTPException(status_code=404, detail="artifact export not found")
-    return FileResponse(export_path, media_type="application/pdf", filename=file_name)
+    media_type = {
+        ".pdf": "application/pdf",
+        ".png": "image/png",
+        ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ".md": "text/markdown; charset=UTF-8",
+    }[export_path.suffix.lower()]
+    return FileResponse(export_path, media_type=media_type, filename=file_name)
 
 
 class DebugArtifactRunResponse(BaseModel):
@@ -622,6 +631,7 @@ def resume_task_from_java(
 @app.post("/callbacks/acquisition/ack", response_model=ArtifactAcquisitionAckExecutionResponse)
 def ack_acquisition_callback(
     request: ArtifactAcquisitionAckRequest,
+    defer_resume: bool = Header(default=False, alias="X-NoteWeave-Defer-Resume"),
 ) -> ArtifactAcquisitionAckExecutionResponse:
     return acknowledge_acquisition_operation_with_callbacks(
         callback_token=request.callback_token,
@@ -630,7 +640,37 @@ def ack_acquisition_callback(
         error_code=request.error_code,
         error_message=request.error_message,
         provider_payload=request.provider_payload,
+        defer_resume=defer_resume,
     )
+
+
+_MAX_TRANSCRIPTION_BYTES = 128 * 1024 * 1024
+
+
+@app.post("/internal/source-transcriptions", status_code=202)
+async def submit_source_transcription(
+    request: Request,
+    workspace_id: str,
+    source_id: str,
+    snapshot_id: str,
+    mime_type: str,
+    file_name: str = "",
+) -> dict[str, object]:
+    """Java Host 提交资料的音视频原件；保存后在后台通过 MCP 转写，完成后回调 Java。"""
+    content = await request.body()
+    if len(content) > _MAX_TRANSCRIPTION_BYTES:
+        raise HTTPException(status_code=413, detail="media file exceeds 128 MB")
+    try:
+        return accept_source_transcription(
+            workspace_id=workspace_id,
+            source_id=source_id,
+            snapshot_id=snapshot_id,
+            file_name=file_name,
+            mime_type=mime_type,
+            content=content,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/internal/default-actions", response_model=DebugDefaultActionCatalogResponse)

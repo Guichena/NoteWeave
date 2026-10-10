@@ -90,17 +90,22 @@ public class QaHybridRetriever {
                 QaRetrievalStrategyProfile.VECTOR_WEIGHT,
                 QaRetrievalStrategyProfile.KEYWORD_WEIGHT,
                 QaRetrievalStrategyProfile.FUSION_LIMIT);
-        QaRerankService.RerankOutcome reranked = rerankService.rerank(
-                query, fused, QaRetrievalStrategyProfile.RERANK_LIMIT);
         Map<String, PassageOwnership> ownership = retrievalHydrator.hydratePassageOwnership(
-                workspaceId, reranked.hits().stream().map(hit -> hit.hit().chunkId()).toList());
+                workspaceId, fused.stream().map(QaRrfFusionService.FusedHit::chunkId).toList());
+        List<QaRrfFusionService.FusedHit> eligible = fused.stream().filter(hit -> {
+            PassageOwnership owner = ownership.get(hit.chunkId());
+            return owner != null && hit.sourceId().equals(owner.sourceId())
+                    && hit.sourceSnapshotId().equals(owner.sourceSnapshotId());
+        }).toList();
+        QaRerankService.RerankOutcome reranked = rerankService.rerank(
+                query, eligible, QaRetrievalStrategyProfile.RERANK_LIMIT);
         Map<String, List<RetrievalHydrator.AdjacentPassage>> hydratedAdjacent =
                 retrievalHydrator.hydrateAdjacentPassages(
                         workspaceId, reranked.hits().stream().map(hit -> hit.hit().chunkId()).toList());
         Map<String, List<RetrievalHydrator.AdjacentPassage>> adjacent = hydratedAdjacent == null
                 ? Map.of() : hydratedAdjacent;
         List<RetrievedChunk> owned = new ArrayList<>();
-        int ownershipRejected = 0;
+        int ownershipRejected = fused.size() - eligible.size();
         for (RankedHit ranked : reranked.hits()) {
             QaRrfFusionService.FusedHit hit = ranked.hit();
             PassageOwnership owner = ownership.get(hit.chunkId());

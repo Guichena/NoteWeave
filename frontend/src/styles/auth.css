@@ -1,0 +1,358 @@
+/* ============================================================
+ * Auth: 左侧一句话品牌说明 + 右侧简洁表单
+ * ============================================================ */
+
+.auth-shell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 48px 20px;
+  background:
+    radial-gradient(900px 480px at 12% 0%, color-mix(in srgb, var(--accent-soft) 70%, transparent), transparent 70%),
+    var(--bg);
+}
+
+.auth-theme-toggle {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: var(--radius-pill);
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+}
+
+.auth-theme-toggle:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.auth-container {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 420px);
+  align-items: center;
+  gap: clamp(32px, 7vw, 96px);
+  width: 100%;
+  max-width: 1040px;
+  animation: nw-fade-in 280ms var(--ease);
+}
+
+.auth-container-single {
+  grid-template-columns: minmax(0, 420px);
+  justify-content: center;
+}
+
+/* ---------- Intro ---------- */
+
+.auth-context-panel {
+  display: grid;
+  gap: 36px;
+}
+
+.auth-brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.auth-brand-symbol {
+  width: 40px;
+  height: 40px;
+}
+
+.auth-brand-title {
+  font-size: var(--text-xl);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.auth-context-body {
+  display: grid;
+  gap: 18px;
+}
+
+.auth-context-heading {
+  font-family: var(--font-display);
+  font-size: clamp(36px, 4.6vw, 54px);
+  font-weight: var(--weight-display);
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+}
+
+.auth-context-lead {
+  max-width: 440px;
+  color: var(--ink-2);
+  font-size: var(--text-lg);
+  line-height: 1.7;
+}
+
+.auth-context-points {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.auth-context-points li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink-2);
+  font-size: var(--text-md);
+}
+
+.auth-context-points svg {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  padding: 7px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: var(--shadow-xs);
+}
+
+/* ---------- Card ---------- */
+
+.auth-card {
+  display: grid;
+  gap: 22px;
+  padding: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2xl);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+
+.auth-header {
+  display: grid;
+  gap: 6px;
+}
+
+.auth-header h1 {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.auth-subtitle {
+  color: var(--muted);
+  font-size: var(--text-md);
+}
+
+.auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+}
+
+.auth-tabs button {
+  height: 34px;
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font-size: var(--text-md);
+  font-weight: 550;
+  transition: background var(--duration) var(--ease), color var(--duration) var(--ease);
+}
+
+.auth-tabs button:hover {
+  color: var(--ink);
+}
+
+.auth-tabs button.active {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-sm);
+}
+
+.auth-form {
+  display: grid;
+  gap: 16px;
+}
+
+.auth-field {
+  display: grid;
+  gap: 6px;
+}
+
+.auth-field label {
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  font-weight: 550;
+}
+
+.auth-field-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.auth-field-hint {
+  font-size: var(--text-xs);
+}
+
+.auth-hint-warning {
+  color: var(--warning);
+}
+
+.auth-hint-danger {
+  color: var(--danger);
+}
+
+.auth-field input {
+  min-height: 44px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.auth-password-control {
+  position: relative;
+}
+
+.auth-password-control input {
+  padding-right: 44px;
+}
+
+.auth-password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  transform: translateY(-50%);
+}
+
+.auth-password-toggle:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.auth-error {
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.auth-submit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: var(--text-base);
+  font-weight: 600;
+  transition: background var(--duration) var(--ease), opacity var(--duration) var(--ease);
+}
+
+.auth-submit-btn:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.auth-submit-btn:disabled {
+  opacity: 0.45;
+}
+
+.auth-form-note {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  text-align: center;
+}
+
+/* 浏览器自动填充：保持配色，并触发 animationstart 让组件同步 autofill 值 */
+.auth-field input:-webkit-autofill,
+.auth-field input:-webkit-autofill:hover,
+.auth-field input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--ink);
+  -webkit-box-shadow: 0 0 0 1000px var(--surface) inset;
+  caret-color: var(--ink);
+  transition: background-color 9999s ease-out;
+  animation: noteweave-auth-autofill 1ms;
+}
+
+@keyframes noteweave-auth-autofill {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.auth-card-checking {
+  padding: 28px;
+}
+
+.auth-checking-indicator {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.auth-checking-text {
+  display: grid;
+  gap: 2px;
+}
+
+.auth-checking-text strong {
+  font-size: var(--text-md);
+}
+
+.auth-checking-text span {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 900px) {
+  .auth-container {
+    grid-template-columns: minmax(0, 440px);
+    justify-content: center;
+    gap: 28px;
+  }
+
+  .auth-context-panel {
+    gap: 18px;
+  }
+
+  .auth-context-heading {
+    font-size: 34px;
+  }
+
+  .auth-context-lead,
+  .auth-context-points {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .auth-shell {
+    padding: 64px 14px 24px;
+    place-items: start center;
+  }
+
+  .auth-card {
+    padding: 22px;
+    border-radius: var(--radius-xl);
+  }
+}

@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { BookOpenText, Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 
 type AuthMode = "login" | "register";
 type TextSetter = (value: string) => void;
@@ -90,11 +90,6 @@ export function AuthCard(props: AuthCardProps) {
   return (
           <section className="auth-card">
             <div className="auth-header">
-              <div className="auth-brand-badge">
-                <BookOpenText size={18} strokeWidth={1.8} aria-hidden="true" />
-                <span>NoteWeave</span>
-              </div>
-              <p className="auth-card-kicker">YOUR RESEARCH DESK</p>
               <h1>{mode === "login" ? "登录研究工作台" : "创建 NoteWeave 账号"}</h1>
               <p className="auth-subtitle">
                 {mode === "login"

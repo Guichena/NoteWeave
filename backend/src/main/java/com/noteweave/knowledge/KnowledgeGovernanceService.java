@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +24,7 @@ public class KnowledgeGovernanceService {
     private final KnowledgeVersionService knowledgeVersionService;
     private final KnowledgeWikiMutationService wikiMutationService;
     private final KnowledgeCommandService knowledgeCommandService;
+    private final KnowledgeCitationReadGate citationReadGate;
 
     public KnowledgeGovernanceService(
             JdbcTemplate jdbcTemplate,
@@ -30,7 +32,8 @@ public class KnowledgeGovernanceService {
             KnowledgeWikiSearchEngine wikiSearchEngine,
             KnowledgeVersionService knowledgeVersionService,
             KnowledgeWikiMutationService wikiMutationService,
-            KnowledgeCommandService knowledgeCommandService
+            KnowledgeCommandService knowledgeCommandService,
+            KnowledgeCitationReadGate citationReadGate
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.workspaceQueryPort = workspaceQueryPort;
@@ -38,6 +41,7 @@ public class KnowledgeGovernanceService {
         this.knowledgeVersionService = knowledgeVersionService;
         this.wikiMutationService = wikiMutationService;
         this.knowledgeCommandService = knowledgeCommandService;
+        this.citationReadGate = citationReadGate;
     }
 
     public WikiStatsResponse getWikiStats(String workspaceId) {
@@ -59,45 +63,33 @@ public class KnowledgeGovernanceService {
             String workspaceId,
             boolean wikiEnabled
     ) {
-        List<WikiIssueResponse> issues = lintWiki(workspaceId);
-        int pageCount = count("""
-                select count(*) from knowledge_item
-                where workspace_id = ? and item_type = 'WIKI' and status = 'ACTIVE'
-                """, workspaceId);
-        int linkCount = count(
-                "select count(*) from knowledge_item_link where workspace_id = ?",
-                workspaceId);
-        int resolvedLinkCount = count("""
-                select count(*) from knowledge_item_link
-                where workspace_id = ? and relation_status = 'RESOLVED'
-                """, workspaceId);
-        int unresolvedLinkCount = count("""
-                select count(*) from knowledge_item_link
-                where workspace_id = ? and relation_status = 'UNRESOLVED'
-                """, workspaceId);
-        int citationCount = count("""
-                select count(*)
-                from knowledge_item i
-                join knowledge_version v on v.id = i.latest_version_id
-                join knowledge_version_citation c on c.knowledge_version_id = v.id
-                where i.workspace_id = ? and i.item_type = 'WIKI'
-                  and i.status = 'ACTIVE'
-                """, workspaceId);
+        List<WikiSearchRow> allPages = wikiSearchEngine.loadRows(workspaceId);
+        Set<String> readableVersions = citationReadGate.readableVersionIds(workspaceId,
+                allPages.stream().map(WikiSearchRow::versionId).toList());
+        List<WikiSearchRow> pages = allPages.stream()
+                .filter(row -> readableVersions.contains(row.versionId())).toList();
+        Set<String> readablePageIds = pages.stream().map(WikiSearchRow::itemId)
+                .collect(java.util.stream.Collectors.toSet());
+        List<WikiIssueResponse> issues = lintWiki(workspaceId).stream()
+                .filter(issue -> readablePageIds.contains(issue.itemId())).toList();
+        int pageCount = pages.size();
+        List<String[]> links = jdbcTemplate.query("""
+                select source_item_id, target_item_id, relation_status
+                from knowledge_item_link where workspace_id = ?
+                """, (rs, rowNum) -> new String[] {
+                rs.getString(1), rs.getString(2), rs.getString(3)
+        }, workspaceId).stream().filter(link -> readablePageIds.contains(link[0])
+                && (link[1] == null || readablePageIds.contains(link[1]))).toList();
+        int linkCount = links.size();
+        int unresolvedLinkCount = (int) links.stream()
+                .filter(link -> "UNRESOLVED".equals(link[2])).count();
+        int resolvedLinkCount = (int) links.stream()
+                .filter(link -> "RESOLVED".equals(link[2])).count();
+        int citationCount = pages.stream().mapToInt(WikiSearchRow::citationCount).sum();
         Map<String, Integer> pagesByKind = new HashMap<>();
-        jdbcTemplate.query("""
-                select coalesce(page_kind, 'TOPIC') as page_kind, count(*) as total
-                from knowledge_item
-                where workspace_id = ? and item_type = 'WIKI' and status = 'ACTIVE'
-                group by page_kind
-                """, (rs, rowNum) -> {
-            pagesByKind.put(rs.getString("page_kind"), rs.getInt("total"));
-            return null;
-        }, workspaceId);
-        if (pagesByKind.isEmpty() && pageCount > 0) {
-            pagesByKind.put("TOPIC", pageCount);
-        }
-        List<KnowledgeItemResponse> recentUpdates = wikiSearchEngine
-                .loadRows(workspaceId).stream()
+        pages.forEach(page -> pagesByKind.merge(
+                page.pageKind() == null ? "TOPIC" : page.pageKind(), 1, Integer::sum));
+        List<KnowledgeItemResponse> recentUpdates = pages.stream()
                 .sorted(Comparator.comparing(WikiSearchRow::updatedAt).reversed())
                 .limit(5)
                 .map(WikiSearchRow::toItemResponse)

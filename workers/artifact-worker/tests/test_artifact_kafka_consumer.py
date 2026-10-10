@@ -77,6 +77,22 @@ def test_consumer_commits_only_after_execution_protocol_completes() -> None:
     assert summary.completed_count == 1
 
 
+def test_material_command_uses_material_executor_and_keeps_artifact_path_separate() -> None:
+    messages = FakeMessages([json.dumps({
+        "schema_version": "video-material-command.v1",
+        "task_id": "material-1", "delivery_token": "delivery-material",
+    })])
+    calls: list[tuple[str, str]] = []
+    summary = consume_artifact_commands(
+        messages,
+        executor=lambda *_args, **_kwargs: pytest.fail("Artifact Job executor was called"),
+        material_executor=lambda task_id, *, delivery_token: calls.append((task_id, delivery_token)),
+    )
+    assert calls == [("material-1", "delivery-material")]
+    assert summary.completed_count == 1
+    assert messages.commit_count == 1
+
+
 def test_consumer_does_not_commit_when_execution_or_callback_is_unconfirmed() -> None:
     messages = FakeMessages([command()])
 

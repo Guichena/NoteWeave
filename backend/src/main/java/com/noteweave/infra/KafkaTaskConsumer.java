@@ -10,6 +10,8 @@ import com.noteweave.source.SourceParseService.SourceParseDisposition;
 import com.noteweave.task.TaskService;
 import com.noteweave.conversation.PromoteSegmentSummaryRequest;
 import com.noteweave.conversation.SegmentSummaryPromotionService;
+import com.noteweave.conversation.ConversationTopicSummaryV2Service;
+import com.noteweave.conversation.ConversationSummaryGenerator;
 import com.noteweave.common.RequestContext;
 import java.util.Map;
 import java.util.List;
@@ -44,12 +46,15 @@ public class KafkaTaskConsumer {
     private final ObjectMapper objectMapper;
     private final SourceRetrievalProjectionCoordinator projectionCoordinator;
     private final SegmentSummaryPromotionService segmentSummaryPromotionService;
+    private final ConversationTopicSummaryV2Service topicSummaryV2Service;
+    private ConversationSummaryGenerator summaryGenerator = ConversationSummaryGenerator.extractiveOnly();
+    private com.noteweave.memory.MemoryConversationExtractionService memoryExtractionService;
 
     public KafkaTaskConsumer(SourceParseService sourceParseService,
                              WikiIngestService wikiIngestService,
                              TaskService taskService,
                              ObjectMapper objectMapper) {
-        this(sourceParseService, wikiIngestService, taskService, objectMapper, null, null);
+        this(sourceParseService, wikiIngestService, taskService, objectMapper, null, null, null);
     }
 
     public KafkaTaskConsumer(SourceParseService sourceParseService,
@@ -57,7 +62,17 @@ public class KafkaTaskConsumer {
                              TaskService taskService,
                              ObjectMapper objectMapper,
                              SourceRetrievalProjectionCoordinator projectionCoordinator) {
-        this(sourceParseService, wikiIngestService, taskService, objectMapper, projectionCoordinator, null);
+        this(sourceParseService, wikiIngestService, taskService, objectMapper, projectionCoordinator, null, null);
+    }
+
+    public KafkaTaskConsumer(SourceParseService sourceParseService,
+                             WikiIngestService wikiIngestService,
+                             TaskService taskService,
+                             ObjectMapper objectMapper,
+                             SourceRetrievalProjectionCoordinator projectionCoordinator,
+                             SegmentSummaryPromotionService segmentSummaryPromotionService) {
+        this(sourceParseService, wikiIngestService, taskService, objectMapper, projectionCoordinator,
+                segmentSummaryPromotionService, null);
     }
 
     @Autowired
@@ -66,13 +81,25 @@ public class KafkaTaskConsumer {
                              TaskService taskService,
                              ObjectMapper objectMapper,
                              SourceRetrievalProjectionCoordinator projectionCoordinator,
-                             SegmentSummaryPromotionService segmentSummaryPromotionService) {
+                             SegmentSummaryPromotionService segmentSummaryPromotionService,
+                             ConversationTopicSummaryV2Service topicSummaryV2Service) {
         this.sourceParseService = sourceParseService;
         this.wikiIngestService = wikiIngestService;
         this.taskService = taskService;
         this.objectMapper = objectMapper;
         this.projectionCoordinator = projectionCoordinator;
         this.segmentSummaryPromotionService = segmentSummaryPromotionService;
+        this.topicSummaryV2Service = topicSummaryV2Service;
+    }
+
+    @Autowired(required = false)
+    void setSummaryGenerator(ConversationSummaryGenerator summaryGenerator) {
+        if (summaryGenerator != null) this.summaryGenerator = summaryGenerator;
+    }
+
+    @Autowired(required = false)
+    void setMemoryExtractionService(com.noteweave.memory.MemoryConversationExtractionService service) {
+        this.memoryExtractionService = service;
     }
 
     @KafkaListener(topics = "${noteweave.kafka.topics.source-parse}",
@@ -106,6 +133,65 @@ public class KafkaTaskConsumer {
                         sourceParseService.assessProcessability(workspaceId, sourceId, snapshotId)
                 );
             }
+        });
+    }
+
+    /** 切片阶段：读取解析阶段提取的文本，生成片段和阅读窗口，然后投递向量化阶段。 */
+    @KafkaListener(topics = "${noteweave.kafka.topics.source-chunk}",
+                   groupId = "${spring.kafka.consumer.group-id}",
+                   containerFactory = "kafkaListenerContainerFactory")
+    public void onSourceChunk(ConsumerRecord<String, String> record) {
+        handle("source.chunk", record, payload -> {
+            String workspaceId = text(payload.get("workspaceId"));
+            String sourceId = text(payload.get("sourceId"));
+            String snapshotId = text(payload.get("snapshotId"));
+            String textObjectKey = text(payload.get("textObjectKey"));
+            requirePayloadValue(workspaceId, "workspaceId");
+            requirePayloadValue(sourceId, "sourceId");
+            requirePayloadValue(snapshotId, "snapshotId");
+            requirePayloadValue(textObjectKey, "textObjectKey");
+            Object pageCount = payload.get("pageCount");
+            sourceParseService.chunkStage(workspaceId, sourceId, snapshotId, textObjectKey,
+                    text(payload.get("mimeType")), pageCount instanceof Number number ? number.intValue() : 0);
+        });
+    }
+
+    /** 向量化阶段：计算片段和资料的向量，写入派生存储后投递索引阶段。 */
+    @KafkaListener(topics = "${noteweave.kafka.topics.source-embed}",
+                   groupId = "${spring.kafka.consumer.group-id}",
+                   containerFactory = "kafkaListenerContainerFactory")
+    public void onSourceEmbed(ConsumerRecord<String, String> record) {
+        handle("source.embed", record, payload -> {
+            String workspaceId = text(payload.get("workspaceId"));
+            String sourceId = text(payload.get("sourceId"));
+            String snapshotId = text(payload.get("sourceSnapshotId"));
+            requirePayloadValue(workspaceId, "workspaceId");
+            requirePayloadValue(sourceId, "sourceId");
+            requirePayloadValue(snapshotId, "sourceSnapshotId");
+            if (projectionCoordinator == null) {
+                throw new IllegalStateException("retrieval projection coordinator is unavailable");
+            }
+            projectionCoordinator.embedStage(workspaceId, sourceId, snapshotId, text(payload.get("taskId")));
+        });
+    }
+
+    /** 索引阶段：把片段和资料写入检索索引，并完成资料的就绪收尾。 */
+    @KafkaListener(topics = "${noteweave.kafka.topics.source-index}",
+                   groupId = "${spring.kafka.consumer.group-id}",
+                   containerFactory = "kafkaListenerContainerFactory")
+    public void onSourceIndex(ConsumerRecord<String, String> record) {
+        handle("source.index", record, payload -> {
+            String workspaceId = text(payload.get("workspaceId"));
+            String sourceId = text(payload.get("sourceId"));
+            String snapshotId = text(payload.get("sourceSnapshotId"));
+            requirePayloadValue(workspaceId, "workspaceId");
+            requirePayloadValue(sourceId, "sourceId");
+            requirePayloadValue(snapshotId, "sourceSnapshotId");
+            if (projectionCoordinator == null) {
+                throw new IllegalStateException("retrieval projection coordinator is unavailable");
+            }
+            projectionCoordinator.indexStage(workspaceId, sourceId, snapshotId, text(payload.get("taskId")),
+                    text(payload.get("embeddingsObjectKey")));
         });
     }
 
@@ -161,9 +247,7 @@ public class KafkaTaskConsumer {
                    containerFactory = "kafkaListenerContainerFactory")
     public void onConversationSummary(ConsumerRecord<String, String> record) {
         handle("conversation.summary", record, payload -> {
-            if (segmentSummaryPromotionService == null) {
-                throw new IllegalStateException("conversation summary promotion service is unavailable");
-            }
+            boolean v2 = Integer.valueOf(2).equals(payload.get("summary_projection_version"));
             String segmentId = text(payload.get("segment_id"));
             String revisionId = text(payload.get("summary_revision_id"));
             requirePayloadValue(segmentId, "segment_id");
@@ -172,30 +256,64 @@ public class KafkaTaskConsumer {
             if (!(rawMessages instanceof List<?> messages) || messages.isEmpty()) {
                 throw new IllegalArgumentException("conversation.summary payload missing source_messages");
             }
-            String summary = messages.stream()
+            // 增量摘要：payload 里带有上一版摘要时，只需要读入之后新增的消息
+            List<ConversationSummaryGenerator.Turn> turns = messages.stream()
                     .filter(Map.class::isInstance)
                     .map(Map.class::cast)
-                    .map(message -> summarizeMessage(text(message.get("role")), text(message.get("content"))))
-                    .filter(value -> !value.isBlank())
-                    .collect(java.util.stream.Collectors.joining("\n"));
-            if (summary.isBlank()) {
+                    .map(message -> new ConversationSummaryGenerator.Turn(
+                            text(message.get("role")), text(message.get("content"))))
+                    .toList();
+            ConversationSummaryGenerator.Summary summary = summaryGenerator.summarize(
+                    text(payload.get("base_summary_text")), turns);
+            if (summary.text().isBlank()) {
                 throw new IllegalArgumentException("conversation.summary payload contains no summary content");
             }
-            segmentSummaryPromotionService.promote(
-                    segmentId,
-                    revisionId,
-                    new PromoteSegmentSummaryRequest(summary, sha256(summary))
-            );
+            PromoteSegmentSummaryRequest request = new PromoteSegmentSummaryRequest(
+                    summary.text(), sha256(summary.text()), summary.method());
+            if (v2) {
+                if (topicSummaryV2Service == null) {
+                    throw new IllegalStateException("topic summary v2 service is unavailable");
+                }
+                topicSummaryV2Service.promote(segmentId, revisionId, request);
+            } else {
+                if (segmentSummaryPromotionService == null) {
+                    throw new IllegalStateException("conversation summary promotion service is unavailable");
+                }
+                segmentSummaryPromotionService.promote(segmentId, revisionId, request);
+            }
         });
     }
 
-    private String summarizeMessage(String role, String content) {
-        String normalized = content == null ? "" : content.replace('\r', ' ').replace('\n', ' ').trim();
-        if (normalized.isBlank()) {
-            return "";
-        }
-        String bounded = normalized.substring(0, Math.min(600, normalized.length()));
-        return (role == null || role.isBlank() ? "message" : role.toLowerCase(java.util.Locale.ROOT)) + ": " + bounded;
+    /**
+     * 从对话中提取记忆候选。提取是尽力而为的后台任务：失败时把任务标记为失败，不再重试，
+     * 也不影响回答本身。
+     */
+    @KafkaListener(topics = "${noteweave.kafka.topics.memory-extraction:noteweave.memory.extraction}",
+                   groupId = "${spring.kafka.consumer.group-id}",
+                   containerFactory = "kafkaListenerContainerFactory")
+    public void onMemoryExtraction(ConsumerRecord<String, String> record) {
+        handle("memory.extraction", record, payload -> {
+            String taskId = text(payload.get("task_id"));
+            String workspaceId = text(payload.get("workspace_id"));
+            String messageId = text(payload.get("message_id"));
+            String userId = text(payload.get("user_id"));
+            requirePayloadValue(workspaceId, "workspace_id");
+            requirePayloadValue(messageId, "message_id");
+            requirePayloadValue(userId, "user_id");
+            if (memoryExtractionService == null) {
+                throw new IllegalStateException("memory extraction service is unavailable");
+            }
+            try {
+                memoryExtractionService.extract(taskId, workspaceId, messageId, userId,
+                        text(payload.get("content")));
+            } catch (RuntimeException ex) {
+                log.warn("Memory extraction failed for message {}: {}", messageId, ex.getMessage());
+                if (taskId != null) {
+                    taskService.failTask(taskId, "MEMORY_EXTRACTION_FAILED", "记忆候选提取失败",
+                            "MEMORY_EXTRACTION_FAILED", false);
+                }
+            }
+        });
     }
 
     private String sha256(String value) {
@@ -250,6 +368,12 @@ public class KafkaTaskConsumer {
         }
 
         SourceParseDisposition disposition = assessment.disposition();
+        if (disposition == SourceParseDisposition.IN_LATER_STAGE) {
+            // 快照已进入切片、向量化或索引阶段，任务由后续阶段收尾，这里只确认重复消息
+            log.info("ACK duplicate source.parse while later stages run: taskId={}, sourceId={}, snapshotId={}",
+                    taskId, sourceId, snapshotId);
+            return;
+        }
         String detail = "source_status=" + assessment.sourceStatus()
                 + ", snapshot_parse_status=" + assessment.snapshotParseStatus();
         if (disposition == SourceParseDisposition.TARGET_MISSING) {

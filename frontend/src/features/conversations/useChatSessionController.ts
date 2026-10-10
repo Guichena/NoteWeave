@@ -153,6 +153,8 @@ export function useChatSessionController({
   const {
     uploadSource,
     uploadSourceFile,
+    uploads,
+    dismissUpload,
     deleteSource,
     prepareNoteSourceDraft,
     rewriteNoteSourceDraft,
@@ -236,6 +238,7 @@ export function useChatSessionController({
         });
         throw error;
       }
+      setQuestion((current) => (current.trim() === trimmed ? "" : current));
       const buffered = answerRunStoreRef.current.get(sent.answer_run_id);
       if (mode === "note") {
         setLastNoteAssistantMessageId(sent.assistant_message_id);
@@ -324,6 +327,8 @@ export function useChatSessionController({
     currentRoute,
     uploadSource,
     uploadSourceFile,
+    uploads,
+    dismissUpload,
     deleteSource,
     rewriteNoteSourceDraft,
     saveNoteAnswerAsSource,

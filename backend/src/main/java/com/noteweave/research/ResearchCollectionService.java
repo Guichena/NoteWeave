@@ -13,13 +13,16 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ResearchCollectionService {
     private final JdbcTemplate jdbcTemplate;
+    private final ResearchContextV2Gate contextGate;
 
-    public ResearchCollectionService(JdbcTemplate jdbcTemplate) {
+    public ResearchCollectionService(JdbcTemplate jdbcTemplate, ResearchContextV2Gate contextGate) {
         this.jdbcTemplate = jdbcTemplate;
+        this.contextGate = contextGate;
     }
 
     @Transactional
     public ResearchCollectionResponse materialize(String runId) {
+        contextGate.requireReadable(runId);
         Run run = requireCompletedRun(null, runId, true);
         String collectionId = jdbcTemplate.query("""
                 select id from research_collection where research_run_id = ?
@@ -42,6 +45,7 @@ public class ResearchCollectionService {
     }
 
     public ResearchCollectionResponse get(String workspaceId, String runId) {
+        contextGate.requireReadable(runId);
         Run run = requireCompletedRun(workspaceId, runId, false);
         CollectionRow collection = jdbcTemplate.query("""
                 select id, title, status, created_at, updated_at

@@ -4,32 +4,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ArtifactRail } from "./features/artifacts/ArtifactRail";
 import { ResearchDetailWorkbench } from "./features/research/ResearchDetailWorkbench";
-import {
-  isResearchRunFailed,
-  isResearchRunPending,
-  ResearchReportPanel
-} from "./features/research/ResearchReportPanel";
-import { ResearchSidebar } from "./features/research/ResearchSidebar";
 import { WorkspaceSettingsPanel } from "./features/workspace/WorkspaceSettingsPanel";
 
-vi.mock("./features/memory/useMemoryReview", () => ({
-  useMemoryReview: () => ({
-    queue: [],
-    selectedReviewId: "",
-    versions: [],
-    selectedItem: null,
-    selectedVersion: null,
-    queueLoading: false,
-    versionsLoading: false,
-    mutating: false,
+vi.mock("./features/memory/useMemoryItems", () => ({
+  useMemoryItems: () => ({
+    items: [],
+    loading: false,
     error: "",
-    lastDecision: null,
-    refreshQueue: vi.fn(),
-    selectReview: vi.fn(),
-    decide: vi.fn(),
-    appendVersion: vi.fn(),
-    selectVersion: vi.fn()
-  })
+    pendingRevisionId: "",
+    refresh: vi.fn(),
+    addPreference: vi.fn(),
+    decide: vi.fn()
+  }),
+  errorMessage: (error: unknown) => String(error)
 }));
 
 import { MemoryReviewWorkbench } from "./features/memory/MemoryReviewWorkbench";
@@ -37,15 +24,6 @@ import { MemoryReviewWorkbench } from "./features/memory/MemoryReviewWorkbench";
 afterEach(cleanup);
 
 describe("workspace component wiring", () => {
-  it("keeps active Research runs in a pending presentation state", () => {
-    expect(isResearchRunPending("QUEUED")).toBe(true);
-    expect(isResearchRunPending("RUNNING")).toBe(true);
-    expect(isResearchRunPending("COMPLETED")).toBe(false);
-    expect(isResearchRunPending("FAILED")).toBe(false);
-    expect(isResearchRunFailed("FAILED")).toBe(true);
-    expect(isResearchRunFailed("RUNNING")).toBe(false);
-  });
-
   it("updates retrieval settings and adds a workspace member", async () => {
     const updateRetrievalSettings = vi.fn(async (_workspaceId: string, enabled: boolean) => ({
       workspace_id: "workspace",
@@ -110,7 +88,7 @@ describe("workspace component wiring", () => {
       selectedArtifactSkill: skill,
       artifactStudioSkills: [skill],
       artifactFormValues: {},
-      artifactSidebarState: {},
+      artifactJobs: [],
       latestArtifactVersion: null,
       artifactHistoryLoadingKey: "",
       artifactSavedSourceByVersionId: {},
@@ -155,7 +133,7 @@ describe("workspace component wiring", () => {
       setArtifactFormValues
     })} />);
 
-    expect(screen.getByRole("heading", { name: "产物工作台" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "产物" })).toBeTruthy();
     expect(screen.queryByText("创建产物")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /学习指南/ }));
     expect(setSelectedArtifactSkillKey).toHaveBeenCalledWith("study_guide");
@@ -163,32 +141,30 @@ describe("workspace component wiring", () => {
     expect(setArtifactComposerOpen).toHaveBeenCalledWith(true);
   });
 
-  it("keeps a failed Artifact run out of the running section", () => {
+  it("shows a failed Artifact job with its reason instead of an openable version", () => {
     render(<ArtifactRail {...buildArtifactOverviewProps({
-      artifactSidebarState: {
-        runs: [{
-          key: "failed-job",
-          title: "简历亮点描述",
-          status: "失败",
-          detail: "source scope must not be empty",
-          meta: "1 天前",
-          waitSignals: [],
-          waitDetails: [],
-          tone: "danger",
-          group: "recent"
-        }],
-        historyItems: [],
-        latestAuditView: {},
-        historyViewer: { activeKey: "", activeVersion: null }
-      }
+      artifactJobs: [{
+        artifact_job_id: "failed-job",
+        workspace_id: "workspace",
+        task_id: "task-1",
+        skill_key: "resume_highlight",
+        status: "FAILED",
+        task_status: "FAILED",
+        progress_phase: "RESOLVING",
+        progress_message: "source scope must not be empty",
+        result_title: "",
+        latest_version_no: 0,
+        created_at: "2026-07-20T00:00:00Z",
+        updated_at: "2026-07-20T00:00:00Z"
+      }],
+      resolveArtifactSkillTitle: () => "简历亮点描述"
     })} />);
 
-    const runningSection = screen.getByRole("heading", { name: "正在运行" }).closest("section");
-    const recentSection = screen.getByRole("heading", { name: "最近运行" }).closest("section");
-    expect(runningSection?.textContent).toContain("当前没有运行中的任务");
-    expect(runningSection?.textContent).not.toContain("简历亮点描述");
-    expect(recentSection?.textContent).toContain("简历亮点描述");
-    expect(recentSection?.textContent).toContain("失败");
+    const row = document.querySelector('[data-run-key="artifact-job-failed-job"]');
+    expect(row?.getAttribute("data-state")).toBe("failed");
+    expect(row?.textContent).toContain("简历亮点描述");
+    expect(row?.textContent).toContain("生成失败：source scope must not be empty");
+    expect(screen.queryByRole("button", { name: "打开 简历亮点描述" })).toBeNull();
   });
 
   it("shows pending copy before an empty Artifact catalog or history", () => {
@@ -198,208 +174,9 @@ describe("workspace component wiring", () => {
     })} />);
 
     expect(screen.getByText("正在加载产物类型")).toBeTruthy();
-    expect(screen.getByText("正在同步运行状态")).toBeTruthy();
-    expect(screen.getByText("正在加载产物记录")).toBeTruthy();
-    expect(screen.queryByText("Skill 目录当前不可用，无法创建产物任务。")).toBeNull();
-    expect(screen.queryByText("完成一次生成后，版本会保存在这里。")).toBeNull();
-  });
-
-  it("mounts the Research launcher with an empty history", () => {
-    const props = {
-      summarizedResearchQuestion: "研究问题",
-      summarizedResearchGoal: "研究目标",
-      researchDeliverableFormat: "报告",
-      researchProfile: "default",
-      researchDepth: "STANDARD",
-      researchType: "AUTO",
-      researchRetrievalMode: "WEB_ONLY",
-      researchScopeCount: 0,
-      researchQuestion: "研究问题",
-      researchGoal: "研究目标",
-      researchTimeRange: "",
-      researchConstraintsText: "",
-      isBusy: false,
-      workspace: { workspace_id: "workspace" },
-      sources: [],
-      selectedResearchSourceIds: [],
-      researchScopeSources: [],
-      researchRuns: [],
-      filteredResearchRuns: [],
-      researchHistoryFilter: "ALL",
-      setResearchHistoryFilter: vi.fn(),
-      researchHistoryFilterLabel: (filter: string) => filter,
-      researchTimelineMilestones: [],
-      researchTimelinePath: {
-        stageLabels: [],
-        currentStageLabel: "",
-        currentRunStageLabel: "",
-        currentRunAlignedWithPath: false,
-        narrative: ""
-      },
-      runContinuityBaselineById: new Map(),
-      currentResearchRunSummary: null,
-      currentResearchRunId: "",
-      currentSavedReportSource: null,
-      currentSavedReportSourceInScope: false,
-      focusedResearchSourceId: "",
-      buildRunSignalChips: () => [],
-      buildRunPrimaryTone: () => "neutral",
-      readRecoveryTargets: () => null
-    } as any;
-    const { rerender } = render(<ResearchSidebar {...props} />);
-
-    expect(screen.getByRole("heading", { name: "独立研究工作台" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "仅网络", pressed: true })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "网络 + 资料", pressed: false })).toBeTruthy();
-    expect((screen.getByRole("button", { name: "启动 Deep Research" }) as HTMLButtonElement).disabled).toBe(false);
-
-    rerender(<ResearchSidebar {...props} researchQuestion="" />);
-    expect((screen.getByRole("button", { name: "启动 Deep Research" }) as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it("mounts the Research report empty state", () => {
-    render(<ResearchReportPanel {...({
-      currentResearchRun: null,
-      currentResearchCollection: null,
-      currentResearchRunSummary: null,
-      researchReportStructure: null,
-      researchClosedLoopState: null,
-      currentResearchSourceEvidenceSummary: null,
-      currentRecoveryTargets: null,
-      currentRunSummaryRecoveryTargets: null,
-      currentIntentCompletionContract: null,
-      currentFinalAnswer: {},
-      currentExecutiveSummary: ["本次研究仍处于受控恢复中，尚未形成稳定答案。"],
-      currentKeyTakeaways: [],
-      currentUncertaintyAndRisks: [],
-      currentVerifiedFindings: [],
-      currentEvidenceHighlights: [],
-      currentSavedReportSource: null,
-      currentSavedReportSourceAsset: null,
-      sourceById: new Map(),
-      workspaceName: "研究工作台",
-      sourceCount: 0,
-      readySourceCount: 0,
-      selectedSourceCount: 0,
-      selectedSourceTitles: [],
-      researchHistoryCount: 0,
-      researchRetrievalMode: "WEB_ONLY",
-      researchQuestion: "",
-      onOpenSourceLibrary: vi.fn(),
-      researchTimelinePath: {
-        stageLabels: [],
-        currentStageLabel: "",
-        currentRunStageLabel: "",
-        currentRunAlignedWithPath: false,
-        narrative: ""
-      }
-    } as any)} />);
-
-    expect(screen.getByText("Research Run")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "从一个问题开始，留下可核验的报告" })).toBeTruthy();
-  });
-
-  it("presents a completed synthesized Markdown report as verified without legacy report structure", () => {
-    render(<ResearchReportPanel {...({
-      currentResearchRun: {
-        research_run_id: "run-synthesis",
-        question: "如何形成可审计报告？",
-        status: "COMPLETED",
-        profile_key: "DEFAULT",
-        updated_at: "2026-08-23T15:25:33Z",
-        final_report_title: "Research report: 如何形成可审计报告？",
-        final_report_markdown: "# Research report\n\n已审计结论 [evidence:1]",
-        source_scope: [{ source_id: "source-1", title: "研究资料" }],
-        research_intent: {}
-      },
-      currentResearchCollection: null,
-      currentResearchRunSummary: null,
-      researchReportStructure: null,
-      researchClosedLoopState: null,
-      currentResearchSourceEvidenceSummary: null,
-      currentRecoveryTargets: null,
-      currentIntentCompletionContract: null,
-      currentFinalAnswer: { answer_status: "RECOVERY_NEEDED", answer_text: "当前还没有形成稳定的最终答案。" },
-      currentExecutiveSummary: [],
-      currentKeyTakeaways: [],
-      currentUncertaintyAndRisks: [],
-      currentVerifiedFindings: [],
-      currentEvidenceHighlights: [],
-      currentSavedReportSource: null,
-      sourceById: new Map(),
-      currentResearchRunId: "run-synthesis",
-      isBusy: false,
-      formatTimestamp: () => "2026/8/23 15:25:33",
-      buildReportRecoveryNarrative: () => "",
-      refreshCurrentResearchRun: vi.fn(),
-      exportResearchReportMarkdown: vi.fn(),
-      saveResearchReportAsSource: vi.fn(),
-      setResearchDetailOpen: vi.fn(),
-      formatResearchAnswerStatus: (status: string) => status === "VERIFIED" ? "Verifier Approved" : status,
-      resultSnapshotTitle: "如何形成可审计报告？",
-      resultSnapshotNarrative: "旧版恢复提示",
-      buildResearchSourceLabel: () => "研究资料",
-      summarizeText: (value: string) => value,
-      researchTimelinePath: { stageLabels: [] }
-    } as any)} />);
-
-    expect(screen.getByText("调研成果 · Verifier Approved")).toBeTruthy();
-    expect(screen.getByText("研究报告已完成，并由通过证据审计的账本综合生成。")).toBeTruthy();
-    expect(screen.getByText("已审计结论", { exact: false })).toBeTruthy();
-    expect(screen.getByText("[证据]").getAttribute("title")).toBe("evidence:1");
-    expect(screen.queryByText("结构化报告尚未就绪")).toBeNull();
-    expect(screen.queryByText("本次研究仍处于受控恢复中，尚未形成稳定答案。")).toBeNull();
-  });
-
-  it("does not present an insufficient-evidence terminal report as verifier approved", () => {
-    render(<ResearchReportPanel {...({
-      currentResearchRun: {
-        research_run_id: "run-insufficient",
-        question: "比较两个数据库",
-        status: "COMPLETED",
-        completion_terminal_state: "INSUFFICIENT_EVIDENCE",
-        profile_key: "DEFAULT",
-        updated_at: "2026-09-21T04:34:15Z",
-        final_report_title: "Research report",
-        final_report_markdown: "# Research report\n\nOutcome: INSUFFICIENT_EVIDENCE",
-        source_scope: [],
-        research_intent: {}
-      },
-      currentResearchCollection: null,
-      currentResearchRunSummary: null,
-      researchReportStructure: null,
-      researchClosedLoopState: null,
-      currentResearchSourceEvidenceSummary: null,
-      currentRecoveryTargets: null,
-      currentIntentCompletionContract: null,
-      currentFinalAnswer: { answer_status: "VERIFIED", answer_text: "" },
-      currentExecutiveSummary: [],
-      currentKeyTakeaways: [],
-      currentUncertaintyAndRisks: [],
-      currentVerifiedFindings: [],
-      currentEvidenceHighlights: [],
-      currentSavedReportSource: null,
-      sourceById: new Map(),
-      currentResearchRunId: "run-insufficient",
-      isBusy: false,
-      formatTimestamp: () => "2026/9/21 12:34:15",
-      buildReportRecoveryNarrative: () => "",
-      refreshCurrentResearchRun: vi.fn(),
-      exportResearchReportMarkdown: vi.fn(),
-      saveResearchReportAsSource: vi.fn(),
-      setResearchDetailOpen: vi.fn(),
-      formatResearchAnswerStatus: (status: string) => status === "INSUFFICIENT_EVIDENCE" ? "Evidence Insufficient" : status,
-      resultSnapshotTitle: "证据不足",
-      resultSnapshotNarrative: "",
-      buildResearchSourceLabel: () => "",
-      summarizeText: (value: string) => value,
-      researchTimelinePath: { stageLabels: [] }
-    } as any)} />);
-
-    expect(screen.getByText("调研成果 · Evidence Insufficient")).toBeTruthy();
-    expect(screen.getByText("本次研究已结束，但现有来源不足以形成可核验结论。下方保留缺口说明，不能作为稳定研究成果。")).toBeTruthy();
-    expect((screen.getByRole("button", { name: "保存为资料" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.queryByText("调研成果 · Verifier Approved")).toBeNull();
+    expect(screen.getByText("正在加载产物")).toBeTruthy();
+    expect(screen.queryByText("产物目录暂不可用，无法创建产物任务。")).toBeNull();
+    expect(screen.queryByText(/完成的产物和各个版本会保存在这里/)).toBeNull();
   });
 
   it("navigates the Research detail audit and checkpoint workflows", () => {
@@ -541,18 +318,13 @@ describe("workspace component wiring", () => {
     expect(onResume).toHaveBeenCalledWith(1);
   });
 
-  it("mounts the Memory review workbench empty state", () => {
+  it("mounts the Memory workbench empty state", () => {
     render(<MemoryReviewWorkbench workspaceId="workspace" />);
 
-    expect(screen.getAllByText("01 · Candidate").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByLabelText("0 条待审核")).toBeTruthy();
-    expect(screen.getByText("等待新的 Memory revision")).toBeTruthy();
-    expect(screen.getByRole("list", { name: "候选到审核决策的阶段" })).toBeTruthy();
-    expect(screen.getByText("进入审核队列")).toBeTruthy();
-    expect(screen.getByText("核对来源与冲突")).toBeTruthy();
-    expect(screen.getByText("审核通过后进入运行时")).toBeTruthy();
-    expect(screen.getByText("当前已接受 revision")).toBeTruthy();
-    expect(screen.getByText("仅限已接受内容")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "记忆" })).toBeTruthy();
+    expect(screen.getByRole("form", { name: "添加偏好" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "生效中" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "待确认" })).toBeNull();
   });
 });
 
@@ -566,12 +338,8 @@ function buildArtifactOverviewProps(overrides: Record<string, unknown> = {}) {
     artifactJobsLoading: false,
     sourceCount: 2,
     artifactFormValues: {},
-    artifactSidebarState: {
-      runs: [],
-      historyItems: [],
-      latestAuditView: {},
-      historyViewer: { activeKey: "", activeVersion: null }
-    },
+    artifactJobs: [],
+    selectedArtifactHistoryVersion: null,
     latestArtifactVersion: null,
     artifactHistoryLoadingKey: "",
     artifactSavedSourceByVersionId: {},
@@ -589,7 +357,6 @@ function buildArtifactOverviewProps(overrides: Record<string, unknown> = {}) {
     launchArtifactPrompt: vi.fn(),
     formatRelativeTime: (value: string) => value,
     resolveArtifactSkillTitle: (key: string) => key,
-    summarizeRunStatus: (status: string) => status,
     openArtifactHistoryVersion: vi.fn(),
     saveArtifactVersionAsSource: vi.fn(),
     artifactVersionSaveKey: vi.fn(),
@@ -598,11 +365,6 @@ function buildArtifactOverviewProps(overrides: Record<string, unknown> = {}) {
     compareArtifactWithPreviousVersion: vi.fn(),
     rollbackArtifactVersion: vi.fn(),
     downloadArtifactVersionPdf: vi.fn(),
-    openWikiHome: vi.fn(),
-    openResearchWorkbench: vi.fn(),
-    openMemoryWorkbench: vi.fn(),
-    toggleWikiEnabled: vi.fn(),
-    wikiEnabled: false,
     sourceDraftTitle: "",
     setSourceDraftTitle: vi.fn(),
     sourceDraftContent: "",
@@ -611,7 +373,6 @@ function buildArtifactOverviewProps(overrides: Record<string, unknown> = {}) {
     rewriteNoteSourceDraft: vi.fn(),
     saveNoteAnswerAsSource: vi.fn(),
     lastNoteAssistantMessageId: "",
-    wikiRebuildAdvice: null,
     ...overrides
   } as any;
 }

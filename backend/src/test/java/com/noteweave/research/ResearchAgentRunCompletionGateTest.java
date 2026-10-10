@@ -208,8 +208,12 @@ class ResearchAgentRunCompletionGateTest {
         String honestReport = jdbcTemplate.queryForObject(
                 "select final_report_markdown from research_run where id = ?", String.class, fixture.runId());
         assertThat(honestReport)
-                .contains("INSUFFICIENT_EVIDENCE", "entity-1:answer", "REQUIRED_CELL_UNRESOLVED")
-                .doesNotContain("## Verified findings");
+                .contains("# 研究报告", "## 局限与未解决项", "INSUFFICIENT_EVIDENCE", "entity-1:answer",
+                        "REQUIRED_CELL_UNRESOLVED", "必需研究项未找到足够证据")
+                .doesNotContain("## 已验证结论");
+        assertThat(jdbcTemplate.queryForObject(
+                "select final_report_title from research_run where id = ?", String.class, fixture.runId()))
+                .startsWith("研究报告：");
         // The old opaque barrier reason must no longer be produced.
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from research_agent_task

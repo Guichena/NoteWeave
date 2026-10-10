@@ -118,17 +118,20 @@ class ArchitectureBoundaryTest {
         String dispatcher = Files.readString(Path.of(
                 "src/main/java/com/noteweave/infra/TaskOutboxDispatcherService.java"));
 
-        assertThat(properties).doesNotContain("noteweave.source.chunk", "noteweave.generated.ingest",
-                "noteweave.source.index");
+        assertThat(properties).doesNotContain("noteweave.generated.ingest");
         assertThat(application).doesNotContain(
-                "source-chunk:", "generated-ingest:", "source-index:",
-                "legacy-research-outbox-enabled", "noteweave.research.run"
+                "generated-ingest:", "legacy-research-outbox-enabled", "noteweave.research.run"
         );
-        assertThat(dispatcher).doesNotContain("source.index", "sourceIndex");
+        // 资料处理的四个阶段各自有真实的消费者，并通过配置的主题名监听
+        assertThat(application).contains("source-chunk:", "source-embed:", "source-index:");
+        assertThat(dispatcher).contains("configured.all()");
         assertThat(consumer)
                 .contains("@ConditionalOnProperty(name = \"noteweave.kafka.enabled\"")
                 .contains("${noteweave.kafka.topics.conversation-summary}")
-                .doesNotContain("onSourceChunk", "onGeneratedIngest");
+                .contains("${noteweave.kafka.topics.source-chunk}", "${noteweave.kafka.topics.source-embed}",
+                        "${noteweave.kafka.topics.source-index}")
+                .contains("onSourceChunk", "onSourceEmbed", "onSourceIndex")
+                .doesNotContain("onGeneratedIngest");
         assertThat(CLASSES.stream().map(javaClass -> javaClass.getSimpleName()))
                 .doesNotContain(
                         "ResearchOutboxDispatchScheduler",
@@ -141,7 +144,8 @@ class ArchitectureBoundaryTest {
 
     @Test
     void elasticsearchHealthMustFollowTheElasticsearchFeatureFlag() throws IOException {
-        String application = Files.readString(Path.of("src/main/resources/application.yml"));
+        String application = Files.readString(Path.of("src/main/resources/application.yml"))
+                .replace("\r\n", "\n");
 
         assertThat(application)
                 .contains("enabled: ${NOTEWEAVE_ES_ENABLED:true}")

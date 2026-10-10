@@ -7,6 +7,7 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir \
     "kafka-python>=2.0.2" \
+    "openai>=2.0,<3" \
     "pydantic-settings>=2.6.0"
 
 COPY app ./app

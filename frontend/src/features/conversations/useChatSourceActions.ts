@@ -1,8 +1,23 @@
+import { useState } from "react";
 import { sourcesApi } from "../sources/api";
 import { formatSourceIndexStatus, formatSourceProcessingStatus, type SourceAsset } from "../sources/model";
 import type { UseChatSessionControllerInput } from "./useChatSessionController";
 
 type StringSetter = (value: string | ((current: string) => string)) => void;
+
+/** 正在上传或上传失败的文件；上传完成后由资料列表中的处理状态接替显示。 */
+export type SourceUploadItem = {
+  id: string;
+  fileName: string;
+  totalBytes: number;
+  uploadedBytes: number;
+  uploadedChunks: number;
+  totalChunks: number;
+  state: "uploading" | "failed";
+  error: string;
+};
+
+const UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024;
 
 type ChatSourceActionsInput = Pick<
   UseChatSessionControllerInput,
@@ -58,6 +73,15 @@ export function useChatSourceActions(props: ChatSourceActionsInput) {
     setSourceDraftContent,
     setSourceDraftRewriteMode
   } = props;
+  const [uploads, setUploads] = useState<SourceUploadItem[]>([]);
+
+  function updateUpload(id: string, patch: Partial<SourceUploadItem>) {
+    setUploads((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  }
+
+  function dismissUpload(id: string) {
+    setUploads((current) => current.filter((item) => item.id !== id));
+  }
 
   async function uploadSource() {
     if (!workspace) {
@@ -77,10 +101,27 @@ export function useChatSourceActions(props: ChatSourceActionsInput) {
       setStatus("请先创建工作台");
       return;
     }
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setUploads((current) => [...current, {
+      id,
+      fileName: file.name,
+      totalBytes: file.size,
+      uploadedBytes: 0,
+      uploadedChunks: 0,
+      totalChunks: Math.max(1, Math.ceil(file.size / UPLOAD_CHUNK_BYTES)),
+      state: "uploading",
+      error: ""
+    }]);
     await run(`上传资料《${file.name}》`, async () => {
-      const completed = await sourcesApi.uploadFile(workspace.workspace_id, file);
-      await refreshUploadedSource(completed.task_id);
-      setStatus(`《${file.name}》已加入当前工作台，解析与索引状态将持续更新`);
+      try {
+        const completed = await sourcesApi.uploadFile(workspace.workspace_id, file, (progress) => updateUpload(id, progress));
+        dismissUpload(id);
+        await refreshUploadedSource(completed.task_id);
+        setStatus(`《${file.name}》已加入当前工作台，解析与索引状态将持续更新`);
+      } catch (error) {
+        updateUpload(id, { state: "failed", error: error instanceof Error ? error.message : "上传失败" });
+        throw error;
+      }
     }, "upload");
   }
 
@@ -196,6 +237,8 @@ export function useChatSourceActions(props: ChatSourceActionsInput) {
   return {
     uploadSource,
     uploadSourceFile,
+    uploads,
+    dismissUpload,
     deleteSource,
     prepareNoteSourceDraft,
     rewriteNoteSourceDraft,

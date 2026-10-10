@@ -31,6 +31,24 @@ export type ArtifactStudioSkill = {
   inputSchema?: Record<string, unknown>;
   defaultInputHints: string[];
   inputFields: ArtifactStudioField[];
+  /** 技能目录里的分组与排序；旧版后端不返回时为空。 */
+  group?: string;
+  order?: number;
+};
+
+/** 技能目录中的展示信息，与后端 ArtifactSkillSummaryResponse.presentation 一致。 */
+export type ArtifactSkillPresentation = {
+  summary?: string;
+  default_input_hints?: string[];
+  group?: string;
+  order?: number;
+  artifact_type?: string;
+  source_hint?: string;
+  runtime_hint?: string;
+  badges?: string[];
+  style_hint?: string;
+  prompt_focus?: string;
+  tone?: string;
 };
 
 export type ArtifactSkillSummary = {
@@ -40,6 +58,7 @@ export type ArtifactSkillSummary = {
   status: string;
   input_schema?: Record<string, unknown>;
   default_input_hints?: string[];
+  presentation?: ArtifactSkillPresentation;
 };
 
 type ArtifactStudioSkillPresentation = Omit<
@@ -194,21 +213,25 @@ export function buildArtifactStudioSkill(
 ): ArtifactStudioSkill {
   const inputFields = buildInputFields(skill.skill_key, skill.input_schema);
   const supportsUrl = inputFields.some((field) => isUrlFieldKey(field.key));
+  // 展示信息以后端技能目录为准；本地的展示表只在旧版后端没有返回时兜底
+  const shown = skill.presentation ?? {};
   return {
     key: skill.skill_key,
-    title: fallback.title || skill.display_name,
-    summary: fallback.summary || skill.description || "生成工作台产物。",
-    artifactType: fallback.artifactType || skill.display_name,
-    sourceHint: fallback.sourceHint || "当前工作台资料",
-    runtimeHint: fallback.runtimeHint || "异步生成",
-    badges: fallback.badges || ["内置 Skill"],
-    styleHint: fallback.styleHint || "按当前 skill 的默认风格与结构生成。",
-    promptFocus: fallback.promptFocus || `输出适合 ${skill.display_name} 的产物`,
-    tone: fallback.tone || "blue",
+    title: skill.display_name || fallback.title || skill.skill_key,
+    summary: shown.summary || fallback.summary || skill.description || "生成工作台产物。",
+    artifactType: shown.artifact_type || fallback.artifactType || skill.display_name,
+    sourceHint: shown.source_hint || fallback.sourceHint || "当前工作台资料",
+    runtimeHint: shown.runtime_hint || fallback.runtimeHint || "异步生成",
+    badges: shown.badges?.length ? shown.badges : fallback.badges || ["内置 Skill"],
+    styleHint: shown.style_hint || fallback.styleHint || "按当前 skill 的默认风格与结构生成。",
+    promptFocus: shown.prompt_focus || fallback.promptFocus || `输出适合 ${skill.display_name} 的产物`,
+    tone: (shown.tone as ArtifactStudioTone | undefined) || fallback.tone || "blue",
     supportsUrl,
     inputSchema: skill.input_schema,
-    defaultInputHints: skill.default_input_hints || [],
-    inputFields
+    defaultInputHints: skill.default_input_hints || shown.default_input_hints || [],
+    inputFields,
+    group: shown.group,
+    order: shown.order
   };
 }
 

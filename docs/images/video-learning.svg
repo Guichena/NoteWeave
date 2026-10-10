@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" width="1200" height="520" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Source Han Sans SC, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="520" fill="#ffffff"/>
+  <text x="600" y="40" text-anchor="middle" font-size="24" font-weight="700" fill="#0f172a">视频学习：先冻结素材，再生成多种产物</text>
+  <text x="600" y="66" text-anchor="middle" font-size="13" fill="#475569">所有产物都基于同一份冻结素材生成，内容只能引用素材中真实出现的字幕或画面文字</text>
+
+  <rect x="30" y="100" width="200" height="150" rx="12" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.6"/>
+  <text x="130" y="130" text-anchor="middle" font-size="16" font-weight="700" fill="#312e81">提交 B站链接</text>
+  <g font-size="12.5" fill="#3730a3" text-anchor="middle">
+    <text x="130" y="158">选择分P、语言、抓帧密度</text>
+    <text x="130" y="182">勾选要生成的产物</text>
+    <text x="130" y="206">发起人权限冻结在请求上</text>
+  </g>
+
+  <rect x="270" y="100" width="380" height="150" rx="12" fill="#fff7ed" stroke="#ea580c" stroke-width="1.6"/>
+  <text x="460" y="130" text-anchor="middle" font-size="16" font-weight="700" fill="#7c2d12">素材采集（系统 MCP）</text>
+  <g font-size="12.5" fill="#9a3412">
+    <text x="290" y="158">优先取人工字幕或平台自动字幕</text>
+    <text x="290" y="182">没有字幕时下载音轨，faster-whisper 转写</text>
+    <text x="290" y="206">机器字幕交给大模型逐批纠正识别错误</text>
+    <text x="290" y="230">按时间点抓取画面，并做画面文字 OCR</text>
+  </g>
+
+  <rect x="690" y="100" width="480" height="150" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.6"/>
+  <text x="930" y="130" text-anchor="middle" font-size="16" font-weight="700" fill="#065f46">冻结素材包与知识规划</text>
+  <g font-size="12.5" fill="#047857">
+    <text x="710" y="158">素材包：字幕片段、画面、OCR，带内容摘要防篡改</text>
+    <text x="710" y="182">知识规划：大模型给出知识点大纲和原文引句</text>
+    <text x="710" y="206">代码组装结构：按引用字幕算时间范围、补齐覆盖</text>
+    <text x="710" y="230">引句不在字幕原文中的观点一律丢弃</text>
+  </g>
+
+  <g stroke="#475569" stroke-width="1.6">
+    <line x1="230" y1="175" x2="268" y2="175" marker-end="url(#arrow)"/>
+    <line x1="650" y1="175" x2="688" y2="175" marker-end="url(#arrow)"/>
+  </g>
+
+  <!-- 产物 -->
+  <text x="600" y="300" text-anchor="middle" font-size="14" font-weight="700" fill="#0f172a">后台协调器按发起人身份为每个产物创建任务（受工作量配额与限流约束）</text>
+  <g stroke="#475569" stroke-width="1.4">
+    <line x1="930" y1="250" x2="930" y2="276"/>
+    <line x1="130" y1="314" x2="1070" y2="314"/>
+    <line x1="130" y1="314" x2="130" y2="338" marker-end="url(#arrow)"/>
+    <line x1="365" y1="314" x2="365" y2="338" marker-end="url(#arrow)"/>
+    <line x1="600" y1="314" x2="600" y2="338" marker-end="url(#arrow)"/>
+    <line x1="835" y1="314" x2="835" y2="338" marker-end="url(#arrow)"/>
+    <line x1="1070" y1="314" x2="1070" y2="338" marker-end="url(#arrow)"/>
+  </g>
+  <g font-size="12.5">
+    <rect x="30" y="340" width="200" height="110" rx="12" fill="#ffffff" stroke="#4f46e5" stroke-width="1.4"/>
+    <text x="130" y="368" text-anchor="middle" font-size="15" font-weight="700" fill="#312e81">视频摘要</text>
+    <text x="130" y="394" text-anchor="middle" fill="#3730a3">一句话总结 · 时间线</text>
+    <text x="130" y="416" text-anchor="middle" fill="#3730a3">核心观点 · 关键概念</text>
+
+    <rect x="265" y="340" width="200" height="110" rx="12" fill="#ffffff" stroke="#4f46e5" stroke-width="1.4"/>
+    <text x="365" y="368" text-anchor="middle" font-size="15" font-weight="700" fill="#312e81">知识博客</text>
+    <text x="365" y="394" text-anchor="middle" fill="#3730a3">按知识点分节</text>
+    <text x="365" y="416" text-anchor="middle" fill="#3730a3">每句都可回溯字幕</text>
+
+    <rect x="500" y="340" width="200" height="110" rx="12" fill="#ffffff" stroke="#4f46e5" stroke-width="1.4"/>
+    <text x="600" y="368" text-anchor="middle" font-size="15" font-weight="700" fill="#312e81">面试问答</text>
+    <text x="600" y="394" text-anchor="middle" fill="#3730a3">每个知识点一道题</text>
+    <text x="600" y="416" text-anchor="middle" fill="#3730a3">简要回答 + 详细回答</text>
+
+    <rect x="735" y="340" width="200" height="110" rx="12" fill="#ffffff" stroke="#4f46e5" stroke-width="1.4"/>
+    <text x="835" y="368" text-anchor="middle" font-size="15" font-weight="700" fill="#312e81">学习演示文稿</text>
+    <text x="835" y="394" text-anchor="middle" fill="#3730a3">PPTX + 逐页预览</text>
+    <text x="835" y="416" text-anchor="middle" fill="#3730a3">原画面配要点</text>
+
+    <rect x="970" y="340" width="200" height="110" rx="12" fill="#ffffff" stroke="#4f46e5" stroke-width="1.4"/>
+    <text x="1070" y="368" text-anchor="middle" font-size="15" font-weight="700" fill="#312e81">图文讲义</text>
+    <text x="1070" y="394" text-anchor="middle" fill="#3730a3">XeLaTeX 编译 PDF</text>
+    <text x="1070" y="416" text-anchor="middle" fill="#3730a3">章节 + 关键画面</text>
+  </g>
+  <text x="600" y="490" text-anchor="middle" font-size="13" fill="#475569">Backend 在发布版本前复核：产物引用的素材摘要、知识规划摘要与渲染结果必须和冻结素材一致</text>
+</svg>

@@ -1,76 +1,67 @@
 package com.noteweave.retrieval.provider;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.config.NoteWeaveProperties;
-import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
+import com.noteweave.config.OpenAiSdkClients;
+import com.openai.client.OpenAIClient;
+import com.openai.core.RequestOptions;
+import com.openai.errors.OpenAIException;
+import com.openai.errors.OpenAIServiceException;
+import com.openai.models.embeddings.CreateEmbeddingResponse;
+import com.openai.models.embeddings.Embedding;
+import com.openai.models.embeddings.EmbeddingCreateParams;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+/**
+ * 基于 OpenAI 官方 Java SDK 的 Embedding 客户端，兼容任意 OpenAI 协议的向量服务。
+ * <p>
+ * 重试与退避交给 SDK（408、429、5xx 和连接错误）；本类负责分批、截断输入，
+ * 并校验返回的向量数量与维度。
+ */
 @Component
 public class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
     private static final String ERROR_DISABLED = "EMBEDDING_PROVIDER_DISABLED";
     private static final String ERROR_REQUEST = "EMBEDDING_PROVIDER_REQUEST_FAILED";
     private static final String ERROR_RESPONSE = "EMBEDDING_PROVIDER_RESPONSE_INVALID";
     private static final String ERROR_DIMENSIONS = "EMBEDDING_DIMENSION_MISMATCH";
+    private static final String EMBEDDINGS_PATH = "/embeddings";
 
-    private final ObjectMapper objectMapper;
-    private final HttpClient httpClient;
     private final boolean enabled;
-    private final URI endpoint;
+    private final OpenAIClient client;
     private final String model;
-    private final String apiKey;
     private final int dimensions;
     private final int documentBatchSize;
     private final Duration queryTimeout;
     private final Duration batchTimeout;
     private final int maxInputCharacters;
-    private final int maxAttempts;
 
-    @Autowired
     public OpenAiCompatibleEmbeddingClient(
             ObjectMapper objectMapper,
             NoteWeaveProperties properties
     ) {
-        this(objectMapper, properties, HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build());
-    }
-
-    OpenAiCompatibleEmbeddingClient(
-            ObjectMapper objectMapper,
-            NoteWeaveProperties properties,
-            HttpClient httpClient
-    ) {
         NoteWeaveProperties.Embedding config = properties.embedding();
-        this.objectMapper = objectMapper;
-        this.httpClient = httpClient;
         this.enabled = config.enabled()
                 && text(config.endpoint()).length() > 0
                 && text(config.model()).length() > 0
                 && config.dimensions() > 0;
-        this.endpoint = enabled
-                ? ProviderEndpointSecurity.requireSecureOrLocal(config.endpoint())
-                : URI.create("http://localhost/disabled");
         this.model = text(config.model());
-        this.apiKey = text(config.apiKey());
         this.dimensions = Math.max(1, config.dimensions());
         this.documentBatchSize = Math.max(1, config.documentBatchSize());
         this.queryTimeout = Duration.ofSeconds(Math.max(1L, config.queryTimeoutSeconds()));
         this.batchTimeout = Duration.ofSeconds(Math.max(1L, config.batchTimeoutSeconds()));
         this.maxInputCharacters = Math.max(1, config.maxInputCharacters());
-        this.maxAttempts = Math.max(1, config.maxAttempts());
+        this.client = enabled
+                ? OpenAiSdkClients.create(
+                        ProviderEndpointSecurity.requireSecureOrLocal(config.endpoint()).toString(),
+                        EMBEDDINGS_PATH,
+                        text(config.apiKey()),
+                        batchTimeout,
+                        Math.max(1, config.maxAttempts()) - 1)
+                : null;
     }
 
     @Override
@@ -103,69 +94,36 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
     }
 
     private EmbeddingResult request(List<String> inputs, Duration timeout) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("model", model);
-        body.put("input", inputs);
-        body.put("dimensions", dimensions);
-        String requestBody;
+        EmbeddingCreateParams params = EmbeddingCreateParams.builder()
+                .model(model)
+                .inputOfArrayOfStrings(inputs)
+                .dimensions(dimensions)
+                // SDK 默认请求 base64，很多兼容服务不支持，显式要求浮点数组。
+                .encodingFormat(EmbeddingCreateParams.EncodingFormat.FLOAT)
+                .build();
+        CreateEmbeddingResponse response;
         try {
-            requestBody = objectMapper.writeValueAsString(body);
-        } catch (Exception ex) {
-            throw new RetrievalProviderException(ERROR_REQUEST, "Embedding request serialization failed", ex);
+            response = client.embeddings().create(params, RequestOptions.builder().timeout(timeout).build());
+        } catch (OpenAIServiceException ex) {
+            throw new RetrievalProviderException(
+                    ERROR_REQUEST, "Embedding provider returned HTTP " + ex.statusCode(), ex);
+        } catch (OpenAIException ex) {
+            throw new RetrievalProviderException(ERROR_REQUEST, "Embedding provider call failed", ex);
         }
-
-        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
-            try {
-                HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
-                        .uri(endpoint)
-                        .timeout(timeout)
-                        .header("Content-Type", "application/json")
-                        .header("Accept", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8));
-                if (!apiKey.isBlank()) {
-                    requestBuilder.header("Authorization", "Bearer " + apiKey);
-                }
-                HttpResponse<String> response = httpClient.send(
-                        requestBuilder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-                if (response.statusCode() / 100 == 2) {
-                    return parse(response.body(), inputs.size());
-                }
-                if (!retryable(response.statusCode()) || attempt == maxAttempts) {
-                    throw new RetrievalProviderException(
-                            ERROR_REQUEST,
-                            "Embedding provider returned HTTP " + response.statusCode());
-                }
-            } catch (IOException ex) {
-                if (attempt == maxAttempts) {
-                    throw new RetrievalProviderException(ERROR_REQUEST, "Embedding provider call failed", ex);
-                }
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-                throw new RetrievalProviderException(ERROR_REQUEST, "Embedding provider call interrupted", ex);
-            }
-            backoff(attempt);
-        }
-        throw new RetrievalProviderException(ERROR_REQUEST, "Embedding provider call failed");
+        return parse(response, inputs.size());
     }
 
-    private EmbeddingResult parse(String body, int expectedCount) {
+    private EmbeddingResult parse(CreateEmbeddingResponse response, int expectedCount) {
         try {
-            JsonNode root = objectMapper.readTree(body == null ? "{}" : body);
             List<IndexedVector> indexed = new ArrayList<>();
-            for (JsonNode item : root.path("data")) {
-                int index = item.path("index").asInt(indexed.size());
-                JsonNode embedding = item.path("embedding");
-                if (!embedding.isArray()) {
-                    throw new RetrievalProviderException(ERROR_RESPONSE, "Embedding response is missing a vector");
-                }
-                List<Float> vector = new ArrayList<>(embedding.size());
-                embedding.forEach(value -> vector.add(value.floatValue()));
+            for (Embedding item : response.data()) {
+                List<Float> vector = item.embedding();
                 if (vector.size() != dimensions) {
                     throw new RetrievalProviderException(
                             ERROR_DIMENSIONS,
                             "Embedding vector dimensions " + vector.size() + " do not match configured " + dimensions);
                 }
-                indexed.add(new IndexedVector(index, List.copyOf(vector)));
+                indexed.add(new IndexedVector((int) item.index(), List.copyOf(vector)));
             }
             indexed.sort(Comparator.comparingInt(IndexedVector::index));
             if (indexed.size() != expectedCount) {
@@ -173,8 +131,11 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
                         ERROR_RESPONSE,
                         "Embedding response count " + indexed.size() + " does not match request " + expectedCount);
             }
-            long totalTokens = root.path("usage").path("total_tokens").asLong(0L);
-            String responseModel = root.path("model").asText(model);
+            long totalTokens = response._usage().asKnown()
+                    .map(CreateEmbeddingResponse.Usage::_totalTokens)
+                    .flatMap(field -> field.asKnown())
+                    .orElse(0L);
+            String responseModel = response._model().asKnown().orElse(model);
             return new EmbeddingResult(
                     indexed.stream().map(IndexedVector::vector).toList(),
                     responseModel,
@@ -182,7 +143,7 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
                     totalTokens);
         } catch (RetrievalProviderException ex) {
             throw ex;
-        } catch (Exception ex) {
+        } catch (RuntimeException ex) {
             throw new RetrievalProviderException(ERROR_RESPONSE, "Embedding provider response is invalid", ex);
         }
     }
@@ -201,20 +162,7 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
         }
     }
 
-    private boolean retryable(int status) {
-        return status == 408 || status == 429 || status >= 500;
-    }
-
-    private void backoff(int attempt) {
-        try {
-            Thread.sleep(Math.min(1000L, 100L << Math.min(4, Math.max(0, attempt - 1))));
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            throw new RetrievalProviderException(ERROR_REQUEST, "Embedding retry interrupted", ex);
-        }
-    }
-
-    private String text(String value) {
+    private static String text(String value) {
         return value == null ? "" : value.trim();
     }
 

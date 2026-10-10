@@ -37,6 +37,7 @@ public class ResearchRunCommandService {
     private final ObjectStorage storage;
     private final ResearchAgentCheckpointHydrator checkpointHydrator;
     private final ResearchAgentFeatureFlagService featureFlags;
+    private final ResearchContextV2Gate contextGate;
 
     public ResearchRunCommandService(
             JdbcTemplate jdbcTemplate,
@@ -49,7 +50,8 @@ public class ResearchRunCommandService {
             ResearchCheckpointStore researchCheckpointStore,
             ObjectStorage storage,
             ResearchAgentCheckpointHydrator checkpointHydrator,
-            ResearchAgentFeatureFlagService featureFlags
+            ResearchAgentFeatureFlagService featureFlags,
+            ResearchContextV2Gate contextGate
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -62,10 +64,21 @@ public class ResearchRunCommandService {
         this.storage = storage;
         this.checkpointHydrator = checkpointHydrator;
         this.featureFlags = featureFlags;
+        this.contextGate = contextGate;
     }
 
     @Transactional
     public ResearchRunResponse createRun(String workspaceId, CreateResearchRunRequest request) {
+        return createRun(workspaceId, request, null, null);
+    }
+
+    @Transactional
+    public ResearchRunResponse createRun(String workspaceId, CreateResearchRunRequest request,
+                                         String executionQuestion, String contextSnapshotId) {
+        if ((executionQuestion == null) != (contextSnapshotId == null)
+                || executionQuestion != null && executionQuestion.isBlank()) {
+            throw new IllegalArgumentException("Research execution question requires a frozen snapshot");
+        }
         requireWorkspace(workspaceId);
         String researchRunId = Ids.newId();
         String profileKey = ResearchIntentPolicy.normalizeProfile(request.profile());
@@ -82,19 +95,22 @@ public class ResearchRunCommandService {
                 workspaceId, acquisitionPolicy.seedSourceIds());
         jdbcTemplate.update("""
                 insert into research_run(
-                    id, workspace_id, task_id, question, profile_key,
+                    id, workspace_id, task_id, question, execution_question,
+                    context_snapshot_id, profile_key,
                     research_intent_json, source_scope_json, control_pack_json, retrieval_mode,
                     status, agent_execution_mode, agent_feature_flags_json
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, 'RUNNING', 'INCREMENTAL_V1', ?)
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'RUNNING', 'INCREMENTAL_V1', ?)
                 """,
-                researchRunId, workspaceId, taskId, request.question().trim(), profileKey,
+                researchRunId, workspaceId, taskId, request.question().trim(),
+                executionQuestion, contextSnapshotId, profileKey,
                 Json.write(objectMapper, researchIntent),
                 Json.write(objectMapper, sourceScopeIds),
                 Json.write(objectMapper, controlPack),
                 acquisitionPolicy.mode().name(), featureFlags.captureJson()
         );
         researchAgentRunBootstrapService.bootstrap(
-                researchRunId, request.question().trim(), researchIntent);
+                researchRunId, executionQuestion == null ? request.question().trim() : executionQuestion,
+                researchIntent);
         startCoordinatingTask(taskId, "Research Agent matrix initialized");
         insertTrace(researchRunId, "RUN_CREATED", "Research run 已入队", Map.of(
                 "question", request.question().trim(),
@@ -127,6 +143,7 @@ public class ResearchRunCommandService {
     ) {
         requireWorkspace(workspaceId);
         ResumeSourceRun sourceRun = loadResumeSourceRun(workspaceId, researchRunId);
+        if (sourceRun.contextSnapshotId() != null) contextGate.requireReadable(researchRunId);
         String requestMode = requestedResumeMode == null ? "AUTO" : requestedResumeMode.strip().toUpperCase();
         if (!List.of("AUTO", "HYDRATE_REQUIRED", "CONTEXT_RESTART").contains(requestMode)) {
             throw new BusinessException("RESEARCH_CHECKPOINT_RESUME_MODE_INVALID", "Unsupported checkpoint resume mode");
@@ -151,6 +168,11 @@ public class ResearchRunCommandService {
         }
         if (!hydrate) {
             ResearchCheckpointRecord checkpoint = researchCheckpointStore.get(workspaceId, researchRunId, checkpointNo);
+            if (ResearchCheckpointStore.HYDRATION_SNAPSHOT_TYPE.equals(checkpoint.snapshotType())) {
+                // 账本快照只能水合恢复；没有可读的上下文快照对象可供 CONTEXT_RESTART 使用
+                throw new BusinessException("RESEARCH_CHECKPOINT_HYDRATION_REQUIRED",
+                        "This checkpoint can only be resumed by canonical-ledger hydration");
+            }
             ResearchCheckpointIntegrity.verify(
                     checkpoint,
                     storage.read("noteweave-derived", checkpoint.objectKey())
@@ -158,23 +180,48 @@ public class ResearchRunCommandService {
         }
 
         String resumedResearchRunId = Ids.newId();
+        String resumedContextSnapshotId = sourceRun.contextSnapshotId() == null ? null : Ids.newId();
         String taskId = taskService.createTask(
                 workspaceId, "RESEARCH_RUN", "RESEARCH_RUN", resumedResearchRunId, "QUEUED",
                 "Deep Research 恢复任务已创建"
         );
         jdbcTemplate.update("""
                 insert into research_run(
-                    id, workspace_id, task_id, question, profile_key,
+                    id, workspace_id, task_id, question, execution_question,
+                    context_snapshot_id, profile_key,
                     research_intent_json, source_scope_json, control_pack_json, retrieval_mode, status,
                     resumed_from_research_run_id, resumed_from_checkpoint_no, agent_execution_mode, resume_mode,
                     resume_mode_reason, agent_feature_flags_json
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, 'RUNNING', ?, ?, 'INCREMENTAL_V1', ?, ?, ?)
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'RUNNING', ?, ?, 'INCREMENTAL_V1', ?, ?, ?)
                 """,
-                resumedResearchRunId, workspaceId, taskId, sourceRun.question(), sourceRun.profileKey(),
+                resumedResearchRunId, workspaceId, taskId, sourceRun.question(),
+                sourceRun.executionQuestion(), resumedContextSnapshotId, sourceRun.profileKey(),
                 sourceRun.researchIntentJson(), sourceRun.sourceScopeJson(), sourceRun.controlPackJson(),
                 sourceRun.retrievalMode().name(), researchRunId, checkpointNo, effectiveResumeMode,
                 resumeModeReason, featureFlags.captureJson()
         );
+        if (resumedContextSnapshotId != null) {
+            int copied = jdbcTemplate.update("""
+                    insert into run_input_snapshot(
+                        id, workspace_id, execution_kind, research_run_id,
+                        conversation_id, query_message_id, assistant_message_id,
+                        requested_turn_mode, history_head_message_id, conversation_cutoff_seq,
+                        retrieval_config_json, snapshot_json, compiler_version, prompt_version,
+                        token_budget_json, replay_availability)
+                    select ?, workspace_id, 'RESEARCH', ?, conversation_id,
+                           query_message_id, assistant_message_id, requested_turn_mode,
+                           history_head_message_id, conversation_cutoff_seq,
+                           retrieval_config_json, snapshot_json, compiler_version, prompt_version,
+                           token_budget_json, replay_availability
+                    from run_input_snapshot
+                    where id = ? and research_run_id = ? and replay_availability = 'FULL'
+                    """, resumedContextSnapshotId, resumedResearchRunId,
+                    sourceRun.contextSnapshotId(), researchRunId);
+            if (copied != 1) {
+                throw new BusinessException("RESEARCH_CONTEXT_SNAPSHOT_MISMATCH",
+                        "Frozen Research Context is unavailable for resume");
+            }
+        }
         log.info("Research resume decision: sourceRun={} checkpoint={} requested={} effective={} reason={}",
                 researchRunId, checkpointNo, requestMode, effectiveResumeMode, resumeModeReason);
         ResearchIntentResponse resumedIntent = readResearchIntent(sourceRun.researchIntentJson());
@@ -184,7 +231,9 @@ public class ResearchRunCommandService {
                     workspaceId, researchRunId, checkpointNo, resumedResearchRunId);
         } else {
             researchAgentRunBootstrapService.bootstrap(
-                    resumedResearchRunId, sourceRun.question(), resumedIntent);
+                    resumedResearchRunId,
+                    sourceRun.executionQuestion() == null
+                            ? sourceRun.question() : sourceRun.executionQuestion(), resumedIntent);
         }
         startCoordinatingTask(taskId, hydrate
                 ? "Research canonical ledger hydrated into agent coordination"
@@ -336,7 +385,8 @@ public class ResearchRunCommandService {
 
     private ResumeSourceRun loadResumeSourceRun(String workspaceId, String researchRunId) {
         return jdbcTemplate.query("""
-                select question, profile_key, research_intent_json,
+                select question, execution_question, context_snapshot_id,
+                       profile_key, research_intent_json,
                        source_scope_json, control_pack_json, retrieval_mode
                 from research_run
                 where workspace_id = ? and id = ?
@@ -346,6 +396,8 @@ public class ResearchRunCommandService {
             }
             return new ResumeSourceRun(
                     rs.getString("question"),
+                    rs.getString("execution_question"),
+                    rs.getString("context_snapshot_id"),
                     rs.getString("profile_key"),
                     rs.getString("research_intent_json"),
                     rs.getString("source_scope_json"),
@@ -410,6 +462,8 @@ public class ResearchRunCommandService {
 
     private record ResumeSourceRun(
             String question,
+            String executionQuestion,
+            String contextSnapshotId,
             String profileKey,
             String researchIntentJson,
             String sourceScopeJson,

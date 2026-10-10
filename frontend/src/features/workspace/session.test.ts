@@ -51,6 +51,29 @@ describe("WorkspaceSessionLoader", () => {
     });
   });
 
+  it("恢复助手消息的回答运行 ID 与引用，刷新后仍能查看证据", async () => {
+    const port = createPort({
+      conversations: [conversation("cited")],
+      messages: [{
+        ...message(1, "ASSISTANT", "混合检索支持 RRF [1]"),
+        requested_turn_mode: "QA",
+        answer_status: "SUCCEEDED",
+        answer_run_id: "run-1",
+        citations: ["ES 文档 | kNN with RRF"]
+      }]
+    });
+    const loader = new WorkspaceSessionLoader(port as never);
+
+    await expect(loader.restoreWorkspace(workspace("workspace"))).resolves.toMatchObject({
+      messages: [{
+        role: "assistant",
+        answerMode: "qa",
+        answerRunId: "run-1",
+        citations: ["ES 文档 | kNN with RRF"]
+      }]
+    });
+  });
+
   it("paginates complete message history", async () => {
     const firstPage = Array.from({ length: 200 }, (_, index) => message(index + 1));
     const listMessages = vi.fn()

@@ -119,7 +119,9 @@ class SourceParseProjectionDisabledTest {
                     id varchar(64) primary key,
                     source_id varchar(64) not null,
                     parse_status varchar(32) not null,
-                    index_status varchar(32) not null
+                    index_status varchar(32) not null,
+                    processing_stage varchar(32), index_attempt_count int default 0 not null,
+                    next_index_retry_at timestamp
                 )
                 """);
         jdbcTemplate.execute("""

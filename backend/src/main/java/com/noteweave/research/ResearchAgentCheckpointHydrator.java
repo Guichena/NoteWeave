@@ -114,7 +114,7 @@ class ResearchAgentCheckpointHydrator {
         hydrateCellEvidence(descendantRunId, listOfMaps(payload.get("cells")), cellIds, evidenceIds);
         hydrateDecisions(descendantRunId, listOfMaps(payload.get("open_decisions")));
         hydrateStages(descendantRunId, listOfMaps(payload.get("stages")));
-        hydrateMatrixPlan(descendantRunId, mapValue(payload.get("matrix_plan")));
+        hydrateMatrixPlan(descendantRunId, sourceRunId, mapValue(payload.get("matrix_plan")));
 
         String genesisId = Ids.newId();
         int waveNo = positiveInt(payload.get("wave_no"), 1);
@@ -147,8 +147,16 @@ class ResearchAgentCheckpointHydrator {
         }
         try {
             Map<String, Object> payload = objectMapper.readValue(snapshot.payloadJson(), new TypeReference<>() { });
-            String canonicalDigest = canonicalizer.domainSeparatedDigest(DIGEST_DOMAIN, payload);
-            if (!canonicalDigest.equals(snapshot.canonicalDigest())) {
+            // payload_json is stored already canonicalized and the compiler's digest is
+            // sha256(domain + "\n" + those canonical bytes). Re-canonicalizing the parsed Map does
+            // not reproduce it, because a JSON round trip changes Java types (BigDecimal scale,
+            // timestamps), so verify against the persisted bytes themselves.
+            byte[] prefix = (DIGEST_DOMAIN + "\n").getBytes(StandardCharsets.US_ASCII);
+            byte[] digestInput = new byte[prefix.length + bytes.length];
+            System.arraycopy(prefix, 0, digestInput, 0, prefix.length);
+            System.arraycopy(bytes, 0, digestInput, prefix.length, bytes.length);
+            String canonicalDigest = "sha256:" + sha256(digestInput);
+            if (!canonicalDigest.equalsIgnoreCase(snapshot.canonicalDigest())) {
                 throw new BusinessException("RESEARCH_CHECKPOINT_CORRUPTED",
                         "Hydration payload canonical digest is invalid");
             }
@@ -398,7 +406,13 @@ class ResearchAgentCheckpointHydrator {
         }
     }
 
-    private void hydrateMatrixPlan(String runId, Map<String, Object> plan) {
+    private void hydrateMatrixPlan(String runId, String sourceRunId, Map<String, Object> snapshotPlan) {
+        Map<String, Object> plan = snapshotPlan;
+        if (listValue(plan.get("rows")).isEmpty() || listValue(plan.get("columns")).isEmpty()) {
+            // Older snapshots captured the latest plan row, which can be a LOCAL_REPAIR record
+            // (no rows/columns). The matrix itself is the source Run's base plan.
+            plan = sourceBasePlan(sourceRunId);
+        }
         if (plan.isEmpty()) return;
         List<?> rows = listValue(plan.get("rows"));
         List<?> columns = listValue(plan.get("columns"));
@@ -413,6 +427,23 @@ class ResearchAgentCheckpointHydrator {
                 """, Ids.newId(), runId, text(plan.get("planner_version")), rows.size(), columns.size(), cellCount,
                 booleanValue(plan.get("bounded")), Json.write(objectMapper, listValue(plan.get("reason_codes"))),
                 Json.write(objectMapper, plan), digest);
+    }
+
+    private Map<String, Object> sourceBasePlan(String sourceRunId) {
+        List<String> plans = jdbcTemplate.queryForList("""
+                select plan_json from research_matrix_plan
+                where research_run_id = ? and plan_mode <> 'LOCAL_REPAIR'
+                order by created_at desc, id desc limit 1
+                """, String.class, sourceRunId);
+        if (plans.isEmpty() || plans.get(0) == null) return Map.of();
+        try {
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(plans.get(0));
+            if (node.isTextual()) node = objectMapper.readTree(node.asText());
+            if (!node.isObject()) return Map.of();
+            return objectMapper.convertValue(node, new TypeReference<Map<String, Object>>() { });
+        } catch (JsonProcessingException exception) {
+            return Map.of();
+        }
     }
 
     @SuppressWarnings("unchecked")

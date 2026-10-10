@@ -102,7 +102,7 @@ class SourceCatalogCacheTest {
     private SourceResponse source(String sourceId) {
         return new SourceResponse(
                 sourceId, "Source", "USER_UPLOAD", "READY", "PARSED", "INDEXED",
-                "", "", Instant.parse("2026-07-14T10:00:00Z"));
+                "", "", Instant.parse("2026-07-14T10:00:00Z"), null, null, null);
     }
 
     private double metric(String result) {

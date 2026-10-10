@@ -1,8 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-
-const credentials = loadCredentials();
+import {
+  expectNoHorizontalOverflow,
+  loginIfRequired,
+  openChat,
+  openSidebar,
+  useFixtureWorkspace
+} from "./helpers";
 
 for (const viewport of [
   { width: 1280, height: 720, name: "desktop" },
@@ -10,6 +13,7 @@ for (const viewport of [
   { width: 375, height: 812, name: "mobile" }
 ]) {
   test(`Chat keeps its workspace context usable on ${viewport.name}`, async ({ page }) => {
+    test.setTimeout(240_000);
     const consoleErrors: string[] = [];
     page.on("console", (message) => {
       if (message.type() === "error") consoleErrors.push(message.text());
@@ -18,88 +22,82 @@ for (const viewport of [
     await page.goto("/");
     await loginIfRequired(page);
     await expect(page.locator(".workbench-shell")).toBeVisible();
+    // 右侧来源面板只有工作台里有资料时才有内容，先切到带资料的夹具工作台。
+    await useFixtureWorkspace(page, viewport.width);
+    await openChat(page, viewport.width);
 
     const metrics = await page.evaluate(() => ({
       viewportWidth: window.innerWidth,
       documentWidth: document.documentElement.scrollWidth
     }));
     expect(metrics.documentWidth).toBeLessThanOrEqual(metrics.viewportWidth);
-    const welcomeKnowledgePath = page.getByLabel("工作台资料与当前会话的关系");
-    if (await welcomeKnowledgePath.isVisible()) {
-      await expect(welcomeKnowledgePath).toContainText(/\d+ 份资料 · \d+ 个会话共用/);
-    } else {
-      await expect(page.locator(".chat-session-meta")).toContainText(/\d+ 份工作台资料/);
-      await expect(page.locator(".chat-session-meta")).toContainText(/\d+ 个会话/);
-      await expect(
-        page.locator(".conversation .bubble").first().or(page.locator(".chat-welcome"))
-      ).toBeVisible();
-    }
+    await expect(
+      page.locator(".conversation .message-row").first().or(page.locator(".chat-welcome"))
+    ).toBeVisible();
 
-    if (viewport.width >= 768) {
+    if (viewport.width >= 900) {
+      // 宽屏：侧边栏显示工作台下的多个对话；≥1200 且工作台有资料时右侧来源面板默认展开
+      await expect(page.locator(".app-sidebar")).toBeVisible();
+      await expect(page.locator(".sidebar-conversation").first()).toBeVisible();
       if (viewport.width >= 1200) {
         await expect(page.locator(".sources-pane")).toBeVisible();
       } else {
-        await expect(page.locator(".sources-pane")).toBeHidden();
+        await expect(page.locator(".context-panel")).toBeHidden();
+        await page.getByRole("button", { name: "打开产物" }).click();
+        await expect(page.locator(".studio-pane")).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(page.locator(".context-panel")).toBeHidden();
       }
-      await expect(page.locator(".chat-session-header h2")).not.toHaveText("等待会话");
-      await expect(page.getByRole("button", { name: "打开资料库" })).toBeVisible();
       await assertWorkspaceSwitcherFits(page, viewport.width);
-      const welcome = page.locator(".chat-welcome");
-      if (await welcome.isVisible()) {
-        const bounds = await page.evaluate(() => {
-          const conversation = document.querySelector(".conversation")?.getBoundingClientRect();
-          const panel = document.querySelector(".chat-welcome")?.getBoundingClientRect();
-          return conversation && panel
-            ? { conversationBottom: conversation.bottom, welcomeBottom: panel.bottom }
-            : null;
-        });
-        expect(bounds).not.toBeNull();
-        expect(bounds!.welcomeBottom).toBeLessThanOrEqual(bounds!.conversationBottom);
-      }
       expect(consoleErrors).toEqual([]);
       return;
     }
 
+    // 抽屉收起有 220ms 过渡，等它真的滑出视口再量位置
+    await expect(page.locator(".workbench-shell.is-mobile-nav-open")).toHaveCount(0);
+    await expect.poll(async () => page.evaluate(() => (
+      document.querySelector<HTMLElement>(".app-sidebar")?.getBoundingClientRect().right ?? Number.POSITIVE_INFINITY
+    ))).toBeLessThanOrEqual(0.5);
+
     const mobileLayout = await page.evaluate(() => {
-      const rail = document.querySelector<HTMLElement>(".global-rail");
-      const main = document.querySelector<HTMLElement>(".workbench-main");
-      const welcome = document.querySelector<HTMLElement>(".chat-welcome");
-      const composer = document.querySelector<HTMLElement>(".composer-dock");
-      const modeTrigger = document.querySelector<HTMLElement>(".answer-mode-trigger");
-      const sourcesToggle = document.querySelector<HTMLElement>(".mobile-sources-toggle");
+      const sidebar = document.querySelector<HTMLElement>(".app-sidebar");
+      const composer = document.querySelector<HTMLElement>(".composer-box");
+      const modeTrigger = document.querySelector<HTMLElement>(".answer-mode-switch");
       return {
-        mainTop: main?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY,
-        railRight: rail?.getBoundingClientRect().right ?? Number.POSITIVE_INFINITY,
-        railPosition: rail ? getComputedStyle(rail).position : "missing",
-        welcomeBottom: welcome?.getBoundingClientRect().bottom ?? 0,
+        sidebarRight: sidebar?.getBoundingClientRect().right ?? Number.POSITIVE_INFINITY,
+        sidebarPosition: sidebar ? getComputedStyle(sidebar).position : "missing",
         composerTop: composer?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY,
-        modeTop: modeTrigger?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY,
-        modeBottom: modeTrigger?.getBoundingClientRect().bottom ?? Number.NEGATIVE_INFINITY,
         composerBottom: composer?.getBoundingClientRect().bottom ?? Number.NEGATIVE_INFINITY,
-        sourcesTop: sourcesToggle?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY
+        modeTop: modeTrigger?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY,
+        modeBottom: modeTrigger?.getBoundingClientRect().bottom ?? Number.NEGATIVE_INFINITY
       };
     });
-    expect(mobileLayout.mainTop).toBeLessThan(80);
-    expect(mobileLayout.railRight).toBeLessThanOrEqual(0.5);
-    expect(mobileLayout.railPosition).toBe("fixed");
-    expect(mobileLayout.composerTop).toBeGreaterThanOrEqual(mobileLayout.welcomeBottom);
+    expect(mobileLayout.sidebarRight).toBeLessThanOrEqual(0.5);
+    expect(mobileLayout.sidebarPosition).toBe("fixed");
+    // 三个元素都必须真的存在，否则下面的包含关系判断会变成空断言
+    expect(Number.isFinite(mobileLayout.composerTop)).toBe(true);
+    expect(Number.isFinite(mobileLayout.modeTop)).toBe(true);
+    expect(Number.isFinite(mobileLayout.modeBottom)).toBe(true);
     expect(mobileLayout.modeTop).toBeGreaterThanOrEqual(mobileLayout.composerTop);
     expect(mobileLayout.modeBottom).toBeLessThanOrEqual(mobileLayout.composerBottom);
-    expect(mobileLayout.sourcesTop).toBeLessThan(mobileLayout.composerTop);
 
-    const sourcesToggle = page.locator(".mobile-sources-toggle");
-    await expect(sourcesToggle).toBeVisible();
-    await sourcesToggle.click();
+    await expect(page.locator(".context-panel")).toBeHidden();
+    await page.getByRole("button", { name: "打开来源" }).click();
+    await expect(page.locator(".sources-pane")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".context-panel")).toBeHidden();
+
+    await openSidebar(page, viewport.width);
+    // Esc 关掉工作台切换器之后，主导航抽屉必须留在原地
+    await assertWorkspaceSwitcherFits(page, viewport.width);
+    await expect(page.locator(".workbench-shell.is-mobile-nav-open")).toHaveCount(1);
+    await page.getByRole("button", { name: "工作台资料库", exact: true }).click();
     await expect(page).toHaveURL(/\/library$/);
     await expect(page.locator(".source-library-page")).toBeVisible();
     const formatRow = page.getByLabel("支持的资料格式");
     await expect(formatRow).toContainText("PDF");
     await expect(formatRow).toContainText("MD");
     await expectNoHorizontalOverflow(page);
-
-    await page.getByRole("button", { name: "打开主导航" }).click();
-    await expect(page.getByText("共享当前工作台资料库", { exact: true })).toBeVisible();
-    await assertWorkspaceSwitcherFits(page, viewport.width);
     expect(consoleErrors).toEqual([]);
   });
 }
@@ -116,55 +114,4 @@ async function assertWorkspaceSwitcherFits(page: Page, viewportWidth: number) {
   expect(documentWidth).toBeLessThanOrEqual(viewportWidth);
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
-}
-
-async function loginIfRequired(page: Page) {
-  const loginForm = page.locator(".auth-card");
-  if (!await loginForm.isVisible()) {
-    return;
-  }
-  await loginForm.locator('input[autocomplete="username"]').fill(credentials.username);
-  await loginForm.locator('input[autocomplete="current-password"]').fill(credentials.password);
-  await loginForm.locator('button[type="submit"], button').last().click();
-}
-
-async function expectNoHorizontalOverflow(page: Page) {
-  const metrics = await page.evaluate(() => ({
-    viewportWidth: window.innerWidth,
-    documentWidth: document.documentElement.scrollWidth
-  }));
-  expect(metrics.documentWidth).toBeLessThanOrEqual(metrics.viewportWidth);
-}
-
-function loadCredentials() {
-  const fileValues = readSimpleEnv(resolve(process.cwd(), "..", ".env"));
-  const username = process.env.NOTEWEAVE_E2E_USERNAME
-    ?? process.env.NOTEWEAVE_BOOTSTRAP_USERNAME
-    ?? fileValues.NOTEWEAVE_BOOTSTRAP_USERNAME;
-  const password = process.env.NOTEWEAVE_E2E_PASSWORD
-    ?? process.env.NOTEWEAVE_BOOTSTRAP_PASSWORD
-    ?? fileValues.NOTEWEAVE_BOOTSTRAP_PASSWORD;
-  if (!username || !password) {
-    throw new Error(
-      "Real Playwright E2E requires NOTEWEAVE_E2E_USERNAME/PASSWORD or bootstrap credentials in ../.env"
-    );
-  }
-  return { username, password };
-}
-
-function readSimpleEnv(path: string) {
-  try {
-    return Object.fromEntries(
-      readFileSync(path, "utf8")
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter((line) => line && !line.startsWith("#") && line.includes("="))
-        .map((line) => {
-          const separator = line.indexOf("=");
-          return [line.slice(0, separator).trim(), line.slice(separator + 1).trim()];
-        })
-    ) as Record<string, string>;
-  } catch {
-    return {};
-  }
 }

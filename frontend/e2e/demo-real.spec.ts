@@ -1,41 +1,50 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import {
+  createWorkspace,
+  ensureStudioVisible,
+  loginIfRequired,
+  navigateFromSidebar,
+  openAccountMenu,
+  openChat,
+  useFixtureWorkspace
+} from "./helpers";
 
-const credentials = loadCredentials();
+const DESKTOP_WIDTH = 1280;
 
 test.beforeEach(async ({ page }) => {
+  await page.setViewportSize({ width: DESKTOP_WIDTH, height: 800 });
   await page.goto("/");
   await loginIfRequired(page);
   await expect(page.locator(".workbench-shell")).toBeVisible();
 });
 
 test("real login, workspace creation, and every workbench surface are wired", async ({ page }) => {
-  await createWorkspace(page);
+  await newWorkspace(page);
 
-  await navigateFromRail(page, "Deep Research 工作台");
+  await navigateFromSidebar(page, "Deep Research 工作台", DESKTOP_WIDTH);
   await expect(page.locator(".research-page-shell")).toBeVisible();
-  await expect(page.locator(".research-index")).toBeVisible();
+  await expect(page.locator(".research-runs")).toBeVisible();
 
-  await navigateFromRail(page, "Wiki 治理工作台");
+  await navigateFromSidebar(page, "Wiki 知识库", DESKTOP_WIDTH);
   await expect(page.locator(".wiki-workbench")).toBeVisible();
 
-  await navigateFromRail(page, "Memory 人工审核");
+  await navigateFromSidebar(page, "Memory 审核", DESKTOP_WIDTH);
   await expect(page.locator(".memory-workbench")).toBeVisible();
 
-  await navigateFromRail(page, "Chat · QA / Note / Wiki");
+  // 对话视图没有独立导航项，从侧边栏的会话条目进入
+  await openChat(page, DESKTOP_WIDTH);
   await expect(page.locator(".chat-panel")).toBeVisible();
-  await page.getByRole("button", { name: "打开产物" }).click();
+  await ensureStudioVisible(page);
   await expect(page.locator(".artifact-rail")).toBeVisible();
-  await expect(page.locator(".artifact-studio-header")).toContainText("产物工作台");
+  await expect(page.locator(".artifact-studio-header")).toContainText("产物");
 });
 
 test("real source ingestion and research task reach terminal UI state through task SSE", async ({ page }) => {
-  test.setTimeout(360_000);
-  await createWorkspace(page);
+  test.setTimeout(900_000);
+  await newWorkspace(page);
   const marker = `playwright-real-source-${Date.now()}`;
 
-  await navigateFromRail(page, "工作台资料库");
+  await navigateFromSidebar(page, "工作台资料库", DESKTOP_WIDTH);
   await page.locator(".source-paste-disclosure > summary").click();
   await page.locator(".source-paste-disclosure textarea").fill(
     `${marker}\nNoteWeave uses a durable task event stream and workspace-scoped source ingestion.`
@@ -50,27 +59,33 @@ test("real source ingestion and research task reach terminal UI state through ta
   await expect(uploadedSource).toBeVisible({
     timeout: 90_000
   });
-  await expect(uploadedSource).toContainText("已建立检索索引", { timeout: 90_000 });
-  await expect(page.locator(".source-task-disclosure")).toContainText(/COMPLETED|FAILED|已完成|失败/i, {
+  await expect(uploadedSource).toContainText(/可检索|向量化失败|写入索引失败/, { timeout: 90_000 });
+  // 展开资料行查看解析任务的处理记录
+  await uploadedSource.locator("[data-source-detail-trigger]").click();
+  await expect(uploadedSource.getByRole("region", { name: "处理记录" })).toContainText(/处理完成|处理失败/, {
     timeout: 90_000
   });
 
-  await navigateFromRail(page, "Deep Research 工作台");
-  await expect(page.locator(".research-index")).toBeVisible();
-  await page.locator(".research-index textarea").nth(0).fill(
+  await navigateFromSidebar(page, "Deep Research 工作台", DESKTOP_WIDTH);
+  const composer = page.locator(".research-composer");
+  await expect(page.locator(".research-runs")).toBeVisible();
+  await page.getByRole("button", { name: "新研究" }).click();
+  await expect(composer).toBeVisible();
+  await page.getByLabel("研究问题", { exact: true }).fill(
     `Explain the task event flow with verifiable evidence. Marker: ${marker}`
   );
-  await page.locator(".research-index textarea").nth(1).fill(
+  await page.locator(".research-composer-settings > summary").click();
+  await page.getByLabel("研究目标", { exact: true }).fill(
     "Produce a concise evidence-backed summary with one verified conclusion."
   );
-  const retrievalModeButtons = page.locator('[aria-label="Research retrieval mode"] button');
-  const sourceScopeButton = page.locator('[id^="research-source-scope-"]').first();
-  if (await sourceScopeButton.isEnabled()) {
-    await retrievalModeButtons.last().click();
+  await page.locator(".research-composer-settings > summary").click();
+  // 有已解析资料时按仅资料研究并勾选第一份资料，否则退回仅网络。
+  await page.getByRole("radio", { name: "仅资料" }).click();
+  const sourceScopeButton = page.locator(".research-scope-picker button").first();
+  if (await sourceScopeButton.count()) {
     await sourceScopeButton.click();
   } else {
-    await expect(sourceScopeButton).toBeDisabled();
-    await retrievalModeButtons.first().click();
+    await page.getByRole("radio", { name: "仅网络" }).click();
   }
 
   const researchCreated = page.waitForResponse((response) =>
@@ -82,7 +97,7 @@ test("real source ingestion and research task reach terminal UI state through ta
       && response.status() === 200
       && response.headers()["content-type"]?.includes("text/event-stream") === true
   );
-  await page.locator(".research-index .research-inline-actions button").first().click();
+  await page.getByRole("button", { name: "启动 Deep Research" }).click();
 
   const researchResponse = await researchCreated;
   expect(researchResponse.status()).toBe(200);
@@ -93,25 +108,23 @@ test("real source ingestion and research task reach terminal UI state through ta
   expect(createdResearch.research_run_id).toBeTruthy();
   expect(createdResearch.task_id).toBeTruthy();
   await taskStream;
-  const currentTaskStatus = page.locator(
-    `.research-task-card[data-task-id="${createdResearch.task_id}"]`
-  );
-  await expect(currentTaskStatus).toContainText(/COMPLETED|FAILED|已完成|失败/i, {
-    timeout: 300_000
+  // 运行页标题区的状态标签会随任务事件从研究中变为终态。
+  // 真实环境里一条仅资料研究要跑好几分钟，worker 排队时更久，这里给足预算
+  await expect(page.locator(".research-run-state")).toContainText(/已完成|运行失败|证据不足/, {
+    timeout: 600_000
   });
-  const currentRunStatus = page.locator(".research-page .wiki-maintenance").filter({
-    hasText: createdResearch.research_run_id
-  }).first();
-  await expect(currentRunStatus).toContainText(/COMPLETED|FAILED/i, { timeout: 15_000 });
+  await expect(page.locator(".research-runs-item.is-active")).toBeVisible();
 });
 
 test("real Markdown and PDF file uploads parse inside the selected workspace", async ({ page }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
   const marker = Date.now();
   const markdownName = `playwright-upload-${marker}.md`;
   const pdfName = `playwright-upload-${marker}.pdf`;
 
-  await navigateFromRail(page, "工作台资料库");
+  // 固定用夹具工作台，避免受上一个用例留下的工作台选择影响
+  await useFixtureWorkspace(page, DESKTOP_WIDTH);
+  await navigateFromSidebar(page, "工作台资料库", DESKTOP_WIDTH);
   const fileInput = page.locator('.source-library-upload-tool input[type="file"]');
   await fileInput.setInputFiles([
     {
@@ -133,11 +146,12 @@ test("real Markdown and PDF file uploads parse inside the selected workspace", a
   try {
     await expect(markdownRow).toBeVisible({ timeout: 90_000 });
     await expect(pdfRow).toBeVisible({ timeout: 90_000 });
-    await expect(markdownRow).toContainText("已解析", { timeout: 90_000 });
-    await expect(pdfRow).toContainText("已解析", { timeout: 90_000 });
-    await expect(markdownRow).toContainText("已建立检索索引", { timeout: 90_000 });
-    await expect(pdfRow).toContainText("已建立检索索引", { timeout: 90_000 });
-    await expect(page.locator(".source-task-disclosure")).toContainText(/COMPLETED|已完成/i, {
+    // 资料行的状态依次经过解析中、切片中、向量化中、写入索引中，最终变为可检索
+    await expect(markdownRow).toContainText("可检索", { timeout: 90_000 });
+    await expect(pdfRow).toContainText("可检索", { timeout: 90_000 });
+    await expect(pdfRow).toContainText(/个切片/);
+    await pdfRow.locator("[data-source-detail-trigger]").click();
+    await expect(pdfRow.getByRole("region", { name: "处理记录" })).toContainText("处理完成", {
       timeout: 90_000
     });
   } finally {
@@ -147,54 +161,63 @@ test("real Markdown and PDF file uploads parse inside the selected workspace", a
 });
 
 test("real QA guard, Note, and Wiki chat modes follow their available capabilities", async ({ page }) => {
-  test.setTimeout(180_000);
-  await createWorkspace(page);
+  test.setTimeout(240_000);
+  await newWorkspace(page);
+  await openChat(page, DESKTOP_WIDTH);
 
-  await expect(page.getByRole("button", { name: "回答模式：问答 RAG", exact: true })).toBeVisible();
-  await page.locator(".composer-block textarea").fill(`qa-playwright-${Date.now()}`);
+  await expect(page.getByRole("radio", { name: /问答/ })).toHaveAttribute("aria-checked", "true");
+  await page.locator(".composer-box textarea").fill(`qa-playwright-${Date.now()}`);
   await expect(page.getByRole("button", { name: "等待可检索资料" })).toBeDisabled();
-  await submitChatMode(page, "Note", `note-playwright-${Date.now()}`);
+  await submitChatMode(page, "精读", `note-playwright-${Date.now()}`);
   await submitChatMode(page, "Wiki", `wiki-playwright-${Date.now()}`);
 });
 
 test("real Wiki creation, Memory refresh, and workspace settings persist", async ({ page }) => {
-  await createWorkspace(page);
+  test.setTimeout(240_000);
+  await newWorkspace(page);
   const marker = `playwright-wiki-${Date.now()}`;
 
-  await navigateFromRail(page, "Wiki 治理工作台");
+  await navigateFromSidebar(page, "Wiki 知识库", DESKTOP_WIDTH);
   await expect(page.locator(".wiki-workbench")).toBeVisible();
   if (await page.locator(".wiki-empty-workbench").isVisible()) {
     await expect(page.getByRole("heading", { name: "准备工作台知识网络" })).toBeVisible();
-    await expect(page.getByRole("complementary", { name: "Wiki 准备状态" })).toBeVisible();
+    await expect(page.getByText("手动创建首个页面")).toBeVisible();
   } else {
-    await page.getByText("维护工具", { exact: true }).click();
-    await page.getByLabel("页面标题").fill(marker);
-    await page.getByLabel("页面正文").fill(`${marker} verifies the real Wiki write path.`);
+    // 补页入口收在管理抽屉的补页 / 修正标签页里
+    await page.getByRole("button", { name: /管理/ }).click();
+    const manage = page.getByRole("dialog", { name: "知识库管理" });
+    await expect(manage).toBeVisible();
+    await manage.getByRole("tab", { name: "补页 / 修正" }).click();
+    await manage.getByLabel("页面标题").fill(marker);
+    await manage.getByLabel("页面正文").fill(`${marker} verifies the real Wiki write path.`);
     const wikiCreated = page.waitForResponse((response) =>
       /\/api\/v2\/workspaces\/[^/]+\/knowledge-items$/.test(response.url())
         && response.request().method() === "POST"
     );
-    await page.getByRole("button", { name: "提交补页 / 修正文案" }).click();
+    await manage.getByRole("button", { name: "提交补页 / 修正文案" }).click();
     expect((await wikiCreated).status()).toBe(200);
+    await manage.getByRole("button", { name: "关闭知识库管理" }).click();
     await expect(page.locator(".wiki-page-card").filter({ hasText: marker })).toBeVisible();
   }
 
-  await navigateFromRail(page, "Memory 人工审核");
+  await navigateFromSidebar(page, "Memory 审核", DESKTOP_WIDTH);
   await expect(page.locator(".memory-workbench")).toBeVisible();
   const memoryRefreshed = page.waitForResponse((response) =>
-    /\/api\/v2\/workspaces\/[^/]+\/memory\/review$/.test(response.url())
+    /\/api\/v2\/workspaces\/[^/]+\/memory\/items$/.test(response.url())
       && response.request().method() === "GET"
   );
-  await page.getByRole("button", { name: "刷新审核队列" }).click();
+  await page.getByRole("button", { name: "刷新记忆" }).click();
   expect((await memoryRefreshed).status()).toBe(200);
-  await expect(page.locator(".memory-queue-list")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "生效中" })).toBeVisible();
   await expect(page.locator(".memory-error")).toHaveCount(0);
 
+  // 工作台设置在账户菜单里
   const settingsLoaded = page.waitForResponse((response) =>
     /\/api\/v2\/workspaces\/[^/]+\/retrieval-settings$/.test(response.url())
       && response.request().method() === "GET"
   );
-  await page.getByRole("button", { name: "工作台设置" }).click();
+  await openAccountMenu(page, DESKTOP_WIDTH);
+  await page.getByRole("menuitem", { name: "工作台设置" }).click();
   expect((await settingsLoaded).status()).toBe(200);
   const retrievalToggle = page.locator('.workspace-settings-panel input[type="checkbox"]');
   await expect(retrievalToggle).toBeEnabled();
@@ -217,9 +240,10 @@ test("real Wiki creation, Memory refresh, and workspace settings persist", async
 });
 
 test("real Artifact task reaches a terminal UI state or exposes provider wait", async ({ page }) => {
-  test.setTimeout(180_000);
-  await createWorkspace(page);
-  await page.getByRole("button", { name: "打开产物" }).click();
+  test.setTimeout(420_000);
+  await useFixtureWorkspace(page, DESKTOP_WIDTH);
+  await openChat(page, DESKTOP_WIDTH);
+  await ensureStudioVisible(page);
   const artifactComposer = page.locator(".artifact-composer-view");
   const artifactSkillCard = page.locator(".artifact-action-card").first();
   await expect(artifactComposer.or(artifactSkillCard)).toBeVisible();
@@ -246,50 +270,30 @@ test("real Artifact task reaches a terminal UI state or exposes provider wait", 
     `[data-run-key="artifact-job-${artifactEnvelope.data.artifact_job_id}"]`
   );
   let observedArtifactState = "pending";
+  // 产物行通过 data-state 暴露状态：ready / failed / cancelled 为终态，waiting 表示等待外部服务。
   await expect.poll(async () => {
-    const text = await artifactCard.innerText();
-    observedArtifactState = /COMPLETED|FAILED|已完成|失败/i.test(text)
+    const state = await artifactCard.getAttribute("data-state");
+    observedArtifactState = state === "ready" || state === "failed" || state === "cancelled"
       ? "terminal"
-      : /等待|provider|配置/i.test(text)
+      : state === "waiting"
         ? "provider_wait"
         : "pending";
     return observedArtifactState;
-  }, { timeout: 30_000 }).toMatch(/terminal|provider_wait/);
+    // 真实大模型生成产物要几分钟，这里等到终态或等待外部服务为止
+  }, { timeout: 300_000 }).toMatch(/terminal|provider_wait/);
+
   expect(observedArtifactState).toMatch(/terminal|provider_wait/);
   if (observedArtifactState === "provider_wait") {
     test.info().annotations.push({
       type: "environment-prerequisite",
       description: "Artifact provider is not configured in the local compose environment; the UI surfaces the task as waiting instead of claiming completion."
     });
-    await expect(artifactCard).toContainText(/等待|provider|配置/i);
+    await expect(artifactCard).toContainText(/等待/);
   }
 });
 
-async function loginIfRequired(page: Page) {
-  const loginForm = page.locator(".auth-card");
-  if (!await loginForm.isVisible()) {
-    return;
-  }
-  await loginForm.locator('input[autocomplete="username"]').fill(credentials.username);
-  await loginForm.locator('input[autocomplete="current-password"]').fill(credentials.password);
-  await loginForm.locator('button[type="submit"], button').last().click();
-}
-
-async function createWorkspace(page: Page) {
-  const createButton = page.locator(".global-rail-actions button").first();
-  await expect(createButton).toBeEnabled();
-  await createButton.click();
-  const dialog = page.getByRole("dialog", { name: "创建研究工作台" });
-  await expect(dialog).toBeVisible();
-  await dialog.getByLabel("工作台名称").fill(`Playwright 工作台 ${Date.now()}`);
-  await dialog.getByLabel("用途说明").fill("真实浏览器回归用工作台");
-  await dialog.getByRole("button", { name: "创建工作台", exact: true }).click();
-  await expect(dialog).toHaveCount(0);
-  await expect(page.locator(".global-rail-context")).toContainText("Playwright 工作台");
-}
-
-async function navigateFromRail(page: Page, name: string) {
-  await page.getByRole("button", { name, exact: true }).click();
+async function newWorkspace(page: Page) {
+  return createWorkspace(page, `Playwright 工作台 ${Date.now()}`, DESKTOP_WIDTH);
 }
 
 async function deleteSourceIfPresent(page: Page, title: string) {
@@ -327,10 +331,9 @@ function escapePdfText(value: string) {
 }
 
 async function submitChatMode(page: Page, modeLabel: string, marker: string) {
-  await page.getByRole("button", { name: /^回答模式：/ }).click();
-  await page.getByRole("menuitemradio", { name: new RegExp(`^${modeLabel}`) }).click();
+  await page.getByRole("radiogroup", { name: "回答模式" }).getByRole("radio", { name: modeLabel }).click();
   const assistantCount = await page.locator(".bubble.assistant").count();
-  await page.locator(".composer-block textarea").fill(
+  await page.locator(".composer-box textarea").fill(
     `Return one concise conclusion for the real demo. Marker: ${marker}`
   );
   const answerCreated = page.waitForResponse((response) =>
@@ -342,41 +345,8 @@ async function submitChatMode(page: Page, modeLabel: string, marker: string) {
   await expect(page.locator(".bubble.user").filter({ hasText: marker })).toBeVisible();
   const assistant = page.locator(".bubble.assistant").nth(assistantCount);
   await expect(assistant.locator(".answer-run-spinner")).toHaveCount(0, {
-    timeout: 60_000
+    timeout: 90_000
   });
   await expect(assistant).toContainText(/.+/);
-  await expect(page.locator(".chat-typing")).toHaveCount(0, { timeout: 60_000 });
-}
-
-function loadCredentials() {
-  const fileValues = readSimpleEnv(resolve(process.cwd(), "..", ".env"));
-  const username = process.env.NOTEWEAVE_E2E_USERNAME
-    ?? process.env.NOTEWEAVE_BOOTSTRAP_USERNAME
-    ?? fileValues.NOTEWEAVE_BOOTSTRAP_USERNAME;
-  const password = process.env.NOTEWEAVE_E2E_PASSWORD
-    ?? process.env.NOTEWEAVE_BOOTSTRAP_PASSWORD
-    ?? fileValues.NOTEWEAVE_BOOTSTRAP_PASSWORD;
-  if (!username || !password) {
-    throw new Error(
-      "Real Playwright E2E requires NOTEWEAVE_E2E_USERNAME/PASSWORD or bootstrap credentials in ../.env"
-    );
-  }
-  return { username, password };
-}
-
-function readSimpleEnv(path: string) {
-  try {
-    return Object.fromEntries(
-      readFileSync(path, "utf8")
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter((line) => line && !line.startsWith("#") && line.includes("="))
-        .map((line) => {
-          const separator = line.indexOf("=");
-          return [line.slice(0, separator).trim(), line.slice(separator + 1).trim()];
-        })
-    ) as Record<string, string>;
-  } catch {
-    return {};
-  }
+  await expect(page.locator(".chat-typing")).toHaveCount(0, { timeout: 90_000 });
 }

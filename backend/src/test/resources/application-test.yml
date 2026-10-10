@@ -41,6 +41,9 @@ noteweave:
     artifact-auto-dispatch-enabled: false
     artifact-callback-secret: test-artifact-callback-secret
     artifact-input-unfenced-enabled: true
+  video-learning:
+    child-coordinator:
+      enabled: false
   storage:
     backend: local
     local-root: target/test-noteweave-storage

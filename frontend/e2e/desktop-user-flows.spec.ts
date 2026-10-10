@@ -1,11 +1,17 @@
-import { expect, test, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { expect, test } from "@playwright/test";
+import {
+  ensureStudioVisible,
+  loginIfRequired,
+  navigateFromSidebar,
+  openAccountMenu,
+  openChat,
+  useFixtureWorkspace
+} from "./helpers";
 
-const credentials = loadCredentials();
+const DESKTOP_WIDTH = 1280;
 
 test("desktop auth validation and password visibility remain usable", async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.setViewportSize({ width: DESKTOP_WIDTH, height: 720 });
   await page.goto("/");
 
   const loginPassword = page.getByLabel("密码", { exact: true });
@@ -31,48 +37,56 @@ test("desktop auth validation and password visibility remain usable", async ({ p
 });
 
 test("desktop creation dialogs and theme persistence follow user expectations", async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.setViewportSize({ width: DESKTOP_WIDTH, height: 720 });
   await page.goto("/");
-  await login(page);
+  await loginIfRequired(page);
 
-  const workspaceTrigger = page.getByRole("button", { name: "新建工作台", exact: true });
-  await workspaceTrigger.click();
+  // 新建工作台收在账户菜单里，关闭对话框后焦点要回到打开它的账户入口
+  const accountTrigger = page.getByRole("button", { name: "账户与工作台菜单" });
+  await openAccountMenu(page, DESKTOP_WIDTH);
+  await page.getByRole("menuitem", { name: "新建工作台" }).click();
   const workspaceDialog = page.getByRole("dialog", { name: "创建研究工作台" });
   const workspaceName = workspaceDialog.getByLabel("工作台名称");
   await expect(workspaceName).toBeFocused();
   await expect(workspaceDialog.getByRole("button", { name: "创建工作台", exact: true })).toBeDisabled();
-  await workspaceName.fill("仅用于验证表单状态");
+  await workspaceName.fill("Playwright 仅用于验证表单状态");
   await expect(workspaceDialog.getByRole("button", { name: "创建工作台", exact: true })).toBeEnabled();
   await workspaceName.press("Escape");
   await expect(workspaceDialog).toHaveCount(0);
-  await expect(workspaceTrigger).toBeFocused();
+  await expect(accountTrigger).toBeFocused();
 
   const conversationTrigger = page.getByRole("button", { name: "新建会话", exact: true });
   await conversationTrigger.click();
   const conversationDialog = page.getByRole("dialog", { name: "新建独立会话" });
   const conversationName = conversationDialog.getByLabel("会话名称");
   await expect(conversationName).toBeFocused();
-  await conversationName.fill("仅用于验证表单状态");
+  await conversationName.fill("Playwright 仅用于验证表单状态");
   await expect(conversationDialog.getByRole("button", { name: "创建会话", exact: true })).toBeEnabled();
   await conversationName.press("Escape");
   await expect(conversationDialog).toHaveCount(0);
   await expect(conversationTrigger).toBeFocused();
 
-  await page.getByRole("button", { name: "切换明暗主题" }).click();
+  // 明暗主题开关同样在账户菜单里，切换后要能跨刷新保持
+  await openAccountMenu(page, DESKTOP_WIDTH);
+  await page.getByRole("menuitem", { name: "切换明暗主题" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.reload();
   await expect(page.locator(".workbench-shell")).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await page.getByRole("button", { name: "切换明暗主题" }).click();
+  await openAccountMenu(page, DESKTOP_WIDTH);
+  await page.getByRole("menuitem", { name: "切换明暗主题" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 });
 
 test("desktop library, Research, and Artifact controls enforce their real prerequisites", async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 720 });
+  test.setTimeout(240_000);
+  await page.setViewportSize({ width: DESKTOP_WIDTH, height: 720 });
   await page.goto("/");
-  await login(page);
+  await loginIfRequired(page);
+  // 仅资料研究需要工作台里真的有已解析资料，夹具工作台保证了这一点
+  await useFixtureWorkspace(page, DESKTOP_WIDTH);
 
-  await page.getByRole("button", { name: "工作台资料库", exact: true }).click();
+  await navigateFromSidebar(page, "工作台资料库", DESKTOP_WIDTH);
   await page.locator('.source-library-upload-tool input[type="file"]').setInputFiles({
     name: "unsupported.exe",
     mimeType: "application/octet-stream",
@@ -80,24 +94,24 @@ test("desktop library, Research, and Artifact controls enforce their real prereq
   });
   await expect(page.getByRole("alert")).toContainText("格式不受支持");
 
-  await page.getByRole("button", { name: "Deep Research 工作台", exact: true }).click();
+  await navigateFromSidebar(page, "Deep Research 工作台", DESKTOP_WIDTH);
+  // 工作台里已有研究记录时会直接打开最近一条运行，这里无条件回到新建研究的表单
+  await expect(page.locator(".research-runs")).toBeVisible();
+  await page.getByRole("button", { name: "新研究" }).click();
+  await expect(page.locator(".research-composer")).toBeVisible();
   const launchResearch = page.getByRole("button", { name: "启动 Deep Research" });
   await expect(launchResearch).toBeDisabled();
   await page.getByLabel("研究问题", { exact: true }).fill("验证桌面端启动条件是否真实生效");
   await expect(launchResearch).toBeEnabled();
-  await page.getByRole("button", { name: "仅资料", exact: true }).click();
+  await page.getByRole("radio", { name: "仅资料", exact: true }).click();
   await expect(launchResearch).toBeDisabled();
-  const firstSource = page.locator('[id^="research-source-scope-"]').first();
-  if (await firstSource.count() > 0 && await firstSource.isEnabled()) {
-    await firstSource.click();
-    await expect(launchResearch).toBeEnabled();
-  } else {
-    await page.getByRole("button", { name: "仅网络", exact: true }).click();
-    await expect(launchResearch).toBeEnabled();
-  }
+  const firstSource = page.locator(".research-scope-picker button").first();
+  await expect(firstSource).toBeEnabled();
+  await firstSource.click();
+  await expect(launchResearch).toBeEnabled();
 
-  await page.getByRole("button", { name: "Chat · QA / Note / Wiki", exact: true }).click();
-  await page.getByRole("button", { name: "打开产物", exact: true }).click();
+  await openChat(page, DESKTOP_WIDTH);
+  await ensureStudioVisible(page);
   await page.locator(".artifact-action-card").first().click();
   const artifactComposer = page.locator(".artifact-composer-view");
   await expect(artifactComposer).toBeVisible();
@@ -106,43 +120,3 @@ test("desktop library, Research, and Artifact controls enforce their real prereq
   await artifactComposer.getByRole("button", { name: "返回 Studio" }).click();
   await expect(page.locator(".artifact-action-card").first()).toBeVisible();
 });
-
-async function login(page: Page) {
-  const authCard = page.locator(".auth-card");
-  if (!await authCard.isVisible()) return;
-  await authCard.locator('input[autocomplete="username"]').fill(credentials.username);
-  await authCard.locator('input[autocomplete="current-password"]').fill(credentials.password);
-  await authCard.getByRole("button", { name: "登录", exact: true }).click();
-  await expect(page.locator(".workbench-shell")).toBeVisible();
-}
-
-function loadCredentials() {
-  const fileValues = readSimpleEnv(resolve(process.cwd(), "..", ".env"));
-  const username = process.env.NOTEWEAVE_E2E_USERNAME
-    ?? process.env.NOTEWEAVE_BOOTSTRAP_USERNAME
-    ?? fileValues.NOTEWEAVE_BOOTSTRAP_USERNAME;
-  const password = process.env.NOTEWEAVE_E2E_PASSWORD
-    ?? process.env.NOTEWEAVE_BOOTSTRAP_PASSWORD
-    ?? fileValues.NOTEWEAVE_BOOTSTRAP_PASSWORD;
-  if (!username || !password) {
-    throw new Error("Real Playwright E2E requires NoteWeave bootstrap credentials");
-  }
-  return { username, password };
-}
-
-function readSimpleEnv(path: string) {
-  try {
-    return Object.fromEntries(
-      readFileSync(path, "utf8")
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter((line) => line && !line.startsWith("#") && line.includes("="))
-        .map((line) => {
-          const separator = line.indexOf("=");
-          return [line.slice(0, separator).trim(), line.slice(separator + 1).trim()];
-        })
-    ) as Record<string, string>;
-  } catch {
-    return {};
-  }
-}

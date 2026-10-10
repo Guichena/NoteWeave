@@ -9,3 +9,11 @@ class ArtifactCommand(BaseModel):
     schema_version: Literal["artifact-command.v1"]
     task_id: str = Field(min_length=1)
     delivery_token: str = Field(min_length=1)
+
+
+class VideoMaterialCommand(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["video-material-command.v1"]
+    task_id: str = Field(min_length=1)
+    delivery_token: str = Field(min_length=1)

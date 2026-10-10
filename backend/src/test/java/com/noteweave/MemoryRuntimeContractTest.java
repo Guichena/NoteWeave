@@ -492,6 +492,131 @@ class MemoryRuntimeContractTest {
                 .andExpect(jsonPath("$.data").doesNotExist());
     }
 
+    @Test
+    void memoryItemsShouldExposeGateScoresForActiveAndProposedRevisions() throws Exception {
+        String workspaceId = createWorkspace();
+        String userSignal = createMemorySignal(workspaceId, Map.of(
+                "signal_type", "PREFERENCE",
+                "source_type", "USER_FEEDBACK",
+                "signal_text", "回答先给结论，再展开证据",
+                "task_neighborhood", "COMMON",
+                "style_constraints", java.util.List.of("先给结论，再展开证据")
+        ));
+        String inferredSignal = createMemorySignal(workspaceId, Map.of(
+                "signal_type", "PREFERENCE",
+                "source_type", "MODEL_INFERENCE",
+                "signal_text", "用户可能偏好更长的解释",
+                "task_neighborhood", "CHAT_NOTE",
+                "style_constraints", java.util.List.of("更长的解释")
+        ));
+        mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/memory/promotions", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "signal_ids", java.util.List.of(userSignal, inferredSignal)))))
+                .andExpect(status().isOk());
+
+        // 待确认的版本排在前面；用户反馈直接通过门控，模型推断因来源可信度不足进入确认
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/memory/items", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[0].revision_status").value("PROPOSED"))
+                .andExpect(jsonPath("$.data[0].display_text").value("用户可能偏好更长的解释"))
+                .andExpect(jsonPath("$.data[0].task_neighborhoods[0]").value("CHAT_NOTE"))
+                .andExpect(jsonPath("$.data[0].gate.result").value("NEEDS_REVIEW"))
+                .andExpect(jsonPath("$.data[0].gate.source_type").value("MODEL_INFERENCE"))
+                .andExpect(jsonPath("$.data[0].gate.evidence_score").value(0.35))
+                .andExpect(jsonPath("$.data[0].gate.evidence_threshold").value(0.70))
+                .andExpect(jsonPath("$.data[1].revision_status").value("ACTIVE"))
+                .andExpect(jsonPath("$.data[1].item_status").value("ACTIVE"))
+                .andExpect(jsonPath("$.data[1].memory_scope").value("WORKSPACE"))
+                .andExpect(jsonPath("$.data[1].gate.result").value("READY"))
+                .andExpect(jsonPath("$.data[1].gate.source_type").value("USER_FEEDBACK"))
+                .andExpect(jsonPath("$.data[1].conflict_status").value("NO_CONFLICT"));
+    }
+
+    @Test
+    void userShouldBeAbleToRevokeAnApprovedActiveMemory() throws Exception {
+        String workspaceId = createWorkspace();
+        String signalId = createMemorySignal(workspaceId, Map.of(
+                "signal_type", "PREFERENCE",
+                "source_type", "USER_FEEDBACK",
+                "signal_text", "术语保留英文原文",
+                "task_neighborhood", "COMMON",
+                "terminology_policy", java.util.List.of("术语保留英文原文")
+        ));
+        mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/memory/promotions", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("signal_ids", java.util.List.of(signalId)))))
+                .andExpect(status().isOk());
+        MvcResult items = mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/memory/items", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].review_status").value("APPROVED"))
+                .andReturn();
+        String revisionId = objectMapper.readTree(items.getResponse().getContentAsString())
+                .path("data").get(0).path("revision_id").asText();
+
+        // 已批准的记忆不需要复核，确认操作仍被拒绝；停用操作可以直接执行
+        mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/memory/revisions/{revisionId}/review",
+                        workspaceId, revisionId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("decision", "ACCEPT"))))
+                .andExpect(jsonPath("$.code").value("MEMORY_RUNTIME_REVISION_NOT_REVIEWABLE"));
+        mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/memory/revisions/{revisionId}/review",
+                        workspaceId, revisionId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("decision", "REVOKE"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("REVOKED"));
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/memory/items", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(0));
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/memory/shadow-recall", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.runtime.memory_references.length()").value(0));
+    }
+
+    @Test
+    void reviewRequiredMemoryMustPauseRecallUntilConfirmedAndKeepTheReason() throws Exception {
+        String workspaceId = createWorkspace();
+        MemoryObservationResult approved = memoryRuntime.observe(new ExecutionObservation(
+                "recall-approved-" + System.nanoTime(), workspaceId, "WORKSPACE",
+                "preference:recall-approved", "Keep answers concise", "USER_FEEDBACK", "feedback-recall-approved"));
+        acceptRevision(workspaceId, approved.revisionId());
+        MemoryObservationResult flagged = memoryRuntime.observe(new ExecutionObservation(
+                "recall-flagged-" + System.nanoTime(), workspaceId, "WORKSPACE",
+                "preference:recall-flagged", "Put citations at the end", "USER_FEEDBACK", "feedback-recall-flagged"));
+        acceptRevision(workspaceId, flagged.revisionId());
+        jdbcTemplate.update("update memory_item set review_status = 'REVIEW_REQUIRED' where id = ?",
+                flagged.memoryItemId());
+
+        // 需要复核期间，Context V2 使用的运行时召回与检查接口都不再返回这条记忆
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/memory/shadow-recall", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.runtime.memory_references.length()").value(1))
+                .andExpect(jsonPath("$.data.runtime.memory_references[0].memory_version_id")
+                        .value(approved.revisionId()));
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/memory/inspector", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.active_memory.memory_references.length()").value(1));
+
+        mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/memory/revisions/{revisionId}/review",
+                        workspaceId, flagged.revisionId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "decision", "ACCEPT", "reason", "复核后确认仍然适用"))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/memory/shadow-recall", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.runtime.memory_references.length()").value(2));
+        JsonNode payload = objectMapper.readTree(jdbcTemplate.queryForObject("""
+                select payload_json from memory_event
+                where memory_item_id = ? and event_type = 'ACTIVE_REVIEW_ACCEPTED'
+                """, String.class, flagged.memoryItemId()));
+        org.assertj.core.api.Assertions.assertThat(payload.path("decision").asText()).isEqualTo("ACCEPT");
+        org.assertj.core.api.Assertions.assertThat(payload.path("reason").asText()).isEqualTo("复核后确认仍然适用");
+    }
+
     private String createWorkspace() throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v2/workspaces")
                         .contentType(MediaType.APPLICATION_JSON)

@@ -197,6 +197,7 @@ public class WorkerTaskCallbackService {
         TaskService.TaskRef task = taskService.getTaskRef(taskId);
         if (isTerminalStatus(task.taskStatus())) {
             validateTerminalCallback(taskId, idempotencyKey, "COMPLETE", request);
+            artifactJobService.validateCandidateReplay(taskId, request);
             return terminalAck(taskId, task.taskStatus());
         }
         validateCallbackOwnership(task);
@@ -207,6 +208,7 @@ public class WorkerTaskCallbackService {
         task = taskService.getTaskRef(taskId);
         if (isTerminalStatus(task.taskStatus())) {
             validateTerminalCallback(taskId, idempotencyKey, "COMPLETE", request);
+            artifactJobService.validateCandidateReplay(taskId, request);
             return terminalAck(taskId, task.taskStatus());
         }
         validateCallbackOwnership(task);
@@ -216,8 +218,10 @@ public class WorkerTaskCallbackService {
             taskService.startTask(taskId);
             task = taskService.getTaskRef(taskId);
         }
+        List<ArtifactExportService.PreparedFile> preparedFiles =
+                artifactExportService.prepareForCompletion(taskId, request);
         CompletionOutcome outcome = artifactJobService.completeFromWorker(taskId, request);
-        artifactExportService.materializeExports(outcome.resultRef());
+        artifactExportService.publishPreparedFiles(outcome.resultRef(), preparedFiles);
         taskService.completeTask(taskId, outcome.phase(), outcome.message(), outcome.resultRef());
         acknowledgeDelivery(taskId, deliveryToken, requireDelivery);
         completeCallbackReceipt(taskId, idempotencyKey, outcome.resultRef());

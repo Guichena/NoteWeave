@@ -7,10 +7,12 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.noteweave.security.AuditActorProvider;
+import com.noteweave.research.ResearchGeneratedSourceReadGate;
 import com.noteweave.workspace.WorkspaceQueryPort;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -39,21 +41,29 @@ class KnowledgeGovernanceServiceTest {
         when(actorProvider.currentOrSystem("KNOWLEDGE")).thenReturn("actor");
         KnowledgeWikiMutationService mutationService =
                 new KnowledgeWikiMutationService(jdbcTemplate);
+        ResearchGeneratedSourceReadGate sourceGate = mock(ResearchGeneratedSourceReadGate.class);
+        when(sourceGate.readableSourceIds(org.mockito.ArgumentMatchers.eq("workspace"),
+                org.mockito.ArgumentMatchers.anyList()))
+                .thenAnswer(invocation -> Set.copyOf(invocation.getArgument(1)));
+        KnowledgeCitationReadGate citationGate = new KnowledgeCitationReadGate(jdbcTemplate, sourceGate);
         KnowledgeVersionService versionService = new KnowledgeVersionService(
-                jdbcTemplate, actorProvider, mutationService);
+                jdbcTemplate, actorProvider, mutationService,
+                citationGate);
         commandService = new KnowledgeCommandService(
                 jdbcTemplate,
                 workspaceQueryPort,
                 actorProvider,
                 versionService,
-                mutationService);
+                mutationService,
+                citationGate);
         governanceService = new KnowledgeGovernanceService(
                 jdbcTemplate,
                 workspaceQueryPort,
                 new KnowledgeWikiSearchEngine(jdbcTemplate),
                 versionService,
                 mutationService,
-                commandService);
+                commandService,
+                citationGate);
     }
 
     @Test
@@ -115,6 +125,11 @@ class KnowledgeGovernanceServiceTest {
 
     @Test
     void shouldRebuildLinksThroughImmutableVersionAndPreserveCitations() {
+        jdbcTemplate.update("""
+                insert into citation(id, source_id, title, quote_text)
+                values ('citation-a', 'source', 'Source', 'quote a'),
+                       ('citation-b', 'source', 'Source', 'quote b')
+                """);
         KnowledgeItemResponse sourcePage = commandService.createItemWithVersion(
                 "workspace",
                 "WIKI",
@@ -266,6 +281,7 @@ class KnowledgeGovernanceServiceTest {
         jdbcTemplate.execute("""
                 create table citation(
                     id varchar(36) primary key,
+                    workspace_id varchar(36) not null default 'workspace',
                     source_id varchar(36) not null,
                     title varchar(300),
                     quote_text varchar(1000),

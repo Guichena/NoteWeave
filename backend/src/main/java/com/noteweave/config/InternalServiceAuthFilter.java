@@ -130,7 +130,9 @@ public class InternalServiceAuthFilter extends OncePerRequestFilter {
 
     private boolean isArtifactWorkerRoute(String path) {
         return path.startsWith("/internal/worker/artifact-tasks/")
+                || path.startsWith("/internal/worker/video-material-tasks/")
                 || path.startsWith("/internal/worker/tasks/")
+                || path.startsWith("/internal/worker/source-transcriptions/")
                 || path.equals("/internal/worker/artifact-callbacks/acquisition/ack");
     }
 

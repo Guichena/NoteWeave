@@ -7,7 +7,7 @@ import { WorkbenchShell } from "./WorkbenchShell";
 afterEach(cleanup);
 
 describe("WorkbenchShell", () => {
-  it("renders left nav and notifies navigation", () => {
+  it("renders the sidebar navigation and notifies navigation", () => {
     const onNavigate = vi.fn();
     render(
       <WorkbenchShell
@@ -153,7 +153,8 @@ describe("WorkbenchShell", () => {
       </WorkbenchShell>
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "新建工作台" }));
+    fireEvent.click(screen.getByRole("button", { name: "账户与工作台菜单" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "新建工作台" }));
     expect(screen.getByRole("dialog", { name: "创建研究工作台" })).toBeTruthy();
     const submit = screen.getByRole("button", { name: "创建工作台" });
     expect(submit.hasAttribute("disabled")).toBe(true);
@@ -229,8 +230,9 @@ describe("WorkbenchShell", () => {
       </WorkbenchShell>
     );
 
-    const workspaceTrigger = screen.getByRole("button", { name: "新建工作台" });
+    const workspaceTrigger = screen.getByRole("button", { name: "账户与工作台菜单" });
     fireEvent.click(workspaceTrigger);
+    fireEvent.click(screen.getByRole("menuitem", { name: "新建工作台" }));
     fireEvent.keyDown(window, { key: "Escape" });
     await waitFor(() => expect(document.activeElement).toBe(workspaceTrigger));
 

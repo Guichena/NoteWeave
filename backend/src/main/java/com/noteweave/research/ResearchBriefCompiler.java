@@ -4,7 +4,12 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.BusinessException;
+import com.noteweave.conversation.ContextProjectionV2;
+import com.noteweave.conversation.ResearchContextV2Question;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,13 +35,31 @@ public class ResearchBriefCompiler {
     }
 
     public CompiledBrief compile(String runId, String currentQuestion) {
+        RunContext run = jdbcTemplate.query("""
+                select workspace_id, question, execution_question, context_snapshot_id
+                from research_run where id = ?
+                """, rs -> rs.next() ? new RunContext(rs.getString(1), rs.getString(2),
+                rs.getString(3), rs.getString(4)) : null, runId);
+        if (run == null) throw snapshotMismatch("Research Run is unavailable", null);
         SnapshotLink link = jdbcTemplate.query("""
-                select id, workspace_id, conversation_id, snapshot_json
+                select id, workspace_id, conversation_id, query_message_id,
+                       snapshot_json, compiler_version,
+                       replay_availability
                 from run_input_snapshot
-                where execution_kind = 'RESEARCH' and research_run_id = ? and replay_availability = 'FULL'
+                where execution_kind = 'RESEARCH' and research_run_id = ?
                 """, rs -> rs.next() ? new SnapshotLink(
-                rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4)) : null, runId);
-        if (link == null) {
+                rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
+                rs.getString(5), rs.getString(6), rs.getString(7)) : null, runId);
+        if (run.contextSnapshotId() != null) {
+            if (link == null || !run.contextSnapshotId().equals(link.snapshotId())
+                    || !"FULL".equals(link.replayAvailability())
+                    || run.executionQuestion() == null
+                    || !run.executionQuestion().equals(currentQuestion)) {
+                throw snapshotMismatch("Frozen Research Context is unavailable", null);
+            }
+            return attachResumeContext(runId, compileV2(link, run));
+        }
+        if (link == null || !"FULL".equals(link.replayAvailability())) {
             return attachResumeContext(runId, standalone(currentQuestion));
         }
 
@@ -64,6 +87,52 @@ public class ResearchBriefCompiler {
         brief.put("conversation_summary", projection.summaryText());
         brief.put("recent_messages", List.copyOf(messages));
         return attachResumeContext(runId, new CompiledBrief(planningQuery, Map.copyOf(brief)));
+    }
+
+    private CompiledBrief compileV2(SnapshotLink link, RunContext run) {
+        JsonNode snapshot;
+        ContextProjectionV2 projection;
+        try {
+            snapshot = objectMapper.readTree(link.snapshotJson());
+            projection = objectMapper.treeToValue(snapshot.path("context_v2_projection"),
+                    ContextProjectionV2.class);
+            String digest = sha256(objectMapper.writeValueAsString(projection));
+            if (!digest.equals(snapshot.path("context_v2_projection_sha256").asText())
+                    || !link.compilerVersion().equals(projection.compilerVersion())
+                    || !run.workspaceId().equals(link.workspaceId())
+                    || !link.workspaceId().equals(projection.workspaceId())
+                    || !link.conversationId().equals(projection.conversationId())
+                    || !"FULL".equals(projection.replayAvailability())
+                    || !run.question().equals(projection.currentInput())
+                    || !run.executionQuestion().equals(ResearchContextV2Question.render(
+                    projection, link.queryMessageId()))) {
+                throw snapshotMismatch("Frozen Research Context identity or digest changed", null);
+            }
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw snapshotMismatch("Frozen Research Context JSON is invalid", ex);
+        }
+        List<Map<String, Object>> messages = projection.rawTail().stream()
+                .map(message -> Map.<String, Object>of(
+                        "message_id", message.messageId(), "message_seq", message.seq(),
+                        "role", message.role(), "content", message.text()))
+                .toList();
+        Map<String, Object> brief = new LinkedHashMap<>();
+        brief.put("entry_point", "CONVERSATION");
+        brief.put("context_snapshot_id", link.snapshotId());
+        brief.put("context_compiler_version", projection.compilerVersion());
+        brief.put("context_projection_sha256", snapshot.path("context_v2_projection_sha256").asText());
+        brief.put("current_question", run.question());
+        brief.put("conversation_summary", projection.topicSummaries().stream()
+                .map(ContextProjectionV2.TopicSummary::text).reduce((a, b) -> a + "\n" + b).orElse(""));
+        brief.put("recent_messages", messages);
+        return new CompiledBrief(bounded(run.executionQuestion()), Map.copyOf(brief));
+    }
+
+    private static String sha256(String value) throws Exception {
+        return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                .digest(value.getBytes(StandardCharsets.UTF_8)));
     }
 
     private FrozenProjection loadFrozenProjection(SnapshotLink link) {
@@ -210,7 +279,12 @@ public class ResearchBriefCompiler {
         }
     }
 
-    private record SnapshotLink(String snapshotId, String workspaceId, String conversationId, String snapshotJson) { }
+    private record SnapshotLink(String snapshotId, String workspaceId, String conversationId,
+                                String queryMessageId, String snapshotJson, String compilerVersion,
+                                String replayAvailability) { }
+
+    private record RunContext(String workspaceId, String question, String executionQuestion,
+                              String contextSnapshotId) { }
 
     private record FrozenProjection(String summaryText, List<FrozenMessage> messages) { }
 

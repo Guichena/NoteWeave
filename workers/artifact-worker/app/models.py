@@ -8,6 +8,10 @@ class SourceScopeItem(BaseModel):
     title: str
     summary: str = ""
     sample_text: str = ""
+    source_snapshot_id: str = ""
+    source_window_id: str = ""
+    material_windows: list[dict[str, object]] = Field(default_factory=list)
+    material_gap: str = ""
     generated_by: str = ""
     generated_ref_id: str = ""
     source_type: str = "DOCUMENT_TEXT"
@@ -70,17 +74,31 @@ class ArtifactTaskInputPayload(BaseModel):
     writeback_mode: str = "NONE"
 
 
+class ContextV2ShadowInput(BaseModel):
+    snapshot_id: str
+    projection_sha256: str
+    compiler_version: str
+    memory_revision_ids: list[str] = Field(default_factory=list)
+    replay_availability: str
+
+
 class ArtifactTaskInput(BaseModel):
     task_id: str
     workspace_id: str
     target_id: str
     input_snapshot_id: str = ""
+    catalog_digest: str = ""
     replay_availability: str = "FULL"
     source_scope: list[SourceScopeItem] = Field(default_factory=list)
     upstream_refs: list[ArtifactUpstreamRef] = Field(default_factory=list)
     context_snapshot: ContextSnapshot = Field(default_factory=ContextSnapshot)
     control_pack: ControlPack
     input_payload: ArtifactTaskInputPayload
+    # Diagnostic only; this projection is not the production generation input.
+    context_v2_shadow: ContextV2ShadowInput | None = None
+    # Worker-local material fetched through the Host's fenced reference endpoint.
+    frozen_video_material: dict[str, object] = Field(default_factory=dict)
+    frozen_video_knowledge_plan: dict[str, object] = Field(default_factory=dict)
 
 
 class ArtifactSkillDefinition(BaseModel):
@@ -370,6 +388,7 @@ class AcquisitionOperationReceipt(BaseModel):
     status: str
     request_id: str = ""
     input_locator: str = ""
+    tool_arguments: dict[str, object] = Field(default_factory=dict)
     requested_at: str = ""
     completed_at: str = ""
     provider_receipt_id: str = ""
@@ -442,6 +461,7 @@ class AcquisitionRuntimeOperation(BaseModel):
     provider_status: str = ""
     health_status: str = ""
     input_locator: str = ""
+    tool_arguments: dict[str, object] = Field(default_factory=dict)
     input_digest: str = ""
     requested_at: str = ""
     completed_at: str = ""

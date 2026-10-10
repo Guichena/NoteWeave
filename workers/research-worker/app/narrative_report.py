@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from app.json_repair import parse_json_payload
 from app.llm_client import LlmClient
@@ -21,6 +21,8 @@ class NarrativeReportResult:
     markdown: str
     mode: str
     reason: str | None = None
+    # 实际发出的模型调用次数，宿主按角色预算核对
+    llm_calls: int = 0
 
 
 class NarrativeReportPolisher:
@@ -36,49 +38,52 @@ class NarrativeReportPolisher:
         comparison_required = _comparison_table_required(question)
         if self.llm_client is None:
             return _fallback(cells, limitations, "LLM_UNAVAILABLE", question)
-        response = self.llm_client.complete_json(
-            "research.synthesis",
-            {
-                "contract": {
-                    "title": "non-empty string",
-                    "executive_summary": "evidence-bound summary",
-                    "sections": [{
-                        "heading": "non-empty string",
-                        "paragraphs": [{
-                            "text": "article-style prose",
-                            "cell_keys": ["frozen cell keys"],
-                            "evidence_keys": ["evidence keys attached to those cells"],
-                        }],
+        request_payload: dict[str, object] = {
+            "contract": {
+                "title": "non-empty string",
+                "executive_summary": "evidence-bound summary",
+                "sections": [{
+                    "heading": "non-empty string",
+                    "paragraphs": [{
+                        "text": "article-style prose",
+                        "cell_keys": ["frozen cell keys"],
+                        "evidence_keys": ["evidence keys attached to those cells"],
                     }],
-                    "comparison_table": {
-                        "columns": ["comparison dimensions, only when useful"],
-                        "rows": [{
-                            "cells": ["one value per column"],
-                            "cell_keys": ["frozen cell keys supporting the row"],
-                            "evidence_keys": ["accepted evidence keys supporting the row"],
-                        }],
-                    },
-                    "limitations": ["known limitations only"],
+                }],
+                "comparison_table": {
+                    "columns": ["comparison dimensions, only when useful"],
+                    "rows": [{
+                        "cells": ["one value per column"],
+                        "cell_keys": ["frozen cell keys supporting the row"],
+                        "evidence_keys": ["accepted evidence keys supporting the row"],
+                    }],
                 },
-                "rules": [
-                    "Use only facts present in frozen_cells.",
-                    "Every paragraph must cite at least one cell_key and evidence_key.",
-                    "Do not add sources, numbers, dates, versions, names, or conclusions.",
-                    "Write a cohesive professional research article, not an audit log.",
-                    "Return JSON only.",
-                    "For a comparison question, comparison_table is required and must contain at least two evidence-bound rows.",
-                ],
-                "frozen_cells": cells,
-                "research_question": question,
-                "known_limitations": limitations,
+                "limitations": ["known limitations only"],
             },
-        )
-        parsed = parse_json_payload(response)
-        try:
-            narrative = _normalize_narrative(parsed, cells, limitations, question, comparison_required)
-        except ValueError as exc:
-            return _fallback(cells, limitations, str(exc), question)
-        return NarrativeReportResult(narrative, _render_markdown(narrative), "LLM")
+            "rules": [
+                "Use only facts present in frozen_cells.",
+                "Every paragraph must cite at least one cell_key and evidence_key.",
+                "Do not add sources, numbers, dates, versions, names, or conclusions.",
+                "Write a cohesive professional research article, not an audit log.",
+                "Return JSON only.",
+                "For a comparison question, comparison_table is required and must contain at least two evidence-bound rows.",
+            ],
+            "frozen_cells": cells,
+            "research_question": question,
+            "known_limitations": limitations,
+        }
+        # 模型偶尔返回无法解析或不合契约的 JSON；带上失败原因重试一次，仍失败才退回确定性模板
+        failure = ""
+        for attempt in range(1, 3):
+            payload = request_payload if not failure else {**request_payload, "previous_attempt_error": failure}
+            parsed = parse_json_payload(self.llm_client.complete_json("research.synthesis", payload))
+            try:
+                narrative = _normalize_narrative(parsed, cells, limitations, question, comparison_required)
+            except ValueError as exc:
+                failure = str(exc)
+                continue
+            return NarrativeReportResult(narrative, _render_markdown(narrative), "LLM", llm_calls=attempt)
+        return replace(_fallback(cells, limitations, failure, question), llm_calls=2)
 
 
 def _validated_cells(synthesis_input: dict[str, object]) -> list[dict[str, object]]:
@@ -190,7 +195,7 @@ def _fallback(
         })
     narrative: dict[str, object] = {
         "schema_version": "research-reader-report.v1",
-        "title": question or "Research report",
+        "title": question or "研究报告",
         "executive_summary": "以下报告仅综合已通过核验的研究结论，并为每项事实保留可回溯的证据引用。",
         "sections": sections,
         "comparison_table": {},

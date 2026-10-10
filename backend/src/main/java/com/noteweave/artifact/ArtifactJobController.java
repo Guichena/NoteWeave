@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.transaction.annotation.Transactional;
 
 @RestController
 @RequestMapping("/api/v2/workspaces/{workspaceId}/artifact-jobs")
@@ -98,7 +99,8 @@ public class ArtifactJobController {
     }
 
     @PostMapping("/{artifactJobId}/versions/{versionNo}/rollback")
-    ApiResponse<ArtifactVersionDetailResponse> rollbackArtifactVersion(
+    @Transactional
+    public ApiResponse<ArtifactVersionDetailResponse> rollbackArtifactVersion(
             @PathVariable String workspaceId,
             @PathVariable String artifactJobId,
             @PathVariable int versionNo,
@@ -107,10 +109,12 @@ public class ArtifactJobController {
         String sourceVersionId = artifactJobService
                 .getVersionDetail(workspaceId, artifactJobId, versionNo)
                 .versionId();
+        List<ArtifactExportService.PreparedFile> preparedFiles =
+                artifactExportService.prepareRollbackFiles(sourceVersionId);
         ArtifactVersionDetailResponse rolledBack = artifactJobService.rollbackVersion(
                 workspaceId, artifactJobId, versionNo, request
         );
-        artifactExportService.copyFiles(sourceVersionId, rolledBack.versionId());
+        artifactExportService.publishPreparedFiles(rolledBack.versionId(), preparedFiles);
         return ApiResponse.success(artifactJobService.getVersionDetail(
                 workspaceId, artifactJobId, rolledBack.versionNo()
         ));
@@ -156,6 +160,28 @@ public class ArtifactJobController {
                                 .build()
                                 .toString()
                 )
+                .body(file.content());
+    }
+
+    @GetMapping("/{artifactJobId}/versions/{versionNo}/files")
+    ApiResponse<List<ArtifactFileMetadataResponse>> listArtifactFiles(
+            @PathVariable String workspaceId, @PathVariable String artifactJobId,
+            @PathVariable int versionNo) {
+        return ApiResponse.success(artifactExportService.listVersionFiles(
+                workspaceId, artifactJobId, versionNo));
+    }
+
+    @GetMapping("/{artifactJobId}/versions/{versionNo}/files/{fileId}")
+    ResponseEntity<byte[]> downloadArtifactFile(
+            @PathVariable String workspaceId, @PathVariable String artifactJobId,
+            @PathVariable int versionNo, @PathVariable String fileId) {
+        ArtifactDownloadFile file = artifactExportService.downloadFile(
+                workspaceId, artifactJobId, versionNo, fileId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(file.mediaType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename(file.fileName(), StandardCharsets.UTF_8)
+                                .build().toString())
                 .body(file.content());
     }
 }

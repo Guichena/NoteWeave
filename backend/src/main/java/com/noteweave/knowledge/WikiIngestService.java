@@ -13,6 +13,8 @@ import java.util.Map;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -31,6 +33,22 @@ public class WikiIngestService {
     private final WikiIngestTransactionExecutor transactionExecutor;
 
     private static final Duration ORPHANED_PENDING_TASK_AGE = Duration.ofMinutes(10);
+    /** 自动概念页正文里的固定说明，用来区分自动生成的概念页和用户手工创建的页面。 */
+    static final String CONCEPT_PAGE_MARKER = "该概念页由工作台级 Wiki ingest 自动汇聚";
+    /** 资料页构建说明里的固定文字，用来识别自动生成的资料页。 */
+    static final String SOURCE_PAGE_MARKER = "该页面由工作台级 Wiki ingest 根据资料变化生成";
+    /** 资料页来源小节里记录概念指纹的前缀。 */
+    static final String CONCEPT_FINGERPRINT_LABEL = "- concept_fingerprint: `";
+    /** 资料页列出当前选中概念的小节标题。 */
+    static final String SELECTED_CONCEPTS_HEADING = "## 关联概念";
+    private static final Logger log = LoggerFactory.getLogger(WikiIngestService.class);
+    private WikiConceptSuggester conceptSuggester = WikiConceptSuggester.ruleBasedOnly();
+
+    /** 概念页的选题：有大模型时由模型挑选核心术语，否则按规则抽取。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setConceptSuggester(WikiConceptSuggester conceptSuggester) {
+        if (conceptSuggester != null) this.conceptSuggester = conceptSuggester;
+    }
 
     public WikiIngestService(
             JdbcTemplate jdbcTemplate,
@@ -275,14 +293,25 @@ public class WikiIngestService {
     private KnowledgeItemResponse ingestSource(String workspaceId, String sourceId) {
         SourceForWiki source = loadSource(workspaceId, sourceId);
         List<ChunkForWiki> chunks = loadChunks(workspaceId, sourceId);
+        String leadingText = String.join("\n", chunks.stream().map(ChunkForWiki::content).toList());
+        String fingerprint = conceptFingerprint(source, leadingText);
+        // 先选定概念，再写入页面和引用，缩短事务内持有写锁的时间。
+        // 资料内容没变时沿用上次选出的概念，避免每次重建都让模型重新挑选、概念页来回变动
+        List<String> concepts = reusableConcepts(workspaceId, source.title(), fingerprint);
+        if (concepts.isEmpty()) {
+            concepts = conceptSuggester.suggest(source.title(), source.summary(), source.tagsJson(), leadingText,
+                    loadAutoConceptTitles(workspaceId));
+        }
+        // 在写入资料页之前清理旧概念页，写入时的自动链接就不会再指向即将删除的页面
+        pruneOrphanedConceptPages(workspaceId, source.title(), concepts);
         List<String> citationIds = createCitations(workspaceId, chunks, 3);
         KnowledgeItemResponse sourcePage = knowledgeCommandService.upsertWikiPageForInternalExecution(
                 workspaceId,
                 source.title(),
-                buildSourcePageContent(source, chunks),
+                buildSourcePageContent(source, chunks, concepts, fingerprint),
                 citationIds
         );
-        for (String concept : WikiConceptExtractor.extract(source.title(), source.tagsJson())) {
+        for (String concept : concepts) {
             List<SourceForWiki> relatedSources = loadRelatedSourcesForConcept(workspaceId, concept, 4);
             if (relatedSources.isEmpty()) {
                 relatedSources = List.of(source);
@@ -296,12 +325,106 @@ public class WikiIngestService {
             knowledgeCommandService.upsertWikiPageForInternalExecution(
                     workspaceId,
                     concept,
-                    buildConceptPageContent(concept, relatedSources, relatedChunks, source),
+                    buildConceptPageContent(concept, relatedSources, relatedChunks, concepts),
                     conceptCitationIds
             );
         }
         refreshWorkspaceIndexPage(workspaceId, source.title());
         return sourcePage;
+    }
+
+    /**
+     * 清理不再被任何资料页选中的自动概念页。
+     * <p>
+     * 资料页的关联概念小节列出它当前选出的概念；概念选择变化后（例如规则抽取换成模型挑选），
+     * 旧概念页不会再被覆盖，只会残留在目录里。这里不能看链接表：自动链接会把正文里出现的页面标题
+     * 也标成链接，旧概念页会因此一直被引用。只删除从未被用户编辑过的自动概念页，
+     * 用户改过或手工创建的页面一律保留。
+     */
+    private int pruneOrphanedConceptPages(String workspaceId, String currentSourceTitle, List<String> currentConcepts) {
+        // 当前资料的资料页还没写入，它的选中概念以本次结果为准；其他资料以各自资料页为准
+        java.util.Set<String> selected = new java.util.HashSet<>(currentConcepts);
+        jdbcTemplate.queryForList("""
+                select v.content
+                from knowledge_item page
+                join knowledge_version v on v.id = page.latest_version_id
+                join source s on s.workspace_id = page.workspace_id and s.title = page.title
+                where page.workspace_id = ? and page.item_type = 'WIKI' and page.status = 'ACTIVE'
+                  and s.status = 'READY' and page.title <> ?
+                """, String.class, workspaceId, currentSourceTitle)
+                .forEach(content -> selected.addAll(selectedConcepts(content)));
+        List<String> orphanIds = new ArrayList<>();
+        jdbcTemplate.query("""
+                select i.id, i.title
+                from knowledge_item i
+                join knowledge_version v on v.id = i.latest_version_id
+                where i.workspace_id = ?
+                  and i.item_type = 'WIKI'
+                  and i.status = 'ACTIVE'
+                  and i.updated_by like 'SYSTEM:%'
+                  and v.content like ?
+                """, rs -> {
+            if (!selected.contains(rs.getString("title"))) orphanIds.add(rs.getString("id"));
+        }, workspaceId, "%" + CONCEPT_PAGE_MARKER + "%");
+        for (String itemId : orphanIds) {
+            knowledgeCommandService.deleteItem(itemId);
+        }
+        if (!orphanIds.isEmpty()) {
+            log.info("Pruned {} orphaned Wiki concept pages in workspace {}", orphanIds.size(), workspaceId);
+        }
+        return orphanIds.size();
+    }
+
+    /** 资料内容指纹：标题、摘要和正文开头都没变时，概念选择可以直接沿用。 */
+    static String conceptFingerprint(SourceForWiki source, String leadingText) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest(
+                    (source.title() + "\n" + source.summary() + "\n" + leadingText)
+                            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest).substring(0, 16);
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 unavailable", ex);
+        }
+    }
+
+    /** 现有资料页的指纹与本次一致时，返回它关联概念小节里的概念；否则返回空列表。 */
+    private List<String> reusableConcepts(String workspaceId, String sourceTitle, String fingerprint) {
+        List<String> contents = jdbcTemplate.queryForList("""
+                select v.content
+                from knowledge_item i
+                join knowledge_version v on v.id = i.latest_version_id
+                where i.workspace_id = ? and i.item_type = 'WIKI' and i.status = 'ACTIVE' and i.title = ?
+                """, String.class, workspaceId, sourceTitle);
+        if (contents.isEmpty() || !contents.get(0).contains(CONCEPT_FINGERPRINT_LABEL + fingerprint + "`")) {
+            return List.of();
+        }
+        return selectedConcepts(contents.get(0));
+    }
+
+    /** 工作台里已有的自动概念页标题，提示模型沿用，让不同资料能汇聚到同一个概念页。 */
+    private List<String> loadAutoConceptTitles(String workspaceId) {
+        return jdbcTemplate.queryForList("""
+                select i.title
+                from knowledge_item i
+                join knowledge_version v on v.id = i.latest_version_id
+                where i.workspace_id = ? and i.item_type = 'WIKI' and i.status = 'ACTIVE' and v.content like ?
+                order by i.updated_at desc
+                limit 40
+                """, String.class, workspaceId, "%" + CONCEPT_PAGE_MARKER + "%");
+    }
+
+    /** 读取资料页关联概念小节里的 [[概念]] 列表。 */
+    public static List<String> selectedConcepts(String sourcePageContent) {
+        if (sourcePageContent == null) return List.of();
+        int start = sourcePageContent.indexOf(SELECTED_CONCEPTS_HEADING);
+        if (start < 0) return List.of();
+        int bodyStart = start + SELECTED_CONCEPTS_HEADING.length();
+        int end = sourcePageContent.indexOf("\n## ", bodyStart);
+        String section = sourcePageContent.substring(bodyStart, end < 0 ? sourcePageContent.length() : end);
+        List<String> concepts = new ArrayList<>();
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\\[\\[([^\\]]+)]]").matcher(section);
+        while (matcher.find()) concepts.add(matcher.group(1).trim());
+        return concepts;
     }
 
     private List<String> readySourceIds(String workspaceId) {
@@ -395,16 +518,16 @@ public class WikiIngestService {
         }).toList();
     }
 
-    private String buildSourcePageContent(SourceForWiki source, List<ChunkForWiki> chunks) {
+    private String buildSourcePageContent(SourceForWiki source, List<ChunkForWiki> chunks, List<String> concepts,
+                                          String fingerprint) {
         StringBuilder builder = new StringBuilder();
         builder.append("# ").append(source.title()).append("\n\n");
         builder.append("## 资料摘要\n\n");
         builder.append(source.summary().isBlank() ? "该页面由 Wiki ingest 根据资料内容生成，可通过 Wiki 工作台继续维护。" : source.summary()).append("\n\n");
-        List<String> concepts = WikiConceptExtractor.extract(source.title(), source.tagsJson());
         builder.append("## 页面导航\n\n");
         builder.append("- [[Wiki Index]]\n");
         if (!concepts.isEmpty()) {
-            builder.append("\n## 关联概念\n\n");
+            builder.append("\n").append(SELECTED_CONCEPTS_HEADING).append("\n\n");
             for (String concept : concepts) {
                 builder.append("- [[").append(concept).append("]]\n");
             }
@@ -418,9 +541,10 @@ public class WikiIngestService {
         builder.append("\n## 来源\n\n");
         builder.append("- source_id: `").append(source.sourceId()).append("`\n");
         builder.append("- source_type: `").append(source.sourceType()).append("`\n");
-        builder.append("- tags: `").append(source.tagsJson()).append("`\n\n");
+        builder.append("- tags: `").append(source.tagsJson()).append("`\n");
+        builder.append(CONCEPT_FINGERPRINT_LABEL).append(fingerprint).append("`\n\n");
         builder.append("## 构建说明\n\n");
-        builder.append("该页面由工作台级 Wiki ingest 根据资料变化生成，不绑定单次会话。\n");
+        builder.append(SOURCE_PAGE_MARKER).append("，不绑定单次会话。\n");
         return builder.toString();
     }
 
@@ -428,12 +552,12 @@ public class WikiIngestService {
             String concept,
             List<SourceForWiki> relatedSources,
             List<ChunkForWiki> relatedChunks,
-            SourceForWiki triggerSource
+            List<String> siblingConcepts
     ) {
         StringBuilder builder = new StringBuilder();
         builder.append("# ").append(concept).append("\n\n");
         builder.append("## 概念摘要\n\n");
-        builder.append("该概念页由工作台级 Wiki ingest 自动汇聚，与 `").append(concept).append("` 相关的资料页和片段会持续回流到这里。\n\n");
+        builder.append(CONCEPT_PAGE_MARKER).append("，与 `").append(concept).append("` 相关的资料页和片段会持续回流到这里。\n\n");
         builder.append("## 相关资料\n\n");
         builder.append("- [[Wiki Index]]\n");
         for (SourceForWiki related : relatedSources) {
@@ -454,7 +578,7 @@ public class WikiIngestService {
             }
         }
         builder.append("\n## 相邻概念\n\n");
-        for (String sibling : WikiConceptExtractor.extract(triggerSource.title(), triggerSource.tagsJson())) {
+        for (String sibling : siblingConcepts) {
             if (!sibling.equalsIgnoreCase(concept)) {
                 builder.append("- [[").append(sibling).append("]]\n");
             }
