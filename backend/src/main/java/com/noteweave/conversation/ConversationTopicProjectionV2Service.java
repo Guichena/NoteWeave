@@ -64,9 +64,17 @@ public class ConversationTopicProjectionV2Service {
                     "Deleted messages require topic redaction before shadow projection refresh",
                     HttpStatus.CONFLICT);
         }
+        // 已经落库的话题划分不回溯修改：作为固定前缀交给切分器，只对之后的消息做新的判断
+        List<TopicSegmenterV2.Segment> persisted = jdbc.query("""
+                select id, topic_id, start_seq, end_seq, decision_status, decision_reason, rule_version
+                from conversation_topic_segment_v2
+                where conversation_id = ? and decision_status <> 'STALE' order by start_seq
+                """, (rs, index) -> new TopicSegmenterV2.Segment(rs.getString("id"), rs.getString("topic_id"),
+                rs.getInt("start_seq"), rs.getInt("end_seq"), rs.getString("decision_status"),
+                rs.getString("decision_reason"), rs.getString("rule_version")), conversationId);
         TopicSegmenterV2.Projection projection = segmenter.segment(rows.stream()
                 .map(row -> new TopicSegmenterV2.Message(row.id(), row.seq(), row.role(), row.text()))
-                .toList());
+                .toList(), persisted);
         Map<Integer, MessageRow> bySeq = new HashMap<>();
         for (MessageRow row : rows) bySeq.put(row.seq(), row);
         List<StoredSegment> existing = jdbc.query("""

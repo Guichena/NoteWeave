@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import hashlib
-import re
 from typing import Any
 
 from app.models import ResearchEvidenceCard, ResearchReadWindow
 from app.llm_client import LlmClient
 from app.json_repair import parse_json_payload
 from app.claim_fact_validator import validate_claim_facts
+from app.text_terms import coverage, is_negated
+
+# 没有大模型做语义判断时，claim 至少要有这个比例的词项能在引文里找到，才算得到引文支持
+LEXICAL_SUPPORT_THRESHOLD = 0.12
 
 
 def verify_report_citations(
@@ -68,7 +71,7 @@ def verify_report_citations(
                 and deterministic_allows_support
                 and (
                     semantic_status == "ENTAILED"
-                    or semantic_status == "NOT_RUN" and support_score >= 0.12
+                    or semantic_status == "NOT_RUN" and support_score >= LEXICAL_SUPPORT_THRESHOLD
                 )
             )
             status = "PASS" if span_valid and association_valid and support_valid else "FAIL"
@@ -149,35 +152,13 @@ def _dict_items(value: Any) -> list[dict[str, Any]]:
 
 
 def _lexical_support(claim: str, quote: str) -> float:
-    claim_tokens = _tokens(claim)
-    evidence_tokens = _tokens(quote)
-    if not claim_tokens or not evidence_tokens:
-        return 0.0
-    return round(len(claim_tokens & evidence_tokens) / len(claim_tokens), 4)
-
-
-def _tokens(text: str) -> set[str]:
-    return {
-        token.strip(".,:;!?()[]{}\"'").lower()
-        for token in str(text).replace("_", " ").replace("-", " ").split()
-        if len(token.strip(".,:;!?()[]{}\"'")) >= 3
-    }
+    """claim 的词项有多大比例出现在引文里；中文按相邻两字切分，否则整句会被当成一个词，得分恒为 0。"""
+    return coverage(claim, quote)
 
 
 def _polarity_consistent(claim: str, quote: str) -> bool:
     """Reject obvious negation inversions; lexical overlap alone must not certify them."""
-    latin_negations = {
-        "not", "no", "never", "neither", "without", "cannot", "can't", "doesn't",
-        "didn't", "isn't", "wasn't", "aren't", "weren't",
-    }
-    cjk_negations = {"不", "未", "没有", "并非", "不能", "无法", "从未", "否认", "反对"}
-    claim_lower = claim.lower()
-    quote_lower = quote.lower()
-    claim_words = set(re.findall(r"[a-z]+(?:'[a-z]+)?", claim_lower))
-    quote_words = set(re.findall(r"[a-z]+(?:'[a-z]+)?", quote_lower))
-    claim_negative = bool(claim_words & latin_negations) or any(token in claim for token in cjk_negations)
-    quote_negative = bool(quote_words & latin_negations) or any(token in quote for token in cjk_negations)
-    return claim_negative == quote_negative
+    return is_negated(claim) == is_negated(quote)
 
 
 def _semantic_support_status(

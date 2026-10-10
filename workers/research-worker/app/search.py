@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
 from app.models import ResearchPlan, ResearchSearchHit, ResearchTaskInput, SourceScopeItem
+from app.text_terms import terms as text_terms
 
 
 @dataclass
@@ -160,18 +160,7 @@ def _score_query_coverage(query: str, source: SourceScopeItem) -> tuple[list[str
 
 
 def _terms(text: str) -> set[str]:
-    terms = {
-        token
-        for token in re.findall(r"[a-zA-Z0-9]+", text.lower())
-        if len(token) >= 3
-    }
-    for chunk in re.findall(r"[\u4e00-\u9fff]+", text):
-        if len(chunk) == 1:
-            terms.add(chunk)
-            continue
-        for index in range(len(chunk) - 1):
-            terms.add(chunk[index:index + 2])
-    return terms
+    return text_terms(text)
 
 
 def _search_angle(query: str, query_index: int) -> str:

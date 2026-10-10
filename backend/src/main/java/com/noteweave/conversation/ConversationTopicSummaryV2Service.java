@@ -22,7 +22,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class ConversationTopicSummaryV2Service {
     static final String COMPILER_VERSION = "topic-summary-v2-incremental-a2";
     private static final String SUMMARY_TOPIC = "noteweave.conversation.summary";
-    private static final int RAW_TAIL = 8;
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
@@ -40,12 +39,19 @@ public class ConversationTopicSummaryV2Service {
                 select id from conversation where id = ? and workspace_id = ? for update
                 """, (rs, index) -> rs.getString(1), conversationId, workspaceId);
         if (locked.size() != 1) throw invalid("conversation does not belong to Workspace");
-        Integer lastSeq = jdbc.queryForObject("""
-                select max(message_seq) from conversation_message
+        // 摘要覆盖到原文窗口之前：原文窗口的大小与上下文规划器用同一套按 token 计算的规则
+        List<SourceMessage> latest = jdbc.query("""
+                select id, message_seq, role, content from conversation_message
                 where workspace_id = ? and conversation_id = ? and context_status = 'CURRENT'
-                """, Integer.class, workspaceId, conversationId);
-        if (lastSeq == null || lastSeq <= RAW_TAIL) return 0;
-        int coveredEnd = lastSeq - RAW_TAIL;
+                order by message_seq desc limit ?
+                """, (rs, index) -> new SourceMessage(rs.getString(1), rs.getInt(2),
+                rs.getString(3), rs.getString(4)),
+                workspaceId, conversationId, ContextWindowPlannerV2.MAX_RAW_TAIL_MESSAGES + 1);
+        java.util.Collections.reverse(latest);
+        int tailSize = ContextWindowPlannerV2.rawTailSize(
+                latest.stream().map(SourceMessage::text).toList(), ContextWindowPlannerV2.RAW_TAIL_TOKEN_TARGET);
+        if (latest.size() <= tailSize) return 0;
+        int coveredEnd = latest.get(latest.size() - tailSize).seq() - 1;
         List<Segment> segments = jdbc.query("""
                 select id, topic_id, start_seq, end_seq from conversation_topic_segment_v2
                 where workspace_id = ? and conversation_id = ?

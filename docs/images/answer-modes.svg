@@ -23,7 +23,7 @@
   <text x="210" y="208" text-anchor="middle" font-size="16" font-weight="700" fill="#312e81">问答：混合检索</text>
   <g font-size="12.5" fill="#3730a3">
     <text x="48" y="236">1. 问题向量化（Embedding）</text>
-    <text x="48" y="260">2. Elasticsearch 同时做 BM25 与 kNN 召回</text>
+    <text x="48" y="260">2. BM25（中文按二元组切词）与 kNN 同时召回</text>
     <text x="48" y="284">3. RRF 按名次融合两路结果</text>
     <text x="48" y="308">4. 召回过少时扩展查询再召回一次</text>
     <text x="48" y="332">5. Rerank 精排（可按配置关闭）</text>
@@ -48,8 +48,8 @@
   <rect x="810" y="180" width="360" height="230" rx="12" fill="#faf5ff" stroke="#9333ea" stroke-width="1.6"/>
   <text x="990" y="208" text-anchor="middle" font-size="16" font-weight="700" fill="#581c87">Wiki：沿知识网络回答</text>
   <g font-size="12.5" fill="#7e22ce">
-    <text x="828" y="236">1. 从 Wiki Index 找到相关页面</text>
-    <text x="828" y="260">2. 读取页面正文与版本</text>
+    <text x="828" y="236">1. BM25F 按标题、摘要、正文加权检索页面</text>
+    <text x="828" y="260">2. 得分沿页面链接传播一次，带出相关页面</text>
     <text x="828" y="284">3. 沿链接与反向链接扩展，图遍历有预算</text>
     <text x="828" y="308">4. 通过来源回链定位到原始资料</text>
     <text x="828" y="332">资料变化时同步刷新页面，页面保留版本</text>

@@ -79,7 +79,7 @@ class KnowledgeQueryServiceTest {
     }
 
     @Test
-    void shouldPreserveLegacyWikiRankingAndNoMatchFallback() {
+    void titleAndSummaryMatchesOutrankBodyOnlyMatchesAndNoMatchReturnsNothing() {
         List<KnowledgePageHit> ranked = queryService.findRelevantWikiPages(
                 "workspace", "alpha beta");
 
@@ -90,12 +90,46 @@ class KnowledgeQueryServiceTest {
                 .extracting(KnowledgeItemResponse::itemId)
                 .containsExactly("item-a", "item-b");
 
-        assertThat(queryService.findRelevantWikiPages("workspace", "no-match-token"))
-                .extracting(KnowledgePageHit::itemId)
-                .containsExactly("item-b", "item-a");
-        assertThat(queryService.findRelevantWikiPages("workspace", "no-match-token"))
-                .extracting(KnowledgePageHit::score)
-                .containsOnly(0);
+        // 没有页面命中时不再用最近更新的页面充当证据
+        assertThat(queryService.findRelevantWikiPages("workspace", "no-match-token")).isEmpty();
+    }
+
+    @Test
+    void chineseQuestionsMatchPagesByBigramsAndLinkedPagesFollowStrongHits() {
+        insertWikiPage("item-cache", "version-cache", "缓存一致性方案",
+                "写请求先更新数据库，再删除缓存；删除失败时写入消息队列重试。", "先更新数据库再删缓存");
+        insertWikiPage("item-binlog", "version-binlog", "Binlog 订阅",
+                "通过 Canal 订阅 MySQL 变更日志，由独立消费者异步处理。", "Canal 变更订阅");
+        insertWikiPage("item-unrelated", "version-unrelated", "前端路由设计",
+                "页面路由按工作台划分，懒加载各个视图。", "路由与懒加载");
+        jdbcTemplate.update("""
+                insert into knowledge_item_link(
+                    workspace_id, source_item_id, target_item_id, target_title, relation_type,
+                    relation_status, mention_count, updated_at
+                ) values ('workspace', 'item-cache', 'item-binlog', 'Binlog 订阅', 'WIKI_LINK', 'RESOLVED', 1,
+                          timestamp '2026-07-14 12:00:00')
+                """);
+
+        List<KnowledgePageHit> hits = queryService.findRelevantWikiPages("workspace", "缓存一致性怎么保证？");
+
+        assertThat(hits).extracting(KnowledgePageHit::itemId)
+                .containsExactly("item-cache", "item-binlog");
+        assertThat(hits.get(0).score()).isGreaterThan(hits.get(1).score());
+        // 只零星共享一个词（Canal）的问题覆盖度不够，不算命中
+        assertThat(queryService.findRelevantWikiPages("workspace", "Canal 与量子计算的发展前景和未来展望")).isEmpty();
+    }
+
+    private void insertWikiPage(String itemId, String versionId, String title, String content, String summary) {
+        jdbcTemplate.update("""
+                insert into knowledge_item(
+                    id, workspace_id, item_type, page_kind, title, status, latest_version_id, updated_at
+                ) values (?, 'workspace', 'WIKI', 'TOPIC', ?, 'ACTIVE', ?, timestamp '2026-07-15 10:00:00')
+                """, itemId, title, versionId);
+        jdbcTemplate.update("""
+                insert into knowledge_version(
+                    id, item_id, version_no, content, summary, source_message_id, created_at
+                ) values (?, ?, 1, ?, ?, null, timestamp '2026-07-15 10:00:00')
+                """, versionId, itemId, content, summary);
     }
 
     @Test
@@ -141,8 +175,9 @@ class KnowledgeQueryServiceTest {
 
         assertThat(queryService.searchWikiPages("workspace", "architecture"))
                 .extracting(KnowledgeItemResponse::itemId)
-                .hasSize(122)
-                .contains("matching-item-0");
+                // 121 个新页面加上原有的 item-a；item-b 不含该词，但链接到 item-a，通过链接传播进入结果
+                .hasSize(123)
+                .contains("matching-item-0", "item-a", "item-b");
     }
 
     @Test
