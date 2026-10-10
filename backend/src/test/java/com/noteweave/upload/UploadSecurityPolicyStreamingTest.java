@@ -42,6 +42,19 @@ class UploadSecurityPolicyStreamingTest {
     }
 
     @Test
+    void gbkTextIsAcceptedButUtf8CutMidCharacterIsNot() throws Exception {
+        byte[] gbk = "缓存一致性：先更新数据库，再删除缓存。".getBytes(java.nio.charset.Charset.forName("GBK"));
+        Path gbkFile = write("gbk.txt", gbk);
+        assertThatCode(() -> policy.validateMergedFile("text/plain", gbk.length, gbkFile)).doesNotThrowAnyException();
+        assertThatCode(() -> policy.validateMergedContent("text/plain", gbk.length, gbk)).doesNotThrowAnyException();
+
+        // 末尾缺字节的 UTF-8 恰好也能凑成 GB18030 字符，仍按截断的 UTF-8 拒绝
+        byte[] utf8 = "资料".getBytes(StandardCharsets.UTF_8);
+        byte[] cut = java.util.Arrays.copyOf(utf8, utf8.length - 1);
+        assertCode(write("cut-tail.md", cut), "text/markdown", cut.length, "UPLOAD_TEXT_ENCODING_INVALID");
+    }
+
+    @Test
     void pdfOnlyNeedsItsSignature() throws Exception {
         byte[] pdf = "%PDF-1.7 binary \u0000 content".getBytes(StandardCharsets.ISO_8859_1);
         Path file = write("doc.pdf", pdf);

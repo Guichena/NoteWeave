@@ -124,7 +124,7 @@ public class QaHybridRetriever {
             }
             owned.add(new RetrievedChunk(
                     hit.chunkId(), owner.sourceId(), owner.sourceSnapshotId(), hit.chunkNo(),
-                    hit.title(), enrich(hit.content(), context), "chunk:" + hit.chunkNo(), hit.sourceType(),
+                    hit.title(), enrich(hit.content(), context), owner.locationOr("chunk:" + hit.chunkNo()), hit.sourceType(),
                     owner.generatedBy(), owner.generatedRefId(),
                     (int) Math.round(ranked.rerankScore() * 1000), reason,
                     Math.max(hit.vectorScore(), hit.keywordScore()), hit.rrfScore(), ranked.rerankScore()));

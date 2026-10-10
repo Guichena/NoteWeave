@@ -18,14 +18,14 @@
 
     <rect x="232" y="100" width="170" height="130" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.6"/>
     <text x="317" y="130" text-anchor="middle" font-size="16" font-weight="700" fill="#065f46">解析 Parse</text>
-    <text x="317" y="156" text-anchor="middle" fill="#047857">PDF / 文档提取文本</text>
-    <text x="317" y="178" text-anchor="middle" fill="#047857">音视频转交转写</text>
+    <text x="317" y="156" text-anchor="middle" fill="#047857">逐页提取，去页眉页脚</text>
+    <text x="317" y="178" text-anchor="middle" fill="#047857">编码识别，音视频转写</text>
     <text x="317" y="204" text-anchor="middle" font-family="Consolas, Menlo, monospace" font-size="10.5" fill="#64748b">noteweave.source.parse</text>
 
     <rect x="434" y="100" width="170" height="130" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.6"/>
     <text x="519" y="130" text-anchor="middle" font-size="16" font-weight="700" fill="#065f46">切片 Chunk</text>
-    <text x="519" y="156" text-anchor="middle" fill="#047857">900 字窗口</text>
-    <text x="519" y="178" text-anchor="middle" fill="#047857">120 字重叠</text>
+    <text x="519" y="156" text-anchor="middle" fill="#047857">按章节与句子切分</text>
+    <text x="519" y="178" text-anchor="middle" fill="#047857">≤600 Token，带页码</text>
     <text x="519" y="204" text-anchor="middle" font-family="Consolas, Menlo, monospace" font-size="10.5" fill="#64748b">noteweave.source.chunk</text>
 
     <rect x="636" y="100" width="170" height="130" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.6"/>

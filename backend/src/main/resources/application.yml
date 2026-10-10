@@ -177,8 +177,8 @@ noteweave:
       bucket-derived: ${NOTEWEAVE_MINIO_BUCKET_DERIVED:noteweave-derived}
       bucket-export: ${NOTEWEAVE_MINIO_BUCKET_EXPORT:noteweave-export}
   document:
-    chunk-size: ${NOTEWEAVE_DOCUMENT_CHUNK_SIZE:900}
-    chunk-overlap: ${NOTEWEAVE_DOCUMENT_CHUNK_OVERLAP:120}
+    chunk-max-tokens: ${NOTEWEAVE_DOCUMENT_CHUNK_MAX_TOKENS:600}
+    chunk-overlap-tokens: ${NOTEWEAVE_DOCUMENT_CHUNK_OVERLAP_TOKENS:80}
   kafka:
     enabled: ${NOTEWEAVE_KAFKA_ENABLED:true}
     topics:

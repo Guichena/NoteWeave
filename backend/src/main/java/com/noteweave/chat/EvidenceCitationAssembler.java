@@ -29,9 +29,10 @@ public class EvidenceCitationAssembler {
             String citationId = Ids.newId();
             jdbcTemplate.update("""
                     insert into citation(id, workspace_id, source_id, source_snapshot_id, source_chunk_id, title, quote_text, page_no, location_info)
-                    values (?, ?, ?, ?, ?, ?, ?, null, ?)
+                    values (?, ?, ?, ?, ?, ?, ?, (select sc.page_start from source_chunk sc where sc.id = ?), ?)
                     """, citationId, workspaceId, citation.sourceId(), citation.sourceSnapshotId(),
-                    citation.passageId(), citation.title(), trim(citation.quoteText(), 360), citation.location());
+                    citation.passageId(), citation.title(), trim(citation.quoteText(), 360), citation.passageId(),
+                    citation.location());
             jdbcTemplate.update("""
                     insert into message_citation(id, message_id, citation_id, sort_order)
                     values (?, ?, ?, ?)
