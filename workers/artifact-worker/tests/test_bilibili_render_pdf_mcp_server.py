@@ -6,11 +6,14 @@ import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
+import anyio
 import pytest
+from mcp import ClientSession
+from mcp.shared.memory import create_client_server_memory_streams
 from PIL import Image
 
-import mcp.bilibili_render_pdf_server as mcp_module
-from mcp.bilibili_render_pdf_server import BilibiliRenderPdfServer
+import mcp_servers.bilibili_render_pdf_server as mcp_module
+from mcp_servers.bilibili_render_pdf_server import BilibiliRenderPdfServer
 from app.video_frame_capture import CapturedFrame, CaptureResult
 
 
@@ -23,10 +26,46 @@ def _sandboxed_server(root: Path) -> BilibiliRenderPdfServer:
     return server
 
 
+def _dispatch(server: BilibiliRenderPdfServer, message: dict) -> dict:
+    """经官方 MCP SDK 的内存会话（真实握手与协议编解码）发送一条请求，返回 JSON-RPC 形状的结果。"""
+
+    async def run() -> dict:
+        sdk_server = server.build_server()
+        async with create_client_server_memory_streams() as (client_streams, server_streams):
+            async with anyio.create_task_group() as task_group:
+                task_group.start_soon(
+                    sdk_server.run,
+                    server_streams[0],
+                    server_streams[1],
+                    sdk_server.create_initialization_options(),
+                )
+                async with ClientSession(*client_streams) as session:
+                    initialized = await session.initialize()
+                    method = message["method"]
+                    params = message.get("params") or {}
+                    if method == "initialize":
+                        result = initialized
+                    elif method == "tools/list":
+                        result = await session.list_tools()
+                    elif method == "tools/call":
+                        result = await session.call_tool(params["name"], params.get("arguments"))
+                    else:
+                        raise AssertionError(f"unsupported test method: {method}")
+                task_group.cancel_scope.cancel()
+        return {"result": result.model_dump(mode="json", by_alias=True, exclude_none=True)}
+
+    return anyio.run(run)
+
+
+def _error_text(response: dict) -> str:
+    assert response["result"]["isError"] is True
+    return response["result"]["content"][0]["text"]
+
+
 def test_initialize_should_expose_mcp_server_info() -> None:
     server = BilibiliRenderPdfServer()
 
-    response = server.handle_message(
+    response = _dispatch(server, 
         {
             "jsonrpc": "2.0",
             "id": "init",
@@ -36,7 +75,7 @@ def test_initialize_should_expose_mcp_server_info() -> None:
     )
 
     assert response is not None
-    assert response["result"]["protocolVersion"] == "2025-06-18"
+    assert response["result"]["protocolVersion"]
     assert response["result"]["serverInfo"]["name"] == "bilibili-render-pdf"
     assert response["result"]["capabilities"]["tools"]["listChanged"] is False
 
@@ -44,7 +83,7 @@ def test_initialize_should_expose_mcp_server_info() -> None:
 def test_tools_list_should_expose_expected_skill_surface() -> None:
     server = BilibiliRenderPdfServer()
 
-    response = server.handle_message(
+    response = _dispatch(server, 
         {
             "jsonrpc": "2.0",
             "id": 1,
@@ -73,7 +112,7 @@ def test_analyze_frame_mcp_passes_only_frozen_frame_identity(tmp_path, monkeypat
         return {"schema_version": "frame-observation-v1", "observations": []}
 
     monkeypatch.setattr(mcp_module, "observe_staged_frame", fake_observe)
-    response = server.handle_message({
+    response = _dispatch(server, {
         "jsonrpc": "2.0", "id": 2, "method": "tools/call",
         "params": {"name": "analyze_frame", "arguments": {
             "task_id": "task-1", "file_id": "frame-1", "checksum_sha256": "a" * 64,
@@ -219,7 +258,7 @@ def test_get_bilibili_subtitle_should_fetch_remote_subtitle_artifact(tmp_path: P
         "fetch_exit_code": 0,
     }
 
-    response = server.handle_message(
+    response = _dispatch(server, 
         {
             "jsonrpc": "2.0",
             "id": 2,
@@ -309,7 +348,7 @@ def test_get_bilibili_subtitle_should_fallback_to_transcription_when_subtitles_m
         "ok": True,
     }
 
-    response = server.handle_message(
+    response = _dispatch(server, 
         {
             "jsonrpc": "2.0",
             "id": 3,
@@ -336,7 +375,7 @@ def test_get_bilibili_subtitle_should_fallback_to_transcription_when_subtitles_m
 def test_render_latex_pdf_should_write_tex_and_real_pdf_artifacts(tmp_path: Path) -> None:
     server = _sandboxed_server(tmp_path)
 
-    response = server.handle_message(
+    response = _dispatch(server, 
         {
             "jsonrpc": "2.0",
             "id": 4,
@@ -402,7 +441,7 @@ def test_render_latex_pdf_should_run_xelatex_twice_for_toc_and_references(
     calls: list[list[str]] = []
 
     monkeypatch.setattr(
-        "mcp.bilibili_render_pdf_server.shutil.which",
+        "mcp_servers.bilibili_render_pdf_server.shutil.which",
         lambda executable: "/usr/bin/xelatex" if executable == "xelatex" else None,
     )
 
@@ -411,7 +450,7 @@ def test_render_latex_pdf_should_run_xelatex_twice_for_toc_and_references(
         (Path(cwd) / "two-pass.pdf").write_bytes(b"%PDF-1.7\n")
         return SimpleNamespace(returncode=0, stdout=f"pass {len(calls)}", stderr="")
 
-    monkeypatch.setattr("mcp.bilibili_render_pdf_server.subprocess.run", fake_run)
+    monkeypatch.setattr("mcp_servers.bilibili_render_pdf_server.subprocess.run", fake_run)
 
     result = server._render_latex_pdf(
         {
@@ -438,12 +477,12 @@ def test_transcribe_local_audio_should_fail_cleanly_when_skill_env_missing(
     original_python = server.transcribe_venv_python
     server.transcribe_venv_python = tmp_path / "missing-python.exe"
     monkeypatch.setattr(
-        "mcp.bilibili_render_pdf_server.importlib.util.find_spec",
+        "mcp_servers.bilibili_render_pdf_server.importlib.util.find_spec",
         lambda _name: None,
     )
     monkeypatch.setattr(server, "_looks_like_conda_env", lambda _path: False)
     try:
-        response = server.handle_message(
+        response = _dispatch(server, 
             {
                 "jsonrpc": "2.0",
                 "id": 5,
@@ -457,11 +496,10 @@ def test_transcribe_local_audio_should_fail_cleanly_when_skill_env_missing(
     finally:
         server.transcribe_venv_python = original_python
 
-    assert response is not None
-    assert response["error"]["code"] == -32602
+    message = _error_text(response)
     assert (
-        "setup_bilibili_render_pdf_mcp_env.ps1" in response["error"]["message"]
-        or "setup_audio_env.ps1" in response["error"]["message"]
+        "setup_bilibili_render_pdf_mcp_env.ps1" in message
+        or "setup_audio_env.ps1" in message
     )
 
 
@@ -474,7 +512,7 @@ def test_transcribe_local_audio_should_use_bundled_runtime_without_codex_skill(
     audio_path.write_bytes(b"fake-audio")
     server.transcribe_script = tmp_path / "missing-codex-skill-script.py"
     monkeypatch.setattr(
-        "mcp.bilibili_render_pdf_server.importlib.util.find_spec",
+        "mcp_servers.bilibili_render_pdf_server.importlib.util.find_spec",
         lambda name: object() if name == "faster_whisper" else None,
     )
     server._run_transcription = lambda **kwargs: {
@@ -489,21 +527,22 @@ def test_transcribe_local_audio_should_use_bundled_runtime_without_codex_skill(
     assert result["execution_mode"] == "bundled_faster_whisper"
 
 
-def test_handle_line_should_support_json_array_batch() -> None:
+def test_tool_call_should_reject_arguments_outside_input_schema() -> None:
     server = BilibiliRenderPdfServer()
-    payload = json.dumps(
-        [
-            {"jsonrpc": "2.0", "id": "a", "method": "ping"},
-            {"jsonrpc": "2.0", "id": "b", "method": "tools/list", "params": {}},
-        ],
-        ensure_ascii=False,
-    )
 
-    responses = server.handle_line(payload)
+    missing = _dispatch(server, {
+        "method": "tools/call",
+        "params": {"name": "get_bilibili_subtitle", "arguments": {}},
+    })
+    unexpected = _dispatch(server, {
+        "method": "tools/call",
+        "params": {"name": "analyze_frame", "arguments": {
+            "task_id": "task-1", "file_id": "frame-1", "checksum_sha256": "a" * 64, "path": "/etc/passwd",
+        }},
+    })
 
-    assert len(responses) == 2
-    assert responses[0]["result"] == {}
-    assert "tools" in responses[1]["result"]
+    assert "video_url" in _error_text(missing)
+    assert "path" in _error_text(unexpected)
 
 
 def test_local_paths_outside_mcp_sandbox_should_be_rejected(tmp_path: Path) -> None:
@@ -511,7 +550,7 @@ def test_local_paths_outside_mcp_sandbox_should_be_rejected(tmp_path: Path) -> N
     outside = tmp_path / "outside.mp3"
     outside.write_bytes(b"fake-audio")
 
-    response = server.handle_message({
+    response = _dispatch(server, {
         "jsonrpc": "2.0",
         "id": "outside",
         "method": "tools/call",
@@ -521,6 +560,4 @@ def test_local_paths_outside_mcp_sandbox_should_be_rejected(tmp_path: Path) -> N
         },
     })
 
-    assert response is not None
-    assert response["error"]["code"] == -32602
-    assert "must stay inside" in response["error"]["message"]
+    assert "must stay inside" in _error_text(response)

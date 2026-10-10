@@ -12,7 +12,7 @@ SYSTEM_BILIBILI_SERVER_ID = "builtin-bilibili-mcp"
 
 def list_system_mcp_servers() -> list[CustomMcpServerRegistration]:
     worker_root = Path(__file__).resolve().parents[1]
-    server_script = worker_root / "mcp" / "bilibili_render_pdf_server.py"
+    server_script = worker_root / "mcp_servers" / "bilibili_render_pdf_server.py"
     return [
         CustomMcpServerRegistration(
             server_id=SYSTEM_BILIBILI_SERVER_ID,

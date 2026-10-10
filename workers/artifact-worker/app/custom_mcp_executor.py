@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import json
 import os
-import subprocess
+import tempfile
 import threading
-import uuid
+from datetime import timedelta
 from pathlib import Path
+from typing import Any
+
+import anyio
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 
 from app.acquisition_runtime import (
     acknowledge_acquisition_operation,
@@ -101,73 +108,68 @@ def _call_custom_mcp_tool(server: object, operation: dict[str, object]) -> dict[
     if not working_directory:
         raise ValueError(f"custom MCP server working directory is missing: {server.server_id}")
 
-    init_request_id = f"init-{uuid.uuid4().hex}"
-    call_request_id = f"call-{uuid.uuid4().hex}"
-    init_message = {
-        "jsonrpc": "2.0",
-        "id": init_request_id,
-        "method": "initialize",
-        "params": {"protocolVersion": "2025-06-18"},
-    }
-    tool_call_message = {
-        "jsonrpc": "2.0",
-        "id": call_request_id,
-        "method": "tools/call",
-        "params": {
-            "name": str(operation.get("tool_name", "")),
-            "arguments": _build_tool_arguments(operation),
-        },
-    }
-    raw_input = "\n".join([json.dumps(init_message), json.dumps(tool_call_message)]) + "\n"
-    env = {**os.environ, **server.launch_env}
-    completed = subprocess.run(
-        command,
-        input=raw_input,
+    tool_name = str(operation.get("tool_name", ""))
+    arguments = _build_tool_arguments(operation)
+    parameters = StdioServerParameters(
+        command=command[0],
+        args=command[1:],
+        env={**os.environ, **server.launch_env},
         cwd=working_directory,
-        env=env or None,
-        text=True,
         encoding="utf-8",
-        errors="replace",
-        capture_output=True,
-        check=False,
-        timeout=load_settings().mcp_process_timeout_seconds,
+        encoding_error_handler="replace",
     )
-    stdout = completed.stdout or ""
-    stderr = completed.stderr or ""
-    if completed.returncode != 0:
-        raise ValueError(stderr.strip() or stdout.strip() or "custom MCP process failed")
-    responses = []
-    for raw_line in stdout.splitlines():
-        stripped = raw_line.strip()
-        if not stripped:
-            continue
-        responses.append(json.loads(stripped))
-    tool_response = next(
-        (item for item in responses if str(item.get("id", "")) == call_request_id),
-        None,
-    )
-    if tool_response is None:
-        raise ValueError("custom MCP tool call returned no matching response")
-    if "error" in tool_response:
-        error = tool_response["error"]
-        raise ValueError(str(error.get("message") or "custom MCP tool call failed"))
-    result = tool_response.get("result") or {}
-    if result.get("isError"):
-        raise ValueError("custom MCP tool call returned isError=true")
-    structured = result.get("structuredContent")
+    timeout_seconds = load_settings().mcp_process_timeout_seconds
+    with tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as stderr_log:
+        try:
+            result = _run_blocking(
+                lambda: _call_tool_over_stdio(parameters, tool_name, arguments, timeout_seconds, stderr_log)
+            )
+        except Exception as exc:
+            stderr_log.seek(0)
+            stderr_tail = stderr_log.read()[-2000:].strip()
+            raise ValueError(stderr_tail or str(exc) or "custom MCP process failed") from exc
+    if result.isError:
+        message = next((item.text for item in result.content if getattr(item, "type", "") == "text"), "")
+        raise ValueError(message.strip() or "custom MCP tool call returned isError=true")
+    structured = result.structuredContent
     if isinstance(structured, dict):
         validate_json_payload_size(structured, label="MCP structured content")
         return structured
-    content = result.get("content") or []
-    if content:
-        text = str(content[0].get("text", "")).strip()
-        if text:
-            payload = json.loads(text)
-            if not isinstance(payload, dict):
-                raise ValueError("custom MCP tool content must decode to an object")
-            validate_json_payload_size(payload, label="MCP text content")
-            return payload
+    text = next((item.text for item in result.content if getattr(item, "type", "") == "text"), "").strip()
+    if text:
+        payload = json.loads(text)
+        if not isinstance(payload, dict):
+            raise ValueError("custom MCP tool content must decode to an object")
+        validate_json_payload_size(payload, label="MCP text content")
+        return payload
     raise ValueError("custom MCP tool call returned no structured content")
+
+
+async def _call_tool_over_stdio(
+    parameters: StdioServerParameters,
+    tool_name: str,
+    arguments: dict[str, Any],
+    timeout_seconds: float,
+    stderr_log: Any,
+) -> Any:
+    """用官方 MCP SDK 启动 stdio 服务端，完成握手后调用一次工具；整个会话受进程超时约束。"""
+    with anyio.fail_after(timeout_seconds):
+        async with stdio_client(parameters, errlog=stderr_log) as (read_stream, write_stream):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                return await session.call_tool(
+                    tool_name, arguments, read_timeout_seconds=timedelta(seconds=timeout_seconds)
+                )
+
+
+def _run_blocking(coroutine_factory: Any) -> Any:
+    """在同步调用方里执行协程；调用方线程已有事件循环时，换到独立线程执行。"""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return anyio.run(coroutine_factory)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(anyio.run, coroutine_factory).result()
 
 
 def _build_tool_arguments(operation: dict[str, object]) -> dict[str, object]:

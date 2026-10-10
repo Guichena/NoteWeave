@@ -17,12 +17,16 @@ WORKER_ROOT = Path(__file__).resolve().parents[1]
 if str(WORKER_ROOT) not in sys.path:
     sys.path.insert(0, str(WORKER_ROOT))
 
+import anyio
+import mcp.types as types
+from mcp.server.lowlevel import Server
+from mcp.server.stdio import stdio_server
+
 from app.video_frame_capture import capture_local_video
 from app.video_frame_observation import observe_staged_frame
 from PIL import Image
 
 
-MCP_PROTOCOL_VERSION = "2025-06-18"
 SERVER_NAME = "bilibili-render-pdf"
 SERVER_VERSION = "0.1.0"
 SUBTITLE_EXTENSIONS = (".srt", ".vtt", ".ass")
@@ -52,56 +56,28 @@ class BilibiliRenderPdfServer:
         self.input_root.mkdir(parents=True, exist_ok=True)
         self.output_root.mkdir(parents=True, exist_ok=True)
 
-    def serve_stdio(self) -> int:
-        for raw_line in sys.stdin:
-            line = raw_line.strip()
-            if not line:
-                continue
-            for response in self.handle_line(line):
-                sys.stdout.write(json.dumps(response, ensure_ascii=False) + "\n")
-                sys.stdout.flush()
-        return 0
+    def build_server(self) -> Server:
+        """用官方 MCP SDK 暴露工具；协议握手、参数按 inputSchema 校验和错误封装都交给 SDK。"""
+        server: Server = Server(SERVER_NAME, version=SERVER_VERSION)
 
-    def handle_line(self, line: str) -> list[dict[str, Any]]:
-        payload = json.loads(line)
-        if isinstance(payload, list):
-            return [response for item in payload if (response := self.handle_message(item)) is not None]
-        response = self.handle_message(payload)
-        return [response] if response is not None else []
+        @server.list_tools()
+        async def list_tools() -> list[types.Tool]:
+            return [
+                types.Tool(name=tool["name"], description=tool["description"], inputSchema=tool["inputSchema"])
+                for tool in self._tools_list()
+            ]
 
-    def handle_message(self, request: dict[str, Any]) -> dict[str, Any] | None:
-        request_id = request.get("id")
-        method = request.get("method")
-        if not method:
-            return self._error(request_id, -32600, "Invalid request")
-        if request_id is None:
-            return None
+        @server.call_tool()
+        async def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            # 工具内部是阻塞的下载、转写和编译，放到工作线程里执行，不阻塞协议读写。
+            return await anyio.to_thread.run_sync(self.call_tool, name, arguments)
 
-        try:
-            if method == "initialize":
-                return self._result(request_id, self._initialize_result(request.get("params") or {}))
-            if method == "ping":
-                return self._result(request_id, {})
-            if method == "tools/list":
-                return self._result(request_id, {"tools": self._tools_list()})
-            if method == "tools/call":
-                return self._result(request_id, self._call_tool(request.get("params") or {}))
-        except Exception as exc:
-            return self._error(request_id, -32602, str(exc))
-        return self._error(request_id, -32601, "Method not found")
+        return server
 
-    def _initialize_result(self, params: dict[str, Any]) -> dict[str, Any]:
-        protocol_version = params.get("protocolVersion", MCP_PROTOCOL_VERSION)
-        if protocol_version not in {"2024-11-05", "2025-03-26", MCP_PROTOCOL_VERSION}:
-            protocol_version = MCP_PROTOCOL_VERSION
-        return {
-            "protocolVersion": protocol_version,
-            "capabilities": {"tools": {"listChanged": False}},
-            "serverInfo": {
-                "name": SERVER_NAME,
-                "version": SERVER_VERSION,
-            },
-        }
+    async def serve_stdio(self) -> None:
+        server = self.build_server()
+        async with stdio_server() as (read_stream, write_stream):
+            await server.run(read_stream, write_stream, server.create_initialization_options())
 
     def _tools_list(self) -> list[dict[str, Any]]:
         return [
@@ -244,23 +220,20 @@ class BilibiliRenderPdfServer:
             },
         ]
 
-    def _call_tool(self, params: dict[str, Any]) -> dict[str, Any]:
-        tool_name = params.get("name")
-        arguments = params.get("arguments") or {}
-        if not tool_name:
-            raise ValueError("tools/call requires name")
+    def call_tool(self, tool_name: str, arguments: dict[str, Any] | None) -> dict[str, Any]:
+        arguments = arguments or {}
         if tool_name == "get_bilibili_subtitle":
-            return _tool_result(self._get_bilibili_subtitle(arguments))
+            return self._get_bilibili_subtitle(arguments)
         if tool_name == "transcribe_local_audio":
-            return _tool_result(self._transcribe_local_audio(arguments))
+            return self._transcribe_local_audio(arguments)
         if tool_name == "capture_bilibili_frames":
-            return _tool_result(self._capture_bilibili_frames(arguments))
+            return self._capture_bilibili_frames(arguments)
         if tool_name == "analyze_frame":
-            return _tool_result(self._analyze_frame(arguments))
+            return self._analyze_frame(arguments)
         if tool_name == "analyze_frames":
-            return _tool_result(self._analyze_frames(arguments))
+            return self._analyze_frames(arguments)
         if tool_name == "render_latex_pdf":
-            return _tool_result(self._render_latex_pdf(arguments))
+            return self._render_latex_pdf(arguments)
         raise ValueError(f"Unknown tool: {tool_name}")
 
     def _analyze_frame(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -777,12 +750,6 @@ class BilibiliRenderPdfServer:
             return prefix + body_text + "\n" + suffix
         return template + "\n" + body_text
 
-    def _result(self, request_id: Any, result: Any) -> dict[str, Any]:
-        return {"jsonrpc": "2.0", "id": request_id, "result": result}
-
-    def _error(self, request_id: Any, code: int, message: str) -> dict[str, Any]:
-        return {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}
-
     def _resolve_transcription_python(self) -> tuple[Path, str, list[str]]:
         current_python = Path(sys.executable).resolve()
         notes = [
@@ -796,7 +763,7 @@ class BilibiliRenderPdfServer:
             return self.transcribe_venv_python, "delegated_skill_script_in_skill_venv", notes
         raise ValueError(
             "No usable Python runtime found for transcription. "
-            "Create the dedicated conda environment with workers/artifact-worker/mcp/setup_bilibili_render_pdf_mcp_env.ps1 "
+            "Create the dedicated conda environment with workers/artifact-worker/mcp_servers/setup_bilibili_render_pdf_mcp_env.ps1 "
             "or run the skill's setup_audio_env.ps1 first."
         )
 
@@ -813,7 +780,7 @@ class BilibiliRenderPdfServer:
         if importlib.util.find_spec("yt_dlp") is None:
             raise ValueError(
                 "yt-dlp is not available in the MCP environment. "
-                "Run workers/artifact-worker/mcp/setup_bilibili_render_pdf_mcp_env.ps1 to install remote fetch dependencies."
+                "Run workers/artifact-worker/mcp_servers/setup_bilibili_render_pdf_mcp_env.ps1 to install remote fetch dependencies."
             )
 
     def _resolve_output_dir(self, requested_output_dir: str, *, bucket: str, stem: str) -> Path:
@@ -1251,15 +1218,6 @@ class BilibiliRenderPdfServer:
         return lines
 
 
-def _tool_result(output: Any) -> dict[str, Any]:
-    text = json.dumps(output, ensure_ascii=False)
-    return {
-        "content": [{"type": "text", "text": text}],
-        "structuredContent": output,
-        "isError": False,
-    }
-
-
 def _required_string(arguments: dict[str, Any], key: str) -> str:
     value = arguments.get(key)
     if not isinstance(value, str) or not value.strip():
@@ -1574,7 +1532,8 @@ def main() -> int:
     args = parser.parse_args()
     if args.transport != "stdio":
         raise SystemExit("Only stdio transport is supported in this independent module.")
-    return BilibiliRenderPdfServer().serve_stdio()
+    anyio.run(BilibiliRenderPdfServer().serve_stdio)
+    return 0
 
 
 if __name__ == "__main__":

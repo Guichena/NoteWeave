@@ -28,10 +28,10 @@ if (-not (Test-Path -LiteralPath $serverScript)) {
     throw "MCP server script not found at $serverScript"
 }
 if (-not (Test-Path -LiteralPath (Join-Path $envPrefix "conda-meta\history"))) {
-    throw "Dedicated conda environment is missing or incomplete at $envPrefix. Run workers/artifact-worker/mcp/setup_bilibili_render_pdf_mcp_env.ps1 first."
+    throw "Dedicated conda environment is missing or incomplete at $envPrefix. Run workers/artifact-worker/mcp_servers/setup_bilibili_render_pdf_mcp_env.ps1 first."
 }
 if (-not (Test-Path -LiteralPath (Join-Path $envPrefix "python.exe"))) {
-    throw "Dedicated conda environment is missing python.exe at $envPrefix. Run workers/artifact-worker/mcp/setup_bilibili_render_pdf_mcp_env.ps1 first."
+    throw "Dedicated conda environment is missing python.exe at $envPrefix. Run workers/artifact-worker/mcp_servers/setup_bilibili_render_pdf_mcp_env.ps1 first."
 }
 
 & $condaBat run --no-capture-output -p $envPrefix python $serverScript

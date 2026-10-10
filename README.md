@@ -61,12 +61,14 @@ Backend 是研究状态的唯一来源：规划研究表、分发子任务、合
 
 | 组件 | 实现 |
 | --- | --- |
-| Backend | Java 17、Spring Boot 3.3、Spring JDBC、Flyway（迁移到 `V130`） |
+| Backend | Java 17、Spring Boot 3.3、Spring JDBC、Flyway（迁移到 `V130`）、OpenAI Java SDK |
 | Frontend | React 19、TypeScript 5、Vite 5，Nginx 托管 |
-| Research Worker | Python 3.12、Pydantic、kafka-python |
-| Artifact Worker | Python 3.12、FastAPI、faster-whisper、yt-dlp、XeLaTeX、python-pptx |
+| Research Worker | Python 3.12、Pydantic、kafka-python、OpenAI Python SDK |
+| Artifact Worker | Python 3.12、FastAPI、OpenAI Python SDK、MCP Python SDK、faster-whisper、yt-dlp、XeLaTeX、python-pptx |
 | 存储与中间件 | MySQL 8.4、Redis 7.2、Kafka、MinIO、Elasticsearch 8.15 |
 | 外部服务 | OpenAI 兼容大模型、Embedding、Rerank、Serper 联网检索 |
+
+模型调用统一使用 OpenAI 官方 SDK（Chat Completions 与 Embeddings 接口），可以接入任意兼容 OpenAI 协议的服务；Rerank 不属于 OpenAI 协议，单独实现。Agent 编排没有使用框架：研究状态放在 Backend 的研究表里，由状态机驱动，模型只在每一步产出结构化 JSON，便于验证、审计和断点恢复。系统 MCP 服务端和调用端都基于官方 MCP Python SDK，通过 stdio 通信，工具参数按 inputSchema 校验。
 
 Backend 与 Worker 之间的通信方式：研究子任务、产物任务和视频素材采集都由 Backend 写入 Outbox，再投递到 Kafka；Worker 通过带令牌和签名的内部 HTTP 接口回调结果；音视频资料转写由 Backend 直接调用 Artifact Worker 的 HTTP 接口。Worker 不直接写 Java 业务表。
 

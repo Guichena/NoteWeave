@@ -31,6 +31,8 @@ RUN cp /etc/apt/sources.list.d/debian.sources /tmp/debian.sources \
 RUN pip install --no-cache-dir \
     "fastapi>=0.115.0,<1" \
     "kafka-python>=2.0.2,<4" \
+    "mcp>=1.12,<2" \
+    "openai>=2.0,<3" \
     "pydantic-settings>=2.6.0,<3" \
     "Pillow>=11.0,<13" \
     "pypdf>=6.0,<7" \
@@ -42,7 +44,7 @@ RUN pip install --no-cache-dir \
     "uvicorn>=0.32.0,<1"
 
 COPY app ./app
-COPY mcp ./mcp
+COPY mcp_servers ./mcp_servers
 RUN mkdir -p /app/runtime
 
 EXPOSE 18092

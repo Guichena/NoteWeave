@@ -8,6 +8,9 @@ import urllib.error
 import urllib.request
 from typing import Callable, Protocol
 
+import httpx
+from openai import APIStatusError, OpenAI, OpenAIError
+
 from app.config import load_settings
 from app.http_security import credential_safe_urlopen
 from app.json_repair import parse_json_payload
@@ -80,8 +83,41 @@ class QuoteTamperFaultLlmClient:
         return summary() if callable(summary) else {"provider_call_count": 1, "call_count": 1, "calls": []}
 
 
+class _CredentialSafeTransport(httpx.BaseTransport):
+    """SDK 的 HTTP 出口交给 credential_safe_urlopen：只连公网地址、拒绝重定向，密钥不会被转发到其他主机。"""
+
+    def __init__(self, default_timeout_seconds: float) -> None:
+        self.default_timeout_seconds = default_timeout_seconds
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        timeout = (request.extensions.get("timeout") or {}).get("read") or self.default_timeout_seconds
+        headers = {
+            key: value
+            for key, value in request.headers.items()
+            if key.lower() not in {"host", "connection", "accept-encoding", "content-length"}
+        }
+        url_request = urllib.request.Request(
+            str(request.url), data=request.read() or None, headers=headers, method=request.method
+        )
+        try:
+            with credential_safe_urlopen(url_request, timeout=timeout) as response:
+                body = response.read()
+        except urllib.error.HTTPError as exc:
+            try:
+                error_body = exc.read() or b""
+            except Exception:
+                error_body = b""
+            return httpx.Response(exc.code, content=error_body, request=request)
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            raise httpx.ConnectError(str(exc), request=request) from exc
+        return httpx.Response(200, headers={"content-type": "application/json"}, content=body, request=request)
+
+
 class OpenAICompatibleLlmClient:
-    """Minimal OpenAI-compatible JSON client without adding worker dependencies."""
+    """基于 OpenAI 官方 SDK 的 JSON 客户端，兼容任意 OpenAI 协议的服务。
+
+    SDK 自带重试关闭，由本类逐次重试：每次尝试前检查取消，并记录每次的 HTTP 状态用于预算结算。
+    """
 
     def __init__(
         self,
@@ -110,6 +146,16 @@ class OpenAICompatibleLlmClient:
         self.context_safety_buffer_chars = max(0, context_safety_buffer_chars)
         self.call_records: list[dict[str, object]] = []
         self.cancellation_checker: Callable[[], None] | None = None
+        self.client = OpenAI(
+            api_key=api_key,
+            base_url=self.base_url,
+            max_retries=0,
+            timeout=timeout_seconds,
+            http_client=httpx.Client(
+                transport=_CredentialSafeTransport(timeout_seconds),
+                follow_redirects=False,
+            ),
+        )
 
     def set_cancellation_checker(self, checker: Callable[[], None] | None) -> None:
         self.cancellation_checker = checker
@@ -121,7 +167,7 @@ class OpenAICompatibleLlmClient:
             payload,
             max(1000, self.max_input_chars - self.context_safety_buffer_chars),
         )
-        request_payload = {
+        request_payload: dict[str, object] = {
             "model": model,
             "messages": [
                 {
@@ -144,8 +190,9 @@ class OpenAICompatibleLlmClient:
             ],
             "response_format": {"type": "json_object"},
         }
+        extra_body: dict[str, object] = {}
         if model.lower().startswith("glm-5"):
-            request_payload["thinking"] = {"type": "disabled"}
+            extra_body["thinking"] = {"type": "disabled"}
         if "temperature" in purpose_config:
             request_payload["temperature"] = float(purpose_config["temperature"])
         if "seed" in purpose_config:
@@ -165,15 +212,6 @@ class OpenAICompatibleLlmClient:
                 "CALL_BUDGET_EXHAUSTED",
             )
             return ""
-        request = urllib.request.Request(
-            f"{self.base_url}/chat/completions",
-            data=json.dumps(request_payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}",
-            },
-            method="POST",
-        )
         data: dict[str, object] | None = None
         termination_reason = "RETRY_EXHAUSTED"
         attempts = 0
@@ -183,22 +221,30 @@ class OpenAICompatibleLlmClient:
                 self.cancellation_checker()
             attempts = attempt
             try:
-                with credential_safe_urlopen(request, timeout=purpose_timeout_seconds) as response:
-                    data = json.loads(response.read().decode("utf-8"))
+                completion = self.client.chat.completions.create(
+                    **request_payload,
+                    extra_body=extra_body or None,
+                    timeout=purpose_timeout_seconds,
+                )
+                data = completion.model_dump()
                 termination_reason = "SUCCESS"
                 break
-            except urllib.error.HTTPError as exc:
-                http_statuses.append(exc.code)
-                logger.warning("LLM JSON completion attempt %s failed for %s: %s", attempt, purpose, exc)
-                if 400 <= exc.code < 500 and exc.code not in {408, 429}:
-                    termination_reason = f"NON_RETRYABLE_HTTP_{exc.code}"
+            except APIStatusError as exc:
+                http_statuses.append(exc.status_code)
+                logger.warning(
+                    "LLM JSON completion attempt %s failed for %s: HTTP %s", attempt, purpose, exc.status_code
+                )
+                if 400 <= exc.status_code < 500 and exc.status_code not in {408, 429}:
+                    termination_reason = f"NON_RETRYABLE_HTTP_{exc.status_code}"
                     break
                 if attempt < purpose_max_attempts:
                     time.sleep(min(2 ** (attempt - 1), 4))
-            except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
+            except (OpenAIError, ValueError) as exc:
                 logger.warning("LLM JSON completion attempt %s failed for %s: %s", attempt, purpose, exc)
                 if attempt < purpose_max_attempts:
                     time.sleep(min(2 ** (attempt - 1), 4))
+        if extra_body:
+            request_payload = {**request_payload, **extra_body}
         if data is None:
             self._record_call(
                 purpose, request_payload, {}, attempts, started, termination_reason,

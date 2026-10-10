@@ -47,8 +47,8 @@ _custom_artifact_config_store_path: Path | None = None
 
 def _default_bilibili_render_pdf_blueprint() -> CustomMcpServerRegistration:
     repo_root = Path(__file__).resolve().parents[2]
-    server_script = repo_root / "mcp" / "bilibili_render_pdf_server.py"
-    launcher_script = repo_root / "mcp" / "launch_bilibili_render_pdf_mcp.ps1"
+    server_script = repo_root / "mcp_servers" / "bilibili_render_pdf_server.py"
+    launcher_script = repo_root / "mcp_servers" / "launch_bilibili_render_pdf_mcp.ps1"
     env_prefix = repo_root / ".conda" / "bilibili-render-pdf-mcp"
     return CustomMcpServerRegistration(
         server_id="custom-bilibili-render-pdf",

@@ -484,6 +484,60 @@ def test_llm_gateway_should_not_retry_non_retryable_http_4xx(monkeypatch) -> Non
     assert client.usage_summary()["calls"][0]["termination_reason"] == "NON_RETRYABLE_HTTP_401"
 
 
+def test_llm_gateway_should_send_sdk_request_through_credential_safe_transport(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"choices":[{"message":{"content":"{\\"ok\\":true}"}}]}'
+
+    def fake_urlopen(request, **kwargs):
+        captured["url"] = request.full_url
+        captured["method"] = request.get_method()
+        captured["headers"] = {key.lower(): value for key, value in request.header_items()}
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        captured["timeout"] = kwargs["timeout"]
+        return Response()
+
+    monkeypatch.setattr("app.llm_client.credential_safe_urlopen", fake_urlopen)
+    client = OpenAICompatibleLlmClient(
+        "secret-key",
+        "model",
+        base_url="https://llm.example/v1/",
+        purpose_options={"research.extract": {"timeout_seconds": 17}},
+    )
+
+    assert client.complete_json("research.extract", {"x": 1}) == '{"ok":true}'
+    assert captured["url"] == "https://llm.example/v1/chat/completions"
+    assert captured["method"] == "POST"
+    assert captured["headers"]["authorization"] == "Bearer secret-key"
+    assert captured["body"]["response_format"] == {"type": "json_object"}
+    assert json.loads(captured["body"]["messages"][1]["content"])["purpose"] == "research.extract"
+    assert captured["timeout"] == 17
+
+
+def test_llm_gateway_should_not_follow_provider_redirects(monkeypatch) -> None:
+    calls = {"count": 0}
+
+    def redirect(request, **kwargs):
+        calls["count"] += 1
+        raise urllib.error.HTTPError(request.full_url, 302, "Provider redirects are forbidden", {}, None)
+
+    monkeypatch.setattr("app.llm_client.credential_safe_urlopen", redirect)
+    monkeypatch.setattr("app.llm_client.time.sleep", lambda *_: None)
+    client = OpenAICompatibleLlmClient("key", "model", max_attempts=2)
+
+    assert client.complete_json("research.extract", {"x": 1}) == ""
+    assert calls["count"] == 2
+    assert client.usage_summary()["calls"][0]["http_statuses"] == [302, 302]
+
+
 def test_llm_gateway_should_preserve_429_and_5xx_counts_across_retries(monkeypatch) -> None:
     statuses = iter([429, 503])
 
