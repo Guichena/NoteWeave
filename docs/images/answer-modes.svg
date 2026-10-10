@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" width="1200" height="640" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Source Han Sans SC, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="640" fill="#ffffff"/>
+  <text x="600" y="40" text-anchor="middle" font-size="24" font-weight="700" fill="#0f172a">问答 / 精读 / Wiki：三种回答模式，共用证据与引用约束</text>
+  <text x="600" y="66" text-anchor="middle" font-size="13" fill="#475569">按回答模式选择检索策略，证据先过预算与范围校验，再生成逐句带引用的回答</text>
+
+  <rect x="430" y="88" width="340" height="56" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-width="1.4"/>
+  <text x="600" y="112" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">用户问题 + 回答模式 + 资料范围</text>
+  <text x="600" y="133" text-anchor="middle" font-size="12" fill="#475569">AnswerModeStrategyRegistry 选择策略</text>
+
+  <g stroke="#475569" stroke-width="1.5" fill="none">
+    <path d="M600,144 L600,160 L210,160 L210,178" marker-end="url(#arrow)"/>
+    <path d="M600,160 L600,178" marker-end="url(#arrow)"/>
+    <path d="M600,160 L990,160 L990,178" marker-end="url(#arrow)"/>
+  </g>
+
+  <!-- QA -->
+  <rect x="30" y="180" width="360" height="230" rx="12" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.6"/>
+  <text x="210" y="208" text-anchor="middle" font-size="16" font-weight="700" fill="#312e81">问答：混合检索</text>
+  <g font-size="12.5" fill="#3730a3">
+    <text x="48" y="236">1. 问题向量化（Embedding）</text>
+    <text x="48" y="260">2. Elasticsearch 同时做 BM25 与 kNN 召回</text>
+    <text x="48" y="284">3. RRF 按名次融合两路结果</text>
+    <text x="48" y="308">4. 召回过少时扩展查询再召回一次</text>
+    <text x="48" y="332">5. Rerank 精排（可按配置关闭）</text>
+  </g>
+  <text x="48" y="366" font-size="11.5" fill="#6366f1">QaHybridRetriever · QaQueryExpansionService</text>
+  <text x="48" y="386" font-size="11.5" fill="#6366f1">QaRerankService</text>
+
+  <!-- NOTE -->
+  <rect x="420" y="180" width="360" height="230" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.6"/>
+  <text x="600" y="208" text-anchor="middle" font-size="16" font-weight="700" fill="#065f46">精读：先定位，再连续读</text>
+  <g font-size="12.5" fill="#047857">
+    <text x="438" y="236">1. 资料级召回，确定最相关的几份资料</text>
+    <text x="438" y="260">2. 按问题为候选窗口打分，选出阅读窗口</text>
+    <text x="438" y="284">3. 按原文顺序读取连续窗口</text>
+    <text x="438" y="308">4. 只依据读到的范围作答</text>
+    <text x="438" y="332">   窗口没覆盖到的内容明确说明</text>
+  </g>
+  <text x="438" y="366" font-size="11.5" fill="#059669">NoteRecallRetriever · NoteReadingPlanner</text>
+  <text x="438" y="386" font-size="11.5" fill="#059669">NoteReadingRetriever</text>
+
+  <!-- WIKI -->
+  <rect x="810" y="180" width="360" height="230" rx="12" fill="#faf5ff" stroke="#9333ea" stroke-width="1.6"/>
+  <text x="990" y="208" text-anchor="middle" font-size="16" font-weight="700" fill="#581c87">Wiki：沿知识网络回答</text>
+  <g font-size="12.5" fill="#7e22ce">
+    <text x="828" y="236">1. 从 Wiki Index 找到相关页面</text>
+    <text x="828" y="260">2. 读取页面正文与版本</text>
+    <text x="828" y="284">3. 沿链接与反向链接扩展，图遍历有预算</text>
+    <text x="828" y="308">4. 通过来源回链定位到原始资料</text>
+    <text x="828" y="332">资料变化时同步刷新页面，页面保留版本</text>
+  </g>
+  <text x="828" y="366" font-size="11.5" fill="#9333ea">WikiEvidenceRetriever · WikiGraphBudgeter</text>
+  <text x="828" y="386" font-size="11.5" fill="#9333ea">WikiIngestService · KnowledgeVersionService</text>
+
+  <g stroke="#475569" stroke-width="1.5" fill="none">
+    <path d="M210,410 L210,436 L600,436" />
+    <path d="M990,410 L990,436 L600,436" />
+    <path d="M600,410 L600,454" marker-end="url(#arrow)"/>
+  </g>
+
+  <rect x="150" y="456" width="900" height="74" rx="12" fill="#fff7ed" stroke="#ea580c" stroke-width="1.6"/>
+  <text x="600" y="482" text-anchor="middle" font-size="15" font-weight="700" fill="#7c2d12">证据约束（三种模式共用）</text>
+  <text x="600" y="506" text-anchor="middle" font-size="12.5" fill="#9a3412">EvidenceBudgeter 控制证据规模 · EvidenceScopeGuard / EvidenceOwnershipGuard 只允许本工作台、所选资料范围内的证据</text>
+  <text x="600" y="522" text-anchor="middle" font-size="12.5" fill="#9a3412">叠加对话上下文窗口与记忆编译出的表达控制</text>
+
+  <path d="M600,530 L600,552" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="150" y="554" width="900" height="66" rx="12" fill="#f8fafc" stroke="#64748b" stroke-width="1.4"/>
+  <text x="600" y="580" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">流式生成与引用回填</text>
+  <text x="600" y="604" text-anchor="middle" font-size="12.5" fill="#334155">OpenAI Java SDK 流式输出 → EvidenceCitationAssembler 把引用对应到证据 → SSE 推送；回答可回溯到原文片段</text>
+</svg>

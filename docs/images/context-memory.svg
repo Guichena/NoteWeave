@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 560" width="1200" height="560" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Source Han Sans SC, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="560" fill="#ffffff"/>
+  <text x="600" y="40" text-anchor="middle" font-size="24" font-weight="700" fill="#0f172a">Context 与 Memory：上下文按话题压缩，记忆经门控后只控制表达</text>
+  <text x="600" y="66" text-anchor="middle" font-size="13" fill="#475569">事实只来自资料证据；记忆决定怎么说，不决定说什么</text>
+
+  <!-- context lane -->
+  <text x="30" y="104" font-size="15" font-weight="700" fill="#312e81">上下文编译</text>
+  <g font-size="12.5">
+    <rect x="30" y="116" width="250" height="96" rx="12" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+    <text x="155" y="142" text-anchor="middle" font-size="14" font-weight="700" fill="#312e81">话题切分</text>
+    <text x="155" y="168" text-anchor="middle" fill="#3730a3">长对话按话题切成片段</text>
+    <text x="155" y="192" text-anchor="middle" font-size="11.5" fill="#6366f1">TopicSegmenterV2</text>
+
+    <rect x="320" y="116" width="250" height="96" rx="12" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+    <text x="445" y="142" text-anchor="middle" font-size="14" font-weight="700" fill="#312e81">增量摘要</text>
+    <text x="445" y="168" text-anchor="middle" fill="#3730a3">每个话题由大模型增量更新摘要</text>
+    <text x="445" y="192" text-anchor="middle" font-size="11.5" fill="#6366f1">ConversationTopicSummaryV2Service</text>
+
+    <rect x="610" y="116" width="270" height="96" rx="12" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+    <text x="745" y="142" text-anchor="middle" font-size="14" font-weight="700" fill="#312e81">窗口规划</text>
+    <text x="745" y="168" text-anchor="middle" fill="#3730a3">在 Token 预算内选取相关轮次与摘要</text>
+    <text x="745" y="192" text-anchor="middle" font-size="11.5" fill="#6366f1">ContextWindowPlannerV2</text>
+  </g>
+  <g stroke="#475569" stroke-width="1.5">
+    <line x1="280" y1="164" x2="318" y2="164" marker-end="url(#arrow)"/>
+    <line x1="570" y1="164" x2="608" y2="164" marker-end="url(#arrow)"/>
+  </g>
+
+  <!-- memory lane -->
+  <text x="30" y="264" font-size="15" font-weight="700" fill="#065f46">长期记忆</text>
+  <g font-size="12.5">
+    <rect x="30" y="276" width="250" height="120" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.4"/>
+    <text x="155" y="302" text-anchor="middle" font-size="14" font-weight="700" fill="#065f46">候选提取</text>
+    <text x="155" y="328" text-anchor="middle" fill="#047857">从对话中提取偏好与禁忌</text>
+    <text x="155" y="350" text-anchor="middle" fill="#047857">记录来源：明确要求或模型推断</text>
+    <text x="155" y="378" text-anchor="middle" font-size="11.5" fill="#059669">MemoryConversationExtractionService</text>
+
+    <rect x="320" y="276" width="250" height="120" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.4"/>
+    <text x="445" y="302" text-anchor="middle" font-size="14" font-weight="700" fill="#065f46">四项门控</text>
+    <text x="445" y="328" text-anchor="middle" fill="#047857">来源可信度 · 预期效用</text>
+    <text x="445" y="350" text-anchor="middle" fill="#047857">风险 · 与已有记忆冲突</text>
+    <text x="445" y="378" text-anchor="middle" font-size="11.5" fill="#059669">MemoryCandidateGate</text>
+
+    <rect x="610" y="276" width="270" height="120" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.4"/>
+    <text x="745" y="302" text-anchor="middle" font-size="14" font-weight="700" fill="#065f46">晋升或待确认</text>
+    <text x="745" y="328" text-anchor="middle" fill="#047857">全部通过自动生效，否则进入待确认</text>
+    <text x="745" y="350" text-anchor="middle" fill="#047857">用户可生效、忽略或停用；记忆有版本</text>
+    <text x="745" y="378" text-anchor="middle" font-size="11.5" fill="#059669">MemoryPromotionService</text>
+  </g>
+  <g stroke="#475569" stroke-width="1.5">
+    <line x1="280" y1="336" x2="318" y2="336" marker-end="url(#arrow)"/>
+    <line x1="570" y1="336" x2="608" y2="336" marker-end="url(#arrow)"/>
+  </g>
+
+  <!-- compile -->
+  <rect x="920" y="196" width="250" height="140" rx="12" fill="#fff7ed" stroke="#ea580c" stroke-width="1.6"/>
+  <text x="1045" y="224" text-anchor="middle" font-size="15" font-weight="700" fill="#7c2d12">编译控制包</text>
+  <g font-size="12.5" fill="#9a3412" text-anchor="middle">
+    <text x="1045" y="252">生效记忆编译为表达控制</text>
+    <text x="1045" y="276">（风格、结构、避免的写法）</text>
+    <text x="1045" y="300">编译结果缓存在 Redis</text>
+    <text x="1045" y="322" font-size="11.5" fill="#ea580c">MemoryCompilerService</text>
+  </g>
+  <path d="M880,336 L900,336 L900,300 L918,300" stroke="#475569" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- prompt -->
+  <rect x="300" y="436" width="870" height="90" rx="12" fill="#f8fafc" stroke="#64748b" stroke-width="1.6"/>
+  <text x="735" y="464" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">回答时组装输入</text>
+  <text x="735" y="490" text-anchor="middle" font-size="12.5" fill="#334155">对话上下文窗口 + 记忆表达控制 + 资料证据；回答界面展开可看到实际使用的上下文与表达控制</text>
+  <text x="735" y="512" text-anchor="middle" font-size="12.5" fill="#334155">使用后记录效果，效果变差的记忆回到待确认</text>
+  <g stroke="#475569" stroke-width="1.5" fill="none">
+    <path d="M880,150 L1185,150 L1185,418 L1120,418 L1120,434" marker-end="url(#arrow)"/>
+    <path d="M1045,336 L1045,434" marker-end="url(#arrow)"/>
+  </g>
+</svg>
