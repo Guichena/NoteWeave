@@ -51,7 +51,9 @@ try {
         $state = (Invoke-Json "GET" "$BaseUrl/api/v2/tasks/$($complete.task_id)").data
         if ($state.task_status -in @("COMPLETED", "FAILED", "CANCELLED")) { $state }
     } "source parse task terminal state"
-    if ($task.task_status -ne "COMPLETED") { throw "Source parse did not complete: $($task.task_status)" }
+    if ($task.task_status -ne "COMPLETED") {
+        throw "Source parse did not complete: $($task.task_status); phase=$($task.progress_phase); message=$($task.progress_message); error=$($task.error_message)"
+    }
     $source = Wait-Until {
         $sources = (Invoke-Json "GET" "$BaseUrl/api/v2/workspaces/$workspace/sources").data
         $item = $sources | Where-Object source_id -eq $complete.source_id | Select-Object -First 1
