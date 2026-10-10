@@ -11,9 +11,6 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -21,7 +18,8 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: maven
-      - run: mvn --batch-mode --no-transfer-progress clean test
+      # .mvn/maven.config 以仓库根目录为基准引用 .mvn/settings.xml，所以从根目录指定 pom 运行。
+      - run: mvn --batch-mode --no-transfer-progress -f backend/pom.xml clean test
 
   frontend:
     runs-on: ubuntu-latest
@@ -73,10 +71,13 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+      # PDF 讲义的便携渲染需要中文字体；XeLaTeX 不在 CI 安装，测试走便携渲染路径。
+      - name: Install CJK font for PDF rendering
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-arphic-gbsn00lp
       - name: Install test dependencies without optional transcription runtime
         run: |
           python -m pip install -e . --no-deps
-          python -m pip install "fastapi>=0.115,<1" "kafka-python>=2.0.2,<4" "pydantic-settings>=2.6,<3" "pytest>=9,<10" "reportlab>=4.2,<5" "uvicorn>=0.32,<1" "yt-dlp>=2025.6.30,<2027"
+          python -m pip install "fastapi>=0.115,<1" "kafka-python>=2.0.2,<4" "mcp>=1.12,<2" "openai>=2.0,<3" "pydantic-settings>=2.6,<3" "Pillow>=11.0,<13" "pypdf>=6.0,<7" "python-pptx>=1.0.2,<2" "pytest>=9,<10" "reportlab>=4.2,<5" "uvicorn>=0.32,<1" "yt-dlp>=2025.6.30,<2027"
       - run: python -m pytest -q
 
   compose-config:
