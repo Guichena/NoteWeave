@@ -59,22 +59,12 @@ public class MemoryCompilerPolicy {
                 .thenComparing(RankableMemory::memoryObjectId);
     }
 
+    /** 与上下文预算用同一套估算规则（见 ContextTokenEstimator），每条再加 1 个 token 作为提示词里的分隔开销。 */
     public int estimateTokens(String value) {
         if (value == null || value.isBlank()) {
             return 0;
         }
-        int han = 0;
-        int other = 0;
-        for (int index = 0; index < value.length();) {
-            int codePoint = value.codePointAt(index);
-            index += Character.charCount(codePoint);
-            if (Character.UnicodeScript.of(codePoint) == Character.UnicodeScript.HAN) {
-                han++;
-            } else if (!Character.isWhitespace(codePoint)) {
-                other++;
-            }
-        }
-        return han + (int) Math.ceil(other / 4.0) + 1;
+        return com.noteweave.conversation.ContextTokenEstimator.estimate(value.strip()) + 1;
     }
 
     public record RankableMemory(

@@ -109,6 +109,28 @@ class ContextWindowPlannerV2Test {
     }
 
     @Test
+    void longAnswersShrinkTheRawTailByTokensButKeepTheLastExchange() {
+        String longAnswer = "长回答".repeat(900);
+        List<ContextProjectionV2.RawMessage> messages = java.util.stream.IntStream.rangeClosed(1, 12)
+                .mapToObj(seq -> message(seq, seq % 2 == 0 ? longAnswer : "问题 " + seq)).toList();
+        var active = segment("A1", "A", 1, 12, "CONFIDENT");
+        var complete = summary("A1", "A", 1, 8, "first eight messages");
+
+        ContextProjectionV2 result = planner.compile(new ContextWindowPlannerV2.Input(
+                "workspace", "actor", "conversation", 12, "question", "QA", 12_000,
+                messages, List.of(active), List.of(complete), List.of(), List.of()));
+
+        // 每条长回答约 2700 token，原文窗口目标 6000 token：保留最近两轮，从第 9 条开始
+        assertThat(result.rawTail()).extracting(ContextProjectionV2.RawMessage::seq)
+                .containsExactly(9, 10, 11, 12);
+        assertThat(result.topicSummaries()).containsExactly(complete);
+        assertThat(result.degradationReasons()).contains("RAW_TAIL_TRIMMED_BY_TOKENS");
+        assertThat(result.selectedTokens()).isLessThanOrEqualTo(12_000);
+        assertThat(ContextWindowPlannerV2.rawTailSize(List.of(longAnswer, longAnswer, longAnswer), 10))
+                .isEqualTo(ContextWindowPlannerV2.MIN_RAW_TAIL_MESSAGES);
+    }
+
+    @Test
     void laggingIncrementalSummaryIsBridgedWithRawMessagesInsteadOfExpandingTheTopic() {
         List<ContextProjectionV2.RawMessage> messages = java.util.stream.IntStream.rangeClosed(1, 20)
                 .mapToObj(seq -> message(seq, "message " + seq)).toList();

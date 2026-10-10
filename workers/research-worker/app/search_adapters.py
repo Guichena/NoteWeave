@@ -16,6 +16,7 @@ from app.http_security import credential_safe_urlopen
 from app.models import ResearchPlan, ResearchSearchHit, ResearchTaskInput
 from app.search import run_seed_source_search
 from app.source_profile import infer_search_lane, infer_source_domain, infer_source_quality
+from app.text_terms import terms as text_terms
 
 
 @dataclass(frozen=True)
@@ -1038,18 +1039,7 @@ def _coverage_score(query: str, title: str, snippet: str) -> float:
 
 
 def _terms(text: str) -> set[str]:
-    terms = {
-        token
-        for token in re.findall(r"[a-zA-Z0-9]+", text.lower())
-        if len(token) >= 3
-    }
-    for chunk in re.findall(r"[\u4e00-\u9fff]+", text):
-        if len(chunk) == 1:
-            terms.add(chunk)
-            continue
-        for index in range(len(chunk) - 1):
-            terms.add(chunk[index:index + 2])
-    return terms
+    return text_terms(text)
 
 
 def _stable_key(value: str) -> str:

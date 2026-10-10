@@ -3,6 +3,7 @@ package com.noteweave.retrieval.index;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.mapping.Property;
 import co.elastic.clients.elasticsearch._types.mapping.TypeMapping;
+import co.elastic.clients.elasticsearch.indices.IndexSettings;
 import com.noteweave.retrieval.projection.RetrievalProjectionRepository.ProjectionType;
 import java.io.IOException;
 import java.util.LinkedHashMap;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class RetrievalIndexManager {
+    static final String TEXT_ANALYZER = "noteweave_cjk_text";
     private final ElasticsearchClient client;
 
     @Autowired
@@ -47,6 +49,7 @@ public class RetrievalIndexManager {
             }
             client.indices().create(c -> c
                     .index(physicalIndex)
+                    .settings(settings())
                     .mappings(mapping(type, embeddingDimensions)));
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to create retrieval index " + physicalIndex, ex);
@@ -142,6 +145,19 @@ public class RetrievalIndexManager {
         }
     }
 
+    /**
+     * 文本字段的分析器。默认的 standard 分析器把中文切成单字，BM25 只能按单字匹配，
+     * "缓存"和"存储"会因为共享"存"字而相互命中。这里改用 ES 内置的 CJK 二元组：
+     * 中日韩文字按相邻两字切分，英文和数字仍按单词切分并转小写，cjk_width 把全角字母数字归一成半角。
+     * 内置过滤器不需要额外安装分词插件。
+     */
+    IndexSettings settings() {
+        return IndexSettings.of(settings -> settings.analysis(analysis -> analysis
+                .analyzer(TEXT_ANALYZER, analyzer -> analyzer.custom(custom -> custom
+                        .tokenizer("standard")
+                        .filter("cjk_width", "lowercase", "cjk_bigram")))));
+    }
+
     TypeMapping mapping(ProjectionType type, int dimensions) {
         Map<String, Property> properties = commonProperties(dimensions);
         if (type == ProjectionType.QA_CHUNK) {
@@ -191,7 +207,7 @@ public class RetrievalIndexManager {
     }
 
     private Property text() {
-        return Property.of(property -> property.text(text -> text));
+        return Property.of(property -> property.text(text -> text.analyzer(TEXT_ANALYZER)));
     }
 
     private Property integer() {

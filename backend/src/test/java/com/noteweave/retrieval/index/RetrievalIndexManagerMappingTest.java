@@ -32,4 +32,17 @@ class RetrievalIndexManagerMappingTest {
         assertThat(mapping.properties()).doesNotContainKey("content_embedding");
         assertThat(mapping.properties().get("source_embedding").denseVector().dims()).isEqualTo(768);
     }
+
+    @Test
+    void textFieldsUseTheCjkBigramAnalyzer() {
+        var analyzer = manager.settings().analysis().analyzer().get(RetrievalIndexManager.TEXT_ANALYZER);
+
+        assertThat(analyzer.custom().tokenizer()).isEqualTo("standard");
+        assertThat(analyzer.custom().filter()).containsExactly("cjk_width", "lowercase", "cjk_bigram");
+        TypeMapping qa = manager.mapping(ProjectionType.QA_CHUNK, 1024);
+        assertThat(qa.properties().get("content").text().analyzer()).isEqualTo(RetrievalIndexManager.TEXT_ANALYZER);
+        assertThat(qa.properties().get("heading").text().analyzer()).isEqualTo(RetrievalIndexManager.TEXT_ANALYZER);
+        TypeMapping note = manager.mapping(ProjectionType.NOTE_SOURCE, 768);
+        assertThat(note.properties().get("summary").text().analyzer()).isEqualTo(RetrievalIndexManager.TEXT_ANALYZER);
+    }
 }

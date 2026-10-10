@@ -13,7 +13,7 @@
   <g font-size="12.5">
     <rect x="30" y="116" width="250" height="96" rx="12" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
     <text x="155" y="142" text-anchor="middle" font-size="14" font-weight="700" fill="#312e81">话题切分</text>
-    <text x="155" y="168" text-anchor="middle" fill="#3730a3">长对话按话题切成片段</text>
+    <text x="155" y="168" text-anchor="middle" fill="#3730a3">按词项加权覆盖度判断话题归属</text>
     <text x="155" y="192" text-anchor="middle" font-size="11.5" fill="#6366f1">TopicSegmenterV2</text>
 
     <rect x="320" y="116" width="250" height="96" rx="12" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
@@ -23,7 +23,7 @@
 
     <rect x="610" y="116" width="270" height="96" rx="12" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
     <text x="745" y="142" text-anchor="middle" font-size="14" font-weight="700" fill="#312e81">窗口规划</text>
-    <text x="745" y="168" text-anchor="middle" fill="#3730a3">在 Token 预算内选取相关轮次与摘要</text>
+    <text x="745" y="168" text-anchor="middle" fill="#3730a3">原文窗口按 Token 伸缩，更早靠摘要</text>
     <text x="745" y="192" text-anchor="middle" font-size="11.5" fill="#6366f1">ContextWindowPlannerV2</text>
   </g>
   <g stroke="#475569" stroke-width="1.5">

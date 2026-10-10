@@ -10,8 +10,15 @@ import org.springframework.http.HttpStatus;
 
 /** C2 selection over already authorized references at a frozen input cutoff. */
 public final class ContextWindowPlannerV2 {
-    public static final String COMPILER_VERSION = "context-window-v2-a2";
-    private static final int TARGET_RAW_TAIL = 8;
+    public static final String COMPILER_VERSION = "context-window-v2-a3";
+    /** 原文窗口最多保留的消息条数。 */
+    static final int MAX_RAW_TAIL_MESSAGES = 8;
+    /** 原文窗口至少保留的消息条数（最近一问一答），再长也不裁掉。 */
+    static final int MIN_RAW_TAIL_MESSAGES = 2;
+    /** 原文窗口的 token 目标；摘要任务按同一目标决定覆盖到哪里，两边的边界保持一致。 */
+    static final int RAW_TAIL_TOKEN_TARGET = 6_000;
+    /** 原文窗口最多占总预算的比例，给摘要、约束和记忆留出空间。 */
+    private static final double RAW_TAIL_BUDGET_SHARE = 0.5d;
     private static final int MAX_UNSUMMARIZED_MESSAGES = 256;
     /** 摘要异步生成，通常比原文窗口落后一两轮；落后不超过这个条数时用原文补齐，不整段展开。 */
     private static final int MAX_SUMMARY_LAG_MESSAGES = 8;
@@ -55,9 +62,17 @@ public final class ContextWindowPlannerV2 {
             decisions.add(new ContextProjectionV2.Decision("MEMORY_REVISION", item.revisionId(),
                     "INCLUDE", "APPROVED_MEMORY_INPUT"));
         }
-        int firstTail = Math.max(0, messages.size() - TARGET_RAW_TAIL);
+        int tailTokenLimit = Math.min(RAW_TAIL_TOKEN_TARGET,
+                (int) (input.tokenBudget() * RAW_TAIL_BUDGET_SHARE));
+        int tailSize = rawTailSize(messages.stream().map(ContextProjectionV2.RawMessage::text).toList(),
+                tailTokenLimit);
+        int firstTail = messages.size() - tailSize;
         List<ContextProjectionV2.RawMessage> raw = messages.subList(firstTail, messages.size());
         List<String> degradation = new ArrayList<>();
+        if (tailSize < Math.min(MAX_RAW_TAIL_MESSAGES, messages.size())) {
+            // 最近几条消息很长时原文窗口收窄，更早的消息交给摘要
+            degradation.add("RAW_TAIL_TRIMMED_BY_TOKENS");
+        }
         if (active != null && !raw.isEmpty() && active.startSeq() < raw.get(0).seq()) {
             int initialRawStart = raw.get(0).seq();
             // 当前话题段内覆盖到原文窗口之前、且最新的一版摘要
@@ -137,6 +152,22 @@ public final class ContextWindowPlannerV2 {
                 input.workspaceId(), input.actorId(), input.conversationId(), input.cutoffSeq(),
                 input.currentInput(), raw, selected, constraints, memories, decisions,
                 input.tokenBudget(), used, degradation, "FULL");
+    }
+
+    /**
+     * 从最后一条消息往前数，原文窗口保留多少条：至少 MIN_RAW_TAIL_MESSAGES 条，最多 MAX_RAW_TAIL_MESSAGES 条，
+     * 中间按 token 累计，超过 tokenLimit 就停。短消息的对话保留满 8 条，长回答的对话只保留最近几轮。
+     */
+    static int rawTailSize(List<String> textsInOrder, int tokenLimit) {
+        int count = 0;
+        int used = 0;
+        for (int index = textsInOrder.size() - 1; index >= 0 && count < MAX_RAW_TAIL_MESSAGES; index--) {
+            int cost = tokens(textsInOrder.get(index));
+            if (count >= MIN_RAW_TAIL_MESSAGES && used + cost > tokenLimit) break;
+            used += cost;
+            count++;
+        }
+        return count;
     }
 
     /** 预算单位是估算的 token 数，估算规则见 ContextTokenEstimator。 */

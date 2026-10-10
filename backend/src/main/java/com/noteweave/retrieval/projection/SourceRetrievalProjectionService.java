@@ -25,8 +25,8 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class SourceRetrievalProjectionService {
-    public static final String QA_SCHEMA_VERSION = "qa-chunk-index-v1";
-    public static final String NOTE_SCHEMA_VERSION = "note-source-index-v1";
+    public static final String QA_SCHEMA_VERSION = "qa-chunk-index-v2";
+    public static final String NOTE_SCHEMA_VERSION = "note-source-index-v2";
     private static final String EMBEDDING_PROVIDER = "openai-compatible";
 
     private final JdbcTemplate jdbcTemplate;
