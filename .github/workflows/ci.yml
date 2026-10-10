@@ -110,6 +110,11 @@ jobs:
       - name: Collect Compose logs
         if: always()
         run: docker compose --env-file .env.ci --profile app logs --no-color > target-ci-compose.log 2>&1 || true
+      - name: Show service logs on failure
+        if: failure()
+        run: |
+          docker compose --env-file .env.ci --profile app ps -a || true
+          docker compose --env-file .env.ci --profile app logs --no-color --tail 150 backend artifact-worker-api minio minio-init || true
       - name: Tear down Compose
         if: always()
         run: docker compose --env-file .env.ci --profile app down -v --remove-orphans
