@@ -42,8 +42,7 @@ class SourceParseProjectionDisabledTest {
                 values ('snapshot-1', 'source-1', 'PENDING', 'PENDING')
                 """);
 
-        DocumentChunker documentChunker = mock(DocumentChunker.class);
-        when(documentChunker.chunk("parsed content")).thenReturn(List.of("parsed content"));
+        DocumentChunker documentChunker = new DocumentChunker(600, 80);
         SourceMessagingMode messagingMode = mock(SourceMessagingMode.class);
         when(messagingMode.isAsyncEnabled()).thenReturn(true);
         AuditActorProvider actorProvider = mock(AuditActorProvider.class);
@@ -135,6 +134,8 @@ class SourceParseProjectionDisabledTest {
                     content clob,
                     token_estimate int,
                     location_info varchar(500),
+                    page_start int,
+                    page_end int,
                     projection_status varchar(32) default 'PENDING',
                     projected_at timestamp
                 )

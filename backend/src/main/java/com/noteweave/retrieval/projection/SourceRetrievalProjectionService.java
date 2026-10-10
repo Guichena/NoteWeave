@@ -125,7 +125,7 @@ public class SourceRetrievalProjectionService {
         }
         int dimensions = properties.embedding().dimensions();
         String model = properties.embedding().model();
-        List<String> qaTexts = chunks.stream().map(this::qaEmbeddingText).toList();
+        List<String> qaTexts = chunks.stream().map(chunk -> qaEmbeddingText(source, chunk)).toList();
         EmbeddingClient.EmbeddingResult qaEmbeddings = embeddingClient.embedDocuments(qaTexts);
         verifyEmbeddingContract(qaEmbeddings, chunks.size(), dimensions);
         String noteText = noteEmbeddingText(source, chunks);
@@ -286,8 +286,17 @@ public class SourceRetrievalProjectionService {
         return count == null ? 0 : count;
     }
 
-    private String qaEmbeddingText(ChunkRow chunk) {
-        return (text(chunk.heading()) + "\n" + text(chunk.content())).trim();
+    /**
+     * 片段向量的输入：资料标题与章节路径作为上下文前缀，再接正文。
+     * 片段单独看时常常缺少主语和所属章节，加上前缀能让向量召回按"哪份资料的哪一节"区分同类内容。
+     */
+    private String qaEmbeddingText(SourceRow source, ChunkRow chunk) {
+        String context = text(source.title());
+        String heading = text(chunk.heading());
+        if (!heading.isBlank()) {
+            context = context.isBlank() ? heading : context + " > " + heading;
+        }
+        return (context + "\n" + text(chunk.content())).trim();
     }
 
     private String noteEmbeddingText(SourceRow source, List<ChunkRow> chunks) {

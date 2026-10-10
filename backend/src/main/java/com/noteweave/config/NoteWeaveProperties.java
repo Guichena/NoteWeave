@@ -35,7 +35,7 @@ public record NoteWeaveProperties(
                             "us-east-1", "noteweave-source", "noteweave-derived", "noteweave-export"));
         }
         if (document == null) {
-            document = new Document(900, 120);
+            document = new Document(600, 80);
         }
         if (worker == null) {
             worker = new Worker("http://localhost:18092");
@@ -102,7 +102,8 @@ public record NoteWeaveProperties(
     ) {
     }
 
-    public record Document(int chunkSize, int chunkOverlap) {
+    /** 资料切片预算，单位是估算 Token：片段上限与相邻片段的句子级重叠上限。 */
+    public record Document(int chunkMaxTokens, int chunkOverlapTokens) {
     }
 
     public record Worker(String artifactBaseUrl) {

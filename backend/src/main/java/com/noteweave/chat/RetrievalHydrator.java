@@ -41,7 +41,8 @@ public class RetrievalHydrator {
         List<PassageOwnership> rows = jdbcTemplate.query("""
                 select c.id as chunk_id, c.source_id, c.source_snapshot_id,
                        coalesce(s.generated_by, '') as generated_by,
-                       coalesce(s.generated_ref_id, '') as generated_ref_id
+                       coalesce(s.generated_ref_id, '') as generated_ref_id,
+                       coalesce(c.location_info, '') as location_info
                 from source_chunk c
                 join source s
                   on s.id = c.source_id and s.workspace_id = c.workspace_id
@@ -63,7 +64,8 @@ public class RetrievalHydrator {
                 rs.getString("source_id"),
                 rs.getString("source_snapshot_id"),
                 rs.getString("generated_by"),
-                rs.getString("generated_ref_id")
+                rs.getString("generated_ref_id"),
+                rs.getString("location_info")
         ), parameters.toArray());
         Map<String, PassageOwnership> byChunkId = new LinkedHashMap<>();
         rows.stream().filter(row -> generatedSourceGate == null || generatedSourceGate.visible(
@@ -254,13 +256,23 @@ public class RetrievalHydrator {
         return String.join(",", java.util.Collections.nCopies(count, "?"));
     }
 
+    /** 片段归属与定位；locationInfo 来自切片阶段写入的页码、时间与章节，旧数据为空。 */
     public record PassageOwnership(
             String chunkId,
             String sourceId,
             String sourceSnapshotId,
             String generatedBy,
-            String generatedRefId
+            String generatedRefId,
+            String locationInfo
     ) {
+        public PassageOwnership(String chunkId, String sourceId, String sourceSnapshotId,
+                                String generatedBy, String generatedRefId) {
+            this(chunkId, sourceId, sourceSnapshotId, generatedBy, generatedRefId, "");
+        }
+
+        public String locationOr(String fallback) {
+            return locationInfo == null || locationInfo.isBlank() ? fallback : locationInfo;
+        }
     }
 
     public record AdjacentPassage(

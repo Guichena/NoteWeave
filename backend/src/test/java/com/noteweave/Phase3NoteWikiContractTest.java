@@ -241,6 +241,8 @@ class Phase3NoteWikiContractTest {
     void noteModeShouldExpandCandidateSourcesByTagOverlapRelationSignals() throws Exception {
         String workspaceId = createWorkspace();
         uploadSource(workspaceId, "anchor-research.md", """
+                # AnchorAlpha 样例
+
                 phase3 marginalia shared-signal
                 AnchorAlpha 是资料级候选定位的关键样例。
                 Note 链路需要先命中这份资料，再通过共享标签扩展相邻资料。
@@ -407,22 +409,7 @@ class Phase3NoteWikiContractTest {
                 这份资料用于当前问题的主命中资料，会触发主窗口读取。
 
                 AdditionalAnchorCue
-                AnchorTurnShared repeat segment 01 for long reading window planning.
-                AnchorTurnShared repeat segment 02 for long reading window planning.
-                AnchorTurnShared repeat segment 03 for long reading window planning.
-                AnchorTurnShared repeat segment 04 for long reading window planning.
-                AnchorTurnShared repeat segment 05 for long reading window planning.
-                AnchorTurnShared repeat segment 06 for long reading window planning.
-                AnchorTurnShared repeat segment 07 for long reading window planning.
-                AnchorTurnShared repeat segment 08 for long reading window planning.
-                AnchorTurnShared repeat segment 09 for long reading window planning.
-                AnchorTurnShared repeat segment 10 for long reading window planning.
-                AnchorTurnShared repeat segment 11 for long reading window planning.
-                AnchorTurnShared repeat segment 12 for long reading window planning.
-                AnchorTurnShared repeat segment 13 for long reading window planning.
-                AnchorTurnShared repeat segment 14 for long reading window planning.
-                AnchorTurnShared repeat segment 15 for long reading window planning.
-                """);
+                """ + longReadingSegments(60));
         uploadSource(workspaceId, "turn-neighbor.md", """
                 TurnNeighborOnly
                 TurnNeighborOnly
@@ -1660,6 +1647,15 @@ class Phase3NoteWikiContractTest {
                 "update workspace set retrieval_strategy_v2_enabled = true where id = ?",
                 workspaceId);
         return workspaceId;
+    }
+
+    /** 足够长的英文段落，按 Token 切出的阅读窗口多于规划器一次展示的数量。 */
+    private static String longReadingSegments(int count) {
+        StringBuilder builder = new StringBuilder();
+        for (int index = 1; index <= count; index++) {
+            builder.append(String.format("AnchorTurnShared repeat segment %02d for long reading window planning.%n", index));
+        }
+        return builder.toString();
     }
 
     private String uploadSource(String workspaceId) throws Exception {

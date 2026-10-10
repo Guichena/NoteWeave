@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -28,8 +30,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class SourceParseService implements SourceParsePort {
 
     private static final Logger log = LoggerFactory.getLogger(SourceParseService.class);
-    private static final int WINDOW_CHARS = 320;
-    private static final int WINDOW_OVERLAP = 80;
     private static final String BUCKET_SOURCE = "noteweave-source";
 
     private final JdbcTemplate jdbcTemplate;
@@ -104,25 +104,27 @@ public class SourceParseService implements SourceParsePort {
         String text = extracted.text();
         String actor = auditActorProvider.currentOrSystem("SOURCE_PARSE");
         boolean projectionEnabled = elasticsearchEnabled;
-        List<String> chunks = documentChunker.chunk(text);
+        List<DocumentChunker.DocumentChunk> chunks = documentChunker.chunk(text, extracted.mimeType());
         for (int i = 0; i < chunks.size(); i++) {
             String chunkId = Ids.newId();
-            String content = chunks.get(i);
+            DocumentChunker.DocumentChunk chunk = chunks.get(i);
             jdbcTemplate.update("""
-                    insert into source_chunk(id, workspace_id, source_id, source_snapshot_id, chunk_no, heading, content, token_estimate, location_info)
-                    values (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, chunkId, workspaceId, sourceId, snapshotId, i, "片段 " + (i + 1), content,
-                    Math.max(1, content.length() / 2), "chunk:" + i);
-            List<String> windows = buildReadWindows(content);
+                    insert into source_chunk(id, workspace_id, source_id, source_snapshot_id, chunk_no, heading, content,
+                                             token_estimate, location_info, page_start, page_end)
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, chunkId, workspaceId, sourceId, snapshotId, i, chunk.headingPath(), chunk.content(),
+                    Math.max(1, chunk.tokens()), chunk.location(i), chunk.pageStart(), chunk.pageEnd());
+            List<String> windows = documentChunker.windows(chunk.content());
             for (int windowNo = 0; windowNo < windows.size(); windowNo++) {
                 jdbcTemplate.update("""
                         insert into source_window(id, source_chunk_id, window_no, content, location_info)
                         values (?, ?, ?, ?, ?)
-                        """, Ids.newId(), chunkId, windowNo, windows.get(windowNo), "chunk:" + i + "/window:" + windowNo);
+                        """, Ids.newId(), chunkId, windowNo, windows.get(windowNo), chunk.windowLocation(i, windowNo));
             }
         }
 
-        List<String> tags = deriveTags(sourceMeta.title(), sourceMeta.sourceType(), text);
+        List<String> outline = outline(chunks);
+        List<String> tags = deriveTags(sourceMeta.title(), sourceMeta.sourceType(), text, outline);
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("title", sourceMeta.title());
         metadata.put("source_type", sourceMeta.sourceType());
@@ -132,6 +134,10 @@ public class SourceParseService implements SourceParsePort {
         if (extracted.pageCount() > 0) {
             metadata.put("page_count", extracted.pageCount());
         }
+        if (!outline.isEmpty()) {
+            metadata.put("outline", outline);
+        }
+        metadata.put("chunking", "structure_aware_token_v2");
         metadata.put("entry_strategy", "marginalia_structured_reading_funnel");
         jdbcTemplate.update("""
                 update source
@@ -469,34 +475,110 @@ public class SourceParseService implements SourceParsePort {
         return taskIds.isEmpty() ? null : taskIds.get(0);
     }
 
+    private static final Pattern MARKDOWN_LINK = Pattern.compile("!?\\[([^\\]]*)\\]\\([^)]*\\)");
+    private static final Pattern ASCII_TERM = Pattern.compile("[A-Za-z][A-Za-z0-9.+#-]{1,30}");
+    private static final Pattern HEADING_NUMBER = Pattern.compile(
+            "^(第[一二三四五六七八九十百零〇\\d]+[章节篇部]|[一二三四五六七八九十]+[、.．]|[（(][一二三四五六七八九十]+[)）]|\\d{1,2}(\\.\\d{1,2}){0,3}[.、．]?)\\s*");
+    /** 目录行：较短、以页码结尾，例如 "2 知识点 2" 或 "第一章 概述 ........ 5"。 */
+    private static final Pattern TOC_LINE = Pattern.compile("^.{1,60}?[\\s.·…]+\\d{1,4}$");
+    private static final Set<String> TERM_STOPWORDS = Set.of(
+            "the", "and", "for", "with", "this", "that", "from", "are", "was", "were", "has", "have", "not",
+            "but", "can", "will", "you", "your", "our", "its", "into", "than", "then", "also", "such", "use",
+            "http", "https", "www", "com");
+
+    /** 摘要：跳过标题、代码块和表格，去掉 Markdown 标记与转写时间戳，按句子截取开头约 360 字。 */
     private String summarize(String text) {
-        String normalized = text == null ? "" : text.replace("\r", "").replace("\n", " ").trim();
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        StringBuilder body = new StringBuilder();
+        boolean inFence = false;
+        for (String raw : text.replace('\f', '\n').split("\n")) {
+            String line = raw.strip();
+            if (line.startsWith("```") || line.startsWith("~~~")) {
+                inFence = !inFence;
+                continue;
+            }
+            if (inFence || line.isEmpty() || line.startsWith("#") || line.startsWith("|")
+                    || "目录".equals(line) || "Contents".equalsIgnoreCase(line) || TOC_LINE.matcher(line).matches()) {
+                continue;
+            }
+            line = MARKDOWN_LINK.matcher(line).replaceAll("$1")
+                    .replaceAll("^\\[\\d{1,2}:\\d{2}(:\\d{2})?\\]\\s*", "")
+                    .replaceAll("^([>*+-]|\\d+[.)])\\s+", "")
+                    .replaceAll("[*_`]+", "");
+            if (!line.isBlank()) {
+                if (!body.isEmpty()) body.append(' ');
+                body.append(line);
+            }
+            if (body.length() > 600) break;
+        }
+        String normalized = body.toString().replaceAll("\\s+", " ").strip();
+        if (normalized.isEmpty()) {
+            normalized = text.replaceAll("\\s+", " ").strip();
+        }
         if (normalized.length() <= 360) {
             return normalized;
         }
-        return normalized.substring(0, 359) + "...";
+        String head = normalized.substring(0, 360);
+        int sentenceEnd = Math.max(Math.max(head.lastIndexOf('。'), head.lastIndexOf('！')),
+                Math.max(head.lastIndexOf('？'), head.lastIndexOf(". ")));
+        return sentenceEnd >= 180 ? head.substring(0, sentenceEnd + 1) : head.substring(0, 359) + "...";
     }
 
-    private List<String> deriveTags(String title, String sourceType, String text) {
+    /** 资料大纲：按出现顺序去重的章节路径，最多 30 条，供资料级召回和界面展示。 */
+    private static List<String> outline(List<DocumentChunker.DocumentChunk> chunks) {
+        Set<String> paths = new LinkedHashSet<>();
+        for (DocumentChunker.DocumentChunk chunk : chunks) {
+            if (chunk.headingPath() != null && !chunk.headingPath().isBlank()) {
+                paths.add(chunk.headingPath());
+            }
+            if (paths.size() >= 30) break;
+        }
+        return new ArrayList<>(paths);
+    }
+
+    /**
+     * 标签：资料类型、标题中的词、一级章节名（去掉编号），以及正文里反复出现的英文术语。
+     * 没有中文分词器时，不把整段连续汉字当成一个标签。
+     */
+    private List<String> deriveTags(String title, String sourceType, String text, List<String> outline) {
         Set<String> tags = new LinkedHashSet<>();
         if (sourceType != null && !sourceType.isBlank()) {
             tags.add(sourceType.toLowerCase(Locale.ROOT));
         }
-        collectTerms(tags, title);
-        collectTerms(tags, text == null ? "" : text.substring(0, Math.min(text.length(), 800)));
-        return new ArrayList<>(tags).stream().limit(12).toList();
-    }
-
-    private void collectTerms(Set<String> tags, String value) {
-        if (value == null || value.isBlank()) {
-            return;
-        }
-        String[] parts = value.toLowerCase(Locale.ROOT).split("[^\\p{IsHan}a-zA-Z0-9]+");
-        for (String part : parts) {
-            if (part.length() >= 2) {
-                tags.add(part);
+        if (title != null) {
+            String stem = title.replaceAll("\\.[A-Za-z0-9]{1,5}$", "");
+            for (String part : stem.toLowerCase(Locale.ROOT).split("[^\\p{IsHan}a-z0-9]+")) {
+                if (part.length() >= 2 && part.length() <= 12) tags.add(part);
             }
         }
+        for (String path : outline) {
+            String top = path.split(" > ", 2)[0];
+            String name = HEADING_NUMBER.matcher(top).replaceFirst("").strip();
+            // 带数字或时间的章节名（如 "画面 01 ·00:00"）是编号而不是主题，不作为标签
+            if (name.length() >= 2 && name.length() <= 16 && !name.matches(".*\\d.*")) tags.add(name);
+            if (tags.size() >= 8) break;
+        }
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        Matcher matcher = ASCII_TERM.matcher(text == null ? "" : text);
+        while (matcher.find()) {
+            String term = matcher.group().replaceAll("[.-]+$", "").toLowerCase(Locale.ROOT);
+            if (term.length() >= 2 && !TERM_STOPWORDS.contains(term)) counts.merge(term, 1, Integer::sum);
+        }
+        counts.entrySet().stream()
+                .filter(entry -> entry.getValue() >= 2)
+                .sorted((left, right) -> Integer.compare(right.getValue(), left.getValue()))
+                .limit(6)
+                .forEach(entry -> tags.add(entry.getKey()));
+        // 短资料里高频术语很少，用开头 800 字中的英文术语按出现顺序补足
+        String head = text == null ? "" : text.substring(0, Math.min(text.length(), 800));
+        Matcher headTerms = ASCII_TERM.matcher(head);
+        while (tags.size() < 12 && headTerms.find()) {
+            String term = headTerms.group().replaceAll("[.-]+$", "").toLowerCase(Locale.ROOT);
+            if (term.length() >= 2 && !TERM_STOPWORDS.contains(term)) tags.add(term);
+        }
+        return new ArrayList<>(tags).stream().limit(12).toList();
     }
 
     private String writeJson(Object value) {
@@ -505,33 +587,6 @@ public class SourceParseService implements SourceParsePort {
         } catch (JsonProcessingException ex) {
             throw new BusinessException("JSON_WRITE_FAILED", "资料元数据序列化失败");
         }
-    }
-
-    private List<String> buildReadWindows(String content) {
-        String normalized = content == null ? "" : content.trim();
-        if (normalized.isBlank()) {
-            return List.of("");
-        }
-        if (normalized.length() <= WINDOW_CHARS) {
-            return List.of(normalized);
-        }
-        List<String> windows = new ArrayList<>();
-        int start = 0;
-        while (start < normalized.length()) {
-            int end = Math.min(normalized.length(), start + WINDOW_CHARS);
-            if (end < normalized.length()) {
-                int paragraphBreak = normalized.lastIndexOf("\n\n", end);
-                if (paragraphBreak > start + WINDOW_CHARS / 2) {
-                    end = paragraphBreak;
-                }
-            }
-            windows.add(normalized.substring(start, end).trim());
-            if (end >= normalized.length()) {
-                break;
-            }
-            start = Math.max(end - WINDOW_OVERLAP, start + 1);
-        }
-        return windows;
     }
 
     private record SourceMeta(String title, String sourceType, String mimeType, boolean processable) {

@@ -174,7 +174,7 @@ public class QaPassageRetriever {
                             Integer.parseInt(hit.chunkNo()),
                             hit.title(),
                             hit.content(),
-                            "chunk:" + hit.chunkNo(),
+                            ownership.locationOr("chunk:" + hit.chunkNo()),
                             hit.sourceType(),
                             ownership.generatedBy(),
                             ownership.generatedRefId(),

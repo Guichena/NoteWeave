@@ -87,12 +87,10 @@ public class UploadSecurityPolicy {
             throw new BusinessException("UPLOAD_BINARY_CONTENT_REJECTED", "文本资料不能包含 NUL 字节");
         }
         try {
-            StandardCharsets.UTF_8.newDecoder()
-                    .onMalformedInput(CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(CodingErrorAction.REPORT)
-                    .decode(ByteBuffer.wrap(content));
-        } catch (Exception ex) {
-            throw new BusinessException("UPLOAD_TEXT_ENCODING_INVALID", "文本资料必须使用有效 UTF-8 编码");
+            requireSupportedTextEncoding(new java.io.ByteArrayInputStream(content),
+                    () -> new java.io.ByteArrayInputStream(content));
+        } catch (java.io.IOException ex) {
+            throw new BusinessException("UPLOAD_MERGE_FAILED", "上传分片合并失败");
         }
         if (!EXTENSION_MIME.containsValue(normalizedMime)) {
             throw new BusinessException("UPLOAD_FILE_TYPE_UNSUPPORTED", "不支持该文件类型");
@@ -129,7 +127,7 @@ public class UploadSecurityPolicy {
                 }
                 return;
             }
-            validateUtf8Text(input);
+            requireSupportedTextEncoding(input, () -> java.nio.file.Files.newInputStream(file));
         } catch (java.io.IOException ex) {
             throw new BusinessException("UPLOAD_MERGE_FAILED", "上传分片合并失败");
         }
@@ -138,9 +136,40 @@ public class UploadSecurityPolicy {
         }
     }
 
-    /** 分块检查 NUL 字节并做严格的 UTF-8 解码；跨块的多字节字符由解码器保留到下一块。 */
-    private void validateUtf8Text(java.io.InputStream input) throws java.io.IOException {
-        java.nio.charset.CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+    private static final java.nio.charset.Charset GB18030 = java.nio.charset.Charset.forName("GB18030");
+    private static final String TEXT_ENCODING_MESSAGE = "文本资料必须使用 UTF-8 或 GBK（GB18030）编码";
+
+    @FunctionalInterface
+    private interface InputReopener {
+        java.io.InputStream open() throws java.io.IOException;
+    }
+
+    private enum TextDecodeResult { VALID, TRUNCATED_AT_END, MALFORMED }
+
+    /**
+     * 文本资料接受 UTF-8 与 GB18030（兼容 GBK、GB2312）。先按 UTF-8 严格解码；
+     * 只在末尾缺字节时判定为被截断的 UTF-8 并拒绝，其他非法字节再按 GB18030 严格解码一次。
+     */
+    private void requireSupportedTextEncoding(java.io.InputStream input, InputReopener reopen)
+            throws java.io.IOException {
+        TextDecodeResult utf8 = decodeStrictly(input, StandardCharsets.UTF_8, true);
+        if (utf8 == TextDecodeResult.VALID) {
+            return;
+        }
+        if (utf8 == TextDecodeResult.MALFORMED) {
+            try (java.io.InputStream again = reopen.open()) {
+                if (decodeStrictly(again, GB18030, false) == TextDecodeResult.VALID) {
+                    return;
+                }
+            }
+        }
+        throw new BusinessException("UPLOAD_TEXT_ENCODING_INVALID", TEXT_ENCODING_MESSAGE);
+    }
+
+    /** 分块检查 NUL 字节并严格解码；跨块的多字节字符由解码器保留到下一块。 */
+    private TextDecodeResult decodeStrictly(java.io.InputStream input, java.nio.charset.Charset charset,
+                                            boolean checkNul) throws java.io.IOException {
+        java.nio.charset.CharsetDecoder decoder = charset.newDecoder()
                 .onMalformedInput(CodingErrorAction.REPORT)
                 .onUnmappableCharacter(CodingErrorAction.REPORT);
         byte[] block = new byte[64 * 1024];
@@ -148,32 +177,34 @@ public class UploadSecurityPolicy {
         java.nio.CharBuffer sink = java.nio.CharBuffer.allocate(block.length);
         int read;
         while ((read = input.read(block)) != -1) {
-            if (containsNul(block, read)) {
+            if (checkNul && containsNul(block, read)) {
                 throw new BusinessException("UPLOAD_BINARY_CONTENT_REJECTED", "文本资料不能包含 NUL 字节");
             }
             pending.put(block, 0, read);
             pending.flip();
-            decodeInto(decoder, pending, sink, false);
+            if (!decodeInto(decoder, pending, sink, false)) {
+                return TextDecodeResult.MALFORMED;
+            }
             pending.compact();
         }
         pending.flip();
-        decodeInto(decoder, pending, sink, true);
-        sink.clear();
-        if (decoder.flush(sink).isError()) {
-            throw new BusinessException("UPLOAD_TEXT_ENCODING_INVALID", "文本资料必须使用有效 UTF-8 编码");
+        if (!decodeInto(decoder, pending, sink, true)) {
+            return TextDecodeResult.TRUNCATED_AT_END;
         }
+        sink.clear();
+        return decoder.flush(sink).isError() ? TextDecodeResult.TRUNCATED_AT_END : TextDecodeResult.VALID;
     }
 
-    private void decodeInto(java.nio.charset.CharsetDecoder decoder, ByteBuffer input,
-                            java.nio.CharBuffer sink, boolean endOfInput) {
+    private boolean decodeInto(java.nio.charset.CharsetDecoder decoder, ByteBuffer input,
+                               java.nio.CharBuffer sink, boolean endOfInput) {
         while (true) {
             sink.clear();
             java.nio.charset.CoderResult result = decoder.decode(input, sink, endOfInput);
             if (result.isError()) {
-                throw new BusinessException("UPLOAD_TEXT_ENCODING_INVALID", "文本资料必须使用有效 UTF-8 编码");
+                return false;
             }
             if (result.isUnderflow()) {
-                return;
+                return true;
             }
         }
     }
