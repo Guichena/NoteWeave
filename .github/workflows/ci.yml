@@ -102,6 +102,10 @@ jobs:
           sed -i 's/^KAFKA_CLIENT_PASSWORD=.*/KAFKA_CLIENT_PASSWORD=ci-kafka-password/' .env.ci
           sed -i 's/^ELASTIC_PASSWORD=.*/ELASTIC_PASSWORD=ci-elastic-password/' .env.ci
           sed -i 's/^MINIO_ROOT_PASSWORD=.*/MINIO_ROOT_PASSWORD=ci-minio-password/' .env.ci
+          # 外部 Provider 均不可用：关闭向量化、重排和检索投影，资料解析后直接可读，回答应明确失败。
+          sed -i 's/^NOTEWEAVE_EMBEDDING_ENABLED=.*/NOTEWEAVE_EMBEDDING_ENABLED=false/' .env.ci
+          sed -i 's/^NOTEWEAVE_RERANK_ENABLED=.*/NOTEWEAVE_RERANK_ENABLED=false/' .env.ci
+          sed -i 's/^NOTEWEAVE_ES_ENABLED=.*/NOTEWEAVE_ES_ENABLED=false/' .env.ci
       - name: Start Compose application
         run: docker compose --env-file .env.ci --profile app up --build -d --wait --wait-timeout 180
       - name: Run provider-disabled vertical smoke
