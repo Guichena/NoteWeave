@@ -473,6 +473,9 @@ def test_transcribe_local_audio_should_fail_cleanly_when_skill_env_missing(
     server = _sandboxed_server(tmp_path)
     audio_path = tmp_path / "sample.mp3"
     audio_path.write_bytes(b"fake-audio")
+    # 转写脚本存在、但专用 Python 环境缺失：应提示环境安装脚本，而不依赖本机是否装过 Codex skill。
+    server.transcribe_script = tmp_path / "transcribe_local_audio.py"
+    server.transcribe_script.write_text("", encoding="utf-8")
 
     original_python = server.transcribe_venv_python
     server.transcribe_venv_python = tmp_path / "missing-python.exe"
