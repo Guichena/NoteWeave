@@ -154,3 +154,17 @@
 - `GET /memory/control-pack/chat` 增加可选 `query`。对话回答先改写，再用独立问题编译。产物和研究的编译方法增加了 `query`，B 线现有调用仍传空，那些目录没有修改，按需记忆在产物和研究里先不注入。
 - `GET /answer-runs/{runId}/evidence` 从 `run_input_snapshot` 的 `memory_revision_refs` 读出这次实际编入的记忆。回放状态为 `METADATA_ONLY` 或其他非 `FULL` 状态时省略 `display_text`。用户 `REVOKE` 时，写回快照前去掉匹配 `memory_version_id` 的 `display_text`，并把仍为 `FULL` 的快照标成 `METADATA_ONLY`。
 - 与第 6 节原文的差异已写在进度看板协调区。反馈接口留到 2D。实现提交 `dc65e40`。测试环境关闭了 LLM 和嵌入模型，向量相关度没有用真实模型验证。
+
+### 2D（2026-10-12 完成）
+
+- 新增 `POST /workspaces/{workspaceId}/answer-runs/{runId}/feedback`，请求体为 `rating`（`POSITIVE` 或 `NEGATIVE`）和可选 `reason`。权限沿用 `ANSWER_RUN`。找不到 run 返回 404，错误码 `ANSWER_RUN_NOT_FOUND`。run 存在但没有 `answer_message_id` 时返回 200，受影响记忆数为 0，原因 `MEMORY_FEEDBACK_NO_APPLICATION`。同一回答可以重复提交，以最后一次为准。
+- 提交回答的请求体增加可选 `regenerated_from`，取值是原 answer run id。回合结束时给原回答实际注入的记忆记 `RETRIED`。run 不存在、工作区不一致或没有注入行时不让这次发送失败。`source_ref` 为 `retry:` 加 run id，只记一次。请求哈希和冻结 JSON 带上该字段，旧 JSON 缺键视为没有。
+- 产物编辑由 `MemoryApplicationFeedbackService.recordArtifactEdit` 计算比例。折叠空白并截到 800 字后，编辑距离除以较长文本长度。空白对空白为 0，一边为空为 1，比例为 0 不记。同一目标的 `EDIT` 以最后一次为准。目标由调用方传入，应对 `ARTIFACT_JOB_RUN` 的 task id。不挂 HTTP，不改 `ArtifactJobService`。
+- 下一轮消息在抽取落库的同一事务里处理。任一 `preference.feedback`，或用户原文命中不满说法，记 `NEGATIVE`。`CLASSIFIED_NO`，以及没有 feedback 且不满说法未命中，记 `ACCEPTED`，更新权重 0.5。只作用于上一条助手回答里还没有 `RATING`、`RETRY`、`FOLLOW_UP` 的注入记忆。没有上一条助手，或没有注入行，直接返回。`source_ref` 为 `follow-up:` 加消息 id。
+- 方面先走规则。太长、太短、简短、啰嗦、长度对应 `LENGTH`；英文、中文、语言对应 `LANGUAGE`；格式、结构、表格、分点、结论对应 `FORMAT`；语气、风格对应 `STYLE`。四个固定原因是内容不准确、没有回答问题、引用不支持结论、资料里有但没找到，都记为 `CONTENT`。都未命中才调用模型，不合规重试一次。空白是 `UNKNOWN`。模型不可用或两次失败记 `MEMORY_FEEDBACK_ASPECT_NOT_RUN`，aspect 为 `UNKNOWN`。
+- `LENGTH` 映射 `answer.length`，`LANGUAGE` 映射 `answer.language`，`FORMAT` 映射 `format.` 前缀，`STYLE` 映射 `answer.style`、`interaction.` 前缀和 `answer.constraint`。`CONTENT` 只记回答级事件，不改效用，不加 β。`UNKNOWN` 对当次全部注入记忆记 `NEGATIVE`，更新权重 0.5。没有命中槽位时不摊派，原因 `MEMORY_FEEDBACK_SLOT_UNMATCHED`。
+- 点赞和重新生成作用于该次注入的全部记忆。点踩只替换同一目标上 `signal_kind` 为 `RATING` 的记录，不覆盖 `RETRY`、`EDIT`、`FOLLOW_UP`。该条若是这条记忆最新的效用更新，用替换前快照恢复再套新结果；后面已有别的反馈时按记下的差值调整，原因 `MEMORY_FEEDBACK_UTILITY_ADJUSTED`。同一评分、原因和方面再次提交视为已生效。
+- 效用混合系数改为 `0.25 * updateWeight`。权重为 1 时与原来的公式一致。`ACCEPTED` 和 `UNKNOWN` 负面传 0.5。策略版本仍是 `memory-outcome-policy-v1`。原 `POST /memory/outcomes` 继续只在 outcome 为空时写一次，不受新开关影响。
+- 命中槽位的负面增加 β。增量取推断档 0.5，除以 1 加已有证据会话数，再加未作废且 `beta_weight` 大于 0 的反馈目标数。`UNKNOWN` 再把这个增量乘 0.5。不写入 `memory_evidence_session`。替换时按行上的 `beta_weight` 减回，下限 0。正面不加 α。效果按当时生效的 `memory_revision_id` 归因。
+- 迁移是 `V163__memory_application_outcome.sql`。开关 `noteweave.memory.outcome-feedback-enabled` 默认打开，环境变量 `NOTEWEAVE_MEMORY_OUTCOME_FEEDBACK_ENABLED`，`docker-compose.yml` 已同步。关闭时反馈接口仍返回 200，受影响记忆数为 0，原因 `MEMORY_OUTCOME_FEEDBACK_DISABLED`，自动信号同样不写。
+- 与第 6 节原文的差异已写在进度看板协调区。前端按钮留在 A 线。实现提交 `296734a`。测试环境关闭了 LLM，方面判断的模型路径只验证了不可用和重试，没有用真实模型。
