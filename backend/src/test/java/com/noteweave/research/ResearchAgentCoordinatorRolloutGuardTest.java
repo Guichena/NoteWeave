@@ -2,6 +2,7 @@ package com.noteweave.research;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -31,6 +32,7 @@ class ResearchAgentCoordinatorRolloutGuardTest {
         var snapshot = new ResearchAgentCoordinatorSnapshotService.Snapshot(
                 "run-1", 0, 1, 0, 0, 0, 0, 0, 2);
         when(snapshots.snapshot("run-1")).thenReturn(snapshot);
+        when(roleWorkflow.advancePendingAudit("run-1", 1)).thenReturn(new ResearchAgentRoleWorkflowService.WorkflowReceipt("NO_AUDIT_PENDING", null));
         when(guard.evaluate()).thenReturn(new ResearchAgentRolloutPolicy.Decision(
                 ResearchAgentRolloutPolicy.Action.PAUSE_NEW_INITIAL_WAVES,
                 List.of("DELIVERY_FAILURE_RATE_EXCEEDED"),
@@ -43,6 +45,7 @@ class ResearchAgentCoordinatorRolloutGuardTest {
         var receipt = service.tick("run-1", "coordinator-1");
 
         assertThat(receipt.outcome()).isEqualTo("ROLLOUT_PAUSED");
-        verifyNoInteractions(coordinator, recovery, faults, finalization, lifecycle, runnableWork, roleWorkflow);
+        verify(roleWorkflow).advancePendingAudit("run-1", 1);
+        verifyNoInteractions(coordinator, recovery, faults, finalization, lifecycle, runnableWork);
     }
 }

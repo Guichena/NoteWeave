@@ -884,7 +884,7 @@ class ResearchAgentTaskCoordinatorServiceTest {
                         "llm_calls", "search_calls", "fetch_calls", "read_calls", "extract_calls",
                         "evidence_cards", "evidence_appended", "candidates_submitted",
                         "candidate_merges_accepted", "candidate_merges_rejected");
-                assertThat(reserved.get("llm_calls")).isEqualTo(4L);
+                assertThat(reserved.get("llm_calls")).isEqualTo(34L);
                 assertThat(reserved)
                         .containsEntry("search_calls", 3L)
                         .containsEntry("fetch_calls", 3L)

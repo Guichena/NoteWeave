@@ -306,7 +306,7 @@ class ResearchAgentCompletionReplayRepository {
                 ResearchAgentCompletionEnvelope.Evidence evidence = evidenceByKey.get(key);
                 return evidence != null && "SUPPORTS".equals(evidence.relationType())
                         && evidence.quoteText() != null && !evidence.quoteText().isBlank()
-                        && candidate.candidateValue().equals(evidence.claimText());
+                        && ResearchEquivalentClaims.supports(candidate, evidence.evidenceKey(), evidence.claimText());
             });
             boolean qualificationRejectedCandidate = qualificationRejected.contains(candidate.candidateKey());
             boolean supported = literalSupport && !qualificationRejectedCandidate;

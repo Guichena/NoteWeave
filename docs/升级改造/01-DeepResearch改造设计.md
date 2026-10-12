@@ -122,7 +122,7 @@ Java 端的状态治理（单元格版本、Fencing、预算预留、Replan 审�
 
 ## 6. 配置默认值
 
-目前 `intent-matrix-v2`、`wide-discovery-v1`、`evidence-audit-v1`、`worker-synthesis-v1` 默认全部关闭。已确定：改造完成后新规划器、宽搜索、证据审计默认打开（`application.yml` 和 `docker-compose*.yml` 同步修改），保留开关用于回退。
+1B 完成后 `intent-matrix-v2` 默认打开，1D 完成后 `evidence-audit-v1` 默认打开；Worker 的证据审计角色也默认启用。`wide-discovery-v1` 与 `worker-synthesis-v1` 仍默认关闭，宽搜索在 1E 完成后打开。`application.yml` 和 `docker-compose.yml` 同步配置，保留开关用于回退；已有 Run 的冻结开关不被覆盖。
 
 ## 7. 参考业界方案后的修订
 
@@ -183,3 +183,16 @@ Java 端的状态治理（单元格版本、Fencing、预算预留、Replan 审�
 - 删除深挖修复对原研究查询的重复使用，改为按原因规划；旧单进程循环的模板和反证规则仍按任务书留待 1F 修改。
 - 验证：Worker 703 项通过；Backend 分组验证全部 251 个测试类、1229 项，1218 项通过、11 项沿用既有跳过条件；Frontend 308 项通过，`tsc -b` 和 `ui:check` 通过。新增测试覆盖事实隔离、不可用模型的 `NOT_RUN`、实际查询保存、事务回滚与重放、审计查询数、跨工作区校验以及当前候选的成文资格。实现提交 `b1851f0` 已快进合入集成分支，环境处理细节见阶段交接记录。
 - 尚未使用真实模型、真实外部检索服务跑完整研究，也未进行浏览器联调或 MySQL 实例迁移验证。Flyway 迁移已在 H2 的 MySQL 模式验证。
+
+### 1D（2026-10-12 完成）
+
+- Worker 使用 NFKC、数字和单位规范化比较结论，保持结论原文不变。词项集合 Jaccard 相似度低于 0.2 时分开，高于等于 0.9 时合并，中间区间调用 `research.claims.equivalent`；数量或极性不同的结论不直接合并。每个新成员与簇内全部成员比较，避免经由相似度链条合并不同事实。模型不可用时保留独立候选簇。
+- 来源按注册域名、文件血缘和引文 SimHash 合并。注册域名使用包含私有后缀的 PSL：Worker 使用 tldextract，Java 使用 Guava，均只读依赖自带快照。引文按 NFKC、小写、词频和 SHA-256 的前 64 位计算 SimHash，至少 4 个词项且 Hamming 距离不超过 3 时视为转载；相同引文也合并。每组采用最高支撑分，独立组使用 `1 - Π(1 - p_i)`，置信度上限为 950000。
+- 保持每格一个合并候选的完成协议。候选增加可选 `equivalent_claims`，逐条绑定证据标识、原始结论和来源域名，代表值必须是一条证据的原结论。完成信封 v2 的 `extraction_diagnostics.claim_clusters` 保留全部候选簇；旧字段和旧信封摘要保持兼容。Java 重新计算来源独立性及置信度，每条证据仍做逐字引文、类型事实和来源资格校验。高风险聚合修复必须有两个独立来源。
+- `V141__research_semantic_claim_clusters.sql` 新增候选簇、语义检查表，增加候选等价证据和转载指纹、单元格语义版本与状态。语义审计只读取当前计划、实体集合、单元格版本下的簇；合并后进一步限定到最后一次接受的候选任务及其双槽组，旧修复任务的簇不参与新候选审计。
+- EVIDENCE_AUDIT 使用 `research-evidence-audit-input.v2` 与 `research-evidence-audit-result.v2`，对同格所有簇两两执行等价和 `research.audit.contradiction` 判定。输出不合规时带错误信息重试一次，调用次数计入预算。Java 校验完整配对、冻结的单元格与语义版本、证据资格和总体状态。矛盾写成 `SEMANTIC_CONTRADICTION` 冲突进入现有定向反证修复；未执行、判断失败或等价与矛盾结果互相冲突时记 `NOT_RUN`，禁止正式成文。审计可在候选尚未合并时执行。
+- 双槽结论措辞不同且全部经审计判为等价时，只对当前簇中的证据批准来源复用，记录 `SEMANTIC_EQUIVALENCE_APPROVED` 并生成聚合修复任务。审计不直接改写单元格值；新任务仍通过原子完成、独立来源和反证门控。新的成功审计可以关闭旧语义冲突，类型事实判定不会自行关闭或重新打开语义冲突。
+- 正式报告、部分报告、合成和集合晋升统一使用 `research_formal_eligible_cell`，同时满足 1C 反证和本阶段语义资格。`GET /research-runs/{runId}/cells` 返回约定的单元格、等价证据、独立来源数、置信度及冲突，使用 `ApiResponse` 并校验工作区归属。
+- `evidence-audit-v1` 和 Worker 的 `research_agent_evidence_audit_enabled` 默认打开，Compose 同步为 true，保留已有 Run 的冻结开关。普通深挖预留 34 次模型调用，高风险及反证任务预留 64 次；审计按每对最多 4 次调用预留，每任务最多 80 次。批量审计按配对数量分批，预算耗尽的配对保留 `NOT_RUN`。没有修改前端源码或旧单进程循环。
+- 验证：Worker 722 项通过；Backend 全部 260 个测试类、1279 项已核对，1268 项通过、11 项沿用既有跳过条件；Frontend 308 项通过，`tsc -b` 和 `ui:check` 通过。新增测试覆盖规范化与聚类、转载与独立来源置信度、跨语言摘要和 SimHash、等价证据提交与重放、当前任务及版本范围、语义配对完整性与过期结果、原子审计的 `NOT_RUN` 门控、语义冲突保持、双槽等价后的来源复用及单元格查询的工作区边界。测试环境处理见阶段交接记录。
+- 尚未使用真实模型、真实外部检索服务或浏览器跑完整研究，也未在 MySQL 实例执行迁移；迁移已通过 H2 的 MySQL 模式验证。

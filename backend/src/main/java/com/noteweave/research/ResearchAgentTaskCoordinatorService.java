@@ -624,8 +624,8 @@ public class ResearchAgentTaskCoordinatorService {
         long evidence = cells * MAX_EVIDENCE_CARDS_PER_CELL;
         return Map.of(
                 // Worker 按调用次数结算：检索词规划最多 2 次（生成一次，输出不合规时修复一次），
-                // 证据抽取最多 2 次，与 Worker 端 DEEP_CELL 角色的 max_llm_calls 保持一致。
-                "llm_calls", 4L,
+                // 证据抽取最多 2 次；最多 6 张卡产生 15 对等价判定，每对最多 2 次。
+                "llm_calls", 34L,
                 // Tool grants from earlier leases are charged at completion time. Reserve
                 // the task's three-attempt recovery ceiling so a legal retry can settle.
                 "search_calls", 3L,
@@ -638,10 +638,10 @@ public class ResearchAgentTaskCoordinatorService {
                 "candidate_merges_accepted", cells,
                 "candidate_merges_rejected", cells);
     }
-    /** 查询生成和抽取各最多 2 次；预留多条原结论拆分及 6 条事实的判定预算。工具包含三次租约恢复上限。 */
+    /** 在隔离反证预算上增加最多 30 次等价判定调用；工具包含三次租约恢复上限。 */
     static Map<String, Long> counterCellBudget() {
         Map<String, Long> budget = new LinkedHashMap<>(deepCellBudget(1));
-        budget.put("llm_calls", 32L);
+        budget.put("llm_calls", 64L);
         budget.put("search_calls", 21L);
         budget.put("fetch_calls", 21L);
         budget.put("read_calls", 21L);
@@ -681,6 +681,9 @@ public class ResearchAgentTaskCoordinatorService {
         }
         repair.put("claims", claims.stream().distinct().toList());
         policy.put("repair_target", repair);
+        Integer equivalentRepair = jdbcTemplate.queryForObject("select count(*) from research_verifier_decision where research_run_id = ? and target_id = ? and decision_type = 'QUORUM_REPAIR_REQUIRED' and reason_code = 'SEMANTIC_EQUIVALENCE_APPROVED' and decision_status = 'OPEN'",
+                Integer.class, runId, cellKey);
+        if (equivalentRepair != null && equivalentRepair > 0 && target.excludedSourceIds().isEmpty()) policy.put("equivalence_repair", true);
         if ("EVIDENCE_CONFLICT".equals(cause)) policy.put("counter_required", true);
         return Map.copyOf(policy);
     }

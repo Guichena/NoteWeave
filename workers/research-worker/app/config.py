@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     research_agent_bundle_max_cells: int = 3
     research_agent_consumer_enabled: bool = True
     research_agent_deep_cell_executor_enabled: bool = True
-    research_agent_evidence_audit_enabled: bool = False
+    research_agent_evidence_audit_enabled: bool = True
     research_agent_synthesis_enabled: bool = False
     research_agent_wide_discovery_enabled: bool = False
     research_agent_planning_enabled: bool = True

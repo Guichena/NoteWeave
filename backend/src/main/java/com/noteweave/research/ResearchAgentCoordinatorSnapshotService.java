@@ -44,11 +44,13 @@ public class ResearchAgentCoordinatorSnapshotService {
                 select count(*) from research_cell
                 where research_run_id = ? and cell_status = 'VERIFIED'
                   and evidence_refs_json is not null and evidence_refs_json <> '[]'
+                  and semantic_audit_status in ('NOT_REQUIRED','PASS')
                 """, Long.class, runId);
         Long nonFinalizableCells = jdbcTemplate.queryForObject("""
                 select count(*) from research_cell
                 where research_run_id = ?
-                  and (cell_status <> 'VERIFIED' or evidence_refs_json is null or evidence_refs_json = '[]')
+                  and (cell_status <> 'VERIFIED' or evidence_refs_json is null or evidence_refs_json = '[]'
+                       or semantic_audit_status not in ('NOT_REQUIRED','PASS'))
                 """, Long.class, runId);
         return new Snapshot(runId, checkpoint == null ? 0 : checkpoint, wave == null ? 1 : wave,
                 taskCount == null ? 0 : taskCount, active == null ? 0 : active, failed == null ? 0 : failed,

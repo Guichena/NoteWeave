@@ -70,11 +70,11 @@ class RoleProfileCatalog:
         ),
         "DEEP_CELL": RoleProfile(
             "deep-cell-v1", "deep_cell_extract", 0.1,
-            frozenset({"search", "fetch", "read", "extract"}), 7, 7, 14, 32,
+            frozenset({"search", "fetch", "read", "extract"}), 7, 7, 14, 64,
         ),
         "COUNTERFACTUAL": RoleProfile(
             "counterfactual-v1", "counterfactual_verify", 0.0,
-            frozenset({"search", "fetch", "read", "extract"}), 7, 7, 14, 32, True,
+            frozenset({"search", "fetch", "read", "extract"}), 7, 7, 14, 64, True,
         ),
         "CELL_VERIFIER": RoleProfile(
             "cell-verifier-v1", "cell_verify", 0.0,
@@ -87,7 +87,7 @@ class RoleProfileCatalog:
         # Runtime aliases retained for the MA4 task snapshot vocabulary.
         "EVIDENCE_AUDIT": RoleProfile(
             "evidence-audit-v1", "cell_verify", 0.0,
-            frozenset({"read"}), 0, 0, 8, 1,
+            frozenset({"read"}), 0, 0, 8, 80,
         ),
         "SYNTHESIS": RoleProfile(
             "synthesis-v1", "report_synthesis", 0.0,
