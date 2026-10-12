@@ -20,6 +20,7 @@ from types import SimpleNamespace
 from app.repair_queries import plan_repair_queries
 from app.counter_checks import atomic_queries, judge_fact, MAX_FACTS
 from app.query_execution import capture_queries
+from app.claim_clustering import build_claim_clusters
 
 from app.agent_command_contract import ResearchAgentCommand
 from app.agent_task_client import AgentTaskClaim, ArchivedExternalSnapshot
@@ -168,7 +169,7 @@ class DeepCellExecutor:
         authoritative_repair_exclusions = (
             isinstance(excluded_source_ids, list)
             and all(isinstance(source_id, str) and bool(source_id.strip()) for source_id in excluded_source_ids)
-            and (bool(excluded_source_ids) or web_only_repair)
+            and (bool(excluded_source_ids) or web_only_repair or snapshot.query_policy.get("equivalence_repair") is True)
         )
         counterfactual_repair = (
             snapshot.role == "COUNTERFACTUAL"
@@ -276,7 +277,9 @@ class DeepCellExecutor:
         require_active()
 
         trusted_evidence = _trusted_evidence_payload(snapshot, cards, windows)[:MAX_EVIDENCE_CARDS_PER_CELL]
-        candidates = _candidate_payload(snapshot, cards, trusted_evidence)
+        claim_clusters = []
+        candidates = _candidate_payload(snapshot, cards, trusted_evidence, windows=windows,
+                                        llm=llm_client, clusters_out=claim_clusters)
         executed_queries = (list(getattr(self.toolchain, "executed_queries", [item.query for item in build_search_query_plan(plan)]))
                             if not reused and plan.query_specs else [])
         report = {"queries": list(dict.fromkeys([*executed_queries, *workspace_queries])),
@@ -342,7 +345,8 @@ class DeepCellExecutor:
             "trace_digest": canonical_json_digest(trace),
             "evidence": trusted_evidence,
             "candidates": candidates,
-            "extraction_diagnostics": {**extraction.diagnostics(), "execution_report": report},
+            "extraction_diagnostics": {**extraction.diagnostics(), "execution_report": report,
+                                       "claim_clusters": claim_clusters},
         })
 
     def _counter_checks(self, snapshot, task_input, plan, allow_external, originals, original_windows,
@@ -946,37 +950,35 @@ def _trusted_evidence_payload(snapshot: ResearchAgentTaskSnapshot, cards: list[o
     return payload
 
 
-def _candidate_payload(snapshot: ResearchAgentTaskSnapshot, cards: list[object], evidence: list[dict[str, object]]) -> list[dict[str, object]]:
-    evidence_keys = {str(item["evidence_key"]) for item in evidence}
+def _candidate_payload(snapshot: ResearchAgentTaskSnapshot, cards: list[object], evidence: list[dict[str, object]],
+                       *, windows=None, llm=None, clusters_out=None) -> list[dict[str, object]]:
+    evidence_by_key = {str(item["evidence_key"]): item for item in evidence}
+    by_window = {w.window_id: w for w in windows or [] if getattr(w, "window_id", "")}
     targets = {item.cell_id: item.expected_version for item in snapshot.target_cells}
-    grouped: dict[tuple[str, str], dict[str, object]] = {}
+    rows = []
     for card in cards:
         cell_id = f"{getattr(card, 'entity_id', '')}:{getattr(card, 'column_key', '')}"
         evidence_key = _scoped_evidence_key(snapshot, card)
         value = unicodedata.normalize("NFC", str(getattr(card, "claim_text", "")))
-        if (cell_id not in targets or evidence_key not in evidence_keys or not value
+        if (cell_id not in targets or evidence_key not in evidence_by_key or not value
                 or str(getattr(card, "relation_type", "")).upper() != "SUPPORTS"):
             continue
-        key = (cell_id, value)
-        group = grouped.setdefault(key, {"evidence_keys": set(), "confidence_ppm": 0})
-        group["evidence_keys"].add(evidence_key)  # type: ignore[union-attr]
-        group["confidence_ppm"] = max(int(group["confidence_ppm"]), _score_ppm(getattr(card, "support_score", 0.0)))
-
-    by_cell: dict[str, list[tuple[str, dict[str, object]]]] = {}
-    for (cell_id, value), group in grouped.items():
-        by_cell.setdefault(cell_id, []).append((value, group))
+        item = evidence_by_key[evidence_key]
+        window = by_window.get(item["window_id"])
+        domain = (getattr(window, "source_domain", "") or (urlsplit(getattr(window, "url", "")).hostname or "")
+                  or "workspace-source:" + str(item["source_id"]))
+        rows.append({**item, "cell_key": cell_id, "source_domain": domain,
+                     "lineage_digest": getattr(window, "lineage_digest", "")})
+    clusters = build_claim_clusters(rows, llm)
+    if clusters_out is not None:
+        clusters_out.extend(clusters)
+    by_cell = {}
+    for cluster in clusters:
+        by_cell.setdefault(cluster["cell_key"], []).append(cluster)
     proposals: list[dict[str, object]] = []
     for cell_id in sorted(by_cell):
-        value, group = sorted(
-            by_cell[cell_id], key=lambda item: (-int(item[1]["confidence_ppm"]), item[0])
-        )[0]
-        # A canonical candidate may only bind evidence whose claim_text is exactly
-        # the selected candidate value. Other Evidence from the same Cell remains
-        # available to conflict detection, but binding it here makes Java's
-        # qualification gate correctly reject the candidate as a claim mismatch.
-        candidate_evidence = sorted(
-            {str(item) for item in group["evidence_keys"]}  # type: ignore[union-attr]
-        )
+        group = by_cell[cell_id][0]
+        value, candidate_evidence = group["claim_text"], group["evidence_keys"]
         stable = _stable_hex(snapshot.task_id, str(snapshot.lease_epoch), str(snapshot.fencing_token),
                              cell_id, str(targets[cell_id]), value, *candidate_evidence)
         proposals.append({
@@ -986,6 +988,7 @@ def _candidate_payload(snapshot: ResearchAgentTaskSnapshot, cards: list[object],
             "candidate_value": value,
             "evidence_keys": candidate_evidence,
             "confidence_ppm": int(group["confidence_ppm"]),
+            "equivalent_claims": group["equivalent_claims"],
         })
     return proposals
 

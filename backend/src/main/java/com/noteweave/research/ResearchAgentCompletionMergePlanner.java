@@ -42,7 +42,7 @@ class ResearchAgentCompletionMergePlanner {
             }
             boolean literalSupport = candidate.evidenceKeys().stream().map(evidenceByKey::get).allMatch(evidence ->
                     evidence != null && "SUPPORTS".equals(evidence.relationType())
-                            && candidate.candidateValue().equals(evidence.claimText()));
+                            && ResearchEquivalentClaims.supports(candidate, evidence.evidenceKey(), evidence.claimText()));
             boolean qualificationRejected = qualificationRejectedCandidates.contains(candidate.candidateKey());
             boolean supported = literalSupport && !qualificationRejected;
             ResearchAgentCompletionReceipt.MergeReceipt receipt =
@@ -91,13 +91,14 @@ class ResearchAgentCompletionMergePlanner {
                 .distinct().sorted().toList();
         boolean supported = candidate.evidenceKeys().stream().map(evidence::get).allMatch(item ->
                 item != null && "SUPPORTS".equals(item.relationType())
-                        && candidate.candidateValue().equals(item.claimText()))
+                        && ResearchEquivalentClaims.supports(candidate, item.evidenceKey(), item.claimText()))
                 && !qualificationRejectedCandidates.contains(candidate.candidateKey());
         ResearchAgentCompletionCommitter.QuorumCandidate current =
                 new ResearchAgentCompletionCommitter.QuorumCandidate(
                         null, task.id(), null, candidate.candidateKey(), candidate.cellKey(),
                         candidate.baseCellVersion(), candidate.candidateValue(), candidate.confidencePpm(), domains,
-                        candidate.evidenceKeys().stream().sorted().toList(), null, task.candidateSlot(), supported);
+                        candidate.evidenceKeys().stream().sorted().toList(), null, task.candidateSlot(), supported,
+                        candidate.evidenceKeys().stream().map(evidence::get).map(item -> ResearchSourceIndependence.fingerprint(item.quoteText())).distinct().sorted().toList());
         List<ResearchAgentCompletionCommitter.QuorumCandidate> candidates = new ArrayList<>(existing);
         candidates.add(current);
         return quorumOutcome(candidates);
@@ -123,7 +124,8 @@ class ResearchAgentCompletionMergePlanner {
                 || !hasStrongSourceIdentity(first.domains())
                 || !hasStrongSourceIdentity(second.domains())) {
             reason = "QUORUM_PROVENANCE_MISSING";
-        } else if (!java.util.Collections.disjoint(first.domains(), second.domains())) {
+        } else if (!java.util.Collections.disjoint(first.domains(), second.domains())
+                || ResearchSourceIndependence.overlappingFingerprints(first.fingerprints(), second.fingerprints())) {
             reason = "QUORUM_SOURCE_DOMAIN_NOT_INDEPENDENT";
         }
         ResearchAgentCompletionReceipt.MergeReceipt receipt =

@@ -191,6 +191,7 @@ class ResearchAgentExtractionDiagnostics(_FrozenStrictContract):
     rejection_counts: dict[str, int]
     provider_receipt: ResearchAgentExtractionProviderReceipt
     execution_report: dict[str, object] | None = None
+    claim_clusters: list[dict[str, object]] | None = None
     rejection_samples: tuple[ResearchAgentRejectionSample, ...] = Field(
         default_factory=tuple, max_length=_MAX_REJECTION_SAMPLES
     )
@@ -222,6 +223,9 @@ class ResearchAgentExtractionDiagnostics(_FrozenStrictContract):
         if self.execution_report is not None:
             from app.execution_report import validate_execution_report
             validate_execution_report(self.execution_report)
+        if self.claim_clusters is not None:
+            from app.claim_clustering import validate_clusters
+            validate_clusters(self.claim_clusters)
         if sum(self.rejection_counts.values()) != self.rejected_count:
             raise ValueError("extraction rejection_counts must sum to rejected_count")
         if self.accepted_count == 0 and self.termination_reason == _EXTRACTION_ACCEPTED_REASON:
@@ -261,6 +265,17 @@ class ResearchAgentCompletionEvidence(_FrozenStrictContract):
         return _require_nonblank_text(value)
 
 
+class ResearchEquivalentClaim(_FrozenStrictContract):
+    evidence_key: str = Field(min_length=1, max_length=64, pattern=_STABLE_KEY_PATTERN)
+    claim_text: str = Field(min_length=1, max_length=16_384)
+    source_domain: str = Field(min_length=1, max_length=300)
+
+    @field_validator("claim_text", "source_domain")
+    @classmethod
+    def nonblank(cls, value):
+        return _require_nonblank_text(value)
+
+
 class ResearchAgentCompletionCandidate(_FrozenStrictContract):
     candidate_key: str = Field(min_length=1, max_length=160, pattern=_STABLE_KEY_PATTERN)
     cell_key: str = Field(min_length=1, max_length=160)
@@ -268,6 +283,7 @@ class ResearchAgentCompletionCandidate(_FrozenStrictContract):
     candidate_value: str = Field(min_length=1, max_length=16_384)
     evidence_keys: tuple[str, ...] = Field(min_length=1, max_length=12)
     confidence_ppm: int = Field(ge=0, le=1_000_000)
+    equivalent_claims: tuple["ResearchEquivalentClaim", ...] | None = Field(default=None, max_length=12)
 
     @field_validator("candidate_key", "cell_key")
     @classmethod
@@ -287,6 +303,21 @@ class ResearchAgentCompletionCandidate(_FrozenStrictContract):
         if len(set(value)) != len(value):
             raise ValueError("candidate evidence_keys must be unique")
         return value
+
+    @model_validator(mode="after")
+    def validate_equivalent_claims(self):
+        if self.equivalent_claims is not None:
+            keys = [claim.evidence_key for claim in self.equivalent_claims]
+            if len(keys) != len(set(keys)) or set(keys) != set(self.evidence_keys):
+                raise ValueError("equivalent_claims 必须逐条对应候选证据，且不能重复")
+            if not any(claim.claim_text == self.candidate_value for claim in self.equivalent_claims):
+                raise ValueError("候选代表值必须保留一条证据的结论原文")
+        return self
+
+    @field_validator("equivalent_claims", mode="before")
+    @classmethod
+    def freeze_equivalent_claims(cls, value):
+        return tuple(value) if isinstance(value, list) else value
 
     @field_validator("evidence_keys", mode="before")
     @classmethod
@@ -398,6 +429,8 @@ def _canonical_payload(value: ResearchAgentCompletionEnvelope | _ResearchAgentCo
     candidates = sorted(payload["candidates"], key=lambda item: item["candidate_key"])  # type: ignore[index,return-value]
     for candidate in candidates:
         candidate["evidence_keys"] = sorted(candidate["evidence_keys"])  # type: ignore[index]
+        if "equivalent_claims" in candidate:
+            candidate["equivalent_claims"] = sorted(candidate["equivalent_claims"], key=lambda c: c["evidence_key"])
     payload["candidates"] = candidates
     return _normalize_unicode(payload)  # type: ignore[return-value]
 

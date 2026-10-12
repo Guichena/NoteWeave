@@ -211,6 +211,7 @@ class ResearchAgentCompletionCommitter {
             throw new IllegalStateException("Persisted merge outcome differs from the locked completion plan");
         }
         resolveCounterfactualRepairDecisions(run.id(), task, mergeOutcome);
+        new ResearchClaimClusterService(jdbcTemplate, objectMapper).persist(task, envelope, completionId);
 
         persistBudget(reservation, completionId, envelope.executionKey(), ledger);
         checkpoint(ResearchAgentCompletionFaultInjector.Stage.AFTER_BUDGET_FINALIZE, 0);
@@ -462,7 +463,8 @@ class ResearchAgentCompletionCommitter {
                     || (task.candidateQuorum() == 1 && (cell.leaseEpoch() != task.leaseEpoch()
                     || cell.fencingToken() != task.fencingToken())) || "FROZEN".equals(cell.status())
                     || (!roleResultTask && "VERIFIED".equals(cell.status()))
-                    || (roleResultTask && !ResearchAgentRoles.ownsNoCells(task.role()) && !"VERIFIED".equals(cell.status()))) {
+                    || (roleResultTask && !ResearchAgentRoles.ownsNoCells(task.role())
+                        && !"EVIDENCE_AUDIT".equals(task.role()) && !"VERIFIED".equals(cell.status()))) {
                 throw snapshotStale("Canonical target cell no longer matches the task snapshot");
             }
         }
@@ -582,7 +584,7 @@ class ResearchAgentCompletionCommitter {
     private static List<String> quorumIdentityTokens(String sourceDomain, String lineageDigest) {
         List<String> identities = new ArrayList<>();
         if (sourceDomain != null && !sourceDomain.isBlank()) {
-            identities.add("domain:" + sourceDomain);
+            identities.add("domain:" + ResearchSourceIndependence.registeredDomain(sourceDomain));
         }
         if (lineageDigest != null && !lineageDigest.isBlank()) {
             identities.add("lineage:" + lineageDigest);
@@ -657,7 +659,7 @@ class ResearchAgentCompletionCommitter {
         List<QuorumCandidate> rows = jdbcTemplate.query("""
                 select id, task_id, research_agent_execution_id, idempotency_key, cell_key, base_cell_version,
                        candidate_value, confidence_score_ppm, source_domains_json, evidence_ids_json,
-                       blind_digest, candidate_slot
+                       blind_digest, candidate_slot, source_fingerprints_json
                 from research_agent_candidate
                 where research_run_id = ? and quorum_group_key = ?
                 order by candidate_slot for update
@@ -668,15 +670,16 @@ class ResearchAgentCompletionCommitter {
                     rs.getString("idempotency_key"), rs.getString("cell_key"), rs.getInt("base_cell_version"),
                     rs.getString("candidate_value"), rs.getInt("confidence_score_ppm"),
                     readStringList(rs.getString("source_domains_json")), evidenceKeys,
-                    rs.getString("blind_digest"), rs.getInt("candidate_slot"), false);
+                    rs.getString("blind_digest"), rs.getInt("candidate_slot"), false,
+                    readOptionalStrings(rs.getString("source_fingerprints_json")));
         }, task.runId(), task.quorumGroupKey());
         return rows.stream().map(item -> new QuorumCandidate(
                 item.id(), item.taskId(), item.executionId(), item.candidateKey(), item.cellKey(),
                 item.baseCellVersion(), item.value(), item.confidencePpm(), item.domains(), item.evidenceKeys(),
                 item.blindDigest(), item.slot(),
-                persistedEvidenceSupports(task.runId(), item.evidenceKeys(), item.value())
+                persistedEvidenceSupports(task.runId(), item.evidenceKeys(), item.value(), item.id())
                         && repairExecution.persistedCounterSupports(item.taskId(), item.cellKey(), item.value())
-                        && !persistedQualificationRejected(item.id())))
+                        && !persistedQualificationRejected(item.id()), item.fingerprints()))
                 .toList();
     }
 
@@ -692,18 +695,39 @@ class ResearchAgentCompletionCommitter {
         return rejected != null && rejected > 0;
     }
 
-    private boolean persistedEvidenceSupports(String runId, List<String> keys, String value) {
+    private boolean persistedEvidenceSupports(String runId, List<String> keys, String value, String candidateId) {
         if (keys.isEmpty()) return false;
         String placeholders = String.join(",", Collections.nCopies(keys.size(), "?"));
         List<Object> parameters = new ArrayList<>();
         parameters.add(runId);
         parameters.addAll(keys);
+        Map<String, String> equivalent = new HashMap<>();
+        String json = jdbcTemplate.queryForObject("select equivalent_claims_json from research_agent_candidate where id = ?", String.class, candidateId);
+        if (json != null) {
+            try {
+                var claims = objectMapper.readTree(json);
+                if (claims.isTextual()) claims = objectMapper.readTree(claims.asText());
+                claims.forEach(claim -> equivalent.put(claim.path("evidence_key").asText(), claim.path("claim_text").asText()));
+            } catch (JsonProcessingException exception) { throw new BusinessException("RESEARCH_AGENT_COMPLETION_INVALID", "已保存的等价证据不符合约定"); }
+        }
         List<Boolean> support = jdbcTemplate.query("""
-                select relation_type, claim_text from source_evidence
+                select relation_type, claim_text, evidence_key from source_evidence
                 where research_run_id = ? and evidence_key in (""" + placeholders + ") order by evidence_key",
-                (rs, rowNum) -> "SUPPORTS".equals(rs.getString(1)) && value.equals(rs.getString(2)),
+                (rs, rowNum) -> "SUPPORTS".equals(rs.getString(1)) && (value.equals(rs.getString(2))
+                        || rs.getString(2).equals(equivalent.get(rs.getString(3)))),
                 parameters.toArray());
         return support.size() == keys.size() && support.stream().allMatch(Boolean::booleanValue);
+    }
+
+    private List<String> readOptionalStrings(String json) {
+        if (json == null) return List.of();
+        try {
+            var node = objectMapper.readTree(json);
+            if (node.isTextual()) node = objectMapper.readTree(node.asText());
+            List<String> result = new ArrayList<>();
+            node.forEach(item -> result.add(item.asText()));
+            return List.copyOf(result);
+        } catch (JsonProcessingException exception) { throw new BusinessException("RESEARCH_AGENT_COMPLETION_INVALID", "已保存的来源指纹不符合约定"); }
     }
 
     private MergeOutcome applyQuorumVerdictAndCas(
@@ -813,7 +837,7 @@ class ResearchAgentCompletionCommitter {
             CellRow cell = cellsByKey.get(candidate.cellKey());
             boolean literalSupport = persisted.evidence().stream().allMatch(evidence ->
                     "SUPPORTS".equals(evidence.relationType())
-                            && candidate.candidateValue().equals(evidence.claimText()));
+                            && ResearchEquivalentClaims.supports(candidate, evidence.evidenceKey(), evidence.claimText()));
             boolean qualificationRejected = qualificationRejectedCandidates.contains(candidate.candidateKey());
             boolean supported = literalSupport && !qualificationRejected;
             String decision = supported ? "ACCEPTED" : "REJECTED";
@@ -1329,8 +1353,16 @@ class ResearchAgentCompletionCommitter {
             List<String> evidenceKeys,
             String blindDigest,
             int slot,
-            boolean supported
-    ) { }
+            boolean supported,
+            List<String> fingerprints
+    ) {
+        QuorumCandidate(String id, String taskId, String executionId, String candidateKey, String cellKey,
+                        int baseCellVersion, String value, int confidencePpm, List<String> domains,
+                        List<String> evidenceKeys, String blindDigest, int slot, boolean supported) {
+            this(id, taskId, executionId, candidateKey, cellKey, baseCellVersion, value, confidencePpm,
+                    domains, evidenceKeys, blindDigest, slot, supported, List.of());
+        }
+    }
 
     record MergeOutcome(
             List<ResearchAgentCompletionReceipt.MergeReceipt> accepted,

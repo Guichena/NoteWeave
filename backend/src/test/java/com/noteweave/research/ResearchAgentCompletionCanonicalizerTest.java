@@ -19,6 +19,21 @@ class ResearchAgentCompletionCanonicalizerTest {
     private final ResearchAgentCompletionEnvelopeParser parser = new ResearchAgentCompletionEnvelopeParser();
 
     @Test
+    void shouldMatchWorkerEquivalentCompletionVectorAndIgnoreEquivalentEvidenceOrder() throws Exception {
+        try (var stream = getClass().getResourceAsStream("/research/semantic-completion-v2.json")) {
+            assertThat(stream).isNotNull();
+            var envelope = parser.parse(stream.readAllBytes());
+            assertThat(canonicalizer.validateAndVerify(envelope).digest()).isEqualTo(envelope.envelopeDigest());
+            var claims = new ArrayList<>(envelope.candidates().get(0).equivalentClaims());
+            java.util.Collections.reverse(claims);
+            var candidate = envelope.candidates().get(0);
+            var reversed = new ResearchAgentCompletionEnvelope.Candidate(candidate.candidateKey(), candidate.cellKey(), candidate.baseCellVersion(), candidate.candidateValue(), candidate.evidenceKeys(), candidate.confidencePpm(), claims);
+            var changed = new ResearchAgentCompletionEnvelope(envelope.schemaVersion(), envelope.taskId(), envelope.workerInstanceId(), envelope.leaseEpoch(), envelope.fencingToken(), envelope.executionKey(), envelope.taskSnapshotDigest(), envelope.terminationReason(), envelope.budgetUsage(), envelope.telemetry(), envelope.traceDigest(), envelope.evidence(), List.of(reversed), null, envelope.extractionDiagnostics(), envelope.envelopeDigest());
+            assertThat(canonicalizer.digest(changed)).isEqualTo(envelope.envelopeDigest());
+        }
+    }
+
+    @Test
     void shouldOrderCanonicalObjectKeysByUnsignedUtf8LikePython() {
         Map<String, Object> value = new LinkedHashMap<>();
         value.put("😀", "emoji");

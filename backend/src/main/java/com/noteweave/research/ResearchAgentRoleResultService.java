@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
 /** Validates feature-gated role results before any promotion or repair advancement. */
 @Service
 class ResearchAgentRoleResultService {
-    private static final String AUDIT_SCHEMA = "research-evidence-audit-result.v1";
+    private static final Set<String> AUDIT_SCHEMAS = Set.of("research-evidence-audit-result.v1", "research-evidence-audit-result.v2");
     private static final Set<String> SYNTHESIS_SCHEMAS = Set.of(
             "research-synthesis-candidate.v1", "research-synthesis-candidate.v2");
     private static final String DIGEST_DOMAIN = "research-agent-role-result.v1";
@@ -76,6 +76,8 @@ class ResearchAgentRoleResultService {
                 canonicalizer.canonicalJsonValue(result));
         if ("EVIDENCE_AUDIT".equals(task.role())) {
             persistAuditDecisions(task, result, roleResultId);
+            var clusterService = new ResearchClaimClusterService(jdbcTemplate, objectMapper);
+            new ResearchSemanticAuditService(jdbcTemplate, objectMapper, clusterService).apply(task, envelope, roleResultId);
         } else if ("SYNTHESIS".equals(task.role())) {
             jdbcTemplate.update("""
                     insert into research_agent_synthesis_candidate(
@@ -94,7 +96,7 @@ class ResearchAgentRoleResultService {
     }
 
     private void validateAudit(ResearchAgentCompletionCommitter.TaskRow task, Map<String, Object> result) {
-        if (!AUDIT_SCHEMA.equals(text(result.get("result_schema_version")))
+        if (!AUDIT_SCHEMAS.contains(text(result.get("result_schema_version")))
                 || !"EVIDENCE_AUDIT".equals(text(result.get("role")))) throw invalid("Audit result schema or role is invalid");
         Map<String, Object> policy = queryPolicy(task);
         Map<String, Object> input = mapValue(policy.get("audit_input"));
@@ -156,7 +158,7 @@ class ResearchAgentRoleResultService {
                     values (?, ?, 'CELL', ?, ?, ?, ?, ?, ?, ?)
                     """, Ids.newId(), task.runId(),
                     "PASS".equals(status) ? "EVIDENCE_AUDIT_PASS" : "EVIDENCE_AUDIT_REPAIR_REQUIRED",
-                    text(target.get("reason_codes")), cellKey,
+                    stringList(target.get("reason_codes")).stream().findFirst().orElse("AUDIT_REPAIR_REQUIRED"), cellKey,
                     Json.write(objectMapper, stringList(target.get("evidence_keys"))),
                     "PASS".equals(status) ? "AUDIT_COMPLETE" : "COUNTERFACTUAL_REPAIR",
                     decisionStatus, Json.write(objectMapper, Map.of("role_result_id", roleResultId)));

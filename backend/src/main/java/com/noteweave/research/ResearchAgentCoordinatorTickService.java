@@ -67,6 +67,11 @@ public class ResearchAgentCoordinatorTickService {
         // snapshot, so a conflict demotion is visible to readyForFinalization()/nonFinalizableCellCount
         // and the terminal gate can never finalize a Run over a mutually-exclusive cell.
         globalConflictService.adjudicateRun(runId);
+        ResearchAgentCoordinatorSnapshotService.Snapshot auditSnapshot = snapshots.snapshot(runId);
+        if (auditSnapshot.activeTaskCount() == 0) {
+            var audit = roleWorkflow.advancePendingAudit(runId, auditSnapshot.currentWaveNo());
+            if ("AUDIT_TASKIZED".equals(audit.outcome())) return new TickReceipt(audit.outcome(), snapshots.snapshot(runId), audit.taskization());
+        }
         // DR-304: dispatch (or explicitly exhaust) the bounded counterfactual repair for every still
         // open conflict, still before the snapshot so the tick's own branches see the dispatched task.
         conflictRepairService.advance(runId);

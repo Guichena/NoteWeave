@@ -6,7 +6,8 @@ dependencies = [
   "kafka-python>=2.0.2",
   "openai>=2.0,<3",
   "pydantic-settings>=2.6.0",
-  "pytest>=9.0.0"
+  "pytest>=9.0.0",
+  "tldextract>=5.1,<6"
 ]
 
 [tool.pytest.ini_options]

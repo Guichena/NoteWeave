@@ -365,6 +365,7 @@ public class ResearchAgentRunCompletionGate {
         // spent and it is still unresolved" never collapses into an open conflict.
         if (CONFLICT_EXHAUSTED_CELL_STATUS.equals(cell.status())) return REASON_CONFLICT_REPAIR_EXHAUSTED;
         if (CONFLICTED_CELL_STATUS.equals(cell.status())) return REASON_CONFLICTED_CELL;
+        if (cell.status() != null && cell.status().startsWith("SEMANTIC_")) return cell.status();
         if (RESOLVED_CELL_STATUS.equals(cell.status())) return "EVIDENCE_MISSING";
         return requiredColumnKey(tableState, cell.columnKey()) ? "REQUIRED_CELL_UNRESOLVED" : "OPTIONAL_CELL_UNRESOLVED";
     }
@@ -468,7 +469,9 @@ public class ResearchAgentRunCompletionGate {
     public TableState loadTableState(String runId) {
         List<CellState> cells = jdbcTemplate.query("""
                 select cell_key, column_key,
-                    case when cell_status = 'VERIFIED' and not exists (
+                    case when cell_status in ('CONFLICTED','CONFLICT_EXHAUSTED') then cell_status
+                    when semantic_audit_status in ('PENDING','NOT_RUN','CONFLICT','BLOCKED') then concat('SEMANTIC_', semantic_audit_status)
+                    when cell_status = 'VERIFIED' and not exists (
                         select 1 from research_counter_eligible_cell eligible where eligible.id = research_cell.id
                     ) then 'COUNTER_CHECK_PENDING' else cell_status end as cell_status,
                     candidate_value, evidence_refs_json

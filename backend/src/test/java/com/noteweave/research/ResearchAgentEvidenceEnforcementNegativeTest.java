@@ -514,8 +514,10 @@ class ResearchAgentEvidenceEnforcementNegativeTest {
     }
 
     private ResearchAgentCompletionCommitter.TaskRow taskRow(int candidateQuorum) {
+        // 高风险要求从当前单元格读取，直接资格校验也使用真实的普通单元格。
+        Fixture fixture = fixture("prefix trusted quote 0 suffix");
         return new ResearchAgentCompletionCommitter.TaskRow(
-                "task-0", "run-0", "CLAIMED", "DEEP_CELL", "entity-1", "main",
+                fixture.taskId(), fixture.runId(), "CLAIMED", "DEEP_CELL", "entity-1", "main",
                 1, 1, "[]", "{}", "{}", "research-agent-task-snapshot.v1", null, "worker-a",
                 1, 1L, null, null, candidateQuorum, 1, true);
     }

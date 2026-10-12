@@ -131,7 +131,13 @@ class ResearchAgentCompletionWriteRepository {
             List<String> sourceDomains = boundEvidence.stream()
                     .flatMap(itemEvidence -> itemEvidence.quorumIdentities().stream())
                     .distinct().sorted().toList();
-            BigDecimal legacyConfidence = legacyScore(item.confidencePpm());
+            List<ResearchSourceIndependence.Source> sourceFacts = new ArrayList<>();
+            for (String key : evidenceKeys) sourceFacts.addAll(jdbcTemplate.query(
+                    "select source_domain, lineage_digest, quote_text, support_score_ppm from source_evidence where research_run_id = ? and evidence_key = ?",
+                    (rs, n) -> new ResearchSourceIndependence.Source(rs.getString(1), rs.getString(2), rs.getString(3), rs.getInt(4)), runId, key));
+            List<String> fingerprints = sourceFacts.stream().map(source -> ResearchSourceIndependence.fingerprint(source.quote())).distinct().sorted().toList();
+            int confidence = item.equivalentClaims() == null ? item.confidencePpm() : ResearchSourceIndependence.score(sourceFacts).confidencePpm();
+            BigDecimal legacyConfidence = legacyScore(confidence);
             Map<String, Object> content = rowContent();
             content.put("id", candidateId);
             content.put("research_run_id", runId);
@@ -149,7 +155,9 @@ class ResearchAgentCompletionWriteRepository {
             content.put("candidate_value", item.candidateValue());
             content.put("evidence_ids", evidenceKeys);
             content.put("confidence_score", legacyConfidence.toPlainString());
-            content.put("confidence_score_ppm", item.confidencePpm());
+            content.put("confidence_score_ppm", confidence);
+            if (item.equivalentClaims() != null) content.put("equivalent_claims", item.equivalentClaims());
+            content.put("source_fingerprints", fingerprints);
             String blindDigest = null;
             if (task.candidateQuorum() == 2) {
                 Map<String, Object> blindContent = rowContent();
@@ -172,20 +180,23 @@ class ResearchAgentCompletionWriteRepository {
                             base_cell_version, plan_revision, entity_set_version, lease_epoch, fencing_token,
                             candidate_value, evidence_ids_json, confidence_score,
                             agent_completion_id, content_digest, research_agent_execution_id, confidence_score_ppm,
-                            quorum_group_key, candidate_slot, source_domains_json, blind_digest
-                        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            quorum_group_key, candidate_slot, source_domains_json, blind_digest,
+                            equivalent_claims_json, source_fingerprints_json
+                        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, candidateId, runId, task.id(), executionId, item.candidateKey(), item.cellKey(),
                         item.baseCellVersion(), task.planRevision(), task.entitySetVersion(), task.leaseEpoch(),
                         task.fencingToken(), item.candidateValue(), Json.write(objectMapper, evidenceKeys),
-                        legacyConfidence, completionId, contentDigest, executionId, item.confidencePpm(),
+                        legacyConfidence, completionId, contentDigest, executionId, confidence,
                         task.quorumGroupKey(), task.candidateSlot(),
-                        task.candidateQuorum() == 2 ? Json.write(objectMapper, sourceDomains) : null, blindDigest);
+                        task.candidateQuorum() == 2 ? Json.write(objectMapper, sourceDomains) : null, blindDigest,
+                        item.equivalentClaims() == null ? null : Json.write(objectMapper, item.equivalentClaims()), Json.write(objectMapper, fingerprints));
             } catch (DataIntegrityViolationException exception) {
                 throw new com.noteweave.common.BusinessException("RESEARCH_AGENT_COMPLETION_CANDIDATE_CONFLICT",
                         "Candidate stable key raced with different content");
             }
             result.add(new ResearchAgentCompletionCommitter.CandidatePersisted(
-                    candidateId, item, boundEvidence, contentDigest));
+                    candidateId, new ResearchAgentCompletionEnvelope.Candidate(item.candidateKey(), item.cellKey(),
+                    item.baseCellVersion(), item.candidateValue(), item.evidenceKeys(), confidence, item.equivalentClaims()), boundEvidence, contentDigest));
             checkpoint.accept(ResearchAgentCompletionFaultInjector.Stage.AFTER_NTH_CANDIDATE, ++ordinal);
         }
         return List.copyOf(result);

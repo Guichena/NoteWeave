@@ -128,7 +128,7 @@ public class ResearchCollectionService {
                 select cell_key, column_key, candidate_value, evidence_refs_json
                 from research_cell
                 where research_run_id = ? and cell_status = 'VERIFIED' and candidate_value is not null
-                    and exists (select 1 from research_counter_eligible_cell eligible where eligible.id = research_cell.id)
+                    and exists (select 1 from research_formal_eligible_cell eligible where eligible.id = research_cell.id)
                 order by cell_key
                 """, (rs, rowNum) -> new NoteCandidate(
                 rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4)), run.id());

@@ -5,7 +5,6 @@ import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
 import com.noteweave.common.Json;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -28,8 +27,6 @@ class ResearchEvidenceQualificationService {
      * identity vocabulary as {@link #independentSourceCount} instead of re-deriving it.
      */
     static final Pattern LINEAGE = Pattern.compile("(?:sha256:)?[0-9a-f]{64}");
-    private static final Set<String> TWO_LABEL_PUBLIC_SUFFIXES = Set.of(
-            "co.uk", "org.uk", "ac.uk", "com.au", "net.au", "co.jp", "com.cn", "com.hk", "com.sg");
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -157,7 +154,17 @@ class ResearchEvidenceQualificationService {
         for (ResearchAgentCompletionEnvelope.Evidence item : evidence) {
             reasons.addAll(validateEvidence(item, authority.get(item.evidenceKey())));
             if (!"SUPPORTS".equals(item.relationType())) reasons.add("RELATION_NOT_SUPPORTING");
-            if (!candidate.candidateValue().equals(item.claimText())) reasons.add("CLAIM_CANDIDATE_MISMATCH");
+            if (!ResearchEquivalentClaims.supports(candidate, item.evidenceKey(), item.claimText())) reasons.add("CLAIM_CANDIDATE_MISMATCH");
+            if (candidate.equivalentClaims() != null) {
+                var declaration = candidate.equivalentClaims().stream().filter(claim -> claim.evidenceKey().equals(item.evidenceKey())).findFirst().orElseThrow();
+                if (!declaration.claimText().equals(item.claimText())) reasons.add("EQUIVALENT_CLAIM_MISMATCH");
+                var source = authority.get(item.evidenceKey());
+                boolean workspaceIdentity = declaration.sourceDomain().equals("workspace-source:" + item.sourceId())
+                        && "WORKSPACE".equals(item.snapshotStatus());
+                if (source == null || (!workspaceIdentity && !registeredDomain(declaration.sourceDomain()).equals(registeredDomain(source.sourceDomain())))) {
+                    reasons.add("EQUIVALENT_SOURCE_MISMATCH");
+                }
+            }
         }
         // DR-112: this branch is unreachable in the live completion path and is kept only as a
         // defensive backstop. Three independent Canonicalizer invariants make `evidence` (the
@@ -175,8 +182,11 @@ class ResearchEvidenceQualificationService {
         // as a candidate-only validation row. Pinned by
         // ResearchAgentEvidenceEnforcementNegativeTest (DR-112 group 5).
         if (evidence.isEmpty()) reasons.add("QUALIFIED_SOURCE_REQUIRED");
-        if (task.candidateQuorum() == 1 && independentSourceCount(evidence, authority) < 1) {
-            reasons.add("QUALIFIED_SOURCE_REQUIRED");
+        if (task.candidateQuorum() == 1) {
+            Boolean highRisk = jdbcTemplate.queryForObject("select high_risk from research_cell where research_run_id = ? and cell_key = ?",
+                    Boolean.class, task.runId(), candidate.cellKey());
+            int required = Boolean.TRUE.equals(highRisk) ? 2 : 1;
+            if (independentSourceCount(evidence, authority) < required) reasons.add(required == 2 ? "INDEPENDENT_SOURCES_REQUIRED" : "QUALIFIED_SOURCE_REQUIRED");
         }
         return reasons.stream().distinct().sorted().toList();
     }
@@ -213,16 +223,14 @@ class ResearchEvidenceQualificationService {
             List<ResearchAgentCompletionEnvelope.Evidence> evidence,
             Map<String, ResearchAgentCompletionCommitter.TrustedEvidenceSource> authority
     ) {
-        List<SourceIdentity> accepted = new ArrayList<>();
-        evidence.stream().sorted(Comparator.comparing(ResearchAgentCompletionEnvelope.Evidence::evidenceKey))
-                .map(item -> authority.get(item.evidenceKey())).filter(java.util.Objects::nonNull)
-                .map(item -> new SourceIdentity(registeredDomain(item.sourceDomain()), item.lineageDigest()))
-                .filter(SourceIdentity::complete).forEach(identity -> {
-                    boolean overlaps = accepted.stream().anyMatch(existing ->
-                            existing.domain().equals(identity.domain()) || existing.lineage().equals(identity.lineage()));
-                    if (!overlaps) accepted.add(identity);
-                });
-        return accepted.size();
+        List<ResearchSourceIndependence.Source> sources = new ArrayList<>();
+        for (var item : evidence) {
+            var source = authority.get(item.evidenceKey());
+            if (source != null && new SourceIdentity(registeredDomain(source.sourceDomain()), source.lineageDigest()).complete()) {
+                sources.add(new ResearchSourceIndependence.Source(source.sourceDomain(), source.lineageDigest(), item.quoteText(), item.supportScorePpm()));
+            }
+        }
+        return ResearchSourceIndependence.score(sources).independentSources();
     }
 
     private BindingValidation validation(
@@ -257,17 +265,7 @@ class ResearchEvidenceQualificationService {
      * exactly like {@link #independentSourceCount} (same registrable-domain reduction).
      */
     static String registeredDomain(String domain) {
-        if (domain == null) return "";
-        String normalized = domain.strip().toLowerCase(Locale.ROOT);
-        if (normalized.startsWith("workspace-source:") || normalized.startsWith("external-source:")) {
-            return normalized;
-        }
-        String[] labels = normalized.split("\\.");
-        if (labels.length <= 2) return normalized;
-        String suffix = labels[labels.length - 2] + "." + labels[labels.length - 1];
-        return TWO_LABEL_PUBLIC_SUFFIXES.contains(suffix)
-                ? labels[labels.length - 3] + "." + suffix
-                : suffix;
+        return ResearchSourceIndependence.registeredDomain(domain);
     }
 
     record QualificationBatch(List<BindingValidation> validations, String mode) {
