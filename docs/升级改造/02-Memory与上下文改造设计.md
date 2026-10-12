@@ -168,3 +168,15 @@
 - 命中槽位的负面增加 β。增量取推断档 0.5，除以 1 加已有证据会话数，再加未作废且 `beta_weight` 大于 0 的反馈目标数。`UNKNOWN` 再把这个增量乘 0.5。不写入 `memory_evidence_session`。替换时按行上的 `beta_weight` 减回，下限 0。正面不加 α。效果按当时生效的 `memory_revision_id` 归因。
 - 迁移是 `V163__memory_application_outcome.sql`。开关 `noteweave.memory.outcome-feedback-enabled` 默认打开，环境变量 `NOTEWEAVE_MEMORY_OUTCOME_FEEDBACK_ENABLED`，`docker-compose.yml` 已同步。关闭时反馈接口仍返回 200，受影响记忆数为 0，原因 `MEMORY_OUTCOME_FEEDBACK_DISABLED`，自动信号同样不写。
 - 与第 6 节原文的差异已写在进度看板协调区。前端按钮留在 A 线。实现提交 `296734a`。测试环境关闭了 LLM，方面判断的模型路径只验证了不可用和重试，没有用真实模型。
+
+### 2E（2026-10-12 完成）
+
+- 向量可用时，嵌入输入优先用该用户消息最新 `answer_run` 里带 `rewrite_method` 的 `standalone_query`。没有改写、空白或解析失败时用消息原文。词项覆盖度仍用原文。助手消息和空白用户消息不更新话题向量，也不计入相邻间隙。
+- 话题向量是话题内用户消息向量的指数滑动平均，系数 0.5，比较时用更新前的向量。融合分等于 0.5 乘词项覆盖度，加 0.5 乘不小于 0 的余弦。归入已有话题的下限是 0.40，回到旧话题的下限是 0.30。当前话题达到最高分的 0.85 时留下。
+- 句首延续正则，以及什么时候、为什么，只在与当前话题的余弦不低于 0.55 时加分，理由 `CONTINUATION_WITH_SEMANTICS`。余弦不足时忽略该正则。显式改聊仍直接开新话题。显式回到取融合分最高的已有话题。
+- 深度分数取前一间隙余弦减去当前间隙余弦。当前相邻余弦低于 0.35，或者已经有前一间隙且落差不低于 0.15、当前相邻余弦低于 0.55，开启新边界，理由 `DEPTH_BOUNDARY`。相邻余弦落在 0.35 到 0.55 且落差不足、融合也未命中时，新段保持 `UNCERTAIN`。已经落库的切分继续当固定前缀，不重切。
+- `UNCERTAIN` 且复核开关和模型都可用时，`boundary_review` 记 `PENDING`，否则记 `NOT_RUN`。`TopicBoundaryReviewService` 每 30 秒最多处理 20 条。模型只输出 JSON，`decision` 取 `SAME`、`NEW`、`RETURN`，`RETURN` 还要 `topic_index`。不合规重试一次。模型不可用或两次都不合规时保持 `UNCERTAIN`，原因 `TOPIC_BOUNDARY_REVIEW_NOT_RUN`，不允许改成 `CONFIDENT`。成功后 `boundary_review` 为 `REVIEWED`。不删除段，不缩短 `end_seq`。同一话题且两端都是 `CONFIDENT` 时，较早段摘要可以进入下一轮规划。
+- 向量服务关闭、调用失败或返回条数不一致时退回纯词项切分，降级原因 `TOPIC_SEGMENT_VECTOR_UNAVAILABLE`。没有非空用户消息时不记降级。词项路径规则版本仍是 `topic-segmenter-v2-a2`。语义路径新段用 `topic-segmenter-v2-a3`。
+- Pk 与 WindowDiff 放在 `TopicSegmentationMetrics`。没有标注集，权重和阈值写在进度看板协调区，指标用构造样例验证。
+- 迁移是 `V164__conversation_topic_boundary_review.sql`，只追加可空列 `degradation_reason`、`boundary_review`。开关 `noteweave.conversation.boundary-review-enabled` 默认打开，环境变量 `NOTEWEAVE_TOPIC_BOUNDARY_REVIEW_ENABLED`。延迟默认 30000 毫秒，环境变量 `NOTEWEAVE_TOPIC_BOUNDARY_REVIEW_DELAY_MS`，`docker-compose.yml` 已同步。
+- 与第 6 节原文的差异已写在进度看板协调区。实现提交 `bf7b2be`。测试环境关闭了嵌入模型和 LLM，没有用真实模型验证切分和复核。
