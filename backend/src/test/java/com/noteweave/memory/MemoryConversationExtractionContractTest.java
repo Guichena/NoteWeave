@@ -62,7 +62,12 @@ class MemoryConversationExtractionContractTest {
             assertThat(item.path("gate").path("source_type").asText()).isEqualTo("CONVERSATION_FEEDBACK");
             assertThat(item.path("gate").path("source_ref").asText())
                     .isEqualTo("conversation-message:" + preferenceMessage + ":0");
+            assertThat(item.path("slot_key").asText()).isEqualTo("format.structure");
+            assertThat(item.path("conflict").path("type").asText()).isEqualTo("NONE");
         });
+        assertThat(jdbc.queryForObject(
+                "select status from memory_index_outbox where memory_item_id = ?",
+                String.class, items.get(0).path("memory_item_id").asText())).isEqualTo("PENDING");
         // 生效后进入表达控制，结构类偏好编入结构约束
         JsonNode pack = data(get("/api/v2/workspaces/{workspaceId}/memory/control-pack/chat", workspaceId)
                 .param("answer_mode", "QA"));

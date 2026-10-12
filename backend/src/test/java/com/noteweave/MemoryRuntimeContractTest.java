@@ -531,7 +531,11 @@ class MemoryRuntimeContractTest {
                 .andExpect(jsonPath("$.data[1].memory_scope").value("WORKSPACE"))
                 .andExpect(jsonPath("$.data[1].gate.result").value("READY"))
                 .andExpect(jsonPath("$.data[1].gate.source_type").value("USER_FEEDBACK"))
-                .andExpect(jsonPath("$.data[1].conflict_status").value("NO_CONFLICT"));
+                .andExpect(jsonPath("$.data[1].conflict_status").value("NO_CONFLICT"))
+                .andExpect(jsonPath("$.data[1].slot_key").value("format.structure"))
+                .andExpect(jsonPath("$.data[1].conflict.type").value("NONE"))
+                .andExpect(jsonPath("$.data[0].slot_key").value("answer.style"))
+                .andExpect(jsonPath("$.data[0].conflict.type").value("NONE"));
     }
 
     @Test

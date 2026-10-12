@@ -52,13 +52,14 @@ public class MemoryItemQueryService {
                        r.provenance_type, r.normalized_value_json, r.created_at,
                        c.evidence_gate_status, c.marginal_utility_score, c.risk_score as candidate_risk_score,
                        c.scope_status, c.conflict_status as candidate_conflict_status, c.policy_version,
-                       c.created_from_signal_ids_json
+                       c.created_from_signal_ids_json, c.conflict_type, c.conflicting_item_id, c.conflicting_text,
+                       c.slot_key as candidate_slot_key, i.semantic_slot_key
                 from memory_item i
                 join memory_runtime_revision r on r.memory_item_id = i.id
                 left join memory_candidate c
                   on r.provenance_type = 'MEMORY_CANDIDATE' and c.id = r.provenance_ref
                 where i.workspace_id = ?
-                  and i.status <> 'DELETED'
+                  and i.status not in ('DELETED', 'SUPERSEDED')
                   and (i.memory_scope <> 'USER' or i.owner_user_id = ?)
                   and (r.status = 'PROPOSED' or (r.status = 'ACTIVE' and r.id = i.current_revision_id))
                 order by case when r.status = 'PROPOSED' then 0 else 1 end, r.created_at desc, r.id
@@ -99,7 +100,14 @@ public class MemoryItemQueryService {
                             rs.getString("policy_version"),
                             evidence.sourceRef()),
                     toInstant(rs.getTimestamp("last_confirmed_at")),
-                    toInstant(rs.getTimestamp("created_at")));
+                    toInstant(rs.getTimestamp("created_at")),
+                    displaySlot(rs.getString("semantic_slot_key"), rs.getString("candidate_slot_key"),
+                            text(payload, "slot")),
+                    MemoryConflictResponse.from(
+                            firstText(rs.getString("conflict_type"), text(payload, "conflict_type"), ""),
+                            firstText(rs.getString("conflicting_item_id"), text(payload, "conflicting_item_id"), ""),
+                            firstText(rs.getString("conflicting_text"), text(payload, "conflicting_text"), ""),
+                            conflictStatus));
         }, workspaceId, userId);
     }
 
@@ -110,7 +118,8 @@ public class MemoryItemQueryService {
                 && utility >= candidatePolicy.minimumAutoPromotionUtility()
                 && risk < candidatePolicy.reviewRequiredRisk()
                 && "VALID".equals(scopeStatus)
-                && !"CONFLICTING_ACTIVE_MEMORY".equals(conflictStatus);
+                && !"CONFLICTING_ACTIVE_MEMORY".equals(conflictStatus)
+                && !"CONFLICT_CHECK_NOT_RUN".equals(conflictStatus);
         return ready ? "READY" : "NEEDS_REVIEW";
     }
 
@@ -160,6 +169,18 @@ public class MemoryItemQueryService {
     private static String text(JsonNode node, String field) {
         JsonNode value = node == null ? null : node.get(field);
         return value != null && value.isTextual() ? value.asText() : null;
+    }
+
+    private static String displaySlot(String semanticSlot, String candidateSlot, String payloadSlot) {
+        String fromColumn = MemorySlots.publicSlot(semanticSlot);
+        if (!"unknown".equals(fromColumn)) {
+            return fromColumn;
+        }
+        String fromCandidate = MemorySlots.publicSlot(candidateSlot);
+        if (!"unknown".equals(fromCandidate)) {
+            return fromCandidate;
+        }
+        return MemorySlots.publicSlot(payloadSlot);
     }
 
     private static String firstText(String first, String second, String fallback) {

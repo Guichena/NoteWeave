@@ -41,7 +41,7 @@ public class MemoryConversationExtractionService {
     private static final int MAX_MESSAGE_CHARS = 2_000;
     private static final int MAX_STATEMENTS = 3;
     private static final int MAX_STATEMENT_CHARS = 200;
-    private static final int EXTRACTION_OUTPUT_TOKENS = 600;
+    private static final int EXTRACTION_OUTPUT_TOKENS = 900;
 
     /** 初筛：带有长期要求措辞的消息才值得提取。 */
     static final Pattern DURABLE_CUE = Pattern.compile(
@@ -66,7 +66,10 @@ public class MemoryConversationExtractionService {
             输出 JSON 数组，每项包含：
             - statement：用一句祈使句复述这条偏好，不超过 60 字，使用用户的语言；
             - category：style、structure、terminology、forbidden、interaction 之一；
-            - explicit：用户是否明确要求长期遵守（例如使用了以后、每次、记住、总是等说法），true 或 false。
+            - explicit：用户是否明确要求长期遵守（例如使用了以后、每次、记住、总是等说法），true 或 false；
+            - slot：槽位，形如 answer.language、answer.length、answer.style、answer.constraint、format.structure、format.table、terminology.term、interaction.style，无法归类时留空；
+            - value：槽位取值，不超过 40 字；
+            - polarity：REQUIRE 或 FORBID，用户要求避免或禁止时用 FORBID，否则 REQUIRE。
             最多 3 项。没有符合条件的偏好时输出 []。只输出 JSON，不要解释。""";
 
     private static final Logger log = LoggerFactory.getLogger(MemoryConversationExtractionService.class);
@@ -230,12 +233,7 @@ public class MemoryConversationExtractionService {
     }
 
     static String categorize(String statement) {
-        String value = statement.toLowerCase(Locale.ROOT);
-        if (value.matches(".*(不要|别|避免|禁止|不许|never|avoid|don't|do not).*")) return "forbidden";
-        if (value.matches(".*(术语|叫做|称为|统一称|统一叫|译为|写作).*")) return "terminology";
-        if (value.matches(".*(结构|先.*再|分点|列表|表格|标题|段落|结论|步骤|bullet|table|heading).*")) return "structure";
-        if (value.matches(".*(追问|确认|反问|提问|澄清|ask|confirm).*")) return "interaction";
-        return "style";
+        return MemorySlots.categoryOf(statement);
     }
 
     private List<Preference> parse(String output) {
@@ -253,7 +251,10 @@ public class MemoryConversationExtractionService {
                 String category = node.path("category").asText("style").trim().toLowerCase(Locale.ROOT);
                 preferences.add(new Preference(bound(statement, MAX_STATEMENT_CHARS),
                         CATEGORIES.contains(category) ? category : "style",
-                        node.path("explicit").asBoolean(false)));
+                        node.path("explicit").asBoolean(false),
+                        node.path("slot").asText(null),
+                        node.path("value").asText(null),
+                        node.path("polarity").asText(null)));
                 if (preferences.size() == MAX_STATEMENTS) break;
             }
             return preferences;
@@ -273,15 +274,18 @@ public class MemoryConversationExtractionService {
                 "forbidden".equals(preference.category()) ? statement : List.of(),
                 "interaction".equals(preference.category()) ? statement : List.of(),
                 List.of());
+        MemorySlots.Assignment assignment = preference.assignment();
         String signalId = Ids.newId();
         jdbcTemplate.update("""
                 insert into memory_signal(
                     id, workspace_id, user_id, source_type, source_id, signal_type, signal_text,
-                    task_neighborhood, compile_hints_json, confidence_score, policy_version
-                ) values (?, ?, ?, ?, ?, 'PREFERENCE', ?, 'COMMON', ?, ?, ?)
+                    task_neighborhood, compile_hints_json, confidence_score, policy_version,
+                    slot_key, slot_value, polarity
+                ) values (?, ?, ?, ?, ?, 'PREFERENCE', ?, 'COMMON', ?, ?, ?, ?, ?, ?)
                 """, signalId, workspaceId, userId, sourceType, SOURCE_REF_PREFIX + messageId + ":" + index,
                 preference.statement(), Json.write(objectMapper, hints),
-                candidatePolicy.confidenceForSource(sourceType), candidatePolicy.version());
+                candidatePolicy.confidenceForSource(sourceType), candidatePolicy.version(),
+                assignment.slot(), assignment.value(), assignment.polarity());
         return signalId;
     }
 
@@ -290,7 +294,8 @@ public class MemoryConversationExtractionService {
         return new ArrayList<>(jdbcTemplate.queryForList("""
                 select r.display_text from memory_item i
                 join memory_runtime_revision r on r.memory_item_id = i.id
-                where i.workspace_id = ? and i.status <> 'DELETED' and r.status in ('ACTIVE', 'PROPOSED')
+                where i.workspace_id = ? and i.status not in ('DELETED', 'SUPERSEDED')
+                  and r.status in ('ACTIVE', 'PROPOSED')
                 """, String.class, workspaceId));
     }
 
@@ -307,7 +312,22 @@ public class MemoryConversationExtractionService {
         return value.length() <= maximum ? value : value.substring(0, maximum);
     }
 
-    record Preference(String statement, String category, boolean explicit) { }
+    record Preference(
+            String statement,
+            String category,
+            boolean explicit,
+            String slot,
+            String value,
+            String polarity
+    ) {
+        Preference(String statement, String category, boolean explicit) {
+            this(statement, category, explicit, null, null, null);
+        }
+
+        MemorySlots.Assignment assignment() {
+            return MemorySlots.complete(category, statement, "PREFERENCE", slot, value, polarity);
+        }
+    }
 
     record Extraction(List<Preference> preferences, String method) { }
 

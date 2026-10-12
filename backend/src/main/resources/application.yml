@@ -199,6 +199,10 @@ noteweave:
       memory-extraction: ${NOTEWEAVE_KAFKA_TOPIC_MEMORY_EXTRACTION:noteweave.memory.extraction}
       research-agent-command: ${NOTEWEAVE_KAFKA_RESEARCH_AGENT_TOPIC:noteweave.research.agent.command}
     artifact-dlq-topic: ${NOTEWEAVE_KAFKA_ARTIFACT_DLQ_TOPIC:noteweave.artifact.job.dlq}
+  memory:
+    index-name: ${NOTEWEAVE_MEMORY_INDEX_NAME:noteweave-memory}
+    index-dispatch-delay-ms: ${NOTEWEAVE_MEMORY_INDEX_DISPATCH_DELAY_MS:30000}
+    slot-backfill-enabled: ${NOTEWEAVE_MEMORY_SLOT_BACKFILL_ENABLED:false}
   elasticsearch:
     enabled: ${NOTEWEAVE_ES_ENABLED:true}
     host: ${NOTEWEAVE_ES_HOST:localhost}

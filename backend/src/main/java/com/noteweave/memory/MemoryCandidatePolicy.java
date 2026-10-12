@@ -61,7 +61,8 @@ public class MemoryCandidatePolicy {
         if ("COMMON".equals(taskNeighborhood)) {
             risk += 0.05;
         }
-        if ("CONFLICTING_ACTIVE_MEMORY".equals(conflictStatus)) {
+        if ("CONFLICTING_ACTIVE_MEMORY".equals(conflictStatus)
+                || "CONFLICT_CHECK_NOT_RUN".equals(conflictStatus)) {
             risk += 0.65;
         }
         return Math.min(risk, 0.99);

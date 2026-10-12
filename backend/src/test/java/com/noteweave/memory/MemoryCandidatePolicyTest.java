@@ -53,6 +53,17 @@ class MemoryCandidatePolicyTest {
     }
 
     @Test
+    void shouldRequireReviewWhenConflictCheckDidNotRun() {
+        MemoryCandidateGate.GateDecision decision = gate.evaluate(
+                signal("USER_FEEDBACK", "PREFERENCE", "CHAT_QA", 0.98),
+                policy.marginalUtility("USER_FEEDBACK", "PREFERENCE", "CHAT_QA"),
+                "CONFLICT_CHECK_NOT_RUN");
+
+        assertThat(decision.riskScore()).isGreaterThanOrEqualTo(policy.reviewRequiredRisk());
+        assertThat(decision.reviewStatus()).isEqualTo("NEEDS_REVIEW");
+    }
+
+    @Test
     void shouldMatchEquivalentStatementsAfterRuleNormalization() {
         String canonical = "正式文档统一使用先结论后结构";
         String punctuationVariant = "正式文档，统一使用先结论后结构。";
@@ -82,6 +93,9 @@ class MemoryCandidatePolicyTest {
                         List.of(), List.of(), List.of(),
                         List.of(), List.of(), List.of()),
                 confidence,
-                policy.version());
+                policy.version(),
+                null,
+                null,
+                null);
     }
 }

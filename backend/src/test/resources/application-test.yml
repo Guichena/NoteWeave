@@ -15,6 +15,9 @@ spring:
 
 noteweave:
   environment: test
+  memory:
+    index-dispatch-delay-ms: 3600000
+    slot-backfill-enabled: false
   retrieval:
     query-rewrite:
       enabled: true

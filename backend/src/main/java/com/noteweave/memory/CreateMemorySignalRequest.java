@@ -15,6 +15,9 @@ public record CreateMemorySignalRequest(
         List<String> terminologyPolicy,
         List<String> forbiddenPatterns,
         List<String> interactionPolicy,
-        List<String> reviewChecklist
+        List<String> reviewChecklist,
+        @Size(max = 256) String slotKey,
+        @Size(max = 512) String slotValue,
+        @Size(max = 16) String polarity
 ) {
 }

@@ -10,6 +10,8 @@ public record MemoryRuntimeReviewItemResponse(
         String conflictStatus,
         double utilityScore,
         String reviewStatus,
-        String lifecycleStatus
+        String lifecycleStatus,
+        String slotKey,
+        MemoryConflictResponse conflict
 ) {
 }

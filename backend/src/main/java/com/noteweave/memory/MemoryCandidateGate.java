@@ -28,13 +28,18 @@ public class MemoryCandidateGate {
                 && marginalUtility >= policy.minimumAutoPromotionUtility()
                 && riskScore < policy.reviewRequiredRisk()
                 && "VALID".equals(scopeStatus)
-                && !"CONFLICTING_ACTIVE_MEMORY".equals(conflictStatus);
+                && !blocking(conflictStatus);
         return new GateDecision(
                 policy.version(),
                 evidenceGateStatus,
                 riskScore,
                 scopeStatus,
                 ready ? "READY" : "NEEDS_REVIEW");
+    }
+
+    private boolean blocking(String conflictStatus) {
+        return "CONFLICTING_ACTIVE_MEMORY".equals(conflictStatus)
+                || "CONFLICT_CHECK_NOT_RUN".equals(conflictStatus);
     }
 
     private boolean validScope(MemorySignalService.SignalRow signal) {

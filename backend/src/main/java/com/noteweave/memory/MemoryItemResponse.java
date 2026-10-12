@@ -25,6 +25,8 @@ public record MemoryItemResponse(
         // 仅由候选晋升产生的记忆带有门控打分；直接提交的观察记录为空
         MemoryGateResponse gate,
         Instant lastConfirmedAt,
-        Instant createdAt
+        Instant createdAt,
+        String slotKey,
+        MemoryConflictResponse conflict
 ) {
 }
