@@ -169,3 +169,17 @@ Java 端的状态治理（单元格版本、Fencing、预算预留、Replan 审�
 - `intent-matrix-v2` 默认打开（骨架表格使用正则规划）；顺带修复开关快照解析不兼容 JSON 列被二次转义的问题。
 - 测试：Worker 689 通过（新增 `test_planning_executor.py` 7 个）；Backend 1223 通过（新增 `ResearchPlanningServiceTest` 7 个，`ResearchAgentAutomaticRunBootstrapTest` 改为先规划再进入首个波次）；Frontend 294 通过（新增 `ResearchPlanPanel.dom.test.tsx` 4 个）。
 - 未完成的验证：本机 WSL Docker 栈未运行，没有在浏览器里截图验证面板，也没有用真实模型跑过完整规划。
+
+### 1C（2026-10-12 完成）
+
+- Java 生成修复任务时，`query_policy.repair_target` 包含单元格、列定义、冲突结论原文及来源域名、修复原因、已试检索词。失败波次的原因按单元格传入；高风险单元格和冲突修复设置 `counter_required`。
+- Worker 新增 `repair_queries.py`：冲突使用 `research.counter.queries`；其他原因使用 `research.replan.queries`。冲突查询针对限制条件、版本差异、反例和勘误；收益耗尽时放宽、收窄或切换语言；获取或服务商失败时改写查询并转向官方文档、技术报告等来源。与已试查询重复的查询会被拒绝，生成失败时退回按原因划分的规则并记录降级原因。
+- `counter_checks.py` 用 `research.counter.facts` 拆分完整结论，再用 `research.counter.verify` 逐条判定。每条事实单独检索、读取及归档；判定上下文只包含该事实和新片段，过滤原始证据窗口、原引文和已排除来源。`REFUTED` 和 `NOT_REFUTED` 必须引用本次片段的逐字原文；无相关结果记 `NO_COUNTER_EVIDENCE_FOUND`，模型不可用、结构不合规或预算不足记 `NOT_RUN`。
+- 每个任务最多执行 6 条原子事实的隔离反证，无法完整覆盖的结论记 `NOT_RUN`。每个新增 purpose 都有结构校验，不合规时带错误重试一次。反证任务预留最多 32 次模型调用、每种检索工具 21 次调用（包含三次租约恢复上限）、12 张证据卡；普通深挖仍预留 4 次模型调用，Worker 按服务端快照限制实际调用上限。
+- 查询历史与反证通过完成信封 v2 的可选 `extraction_diagnostics.execution_report` 上报，参与摘要和同一次完成事务；保存实际执行的查询，包括零结果查询。完成重放不会重复写入查询、反证或审计计数。沿用现有归档重放机制，恢复时不把未执行的查询登记为新查询。
+- 迁移 `V140__research_repair_counter_checks.sql` 新增 `research_task_query`、`research_counter_check`，扩展 Replan 审计的 `repair_cause / strategy / query_count`，新增 `research_counter_eligible_cell` 视图。视图绑定当前值、当前版本和最后一次合并业务键，旧候选的反证不能用于新候选。
+- 合并时拒绝缺失反证、`NOT_RUN` 或候选自身被反驳的结论；冲突双方存在未执行的反证时也拒绝修复候选。高风险双槽合并检查已持久化槽位的反证。完成判定、正式报告、部分报告、证据审计、合成和集合晋升统一使用反证资格门控，报告逐条展示原子事实、判定和实际查询数。
+- 新增 `GET /research-runs/{runId}/replans` 和 `GET /research-runs/{runId}/counter-checks`，字段遵循接口约定，使用现有 `ApiResponse`；校验 Run 属于请求中的工作区。没有新增配置开关，该阶段行为随 Agent 模式生效。
+- 删除深挖修复对原研究查询的重复使用，改为按原因规划；旧单进程循环的模板和反证规则仍按任务书留待 1F 修改。
+- 验证：Worker 703 项通过；Backend 分组验证全部 251 个测试类、1229 项，1218 项通过、11 项沿用既有跳过条件；Frontend 308 项通过，`tsc -b` 和 `ui:check` 通过。新增测试覆盖事实隔离、不可用模型的 `NOT_RUN`、实际查询保存、事务回滚与重放、审计查询数、跨工作区校验以及当前候选的成文资格。实现提交 `b1851f0` 已快进合入集成分支，环境处理细节见阶段交接记录。
+- 尚未使用真实模型、真实外部检索服务跑完整研究，也未进行浏览器联调或 MySQL 实例迁移验证。Flyway 迁移已在 H2 的 MySQL 模式验证。
