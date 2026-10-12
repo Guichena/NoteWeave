@@ -27,6 +27,9 @@ public record MemoryItemResponse(
         Instant lastConfirmedAt,
         Instant createdAt,
         String slotKey,
-        MemoryConflictResponse conflict
+        MemoryConflictResponse conflict,
+        MemoryConfidenceResponse confidence,
+        int reinforcementCount,
+        Instant lastReinforcedAt
 ) {
 }

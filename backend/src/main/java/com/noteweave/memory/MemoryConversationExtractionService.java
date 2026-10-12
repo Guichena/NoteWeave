@@ -25,10 +25,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * 从对话中自动提取长期记忆候选。
  * <p>
- * 用户消息提交时先用规则做初筛，只有带有长期要求措辞（以后、每次、记住等）的消息才会进入异步任务。
- * 任务中优先让大模型把消息整理成结构化的表达偏好，模型不可用时按规则提取。提取结果写成记忆信号，
- * 再交给现有的候选门控：用户明确要求长期遵守的偏好按对话反馈计分，通常可以直接生效；
- * 模型推断出的偏好按模型推断计分，可信度低于门槛，进入待确认。
+ * 用户消息在长度范围内都会进入异步任务。任务里先做一次短分类，只有包含回答方式要求或反馈的消息才完整抽取。
+ * 模型不可用时退回规则：长期措辞仍按明确偏好处理，太长了、看不懂、别用英文这类隐式反馈单独抽取。
+ * 与已有记忆等价的信号不再新建一条，而是按会话累加证据。
  * 只提取回答方式上的偏好，资料中的事实不会写入记忆。
  */
 @Service
@@ -43,7 +42,7 @@ public class MemoryConversationExtractionService {
     private static final int MAX_STATEMENT_CHARS = 200;
     private static final int EXTRACTION_OUTPUT_TOKENS = 900;
 
-    /** 初筛：带有长期要求措辞的消息才值得提取。 */
+    /** 规则降级时识别长期要求。它不再决定消息能否入队。 */
     static final Pattern DURABLE_CUE = Pattern.compile(
             "以后|今后|往后|之后都|从现在起|从今以后|每次|每一次|一律|总是|始终|一直都?要|默认(用|使用|给|按)"
                     + "|记住|请记得|不要再|别再|统一(用|使用|称|叫|写)|我(比较|更|很|最|一般|通常)?(喜欢|偏好|习惯)|我倾向于?|我希望你"
@@ -55,6 +54,8 @@ public class MemoryConversationExtractionService {
             Pattern.CASE_INSENSITIVE);
     private static final Pattern SENTENCE_BREAK = Pattern.compile("[。！？!?\\n；;]+");
     private static final Pattern LEADING_CUE = Pattern.compile("^(请)?(记住|请记得)[：:，,\\s]*");
+    private static final Pattern FEEDBACK_CUE = Pattern.compile(
+            "太长|太短|太啰嗦|看不懂|听不懂|说人话|简单点|详细点|别用英文|不要用英文|少用英文");
     private static final Set<String> CATEGORIES = Set.of("style", "structure", "terminology", "forbidden", "interaction");
 
     private static final String SYSTEM_PROMPT = """
@@ -69,7 +70,8 @@ public class MemoryConversationExtractionService {
             - explicit：用户是否明确要求长期遵守（例如使用了以后、每次、记住、总是等说法），true 或 false；
             - slot：槽位，形如 answer.language、answer.length、answer.style、answer.constraint、format.structure、format.table、terminology.term、interaction.style，无法归类时留空；
             - value：槽位取值，不超过 40 字；
-            - polarity：REQUIRE 或 FORBID，用户要求避免或禁止时用 FORBID，否则 REQUIRE。
+            - polarity：REQUIRE 或 FORBID，用户要求避免或禁止时用 FORBID，否则 REQUIRE；
+            - feedback：用户是在评价已有回答（例如太长了、看不懂、别用英文）时为 true，否则 false。
             最多 3 项。没有符合条件的偏好时输出 []。只输出 JSON，不要解释。""";
 
     private static final Logger log = LoggerFactory.getLogger(MemoryConversationExtractionService.class);
@@ -82,6 +84,8 @@ public class MemoryConversationExtractionService {
     private final CanonicalMemoryReviewService reviewService;
     private final MemoryStatementMatcher statementMatcher;
     private final ChatLlmClient llmClient;
+    private final MemoryEvidenceService evidenceService;
+    private final MemoryWordingJudge wordingJudge;
     private final TransactionTemplate transactionTemplate;
     private final String topic;
     private final boolean enabled;
@@ -96,6 +100,8 @@ public class MemoryConversationExtractionService {
             CanonicalMemoryReviewService reviewService,
             MemoryStatementMatcher statementMatcher,
             ChatLlmClient llmClient,
+            MemoryEvidenceService evidenceService,
+            MemoryWordingJudge wordingJudge,
             PlatformTransactionManager transactionManager,
             @Value("${noteweave.kafka.topics.memory-extraction:noteweave.memory.extraction}") String topic,
             @Value("${noteweave.memory.conversation-extraction-enabled:true}") boolean enabled
@@ -108,12 +114,14 @@ public class MemoryConversationExtractionService {
         this.reviewService = reviewService;
         this.statementMatcher = statementMatcher;
         this.llmClient = llmClient;
+        this.evidenceService = evidenceService;
+        this.wordingJudge = wordingJudge;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.topic = topic;
         this.enabled = enabled;
     }
 
-    /** 在对话轮次提交的事务里调用：初筛通过时写入提取任务和 outbox 消息，返回是否入队。 */
+    /** 在对话轮次提交的事务里调用：消息长度合适时写入提取任务和 outbox 消息，返回是否入队。 */
     public boolean queueForUserMessage(String workspaceId, String conversationId, String messageId,
                                        String actorUserId) {
         // 系统发起的轮次（例如恢复任务）没有对应的用户，不提取个人偏好
@@ -147,8 +155,7 @@ public class MemoryConversationExtractionService {
     }
 
     static boolean shouldExtract(String content) {
-        return content != null && !content.isBlank() && content.length() <= MAX_MESSAGE_CHARS * 2
-                && DURABLE_CUE.matcher(content).find();
+        return content != null && !content.isBlank() && content.length() <= MAX_MESSAGE_CHARS * 2;
     }
 
     /**
@@ -161,7 +168,7 @@ public class MemoryConversationExtractionService {
             transactionTemplate.executeWithoutResult(status -> completeTask(taskId, "记忆候选已提取", messageId));
             return new ExtractionResult(List.of(), "DUPLICATE_DELIVERY");
         }
-        Extraction extraction = extractPreferences(content);
+        Extraction extraction = extractPreferences(content, previousAssistant(workspaceId, messageId));
         return persistExtraction(taskId, workspaceId, messageId, userId, extraction);
     }
 
@@ -184,42 +191,63 @@ public class MemoryConversationExtractionService {
             completeTask(taskId, "记忆候选已提取", messageId);
             return new ExtractionResult(List.of(), "DUPLICATE_DELIVERY");
         }
-        List<String> known = knownStatements(workspaceId);
+        List<KnownMemory> known = knownMemories(workspaceId);
+        String sessionKey = sessionKey(workspaceId, messageId);
         List<ExtractedCandidate> produced = new ArrayList<>();
         int index = 0;
         for (Preference preference : extraction.preferences()) {
-            if (known.stream().anyMatch(statement -> statementMatcher.equivalent(statement, preference.statement()))) {
+            MemorySlots.Assignment assignment = preference.assignment();
+            KnownMemory equivalent = equivalentOf(known, preference, assignment);
+            MemoryEvidence.Band band = evidenceBand(preference);
+            if (equivalent != null) {
+                evidenceService.observe(equivalent.id(), sessionKey, "SUPPORT", band);
+                if (!equivalent.text().equals(preference.statement())
+                        && wordingJudge.moreSpecific(equivalent.text(), preference.statement())) {
+                    reviewService.reviseEquivalentWording(workspaceId, equivalent.id(), preference.statement());
+                }
                 continue;
             }
-            known.add(preference.statement());
+            KnownMemory contradicting = contradictingOf(known, assignment);
+            if (contradicting != null) {
+                evidenceService.observe(contradicting.id(), sessionKey, "CONTRADICT", band);
+            }
             String signalId = insertSignal(workspaceId, userId, messageId, index++, preference);
             MemoryCandidateResponse candidate = candidateService.buildCandidates(workspaceId, List.of(signalId)).get(0);
             reviewService.projectCandidate(candidateService.findCandidate(workspaceId, candidate.candidateId()), userId);
+            evidenceService.recordOrigin(candidate.candidateId(), sessionKey);
+            known.add(new KnownMemory(candidate.candidateId(), preference.statement(),
+                    assignment.slot(), assignment.value(), assignment.polarity()));
             produced.add(new ExtractedCandidate(candidate.candidateId(), preference.statement(),
-                    preference.explicit() ? SOURCE_EXPLICIT : SOURCE_INFERRED, candidate.reviewStatus()));
+                    sourceType(preference), candidate.reviewStatus()));
         }
         completeTask(taskId, produced.isEmpty() ? "没有发现需要长期记住的偏好"
                 : "提取到 " + produced.size() + " 条记忆候选", messageId);
         return new ExtractionResult(List.copyOf(produced), extraction.method());
     }
 
-    Extraction extractPreferences(String content) {
+    Extraction extractPreferences(String content, String previousAnswer) {
         String message = bound(content == null ? "" : content.trim(), MAX_MESSAGE_CHARS);
         if (llmClient != null && llmClient.isEnabled()) {
-            try {
-                String output = llmClient.streamChat(SYSTEM_PROMPT, "用户消息：\n" + message,
-                        EXTRACTION_OUTPUT_TOKENS, token -> { });
-                List<Preference> parsed = parse(output);
-                if (parsed != null) return new Extraction(parsed, "LLM");
-                log.warn("Memory extraction output was not a JSON array; falling back to rules");
-            } catch (RuntimeException ex) {
-                log.warn("Memory extraction via LLM failed; falling back to rules: {}", ex.getMessage());
+            String decision = MemoryExtractionClassifier.decide(llmClient, message);
+            if ("NO".equals(decision)) {
+                return new Extraction(List.of(), "CLASSIFIED_NO");
+            }
+            if ("YES".equals(decision)) {
+                try {
+                    String output = llmClient.streamChat(SYSTEM_PROMPT, extractionPrompt(message, previousAnswer),
+                            EXTRACTION_OUTPUT_TOKENS, token -> { });
+                    List<Preference> parsed = parse(output);
+                    if (parsed != null) return new Extraction(parsed, "LLM");
+                    log.warn("Memory extraction output was not a JSON array; falling back to rules");
+                } catch (RuntimeException ex) {
+                    log.warn("Memory extraction via LLM failed; falling back to rules: {}", ex.getMessage());
+                }
             }
         }
         return new Extraction(ruleBased(message), "RULE");
     }
 
-    /** 规则提取：保留带有长期要求措辞和指令动词的句子，统一视为用户明确提出的偏好。 */
+    /** 规则提取：长期措辞视为明确偏好；没有长期措辞的不满说法视为隐式反馈。 */
     static List<Preference> ruleBased(String message) {
         List<Preference> preferences = new ArrayList<>();
         for (String sentence : SENTENCE_BREAK.split(message)) {
@@ -227,6 +255,14 @@ public class MemoryConversationExtractionService {
             if (trimmed.length() < 4 || !DURABLE_CUE.matcher(sentence).find()
                     || !DIRECTIVE.matcher(trimmed).find()) continue;
             preferences.add(new Preference(bound(trimmed, MAX_STATEMENT_CHARS), categorize(trimmed), true));
+            if (preferences.size() == MAX_STATEMENTS) return preferences;
+        }
+        for (String sentence : SENTENCE_BREAK.split(message)) {
+            String trimmed = sentence.trim();
+            if (trimmed.length() < 2 || !FEEDBACK_CUE.matcher(trimmed).find()) continue;
+            if (preferences.stream().anyMatch(item -> item.statement().equals(trimmed))) continue;
+            preferences.add(new Preference(bound(trimmed, MAX_STATEMENT_CHARS), categorize(trimmed), false,
+                    null, null, "FORBID", true));
             if (preferences.size() == MAX_STATEMENTS) break;
         }
         return preferences;
@@ -254,7 +290,8 @@ public class MemoryConversationExtractionService {
                         node.path("explicit").asBoolean(false),
                         node.path("slot").asText(null),
                         node.path("value").asText(null),
-                        node.path("polarity").asText(null)));
+                        node.path("polarity").asText(null),
+                        node.path("feedback").asBoolean(false)));
                 if (preferences.size() == MAX_STATEMENTS) break;
             }
             return preferences;
@@ -265,7 +302,8 @@ public class MemoryConversationExtractionService {
 
     private String insertSignal(String workspaceId, String userId, String messageId, int index,
                                 Preference preference) {
-        String sourceType = preference.explicit() ? SOURCE_EXPLICIT : SOURCE_INFERRED;
+        String sourceType = sourceType(preference);
+        MemoryEvidence.Band band = evidenceBand(preference);
         List<String> statement = List.of(preference.statement());
         MemorySignalService.MemoryCompileHints hints = new MemorySignalService.MemoryCompileHints(
                 "style".equals(preference.category()) ? statement : List.of(),
@@ -280,23 +318,118 @@ public class MemoryConversationExtractionService {
                 insert into memory_signal(
                     id, workspace_id, user_id, source_type, source_id, signal_type, signal_text,
                     task_neighborhood, compile_hints_json, confidence_score, policy_version,
-                    slot_key, slot_value, polarity
-                ) values (?, ?, ?, ?, ?, 'PREFERENCE', ?, 'COMMON', ?, ?, ?, ?, ?, ?)
+                    slot_key, slot_value, polarity, evidence_band
+                ) values (?, ?, ?, ?, ?, 'PREFERENCE', ?, 'COMMON', ?, ?, ?, ?, ?, ?, ?)
                 """, signalId, workspaceId, userId, sourceType, SOURCE_REF_PREFIX + messageId + ":" + index,
                 preference.statement(), Json.write(objectMapper, hints),
-                candidatePolicy.confidenceForSource(sourceType), candidatePolicy.version(),
-                assignment.slot(), assignment.value(), assignment.polarity());
+                MemoryEvidence.prior(band).mean(), candidatePolicy.version(),
+                assignment.slot(), assignment.value(), assignment.polarity(), band.name());
         return signalId;
     }
 
-    /** 已生效或待确认的记忆文本，用来跳过重复的偏好。 */
-    private List<String> knownStatements(String workspaceId) {
-        return new ArrayList<>(jdbcTemplate.queryForList("""
-                select r.display_text from memory_item i
+    private List<KnownMemory> knownMemories(String workspaceId) {
+        return new ArrayList<>(jdbcTemplate.query("""
+                select i.id, r.display_text, i.semantic_slot_key, r.normalized_value_json
+                from memory_item i
                 join memory_runtime_revision r on r.memory_item_id = i.id
                 where i.workspace_id = ? and i.status not in ('DELETED', 'SUPERSEDED')
                   and r.status in ('ACTIVE', 'PROPOSED')
-                """, String.class, workspaceId));
+                  and (r.status = 'PROPOSED' or r.id = i.current_revision_id)
+                """, (rs, rowNum) -> {
+            JsonNode payload = readJson(rs.getString("normalized_value_json"));
+            String slot = MemorySlots.publicSlot(rs.getString("semantic_slot_key"));
+            if ("unknown".equals(slot)) {
+                slot = MemorySlots.publicSlot(text(payload, "slot"));
+            }
+            return new KnownMemory(rs.getString("id"), rs.getString("display_text"), slot,
+                    text(payload, "slot_value"), text(payload, "polarity"));
+        }, workspaceId));
+    }
+
+    private KnownMemory equivalentOf(List<KnownMemory> known, Preference preference, MemorySlots.Assignment assignment) {
+        for (KnownMemory item : known) {
+            boolean sameSlot = !"unknown".equals(assignment.slot()) && assignment.slot().equals(item.slot());
+            boolean sameValue = assignment.value().equalsIgnoreCase(item.value());
+            boolean samePolarity = assignment.polarity().equals(item.polarity());
+            if (statementMatcher.equivalent(item.text(), preference.statement())
+                    || (sameSlot && sameValue && samePolarity)) {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    private KnownMemory contradictingOf(List<KnownMemory> known, MemorySlots.Assignment assignment) {
+        if ("unknown".equals(assignment.slot())) {
+            return null;
+        }
+        for (KnownMemory item : known) {
+            if (!assignment.slot().equals(item.slot()) || item.polarity().isBlank()) {
+                continue;
+            }
+            if (!assignment.value().equalsIgnoreCase(item.value()) || !assignment.polarity().equals(item.polarity())) {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    private static String sourceType(Preference preference) {
+        return preference.explicit() || preference.feedback() ? SOURCE_EXPLICIT : SOURCE_INFERRED;
+    }
+
+    private static MemoryEvidence.Band evidenceBand(Preference preference) {
+        return MemoryEvidence.bandOf(sourceType(preference), preference.feedback() && !preference.explicit());
+    }
+
+    private String sessionKey(String workspaceId, String messageId) {
+        String conversationId = jdbcTemplate.query("""
+                select conversation_id from conversation_message where id = ? and workspace_id = ?
+                """, rs -> rs.next() ? rs.getString(1) : null, messageId, workspaceId);
+        return conversationId == null || conversationId.isBlank()
+                ? "message:" + messageId : "conversation:" + conversationId;
+    }
+
+    private String previousAssistant(String workspaceId, String messageId) {
+        String content = jdbcTemplate.query("""
+                select earlier.content
+                from conversation_message current_message
+                join conversation_message earlier
+                  on earlier.conversation_id = current_message.conversation_id
+                 and earlier.workspace_id = current_message.workspace_id
+                where current_message.id = ? and current_message.workspace_id = ?
+                  and earlier.role = 'ASSISTANT'
+                  and earlier.created_at <= current_message.created_at
+                order by earlier.created_at desc
+                limit 1
+                """, rs -> rs.next() ? rs.getString(1) : null, messageId, workspaceId);
+        return content == null ? "" : bound(content, MAX_MESSAGE_CHARS);
+    }
+
+    private static String extractionPrompt(String message, String previousAnswer) {
+        if (previousAnswer == null || previousAnswer.isBlank()) {
+            return "用户消息：\n" + message;
+        }
+        return "上一条助手回答：\n" + previousAnswer + "\n用户消息：\n" + message;
+    }
+
+    private JsonNode readJson(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readTree(value);
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private static String text(JsonNode node, String field) {
+        JsonNode value = node == null ? null : node.get(field);
+        if (value == null || value.isNull()) {
+            return "";
+        }
+        return value.asText("");
     }
 
     private void completeTask(String taskId, String message, String resultRef) {
@@ -318,15 +451,23 @@ public class MemoryConversationExtractionService {
             boolean explicit,
             String slot,
             String value,
-            String polarity
+            String polarity,
+            boolean feedback
     ) {
         Preference(String statement, String category, boolean explicit) {
-            this(statement, category, explicit, null, null, null);
+            this(statement, category, explicit, null, null, null, false);
+        }
+
+        Preference(String statement, String category, boolean explicit, String slot, String value, String polarity) {
+            this(statement, category, explicit, slot, value, polarity, false);
         }
 
         MemorySlots.Assignment assignment() {
             return MemorySlots.complete(category, statement, "PREFERENCE", slot, value, polarity);
         }
+    }
+
+    private record KnownMemory(String id, String text, String slot, String value, String polarity) {
     }
 
     record Extraction(List<Preference> preferences, String method) { }

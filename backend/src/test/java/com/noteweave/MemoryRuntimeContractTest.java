@@ -2,6 +2,7 @@ package com.noteweave;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.hamcrest.Matchers.closeTo;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -524,7 +525,7 @@ class MemoryRuntimeContractTest {
                 .andExpect(jsonPath("$.data[0].task_neighborhoods[0]").value("CHAT_NOTE"))
                 .andExpect(jsonPath("$.data[0].gate.result").value("NEEDS_REVIEW"))
                 .andExpect(jsonPath("$.data[0].gate.source_type").value("MODEL_INFERENCE"))
-                .andExpect(jsonPath("$.data[0].gate.evidence_score").value(0.35))
+                .andExpect(jsonPath("$.data[0].gate.evidence_score", closeTo(0.3333, 0.0002)))
                 .andExpect(jsonPath("$.data[0].gate.evidence_threshold").value(0.70))
                 .andExpect(jsonPath("$.data[1].revision_status").value("ACTIVE"))
                 .andExpect(jsonPath("$.data[1].item_status").value("ACTIVE"))
@@ -535,7 +536,14 @@ class MemoryRuntimeContractTest {
                 .andExpect(jsonPath("$.data[1].slot_key").value("format.structure"))
                 .andExpect(jsonPath("$.data[1].conflict.type").value("NONE"))
                 .andExpect(jsonPath("$.data[0].slot_key").value("answer.style"))
-                .andExpect(jsonPath("$.data[0].conflict.type").value("NONE"));
+                .andExpect(jsonPath("$.data[0].conflict.type").value("NONE"))
+                .andExpect(jsonPath("$.data[1].confidence.alpha", closeTo(4.0, 0.001)))
+                .andExpect(jsonPath("$.data[1].confidence.beta", closeTo(1.0, 0.001)))
+                .andExpect(jsonPath("$.data[1].confidence.mean", closeTo(0.8, 0.001)))
+                .andExpect(jsonPath("$.data[1].reinforcement_count").value(0))
+                .andExpect(jsonPath("$.data[0].confidence.alpha", closeTo(1.0, 0.001)))
+                .andExpect(jsonPath("$.data[0].confidence.beta", closeTo(2.0, 0.001)))
+                .andExpect(jsonPath("$.data[0].confidence.mean", closeTo(1.0 / 3.0, 0.001)));
     }
 
     @Test

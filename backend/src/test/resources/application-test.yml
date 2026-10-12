@@ -18,6 +18,8 @@ noteweave:
   memory:
     index-dispatch-delay-ms: 3600000
     slot-backfill-enabled: false
+    consolidation-enabled: false
+    consolidation-delay-ms: 3600000
   retrieval:
     query-rewrite:
       enabled: true

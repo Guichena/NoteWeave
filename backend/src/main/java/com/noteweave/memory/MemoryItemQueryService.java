@@ -53,7 +53,8 @@ public class MemoryItemQueryService {
                        c.evidence_gate_status, c.marginal_utility_score, c.risk_score as candidate_risk_score,
                        c.scope_status, c.conflict_status as candidate_conflict_status, c.policy_version,
                        c.created_from_signal_ids_json, c.conflict_type, c.conflicting_item_id, c.conflicting_text,
-                       c.slot_key as candidate_slot_key, i.semantic_slot_key
+                       c.slot_key as candidate_slot_key, i.semantic_slot_key,
+                       i.evidence_alpha, i.evidence_beta, i.reinforcement_count, i.last_reinforced_at
                 from memory_item i
                 join memory_runtime_revision r on r.memory_item_id = i.id
                 left join memory_candidate c
@@ -107,7 +108,10 @@ public class MemoryItemQueryService {
                             firstText(rs.getString("conflict_type"), text(payload, "conflict_type"), ""),
                             firstText(rs.getString("conflicting_item_id"), text(payload, "conflicting_item_id"), ""),
                             firstText(rs.getString("conflicting_text"), text(payload, "conflicting_text"), ""),
-                            conflictStatus));
+                            conflictStatus),
+                    MemoryConfidenceResponse.of(rs.getDouble("evidence_alpha"), rs.getDouble("evidence_beta")),
+                    rs.getInt("reinforcement_count"),
+                    toInstant(rs.getTimestamp("last_reinforced_at")));
         }, workspaceId, userId);
     }
 

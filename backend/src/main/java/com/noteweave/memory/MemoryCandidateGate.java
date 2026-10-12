@@ -16,14 +16,24 @@ public class MemoryCandidateGate {
             double marginalUtility,
             String conflictStatus
     ) {
+        return evaluate(signal, marginalUtility, conflictStatus,
+                MemorySlots.categoryOf(signal.signalText()), "USER");
+    }
+
+    public GateDecision evaluate(
+            MemorySignalService.SignalRow signal,
+            double marginalUtility,
+            String conflictStatus,
+            String category,
+            String scope
+    ) {
         String scopeStatus = validScope(signal) ? "VALID" : "INVALID";
-        String evidenceGateStatus = signal.confidenceScore()
-                >= policy.minimumEvidenceConfidence() ? "PASS" : "NEEDS_REVIEW";
-        double riskScore = policy.riskScore(
-                signal.sourceType(),
-                signal.signalType(),
-                signal.taskNeighborhood(),
-                conflictStatus);
+        MemoryEvidence.Posterior prior = MemoryEvidence.prior(
+                MemoryEvidence.bandOf(signal.sourceType(), false));
+        boolean evidencePass = signal.confidenceScore() >= policy.minimumEvidenceConfidence()
+                && prior.variance() <= policy.maximumPosteriorVariance();
+        String evidenceGateStatus = evidencePass ? "PASS" : "NEEDS_REVIEW";
+        double riskScore = policy.riskScore(category, scope, conflictStatus);
         boolean ready = "PASS".equals(evidenceGateStatus)
                 && marginalUtility >= policy.minimumAutoPromotionUtility()
                 && riskScore < policy.reviewRequiredRisk()

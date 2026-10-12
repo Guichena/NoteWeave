@@ -203,6 +203,14 @@ noteweave:
     index-name: ${NOTEWEAVE_MEMORY_INDEX_NAME:noteweave-memory}
     index-dispatch-delay-ms: ${NOTEWEAVE_MEMORY_INDEX_DISPATCH_DELAY_MS:30000}
     slot-backfill-enabled: ${NOTEWEAVE_MEMORY_SLOT_BACKFILL_ENABLED:false}
+    consolidation-enabled: ${NOTEWEAVE_MEMORY_CONSOLIDATION_ENABLED:true}
+    consolidation-delay-ms: ${NOTEWEAVE_MEMORY_CONSOLIDATION_DELAY_MS:3600000}
+    consolidation-stale-days: ${NOTEWEAVE_MEMORY_CONSOLIDATION_STALE_DAYS:90}
+    policy:
+      minimum-evidence-confidence: ${NOTEWEAVE_MEMORY_MIN_EVIDENCE_CONFIDENCE:0.70}
+      minimum-auto-promotion-utility: ${NOTEWEAVE_MEMORY_MIN_PROMOTION_UTILITY:0.60}
+      review-required-risk: ${NOTEWEAVE_MEMORY_REVIEW_RISK:0.70}
+      maximum-posterior-variance: ${NOTEWEAVE_MEMORY_MAX_POSTERIOR_VARIANCE:0.04}
   elasticsearch:
     enabled: ${NOTEWEAVE_ES_ENABLED:true}
     host: ${NOTEWEAVE_ES_HOST:localhost}

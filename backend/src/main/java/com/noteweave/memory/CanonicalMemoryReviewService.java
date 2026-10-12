@@ -31,6 +31,7 @@ public class CanonicalMemoryReviewService {
     private final MemoryStatementMatcher statementMatcher;
     private final RunReplayRedactionService replayRedactionService;
     private final MemoryIndexOutbox indexOutbox;
+    private final MemoryEvidenceService evidenceService;
 
     public CanonicalMemoryReviewService(
             JdbcTemplate jdbcTemplate,
@@ -39,7 +40,8 @@ public class CanonicalMemoryReviewService {
             WorkspaceAccessGuard workspaceAccessGuard,
             MemoryStatementMatcher statementMatcher,
             RunReplayRedactionService replayRedactionService,
-            MemoryIndexOutbox indexOutbox
+            MemoryIndexOutbox indexOutbox,
+            MemoryEvidenceService evidenceService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -48,6 +50,7 @@ public class CanonicalMemoryReviewService {
         this.statementMatcher = statementMatcher;
         this.replayRedactionService = replayRedactionService;
         this.indexOutbox = indexOutbox;
+        this.evidenceService = evidenceService;
     }
 
     @Transactional
@@ -116,7 +119,102 @@ public class CanonicalMemoryReviewService {
                 flagConflictingItem(candidate.conflictingItemId());
             }
         }
+        evidenceService.assignPrior(candidate.candidateId(), evidenceBand(candidate));
         return candidateResponse(candidate);
+    }
+
+    /** 等价记忆的新措辞更具体时，在同一条记忆上增加版本，不新建记忆。 */
+    @Transactional
+    public boolean reviseEquivalentWording(String workspaceId, String itemId, String newText) {
+        if (newText == null || newText.isBlank()) {
+            return false;
+        }
+        RevisionHead head = jdbcTemplate.query("""
+                select r.id, r.version_no, r.status, r.confidence, r.display_text, r.normalized_value_json,
+                       r.provenance_type, r.provenance_ref, i.semantic_slot_key
+                from memory_item i
+                join memory_runtime_revision r on r.memory_item_id = i.id
+                where i.workspace_id = ? and i.id = ?
+                  and i.status not in ('DELETED', 'SUPERSEDED')
+                  and r.status in ('ACTIVE', 'PROPOSED')
+                  and (r.status = 'PROPOSED' or r.id = i.current_revision_id)
+                order by case when r.status = 'ACTIVE' then 0 else 1 end
+                limit 1
+                for update
+                """, rs -> {
+            if (!rs.next()) {
+                return null;
+            }
+            return new RevisionHead(
+                    rs.getString("id"),
+                    rs.getInt("version_no"),
+                    rs.getString("status"),
+                    rs.getDouble("confidence"),
+                    rs.getString("display_text"),
+                    rs.getString("normalized_value_json"),
+                    rs.getString("provenance_type"),
+                    rs.getString("provenance_ref"),
+                    rs.getString("semantic_slot_key"));
+        }, workspaceId, itemId);
+        if (head == null || newText.trim().equals(head.displayText())) {
+            return false;
+        }
+        if ("PROPOSED".equals(head.status())) {
+            jdbcTemplate.update("""
+                    update memory_runtime_revision set display_text = ? where id = ?
+                    """, newText.trim(), head.revisionId());
+            return true;
+        }
+        String revisionId = Ids.newId();
+        jdbcTemplate.update("""
+                update memory_runtime_revision
+                set status = 'SUPERSEDED', valid_until = current_timestamp
+                where id = ? and status = 'ACTIVE'
+                """, head.revisionId());
+        jdbcTemplate.update("""
+                insert into memory_runtime_revision(
+                    id, memory_item_id, workspace_id, version_no, status, confidence,
+                    normalized_value_json, display_text, provenance_type, provenance_ref,
+                    observation_id, content_hash, supersedes_revision_id
+                ) values (?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                revisionId, itemId, workspaceId, head.versionNo() + 1, head.confidence(),
+                head.normalizedValueJson(), newText.trim(), head.provenanceType(), head.provenanceRef(),
+                "wording:" + revisionId, revisionId, head.revisionId());
+        jdbcTemplate.update("""
+                update memory_item set current_revision_id = ?, updated_at = current_timestamp
+                where id = ?
+                """, revisionId, itemId);
+        writeEvent(itemId, "WORDING_REVISED", revisionId);
+        enqueueIndex(workspaceId, itemId, "UPSERT", newText.trim(),
+                head.semanticSlot() == null ? "" : head.semanticSlot(), "");
+        return true;
+    }
+
+    /** 后台整理确认两条记忆重复后，停用较新的一条。不删除、不脱敏。 */
+    @Transactional
+    public boolean mergeDuplicate(String workspaceId, String keepItemId, String dropItemId) {
+        ActiveRow drop = lockActive(workspaceId, dropItemId, keepItemId);
+        if (drop == null) {
+            return false;
+        }
+        int updated = jdbcTemplate.update("""
+                update memory_item set status = 'SUPERSEDED', review_status = 'SUPERSEDED',
+                    semantic_slot_key = null, lock_version = lock_version + 1,
+                    updated_at = current_timestamp
+                where id = ? and status = 'ACTIVE'
+                """, drop.itemId());
+        if (updated == 0) {
+            return false;
+        }
+        jdbcTemplate.update("""
+                update memory_runtime_revision
+                set status = 'SUPERSEDED', valid_until = current_timestamp
+                where id = ? and status = 'ACTIVE'
+                """, drop.revisionId());
+        writeEvent(drop.itemId(), "MERGED_DUPLICATE", keepItemId);
+        enqueueIndex(workspaceId, drop.itemId(), "DELETE", drop.displayText(), "", "");
+        return true;
     }
 
     public List<MemoryRuntimeReviewItemResponse> list(String workspaceId) {
@@ -497,6 +595,28 @@ public class CanonicalMemoryReviewService {
             throw new BusinessException("MEMORY_CANONICAL_PAYLOAD_PARSE_FAILED", "Canonical Memory payload parse failed");
         }
     }
+
+    private MemoryEvidence.Band evidenceBand(MemoryCandidateService.CandidateRow candidate) {
+        if (candidate.signalIds() == null || candidate.signalIds().isEmpty()) {
+            return MemoryEvidence.Band.INFERRED;
+        }
+        String band = jdbcTemplate.query("""
+                select evidence_band from memory_signal where id = ?
+                """, rs -> rs.next() ? rs.getString(1) : null, candidate.signalIds().get(0));
+        return MemoryEvidence.band(band);
+    }
+
+    private record RevisionHead(
+            String revisionId,
+            int versionNo,
+            String status,
+            double confidence,
+            String displayText,
+            String normalizedValueJson,
+            String provenanceType,
+            String provenanceRef,
+            String semanticSlot
+    ) { }
 
     private record ReviewRow(
             String revisionId,

@@ -62,7 +62,8 @@ public class MemoryCandidateService {
                     signal.sourceType(), signal.signalType(), signal.taskNeighborhood());
             String conflictStatus = conflict.legacyStatus();
             MemoryCandidateGate.GateDecision gate = candidateGate.evaluate(
-                    signal, marginalUtilityScore, conflictStatus);
+                    signal, marginalUtilityScore, conflictStatus,
+                    MemorySlots.categoryOf(signal.signalText()), "WORKSPACE");
             String candidateId = Ids.newId();
             List<String> neighborhoods = List.of(signal.taskNeighborhood());
             jdbcTemplate.update("""

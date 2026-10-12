@@ -14,9 +14,9 @@ class MemoryCandidatePolicyTest {
 
     @Test
     void shouldExposeVersionedConfidenceAndUtilityPolicy() {
-        assertThat(policy.version()).isEqualTo("memory-candidate-policy-v1");
-        assertThat(policy.confidenceForSource("USER_FEEDBACK")).isEqualTo(0.98);
-        assertThat(policy.confidenceForSource("MODEL_INFERENCE")).isEqualTo(0.35);
+        assertThat(policy.version()).isEqualTo("memory-candidate-policy-v2");
+        assertThat(policy.confidenceForSource("USER_FEEDBACK")).isEqualTo(0.8);
+        assertThat(policy.confidenceForSource("MODEL_INFERENCE")).isCloseTo(1.0 / 3.0, within(0.0000001));
         assertThat(policy.marginalUtility(
                 "USER_FEEDBACK", "NEGATIVE", "COMMON")).isCloseTo(0.98, within(0.0001));
     }
@@ -60,6 +60,17 @@ class MemoryCandidatePolicyTest {
                 "CONFLICT_CHECK_NOT_RUN");
 
         assertThat(decision.riskScore()).isGreaterThanOrEqualTo(policy.reviewRequiredRisk());
+        assertThat(decision.reviewStatus()).isEqualTo("NEEDS_REVIEW");
+    }
+
+    @Test
+    void shouldReviewHighScoringModelInferenceWhenPosteriorVarianceIsWide() {
+        MemoryCandidateGate.GateDecision decision = gate.evaluate(
+                signal("MODEL_INFERENCE", "PREFERENCE", "CHAT_QA", 0.98),
+                policy.marginalUtility("MODEL_INFERENCE", "PREFERENCE", "CHAT_QA"),
+                "NO_CONFLICT");
+
+        assertThat(decision.evidenceGateStatus()).isEqualTo("NEEDS_REVIEW");
         assertThat(decision.reviewStatus()).isEqualTo("NEEDS_REVIEW");
     }
 

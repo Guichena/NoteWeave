@@ -64,6 +64,7 @@ public class MemorySignalService {
         String sourceId = "memory-signal:" + signalId;
         String taskNeighborhood = normalizeToken(request.taskNeighborhood());
         double confidenceScore = candidatePolicy.confidenceForSource(sourceType);
+        String evidenceBand = MemoryEvidence.bandOf(sourceType, false).name();
         MemorySlots.Assignment assignment = MemorySlots.complete(
                 MemorySlots.categoryOf(request.signalText()),
                 request.signalText(),
@@ -75,8 +76,8 @@ public class MemorySignalService {
                 insert into memory_signal(
                     id, workspace_id, user_id, source_type, source_id, signal_type, signal_text,
                     task_neighborhood, compile_hints_json, confidence_score, policy_version,
-                    slot_key, slot_value, polarity
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    slot_key, slot_value, polarity, evidence_band
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 signalId,
                 workspaceId,
@@ -91,7 +92,8 @@ public class MemorySignalService {
                 candidatePolicy.version(),
                 assignment.slot(),
                 assignment.value(),
-                assignment.polarity()
+                assignment.polarity(),
+                evidenceBand
         );
         return new MemorySignalResponse(
                 signalId,
