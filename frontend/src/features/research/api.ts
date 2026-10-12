@@ -2,9 +2,13 @@ import { apiClient, type ApiClient } from "../../shared/api";
 import {
   type CreateResearchRunInput,
   type ResearchCheckpoint,
+  type ResearchCell,
   type ResearchCollection,
+  type ResearchCounterCheck,
+  type ResearchDiscoveryProposal,
   type ResearchPlan,
   type ResearchPlanRevision,
+  type ResearchReplan,
   type ResearchRunDetail,
   type ResearchRunResponse,
   type ResearchRunSummary,
@@ -57,6 +61,25 @@ export class ResearchApi {
 
   revisePlan(workspaceId: string, researchRunId: string, revision: ResearchPlanRevision) {
     return this.client.put<ResearchPlan>(`${this.runsPath(workspaceId)}/${researchRunId}/plan`, revision);
+  }
+
+  listReplans(workspaceId: string, researchRunId: string, init?: RequestInit) {
+    return this.client.get<ResearchReplan[]>(`${this.runsPath(workspaceId)}/${researchRunId}/replans`, init);
+  }
+
+  listCounterChecks(workspaceId: string, researchRunId: string, init?: RequestInit) {
+    return this.client.get<ResearchCounterCheck[]>(`${this.runsPath(workspaceId)}/${researchRunId}/counter-checks`, init);
+  }
+
+  listCells(workspaceId: string, researchRunId: string, init?: RequestInit) {
+    return this.client.get<ResearchCell[]>(`${this.runsPath(workspaceId)}/${researchRunId}/cells`, init);
+  }
+
+  listDiscoveryProposals(workspaceId: string, researchRunId: string, init?: RequestInit) {
+    return this.client.get<ResearchDiscoveryProposal[]>(
+      `${this.runsPath(workspaceId)}/${researchRunId}/discovery-proposals`,
+      init
+    );
   }
 
   saveReportAsSource(workspaceId: string, researchRunId: string) {

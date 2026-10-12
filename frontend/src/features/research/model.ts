@@ -464,6 +464,60 @@ export type ResearchPlanRevision = {
   dimensions: Array<{ label: string; description?: string; answer_format?: string; high_risk?: boolean }>;
 };
 
+export type ResearchReplanStrategy = "COUNTER_EVIDENCE" | "BROADEN" | "NARROW" | "SWITCH_LANGUAGE" | "SWITCH_SOURCE_TYPE";
+
+export type ResearchReplan = {
+  plan_revision_from: number;
+  plan_revision_to: number;
+  deviation_type: string;
+  repair_cause: string;
+  observed_facts: string;
+  affected_cells: string[];
+  strategy: ResearchReplanStrategy | string;
+  query_count: number;
+  created_at: string;
+};
+
+export type ResearchCounterCheckVerdict = "REFUTED" | "NOT_REFUTED" | "NO_COUNTER_EVIDENCE_FOUND" | "NOT_RUN";
+
+export type ResearchCounterCheck = {
+  cell_key: string;
+  entity_label: string;
+  column_label: string;
+  claim_text: string;
+  verdict: ResearchCounterCheckVerdict | string;
+  counter_query_count: number;
+  refuting_evidence_keys: string[];
+  checked_at: string;
+};
+
+export type ResearchCellConflict = {
+  kind: "TYPED_FACT_CONTRADICTION" | "SEMANTIC_CONTRADICTION" | string;
+  other_value: string;
+  status: "OPEN" | "RESOLVED" | string;
+};
+
+export type ResearchCell = {
+  cell_key: string;
+  entity_label: string;
+  column_label: string;
+  cell_status: string;
+  candidate_value: string | null;
+  equivalent_claims: Array<{ evidence_key: string; claim_text: string; source_domain: string }>;
+  independent_source_count: number;
+  confidence_ppm: number | null;
+  conflicts: ResearchCellConflict[];
+};
+
+export type ResearchDiscoveryProposal = {
+  proposal_type: "ENTITY" | "DIMENSION" | "SEARCH_QUERY" | string;
+  label: string;
+  rationale: string;
+  confidence_ppm: number;
+  supporting_domain_count: number;
+  status: "ACCEPTED" | "SHADOW" | "REJECTED" | string;
+};
+
 export type ResearchRunDetail = {
   research_run_id: string;
   workspace_id: string;

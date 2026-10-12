@@ -44,4 +44,6 @@
 ## 5. 当前状态
 
 - 1A、1B 已完成，研究表格确认面板 `ResearchPlanPanel` 已上线并有 DOM 测试；尚未在浏览器中截图验证（需要启动 WSL Docker 栈）。
-- 基线已提交；下一步是 F1 到 F3 的 mock 开发和 E1、E2 的评测方案。
+- 基线已提交。
+- F1 到 F3 已完成 mock 开发（分支 `feat/upgrade-frontend`）：`ResearchRepairPanel`（审计页）、`ResearchCellsPanel` 与 `ResearchDiscoveryPanel`（过程页），按接口约定读取 `replans`、`counter-checks`、`cells`、`discovery-proposals`；接口返回 404 时面板不显示，B 线实现前不影响现有页面。等 1C 到 1E 合并后联调。
+- 下一步：E1、E2 的评测方案，然后是 F4 到 F8。
