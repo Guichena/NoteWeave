@@ -368,7 +368,11 @@ class Phase3NoteWikiContractTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("window-ready.md")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("source-window-ready")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("readiness=")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("window-fallback")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("verify《window-ready.md》")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("verify《windowless-top.md》"))))
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("window-fallback"))));
     }
 
     @Test

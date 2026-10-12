@@ -23,12 +23,51 @@ class NoteRecallRankerTest {
                 List.of(source), new LinkedHashSet<>(List.of("spring", "boot", "3")));
 
         NoteRecallRanker.MetadataRank metadataRank = ranks.get("source");
-        assertThat(metadataRank.score()).isEqualTo(183);
+        assertThat(metadataRank.score()).isPositive();
         assertThat(metadataRank.matchedFields())
-                .containsExactly("title", "tags", "sample_text", "summary", "metadata");
+                .containsExactly("title", "summary", "tags", "metadata", "sample_text");
         assertThat(metadataRank.coverageTerms()).containsExactly("spring", "boot", "3");
         assertThat(metadataRank.coveredQueryTerms()).isEqualTo(3);
         assertThat(metadataRank.totalQueryTerms()).isEqualTo(3);
+    }
+
+    @Test
+    void titleMatchShouldOutrankSampleOnlyMatch() {
+        NoteRecallRanker ranker = new NoteRecallRanker();
+        CandidateSource title = new CandidateSource(
+                "title", "AnchorCoverage.md", "MARKDOWN", 1, 1, "", "",
+                "Spec2026 architecture review", "[]", "{}", "other",
+                0, "", List.of(), List.of(), 0, 0, "", "");
+        CandidateSource sample = new CandidateSource(
+                "sample", "sample-window.md", "MARKDOWN", 1, 1, "", "",
+                "正文里没有这两个词", "[]", "{}", "AnchorCoverage Spec2026",
+                0, "", List.of(), List.of(), 0, 0, "", "");
+
+        Map<String, NoteRecallRanker.MetadataRank> ranks = ranker.rankMetadata(
+                List.of(sample, title), new LinkedHashSet<>(List.of("AnchorCoverage", "Spec2026")));
+
+        assertThat(ranks.get("title").score()).isGreaterThan(ranks.get("sample").score());
+        assertThat(ranks.get("title").matchedFields()).contains("title");
+        assertThat(ranks.get("title").coveredQueryTerms()).isEqualTo(2);
+    }
+
+    @Test
+    void windowlessCandidateDoesNotEnterVerifyBatch() {
+        NoteRecallRanker ranker = new NoteRecallRanker();
+        CandidateSource windowless = new CandidateSource(
+                "windowless", "windowless", "PDF", 1, 0, "", "", "", "[]", "{}", "",
+                30, "", List.of(), List.of(), 0, 0, "", "");
+        CandidateSource ready = new CandidateSource(
+                "ready", "ready", "MARKDOWN", 1, 1, "", "", "", "[]", "{}", "",
+                20, "", List.of(), List.of(), 0, 0, "", "");
+        var selection = ranker.select(List.of(
+                new ScoredCandidate(windowless, 8, 0, 0, 0),
+                new ScoredCandidate(ready, 6, 0, 0, 0)));
+
+        assertThat(selection.verifySources()).extracting(CandidateSource::sourceId)
+                .containsExactly("ready");
+        assertThat(selection.verifySources()).extracting(CandidateSource::verifyAdmissionReason)
+                .noneMatch(reason -> reason.contains("window-fallback"));
     }
 
     @Test

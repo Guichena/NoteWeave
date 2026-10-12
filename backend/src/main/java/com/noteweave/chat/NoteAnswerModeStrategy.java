@@ -12,6 +12,7 @@ import com.noteweave.chat.NoteRetrievalService.NoteEntryMetadata;
 import com.noteweave.chat.NoteRetrievalService.NoteJournalHit;
 import com.noteweave.chat.NoteRetrievalService.ReadingWindow;
 import com.noteweave.chat.NoteRetrievalService.RelatedEntryPreview;
+import com.noteweave.retrieval.NoteRetrievalStrategyProfile;
 import com.noteweave.retrieval.QueryRewrite;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -52,6 +53,7 @@ public class NoteAnswerModeStrategy implements AnswerModeStrategy {
         filters.put("workspace_id", context.workspaceId());
         filters.put("source_status", "READY");
         QueryRewrite.copyInto(filters, context.attributes());
+        NoteRetrievalStrategyProfile.copyInto(filters);
         return new RetrievalPlan(
                 PLAN_VERSION,
                 AnswerMode.NOTE,

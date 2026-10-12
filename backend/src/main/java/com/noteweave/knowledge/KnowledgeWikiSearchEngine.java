@@ -1,12 +1,12 @@
 package com.noteweave.knowledge;
 
 import com.noteweave.common.text.LexicalTerms;
+import com.noteweave.retrieval.lexical.Bm25fScorer;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -126,65 +126,45 @@ final class KnowledgeWikiSearchEngine {
     }
 
     static Map<String, Double> bm25f(List<WikiSearchRow> rows, Query query, WikiLexicalBoost boost) {
+        if (rows == null || rows.isEmpty() || query == null || query.terms().isEmpty()) {
+            return Map.of();
+        }
         WikiLexicalBoost safeBoost = boost == null ? WikiLexicalBoost.none() : boost;
         Set<String> mustBoost = boostTokens(safeBoost.mustTerms());
         Set<String> titleBoost = boostTokens(safeBoost.titleTerms());
         Set<String> bodyBoost = boostTokens(safeBoost.bodyTerms());
-        Set<String> terms = query.terms();
-        List<Field[]> documents = new ArrayList<>(rows.size());
-        double[] totalLength = new double[3];
-        Map<String, Integer> documentFrequency = new HashMap<>();
+        Map<String, Double> termBoosts = new HashMap<>();
+        for (String term : mustBoost) {
+            termBoosts.put(term, Bm25fScorer.FIELD_TERM_BOOST);
+        }
+        Map<String, Set<String>> fieldTermBoosts = new HashMap<>();
+        if (!titleBoost.isEmpty()) {
+            fieldTermBoosts.put("title", titleBoost);
+        }
+        if (!bodyBoost.isEmpty()) {
+            fieldTermBoosts.put("content", bodyBoost);
+        }
+        List<Bm25fScorer.Document> documents = new ArrayList<>(rows.size());
         for (WikiSearchRow row : rows) {
-            Field[] fields = {
-                    Field.of(row.title(), TITLE_WEIGHT),
-                    Field.of(row.summary(), SUMMARY_WEIGHT),
-                    Field.of(row.content(), CONTENT_WEIGHT)};
-            documents.add(fields);
-            Set<String> seen = new HashSet<>();
-            for (int index = 0; index < fields.length; index++) {
-                totalLength[index] += fields[index].length();
-                for (String term : terms) {
-                    if (fields[index].frequency(term) > 0) seen.add(term);
-                }
-            }
-            seen.forEach(term -> documentFrequency.merge(term, 1, Integer::sum));
-        }
-        int count = rows.size();
-        double[] averageLength = new double[3];
-        for (int index = 0; index < 3; index++) {
-            averageLength[index] = Math.max(1.0d, totalLength[index] / count);
-        }
-        Map<String, Double> idf = new HashMap<>();
-        for (String term : terms) {
-            int df = documentFrequency.getOrDefault(term, 0);
-            idf.put(term, Math.log(1.0d + (count - df + 0.5d) / (df + 0.5d)));
+            Map<String, String> fields = new HashMap<>();
+            fields.put("title", row.title() == null ? "" : row.title());
+            fields.put("summary", row.summary() == null ? "" : row.summary());
+            fields.put("content", row.content() == null ? "" : row.content());
+            documents.add(new Bm25fScorer.Document(row.itemId(), fields));
         }
         Map<String, Double> scores = new HashMap<>();
-        for (int document = 0; document < count; document++) {
-            Field[] fields = documents.get(document);
-            double score = 0.0d;
-            Set<String> matched = new HashSet<>();
-            for (String term : terms) {
-                double termBoost = mustBoost.contains(term) ? 2.0d : 1.0d;
-                double weighted = 0.0d;
-                for (int index = 0; index < fields.length; index++) {
-                    int frequency = fields[index].frequency(term);
-                    if (frequency == 0) continue;
-                    double fieldBoost = 1.0d;
-                    if (index == 0 && titleBoost.contains(term)) {
-                        fieldBoost = 2.0d;
-                    } else if (index == 2 && bodyBoost.contains(term)) {
-                        fieldBoost = 2.0d;
-                    }
-                    double normalization = 1.0d - B + B * fields[index].length() / averageLength[index];
-                    weighted += fields[index].weight() * frequency / normalization * fieldBoost;
-                }
-                if (weighted == 0.0d) continue;
-                matched.add(term);
-                score += idf.get(term) * termBoost * weighted / (K1 + weighted);
-            }
-            if (score > 0.0d && query.covered(matched)) {
-                scores.put(rows.get(document).itemId(), score);
+        for (Bm25fScorer.Hit hit : new Bm25fScorer().score(
+                K1,
+                List.of(
+                        new Bm25fScorer.FieldSpec("title", TITLE_WEIGHT, B),
+                        new Bm25fScorer.FieldSpec("summary", SUMMARY_WEIGHT, B),
+                        new Bm25fScorer.FieldSpec("content", CONTENT_WEIGHT, B)),
+                documents,
+                query.terms(),
+                termBoosts,
+                fieldTermBoosts)) {
+            if (query.covered(hit.matchedTerms())) {
+                scores.put(hit.id(), hit.score());
             }
         }
         return scores;
@@ -246,19 +226,6 @@ final class KnowledgeWikiSearchEngine {
 
     private Instant toInstant(Timestamp value) {
         return value == null ? Instant.now() : value.toInstant();
-    }
-
-    private record Field(Map<String, Integer> frequencies, int length, double weight) {
-        static Field of(String text, double weight) {
-            List<String> tokens = LexicalTerms.tokens(text);
-            Map<String, Integer> frequencies = new HashMap<>();
-            tokens.forEach(token -> frequencies.merge(token, 1, Integer::sum));
-            return new Field(frequencies, tokens.size(), weight);
-        }
-
-        int frequency(String term) {
-            return frequencies.getOrDefault(term, 0);
-        }
     }
 
     private record ScoredWikiRow(WikiSearchRow row, double score) {
