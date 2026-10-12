@@ -108,6 +108,8 @@ noteweave:
     events:
       channel-retention-seconds: ${NOTEWEAVE_CONVERSATION_EVENTS_CHANNEL_RETENTION_SECONDS:900}
       max-retained-channels: ${NOTEWEAVE_CONVERSATION_EVENTS_MAX_RETAINED_CHANNELS:10000}
+    boundary-review-enabled: ${NOTEWEAVE_TOPIC_BOUNDARY_REVIEW_ENABLED:true}
+    boundary-review-delay-ms: ${NOTEWEAVE_TOPIC_BOUNDARY_REVIEW_DELAY_MS:30000}
   upload:
     cleanup-delay-ms: ${NOTEWEAVE_UPLOAD_CLEANUP_DELAY_MS:60000}
     cleanup-stale-after-seconds: ${NOTEWEAVE_UPLOAD_CLEANUP_STALE_AFTER_SECONDS:86400}

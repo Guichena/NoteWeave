@@ -14,13 +14,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.noteweave.chat.ChatLlmClient;
 import com.noteweave.chat.ChatService;
 import com.noteweave.common.Ids;
 import com.noteweave.research.ResearchAgentIncrementalFinalizationService;
 import com.noteweave.research.ResearchAgentTaskCoordinatorService;
 import com.noteweave.research.ResearchAgentTaskService;
+import com.noteweave.security.CurrentUserProvider;
 import java.nio.charset.StandardCharsets;
+import java.sql.Timestamp;
 import java.util.Map;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -1088,6 +1092,122 @@ class ConversationTurnModuleContractTest {
     }
 
     @Test
+    void semanticBoundaryReviewWritesBackAndNextPlanUsesTheConfirmedTopic() throws Exception {
+        String workspaceId = createWorkspace();
+        String conversationId = createConversation(workspaceId);
+        String firstMessage = insertTurnMessage(workspaceId, conversationId, 1, "USER",
+                "缓存一致性有哪些方案，先更新数据库还是先删除缓存？");
+        insertTurnMessage(workspaceId, conversationId, 2, "ASSISTANT", "好的。");
+        String thirdMessage = insertTurnMessage(workspaceId, conversationId, 3, "USER",
+                "台南旅行想住两晚并吃牛肉汤逛安平老街。");
+        for (int seq = 4; seq <= 10; seq++) {
+            insertTurnMessage(workspaceId, conversationId, seq, "USER", "这天再看安平。");
+        }
+        insertAnswerRun(workspaceId, conversationId, firstMessage, "not-json", "2026-10-12 00:00:01");
+        insertAnswerRun(workspaceId, conversationId, firstMessage,
+                "{\"steps\":[{\"filters\":{\"rewrite_method\":\"LLM\",\"standalone_query\":\"独立问题\"}}]}",
+                "2026-10-12 00:00:02");
+        insertAnswerRun(workspaceId, conversationId, thirdMessage,
+                "{\"steps\":[{\"filters\":{\"rewrite_method\":\"LLM\",\"standalone_query\":\"台南独立问题\"}}]}",
+                "2026-10-12 00:00:01");
+        insertAnswerRun(workspaceId, conversationId, thirdMessage,
+                "{\"steps\":[{\"filters\":{\"rewrite_method\":\"RULE\",\"standalone_query\":\"  \"}}]}",
+                "2026-10-12 00:00:03");
+        assertThat(topicProjectionV2Service.standaloneQueries(workspaceId, conversationId))
+                .containsEntry(firstMessage, "独立问题")
+                .doesNotContainKey(thirdMessage);
+
+        TopicSegmenterV2.Projection projection = topicProjectionV2Service.refresh(workspaceId, conversationId);
+        assertThat(projection.segments()).hasSize(2);
+        assertThat(projection.segments().get(0).endSeq()).isEqualTo(2);
+        assertThat(projection.segments().get(0).status()).isEqualTo("CONFIDENT");
+        TopicSegmenterV2.Segment uncertain = projection.segments().get(1);
+        assertThat(uncertain.startSeq()).isEqualTo(3);
+        assertThat(uncertain.endSeq()).isEqualTo(10);
+        assertThat(uncertain.status()).isEqualTo("UNCERTAIN");
+        assertThat(jdbcTemplate.queryForObject(
+                "select degradation_reason from conversation_topic_segment_v2 where id = ?",
+                String.class, uncertain.segmentId())).isEqualTo(TopicSegmenterV2.VECTOR_UNAVAILABLE);
+        assertThat(jdbcTemplate.queryForObject(
+                "select boundary_review from conversation_topic_segment_v2 where id = ?",
+                String.class, uncertain.segmentId())).isEqualTo("NOT_RUN");
+
+        ScriptedBoundaryClient client = new ScriptedBoundaryClient();
+        client.enabled = false;
+        TopicBoundaryReviewService reviews = new TopicBoundaryReviewService(jdbcTemplate, client, true);
+        markPending(uncertain.segmentId());
+        assertThat(reviews.reviewConversation(conversationId)).isEqualTo(1);
+        assertSegment(uncertain.segmentId(), uncertain.topicId(), "UNCERTAIN",
+                TopicBoundaryJudge.NOT_RUN, "NOT_RUN", uncertain.endSeq());
+        assertThat(jdbcTemplate.queryForObject(
+                "select degradation_reason from conversation_topic_segment_v2 where id = ?",
+                String.class, uncertain.segmentId())).isEqualTo(TopicSegmenterV2.VECTOR_UNAVAILABLE);
+
+        client.enabled = true;
+        client.outputs.add("{\"decision\":\"RETURN\",\"topic_index\":5}");
+        markPending(uncertain.segmentId());
+        assertThat(reviews.reviewConversation(conversationId)).isEqualTo(1);
+        assertSegment(uncertain.segmentId(), uncertain.topicId(), "UNCERTAIN",
+                TopicBoundaryJudge.NOT_RUN, "NOT_RUN", uncertain.endSeq());
+
+        client.outputs.add("{\"decision\":\"RETURN\",\"topic_index\":0}");
+        markPending(uncertain.segmentId());
+        assertThat(reviews.reviewConversation(conversationId)).isEqualTo(1);
+        assertSegment(uncertain.segmentId(), projection.segments().get(0).topicId(), "CONFIDENT",
+                TopicBoundaryReviewService.RETURN, "REVIEWED", uncertain.endSeq());
+        jdbcTemplate.update("""
+                update conversation_topic_segment_v2
+                set topic_id = ?, decision_status = 'UNCERTAIN', boundary_review = 'PENDING',
+                    decision_reason = 'NO_SIMILAR_TOPIC'
+                where id = ?
+                """, uncertain.topicId(), uncertain.segmentId());
+
+        client.outputs.add("{\"decision\":\"NEW\"}");
+        markPending(uncertain.segmentId());
+        assertThat(reviews.reviewConversation(conversationId)).isEqualTo(1);
+        assertSegment(uncertain.segmentId(), uncertain.topicId(), "CONFIDENT",
+                TopicBoundaryReviewService.NEW_TOPIC, "REVIEWED", uncertain.endSeq());
+
+        jdbcTemplate.update("""
+                update conversation_topic_segment_v2
+                set decision_status = 'UNCERTAIN', boundary_review = 'PENDING', decision_reason = 'NO_SIMILAR_TOPIC'
+                where id = ?
+                """, uncertain.segmentId());
+        client.outputs.add("{\"decision\":\"SAME\"}");
+        assertThat(reviews.reviewConversation(conversationId)).isEqualTo(1);
+        assertSegment(uncertain.segmentId(), projection.segments().get(0).topicId(), "CONFIDENT",
+                TopicBoundaryReviewService.SAME, "REVIEWED", uncertain.endSeq());
+
+        TopicSegmenterV2.Projection replay = topicProjectionV2Service.refresh(workspaceId, conversationId);
+        assertThat(replay.segments()).extracting(TopicSegmenterV2.Segment::segmentId)
+                .containsExactly(projection.segments().get(0).segmentId(), uncertain.segmentId());
+        assertThat(replay.segments().get(1).topicId()).isEqualTo(replay.segments().get(0).topicId());
+        assertThat(replay.segments().get(1).status()).isEqualTo("CONFIDENT");
+        assertThat(replay.segments().get(1).endSeq()).isEqualTo(uncertain.endSeq());
+        assertThat(jdbcTemplate.queryForObject(
+                "select boundary_review from conversation_topic_segment_v2 where id = ?",
+                String.class, uncertain.segmentId())).isEqualTo("REVIEWED");
+
+        String summary = "缓存一致性的方案摘要";
+        String summaryHash = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(summary.getBytes(StandardCharsets.UTF_8)));
+        assertThat(jdbcTemplate.update("""
+                update conversation_topic_summary_revision_v2
+                set status = 'READY', summary_text = ?, content_hash = ?, summary_method = 'EXTRACTIVE',
+                    ready_at = current_timestamp
+                where segment_id = ? and status = 'BUILDING'
+                """, summary, summaryHash, projection.segments().get(0).segmentId())).isEqualTo(1);
+        ContextProjectionV2 planned = contextCompilerV2Service.compile(
+                workspaceId, CurrentUserProvider.LOCAL_USER_ID, conversationId, 10,
+                "回到缓存一致性", "QA", 20_000);
+        assertThat(planned.topicSummaries()).extracting(ContextProjectionV2.TopicSummary::text).contains(summary);
+        assertThat(planned.decisions()).anySatisfy(decision -> {
+            assertThat(decision.reason()).isEqualTo("MATCHED_ACTIVE_TOPIC");
+            assertThat(decision.action()).isEqualTo("INCLUDE");
+        });
+    }
+
+    @Test
     void shadowConstraintProjectionPersistsUserCorrectionAndNeverPromotesAssistantText() throws Exception {
         String workspaceId = createWorkspace();
         String conversationId = createConversation(workspaceId);
@@ -1780,5 +1900,65 @@ class ConversationTurnModuleContractTest {
             }
         }
         throw new AssertionError("Uploaded source was not listed: " + fileName);
+    }
+
+    private String insertTurnMessage(String workspaceId, String conversationId, int seq,
+                                     String role, String text) throws Exception {
+        String id = Ids.newId();
+        String hash = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(text.getBytes(StandardCharsets.UTF_8)));
+        jdbcTemplate.update("""
+                insert into conversation_message(id, conversation_id, workspace_id, message_seq,
+                    role, answer_mode, content, content_hash, context_status)
+                values (?, ?, ?, ?, ?, 'QA', ?, ?, 'CURRENT')
+                """, id, conversationId, workspaceId, seq, role, text, hash);
+        return id;
+    }
+
+    private void insertAnswerRun(String workspaceId, String conversationId, String messageId,
+                                 String planJson, String createdAt) {
+        jdbcTemplate.update("""
+                insert into answer_run(id, workspace_id, conversation_id, mode, status, query_message_id,
+                    retrieval_plan_version, created_by, updated_by, retrieval_plan_json, created_at)
+                values (?, ?, ?, 'QA', 'COMPLETED', ?, 'legacy-v1', 'test', 'test', ?, ?)
+                """, Ids.newId(), workspaceId, conversationId, messageId, planJson,
+                Timestamp.valueOf(createdAt));
+    }
+
+    private void markPending(String segmentId) {
+        jdbcTemplate.update("""
+                update conversation_topic_segment_v2
+                set boundary_review = 'PENDING', decision_status = 'UNCERTAIN'
+                where id = ?
+                """, segmentId);
+    }
+
+    private void assertSegment(String segmentId, String topicId, String status, String reason,
+                               String review, int endSeq) {
+        assertThat(jdbcTemplate.queryForMap("""
+                select topic_id, decision_status, decision_reason, boundary_review, end_seq
+                from conversation_topic_segment_v2 where id = ?
+                """, segmentId))
+                .containsEntry("topic_id", topicId)
+                .containsEntry("decision_status", status)
+                .containsEntry("decision_reason", reason)
+                .containsEntry("boundary_review", review)
+                .containsEntry("end_seq", endSeq);
+    }
+
+    private static final class ScriptedBoundaryClient implements ChatLlmClient {
+        private final java.util.List<String> outputs = new java.util.ArrayList<>();
+        private boolean enabled = true;
+
+        @Override
+        public String streamChat(String systemPrompt, String userPrompt, int maximumOutputTokens,
+                                  Consumer<String> onToken) {
+            return outputs.isEmpty() ? "" : outputs.remove(0);
+        }
+
+        @Override
+        public boolean isEnabled() {
+            return enabled;
+        }
     }
 }

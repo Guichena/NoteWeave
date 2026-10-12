@@ -20,6 +20,9 @@ noteweave:
     slot-backfill-enabled: false
     consolidation-enabled: false
     consolidation-delay-ms: 3600000
+  conversation:
+    boundary-review-enabled: false
+    boundary-review-delay-ms: 3600000
   retrieval:
     query-rewrite:
       enabled: true
