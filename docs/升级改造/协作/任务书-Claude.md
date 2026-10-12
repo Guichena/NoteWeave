@@ -46,4 +46,6 @@
 - 1A、1B 已完成，研究表格确认面板 `ResearchPlanPanel` 已上线并有 DOM 测试；尚未在浏览器中截图验证（需要启动 WSL Docker 栈）。
 - 基线已提交。
 - F1 到 F3 已完成 mock 开发（分支 `feat/upgrade-frontend`）：`ResearchRepairPanel`（审计页）、`ResearchCellsPanel` 与 `ResearchDiscoveryPanel`（过程页），按接口约定读取 `replans`、`counter-checks`、`cells`、`discovery-proposals`；接口返回 404 时面板不显示，B 线实现前不影响现有页面。等 1C 到 1E 合并后联调。
-- 下一步：E1、E2 的评测方案，然后是 F4 到 F8。
+- E1 已完成：`experiments/deep-research/quality-eval/`（20 题，有效单元格完成率加单次 LLM 五维评分），脚本 `scripts/deepresearch/run_quality_eval.py`、`score_quality_eval.py`。
+- E2 已完成：`experiments/retrieval/`（固定语料快照，首轮 20 题、多轮 12 组、Wiki 跨页 8 题，按要点词项判定相关性），脚本在 `scripts/retrieval/`。两套都只做了脚本测试，尚未在真实环境运行。
+- 下一步：F4 到 F8。
