@@ -260,8 +260,9 @@ def test_explicit_allowed_url_should_precede_provider_rankings() -> None:
     assert hits[1] is provider_hit
 
 
-def test_domain_allowlist_should_scope_every_search_query_before_provider_call() -> None:
-    from app.deep_cell_executor import _build_task_scope, _scope_search_plan_to_domains
+def test_domain_allowlist_should_scope_every_planned_query_before_provider_call() -> None:
+    from app.cell_query_planner import CellQueryPlan
+    from app.deep_cell_executor import _build_task_scope, _plan_queries_for_cell, _scope_search_plan_to_domains
     from app.task_snapshot_contract import ResearchAgentTaskSnapshot
 
     raw = _external_snapshot()
@@ -273,56 +274,20 @@ def test_domain_allowlist_should_scope_every_search_query_before_provider_call()
     raw["snapshot_digest"] = snapshot_digest(raw)
     snapshot = ResearchAgentTaskSnapshot.model_validate(raw)
     _task_input, plan, _allow_external = _build_task_scope(snapshot)
+    planned, query_plan = _plan_queries_for_cell(snapshot, plan, None)
 
-    scoped = _scope_search_plan_to_domains(snapshot, plan)
+    scoped = _scope_search_plan_to_domains(snapshot, planned)
 
-    assert scoped.query_set
-    assert all(" site:" in query for query in scoped.query_set)
-    assert any(query.endswith("site:platform.openai.com") for query in scoped.query_set)
-    assert any(query.endswith("site:docs.anthropic.com") for query in scoped.query_set)
-    budgets = scoped.stop_contract["execution_profile"]["query_family_budgets"]
-    assert budgets["direct"] >= 2
-
-
-def test_domain_scoping_should_focus_each_comparison_slot_on_its_publisher() -> None:
-    from app.deep_cell_executor import _domain_focused_query
-
-    query = (
-        "Compare 'Hybrid working from home improves retention' (Nature, Trip.com trial) "
-        "and 'Work from Home & Productivity' (NBER Working Paper 28983)."
-    )
-
-    nature = _domain_focused_query(query, "nature.com")
-    nber = _domain_focused_query(query, "www.nber.org")
-
-    assert "Nature" in nature
-    assert "NBER" not in nature
-    assert "NBER" in nber
-    assert "Nature" not in nber
+    assert isinstance(query_plan, CellQueryPlan)
+    assert len(scoped.query_specs) == len(planned.query_specs) * 2
+    assert scoped.query_set == [spec.query for spec in scoped.query_specs]
+    assert all(query.endswith(("site:platform.openai.com", "site:docs.anthropic.com")) for query in scoped.query_set)
+    assert all("::" not in query and chr(10) not in query for query in scoped.query_set)
+    assert {spec.family for spec in scoped.query_specs} == {spec.family for spec in planned.query_specs}
+    assert scoped.stop_contract["execution_profile"]["search_query_budget"] >= 2
 
 
-def test_official_product_comparison_should_infer_primary_source_domains() -> None:
-    from app.deep_cell_executor import _build_task_scope, _effective_allowed_external_domains
-    from app.task_snapshot_contract import ResearchAgentTaskSnapshot
-
-    raw = _external_snapshot()
-    raw.pop("snapshot_digest")
-    raw["query_policy"] = {
-        **raw["query_policy"],
-        "query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引能力，优先引用双方官方文档。",
-    }
-    raw["snapshot_digest"] = snapshot_digest(raw)
-    snapshot = ResearchAgentTaskSnapshot.model_validate(raw)
-    _task_input, plan, _allow_external = _build_task_scope(snapshot)
-
-    assert _effective_allowed_external_domains(snapshot, plan) == {
-        "postgresql.org",
-        "dev.mysql.com",
-        "docs.oracle.com",
-    }
-
-
-def test_comparison_entity_should_scope_query_and_official_domain_to_one_product() -> None:
+def test_product_names_in_question_should_not_infer_external_domains() -> None:
     from app.deep_cell_executor import _build_task_scope, _effective_allowed_external_domains
     from app.task_snapshot_contract import ResearchAgentTaskSnapshot
 
@@ -340,10 +305,11 @@ def test_comparison_entity_should_scope_query_and_official_domain_to_one_product
 
     assert "Current Table-as-State entity: PostgreSQL 17" in task_input.input_payload.question
     assert "only for this entity" in task_input.input_payload.question
-    assert _effective_allowed_external_domains(snapshot, plan) == {"postgresql.org"}
+    # 只有来源策略里明确允许的域名才会限定检索范围
+    assert _effective_allowed_external_domains(snapshot, plan) == set()
 
 
-def test_comparison_entity_should_prepend_versioned_official_seed_urls() -> None:
+def test_no_url_should_be_prepended_without_an_explicit_allowlist_match() -> None:
     from app.deep_cell_executor import _build_task_scope, _prepend_explicit_allowed_urls
     from app.task_snapshot_contract import ResearchAgentTaskSnapshot
 
@@ -358,12 +324,46 @@ def test_comparison_entity_should_prepend_versioned_official_seed_urls() -> None
     snapshot = ResearchAgentTaskSnapshot.model_validate(raw)
     _task_input, plan, _allow_external = _build_task_scope(snapshot)
 
-    hits = _prepend_explicit_allowed_urls(snapshot, plan, [])
+    assert _prepend_explicit_allowed_urls(snapshot, plan, []) == []
 
-    assert [hit.url for hit in hits] == [
-        "https://www.postgresql.org/docs/17/datatype-json.html#JSON-INDEXING",
-        "https://www.postgresql.org/docs/17/gin.html",
-    ]
+
+def test_deep_cell_should_search_with_planned_natural_language_queries() -> None:
+    from app.deep_cell_executor import DeepCellExecutor
+
+    seen_plans = []
+
+    class _RecordingToolchain(_Toolchain):
+        def search(self, task_input, plan, *, allow_external: bool):
+            seen_plans.append(plan)
+            return super().search(task_input, plan, allow_external=allow_external)
+
+    raw = _snapshot()
+    raw.pop("snapshot_digest")
+    raw["query_policy"] = {
+        "query": chr(10).join([
+            "Use the frozen conversation context to interpret the research request.",
+            "user: earlier turn about something else",
+            "Current research request:",
+            "How does the method work?",
+        ]),
+        "research_brief": {"current_question": "How does the method work?"},
+        "entity_label": "Method X",
+        "column_specs": [{"key": "method", "label": "Training procedure"}],
+    }
+    snapshot = {**raw, "snapshot_digest": snapshot_digest(raw)}
+
+    DeepCellExecutor(_Permit(), "worker-a", toolchain=_RecordingToolchain(), enable_llm=False)(
+        _command(), _claim(snapshot)
+    )
+
+    plan = seen_plans[0]
+    assert plan.query_specs
+    assert plan.query_set == [spec.query for spec in plan.query_specs]
+    assert all("::" not in query and chr(10) not in query and len(query) <= 200 for query in plan.query_set)
+    assert any("Training procedure" in query and "Method X" in query for query in plan.query_set)
+    assert not any("frozen conversation context" in query for query in plan.query_set)
+    assert plan.stop_contract["query_planning"]["method"] == "RULE"
+    assert plan.stop_contract["query_planning"]["degradation_reasons"] == ["CELL_QUERY_LLM_UNAVAILABLE"]
 
 
 def test_external_hits_should_be_interleaved_across_source_domains() -> None:
@@ -384,28 +384,6 @@ def test_external_hits_should_be_interleaved_across_source_domains() -> None:
         "docs.oracle.com",
         "www.postgresql.org",
     ]
-
-
-def test_inferred_official_domains_should_generate_product_focused_site_queries() -> None:
-    from app.deep_cell_executor import _build_task_scope, _scope_search_plan_to_domains
-    from app.task_snapshot_contract import ResearchAgentTaskSnapshot
-
-    raw = _external_snapshot()
-    raw.pop("snapshot_digest")
-    raw["query_policy"] = {
-        **raw["query_policy"],
-        "query": "Compare PostgreSQL 17 and MySQL 8.4 JSONB JSON_TABLE indexing using official documentation",
-    }
-    raw["snapshot_digest"] = snapshot_digest(raw)
-    snapshot = ResearchAgentTaskSnapshot.model_validate(raw)
-    _task_input, plan, _allow_external = _build_task_scope(snapshot)
-
-    scoped = _scope_search_plan_to_domains(snapshot, plan)
-
-    assert any("postgresql 17" in query.lower() and query.endswith("site:postgresql.org") for query in scoped.query_set)
-    assert any("mysql 8.4" in query.lower() and query.endswith("site:dev.mysql.com") for query in scoped.query_set)
-    assert any("mysql 8.4" in query.lower() and query.endswith("site:docs.oracle.com") for query in scoped.query_set)
-    assert all("official documentation" in query.lower() for query in scoped.query_set)
 
 
 def test_crash_fault_should_fire_only_after_at_least_one_external_archive() -> None:

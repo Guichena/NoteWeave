@@ -107,6 +107,34 @@ class ResearchAgentTaskCoordinatorServiceTest {
     }
 
     @Test
+    void shouldCarryTargetColumnLabelsFromPlanIntoQueryPolicy() throws Exception {
+        jdbcTemplate.update("""
+                insert into research_matrix_plan(
+                    id, research_run_id, planner_version, plan_mode, plan_status,
+                    row_count, column_count, cell_count, bounded, reason_codes_json,
+                    plan_json, plan_digest)
+                values (?, ?, 'intent-matrix.v2', 'INTENT_MATRIX_V2', 'ACTIVE', 1, 2, 2, false, '[]', ?, ?)
+                """, Ids.newId(), runId,
+                objectMapper.writeValueAsString(Map.of("columns", List.of(
+                        Map.of("key", "method", "label", "Training procedure")))),
+                "sha256:" + "2".repeat(64));
+        coordinator.planAndEnqueue(runId);
+
+        var contexts = jdbcTemplate.queryForList(
+                "select execution_context_json from research_agent_task where research_run_id = ?",
+                String.class, runId);
+        Map<String, String> labels = new java.util.HashMap<>();
+        for (String context : contexts) {
+            for (var spec : objectMapper.readTree(context).path("query_policy").path("column_specs")) {
+                labels.put(spec.path("key").asText(), spec.path("label").asText());
+            }
+        }
+        // 规划里没有标签的列退回使用列键
+        assertThat(labels).containsEntry("method", "Training procedure")
+                .containsEntry("evidence", "evidence");
+    }
+
+    @Test
     void shouldGrantExternalToolScopeOnlyWhenTheServerPolicyEnablesIt() throws Exception {
         when(externalEvidencePolicy.enabled()).thenReturn(true);
 
@@ -856,7 +884,7 @@ class ResearchAgentTaskCoordinatorServiceTest {
                         "llm_calls", "search_calls", "fetch_calls", "read_calls", "extract_calls",
                         "evidence_cards", "evidence_appended", "candidates_submitted",
                         "candidate_merges_accepted", "candidate_merges_rejected");
-                assertThat(reserved.get("llm_calls")).isEqualTo(2L);
+                assertThat(reserved.get("llm_calls")).isEqualTo(4L);
                 assertThat(reserved)
                         .containsEntry("search_calls", 3L)
                         .containsEntry("fetch_calls", 3L)

@@ -396,7 +396,7 @@ class ResearchAgentCompletionCommitter {
                 || (task.candidateQuorum() == 2 && "COUNTERFACTUAL".equals(task.role()))
                 || isCounterfactualRepairTask(task));
         boolean roleResultTask = SNAPSHOT_SCHEMA_V3.equals(task.snapshotSchemaVersion())
-                && Set.of("EVIDENCE_AUDIT", "SYNTHESIS", "WIDE_DISCOVERY").contains(task.role())
+                && ResearchAgentRoles.submitsRoleResult(task.role())
                 && ResearchAgentCompletionCanonicalizer.SCHEMA_VERSION_V2.equals(envelope.schemaVersion())
                 && "ROLE_RESULT".equals(envelope.terminationReason());
         if (!v1 && !v2 && !roleResultTask) {
@@ -457,7 +457,7 @@ class ResearchAgentCompletionCommitter {
                     || (task.candidateQuorum() == 1 && (cell.leaseEpoch() != task.leaseEpoch()
                     || cell.fencingToken() != task.fencingToken())) || "FROZEN".equals(cell.status())
                     || (!roleResultTask && "VERIFIED".equals(cell.status()))
-                    || (roleResultTask && !"WIDE_DISCOVERY".equals(task.role()) && !"VERIFIED".equals(cell.status()))) {
+                    || (roleResultTask && !ResearchAgentRoles.ownsNoCells(task.role()) && !"VERIFIED".equals(cell.status()))) {
                 throw snapshotStale("Canonical target cell no longer matches the task snapshot");
             }
         }
@@ -1047,7 +1047,7 @@ class ResearchAgentCompletionCommitter {
         try {
             List<Map<String, Object>> values = objectMapper.readValue(json, new TypeReference<>() { });
             int maximum = Set.of("EVIDENCE_AUDIT", "SYNTHESIS").contains(role) ? 80 : 3;
-            boolean emptyAllowed = "WIDE_DISCOVERY".equals(role);
+            boolean emptyAllowed = ResearchAgentRoles.ownsNoCells(role);
             if (values == null || (!emptyAllowed && values.isEmpty()) || values.size() > maximum) {
                 throw snapshotStale("Task target snapshot has an invalid cell count");
             }

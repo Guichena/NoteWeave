@@ -7,6 +7,7 @@ import { ResearchCheckpointProvenancePanel } from "./ResearchCheckpointProvenanc
 import { ResearchCheckpointReplayPanel } from "./ResearchCheckpointReplayPanel";
 import { ResearchCheckpointSnapshotPanel } from "./ResearchCheckpointSnapshotPanel";
 import { ResearchClosedLoopStatePanel } from "./ResearchClosedLoopStatePanel";
+import { ResearchPlanPanel } from "./ResearchPlanPanel";
 import { ResearchProcessOverview } from "./ResearchProcessOverview";
 import { ResearchProcessStageLanes } from "./ResearchProcessStageLanes";
 import { ResearchProcessTraceBrowser } from "./ResearchProcessTraceBrowser";
@@ -133,6 +134,7 @@ export function ResearchDetailWorkbench({
 
         {tab === "process" ? (
           <div className="research-detail-section-stack">
+            <ResearchPlanPanel workspaceId={run.workspace_id} researchRunId={run.research_run_id} onStarted={onRefresh} />
             <ResearchProcessOverview
               processSummary={process}
               searchReadTimeline={effectiveTimeline}

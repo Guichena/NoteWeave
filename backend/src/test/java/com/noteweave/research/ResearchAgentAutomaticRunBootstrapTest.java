@@ -91,6 +91,10 @@ class ResearchAgentAutomaticRunBootstrapTest {
                 where research_run_id = ? and column_key = 'answer'
                 """, Boolean.class, created.researchRunId())).isFalse();
 
+        // 新 Run 先进入规划阶段；这里模拟规划任务失败，Run 沿用规则生成的表格进入首个深挖波次
+        assertThat(coordinatorTick.tick(created.researchRunId(), "bootstrap-test").outcome()).isEqualTo("PLANNING_TASKIZED");
+        jdbcTemplate.update("update research_agent_task set status = 'FAILED' where research_run_id = ? and role = 'PLANNING'",
+                created.researchRunId());
         ResearchAgentCoordinatorTickService.TickReceipt tick =
                 coordinatorTick.tick(created.researchRunId(), "bootstrap-test");
 
@@ -124,6 +128,10 @@ class ResearchAgentAutomaticRunBootstrapTest {
                 "select source_scope_json from research_run where id = ?", String.class, created.researchRunId()))
                 .isEqualTo("[]");
 
+        // 新 Run 先进入规划阶段；这里模拟规划任务失败，Run 沿用规则生成的表格进入首个深挖波次
+        assertThat(coordinatorTick.tick(created.researchRunId(), "web-only-bootstrap-test").outcome()).isEqualTo("PLANNING_TASKIZED");
+        jdbcTemplate.update("update research_agent_task set status = 'FAILED' where research_run_id = ? and role = 'PLANNING'",
+                created.researchRunId());
         ResearchAgentCoordinatorTickService.TickReceipt tick =
                 coordinatorTick.tick(created.researchRunId(), "web-only-bootstrap-test");
 
@@ -132,7 +140,7 @@ class ResearchAgentAutomaticRunBootstrapTest {
                 "select count(*) from research_agent_task where research_run_id = ?",
                 Integer.class, created.researchRunId())).isGreaterThan(0);
         String agentTaskId = jdbcTemplate.queryForObject("""
-                select id from research_agent_task where research_run_id = ? order by task_key limit 1
+                select id from research_agent_task where research_run_id = ? and role <> 'PLANNING' order by task_key limit 1
                 """, String.class, created.researchRunId());
         ResearchAgentTaskService.ClaimedTask claimed = taskService.claimTask(
                 new ResearchAgentTaskService.ClaimCommand(agentTaskId, "web-only-worker", 30));

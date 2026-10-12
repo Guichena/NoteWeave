@@ -3,6 +3,8 @@ import {
   type CreateResearchRunInput,
   type ResearchCheckpoint,
   type ResearchCollection,
+  type ResearchPlan,
+  type ResearchPlanRevision,
   type ResearchRunDetail,
   type ResearchRunResponse,
   type ResearchRunSummary,
@@ -43,6 +45,18 @@ export class ResearchApi {
       `${this.runsPath(workspaceId)}/${researchRunId}/resume-from-checkpoint/${checkpointNo}`,
       {}
     );
+  }
+
+  getPlan(workspaceId: string, researchRunId: string, init?: RequestInit) {
+    return this.client.get<ResearchPlan>(`${this.runsPath(workspaceId)}/${researchRunId}/plan`, init);
+  }
+
+  approvePlan(workspaceId: string, researchRunId: string) {
+    return this.client.post<ResearchPlan>(`${this.runsPath(workspaceId)}/${researchRunId}/plan/approve`, {});
+  }
+
+  revisePlan(workspaceId: string, researchRunId: string, revision: ResearchPlanRevision) {
+    return this.client.put<ResearchPlan>(`${this.runsPath(workspaceId)}/${researchRunId}/plan`, revision);
   }
 
   saveReportAsSource(workspaceId: string, researchRunId: string) {

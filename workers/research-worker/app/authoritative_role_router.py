@@ -36,6 +36,8 @@ ROLE_CAPABILITIES = {
                                 "ARTIFACT_CANDIDATE", "ARTIFACT_PROMOTION_ONLY", frozenset()),
     "WIDE_DISCOVERY": RoleCapability("WIDE_DISCOVERY", True, "DiscoveryExecutor", frozenset({"v3"}),
                                      "SCOPE_PROPOSAL", "PROPOSAL_ONLY", frozenset({"search", "read"})),
+    "PLANNING": RoleCapability("PLANNING", True, "PlanningExecutor", frozenset({"v3"}),
+                               "PLAN_PROPOSAL", "PROPOSAL_ONLY", frozenset({"search"})),
     "CELL_VERIFIER": RoleCapability("CELL_VERIFIER", False, "Internal", frozenset(), "DECISION", "NONE", frozenset()),
     "GLOBAL_VERIFIER": RoleCapability("GLOBAL_VERIFIER", False, "Internal", frozenset(), "DECISION", "NONE", frozenset()),
 }

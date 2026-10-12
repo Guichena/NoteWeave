@@ -62,6 +62,7 @@ def _role_completion(
     role_result: dict[str, object],
     *,
     llm_calls: int = 0,
+    search_calls: int = 0,
 ):
     trace = {"schema_version": "research-agent-role-trace.v1", "role_result": role_result}
     return build_completion_envelope({
@@ -73,7 +74,7 @@ def _role_completion(
         "execution_key": f"role-result:{claim.agent_task_id}:{claim.lease_epoch}:{claim.fencing_token}",
         "task_snapshot_digest": snapshot_digest,
         "termination_reason": "ROLE_RESULT",
-        "budget_usage": {"llm_calls": llm_calls, "search_calls": 0, "fetch_calls": 0, "read_calls": 0,
+        "budget_usage": {"llm_calls": llm_calls, "search_calls": search_calls, "fetch_calls": 0, "read_calls": 0,
                          "extract_calls": 0, "evidence_cards": 0, "candidates_submitted": 0},
         "telemetry": {"search_hits": 0, "documents": 0, "windows": 0},
         "trace_digest": canonical_json_digest(trace),

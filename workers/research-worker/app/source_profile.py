@@ -3,6 +3,7 @@ from __future__ import annotations
 from urllib.parse import urlparse
 
 from app.models import ResearchPlan, ResearchSearchHit
+from app.query_specs import find_query_spec
 
 
 HIGH_TRUST_QUALITY_SCORES = {
@@ -76,6 +77,9 @@ def _adjust_for_content_quality(source_quality: str, score: float, content_text:
 
 
 def infer_search_lane(plan: ResearchPlan, query: str) -> str:
+    spec = find_query_spec(plan, query)
+    if spec is not None:
+        return spec.search_lane
     lowered = (query or "").lower()
     if "verified evidence search" in lowered or "direct answer with evidence" in lowered:
         return "DEEP_FOCUS"

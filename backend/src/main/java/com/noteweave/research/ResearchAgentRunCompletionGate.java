@@ -460,7 +460,7 @@ public class ResearchAgentRunCompletionGate {
     public boolean failedTasksAreEvidenceOutcomes(String runId) {
         List<String> reasons = jdbcTemplate.queryForList("""
                 select coalesce(terminal_reason, '') from research_agent_task
-                where research_run_id = ? and status = 'FAILED'
+                where research_run_id = ? and status = 'FAILED' and role <> 'PLANNING'
                 """, String.class, runId);
         return !reasons.isEmpty() && EVIDENCE_TERMINATION_REASONS.containsAll(reasons);
     }

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.models import ResearchPlan, ResearchSearchHit, ResearchTaskInput, SourceScopeItem
+from app.query_specs import find_query_spec
 from app.text_terms import terms as text_terms
 
 
@@ -109,7 +110,9 @@ def _select_best_query(
             best_score = coverage_score
             best_fields = matched_fields
             best_index = query_index
-    return best_query, _search_angle(best_query, best_index), best_fields, max(best_score, 0.0)
+    spec = find_query_spec(plan, best_query)
+    angle = spec.search_angle if spec is not None else _search_angle(best_query, best_index)
+    return best_query, angle, best_fields, max(best_score, 0.0)
 
 
 def _build_snippet(source: SourceScopeItem, plan: ResearchPlan) -> str:

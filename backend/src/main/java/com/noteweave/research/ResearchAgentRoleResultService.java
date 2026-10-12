@@ -27,6 +27,7 @@ class ResearchAgentRoleResultService {
     private final ResearchAgentRoleCapabilityRegistry capabilities;
     private final ResearchDiscoveryProposalService discoveryProposalService;
     private final ResearchAgentSynthesisValidationService synthesisValidationService;
+    private final ResearchPlanningService planningService;
 
     ResearchAgentRoleResultService(
             JdbcTemplate jdbcTemplate,
@@ -34,7 +35,8 @@ class ResearchAgentRoleResultService {
             ResearchAgentCompletionCanonicalizer canonicalizer,
             ResearchAgentRoleCapabilityRegistry capabilities,
             ResearchDiscoveryProposalService discoveryProposalService,
-            ResearchAgentSynthesisValidationService synthesisValidationService
+            ResearchAgentSynthesisValidationService synthesisValidationService,
+            ResearchPlanningService planningService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -42,6 +44,7 @@ class ResearchAgentRoleResultService {
         this.capabilities = capabilities;
         this.discoveryProposalService = discoveryProposalService;
         this.synthesisValidationService = synthesisValidationService;
+        this.planningService = planningService;
     }
 
     void validateAndPersist(
@@ -49,7 +52,7 @@ class ResearchAgentRoleResultService {
             ResearchAgentCompletionEnvelope envelope,
             String completionId
     ) {
-        if (!Set.of("EVIDENCE_AUDIT", "SYNTHESIS", "WIDE_DISCOVERY").contains(task.role())) return;
+        if (!ResearchAgentRoles.submitsRoleResult(task.role())) return;
         capabilities.requireRegistered(task.role());
         Map<String, Object> result = envelope.roleResult();
         if (result == null || result.isEmpty()) throw invalid("Role completion has no result payload");
@@ -83,6 +86,8 @@ class ResearchAgentRoleResultService {
                     text(result.get("ledger_digest")), text(result.get("audit_digest")),
                     text(result.get("markdown")), Json.write(objectMapper, result.get("claims")),
                     Json.write(objectMapper, result.get("limitations")));
+        } else if (ResearchAgentRoles.PLANNING.equals(task.role())) {
+            planningService.applyResult(task, result);
         } else {
             discoveryProposalService.validateAndPersist(task, result, roleResultId);
         }

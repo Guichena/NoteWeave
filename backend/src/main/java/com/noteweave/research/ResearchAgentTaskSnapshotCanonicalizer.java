@@ -32,7 +32,7 @@ class ResearchAgentTaskSnapshotCanonicalizer {
                 && !SCHEMA_V2.equals(input.schemaVersion())
                 && !SCHEMA_V3.equals(input.schemaVersion())) throw invalid();
         List<Map<String, Object>> targetBindings = readList(
-                input.targetBindingsJson(), "WIDE_DISCOVERY".equals(input.role()));
+                input.targetBindingsJson(), ResearchAgentRoles.ownsNoCells(input.role()));
         Map<String, Object> budget = readMap(input.budgetJson());
         Map<String, Object> context = readMap(input.executionContextJson());
         Object providerKey = context.get("provider_key");

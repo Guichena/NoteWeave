@@ -79,7 +79,11 @@ class ResearchAgentFeatureFlagService {
                 """, rs -> rs.next() ? rs.getString(1) : null, runId);
         if (raw == null || raw.isBlank()) return Map.of();
         try {
-            return objectMapper.readValue(raw, new TypeReference<>() { });
+            // JSON 列在部分驱动下以带引号的字符串返回，需要再解析一层
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(raw);
+            if (node.isTextual()) node = objectMapper.readTree(node.asText());
+            if (!node.isObject()) throw new IllegalStateException("Research Agent feature flag snapshot is not an object");
+            return objectMapper.convertValue(node, new TypeReference<Map<String, Object>>() { });
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Research Agent feature flag snapshot is invalid", exception);
         }

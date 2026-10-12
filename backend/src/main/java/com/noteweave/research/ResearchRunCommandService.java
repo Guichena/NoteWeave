@@ -38,6 +38,7 @@ public class ResearchRunCommandService {
     private final ResearchAgentCheckpointHydrator checkpointHydrator;
     private final ResearchAgentFeatureFlagService featureFlags;
     private final ResearchContextV2Gate contextGate;
+    private final ResearchPlanningService planningService;
 
     public ResearchRunCommandService(
             JdbcTemplate jdbcTemplate,
@@ -51,7 +52,8 @@ public class ResearchRunCommandService {
             ObjectStorage storage,
             ResearchAgentCheckpointHydrator checkpointHydrator,
             ResearchAgentFeatureFlagService featureFlags,
-            ResearchContextV2Gate contextGate
+            ResearchContextV2Gate contextGate,
+            ResearchPlanningService planningService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -65,6 +67,7 @@ public class ResearchRunCommandService {
         this.checkpointHydrator = checkpointHydrator;
         this.featureFlags = featureFlags;
         this.contextGate = contextGate;
+        this.planningService = planningService;
     }
 
     @Transactional
@@ -111,6 +114,7 @@ public class ResearchRunCommandService {
         researchAgentRunBootstrapService.bootstrap(
                 researchRunId, executionQuestion == null ? request.question().trim() : executionQuestion,
                 researchIntent);
+        planningService.requirePlanning(researchRunId);
         startCoordinatingTask(taskId, "Research Agent matrix initialized");
         insertTrace(researchRunId, "RUN_CREATED", "Research run 已入队", Map.of(
                 "question", request.question().trim(),
@@ -234,6 +238,7 @@ public class ResearchRunCommandService {
                     resumedResearchRunId,
                     sourceRun.executionQuestion() == null
                             ? sourceRun.question() : sourceRun.executionQuestion(), resumedIntent);
+            planningService.requirePlanning(resumedResearchRunId);
         }
         startCoordinatingTask(taskId, hydrate
                 ? "Research canonical ledger hydrated into agent coordination"

@@ -26,6 +26,8 @@ class ResearchAgentCoordinatorRolloutGuardTest {
         var honestReports = mock(ResearchAgentHonestReportService.class);
         var globalConflictService = mock(ResearchGlobalConflictService.class);
         var conflictRepairService = mock(ResearchAgentConflictRepairService.class);
+        var planning = mock(ResearchPlanningService.class);
+        when(planning.advance("run-1")).thenReturn(new ResearchPlanningService.GateOutcome(false, "PLAN_READY", null));
         var snapshot = new ResearchAgentCoordinatorSnapshotService.Snapshot(
                 "run-1", 0, 1, 0, 0, 0, 0, 0, 2);
         when(snapshots.snapshot("run-1")).thenReturn(snapshot);
@@ -36,7 +38,7 @@ class ResearchAgentCoordinatorRolloutGuardTest {
         var service = new ResearchAgentCoordinatorTickService(
                 snapshots, coordinator, recovery, faults, finalization, guard, lifecycle,
                 runnableWork, roleWorkflow, completionGate, honestReports,
-                globalConflictService, conflictRepairService);
+                globalConflictService, conflictRepairService, planning);
 
         var receipt = service.tick("run-1", "coordinator-1");
 

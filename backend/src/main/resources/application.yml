@@ -58,7 +58,11 @@ noteweave:
       artifact-active-enabled: ${NOTEWEAVE_CONTEXT_V2_ARTIFACT_ACTIVE_ENABLED:false}
   research:
     strict-research-evidence-validation: ${NOTEWEAVE_RESEARCH_STRICT_EVIDENCE_VALIDATION:false}
-    intent-matrix-v2: ${NOTEWEAVE_RESEARCH_INTENT_MATRIX_V2:false}
+    intent-matrix-v2: ${NOTEWEAVE_RESEARCH_INTENT_MATRIX_V2:true}
+    # 由 PLANNING 角色调用模型规划研究表格；关闭后直接使用规则生成的表格
+    llm-planning-v1: ${NOTEWEAVE_RESEARCH_LLM_PLANNING_V1:true}
+    # 规划完成后等待用户确认表格的秒数，0 表示不等待直接开始研究
+    plan-review-seconds: ${NOTEWEAVE_RESEARCH_PLAN_REVIEW_SECONDS:0}
     runnable-work-v2: ${NOTEWEAVE_RESEARCH_RUNNABLE_WORK_V2:false}
     checkpoint-hydration-v2: ${NOTEWEAVE_RESEARCH_CHECKPOINT_HYDRATION_V2:false}
     evidence-audit-v1: ${NOTEWEAVE_RESEARCH_EVIDENCE_AUDIT_V1:false}

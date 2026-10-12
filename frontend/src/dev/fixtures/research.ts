@@ -1,4 +1,9 @@
-import type { ResearchRunDetail, ResearchRunSummary } from "../../features/research/model";
+import type {
+  ResearchPlan,
+  ResearchPlanRevision,
+  ResearchRunDetail,
+  ResearchRunSummary
+} from "../../features/research/model";
 
 // 结构与研究运行接口响应完全一致的设计数据。
 // 包含一个已完成的运行（研究表已探索完毕，其中一处冲突由反证分支消解）和一个仍在进行中的运行。
@@ -389,5 +394,52 @@ export const researchTasks: Record<string, Record<string, unknown>> = {
     task_id: runningRun.task_id, task_type: "RESEARCH", task_status: "RUNNING",
     progress_phase: "VERIFYING", progress_message: "第 2 轮：核验 Evidence 并补齐缺失字段", result_ref: runningRun.research_run_id,
     error_message: "", target_type: "RESEARCH_RUN", target_id: runningRun.research_run_id, wait_context: null
+  }
+};
+
+// 研究表格：进行中的 Run 停在确认阶段，便于预览修改和开始研究；其余 Run 已开始研究。
+const planStates: Record<string, ResearchPlan> = {};
+
+function initialPlan(runId: string): ResearchPlan {
+  return {
+    plan_status: runId === runningRun.research_run_id ? "REVIEW" : "READY",
+    review_deadline: null,
+    planner: "llm-matrix.v1",
+    rows: [
+      { entity_key: "entity-postgresql", label: "PostgreSQL 17" },
+      { entity_key: "entity-mysql", label: "MySQL 8.4" }
+    ],
+    columns: [
+      { column_key: "dim-index-types", label: "JSON 索引类型", description: "支持哪些可加速 JSON 查询的索引", answer_format: "LIST", high_risk: false },
+      { column_key: "dim-operators", label: "可加速的查询运算符", description: "索引能覆盖哪些 JSON 运算符和函数", answer_format: "LIST", high_risk: false },
+      { column_key: "dim-limits", label: "限制与代价", description: "索引体积、写入开销和不支持的场景", answer_format: "LONG_TEXT", high_risk: false }
+    ],
+    brief: { objective: "比较两者 JSON 索引能力的覆盖范围与代价", exclusions: ["其他数据库"] },
+    effort_tier: "STANDARD",
+    authoritative_domains: ["postgresql.org", "dev.mysql.com"],
+    perspectives: [{ name: "应用开发者", questions: ["哪些查询能用上索引"] }]
+  };
+}
+
+export const researchPlan = {
+  read(runId: string): ResearchPlan {
+    planStates[runId] ??= initialPlan(runId);
+    return planStates[runId];
+  },
+  approve(runId: string): ResearchPlan {
+    planStates[runId] = { ...researchPlan.read(runId), plan_status: "READY" };
+    return planStates[runId];
+  },
+  revise(runId: string, revision: ResearchPlanRevision): ResearchPlan {
+    planStates[runId] = {
+      ...researchPlan.read(runId),
+      planner: "user-revision.1",
+      rows: revision.entities.map((entity, index) => ({ entity_key: `entity-${index}`, label: entity.label })),
+      columns: revision.dimensions.map((dimension, index) => ({
+        column_key: `dim-${index}`, label: dimension.label, description: dimension.description ?? "",
+        answer_format: "SHORT_TEXT", high_risk: false
+      }))
+    };
+    return planStates[runId];
   }
 };

@@ -14,6 +14,7 @@ from typing import Protocol
 
 from app.http_security import credential_safe_urlopen
 from app.models import ResearchPlan, ResearchSearchHit, ResearchTaskInput
+from app.query_specs import find_query_spec
 from app.search import run_seed_source_search
 from app.source_profile import infer_search_lane, infer_source_domain, infer_source_quality
 from app.text_terms import terms as text_terms
@@ -373,7 +374,8 @@ class ExternalSearchAdapter:
         if not title:
             title = url or f"{self.provider_name} result"
         confidence_score = _normalize_score(raw_result.get("score"), default=0.74)
-        search_angle = _search_angle(query)
+        spec = find_query_spec(plan, query)
+        search_angle = spec.search_angle if spec is not None else _search_angle(query)
         matched_fields = _matched_fields(query, title, snippet, url)
         coverage_score = _coverage_score(query, title, snippet)
         stable_key = _stable_key(url or title or snippet)
@@ -506,6 +508,8 @@ def build_search_query_plan(
     plan: ResearchPlan,
     remaining_budget: int | None = None,
 ) -> list[SearchQueryPlanItem]:
+    if plan.query_specs:
+        return _query_plan_from_specs(plan, remaining_budget)
     queries = _queries_for_recovery(plan)
     unique_queries = list(dict.fromkeys(query.strip() for query in queries if query.strip()))
     if not unique_queries:
@@ -576,6 +580,29 @@ def build_search_query_plan(
         )
         for index, query in enumerate(selected_queries, start=1)
     ]
+
+
+def _query_plan_from_specs(
+    plan: ResearchPlan,
+    remaining_budget: int | None,
+) -> list[SearchQueryPlanItem]:
+    """结构化检索词已经按先宽后窄排好序，这里只按预算截断。"""
+    query_budget = max(1, int(_execution_profile(plan).get("search_query_budget", len(plan.query_specs))))
+    if remaining_budget is not None:
+        query_budget = min(query_budget, max(1, remaining_budget))
+    items: list[SearchQueryPlanItem] = []
+    seen: set[str] = set()
+    for spec in plan.query_specs:
+        query = spec.query.strip()
+        if not query or query in seen:
+            continue
+        seen.add(query)
+        items.append(SearchQueryPlanItem(
+            query=query, family=spec.family, lane=spec.search_lane, priority=len(items) + 1,
+        ))
+        if len(items) >= query_budget:
+            break
+    return items
 
 
 def _queries_for_recovery(plan: ResearchPlan) -> list[str]:

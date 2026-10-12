@@ -59,6 +59,11 @@ class RoleProfile:
 
 class RoleProfileCatalog:
     _PROFILES = {
+        # 一次探测检索，模型生成一次加修复一次
+        "PLANNING": RoleProfile(
+            "planning-v1", "research_planning", 0.2,
+            frozenset({"search"}), 1, 0, 0, 2,
+        ),
         "WIDE_DISCOVERY": RoleProfile(
             "wide-discovery-v1", "wide_discovery", 0.2,
             frozenset({"search", "read"}), 8, 0, 12, 2,

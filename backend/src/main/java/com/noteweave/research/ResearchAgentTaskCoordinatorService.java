@@ -109,7 +109,9 @@ public class ResearchAgentTaskCoordinatorService {
                         bundle.stream().map(cell -> new ResearchAgentTaskService.TargetCellBinding(cell.cellKey(), cell.version())).toList(),
                         new ResearchAgentTaskService.TaskExecutionContext("research-default",
                                 sourcePolicyForSlot(run, slotSources, candidateQuorum, candidateSlot),
-                                withEntityLabel(brief.queryPolicy(), run.id(), entityId), run.researchIntent(), run.controlPack())
+                                withCellScope(brief.queryPolicy(), run.id(), entityId,
+                                        bundle.stream().map(CellScope::cellKey).toList()),
+                                run.researchIntent(), run.controlPack())
                 ));
                 jdbcTemplate.update("""
                         update research_agent_task
@@ -178,8 +180,9 @@ public class ResearchAgentTaskCoordinatorService {
                     List.of(new ResearchAgentTaskService.TargetCellBinding(cell.cellKey(), cell.version())),
                     new ResearchAgentTaskService.TaskExecutionContext("research-default",
                             repairSourcePolicy(run, independentSources, target.excludedSourceIds()),
-                            withEntityLabel(repairQueryPolicy(brief, target.reasonDigest(), command.parentCheckpointSeq(),
-                                    target.conflictTraceId(), target.conflictEvidenceKeys()), run.id(), entityId(cell.cellKey())),
+                            withCellScope(repairQueryPolicy(brief, target.reasonDigest(), command.parentCheckpointSeq(),
+                                    target.conflictTraceId(), target.conflictEvidenceKeys()), run.id(), entityId(cell.cellKey()),
+                                    List.of(cell.cellKey())),
                             run.researchIntent(), run.controlPack())
             ));
             jdbcTemplate.update("""
@@ -226,10 +229,15 @@ public class ResearchAgentTaskCoordinatorService {
         return run;
     }
 
-    private Map<String, Object> withEntityLabel(
+    /**
+     * 给任务的查询策略补上实体名和目标列的标签。Worker 按列的含义生成检索词，
+     * 只拿到 finding-xxxx 这样的列键时无法知道该检索什么。
+     */
+    private Map<String, Object> withCellScope(
             Map<String, Object> basePolicy,
             String runId,
-            String entityId
+            String entityId,
+            List<String> cellKeys
     ) {
         Map<String, Object> policy = new LinkedHashMap<>(basePolicy);
         String label = jdbcTemplate.query("""
@@ -239,7 +247,164 @@ public class ResearchAgentTaskCoordinatorService {
         if (label != null && !label.isBlank() && !"Subject".equalsIgnoreCase(label.strip())) {
             policy.put("entity_label", label.strip());
         }
+        Map<String, String> columnLabels = columnLabels(runId);
+        Map<String, Map<String, Object>> columnDefinitions = columnDefinitions(runId);
+        List<Map<String, Object>> columnSpecs = new ArrayList<>();
+        Set<String> seenColumns = new LinkedHashSet<>();
+        for (String cellKey : cellKeys) {
+            int separator = cellKey.indexOf(':');
+            String columnKey = separator < 0 ? cellKey : cellKey.substring(separator + 1);
+            if (!seenColumns.add(columnKey)) continue;
+            Map<String, Object> definition = columnDefinitions.get(columnKey);
+            columnSpecs.add(definition != null ? definition
+                    : Map.of("key", columnKey, "label", columnLabels.getOrDefault(columnKey, columnKey)));
+        }
+        policy.put("column_specs", List.copyOf(columnSpecs));
+        policy.putAll(planGuidance(runId));
         return Map.copyOf(policy);
+    }
+
+    /** 模型规划写入的列定义；没有经过模型规划的 Run 返回空表，退回使用列标签。 */
+    private Map<String, Map<String, Object>> columnDefinitions(String runId) {
+        Map<String, Map<String, Object>> definitions = new LinkedHashMap<>();
+        jdbcTemplate.query("""
+                select column_key, label, description, answer_format, search_intents_json
+                from research_column where research_run_id = ? order by created_at, column_key
+                """, rs -> {
+            Map<String, Object> definition = new LinkedHashMap<>();
+            definition.put("key", rs.getString(1));
+            definition.put("label", rs.getString(2));
+            definition.put("description", rs.getString(3) == null ? "" : rs.getString(3));
+            definition.put("answer_format", rs.getString(4));
+            definition.put("search_intents", readStringListOrEmpty(rs.getString(5)));
+            definitions.put(rs.getString(1), Map.copyOf(definition));
+        }, runId);
+        return definitions;
+    }
+
+    /** 模型规划给出的研究目标、投入等级、排除项和权威域名，供 Worker 生成检索词时参考，不限制检索范围。 */
+    private Map<String, Object> planGuidance(String runId) {
+        List<String> plans = jdbcTemplate.queryForList("""
+                select plan_json from research_matrix_plan
+                where research_run_id = ? and plan_mode = 'LLM_MATRIX'
+                order by created_at desc, id desc limit 1
+                """, String.class, runId);
+        if (plans.isEmpty()) return Map.of();
+        try {
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(plans.get(0));
+            if (node.isTextual()) node = objectMapper.readTree(node.asText());
+            Map<String, Object> guidance = new LinkedHashMap<>();
+            String objective = node.path("brief").path("objective").asText("");
+            if (!objective.isBlank()) guidance.put("objective", objective);
+            String effortTier = node.path("effort_tier").asText("");
+            if (!effortTier.isBlank()) guidance.put("effort_tier", effortTier);
+            List<String> domains = new ArrayList<>();
+            node.path("authoritative_domains").forEach(item -> domains.add(item.asText()));
+            if (!domains.isEmpty()) guidance.put("authoritative_domains", List.copyOf(domains));
+            List<String> exclusions = new ArrayList<>();
+            node.path("brief").path("exclusions").forEach(item -> exclusions.add(item.asText()));
+            if (!exclusions.isEmpty()) guidance.put("boundaries", List.copyOf(exclusions));
+            return Map.copyOf(guidance);
+        } catch (JsonProcessingException exception) {
+            return Map.of();
+        }
+    }
+
+    private List<String> readStringListOrEmpty(String raw) {
+        if (raw == null || raw.isBlank()) return List.of();
+        try {
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(raw);
+            if (node.isTextual()) node = objectMapper.readTree(node.asText());
+            List<String> values = new ArrayList<>();
+            node.forEach(item -> values.add(item.asText()));
+            return List.copyOf(values);
+        } catch (JsonProcessingException exception) {
+            return List.of();
+        }
+    }
+
+    /**
+     * 为规划阶段下发唯一的 PLANNING 任务。任务键按 Run 固定，重复调用只会重放已有任务；
+     * 检索预算只够一次探测检索，模型调用预算为生成一次加修复一次。
+     */
+    @Transactional
+    public CoordinatorReceipt planPlanningTask(String runId, Map<String, Object> planningInput) {
+        RunScope run = requireIncrementalRunnableRun(runId);
+        ResearchBriefCompiler.CompiledBrief brief = researchBriefCompiler.compile(run.id(), run.question());
+        List<Map<String, Object>> sources = loadTrustedSources(
+                run.workspaceId(), run.sourceScopeJson(), run.retrievalMode());
+        String logicalKey = "planning:" + run.id();
+        Map<String, Long> budget = planningBudget();
+        Map<String, Object> queryPolicy = new LinkedHashMap<>(brief.queryPolicy());
+        queryPolicy.put("allowed_tools", List.of("search"));
+        queryPolicy.put("planning_input", planningInput);
+        ResearchAgentTaskService.TaskSnapshot task = taskService.createTask(new ResearchAgentTaskService.CreateTaskCommand(
+                run.id(), logicalKey, logicalKey, 1, ResearchAgentRoles.PLANNING, "planning", "branch-main",
+                1, 1, List.of(), new LinkedHashMap<String, Object>(budget), List.of(),
+                new ResearchAgentTaskService.TaskExecutionContext("research-default",
+                        sourcePolicy(run, sources), Map.copyOf(queryPolicy), run.researchIntent(), run.controlPack())));
+        jdbcTemplate.update("""
+                update research_agent_task
+                set logical_task_key = ?, candidate_quorum = 1, candidate_slot = 1,
+                    snapshot_schema_version = 'research-agent-task-snapshot.v3', snapshot_digest = null
+                where id = ?
+                """, logicalKey, task.taskId());
+        boolean existed = jdbcTemplate.queryForObject(
+                "select count(*) from research_budget_reservation where research_agent_task_id = ?",
+                Integer.class, task.taskId()) > 0;
+        budgetService.reserve(new ResearchBudgetAndCheckpointService.ReserveCommand(
+                run.id(), task.taskId(), "reserve:" + logicalKey, budget));
+        ResearchAgentCommandOutboxService.CommandReceipt outbox = outboxService.enqueue(task.taskId());
+        return new CoordinatorReceipt(existed ? 0 : 1, existed ? 1 : 0, outbox.idempotentReplay() ? 0 : 1, 0);
+    }
+
+    /** PLANNING 任务的预算：一次探测检索，模型生成一次加修复一次。 */
+    static Map<String, Long> planningBudget() {
+        Map<String, Long> budget = new LinkedHashMap<>();
+        budget.put("llm_calls", 2L);
+        budget.put("search_calls", 1L);
+        budget.put("fetch_calls", 0L);
+        budget.put("read_calls", 0L);
+        budget.put("extract_calls", 0L);
+        budget.put("evidence_cards", 0L);
+        budget.put("evidence_appended", 0L);
+        budget.put("candidates_submitted", 0L);
+        budget.put("candidate_merges_accepted", 0L);
+        budget.put("candidate_merges_rejected", 0L);
+        return Map.copyOf(budget);
+    }
+
+    /** 列标签来自初始表格规划（含断点恢复时复制的规划）和已接受的维度提案，后写入的覆盖先写入的。 */
+    private Map<String, String> columnLabels(String runId) {
+        Map<String, String> labels = new LinkedHashMap<>();
+        List<String> plans = jdbcTemplate.queryForList("""
+                select plan_json from research_matrix_plan
+                where research_run_id = ? and plan_mode = 'INTENT_MATRIX_V2'
+                order by created_at, id
+                """, String.class, runId);
+        for (String planJson : plans) {
+            try {
+                com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(planJson);
+                if (node.isTextual()) node = objectMapper.readTree(node.asText());
+                for (com.fasterxml.jackson.databind.JsonNode column : node.path("columns")) {
+                    String key = column.path("key").asText("");
+                    String columnLabel = column.path("label").asText("");
+                    if (!key.isBlank() && !columnLabel.isBlank()) labels.put(key, columnLabel.strip());
+                }
+            } catch (JsonProcessingException exception) {
+                // 规划 JSON 损坏时不影响任务下发，Worker 会退回使用列键
+            }
+        }
+        jdbcTemplate.query("""
+                select candidate_key, label from research_discovery_proposal
+                where research_run_id = ? and proposal_type = 'DIMENSION' and proposal_status = 'ACCEPTED'
+                order by created_at, id
+                """, rs -> {
+            String key = rs.getString(1);
+            String columnLabel = rs.getString(2);
+            if (key != null && columnLabel != null && !columnLabel.isBlank()) labels.put(key, columnLabel.strip());
+        }, runId);
+        return labels;
     }
 
     private Map<String, Object> readRequiredMap(String raw, String label) {
@@ -446,9 +611,9 @@ public class ResearchAgentTaskCoordinatorService {
         long cells = Math.max(1, targetCellCount);
         long evidence = cells * MAX_EVIDENCE_CARDS_PER_CELL;
         return Map.of(
-                // The worker accounts physical provider attempts, including one retry.
-                // Keep the frozen reservation aligned with research.extract max_attempts.
-                "llm_calls", 2L,
+                // Worker 按调用次数结算：检索词规划最多 2 次（生成一次，输出不合规时修复一次），
+                // 证据抽取最多 2 次，与 Worker 端 DEEP_CELL 角色的 max_llm_calls 保持一致。
+                "llm_calls", 4L,
                 // Tool grants from earlier leases are charged at completion time. Reserve
                 // the task's three-attempt recovery ceiling so a legal retry can settle.
                 "search_calls", 3L,

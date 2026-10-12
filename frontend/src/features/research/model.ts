@@ -436,6 +436,34 @@ export type ResearchProcessSummary = {
   audit_summary: ResearchAuditSummary;
 };
 
+/** 研究表格的规划状态：PLANNING 模型规划中，REVIEW 等待确认，READY 已开始研究 */
+export type ResearchPlanStatus = "PLANNING" | "REVIEW" | "READY";
+
+export type ResearchPlanColumn = {
+  column_key: string;
+  label: string;
+  description?: string | null;
+  answer_format?: string | null;
+  high_risk?: boolean | null;
+};
+
+export type ResearchPlan = {
+  plan_status: ResearchPlanStatus;
+  review_deadline: string | null;
+  planner: string;
+  rows: Array<{ entity_key: string; label: string | null }>;
+  columns: ResearchPlanColumn[];
+  brief: { objective?: string; scope?: string; time_range?: string; deliverable?: string; exclusions?: string[] };
+  effort_tier: string;
+  authoritative_domains: string[];
+  perspectives: Array<{ name?: string; questions?: string[] }>;
+};
+
+export type ResearchPlanRevision = {
+  entities: Array<{ label: string }>;
+  dimensions: Array<{ label: string; description?: string; answer_format?: string; high_risk?: boolean }>;
+};
+
 export type ResearchRunDetail = {
   research_run_id: string;
   workspace_id: string;

@@ -21,6 +21,7 @@ public class ResearchAgentCoordinatorTickService {
     private final ResearchAgentHonestReportService honestReports;
     private final ResearchGlobalConflictService globalConflictService;
     private final ResearchAgentConflictRepairService conflictRepairService;
+    private final ResearchPlanningService planning;
 
     public ResearchAgentCoordinatorTickService(ResearchAgentCoordinatorSnapshotService snapshots,
                                                ResearchAgentTaskCoordinatorService coordinator,
@@ -34,7 +35,8 @@ public class ResearchAgentCoordinatorTickService {
                                                ResearchAgentRunCompletionGate completionGate,
                                                ResearchAgentHonestReportService honestReports,
                                                ResearchGlobalConflictService globalConflictService,
-                                               ResearchAgentConflictRepairService conflictRepairService) {
+                                               ResearchAgentConflictRepairService conflictRepairService,
+                                               ResearchPlanningService planning) {
         this.snapshots = snapshots;
         this.coordinator = coordinator;
         this.recovery = recovery;
@@ -48,12 +50,18 @@ public class ResearchAgentCoordinatorTickService {
         this.honestReports = honestReports;
         this.globalConflictService = globalConflictService;
         this.conflictRepairService = conflictRepairService;
+        this.planning = planning;
     }
 
     @Transactional
     public TickReceipt tick(String runId, String coordinatorInstanceId) {
         if (coordinatorInstanceId == null || coordinatorInstanceId.isBlank()) {
             throw new BusinessException("RESEARCH_AGENT_COORDINATOR_TICK_INVALID", "Coordinator instance id is required");
+        }
+        // 规划阶段：模型规划表格、等待用户确认期间不下发任何深挖任务
+        ResearchPlanningService.GateOutcome plan = planning.advance(runId);
+        if (plan.waiting()) {
+            return new TickReceipt(plan.outcome(), snapshots.snapshot(runId), plan.taskization());
         }
         // DR-303: re-adjudicate cross-source conflicts against the canonical ledger *before* taking the
         // snapshot, so a conflict demotion is visible to readyForFinalization()/nonFinalizableCellCount

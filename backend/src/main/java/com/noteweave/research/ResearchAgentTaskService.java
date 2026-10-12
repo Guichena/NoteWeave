@@ -31,7 +31,7 @@ public class ResearchAgentTaskService {
     private static final String TASK_SNAPSHOT_SCHEMA_V2 = "research-agent-task-snapshot.v2";
     private static final String TASK_SNAPSHOT_SCHEMA_V3 = "research-agent-task-snapshot.v3";
     private static final Set<String> SNAPSHOT_ROLES = Set.of(
-            "DEEP_CELL", "WIDE_DISCOVERY", "COUNTERFACTUAL", "EVIDENCE_AUDIT", "SYNTHESIS"
+            "DEEP_CELL", "WIDE_DISCOVERY", "COUNTERFACTUAL", "EVIDENCE_AUDIT", "SYNTHESIS", "PLANNING"
     );
 
     private final JdbcTemplate jdbcTemplate;
@@ -270,7 +270,7 @@ public class ResearchAgentTaskService {
         if (!isSnapshotSchema(task.snapshotSchemaVersion())) return;
         List<Map<String, Object>> bindings = new ArrayList<>(
                 readList(task.targetBindingsJson(), "RESEARCH_AGENT_TASK_SNAPSHOT_INVALID",
-                        "WIDE_DISCOVERY".equals(task.role())));
+                        ResearchAgentRoles.ownsNoCells(task.role())));
         bindings.sort((left, right) -> ResearchAgentBinaryOrder.UTF8.compare(
                 String.valueOf(left.get("cell_id")), String.valueOf(right.get("cell_id"))));
         String bindingOwner = task.candidateQuorum() == 2 ? task.quorumGroupKey() : task.id();
@@ -442,7 +442,7 @@ public class ResearchAgentTaskService {
                 || blank(command.role()) || blank(command.entityId()) || blank(command.branchId())
                 || command.waveNo() < 1 || command.planRevision() < 0 || command.entitySetVersion() < 0
                 || command.targetCells() == null
-                || (command.targetCells().isEmpty() && !"WIDE_DISCOVERY".equals(command.role()))
+                || (command.targetCells().isEmpty() && !ResearchAgentRoles.ownsNoCells(command.role()))
                 || command.budget() == null) {
             throw new BusinessException("RESEARCH_AGENT_TASK_INVALID", "Research agent task contract is invalid");
         }
@@ -453,7 +453,7 @@ public class ResearchAgentTaskService {
         }
         if (!bindingsPresent) return; // Legacy MA3/MA4A transport task: intentionally not eligible for MA4D execution.
         if (!SNAPSHOT_ROLES.contains(command.role())
-                || (command.targetBindings().isEmpty() && !"WIDE_DISCOVERY".equals(command.role()))
+                || (command.targetBindings().isEmpty() && !ResearchAgentRoles.ownsNoCells(command.role()))
                 || command.targetBindings().size() != command.targetCells().size()) {
             throw new BusinessException("RESEARCH_AGENT_TASK_SNAPSHOT_INVALID", "Task snapshot bindings are invalid");
         }

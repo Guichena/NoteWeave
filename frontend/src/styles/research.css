@@ -1782,3 +1782,84 @@
     border-radius: 0;
   }
 }
+
+/* 研究表格：模型规划的研究对象与维度，确认阶段可修改 */
+.research-plan-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.research-plan-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.research-plan-status {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--tint-blue);
+  color: var(--tint-blue-ink);
+}
+
+.research-plan-status.status-review {
+  background: var(--tint-violet);
+  color: var(--tint-violet-ink);
+}
+
+.research-plan-status.status-ready {
+  background: var(--tint-green);
+  color: var(--tint-green-ink);
+}
+
+.research-plan-objective {
+  margin: 0;
+}
+
+.research-plan-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.research-plan-list li {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.research-plan-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+.research-plan-columns li {
+  display: grid;
+  gap: 2px;
+}
+
+.research-plan-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.research-plan-editor label {
+  display: grid;
+  gap: 4px;
+}
+
+.research-plan-editor textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.research-plan-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

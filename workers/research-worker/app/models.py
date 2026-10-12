@@ -149,9 +149,24 @@ class ResearchTaskInput(BaseModel):
     input_payload: ResearchTaskInputPayload
 
 
+class ResearchQuerySpec(BaseModel):
+    """一条检索词及其用途。用途放在字段里，检索词本身只保留发给搜索引擎的自然语言。"""
+
+    query: str
+    # 查询类别，取值与 execution_profile.query_family_order 的类别一致
+    family: str = "direct"
+    search_angle: str = "direct"
+    search_lane: str = "BALANCED"
+    column_keys: list[str] = Field(default_factory=list)
+    language: str = ""
+    rationale: str = ""
+
+
 class ResearchPlan(BaseModel):
     normalized_question: str
     query_set: list[str] = Field(default_factory=list)
+    # 有值时以它为准：query_set 与之一一对应，查询类别、检索角度、检索通道都从这里读取
+    query_specs: list[ResearchQuerySpec] = Field(default_factory=list)
     report_sections: list[str] = Field(default_factory=list)
     # P0-1: 实体化的 schema,替换旧的 state_columns 11 个元数据列
     research_schema: ResearchSchema = Field(default_factory=ResearchSchema, alias="schema")

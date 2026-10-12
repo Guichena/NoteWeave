@@ -12,6 +12,7 @@ class ResearchAgentRoleCapabilityRegistry {
     private final boolean evidenceAuditEnabled;
     private final boolean synthesisEnabled;
     private final boolean wideDiscoveryEnabled;
+    private final boolean planningEnabled;
 
     private static final Map<String, Capability> CAPABILITIES = Map.of(
             "DEEP_CELL", new Capability(true, "DeepCellExecutor", "v1-v3", "CANDIDATE", "CELL_CANDIDATE",
@@ -21,17 +22,20 @@ class ResearchAgentRoleCapabilityRegistry {
             "EVIDENCE_AUDIT", new Capability(false, "EvidenceAuditExecutor", "v3", "AUDIT_RESULT", "AUDIT_DECISION", Set.of()),
             "SYNTHESIS", new Capability(false, "SynthesisExecutor", "v3", "ARTIFACT_CANDIDATE", "ARTIFACT_PROMOTION_ONLY", Set.of()),
             "WIDE_DISCOVERY", new Capability(false, "DiscoveryExecutor", "v3", "SCOPE_PROPOSAL", "PROPOSAL_ONLY", Set.of("search", "read")),
+            "PLANNING", new Capability(false, "PlanningExecutor", "v3", "PLAN_PROPOSAL", "PROPOSAL_ONLY", Set.of("search")),
             "CELL_VERIFIER", new Capability(false, "Internal", "internal", "DECISION", "NONE", Set.of()),
             "GLOBAL_VERIFIER", new Capability(false, "Internal", "internal", "DECISION", "NONE", Set.of()));
 
     ResearchAgentRoleCapabilityRegistry(
             @Value("${noteweave.research.evidence-audit-v1:false}") boolean evidenceAuditEnabled,
             @Value("${noteweave.research.worker-synthesis-v1:false}") boolean synthesisEnabled,
-            @Value("${noteweave.research.wide-discovery-v1:false}") boolean wideDiscoveryEnabled
+            @Value("${noteweave.research.wide-discovery-v1:false}") boolean wideDiscoveryEnabled,
+            @Value("${noteweave.research.llm-planning-v1:true}") boolean planningEnabled
     ) {
         this.evidenceAuditEnabled = evidenceAuditEnabled;
         this.synthesisEnabled = synthesisEnabled;
         this.wideDiscoveryEnabled = wideDiscoveryEnabled;
+        this.planningEnabled = planningEnabled;
     }
 
     Capability requireSchedulable(String role) {
@@ -57,6 +61,7 @@ class ResearchAgentRoleCapabilityRegistry {
             case "EVIDENCE_AUDIT" -> evidenceAuditEnabled;
             case "SYNTHESIS" -> synthesisEnabled;
             case "WIDE_DISCOVERY" -> wideDiscoveryEnabled;
+            case "PLANNING" -> planningEnabled;
             default -> false;
         };
     }

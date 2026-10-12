@@ -1,7 +1,7 @@
 import * as artifacts from "./fixtures/artifacts";
 import * as memory from "./fixtures/memory";
 import { evidenceByRun, messages, sources } from "./fixtures/chat";
-import { researchTasks, runDetails, runs, runningRun } from "./fixtures/research";
+import { researchPlan, researchTasks, runDetails, runs, runningRun } from "./fixtures/research";
 import { reprocessMockSource, sourceTaskEvents, sourceTasks } from "./fixtures/sources";
 import * as wiki from "./fixtures/wiki";
 
@@ -43,6 +43,11 @@ const routes: Array<[method: string, pattern: RegExp, handler: Handler]> = [
     return run ? { ...run, workspace_id: m[1] } : undefined;
   }],
   ["GET", /^\/api\/v2\/workspaces\/[^/]+\/research-runs\/[^/]+\/collection$/, () => null],
+  ["GET", /^\/api\/v2\/workspaces\/[^/]+\/research-runs\/([^/]+)\/plan$/, (m) => researchPlan.read(m[1])],
+  ["POST", /^\/api\/v2\/workspaces\/[^/]+\/research-runs\/([^/]+)\/plan\/approve$/, (m) => researchPlan.approve(m[1])],
+  ["PUT", /^\/api\/v2\/workspaces\/[^/]+\/research-runs\/([^/]+)\/plan$/, async (m, request) => (
+    researchPlan.revise(m[1], await request.json())
+  )],
   ["GET", /^\/api\/v2\/workspaces\/[^/]+\/research-runs\/([^/]+)\/checkpoints\/(\d+)$/, (m) => {
     const checkpoint = runDetails[m[1]]?.closed_loop_state.checkpoints.find((item) => item.checkpoint_no === Number(m[2]));
     return checkpoint ? { ...checkpoint, counterfactual_summary: null, payload: {} } : undefined;
