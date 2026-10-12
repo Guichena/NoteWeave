@@ -4,6 +4,7 @@ import re
 from typing import Protocol
 
 from app.fetch_adapters import run_research_fetch
+from app.query_specs import find_query_spec
 from app.models import (
     ResearchFetchedDocument,
     ResearchPlan,
@@ -339,7 +340,8 @@ def _requirement_target_context(
     recovery_ids = _string_list(plan.stop_contract.get("recovery_target_requirement_ids"))
     recovery_labels = _string_list(plan.stop_contract.get("recovery_target_requirement_labels"))
     recovery_columns = _string_list(plan.stop_contract.get("recovery_target_columns"))
-    query_family = _query_family(query)
+    spec = find_query_spec(plan, query)
+    query_family = spec.family if spec is not None else _query_family(query)
     if recovery_ids or recovery_labels or recovery_columns:
         return {
             "ids": recovery_ids,

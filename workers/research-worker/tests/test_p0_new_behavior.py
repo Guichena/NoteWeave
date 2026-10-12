@@ -88,7 +88,7 @@ def test_planner_should_emit_product_comparison_columns_for_product_questions() 
                 "task_neighborhood": "RESEARCH_DEFAULT",
             },
             "input_payload": {
-                "question": "Compare notebooklm vs perplexity vs genspark",
+                "question": "Compare these products: Alpha vs Beta vs Gamma",
                 "profile_key": "STANDARD",
                 "research_intent": {"depth": "STANDARD"},
             },

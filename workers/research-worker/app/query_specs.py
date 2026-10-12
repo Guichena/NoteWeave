@@ -6,12 +6,15 @@ from app.models import ResearchPlan, ResearchQuerySpec
 
 
 def find_query_spec(plan: ResearchPlan | None, query: str) -> ResearchQuerySpec | None:
-    if plan is None or not plan.query_specs:
+    if plan is None:
         return None
     target = (query or "").strip()
     for spec in plan.query_specs:
         if spec.query == target:
             return spec
+    for item in plan.stop_contract.get("query_spec_history", []):
+        if isinstance(item, dict) and item.get("query") == target:
+            return ResearchQuerySpec.model_validate(item)
     return None
 
 

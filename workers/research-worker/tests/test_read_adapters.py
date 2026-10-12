@@ -3,6 +3,8 @@ from __future__ import annotations
 from app.fetch_adapters import WorkspaceFetchAdapter, run_research_fetch
 from app.models import ResearchFetchedDocument, ResearchSearchHit, ResearchTaskInput
 from app.planner import build_research_plan
+from app.models import ResearchQuerySpec
+from app.query_specs import with_query_specs
 from app.read_adapters import (
     CompositeReadAdapter,
     UrlReadAdapter,
@@ -268,9 +270,8 @@ def test_requirement_targeted_read_should_surface_requirement_target_metadata() 
     }
     task_input = ResearchTaskInput.model_validate(payload)
     plan = build_research_plan(task_input)
-    targeted_query = next(
-        query for query in plan.query_set if "verified evidence search" in query
-    )
+    targeted_query = "synthesis primary evidence"
+    plan = with_query_specs(plan, [ResearchQuerySpec(query=targeted_query, family="verified_evidence")])
     document = _fetched_url_document().model_copy(update={"query": targeted_query})
 
     windows = run_research_read(

@@ -68,7 +68,7 @@ def _adjust_for_content_quality(source_quality: str, score: float, content_text:
         return source_quality, score
     lowered = text.lower()
     weak_markers = ["todo", "coming soon", "placeholder", "lorem ipsum", "under construction"]
-    word_count = len(text.split())
+    word_count = len(text.split()) + sum(1 for char in text if "一" <= char <= "鿿") // 2
     if word_count < 12 or any(marker in lowered for marker in weak_markers):
         return "GENERAL_WEB", min(score, 0.45)
     if word_count < 40 and source_quality in {"REPOSITORY_SOURCE", "OFFICIAL_DOC", "GOVERNMENT_SOURCE", "ACADEMIC_SOURCE"}:

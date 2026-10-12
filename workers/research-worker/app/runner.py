@@ -315,7 +315,12 @@ def run_research_task(
 
     harness = build_harness(task_input)
     llm_client = build_default_llm_client()
-    plan, harness_trace = harness.plan(task_input)
+    if cancellation_checker is not None:
+        cancellation_checker()
+    setter = getattr(llm_client, "set_cancellation_checker", None)
+    if callable(setter):
+        setter(cancellation_checker)
+    plan, harness_trace = harness.plan(task_input, llm_client=llm_client)
     planning_event = ResearchProgressEvent(
         phase="PLANNING",
         progress_percent=10,
@@ -626,6 +631,7 @@ def run_research_task(
     )
     checkpoint_candidate = {
         "schema_version": "research-checkpoint.v2",
+        "plan": plan.model_dump(mode="json"),
         "checkpoint_no": max(1, len(loop_rounds_payload)),
         "snapshot_type": "RESEARCH_LOOP_CHECKPOINT",
         "research_intent": task_input.input_payload.research_intent.model_dump(mode="json"),
@@ -690,6 +696,9 @@ def run_research_task(
             "research_artifact_candidate": research_artifact_candidate,
             "research_intent": task_input.input_payload.research_intent.model_dump(mode="json"),
             "query_set": plan.query_set,
+            "query_specs": [spec.model_dump(mode="json") for spec in plan.query_specs],
+            "executed_queries": list(plan.executed_queries),
+            "counter_checks": list(plan.counter_checks),
             "report_sections": plan.report_sections,
             "search_hits": [
                 hit.model_dump(mode="json")

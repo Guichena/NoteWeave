@@ -463,7 +463,7 @@ def test_workspace_window_search_should_bound_planned_queries_to_backend_contrac
     snapshot = ResearchAgentTaskSnapshot.model_validate(raw_snapshot)
     task_input, plan, _allow_external = _build_task_scope(snapshot)
     plan = plan.model_copy(update={
-        "query_set": [f"{plan.normalized_question} :: planned angle {index}" for index in range(9)]
+        "query_set": [f"method evidence angle {index}" for index in range(9)], "query_specs": []
     })
 
     class WindowPermit(_Permit):

@@ -52,6 +52,9 @@ class ResearchColumn(BaseModel):
     acceptance: list[str] = Field(default_factory=list)  # for enum
     description: str = ""
 
+    high_risk: bool = False
+    search_intents: list[str] = Field(default_factory=list)
+
 
 class ResearchSchema(BaseModel):
     """不可变的 Research Table schema(借鉴 Table-as-Search __schema__ 文档)。
@@ -179,6 +182,8 @@ class ResearchPlan(BaseModel):
     plan_horizon: list[dict[str, object]] = Field(default_factory=list)
     plan_revision: int = 0
     replan_history: list[dict[str, object]] = Field(default_factory=list)
+    executed_queries: list[str] = Field(default_factory=list)
+    counter_checks: list[dict[str, object]] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
 
@@ -875,6 +880,7 @@ class ResearchIntentAlignment(BaseModel):
 
 
 class LocalVerifierResult(BaseModel):
+    counter_checks: list[dict[str, object]] = Field(default_factory=list)
     status: str
     passed_checks: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)

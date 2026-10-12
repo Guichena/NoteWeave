@@ -74,8 +74,8 @@ class SeedSourceSearchAdapter:
                     "provider_fallback_reason": "",
                     "url": hit.url or "",
                     "source_domain": infer_source_domain(hit.url or ""),
-                    "source_quality": "WORKSPACE_SOURCE",
-                    "source_quality_score": 0.98,
+                    "source_quality": hit.source_quality,
+                    "source_quality_score": hit.source_quality_score,
                     "search_lane": infer_search_lane(plan, hit.query),
                 }
             )
@@ -512,6 +512,10 @@ def build_search_query_plan(
     plan: ResearchPlan,
     remaining_budget: int | None = None,
 ) -> list[SearchQueryPlanItem]:
+    if remaining_budget is not None and remaining_budget <= 0:
+        return []
+    if not plan.query_set and plan.stop_contract.get("query_planning_method"):
+        return []
     if plan.query_specs:
         return _query_plan_from_specs(plan, remaining_budget)
     queries = _queries_for_recovery(plan)

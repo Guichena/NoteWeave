@@ -48,7 +48,7 @@ def _build_task_input(
                     "deliverable_format": "Evidence-backed executive brief",
                     "constraints": [
                         "Keep the answer anchored to explicit evidence windows.",
-                        "Call out unresolved conflicts separately.",
+                        "List remaining uncertainties separately.",
                     ],
                     "time_range": "Focus on the current project cycle.",
                     "depth": "DEEP",
@@ -62,12 +62,6 @@ def test_build_research_plan_should_compile_query_set_and_stop_contract() -> Non
     task_input = _build_task_input()
     plan = build_research_plan(task_input)
     assert plan.normalized_question == "AlphaResearch should focus on what?"
-    assert plan.query_set[0] == "AlphaResearch should focus on what?"
-    assert any("research goal" in query for query in plan.query_set)
-    assert any("deliverable" in query for query in plan.query_set)
-    assert any("constraint" in query for query in plan.query_set)
-    assert any("time range" in query for query in plan.query_set)
-    assert any("Alpha Source" in query for query in plan.query_set)
     assert plan.stop_contract["must_respect_evidence_policy"] is True
     assert plan.stop_contract["depth"] == "DEEP"
     assert plan.stop_contract["research_goal"] == "Identify the verifier-approved summary direction for AlphaResearch."
@@ -80,13 +74,11 @@ def test_build_research_plan_should_compile_query_set_and_stop_contract() -> Non
     assert plan.stop_contract["execution_profile"]["query_family_budgets"]["source_scoped"] >= 1
     assert plan.stop_contract["execution_profile"]["query_family_budgets"]["deep_focus"] == 1
     assert "coverage_gap" in plan.stop_contract["search_angles"]
-    assert any("coverage gap check" in query for query in plan.query_set)
-    assert any("counterfactual evidence check" in query for query in plan.query_set)
-    assert any("direct answer with evidence" in query for query in plan.query_set)
-    assert any("verified evidence search" in query for query in plan.query_set)
-    assert "support_level" in plan.state_columns or any(
-        col.key == "problem" for col in plan.research_schema.columns
-    ), f"P0-1: state_columns 来自 schema,应该至少包含问题维度; got={plan.state_columns}"
+    assert plan.query_specs
+    assert plan.query_set == [spec.query for spec in plan.query_specs]
+    assert all("::" not in query and len(query) <= 200 for query in plan.query_set)
+    assert plan.research_type == "GENERIC"
+    assert {"subject", "answer", "key_evidence"} <= set(plan.state_columns)
     assert "Research Intent" in plan.report_sections
     assert any("depth tier: DEEP" in note for note in plan.notes)
     assert plan.stop_contract["required_finding_contract"]
@@ -119,18 +111,11 @@ def test_build_research_plan_should_surface_execution_profile_by_depth() -> None
     assert standard_plan.stop_contract["execution_profile"]["query_family_budgets"]["coverage_gap"] == 1
     assert deep_plan.stop_contract["execution_profile"]["query_family_budgets"]["source_scoped"] >= 2
 
-    assert not any("coverage gap check" in query for query in quick_plan.query_set)
-    assert not any("counterfactual evidence check" in query for query in quick_plan.query_set)
-
-    assert any("coverage gap check" in query for query in standard_plan.query_set)
-    assert any("counterfactual evidence check" in query for query in standard_plan.query_set)
-    assert any("direct answer with evidence" in query for query in standard_plan.query_set)
-    assert any("verified evidence search" in query for query in standard_plan.query_set)
-
-    assert any("deep focus" in query for query in deep_plan.query_set)
-    assert any("triangulation" in query for query in deep_plan.query_set)
-    assert deep_plan.query_set[-2].endswith("coverage gap check")
-    assert deep_plan.query_set[-1].endswith("counterfactual evidence check")
+    for plan in [quick_plan, standard_plan, deep_plan]:
+        assert plan.query_set == [spec.query for spec in plan.query_specs]
+        assert all("::" not in query for query in plan.query_set)
+        assert plan.stop_contract["query_planning_method"] == "RULE"
+        assert "CELL_QUERY_LLM_UNAVAILABLE" in plan.stop_contract["degradation_reasons"]
 
 
 def test_build_research_plan_should_use_research_type_report_sections() -> None:
@@ -217,7 +202,8 @@ def test_workspace_search_should_use_sample_text_when_summary_is_blank() -> None
 
     assert search_hits[0].source_title == "Window Only Source"
     assert "only concrete research evidence" in search_hits[0].snippet
-    assert search_hits[0].confidence_score >= 0.6
+    assert 0 < search_hits[0].confidence_score < 1
+    assert search_hits[0].coverage_score > 0
 
 
 def test_build_research_plan_should_record_resume_checkpoint_note() -> None:
@@ -1056,10 +1042,8 @@ def test_research_task_should_add_targeted_counterfactual_query_for_resume_check
 
     _events, result = run_research_task(task_input)
 
-    assert any(
-        "counterfactual recheck against Conflict Source" in query
-        for query in result.result_payload["query_set"]
-    )
+    assert all("::" not in query for query in result.result_payload["query_set"])
+    assert result.result_payload["replan_history"][0]["strategy"] == "COUNTER_EVIDENCE"
     assert result.result_payload["counterfactual_summary"]["has_counterfactual_recheck"] is True
     assert result.result_payload["counterfactual_summary"]["counterfactual_branch_count"] == 1
     assert result.result_payload["counterfactual_summary"]["counterfactual_branch_ids"] == ["branch-recovery-1"]

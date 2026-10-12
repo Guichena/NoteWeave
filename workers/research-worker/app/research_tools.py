@@ -10,6 +10,8 @@ from app.extraction_result import ExtractionResult
 from app.extractor import extract_evidence_cards_detailed
 from app.fetch_adapters import run_research_fetch
 from app.llm_client import LlmClient
+from app.legacy_counter_runtime import run_counter_checks
+from app.query_execution import capture_queries
 from app.models import (
     ResearchFetchedDocument,
     GlobalVerifierResult,
@@ -81,13 +83,15 @@ class ResearchToolbox:
         round_traces: list[ResearchStepTrace] = []
 
         search_started = _utc_now()
-        search_hits, search_trace = self.search_web(
-            task_input,
-            plan,
-            round_no=round_no,
-            prior_artifacts=prior_artifacts,
-            recovery_mode=recovery_mode,
-        )
+        with capture_queries() as executed_queries:
+            search_hits, search_trace = self.search_web(
+                task_input,
+                plan,
+                round_no=round_no,
+                prior_artifacts=prior_artifacts,
+                recovery_mode=recovery_mode,
+            )
+        plan.executed_queries = list(dict.fromkeys([*plan.executed_queries, *executed_queries]))
         search_trace = _observe_trace(
             search_trace,
             search_started,
@@ -220,6 +224,12 @@ class ResearchToolbox:
         self._check_cancelled()
         round_traces.append(cell_verdict_trace)
 
+        counter_started = _utc_now()
+        run_counter_checks(task_input, plan, evidence_cards, read_windows, self.llm_client, self._check_cancelled)
+        round_traces.append(_observe_trace(_build_tool_trace(
+            round_no=round_no, tool_name="counter_facts", status="success",
+            message="原子事实反证已记录", outputs={"counter_checks": plan.counter_checks,
+            "counter_search_calls": plan.stop_contract.get("counter_search_calls", 0)}), counter_started, 1))
         local_started = _utc_now()
         local_result, local_trace = self.verify_local(
             task_input,

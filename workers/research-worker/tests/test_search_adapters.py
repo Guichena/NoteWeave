@@ -10,6 +10,8 @@ pytestmark = pytest.mark.usefixtures("fake_default_llm")
 
 from app.models import ResearchTaskInput
 from app.planner import build_research_plan
+from app.models import ResearchQuerySpec
+from app.query_specs import with_query_specs
 from app.runner import run_research_task
 from app.search_adapters import (
     _build_external_search_adapters,
@@ -136,7 +138,8 @@ def test_default_search_adapter_should_use_workspace_only_without_external_key(m
     assert len(hits) == 1
     assert hits[0].source_id == "src-workspace"
     assert hits[0].adapter == "workspace"
-    assert hits[0].source_quality == "WORKSPACE_SOURCE"
+    assert hits[0].source_quality == "GENERAL_WEB"
+    assert hits[0].source_quality_score == 0.45
 
 
 def test_web_search_adapter_should_fail_explicitly_without_external_provider(monkeypatch) -> None:
@@ -347,6 +350,8 @@ def test_composite_search_adapter_should_dedupe_by_source_url_and_title() -> Non
 def test_search_adapter_hits_should_include_reason_angle_and_confidence() -> None:
     task_input = _build_task_input()
     plan = build_research_plan(task_input)
+    plan = with_query_specs(plan, [ResearchQuerySpec(query="verifier coverage gaps", family="coverage_gap",
+                                                  search_angle="coverage_gap", search_lane="WIDE_DISCOVERY")])
     transport = FakeExternalTransport(
         {
             plan.query_set[0]: [
@@ -356,7 +361,7 @@ def test_search_adapter_hits_should_include_reason_angle_and_confidence() -> Non
                     "snippet": "Coverage gap search result.",
                 }
             ],
-            plan.query_set[-2]: [
+            plan.query_set[0]: [
                 {
                     "title": "Coverage Gap Note",
                     "url": "https://example.com/gap",
@@ -404,11 +409,8 @@ def test_build_search_query_plan_should_select_budgeted_query_families_for_deep_
 
     assert len(query_plan) <= execution_profile["search_query_budget"]
     assert families[0] == "direct"
-    assert "source_scoped" in families
-    assert "intent" in families
-    assert "deep_focus" in families
-    assert "coverage_gap" in families
-    assert families.count("constraints") <= execution_profile["query_family_budgets"]["constraints"]
+    assert families == [spec.family for spec in plan.query_specs[:len(query_plan)]]
+    assert all("::" not in item.query for item in query_plan)
     assert all(item.query in plan.query_set for item in query_plan)
 
 
@@ -417,10 +419,13 @@ def test_build_search_query_plan_should_prioritize_recovery_target_queries() -> 
     plan = build_research_plan(task_input)
     plan.stop_contract["recovery_mode"] = "READ_MORE"
     plan.stop_contract["recovery_target_queries"] = [
-        "How should research loops be verified? :: verified evidence search :: Evidence finding",
-        "How should research loops be verified? :: direct answer with evidence :: Goal finding",
+        "research loops primary evidence",
+        "research loops verification methods",
     ]
 
+    plan = with_query_specs(plan, [
+        ResearchQuerySpec(query=plan.stop_contract["recovery_target_queries"][0], family="verified_evidence"),
+        ResearchQuerySpec(query=plan.stop_contract["recovery_target_queries"][1], family="direct_evidence")])
     query_plan = build_search_query_plan(plan)
 
     assert [item.family for item in query_plan] == ["verified_evidence", "direct_evidence"]
@@ -455,17 +460,13 @@ def test_empty_search_results_should_still_trigger_branch_recovery() -> None:
 def test_external_search_adapter_should_only_run_targeted_counterfactual_queries_during_recovery() -> None:
     task_input = _build_task_input()
     plan = build_research_plan(task_input)
-    plan.query_set.extend(
-        [
-            "How should research loops be verified? :: counterfactual recheck against Workspace Evidence",
-            "How should research loops be verified? :: broad unrelated expansion",
-        ]
-    )
+    plan = with_query_specs(plan, [ResearchQuerySpec(query="research loops counterexamples limitations",
+        family="counterfactual", search_angle="counterfactual", search_lane="COUNTERFACTUAL")])
     plan.stop_contract["recovery_mode"] = "COUNTERFACTUAL_RECHECK"
     plan.stop_contract["recovery_target_sources"] = ["Workspace Evidence"]
     transport = FakeExternalTransport(
         {
-            "How should research loops be verified? :: counterfactual recheck against Workspace Evidence": [
+            "research loops counterexamples limitations": [
                 {
                     "title": "Counterfactual Recovery Result",
                     "url": "https://example.com/counterfactual",
@@ -487,7 +488,7 @@ def test_external_search_adapter_should_only_run_targeted_counterfactual_queries
     assert hits[0].source_title == "Counterfactual Recovery Result"
     assert transport.calls == [
         (
-            "How should research loops be verified? :: counterfactual recheck against Workspace Evidence",
+            "research loops counterexamples limitations",
             plan.stop_contract["execution_profile"]["per_query_result_limit"],
         )
     ]
@@ -541,11 +542,13 @@ def test_external_search_adapter_should_prioritize_requirement_target_queries_du
     plan.stop_contract["recovery_mode"] = "READ_MORE"
     plan.stop_contract["recovery_target_requirement_types"] = ["CONSTRAINT_FINDING"]
     plan.stop_contract["recovery_target_queries"] = [
-        "How should research loops be verified? :: verified evidence search :: Evidence finding"
+        "research loops primary evidence"
     ]
+    plan = with_query_specs(plan, [ResearchQuerySpec(query=plan.stop_contract["recovery_target_queries"][0],
+        family="verified_evidence", search_angle="verified_evidence", search_lane="DEEP_FOCUS")])
     transport = FakeExternalTransport(
         {
-            "How should research loops be verified? :: verified evidence search :: Evidence finding": [
+            "research loops primary evidence": [
                 {
                     "title": "Verified Evidence Result",
                     "url": "https://example.com/verified-evidence",
@@ -567,7 +570,7 @@ def test_external_search_adapter_should_prioritize_requirement_target_queries_du
     assert hits[0].source_title == "Verified Evidence Result"
     assert transport.calls == [
         (
-            "How should research loops be verified? :: verified evidence search :: Evidence finding",
+            "research loops primary evidence",
             plan.stop_contract["execution_profile"]["per_query_result_limit"],
         )
     ]

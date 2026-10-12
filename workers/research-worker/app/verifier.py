@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.json_repair import parse_json_payload
+from app.legacy_counter_runtime import counter_completed, requires_counter
 from app.llm_client import LlmClient
 from app.models import (
     GlobalVerifierResult,
@@ -455,25 +456,14 @@ def run_local_verifier(
                     ],
                 )
             )
-    elif recovery_mode == "COUNTERFACTUAL_RECHECK":
-        if (
-            any(hit.search_angle == "counterfactual" for hit in search_hits)
-            or any("counterfactual" in window.read_focus.lower() for window in read_windows)
-            or any(card.relation_type == "CONFLICTS" for card in evidence_cards)
-        ):
-            passed_checks.append("counterfactual recovery produced verifier-visible conflict evidence")
+    if requires_counter(plan) or plan.counter_checks:
+        if plan.counter_checks and all(counter_completed(r) for r in plan.counter_checks):
+            passed_checks.append("反证检索、原文读取和模型判定均已完成")
         else:
-            warnings.append("counterfactual recovery did not surface explicit conflict recheck evidence")
-            recovery_actions.append("target a conflicting source window before synthesis")
-            decision_records.append(
-                _decision(
-                    scope="LOCAL",
-                    decision_type="RECOVER",
-                    reason_code="COUNTERFACTUAL_SIGNAL_MISSING",
-                    action="target a conflicting source window before synthesis",
-                    status="WARN",
-                )
-            )
+            warnings.append("反证未完成，结论不能通过正式成文校验")
+            recovery_actions.append("完成原子事实的独立反证检索与模型判定")
+            decision_records.append(_decision(scope="LOCAL", decision_type="RECOVER",
+                reason_code="COUNTERFACTUAL_NOT_RUN", action="完成反证验证", status="WARN"))
 
     if intent_alignment.status == "PASS":
         passed_checks.append("research intent is aligned with the current closed-loop state")
@@ -516,6 +506,8 @@ def run_local_verifier(
             )
         )
     return LocalVerifierResult(
+        counter_checks=list(plan.counter_checks) or ([{"verdict": "NOT_RUN", "facts": [],
+            "reason_code": "COUNTER_NOT_RUN"}] if requires_counter(plan) else []),
         status=status,
         passed_checks=passed_checks,
         warnings=warnings,
@@ -632,6 +624,8 @@ def run_global_verifier(
         item.requirement_id for item in ledger.required_finding_progress if item.status != "READY"
     ]
     blockers: set[str] = set()
+    if any(not counter_completed(r) or r.get("verdict") != "NOT_REFUTED" for r in local_result.counter_checks):
+        blockers.add("COUNTERFACTUAL_UNRESOLVED")
     if not verified_cells and ledger.verified_row_count <= 0:
         blockers.add("NO_VERIFIED_CANONICAL_COVERAGE")
     if ledger.unresolved_questions:
@@ -671,7 +665,8 @@ def run_global_verifier(
         blockers.add("VERIFIER_DISAGREEMENT")
         facts["blocker_reason_codes"] = sorted(blockers)
 
-    counterfactual_results = _run_global_counterfactual_predicates(verified_cells, card_by_id, active_branches)
+    counterfactual_results = [*_run_global_counterfactual_predicates(verified_cells, card_by_id, active_branches),
+                              *local_result.counter_checks]
     recovery_actions = [
         action
         for branch_decision in branch_decisions
@@ -1054,7 +1049,8 @@ def _evaluate_constraint_requirement(
     branch_decisions: list[ResearchBranchDecision],
 ) -> ResearchIntentRequirement:
     normalized = constraint.lower()
-    if any(token in normalized for token in ["verified", "evidence", "已验证", "证据"]):
+    if (any(token in normalized for token in ["verified", "evidence", "已验证", "证据"])
+            and not any(token in normalized for token in ["conflict", "counterfactual", "冲突", "反证"])):
         progress = _find_requirement_progress(ledger, "CONSTRAINT_FINDING")
         satisfied = bool(progress and progress.ready_row_ids)
         return _requirement(
@@ -1072,40 +1068,14 @@ def _evaluate_constraint_requirement(
             missing_reason="" if satisfied else f"constraint still unmet: {constraint}",
         )
     if any(token in normalized for token in ["conflict", "counterfactual", "冲突", "反证"]):
-        progress = _find_requirement_progress(ledger, "CONFLICT_FINDING")
-        satisfied = (
-            bool(progress and progress.ready_row_ids)
-            or
-            ledger.conflicted_row_count > 0
-            or any(hit.search_angle == "counterfactual" for hit in search_hits)
-            or any(decision.decision == "COUNTERFACTUAL_RECHECK" for decision in branch_decisions)
-            or "Conflicts And Uncertainty" in plan.report_sections
-        )
-        evidence_refs = [
-            row.row_id
-            for row in ledger.rows
-            if row.row_status == "CONFLICTED"
-        ][:3]
-        if not evidence_refs:
-            evidence_refs = [
-                hit.hit_id
-                for hit in search_hits
-                if hit.search_angle == "counterfactual"
-            ][:3]
+        satisfied = bool(plan.counter_checks) and all(counter_completed(r) for r in plan.counter_checks)
         return _requirement(
-            requirement_id=requirement_id,
-            requirement_type="CONSTRAINT",
-            label=f"Constraint: {constraint}",
-            status="PASS" if satisfied else "WARN",
-            evidence_anchor="counterfactual_branch",
-            evidence_refs=evidence_refs,
-            required_columns=list(progress.required_columns) if progress else [],
-            accepted_row_statuses=list(progress.accepted_row_statuses) if progress else ["CONFLICTED"],
-            target_row_count=progress.target_row_count if progress else 1,
-            ready_row_ids=list(progress.ready_row_ids[:3]) if progress else [],
-            coverage_note=f"constraint covered: {constraint}" if satisfied else "",
-            missing_reason="" if satisfied else f"constraint still unmet: {constraint}",
-        )
+            requirement_id=requirement_id, requirement_type="CONSTRAINT", label=f"Constraint: {constraint}",
+            status="PASS" if satisfied else "WARN", evidence_anchor="counter_checks",
+            evidence_refs=[str(r.get("evidence_id") or "") for r in plan.counter_checks],
+            required_columns=[], accepted_row_statuses=[], target_row_count=1, ready_row_ids=[],
+            coverage_note="独立反证已完成" if satisfied else "",
+            missing_reason="" if satisfied else "反证检索、原文读取或模型判定未完成")
     if any(token in normalized for token in ["next action", "recovery", "恢复", "后续"]):
         return _requirement(
             requirement_id=requirement_id,
