@@ -7,7 +7,7 @@ import {
   reduceAnswerRunState
 } from "../answers/store";
 import { answersApi } from "../answers/api";
-import type { AnswerRunState } from "../answers/model";
+import type { AnswerFeedbackInput, AnswerRunState } from "../answers/model";
 import {
   type Message,
   updateAssistantMessageByRun,
@@ -206,7 +206,12 @@ export function useChatSessionController({
     return reconciled;
   }
 
-  async function sendConversationPrompt(content: string, runLabel = `${currentRoute().label} 提问`) {
+  async function sendConversationPrompt(
+    content: string,
+    runLabel = `${currentRoute().label} 提问`,
+    options: { mode?: AnswerMode; regeneratedFrom?: string } = {}
+  ) {
+    const turnMode = options.mode ?? mode;
     if (!conversation) {
       setStatus("请先创建工作台和会话");
       return;
@@ -221,9 +226,10 @@ export function useChatSessionController({
       try {
         sent = await answersApi.send(conversation.conversation_id, {
           content: trimmed,
-          answer_mode: mode.toUpperCase(),
-          client_request_id: `${mode}-${Date.now()}`,
-          source_scope_source_ids: mode === "qa" ? selectedQaSourceIds : []
+          answer_mode: turnMode.toUpperCase(),
+          client_request_id: `${turnMode}-${Date.now()}`,
+          source_scope_source_ids: turnMode === "qa" ? selectedQaSourceIds : [],
+          ...(options.regeneratedFrom ? { regenerated_from: options.regeneratedFrom } : {})
         });
       } catch (error) {
         setMessages((current) => {
@@ -240,7 +246,7 @@ export function useChatSessionController({
       }
       setQuestion((current) => (current.trim() === trimmed ? "" : current));
       const buffered = answerRunStoreRef.current.get(sent.answer_run_id);
-      if (mode === "note") {
+      if (turnMode === "note") {
         setLastNoteAssistantMessageId(sent.assistant_message_id);
         setLastNoteAnswerContent(buffered?.content ?? "");
         setSourceDraftContent("");
@@ -255,7 +261,7 @@ export function useChatSessionController({
       setMessages((current) => [...current, {
         role: "assistant",
         content: buffered?.content ?? "",
-        answerMode: mode,
+        answerMode: turnMode,
         citations: buffered?.citations ?? [],
         answerRunId: sent.answer_run_id,
         answerStatus: buffered?.status ?? "GENERATING",
@@ -264,7 +270,7 @@ export function useChatSessionController({
       if (conversationStreamConnected) {
         await answerRunStoreRef.current.waitFor(sent.answer_run_id);
         const completed = await reconcileAnswerRun(sent.answer_run_id);
-        if (mode === "note" && completed?.content) {
+        if (turnMode === "note" && completed?.content) {
           setLastNoteAnswerContent(completed.content);
           await prepareNoteSourceDraft(sent.assistant_message_id, sourceDraftTitle, completed.content);
         }
@@ -293,7 +299,7 @@ export function useChatSessionController({
         }));
       }
       const reconciled = await reconcileAnswerRun(sent.answer_run_id, fallback);
-      if (mode === "note" && reconciled?.content) {
+      if (turnMode === "note" && reconciled?.content) {
         setLastNoteAnswerContent(reconciled.content);
         await prepareNoteSourceDraft(sent.assistant_message_id, sourceDraftTitle, reconciled.content);
       }
@@ -302,6 +308,26 @@ export function useChatSessionController({
 
   async function sendMessage() {
     await sendConversationPrompt(question);
+  }
+
+  /** 用触发这条回答的用户问题重新提问，并告诉后端这是对原回答的重新生成。 */
+  async function regenerateAnswer(answerRunId: string) {
+    const index = messages.findIndex((message) => message.answerRunId === answerRunId);
+    const original = messages[index];
+    const userMessage = messages.slice(0, Math.max(index, 0)).reverse().find((message) => message.role === "user");
+    if (index < 0 || !userMessage) {
+      setStatus("找不到这条回答对应的问题，无法重新生成");
+      return;
+    }
+    await sendConversationPrompt(userMessage.content, "重新生成", {
+      mode: original.answerMode,
+      regeneratedFrom: answerRunId
+    });
+  }
+
+  async function sendAnswerFeedback(answerRunId: string, input: AnswerFeedbackInput) {
+    if (!workspace) throw new Error("请先选择工作台");
+    await answersApi.sendFeedback(workspace.workspace_id, answerRunId, input);
   }
 
   return {
@@ -333,7 +359,9 @@ export function useChatSessionController({
     rewriteNoteSourceDraft,
     saveNoteAnswerAsSource,
     sendMessage,
-    sendConversationPrompt
+    sendConversationPrompt,
+    regenerateAnswer,
+    sendAnswerFeedback
   };
 }
 

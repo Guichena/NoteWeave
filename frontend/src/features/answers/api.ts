@@ -1,6 +1,7 @@
 import { apiClient, type ApiClient } from "../../shared/api";
 import { type AnswerEvidenceManifest } from "./evidence";
 import {
+  type AnswerFeedbackInput,
   type AnswerRunSnapshot,
   type SendAnswerInput,
   type SendAnswerResponse
@@ -25,6 +26,13 @@ export class AnswersApi {
   getEvidence(workspaceId: string, runId: string) {
     return this.client.get<AnswerEvidenceManifest>(
       `/api/v2/workspaces/${workspaceId}/answer-runs/${runId}/evidence`
+    );
+  }
+
+  sendFeedback(workspaceId: string, runId: string, input: AnswerFeedbackInput) {
+    return this.client.post<unknown>(
+      `/api/v2/workspaces/${workspaceId}/answer-runs/${runId}/feedback`,
+      input
     );
   }
 }

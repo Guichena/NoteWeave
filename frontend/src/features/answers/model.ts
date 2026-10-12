@@ -3,6 +3,15 @@ export type SendAnswerInput = {
   answer_mode: string;
   client_request_id: string;
   source_scope_source_ids?: string[];
+  /** 重新生成时带上原回答的 run ID，后端据此记录用户对原回答不满意。 */
+  regenerated_from?: string;
+};
+
+export type AnswerFeedbackRating = "POSITIVE" | "NEGATIVE";
+
+export type AnswerFeedbackInput = {
+  rating: AnswerFeedbackRating;
+  reason?: string;
 };
 
 export type SendAnswerResponse = {

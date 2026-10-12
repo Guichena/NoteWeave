@@ -1,6 +1,7 @@
 import { apiClient, type ApiClient } from "../../shared/api";
 import {
   type CreateMemorySignalInput,
+  type MemoryControlPack,
   type MemoryItem,
   type MemoryPromotionResult,
   type MemoryReviewDecisionInput,
@@ -16,6 +17,12 @@ export class MemoryApi {
     return init
       ? this.client.get<MemoryItem[]>(path, init)
       : this.client.get<MemoryItem[]>(path);
+  }
+
+  /** 预览某个问题在指定回答模式下会编入哪些记忆。 */
+  previewChatControlPack(workspaceId: string, answerMode: string, query: string) {
+    const params = new URLSearchParams({ answer_mode: answerMode, query });
+    return this.client.get<MemoryControlPack>(`/api/v2/workspaces/${workspaceId}/memory/control-pack/chat?${params}`);
   }
 
   createSignal(workspaceId: string, input: CreateMemorySignalInput) {

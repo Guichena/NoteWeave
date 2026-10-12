@@ -47,7 +47,7 @@ describe("buildCitationViews", () => {
 
   it("没有证据清单时只展示引用文本", () => {
     expect(buildCitationViews(["A 文档 | 摘录"], null)).toEqual([
-      { index: 1, title: "A 文档", quote: "摘录", kindLabel: "", location: "" }
+      { index: 1, title: "A 文档", quote: "摘录", kindLabel: "", location: "", graphPath: [] }
     ]);
   });
 });

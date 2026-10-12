@@ -4,7 +4,7 @@ import { isSourceReadableOnly, isSourceSearchable } from "../sources/model";
 import { type AnswerMode } from "../../routes";
 import { modeExamplePrompts, modeQuestionPlaceholder } from "../shell/modeContext";
 import { BrandMark } from "../shell/BrandMark";
-import { MessageBubble, type EvidenceLoader } from "../answers/MessageBubble";
+import { MessageBubble, type AnswerFeedbackSender, type EvidenceLoader } from "../answers/MessageBubble";
 import { routes } from "../../routes";
 import { type Message } from "../answers/messageTypes";
 import { type SourceAsset } from "../sources/model";
@@ -49,6 +49,8 @@ export type ChatWorkbenchProps = {
   loadAnswerEvidence?: EvidenceLoader;
   /** 点击回答中的 [[页面]] 时跳转到对应的 Wiki 页面。 */
   onOpenWikiPage?: (title: string) => void;
+  onAnswerFeedback?: AnswerFeedbackSender;
+  onRegenerateAnswer?: (answerRunId: string) => void;
 };
 
 export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchProps) {
@@ -73,7 +75,9 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
     uploadSourceFile,
     uploadBusy = false,
     loadAnswerEvidence,
-    onOpenWikiPage
+    onOpenWikiPage,
+    onAnswerFeedback,
+    onRegenerateAnswer
   } = props;
   const composerBusy = chatBusy;
   const activeRoute = routes.find((route) => route.key === mode) ?? routes[0];
@@ -250,7 +254,13 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
                 <div key={`${message.role}-${index}`} className={`bubble message-row ${message.role}`}>
                   {message.role === "assistant" ? <BrandMark className="message-avatar" size={26} /> : null}
                   <div className="message-content">
-                    <MessageBubble message={message} loadEvidence={loadAnswerEvidence} onOpenWikiPage={onOpenWikiPage} />
+                    <MessageBubble
+                      message={message}
+                      loadEvidence={loadAnswerEvidence}
+                      onOpenWikiPage={onOpenWikiPage}
+                      onFeedback={onAnswerFeedback}
+                      onRegenerate={onRegenerateAnswer}
+                    />
                   </div>
                 </div>
               ))}

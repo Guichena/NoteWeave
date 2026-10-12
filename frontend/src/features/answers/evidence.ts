@@ -1,3 +1,5 @@
+import type { MemoryReference } from "../memory/model";
+
 /** 回答证据清单中的一条证据，与后端 /answer-runs/{id}/evidence 的响应字段一致。 */
 export type AnswerEvidence = {
   rank: number;
@@ -10,11 +12,28 @@ export type AnswerEvidence = {
   excerpt: string;
   location: string | null;
   character_cost: number;
+  /** Wiki 模式通过图扩展得到的页面才有：种子页到该页经过的页面标题。 */
+  graph_path?: string[] | null;
 };
+
+/** 多轮对话中检索实际使用的独立问题；首轮问题或模型不可用时 method 为 RULE。 */
+export type RetrievalRewrite = {
+  is_standalone: boolean;
+  standalone_query: string;
+  keyword_query: string;
+  method: "LLM" | "RULE" | string;
+  degradation_reasons: string[];
+};
+
+export type EvidenceSufficiency = "SUFFICIENT" | "PARTIAL" | "INSUFFICIENT" | "NOT_RUN";
 
 export type AnswerEvidenceManifest = {
   run_id: string;
   evidence: AnswerEvidence[];
+  retrieval_rewrite?: RetrievalRewrite | null;
+  evidence_sufficiency?: EvidenceSufficiency | string | null;
+  /** 这次回答实际编入的记忆（2C）。 */
+  memory_references?: MemoryReference[] | null;
 };
 
 /** 面向用户展示的引用：标题与摘录来自引用文本，类型和位置来自证据清单。 */
@@ -23,6 +42,7 @@ export type CitationView = {
   title: string;
   quote: string;
   kindLabel: string;
+  graphPath: string[];
   location: string;
 };
 
@@ -71,7 +91,8 @@ export function buildCitationViews(citations: string[], manifest: AnswerEvidence
       title: title || matched?.title || `来源 ${index}`,
       quote: quote || matched?.excerpt || "",
       kindLabel: matched ? evidenceKindLabel(matched) : "",
-      location: readableLocation(matched?.location ?? null)
+      location: readableLocation(matched?.location ?? null),
+      graphPath: matched?.graph_path ?? []
     };
   });
 }

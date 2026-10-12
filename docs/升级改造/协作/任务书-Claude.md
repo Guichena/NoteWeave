@@ -48,4 +48,10 @@
 - F1 到 F3 已完成 mock 开发（分支 `feat/upgrade-frontend`）：`ResearchRepairPanel`（审计页）、`ResearchCellsPanel` 与 `ResearchDiscoveryPanel`（过程页），按接口约定读取 `replans`、`counter-checks`、`cells`、`discovery-proposals`；接口返回 404 时面板不显示，B 线实现前不影响现有页面。等 1C 到 1E 合并后联调。
 - E1 已完成：`experiments/deep-research/quality-eval/`（20 题，有效单元格完成率加单次 LLM 五维评分），脚本 `scripts/deepresearch/run_quality_eval.py`、`score_quality_eval.py`。
 - E2 已完成：`experiments/retrieval/`（固定语料快照，首轮 20 题、多轮 12 组、Wiki 跨页 8 题，按要点词项判定相关性），脚本在 `scripts/retrieval/`。两套都只做了脚本测试，尚未在真实环境运行。
-- 下一步：F4 到 F8。
+- F4 到 F8 已完成 mock 开发：
+  - F4、F5：回答证据面板展示检索改写（`retrieval_rewrite`）和 Wiki 证据的到达路径（`graph_path`）；本次会话刚生成完的回答会立即读取证据清单，`evidence_sufficiency` 为 INSUFFICIENT 或 PARTIAL 时在回答上方提示。历史消息仍在展开引用时才读取。
+  - F6：待确认记忆展示冲突类型和冲突的那条记忆，冲突检查未执行时提示人工确认；生效记忆展示置信度和强化次数。
+  - F7：记忆页新增注入预览（输入问题查看会编入哪些记忆及原因）；回答证据面板展示这次回答实际编入的记忆。为此在接口约定中补充了 `display_text` 和证据接口的 `memory_references`，见进度看板协调区。
+  - F8：回答下方的点赞、点踩（点踩后可选原因）和重新生成，重新生成沿用原回答的模式并带上 `regenerated_from`。
+  - 尚未在浏览器中验证；重新生成的控制器逻辑没有单独的测试。
+- 下一步：F9 到 F11，以及 E3 到 E5。
