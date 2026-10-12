@@ -57,5 +57,6 @@
   "commands": {
     "run": "python scripts/deepresearch/run_quality_eval.py --execute",
     "score": "python scripts/deepresearch/score_quality_eval.py"
-  }
+  },
+  "implementation_commit": "45dc4711496e6ba66d4bb39eb0983a3e07c55485"
 }
