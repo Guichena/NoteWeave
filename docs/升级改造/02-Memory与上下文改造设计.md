@@ -118,3 +118,16 @@
 | 注入价值 = 置信度 × 效用 × 相关度 × 新近度衰减，权重用评测集校准 | S3 | Generative Agents |
 | 话题切分以改写后的独立问题计算向量，相邻消息相似度加深度分数找边界，显式切换规则保留为强信号；用 Pk、WindowDiff 评测 | S7 | TextTiling 系列研究 |
 | 评测集覆盖知识更新和拒答 | 评测 | LongMemEval |
+
+## 7. 实施记录
+
+### 2A（2026-10-12 完成）
+
+- 抽取输出增加 `slot`、`value`、`polarity`。规则降级先按语句归类，顺序是 forbidden、terminology、structure、interaction，其余为 style。槽位优先采用已经合法的 `slot`；没有时再按语言、长度、表格等特征推断，然后按类别落到 `answer.constraint`、`terminology.term`、`format.structure`、`interaction.style` 或 `answer.style`。显式 `REQUIRE` 或 `FORBID` 优先；信号类型为 `NEGATIVE` 或类别为 forbidden 时记 `FORBID`，其余记 `REQUIRE`。接口上看不到合法槽位、或存的是 `legacy:`、`candidate:` 身份键时，`slot_key` 返回 `unknown`，这个值不写回身份列。
+- 冲突分两段。同槽同值且极性相反判 `POLARITY`，同槽取值不同判 `SLOT_VALUE`，同槽同值同极性判等价。其余在同一工作区和任务邻域内，用索引 `noteweave-memory` 取最相似 5 条生效记忆，由模型选择 `ADD`、`MERGE`、`SUPERSEDE`、`NOOP`。输出不合规时把错误附上并重试一次。
+- 与第 6 节原文有两处差异，判断已写在进度看板协调区。槽位冲突以及模型给出的 `MERGE`、`SUPERSEDE` 都不在晋升时自动替换，复核必须 `REPLACE_EXISTING` 或 `REJECT`。确认后旧记忆改为 `SUPERSEDED`，对应 revision 写入 `valid_until`，不删除、不脱敏。用户主动 `REVOKE` 仍是 `DELETED`。`valid_from` 沿用现有列，失效时间继续用 `valid_until`，没有新增 `invalid_at`。
+- 索引或向量不可用，并且没有同槽判定时，对外 `conflict.type` 为 `NONE`，降级原因 `MEMORY_CONFLICT_INDEX_UNAVAILABLE`。向量已经命中，但模型不可用、调用失败或两次输出都不合规时，对外为 `CHECK_NOT_RUN`，对内状态 `CONFLICT_CHECK_NOT_RUN`，不能自动生效。空索引按 `ADD` 处理。
+- `GET /memory/review` 和 `GET /memory/items` 每一项返回 `slot_key` 与 `conflict`。列表不返回 `SUPERSEDED`。编译器仍只读 `ACTIVE` 且已批准的记忆。冲突未决时，被指向的旧记忆改为 `REVIEW_REQUIRED`，暂时离开控制包。
+- 索引写入放在 `memory` 包的 `MemoryIndexOutbox`，文档字段包含工作区、记忆、槽位、展示文本、任务邻域和向量。不改 retrieval 的投影写入器。调度发现客户端不可用时直接返回，不累计失败次数。历史回填由 `MemorySlotBackfillService` 在开关打开时执行，默认关闭；模型给不出合法槽位时 `semantic_slot_key` 保持 null。
+- 迁移脚本是 `V160__memory_slot_and_conflict_index.sql`。配置 `noteweave.memory.index-name` 默认 `noteweave-memory`，`index-dispatch-delay-ms` 默认 30000，`slot-backfill-enabled` 默认 false。
+- 置信度、按问题注入记忆、反馈接口、去掉正则初筛，以及把等价跳过改成强化，都留到后续阶段。实现提交 `a9525db`。测试环境没有真实模型和真实 Elasticsearch，发件箱保持 `PENDING`。
