@@ -7,6 +7,7 @@ import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
+import com.noteweave.retrieval.RetrievalChannels;
 import com.noteweave.retrieval.index.RetrievalIndexNames;
 import com.noteweave.retrieval.projection.RetrievalProjectionRepository.ProjectionType;
 import com.noteweave.retrieval.provider.RetrievalProviderException;
@@ -49,22 +50,49 @@ public class ElasticsearchNoteSourceSearchAdapter implements NoteSourceSearchPor
 
     @Override
     public List<NoteSourceHit> metadataRetrieve(String workspaceId, String query, int topK) {
-        if (query == null || query.isBlank() || topK <= 0) {
+        return metadataRetrieve(workspaceId, RetrievalChannels.same(query), topK);
+    }
+
+    @Override
+    public List<NoteSourceHit> metadataRetrieve(String workspaceId, RetrievalChannels channels, int topK) {
+        RetrievalChannels safeChannels = channels == null ? RetrievalChannels.same("") : channels;
+        String query = safeChannels.lexicalQuery();
+        if (query.isBlank() || topK <= 0) {
             return List.of();
         }
-        BoolQuery bool = new BoolQuery.Builder()
+        BoolQuery.Builder bool = new BoolQuery.Builder()
                 .must(must -> must.multiMatch(multi -> multi
                         .query(query)
                         .fields("title^5", "tags^4", "summary^3", "section_descriptions^2", "metadata_text^2", "source_type")
                         .type(co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType.BestFields)
                         .fuzziness("AUTO")))
-                .filter(scope(workspaceId))
-                .build();
+                .filter(scope(workspaceId));
+        if (safeChannels.hasFieldBoosts()) {
+            boostTerms(bool, safeChannels.mustTerms(),
+                    "title^6", "tags^5", "summary^4", "section_descriptions^3", "metadata_text^3");
+            boostTerms(bool, safeChannels.titleTerms(), "title^6", "tags^5");
+            boostTerms(bool, safeChannels.bodyTerms(), "summary^4", "section_descriptions^4");
+        }
         return search(new SearchRequest.Builder()
                 .index(RetrievalIndexNames.alias(ProjectionType.NOTE_SOURCE, workspaceId))
                 .size(topK)
-                .query(queryBuilder -> queryBuilder.bool(bool))
+                .query(queryBuilder -> queryBuilder.bool(bool.build()))
                 .build());
+    }
+
+    private void boostTerms(BoolQuery.Builder bool, List<String> terms, String... fields) {
+        if (terms == null || fields.length == 0) {
+            return;
+        }
+        for (String term : terms) {
+            if (term == null || term.isBlank()) {
+                continue;
+            }
+            bool.should(should -> should.multiMatch(multi -> multi
+                    .query(term)
+                    .fields(List.of(fields))
+                    .type(co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType.BestFields)));
+        }
     }
 
     private Query scope(String workspaceId) {

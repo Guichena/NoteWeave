@@ -4,6 +4,7 @@ import com.noteweave.chat.QaPassageRetriever.RetrievedChunk;
 import com.noteweave.chat.RetrievalHydrator.PassageOwnership;
 import com.noteweave.retrieval.QaEvidenceSelectionPolicy;
 import com.noteweave.retrieval.QaRetrievalStrategyProfile;
+import com.noteweave.retrieval.RetrievalChannels;
 import com.noteweave.retrieval.provider.EmbeddingClient;
 import com.noteweave.retrieval.provider.RetrievalProviderException;
 import com.noteweave.retrieval.qa.QaHybridSearchPort;
@@ -46,20 +47,23 @@ public class QaHybridRetriever {
     }
 
     public HybridResult retrieve(String workspaceId, String query, Set<String> sourceScope) {
+        return retrieve(workspaceId, RetrievalChannels.same(query), sourceScope);
+    }
+
+    public HybridResult retrieve(String workspaceId, RetrievalChannels channels, Set<String> sourceScope) {
+        RetrievalChannels safeChannels = channels == null ? RetrievalChannels.same("") : channels;
         if (!embeddingClient.isEnabled()) {
             throw new RetrievalProviderException("EMBEDDING_PROVIDER_DISABLED",
                     "QA hybrid retrieval requires query embedding");
         }
-        EmbeddingClient.EmbeddingResult embedding = embeddingClient.embedQuery(query);
+        EmbeddingClient.EmbeddingResult embedding = embeddingClient.embedQuery(safeChannels.vectorQuery());
         List<Float> queryVector = embedding.singleVector();
         List<QaHybridSearchPort.QaSearchHit> vectorHits = new ArrayList<>(searchPort.vectorRetrieve(
-                new QaVectorQuery(workspaceId, query, queryVector, sourceScope,
+                new QaVectorQuery(workspaceId, safeChannels.vectorQuery(), queryVector, sourceScope,
                         QaRetrievalStrategyProfile.RECALL_LIMIT,
                         QaRetrievalStrategyProfile.VECTOR_THRESHOLD)));
         List<QaHybridSearchPort.QaSearchHit> keywordHits = new ArrayList<>(searchPort.keywordRetrieve(
-                new QaKeywordQuery(workspaceId, query, sourceScope,
-                        QaRetrievalStrategyProfile.RECALL_LIMIT,
-                        QaRetrievalStrategyProfile.KEYWORD_THRESHOLD)));
+                keywordQuery(workspaceId, safeChannels.lexicalQuery(), sourceScope, safeChannels)));
         List<String> pipelineDegradations = new ArrayList<>();
         List<QaRrfFusionService.FusedHit> primaryFused = fusionService.fuse(
                 vectorHits, keywordHits,
@@ -68,7 +72,7 @@ public class QaHybridRetriever {
                 QaRetrievalStrategyProfile.KEYWORD_WEIGHT,
                 QaRetrievalStrategyProfile.FUSION_LIMIT);
         List<String> expansions = primaryFused.size() < LOW_RECALL_EXPANSION_THRESHOLD
-                ? queryExpansionService.expand(query) : List.of();
+                ? extraQueries(safeChannels) : List.of();
         for (String expansion : expansions) {
             try {
                 List<Float> expansionVector = embeddingClient.embedQuery(expansion).singleVector();
@@ -98,7 +102,7 @@ public class QaHybridRetriever {
                     && hit.sourceSnapshotId().equals(owner.sourceSnapshotId());
         }).toList();
         QaRerankService.RerankOutcome reranked = rerankService.rerank(
-                query, eligible, QaRetrievalStrategyProfile.RERANK_LIMIT);
+                safeChannels.rerankQuery(), eligible, QaRetrievalStrategyProfile.RERANK_LIMIT);
         Map<String, List<RetrievalHydrator.AdjacentPassage>> hydratedAdjacent =
                 retrievalHydrator.hydrateAdjacentPassages(
                         workspaceId, reranked.hits().stream().map(hit -> hit.hit().chunkId()).toList());
@@ -145,6 +149,31 @@ public class QaHybridRetriever {
         return new HybridResult(selected, !pipelineDegradations.isEmpty(),
                 List.copyOf(new java.util.LinkedHashSet<>(pipelineDegradations)), measurements,
                 embedding.model(), reranked.model());
+    }
+
+    private List<String> extraQueries(RetrievalChannels channels) {
+        if (channels.ruleExpansion()) {
+            return queryExpansionService.expand(channels.vectorQuery());
+        }
+        return channels.alternatives();
+    }
+
+    private QaKeywordQuery keywordQuery(
+            String workspaceId,
+            String query,
+            Set<String> sourceScope,
+            RetrievalChannels channels
+    ) {
+        return new QaKeywordQuery(
+                workspaceId,
+                query,
+                sourceScope,
+                QaRetrievalStrategyProfile.RECALL_LIMIT,
+                QaRetrievalStrategyProfile.KEYWORD_THRESHOLD,
+                channels.mustTerms(),
+                channels.titleTerms(),
+                channels.bodyTerms()
+        );
     }
 
     private void mergeDistinct(

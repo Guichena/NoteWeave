@@ -25,6 +25,7 @@ import com.noteweave.conversation.ContextV2ShadowSnapshotService;
 import com.noteweave.memory.MemoryCompilerService;
 import com.noteweave.memory.MemoryControlPackResponse;
 import com.noteweave.quota.WorkloadQuotaService;
+import com.noteweave.retrieval.QueryRewrite;
 import com.noteweave.security.WorkspaceAccessGuard;
 import com.noteweave.security.WorkspacePermission;
 import com.noteweave.security.AuditActorProvider;
@@ -56,6 +57,7 @@ public class ChatService {
     private final WorkloadQuotaService workloadQuotaService;
     private final ConversationContextProjectionService contextProjectionService;
     private final ConversationRetrievalContextAssembler conversationContextAssembler;
+    private final QueryRewriteService queryRewriteService;
     private final ContextV2RolloutService contextV2Rollout;
     private final ContextV2ShadowSnapshotService contextV2Snapshots;
 
@@ -74,6 +76,7 @@ public class ChatService {
             WorkloadQuotaService workloadQuotaService,
             ConversationContextProjectionService contextProjectionService,
             ConversationRetrievalContextAssembler conversationContextAssembler,
+            QueryRewriteService queryRewriteService,
             ContextV2RolloutService contextV2Rollout,
             ContextV2ShadowSnapshotService contextV2Snapshots
     ) {
@@ -91,6 +94,7 @@ public class ChatService {
         this.workloadQuotaService = workloadQuotaService;
         this.contextProjectionService = contextProjectionService;
         this.conversationContextAssembler = conversationContextAssembler;
+        this.queryRewriteService = queryRewriteService;
         this.contextV2Rollout = contextV2Rollout;
         this.contextV2Snapshots = contextV2Snapshots;
     }
@@ -251,11 +255,16 @@ public class ChatService {
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_CHAT_CONTROL_SECTION,
                 renderChatControlSection(chatControlPack) + v2UserControls);
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_TEMPLATE_LABEL, templateLabel(mode));
+        QueryRewrite rewrite = queryRewriteService.rewrite(conversationContext);
+        attributes.putAll(rewrite.attributes(conversationContext.currentQuestion()));
+        if (conversationContext.contextApplied()) {
+            attributes.put(ConversationWindow.ATTRIBUTE, conversationContext.retrievalQuestion());
+        }
         AnswerContext context = new AnswerContext(
                 workspaceId,
                 conversationId,
                 currentUserMessageId,
-                conversationContext.retrievalQuestion(),
+                rewrite.standaloneQuery(),
                 sourceScope,
                 attributes,
                 Instant.now()

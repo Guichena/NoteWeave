@@ -5,6 +5,7 @@ import com.noteweave.common.BusinessException;
 import com.noteweave.retrieval.QaEvidenceRelevancePolicy;
 import com.noteweave.retrieval.QaEvidenceSelectionPolicy;
 import com.noteweave.retrieval.QaRetrievalStrategyProfile;
+import com.noteweave.retrieval.RetrievalChannels;
 import com.noteweave.search.ChunkSearchHit;
 import com.noteweave.search.ChunkSearchPort;
 import java.util.ArrayList;
@@ -95,6 +96,18 @@ public class QaPassageRetriever {
             Set<String> sourceScope,
             QaRetrievalStrategyProfile profile
     ) {
+        return retrieveWithDiagnostics(
+                workspaceId, RetrievalChannels.same(query), sourceScope, profile);
+    }
+
+    public RetrievalResult retrieveWithDiagnostics(
+            String workspaceId,
+            RetrievalChannels channels,
+            Set<String> sourceScope,
+            QaRetrievalStrategyProfile profile
+    ) {
+        RetrievalChannels safeChannels = channels == null ? RetrievalChannels.same("") : channels;
+        String query = safeChannels.lexicalQuery();
         Objects.requireNonNull(profile, "QA retrieval strategy profile is required");
         List<String> allowedSourceIds = normalizeSourceScope(sourceScope);
         Set<String> allowedSources = new LinkedHashSet<>(allowedSourceIds);
@@ -109,7 +122,7 @@ public class QaPassageRetriever {
         if (hybridRetriever != null) {
             try {
                 QaHybridRetriever.HybridResult hybrid = hybridRetriever.retrieve(
-                        workspaceId, query, allowedSources);
+                        workspaceId, safeChannels, allowedSources);
                 return new RetrievalResult(hybrid.chunks(), hybrid.degraded(),
                         hybrid.degradationReasons(), hybrid.measurements());
             } catch (BusinessException ex) {

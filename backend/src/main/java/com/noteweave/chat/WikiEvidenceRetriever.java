@@ -6,8 +6,11 @@ import com.noteweave.answer.strategy.EvidenceRetrievalResult;
 import com.noteweave.answer.strategy.EvidenceRetriever;
 import com.noteweave.answer.strategy.RetrievalPlan;
 import com.noteweave.knowledge.KnowledgePageHit;
+import com.noteweave.knowledge.WikiLexicalBoost;
 import com.noteweave.knowledge.WikiPageContext;
 import com.noteweave.knowledge.WikiRetrievalQueryPort;
+import com.noteweave.retrieval.QueryRewrite;
+import com.noteweave.retrieval.RetrievalChannels;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -62,8 +65,14 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
             RetrievalPlan plan,
             RetrievalPlan.Step step
     ) {
-        List<WikiPageContext> candidateContexts = wikiRetrievalQueryPort.findRelevantWikiPageContexts(
-                        context.workspaceId(), context.query()).stream()
+        RetrievalChannels channels = QueryRewrite.channelsFrom(step.filters(), context.query());
+        WikiLexicalBoost boost = new WikiLexicalBoost(
+                channels.mustTerms(), channels.titleTerms(), channels.bodyTerms());
+        String query = channels.legacySingleQuery() ? context.query() : wikiQuery(channels);
+        List<WikiPageContext> candidateContexts = (channels.legacySingleQuery() || boost.empty()
+                ? wikiRetrievalQueryPort.findRelevantWikiPageContexts(context.workspaceId(), query)
+                : wikiRetrievalQueryPort.findRelevantWikiPageContexts(context.workspaceId(), query, boost))
+                .stream()
                 .limit(Math.max(0, step.candidateLimit()))
                 .toList();
         WikiGraphBudgeter.Result graph = graphBudgeter.apply(candidateContexts, plan.budget());
@@ -104,6 +113,24 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
                         "graph_character_limit", (long) graph.graphCharacterLimit()
                 )
         );
+    }
+
+    /**
+     * Wiki 的覆盖判定按组取或。关键词查询是「当前问题 + 话题锚点」拼在一起时，
+     * 追问里的虚词会把锚点稀释到阈值以下。这里拆回两行，解析器会分成两组。
+     * must_terms 仍然只做加权，不进入覆盖判定。
+     */
+    private static String wikiQuery(RetrievalChannels channels) {
+        String lexical = channels.lexicalQuery();
+        String current = channels.vectorQuery();
+        if (current.isBlank() || !lexical.startsWith(current)) {
+            return lexical;
+        }
+        String anchor = lexical.substring(current.length()).strip();
+        if (anchor.isBlank()) {
+            return lexical;
+        }
+        return "当前问题：" + current + "\n主题锚点：" + anchor;
     }
 
     private EvidenceBundle.Evidence toEvidence(

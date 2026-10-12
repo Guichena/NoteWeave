@@ -5,6 +5,7 @@ import com.noteweave.answer.strategy.EvidenceBundleSnapshot;
 import com.noteweave.answer.strategy.RetrievalExecutionTrace;
 import com.noteweave.answer.strategy.RetrievalPlan;
 import com.noteweave.common.BusinessException;
+import com.noteweave.retrieval.QueryRewrite;
 import com.noteweave.common.Ids;
 import com.noteweave.common.Json;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -408,7 +409,7 @@ public class AnswerRunService {
         return jdbcTemplate.query("""
                 select r.id, r.workspace_id, r.conversation_id, r.mode, r.status,
                        r.query_message_id, r.answer_message_id, r.assistant_request_id,
-                       r.retrieval_plan_version, r.model, r.maximum_output_tokens,
+                       r.retrieval_plan_version, r.retrieval_plan_json, r.model, r.maximum_output_tokens,
                        r.evidence_bundle_json,
                        r.started_at, r.first_token_at, r.finished_at,
                        r.error_code, r.error_message,
@@ -441,7 +442,11 @@ public class AnswerRunService {
                 rs.getTimestamp("fresh_at") == null ? null : rs.getTimestamp("fresh_at").toInstant(),
                 rs.getInt("character_cost")
         ), workspaceId, runId);
-        return new AnswerEvidenceManifestResponse(runId, evidence);
+        String planJson = jdbcTemplate.query("""
+                select retrieval_plan_json from answer_run
+                where workspace_id = ? and id = ?
+                """, rs -> rs.next() ? rs.getString("retrieval_plan_json") : null, workspaceId, runId);
+        return new AnswerEvidenceManifestResponse(runId, evidence, QueryRewrite.viewFromPlanJson(planJson));
     }
 
     public List<AnswerRunResponse> listConversationRuns(
@@ -452,7 +457,7 @@ public class AnswerRunService {
         return jdbcTemplate.query("""
                 select r.id, r.workspace_id, r.conversation_id, r.mode, r.status,
                        r.query_message_id, r.answer_message_id, r.assistant_request_id,
-                       r.retrieval_plan_version, r.model, r.maximum_output_tokens,
+                       r.retrieval_plan_version, r.retrieval_plan_json, r.model, r.maximum_output_tokens,
                        r.evidence_bundle_json,
                        r.started_at, r.first_token_at, r.finished_at,
                        r.error_code, r.error_message,
@@ -642,7 +647,8 @@ public class AnswerRunService {
                 (Integer) rs.getObject("revision_no"), text(rs.getString("revision_status")),
                 text(rs.getString("content")), instant(rs.getTimestamp("started_at")),
                 instant(rs.getTimestamp("first_token_at")), instant(rs.getTimestamp("finished_at")),
-                text(rs.getString("error_code")), text(rs.getString("error_message"))
+                text(rs.getString("error_code")), text(rs.getString("error_message")),
+                QueryRewrite.viewFromPlanJson(rs.getString("retrieval_plan_json"))
         );
     }
 

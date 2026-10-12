@@ -57,19 +57,29 @@ final class KnowledgeWikiSearchEngine {
     }
 
     List<WikiSearchRow> search(String workspaceId, String query) {
-        Query parsed = Query.parse(query);
+        return search(workspaceId, query, WikiLexicalBoost.none());
+    }
+
+    List<WikiSearchRow> search(String workspaceId, String query, WikiLexicalBoost boost) {
+        WikiLexicalBoost safeBoost = boost == null ? WikiLexicalBoost.none() : boost;
+        Query parsed = Query.parse(query).withExtraTerms(safeBoost);
         if (parsed.terms().isEmpty()) {
             return loadRows(workspaceId);
         }
-        return rank(workspaceId, parsed).stream().map(ScoredWikiRow::row).toList();
+        return rank(workspaceId, parsed, safeBoost).stream().map(ScoredWikiRow::row).toList();
     }
 
     List<KnowledgePageHit> findRelevantPages(String workspaceId, String query) {
-        Query parsed = Query.parse(query);
+        return findRelevantPages(workspaceId, query, WikiLexicalBoost.none());
+    }
+
+    List<KnowledgePageHit> findRelevantPages(String workspaceId, String query, WikiLexicalBoost boost) {
+        WikiLexicalBoost safeBoost = boost == null ? WikiLexicalBoost.none() : boost;
+        Query parsed = Query.parse(query).withExtraTerms(safeBoost);
         if (parsed.terms().isEmpty()) {
             return List.of();
         }
-        return rank(workspaceId, parsed).stream()
+        return rank(workspaceId, parsed, safeBoost).stream()
                 .map(row -> row.row().toPageHit((int) Math.round(row.score() * 100)))
                 .toList();
     }
@@ -79,12 +89,12 @@ final class KnowledgeWikiSearchEngine {
         return loadRows(workspaceId, BROWSE_LIMIT);
     }
 
-    private List<ScoredWikiRow> rank(String workspaceId, Query query) {
+    private List<ScoredWikiRow> rank(String workspaceId, Query query, WikiLexicalBoost boost) {
         List<WikiSearchRow> rows = loadRows(workspaceId, SEARCH_PAGE_CEILING);
         if (rows.isEmpty()) {
             return List.of();
         }
-        Map<String, Double> lexical = bm25f(rows, query);
+        Map<String, Double> lexical = bm25f(rows, query, boost);
         Map<String, Double> neighbor = neighborScores(workspaceId, lexical);
         List<ScoredWikiRow> scored = new ArrayList<>();
         for (WikiSearchRow row : rows) {
@@ -112,6 +122,14 @@ final class KnowledgeWikiSearchEngine {
 
     /** BM25F：三个字段各自做长度归一，按字段权重合并成一个词频后再饱和。 */
     static Map<String, Double> bm25f(List<WikiSearchRow> rows, Query query) {
+        return bm25f(rows, query, WikiLexicalBoost.none());
+    }
+
+    static Map<String, Double> bm25f(List<WikiSearchRow> rows, Query query, WikiLexicalBoost boost) {
+        WikiLexicalBoost safeBoost = boost == null ? WikiLexicalBoost.none() : boost;
+        Set<String> mustBoost = boostTokens(safeBoost.mustTerms());
+        Set<String> titleBoost = boostTokens(safeBoost.titleTerms());
+        Set<String> bodyBoost = boostTokens(safeBoost.bodyTerms());
         Set<String> terms = query.terms();
         List<Field[]> documents = new ArrayList<>(rows.size());
         double[] totalLength = new double[3];
@@ -147,16 +165,23 @@ final class KnowledgeWikiSearchEngine {
             double score = 0.0d;
             Set<String> matched = new HashSet<>();
             for (String term : terms) {
+                double termBoost = mustBoost.contains(term) ? 2.0d : 1.0d;
                 double weighted = 0.0d;
                 for (int index = 0; index < fields.length; index++) {
                     int frequency = fields[index].frequency(term);
                     if (frequency == 0) continue;
+                    double fieldBoost = 1.0d;
+                    if (index == 0 && titleBoost.contains(term)) {
+                        fieldBoost = 2.0d;
+                    } else if (index == 2 && bodyBoost.contains(term)) {
+                        fieldBoost = 2.0d;
+                    }
                     double normalization = 1.0d - B + B * fields[index].length() / averageLength[index];
-                    weighted += fields[index].weight() * frequency / normalization;
+                    weighted += fields[index].weight() * frequency / normalization * fieldBoost;
                 }
                 if (weighted == 0.0d) continue;
                 matched.add(term);
-                score += idf.get(term) * weighted / (K1 + weighted);
+                score += idf.get(term) * termBoost * weighted / (K1 + weighted);
             }
             if (score > 0.0d && query.covered(matched)) {
                 scores.put(rows.get(document).itemId(), score);
@@ -239,10 +264,22 @@ final class KnowledgeWikiSearchEngine {
     private record ScoredWikiRow(WikiSearchRow row, double score) {
     }
 
+    private static Set<String> boostTokens(List<String> terms) {
+        Set<String> tokens = new java.util.LinkedHashSet<>();
+        if (terms == null) {
+            return tokens;
+        }
+        for (String term : terms) {
+            tokens.addAll(LexicalTerms.queryTerms(term));
+        }
+        return tokens;
+    }
+
     /**
-     * 检索词项。回答链路传进来的是带对话上下文的组合查询（"当前问题：……""主题锚点：……"加上对话窗口和摘要），
-     * 这里只取当前问题和主题锚点；页面覆盖其中任意一组词项的足够比例即算命中，
-     * 这样省略了主语的追问（例如"第二点为什么成立"）可以靠主题锚点找到页面。
+     * 检索词项。回答链路传入改写后的关键词查询；追问会拆成「当前问题：」和「主题锚点：」两行。
+     * 直接搜索仍可能带来旧的多行查询，解析时只取这两行；
+     * 页面覆盖其中任意一组词项的足够比例即算命中。
+     * 加权词并进 terms，不并进 groups，因此不会改变覆盖判定。
      */
     record Query(Set<String> terms, List<Set<String>> groups) {
         private static final String CURRENT_PREFIX = "当前问题：";
@@ -266,6 +303,17 @@ final class KnowledgeWikiSearchEngine {
             Set<String> terms = new java.util.LinkedHashSet<>();
             groups.forEach(terms::addAll);
             return new Query(terms, groups);
+        }
+
+        Query withExtraTerms(WikiLexicalBoost boost) {
+            if (boost == null || boost.empty()) {
+                return this;
+            }
+            Set<String> expanded = new java.util.LinkedHashSet<>(terms);
+            expanded.addAll(boostTokens(boost.mustTerms()));
+            expanded.addAll(boostTokens(boost.titleTerms()));
+            expanded.addAll(boostTokens(boost.bodyTerms()));
+            return new Query(expanded, groups);
         }
 
         boolean covered(Set<String> matched) {

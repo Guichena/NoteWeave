@@ -1,6 +1,8 @@
 package com.noteweave.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -10,9 +12,12 @@ import com.noteweave.answer.strategy.AnswerMode;
 import com.noteweave.answer.strategy.EvidenceBundle;
 import com.noteweave.answer.strategy.RetrievalPlan;
 import com.noteweave.knowledge.KnowledgePageHit;
+import com.noteweave.knowledge.WikiLexicalBoost;
 import com.noteweave.knowledge.WikiPageContext;
 import com.noteweave.knowledge.WikiRetrievalQueryPort;
+import com.noteweave.retrieval.QueryRewrite;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -137,6 +142,48 @@ class WikiEvidenceRetrieverTest {
                 .containsExactly(2.0, 18.0);
         assertThat(result.evidence()).extracting(EvidenceBundle.Evidence::rerankScore)
                 .containsExactly(2.0, 18.0);
+    }
+
+    @Test
+    void followUpKeywordQueryKeepsTheTopicAnchorAsItsOwnCoverageLine() {
+        WikiRetrievalQueryPort queryPort = mock(WikiRetrievalQueryPort.class);
+        WikiRetrievalSnapshotCodec codec =
+                new WikiRetrievalSnapshotCodec(new ObjectMapper().findAndRegisterModules());
+        WikiPageContext page = page("item", "version", "Alpha策略");
+        String expected = "当前问题：第二点为什么成立\n主题锚点：请介绍 Alpha策略";
+        when(queryPort.findRelevantWikiPageContexts(eq("workspace"), eq(expected), any(WikiLexicalBoost.class)))
+                .thenReturn(List.of(page));
+        when(queryPort.citationIdsForWikiPages(eq("workspace"), any()))
+                .thenReturn(List.of());
+        WikiEvidenceRetriever retriever = new WikiEvidenceRetriever(queryPort, codec);
+
+        QueryRewrite rewrite = new QueryRewrite(
+                false,
+                "第二点为什么成立",
+                "第二点为什么成立 请介绍 Alpha策略",
+                List.of(),
+                "reasoning",
+                List.of("请介绍", "alpha策略"),
+                List.of(),
+                List.of(),
+                "zh",
+                "RULE",
+                List.of("QUERY_REWRITE_LLM_UNAVAILABLE"));
+        Map<String, String> filters = new LinkedHashMap<>();
+        QueryRewrite.copyInto(filters, rewrite.attributes("第二点为什么成立"));
+        RetrievalPlan.Step step = new RetrievalPlan.Step(WikiEvidenceRetriever.CHANNEL, 5, 1, filters);
+        RetrievalPlan plan = new RetrievalPlan(
+                "wiki-test-v1", AnswerMode.WIKI, List.of(step),
+                new RetrievalPlan.Budget(5, 20_000, 1, 30));
+
+        var result = retriever.retrieve(
+                new AnswerContext("workspace", "conversation", "message", "第二点为什么成立",
+                        Set.of(), rewrite.attributes("第二点为什么成立"), Instant.now()),
+                plan,
+                step);
+
+        assertThat(result.evidence()).extracting(EvidenceBundle.Evidence::evidenceId)
+                .containsExactly("knowledge-version:version");
     }
 
     private WikiPageContext page(String itemId, String versionId, String title) {

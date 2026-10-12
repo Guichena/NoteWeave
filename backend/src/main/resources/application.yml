@@ -94,6 +94,8 @@ noteweave:
     enabled: ${NOTEWEAVE_VIDEO_LEARNING_ENABLED:false}
     workspace-allowlist: ${NOTEWEAVE_VIDEO_LEARNING_WORKSPACE_ALLOWLIST:}
   retrieval:
+    query-rewrite:
+      enabled: ${NOTEWEAVE_QUERY_REWRITE_ENABLED:true}
     qa:
       mysql-fallback-enabled: ${NOTEWEAVE_QA_MYSQL_FALLBACK_ENABLED:false}
     note:

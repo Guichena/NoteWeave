@@ -325,7 +325,15 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
     }
 
     public List<KnowledgePageHit> findRelevantWikiPages(String workspaceId, String query) {
-        List<KnowledgePageHit> pages = wikiSearchEngine.findRelevantPages(workspaceId, query);
+        return findRelevantWikiPages(workspaceId, query, WikiLexicalBoost.none());
+    }
+
+    public List<KnowledgePageHit> findRelevantWikiPages(
+            String workspaceId,
+            String query,
+            WikiLexicalBoost boost
+    ) {
+        List<KnowledgePageHit> pages = wikiSearchEngine.findRelevantPages(workspaceId, query, boost);
         Set<String> readable = citationReadGate.readableVersionIds(workspaceId,
                 pages.stream().map(KnowledgePageHit::versionId).toList());
         return pages.stream().filter(page -> readable.contains(page.versionId()))
@@ -334,7 +342,16 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
 
     @Override
     public List<WikiPageContext> findRelevantWikiPageContexts(String workspaceId, String query) {
-        return findRelevantWikiPages(workspaceId, query).stream()
+        return findRelevantWikiPageContexts(workspaceId, query, WikiLexicalBoost.none());
+    }
+
+    @Override
+    public List<WikiPageContext> findRelevantWikiPageContexts(
+            String workspaceId,
+            String query,
+            WikiLexicalBoost boost
+    ) {
+        return findRelevantWikiPages(workspaceId, query, boost).stream()
                 .map(page -> new WikiPageContext(
                         page,
                         listOutgoingLinks(workspaceId, page.itemId()).stream().limit(5).toList(),

@@ -8,6 +8,7 @@ import com.noteweave.answer.strategy.EvidenceBundle;
 import com.noteweave.answer.strategy.PromptSpec;
 import com.noteweave.answer.strategy.RetrievalPlan;
 import com.noteweave.retrieval.QaRetrievalStrategyProfile;
+import com.noteweave.retrieval.QueryRewrite;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -81,6 +82,7 @@ public class QaAnswerModeStrategy implements AnswerModeStrategy {
         if (!context.sourceScope().isEmpty()) {
             filters.put("source_ids", String.join(",", context.sourceScope().stream().sorted().toList()));
         }
+        QueryRewrite.copyInto(filters, context.attributes());
         return new RetrievalPlan(
                 profile.planVersion(),
                 AnswerMode.QA,
@@ -146,8 +148,9 @@ public class QaAnswerModeStrategy implements AnswerModeStrategy {
         if ("comparison".equals(questionType)) {
             answer.append("- 这是比较类问题，请按相同维度比较不同对象。\n");
         }
-        answer.append("\n内部检索边界：").append(retrievalBoundary(context)).append("。不要在回答中提及。\n")
-                .append("\n可用资料片段：\n");
+        answer.append("\n内部检索边界：").append(retrievalBoundary(context)).append("。不要在回答中提及。\n\n");
+        ConversationWindow.append(answer, context);
+        answer.append("可用资料片段：\n");
         for (int index = 0; index < bundle.evidence().size(); index++) {
             EvidenceBundle.Evidence item = bundle.evidence().get(index);
             answer.append("- 《").append(item.title()).append("》：")

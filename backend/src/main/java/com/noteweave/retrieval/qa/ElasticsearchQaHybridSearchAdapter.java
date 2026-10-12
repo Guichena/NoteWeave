@@ -64,6 +64,9 @@ public class ElasticsearchQaHybridSearchAdapter implements QaHybridSearchPort {
                         .type(co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType.BestFields)
                         .fuzziness("AUTO")))
                 .filter(scopeFilter(query.workspaceId(), query.sourceScope()));
+        boostTerms(bool, query.mustTerms(), "title^8", "heading^8", "content^5");
+        boostTerms(bool, query.titleTerms(), "title^6", "heading^6");
+        boostTerms(bool, query.bodyTerms(), "content^4");
         SearchRequest.Builder request = new SearchRequest.Builder()
                 .index(RetrievalIndexNames.alias(ProjectionType.QA_CHUNK, query.workspaceId()))
                 .size(query.topK())
@@ -72,6 +75,21 @@ public class ElasticsearchQaHybridSearchAdapter implements QaHybridSearchPort {
             request.minScore(query.threshold());
         }
         return search(request.build());
+    }
+
+    private void boostTerms(BoolQuery.Builder bool, List<String> terms, String... fields) {
+        if (terms == null || fields.length == 0) {
+            return;
+        }
+        for (String term : terms) {
+            if (term == null || term.isBlank()) {
+                continue;
+            }
+            bool.should(should -> should.multiMatch(multi -> multi
+                    .query(term)
+                    .fields(List.of(fields))
+                    .type(co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType.BestFields)));
+        }
     }
 
     Query scopeFilter(String workspaceId, Set<String> sourceScope) {

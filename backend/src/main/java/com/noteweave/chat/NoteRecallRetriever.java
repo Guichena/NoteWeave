@@ -5,6 +5,7 @@ import com.noteweave.chat.NoteRetrievalService.NoteJournalHit;
 import com.noteweave.chat.NoteRetrievalService.NoteRecallPlan;
 import com.noteweave.chat.NoteRetrievalService.NoteRecallTrace;
 import com.noteweave.chat.NoteRetrievalService.NoteRelationSignal;
+import com.noteweave.retrieval.RetrievalChannels;
 import com.noteweave.retrieval.note.NoteSourceRerankService;
 import com.noteweave.retrieval.note.NoteSourceSearchPort;
 import com.noteweave.retrieval.provider.EmbeddingClient;
@@ -67,10 +68,16 @@ public class NoteRecallRetriever {
     }
 
     public NoteRecallPlan retrieve(String workspaceId, String query) {
+        return retrieve(workspaceId, RetrievalChannels.same(query));
+    }
+
+    public NoteRecallPlan retrieve(String workspaceId, RetrievalChannels channels) {
+        RetrievalChannels safeChannels = channels == null ? RetrievalChannels.same("") : channels;
+        String lexicalQuery = safeChannels.lexicalQuery();
         List<String> degradationReasons = new ArrayList<>();
-        Set<String> terms = extractTerms(query);
+        Set<String> terms = extractTerms(lexicalQuery);
         Map<String, Integer> noteSignals = journalRetriever.sourceSignals(workspaceId, terms);
-        List<NoteJournalHit> journalHits = journalRetriever.retrieve(workspaceId, query);
+        List<NoteJournalHit> journalHits = journalRetriever.retrieve(workspaceId, lexicalQuery);
         Map<String, Set<String>> sourceIdsByNote = repository.sourceIdsByNote(workspaceId);
         Map<String, Set<String>> sourceIdsByAnsweredTurn = repository.sourceIdsByAnsweredTurn(workspaceId);
         List<CandidateSource> candidates = repository.findCurrentSources(workspaceId);
@@ -85,13 +92,13 @@ public class NoteRecallRetriever {
                 || !embeddingClient.isEnabled();
         if (!sourceRecallUnavailable) {
             try {
-                var vector = embeddingClient.embedQuery(query).singleVector();
+                var vector = embeddingClient.embedQuery(safeChannels.vectorQuery()).singleVector();
                 int rank = 0;
                 for (var hit : sourceSearchPort.semanticRetrieve(workspaceId, vector, 80)) {
                     semanticScores.put(hit.sourceId(), weightedRankScore(++rank, 1.0d));
                 }
                 rank = 0;
-                for (var hit : sourceSearchPort.metadataRetrieve(workspaceId, query, 80)) {
+                for (var hit : metadataHits(workspaceId, safeChannels)) {
                     indexedMetadataScores.put(hit.sourceId(), weightedRankScore(++rank, 0.8d));
                 }
             } catch (RuntimeException ex) {
@@ -158,7 +165,7 @@ public class NoteRecallRetriever {
         NoteSourceRerankService.Outcome rerankOutcome = rerankService == null
                 ? new NoteSourceRerankService.Outcome(scored, true,
                         List.of("NOTE_SOURCE_RERANK_UNAVAILABLE"), "")
-                : rerankService.rerank(query, scored.stream().limit(40).toList(), 16);
+                : rerankService.rerank(safeChannels.rerankQuery(), scored.stream().limit(40).toList(), 16);
         degradationReasons.addAll(rerankOutcome.degradationReasons());
         List<NoteRecallRanker.ScoredCandidate> reranked = rerankOutcome.candidates();
         NoteRecallRanker.Selection selection = ranker.select(reranked);
@@ -360,6 +367,16 @@ public class NoteRecallRetriever {
             return -18;
         }
         return Math.min(12, 4 + source.windowCount());
+    }
+
+    private List<com.noteweave.retrieval.note.NoteSourceSearchPort.NoteSourceHit> metadataHits(
+            String workspaceId,
+            RetrievalChannels channels
+    ) {
+        if (channels.hasFieldBoosts()) {
+            return sourceSearchPort.metadataRetrieve(workspaceId, channels, 80);
+        }
+        return sourceSearchPort.metadataRetrieve(workspaceId, channels.lexicalQuery(), 80);
     }
 
     private Set<String> extractTerms(String query) {

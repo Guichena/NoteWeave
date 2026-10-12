@@ -1,5 +1,7 @@
 package com.noteweave.answer;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.noteweave.retrieval.QueryRewrite;
 import java.time.Instant;
 import java.util.List;
 
@@ -24,7 +26,8 @@ public record AnswerRunResponse(
         Instant firstTokenAt,
         Instant finishedAt,
         String errorCode,
-        String errorMessage
+        String errorMessage,
+        @JsonInclude(JsonInclude.Include.NON_NULL) QueryRewrite.View retrievalRewrite
 ) {
     public AnswerRunResponse {
         retrievalDegradationReasons = retrievalDegradationReasons == null

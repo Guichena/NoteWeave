@@ -16,6 +16,8 @@ spring:
 noteweave:
   environment: test
   retrieval:
+    query-rewrite:
+      enabled: true
     qa:
       mysql-fallback-enabled: true
     note:

@@ -11,6 +11,7 @@ import com.noteweave.knowledge.KnowledgeCitationResponse;
 import com.noteweave.knowledge.KnowledgePageHit;
 import com.noteweave.knowledge.WikiPageContext;
 import com.noteweave.knowledge.WikiLinkResponse;
+import com.noteweave.retrieval.QueryRewrite;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -43,6 +44,10 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
 
     @Override
     public RetrievalPlan plan(AnswerContext context) {
+        Map<String, String> filters = new LinkedHashMap<>();
+        filters.put("workspace_id", context.workspaceId());
+        filters.put("item_status", "ACTIVE");
+        QueryRewrite.copyInto(filters, context.attributes());
         return new RetrievalPlan(
                 PLAN_VERSION,
                 AnswerMode.WIKI,
@@ -50,7 +55,7 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
                         WikiEvidenceRetriever.CHANNEL,
                         5,
                         1.0,
-                        Map.of("workspace_id", context.workspaceId(), "item_status", "ACTIVE")
+                        filters
                 )),
                 new RetrievalPlan.Budget(5, 20_000, 1, 30, 60, 4_000)
         );
@@ -163,6 +168,7 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
                 builder.append("- 前序主题摘要：").append(topicSummary).append("\n");
             }
             builder.append("\n");
+            ConversationWindow.append(builder, context);
         }
         builder.append(context.attributes().getOrDefault(ATTRIBUTE_CHAT_CONTROL_SECTION, ""));
         builder.append("## 默认 Wiki 工作台\n");

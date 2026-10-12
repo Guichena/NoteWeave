@@ -7,6 +7,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import com.noteweave.retrieval.RetrievalChannels;
 import com.noteweave.retrieval.provider.EmbeddingClient;
 import com.noteweave.retrieval.provider.RerankClient;
 import com.noteweave.retrieval.qa.QaHybridSearchPort;
@@ -53,6 +54,15 @@ public class NoteReadingRetriever {
             List<CandidateSource> sources,
             String query
     ) {
+        return retrieveWithDiagnostics(workspaceId, sources, RetrievalChannels.same(query));
+    }
+
+    public ReadingResult retrieveWithDiagnostics(
+            String workspaceId,
+            List<CandidateSource> sources,
+            RetrievalChannels channels
+    ) {
+        RetrievalChannels safeChannels = channels == null ? RetrievalChannels.same("") : channels;
         if (sources == null || sources.isEmpty()) {
             return new ReadingResult(List.of(), false, List.of(), Map.of(
                     "note_window_candidate_count", 0L,
@@ -62,7 +72,8 @@ public class NoteReadingRetriever {
         }
         Map<String, List<ReadingWindow>> windows = hydrator.hydrateNoteWindows(
                 workspaceId, sources.stream().map(CandidateSource::sourceId).toList());
-        SemanticScoreResult semantic = semanticChunkScores(workspaceId, sources, query);
+        SemanticScoreResult semantic = semanticChunkScores(
+                workspaceId, sources, safeChannels.vectorQuery());
         Map<String, Double> semanticByChunk = semantic.scores();
         List<ReadingWindow> selected = new ArrayList<>();
         for (CandidateSource source : sources) {
@@ -71,14 +82,14 @@ public class NoteReadingRetriever {
                             .withScore(window.score()
                                     + (int) Math.round(semanticByChunk.getOrDefault(window.chunkId(), 0.0d) * 100)))
                     .toList();
-            selected.addAll(planner.plan(sourceWindows, query, 4));
+            selected.addAll(planner.plan(sourceWindows, safeChannels.lexicalQuery(), 4));
         }
         List<ReadingWindow> candidates = selected.stream().sorted(Comparator
                         .comparingInt((ReadingWindow window) -> planner.rolePriority(window.readRole()))
                         .thenComparing(Comparator.comparingInt(ReadingWindow::score).reversed())
                         .thenComparing(ReadingWindow::title).thenComparingInt(ReadingWindow::chunkNo)
                          .thenComparingInt(ReadingWindow::windowNo)).limit(24).toList();
-        WindowRerankResult reranked = rerankWindows(query, candidates, 8);
+        WindowRerankResult reranked = rerankWindows(safeChannels.rerankQuery(), candidates, 8);
         LinkedHashSet<String> degradationReasons = new LinkedHashSet<>();
         degradationReasons.addAll(semantic.degradationReasons());
         degradationReasons.addAll(reranked.degradationReasons());

@@ -8,6 +8,8 @@ import com.noteweave.answer.strategy.RetrievalPlan;
 import com.noteweave.chat.NoteRetrievalService.NoteEntryMetadata;
 import com.noteweave.chat.NoteRetrievalService.NoteRecallPlan;
 import com.noteweave.chat.NoteRetrievalService.ReadingWindow;
+import com.noteweave.retrieval.QueryRewrite;
+import com.noteweave.retrieval.RetrievalChannels;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -47,11 +49,23 @@ public class NoteEvidenceRetriever implements EvidenceRetriever {
             RetrievalPlan plan,
             RetrievalPlan.Step step
     ) {
-        NoteRecallPlan recallPlan = recallRetriever.retrieve(context.workspaceId(), context.query());
-        List<NoteEntryMetadata> metadataEntries = retrievalService.readEntriesMetadataForNote(
-                context.workspaceId(), recallPlan.verifySources(), context.query());
-        NoteReadingRetriever.ReadingResult reading = readingRetriever.retrieveWithDiagnostics(
-                context.workspaceId(), recallPlan.verifySources(), context.query());
+        RetrievalChannels channels = QueryRewrite.channelsFrom(step.filters(), context.query());
+        NoteRecallPlan recallPlan;
+        List<NoteEntryMetadata> metadataEntries;
+        NoteReadingRetriever.ReadingResult reading;
+        if (channels.legacySingleQuery()) {
+            recallPlan = recallRetriever.retrieve(context.workspaceId(), context.query());
+            metadataEntries = retrievalService.readEntriesMetadataForNote(
+                    context.workspaceId(), recallPlan.verifySources(), context.query());
+            reading = readingRetriever.retrieveWithDiagnostics(
+                    context.workspaceId(), recallPlan.verifySources(), context.query());
+        } else {
+            recallPlan = recallRetriever.retrieve(context.workspaceId(), channels);
+            metadataEntries = retrievalService.readEntriesMetadataForNote(
+                    context.workspaceId(), recallPlan.verifySources(), channels.lexicalQuery());
+            reading = readingRetriever.retrieveWithDiagnostics(
+                    context.workspaceId(), recallPlan.verifySources(), channels);
+        }
         List<ReadingWindow> windows = reading.windows().stream()
                 .limit(Math.max(0, step.candidateLimit()))
                 .toList();

@@ -12,6 +12,7 @@ import com.noteweave.chat.NoteRetrievalService.NoteEntryMetadata;
 import com.noteweave.chat.NoteRetrievalService.NoteJournalHit;
 import com.noteweave.chat.NoteRetrievalService.ReadingWindow;
 import com.noteweave.chat.NoteRetrievalService.RelatedEntryPreview;
+import com.noteweave.retrieval.QueryRewrite;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -47,6 +48,10 @@ public class NoteAnswerModeStrategy implements AnswerModeStrategy {
 
     @Override
     public RetrievalPlan plan(AnswerContext context) {
+        Map<String, String> filters = new LinkedHashMap<>();
+        filters.put("workspace_id", context.workspaceId());
+        filters.put("source_status", "READY");
+        QueryRewrite.copyInto(filters, context.attributes());
         return new RetrievalPlan(
                 PLAN_VERSION,
                 AnswerMode.NOTE,
@@ -54,7 +59,7 @@ public class NoteAnswerModeStrategy implements AnswerModeStrategy {
                         NoteEvidenceRetriever.CHANNEL,
                         8,
                         1.0,
-                        Map.of("workspace_id", context.workspaceId(), "source_status", "READY")
+                        filters
                 )),
                 new RetrievalPlan.Budget(8, 24_000, 0, 0)
         );
@@ -139,6 +144,7 @@ public class NoteAnswerModeStrategy implements AnswerModeStrategy {
             if (!topicSummary.isBlank()) {
                 builder.append("- 前序主题摘要：").append(topicSummary).append("\n");
             }
+            ConversationWindow.append(builder, context);
         }
         builder.append("- 呈现策略：聊天正文只保留直接回答，检索细节以下挂卡片折叠展示。\n");
         if (!journalHits.isEmpty()) {
