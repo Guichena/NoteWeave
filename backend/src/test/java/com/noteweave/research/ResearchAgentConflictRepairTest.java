@@ -47,6 +47,8 @@ class ResearchAgentConflictRepairTest {
 
         assertThat(conflictService.adjudicateRun(fixture.runId())).isEqualTo(1);
         assertThat(cellStatus(fixture, "entity-1:answer")).isEqualTo("CONFLICTED");
+        jdbcTemplate.update("insert into research_task_query(id, research_run_id, task_id, cell_key, query_text, strategy) values (?, ?, ?, ?, ?, ?)",
+                Ids.newId(), fixture.runId(), Ids.newId(), "entity-1:answer", "prior revenue query", "DIRECT");
         String traceId = jdbcTemplate.queryForObject("""
                 select id from research_verifier_decision
                 where research_run_id = ? and decision_type = 'GLOBAL_CONFLICT'
@@ -72,6 +74,12 @@ class ResearchAgentConflictRepairTest {
                 .path("query_policy");
         assertThat(queryPolicy.path("conflict_trace_id").asText()).isEqualTo(traceId);
         assertThat(queryPolicy.path("conflict_evidence_ids").toString()).contains("ev-a", "ev-b");
+        JsonNode repair = queryPolicy.path("repair_target");
+        assertThat(repair.path("cell_key").asText()).isEqualTo("entity-1:answer");
+        assertThat(repair.path("repair_cause").asText()).isEqualTo("EVIDENCE_CONFLICT");
+        assertThat(repair.path("claims").toString()).contains("revenue was 100", "revenue was 200", "alpha.com", "beta.org");
+        assertThat(repair.path("tried_queries").toString()).contains("prior revenue query");
+        assertThat(queryPolicy.path("counter_required").asBoolean()).isTrue();
 
         assertThat(conflictRepairService.conflictRepairLedger(fixture.runId()).attempts()).isEqualTo(1);
     }
@@ -244,7 +252,7 @@ class ResearchAgentConflictRepairTest {
                 conflictRepairService.conflictRepairLedger(fixture.runId());
 
         assertThat(ledger.attempts()).isEqualTo(1);
-        assertThat(ledger.externalCallsSpent()).isEqualTo(9L);
+        assertThat(ledger.externalCallsSpent()).isEqualTo(63L);
         assertThat(ledger.externalCallsUpperBound())
                 .isEqualTo(ResearchAgentConflictRepairService.EXTERNAL_CALLS_PER_CONFLICT_TASK);
     }

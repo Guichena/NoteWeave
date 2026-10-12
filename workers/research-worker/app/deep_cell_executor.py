@@ -10,12 +10,16 @@ from __future__ import annotations
 import hashlib
 import unicodedata
 from copy import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import os
 import re
 from typing import Protocol
 from urllib.parse import urlsplit
+from types import SimpleNamespace
+from app.repair_queries import plan_repair_queries
+from app.counter_checks import atomic_queries, judge_fact, MAX_FACTS
+from app.query_execution import capture_queries
 
 from app.agent_command_contract import ResearchAgentCommand
 from app.agent_task_client import AgentTaskClaim, ArchivedExternalSnapshot
@@ -114,7 +118,10 @@ class ExistingResearchToolchain:
             adapter = build_web_plus_seed_search_adapter()
         else:
             adapter = SeedSourceSearchAdapter()
-        return list(run_research_search(task_input, plan, adapter=adapter))
+        with capture_queries() as queries:
+            hits = list(run_research_search(task_input, plan, adapter=adapter))
+        self.executed_queries = list(queries)
+        return hits
 
     def fetch(self, task_input: ResearchTaskInput, plan: ResearchPlan, hits: list[object], *, allow_external: bool) -> list[object]:
         adapter = build_default_fetch_adapter() if allow_external else CompositeFetchAdapter([WorkspaceFetchAdapter()], max_concurrency=1)
@@ -187,7 +194,9 @@ class DeepCellExecutor:
             context.cancel_token.require_active()
             require_execution_active()
 
-        llm_client = _build_execution_llm(require_active, context.profile) if self.enable_llm else None
+        # 普通单元格仍按快照的 4 次预算执行，角色上限仅供需要反证的任务使用。
+        llm_limit = min(context.profile.max_llm_calls, int(snapshot.budget.get("llm_calls", context.profile.max_llm_calls)))
+        llm_client = _build_execution_llm(require_active, replace(context.profile, max_llm_calls=llm_limit)) if self.enable_llm else None
 
         # Recovery inventory must be consulted before any provider permit. A prior lease may
         # already have spent the single search/fetch/read rounds reserved for this task.
@@ -196,6 +205,7 @@ class DeepCellExecutor:
         require_active()
 
         query_planning: dict[str, object] = {"method": "SKIPPED_ARCHIVE_REPLAY"}
+        workspace_queries = []
         if not reused:
             plan, _ = _plan_queries_for_cell(snapshot, plan, llm_client)
             plan = _scope_search_plan_to_domains(snapshot, plan)
@@ -204,11 +214,12 @@ class DeepCellExecutor:
             context.toolbox.require("search")
             self.permit_client.require_permit(snapshot, "search")
             require_active()
-            hits = self.toolchain.search(task_input, plan, allow_external=allow_external)
+            hits = self.toolchain.search(task_input, plan, allow_external=allow_external) if plan.query_specs else []
             hits = _prepend_explicit_allowed_urls(snapshot, plan, hits)
             hits = _filter_external_hits_by_domain(snapshot, hits, plan)
             hits = _interleave_hits_by_domain(hits)
-            workspace_hits = _search_workspace_windows(snapshot, task_input, plan, self.permit_client)
+            workspace_hits = (_search_workspace_windows(snapshot, task_input, plan, self.permit_client, workspace_queries)
+                              if plan.query_specs else [])
             if workspace_hits:
                 hits = workspace_hits + [hit for hit in hits if getattr(hit, "adapter", "") != "workspace"]
                 hits = [
@@ -266,6 +277,20 @@ class DeepCellExecutor:
 
         trusted_evidence = _trusted_evidence_payload(snapshot, cards, windows)[:MAX_EVIDENCE_CARDS_PER_CELL]
         candidates = _candidate_payload(snapshot, cards, trusted_evidence)
+        executed_queries = (list(getattr(self.toolchain, "executed_queries", [item.query for item in build_search_query_plan(plan)]))
+                            if not reused and plan.query_specs else [])
+        report = {"queries": list(dict.fromkeys([*executed_queries, *workspace_queries])),
+                  "strategy": query_planning.get("strategy", "DIRECT"), "counter_checks": []}
+        repair_target = snapshot.query_policy.get("repair_target", {})
+        needs_counter = (snapshot.high_risk or snapshot.query_policy.get("counter_required") is True
+                         or repair_target.get("repair_cause") == "EVIDENCE_CONFLICT")
+        if needs_counter:
+            originals = [(c["cell_key"], c["candidate_value"]) for c in candidates]
+            originals += [(str(repair_target.get("cell_key", "")), c["claim_text"])
+                          for c in repair_target.get("claims", []) if isinstance(c, dict) and c.get("claim_text")]
+            originals = list(dict.fromkeys(originals))
+            self._counter_checks(snapshot, task_input, plan, allow_external, originals, windows,
+                                 llm_client, context, trusted_evidence, report, require_active)
         termination = "CANDIDATES_PROPOSED" if candidates else "EVIDENCE_ONLY" if trusted_evidence else "NO_SUPPORTED_CANDIDATE"
         # DR-102: keep the reproducibility-safe extraction outcome in the trace
         # digest (reason codes and counts only, never the model response text).
@@ -317,8 +342,80 @@ class DeepCellExecutor:
             "trace_digest": canonical_json_digest(trace),
             "evidence": trusted_evidence,
             "candidates": candidates,
-            "extraction_diagnostics": extraction.diagnostics(),
+            "extraction_diagnostics": {**extraction.diagnostics(), "execution_report": report},
         })
+
+    def _counter_checks(self, snapshot, task_input, plan, allow_external, originals, original_windows,
+                        llm, context, evidence, report, require_active):
+        remaining = MAX_FACTS
+        original_quotes = [e["quote_text"] for e in evidence]
+        original_ids = {(w.source_id, w.window_id) for w in original_windows}
+        excluded_sources = set(snapshot.source_policy.get("excluded_source_ids", []))
+        for cell_key, original in originals:
+            require_active()
+            tried = list(snapshot.query_policy.get("tried_queries", [])) + report["queries"]
+            facts = atomic_queries(original, llm, tried) if remaining else None
+            if not facts or len(facts) > remaining:
+                report["counter_checks"].append({"cell_key": cell_key, "original_claim": original,
+                    "claim_text": original[:2000], "verdict": "NOT_RUN", "queries": [], "refuting_evidence_keys": []})
+                continue
+            remaining -= len(facts)
+            for fact in facts:
+                query = fact["query"]
+                # 隔离检索：不复用原查询，不提供原证据、其他事实或研究草稿。
+                scoped_plan = with_query_specs(plan, [ResearchQuerySpec(query=query, family="counterfactual",
+                    search_angle="counterfactual", search_lane="COUNTERFACTUAL")]).model_copy(update={
+                    "normalized_question": fact["claim_text"],
+                    "stop_contract": {**plan.stop_contract, "execution_profile": {
+                        **plan.stop_contract.get("execution_profile", {}), "search_query_budget": 1}}})
+                scoped_input = task_input.model_copy(update={"input_payload": task_input.input_payload.model_copy(
+                    update={"question": fact["claim_text"]})})
+                for tool in ("search", "fetch", "read"):
+                    require_active()
+                    self.permit_client.require_permit(snapshot, tool)
+                    if tool == "search":
+                        hits = self.toolchain.search(scoped_input, scoped_plan, allow_external=allow_external)
+                        workspace_hits = _search_workspace_windows(snapshot, scoped_input, scoped_plan, self.permit_client)
+                        if workspace_hits:
+                            hits = workspace_hits + [h for h in hits if getattr(h, "adapter", "") != "workspace"]
+                        hits = _filter_external_hits_by_domain(snapshot, hits, scoped_plan)
+                        hits = [h for h in hits if getattr(h, "source_id", "") not in excluded_sources]
+                        actual = getattr(self.toolchain, "executed_queries", [query])
+                        report["queries"].extend(q for q in [*actual, *([query] if workspace_hits else [])]
+                                                 if q not in report["queries"])
+                    elif tool == "fetch":
+                        documents = self.toolchain.fetch(scoped_input, scoped_plan, hits, allow_external=allow_external)
+                    else:
+                        fresh = self.toolchain.read(scoped_input, scoped_plan, documents, allow_external=allow_external)
+                    context.usage.add(tool + "_calls")
+                fresh = [w for w in fresh if (w.source_id, w.window_id) not in original_ids
+                         and w.source_id not in excluded_sources
+                         and not any(q in w.window_text for q in original_quotes)]
+                fresh, _ = _archive_external_windows(snapshot, fresh, self.permit_client)
+                fresh = [w for w in fresh if w.snapshot_status in {"WORKSPACE", "EXTERNAL_ARCHIVED"}]
+                judged = judge_fact(fact["claim_text"], fresh, llm)
+                verdict = judged["verdict"] if judged else "NOT_RUN"
+                refs = []
+                if verdict == "REFUTED":
+                    by_id = {w.window_id: w for w in fresh}
+                    for citation in judged["citations"]:
+                        if len(evidence) >= 12:
+                            verdict = "NOT_RUN"
+                            break
+                        w = by_id[citation["window_id"]]
+                        card = SimpleNamespace(evidence_id="counter:" + _stable_hex(query, citation["quote_text"])[:32],
+                            window_id=w.window_id, source_id=w.source_id, source_title=w.source_title,
+                            entity_id=cell_key.split(":")[0], column_key=cell_key.split(":", 1)[1],
+                            quote_text=citation["quote_text"], claim_text=fact["claim_text"],
+                            relation_type="CONFLICTS", support_score=0, conflict_score=1)
+                        payload = _trusted_evidence_payload(snapshot, [card], [w])
+                        evidence.extend(payload)
+                        refs.extend(e["evidence_key"] for e in payload)
+                    if not refs:
+                        verdict = "NOT_RUN"
+                report["counter_checks"].append({"cell_key": cell_key, "original_claim": original,
+                    "claim_text": fact["claim_text"], "verdict": verdict, "queries": [query],
+                    "refuting_evidence_keys": refs if verdict == "REFUTED" else []})
 def _build_task_scope(snapshot: ResearchAgentTaskSnapshot) -> tuple[ResearchTaskInput, ResearchPlan, bool]:
     raw_query = snapshot.query_policy.get("query")
     raw_scope = snapshot.source_policy.get("source_scope")
@@ -481,7 +578,7 @@ def _scope_search_plan_to_domains(
 ) -> ResearchPlan:
     """用户限定了外部域名时，每条检索词对每个域名各生成一条 site: 查询，用途沿用原检索词。"""
     domains = sorted(_effective_allowed_external_domains(snapshot, plan))
-    if not domains:
+    if not domains or not plan.query_specs:
         return plan
     base_specs = list(plan.query_specs) or [
         ResearchQuerySpec(query=query) for query in (plan.query_set or [plan.normalized_question])
@@ -520,13 +617,19 @@ def _plan_queries_for_cell(
     llm_client: object | None,
 ) -> tuple[ResearchPlan, CellQueryPlan]:
     """为本任务的目标单元格生成检索词，并把检索预算对齐到生成的条数。"""
-    query_plan = plan_cell_queries(_cell_query_context(snapshot, plan), llm_client)
+    target = snapshot.query_policy.get("repair_target")
+    strategy = "DIRECT"
+    if isinstance(target, dict):
+        query_plan, strategy = plan_repair_queries(_cell_query_context(snapshot, plan), target, llm_client)
+    else:
+        query_plan = plan_cell_queries(_cell_query_context(snapshot, plan), llm_client)
     stop_contract = dict(plan.stop_contract)
     execution_profile = dict(stop_contract.get("execution_profile", {}))
     execution_profile["search_query_budget"] = len(query_plan.specs)
     stop_contract["execution_profile"] = execution_profile
     stop_contract["query_planning"] = {
         "method": query_plan.method,
+        "strategy": strategy,
         "query_count": len(query_plan.specs),
         "rejected_count": len(query_plan.rejected),
         "degradation_reasons": list(query_plan.degradation_reasons),
@@ -597,6 +700,7 @@ def _search_workspace_windows(
     task_input: ResearchTaskInput,
     plan: ResearchPlan,
     permit_client: PermitClient,
+    recorded_queries: list[str] | None = None,
 ) -> list[ResearchSearchHit]:
     if not task_input.source_scope:
         return []
@@ -607,6 +711,8 @@ def _search_workspace_windows(
     query_plan = build_search_query_plan(plan, remaining_budget=8)
     queries = [item.query for item in query_plan[:8]] or [plan.normalized_question]
     raw_hits = search(snapshot, queries=queries, limit=limit)
+    if recorded_queries is not None:
+        recorded_queries.extend(queries)
     scope = {(source.source_id, source.source_snapshot_id) for source in task_input.source_scope}
     result: list[ResearchSearchHit] = []
     for raw in raw_hits:

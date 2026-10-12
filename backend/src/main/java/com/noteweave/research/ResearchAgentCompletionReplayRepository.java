@@ -292,6 +292,11 @@ class ResearchAgentCompletionReplayRepository {
         Map<String, ResearchAgentCompletionEnvelope.Evidence> evidenceByKey = new LinkedHashMap<>();
         envelope.evidence().forEach(item -> evidenceByKey.put(item.evidenceKey(), item));
         Set<String> qualificationRejected = qualificationRejectedCandidateKeys(completionId);
+        // 重放与首次提交使用相同的反证门控，未执行反证的拒绝结果也必须可以幂等重放。
+        String executionContext = jdbcTemplate.queryForObject(
+                "select execution_context_json from research_agent_task where id = ?", String.class, envelope.taskId());
+        qualificationRejected.addAll(new ResearchRepairExecutionService(jdbcTemplate, objectMapper)
+                .rejectedCandidates(executionContext, envelope));
         if (storedMerges.size() != envelope.candidates().size()) {
             throw corrupt("Committed research-agent receipt merge cells disagree with its completion envelope");
         }

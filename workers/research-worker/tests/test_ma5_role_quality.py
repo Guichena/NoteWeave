@@ -20,14 +20,14 @@ def test_role_profiles_are_independent_and_fail_closed() -> None:
     assert deep.profile_key == "deep-cell-v1"
     assert deep.model_purpose == "deep_cell_extract"
     assert deep.temperature == 0.1
-    assert deep.max_llm_calls == 4
+    assert deep.max_llm_calls == 32
     assert deep.allowed_tools == frozenset({"search", "fetch", "read", "extract"})
     assert deep.require_independent_sources is False
 
     assert counterfactual.profile_key == "counterfactual-v1"
     assert counterfactual.temperature == 0.0
     assert counterfactual.require_independent_sources is True
-    assert counterfactual.max_search_calls > deep.max_search_calls
+    assert counterfactual.max_search_calls == deep.max_search_calls == 7
 
     assert verifier.profile_key == "cell-verifier-v1"
     assert verifier.allowed_tools == frozenset({"read"})

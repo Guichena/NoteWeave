@@ -99,7 +99,7 @@ public class ResearchAgentTaskCoordinatorService {
                         ? logicalFingerprint : logicalFingerprint + ":slot:" + candidateSlot;
                 String role = candidateSlot == 1 ? "DEEP_CELL" : "COUNTERFACTUAL";
                 List<Map<String, Object>> slotSources = sourcesForSlot(sources, candidateQuorum, candidateSlot);
-                Map<String, Long> reservation = deepCellBudget(bundle.size());
+                Map<String, Long> reservation = first.highRisk() ? counterCellBudget() : deepCellBudget(bundle.size());
                 Map<String, Object> snapshotBudget = new LinkedHashMap<>(reservation);
                 ResearchAgentTaskService.TaskSnapshot task = taskService.createTask(new ResearchAgentTaskService.CreateTaskCommand(
                         run.id(), "deep-cell:" + slotFingerprint, "coordinator:" + slotFingerprint, waveNo, role, entityId,
@@ -172,7 +172,9 @@ public class ResearchAgentTaskCoordinatorService {
             // counterfactual is scoped to the exact claim, not merely to the cell.
             String logicalPrefix = target.conflictAnchored() ? "conflict-counterfactual:" : "counterfactual:";
             TaskPriority priority = repairPriority(cell);
-            Map<String, Object> snapshotBudget = new LinkedHashMap<>(deepCellBudget(1));
+            boolean requiresCounter = cell.highRisk() || "EVIDENCE_CONFLICT".equals(repairCause(run.id(), cell.cellKey(), target));
+            Map<String, Long> repairBudget = requiresCounter ? counterCellBudget() : deepCellBudget(1);
+            Map<String, Object> snapshotBudget = new LinkedHashMap<>(repairBudget);
             ResearchAgentTaskService.TaskSnapshot task = taskService.createTask(new ResearchAgentTaskService.CreateTaskCommand(
                     run.id(), logicalPrefix + fingerprint, "repair:" + fingerprint, command.waveNo(), "COUNTERFACTUAL",
                     entityId(cell.cellKey()), "branch-counterfactual", cell.planRevision(), cell.entitySetVersion(),
@@ -180,9 +182,9 @@ public class ResearchAgentTaskCoordinatorService {
                     List.of(new ResearchAgentTaskService.TargetCellBinding(cell.cellKey(), cell.version())),
                     new ResearchAgentTaskService.TaskExecutionContext("research-default",
                             repairSourcePolicy(run, independentSources, target.excludedSourceIds()),
-                            withCellScope(repairQueryPolicy(brief, target.reasonDigest(), command.parentCheckpointSeq(),
+                            withRepairTarget(run.id(), cell.cellKey(), target, withCellScope(repairQueryPolicy(brief, target.reasonDigest(), command.parentCheckpointSeq(),
                                     target.conflictTraceId(), target.conflictEvidenceKeys()), run.id(), entityId(cell.cellKey()),
-                                    List.of(cell.cellKey())),
+                                    List.of(cell.cellKey()))),
                             run.researchIntent(), run.controlPack())
             ));
             jdbcTemplate.update("""
@@ -195,7 +197,7 @@ public class ResearchAgentTaskCoordinatorService {
                     """, logicalPrefix + fingerprint, priority.score(), priority.reason(), task.taskId());
             boolean existed = jdbcTemplate.queryForObject("select count(*) from research_budget_reservation where research_agent_task_id = ?", Integer.class, task.taskId()) > 0;
             budgetService.reserve(new ResearchBudgetAndCheckpointService.ReserveCommand(
-                    run.id(), task.taskId(), "repair-reserve:" + fingerprint, deepCellBudget(1)));
+                    run.id(), task.taskId(), "repair-reserve:" + fingerprint, repairBudget));
             ResearchAgentCommandOutboxService.CommandReceipt outbox = outboxService.enqueue(task.taskId());
             if (existed) {
                 replayed++;
@@ -260,6 +262,16 @@ public class ResearchAgentTaskCoordinatorService {
                     : Map.of("key", columnKey, "label", columnLabels.getOrDefault(columnKey, columnKey)));
         }
         policy.put("column_specs", List.copyOf(columnSpecs));
+        List<String> tried = new ArrayList<>();
+        for (String cellKey : cellKeys) {
+            tried.addAll(jdbcTemplate.queryForList("select query_text from research_task_query where research_run_id = ? and cell_key = ? order by created_at, id",
+                    String.class, runId, cellKey));
+        }
+        policy.put("tried_queries", tried.stream().distinct().toList());
+        Boolean counterRequired = jdbcTemplate.queryForObject("select count(*) > 0 from research_cell where research_run_id = ? and high_risk = true and cell_key in ("
+                + String.join(",", java.util.Collections.nCopies(cellKeys.size(), "?")) + ")", Boolean.class,
+                java.util.stream.Stream.concat(java.util.stream.Stream.of(runId), cellKeys.stream()).toArray());
+        if (Boolean.TRUE.equals(counterRequired)) policy.put("counter_required", true);
         policy.putAll(planGuidance(runId));
         return Map.copyOf(policy);
     }
@@ -626,6 +638,66 @@ public class ResearchAgentTaskCoordinatorService {
                 "candidate_merges_accepted", cells,
                 "candidate_merges_rejected", cells);
     }
+    /** 查询生成和抽取各最多 2 次；预留多条原结论拆分及 6 条事实的判定预算。工具包含三次租约恢复上限。 */
+    static Map<String, Long> counterCellBudget() {
+        Map<String, Long> budget = new LinkedHashMap<>(deepCellBudget(1));
+        budget.put("llm_calls", 32L);
+        budget.put("search_calls", 21L);
+        budget.put("fetch_calls", 21L);
+        budget.put("read_calls", 21L);
+        budget.put("evidence_cards", 12L);
+        budget.put("evidence_appended", 12L);
+        return Map.copyOf(budget);
+    }
+
+    private Map<String, Object> withRepairTarget(String runId, String cellKey, CounterfactualTarget target,
+                                                Map<String, Object> scoped) {
+        Map<String, Object> policy = new LinkedHashMap<>(scoped);
+        Map<String, Object> repair = new LinkedHashMap<>();
+        repair.put("cell_key", cellKey);
+        repair.put("column_specs", scoped.get("column_specs"));
+        String cause = repairCause(runId, cellKey, target);
+        repair.put("repair_cause", cause);
+        repair.put("tried_queries", scoped.get("tried_queries"));
+        List<Map<String, Object>> claims = new ArrayList<>();
+        for (String key : target.conflictEvidenceKeys()) {
+            claims.addAll(jdbcTemplate.query("select claim_text, coalesce(source_domain, '') as source_domain from source_evidence where research_run_id = ? and evidence_key = ?",
+                    (rs, n) -> Map.<String, Object>of("claim_text", rs.getString(1), "source_domain", rs.getString(2)), runId, key));
+        }
+        if (claims.isEmpty() && "EVIDENCE_CONFLICT".equals(cause)) {
+            List<String> candidateEvidence = jdbcTemplate.queryForList("select evidence_ids_json from research_agent_candidate where research_run_id = ? and cell_key = ? order by submitted_at desc, id desc limit 2",
+                    String.class, runId, cellKey);
+            for (String json : candidateEvidence) {
+                try {
+                    var keys = objectMapper.readTree(json);
+                    if (keys.isTextual()) keys = objectMapper.readTree(keys.asText());
+                    for (var key : keys) claims.addAll(jdbcTemplate.query(
+                            "select claim_text, coalesce(source_domain, '') from source_evidence where research_run_id = ? and evidence_key = ?",
+                            (rs, n) -> Map.<String, Object>of("claim_text", rs.getString(1), "source_domain", rs.getString(2)), runId, key.asText()));
+                } catch (JsonProcessingException exception) {
+                    throw new BusinessException("RESEARCH_AGENT_REPAIR_INVALID", "修复候选的证据列表不符合约定");
+                }
+            }
+        }
+        repair.put("claims", claims.stream().distinct().toList());
+        policy.put("repair_target", repair);
+        if ("EVIDENCE_CONFLICT".equals(cause)) policy.put("counter_required", true);
+        return Map.copyOf(policy);
+    }
+
+    private String repairCause(String runId, String cellKey, CounterfactualTarget target) {
+        if (target.conflictAnchored()) return "EVIDENCE_CONFLICT";
+        String cause = target.repairCause() == null ? repairCauseForCell(runId, cellKey) : target.repairCause();
+        return Set.of("EVIDENCE_CONFLICT", "FETCH_FAILED", "PROVIDER_FAILED").contains(cause)
+                ? cause : "MARGINAL_GAIN_EXHAUSTED";
+    }
+
+    private String repairCauseForCell(String runId, String cellKey) {
+        List<String> reasons = jdbcTemplate.queryForList("select reason_code from research_verifier_decision where research_run_id = ? and target_id = ? order by created_at desc, id desc limit 1", String.class, runId, cellKey);
+        String reason = reasons.isEmpty() ? "" : reasons.get(0);
+        return java.util.Set.of("FETCH_FAILED", "PROVIDER_FAILED", "EVIDENCE_CONFLICT").contains(reason == null ? "" : reason)
+                ? reason : "MARGINAL_GAIN_EXHAUSTED";
+    }
     private String fingerprint(String runId, int waveNo, String entityId, int planRevision, int entitySetVersion, List<CellScope> cells) {
         try { String text = runId + "|wave@" + waveNo + "|" + entityId + "|plan@" + planRevision + "|entities@" + entitySetVersion
                 + cells.stream().map(cell -> "|" + cell.cellKey() + "@" + cell.version()).reduce("", String::concat);
@@ -649,7 +721,7 @@ public class ResearchAgentTaskCoordinatorService {
     public record CounterfactualRepairCommand(String researchRunId, int parentCheckpointSeq, int waveNo,
                                               List<CounterfactualTarget> targets) { }
     public record CounterfactualTarget(String cellKey, String reasonDigest, List<String> excludedSourceIds,
-                                       String conflictTraceId, List<String> conflictEvidenceKeys) {
+                                       String conflictTraceId, List<String> conflictEvidenceKeys, String repairCause) {
         public CounterfactualTarget {
             excludedSourceIds = excludedSourceIds == null ? List.of() : excludedSourceIds.stream()
                     .filter(value -> value != null && !value.isBlank()).sorted().toList();
@@ -663,7 +735,12 @@ public class ResearchAgentTaskCoordinatorService {
 
         /** DR-304: failed-wave / quorum repairs are not anchored to a conflict trace. */
         public CounterfactualTarget(String cellKey, String reasonDigest, List<String> excludedSourceIds) {
-            this(cellKey, reasonDigest, excludedSourceIds, null, List.of());
+            this(cellKey, reasonDigest, excludedSourceIds, null, List.of(), null);
+        }
+
+        public CounterfactualTarget(String cellKey, String reasonDigest, List<String> excludedSourceIds,
+                                    String conflictTraceId, List<String> conflictEvidenceKeys) {
+            this(cellKey, reasonDigest, excludedSourceIds, conflictTraceId, conflictEvidenceKeys, null);
         }
 
         /** True when this repair is a DR-304 conflict repair and must carry its trace anchor. */

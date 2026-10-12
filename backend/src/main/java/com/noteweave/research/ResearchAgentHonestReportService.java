@@ -83,7 +83,7 @@ class ResearchAgentHonestReportService {
             report.append("## 完成判定原因\n\n");
             decision.reasonCodes().forEach(reason -> report.append("- ").append(markdown(reason)).append("\n"));
         }
-        return report.toString();
+        return ResearchRepairExecutionService.appendCounterAudit(jdbcTemplate, runId, report.toString());
     }
 
     /**
@@ -96,7 +96,7 @@ class ResearchAgentHonestReportService {
         java.util.Set<String> promoted = new java.util.HashSet<>();
         decision.promotableClaims().forEach(claim -> promoted.add(claim.cellKey()));
         List<String[]> cells = jdbcTemplate.query("""
-                select cell_key, candidate_value, evidence_refs_json from research_cell
+                select cell_key, candidate_value, evidence_refs_json from research_counter_eligible_cell
                 where research_run_id = ? and cell_status = 'VERIFIED' order by cell_key
                 """, (rs, rowNum) -> new String[] {rs.getString(1), rs.getString(2), rs.getString(3)}, runId);
         cells.removeIf(cell -> promoted.contains(cell[0]) || cell[1] == null || cell[1].isBlank());

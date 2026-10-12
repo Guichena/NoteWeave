@@ -238,7 +238,7 @@ class ResearchAgentRoleWorkflowService {
         return jdbcTemplate.query("""
                 select id, cell_key, cell_version, plan_revision, entity_set_version,
                        candidate_value, evidence_refs_json
-                from research_cell where research_run_id = ? and cell_status = 'VERIFIED'
+                from research_counter_eligible_cell where research_run_id = ? and cell_status = 'VERIFIED'
                 order by cell_key
                 """, (rs, rowNum) -> new CellScope(
                 rs.getString(1), rs.getString(2), rs.getInt(3), rs.getInt(4), rs.getInt(5),

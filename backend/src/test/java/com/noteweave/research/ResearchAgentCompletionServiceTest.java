@@ -51,6 +51,105 @@ class ResearchAgentCompletionServiceTest {
     }
 
     @Test
+    void shouldPersistExecutedQueriesAndCounterChecksOnceWithAtomicCompletion() {
+        Fixture fixture = fixture(1);
+        ResearchAgentCompletionEnvelope base = envelope(fixture, true);
+        Map<String, Object> check = Map.of("cell_key", fixture.cellKeys().get(0), "original_claim", "value-0",
+                "claim_text", "value-0", "verdict", "NOT_REFUTED", "queries", List.of("value exception"), "refuting_evidence_keys", List.of());
+        ResearchAgentCompletionEnvelope result = executionEnvelope(base, List.of(check));
+        completionService.complete(fixture.taskId(), result);
+        assertThat(completionService.complete(fixture.taskId(), result).idempotentReplay()).isTrue();
+        assertThat(count("research_task_query", "task_id", fixture.taskId())).isEqualTo(1);
+        assertThat(count("research_counter_check", "task_id", fixture.taskId())).isEqualTo(1);
+        String workspaceId = jdbcTemplate.queryForObject("select workspace_id from research_run where id = ?", String.class, fixture.runId());
+        ResearchRepairExecutionService repair = new ResearchRepairExecutionService(jdbcTemplate, new com.fasterxml.jackson.databind.ObjectMapper());
+        assertThat(repair.counterChecks(workspaceId, fixture.runId())).singleElement().satisfies(row -> {
+            assertThat(row.get("verdict")).isEqualTo("NOT_REFUTED");
+            assertThat(row.get("counter_query_count")).isEqualTo(1);
+        });
+        assertCode(() -> repair.counterChecks(Ids.newId(), fixture.runId()), "RESEARCH_RUN_NOT_FOUND");
+    }
+
+    @Test
+    void shouldRollbackQueriesAndCompletionWhenCounterCheckEscapesTargetScope() {
+        Fixture fixture = fixture(1);
+        ResearchAgentCompletionEnvelope result = executionEnvelope(envelope(fixture, true), List.of(Map.of(
+                "cell_key", "other:cell", "original_claim", "value-0", "claim_text", "value-0", "verdict", "NOT_REFUTED",
+                "queries", List.of("value exception"), "refuting_evidence_keys", List.of())));
+        assertCode(() -> completionService.complete(fixture.taskId(), result), "RESEARCH_REPAIR_EXECUTION_INVALID");
+        assertThat(count("research_task_query", "task_id", fixture.taskId())).isZero();
+        assertThat(count("research_counter_check", "task_id", fixture.taskId())).isZero();
+        assertThat(count("research_agent_completion", "research_agent_task_id", fixture.taskId())).isZero();
+    }
+
+    @Test
+    void shouldBlockHighRiskPromotionUntilCurrentMergedClaimHasExecutedCounterChecks() {
+        Fixture fixture = fixture(1);
+        completionService.complete(fixture.taskId(), envelope(fixture, true));
+        jdbcTemplate.update("update research_cell set high_risk = true where research_run_id = ?", fixture.runId());
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_counter_eligible_cell where research_run_id = ?", Integer.class, fixture.runId())).isZero();
+        jdbcTemplate.update("""
+                insert into research_counter_check(id, research_run_id, task_id, cell_key, original_claim,
+                    claim_text, verdict, counter_query_count, refuting_evidence_keys_json)
+                values (?, ?, ?, ?, 'old-value', 'old-value', 'NOT_REFUTED', 1, '[]')
+                """, Ids.newId(), fixture.runId(), fixture.taskId(), fixture.cellKeys().get(0));
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_counter_eligible_cell where research_run_id = ?", Integer.class, fixture.runId())).isZero();
+        jdbcTemplate.update("update research_counter_check set original_claim = 'value-0', claim_text = 'value-0' where research_run_id = ?", fixture.runId());
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_counter_eligible_cell where research_run_id = ?", Integer.class, fixture.runId())).isEqualTo(1);
+        jdbcTemplate.update("update research_counter_check set verdict = 'NOT_RUN' where research_run_id = ?", fixture.runId());
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_counter_eligible_cell where research_run_id = ?", Integer.class, fixture.runId())).isZero();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"NOT_RUN", "NOT_REFUTED", "NO_COUNTER_EVIDENCE_FOUND"})
+    void shouldMergeRequiredCounterCandidateOnlyAfterAnExecutedVerdict(String verdict) throws Exception {
+        Fixture original = fixture(1);
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        var context = mapper.readTree(jdbcTemplate.queryForObject(
+                "select execution_context_json from research_agent_task where id = ?", String.class, original.taskId()));
+        if (context.isTextual()) context = mapper.readTree(context.asText());
+        ((com.fasterxml.jackson.databind.node.ObjectNode) context.get("query_policy")).put("counter_required", true);
+        ((com.fasterxml.jackson.databind.node.ObjectNode) context.get("query_policy")).set("repair_target", mapper.valueToTree(Map.of(
+                "cell_key", original.cellKeys().get(0), "repair_cause", "EVIDENCE_CONFLICT", "claims", List.of())));
+        new ResearchAgentReplanAuditService(jdbcTemplate, mapper).recordReplan(new ResearchAgentReplanAuditService.ReplanAuditCommand(
+                original.runId(), 0, 1, "sha256:" + "a".repeat(64), "sha256:" + "b".repeat(64), "EVIDENCE_CONFLICT",
+                "待验证结论存在冲突", original.cellKeys(), Map.of(), null, "COUNTERFACTUAL_RESEARCH"));
+        jdbcTemplate.update("update research_agent_task set execution_context_json = ?, snapshot_digest = null where id = ?",
+                mapper.writeValueAsString(context), original.taskId());
+        var claim = taskService.claimTask(new ResearchAgentTaskService.ClaimCommand(original.taskId(), "worker-a", 300));
+        Fixture scoped = new Fixture(original.runId(), original.taskId(), original.cellKeys(), claim.leaseEpoch(),
+                claim.fencingToken(), claim.snapshotDigest(), original.executionKey());
+        Map<String, Object> check = Map.of("cell_key", scoped.cellKeys().get(0), "original_claim", "value-0",
+                "claim_text", "value-0", "verdict", verdict, "queries", "NOT_RUN".equals(verdict) ? List.of() : List.of("value exception"),
+                "refuting_evidence_keys", List.of());
+        var completed = executionEnvelope(envelope(scoped, true), List.of(check));
+        var receipt = completionService.complete(scoped.taskId(), completed);
+        assertThat(completionService.complete(scoped.taskId(), completed).idempotentReplay()).isTrue();
+        assertThat(receipt.acceptedMerges()).hasSize("NOT_RUN".equals(verdict) ? 0 : 1);
+        assertThat(count("research_counter_check", "task_id", scoped.taskId())).isEqualTo(1);
+        String workspaceId = jdbcTemplate.queryForObject("select workspace_id from research_run where id = ?", String.class, scoped.runId());
+        assertThat(new ResearchRepairExecutionService(jdbcTemplate, mapper).replans(workspaceId, scoped.runId()))
+                .singleElement().satisfies(audit -> {
+                    assertThat(audit.get("strategy")).isEqualTo("COUNTER_EVIDENCE");
+                    assertThat(audit.get("repair_cause")).isEqualTo("EVIDENCE_CONFLICT");
+                    assertThat(audit.get("query_count")).isEqualTo(1);
+                });
+    }
+
+    private ResearchAgentCompletionEnvelope executionEnvelope(ResearchAgentCompletionEnvelope base, List<Map<String, Object>> checks) {
+        Map<String, Object> diagnostics = Map.of("schema_version", "research-extraction-diagnostics.v1",
+                "termination_reason", "ACCEPTED_CARDS", "accepted_count", 1, "rejected_count", 0, "rejection_counts", Map.of(),
+                "provider_receipt", Map.of("purpose", "research.extract", "transport", "openai-compatible", "model", "test-model",
+                        "call_count", 0, "response_digest", "", "response_chars", 0),
+                "execution_report", Map.of("queries", List.of("value exception"), "strategy", "COUNTER_EVIDENCE", "counter_checks", checks));
+        Map<String, Long> usage = new java.util.LinkedHashMap<>(base.budgetUsage());
+        usage.put("llm_calls", 2L);
+        return signed(new ResearchAgentCompletionEnvelope("research-agent-completion.v2", base.taskId(), base.workerInstanceId(),
+                base.leaseEpoch(), base.fencingToken(), base.executionKey(), base.taskSnapshotDigest(), base.terminationReason(),
+                usage, base.telemetry(), base.traceDigest(), base.evidence(), base.candidates(), null, diagnostics, null));
+    }
+
+    @Test
     void shouldAtomicallyCommitExecutionAggregateChildrenCellsBudgetTaskOutboxAndBindings() {
         Fixture fixture = fixture(1);
         ResearchAgentCompletionEnvelope envelope = envelope(fixture, true);

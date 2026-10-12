@@ -60,7 +60,8 @@ public class ResearchAgentRepairAdvancementService {
             taskization = coordinator.planCounterfactualRepairs(new ResearchAgentTaskCoordinatorService.CounterfactualRepairCommand(
                     command.researchRunId(), command.expectedCheckpointSeq(), command.repairWaveNo(),
                     decision.targets().stream().map(target -> new ResearchAgentTaskCoordinatorService.CounterfactualTarget(
-                            target.cellKey(), target.reasonDigest(), target.excludedSourceIds())).toList()));
+                            target.cellKey(), target.reasonDigest(), target.excludedSourceIds(), null, List.of(),
+                            repairCause(projected.stream().filter(gap -> gap.cellKey().equals(target.cellKey())).toList()))).toList()));
         } else {
             taskization = new ResearchAgentTaskCoordinatorService.CoordinatorReceipt(0, 0, 0, 0);
         }

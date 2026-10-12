@@ -467,7 +467,11 @@ public class ResearchAgentRunCompletionGate {
 
     public TableState loadTableState(String runId) {
         List<CellState> cells = jdbcTemplate.query("""
-                select cell_key, column_key, cell_status, candidate_value, evidence_refs_json
+                select cell_key, column_key,
+                    case when cell_status = 'VERIFIED' and not exists (
+                        select 1 from research_counter_eligible_cell eligible where eligible.id = research_cell.id
+                    ) then 'COUNTER_CHECK_PENDING' else cell_status end as cell_status,
+                    candidate_value, evidence_refs_json
                 from research_cell
                 where research_run_id = ?
                 order by cast(cell_key as binary), cell_key
