@@ -89,6 +89,7 @@ public class MemoryConversationExtractionService {
     private final TransactionTemplate transactionTemplate;
     private final String topic;
     private final boolean enabled;
+    private MemoryApplicationFeedbackService applicationFeedback;
 
     @Autowired
     public MemoryConversationExtractionService(
@@ -119,6 +120,11 @@ public class MemoryConversationExtractionService {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.topic = topic;
         this.enabled = enabled;
+    }
+
+    @Autowired(required = false)
+    void setApplicationFeedback(MemoryApplicationFeedbackService applicationFeedback) {
+        this.applicationFeedback = applicationFeedback;
     }
 
     /** 在对话轮次提交的事务里调用：消息长度合适时写入提取任务和 outbox 消息，返回是否入队。 */
@@ -169,13 +175,19 @@ public class MemoryConversationExtractionService {
             return new ExtractionResult(List.of(), "DUPLICATE_DELIVERY");
         }
         Extraction extraction = extractPreferences(content, previousAssistant(workspaceId, messageId));
-        return persistExtraction(taskId, workspaceId, messageId, userId, extraction);
+        return persistExtraction(taskId, workspaceId, messageId, userId, extraction, content);
     }
 
     /** 把提取结果写成信号并交给候选门控，在单独的事务里完成。 */
     ExtractionResult persistExtraction(String taskId, String workspaceId, String messageId, String userId,
                                        Extraction extraction) {
-        return transactionTemplate.execute(status -> persist(taskId, workspaceId, messageId, userId, extraction));
+        return persistExtraction(taskId, workspaceId, messageId, userId, extraction, null);
+    }
+
+    ExtractionResult persistExtraction(String taskId, String workspaceId, String messageId, String userId,
+                                       Extraction extraction, String userContent) {
+        return transactionTemplate.execute(status -> persist(
+                taskId, workspaceId, messageId, userId, extraction, userContent));
     }
 
     private boolean alreadyExtracted(String workspaceId, String messageId) {
@@ -186,7 +198,7 @@ public class MemoryConversationExtractionService {
     }
 
     private ExtractionResult persist(String taskId, String workspaceId, String messageId, String userId,
-                                     Extraction extraction) {
+                                     Extraction extraction, String userContent) {
         if (alreadyExtracted(workspaceId, messageId)) {
             completeTask(taskId, "记忆候选已提取", messageId);
             return new ExtractionResult(List.of(), "DUPLICATE_DELIVERY");
@@ -219,6 +231,11 @@ public class MemoryConversationExtractionService {
                     assignment.slot(), assignment.value(), assignment.polarity()));
             produced.add(new ExtractedCandidate(candidate.candidateId(), preference.statement(),
                     sourceType(preference), candidate.reviewStatus()));
+        }
+        if (applicationFeedback != null) {
+            boolean dissatisfied = extraction.preferences().stream().anyMatch(Preference::feedback)
+                    || (userContent != null && FEEDBACK_CUE.matcher(userContent).find());
+            applicationFeedback.recordFollowUp(workspaceId, messageId, userContent, dissatisfied);
         }
         completeTask(taskId, produced.isEmpty() ? "没有发现需要长期记住的偏好"
                 : "提取到 " + produced.size() + " 条记忆候选", messageId);

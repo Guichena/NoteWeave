@@ -50,6 +50,19 @@ class MemoryOutcomePolicyTest {
     }
 
     @Test
+    void shouldHalveTheUtilityMixWhenUpdateWeightIsHalf() {
+        MemoryOutcomePolicy.Decision decision = policy.evaluate(
+                state(0.50, 0, 0, 0, 0, 0),
+                "ACCEPTED",
+                null,
+                0.5);
+
+        assertThat(decision.utilityScore()).isEqualTo(0.5625);
+        assertThat(decision.positiveOutcomeCount()).isEqualTo(1);
+        assertThat(decision.applicationCount()).isEqualTo(1);
+    }
+
+    @Test
     void shouldRejectUnknownOutcomeType() {
         assertThatThrownBy(() -> policy.evaluate(
                 state(0.50, 0, 0, 0, 0, 0), "IGNORED", null))

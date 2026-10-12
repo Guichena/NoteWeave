@@ -13,6 +13,14 @@ public class MemoryOutcomePolicy {
     }
 
     public Decision evaluate(State state, String outcomeType, Double editMagnitude) {
+        return evaluate(state, outcomeType, editMagnitude, 1.0);
+    }
+
+    /**
+     * updateWeight 为 1 时与原来的 0.75/0.25 混合一致。
+     * 小于 1 时缩小这一次对效用的拉动，计数仍按一次应用计算。
+     */
+    public Decision evaluate(State state, String outcomeType, Double editMagnitude, double updateWeight) {
         String normalizedOutcome = normalizeOutcome(outcomeType);
         double score = outcomeScore(normalizedOutcome, editMagnitude);
         int applicationCount = state.applicationCount() + 1;
@@ -24,7 +32,8 @@ public class MemoryOutcomePolicy {
                 + ("EDITED".equals(normalizedOutcome) ? 1 : 0);
         int retryCount = state.retryOutcomeCount()
                 + ("RETRIED".equals(normalizedOutcome) ? 1 : 0);
-        double utility = round(clamp(state.utilityScore() * 0.75 + score * 0.25));
+        double mix = 0.25 * (Double.isFinite(updateWeight) ? clamp(updateWeight) : 1.0);
+        double utility = round(clamp(state.utilityScore() * (1.0 - mix) + score * mix));
         int adverseCount = negativeCount + editCount + retryCount;
         double adverseRatio = applicationCount == 0
                 ? 0.0 : adverseCount / (double) applicationCount;
