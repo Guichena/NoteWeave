@@ -1,4 +1,13 @@
 import { apiClient, type ApiClient } from "../../shared/api";
+import { hashFile, readBlobBytes } from "../../shared/util/sha256";
+import {
+  MAX_SOURCE_FILE_BYTES,
+  cachedSourceFormats,
+  describeSourceFormats,
+  resolveSourceMimeType,
+  type SourceFormat
+} from "./sourceFiles";
+import { clearUploadResume, readUploadResume, saveUploadResume } from "./uploadResume";
 import {
   type CompletedSourceUpload,
   type DeletedSource,
@@ -32,18 +41,28 @@ export class SourcesApi {
     return this.uploadBytes(workspaceId, bytes, fileName, "text/markdown");
   }
 
-  async uploadFile(workspaceId: string, file: File, onProgress?: (progress: SourceUploadProgress) => void) {
-    const mimeType = resolveSourceMimeType(file.name, file.type);
+  async uploadFile(
+    workspaceId: string,
+    file: File,
+    onProgress?: (progress: SourceUploadProgress) => void,
+    formats: SourceFormat[] = cachedSourceFormats(workspaceId)
+  ) {
+    const mimeType = resolveSourceMimeType(file.name, formats);
     if (!mimeType) {
-      throw new Error("仅支持 PDF、Markdown、TXT、JSON 和 CSV 资料");
+      throw new Error(`格式不受支持，目前支持 ${describeSourceFormats(formats)}`);
     }
     if (file.size <= 0) {
       throw new Error("不能上传空文件");
     }
-    if (file.size > MAX_SOURCE_FILE_SIZE) {
+    if (file.size > MAX_SOURCE_FILE_BYTES) {
       throw new Error("单个资料文件不能超过 128MB");
     }
     return this.uploadBlob(workspaceId, file, file.name, mimeType, onProgress);
+  }
+
+  /** 后端支持的资料格式，用于文件选择器过滤。 */
+  listFormats(workspaceId: string) {
+    return this.client.get<SourceFormat[]>(`/api/v2/workspaces/${workspaceId}/uploads/formats`);
   }
 
   private async uploadBytes(
@@ -55,40 +74,109 @@ export class SourcesApi {
     return this.uploadBlob(workspaceId, new Blob([bytes]), fileName, mimeType);
   }
 
+  /**
+   * 先计算文件指纹：服务端已有同样的文件时直接秒传；本机有未完成的同一文件上传时，
+   * 向服务端确认已收到的分片后只补传缺少的分片；否则新建上传会话。
+   */
   private async uploadBlob(
     workspaceId: string,
     file: Blob,
     fileName: string,
     mimeType: string,
     onProgress?: (progress: SourceUploadProgress) => void
-  ) {
-    const chunkSize = Math.min(MAX_SOURCE_CHUNK_SIZE, file.size);
-    const totalChunks = Math.ceil(file.size / chunkSize);
-    const upload = await this.client.post<{ upload_id: string }>(
-      `/api/v2/workspaces/${workspaceId}/uploads`,
-      {
-        file_name: fileName,
-        file_size: file.size,
-        mime_type: mimeType,
-        chunk_size: chunkSize,
-        total_chunks: totalChunks
-      }
-    );
+  ): Promise<SourceUploadResult> {
+    const totalBytes = file.size;
+    const sha256 = await hashFile(file, (hashedBytes) => onProgress?.({
+      phase: "hashing", hashedBytes, uploadedChunks: 0, totalChunks: 0, uploadedBytes: 0, totalBytes, resumedChunks: 0
+    }));
+    const session = await this.openUploadSession(workspaceId, file, fileName, mimeType, sha256);
+    if (session.kind === "done") {
+      clearUploadResume(workspaceId, sha256);
+      return session.result;
+    }
+    const { uploadId, chunkSize, totalChunks, received } = session;
+    const chunkBytes = (index: number) => Math.min(totalBytes, (index + 1) * chunkSize) - index * chunkSize;
+    let uploadedChunks = received.size;
+    let uploadedBytes = Array.from(received).reduce((sum, index) => sum + chunkBytes(index), 0);
+    const report = () => onProgress?.({
+      phase: "uploading", hashedBytes: totalBytes, uploadedChunks, totalChunks, uploadedBytes, totalBytes,
+      resumedChunks: received.size
+    });
+    report();
     for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex += 1) {
+      if (received.has(chunkIndex)) continue;
       const start = chunkIndex * chunkSize;
-      const end = Math.min(file.size, start + chunkSize);
-      const chunk = new Uint8Array(await file.slice(start, end).arrayBuffer());
-      await this.client.raw(`/api/v2/uploads/${upload.upload_id}/chunks/${chunkIndex}`, {
+      const chunk = await readBlobBytes(file.slice(start, start + chunkBytes(chunkIndex)));
+      await this.client.raw(`/api/v2/uploads/${uploadId}/chunks/${chunkIndex}`, {
         method: "PUT",
         headers: { "Content-Type": "application/octet-stream" },
         body: chunk
       });
-      onProgress?.({ uploadedChunks: chunkIndex + 1, totalChunks, uploadedBytes: end, totalBytes: file.size });
+      uploadedChunks += 1;
+      uploadedBytes += chunk.length;
+      report();
     }
-    return this.client.post<CompletedSourceUpload>(
-      `/api/v2/uploads/${upload.upload_id}/complete`,
-      {}
-    );
+    const completed = await this.client.post<CompletedSourceUpload>(`/api/v2/uploads/${uploadId}/complete`, {});
+    clearUploadResume(workspaceId, sha256);
+    return { ...completed, instant: false, resumed_chunks: received.size };
+  }
+
+  private async openUploadSession(
+    workspaceId: string,
+    file: Blob,
+    fileName: string,
+    mimeType: string,
+    sha256: string
+  ): Promise<UploadSession> {
+    const record = readUploadResume(workspaceId, sha256, file.size);
+    if (record) {
+      try {
+        const status = await this.client.get<UploadStatus>(`/api/v2/uploads/${record.upload_id}`);
+        if (status.status === "UPLOADING" && status.total_chunks === record.total_chunks) {
+          return {
+            kind: "upload",
+            uploadId: record.upload_id,
+            chunkSize: status.chunk_size,
+            totalChunks: status.total_chunks,
+            received: new Set(status.uploaded_chunk_indexes)
+          };
+        }
+        if (status.status === "COMPLETED") {
+          const completed = await this.client.post<CompletedSourceUpload>(`/api/v2/uploads/${record.upload_id}/complete`, {});
+          return { kind: "done", result: { ...completed, instant: false, resumed_chunks: status.total_chunks } };
+        }
+      } catch {
+        // 会话已过期或接口不可用时重新上传
+      }
+      clearUploadResume(workspaceId, sha256);
+    }
+    const chunkSize = Math.max(1, Math.min(MAX_SOURCE_CHUNK_SIZE, file.size));
+    const totalChunks = Math.max(1, Math.ceil(file.size / chunkSize));
+    const created = await this.client.post<CreateUploadResult>(`/api/v2/workspaces/${workspaceId}/uploads`, {
+      file_name: fileName,
+      file_size: file.size,
+      mime_type: mimeType,
+      chunk_size: chunkSize,
+      total_chunks: totalChunks,
+      sha256
+    });
+    if (created.instant && created.source_id) {
+      return {
+        kind: "done",
+        result: {
+          source_id: created.source_id,
+          task_id: created.task_id ?? "",
+          parse_status: created.parse_status ?? "",
+          index_status: created.index_status ?? "",
+          instant: true,
+          resumed_chunks: 0
+        }
+      };
+    }
+    saveUploadResume(workspaceId, sha256, {
+      upload_id: created.upload_id, chunk_size: chunkSize, total_chunks: totalChunks, file_size: file.size
+    });
+    return { kind: "upload", uploadId: created.upload_id, chunkSize, totalChunks, received: new Set() };
   }
 
   remove(workspaceId: string, sourceId: string) {
@@ -129,38 +217,44 @@ function pastedSourceFileName(content: string) {
 }
 
 const MAX_SOURCE_CHUNK_SIZE = 8 * 1024 * 1024;
-const MAX_SOURCE_FILE_SIZE = 128 * 1024 * 1024;
 
-const SOURCE_MIME_BY_EXTENSION: Record<string, string> = {
-  pdf: "application/pdf",
-  md: "text/markdown",
-  markdown: "text/markdown",
-  txt: "text/plain",
-  json: "application/json",
-  csv: "text/csv",
-  // 与后端 SourceMediaTypes 的规范 MIME 一致
-  mp3: "audio/mpeg",
-  m4a: "audio/mp4",
-  wav: "audio/wav",
-  ogg: "audio/ogg",
-  flac: "audio/flac",
-  webm: "audio/webm",
-  mp4: "video/mp4"
-};
-
-function resolveSourceMimeType(fileName: string, browserMimeType: string) {
-  const extension = fileName.split(".").pop()?.toLowerCase() ?? "";
-  const expected = SOURCE_MIME_BY_EXTENSION[extension];
-  void browserMimeType;
-  return expected ?? "";
-}
-
-/** 分片上传进度：每个分片上传完成后回调一次。 */
+/** 上传进度：计算指纹时按读取的字节回调，上传时每个分片完成后回调一次。 */
 export type SourceUploadProgress = {
+  phase: "hashing" | "uploading";
+  hashedBytes: number;
   uploadedChunks: number;
   totalChunks: number;
   uploadedBytes: number;
   totalBytes: number;
+  /** 续传时服务端已经收到、本次跳过的分片数。 */
+  resumedChunks: number;
 };
+
+/** instant 为 true 表示服务端已有同样的文件，没有上传任何分片。 */
+export type SourceUploadResult = CompletedSourceUpload & { instant: boolean; resumed_chunks: number };
+
+type CreateUploadResult = {
+  upload_id: string;
+  status: string;
+  chunk_size: number;
+  total_chunks: number;
+  instant?: boolean;
+  source_id?: string;
+  task_id?: string;
+  parse_status?: string;
+  index_status?: string;
+};
+
+type UploadStatus = {
+  upload_id: string;
+  status: string;
+  total_chunks: number;
+  chunk_size: number;
+  uploaded_chunk_indexes: number[];
+};
+
+type UploadSession =
+  | { kind: "done"; result: SourceUploadResult }
+  | { kind: "upload"; uploadId: string; chunkSize: number; totalChunks: number; received: Set<number> };
 
 export const sourcesApi = new SourcesApi();

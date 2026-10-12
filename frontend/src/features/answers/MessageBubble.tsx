@@ -213,6 +213,11 @@ function AssistantMessage({ message, loadEvidence, onOpenWikiPage, onFeedback, o
                       <small>{[view.kindLabel, view.location].filter(Boolean).join(" · ")}</small>
                     ) : null}
                     {view.quote ? <p>{view.quote}</p> : null}
+                    {view.ocrNote ? (
+                      <small className={`message-source-ocr${view.ocrLowConfidence ? " is-low" : ""}`}>
+                        {view.ocrNote}{view.ocrLowConfidence ? "，识别可能有误，请对照原文核对" : ""}
+                      </small>
+                    ) : null}
                     {view.graphPath.length > 1 ? (
                       <small className="message-source-path">经由页面：{view.graphPath.join(" → ")}</small>
                     ) : null}

@@ -14,6 +14,10 @@ export type AnswerEvidence = {
   character_cost: number;
   /** Wiki 模式通过图扩展得到的页面才有：种子页到该页经过的页面标题。 */
   graph_path?: string[] | null;
+  /** 5D：片段文字来自 PDF 文字层还是 OCR 识别。 */
+  text_origin?: "TEXT_LAYER" | "OCR" | string | null;
+  /** OCR 识别的平均置信度，0 到 1。 */
+  ocr_confidence?: number | null;
 };
 
 /** 多轮对话中检索实际使用的独立问题；首轮问题或模型不可用时 method 为 RULE。 */
@@ -43,6 +47,10 @@ export type CitationView = {
   quote: string;
   kindLabel: string;
   graphPath: string[];
+  /** 片段来自 OCR 识别时的说明，文字层提取的片段为空。 */
+  ocrNote: string;
+  /** OCR 置信度低于阈值，需要提醒核对原文。 */
+  ocrLowConfidence: boolean;
   location: string;
 };
 
@@ -92,7 +100,23 @@ export function buildCitationViews(citations: string[], manifest: AnswerEvidence
       quote: quote || matched?.excerpt || "",
       kindLabel: matched ? evidenceKindLabel(matched) : "",
       location: readableLocation(matched?.location ?? null),
-      graphPath: matched?.graph_path ?? []
+      graphPath: matched?.graph_path ?? [],
+      ...describeOcr(matched)
     };
   });
+}
+
+/** 低于这个置信度的 OCR 片段提示用户核对原文。 */
+export const OCR_LOW_CONFIDENCE = 0.8;
+
+function describeOcr(evidence: AnswerEvidence | undefined): Pick<CitationView, "ocrNote" | "ocrLowConfidence"> {
+  if (evidence?.text_origin !== "OCR") return { ocrNote: "", ocrLowConfidence: false };
+  const confidence = evidence.ocr_confidence;
+  if (typeof confidence !== "number" || !Number.isFinite(confidence)) {
+    return { ocrNote: "文字由 OCR 识别", ocrLowConfidence: false };
+  }
+  return {
+    ocrNote: `文字由 OCR 识别 · 置信度 ${Math.round(confidence * 100)}%`,
+    ocrLowConfidence: confidence < OCR_LOW_CONFIDENCE
+  };
 }

@@ -1162,3 +1162,12 @@ details[open] > summary .message-sources-peek {
   display: block;
   color: var(--muted);
 }
+
+.message-source-ocr {
+  display: block;
+  color: var(--muted);
+}
+
+.message-source-ocr.is-low {
+  color: var(--warning);
+}

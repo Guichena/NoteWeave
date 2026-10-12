@@ -116,16 +116,23 @@ describe("SourceLibraryWorkbench", () => {
       dismissUpload,
       uploads: [
         { id: "u1", fileName: "评测报告.pdf", totalBytes: 20 * 1024 * 1024, uploadedBytes: 8 * 1024 * 1024,
-          uploadedChunks: 1, totalChunks: 3, state: "uploading", error: "" },
+          uploadedChunks: 1, totalChunks: 3, state: "uploading", error: "",
+          phase: "uploading", hashedBytes: 20 * 1024 * 1024, resumedChunks: 1 },
         { id: "u2", fileName: "损坏.pdf", totalBytes: 1024, uploadedBytes: 0,
-          uploadedChunks: 0, totalChunks: 1, state: "failed", error: "网络中断" }
+          uploadedChunks: 0, totalChunks: 1, state: "failed", error: "网络中断",
+          phase: "uploading", hashedBytes: 1024, resumedChunks: 0 },
+        { id: "u3", fileName: "大文件.pdf", totalBytes: 100 * 1024 * 1024, uploadedBytes: 0,
+          uploadedChunks: 0, totalChunks: 0, state: "uploading", error: "",
+          phase: "hashing", hashedBytes: 25 * 1024 * 1024, resumedChunks: 0 }
       ]
     })} />);
 
     const uploads = screen.getByRole("list", { name: "正在上传" });
-    expect(within(uploads).getByText("上传中 · 第 2 / 3 片 · 8.0 MB / 20.0 MB")).toBeTruthy();
+    expect(within(uploads).getByText("上传中 · 第 2 / 3 片 · 8.0 MB / 20.0 MB · 已续传 1 片")).toBeTruthy();
+    expect(within(uploads).getByText("正在计算文件指纹 · 25.0 MB / 100.0 MB")).toBeTruthy();
+    expect(within(uploads).getByRole("progressbar", { name: "大文件.pdf 上传进度" }).getAttribute("aria-valuenow")).toBe("25");
     expect(within(uploads).getByRole("progressbar", { name: "评测报告.pdf 上传进度" }).getAttribute("aria-valuenow")).toBe("40");
-    expect(within(uploads).getByText("上传失败：网络中断")).toBeTruthy();
+    expect(within(uploads).getByText("上传失败：网络中断。重新选择同一个文件会从中断处继续")).toBeTruthy();
     fireEvent.click(within(uploads).getByRole("button", { name: "移除 损坏.pdf" }));
     expect(dismissUpload).toHaveBeenCalledWith("u2");
   });

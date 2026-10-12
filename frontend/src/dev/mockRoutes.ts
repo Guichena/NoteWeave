@@ -4,12 +4,15 @@ import { answerFeedback, evidenceByRun, evidenceMetaByRun, messages, sources } f
 import { researchInsights, researchPlan, researchTasks, runDetails, runs, runningRun } from "./fixtures/research";
 import { reprocessMockSource, sourceTaskEvents, sourceTasks } from "./fixtures/sources";
 import * as wiki from "./fixtures/wiki";
+import { DEFAULT_SOURCE_FORMATS } from "../features/sources/sourceFiles";
 
 type Handler = (match: RegExpMatchArray, request: Request, url: URL) => unknown | Promise<unknown>;
 
 // 每条路由返回与后端一致的响应信封；未匹配的请求交给真实接口处理。
 const routes: Array<[method: string, pattern: RegExp, handler: Handler]> = [
   ["GET", /^\/api\/v2\/workspaces\/[^/]+\/sources$/, () => sources],
+  // 5A 格式列表：与内置列表一致，实际支持范围以后端为准
+  ["GET", /^\/api\/v2\/workspaces\/[^/]+\/uploads\/formats$/, () => DEFAULT_SOURCE_FORMATS],
   // 历史消息只在第一页返回，后续分页为空，与后端分页行为一致。
   ["GET", /^\/api\/v2\/workspaces\/[^/]+\/conversations\/[^/]+\/messages$/, (_m, _r, url) => (
     url.searchParams.get("after_seq") === "0" ? messages : []

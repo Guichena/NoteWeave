@@ -8,7 +8,8 @@ import type { SourceUploadItem } from "../conversations/useChatSourceActions";
 import type { SourceAsset, SourceReprocessResult } from "./model";
 import { SourceLibraryRow, type RecoveryState } from "./SourceLibraryRow";
 import { buildSourcePipeline } from "./sourcePipeline";
-import { SOURCE_FILE_ACCEPT, SUPPORTED_SOURCE_FORMATS, validateSourceFile } from "./sourceFiles";
+import { validateSourceFile } from "./sourceFiles";
+import { useSourceFormats } from "./useSourceFormats";
 
 export { validateSourceFile };
 
@@ -50,6 +51,7 @@ export function SourceLibraryWorkbench(props: SourceLibraryWorkbenchProps) {
   const loadTask = props.loadTask ?? defaultLoadTask;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const sourceFormats = useSourceFormats(workspace?.workspace_id);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SourceFilter>("all");
   const [expandedId, setExpandedId] = useState("");
@@ -112,7 +114,7 @@ export function SourceLibraryWorkbench(props: SourceLibraryWorkbenchProps) {
 
   async function uploadFiles(files: FileList | File[]) {
     const selectedFiles = Array.from(files);
-    const validationError = selectedFiles.map(validateSourceFile).find(Boolean) ?? "";
+    const validationError = selectedFiles.map(sourceFormats.validate).find(Boolean) ?? "";
     if (validationError) {
       setFileValidationError(validationError);
       return;
@@ -221,7 +223,7 @@ export function SourceLibraryWorkbench(props: SourceLibraryWorkbenchProps) {
               ref={fileInputRef}
               className="source-file-input"
               type="file"
-              accept={SOURCE_FILE_ACCEPT}
+              accept={sourceFormats.accept}
               multiple
               onChange={handleFileChange}
             />
@@ -242,7 +244,7 @@ export function SourceLibraryWorkbench(props: SourceLibraryWorkbenchProps) {
               </span>
             </button>
             <div className="source-format-row" aria-label="支持的资料格式">
-              {SUPPORTED_SOURCE_FORMATS.map((format) => <span key={format}>{format}</span>)}
+              {sourceFormats.names.map((format) => <span key={format}>{format}</span>)}
               <small>单文件最大 128 MB</small>
             </div>
             {fileValidationError ? (
@@ -267,7 +269,9 @@ export function SourceLibraryWorkbench(props: SourceLibraryWorkbenchProps) {
 }
 
 function SourceUploadRow({ upload, onDismiss }: { upload: SourceUploadItem; onDismiss: () => void }) {
-  const percent = upload.totalBytes > 0 ? Math.round((upload.uploadedBytes / upload.totalBytes) * 100) : 0;
+  const hashing = upload.phase === "hashing";
+  const doneBytes = hashing ? upload.hashedBytes : upload.uploadedBytes;
+  const percent = upload.totalBytes > 0 ? Math.round((doneBytes / upload.totalBytes) * 100) : 0;
   const failed = upload.state === "failed";
   return (
     <li className={`source-upload-row${failed ? " is-failed" : ""}`}>
@@ -275,8 +279,11 @@ function SourceUploadRow({ upload, onDismiss }: { upload: SourceUploadItem; onDi
         <strong title={upload.fileName}>{upload.fileName}</strong>
         <small>
           {failed
-            ? `上传失败：${upload.error}`
-            : `上传中 · 第 ${Math.min(upload.uploadedChunks + 1, upload.totalChunks)} / ${upload.totalChunks} 片 · ${formatBytes(upload.uploadedBytes)} / ${formatBytes(upload.totalBytes)}`}
+            ? `上传失败：${upload.error}。重新选择同一个文件会从中断处继续`
+            : hashing
+              ? `正在计算文件指纹 · ${formatBytes(upload.hashedBytes)} / ${formatBytes(upload.totalBytes)}`
+              : `上传中 · 第 ${Math.min(upload.uploadedChunks + 1, upload.totalChunks)} / ${upload.totalChunks} 片 · ${formatBytes(upload.uploadedBytes)} / ${formatBytes(upload.totalBytes)}`
+                + (upload.resumedChunks > 0 ? ` · 已续传 ${upload.resumedChunks} 片` : "")}
         </small>
       </span>
       {failed ? (

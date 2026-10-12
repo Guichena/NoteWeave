@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { ApiClient } from "../../shared/api";
 import { SourcesApi } from "./api";
@@ -63,7 +64,8 @@ describe("SourcesApi", () => {
       file_size: 8,
       mime_type: "application/pdf",
       chunk_size: 8,
-      total_chunks: 1
+      total_chunks: 1,
+      sha256: createHash("sha256").update("%PDF-1.7").digest("hex")
     });
     expect(raw).toHaveBeenCalledWith("/api/v2/uploads/upload-pdf/chunks/0", expect.objectContaining({
       method: "PUT"

@@ -51,6 +51,18 @@ export type ArtifactVersionDetail = {
   runtime_trace?: ArtifactRuntimeTrace | null;
   files: ArtifactFileMetadata[];
   created_at: string;
+  /** 4D 内容校验结果；旧版本没有该字段。 */
+  verification?: ArtifactVerification | null;
+};
+
+export type ArtifactSectionSupport = "SUPPORTED" | "PARTIAL" | "UNSUPPORTED" | "NOT_RUN";
+
+export type ArtifactVerification = {
+  contract_status: "PASS" | "FAIL" | string;
+  repair_rounds: Array<{ round: number; failed_checks: string[]; repaired_sections: string[] }>;
+  citation_recall: number | null;
+  citation_precision: number | null;
+  sections: Array<{ heading: string; support: ArtifactSectionSupport | string }>;
 };
 
 export type ArtifactVersionSummary = {

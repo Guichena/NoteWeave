@@ -56,7 +56,8 @@ const turns: Turn[] = [
     ].join("\n"),
     evidence: [
       { evidence_id: "note-window:rag-20:12", kind: "PASSAGE", source_id: "src-rag", passage_id: "rag-20", knowledge_item_id: null, title: "RAG 检索链路设计.md", excerpt: "长文档按约 800 字切成连续窗口；命中锚点窗口后，向前后各扩展一个窗口，一起交给模型阅读。", location: "第 5 节 · 窗口 12-14" },
-      { evidence_id: "note-window:rag-21:15", kind: "PASSAGE", source_id: "src-rag", passage_id: "rag-21", knowledge_item_id: null, title: "RAG 检索链路设计.md", excerpt: "当窗口总长度超过预算，保留锚点窗口，其次保留后续窗口，前序窗口最先截断。", location: "第 5 节 · 窗口 15" }
+      { evidence_id: "note-window:rag-21:15", kind: "PASSAGE", source_id: "src-rag", passage_id: "rag-21", knowledge_item_id: null, title: "RAG 检索链路设计.md", excerpt: "当窗口总长度超过预算，保留锚点窗口，其次保留后续窗口，前序窗口最先截断。", location: "第 5 节 · 窗口 15",
+        text_origin: "OCR", ocr_confidence: 0.72 }
     ]
   },
   {
