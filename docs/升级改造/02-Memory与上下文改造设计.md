@@ -131,3 +131,14 @@
 - 索引写入放在 `memory` 包的 `MemoryIndexOutbox`，文档字段包含工作区、记忆、槽位、展示文本、任务邻域和向量。不改 retrieval 的投影写入器。调度发现客户端不可用时直接返回，不累计失败次数。历史回填由 `MemorySlotBackfillService` 在开关打开时执行，默认关闭；模型给不出合法槽位时 `semantic_slot_key` 保持 null。
 - 迁移脚本是 `V160__memory_slot_and_conflict_index.sql`。配置 `noteweave.memory.index-name` 默认 `noteweave-memory`，`index-dispatch-delay-ms` 默认 30000，`slot-backfill-enabled` 默认 false。
 - 置信度、按问题注入记忆、反馈接口、去掉正则初筛，以及把等价跳过改成强化，都留到后续阶段。实现提交 `a9525db`。测试环境没有真实模型和真实 Elasticsearch，发件箱保持 `PENDING`。
+
+### 2B（2026-10-12 完成）
+
+- 证据改为 Beta 后验。`USER_FEEDBACK`、`PROJECT_DECISION`，以及 explicit 为 true 的 `CONVERSATION_FEEDBACK`，先验是 (4, 1)，均值 0.8。隐式对话反馈和 `ARTIFACT_FEEDBACK` 先验是 (1.5, 1.5)，均值 0.5。`MODEL_INFERENCE` 先验是 (1, 2)，均值约 0.3333。信号上的 `confidence_score` 写入这个先验均值。效用分仍按原来源表计算。列表按 `evidence_alpha`、`evidence_beta` 现算 `mean = α/(α+β)` 和 `variance = αβ/[(α+β)^2(α+β+1)]`。历史行迁移默认 1.5 与 1.5。
+- 风险分由类别、作用域、冲突相加。forbidden 0.28、terminology 0.18、structure 0.14、interaction 0.12、style 0.10。`WORKSPACE` 加 0.16，其他作用域加 0.06。`CONFLICTING_ACTIVE_MEMORY` 或 `CONFLICT_CHECK_NOT_RUN` 加 0.55，上限 0.99。阈值在 `noteweave.memory.policy`：证据 0.70、效用 0.60、风险 0.70、后验方差 0.04。方差超过 0.04 时，均值过线也进入复核，所以模型先验即使分数写成 0.98 仍是 `NEEDS_REVIEW`。策略版本改为 `memory-candidate-policy-v2`。候选晋升按 `WORKSPACE` 计风险。
+- 新会话权重是来源权重除以 1 加已记录会话数。来源权重明确为 1、推断为 0.5、模型为 0.25。创建时记下当前会话，权重为 0，`reinforcement_count` 不加。同一 `session_key` 和方向再次出现不累计。`SUPPORT` 增加 α 并加一次强化次数，`CONTRADICT` 只增加 β。会话键优先用 `conversation:{id}`，查不到对话时用 `message:{messageId}`。
+- 等价信号保留原记忆并增加 α。措辞不同且模型确认更具体时，`ACTIVE` 写新版本，`PROPOSED` 只改 `display_text`。模型不可用或两次输出不合规时只更新 α。反驳信号增加 β，新候选仍按 2A 进入复核，确认前不替换旧记忆。负面效果反馈写入 β 留到 2D。`revision.confidence` 仍是晋升时写入的风险分，运行时效用分继续读这一列。
+- 抽取去掉 `DURABLE_CUE` 入队条件。非空且长度在上限内的消息都进入 `MEMORY_EXTRACTION`。模型可用时先用最多 10 个 token 做 yes/no 分类，不合规重试一次。回答 NO 时记 `CLASSIFIED_NO` 并且不抽取。回答 YES 时带上一条助手回答做完整抽取。模型不可用、分类失败或完整抽取不合规时退回规则。规则仍要同时命中长期措辞和指示语才算明确偏好，另外识别太长、太短、太啰嗦、看不懂、听不懂、说人话、简单点、详细点、别用英文、不要用英文、少用英文。这类隐式反馈的 explicit 为 false，来源是 `CONVERSATION_FEEDBACK`，极性是 `FORBID`，先验按推断，因此进入复核。
+- 后台整理 `MemoryConsolidationService` 默认打开。首次等待和间隔都是 `consolidation-delay-ms`，默认 3600000。测试环境关闭；关闭时 `consolidate()` 直接返回，不访问数据库。模型不可用时不合并，原因记 `MEMORY_CONSOLIDATION_JUDGE_UNAVAILABLE`，仍会把 `candidate-v3`、已批准、`ACTIVE`、强化次数为 0、且 `last_reinforced_at` 早于 90 天的条目改为 `REVIEW_REQUIRED`。`observation-v1` 等历史记忆不自动移出控制包。合并要求同工作区、同合法槽、语句等价，并且模型返回 `merge` 为 true；输出不合规重试一次。保留强化次数更高的一条，另一条改为 `SUPERSEDED` 并写 `valid_until`，事件是 `MERGED_DUPLICATE`，索引操作是 `DELETE`。不删除正文，也不脱敏。
+- `GET /memory/items` 增加 `confidence`、`reinforcement_count`、`last_reinforced_at`。`GET /memory/review` 本阶段不加这些字段。迁移是 `V161__memory_evidence_beta.sql`。`docker-compose.yml` 同步了 `NOTEWEAVE_MEMORY_CONSOLIDATION_ENABLED`，默认 true。
+- 与第 6 节原文的差异已写在进度看板协调区。按问题注入记忆留到 2C，反馈接口留到 2D。实现提交 `b5252d0`。测试环境关闭了 LLM 和整理任务，短分类成功、措辞改写和近似合并没有用真实模型验证。
