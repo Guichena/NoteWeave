@@ -142,3 +142,15 @@
 - 后台整理 `MemoryConsolidationService` 默认打开。首次等待和间隔都是 `consolidation-delay-ms`，默认 3600000。测试环境关闭；关闭时 `consolidate()` 直接返回，不访问数据库。模型不可用时不合并，原因记 `MEMORY_CONSOLIDATION_JUDGE_UNAVAILABLE`，仍会把 `candidate-v3`、已批准、`ACTIVE`、强化次数为 0、且 `last_reinforced_at` 早于 90 天的条目改为 `REVIEW_REQUIRED`。`observation-v1` 等历史记忆不自动移出控制包。合并要求同工作区、同合法槽、语句等价，并且模型返回 `merge` 为 true；输出不合规重试一次。保留强化次数更高的一条，另一条改为 `SUPERSEDED` 并写 `valid_until`，事件是 `MERGED_DUPLICATE`，索引操作是 `DELETE`。不删除正文，也不脱敏。
 - `GET /memory/items` 增加 `confidence`、`reinforcement_count`、`last_reinforced_at`。`GET /memory/review` 本阶段不加这些字段。迁移是 `V161__memory_evidence_beta.sql`。`docker-compose.yml` 同步了 `NOTEWEAVE_MEMORY_CONSOLIDATION_ENABLED`，默认 true。
 - 与第 6 节原文的差异已写在进度看板协调区。按问题注入记忆留到 2C，反馈接口留到 2D。实现提交 `b5252d0`。测试环境关闭了 LLM 和整理任务，短分类成功、措辞改写和近似合并没有用真实模型验证。
+
+### 2C（2026-10-12 完成）
+
+- 记忆分成常驻和按需。`semantic_slot_key` 以 `terminology.` 开头，或编译提示里只有术语、其余列表都空，记为 `ON_DEMAND`。style、forbidden、interaction、structure、format 记为 `ALWAYS_ON`。先给结论再展开这类全局结构仍然常驻。
+- 价值等于置信度、效用、相关度、新近度的乘积。没有记忆注入评测集，四项指数都取 1。新近度是 `0.5` 的年龄除以半衰期次方，半衰期默认 30 天，配置 `noteweave.memory.compiler.recency-half-life-days`。时间优先 `last_reinforced_at`，没有则用 `updated_at`。选择按价值除以 token 数从高到低放入预算，同密度按记忆 id 稳定排序。作用域和任务邻域只做过滤：用户级记忆只允许 owner，邻域优先级大于等于 3 的排除。同 token 成本下，效用更高的工作区记忆可以排在用户精确记忆前面。策略版本改为 `memory-compiler-policy-v2`。
+- 按需相关度用向量余弦和 BM25 做 RRF，k 为 60，两路权重都是 1，再除以参与通道第一名的理论上限。未命中为 0。常驻类计算时按 1，响应里的 `relevance` 留空。查询为空白时按需记忆相关度为 0，原因 `MEMORY_RELEVANCE_QUERY_ABSENT`。向量不可用或失败时只用 BM25，原因 `MEMORY_RELEVANCE_VECTOR_UNAVAILABLE`。合格集合里没有按需记忆时不记这条降级。与当前问题无关的按需记忆不进入预算。`truncated` 只表示有记忆因为预算落下。
+- 入选说明里，常驻是适用于全部回答的常驻约束，按需是与问题相关度较高，按价值和篇幅选入。落选说明是与当前问题无关，或超出 token 预算。编译 trace 增加 `decisions`，按记忆 id 排序。`selection_reason` 直接返回这些中文。
+- 展示文本的向量缓存在 `memory_item.text_embedding`，哈希对应去掉首尾空白后的展示文本。生效和措辞更新时计算。编译发现哈希不一致且模型可用时补算。模型关闭或失败只记日志，不回滚晋升。模型关闭且哈希不匹配时返回已存向量，不写库。迁移是 `V162__memory_text_embedding.sql`。
+- 缓存键只在查询注入开关打开、并且合格集合里至少有一条按需记忆时，追加规范化查询。规范化是去掉首尾空白、按 `Locale.ROOT` 转小写、连续空白折成一个空格。空白查询也写入空字符串。开关 `noteweave.memory.query-injection-enabled` 默认打开，环境变量 `NOTEWEAVE_MEMORY_QUERY_INJECTION_ENABLED`。关闭后按需记忆按相关度 1 参加选择。`docker-compose.yml` 同步了这个开关和半衰期。
+- `GET /memory/control-pack/chat` 增加可选 `query`。对话回答先改写，再用独立问题编译。产物和研究的编译方法增加了 `query`，B 线现有调用仍传空，那些目录没有修改，按需记忆在产物和研究里先不注入。
+- `GET /answer-runs/{runId}/evidence` 从 `run_input_snapshot` 的 `memory_revision_refs` 读出这次实际编入的记忆。回放状态为 `METADATA_ONLY` 或其他非 `FULL` 状态时省略 `display_text`。用户 `REVOKE` 时，写回快照前去掉匹配 `memory_version_id` 的 `display_text`，并把仍为 `FULL` 的快照标成 `METADATA_ONLY`。
+- 与第 6 节原文的差异已写在进度看板协调区。反馈接口留到 2D。实现提交 `dc65e40`。测试环境关闭了 LLM 和嵌入模型，向量相关度没有用真实模型验证。

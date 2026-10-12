@@ -67,9 +67,10 @@ public class MemoryController {
     @GetMapping("/control-pack/chat")
     ApiResponse<MemoryControlPackResponse> getChatControlPack(
             @PathVariable String workspaceId,
-            @RequestParam("answer_mode") String answerMode
+            @RequestParam("answer_mode") String answerMode,
+            @RequestParam(value = "query", required = false) String query
     ) {
-        return ApiResponse.success(memoryCompilerService.compileChatControlPack(workspaceId, answerMode));
+        return ApiResponse.success(memoryCompilerService.compileChatControlPack(workspaceId, answerMode, query));
     }
 
     @GetMapping("/control-pack/artifact")

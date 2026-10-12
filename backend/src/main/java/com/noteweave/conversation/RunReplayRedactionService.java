@@ -103,10 +103,7 @@ public class RunReplayRedactionService {
 
     public void redactDeletedMemoryRevision(String revisionId) {
         redactFrozenResearchProjection("MEMORY_REVISION", revisionId);
-        jdbcTemplate.update("""
-                update run_input_snapshot set replay_availability = 'METADATA_ONLY'
-                where replay_availability = 'FULL' and snapshot_json like ?
-                """, "%" + revisionId + "%");
+        stripCompiledMemoryText(revisionId);
         jdbcTemplate.update("""
                 update artifact_run_input_snapshot
                 set control_pack_json = null, replay_availability = 'METADATA_ONLY'
@@ -132,6 +129,49 @@ public class RunReplayRedactionService {
                 """, revisionId);
         if (shadowSnapshots != null) shadowSnapshots.redactReference("MEMORY_REVISION", revisionId);
         if (artifactShadowSnapshots != null) artifactShadowSnapshots.redactMemoryRevision(revisionId);
+    }
+
+    /**
+     * 撤销后的快照仍保留记忆版本号，但去掉编入时记下的展示文本。
+     * 回放接口在非 FULL 时也不再返回这段文本。
+     */
+    private void stripCompiledMemoryText(String revisionId) {
+        List<ResearchProjectionRow> rows = jdbcTemplate.query("""
+                select id, snapshot_json from run_input_snapshot
+                where replay_availability = 'FULL' and snapshot_json like ?
+                """, (rs, index) -> new ResearchProjectionRow(rs.getString(1), rs.getString(2)),
+                "%" + revisionId + "%");
+        for (ResearchProjectionRow row : rows) {
+            ObjectNode snapshot;
+            try {
+                snapshot = (ObjectNode) objectMapper.readTree(row.snapshotJson());
+            } catch (JsonProcessingException | ClassCastException ex) {
+                throw new IllegalStateException("记忆撤销后的输入快照无法脱敏", ex);
+            }
+            removeDisplayText(snapshot, revisionId);
+            try {
+                jdbcTemplate.update("""
+                        update run_input_snapshot
+                        set snapshot_json = ?, replay_availability = 'METADATA_ONLY'
+                        where id = ? and replay_availability = 'FULL'
+                        """, objectMapper.writeValueAsString(snapshot), row.id());
+            } catch (JsonProcessingException ex) {
+                throw new IllegalStateException("记忆撤销后的输入快照无法写回", ex);
+            }
+        }
+    }
+
+    private void removeDisplayText(JsonNode node, String revisionId) {
+        if (node instanceof ObjectNode object) {
+            if (revisionId.equals(object.path("memory_version_id").asText()) && object.has("display_text")) {
+                object.remove("display_text");
+            }
+            object.fields().forEachRemaining(field -> removeDisplayText(field.getValue(), revisionId));
+            return;
+        }
+        if (node instanceof ArrayNode array) {
+            array.forEach(child -> removeDisplayText(child, revisionId));
+        }
     }
 
     /** Remove only frozen v2 projection text; preserve Research output and audit records. */
@@ -166,6 +206,9 @@ public class RunReplayRedactionService {
             if (!referenced) continue;
             ContextProjectionV2 redacted = projection.redacted();
             snapshot.set("context_v2_projection", objectMapper.valueToTree(redacted));
+            if ("MEMORY_REVISION".equals(refType)) {
+                removeDisplayText(snapshot, refId);
+            }
             try {
                 String redactedJson = objectMapper.writeValueAsString(redacted);
                 snapshot.put("context_v2_projection_sha256", sha256(redactedJson));

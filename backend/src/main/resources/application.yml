@@ -206,6 +206,9 @@ noteweave:
     consolidation-enabled: ${NOTEWEAVE_MEMORY_CONSOLIDATION_ENABLED:true}
     consolidation-delay-ms: ${NOTEWEAVE_MEMORY_CONSOLIDATION_DELAY_MS:3600000}
     consolidation-stale-days: ${NOTEWEAVE_MEMORY_CONSOLIDATION_STALE_DAYS:90}
+    query-injection-enabled: ${NOTEWEAVE_MEMORY_QUERY_INJECTION_ENABLED:true}
+    compiler:
+      recency-half-life-days: ${NOTEWEAVE_MEMORY_RECENCY_HALF_LIFE_DAYS:30}
     policy:
       minimum-evidence-confidence: ${NOTEWEAVE_MEMORY_MIN_EVIDENCE_CONFIDENCE:0.70}
       minimum-auto-promotion-utility: ${NOTEWEAVE_MEMORY_MIN_PROMOTION_UTILITY:0.60}

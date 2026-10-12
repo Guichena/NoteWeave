@@ -3,12 +3,15 @@ package com.noteweave.memory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.capability.CapabilityCatalogPort;
 import com.noteweave.common.Ids;
+import com.noteweave.retrieval.provider.EmbeddingClient;
 import com.noteweave.security.CurrentUserProvider;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -16,6 +19,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -29,6 +33,10 @@ public class MemoryCompilerService {
     private final MemoryCompilerPolicy compilerPolicy;
     private final MemoryCompiledPackCache compiledPackCache;
     private final MeterRegistry meterRegistry;
+    private final MemoryTextEmbeddingStore embeddingStore;
+    private final ObjectProvider<EmbeddingClient> embeddingClientProvider;
+    private final MemoryRelevanceScorer relevanceScorer = new MemoryRelevanceScorer();
+    private final boolean queryInjectionEnabled;
 
     public MemoryCompilerService(
             JdbcTemplate jdbcTemplate,
@@ -37,7 +45,10 @@ public class MemoryCompilerService {
             CurrentUserProvider currentUserProvider,
             MemoryCompilerPolicy compilerPolicy,
             MemoryCompiledPackCache compiledPackCache,
-            MeterRegistry meterRegistry
+            MeterRegistry meterRegistry,
+            MemoryTextEmbeddingStore embeddingStore,
+            ObjectProvider<EmbeddingClient> embeddingClientProvider,
+            @Value("${noteweave.memory.query-injection-enabled:true}") boolean queryInjectionEnabled
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.readRepository = new MemoryCompilerReadRepository(jdbcTemplate, objectMapper);
@@ -46,9 +57,16 @@ public class MemoryCompilerService {
         this.compilerPolicy = compilerPolicy;
         this.compiledPackCache = compiledPackCache;
         this.meterRegistry = meterRegistry;
+        this.embeddingStore = embeddingStore;
+        this.embeddingClientProvider = embeddingClientProvider;
+        this.queryInjectionEnabled = queryInjectionEnabled;
     }
 
     public MemoryControlPackResponse compileChatControlPack(String workspaceId, String answerMode) {
+        return compileChatControlPack(workspaceId, answerMode, null);
+    }
+
+    public MemoryControlPackResponse compileChatControlPack(String workspaceId, String answerMode, String query) {
         String normalizedMode = MemorySignalService.normalizeToken(answerMode);
         Set<String> neighborhoods = new LinkedHashSet<>();
         neighborhoods.add("COMMON");
@@ -56,16 +74,26 @@ public class MemoryCompilerService {
         neighborhoods.add("CHAT_" + normalizedMode);
         return compilePack(workspaceId, "chat", normalizedMode, "CHAT_" + normalizedMode, neighborhoods,
                 List.of("Memory 不作为事实来源，事实内容必须来自工作台资料池、原文窗口或 Wiki 页面"),
-                List.of());
+                List.of(), query);
     }
 
     public MemoryControlPackResponse compileArtifactControlPack(String workspaceId, String skillKey) {
+        return compileArtifactControlPack(workspaceId, skillKey, null);
+    }
+
+    public MemoryControlPackResponse compileArtifactControlPack(
+            String workspaceId, String skillKey, String query) {
         return compileArtifactControlPackForActor(workspaceId, skillKey,
-                currentUserProvider.requireUserId());
+                currentUserProvider.requireUserId(), query);
     }
 
     public MemoryControlPackResponse compileArtifactControlPackForActor(
             String workspaceId, String skillKey, String actorUserId) {
+        return compileArtifactControlPackForActor(workspaceId, skillKey, actorUserId, null);
+    }
+
+    public MemoryControlPackResponse compileArtifactControlPackForActor(
+            String workspaceId, String skillKey, String actorUserId, String query) {
         if (actorUserId == null || actorUserId.isBlank()) {
             throw new IllegalArgumentException("Artifact actor is required");
         }
@@ -95,10 +123,15 @@ public class MemoryCompilerService {
                 List.of(
                         "产物事实必须来自工作台资料池或已保存为资料的系统产物",
                         "Memory 不作为产物生成原材料"
-                ), degradationReasons, actorUserId);
+                ), degradationReasons, actorUserId, query);
     }
 
     public MemoryControlPackResponse compileResearchControlPack(String workspaceId, String profileKey) {
+        return compileResearchControlPack(workspaceId, profileKey, null);
+    }
+
+    public MemoryControlPackResponse compileResearchControlPack(
+            String workspaceId, String profileKey, String query) {
         String normalizedProfile = MemorySignalService.normalizeToken(profileKey);
         Set<String> neighborhoods = new LinkedHashSet<>();
         neighborhoods.add("COMMON");
@@ -108,7 +141,7 @@ public class MemoryCompilerService {
                 List.of(
                         "Memory 不作为研究证据",
                         "研究结论必须由搜索结果、工作台资料或验证证据支持"
-                ), List.of());
+                ), List.of(), query);
     }
 
     public void logPackUsage(String workspaceId, String taskType, String targetType, String targetId, MemoryControlPackResponse pack) {
@@ -164,11 +197,12 @@ public class MemoryCompilerService {
             String taskNeighborhood,
             Set<String> allowedNeighborhoods,
             List<String> evidencePolicy,
-            List<String> degradationReasons
+            List<String> degradationReasons,
+            String query
     ) {
         return compilePack(workspaceId, packType, targetKey, taskNeighborhood,
                 allowedNeighborhoods, evidencePolicy, degradationReasons,
-                currentUserProvider.requireUserId());
+                currentUserProvider.requireUserId(), query);
     }
 
     private MemoryControlPackResponse compilePack(
@@ -179,7 +213,8 @@ public class MemoryCompilerService {
             Set<String> allowedNeighborhoods,
             List<String> evidencePolicy,
             List<String> degradationReasons,
-            String currentUserId
+            String currentUserId,
+            String query
     ) {
         List<MemoryCompilerReadRepository.StateRow> stateRows = loadStateRows(workspaceId);
         List<MemoryCompilerReadRepository.StateRow> eligibleState = stateRows.stream()
@@ -187,9 +222,14 @@ public class MemoryCompilerService {
                         row.memoryScope(), row.ownerUserId(), currentUserId))
                 .filter(row -> compilerPolicy.neighborhoodPriority(
                         row.taskNeighborhoods(), taskNeighborhood, allowedNeighborhoods) < 3)
-                .sorted(java.util.Comparator.comparing(
+                .sorted(Comparator.comparing(
                         MemoryCompilerReadRepository.StateRow::memoryObjectId))
                 .toList();
+        boolean onDemandPresent = eligibleState.stream().anyMatch(row ->
+                MemoryCompilerPolicy.ON_DEMAND.equals(
+                        compilerPolicy.memoryClass(row.semanticSlotKey(), row.compileHints())));
+        // 没有按需记忆时，查询不进入缓存键，避免同一批常驻约束被不同问题拆成多份缓存。
+        String queryFingerprint = queryInjectionEnabled && onDemandPresent ? normalizeQuery(query) : null;
         MemoryCompiledPackCache.CacheKey cacheKey = new MemoryCompiledPackCache.CacheKey(
                 workspaceId,
                 fingerprint(List.of(currentUserId)),
@@ -200,7 +240,8 @@ public class MemoryCompilerService {
                         taskNeighborhood,
                         allowedNeighborhoods,
                         evidencePolicy,
-                        degradationReasons),
+                        degradationReasons,
+                        queryFingerprint),
                 compilerPolicy.version(),
                 stateFingerprint(eligibleState)
         );
@@ -210,18 +251,67 @@ public class MemoryCompilerService {
         }
 
         List<MemoryCompilerReadRepository.ObjectRow> rows = loadObjectRows(workspaceId);
-        List<RankedObject> rankedRows = rows.stream()
+        List<PreparedMemory> prepared = rows.stream()
                 .filter(row -> compilerPolicy.scopeAllowed(
                         row.memoryScope(), row.ownerUserId(), currentUserId))
-                .map(row -> new RankedObject(
+                .map(row -> new PreparedMemory(
                         row,
                         compilerPolicy.scopePriority(row.memoryScope()),
                         compilerPolicy.neighborhoodPriority(
-                                row.taskNeighborhoods(), taskNeighborhood, allowedNeighborhoods)))
+                                row.taskNeighborhoods(), taskNeighborhood, allowedNeighborhoods),
+                        compilerPolicy.memoryClass(row.semanticSlotKey(), row.compileHints())))
                 .filter(row -> row.neighborhoodPriority() < 3)
-                .sorted((left, right) -> compilerPolicy.comparator().compare(
-                        left.rankable(), right.rankable()))
+                .sorted(Comparator.comparing(item -> item.row().memoryObjectId()))
                 .toList();
+
+        List<String> relevanceReasons = List.of();
+        java.util.Map<String, Double> demandRelevance = java.util.Map.of();
+        List<PreparedMemory> onDemand = prepared.stream()
+                .filter(item -> MemoryCompilerPolicy.ON_DEMAND.equals(item.memoryClass()))
+                .toList();
+        if (!onDemand.isEmpty() && queryInjectionEnabled) {
+            List<MemoryRelevanceScorer.Item> items = onDemand.stream()
+                    .map(item -> new MemoryRelevanceScorer.Item(
+                            item.row().memoryObjectId(),
+                            item.row().displayText(),
+                            embeddingStore.vector(
+                                    workspaceId,
+                                    item.row().memoryObjectId(),
+                                    item.row().displayText(),
+                                    item.row().textEmbedding(),
+                                    item.row().textEmbeddingHash())))
+                    .toList();
+            MemoryRelevanceScorer.Result scored = relevanceScorer.score(
+                    query, items, embeddingClientProvider.getIfAvailable());
+            demandRelevance = scored.relevance();
+            relevanceReasons = scored.degradationReasons();
+        }
+
+        Instant now = Instant.now();
+        List<ValuedMemory> valued = new ArrayList<>();
+        List<MemoryCompilationTraceResponse.Decision> decisions = new ArrayList<>();
+        for (PreparedMemory item : prepared) {
+            boolean demand = MemoryCompilerPolicy.ON_DEMAND.equals(item.memoryClass());
+            double relevance = !demand ? 1d
+                    : (queryInjectionEnabled ? demandRelevance.getOrDefault(item.row().memoryObjectId(), 0d) : 1d);
+            if (demand && relevance <= 0d) {
+                decisions.add(new MemoryCompilationTraceResponse.Decision(
+                        item.row().memoryObjectId(), false, MemoryCompilerPolicy.REASON_IRRELEVANT));
+                continue;
+            }
+            Instant basis = item.row().lastReinforcedAt() != null
+                    ? item.row().lastReinforcedAt() : item.row().updatedAt();
+            double value = compilerPolicy.value(
+                    compilerPolicy.confidence(item.row().evidenceAlpha(), item.row().evidenceBeta()),
+                    item.row().utilityScore(),
+                    relevance,
+                    compilerPolicy.recency(basis, now));
+            int tokens = compilerPolicy.memoryTokens(item.row().compileHints(), item.row().displayText());
+            valued.add(new ValuedMemory(item, relevance, value, tokens));
+        }
+        valued.sort(Comparator
+                .comparingDouble(ValuedMemory::density).reversed()
+                .thenComparing(item -> item.prepared().row().memoryObjectId()));
 
         List<String> memoryObjectIds = new ArrayList<>();
         List<MemoryReferenceResponse> memoryReferences = new ArrayList<>();
@@ -236,8 +326,8 @@ public class MemoryCompilerService {
                 .mapToInt(compilerPolicy::estimateTokens)
                 .sum();
 
-        for (RankedObject ranked : rankedRows) {
-            MemoryCompilerReadRepository.ObjectRow row = ranked.row();
+        for (ValuedMemory item : valued) {
+            MemoryCompilerReadRepository.ObjectRow row = item.prepared().row();
             int incrementalTokens = incrementalTokens(
                     row.compileHints(),
                     styleConstraints,
@@ -248,17 +338,26 @@ public class MemoryCompilerService {
                     reviewChecklist
             );
             if (selectedTokens + incrementalTokens > maximumTokens) {
+                decisions.add(new MemoryCompilationTraceResponse.Decision(
+                        row.memoryObjectId(), false, MemoryCompilerPolicy.REASON_BUDGET));
                 continue;
             }
             selectedTokens += incrementalTokens;
+            String reason = compilerPolicy.selectedReason(item.prepared().memoryClass());
+            boolean demand = MemoryCompilerPolicy.ON_DEMAND.equals(item.prepared().memoryClass());
             memoryObjectIds.add(row.memoryObjectId());
             memoryReferences.add(new MemoryReferenceResponse(
                     row.memoryObjectId(),
                     row.memoryVersionId(),
                     row.utilityScore(),
-                    ranked.scopePriority(),
-                    ranked.neighborhoodPriority(),
-                    selectionReason(ranked)));
+                    item.prepared().scopePriority(),
+                    item.prepared().neighborhoodPriority(),
+                    reason,
+                    item.prepared().memoryClass(),
+                    demand ? item.relevance() : null,
+                    row.displayText()));
+            decisions.add(new MemoryCompilationTraceResponse.Decision(
+                    row.memoryObjectId(), true, reason));
             styleConstraints.addAll(row.compileHints().styleConstraints());
             structureConstraints.addAll(row.compileHints().structureConstraints());
             terminologyPolicy.addAll(row.compileHints().terminologyPolicy());
@@ -266,6 +365,11 @@ public class MemoryCompilerService {
             interactionPolicy.addAll(row.compileHints().interactionPolicy());
             reviewChecklist.addAll(row.compileHints().reviewChecklist());
         }
+        decisions.sort(Comparator.comparing(MemoryCompilationTraceResponse.Decision::memoryObjectId));
+        List<String> combinedReasons = new ArrayList<>(degradationReasons);
+        combinedReasons.addAll(relevanceReasons);
+        boolean truncated = decisions.stream().anyMatch(decision ->
+                !decision.selected() && MemoryCompilerPolicy.REASON_BUDGET.equals(decision.reason()));
 
         MemoryControlPackResponse pack = new MemoryControlPackResponse(
                 packType,
@@ -284,12 +388,13 @@ public class MemoryCompilerService {
                         compilerPolicy.version(),
                         maximumTokens,
                         selectedTokens,
-                        rankedRows.size(),
+                        prepared.size(),
                         memoryReferences.size(),
-                        rankedRows.size() - memoryReferences.size(),
-                        rankedRows.size() > memoryReferences.size(),
-                        !degradationReasons.isEmpty(),
-                        degradationReasons
+                        prepared.size() - memoryReferences.size(),
+                        truncated,
+                        !combinedReasons.isEmpty(),
+                        combinedReasons,
+                        decisions
                 )
         );
         compiledPackCache.put(cacheKey, pack);
@@ -326,7 +431,8 @@ public class MemoryCompilerService {
             String taskNeighborhood,
             Set<String> allowedNeighborhoods,
             List<String> evidencePolicy,
-            List<String> degradationReasons
+            List<String> degradationReasons,
+            String normalizedQuery
     ) {
         List<String> fields = new ArrayList<>();
         fields.add(packType);
@@ -335,7 +441,17 @@ public class MemoryCompilerService {
         allowedNeighborhoods.stream().sorted().forEach(value -> fields.add("n:" + value));
         evidencePolicy.forEach(value -> fields.add("e:" + value));
         degradationReasons.forEach(value -> fields.add("d:" + value));
+        if (normalizedQuery != null) {
+            fields.add("q:" + normalizedQuery);
+        }
         return fingerprint(fields);
+    }
+
+    private String normalizeQuery(String query) {
+        if (query == null || query.isBlank()) {
+            return "";
+        }
+        return query.trim().toLowerCase(Locale.ROOT).replaceAll("\\s+", " ");
     }
 
     private String stateFingerprint(List<MemoryCompilerReadRepository.StateRow> rows) {
@@ -353,6 +469,12 @@ public class MemoryCompilerService {
             fields.add(row.status());
             fields.add(row.validFrom());
             fields.add(row.validTo());
+            fields.add(row.semanticSlotKey());
+            fields.add(Double.toString(row.evidenceAlpha()));
+            fields.add(Double.toString(row.evidenceBeta()));
+            fields.add(row.lastReinforcedAt() == null ? "" : row.lastReinforcedAt().toString());
+            fields.add(row.displayText());
+            fields.add(row.textEmbeddingHash());
         }
         return fingerprint(fields);
     }
@@ -404,13 +526,6 @@ public class MemoryCompilerService {
                 .sum();
     }
 
-    private String selectionReason(RankedObject ranked) {
-        return "scope_priority=" + ranked.scopePriority()
-                + ";neighborhood_priority=" + ranked.neighborhoodPriority()
-                + ";utility=" + ranked.row().utilityScore()
-                + ";fresh_at=" + ranked.row().updatedAt();
-    }
-
     private String normalizeCapabilityKey(String value) {
         return value == null ? "" : value.trim()
                 .toLowerCase(Locale.ROOT)
@@ -418,19 +533,22 @@ public class MemoryCompilerService {
                 .replace(' ', '_');
     }
 
-    private record RankedObject(
+    private record PreparedMemory(
             MemoryCompilerReadRepository.ObjectRow row,
             int scopePriority,
-            int neighborhoodPriority
+            int neighborhoodPriority,
+            String memoryClass
     ) {
-        private MemoryCompilerPolicy.RankableMemory rankable() {
-            return new MemoryCompilerPolicy.RankableMemory(
-                    row.memoryObjectId(),
-                    scopePriority,
-                    neighborhoodPriority,
-                    row.utilityScore(),
-                    row.updatedAt()
-            );
+    }
+
+    private record ValuedMemory(
+            PreparedMemory prepared,
+            double relevance,
+            double value,
+            int tokens
+    ) {
+        private double density() {
+            return value / Math.max(tokens, 1);
         }
     }
 }
