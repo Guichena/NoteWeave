@@ -66,7 +66,7 @@ class RoleProfileCatalog:
         ),
         "WIDE_DISCOVERY": RoleProfile(
             "wide-discovery-v1", "wide_discovery", 0.2,
-            frozenset({"search", "read"}), 8, 0, 12, 2,
+            frozenset({"search", "read"}), 3, 0, 12, 4,
         ),
         "DEEP_CELL": RoleProfile(
             "deep-cell-v1", "deep_cell_extract", 0.1,

@@ -40,7 +40,7 @@ class ResearchAgentCoordinatorRolloutGuardTest {
         var service = new ResearchAgentCoordinatorTickService(
                 snapshots, coordinator, recovery, faults, finalization, guard, lifecycle,
                 runnableWork, roleWorkflow, completionGate, honestReports,
-                globalConflictService, conflictRepairService, planning);
+                globalConflictService, conflictRepairService, planning, mock(ResearchDiscoveryLoopService.class));
 
         var receipt = service.tick("run-1", "coordinator-1");
 

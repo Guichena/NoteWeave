@@ -91,22 +91,22 @@ class ResearchAgentAutomaticRunBootstrapTest {
                 where research_run_id = ? and column_key = 'answer'
                 """, Boolean.class, created.researchRunId())).isFalse();
 
-        // 新 Run 先进入规划阶段；这里模拟规划任务失败，Run 沿用规则生成的表格进入首个深挖波次
+        // 规划失败后沿用规则表格，新 Run 默认先执行宽搜索，再填表。
         assertThat(coordinatorTick.tick(created.researchRunId(), "bootstrap-test").outcome()).isEqualTo("PLANNING_TASKIZED");
         jdbcTemplate.update("update research_agent_task set status = 'FAILED' where research_run_id = ? and role = 'PLANNING'",
                 created.researchRunId());
         ResearchAgentCoordinatorTickService.TickReceipt tick =
                 coordinatorTick.tick(created.researchRunId(), "bootstrap-test");
 
-        assertThat(tick.outcome()).isEqualTo("INITIAL_WAVE_TASKIZED");
+        assertThat(tick.outcome()).isEqualTo("EXPAND_ROWS");
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from research_agent_outbox where research_run_id = ?",
                 Integer.class, created.researchRunId())).isGreaterThan(0);
         assertThat(jdbcTemplate.queryForObject("""
-                select count(*) from research_agent_task rat
-                join research_cell rc on rc.research_run_id = rat.research_run_id
-                where rat.research_run_id = ? and rat.branch_id = rc.branch_id
-                """, Integer.class, created.researchRunId())).isGreaterThan(0);
+                select count(*) from research_agent_task
+                where research_run_id = ? and role = 'WIDE_DISCOVERY'
+                """, Integer.class, created.researchRunId())).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("select phase from research_discovery_loop where research_run_id = ?", String.class, created.researchRunId())).isEqualTo("EXPAND_ROWS");
     }
 
     @Test
@@ -128,14 +128,14 @@ class ResearchAgentAutomaticRunBootstrapTest {
                 "select source_scope_json from research_run where id = ?", String.class, created.researchRunId()))
                 .isEqualTo("[]");
 
-        // 新 Run 先进入规划阶段；这里模拟规划任务失败，Run 沿用规则生成的表格进入首个深挖波次
+        // 规划失败后沿用规则表格，新 Run 默认先执行宽搜索，再填表。
         assertThat(coordinatorTick.tick(created.researchRunId(), "web-only-bootstrap-test").outcome()).isEqualTo("PLANNING_TASKIZED");
         jdbcTemplate.update("update research_agent_task set status = 'FAILED' where research_run_id = ? and role = 'PLANNING'",
                 created.researchRunId());
         ResearchAgentCoordinatorTickService.TickReceipt tick =
                 coordinatorTick.tick(created.researchRunId(), "web-only-bootstrap-test");
 
-        assertThat(tick.outcome()).isEqualTo("INITIAL_WAVE_TASKIZED");
+        assertThat(tick.outcome()).isEqualTo("EXPAND_ROWS");
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from research_agent_task where research_run_id = ?",
                 Integer.class, created.researchRunId())).isGreaterThan(0);
@@ -150,7 +150,10 @@ class ResearchAgentAutomaticRunBootstrapTest {
         assertThat(snapshot.path("source_policy").path("source_scope").isArray()).isTrue();
         assertThat(snapshot.path("source_policy").path("source_scope")).isEmpty();
         assertThat(snapshot.path("source_policy").path("allow_external_search").asBoolean()).isTrue();
-        assertThat(snapshot.path("source_policy").path("allow_external_fetch").asBoolean()).isTrue();
+        assertThat(snapshot.path("source_policy").path("allow_external_fetch").asBoolean()).isFalse();
+        assertThat(snapshot.path("role").asText()).isEqualTo("WIDE_DISCOVERY");
+        assertThat(snapshot.path("query_policy").path("discovery_input").path("schema_version").asText()).isEqualTo("research-discovery-input.v2");
+        assertThat(snapshot.path("query_policy").path("discovery_input").path("table").path("columns")).isNotEmpty();
     }
 
     @Test

@@ -65,14 +65,26 @@ class ResearchDiscoveryProposalService {
         this.precisionThreshold = precisionThreshold;
     }
 
+    List<Map<String, Object>> find(String workspaceId, String runId) {
+        if (jdbcTemplate.queryForObject("select count(*) from research_run where id = ? and workspace_id = ?", Integer.class, runId, workspaceId) != 1)
+            throw new BusinessException("RESEARCH_RUN_NOT_FOUND", "研究任务不存在");
+        return jdbcTemplate.query("select proposal_type, label, rationale, confidence_ppm, supporting_domain_count, proposal_status from research_discovery_proposal where research_run_id = ? and proposal_type in ('ENTITY','DIMENSION','SEARCH_QUERY') order by created_at, id",
+                (rs, n) -> Map.of("proposal_type", rs.getString(1), "label", rs.getString(2), "rationale", rs.getString(3),
+                        "confidence_ppm", rs.getInt(4), "supporting_domain_count", rs.getInt(5), "status", rs.getString(6)), runId);
+    }
+
     void validateAndPersist(
             ResearchAgentCompletionCommitter.TaskRow task,
             Map<String, Object> result,
             String roleResultId
     ) {
-        if (!SCHEMA.equals(text(result.get("result_schema_version")))
+        boolean v2 = "research-discovery-proposal.v2".equals(text(result.get("result_schema_version")));
+        if ((!v2 && !SCHEMA.equals(text(result.get("result_schema_version"))))
                 || !"WIDE_DISCOVERY".equals(text(result.get("role")))) throw invalid("Discovery schema or role is invalid");
         Map<String, Object> input = mapValue(queryPolicy(task).get("discovery_input"));
+        if ("research-discovery-input.v2".equals(text(input.get("schema_version"))) != v2) {
+            throw invalid("宽搜索输入与结果协议版本不一致");
+        }
         if (input.isEmpty() || !text(input.get("input_digest")).equals(text(result.get("input_digest")))) {
             throw stale("Discovery input digest is stale");
         }
@@ -81,6 +93,14 @@ class ResearchDiscoveryProposalService {
         if (planRevision != task.planRevision() || entityVersion != task.entitySetVersion()) {
             throw stale("Discovery plan or entity-set revision is stale");
         }
+        if (v2) {
+            Integer staleCells = jdbcTemplate.queryForObject("select count(*) from research_cell where research_run_id = ? and (plan_revision <> ? or entity_set_version <> ?)", Integer.class, task.runId(), planRevision, entityVersion);
+            if (staleCells != null && staleCells > 0) throw stale("宽搜索表格版本已经变化");
+        }
+        var evidence = new ResearchDiscoveryEvidenceService(jdbcTemplate, objectMapper);
+        var observations = v2 ? evidence.persist(task, result) : Map.<String, ResearchDiscoveryEvidenceService.Observation>of();
+        if (!(result.get("proposals") instanceof List<?> rawProposals)
+                || rawProposals.stream().anyMatch(p -> !(p instanceof Map<?, ?>))) throw invalid("宽搜索提案列表不符合约定");
         List<Map<String, Object>> proposals = listOfMaps(result.get("proposals"));
         if (proposals.size() > 20) throw invalid("Discovery proposal count exceeds the contract");
         Set<String> keys = new HashSet<>();
@@ -93,11 +113,19 @@ class ResearchDiscoveryProposalService {
                 && featureFlags.numberForRun(task.runId(), "wide_discovery_accepted_precision", 0.0)
                     >= featureFlags.numberForRun(task.runId(), "wide_discovery_precision_threshold", 1.0);
         List<Map<String, Object>> accepted = new ArrayList<>();
+        int novel = 0;
         for (Map<String, Object> proposal : proposals) {
             String proposalKey = text(proposal.get("proposal_key"));
             String candidateKey = text(proposal.get("candidate_key"));
             String type = text(proposal.get("proposal_type"));
-            int confidence = integer(proposal.get("confidence_ppm"));
+            int confidence = v2 ? 0 : integer(proposal.get("confidence_ppm"));
+            int supportingDomains = 0;
+            if (v2) {
+                if ("SOURCE_LEAD".equals(type)) throw invalid("新版宽搜索不支持来源标题提案");
+                var score = evidence.score(proposal, observations, objectMapper.valueToTree(input.getOrDefault("authoritative_domains", List.of())));
+                confidence = score.confidence();
+                supportingDomains = score.domains();
+            }
             if (!KEY.matcher(proposalKey).matches() || !KEY.matcher(candidateKey).matches()
                     || !keys.add(proposalKey) || !candidateKeys.add(type + ":" + candidateKey)
                     || !Set.of("ENTITY", "DIMENSION", "SEARCH_QUERY", "SOURCE_LEAD").contains(type)
@@ -115,19 +143,31 @@ class ResearchDiscoveryProposalService {
             }
             String status = acceptanceGate && confidence >= 800_000 && Set.of("ENTITY", "DIMENSION").contains(type)
                     ? "ACCEPTED" : "SHADOW";
+            String label = text(proposal.get("label"));
+            if (label.isBlank() || label.length() > 500 || text(proposal.get("rationale")).length() > 2000
+                    || text(proposal.get("search_query")).length() > 200) throw invalid("宽搜索提案文本不符合约定");
+            Integer duplicate = jdbcTemplate.queryForObject("select count(*) from research_discovery_proposal where research_run_id = ? and (proposal_key = ? or (proposal_type = ? and lower(label) = lower(?)))",
+                    Integer.class, task.runId(), proposalKey, type, label);
+            if (v2 && duplicate != null && duplicate > 0) continue;
+            if (v2 && "ENTITY".equals(type) && jdbcTemplate.queryForObject("select count(*) from research_row where research_run_id = ? and (row_key = ? or lower(source_title) = lower(?))", Integer.class, task.runId(), candidateKey, label) > 0) continue;
+            if (v2 && "DIMENSION".equals(type) && jdbcTemplate.queryForObject("select count(*) from research_column where research_run_id = ? and (column_key = ? or lower(label) = lower(?))", Integer.class, task.runId(), candidateKey, label) > 0) continue;
             jdbcTemplate.update("""
                     insert into research_discovery_proposal(
                         id, research_run_id, task_id, role_result_id, proposal_key, proposal_type,
                         candidate_key, label, search_query, source_lead, source_domain, lineage_digest,
-                        rationale, confidence_ppm, plan_revision, entity_set_version, proposal_status)
-                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        rationale, confidence_ppm, plan_revision, entity_set_version, proposal_status,
+                        supporting_domain_count, supports_json)
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, Ids.newId(), task.runId(), task.id(), roleResultId, proposalKey, type, candidateKey,
                     text(proposal.get("label")), text(proposal.get("search_query")), sourceLead,
                     nullable(domain), nullable(lineage), text(proposal.get("rationale")), confidence,
-                    planRevision, entityVersion, status);
+                    planRevision, entityVersion, status, supportingDomains, v2 ? Json.write(objectMapper, proposal.get("supports")) : null);
+            novel++;
             if ("ACCEPTED".equals(status)) accepted.add(proposal);
         }
         if (!accepted.isEmpty()) applyAcceptedRevision(task.runId(), planRevision, entityVersion, accepted);
+        if (v2) jdbcTemplate.update("update research_discovery_round set round_status = 'COMPLETED', new_proposal_count = ?, accepted_proposal_count = ?, query_count = ?, queries_json = ? where task_id = ? and round_status = 'PENDING'",
+                novel, accepted.size(), stringList(result.get("queries")).size(), Json.write(objectMapper, result.get("queries")), task.id());
     }
 
     private void applyAcceptedRevision(
@@ -142,12 +182,17 @@ class ResearchDiscoveryProposalService {
                 "select count(*) from research_row where research_run_id = ?", Integer.class, runId);
         Integer columnCount = jdbcTemplate.queryForObject(
                 "select count(distinct column_key) from research_cell where research_run_id = ?", Integer.class, runId);
-        int addedCells = 0;
+        if (currentCells == null || currentCells == 0) throw new BusinessException("RESEARCH_REPLAN_AUDIT_NO_AFFECTED_CELLS", "宽搜索扩展需要已有表格");
+        int newRows = (int) accepted.stream().filter(p -> "ENTITY".equals(text(p.get("proposal_type")))).count();
+        int newColumns = (int) accepted.stream().filter(p -> "DIMENSION".equals(text(p.get("proposal_type")))).count();
+        int addedCells = newRows * newColumns;
         for (Map<String, Object> proposal : accepted) {
             if ("DIMENSION".equals(text(proposal.get("proposal_type")))) addedCells += rowCount == null ? 0 : rowCount;
             if ("ENTITY".equals(text(proposal.get("proposal_type")))) addedCells += columnCount == null ? 0 : columnCount;
         }
-        if ((currentCells == null ? 0 : currentCells) + addedCells > 80) {
+        long resultingCells = (long) (rowCount == null ? 0 : rowCount + newRows)
+                * (columnCount == null ? 0 : columnCount + newColumns);
+        if ((currentCells == null ? 0 : currentCells) + addedCells > 80 || resultingCells > 80) {
             throw new BusinessException("RESEARCH_DISCOVERY_PLAN_BOUNDED", "Accepted discovery proposal exceeds 80 cells");
         }
         int nextPlanRevision = planRevision + 1;
@@ -169,24 +214,28 @@ class ResearchDiscoveryProposalService {
         // DR-110: the cells this revision really adds. Collected from the same inserts that
         // create them, so the Replan audit row never has to guess its affected-cell set.
         LinkedHashSet<String> addedCellKeys = new LinkedHashSet<>();
+        // 先建立全部行列，再补齐笛卡尔积，避免同轮新增实体遗漏新增维度。
+        List<Row> allRows = new ArrayList<>(rows);
+        List<String> allColumns = new ArrayList<>(columns);
         for (Map<String, Object> proposal : accepted) {
             String key = text(proposal.get("candidate_key"));
-            if ("DIMENSION".equals(text(proposal.get("proposal_type")))) {
-                for (Row row : rows) {
-                    addedCellKeys.add(insertGapCell(runId, branchId, row.id(), row.key(), key,
-                            nextPlanRevision, nextEntityVersion));
-                }
-            } else if ("ENTITY".equals(text(proposal.get("proposal_type")))) {
+            if ("ENTITY".equals(text(proposal.get("proposal_type")))) {
                 String rowId = Ids.newId();
-                jdbcTemplate.update("""
-                        insert into research_row(
-                            id, research_run_id, row_key, branch_id, source_title, row_status, verification_status)
-                        values (?, ?, ?, ?, ?, 'DISCOVERED', 'PENDING')
-                        """, rowId, runId, key, branchId, text(proposal.get("label")));
-                for (String column : columns) {
-                    addedCellKeys.add(insertGapCell(runId, branchId, rowId, key, column,
-                            nextPlanRevision, nextEntityVersion));
-                }
+                jdbcTemplate.update("insert into research_row(id, research_run_id, row_key, branch_id, source_title, row_status, verification_status) values (?, ?, ?, ?, ?, 'DISCOVERED', 'PENDING')",
+                        rowId, runId, key, branchId, text(proposal.get("label")));
+                allRows.add(new Row(rowId, key));
+            } else {
+                jdbcTemplate.update("insert into research_column(id, research_run_id, column_key, label, description, high_risk, required_provenance_level, search_intents_json, plan_revision) values (?, ?, ?, ?, ?, true, 'TWO_INDEPENDENT_SOURCES', ?, ?)",
+                        Ids.newId(), runId, key, text(proposal.get("label")), text(proposal.get("rationale")),
+                        Json.write(objectMapper, List.of(text(proposal.get("search_query")))), nextPlanRevision);
+                allColumns.add(key);
+            }
+        }
+        jdbcTemplate.update("update research_column set plan_revision = ? where research_run_id = ?", nextPlanRevision, runId);
+        for (Row row : allRows) for (String column : allColumns) {
+            if (jdbcTemplate.queryForObject("select count(*) from research_cell where research_run_id = ? and cell_key = ?",
+                    Integer.class, runId, row.key() + ":" + column) == 0) {
+                addedCellKeys.add(insertGapCell(runId, branchId, row.id(), row.key(), column, nextPlanRevision, nextEntityVersion));
             }
         }
         Integer revisedRowCount = jdbcTemplate.queryForObject(
@@ -226,13 +275,16 @@ class ResearchDiscoveryProposalService {
     private String insertGapCell(String runId, String branchId, String rowId, String rowKey, String column,
                                  int planRevision, int entityVersion) {
         String cellKey = rowKey + ":" + column;
+        // 旧表格缺少列定义时，沿用已有同列的风险要求。
+        boolean highRisk = jdbcTemplate.queryForObject("select count(*) from research_column where research_run_id = ? and column_key = ? and high_risk = true", Integer.class, runId, column) > 0
+                || jdbcTemplate.queryForObject("select count(*) from research_cell where research_run_id = ? and column_key = ? and high_risk = true", Integer.class, runId, column) > 0;
         jdbcTemplate.update("""
                 insert into research_cell(
                     id, research_run_id, research_row_id, cell_key, branch_id, column_key,
                     cell_status, evidence_refs_json, repair_count, cell_version,
                     plan_revision, entity_set_version, high_risk)
-                values (?, ?, ?, ?, ?, ?, 'GAP', '[]', 0, 0, ?, ?, false)
-                """, Ids.newId(), runId, rowId, cellKey, branchId, column, planRevision, entityVersion);
+                values (?, ?, ?, ?, ?, ?, 'GAP', '[]', 0, 0, ?, ?, ?)
+                """, Ids.newId(), runId, rowId, cellKey, branchId, column, planRevision, entityVersion, highRisk);
         return cellKey;
     }
 

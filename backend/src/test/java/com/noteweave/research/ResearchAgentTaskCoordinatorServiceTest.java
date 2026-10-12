@@ -34,6 +34,8 @@ class ResearchAgentTaskCoordinatorServiceTest {
     @Autowired private ResearchAgentRepairAdvancementService repairAdvancement;
     @Autowired private ResearchAgentCoordinatorSnapshotService coordinatorSnapshot;
     @Autowired private ResearchAgentCoordinatorTickService coordinatorTick;
+    @Autowired private ResearchDiscoveryLoopService discoveryLoop;
+    @Autowired private ResearchAgentFeatureFlagService featureFlags;
     @SpyBean private ResearchAgentCoordinatorTickFaultInjector coordinatorTickFaults;
     @SpyBean private ResearchBudgetAndCheckpointService budgetService;
     @SpyBean private ResearchAgentCommandOutboxService outboxService;
@@ -894,6 +896,72 @@ class ResearchAgentTaskCoordinatorServiceTest {
                 throw new AssertionError(exception);
             }
         });
+    }
+
+    @Test
+    void discoveryLoopShouldAlternatePopulateAndExpansionThenStopAfterTwoEmptyRounds() throws Exception {
+        jdbcTemplate.update("update research_run set agent_feature_flags_json = ? where id = ?", "{\"wide_discovery_v1\":true}", runId);
+        var first = discoveryLoop.advance(runId, 1);
+        assertThat(first.outcome()).isEqualTo("EXPAND_ROWS");
+        assertThat(discoveryLoop.advance(runId, 1).outcome()).isEqualTo("DISCOVERY_PENDING");
+        var context = objectMapper.readTree(jdbcTemplate.queryForObject("select execution_context_json from research_agent_task where research_run_id = ?", String.class, runId));
+        assertThat(context.path("query_policy").path("discovery_input").path("table").path("entities")).hasSize(1);
+        assertThat(context.path("source_policy").path("source_scope").get(0).path("source_snapshot_id").asText()).isNotBlank();
+        settleDiscoveryRound();
+        assertThat(discoveryLoop.advance(runId, 2).outcome()).isEqualTo("POPULATE_CELLS");
+        jdbcTemplate.update("update research_agent_task set status = 'SUBMITTED' where research_run_id = ?", runId);
+        assertThat(discoveryLoop.advance(runId, 3).outcome()).isEqualTo("EXPAND_ROWS");
+        settleDiscoveryRound();
+        // 重新创建服务，状态完全从数据库恢复。
+        var restarted = new ResearchDiscoveryLoopService(jdbcTemplate, objectMapper, featureFlags, coordinator);
+        assertThat(restarted.advance(runId, 4).outcome()).isEqualTo("STOPPED");
+        assertThat(jdbcTemplate.queryForObject("select stop_reason from research_discovery_loop where research_run_id = ?", String.class, runId)).isEqualTo("DISCOVERY_SATURATED");
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_discovery_round where research_run_id = ?", Integer.class, runId)).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ? and role = 'DEEP_CELL'", Integer.class, runId)).isEqualTo(2);
+    }
+
+    @Test
+    void discoveryLoopShouldCountActiveReservationsBeforeDispatchingCells() {
+        jdbcTemplate.update("update research_run set agent_feature_flags_json = ? where id = ?", "{\"wide_discovery_v1\":true}", runId);
+        discoveryLoop.advance(runId, 1);
+        settleDiscoveryRound();
+        jdbcTemplate.update("update research_discovery_loop set limits_json = ? where research_run_id = ?", "{\"llm_calls\":20,\"search_calls\":12}", runId);
+        assertThat(discoveryLoop.advance(runId, 2).outcome()).isEqualTo("STOPPED");
+        assertThat(jdbcTemplate.queryForObject("select stop_reason from research_discovery_loop where research_run_id = ?", String.class, runId)).isEqualTo("LOOP_BUDGET_EXHAUSTED");
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
+    }
+
+    @Test
+    void releasedReservationsShouldAllowRemainingCellsWithoutRepeatingCompletedTargets() {
+        jdbcTemplate.update("update research_run set agent_feature_flags_json = ? where id = ?", "{\"wide_discovery_v1\":true}", runId);
+        discoveryLoop.advance(runId, 1);
+        settleDiscoveryRound();
+        jdbcTemplate.update("update research_discovery_loop set limits_json = ? where research_run_id = ?", "{\"llm_calls\":70,\"search_calls\":256}", runId);
+        assertThat(discoveryLoop.advance(runId, 2).taskization().createdTaskCount()).isEqualTo(1);
+        jdbcTemplate.update("update research_agent_task set status = 'SUBMITTED' where research_run_id = ? and role = 'DEEP_CELL'", runId);
+        jdbcTemplate.update("update research_budget_reservation set state = 'SETTLED', consumed_json = '{}' where research_agent_task_id in (select id from research_agent_task where research_run_id = ? and role = 'DEEP_CELL')", runId);
+        assertThat(discoveryLoop.advance(runId, 3).taskization().createdTaskCount()).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ? and role = 'DEEP_CELL'", Integer.class, runId)).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject("select stop_reason from research_discovery_loop where research_run_id = ?", String.class, runId)).isNull();
+    }
+
+    @Test
+    void continuouslyNovelDiscoveryShouldStopAtThreeRounds() {
+        jdbcTemplate.update("update research_run set agent_feature_flags_json = ? where id = ?", "{\"wide_discovery_v1\":true}", runId);
+        jdbcTemplate.update("update research_cell set cell_status = 'FROZEN' where research_run_id = ?", runId);
+        for (int round = 1; round <= 3; round++) {
+            assertThat(discoveryLoop.advance(runId, round).outcome()).isEqualTo("EXPAND_ROWS");
+            settleDiscoveryRound();
+            jdbcTemplate.update("update research_discovery_round set new_proposal_count = 1 where research_run_id = ?", runId);
+        }
+        assertThat(discoveryLoop.advance(runId, 4).outcome()).isEqualTo("STOPPED");
+        assertThat(jdbcTemplate.queryForObject("select stop_reason from research_discovery_loop where research_run_id = ?", String.class, runId)).isEqualTo("DISCOVERY_ROUND_LIMIT");
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ?", Integer.class, runId)).isEqualTo(3);
+    }
+
+    private void settleDiscoveryRound() {
+        jdbcTemplate.update("update research_agent_task set status = 'SUBMITTED' where research_run_id = ? and role = 'WIDE_DISCOVERY'", runId);
+        jdbcTemplate.update("update research_discovery_round set round_status = 'COMPLETED', new_proposal_count = 0 where research_run_id = ?", runId);
     }
 
     private void assertAgentStateIsEmpty() {

@@ -22,6 +22,7 @@ public class ResearchAgentCoordinatorTickService {
     private final ResearchGlobalConflictService globalConflictService;
     private final ResearchAgentConflictRepairService conflictRepairService;
     private final ResearchPlanningService planning;
+    private final ResearchDiscoveryLoopService discoveryLoop;
 
     public ResearchAgentCoordinatorTickService(ResearchAgentCoordinatorSnapshotService snapshots,
                                                ResearchAgentTaskCoordinatorService coordinator,
@@ -36,7 +37,8 @@ public class ResearchAgentCoordinatorTickService {
                                                ResearchAgentHonestReportService honestReports,
                                                ResearchGlobalConflictService globalConflictService,
                                                ResearchAgentConflictRepairService conflictRepairService,
-                                               ResearchPlanningService planning) {
+                                               ResearchPlanningService planning,
+                                               ResearchDiscoveryLoopService discoveryLoop) {
         this.snapshots = snapshots;
         this.coordinator = coordinator;
         this.recovery = recovery;
@@ -51,6 +53,7 @@ public class ResearchAgentCoordinatorTickService {
         this.globalConflictService = globalConflictService;
         this.conflictRepairService = conflictRepairService;
         this.planning = planning;
+        this.discoveryLoop = discoveryLoop;
     }
 
     @Transactional
@@ -63,6 +66,7 @@ public class ResearchAgentCoordinatorTickService {
         if (plan.waiting()) {
             return new TickReceipt(plan.outcome(), snapshots.snapshot(runId), plan.taskization());
         }
+        discoveryLoop.initialize(runId);
         // DR-303: re-adjudicate cross-source conflicts against the canonical ledger *before* taking the
         // snapshot, so a conflict demotion is visible to readyForFinalization()/nonFinalizableCellCount
         // and the terminal gate can never finalize a Run over a mutually-exclusive cell.
@@ -77,11 +81,14 @@ public class ResearchAgentCoordinatorTickService {
         conflictRepairService.advance(runId);
         ResearchAgentCoordinatorSnapshotService.Snapshot snapshot = snapshots.snapshot(runId);
         if (snapshot.activeTaskCount() > 0) {
+            if (discoveryLoop.enabled(runId)) return new TickReceipt("ACTIVE_NOOP", snapshot, null);
             if (!runnableWork.enabledForRun(runId)) return new TickReceipt("ACTIVE_NOOP", snapshot, null);
             ResearchAgentRunnableWorkService.RefillReceipt refill = runnableWork.refill(snapshot);
             return new TickReceipt(refill.outcome(), snapshot, refill.taskization());
         }
-        if (snapshot.taskCount() == 0) {
+        if (snapshot.taskCount() == 0 && discoveryLoop.enabled(runId) && !rolloutGuard.evaluate().allowsInitialWave())
+            return new TickReceipt("ROLLOUT_PAUSED", snapshot, null);
+        if (snapshot.taskCount() == 0 && !discoveryLoop.enabled(runId)) {
             if (!rolloutGuard.evaluate().allowsInitialWave()) {
                 return new TickReceipt("ROLLOUT_PAUSED", snapshot, null);
             }
@@ -116,7 +123,7 @@ public class ResearchAgentCoordinatorTickService {
                         && receipt.decisionKind() != ResearchAgentRepairStopPolicy.DecisionKind.COUNTERFACTUAL
                         && receipt.decisionKind() != ResearchAgentRepairStopPolicy.DecisionKind.STOPPED_CANCELLED
                         && completionGate.failedTasksAreEvidenceOutcomes(runId);
-                if (snapshot.failedTaskCount() > 0 && !evidenceOnlyStop) {
+                if (snapshot.failedTaskCount() > 0 && !evidenceOnlyStop && !discoveryLoop.budgetStopped(runId)) {
                     String terminalReason = receipt.decisionKind() == ResearchAgentRepairStopPolicy.DecisionKind.COUNTERFACTUAL
                             ? "RESEARCH_AGENT_COUNTERFACTUAL_SOURCE_SCOPE_EMPTY"
                             : "RESEARCH_AGENT_" + receipt.decisionKind().name();
@@ -140,6 +147,9 @@ public class ResearchAgentCoordinatorTickService {
             }
             return new TickReceipt(outcome, snapshot, receipt.taskization());
         }
+        var discovery = discoveryLoop.advance(runId, snapshot.currentWaveNo());
+        if (!Set.of("DISABLED", "STOPPED").contains(discovery.outcome()))
+            return new TickReceipt(discovery.outcome(), snapshots.snapshot(runId), discovery.taskization());
         if (snapshot.readyForFinalization()) {
             ResearchAgentRoleWorkflowService.WorkflowReceipt workflow =
                     roleWorkflow.advance(runId, snapshot.currentWaveNo());
@@ -152,7 +162,7 @@ public class ResearchAgentCoordinatorTickService {
             completionGate.recordDecision(runId, completionGate.evaluateForRun(runId));
             return new TickReceipt("RUN_FINALIZED", snapshot, null);
         }
-        if (snapshot.nonFinalizableCellCount() > 0 && runnableWork.enabledForRun(runId)) {
+        if (snapshot.nonFinalizableCellCount() > 0 && !discoveryLoop.enabled(runId) && runnableWork.enabledForRun(runId)) {
             ResearchAgentRunnableWorkService.RefillReceipt refill = runnableWork.refill(snapshot);
             if (refill.taskization() != null || "ACTIVE_BARRIER_PENDING".equals(refill.outcome())) {
                 return new TickReceipt(refill.outcome(), snapshot, refill.taskization());

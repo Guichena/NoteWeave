@@ -43,6 +43,10 @@ public class ResearchBudgetAndCheckpointService {
     @Transactional
     public ReservationReceipt reserve(ReserveCommand command) {
         requireNonNegative(command.reserved());
+        // 直接调用预算接口也必须串行读取同一 Run 的余额。
+        String lockedRun = jdbcTemplate.query("select id from research_run where id = ? for update",
+                rs -> rs.next() ? rs.getString(1) : null, command.researchRunId());
+        if (lockedRun == null) throw new BusinessException("RESEARCH_BUDGET_TASK_NOT_FOUND", "研究任务或预算任务不存在");
         ReservationRow existing = findByIdempotency(command.researchRunId(), command.idempotencyKey());
         if (existing != null) {
             if (!existing.taskId().equals(command.taskId()) || !existing.reserved().equals(normalize(command.reserved()))) {
@@ -51,6 +55,8 @@ public class ResearchBudgetAndCheckpointService {
             return new ReservationReceipt(existing.id(), true);
         }
         requireReservableTask(command.researchRunId(), command.taskId());
+        if (!new ResearchDiscoveryBudget(jdbcTemplate, objectMapper).allows(command.researchRunId(), command.reserved(), 1))
+            throw new BusinessException("RESEARCH_DISCOVERY_BUDGET_EXHAUSTED", "研究主循环剩余预算不足以预留任务");
         String id = Ids.newId();
         Map<String, Long> zero = zeroLike(command.reserved());
         try {

@@ -29,7 +29,7 @@ class ResearchAgentRoleCapabilityRegistry {
     ResearchAgentRoleCapabilityRegistry(
             @Value("${noteweave.research.evidence-audit-v1:false}") boolean evidenceAuditEnabled,
             @Value("${noteweave.research.worker-synthesis-v1:false}") boolean synthesisEnabled,
-            @Value("${noteweave.research.wide-discovery-v1:false}") boolean wideDiscoveryEnabled,
+            @Value("${noteweave.research.wide-discovery-v1:true}") boolean wideDiscoveryEnabled,
             @Value("${noteweave.research.llm-planning-v1:true}") boolean planningEnabled
     ) {
         this.evidenceAuditEnabled = evidenceAuditEnabled;

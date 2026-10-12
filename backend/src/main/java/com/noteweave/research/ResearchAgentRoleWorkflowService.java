@@ -27,7 +27,6 @@ class ResearchAgentRoleWorkflowService {
     private final ResearchAgentCompletionCanonicalizer canonicalizer;
     private final boolean auditEnabled;
     private final boolean synthesisEnabled;
-    private final boolean wideDiscoveryEnabled;
     private final ResearchAgentFeatureFlagService featureFlags;
     private final ResearchContextV2Gate contextGate;
 
@@ -41,8 +40,7 @@ class ResearchAgentRoleWorkflowService {
             ResearchAgentFeatureFlagService featureFlags,
             ResearchContextV2Gate contextGate,
             @Value("${noteweave.research.evidence-audit-v1:true}") boolean auditEnabled,
-            @Value("${noteweave.research.worker-synthesis-v1:false}") boolean synthesisEnabled,
-            @Value("${noteweave.research.wide-discovery-v1:false}") boolean wideDiscoveryEnabled
+            @Value("${noteweave.research.worker-synthesis-v1:false}") boolean synthesisEnabled
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -54,7 +52,6 @@ class ResearchAgentRoleWorkflowService {
         this.contextGate = contextGate;
         this.auditEnabled = auditEnabled;
         this.synthesisEnabled = synthesisEnabled;
-        this.wideDiscoveryEnabled = wideDiscoveryEnabled;
     }
 
     WorkflowReceipt advancePendingAudit(String runId, int waveNo) {
@@ -66,18 +63,11 @@ class ResearchAgentRoleWorkflowService {
                 """, (rs, n) -> new CellScope(rs.getString(1), rs.getString(2), rs.getInt(3), rs.getInt(4), rs.getInt(5), value(rs.getString(6)),
                 rs.getString(7) == null ? List.of() : readStringList(rs.getString(7))), runId);
         if (pending.isEmpty()) return new WorkflowReceipt("NO_AUDIT_PENDING", null);
-        return new WorkflowReceipt("AUDIT_TASKIZED", taskizeAudit(runScope(runId), pending, waveNo + 1));
+        var taskization = taskizeAudit(runScope(runId), pending, waveNo + 1);
+        return new WorkflowReceipt(taskization == null ? "NO_AUDIT_PENDING" : "AUDIT_TASKIZED", taskization);
     }
 
     WorkflowReceipt advance(String runId, int waveNo) {
-        if (wideDiscoveryEnabled && featureFlags.enabledForRun(
-                runId, ResearchAgentFeatureFlagService.WIDE_DISCOVERY)) {
-            RoleResult discovery = latestRoleResult(runId, "WIDE_DISCOVERY");
-            if (discovery == null) {
-                if (activeRoleTask(runId, "WIDE_DISCOVERY")) return new WorkflowReceipt("DISCOVERY_PENDING", null);
-                return new WorkflowReceipt("DISCOVERY_TASKIZED", taskizeDiscovery(runId, waveNo + 1));
-            }
-        }
         if (!auditEnabled || !featureFlags.enabledForRun(
                 runId, ResearchAgentFeatureFlagService.EVIDENCE_AUDIT)) {
             return new WorkflowReceipt("FALLBACK_READY", null);
@@ -85,7 +75,8 @@ class ResearchAgentRoleWorkflowService {
         RoleResult audit = latestRoleResult(runId, "EVIDENCE_AUDIT");
         if (audit == null) {
             if (activeRoleTask(runId, "EVIDENCE_AUDIT")) return new WorkflowReceipt("AUDIT_PENDING", null);
-            return new WorkflowReceipt("AUDIT_TASKIZED", taskizeAudit(runId, waveNo + 1));
+            var taskization = taskizeAudit(runId, waveNo + 1);
+            return new WorkflowReceipt(taskization == null ? "AUDIT_BLOCKED" : "AUDIT_TASKIZED", taskization);
         }
         if (!"PASS".equals(audit.status())) return new WorkflowReceipt("AUDIT_BLOCKED", null);
         if (!synthesisEnabled || !featureFlags.enabledForRun(
@@ -98,6 +89,8 @@ class ResearchAgentRoleWorkflowService {
                 """, Integer.class, runId);
         if (validated != null && validated > 0) return new WorkflowReceipt("SYNTHESIS_READY", null);
         if (activeRoleTask(runId, "SYNTHESIS")) return new WorkflowReceipt("SYNTHESIS_PENDING", null);
+        if (!new ResearchDiscoveryBudget(jdbcTemplate, objectMapper).allows(runId, Map.of("llm_calls", 2L), 1))
+            return new WorkflowReceipt("FALLBACK_READY", null);
         return new WorkflowReceipt("SYNTHESIS_TASKIZED", taskizeSynthesis(runId, waveNo + 2, audit));
     }
 
@@ -145,52 +138,15 @@ class ResearchAgentRoleWorkflowService {
         String inputDigest = canonicalizer.domainSeparatedDigest(AUDIT_DIGEST_DOMAIN, digestInput);
         Map<String, Object> auditInput = new LinkedHashMap<>(digestInput);
         auditInput.put("input_digest", inputDigest);
+        Map<String, Object> policy = Map.of("allowed_tools", List.of(), "audit_input", auditInput);
+        if (!new ResearchDiscoveryBudget(jdbcTemplate, objectMapper).allows(runId, roleBudget("EVIDENCE_AUDIT", policy), 1)) {
+            // 审计不能执行时保留未判定状态，不允许通过正式成文资格。
+            for (CellScope cell : cells) jdbcTemplate.update("update research_cell set semantic_audit_status = 'NOT_RUN' where id = ? and semantic_audit_status = 'PENDING'", cell.id());
+            jdbcTemplate.update("update research_discovery_loop set phase = 'STOPPED', stop_reason = 'LOOP_BUDGET_EXHAUSTED' where research_run_id = ?", runId);
+            return null;
+        }
         return createRoleTask(run, cells, waveNo, "EVIDENCE_AUDIT", "evidence-audit:" + inputDigest.substring(7, 39),
-                Map.of("allowed_tools", List.of(), "audit_input", auditInput));
-    }
-
-    private ResearchAgentTaskCoordinatorService.CoordinatorReceipt taskizeDiscovery(String runId, int waveNo) {
-        RunScope run = runScope(runId);
-        List<CellScope> cells = verifiedCells(runId);
-        int planRevision = cells.stream().mapToInt(CellScope::planRevision).max().orElse(1);
-        int entityVersion = cells.stream().mapToInt(CellScope::entitySetVersion).max().orElse(1);
-        List<?> requiredFindings = run.researchIntent().get("constraints") instanceof List<?> list ? list : List.of();
-        Map<String, Object> digestInput = new LinkedHashMap<>();
-        digestInput.put("schema_version", "research-discovery-input.v1");
-        digestInput.put("question", run.question());
-        digestInput.put("required_findings", requiredFindings);
-        digestInput.put("plan_revision", planRevision);
-        digestInput.put("entity_set_version", entityVersion);
-        digestInput.put("max_cells", 80);
-        digestInput.put("allowed_source_ids", run.sourceIds());
-        String inputDigest = canonicalizer.domainSeparatedDigest("research-discovery-input.v1", digestInput);
-        Map<String, Object> discoveryInput = new LinkedHashMap<>(digestInput);
-        discoveryInput.put("input_digest", inputDigest);
-        String logicalKey = "wide-discovery:" + inputDigest.substring(7, 39);
-        Map<String, Long> budget = zeroBudget();
-        ResearchAgentTaskService.TaskSnapshot task = taskService.createTask(
-                new ResearchAgentTaskService.CreateTaskCommand(
-                        run.id(), logicalKey, logicalKey, waveNo, "WIDE_DISCOVERY", "scope-proposal", "branch-main",
-                        planRevision, entityVersion, List.of(), new LinkedHashMap<String, Object>(budget), List.of(),
-                        new ResearchAgentTaskService.TaskExecutionContext(
-                                "research-internal", Map.of("source_scope", run.sourceIds().stream()
-                                        .map(sourceId -> Map.of("source_id", sourceId, "title", sourceId)).toList()),
-                                Map.of("allowed_tools", List.of(), "discovery_input", discoveryInput),
-                                run.researchIntent(), run.controlPack())));
-        jdbcTemplate.update("""
-                update research_agent_task
-                set logical_task_key = ?, candidate_quorum = 1, candidate_slot = 1,
-                    snapshot_schema_version = 'research-agent-task-snapshot.v3', snapshot_digest = null
-                where id = ?
-                """, logicalKey, task.taskId());
-        boolean existed = jdbcTemplate.queryForObject(
-                "select count(*) from research_budget_reservation where research_agent_task_id = ?",
-                Integer.class, task.taskId()) > 0;
-        budgetService.reserve(new ResearchBudgetAndCheckpointService.ReserveCommand(
-                run.id(), task.taskId(), "reserve:" + logicalKey, budget));
-        ResearchAgentCommandOutboxService.CommandReceipt outbox = outboxService.enqueue(task.taskId());
-        return new ResearchAgentTaskCoordinatorService.CoordinatorReceipt(
-                existed ? 0 : 1, existed ? 1 : 0, outbox.idempotentReplay() ? 0 : 1, 0);
+                policy);
     }
 
     private ResearchAgentTaskCoordinatorService.CoordinatorReceipt taskizeSynthesis(

@@ -439,7 +439,8 @@ def run_research_agent_kafka_consumer_forever(executor: AgentExecutor | None = N
             executors["SYNTHESIS"] = SynthesisExecutor(worker_instance_id)
             enabled_roles.add("SYNTHESIS")
         if settings.research_agent_wide_discovery_enabled:
-            executors["WIDE_DISCOVERY"] = DiscoveryExecutor(worker_instance_id)
+            executors["WIDE_DISCOVERY"] = DiscoveryExecutor(worker_instance_id, client,
+                enable_llm=not settings.research_agent_fake_provider_enabled)
             enabled_roles.add("WIDE_DISCOVERY")
         if settings.research_agent_planning_enabled:
             executors["PLANNING"] = PlanningExecutor(

@@ -67,7 +67,7 @@ noteweave:
     checkpoint-hydration-v2: ${NOTEWEAVE_RESEARCH_CHECKPOINT_HYDRATION_V2:false}
     evidence-audit-v1: ${NOTEWEAVE_RESEARCH_EVIDENCE_AUDIT_V1:true}
     worker-synthesis-v1: ${NOTEWEAVE_RESEARCH_WORKER_SYNTHESIS_V1:false}
-    wide-discovery-v1: ${NOTEWEAVE_RESEARCH_WIDE_DISCOVERY_V1:false}
+    wide-discovery-v1: ${NOTEWEAVE_RESEARCH_WIDE_DISCOVERY_V1:true}
     wide-discovery-auto-accept: ${NOTEWEAVE_RESEARCH_WIDE_DISCOVERY_AUTO_ACCEPT:false}
     wide-discovery-accepted-precision: ${NOTEWEAVE_RESEARCH_WIDE_DISCOVERY_ACCEPTED_PRECISION:0.0}
     wide-discovery-precision-threshold: ${NOTEWEAVE_RESEARCH_WIDE_DISCOVERY_PRECISION_THRESHOLD:0.90}

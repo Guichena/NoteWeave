@@ -35,7 +35,7 @@ class ResearchAgentFeatureFlagService {
             @Value("${noteweave.research.checkpoint-hydration-v2:false}") boolean checkpointHydration,
             @Value("${noteweave.research.evidence-audit-v1:true}") boolean evidenceAudit,
             @Value("${noteweave.research.worker-synthesis-v1:false}") boolean workerSynthesis,
-            @Value("${noteweave.research.wide-discovery-v1:false}") boolean wideDiscovery,
+            @Value("${noteweave.research.wide-discovery-v1:true}") boolean wideDiscovery,
             @Value("${noteweave.research.wide-discovery-auto-accept:false}") boolean discoveryAutoAccept,
             @Value("${noteweave.research.wide-discovery-accepted-precision:0.0}") double acceptedPrecision,
             @Value("${noteweave.research.wide-discovery-precision-threshold:0.90}") double precisionThreshold

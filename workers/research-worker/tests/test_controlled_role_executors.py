@@ -172,4 +172,5 @@ def test_wide_discovery_emits_proposals_without_cell_mutation_payload() -> None:
     assert completion.evidence == ()
     assert completion.role_result["status"] == "PROPOSED"
     assert completion.role_result["plan_revision"] == 3
-    assert completion.role_result["proposals"][0]["proposal_type"] == "DIMENSION"
+    assert completion.role_result["proposals"] == []
+    assert completion.role_result["search_observations"] == []

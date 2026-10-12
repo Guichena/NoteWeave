@@ -91,6 +91,11 @@ class ResearchAgentRoleResultService {
         } else if (ResearchAgentRoles.PLANNING.equals(task.role())) {
             planningService.applyResult(task, result);
         } else {
+            if ("research-discovery-proposal.v2".equals(text(result.get("result_schema_version")))) {
+                if (!(result.get("queries") instanceof List<?> queries)
+                        || envelope.budgetUsage().getOrDefault("search_calls", 0L) < queries.size())
+                    throw invalid("宽搜索检索次数与预算结算不一致");
+            }
             discoveryProposalService.validateAndPersist(task, result, roleResultId);
         }
     }

@@ -159,7 +159,7 @@ public class ResearchExternalSnapshotArchiveService {
      * but it can still reject localhost and numeric non-public destinations
      * before they become durable provenance metadata.
      */
-    boolean nonPublicLiteralHost(String rawHost) {
+    static boolean nonPublicLiteralHost(String rawHost) {
         String host = rawHost == null ? "" : rawHost.strip();
         if (host.startsWith("[") && host.endsWith("]")) host = host.substring(1, host.length() - 1);
         if (host.equalsIgnoreCase("localhost") || host.equalsIgnoreCase("localhost.localdomain")
@@ -195,7 +195,7 @@ public class ResearchExternalSnapshotArchiveService {
      * 2130706433, 0177.0.0.1 and 0x7f.1). Returning {@code null} for an otherwise numeric-looking
      * host makes validation fail closed instead of letting an alternate loopback spelling through.
      */
-    private byte[] parseIpv4Literal(String host) {
+    private static byte[] parseIpv4Literal(String host) {
         String[] parts = host.split("\\.", -1);
         if (parts.length == 0 || parts.length > 4) return null;
         long[] values = new long[parts.length];

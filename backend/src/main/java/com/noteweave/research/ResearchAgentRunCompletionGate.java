@@ -522,6 +522,7 @@ public class ResearchAgentRunCompletionGate {
 
     public BudgetState loadBudgetState(String runId) {
         List<String> reasons = new ArrayList<>();
+        reasons.addAll(jdbcTemplate.queryForList("select stop_reason from research_discovery_loop where research_run_id = ? and stop_reason = 'LOOP_BUDGET_EXHAUSTED'", String.class, runId));
         for (String signal : persistedSignals(runId)) {
             String normalized = signal.trim().toUpperCase(Locale.ROOT);
             if (RESOURCE_REASON_CODES.contains(normalized)) reasons.add(normalized);

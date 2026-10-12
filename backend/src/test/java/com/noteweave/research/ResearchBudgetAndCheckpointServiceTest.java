@@ -51,6 +51,35 @@ class ResearchBudgetAndCheckpointServiceTest {
     }
 
     @Test
+    void concurrentDirectReservationsShouldNotExceedTheFrozenLoopBudget() throws Exception {
+        jdbcTemplate.update("insert into research_discovery_loop(research_run_id, phase, limits_json) values (?, 'POPULATE_CELLS', ?)", runId, "{\"llm_calls\":1,\"search_calls\":1}");
+        String otherTask = taskService.createTask(new ResearchAgentTaskService.CreateTaskCommand(
+                runId, "other-task", "other-task-idem", 1, "DEEP_CELL", "entity-1", "branch-main", 0, 1,
+                List.of("entity-1:evidence"), Map.of("llm_calls", 1))).taskId();
+        var gate = new java.util.concurrent.CountDownLatch(1);
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            List<java.util.concurrent.Future<Object>> futures = new java.util.ArrayList<>();
+            for (String taskId : List.of(agentTaskId, otherTask)) futures.add(executor.submit(() -> {
+                gate.await();
+                try { return service.reserve(new ResearchBudgetAndCheckpointService.ReserveCommand(runId, taskId, "concurrent:" + taskId, Map.of("llm_calls", 1L))); }
+                catch (BusinessException exception) { return exception; }
+            }));
+            gate.countDown();
+            List<Object> results = List.of(futures.get(0).get(10, java.util.concurrent.TimeUnit.SECONDS), futures.get(1).get(10, java.util.concurrent.TimeUnit.SECONDS));
+            assertThat(results.stream().filter(r -> r instanceof ResearchBudgetAndCheckpointService.ReservationReceipt).count()).isEqualTo(1);
+            assertThat(results.stream().filter(r -> r instanceof BusinessException).map(r -> ((BusinessException) r).code()).toList()).containsExactly("RESEARCH_DISCOVERY_BUDGET_EXHAUSTED");
+            String rejectedTask = taskService.createTask(new ResearchAgentTaskService.CreateTaskCommand(
+                    runId, "overflow-task", "overflow-task-idem", 1, "DEEP_CELL", "entity-1", "branch-main", 0, 1,
+                    List.of("entity-1:overflow"), Map.of("llm_calls", 1))).taskId();
+            assertThatThrownBy(() -> service.reserve(new ResearchBudgetAndCheckpointService.ReserveCommand(
+                    runId, rejectedTask, "overflow-reserve", Map.of("llm_calls", Long.MAX_VALUE))))
+                    .isInstanceOfSatisfying(BusinessException.class, error -> assertThat(error.code()).isEqualTo("RESEARCH_DISCOVERY_BUDGET_EXHAUSTED"));
+            assertThat(jdbcTemplate.queryForObject("select count(*) from research_budget_reservation where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
+        } finally { executor.shutdownNow(); }
+    }
+
+    @Test
     void shouldReserveSettleAndReleaseBudgetWithDimensionalConservation() {
         ResearchBudgetAndCheckpointService.ReservationReceipt reserved = service.reserve(new ResearchBudgetAndCheckpointService.ReserveCommand(
                 runId, agentTaskId, "reserve-1", Map.of("llm_calls", 3L, "input_tokens", 100L)
