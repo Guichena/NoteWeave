@@ -70,11 +70,11 @@ class RoleProfileCatalog:
         ),
         "DEEP_CELL": RoleProfile(
             "deep-cell-v1", "deep_cell_extract", 0.1,
-            frozenset({"search", "fetch", "read", "extract"}), 4, 4, 8, 4,
+            frozenset({"search", "fetch", "read", "extract"}), 7, 7, 14, 32,
         ),
         "COUNTERFACTUAL": RoleProfile(
             "counterfactual-v1", "counterfactual_verify", 0.0,
-            frozenset({"search", "fetch", "read", "extract"}), 6, 6, 10, 4, True,
+            frozenset({"search", "fetch", "read", "extract"}), 7, 7, 14, 32, True,
         ),
         "CELL_VERIFIER": RoleProfile(
             "cell-verifier-v1", "cell_verify", 0.0,

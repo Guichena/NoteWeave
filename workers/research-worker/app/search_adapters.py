@@ -18,6 +18,7 @@ from app.query_specs import find_query_spec
 from app.search import run_seed_source_search
 from app.source_profile import infer_search_lane, infer_source_domain, infer_source_quality
 from app.text_terms import terms as text_terms
+from app.query_execution import record_query
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,8 @@ class SeedSourceSearchAdapter:
         remaining_budget: int | None = None,
     ) -> list[ResearchSearchHit]:
         query_plan = build_search_query_plan(plan, remaining_budget)
+        for item in query_plan:
+            record_query(item.query)
         hits = run_seed_source_search(
             task_input,
             plan,
@@ -329,6 +332,7 @@ class ExternalSearchAdapter:
             for page in range(1, page_budget + 1):
                 if len(hits) >= budget:
                     break
+                record_query(query_item.query)
                 raw_results = _transport_search_page(
                     self.transport,
                     query=query_item.query,

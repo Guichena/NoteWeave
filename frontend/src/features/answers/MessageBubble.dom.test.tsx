@@ -2,6 +2,8 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { AnswerEvidence } from "./evidence";
+import type { Message } from "./messageTypes";
 import { MessageBubble } from "./MessageBubble";
 
 afterEach(cleanup);
@@ -135,7 +137,7 @@ describe("MessageBubble failed answers", () => {
 
 describe("MessageBubble 检索链路与证据", () => {
   it("标注回答所用的检索方式，展开引用时读取证据清单并展示位置和摘录", async () => {
-    const loadEvidence = vi.fn(async () => [{
+    const loadEvidence = vi.fn(async () => ({ run_id: "run-1", evidence: [{
       rank: 1,
       evidence_id: "note-window:c1:12",
       kind: "PASSAGE",
@@ -146,7 +148,7 @@ describe("MessageBubble 检索链路与证据", () => {
       excerpt: "命中锚点窗口后向前后各扩展一个窗口",
       location: "第 5 节",
       character_cost: 20
-    }]);
+    }] }));
     render(
       <MessageBubble
         loadEvidence={loadEvidence}
@@ -181,5 +183,83 @@ describe("MessageBubble 检索链路与证据", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "混合检索" }));
     expect(onOpenWikiPage).toHaveBeenCalledWith("混合检索");
+  });
+});
+
+function evidenceItem(overrides: Partial<AnswerEvidence> = {}): AnswerEvidence {
+  return {
+    rank: 1, evidence_id: "knowledge-version:k1", kind: "KNOWLEDGE_VERSION", source_id: null, passage_id: null,
+    knowledge_item_id: "k1", title: "RRF 融合排序", excerpt: "按名次融合", location: null, character_cost: 5,
+    ...overrides
+  };
+}
+
+function completedAnswer(overrides: Partial<Message> = {}): Message {
+  return {
+    role: "assistant", answerMode: "qa", answerStatus: "COMPLETED", answerRunId: "run-9",
+    content: "按名次融合 [1]。", citations: ["RRF 融合排序 | 按名次融合"], ...overrides
+  };
+}
+
+describe("MessageBubble 检索改写、证据充分性与反馈", () => {
+  it("本次会话生成完的回答立即读取证据清单，证据不足时在回答上方提示", async () => {
+    const loadEvidence = vi.fn(async () => ({ run_id: "run-9", evidence: [], evidence_sufficiency: "INSUFFICIENT" }));
+    const { rerender } = render(<MessageBubble loadEvidence={loadEvidence} message={completedAnswer({ answerStatus: "GENERATING" })} />);
+    expect(loadEvidence).not.toHaveBeenCalled();
+
+    rerender(<MessageBubble loadEvidence={loadEvidence} message={completedAnswer()} />);
+    expect((await screen.findByRole("note")).textContent).toContain("没有足够的信息");
+  });
+
+  it("历史回答不主动读取证据清单", () => {
+    const loadEvidence = vi.fn(async () => ({ run_id: "run-9", evidence: [] }));
+    render(<MessageBubble loadEvidence={loadEvidence} message={completedAnswer()} />);
+    expect(loadEvidence).not.toHaveBeenCalled();
+  });
+
+  it("展开引用后展示检索改写和 Wiki 页面的到达路径", async () => {
+    const loadEvidence = vi.fn(async () => ({
+      run_id: "run-9",
+      evidence: [evidenceItem({ graph_path: ["混合检索", "RRF 融合排序"] })],
+      evidence_sufficiency: "PARTIAL",
+      retrieval_rewrite: {
+        is_standalone: false, standalone_query: "RRF 融合排序的参数 K 取多少", keyword_query: "RRF K",
+        method: "RULE", degradation_reasons: ["QUERY_REWRITE_LLM_UNAVAILABLE"]
+      }
+    }));
+    render(<MessageBubble loadEvidence={loadEvidence} message={completedAnswer({ answerMode: "wiki" })} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /来源 1/ }));
+    expect(await screen.findByText("经由页面：混合检索 → RRF 融合排序")).toBeTruthy();
+    expect(screen.getByText(/检索时理解为：RRF 融合排序的参数 K 取多少/)).toBeTruthy();
+    expect(screen.getByText("（模型不可用，按规则补全）")).toBeTruthy();
+    expect(screen.getByRole("note").textContent).toContain("只能回答这个问题的一部分");
+  });
+
+  it("点踩后可以补充原因，两次提交都带上回答 ID", async () => {
+    const onFeedback = vi.fn(async () => undefined);
+    render(<MessageBubble onFeedback={onFeedback} message={completedAnswer()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "回答没有帮助" }));
+    expect(onFeedback).toHaveBeenCalledWith("run-9", { rating: "NEGATIVE" });
+    fireEvent.click(await screen.findByRole("button", { name: "引用不支持结论" }));
+    expect(onFeedback).toHaveBeenLastCalledWith("run-9", { rating: "NEGATIVE", reason: "引用不支持结论" });
+    expect(await screen.findByText("感谢反馈")).toBeTruthy();
+  });
+
+  it("反馈提交失败时恢复按钮状态并提示", async () => {
+    const onFeedback = vi.fn(async () => { throw new Error("boom"); });
+    render(<MessageBubble onFeedback={onFeedback} message={completedAnswer()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "回答有帮助" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("没有提交成功");
+    expect(screen.getByRole("button", { name: "回答有帮助" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("重新生成把原回答 ID 交给调用方", () => {
+    const onRegenerate = vi.fn();
+    render(<MessageBubble onRegenerate={onRegenerate} message={completedAnswer()} />);
+    fireEvent.click(screen.getByRole("button", { name: "重新生成回答" }));
+    expect(onRegenerate).toHaveBeenCalledWith("run-9");
   });
 });

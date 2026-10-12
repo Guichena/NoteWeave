@@ -117,6 +117,9 @@ public class ResearchAgentCompletionEnvelopeParser {
                 object(root, "role_result");
             } else if (v2) {
                 validateExtractionDiagnostics(object(root, "extraction_diagnostics"));
+                if (root.get("extraction_diagnostics").has("execution_report")) {
+                    ResearchRepairExecutionService.validateReport(root.get("extraction_diagnostics").get("execution_report"));
+                }
             }
             return mapper.treeToValue(root, ResearchAgentCompletionEnvelope.class);
         } catch (BusinessException exception) {

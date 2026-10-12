@@ -54,7 +54,11 @@ function fakeApi(lists: MemoryItem[][]) {
     listItems: vi.fn(async () => lists[Math.min(call++, lists.length - 1)]),
     createSignal: vi.fn(async (_workspaceId: string, _input: unknown) => ({ signal_id: "signal-1" })),
     promoteSignals: vi.fn(async () => ({ candidates: [{ candidate_id: "new", review_status: "READY", conflict_status: "NO_CONFLICT" }] })),
-    decideReview: vi.fn(async () => ({ revision_id: "", memory_item_id: "", status: "ACTIVE", revoked_memory_item_ids: [] }))
+    decideReview: vi.fn(async () => ({ revision_id: "", memory_item_id: "", status: "ACTIVE", revoked_memory_item_ids: [] })),
+    previewChatControlPack: vi.fn(async (_workspaceId: string, _mode: string, _query: string) => ({ memory_references: [
+      { memory_object_id: "active", memory_class: "ALWAYS_ON", selection_reason: "适用于全部回答的常驻约束" },
+      { memory_object_id: "other", memory_class: "ON_DEMAND", relevance: 0.82, selection_reason: "与问题相关", display_text: "保留页码" }
+    ] }))
   };
 }
 
@@ -159,5 +163,47 @@ describe("MemoryReviewWorkbench", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "生效" }));
     expect((await screen.findByRole("alert")).textContent).toBe("服务不可用");
+  });
+
+  it("待确认项说明冲突的记忆，冲突检查未执行时要求人工确认", async () => {
+    const slotConflict = memory("slot", {
+      item_status: "EMPTY", review_status: "REVIEW_REQUIRED", revision_status: "PROPOSED",
+      display_text: "回答使用英文",
+      conflict: { type: "SLOT_VALUE", conflicting_item_id: "active", conflicting_text: "回答使用中文" }
+    });
+    const unchecked = memory("unchecked", {
+      item_status: "EMPTY", review_status: "REVIEW_REQUIRED", revision_status: "PROPOSED",
+      display_text: "表格优先", conflict: { type: "CHECK_NOT_RUN" }
+    });
+    renderPage(fakeApi([[slotConflict, unchecked]]));
+
+    const pending = await screen.findByRole("region", { name: "待确认" });
+    const slotCard = within(pending).getByText("回答使用英文").closest("article") as HTMLElement;
+    expect(within(slotCard).getByRole("note").textContent).toContain("与生效中的记忆冲突：同一设置项取值不同回答使用中文");
+    expect(within(slotCard).getByRole("button", { name: "替换原有记忆" })).toBeTruthy();
+
+    const uncheckedCard = within(pending).getByText("表格优先").closest("article") as HTMLElement;
+    expect(uncheckedCard.textContent).toContain("没有完成冲突检查");
+    expect(within(uncheckedCard).getByRole("button", { name: "生效" })).toBeTruthy();
+  });
+
+  it("生效记忆展示置信度和强化次数，并能预览某个问题会编入哪些记忆", async () => {
+    const scored = memory("active", {
+      display_text: "回答先给结论", confidence: { alpha: 7, beta: 1, mean: 0.875, variance: 0.01 }, reinforcement_count: 5
+    });
+    const api = fakeApi([[scored]]);
+    renderPage(api);
+
+    expect(await screen.findByText(/置信度 88% · 强化 5 次/)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("回答模式"), { target: { value: "NOTE" } });
+    fireEvent.change(screen.getByLabelText("预览用的问题"), { target: { value: "第 3 页讲了什么" } });
+    fireEvent.click(screen.getByRole("button", { name: "预览" }));
+
+    const list = await screen.findByRole("list", { name: "编入的记忆" });
+    expect(api.previewChatControlPack).toHaveBeenCalledWith("workspace", "NOTE", "第 3 页讲了什么");
+    expect(within(list).getByText("回答先给结论")).toBeTruthy();
+    expect(within(list).getByText("常驻")).toBeTruthy();
+    expect(within(list).getByText("相关度 82% · 与问题相关")).toBeTruthy();
   });
 });

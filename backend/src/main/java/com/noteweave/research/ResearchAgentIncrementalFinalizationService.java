@@ -68,7 +68,8 @@ public class ResearchAgentIncrementalFinalizationService {
                 """, Integer.class, runId);
         Integer unverified = jdbcTemplate.queryForObject("""
                 select count(*) from research_cell where research_run_id = ?
-                and (cell_status <> 'VERIFIED' or evidence_refs_json is null or evidence_refs_json = '[]')
+                and (cell_status <> 'VERIFIED' or evidence_refs_json is null or evidence_refs_json = '[]'
+                    or not exists (select 1 from research_counter_eligible_cell eligible where eligible.id = research_cell.id))
                 """, Integer.class, runId);
         Integer verified = jdbcTemplate.queryForObject("select count(*) from research_cell where research_run_id = ? and cell_status = 'VERIFIED'", Integer.class, runId);
         if ((active != null && active > 0) || unverified == null || unverified > 0 || verified == null || verified == 0) {
@@ -79,6 +80,7 @@ public class ResearchAgentIncrementalFinalizationService {
         SynthesisCandidate synthesis = loadValidatedSynthesis(runId);
         String markdown = synthesis == null ? render(run.question(), cells, matrixLabels(jdbcTemplate, runId)) : synthesis.markdown();
         markdown = appendCitationAudit(runId, markdown, cells);
+        markdown = ResearchRepairExecutionService.appendCounterAudit(jdbcTemplate, runId, markdown);
         String title = ResearchDisplayLabels.reportTitle(run.question());
         String artifactId = Ids.newId();
         String reportDigest = sha256(markdown);
@@ -178,7 +180,7 @@ public class ResearchAgentIncrementalFinalizationService {
 
     private List<Cell> loadVerifiedCells(String runId) {
         return jdbcTemplate.query("""
-                select id, cell_key, candidate_value, evidence_refs_json from research_cell
+                select id, cell_key, candidate_value, evidence_refs_json from research_counter_eligible_cell
                 where research_run_id = ? and cell_status = 'VERIFIED'
                 """, (rs, rowNum) -> new Cell(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4)), runId);
     }

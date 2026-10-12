@@ -45,14 +45,21 @@ let items: MemoryItem[] = [
   }),
   item("mem-conflict", "不要先给结论，按推导顺序展开", {
     item_status: "EMPTY", review_status: "REVIEW_REQUIRED", revision_status: "PROPOSED", candidate_type: "NEGATIVE",
-    conflict_status: "CONFLICTING_ACTIVE_MEMORY", created_at: minutesAgo(30),
+    conflict_status: "CONFLICTING_ACTIVE_MEMORY", created_at: minutesAgo(30), slot_key: "answer.structure",
+    conflict: { type: "SLOT_VALUE", conflicting_item_id: "mem-conclusion", conflicting_text: "回答先给结论，再展开证据" },
     gate: { ...GATE_BASE, result: "NEEDS_REVIEW", risk_score: 0.85, conflict_status: "CONFLICTING_ACTIVE_MEMORY" }
   }),
   item("mem-recheck", "引用统一放在段落末尾，不插在句中", {
     review_status: "REVIEW_REQUIRED", utility_score: 0.38, application_count: 6, created_at: minutesAgo(4_300)
   }),
-  item("mem-conclusion", "回答先给结论，再展开证据", { application_count: 14, created_at: minutesAgo(8_600) }),
-  item("mem-terms", "技术术语保留英文原文，不做翻译", { application_count: 22, created_at: minutesAgo(9_900) }),
+  item("mem-conclusion", "回答先给结论，再展开证据", {
+    application_count: 14, created_at: minutesAgo(8_600), slot_key: "answer.structure",
+    confidence: { alpha: 7, beta: 1, mean: 0.875, variance: 0.0122 }, reinforcement_count: 5
+  }),
+  item("mem-terms", "技术术语保留英文原文，不做翻译", {
+    application_count: 22, created_at: minutesAgo(9_900), slot_key: "answer.terminology",
+    confidence: { alpha: 9, beta: 2, mean: 0.818, variance: 0.0124 }, reinforcement_count: 7
+  }),
   item("mem-marketing", "不要使用营销式的夸张措辞", { candidate_type: "NEGATIVE", application_count: 9, created_at: minutesAgo(7_200) }),
   item("mem-note-page", "精读回答保留原文所在的页码", {
     task_neighborhoods: ["CHAT_NOTE"], application_count: 5, created_at: minutesAgo(2_900)
@@ -122,4 +129,27 @@ export function decide(revisionId: string, decision: string) {
   }
   const status = decision === "REJECT" ? "REJECTED" : decision === "REVOKE" ? "REVOKED" : "ACTIVE";
   return { revision_id: revisionId, memory_item_id: target.memory_item_id, status, revoked_memory_item_ids: revoked };
+}
+
+// 2C 注入预览：常驻约束总是编入，其余按问题里的词粗略判断相关度。
+export function previewControlPack(answerMode: string, query: string) {
+  const neighborhood = `CHAT_${answerMode.toUpperCase()}`;
+  const active = items.filter((entry) => entry.revision_status === "ACTIVE" && entry.review_status !== "REVIEW_REQUIRED"
+    && entry.memory_scope !== "USER"
+    && entry.task_neighborhoods.some((value) => value === "COMMON" || value === neighborhood));
+  return {
+    memory_references: active.map((entry) => {
+      const alwaysOn = entry.candidate_type === "NEGATIVE" || entry.task_neighborhoods.includes("COMMON");
+      const relevance = alwaysOn ? null : (query.includes("页") ? 0.82 : 0.41);
+      return {
+        memory_object_id: entry.memory_item_id,
+        memory_version_id: entry.revision_id,
+        utility_score: entry.utility_score,
+        memory_class: alwaysOn ? "ALWAYS_ON" : "ON_DEMAND",
+        relevance,
+        selection_reason: alwaysOn ? "适用于全部回答的常驻约束" : "与问题相关度较高，按价值和篇幅选入",
+        display_text: entry.display_text
+      };
+    })
+  };
 }

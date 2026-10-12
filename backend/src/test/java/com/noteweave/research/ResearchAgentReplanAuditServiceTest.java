@@ -42,13 +42,13 @@ class ResearchAgentReplanAuditServiceTest {
             return new ColumnMeta(rs.getString(1), rs.getString(2), nullLength ? null : (int) maxLength);
         }, TABLE);
 
-        assertThat(columns).hasSize(13);
+        assertThat(columns).hasSize(16);
         List<String> names = columns.stream().map(column -> column.name().toLowerCase()).toList();
         assertThat(names).containsExactlyInAnyOrder(
                 "id", "research_run_id", "plan_revision_from", "plan_revision_to",
                 "old_plan_digest", "new_plan_digest", "deviation_type", "observed_facts",
                 "affected_cells_json", "budget_delta_json", "evidence_refs_json",
-                "selected_repair", "created_at");
+                "selected_repair", "created_at", "repair_cause", "strategy", "query_count");
         // No free-form reasoning slot may exist in the audit table.
         assertThat(names).noneMatch(name -> name.matches(".*(reasoning|thought|chain|prompt|raw|transcript).*"));
 
@@ -61,7 +61,7 @@ class ResearchAgentReplanAuditServiceTest {
         // Chain-of-Thought dump; only the three structured payload columns are LOB-shaped and
         // their serialized size is capped by the service before insert.
         for (String narrow : List.of("id", "research_run_id", "old_plan_digest", "new_plan_digest",
-                "deviation_type", "observed_facts", "selected_repair")) {
+                "deviation_type", "observed_facts", "selected_repair", "repair_cause", "strategy")) {
             assertThat(byName.get(narrow).dataType())
                     .as("decision text column %s must be a character column", narrow)
                     .containsIgnoringCase("char");

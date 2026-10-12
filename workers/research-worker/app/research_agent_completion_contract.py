@@ -39,7 +39,7 @@ _EXTRACTION_DIAGNOSTICS_SCHEMA = "research-extraction-diagnostics.v1"
 _EXTRACTION_ACCEPTED_REASON = ExtractionTerminationReason.ACCEPTED_CARDS.value
 _EXTRACTION_TERMINATION_REASONS = frozenset(item.value for item in ExtractionTerminationReason)
 _EXTRACTION_FAILURE_REASONS = frozenset(item.value for item in ExtractionFailureReason)
-_MAX_EXTRACTION_DIAGNOSTICS_BYTES = 8_192
+_MAX_EXTRACTION_DIAGNOSTICS_BYTES = 65_536
 _MAX_EXTRACTION_MODEL_CHARS = 128
 _MAX_EXTRACTION_WINDOW_CHARS = 64
 _MAX_EXTRACTION_COLUMN_CHARS = 64
@@ -190,6 +190,7 @@ class ResearchAgentExtractionDiagnostics(_FrozenStrictContract):
     rejected_count: int = Field(ge=0, le=_MAX_COUNTER)
     rejection_counts: dict[str, int]
     provider_receipt: ResearchAgentExtractionProviderReceipt
+    execution_report: dict[str, object] | None = None
     rejection_samples: tuple[ResearchAgentRejectionSample, ...] = Field(
         default_factory=tuple, max_length=_MAX_REJECTION_SAMPLES
     )
@@ -218,6 +219,9 @@ class ResearchAgentExtractionDiagnostics(_FrozenStrictContract):
 
     @model_validator(mode="after")
     def validate_diagnostics(self) -> "ResearchAgentExtractionDiagnostics":
+        if self.execution_report is not None:
+            from app.execution_report import validate_execution_report
+            validate_execution_report(self.execution_report)
         if sum(self.rejection_counts.values()) != self.rejected_count:
             raise ValueError("extraction rejection_counts must sum to rejected_count")
         if self.accepted_count == 0 and self.termination_reason == _EXTRACTION_ACCEPTED_REASON:

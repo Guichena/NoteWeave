@@ -50,7 +50,7 @@ public class ResearchAgentCompletionCanonicalizer {
     );
     public static final Set<String> EXTRACTION_DIAGNOSTICS_KEYS = Set.of(
             "schema_version", "termination_reason", "accepted_count", "rejected_count",
-            "rejection_counts", "provider_receipt", "rejection_samples"
+            "rejection_counts", "provider_receipt", "rejection_samples", "execution_report"
     );
     public static final Set<String> EXTRACTION_PROVIDER_RECEIPT_KEYS = Set.of(
             "purpose", "transport", "model", "call_count", "response_digest", "response_chars"
@@ -58,7 +58,7 @@ public class ResearchAgentCompletionCanonicalizer {
     public static final Set<String> EXTRACTION_REJECTION_SAMPLE_KEYS = Set.of(
             "reason", "window_id", "column_key", "detail"
     );
-    public static final int MAX_EXTRACTION_DIAGNOSTICS_BYTES = 8_192;
+    public static final int MAX_EXTRACTION_DIAGNOSTICS_BYTES = 65_536;
     public static final int MAX_EXTRACTION_REJECTION_SAMPLES = 8;
     public static final int MAX_EXTRACTION_MODEL_CHARS = 128;
     public static final int MAX_EXTRACTION_WINDOW_CHARS = 64;
@@ -214,6 +214,9 @@ public class ResearchAgentCompletionCanonicalizer {
         }
         if (envelope.extractionDiagnostics() != null) {
             validateExtractionDiagnostics(envelope.extractionDiagnostics());
+            if (envelope.extractionDiagnostics().containsKey("execution_report")) {
+                ResearchRepairExecutionService.validateReport(envelope.extractionDiagnostics().get("execution_report"));
+            }
         }
 
         Set<String> evidenceKeys = new HashSet<>();

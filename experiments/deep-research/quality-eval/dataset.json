@@ -1,0 +1,257 @@
+{
+  "dataset_key": "research-quality-v1",
+  "dataset_version": "1.0.0",
+  "frozen_at": "2026-10-12",
+  "schema_version": "research-quality-dataset.v1",
+  "purpose": "评估 Deep Research 结论质量；与 research-eval-v1 的健壮性断言互补，结构化字段由脚本统计，内容质量由单次 LLM 评分。",
+  "question_types": {
+    "COMPARISON": "两个对象按多个维度对比",
+    "SURVEY": "一类产品或一组变更的整体情况",
+    "FACT": "需要精确事实（版本号、编号、命令）的问题",
+    "CONFLICT": "可信来源结论不一致，期望保留双方证据"
+  },
+  "cases": [
+    {
+      "case_key": "cmp-postgres-mysql-json",
+      "question_type": "COMPARISON",
+      "question": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。",
+      "must_cover": [
+        "两者各自支持的 JSON 索引形式",
+        "哪些运算符或函数能用上索引",
+        "索引的写入开销或限制"
+      ],
+      "expected_entities": [
+        "PostgreSQL 17",
+        "MySQL 8.4"
+      ],
+      "research_eval_v1_case": "normal-postgres17-vs-mysql84-json"
+    },
+    {
+      "case_key": "cmp-openai-anthropic-tools",
+      "question_type": "COMPARISON",
+      "question": "比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。",
+      "must_cover": [
+        "工具定义与调用结果的消息结构",
+        "流式事件的类型划分",
+        "并行工具调用的支持方式"
+      ],
+      "expected_entities": [
+        "OpenAI Responses API",
+        "Anthropic Messages API"
+      ],
+      "research_eval_v1_case": "normal-openai-responses-vs-anthropic-messages"
+    },
+    {
+      "case_key": "cmp-kafka-pulsar-ordering",
+      "question_type": "COMPARISON",
+      "question": "Kafka 与 Pulsar 在消息顺序保证和消费模型上有什么差异？引用官方文档。",
+      "must_cover": [
+        "分区或主题内的顺序保证",
+        "订阅或消费组模型",
+        "重平衡或故障时对顺序的影响"
+      ],
+      "expected_entities": [
+        "Apache Kafka",
+        "Apache Pulsar"
+      ],
+      "research_eval_v1_case": "normal-kafka-vs-pulsar-ordering"
+    },
+    {
+      "case_key": "cmp-terraform-pulumi-state",
+      "question_type": "COMPARISON",
+      "question": "比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。",
+      "must_cover": [
+        "状态文件的存放位置与后端",
+        "加锁机制",
+        "多人并发修改时的行为"
+      ],
+      "expected_entities": [
+        "Terraform",
+        "Pulumi"
+      ],
+      "research_eval_v1_case": "normal-terraform-vs-pulumi-state"
+    },
+    {
+      "case_key": "cmp-redis-valkey-persistence",
+      "question_type": "COMPARISON",
+      "question": "比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。",
+      "must_cover": [
+        "RDB 与 AOF 的支持情况",
+        "两者许可证的区别",
+        "分叉之后新增的差异"
+      ],
+      "expected_entities": [
+        "Redis 7.4",
+        "Valkey 8"
+      ]
+    },
+    {
+      "case_key": "cmp-vite-webpack-hmr",
+      "question_type": "COMPARISON",
+      "question": "比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+      "must_cover": [
+        "开发阶段是否打包",
+        "热更新的粒度与机制",
+        "生产构建使用的工具"
+      ],
+      "expected_entities": [
+        "Vite",
+        "webpack"
+      ]
+    },
+    {
+      "case_key": "cmp-grpc-graphql",
+      "question_type": "COMPARISON",
+      "question": "比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。",
+      "must_cover": [
+        "接口描述语言",
+        "底层传输协议",
+        "流式或订阅能力"
+      ],
+      "expected_entities": [
+        "gRPC",
+        "GraphQL"
+      ]
+    },
+    {
+      "case_key": "cmp-otel-prometheus-metrics",
+      "question_type": "COMPARISON",
+      "question": "比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。",
+      "must_cover": [
+        "指标类型划分",
+        "采集方式是推送还是拉取",
+        "累计值与增量值的表示"
+      ],
+      "expected_entities": [
+        "OpenTelemetry",
+        "Prometheus"
+      ]
+    },
+    {
+      "case_key": "survey-vector-db-hybrid",
+      "question_type": "SURVEY",
+      "question": "主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。",
+      "must_cover": [
+        "至少三个产品是否原生支持关键词加向量混合检索",
+        "各自的融合方式，例如 RRF 或加权",
+        "是否支持重排"
+      ]
+    },
+    {
+      "case_key": "survey-rust-edition-2024",
+      "question_type": "SURVEY",
+      "question": "Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。",
+      "must_cover": [
+        "至少三项具体的不兼容变更",
+        "迁移工具或自动修复方式",
+        "生效的 Rust 版本"
+      ],
+      "research_eval_v1_case": "normal-rust-edition-2024-vs-2021"
+    },
+    {
+      "case_key": "survey-http3-loss-recovery",
+      "question_type": "SURVEY",
+      "question": "HTTP/3 与 HTTP/2 在拥塞控制和丢包恢复上的实现差异是什么？引用 RFC。",
+      "must_cover": [
+        "队头阻塞问题的差异",
+        "QUIC 丢包检测与恢复机制",
+        "拥塞控制所在的协议层"
+      ],
+      "research_eval_v1_case": "normal-http3-vs-http2-congestion"
+    },
+    {
+      "case_key": "survey-oauth-oidc",
+      "question_type": "SURVEY",
+      "question": "OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+      "must_cover": [
+        "OAuth 2.1 移除或强制的授权方式",
+        "PKCE 的要求",
+        "OIDC 增加的 ID Token 与身份信息"
+      ]
+    },
+    {
+      "case_key": "fact-k8s-sidecar",
+      "question_type": "FACT",
+      "question": "Kubernetes 原生 Sidecar 容器是在哪个版本引入、哪个版本稳定的，具体怎么声明？引用官方文档或发布说明。",
+      "must_cover": [
+        "引入时的版本与特性状态",
+        "稳定时的版本",
+        "在 Pod 中的声明方式"
+      ]
+    },
+    {
+      "case_key": "fact-python-free-threading",
+      "question_type": "FACT",
+      "question": "Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。",
+      "must_cover": [
+        "对应的 PEP 编号",
+        "首次提供的版本",
+        "当前的支持状态或限制"
+      ]
+    },
+    {
+      "case_key": "fact-java-virtual-threads",
+      "question_type": "FACT",
+      "question": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+      "must_cover": [
+        "正式发布的 JDK 版本与 JEP 编号",
+        "线程固定问题的原因",
+        "改善该问题的 JEP 与版本"
+      ]
+    },
+    {
+      "case_key": "fact-pg-17-incremental-backup",
+      "question_type": "FACT",
+      "question": "PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。",
+      "must_cover": [
+        "使用的命令或参数",
+        "需要开启的配置",
+        "恢复时合并备份的工具"
+      ]
+    },
+    {
+      "case_key": "conflict-microservice-speed",
+      "question_type": "CONFLICT",
+      "question": "微服务架构是否提高了中型团队的长期交付速度？请比较支持和反对的证据并说明证据来源。",
+      "must_cover": [
+        "支持的证据与来源",
+        "反对或保留的证据与来源",
+        "结论成立的前提条件"
+      ],
+      "research_eval_v1_case": "conflict-microservice-delivery-speed"
+    },
+    {
+      "case_key": "conflict-typescript-defects",
+      "question_type": "CONFLICT",
+      "question": "为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。",
+      "must_cover": [
+        "报告缺陷减少的研究",
+        "结论不显著或相反的研究",
+        "研究方法上的差异"
+      ],
+      "research_eval_v1_case": "conflict-static-typing-defect-rate"
+    },
+    {
+      "case_key": "conflict-coverage-threshold",
+      "question_type": "CONFLICT",
+      "question": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+      "must_cover": [
+        "支持的实证",
+        "不支持的实证",
+        "覆盖率之外的混杂因素"
+      ],
+      "research_eval_v1_case": "conflict-coverage-threshold-defect-escape"
+    },
+    {
+      "case_key": "conflict-ssr-web-vitals",
+      "question_type": "CONFLICT",
+      "question": "服务端渲染是否必然改善 Core Web Vitals？给出结论不一致的测量和成立条件。",
+      "must_cover": [
+        "改善的测量",
+        "没有改善或变差的测量",
+        "决定结果的条件，例如水合成本"
+      ],
+      "research_eval_v1_case": "conflict-ssr-vs-csr-web-vitals"
+    }
+  ]
+}

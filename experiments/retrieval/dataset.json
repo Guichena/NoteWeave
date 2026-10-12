@@ -1,0 +1,814 @@
+{
+  "dataset_key": "retrieval-eval-v1",
+  "dataset_version": "1.0.0",
+  "frozen_at": "2026-10-12",
+  "schema_version": "retrieval-eval-dataset.v1",
+  "corpus": [
+    {
+      "key": "qa-rag",
+      "path": "corpus/qa-rag.md",
+      "sha256": "908b5726f7ef7baf3e5dddb1e93d2de86f3ee6e8761500f32561f29299499160"
+    },
+    {
+      "key": "memory",
+      "path": "corpus/memory.md",
+      "sha256": "d61ceb2e7d8914ed535ebaea768e5e1565d93620187b4dc6278b16606a27b813"
+    },
+    {
+      "key": "wiki",
+      "path": "corpus/wiki.md",
+      "sha256": "eafe89bee46c632998da17307f7a806b53ba39cc856f7b6f21a33e6f0dcea115"
+    }
+  ],
+  "sets": {
+    "first_turn": {
+      "answer_mode": "QA",
+      "cases": [
+        {
+          "case_key": "ft-rrf-params",
+          "question_type": "NUMERIC",
+          "turns": [
+            "QA 混合检索里 RRF 的 K 值和向量、关键词两路的权重分别是多少？"
+          ],
+          "facts": [
+            {
+              "doc": "qa-rag",
+              "any_of": [
+                [
+                  "RRF K 60",
+                  "0.7/0.3"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "ft-evidence-budget",
+          "question_type": "NUMERIC",
+          "turns": [
+            "QA 最终交给模型的证据最多几条，总字符上限是多少？"
+          ],
+          "facts": [
+            {
+              "doc": "qa-rag",
+              "any_of": [
+                [
+                  "最多 6 条",
+                  "8000"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "ft-cjk-analyzer",
+          "question_type": "EXACT",
+          "turns": [
+            "noteweave_cjk_text 分析器是怎么处理中文的？为什么不用默认分析器？"
+          ],
+          "facts": [
+            {
+              "doc": "qa-rag",
+              "any_of": [
+                [
+                  "noteweave_cjk_text",
+                  "cjk_bigram"
+                ]
+              ]
+            },
+            {
+              "doc": "qa-rag",
+              "any_of": [
+                [
+                  "切成单字"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "ft-memory-cache-ttl",
+          "question_type": "NUMERIC",
+          "turns": [
+            "Memory 编译结果缓存的过期时间是多少？"
+          ],
+          "facts": [
+            {
+              "doc": "memory",
+              "any_of": [
+                [
+                  "TTL 180 秒"
+                ],
+                [
+                  "180/30 秒"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "ft-wiki-cache-ttl",
+          "question_type": "NUMERIC",
+          "turns": [
+            "Wiki 页面版本缓存默认多久过期？"
+          ],
+          "facts": [
+            {
+              "doc": "wiki",
+              "any_of": [
+                [
+                  "TTL 600 秒"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "ft-wiki-bm25f",
+          "question_type": "EXACT",
+          "turns": [
+            "Wiki 搜索的 BM25F 里标题、摘要、正文的权重和 k1、b 参数是多少？"
+          ],
+          "facts": [
+            {
+              "doc": "wiki",
+              "any_of": [
+                [
+                  "3:2:1",
+                  "k1=1.2"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "ft-wiki-link-propagation",
+          "question_type": "SEMANTIC",
+          "turns": [
+            "Wiki 搜索中一个页面命中后，和它相连的页面能分到多少得分？"
+          ],
+          "facts": [
+            {
+              "doc": "wiki",
+              "any_of": [
+                [
+                  "35%"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "ft-memory-untrusted-input",
+          "question_type": "SEMANTIC",
+          "turns": [
+            "哪些来源的内容默认不能写进用户的长期记忆？"
+          ],
+          "facts": [
+            {
+              "doc": "memory",
+              "any_of": [
+                [
+                  "Tool Output",
+                  "默认不能创建"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "ft-validating-state",
+          "question_type": "EXACT",
+          "turns": [
+            "AnswerRun 有没有一个叫 VALIDATING 的状态？引用校验在什么时候做？"
+          ],
+          "facts": [
+            {
+              "doc": "qa-rag",
+              "any_of": [
+                [
+                  "VALIDATING",
+                  "引用校验发生在生成提交前"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "ft-score-sum",
+          "question_type": "SEMANTIC",
+          "turns": [
+            "为什么不能把 BM25 和向量的分数归一化以后直接相加？"
+          ],
+          "facts": [
+            {
+              "doc": "qa-rag",
+              "any_of": [
+                [
+                  "分数分布漂移"
+                ],
+                [
+                  "分数不可比"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "ft-revoke-done",
+          "question_type": "SEMANTIC",
+          "turns": [
+            "怎样才算记忆撤销已经传播完成？"
+          ],
+          "facts": [
+            {
+              "doc": "memory",
+              "any_of": [
+                [
+                  "撤销传播完成的判据"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "ft-vector-source-of-truth",
+          "question_type": "SEMANTIC",
+          "turns": [
+            "为什么不用向量数据库保存记忆的权威数据？"
+          ],
+          "facts": [
+            {
+              "doc": "memory",
+              "any_of": [
+                [
+                  "不以向量数据库作为 Memory 真源"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "ft-wiki-delete",
+          "question_type": "EXACT",
+          "turns": [
+            "Wiki 页面删除以后，链接、索引这些数据怎么处理？"
+          ],
+          "facts": [
+            {
+              "doc": "wiki",
+              "any_of": [
+                [
+                  "页面删除",
+                  "Tombstone"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "ft-wiki-concurrent-publish",
+          "question_type": "SEMANTIC",
+          "turns": [
+            "两个人同时修改并发布同一个 Wiki 页面会怎样？"
+          ],
+          "facts": [
+            {
+              "doc": "wiki",
+              "any_of": [
+                [
+                  "同一 Head 发布"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "ft-rerank-timeout",
+          "question_type": "SEMANTIC",
+          "turns": [
+            "Rerank 调用读超时以后，系统怎么处理这次结果？"
+          ],
+          "facts": [
+            {
+              "doc": "qa-rag",
+              "any_of": [
+                [
+                  "Rerank 读超时",
+                  "结果未知"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "ft-refusal",
+          "question_type": "SEMANTIC",
+          "turns": [
+            "检索到了候选但都不能支撑问题时，QA 会怎么回答？"
+          ],
+          "facts": [
+            {
+              "doc": "qa-rag",
+              "any_of": [
+                [
+                  "证据不足拒答"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "ft-evidence-vs-memory",
+          "question_type": "SEMANTIC",
+          "turns": [
+            "Evidence 和 Memory 的用途有什么区别？"
+          ],
+          "facts": [
+            {
+              "doc": "memory",
+              "any_of": [
+                [
+                  "支撑某个 Claim",
+                  "约束或辅助后续运行"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "ft-auto-approve",
+          "question_type": "EXACT",
+          "turns": [
+            "记忆候选在什么条件下可以自动批准？"
+          ],
+          "facts": [
+            {
+              "doc": "memory",
+              "any_of": [
+                [
+                  "自动批准只适用于低风险"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "ft-source-diversity",
+          "question_type": "SEMANTIC",
+          "turns": [
+            "选证据时怎么避免同一份资料占满全部名额？"
+          ],
+          "facts": [
+            {
+              "doc": "qa-rag",
+              "any_of": [
+                [
+                  "第一轮每个 Source 取一条"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "ft-auto-fix",
+          "question_type": "SEMANTIC",
+          "turns": [
+            "Wiki 的自动修复为什么不直接改写页面？"
+          ],
+          "facts": [
+            {
+              "doc": "wiki",
+              "any_of": [
+                [
+                  "Auto-fix 只生成候选 Diff"
+                ],
+                [
+                  "Draft Repair"
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "multi_turn": {
+      "answer_mode": "QA",
+      "cases": [
+        {
+          "case_key": "mt-rrf-k",
+          "answerability": "ANSWERABLE",
+          "turns": [
+            "QA 的混合检索是怎么把两路结果融合起来的？",
+            "那它的 K 取多少？"
+          ],
+          "facts": [
+            {
+              "doc": "qa-rag",
+              "any_of": [
+                [
+                  "RRF K 60"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "mt-wiki-field-weight",
+          "answerability": "ANSWERABLE",
+          "turns": [
+            "介绍一下 Wiki 的搜索打分方式。",
+            "标题和正文的权重比是多少？"
+          ],
+          "facts": [
+            {
+              "doc": "wiki",
+              "any_of": [
+                [
+                  "3:2:1"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "mt-memory-cache",
+          "answerability": "ANSWERABLE",
+          "turns": [
+            "Memory 的 Control Pack 是什么？",
+            "它的缓存多久过期？"
+          ],
+          "facts": [
+            {
+              "doc": "memory",
+              "any_of": [
+                [
+                  "TTL 180 秒"
+                ],
+                [
+                  "180/30 秒"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "mt-wiki-cache",
+          "answerability": "ANSWERABLE",
+          "turns": [
+            "Wiki 的页面缓存是怎么设计的？",
+            "过期时间呢？"
+          ],
+          "facts": [
+            {
+              "doc": "wiki",
+              "any_of": [
+                [
+                  "TTL 600 秒"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "mt-memory-secrets",
+          "answerability": "ANSWERABLE",
+          "turns": [
+            "Memory 怎么防止被网页内容污染？",
+            "那密钥和 Token 这类内容呢？"
+          ],
+          "facts": [
+            {
+              "doc": "memory",
+              "any_of": [
+                [
+                  "密钥、Token、Cookie"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "mt-evidence-count",
+          "answerability": "ANSWERABLE",
+          "turns": [
+            "QA 回答时证据是怎么挑选的？",
+            "最多挑几条？"
+          ],
+          "facts": [
+            {
+              "doc": "qa-rag",
+              "any_of": [
+                [
+                  "最多 6 条"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "mt-graph-budget-values",
+          "answerability": "PARTIAL",
+          "turns": [
+            "Wiki 的图扩展有哪些预算参数？",
+            "这些参数现在分别设成多少？"
+          ],
+          "facts": [
+            {
+              "doc": "wiki",
+              "any_of": [
+                [
+                  "max_hops"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "mt-rerank-vs-vendor",
+          "answerability": "PARTIAL",
+          "turns": [
+            "QA 的 Rerank Top N 是多少？",
+            "和 Cohere Rerank 接口的默认返回条数比哪个大？"
+          ],
+          "facts": [
+            {
+              "doc": "qa-rag",
+              "any_of": [
+                [
+                  "Rerank Top N 40"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "mt-revoke-duration",
+          "answerability": "PARTIAL",
+          "turns": [
+            "Memory 的撤销分哪几类？",
+            "每一类撤销平均要多长时间生效？"
+          ],
+          "facts": [
+            {
+              "doc": "memory",
+              "any_of": [
+                [
+                  "运行时撤销"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "mt-redis-nodes",
+          "answerability": "UNANSWERABLE",
+          "turns": [
+            "Wiki 页面缓存的过期时间是多少？",
+            "那 Redis 集群部署了几个节点？"
+          ],
+          "facts": []
+        },
+        {
+          "case_key": "mt-mysql-version",
+          "answerability": "UNANSWERABLE",
+          "turns": [
+            "Memory 用什么作为业务真源？",
+            "用的 MySQL 是哪个版本？"
+          ],
+          "facts": []
+        },
+        {
+          "case_key": "mt-fix-acceptance",
+          "answerability": "UNANSWERABLE",
+          "turns": [
+            "Wiki 的自动修复要经过什么审核？",
+            "上个月一共有多少条修复被接受了？"
+          ],
+          "facts": []
+        }
+      ]
+    },
+    "wiki_cross_page": {
+      "answer_mode": "WIKI",
+      "cases": [
+        {
+          "case_key": "wk-cache-ttl",
+          "question_type": "CROSS_PAGE",
+          "turns": [
+            "Memory 编译结果缓存和 Wiki 页面缓存的过期时间分别是多少？"
+          ],
+          "facts": [
+            {
+              "doc": "memory",
+              "any_of": [
+                [
+                  "180"
+                ]
+              ]
+            },
+            {
+              "doc": "wiki",
+              "any_of": [
+                [
+                  "600"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "wk-scoring",
+          "question_type": "CROSS_PAGE",
+          "turns": [
+            "QA 和 Wiki 在检索打分方法上有什么不同？"
+          ],
+          "facts": [
+            {
+              "doc": "qa-rag",
+              "any_of": [
+                [
+                  "RRF"
+                ]
+              ]
+            },
+            {
+              "doc": "wiki",
+              "any_of": [
+                [
+                  "BM25F"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "wk-revoke-delete",
+          "question_type": "CROSS_PAGE",
+          "turns": [
+            "Memory 的撤销和 Wiki 的页面删除分别怎么保证旧内容不再被读到？"
+          ],
+          "facts": [
+            {
+              "doc": "memory",
+              "any_of": [
+                [
+                  "撤销"
+                ],
+                [
+                  "Revoke"
+                ]
+              ]
+            },
+            {
+              "doc": "wiki",
+              "any_of": [
+                [
+                  "Tombstone"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "wk-vector-truth",
+          "question_type": "CROSS_PAGE",
+          "turns": [
+            "为什么 QA 不只用向量检索，Memory 也不用向量库做真源？"
+          ],
+          "facts": [
+            {
+              "doc": "qa-rag",
+              "any_of": [
+                [
+                  "纯向量"
+                ]
+              ]
+            },
+            {
+              "doc": "memory",
+              "any_of": [
+                [
+                  "向量数据库"
+                ],
+                [
+                  "向量仅是"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "wk-stale-version",
+          "question_type": "CROSS_PAGE",
+          "turns": [
+            "QA 和 Wiki 怎么防止索引里的旧版本被返回给用户？"
+          ],
+          "facts": [
+            {
+              "doc": "qa-rag",
+              "any_of": [
+                [
+                  "Snapshot"
+                ]
+              ]
+            },
+            {
+              "doc": "wiki",
+              "any_of": [
+                [
+                  "Hydration"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "wk-feedback-principle",
+          "question_type": "CROSS_PAGE",
+          "turns": [
+            "Memory 的 Outcome 和 Wiki 的自动修复有什么共同的设计原则？"
+          ],
+          "facts": [
+            {
+              "doc": "memory",
+              "any_of": [
+                [
+                  "Outcome",
+                  "Candidate"
+                ],
+                [
+                  "Outcome",
+                  "候选"
+                ]
+              ]
+            },
+            {
+              "doc": "wiki",
+              "any_of": [
+                [
+                  "Auto-fix",
+                  "Proposal"
+                ],
+                [
+                  "Auto-fix",
+                  "候选"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "wk-injection",
+          "question_type": "CROSS_PAGE",
+          "turns": [
+            "QA 的 Prompt Injection 测试和 Memory 的污染防线分别防的是什么？"
+          ],
+          "facts": [
+            {
+              "doc": "qa-rag",
+              "any_of": [
+                [
+                  "Prompt Injection"
+                ]
+              ]
+            },
+            {
+              "doc": "memory",
+              "any_of": [
+                [
+                  "Prompt Injection"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "case_key": "wk-diversity",
+          "question_type": "CROSS_PAGE",
+          "turns": [
+            "Wiki 搜索的反链加成和 QA 选证据时的来源多样性分别解决什么问题？"
+          ],
+          "facts": [
+            {
+              "doc": "wiki",
+              "any_of": [
+                [
+                  "反链"
+                ]
+              ]
+            },
+            {
+              "doc": "qa-rag",
+              "any_of": [
+                [
+                  "每个 Source"
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

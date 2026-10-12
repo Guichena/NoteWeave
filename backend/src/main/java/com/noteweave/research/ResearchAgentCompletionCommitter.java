@@ -78,6 +78,7 @@ class ResearchAgentCompletionCommitter {
     private final ResearchAgentCompletionMetrics completionMetrics;
     private final ResearchAgentRoleResultService roleResultService;
     private final ResearchContextV2Gate contextGate;
+    private final ResearchRepairExecutionService repairExecution;
 
     ResearchAgentCompletionCommitter(
             JdbcTemplate jdbcTemplate,
@@ -106,6 +107,7 @@ class ResearchAgentCompletionCommitter {
         this.completionMetrics = completionMetrics;
         this.roleResultService = roleResultService;
         this.contextGate = contextGate;
+        this.repairExecution = new ResearchRepairExecutionService(jdbcTemplate, objectMapper);
     }
 
     @Transactional(propagation = Propagation.REQUIRED)
@@ -144,8 +146,10 @@ class ResearchAgentCompletionCommitter {
 
         String executionId = Ids.newId();
         String completionId = Ids.newId();
+        Set<String> rejectedCandidateKeys = new HashSet<>(evidenceQualification.rejectedCandidateKeys());
+        rejectedCandidateKeys.addAll(repairExecution.rejectedCandidates(task, envelope));
         MergeOutcome plannedOutcome = planMergeOutcome(
-                task, envelope, cells, trustedEvidence, evidenceQualification.rejectedCandidateKeys());
+                task, envelope, cells, trustedEvidence, rejectedCandidateKeys);
         BudgetLedger ledger = calculateBudget(
                 task, envelope, reservation, envelope.budgetUsage(), envelope.evidence().size(),
                 plannedOutcome.accepted().size(), plannedOutcome.rejected().size());
@@ -191,6 +195,7 @@ class ResearchAgentCompletionCommitter {
         checkpoint(ResearchAgentCompletionFaultInjector.Stage.AFTER_COMPLETION_ANCHOR, 0);
 
         roleResultService.validateAndPersist(task, envelope, completionId);
+        repairExecution.persist(task, envelope);
 
         Map<String, EvidencePersisted> evidenceByKey = writeRepository.appendEvidence(
                 run.id(), completionId, envelope.evidence(), trustedEvidence, this::checkpoint);
@@ -201,7 +206,7 @@ class ResearchAgentCompletionCommitter {
         MergeOutcome mergeOutcome = task.candidateQuorum() == 2
                 ? applyQuorumVerdictAndCas(run.id(), task, completionId, cells, plannedOutcome)
                 : applyVerdictsAndCas(run.id(), task, completionId, candidates, cells, evidenceByKey,
-                        evidenceQualification.rejectedCandidateKeys());
+                        rejectedCandidateKeys);
         if (!plannedOutcome.equals(mergeOutcome)) {
             throw new IllegalStateException("Persisted merge outcome differs from the locked completion plan");
         }
@@ -670,6 +675,7 @@ class ResearchAgentCompletionCommitter {
                 item.baseCellVersion(), item.value(), item.confidencePpm(), item.domains(), item.evidenceKeys(),
                 item.blindDigest(), item.slot(),
                 persistedEvidenceSupports(task.runId(), item.evidenceKeys(), item.value())
+                        && repairExecution.persistedCounterSupports(item.taskId(), item.cellKey(), item.value())
                         && !persistedQualificationRejected(item.id())))
                 .toList();
     }

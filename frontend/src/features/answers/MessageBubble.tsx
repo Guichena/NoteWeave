@@ -1,12 +1,19 @@
-import { useEffect, useState } from "react";
-import { Check, ChevronDown, Copy, MessageSquareText, Network, NotebookPen } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  Check, ChevronDown, Copy, MessageSquareText, Network, NotebookPen, RotateCcw, ThumbsDown, ThumbsUp
+} from "lucide-react";
 import { type Message } from "./messageTypes";
 import { MarkdownSurface } from "../../shared/ui/MarkdownSurface";
 import { routes } from "../../routes";
-import { buildCitationViews, type AnswerEvidence } from "./evidence";
+import { buildCitationViews, type AnswerEvidenceManifest } from "./evidence";
+import type { AnswerFeedbackInput, AnswerFeedbackRating } from "./model";
+import { MemoryReferenceList } from "../memory/MemoryInjectionPreview";
 
 /** 按回答运行读取证据清单；未提供时引用只展示标题和摘录。 */
-export type EvidenceLoader = (answerRunId: string) => Promise<AnswerEvidence[]>;
+export type EvidenceLoader = (answerRunId: string) => Promise<AnswerEvidenceManifest>;
+export type AnswerFeedbackSender = (answerRunId: string, input: AnswerFeedbackInput) => Promise<unknown>;
+
+const NEGATIVE_REASONS = ["内容不准确", "没有回答问题", "引用不支持结论", "资料里有但没找到"];
 
 const MODE_ICONS = { qa: MessageSquareText, note: NotebookPen, wiki: Network } as const;
 
@@ -40,20 +47,27 @@ type MessageBubbleProps = {
   message: Message;
   loadEvidence?: EvidenceLoader;
   onOpenWikiPage?: (title: string) => void;
+  onFeedback?: AnswerFeedbackSender;
+  /** 用同一个问题重新生成这条回答。 */
+  onRegenerate?: (answerRunId: string) => void;
 };
 
-export function MessageBubble({ message, loadEvidence, onOpenWikiPage }: MessageBubbleProps) {
-  if (message.role !== "assistant" || !message.answerMode) {
-    return <div className="bubble-body">{message.content}</div>;
+export function MessageBubble(props: MessageBubbleProps) {
+  if (props.message.role !== "assistant" || !props.message.answerMode) {
+    return <div className="bubble-body">{props.message.content}</div>;
   }
-  return <AssistantMessage message={message} loadEvidence={loadEvidence} onOpenWikiPage={onOpenWikiPage} />;
+  return <AssistantMessage {...props} />;
 }
 
-function AssistantMessage({ message, loadEvidence, onOpenWikiPage }: MessageBubbleProps) {
+function AssistantMessage({ message, loadEvidence, onOpenWikiPage, onFeedback, onRegenerate }: MessageBubbleProps) {
   const [activeCitation, setActiveCitation] = useState<number | null>(null);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [manifest, setManifest] = useState<AnswerEvidence[] | null>(null);
+  const [manifest, setManifest] = useState<AnswerEvidenceManifest | null>(null);
+  const [rating, setRating] = useState<AnswerFeedbackRating | null>(null);
+  const [reasonOpen, setReasonOpen] = useState(false);
+  const [feedbackError, setFeedbackError] = useState("");
+  const sawGenerating = useRef(false);
   const isGenerating = message.answerStatus === "GENERATING";
   const isFailed = message.answerStatus === "FAILED" || message.answerStatus === "CANCELLED";
   const presentation = buildAssistantPresentation(message);
@@ -65,20 +79,24 @@ function AssistantMessage({ message, loadEvidence, onOpenWikiPage }: MessageBubb
       : "此回答暂未返回正文。");
   const sources = !isFailed ? presentation.sources : null;
   const sourceItems = sources?.items ?? [];
-  const citationViews = buildCitationViews(sourceItems, manifest);
+  const citationViews = buildCitationViews(sourceItems, manifest?.evidence ?? null);
+  const rewrite = manifest?.retrieval_rewrite;
   const route = routes.find((item) => item.key === message.answerMode) ?? routes[0];
   const ModeIcon = MODE_ICONS[route.key];
   const answerRunId = message.answerRunId;
 
-  // 第一次展开引用时再读取证据清单，避免每条历史消息都发请求。
+  if (isGenerating) sawGenerating.current = true;
+  // 历史消息在第一次展开引用时才读取证据清单，避免每条消息都发请求；
+  // 本次会话里刚生成完的回答立即读取，以便及时提示证据不足。
+  const wantsManifest = sourcesOpen || sawGenerating.current;
   useEffect(() => {
-    if (!sourcesOpen || manifest || !answerRunId || !loadEvidence || isGenerating) return;
+    if (!wantsManifest || manifest || !answerRunId || !loadEvidence || isGenerating || isFailed) return;
     let cancelled = false;
     loadEvidence(answerRunId)
-      .then((items) => { if (!cancelled) setManifest(items); })
-      .catch(() => { if (!cancelled) setManifest([]); });
+      .then((loaded) => { if (!cancelled) setManifest(loaded); })
+      .catch(() => { if (!cancelled) setManifest({ run_id: answerRunId, evidence: [] }); });
     return () => { cancelled = true; };
-  }, [sourcesOpen, manifest, answerRunId, loadEvidence, isGenerating]);
+  }, [wantsManifest, manifest, answerRunId, loadEvidence, isGenerating, isFailed]);
 
   useEffect(() => {
     if (!copied) return;
@@ -89,6 +107,21 @@ function AssistantMessage({ message, loadEvidence, onOpenWikiPage }: MessageBubb
   function focusCitation(index: number) {
     setActiveCitation((current) => (current === index ? null : index));
     setSourcesOpen(true);
+  }
+
+  async function sendFeedback(next: AnswerFeedbackRating, reason?: string) {
+    if (!answerRunId || !onFeedback) return;
+    const previous = rating;
+    setRating(next);
+    setReasonOpen(next === "NEGATIVE" && !reason);
+    setFeedbackError("");
+    try {
+      await onFeedback(answerRunId, reason ? { rating: next, reason } : { rating: next });
+    } catch {
+      setRating(previous);
+      setReasonOpen(false);
+      setFeedbackError("反馈没有提交成功，请稍后再试");
+    }
   }
 
   async function copyAnswer() {
@@ -122,6 +155,7 @@ function AssistantMessage({ message, loadEvidence, onOpenWikiPage }: MessageBubb
           {sourceItems.length > 0 ? <span>{sourceItems.length} 条引用</span> : null}
         </div>
       ) : null}
+      {!isFailed ? <SufficiencyNotice value={manifest?.evidence_sufficiency} /> : null}
       {!isFailed && presentation.leadTitle ? <div className="bubble-label">{presentation.leadTitle}</div> : null}
       <MarkdownSurface
         content={body}
@@ -179,10 +213,25 @@ function AssistantMessage({ message, loadEvidence, onOpenWikiPage }: MessageBubb
                       <small>{[view.kindLabel, view.location].filter(Boolean).join(" · ")}</small>
                     ) : null}
                     {view.quote ? <p>{view.quote}</p> : null}
+                    {view.graphPath.length > 1 ? (
+                      <small className="message-source-path">经由页面：{view.graphPath.join(" → ")}</small>
+                    ) : null}
                   </div>
                 </li>
               ))}
             </ol>
+          ) : null}
+          {rewrite && !rewrite.is_standalone && rewrite.standalone_query ? (
+            <p className="message-retrieval-rewrite">
+              检索时理解为：{rewrite.standalone_query}
+              {rewrite.method === "RULE" ? <small>（模型不可用，按规则补全）</small> : null}
+            </p>
+          ) : null}
+          {manifest?.memory_references?.length ? (
+            <div className="message-memory-references">
+              <small>本次回答参照的记忆（只影响表达方式）</small>
+              <MemoryReferenceList references={manifest.memory_references} />
+            </div>
           ) : null}
           {sources.note ? <MarkdownSurface content={sources.note} className="message-sources-note" /> : null}
         </details>
@@ -198,12 +247,69 @@ function AssistantMessage({ message, loadEvidence, onOpenWikiPage }: MessageBubb
           >
             {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
           </button>
+          {answerRunId && onFeedback ? (
+            <>
+              <button
+                type="button"
+                className={`message-action${rating === "POSITIVE" ? " is-selected" : ""}`}
+                aria-label="回答有帮助"
+                aria-pressed={rating === "POSITIVE"}
+                title="有帮助"
+                onClick={() => void sendFeedback("POSITIVE")}
+              >
+                <ThumbsUp size={14} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className={`message-action${rating === "NEGATIVE" ? " is-selected" : ""}`}
+                aria-label="回答没有帮助"
+                aria-pressed={rating === "NEGATIVE"}
+                title="没有帮助"
+                onClick={() => void sendFeedback("NEGATIVE")}
+              >
+                <ThumbsDown size={14} aria-hidden="true" />
+              </button>
+            </>
+          ) : null}
+          {answerRunId && onRegenerate ? (
+            <button
+              type="button"
+              className="message-action"
+              aria-label="重新生成回答"
+              title="重新生成"
+              onClick={() => onRegenerate(answerRunId)}
+            >
+              <RotateCcw size={14} aria-hidden="true" />
+            </button>
+          ) : null}
         </div>
       ) : null}
+      {reasonOpen ? (
+        <div className="message-feedback-reasons" role="group" aria-label="哪里不好">
+          {NEGATIVE_REASONS.map((reason) => (
+            <button key={reason} type="button" className="secondary-button" onClick={() => void sendFeedback("NEGATIVE", reason)}>
+              {reason}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {rating && !reasonOpen && !feedbackError ? <small className="message-feedback-done">感谢反馈</small> : null}
+      {feedbackError ? <small role="alert">{feedbackError}</small> : null}
     </div>
   );
 }
 
+
+const SUFFICIENCY_NOTICES: Record<string, string> = {
+  INSUFFICIENT: "当前资料中没有足够的信息回答这个问题，下面的内容不能作为结论。",
+  PARTIAL: "当前资料只能回答这个问题的一部分，没有覆盖的部分已在回答中说明。"
+};
+
+function SufficiencyNotice({ value }: { value?: string | null }) {
+  const notice = value ? SUFFICIENCY_NOTICES[value] : undefined;
+  if (!notice) return null;
+  return <div className={`answer-sufficiency-notice is-${value?.toLowerCase()}`} role="note">{notice}</div>;
+}
 
 function buildAssistantPresentation(message: Message): MessagePresentation {
   const parsedSections = splitMarkdownSections(message.content, message.answerMode === "wiki");
