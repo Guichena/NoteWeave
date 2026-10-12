@@ -80,6 +80,16 @@ class MemoryConversationExtractionContractTest {
         JsonNode pack = data(get("/api/v2/workspaces/{workspaceId}/memory/control-pack/chat", workspaceId)
                 .param("answer_mode", "QA"));
         assertThat(pack.path("structure_constraints").toString()).contains("以后回答先给结论再展开");
+        JsonNode reference = null;
+        for (JsonNode item : pack.path("memory_references")) {
+            if (item.path("display_text").asText().contains("以后回答先给结论再展开")) {
+                reference = item;
+            }
+        }
+        assertThat(reference).isNotNull();
+        assertThat(reference.path("memory_class").asText()).isEqualTo("ALWAYS_ON");
+        assertThat(reference.path("selection_reason").asText()).isEqualTo("适用于全部回答的常驻约束");
+        assertThat(reference.has("relevance")).isFalse();
         assertThat(jdbc.queryForObject("select task_status from task where id = ?", String.class,
                 payload.path("task_id").asText())).isEqualTo("COMPLETED");
 

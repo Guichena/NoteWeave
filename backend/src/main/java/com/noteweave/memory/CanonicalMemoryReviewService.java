@@ -32,6 +32,7 @@ public class CanonicalMemoryReviewService {
     private final RunReplayRedactionService replayRedactionService;
     private final MemoryIndexOutbox indexOutbox;
     private final MemoryEvidenceService evidenceService;
+    private final MemoryTextEmbeddingStore embeddingStore;
 
     public CanonicalMemoryReviewService(
             JdbcTemplate jdbcTemplate,
@@ -41,7 +42,8 @@ public class CanonicalMemoryReviewService {
             MemoryStatementMatcher statementMatcher,
             RunReplayRedactionService replayRedactionService,
             MemoryIndexOutbox indexOutbox,
-            MemoryEvidenceService evidenceService
+            MemoryEvidenceService evidenceService,
+            MemoryTextEmbeddingStore embeddingStore
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -51,6 +53,7 @@ public class CanonicalMemoryReviewService {
         this.replayRedactionService = replayRedactionService;
         this.indexOutbox = indexOutbox;
         this.evidenceService = evidenceService;
+        this.embeddingStore = embeddingStore;
     }
 
     @Transactional
@@ -120,6 +123,10 @@ public class CanonicalMemoryReviewService {
             }
         }
         evidenceService.assignPrior(candidate.candidateId(), evidenceBand(candidate));
+        if (activate) {
+            embeddingStore.refresh(
+                    candidate.workspaceId(), candidate.candidateId(), candidate.normalizedStatement());
+        }
         return candidateResponse(candidate);
     }
 
@@ -188,6 +195,7 @@ public class CanonicalMemoryReviewService {
         writeEvent(itemId, "WORDING_REVISED", revisionId);
         enqueueIndex(workspaceId, itemId, "UPSERT", newText.trim(),
                 head.semanticSlot() == null ? "" : head.semanticSlot(), "");
+        embeddingStore.refresh(workspaceId, itemId, newText.trim());
         return true;
     }
 

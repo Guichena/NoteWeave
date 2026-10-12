@@ -56,7 +56,7 @@ class MemoryRuntimeContractTest {
                 .andExpect(jsonPath("$.data.legacy_pack.memory_object_ids").isEmpty())
                 .andExpect(jsonPath("$.data.legacy_pack.memory_references").isEmpty())
                 .andExpect(jsonPath("$.data.legacy_pack.compilation_trace.policy_version")
-                        .value("memory-compiler-policy-v1"));
+                        .value("memory-compiler-policy-v2"));
     }
 
     @Test
@@ -364,6 +364,30 @@ class MemoryRuntimeContractTest {
                         .value(accepted.revisionId()))
                 .andExpect(jsonPath("$.data.snapshot.memory_revision_refs[0].memory_version_id")
                         .value(org.hamcrest.Matchers.not(reviewRequired.revisionId())));
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/answer-runs/{runId}/evidence",
+                        workspaceId, answerRunId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.memory_references.length()").value(1))
+                .andExpect(jsonPath("$.data.memory_references[0].memory_version_id")
+                        .value(accepted.revisionId()))
+                .andExpect(jsonPath("$.data.memory_references[0].memory_class").value("ALWAYS_ON"))
+                .andExpect(jsonPath("$.data.memory_references[0].selection_reason")
+                        .value("适用于全部回答的常驻约束"))
+                .andExpect(jsonPath("$.data.memory_references[0].display_text")
+                        .value("Use the approved snapshot preference"))
+                .andExpect(jsonPath("$.data.memory_references[0].relevance").doesNotExist());
+        jdbcTemplate.update("""
+                update run_input_snapshot
+                set replay_availability = 'METADATA_ONLY'
+                where answer_run_id = ?
+                """, answerRunId);
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/answer-runs/{runId}/evidence",
+                        workspaceId, answerRunId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.memory_references.length()").value(1))
+                .andExpect(jsonPath("$.data.memory_references[0].memory_version_id")
+                        .value(accepted.revisionId()))
+                .andExpect(jsonPath("$.data.memory_references[0].display_text").doesNotExist());
     }
 
     @Test

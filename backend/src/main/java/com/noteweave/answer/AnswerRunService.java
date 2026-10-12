@@ -5,9 +5,12 @@ import com.noteweave.answer.strategy.EvidenceBundleSnapshot;
 import com.noteweave.answer.strategy.RetrievalExecutionTrace;
 import com.noteweave.answer.strategy.RetrievalPlan;
 import com.noteweave.common.BusinessException;
+import com.noteweave.memory.MemoryReferenceResponse;
 import com.noteweave.retrieval.QueryRewrite;
 import com.noteweave.common.Ids;
 import com.noteweave.common.Json;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.security.AuditActorProvider;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -446,7 +449,53 @@ public class AnswerRunService {
                 select retrieval_plan_json from answer_run
                 where workspace_id = ? and id = ?
                 """, rs -> rs.next() ? rs.getString("retrieval_plan_json") : null, workspaceId, runId);
-        return new AnswerEvidenceManifestResponse(runId, evidence, QueryRewrite.viewFromPlanJson(planJson));
+        return new AnswerEvidenceManifestResponse(
+                runId, evidence, QueryRewrite.viewFromPlanJson(planJson), compiledMemoryReferences(workspaceId, runId));
+    }
+
+    /** 从这次回答的输入快照读出实际编入的记忆。回放被降级时不带出展示文本。 */
+    private List<MemoryReferenceResponse> compiledMemoryReferences(String workspaceId, String runId) {
+        record SnapshotMemory(String json, String availability) {
+        }
+        SnapshotMemory row = jdbcTemplate.query("""
+                select snapshot_json, replay_availability
+                from run_input_snapshot
+                where workspace_id = ? and answer_run_id = ?
+                """, rs -> {
+            if (!rs.next()) {
+                return null;
+            }
+            return new SnapshotMemory(rs.getString("snapshot_json"), rs.getString("replay_availability"));
+        }, workspaceId, runId);
+        if (row == null || row.json() == null || row.json().isBlank()) {
+            return List.of();
+        }
+        try {
+            JsonNode refs = objectMapper.readTree(row.json()).path("memory_revision_refs");
+            if (!refs.isArray()) {
+                return List.of();
+            }
+            List<MemoryReferenceResponse> parsed = objectMapper.convertValue(
+                    refs, new TypeReference<List<MemoryReferenceResponse>>() {
+                    });
+            if ("FULL".equals(row.availability())) {
+                return parsed;
+            }
+            return parsed.stream()
+                    .map(reference -> new MemoryReferenceResponse(
+                            reference.memoryObjectId(),
+                            reference.memoryVersionId(),
+                            reference.utilityScore(),
+                            reference.scopePriority(),
+                            reference.neighborhoodPriority(),
+                            reference.selectionReason(),
+                            reference.memoryClass(),
+                            reference.relevance(),
+                            null))
+                    .toList();
+        } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+            throw new IllegalStateException("回答快照中的记忆引用无法读取", ex);
+        }
     }
 
     public List<AnswerRunResponse> listConversationRuns(

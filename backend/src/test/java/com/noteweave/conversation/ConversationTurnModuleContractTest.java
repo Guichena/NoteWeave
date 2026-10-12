@@ -490,7 +490,8 @@ class ConversationTurnModuleContractTest {
                         workspaceId, receipt.path("answer_run_id").asText()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.run_id").value(receipt.path("answer_run_id").asText()))
-                .andExpect(jsonPath("$.data.evidence.length()").value(0));
+                .andExpect(jsonPath("$.data.evidence.length()").value(0))
+                .andExpect(jsonPath("$.data.memory_references").isArray());
     }
 
     @Test

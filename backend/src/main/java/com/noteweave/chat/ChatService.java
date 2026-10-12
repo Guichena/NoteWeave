@@ -229,7 +229,9 @@ public class ChatService {
     ) {
         ConversationRetrievalContextAssembler.Context conversationContext = buildConversationContext(
                 workspaceId, conversationId, currentUserMessageId, request.content());
-        MemoryControlPackResponse chatControlPack = memoryCompilerService.compileChatControlPack(workspaceId, request.answerMode());
+        QueryRewrite rewrite = queryRewriteService.rewrite(conversationContext);
+        MemoryControlPackResponse chatControlPack = memoryCompilerService.compileChatControlPack(
+                workspaceId, request.answerMode(), rewrite.standaloneQuery());
         AnswerMode mode = AnswerMode.parse(request.answerMode());
         Set<String> sourceScope = new LinkedHashSet<>(request.sourceScopeSourceIds());
         if (!sourceScope.isEmpty() && mode != AnswerMode.QA) {
@@ -255,7 +257,6 @@ public class ChatService {
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_CHAT_CONTROL_SECTION,
                 renderChatControlSection(chatControlPack) + v2UserControls);
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_TEMPLATE_LABEL, templateLabel(mode));
-        QueryRewrite rewrite = queryRewriteService.rewrite(conversationContext);
         attributes.putAll(rewrite.attributes(conversationContext.currentQuestion()));
         if (conversationContext.contextApplied()) {
             attributes.put(ConversationWindow.ATTRIBUTE, conversationContext.retrievalQuestion());

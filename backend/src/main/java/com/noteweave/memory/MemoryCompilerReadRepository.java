@@ -26,6 +26,8 @@ final class MemoryCompilerReadRepository {
         return jdbcTemplate.query("""
                 select i.id, r.id as revision_id, i.utility_score,
                        i.memory_scope, i.owner_user_id, i.updated_at,
+                       i.semantic_slot_key, i.evidence_alpha, i.evidence_beta,
+                       i.last_reinforced_at, i.text_embedding_hash,
                        r.normalized_value_json, r.display_text,
                        r.status, r.valid_from, r.valid_until
                 from memory_item i
@@ -50,7 +52,15 @@ final class MemoryCompilerReadRepository {
                     payload.taskNeighborhoods(),
                     rs.getString("status"),
                     timestampText(rs.getTimestamp("valid_from")),
-                    timestampText(rs.getTimestamp("valid_until"))
+                    timestampText(rs.getTimestamp("valid_until")),
+                    rs.getString("semantic_slot_key"),
+                    payload.compileHints(),
+                    nullableDouble(rs, "evidence_alpha", 1.5),
+                    nullableDouble(rs, "evidence_beta", 1.5),
+                    rs.getTimestamp("last_reinforced_at") == null
+                            ? null : rs.getTimestamp("last_reinforced_at").toInstant(),
+                    rs.getString("display_text"),
+                    rs.getString("text_embedding_hash")
             );
         }, workspaceId);
     }
@@ -59,6 +69,8 @@ final class MemoryCompilerReadRepository {
         return jdbcTemplate.query("""
                 select i.id, r.id as revision_id, i.utility_score,
                        i.memory_scope, i.owner_user_id, i.updated_at,
+                       i.semantic_slot_key, i.evidence_alpha, i.evidence_beta,
+                       i.last_reinforced_at, i.text_embedding, i.text_embedding_hash,
                        r.normalized_value_json, r.display_text, r.status
                 from memory_item i
                 join memory_runtime_revision r
@@ -81,7 +93,15 @@ final class MemoryCompilerReadRepository {
                     rs.getTimestamp("updated_at").toInstant(),
                     payload.taskNeighborhoods(),
                     payload.compileHints(),
-                    rs.getString("status")
+                    rs.getString("status"),
+                    rs.getString("semantic_slot_key"),
+                    rs.getString("display_text"),
+                    nullableDouble(rs, "evidence_alpha", 1.5),
+                    nullableDouble(rs, "evidence_beta", 1.5),
+                    rs.getTimestamp("last_reinforced_at") == null
+                            ? null : rs.getTimestamp("last_reinforced_at").toInstant(),
+                    rs.getString("text_embedding"),
+                    rs.getString("text_embedding_hash")
             );
         }, workspaceId);
     }
@@ -168,6 +188,12 @@ final class MemoryCompilerReadRepository {
         return timestamp == null ? "" : timestamp.toInstant().toString();
     }
 
+    private double nullableDouble(java.sql.ResultSet resultSet, String column, double fallback)
+            throws java.sql.SQLException {
+        double value = resultSet.getDouble(column);
+        return resultSet.wasNull() ? fallback : value;
+    }
+
     record ObjectRow(
             String memoryObjectId,
             String memoryVersionId,
@@ -177,7 +203,14 @@ final class MemoryCompilerReadRepository {
             Instant updatedAt,
             List<String> taskNeighborhoods,
             MemorySignalService.MemoryCompileHints compileHints,
-            String status
+            String status,
+            String semanticSlotKey,
+            String displayText,
+            double evidenceAlpha,
+            double evidenceBeta,
+            Instant lastReinforcedAt,
+            String textEmbedding,
+            String textEmbeddingHash
     ) {
     }
 
@@ -191,7 +224,14 @@ final class MemoryCompilerReadRepository {
             List<String> taskNeighborhoods,
             String status,
             String validFrom,
-            String validTo
+            String validTo,
+            String semanticSlotKey,
+            MemorySignalService.MemoryCompileHints compileHints,
+            double evidenceAlpha,
+            double evidenceBeta,
+            Instant lastReinforcedAt,
+            String displayText,
+            String textEmbeddingHash
     ) {
     }
 
