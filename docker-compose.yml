@@ -445,6 +445,7 @@ services:
       retries: 12
 
   parse-worker:
+    profiles: ["app"]
     build:
       context: ./workers/parse-worker
     container_name: noteweave-v2-parse-worker
