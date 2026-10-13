@@ -65,11 +65,16 @@ PRE_VIDEO_POLICY_CATALOG_DIGEST = "8a7ad34dd197854251c65a234f1915e0b44fe9621d2d1
 
 PRE_OUTPUT_CONTRACT_CATALOG_DIGEST = "08108539a76c23dc3fcc4c23fee6c6cd3f8bba29895cd6ccc50f3425dadcb2f0"
 PRE_TYPED_NODE_CATALOG_DIGEST = "ac422e1c25a0bad1dff81474d99a2e6345440e587553e33e43b18873aabfe691"
+PRE_STATEMENT_CATALOG_DIGESTS = {
+    "6213388175d1399d6a98f2692bbf76165665fcc40e9cefb3dc09e0bc5a3ea7d1",
+    "409075da8e53f72951f12409345c38de513c83b9c112745d94044ae7c73f7de1",
+}
 
 
 def _require_published_catalog(task_input: ArtifactTaskInput) -> None:
     if task_input.catalog_digest and task_input.catalog_digest not in {
-            CATALOG_DIGEST, PRE_VIDEO_POLICY_CATALOG_DIGEST, PRE_OUTPUT_CONTRACT_CATALOG_DIGEST, PRE_TYPED_NODE_CATALOG_DIGEST}:
+            CATALOG_DIGEST, PRE_VIDEO_POLICY_CATALOG_DIGEST, PRE_OUTPUT_CONTRACT_CATALOG_DIGEST, PRE_TYPED_NODE_CATALOG_DIGEST,
+            *PRE_STATEMENT_CATALOG_DIGESTS}:
         raise ValueError("artifact Skill catalog digest does not match the frozen Run")
     if task_input.catalog_digest == PRE_VIDEO_POLICY_CATALOG_DIGEST:
         inputs = task_input.input_payload.inputs
@@ -107,6 +112,14 @@ def resume_artifact_task(
     raw_plan = resume_checkpoint.get("execution_plan")
     if not isinstance(raw_plan, dict):
         raise ValueError("artifact resume checkpoint is missing execution_plan")
+    if task_input.catalog_digest in PRE_STATEMENT_CATALOG_DIGESTS and raw_plan.get("action_origin") == "BUILTIN":
+        # 只重绑当前注册图声明，检查点里的冻结意图、权限和输入仍原样读取。
+        from app.compiler import _resolve_node_sequence
+        from app.registry import resolve_production_action
+        action = resolve_production_action(raw_plan["action_key"])
+        if raw_plan.get("skill_graph_key") == action.default_skill_graph_key:
+            raw_plan = {**raw_plan, "node_sequence": [node.model_dump(mode="json")
+                for node in _resolve_node_sequence(raw_plan["skill_graph_key"])]}
     validated_plan = ArtifactExecutionPlan.model_validate(raw_plan)
     _migrate_frozen_builtin_graph(task_input, validated_plan)
     raw_content_objects = resume_checkpoint.get("canonical_content_objects")
@@ -134,7 +147,8 @@ def resume_artifact_task(
 def _migrate_frozen_builtin_graph(task_input, plan):
     """旧内置图仅迁移执行声明，保留输入、意图、权限和已发生的模型调用。"""
     if task_input.catalog_digest not in {PRE_VIDEO_POLICY_CATALOG_DIGEST,
-            PRE_OUTPUT_CONTRACT_CATALOG_DIGEST, PRE_TYPED_NODE_CATALOG_DIGEST} or plan.action_origin != "BUILTIN":
+            PRE_OUTPUT_CONTRACT_CATALOG_DIGEST, PRE_TYPED_NODE_CATALOG_DIGEST,
+            *PRE_STATEMENT_CATALOG_DIGESTS} or plan.action_origin != "BUILTIN":
         return
     from app.compiler import _resolve_node_sequence
     from app.registry import resolve_production_action, resolve_prompt_recipe
@@ -268,7 +282,9 @@ def _run_artifact_task(
     )
     if generation_trace is None:
         raise RuntimeError("artifact skill graph did not produce a section draft")
-    repaired_checks: list[str] = []
+    repaired_checks = [f"章节修复完成：{heading}" for record in
+        generation_trace.get("state", {}).get("verification", {}).get("repair_rounds", [])
+        for heading in record.get("repaired_sections", [])]
     artifact_title = resolve_artifact_title(task_input, plan)
     rendered_markdown = render_markdown(task_input, plan, repaired_sections)
     runtime_notes = render_runtime_notes(task_input, plan)

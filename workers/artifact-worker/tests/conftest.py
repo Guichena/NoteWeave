@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 import app.runner as runner_module
+from app.llm_client import FakeLlmClient
 
 
 _TEST_RUNTIME = tempfile.TemporaryDirectory(prefix="noteweave-artifact-tests-")
@@ -53,6 +54,14 @@ class ContractArtifactTestProvider:
         context = raw_context if isinstance(raw_context, dict) else {}
         raw_passages = inputs.get("material_passages")
         passages = raw_passages if isinstance(raw_passages, list) else []
+        if purpose == "artifact.node.statement_support_judge":
+            return _statement_assessments(inputs)
+        if purpose == "artifact.node.section_repair":
+            # 默认替身不掩盖负向用例；真实修复行为由专门的修复模型替身验证。
+            output = {"sections": inputs["failed_sections"]}
+            if "bullets" in inputs and any(section["heading"] == "简历亮点" for section in inputs["failed_sections"]):
+                output["bullets"] = inputs["bullets"]
+            return json.dumps(output, ensure_ascii=False)
         if purpose == "artifact.node.resume_highlight_extractor":
             return json.dumps({"facts": [
                 {"fact_id": f"fact-{index + 1}", "text": passage["content"],
@@ -75,11 +84,11 @@ class ContractArtifactTestProvider:
         }
         raw_sources = payload.get("sources")
         sources = raw_sources if isinstance(raw_sources, list) else []
-        source_titles = [
+        source_titles = list(dict.fromkeys(
             str(item.get("title", "")).strip()
             for item in sources
             if isinstance(item, dict) and str(item.get("title", "")).strip()
-        ]
+        ))
         source_contents = [
             str(item.get("content", "")).strip()
             for item in sources
@@ -205,6 +214,36 @@ class ContractArtifactTestProvider:
             for heading in context["outline"]
         ]
         return json.dumps({"sections": sections, "bullets": bullets}, ensure_ascii=False)
+
+
+def _statement_assessments(inputs: dict[str, object]) -> str:
+    passages = {passage["chunk_id"]: passage for passage in inputs["material_passages"]}
+    assessments = []
+    for statement in inputs["statements"]:
+        chunk_ids = statement["citation_chunk_ids"]
+        # 引用和原文来自实际节点输入；缺少引用时不伪造支撑证据。
+        citations = [{"chunk_id": chunk_id, "label": "SUPPORTED",
+                      "quote": passages[chunk_id]["content"].strip()}
+                     for chunk_id in chunk_ids]
+        assessments.append({
+            "statement_id": statement["statement_id"],
+            "label": "SUPPORTED" if citations else "UNSUPPORTED",
+            "sufficiently_supported": bool(citations),
+            "citations": citations,
+            "reason": "测试判定使用节点提供的冻结引文。" if citations else "该陈述未提供冻结引用。",
+        })
+    return json.dumps({"assessments": assessments}, ensure_ascii=False)
+
+
+class GeneratedArtifactFakeLlmClient(FakeLlmClient):
+    """只在显式采用此替身的生成用例中提供独立的引用判定响应。"""
+
+    def complete_json(self, purpose: str, payload: dict[str, object]) -> str:
+        if purpose == "artifact.node.statement_support_judge" and purpose not in self.responses_by_purpose:
+            self.calls.append((purpose, payload))
+            return _statement_assessments(payload["inputs"])
+        # 明确配置为空或不合规的响应保持原值，不能被测试适配替换为通过。
+        return super().complete_json(purpose, payload)
 
 
 @pytest.fixture(autouse=True)

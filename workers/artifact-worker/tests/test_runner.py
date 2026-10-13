@@ -41,7 +41,7 @@ from app.models import (
 from app.runner import run_artifact_task
 from app.node_executor import NodeExecutionError
 from app.node_contracts import node_contract_for_skill
-from tests.conftest import ContractArtifactTestProvider
+from tests.conftest import ContractArtifactTestProvider, GeneratedArtifactFakeLlmClient
 from app.verifier import build_output_contract_trace, verify_artifact_output
 from app.main import (
     debug_get_capability_bindings,
@@ -182,16 +182,17 @@ def test_run_artifact_task_should_use_configured_llm_and_trace_generation_mode(
     assert generation_trace["provider"] == fake.provider_name
     assert generation_trace["model"] == fake.model_name
     assert generation_trace["generated_section_count"] == 3
-    assert generation_trace["llm_calls"] == 3
+    assert generation_trace["llm_calls"] == sum(trace["llm_calls"] for trace in result.result_payload["node_traces"])
     assert "Controlled Agentic Graph Harness" in result.result_payload["markdown"]
     generated_sections = result.result_payload["sections"]
     assert set(generated_sections[1]["source_refs"]) == {"产物生成 Agent 编排升级设计", "用户自定义 MCP 权限治理"}
     assert fake.calls and fake.calls[0][0] == "artifact.compile_intent"
-    assert [purpose for purpose, _ in fake.calls if purpose.startswith("artifact.node.")] == [
+    assert [purpose for purpose, _ in fake.calls if purpose.startswith("artifact.node.")][:3] == [
         "artifact.node.resume_highlight_extractor",
         "artifact.node.resume_impact_normalizer",
         "artifact.node.resume_bullet_writer",
     ]
+    assert any(purpose == "artifact.node.statement_support_judge" for purpose, _ in fake.calls)
 
 
 def test_skill_declared_only_in_the_catalog_runs_through_the_generic_graph(
@@ -224,7 +225,7 @@ def test_skill_declared_only_in_the_catalog_runs_through_the_generic_graph(
     sections = ",".join(
         '{"heading": "%s", "body": "论文比较了两种写入顺序的一致性。", "source_refs": ["缓存一致性论文"]}' % heading
         for heading in ["核心论点", "关键证据", "方法与假设", "局限与争议", "待追问问题"])
-    fake = FakeLlmClient({purpose: '{"sections": [%s]}' % sections for purpose in (
+    fake = GeneratedArtifactFakeLlmClient({purpose: '{"sections": [%s]}' % sections for purpose in (
         "artifact.node.generic_section_writer", "artifact.node.style_polisher")})
     monkeypatch.setattr(runner_module, "build_default_llm_client", lambda: fake)
     _, result = run_artifact_task(task_input)
@@ -266,7 +267,7 @@ def test_failed_final_content_gate_never_invokes_renderer(monkeypatch: pytest.Mo
     monkeypatch.setattr(runner_module, "export_artifact_if_required",
                         lambda **kwargs: render_calls.append("render"))
     monkeypatch.setattr(runner_module, "verify_artifact_output",
-                        lambda *args: ArtifactVerificationResult(
+                        lambda *args, **kwargs: ArtifactVerificationResult(
                             status="FAIL", failed_checks=["missing evidence"]))
 
     with pytest.raises(runner_module.ArtifactOutputContractViolationError):
@@ -979,7 +980,7 @@ def test_mindmap_skill_should_compile_to_safe_hierarchical_markdown() -> None:
 def test_run_mindmap_skill_should_pass_its_own_output_contract(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fake = FakeLlmClient(
+    fake = GeneratedArtifactFakeLlmClient(
         {
             "artifact.node.generic_section_writer": r"""
             {
@@ -1214,6 +1215,7 @@ def test_run_artifact_task_should_generate_quiz_artifact() -> None:
         "quiz_designer",
         "quiz_difficulty_normalizer",
         "evidence_guard",
+        "generic_section_repair",
     ]
     assert result.result_payload["execution_plan"]["prompt_recipe"]["recipe_id"] == "quiz_writer_v1"
     assert result.result_payload["verification"]["status"] == "PASS"
@@ -1222,6 +1224,7 @@ def test_run_artifact_task_should_generate_quiz_artifact() -> None:
         "quiz_designer",
         "quiz_difficulty_normalizer",
         "evidence_guard",
+        "generic_section_repair",
     ]
     assert len(result.result_payload["context_pack"]["output_contract"]) == 4
     assert result.result_payload["approval_trace"]["status"] == "NOT_REQUIRED"
@@ -1280,6 +1283,7 @@ def test_run_artifact_task_should_generate_wiki_page_artifact_with_wiki_structur
         "generic_section_writer",
         "wiki_structure_enforcer",
         "evidence_guard",
+        "generic_section_repair",
     ]
     related_pages_section = next(
         section
@@ -1350,6 +1354,7 @@ def test_build_execution_plan_should_support_multiple_default_actions(
             "quiz_designer",
             "quiz_difficulty_normalizer",
             "evidence_guard",
+            "generic_section_repair",
         ]
     elif action_key == "wiki_page":
         assert [node.skill_key for node in plan.node_sequence] == [
@@ -1357,12 +1362,14 @@ def test_build_execution_plan_should_support_multiple_default_actions(
             "generic_section_writer",
             "wiki_structure_enforcer",
             "evidence_guard",
+            "generic_section_repair",
         ]
     else:
         assert [node.skill_key for node in plan.node_sequence] == [
             "workspace_material_digest",
             "generic_section_writer",
             "evidence_guard",
+            "generic_section_repair",
         ]
 
 
@@ -1384,6 +1391,7 @@ def test_build_execution_plan_should_support_quiz_default_action() -> None:
         "quiz_designer",
         "quiz_difficulty_normalizer",
         "evidence_guard",
+        "generic_section_repair",
     ]
 
 
@@ -1402,6 +1410,7 @@ def test_build_execution_plan_should_support_wiki_page_default_action() -> None:
         "generic_section_writer",
         "wiki_structure_enforcer",
         "evidence_guard",
+        "generic_section_repair",
     ]
 
 
@@ -1715,6 +1724,7 @@ def test_run_artifact_task_should_generate_multiple_default_artifacts(
             "quiz_designer",
             "quiz_difficulty_normalizer",
             "evidence_guard",
+            "generic_section_repair",
         ]
     elif action_key == "wiki_page":
         assert result.result_payload["execution_plan"]["skill_graph_key"] == "wiki_artifact_v1"
@@ -1723,6 +1733,7 @@ def test_run_artifact_task_should_generate_multiple_default_artifacts(
             "generic_section_writer",
             "wiki_structure_enforcer",
             "evidence_guard",
+            "generic_section_repair",
         ]
     assert result.result_payload["context_pack"]["output_contract"] == expected_headings
     assert result.result_payload["capability_union_trace"]["status"] == "ALLOW"
@@ -3002,12 +3013,14 @@ def test_debug_skill_registries_should_expose_default_catalogs() -> None:
         "quiz_designer",
         "quiz_difficulty_normalizer",
         "evidence_guard",
+        "generic_section_repair",
     ]
     assert [node["skill_key"] for node in wiki_graph["nodes"]] == [
         "workspace_material_digest",
         "generic_section_writer",
         "wiki_structure_enforcer",
         "evidence_guard",
+        "generic_section_repair",
     ]
 
 

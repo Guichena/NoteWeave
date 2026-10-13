@@ -27,6 +27,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
     private final Map<String, String> actionBindings;
     private final Map<String, List<String>> requiredFileRoles;
     private final Map<String, String> publishedVersions;
+    private final Map<String, Boolean> evidenceRequiredByKey;
     private final String catalogDigest;
     /** 目录里的描述与展示信息：前端的产物卡片和默认输入提示都从这里读取，新增产物不需要改代码。 */
     private final Map<String, String> descriptions;
@@ -75,10 +76,14 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         Map<String, String> bindings = new LinkedHashMap<>();
         Map<String, List<String>> requiredRoles = new LinkedHashMap<>();
         Map<String, String> versions = new LinkedHashMap<>();
+        Map<String, Boolean> evidenceRequired = new LinkedHashMap<>();
         for (Object rawEntry : (List<?>) catalog.get("skills")) {
             Map<?, ?> entry = (Map<?, ?>) rawEntry;
             String key = String.valueOf(entry.get("skill_key"));
             versions.put(key, String.valueOf(entry.get("version")));
+            Map<?, ?> contract = (Map<?, ?>) entry.get("output_contract");
+            Map<?, ?> citation = (Map<?, ?>) contract.get("citation");
+            evidenceRequired.put(key, "PER_SECTION".equals(citation.get("density")));
             bindings.put(key, String.valueOf(entry.get("action_key")));
             if (!(entry.get("required_file_roles") instanceof List<?> roles)) {
                 throw new IllegalStateException("Skill has no required file roles: " + key);
@@ -109,6 +114,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         this.actionBindings = Map.copyOf(bindings);
         this.requiredFileRoles = Map.copyOf(requiredRoles);
         this.publishedVersions = Map.copyOf(versions);
+        this.evidenceRequiredByKey = Map.copyOf(evidenceRequired);
     }
 
     public String catalogDigest() {
@@ -117,6 +123,10 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
 
     public String publishedVersion(String skillKey) {
         return publishedVersions.get(resolveSkill(skillKey).skillKey());
+    }
+
+    boolean requiresEvidence(String skillKey) {
+        return evidenceRequiredByKey.get(resolveSkill(skillKey).skillKey());
     }
 
     public List<String> requiredFileRoles(String skillKey) {

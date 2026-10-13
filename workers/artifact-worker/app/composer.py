@@ -107,7 +107,8 @@ def _mindmap_phrases(body: str, limit: int) -> list[str]:
         line = re.sub(r"^[-*+]\s+", "", raw_line.strip()).strip()
         if not line:
             continue
-        phrase = _short_node_text(line, 56)
+        # 只整理完整陈述，截断句尾可能丢失否定条件并改变原意。
+        phrase = " ".join(line.split()).strip("：:，,。.;； ")
         if phrase and phrase not in phrases:
             phrases.append(phrase)
         if len(phrases) >= limit:

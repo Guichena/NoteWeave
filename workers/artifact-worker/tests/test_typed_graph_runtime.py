@@ -46,14 +46,16 @@ def forbid_render(monkeypatch):
 
 
 def test_resume_graph_keeps_original_facts_and_independent_model_steps():
+    provider = runner.build_default_llm_client()
     _, result = runner.run_artifact_task(resume_task())
     generation = result.result_payload["generation_trace"]
-    assert generation["purposes"] == [
+    assert generation["purposes"][:3] == [
         "artifact.node.resume_highlight_extractor",
         "artifact.node.resume_impact_normalizer",
         "artifact.node.resume_bullet_writer",
     ]
-    assert generation["llm_calls"] == 3
+    assert any(purpose == "artifact.node.statement_support_judge" for purpose, _ in provider.calls)
+    assert generation["llm_calls"] == sum(purpose.startswith("artifact.node.") for purpose, _ in provider.calls)
     state = generation["state"]
     facts = {fact["fact_id"]: fact for fact in state["facts"]}
     assert facts and all(fact["quote"] == "延迟降低 20%。" for fact in facts.values())
@@ -92,8 +94,11 @@ def test_forbidden_content_is_rejected_without_rewriting_generated_facts(monkeyp
         runner.run_artifact_task(resume_task())
     assert caught.value.trace["reason_code"] == "ARTIFACT_NODE_CONTRACT_FAILED"
     assert any("明确禁止的内容" in failure for failure in caught.value.trace["failed_checks"])
-    repair = caught.value.trace["completed_nodes"][-1]
-    assert repair["node_kind"] == "REPAIR" and repair["verification_status"] == "NOT_RUN"
+    repair_calls = [payload for purpose, payload in provider.calls if purpose == "artifact.node.section_repair"]
+    assert len(repair_calls) == 2
+    assert all(payload["inputs"]["failed_sections"] for payload in repair_calls)
+    assert all(any("明确禁止的内容" in failure for failure in payload["inputs"]["failed_checks"])
+               for payload in repair_calls)
 
 
 def test_old_builtin_checkpoint_migrates_only_graph_metadata(monkeypatch):

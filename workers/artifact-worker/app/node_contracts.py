@@ -75,8 +75,10 @@ STATE_FIELDS = {
     "sections": _SECTIONS, "verification": {"type": "object"},
     "retrieval_trace": {"type": "object"},
     "repair_trace": {"type": "object", "additionalProperties": False,
-        "properties": {"status": {"enum": ["SKIPPED", "NOT_RUN"]},
-            "reason": {"type": "string"}, "failed_checks": {"type": "array"}},
+        "properties": {"status": {"enum": ["SKIPPED", "NOT_RUN", "REPAIRED", "FAILED"]},
+            "reason": {"type": "string"}, "failed_checks": {"type": "array"},
+            "rounds": {"type": "array", "maxItems": 2}, "llm_calls": {"type": "integer", "minimum": 0},
+            "execution_traces": {"type": "array"}},
         "required": ["status", "reason", "failed_checks"]},
 }
 
@@ -92,14 +94,15 @@ _LEGACY_NODE_BINDINGS = {
     "resume_highlight_extractor": ("LLM_STEP", ["material_passages", "generation_context"], ["facts"]),
     "resume_impact_normalizer": ("LLM_STEP", ["facts", "material_passages", "generation_context"], ["normalized_facts"]),
     "resume_bullet_writer": ("LLM_STEP", ["normalized_facts", "material_passages", "generation_context"], ["sections", "bullets"]),
-    "resume_verifier": ("VERIFY", ["sections", "bullets", "normalized_facts", "material_passages", "generation_context"], ["verification"]),
-    "resume_local_repair": ("REPAIR", ["sections", "verification", "generation_context"], ["sections", "repair_trace"]),
+    "resume_verifier": ("VERIFY", ["sections", "bullets", "normalized_facts", "material_passages", "section_materials", "generation_context"], ["verification"]),
+    "resume_local_repair": ("REPAIR", ["sections", "bullets", "normalized_facts", "verification", "material_passages", "section_materials", "generation_context"], ["sections", "bullets", "verification", "repair_trace"]),
+    "generic_section_repair": ("REPAIR", ["sections", "verification", "material_passages", "section_materials", "generation_context"], ["sections", "verification", "repair_trace"]),
     "generic_section_writer": ("LLM_STEP", ["material_passages", "section_materials", "generation_context"], ["sections"]),
     "quiz_designer": ("LLM_STEP", ["material_passages", "section_materials", "generation_context"], ["sections"]),
     "quiz_difficulty_normalizer": ("LLM_STEP", ["sections", "material_passages", "generation_context"], ["sections"]),
     "wiki_structure_enforcer": ("LLM_STEP", ["sections", "material_passages", "generation_context"], ["sections"]),
     "style_polisher": ("LLM_STEP", ["sections", "material_passages", "generation_context"], ["sections"]),
-    "evidence_guard": ("VERIFY", ["sections", "material_passages", "generation_context"], ["verification"]),
+    "evidence_guard": ("VERIFY", ["sections", "material_passages", "section_materials", "generation_context"], ["verification"]),
     # 专用视频图由冻结证据执行入口处理，不转为文本生成图。
     "frozen_video_deck_layout": ("TOOL", ["generation_context"], []),
     "original_frame_pptx_renderer": ("TOOL", ["generation_context"], []),
@@ -134,8 +137,33 @@ def hydrate_legacy_node(values):
         result.update(node_contract_for_skill(skill_key, runtime_key))
     elif present != _CONTRACT_FIELDS:
         raise ValueError("节点类型、配方和输入输出 Schema 必须完整声明")
+    else:
+        _upgrade_pre_statement_contract(result)
     validate_node_contract(result)
     return result
+
+
+def _upgrade_pre_statement_contract(node):
+    """只迁移完整匹配上一版注册契约的节点，显式定制约束仍按原声明校验。"""
+    recipe = str(node.get("prompt_recipe_id") or "")
+    runtime_key = recipe[len("node."):-len(".v1")] if recipe.startswith("node.") and recipe.endswith(".v1") else ""
+    if runtime_key not in {"resume_verifier", "resume_local_repair", "evidence_guard"}:
+        return
+    expected = node_contract_for_skill(runtime_key)
+    old = deepcopy(expected)
+    if runtime_key == "resume_local_repair":
+        old["input_schema"] = _schema(["sections", "verification", "generation_context"])
+        old["output_schema"] = _schema(["sections", "repair_trace"])
+        old["output_schema"]["properties"]["repair_trace"] = {
+            "type": "object", "additionalProperties": False,
+            "properties": {"status": {"enum": ["SKIPPED", "NOT_RUN"]},
+                "reason": {"type": "string"}, "failed_checks": {"type": "array"}},
+            "required": ["status", "reason", "failed_checks"]}
+    else:
+        keys = [key for key in expected["input_schema"]["properties"] if key != "section_materials"]
+        old["input_schema"] = _schema(keys)
+    if all(node.get(key) == value for key, value in old.items()):
+        node.update(expected)
 
 
 def _reject_references(value, depth=0):

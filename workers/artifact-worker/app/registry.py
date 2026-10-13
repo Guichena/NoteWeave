@@ -817,6 +817,14 @@ SKILL_DEFINITIONS = {
         verifier_policy=["must close verifier-detected gaps with local edits only"],
         repair_policy=["repair missing bullets, focus points, keywords, and evidence refs"],
     ),
+    "generic_section_repair": SkillDefinition(
+        skill_key="generic_section_repair", skill_version="1.0.0", skill_type="REPAIR",
+        input_contract=["失败章节", "证据诊断", "冻结检索原文"],
+        output_contract=["仅修改失败章节的正文", "两轮以内的真实修复诊断"],
+        required_capabilities=["GENERATE_STRUCTURED_TEXT", "VERIFY_OUTPUT"],
+        verifier_policy=["每轮重检全部契约和陈述依据，已通过章节不改写"],
+        repair_policy=["最多两轮，模型不可用或仍然失败时拒绝提交"],
+    ),
     "evidence_guard": SkillDefinition(
         skill_key="evidence_guard",
         skill_version="1.0.0",

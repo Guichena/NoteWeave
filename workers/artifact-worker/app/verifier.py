@@ -17,12 +17,22 @@ def verify_artifact_output(
     repaired_checks: list[str],
 ) -> ArtifactVerificationResult:
     contract_trace = build_output_contract_trace(result, plan, repaired_checks)
+    generation = result.result_payload.get("generation_trace", {})
+    semantic = generation.get("state", {}).get("verification", {}) if isinstance(generation, dict) else {}
+    failed = list(contract_trace.failed_checks) + list(semantic.get("failed_checks", []))
+    warnings = list(dict.fromkeys([*contract_trace.warnings, *semantic.get("warnings", [])]))
     return ArtifactVerificationResult(
-        status=contract_trace.status,
+        status="FAIL" if failed else "WARN" if warnings else "PASS",
         passed_checks=list(contract_trace.passed_checks),
         repaired_checks=list(contract_trace.repaired_checks),
-        failed_checks=list(contract_trace.failed_checks),
-        warnings=list(contract_trace.warnings),
+        failed_checks=list(dict.fromkeys(failed)), warnings=warnings,
+        contract_status="FAIL" if contract_trace.status == "FAIL" or semantic.get("contract_status") == "FAIL" else "PASS",
+        evidence_status=semantic.get("evidence_status", ""),
+        repair_rounds=semantic.get("repair_rounds", []), citation_recall=semantic.get("citation_recall"),
+        citation_precision=semantic.get("citation_precision"), sections=semantic.get("sections", []),
+        llm_calls=semantic.get("llm_calls", 0),
+        statement_verification_version=semantic.get("statement_verification_version", ""),
+        verification_mode=semantic.get("verification_mode", ""),
     )
 
 
@@ -243,6 +253,8 @@ def _build_repair_summary(
 
 
 def _categorize_local_repair(repaired_check: str) -> tuple[str, str]:
+    if repaired_check.startswith("章节修复完成："):
+        return "section_rewrite", repaired_check.split("：", 1)[1].strip()
     if repaired_check.startswith("missing section repaired:"):
         return "missing_section", repaired_check.split(":", 1)[1].strip()
     if repaired_check.startswith("forbidden pattern removed:"):

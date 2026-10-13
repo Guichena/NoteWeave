@@ -71,6 +71,8 @@ public class ArtifactPayloadReadModelAssembler {
         Map<String, Object> runtimeTracePayload;
         if (nestedRuntimeTrace instanceof Map<?, ?> nestedMap) {
             runtimeTracePayload = normalizeObjectMap(nestedMap);
+            // 新载荷的顶层校验结果为最终结果，兼容仅在运行诊断中保存结果的历史版本。
+            copyRuntimeTraceField(payload, runtimeTracePayload, "verification");
         } else {
             LinkedHashMap<String, Object> runtimeTrace = new LinkedHashMap<>();
             copyRuntimeTraceField(payload, runtimeTrace, "intent_compilation_trace");

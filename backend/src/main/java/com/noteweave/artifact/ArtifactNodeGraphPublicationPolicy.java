@@ -25,6 +25,7 @@ final class ArtifactNodeGraphPublicationPolicy {
             Map.entry("resume_impact_normalizer", "LLM_STEP"),
             Map.entry("resume_bullet_writer", "LLM_STEP"),
             Map.entry("resume_verifier", "VERIFY"), Map.entry("resume_local_repair", "REPAIR"),
+            Map.entry("generic_section_repair", "REPAIR"),
             Map.entry("generic_section_writer", "LLM_STEP"), Map.entry("quiz_designer", "LLM_STEP"),
             Map.entry("quiz_difficulty_normalizer", "LLM_STEP"), Map.entry("wiki_structure_enforcer", "LLM_STEP"),
             Map.entry("style_polisher", "LLM_STEP"), Map.entry("evidence_guard", "VERIFY"),

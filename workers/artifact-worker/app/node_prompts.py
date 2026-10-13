@@ -11,6 +11,27 @@ class NodePromptRecipe:
 
 
 _INSTRUCTIONS = {
+    "statement_support_judge": (
+        "逐条判断输入 statements 是否被其 citation_chunk_ids 对应的原文充分支持。"
+        "只使用本次 material_passages，禁止引入其他章节、常识补充或新的引用。"
+        "返回 assessments，逐陈述包含 statement_id、label、sufficiently_supported、reason 和 citations。"
+        "陈述 label 使用 SUPPORTED、CONTRADICTED、UNSUPPORTED、NON_FACTUAL、UNDETERMINED；"
+        "只有 SUPPORTED 的 sufficiently_supported 为 true，其他标签为 false。"
+        "每条陈述必须覆盖原有全部引用，不能新增、遗漏或重复。"
+        "每条 citation 包含 chunk_id、label、quote，label 允许 SUPPORTED、PARTIAL、CONTRADICTED、"
+        "UNSUPPORTED、UNDETERMINED；quote 必须逐字复制对应原文中的连续片段。"
+        "词语相似不表示含义相同，须检查否定、数字、单位、主体、范围和因果关系。"
+        "单引用 PARTIAL 表示只支持部分内容，不能据此认定整个陈述充分支持。"
+        "没有真实充分引用时不能返回 SUPPORTED；非事实性指令、问题或建议可返回 NON_FACTUAL。"
+    ),
+    "section_repair": (
+        "只修复 inputs.failed_sections 中明确指定的失败章节，返回 sections。"
+        "不能返回、改写或删除其他章节，不改变标题集合和原冻结执行意图。"
+        "仅根据声明的失败检查与已提供素材修复，不引入新的事实、数字或引用。"
+        "简历亮点修复返回的 bullets 仍只能引用既有 facts 的 fact_id，"
+        "bullets 文本与对应亮点章节列表逐条一致，不得新增事实或指标。"
+        "材料不足时保持可追溯的实际信息，不按数量编造内容。"
+    ),
     "resume_highlight_extractor": (
         "从 material_passages 的原文抽取与 generation_context 相关的真实事实。"
         "返回 facts，每项包含唯一 fact_id、事实 text、真实 chunk_id 和连续原文 quote。"

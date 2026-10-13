@@ -691,6 +691,15 @@ class ArtifactVerificationResult(BaseModel):
     repaired_checks: list[str] = Field(default_factory=list)
     failed_checks: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    contract_status: str = ""
+    evidence_status: str = ""
+    repair_rounds: list[dict[str, object]] = Field(default_factory=list)
+    citation_recall: float | None = None
+    citation_precision: float | None = None
+    sections: list[dict[str, object]] = Field(default_factory=list)
+    llm_calls: int = 0
+    statement_verification_version: str = ""
+    verification_mode: str = ""
 
 
 class ArtifactContractCheckTrace(BaseModel):

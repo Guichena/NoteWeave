@@ -12,6 +12,7 @@ SUPPORTED_RUNTIME_NODE_SKILL_KEYS = frozenset(
         "resume_bullet_writer",
         "resume_verifier",
         "resume_local_repair",
+        "generic_section_repair",
         "quiz_designer",
         "quiz_difficulty_normalizer",
         "wiki_structure_enforcer",
