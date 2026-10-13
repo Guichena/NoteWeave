@@ -93,7 +93,7 @@ def test_file_repository_backend_should_persist_records_to_disk(tmp_path: Path) 
             ],
         }
         assert persisted_version["runtime_trace"]["verification"]["status"] == "PASS"
-        assert persisted_version["runtime_trace"]["node_traces"][0]["skill_key"] == "material_retrieve"
+        assert persisted_version["runtime_trace"]["node_traces"][0]["skill_key"] == "workspace_material_digest"
         assert persisted_version["runtime_trace"]["node_traces"] == result.result_payload["node_traces"]
         assert persisted_version["runtime_trace"]["verification"] == result.result_payload["verification"]
         assert (
@@ -125,10 +125,7 @@ def test_file_repository_backend_should_persist_records_to_disk(tmp_path: Path) 
             persisted_retrieval["memory_promotion_preview"]
             == result.result_payload["memory_promotion_preview"]
         )
-        assert (
-            "source trace captured for digested materials"
-            in persisted_version["runtime_trace"]["node_traces"][1]["verification_checks"]
-        )
+        assert persisted_version["runtime_trace"]["node_traces"][0]["node_kind"] == "RETRIEVE"
     finally:
         configure_artifact_repository_backend("memory")
         clear_artifact_repository()
@@ -174,7 +171,7 @@ def test_file_repository_backend_should_reload_existing_records(tmp_path: Path) 
             ],
         }
         assert version_detail["runtime_trace"]["verification"]["status"] == "PASS"
-        assert version_detail["runtime_trace"]["node_traces"][0]["skill_key"] == "material_retrieve"
+        assert version_detail["runtime_trace"]["node_traces"][0]["skill_key"] == "workspace_material_digest"
         assert version_detail["runtime_trace"]["node_traces"] == result.result_payload["node_traces"]
         assert version_detail["runtime_trace"]["verification"] == result.result_payload["verification"]
         assert (

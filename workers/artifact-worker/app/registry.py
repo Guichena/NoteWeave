@@ -18,12 +18,11 @@ from app.models import (
     PromptRecipe,
     ProductionAction,
     SkillDefinition,
-    SkillGraphEdge,
     SkillGraphNode,
     SkillGraphTemplate,
     StyleProfile,
 )
-from app.runtime_node_registry import ensure_runtime_node_skill_registered
+from app.runtime_node_registry import ensure_runtime_node_contract_registered, ensure_runtime_node_skill_registered
 
 
 logger = logging.getLogger(__name__)
@@ -161,11 +160,7 @@ PRODUCTION_ACTIONS = {
             "\u8bc1\u636e\u7efc\u8ff0",
             "\u5efa\u8bae\u65b9\u6848",
         ],
-        required_phrases=[
-            "Production Action",
-            "Schema-Gated Skill Graph Runtime",
-            "Artifact Version",
-        ],
+        required_phrases=[],
     ),
     "FAQ": ProductionAction(
         action_key="FAQ",
@@ -190,11 +185,7 @@ PRODUCTION_ACTIONS = {
             "\u6807\u51c6\u56de\u7b54",
             "\u4f7f\u7528\u8bf4\u660e",
         ],
-        required_phrases=[
-            "Production Action",
-            "Capability Union Policy",
-            "Verifier / Repair",
-        ],
+        required_phrases=[],
     ),
     "QUIZ": ProductionAction(
         action_key="QUIZ",
@@ -220,11 +211,7 @@ PRODUCTION_ACTIONS = {
             "\u7b54\u6848\u4e0e\u89e3\u6790",
             "\u8bc4\u5206\u8981\u70b9",
         ],
-        required_phrases=[
-            "Schema-Gated Skill Graph Runtime",
-            "Capability Union Policy",
-            "Verifier / Repair",
-        ],
+        required_phrases=[],
     ),
     "STUDY_GUIDE": ProductionAction(
         action_key="STUDY_GUIDE",
@@ -249,11 +236,7 @@ PRODUCTION_ACTIONS = {
             "\u6838\u5fc3\u6982\u5ff5",
             "\u7ec3\u4e60\u8def\u5f84",
         ],
-        required_phrases=[
-            "Skill Graph",
-            "Schema Gate",
-            "Local Repair",
-        ],
+        required_phrases=[],
     ),
     "WIKI_PAGE": ProductionAction(
         action_key="WIKI_PAGE",
@@ -278,11 +261,7 @@ PRODUCTION_ACTIONS = {
             "\u5173\u952e\u673a\u5236",
             "\u76f8\u5173\u9875\u9762",
         ],
-        required_phrases=[
-            "Controlled Agentic Graph Harness",
-            "Skill Graph",
-            "Artifact Job",
-        ],
+        required_phrases=[],
     ),
     "MINDMAP": ProductionAction(
         action_key="MINDMAP",
@@ -334,11 +313,7 @@ PRODUCTION_ACTIONS = {
             "\u5173\u952e\u6458\u5f55",
             "\u540e\u7eed\u95ee\u9898",
         ],
-        required_phrases=[
-            "Artifact Runtime",
-            "Evidence Gate",
-            "Verifier / Repair",
-        ],
+        required_phrases=[],
     ),
     "VIDEO_SUMMARY": ProductionAction(
         action_key="VIDEO_SUMMARY",
@@ -366,11 +341,7 @@ PRODUCTION_ACTIONS = {
             "\u5173\u952e\u6982\u5ff5",
             "\u53ef\u6c89\u6dc0\u8981\u70b9",
         ],
-        required_phrases=[
-            "Controlled Agentic Graph Harness",
-            "Schema Gate",
-            "Capability Layer",
-        ],
+        required_phrases=[],
     ),
     "AUDIO_MINUTES": ProductionAction(
         action_key="AUDIO_MINUTES",
@@ -398,11 +369,7 @@ PRODUCTION_ACTIONS = {
             "\u884c\u52a8\u9879",
             "\u5f85\u786e\u8ba4\u95ee\u9898",
         ],
-        required_phrases=[
-            "Artifact Runtime",
-            "Local Repair",
-            "Artifact Version",
-        ],
+        required_phrases=[],
     ),
     "COURSE_NOTES": ProductionAction(
         action_key="COURSE_NOTES",
@@ -431,11 +398,7 @@ PRODUCTION_ACTIONS = {
             "\u91cd\u70b9\u96be\u70b9",
             "\u590d\u4e60\u9898",
         ],
-        required_phrases=[
-            "Style Profile",
-            "Skill Graph",
-            "Verifier / Repair",
-        ],
+        required_phrases=[],
     ),
     "RESUME_HIGHLIGHT": ProductionAction(
         action_key="RESUME_HIGHLIGHT",
@@ -459,13 +422,7 @@ PRODUCTION_ACTIONS = {
             "\u7b80\u5386\u4eae\u70b9",
             "\u5173\u952e\u8bcd",
         ],
-        required_phrases=[
-            "Controlled Agentic Graph Harness",
-            "Schema-Gated Skill Graph Runtime",
-            "Capability Union Policy",
-            "Artifact Job / Artifact Version",
-            "Verifier / Repair",
-        ],
+        required_phrases=[],
     ),
 }
 
@@ -563,9 +520,9 @@ PROMPT_RECIPES = {
         generation_mode="SECTION_SYNTHESIS",
         system_intent="Synthesize workspace evidence into a structured problem-evidence-recommendation report.",
         section_guidance={
-            "问题定义": "先界定问题边界，再说明为什么需要统一产物生成主链路。",
-            "证据综述": "优先归纳 Schema Gate、Skill Graph、Capability Union Policy 等证据点。",
-            "建议方案": "收敛到受控 runtime、版本化落库与局部修复方案。",
+            "问题定义": "根据用户目标与所给资料界定问题边界。",
+            "证据综述": "归纳与主题相关的原文证据，保留其来源。",
+            "建议方案": "根据证据给出可执行的建议，明确限制与待确认问题。",
         },
         node_guidance={},
         citation_policy=["保留工作台来源痕迹。", "优先引用一方资料，不凭空扩展。"],
@@ -580,7 +537,7 @@ PROMPT_RECIPES = {
         system_intent="Frame the report as an executive-facing decision memo with explicit control and rollout tradeoffs.",
         section_guidance={
             "问题定义": "从决策成本、扩展边界和风险控制角度定义问题。",
-            "证据综述": "突出能支持决策的架构证据，而不是罗列全部实现细节。",
+            "证据综述": "突出能支持决策的主题证据和必要背景。",
             "建议方案": "给出决策摘要、实施优先级和风险缓释路径。",
         },
         node_guidance={},
@@ -595,7 +552,7 @@ PROMPT_RECIPES = {
         generation_mode="SECTION_SYNTHESIS",
         system_intent="Turn implementation knowledge into reusable question-answer guidance.",
         section_guidance={
-            "问题集": "覆盖默认产物、门控策略和扩展边界相关高频问题。",
+            "问题集": "围绕资料主题和用户重点选择高频问题。",
             "标准回答": "给出统一口径，避免实现歧义。",
             "使用说明": "说明触发、验证和后续修复动作。",
         },
@@ -609,11 +566,11 @@ PROMPT_RECIPES = {
         recipe_name="Study Guide Writer",
         supported_actions=["STUDY_GUIDE"],
         generation_mode="SECTION_SYNTHESIS",
-        system_intent="Teach the controlled artifact runtime progressively for onboarding and self-study.",
+        system_intent="Teach the provided subject progressively for onboarding and self-study.",
         section_guidance={
-            "学习目标": "明确先学主链路，再学扩展边界。",
-            "核心概念": "按概念递进解释 Action、Style、Skill Graph、Policy Gate。",
-            "练习路径": "给出从运行默认产物到扩展 Action 的练习顺序。",
+            "学习目标": "按学习者背景说明核心知识和学习顺序。",
+            "核心概念": "按难度递进解释资料中的核心概念与关系。",
+            "练习路径": "根据主题安排从基础练习到综合应用的顺序。",
         },
         node_guidance={},
         citation_policy=["高亮关键概念时保留证据来源。"],
@@ -628,7 +585,7 @@ PROMPT_RECIPES = {
         system_intent="Turn workspace evidence into a verifiable quiz draft with questions, answers, and scoring guidance.",
         section_guidance={
             "\u6d4b\u9a8c\u76ee\u6807": "\u5148\u754c\u5b9a\u6d4b\u9a8c\u8981\u9a8c\u8bc1\u7684\u6982\u5ff5\u548c\u80fd\u529b\u8fb9\u754c\u3002",
-            "\u9898\u76ee\u8bbe\u8ba1": "\u9898\u76ee\u9700\u8986\u76d6\u4e3b\u94fe\u8def\u3001schema gate \u548c capability \u98ce\u9669\u63a7\u5236\u3002",
+            "\u9898\u76ee\u8bbe\u8ba1": "题目覆盖资料中的核心概念和用户指定重点。",
             "\u7b54\u6848\u4e0e\u89e3\u6790": "\u7ed9\u51fa\u6807\u51c6\u7b54\u6848\uff0c\u5e76\u8bf4\u660e\u4e3a\u4ec0\u4e48\u8fd9\u4e9b\u7b54\u6848\u80fd\u56de\u5230\u8bbe\u8ba1\u8bc1\u636e\u3002",
             "\u8bc4\u5206\u8981\u70b9": "\u660e\u786e\u57fa\u7840\u3001\u8fdb\u9636\u548c\u6311\u6218\u9898\u7684\u5224\u5206\u8981\u70b9\u3002",
         },
@@ -642,11 +599,11 @@ PROMPT_RECIPES = {
         recipe_name="Wiki Page Writer",
         supported_actions=["WIKI_PAGE"],
         generation_mode="SECTION_SYNTHESIS",
-        system_intent="Normalize architecture knowledge into a stable internal wiki page.",
+        system_intent="Normalize evidence about the requested subject into a stable internal wiki page.",
         section_guidance={
             "概览": "先给定义和边界。",
             "关键机制": "归纳核心对象和关系。",
-            "相关页面": "指向施工文档、设计文档和测试入口。",
+            "相关页面": "列出资料中可核实的相关文档与参考入口。",
         },
         node_guidance={},
         citation_policy=["保持知识库式命名和可追溯来源。"],
@@ -676,7 +633,7 @@ PROMPT_RECIPES = {
         recipe_name="Structured Note Writer",
         supported_actions=["STRUCTURED_NOTE"],
         generation_mode="SECTION_SYNTHESIS",
-        system_intent="Capture the current architecture state as a reusable structured note.",
+        system_intent="Capture the provided subject as a reusable structured note.",
         section_guidance={
             "主题快照": "用最小篇幅定义当前主题。",
             "关键摘录": "保留关键术语与约束短句。",
@@ -697,7 +654,7 @@ PROMPT_RECIPES = {
             "一句话总结": "先用一句话概括视频主张。",
             "时间线摘要": "按主题阶段而非逐秒流水账组织。",
             "核心观点": "提炼最值得复用的观点。",
-            "关键概念": "列出关键架构名词。",
+            "关键概念": "列出视频中的关键概念和专业术语。",
             "可沉淀要点": "指出可回流到知识库的要点。",
         },
         node_guidance={},
@@ -745,10 +702,10 @@ PROMPT_RECIPES = {
         recipe_name="Resume Highlight Writer",
         supported_actions=["RESUME_HIGHLIGHT"],
         generation_mode="HIGHLIGHT_EXTRACTION",
-        system_intent="Condense architecture work into interview-friendly positioning, bullets, and keywords.",
+        system_intent="Condense evidenced project contributions into interview-friendly positioning, bullets, and keywords without inventing results.",
         section_guidance={
-            "一句话定位": "强调主链路、控制力和工程抽象。",
-            "简历亮点": "用结果导向 bullet 写法概括贡献。",
+            "一句话定位": "概括资料中可核实的项目目标和个人贡献。",
+            "简历亮点": "每条 bullet 根据已引用事实概括贡献，数字必须来自原文。",
             "关键词": "保留核心英文术语原文。",
         },
         node_guidance={},
@@ -818,7 +775,7 @@ SKILL_DEFINITIONS = {
         output_contract=["highlight candidates"],
         required_capabilities=["GENERATE_STRUCTURED_TEXT"],
         verifier_policy=["must keep evidence trace"],
-        repair_policy=["backfill highlights from remaining source summaries"],
+        repair_policy=["重新抽取有原文引用的事实，禁止补入无依据的亮点"],
     ),
     "resume_impact_normalizer": SkillDefinition(
         skill_key="resume_impact_normalizer",
@@ -883,202 +840,23 @@ SKILL_DEFINITIONS = {
 }
 
 
-SKILL_GRAPH_TEMPLATES = {
-    "video_deck_v1": SkillGraphTemplate(
-        graph_key="video_deck_v1", graph_name="Frozen Original-Image Video Deck",
-        action_type="SLIDE_DECK", nodes=[
-            SkillGraphNode(node_id="layout", skill_key="frozen_video_deck_layout",
-                           purpose="Map original frames and extracted claims to ordered slides."),
-            SkillGraphNode(node_id="render", skill_key="original_frame_pptx_renderer",
-                           purpose="Render editable text with unchanged source frames."),
-            SkillGraphNode(node_id="verify", skill_key="evidence_guard",
-                           purpose="Verify PPTX and every preview against the frozen slide list."),
-        ],
-        edges=[SkillGraphEdge(from_node="layout", to_node="render", edge_type="PREREQUISITE"),
-               SkillGraphEdge(from_node="render", to_node="verify", edge_type="PREREQUISITE")],
-        schema_contract=["video-deck-ir-v1", "artifact-content-v1"],
-    ),
-    "video_derived_text_v1": SkillGraphTemplate(
-        graph_key="video_derived_text_v1", graph_name="Frozen Video Text Derivation",
-        action_type="VIDEO_DERIVED_TEXT", nodes=[
-            SkillGraphNode(node_id="derive", skill_key="frozen_video_deriver",
-                           purpose="Derive text from the frozen Bundle and plan."),
-            SkillGraphNode(node_id="verify", skill_key="evidence_guard",
-                           purpose="Verify each claim and the deterministic rendering."),
-        ],
-        edges=[SkillGraphEdge(from_node="derive", to_node="verify", edge_type="PREREQUISITE")],
-        schema_contract=["video-derived-text-v1", "artifact-content-v1"],
-    ),
-    "generic_artifact_v1": SkillGraphTemplate(
-        graph_key="generic_artifact_v1",
-        graph_name="Generic Artifact Graph",
-        action_type="GENERIC",
-        nodes=[
-            SkillGraphNode(
-                node_id="digest",
-                skill_key="workspace_material_digest",
-                purpose="Compile workspace material digest.",
-            ),
-            SkillGraphNode(
-                node_id="write",
-                skill_key="generic_section_writer",
-                purpose="Generate outline-aligned sections.",
-            ),
-            SkillGraphNode(
-                node_id="guard",
-                skill_key="evidence_guard",
-                purpose="Check section evidence trace.",
-            ),
-            SkillGraphNode(
-                node_id="polish",
-                skill_key="style_polisher",
-                purpose="Polish final section wording.",
-            ),
-        ],
-        edges=[
-            SkillGraphEdge(from_node="digest", to_node="write", edge_type="PREREQUISITE"),
-            SkillGraphEdge(from_node="write", to_node="guard", edge_type="PREREQUISITE"),
-            SkillGraphEdge(from_node="guard", to_node="polish", edge_type="PREREQUISITE"),
-        ],
-        schema_contract=[
-            "Execution graph must preserve requested section outline.",
-            "Section drafts must retain source trace when workspace materials exist.",
-        ],
-    ),
-    "quiz_artifact_v1": SkillGraphTemplate(
-        graph_key="quiz_artifact_v1",
-        graph_name="Quiz Artifact Graph",
-        action_type="QUIZ",
-        nodes=[
-            SkillGraphNode(
-                node_id="digest",
-                skill_key="workspace_material_digest",
-                purpose="Compile workspace material digest for quiz design.",
-            ),
-            SkillGraphNode(
-                node_id="design",
-                skill_key="quiz_designer",
-                purpose="Draft quiz goals, questions, answers, and scoring notes.",
-            ),
-            SkillGraphNode(
-                node_id="normalize",
-                skill_key="quiz_difficulty_normalizer",
-                purpose="Balance difficulty tiers and tighten quiz phrasing.",
-            ),
-            SkillGraphNode(
-                node_id="guard",
-                skill_key="evidence_guard",
-                purpose="Check quiz evidence trace.",
-            ),
-            SkillGraphNode(
-                node_id="polish",
-                skill_key="style_polisher",
-                purpose="Polish final quiz wording.",
-            ),
-        ],
-        edges=[
-            SkillGraphEdge(from_node="digest", to_node="design", edge_type="PREREQUISITE"),
-            SkillGraphEdge(from_node="design", to_node="normalize", edge_type="PREREQUISITE"),
-            SkillGraphEdge(from_node="normalize", to_node="guard", edge_type="PREREQUISITE"),
-            SkillGraphEdge(from_node="guard", to_node="polish", edge_type="PREREQUISITE"),
-        ],
-        schema_contract=[
-            "Quiz graph must preserve goals, questions, answers, and scoring criteria.",
-            "Quiz output must expose beginner, intermediate, and challenge difficulty layers.",
-        ],
-    ),
-    "wiki_artifact_v1": SkillGraphTemplate(
-        graph_key="wiki_artifact_v1",
-        graph_name="Wiki Artifact Graph",
-        action_type="WIKI_PAGE",
-        nodes=[
-            SkillGraphNode(
-                node_id="digest",
-                skill_key="workspace_material_digest",
-                purpose="Compile workspace material digest for wiki drafting.",
-            ),
-            SkillGraphNode(
-                node_id="write",
-                skill_key="generic_section_writer",
-                purpose="Generate wiki-aligned draft sections.",
-            ),
-            SkillGraphNode(
-                node_id="enforce",
-                skill_key="wiki_structure_enforcer",
-                purpose="Enforce wiki structure and related-page formatting.",
-            ),
-            SkillGraphNode(
-                node_id="guard",
-                skill_key="evidence_guard",
-                purpose="Check wiki evidence trace.",
-            ),
-            SkillGraphNode(
-                node_id="polish",
-                skill_key="style_polisher",
-                purpose="Polish final wiki wording.",
-            ),
-        ],
-        edges=[
-            SkillGraphEdge(from_node="digest", to_node="write", edge_type="PREREQUISITE"),
-            SkillGraphEdge(from_node="write", to_node="enforce", edge_type="PREREQUISITE"),
-            SkillGraphEdge(from_node="enforce", to_node="guard", edge_type="PREREQUISITE"),
-            SkillGraphEdge(from_node="guard", to_node="polish", edge_type="PREREQUISITE"),
-        ],
-        schema_contract=[
-            "Wiki graph must preserve overview, mechanisms, and related pages sections.",
-            "Wiki related pages section must reference stable documentation entry points.",
-        ],
-    ),
-    "resume_highlight_v1": SkillGraphTemplate(
-        graph_key="resume_highlight_v1",
-        graph_name="Resume Highlight Controlled Graph",
-        action_type="RESUME_HIGHLIGHT",
-        nodes=[
-            SkillGraphNode(
-                node_id="digest",
-                skill_key="workspace_material_digest",
-                purpose="Digest workspace evidence for resume use.",
-            ),
-            SkillGraphNode(
-                node_id="extract",
-                skill_key="resume_highlight_extractor",
-                purpose="Extract high-signal accomplishment candidates.",
-            ),
-            SkillGraphNode(
-                node_id="normalize",
-                skill_key="resume_impact_normalizer",
-                purpose="Normalize candidate bullets into impact-first resume language.",
-            ),
-            SkillGraphNode(
-                node_id="write",
-                skill_key="resume_bullet_writer",
-                purpose="Render resume positioning, bullets, and keywords.",
-            ),
-            SkillGraphNode(
-                node_id="verify",
-                skill_key="resume_verifier",
-                purpose="Verify bullet count, focus coverage, and required keyword coverage.",
-            ),
-            SkillGraphNode(
-                node_id="repair",
-                skill_key="resume_local_repair",
-                purpose="Close verifier-detected gaps with targeted local repair.",
-            ),
-        ],
-        edges=[
-            SkillGraphEdge(from_node="digest", to_node="extract", edge_type="PREREQUISITE"),
-            SkillGraphEdge(from_node="extract", to_node="normalize", edge_type="PREREQUISITE"),
-            SkillGraphEdge(from_node="normalize", to_node="write", edge_type="PREREQUISITE"),
-            SkillGraphEdge(from_node="write", to_node="verify", edge_type="PREREQUISITE"),
-            SkillGraphEdge(from_node="verify", to_node="repair", edge_type="PREREQUISITE"),
-        ],
-        schema_contract=[
-            "Schema-gated resume plan must include positioning, highlights, and keyword sections.",
-            "Resume output must preserve required phrases for architecture and safety keywords.",
-            "Resume graph must surface explicit verifier and local repair nodes in runtime trace.",
-        ],
-    ),
-}
+def _load_builtin_skill_graph_templates() -> dict[str, SkillGraphTemplate]:
+    """内置执行图只从发布目录加载，Python 不再保留另一套图定义。"""
+    catalog = json.loads(Path(__file__).with_name("artifact-skill-catalog-v2.json").read_text(encoding="utf-8"))
+    graphs: dict[str, SkillGraphTemplate] = {}
+    for entry in catalog.get("skills", []):
+        definition = entry.get("graph_definition")
+        if not isinstance(definition, dict) or definition.get("graph_key") != entry.get("graph_key"):
+            raise ValueError("发布目录缺少技能图声明或图标识不一致")
+        graph = SkillGraphTemplate.model_validate(definition)
+        existing = graphs.get(graph.graph_key)
+        if existing is not None and existing.model_dump(mode="json") != graph.model_dump(mode="json"):
+            raise ValueError("发布目录中共享技能图的声明不一致")
+        graphs[graph.graph_key] = graph
+    return graphs
+
+
+SKILL_GRAPH_TEMPLATES = _load_builtin_skill_graph_templates()
 
 
 CAPABILITY_BINDINGS = {
@@ -2051,10 +1829,8 @@ def _validate_skill_graph_template(graph: SkillGraphTemplate) -> None:
         raise ValueError("custom skill graph template contains duplicate node_id")
     for node in graph.nodes:
         skill_definition = resolve_skill_definition(node.skill_key)
-        ensure_runtime_node_skill_registered(
-            skill_definition,
-            graph_key=graph.graph_key,
-            node_skill_key=node.skill_key,
+        ensure_runtime_node_contract_registered(
+            node, skill_definition,
             error_prefix="custom skill graph template rejected",
         )
     indegree = {node.node_id: 0 for node in graph.nodes}

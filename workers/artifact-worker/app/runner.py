@@ -39,7 +39,7 @@ from app.models import (
 from app.skill_graph import execute_skill_graph
 from app.error_sanitizer import sanitize_error_message
 from app.custom_mcp_executor import submit_custom_mcp_acquisition_operation
-from app.generation_runtime import ArtifactConfigurationRequiredError, generate_artifact_sections
+from app.generation_runtime import ArtifactConfigurationRequiredError
 from app.export_runtime import export_artifact_if_required
 from app.candidate_file_manifest import build_required_files
 from app.artifact_content_ir import build_content_ir
@@ -48,7 +48,6 @@ from app.verifier import build_output_contract_trace, verify_artifact_output
 from app.writeback_runtime import register_writeback_request
 from app.video_derived_runtime import run_video_derived_text_task
 from app.video_deck_runtime import run_video_deck_task
-from app.retrieval_runtime import execute_retrieve_node
 
 
 PHASE_SEQUENCE = [
@@ -65,11 +64,12 @@ PRE_VIDEO_POLICY_CATALOG_DIGEST = "8a7ad34dd197854251c65a234f1915e0b44fe9621d2d1
 
 
 PRE_OUTPUT_CONTRACT_CATALOG_DIGEST = "08108539a76c23dc3fcc4c23fee6c6cd3f8bba29895cd6ccc50f3425dadcb2f0"
+PRE_TYPED_NODE_CATALOG_DIGEST = "ac422e1c25a0bad1dff81474d99a2e6345440e587553e33e43b18873aabfe691"
 
 
 def _require_published_catalog(task_input: ArtifactTaskInput) -> None:
     if task_input.catalog_digest and task_input.catalog_digest not in {
-            CATALOG_DIGEST, PRE_VIDEO_POLICY_CATALOG_DIGEST, PRE_OUTPUT_CONTRACT_CATALOG_DIGEST}:
+            CATALOG_DIGEST, PRE_VIDEO_POLICY_CATALOG_DIGEST, PRE_OUTPUT_CONTRACT_CATALOG_DIGEST, PRE_TYPED_NODE_CATALOG_DIGEST}:
         raise ValueError("artifact Skill catalog digest does not match the frozen Run")
     if task_input.catalog_digest == PRE_VIDEO_POLICY_CATALOG_DIGEST:
         inputs = task_input.input_payload.inputs
@@ -108,6 +108,7 @@ def resume_artifact_task(
     if not isinstance(raw_plan, dict):
         raise ValueError("artifact resume checkpoint is missing execution_plan")
     validated_plan = ArtifactExecutionPlan.model_validate(raw_plan)
+    _migrate_frozen_builtin_graph(task_input, validated_plan)
     raw_content_objects = resume_checkpoint.get("canonical_content_objects")
     raw_context_pack = resume_checkpoint.get("context_pack")
     if not isinstance(raw_content_objects, list) or not isinstance(raw_context_pack, dict):
@@ -128,6 +129,26 @@ def resume_artifact_task(
         resume_stage=checkpoint_stage,
         passage_search=passage_search,
     )
+
+
+def _migrate_frozen_builtin_graph(task_input, plan):
+    """旧内置图仅迁移执行声明，保留输入、意图、权限和已发生的模型调用。"""
+    if task_input.catalog_digest not in {PRE_VIDEO_POLICY_CATALOG_DIGEST,
+            PRE_OUTPUT_CONTRACT_CATALOG_DIGEST, PRE_TYPED_NODE_CATALOG_DIGEST} or plan.action_origin != "BUILTIN":
+        return
+    from app.compiler import _resolve_node_sequence
+    from app.registry import resolve_production_action, resolve_prompt_recipe
+    action = resolve_production_action(plan.action_key)
+    if plan.skill_graph_key != action.default_skill_graph_key:
+        return
+    plan.node_sequence = _resolve_node_sequence(plan.skill_graph_key)
+    plan.runtime_plan.activated_nodes = [node.skill_key for node in plan.node_sequence]
+    plan.required_phrases = []
+    if plan.prompt_recipe.recipe_id == action.default_prompt_recipe_id:
+        plan.prompt_recipe = resolve_prompt_recipe(action.default_prompt_recipe_id).model_copy(deep=True)
+    note = "旧内置图已迁移到类型化节点，原冻结意图和权限保留"
+    if note not in plan.notes:
+        plan.notes.append(note)
 
 
 def _run_artifact_task(
@@ -241,34 +262,12 @@ def _run_artifact_task(
     if task_input.input_payload.writeback_mode == "MATERIAL_ONLY":
         return _build_material_only_result(
             task_input, plan, capability_resolution, canonical_content_objects)
-    section_materials, retrieved_sources, retrieval_trace, retrieval_node_trace = execute_retrieve_node(
-        task_input, plan, canonical_content_objects, passage_search)
-    for source in retrieved_sources:
-        if source.get("origin") != "HOST_FROZEN_CHUNK" or any(
-                source["title"] == cco.title and source["content"] in cco.plain_text
-                for cco in canonical_content_objects):
-            continue
-        canonical_content_objects.append(CanonicalContentObject(
-            cco_id=f"retrieved-{source['chunk_id']}", kind="RETRIEVED_PASSAGE", title=source["title"],
-            plain_text=source["content"], metadata={"chunk_id": source["chunk_id"],
-                "source_snapshot_id": source["source_snapshot_id"], "location": source["location"]},
-            source_trace=[f"workspace:{task_input.workspace_id}", f"source:{source['source_id']}"]))
     repaired_sections, node_traces, generation_trace = execute_skill_graph(
-        task_input,
-        plan,
-        section_generator=lambda _fallback_sections: generate_artifact_sections(
-            task_input=task_input,
-            plan=plan,
-            canonical_content_objects=canonical_content_objects,
-            llm_client=llm_client,
-            section_materials=section_materials,
-            retrieved_sources=retrieved_sources,
-            retrieval_trace=retrieval_trace,
-        ),
+        task_input, plan, canonical_content_objects=canonical_content_objects,
+        llm_client=llm_client, passage_search=passage_search,
     )
     if generation_trace is None:
         raise RuntimeError("artifact skill graph did not produce a section draft")
-    node_traces.insert(0, retrieval_node_trace)
     repaired_checks: list[str] = []
     artifact_title = resolve_artifact_title(task_input, plan)
     rendered_markdown = render_markdown(task_input, plan, repaired_sections)
@@ -286,7 +285,7 @@ def _run_artifact_task(
                 "outline_sections": len(plan.outline),
                 "source_count": len(task_input.source_scope),
                 "repaired_checks": len(repaired_checks),
-                "skill_nodes": len(plan.node_sequence) + 1,
+                "skill_nodes": len(plan.node_sequence),
             },
         )
         for phase, progress_percent, message in PHASE_SEQUENCE

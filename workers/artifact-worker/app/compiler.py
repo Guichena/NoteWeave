@@ -20,7 +20,7 @@ from app.policy import (
     evaluate_writeback_gate,
     resolve_writeback_capabilities,
 )
-from app.runtime_node_registry import ensure_runtime_node_skill_registered
+from app.runtime_node_registry import ensure_runtime_node_contract_registered
 from app.registry import (
     resolve_prompt_recipe,
     resolve_production_action,
@@ -232,17 +232,13 @@ def _resolve_node_sequence(graph_key: str) -> list[ArtifactSkillNodePlan]:
         node_id = queue.popleft()
         node = node_map[node_id]
         skill_definition = resolve_skill_definition(node.skill_key)
-        ensure_runtime_node_skill_registered(
-            skill_definition,
-            graph_key=graph.graph_key,
-            node_skill_key=node.skill_key,
+        ensure_runtime_node_contract_registered(
+            node, skill_definition,
             error_prefix="schema gate rejected plan",
         )
         ordered_nodes.append(
             ArtifactSkillNodePlan(
-                node_id=node.node_id,
-                skill_key=node.skill_key,
-                purpose=node.purpose,
+                **node.model_dump(mode="json"),
             )
         )
         for neighbor in adjacency[node_id]:

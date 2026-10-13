@@ -48,11 +48,17 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
             throw new IllegalStateException("unsupported artifact Skill catalog version");
         }
         Map<String, ArtifactSkillDefinition> skills = new LinkedHashMap<>();
+        Map<String, Object> graphDefinitions = new LinkedHashMap<>();
         for (Object rawEntry : (List<?>) catalog.get("skills")) {
             if (!(rawEntry instanceof Map<?, ?> entry) || !(entry.get("input_schema") instanceof Map<?, ?> schema)) {
                 throw new IllegalStateException("invalid artifact Skill catalog entry");
             }
             validatePublishedEntry(entry, schema);
+            Object previousGraph = graphDefinitions.putIfAbsent(
+                    String.valueOf(entry.get("graph_key")), entry.get("graph_definition"));
+            if (previousGraph != null && !previousGraph.equals(entry.get("graph_definition"))) {
+                throw new IllegalStateException("发布目录中共享技能图的声明不一致");
+            }
             String key = String.valueOf(entry.get("skill_key"));
             Map<String, Object> inputSchema = new LinkedHashMap<>();
             schema.forEach((field, value) -> inputSchema.put(String.valueOf(field), value));
@@ -119,7 +125,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
 
     private static final Set<String> REQUIRED_ENTRY_FIELDS = Set.of("skill_key", "version", "display_name",
             "description", "input_schema", "output_schema_ref", "graph_key", "prompt_recipe_id",
-            "required_file_roles", "capability_allowlist", "action_key", "output_contract");
+            "required_file_roles", "capability_allowlist", "action_key", "output_contract", "graph_definition");
     /** presentation 是展示信息；definition 让新产物只在目录里声明动作和提示词配方，由 Worker 加载。 */
     private static final Set<String> OPTIONAL_ENTRY_FIELDS = Set.of("presentation", "definition");
 
@@ -143,6 +149,8 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
             throw new IllegalStateException("unsupported artifact Skill publication policy");
         }
         ArtifactOutputContractPublicationPolicy.validate(entry.get("output_contract"));
+        ArtifactNodeGraphPublicationPolicy.validate(
+                entry.get("graph_key"), entry.get("graph_definition"), entry.get("output_contract"));
         Object required = schema.containsKey("required") ? schema.get("required") : List.of();
         if (!(required instanceof List<?> requiredKeys) || !properties.keySet().containsAll(requiredKeys)) {
             throw new IllegalStateException("published Skill has invalid required inputs");

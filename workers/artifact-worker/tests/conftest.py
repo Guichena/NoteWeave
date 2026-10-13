@@ -38,9 +38,41 @@ class ContractArtifactTestProvider:
     provider_name = "contract-test-provider"
     model_name = "deterministic-artifact-test-model"
 
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
     def complete_json(self, purpose: str, payload: dict[str, object]) -> str:
-        if purpose != "artifact.generate":
+        self.calls.append((purpose, payload))
+        if purpose == "artifact.compile_intent":
             return ""
+        if not purpose.startswith("artifact.node."):
+            return ""
+        raw_inputs = payload.get("inputs")
+        inputs = raw_inputs if isinstance(raw_inputs, dict) else {}
+        raw_context = inputs.get("generation_context")
+        context = raw_context if isinstance(raw_context, dict) else {}
+        raw_passages = inputs.get("material_passages")
+        passages = raw_passages if isinstance(raw_passages, list) else []
+        if purpose == "artifact.node.resume_highlight_extractor":
+            return json.dumps({"facts": [
+                {"fact_id": f"fact-{index + 1}", "text": passage["content"],
+                 "chunk_id": passage["chunk_id"], "quote": passage["content"]}
+                for index, passage in enumerate(passages)
+            ]}, ensure_ascii=False)
+        if purpose == "artifact.node.resume_impact_normalizer":
+            return json.dumps({"normalized_facts": [
+                {**fact, "metrics": []} for fact in inputs["facts"]
+            ]}, ensure_ascii=False)
+        if purpose == "artifact.node.resume_bullet_writer":
+            return self._resume_output(inputs, context, passages)
+        if isinstance(inputs.get("sections"), list):
+            return json.dumps({"sections": inputs["sections"]}, ensure_ascii=False)
+        # 通用生成仅接收节点投影的上下文与检索片段，不读取完整任务或权限。
+        payload = {
+            **context,
+            "sources": [{"title": passage["title"], "content": passage["content"]}
+                        for passage in passages],
+        }
         raw_sources = payload.get("sources")
         sources = raw_sources if isinstance(raw_sources, list) else []
         source_titles = [
@@ -102,8 +134,11 @@ class ContractArtifactTestProvider:
                 )
                 if first_node_guidance:
                     body = f"{body}\n\n节点侧重：{first_node_guidance}"
-            if recipe.get("recipe_id") == "resume_highlight_writer_v1" and index == 1:
-                body = "\n".join(["- " + " ".join(body.splitlines()), "- 依据资料说明实现边界。", "- 保留来源便于复核。"])
+            if recipe.get("recipe_id") == "wiki_page_writer_v1" and index == len(outline) - 1:
+                body = "\n".join([
+                    *[f"- {title}：对照原文资料。" for title in source_titles],
+                    "- 来源索引：保留资料引用以便复核。", "", body,
+                ])
             if generation_mode == "QUIZ_SYNTHESIS" and index == 1:
                 body = "\n".join(
                     [
@@ -124,6 +159,8 @@ class ContractArtifactTestProvider:
                         body,
                     ]
                 )
+            for forbidden in context.get("forbidden_patterns", []):
+                body = body.replace(forbidden, "")
             sections.append(
                 {
                     "heading": heading,
@@ -135,6 +172,39 @@ class ContractArtifactTestProvider:
             {"sections": sections},
             ensure_ascii=False,
         )
+
+    def _resume_output(self, inputs, context, passages) -> str:
+        facts = inputs["normalized_facts"]
+        facts_by_id = {fact["fact_id"]: fact for fact in facts}
+        passage_titles = {passage["chunk_id"]: passage["title"] for passage in passages}
+        all_ids = list(facts_by_id)
+        source_titles = list(dict.fromkeys(passage_titles[fact["chunk_id"]] for fact in facts))
+        focus = [*context.get("focus_points", []), *context.get("required_phrases", [])]
+        text = " ".join(dict.fromkeys([
+            *(" ".join(fact["text"].splitlines()).strip() for fact in facts),
+            *focus,
+        ]))
+        # 替身返回三个有原文引用的要点，生产执行器仍负责核对数字与事实标识。
+        bullets = [{"text": text, "fact_ids": all_ids}]
+        bullets.extend({"text": " ".join(facts[index % len(facts)]["text"].splitlines()).strip(),
+                        "fact_ids": [facts[index % len(facts)]["fact_id"]]}
+                       for index in range(2))
+        for forbidden in context.get("forbidden_patterns", []):
+            text = text.replace(forbidden, "")
+            for bullet in bullets:
+                bullet["text"] = bullet["text"].replace(forbidden, "")
+        # Markdown 列表解析会去掉行首尾空白，声明的要点必须与正文逐字一致。
+        text = text.strip()
+        for bullet in bullets:
+            bullet["text"] = bullet["text"].strip()
+        sections = [
+            {"heading": heading,
+             "body": "\n".join("- " + bullet["text"] for bullet in bullets)
+                     if heading == "简历亮点" else text,
+             "source_refs": source_titles}
+            for heading in context["outline"]
+        ]
+        return json.dumps({"sections": sections, "bullets": bullets}, ensure_ascii=False)
 
 
 @pytest.fixture(autouse=True)

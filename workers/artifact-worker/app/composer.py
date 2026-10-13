@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from app.models import ArtifactExecutionPlan, ArtifactSectionDraft, ArtifactTaskInput
 
 
@@ -69,7 +71,7 @@ def _render_mindmap_markdown(
     lines = [f"# {title}"]
     for section in _order_mindmap_sections(plan, sections)[:max_sections]:
         lines.extend(["", f"## {_short_node_text(section.heading, 40)}"])
-        for phrase in _mindmap_phrases(section.body, max_phrases, section.heading):
+        for phrase in _mindmap_phrases(section.body, max_phrases):
             lines.append(f"- {phrase}")
         for source_ref in section.source_refs[:source_ref_limit]:
             lines.append(f"  - 来源：{_short_node_text(source_ref, 52)}")
@@ -98,42 +100,19 @@ def _order_mindmap_sections(
     return ordered
 
 
-def _mindmap_phrases(body: str, limit: int, heading: str) -> list[str]:
+def _mindmap_phrases(body: str, limit: int) -> list[str]:
     normalized = body.replace("；", "\n").replace("。", "\n")
     phrases: list[str] = []
     for raw_line in normalized.splitlines():
-        line = raw_line.strip().lstrip("-*").strip()
+        line = re.sub(r"^[-*+]\s+", "", raw_line.strip()).strip()
         if not line:
-            continue
-        if line.startswith("输出单一根节点") and "”，" in line:
-            line = line.split("”，", 1)[1].strip()
-        if line.startswith((
-            "配方重点：",
-            "任务重点：",
-            "节点侧重：",
-            "输出语言：",
-            "风格：",
-            "技能：",
-            "围绕“技能：",
-            "补充说明：",
-            "导图布局：",
-            "内容层级：",
-            "输出单一根节点",
-        )):
             continue
         phrase = _short_node_text(line, 56)
         if phrase and phrase not in phrases:
             phrases.append(phrase)
         if len(phrases) >= limit:
             break
-    fallback_by_heading = {
-        "主题中心": "梳理当前工作台资料的主题全景",
-        "关键概念": "提炼核心概念、关键对象与关系",
-        "证据脉络": "按来源线索组织关键证据",
-        "核心结论": "汇总可以直接复用的主要结论",
-        "后续行动": "继续追问、验证并沉淀到 Wiki",
-    }
-    return phrases or [fallback_by_heading.get(heading, "待补充结构化要点")]
+    return phrases
 
 
 def _short_node_text(value: str, limit: int) -> str:

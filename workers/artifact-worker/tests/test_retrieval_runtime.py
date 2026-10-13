@@ -188,7 +188,7 @@ def test_host_retrieved_fact_reaches_generated_result_and_is_preserved_as_frozen
     assert any(remote_fact in obj["plain_text"] and obj["metadata"].get("chunk_id") == "chunk-1"
                for obj in result.result_payload["canonical_content_objects"])
     assert result.result_payload["generation_trace"]["retrieval"]["unique_passage_count"] == 1
-    assert result.result_payload["node_traces"][0]["node_id"] == "material_retrieve"
+    assert result.result_payload["node_traces"][0]["node_kind"] == "RETRIEVE"
 
 
 @pytest.mark.parametrize("status", [401, 403, 409])

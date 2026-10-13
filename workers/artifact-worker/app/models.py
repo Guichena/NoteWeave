@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing import Literal
 
 
@@ -223,10 +223,21 @@ class SkillDefinition(BaseModel):
 
 
 class SkillGraphNode(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     node_id: str
     skill_key: str
     purpose: str
     optional: bool = False
+    node_kind: Literal["LLM_STEP", "RETRIEVE", "VERIFY", "REPAIR", "TOOL"]
+    prompt_recipe_id: str
+    input_schema: dict[str, object]
+    output_schema: dict[str, object]
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_node(cls, values):
+        from app.node_contracts import hydrate_legacy_node
+        return hydrate_legacy_node(values)
 
 
 class SkillGraphEdge(BaseModel):
@@ -585,6 +596,17 @@ class ArtifactSkillNodePlan(BaseModel):
     node_id: str
     skill_key: str
     purpose: str
+    optional: bool = False
+    node_kind: Literal["LLM_STEP", "RETRIEVE", "VERIFY", "REPAIR", "TOOL"]
+    prompt_recipe_id: str
+    input_schema: dict[str, object]
+    output_schema: dict[str, object]
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_node(cls, values):
+        from app.node_contracts import hydrate_legacy_node
+        return hydrate_legacy_node(values)
 
 
 class ArtifactRuntimePlan(BaseModel):
@@ -648,6 +670,14 @@ class ArtifactSectionDraft(BaseModel):
 class ArtifactSkillNodeTrace(BaseModel):
     node_id: str
     skill_key: str
+    node_kind: str = ""
+    purpose: str = ""
+    prompt_recipe_id: str = ""
+    llm_calls: int = 0
+    validation_errors: list[str] = Field(default_factory=list)
+    input_fields: list[str] = Field(default_factory=list)
+    output_fields: list[str] = Field(default_factory=list)
+    execution_trace: dict[str, object] = Field(default_factory=dict)
     output_summary: str
     verification_status: str
     verification_checks: list[str] = Field(default_factory=list)

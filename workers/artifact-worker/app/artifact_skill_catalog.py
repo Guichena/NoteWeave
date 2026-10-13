@@ -4,19 +4,77 @@ import hashlib
 import json
 from pathlib import Path
 
-from app.models import ArtifactSkillDefinition, ProductionAction, PromptRecipe
+from app.models import ArtifactSkillDefinition, ProductionAction, PromptRecipe, SkillGraphTemplate
 from app.registry import PRODUCTION_ACTIONS, PROMPT_RECIPES, SKILL_GRAPH_TEMPLATES
 
 
 _ENTRY_FIELDS = {
     "skill_key", "version", "display_name", "description", "input_schema",
     "output_schema_ref", "graph_key", "prompt_recipe_id", "required_file_roles",
-    "capability_allowlist", "action_key", "output_contract",
+    "capability_allowlist", "action_key", "output_contract", "graph_definition",
 }
 # presentation 是前端卡片的展示信息；definition 让新产物只在目录里声明动作和提示词配方
 _OPTIONAL_FIELDS = {"presentation", "definition"}
 _FILE_ROLES = {"PRIMARY_MARKDOWN", "PRIMARY_PDF", "PRIMARY_PPTX", "SOURCE_MD", "SLIDE_PREVIEW"}
 _CATALOG_GRAPHS = {"generic_artifact_v1"}
+
+
+def _published_graph(entry):
+    from app.node_contracts import node_contract_for_skill
+    from app.registry import _validate_skill_graph_template
+    raw = entry.get("graph_definition")
+    if not isinstance(raw, dict) or set(raw) != {
+            "graph_key", "graph_name", "action_type", "nodes", "edges", "schema_contract"}:
+        raise ValueError("发布目录必须包含完整的技能图声明")
+    if raw["graph_key"] != entry.get("graph_key") or not isinstance(raw["nodes"], list) \
+            or not 1 <= len(raw["nodes"]) <= 40 or not isinstance(raw["edges"], list) \
+            or len(raw["edges"]) > 160:
+        raise ValueError("发布技能图标识或节点数量无效")
+    for node in raw["nodes"]:
+        if not isinstance(node, dict) or not {
+                "node_kind", "prompt_recipe_id", "input_schema", "output_schema"} <= set(node):
+            raise ValueError("发布技能图节点缺少类型或输入输出 Schema")
+    graph = SkillGraphTemplate.model_validate(raw)
+    if any(edge.edge_type != "PREREQUISITE" for edge in graph.edges):
+        raise ValueError("发布技能图仅支持明确的先决依赖")
+    node_ids = {node.node_id for node in graph.nodes}
+    if len(node_ids) != len(graph.nodes) or any(
+            edge.from_node not in node_ids or edge.to_node not in node_ids for edge in graph.edges):
+        raise ValueError("发布技能图节点或依赖无效")
+    edge_ids = {(edge.from_node, edge.to_node) for edge in graph.edges}
+    if len(edge_ids) != len(graph.edges):
+        raise ValueError("发布技能图包含重复依赖")
+    remaining = set(node_ids)
+    while remaining:
+        ready = {node for node in remaining if not any(
+            target == node and source in remaining for source, target in edge_ids)}
+        if not ready:
+            raise ValueError("发布技能图存在依赖环")
+        remaining -= ready
+    # 专用视频工具继续由冻结入口执行，仅允许登记过的工具声明。
+    if any(node.node_kind == "TOOL" for node in graph.nodes):
+        if graph.graph_key not in {"video_deck_v1", "video_derived_text_v1"}:
+            raise ValueError("通用产物图不能声明专用视频工具")
+        for node in graph.nodes:
+            expected = node_contract_for_skill(node.skill_key)
+            if any(node.model_dump(mode="json")[field] != expected[field] for field in expected):
+                raise ValueError("专用视频节点与冻结执行契约不一致")
+    else:
+        _validate_skill_graph_template(graph)
+    return graph
+
+
+def register_catalog_graph_definitions(catalog):
+    """按目录加载执行图；共享图的重复声明必须完全一致。"""
+    graphs = {}
+    for entry in catalog.get("skills", []):
+        graph = _published_graph(entry)
+        existing = graphs.get(graph.graph_key)
+        if existing is not None and existing.model_dump(mode="json") != graph.model_dump(mode="json"):
+            raise ValueError("发布目录中共享技能图的声明不一致")
+        graphs[graph.graph_key] = graph
+    SKILL_GRAPH_TEMPLATES.update(graphs)
+    return list(graphs)
 
 
 def register_catalog_declared_skills(catalog: dict[str, object]) -> list[str]:
@@ -87,6 +145,7 @@ def validate_published_catalog(catalog: dict[str, object]) -> None:
     if not isinstance(entries, list) or not isinstance(aliases, dict):
         raise ValueError("artifact Skill catalog entries or aliases are invalid")
     keys: set[str] = set()
+    graphs = {}
     for entry in entries:
         if not isinstance(entry, dict) or not _ENTRY_FIELDS <= set(entry) \
                 or not set(entry) <= _ENTRY_FIELDS | _OPTIONAL_FIELDS:
@@ -99,6 +158,11 @@ def validate_published_catalog(catalog: dict[str, object]) -> None:
                 or entry["version"] != "1.0.0":
             raise ValueError("unknown Skill key, action, or publication version")
         keys.add(key)
+        graph = _published_graph(entry)
+        graph_payload = graph.model_dump(mode="json")
+        if graph.graph_key in graphs and graphs[graph.graph_key] != graph_payload:
+            raise ValueError("发布目录中共享技能图的声明不一致")
+        graphs[graph.graph_key] = graph_payload
         if entry["graph_key"] != action.default_skill_graph_key \
                 or entry["graph_key"] not in SKILL_GRAPH_TEMPLATES \
                 or entry["prompt_recipe_id"] != action.default_prompt_recipe_id \
@@ -132,6 +196,7 @@ def validate_published_catalog(catalog: dict[str, object]) -> None:
 _CATALOG_BYTES = Path(__file__).with_name("artifact-skill-catalog-v2.json").read_bytes()
 CATALOG_DIGEST = hashlib.sha256(_CATALOG_BYTES).hexdigest()
 _CATALOG = json.loads(_CATALOG_BYTES)
+CATALOG_DECLARED_GRAPHS = register_catalog_graph_definitions(_CATALOG)
 CATALOG_DECLARED_SKILLS = register_catalog_declared_skills(_CATALOG)
 validate_published_catalog(_CATALOG)
 
