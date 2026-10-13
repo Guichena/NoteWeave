@@ -219,7 +219,7 @@ PRODUCTION_ACTIONS = {
         artifact_type="STUDY_GUIDE",
         action_origin="BUILTIN",
         default_style_profile_key="TEACHING",
-        default_skill_graph_key="generic_artifact_v1",
+        default_skill_graph_key="sectioned_artifact_v1",
         default_prompt_recipe_id="study_guide_writer_v1",
         required_evidence_level="MEDIUM",
         allow_custom_mcp=True,
@@ -717,6 +717,54 @@ PROMPT_RECIPES = {
 
 
 SKILL_DEFINITIONS = {
+    "outline_planner": SkillDefinition(
+        skill_key="outline_planner", skill_version="1.0.0", skill_type="GENERATION",
+        input_contract=["冻结章节素材包", "用户目标与输出大纲"],
+        output_contract=["章节标题、要点与真实片段标识"],
+        required_capabilities=["GENERATE_STRUCTURED_TEXT"],
+        verifier_policy=["保持输出契约标题，只选择当前章节允许的片段"],
+        repair_policy=["携带结构错误重试一次"],
+    ),
+    "section_writer": SkillDefinition(
+        skill_key="section_writer", skill_version="1.0.0", skill_type="GENERATION",
+        input_contract=["单章计划", "该章节的素材与字符预算"],
+        output_contract=["独立章节正文"],
+        required_capabilities=["GENERATE_STRUCTURED_TEXT"],
+        verifier_policy=["章节仅根据分配的素材写作，不为引用判断生成成功结果"],
+        repair_policy=["只重新生成失败章节"],
+    ),
+    "section_citer": SkillDefinition(
+        skill_key="section_citer", skill_version="1.0.0", skill_type="GENERATION",
+        input_contract=["已有章节正文", "单章冻结素材"],
+        output_contract=["逐陈述真实片段引用与资料标题"],
+        required_capabilities=["GENERATE_STRUCTURED_TEXT", "VERIFY_OUTPUT"],
+        verifier_policy=["引用来自该章素材，引文保留连续原文，不修改正文"],
+        repair_policy=["携带引用结构错误重试一次"],
+    ),
+    "document_consistency": SkillDefinition(
+        skill_key="document_consistency", skill_version="1.0.0", skill_type="GENERATION",
+        input_contract=["全部已生成章节", "术语与结构约束"],
+        output_contract=["仅修改不一致或重复段落的章节及真实修改诊断"],
+        required_capabilities=["GENERATE_STRUCTURED_TEXT"],
+        verifier_policy=["保持章节标题与顺序，不改写无问题段落"],
+        repair_policy=["重新检查实际修改结果，后续执行独立引用与证据校验"],
+    ),
+    "sectioned_verifier": SkillDefinition(
+        skill_key="sectioned_verifier", skill_version="1.0.0", skill_type="VERIFY",
+        input_contract=["完整章节", "独立引用分配", "冻结章节素材"],
+        output_contract=["声明式契约与逐陈述证据诊断"],
+        required_capabilities=["VERIFY_OUTPUT"],
+        verifier_policy=["引用与正文对应，必需陈述未完成或不支持时拒绝提交"],
+        repair_policy=["保留失败章节与可回退节点，不修改已通过章节"],
+    ),
+    "sectioned_repair": SkillDefinition(
+        skill_key="sectioned_repair", skill_version="1.0.0", skill_type="REPAIR",
+        input_contract=["失败章节", "完整证据诊断", "冻结素材与引用分配"],
+        output_contract=["仅修改失败章节，重新分配引用并重检证据"],
+        required_capabilities=["GENERATE_STRUCTURED_TEXT", "VERIFY_OUTPUT"],
+        verifier_policy=["最多两轮，实际修改章节与诊断保持一致"],
+        repair_policy=["仍有必需失败或模型不可用时拒绝提交"],
+    ),
     "workspace_material_digest": SkillDefinition(
         skill_key="workspace_material_digest",
         skill_version="1.0.0",

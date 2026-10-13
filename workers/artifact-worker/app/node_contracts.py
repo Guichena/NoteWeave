@@ -67,6 +67,18 @@ _SECTION_MATERIALS = {
     }, "required": ["heading", "passages"]},
 }
 STATE_FIELDS = {
+    "chapter_plan": {"type": "array", "minItems": 1, "maxItems": 80,
+        "items": {"type": "object", "additionalProperties": False,
+            "properties": {"section_id": _TEXT, "heading": _TEXT,
+                "key_points": {"type": "array", "items": _TEXT, "minItems": 1, "maxItems": 80},
+                "chunk_ids": {"type": "array", "items": _TEXT, "maxItems": 20, "uniqueItems": True}},
+            "required": ["section_id", "heading", "key_points", "chunk_ids"]}},
+    "citation_assignments": {"type": "array", "maxItems": 80,
+        "items": {"type": "object", "additionalProperties": False,
+            "properties": {"heading": _TEXT,
+                "chunk_ids": {"type": "array", "items": _TEXT, "maxItems": 20, "uniqueItems": True}},
+            "required": ["heading", "chunk_ids"]}},
+    "consistency_trace": {"type": "object"},
     "generation_context": _CONTEXT, "material_passages": _PASSAGES,
     "section_materials": _SECTION_MATERIALS,
     "facts": {"type": "array", "items": _FACT, "minItems": 1, "maxItems": 160},
@@ -89,6 +101,12 @@ def _schema(keys):
 
 
 _LEGACY_NODE_BINDINGS = {
+    "outline_planner": ("LLM_STEP", ["material_passages", "section_materials", "generation_context"], ["chapter_plan"]),
+    "section_writer": ("LLM_STEP", ["chapter_plan", "material_passages", "section_materials", "generation_context"], ["sections"]),
+    "section_citer": ("LLM_STEP", ["sections", "chapter_plan", "material_passages", "section_materials", "generation_context"], ["sections", "citation_assignments"]),
+    "document_consistency": ("LLM_STEP", ["sections", "material_passages", "section_materials", "generation_context"], ["sections", "consistency_trace"]),
+    "sectioned_verifier": ("VERIFY", ["sections", "chapter_plan", "material_passages", "section_materials", "generation_context", "citation_assignments", "consistency_trace"], ["sections", "verification", "citation_assignments", "consistency_trace"]),
+    "sectioned_repair": ("REPAIR", ["sections", "chapter_plan", "verification", "material_passages", "section_materials", "generation_context", "citation_assignments", "consistency_trace"], ["sections", "verification", "repair_trace", "citation_assignments", "consistency_trace"]),
     "workspace_material_digest": ("RETRIEVE", ["generation_context"],
         ["material_passages", "section_materials", "retrieval_trace"]),
     "resume_highlight_extractor": ("LLM_STEP", ["material_passages", "generation_context"], ["facts"]),

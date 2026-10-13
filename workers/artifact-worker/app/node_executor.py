@@ -48,9 +48,10 @@ class NodeExecutionError(RuntimeError):
 
 
 class NodeExecutor:
-    def __init__(self, llm_client=None, *, handlers=None, output_guards=None) -> None:
+    def __init__(self, llm_client=None, *, handlers=None, output_guards=None, llm_handlers=None) -> None:
         self.llm_client = llm_client
         self.handlers = dict(handlers or {})
+        self.llm_handlers = dict(llm_handlers or {})
         self.output_guards: dict[str, Callable] = dict(DEFAULT_OUTPUT_GUARDS)
         self.output_guards.update(output_guards or {})
 
@@ -72,6 +73,14 @@ class NodeExecutor:
             trace["input_fields"] = sorted(projected)
             _validate_value(projected, node.input_schema, "输入")
             if kind == "LLM_STEP":
+                handler = self.llm_handlers.get(node.prompt_recipe_id)
+                if handler is not None:
+                    result = handler(projected, node)
+                    trace.update({key: deepcopy(value) for key, value in result.trace.items()
+                        if key not in {"node_id", "node_kind", "prompt_recipe_id", "input_fields", "output_fields"}})
+                    output = self._validate_output(result.output, projected, node)
+                    trace.update(status="COMPLETED", output_fields=sorted(output))
+                    return NodeExecutionResult(output, trace)
                 return self._execute_llm(node, projected, trace)
             handler = self.handlers.get(kind)
             if not callable(handler):
@@ -79,7 +88,9 @@ class NodeExecutor:
             output = self._validate_output(handler(projected, node), projected, node)
             trace.update(status="COMPLETED", output_fields=sorted(output))
             return NodeExecutionResult(output, trace)
-        except NodeExecutionError:
+        except NodeExecutionError as exc:
+            exc.trace.update(node_id=trace["node_id"], node_kind=trace["node_kind"],
+                prompt_recipe_id=trace["prompt_recipe_id"], input_fields=trace["input_fields"])
             raise
         except (ValueError, TypeError) as exc:
             _fail(str(exc), trace)
@@ -189,6 +200,10 @@ def _validate_value(value, schema, direction):
 
 
 def _call_count(client):
+    per_thread = getattr(client, "current_thread_call_count", None)
+    if callable(per_thread):
+        count = per_thread()
+        return count if isinstance(count, int) and not isinstance(count, bool) else None
     summary = getattr(client, "usage_summary", None)
     if callable(summary):
         count = summary().get("current_call_count")

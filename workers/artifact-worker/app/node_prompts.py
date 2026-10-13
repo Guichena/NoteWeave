@@ -11,6 +11,39 @@ class NodePromptRecipe:
 
 
 _INSTRUCTIONS = {
+    "outline_planner": (
+        "根据冻结大纲、用户意图和本章节素材生成 chapter_plan。"
+        "章节标题与顺序必须完整匹配 generation_context.outline，不能增加、遗漏或更名。"
+        "每章给出唯一 section_id、heading、key_points 和 chunk_ids。"
+        "key_points 仅从本章已分配的真实素材提炼；chunk_ids 只能选择该章 section_materials 的有效片段。"
+        "不得改变执行意图、资料范围或宿主权限。"
+    ),
+    "section_writer": (
+        "只写当前 chapter 的正文，依据 key_points 和本次 material_passages 的原文。"
+        "返回 section，heading 保持当前章标题，body 为完整正文，source_refs 必须为空数组。"
+        "写作节点只负责内容，引用由后续独立节点处理。"
+        "保留数字、否定与适用范围，不使用其他章节材料或编造新的事实。"
+    ),
+    "section_citer": (
+        "只给本次 section 的已有正文选择真实引用，不修改正文。"
+        "返回 citation_assignment，其中 heading 保持原值，chunk_ids 仅选本次 material_passages 的片段。"
+        "引用必须实际支撑本章正文，不能按标题相似度或材料数量补充无关片段。"
+        "不能返回新的 body、section 或改写任何陈述。"
+    ),
+    "document_consistency": (
+        "检查输入 paragraphs 的全文术语是否一致、是否有不必要的重复段落。"
+        "只返回 issues，每项包含真实 section_index、paragraph_index、issue_kind 和 detail。"
+        "issue_kind 仅为 TERM_INCONSISTENCY 或 DUPLICATE；同一问题段落只报告一次，合并说明其问题。"
+        "不同章节的合理分工与必要引用不算重复。没有问题时 issues 返回空数组。"
+        "不得输出或改写正文，不核准原文之外的新事实。"
+    ),
+    "paragraph_reviser": (
+        "仅修正已明确列出的 problem_paragraphs，参考 issues 的术语或重复问题说明。"
+        "返回 patches，每项包含原 section_index、paragraph_index 和修正后的 text。"
+        "必须逐项覆盖全部问题段落，不能返回其他位置或整篇正文。"
+        "保留原事实、数字、否定、条件与适用范围，禁止添加资料中没有的结果。"
+        "重复段落可删除冗余表达，但不能删除整个必需章节。"
+    ),
     "statement_support_judge": (
         "逐条判断输入 statements 是否被其 citation_chunk_ids 对应的原文充分支持。"
         "只使用本次 material_passages，禁止引入其他章节、常识补充或新的引用。"
@@ -26,6 +59,7 @@ _INSTRUCTIONS = {
     ),
     "section_repair": (
         "只修复 inputs.failed_sections 中明确指定的失败章节，返回 sections。"
+        "若提供 failed_paragraphs，只修改其中标明的段落，其他段落和原空行格式逐字保留。"
         "不能返回、改写或删除其他章节，不改变标题集合和原冻结执行意图。"
         "仅根据声明的失败检查与已提供素材修复，不引入新的事实、数字或引用。"
         "简历亮点修复返回的 bullets 仍只能引用既有 facts 的 fact_id，"

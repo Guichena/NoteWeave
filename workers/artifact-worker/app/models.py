@@ -628,6 +628,7 @@ class ArtifactRetrievalNodePlan(BaseModel):
 
 
 class ArtifactExecutionPlan(BaseModel):
+    generation_mode: Literal["SINGLE", "SECTIONED"] = "SINGLE"
     retrieval_node: ArtifactRetrievalNodePlan = Field(default_factory=ArtifactRetrievalNodePlan)
     declared_output_contract: dict[str, object] = Field(default_factory=dict)
     plan_id: str

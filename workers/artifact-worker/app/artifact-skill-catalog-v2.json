@@ -2044,7 +2044,8 @@
           "每条事实保留片段标识和原文引用，数字指标只取自引用的事实。",
           "Resume graph must surface explicit verifier and local repair nodes in runtime trace."
         ]
-      }
+      },
+      "generation_mode": "SINGLE"
     },
     {
       "skill_key": "study_guide",
@@ -2075,7 +2076,7 @@
         }
       },
       "output_schema_ref": "artifact-study_guide-output.v1",
-      "graph_key": "generic_artifact_v1",
+      "graph_key": "sectioned_artifact_v1",
       "prompt_recipe_id": "study_guide_writer_v1",
       "required_file_roles": [
         "PRIMARY_MARKDOWN"
@@ -2126,14 +2127,14 @@
         "rules": []
       },
       "graph_definition": {
-        "graph_key": "generic_artifact_v1",
-        "graph_name": "Generic Artifact Graph",
+        "graph_key": "sectioned_artifact_v1",
+        "graph_name": "按章节生成图",
         "action_type": "GENERIC",
         "nodes": [
           {
             "node_id": "digest",
             "skill_key": "workspace_material_digest",
-            "purpose": "Compile workspace material digest.",
+            "purpose": "按章节检索冻结素材",
             "optional": false,
             "node_kind": "RETRIEVE",
             "prompt_recipe_id": "node.workspace_material_digest.v1",
@@ -2391,12 +2392,12 @@
             }
           },
           {
-            "node_id": "write",
-            "skill_key": "generic_section_writer",
-            "purpose": "Generate outline-aligned sections.",
+            "node_id": "outline",
+            "skill_key": "outline_planner",
+            "purpose": "规划章节要点与允许引用的片段",
             "optional": false,
             "node_kind": "LLM_STEP",
-            "prompt_recipe_id": "node.generic_section_writer.v1",
+            "prompt_recipe_id": "node.outline_planner.v1",
             "input_schema": {
               "type": "object",
               "additionalProperties": false,
@@ -2632,6 +2633,358 @@
                 }
               },
               "required": [
+                "material_passages",
+                "section_materials",
+                "generation_context"
+              ]
+            },
+            "output_schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "chapter_plan": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "section_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "key_points": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "minItems": 1,
+                        "maxItems": 80
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "section_id",
+                      "heading",
+                      "key_points",
+                      "chunk_ids"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "chapter_plan"
+              ]
+            }
+          },
+          {
+            "node_id": "write",
+            "skill_key": "section_writer",
+            "purpose": "每个章节独立调用模型，只读取本章素材",
+            "optional": false,
+            "node_kind": "LLM_STEP",
+            "prompt_recipe_id": "node.section_writer.v1",
+            "input_schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "chapter_plan": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "section_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "key_points": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "minItems": 1,
+                        "maxItems": 80
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "section_id",
+                      "heading",
+                      "key_points",
+                      "chunk_ids"
+                    ]
+                  }
+                },
+                "material_passages": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "chunk_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "content": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "source_id": {
+                        "type": "string"
+                      },
+                      "source_snapshot_id": {
+                        "type": "string"
+                      },
+                      "chunk_no": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "location": {
+                        "type": "string"
+                      },
+                      "score": {
+                        "type": "number"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "origin": {
+                        "type": "string"
+                      },
+                      "truncated": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "chunk_id",
+                      "title",
+                      "content"
+                    ]
+                  },
+                  "maxItems": 1600
+                },
+                "section_materials": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "passages": {
+                        "type": "array",
+                        "maxItems": 20,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "chunk_id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "\\S"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "\\S"
+                            },
+                            "selected_chars": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "truncated": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "chunk_id",
+                            "title",
+                            "selected_chars",
+                            "truncated"
+                          ]
+                        }
+                      },
+                      "query": {
+                        "type": "string"
+                      },
+                      "method": {
+                        "type": "string"
+                      },
+                      "budget_chars": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "used_chars": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "degradation_reasons": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 80
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "passages"
+                    ]
+                  }
+                },
+                "generation_context": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "goal": {
+                      "type": "string"
+                    },
+                    "audience": {
+                      "type": "string"
+                    },
+                    "output_language": {
+                      "type": "string"
+                    },
+                    "user_requirement": {
+                      "type": "string"
+                    },
+                    "generation_brief": {
+                      "type": "string"
+                    },
+                    "focus_points": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "style_directives": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "constraints": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "outline": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "style_constraints": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "structure_constraints": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "forbidden_patterns": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "required_phrases": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "prompt_recipe": {
+                      "type": "object"
+                    },
+                    "output_contract": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              "required": [
+                "chapter_plan",
                 "material_passages",
                 "section_materials",
                 "generation_context"
@@ -2683,12 +3036,12 @@
             }
           },
           {
-            "node_id": "guard",
-            "skill_key": "evidence_guard",
-            "purpose": "Check section evidence trace.",
+            "node_id": "consistency",
+            "skill_key": "document_consistency",
+            "purpose": "检查全文术语与重复段落，仅修改有问题内容",
             "optional": false,
-            "node_kind": "VERIFY",
-            "prompt_recipe_id": "node.evidence_guard.v1",
+            "node_kind": "LLM_STEP",
+            "prompt_recipe_id": "node.document_consistency.v1",
             "input_schema": {
               "type": "object",
               "additionalProperties": false,
@@ -2969,22 +3322,58 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "verification": {
+                "sections": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "body": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "source_refs": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 80
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "body",
+                      "source_refs"
+                    ]
+                  },
+                  "minItems": 1,
+                  "maxItems": 80
+                },
+                "consistency_trace": {
                   "type": "object"
                 }
               },
               "required": [
-                "verification"
+                "sections",
+                "consistency_trace"
               ]
             }
           },
           {
-            "node_id": "repair",
-            "skill_key": "generic_section_repair",
-            "purpose": "根据失败项修复章节并重新校验",
+            "node_id": "cite",
+            "skill_key": "section_citer",
+            "purpose": "为陈述选择真实片段引用，正文保持不变",
             "optional": false,
-            "node_kind": "REPAIR",
-            "prompt_recipe_id": "node.generic_section_repair.v1",
+            "node_kind": "LLM_STEP",
+            "prompt_recipe_id": "node.section_citer.v1",
             "input_schema": {
               "type": "object",
               "additionalProperties": false,
@@ -3024,8 +3413,52 @@
                   "minItems": 1,
                   "maxItems": 80
                 },
-                "verification": {
-                  "type": "object"
+                "chapter_plan": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "section_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "key_points": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "minItems": 1,
+                        "maxItems": 80
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "section_id",
+                      "heading",
+                      "key_points",
+                      "chunk_ids"
+                    ]
+                  }
                 },
                 "material_passages": {
                   "type": "array",
@@ -3259,10 +3692,902 @@
               },
               "required": [
                 "sections",
-                "verification",
+                "chapter_plan",
                 "material_passages",
                 "section_materials",
                 "generation_context"
+              ]
+            },
+            "output_schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "sections": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "body": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "source_refs": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 80
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "body",
+                      "source_refs"
+                    ]
+                  },
+                  "minItems": 1,
+                  "maxItems": 80
+                },
+                "citation_assignments": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "chunk_ids"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "sections",
+                "citation_assignments"
+              ]
+            }
+          },
+          {
+            "node_id": "guard",
+            "skill_key": "sectioned_verifier",
+            "purpose": "检查章节契约与逐陈述证据依据",
+            "optional": false,
+            "node_kind": "VERIFY",
+            "prompt_recipe_id": "node.sectioned_verifier.v1",
+            "input_schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "sections": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "body": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "source_refs": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 80
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "body",
+                      "source_refs"
+                    ]
+                  },
+                  "minItems": 1,
+                  "maxItems": 80
+                },
+                "chapter_plan": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "section_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "key_points": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "minItems": 1,
+                        "maxItems": 80
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "section_id",
+                      "heading",
+                      "key_points",
+                      "chunk_ids"
+                    ]
+                  }
+                },
+                "material_passages": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "chunk_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "content": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "source_id": {
+                        "type": "string"
+                      },
+                      "source_snapshot_id": {
+                        "type": "string"
+                      },
+                      "chunk_no": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "location": {
+                        "type": "string"
+                      },
+                      "score": {
+                        "type": "number"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "origin": {
+                        "type": "string"
+                      },
+                      "truncated": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "chunk_id",
+                      "title",
+                      "content"
+                    ]
+                  },
+                  "maxItems": 1600
+                },
+                "section_materials": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "passages": {
+                        "type": "array",
+                        "maxItems": 20,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "chunk_id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "\\S"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "\\S"
+                            },
+                            "selected_chars": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "truncated": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "chunk_id",
+                            "title",
+                            "selected_chars",
+                            "truncated"
+                          ]
+                        }
+                      },
+                      "query": {
+                        "type": "string"
+                      },
+                      "method": {
+                        "type": "string"
+                      },
+                      "budget_chars": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "used_chars": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "degradation_reasons": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 80
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "passages"
+                    ]
+                  }
+                },
+                "generation_context": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "goal": {
+                      "type": "string"
+                    },
+                    "audience": {
+                      "type": "string"
+                    },
+                    "output_language": {
+                      "type": "string"
+                    },
+                    "user_requirement": {
+                      "type": "string"
+                    },
+                    "generation_brief": {
+                      "type": "string"
+                    },
+                    "focus_points": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "style_directives": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "constraints": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "outline": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "style_constraints": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "structure_constraints": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "forbidden_patterns": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "required_phrases": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "prompt_recipe": {
+                      "type": "object"
+                    },
+                    "output_contract": {
+                      "type": "object"
+                    }
+                  }
+                },
+                "citation_assignments": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "chunk_ids"
+                    ]
+                  }
+                },
+                "consistency_trace": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "sections",
+                "chapter_plan",
+                "material_passages",
+                "section_materials",
+                "generation_context",
+                "citation_assignments",
+                "consistency_trace"
+              ]
+            },
+            "output_schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "sections": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "body": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "source_refs": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 80
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "body",
+                      "source_refs"
+                    ]
+                  },
+                  "minItems": 1,
+                  "maxItems": 80
+                },
+                "verification": {
+                  "type": "object"
+                },
+                "citation_assignments": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "chunk_ids"
+                    ]
+                  }
+                },
+                "consistency_trace": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "sections",
+                "verification",
+                "citation_assignments",
+                "consistency_trace"
+              ]
+            }
+          },
+          {
+            "node_id": "repair",
+            "skill_key": "sectioned_repair",
+            "purpose": "最多两轮修复失败章节并重新引用与校验",
+            "optional": false,
+            "node_kind": "REPAIR",
+            "prompt_recipe_id": "node.sectioned_repair.v1",
+            "input_schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "sections": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "body": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "source_refs": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 80
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "body",
+                      "source_refs"
+                    ]
+                  },
+                  "minItems": 1,
+                  "maxItems": 80
+                },
+                "chapter_plan": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "section_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "key_points": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "minItems": 1,
+                        "maxItems": 80
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "section_id",
+                      "heading",
+                      "key_points",
+                      "chunk_ids"
+                    ]
+                  }
+                },
+                "verification": {
+                  "type": "object"
+                },
+                "material_passages": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "chunk_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "content": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "source_id": {
+                        "type": "string"
+                      },
+                      "source_snapshot_id": {
+                        "type": "string"
+                      },
+                      "chunk_no": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "location": {
+                        "type": "string"
+                      },
+                      "score": {
+                        "type": "number"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "origin": {
+                        "type": "string"
+                      },
+                      "truncated": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "chunk_id",
+                      "title",
+                      "content"
+                    ]
+                  },
+                  "maxItems": 1600
+                },
+                "section_materials": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "passages": {
+                        "type": "array",
+                        "maxItems": 20,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "chunk_id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "\\S"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "\\S"
+                            },
+                            "selected_chars": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "truncated": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "chunk_id",
+                            "title",
+                            "selected_chars",
+                            "truncated"
+                          ]
+                        }
+                      },
+                      "query": {
+                        "type": "string"
+                      },
+                      "method": {
+                        "type": "string"
+                      },
+                      "budget_chars": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "used_chars": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "degradation_reasons": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 80
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "passages"
+                    ]
+                  }
+                },
+                "generation_context": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "goal": {
+                      "type": "string"
+                    },
+                    "audience": {
+                      "type": "string"
+                    },
+                    "output_language": {
+                      "type": "string"
+                    },
+                    "user_requirement": {
+                      "type": "string"
+                    },
+                    "generation_brief": {
+                      "type": "string"
+                    },
+                    "focus_points": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "style_directives": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "constraints": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "outline": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "style_constraints": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "structure_constraints": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "forbidden_patterns": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "required_phrases": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "prompt_recipe": {
+                      "type": "object"
+                    },
+                    "output_contract": {
+                      "type": "object"
+                    }
+                  }
+                },
+                "citation_assignments": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "chunk_ids"
+                    ]
+                  }
+                },
+                "consistency_trace": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "sections",
+                "chapter_plan",
+                "verification",
+                "material_passages",
+                "section_materials",
+                "generation_context",
+                "citation_assignments",
+                "consistency_trace"
               ]
             },
             "output_schema": {
@@ -3342,12 +4667,46 @@
                     "reason",
                     "failed_checks"
                   ]
+                },
+                "citation_assignments": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "chunk_ids"
+                    ]
+                  }
+                },
+                "consistency_trace": {
+                  "type": "object"
                 }
               },
               "required": [
                 "sections",
                 "verification",
-                "repair_trace"
+                "repair_trace",
+                "citation_assignments",
+                "consistency_trace"
               ]
             }
           }
@@ -3355,11 +4714,26 @@
         "edges": [
           {
             "from_node": "digest",
+            "to_node": "outline",
+            "edge_type": "PREREQUISITE"
+          },
+          {
+            "from_node": "outline",
             "to_node": "write",
             "edge_type": "PREREQUISITE"
           },
           {
             "from_node": "write",
+            "to_node": "consistency",
+            "edge_type": "PREREQUISITE"
+          },
+          {
+            "from_node": "consistency",
+            "to_node": "cite",
+            "edge_type": "PREREQUISITE"
+          },
+          {
+            "from_node": "cite",
             "to_node": "guard",
             "edge_type": "PREREQUISITE"
           },
@@ -3370,10 +4744,12 @@
           }
         ],
         "schema_contract": [
-          "Execution graph must preserve requested section outline.",
-          "Section drafts must retain source trace when workspace materials exist."
+          "先规划章节，章节仅使用已分配的冻结素材。",
+          "全文一致性修改后执行独立引用分配与陈述级证据校验。",
+          "最多两轮修复失败章节，保留已通过章节。"
         ]
-      }
+      },
+      "generation_mode": "SECTIONED"
     },
     {
       "skill_key": "quiz_pack",
@@ -3507,7 +4883,7 @@
           {
             "node_id": "digest",
             "skill_key": "workspace_material_digest",
-            "purpose": "Compile workspace material digest for quiz design.",
+            "purpose": "按章节检索冻结素材",
             "optional": false,
             "node_kind": "RETRIEVE",
             "prompt_recipe_id": "node.workspace_material_digest.v1",
@@ -3765,12 +5141,12 @@
             }
           },
           {
-            "node_id": "design",
-            "skill_key": "quiz_designer",
-            "purpose": "Draft quiz goals, questions, answers, and scoring notes.",
+            "node_id": "outline",
+            "skill_key": "outline_planner",
+            "purpose": "规划章节要点与允许引用的片段",
             "optional": false,
             "node_kind": "LLM_STEP",
-            "prompt_recipe_id": "node.quiz_designer.v1",
+            "prompt_recipe_id": "node.outline_planner.v1",
             "input_schema": {
               "type": "object",
               "additionalProperties": false,
@@ -4015,6 +5391,358 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
+                "chapter_plan": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "section_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "key_points": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "minItems": 1,
+                        "maxItems": 80
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "section_id",
+                      "heading",
+                      "key_points",
+                      "chunk_ids"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "chapter_plan"
+              ]
+            }
+          },
+          {
+            "node_id": "design",
+            "skill_key": "section_writer",
+            "purpose": "每个章节独立调用模型，只读取本章素材",
+            "optional": false,
+            "node_kind": "LLM_STEP",
+            "prompt_recipe_id": "node.section_writer.v1",
+            "input_schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "chapter_plan": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "section_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "key_points": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "minItems": 1,
+                        "maxItems": 80
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "section_id",
+                      "heading",
+                      "key_points",
+                      "chunk_ids"
+                    ]
+                  }
+                },
+                "material_passages": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "chunk_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "content": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "source_id": {
+                        "type": "string"
+                      },
+                      "source_snapshot_id": {
+                        "type": "string"
+                      },
+                      "chunk_no": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "location": {
+                        "type": "string"
+                      },
+                      "score": {
+                        "type": "number"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "origin": {
+                        "type": "string"
+                      },
+                      "truncated": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "chunk_id",
+                      "title",
+                      "content"
+                    ]
+                  },
+                  "maxItems": 1600
+                },
+                "section_materials": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "passages": {
+                        "type": "array",
+                        "maxItems": 20,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "chunk_id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "\\S"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "\\S"
+                            },
+                            "selected_chars": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "truncated": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "chunk_id",
+                            "title",
+                            "selected_chars",
+                            "truncated"
+                          ]
+                        }
+                      },
+                      "query": {
+                        "type": "string"
+                      },
+                      "method": {
+                        "type": "string"
+                      },
+                      "budget_chars": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "used_chars": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "degradation_reasons": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 80
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "passages"
+                    ]
+                  }
+                },
+                "generation_context": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "goal": {
+                      "type": "string"
+                    },
+                    "audience": {
+                      "type": "string"
+                    },
+                    "output_language": {
+                      "type": "string"
+                    },
+                    "user_requirement": {
+                      "type": "string"
+                    },
+                    "generation_brief": {
+                      "type": "string"
+                    },
+                    "focus_points": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "style_directives": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "constraints": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "outline": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "style_constraints": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "structure_constraints": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "forbidden_patterns": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "required_phrases": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "prompt_recipe": {
+                      "type": "object"
+                    },
+                    "output_contract": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              "required": [
+                "chapter_plan",
+                "material_passages",
+                "section_materials",
+                "generation_context"
+              ]
+            },
+            "output_schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
                 "sections": {
                   "type": "array",
                   "items": {
@@ -4057,12 +5785,12 @@
             }
           },
           {
-            "node_id": "normalize",
-            "skill_key": "quiz_difficulty_normalizer",
-            "purpose": "Balance difficulty tiers and tighten quiz phrasing.",
+            "node_id": "consistency",
+            "skill_key": "document_consistency",
+            "purpose": "检查全文术语与重复段落，仅修改有问题内容",
             "optional": false,
             "node_kind": "LLM_STEP",
-            "prompt_recipe_id": "node.quiz_difficulty_normalizer.v1",
+            "prompt_recipe_id": "node.document_consistency.v1",
             "input_schema": {
               "type": "object",
               "additionalProperties": false,
@@ -4156,6 +5884,81 @@
                     ]
                   },
                   "maxItems": 1600
+                },
+                "section_materials": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "passages": {
+                        "type": "array",
+                        "maxItems": 20,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "chunk_id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "\\S"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "\\S"
+                            },
+                            "selected_chars": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "truncated": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "chunk_id",
+                            "title",
+                            "selected_chars",
+                            "truncated"
+                          ]
+                        }
+                      },
+                      "query": {
+                        "type": "string"
+                      },
+                      "method": {
+                        "type": "string"
+                      },
+                      "budget_chars": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "used_chars": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "degradation_reasons": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 80
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "passages"
+                    ]
+                  }
                 },
                 "generation_context": {
                   "type": "object",
@@ -4260,6 +6063,7 @@
               "required": [
                 "sections",
                 "material_passages",
+                "section_materials",
                 "generation_context"
               ]
             },
@@ -4301,20 +6105,430 @@
                   },
                   "minItems": 1,
                   "maxItems": 80
+                },
+                "consistency_trace": {
+                  "type": "object"
                 }
               },
               "required": [
-                "sections"
+                "sections",
+                "consistency_trace"
+              ]
+            }
+          },
+          {
+            "node_id": "cite",
+            "skill_key": "section_citer",
+            "purpose": "为陈述选择真实片段引用，正文保持不变",
+            "optional": false,
+            "node_kind": "LLM_STEP",
+            "prompt_recipe_id": "node.section_citer.v1",
+            "input_schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "sections": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "body": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "source_refs": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 80
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "body",
+                      "source_refs"
+                    ]
+                  },
+                  "minItems": 1,
+                  "maxItems": 80
+                },
+                "chapter_plan": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "section_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "key_points": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "minItems": 1,
+                        "maxItems": 80
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "section_id",
+                      "heading",
+                      "key_points",
+                      "chunk_ids"
+                    ]
+                  }
+                },
+                "material_passages": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "chunk_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "content": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "source_id": {
+                        "type": "string"
+                      },
+                      "source_snapshot_id": {
+                        "type": "string"
+                      },
+                      "chunk_no": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "location": {
+                        "type": "string"
+                      },
+                      "score": {
+                        "type": "number"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "origin": {
+                        "type": "string"
+                      },
+                      "truncated": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "chunk_id",
+                      "title",
+                      "content"
+                    ]
+                  },
+                  "maxItems": 1600
+                },
+                "section_materials": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "passages": {
+                        "type": "array",
+                        "maxItems": 20,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "chunk_id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "\\S"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "\\S"
+                            },
+                            "selected_chars": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "truncated": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "chunk_id",
+                            "title",
+                            "selected_chars",
+                            "truncated"
+                          ]
+                        }
+                      },
+                      "query": {
+                        "type": "string"
+                      },
+                      "method": {
+                        "type": "string"
+                      },
+                      "budget_chars": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "used_chars": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "degradation_reasons": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 80
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "passages"
+                    ]
+                  }
+                },
+                "generation_context": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "goal": {
+                      "type": "string"
+                    },
+                    "audience": {
+                      "type": "string"
+                    },
+                    "output_language": {
+                      "type": "string"
+                    },
+                    "user_requirement": {
+                      "type": "string"
+                    },
+                    "generation_brief": {
+                      "type": "string"
+                    },
+                    "focus_points": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "style_directives": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "constraints": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "outline": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "style_constraints": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "structure_constraints": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "forbidden_patterns": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "required_phrases": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "prompt_recipe": {
+                      "type": "object"
+                    },
+                    "output_contract": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              "required": [
+                "sections",
+                "chapter_plan",
+                "material_passages",
+                "section_materials",
+                "generation_context"
+              ]
+            },
+            "output_schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "sections": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "body": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "source_refs": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 80
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "body",
+                      "source_refs"
+                    ]
+                  },
+                  "minItems": 1,
+                  "maxItems": 80
+                },
+                "citation_assignments": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "chunk_ids"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "sections",
+                "citation_assignments"
               ]
             }
           },
           {
             "node_id": "guard",
-            "skill_key": "evidence_guard",
-            "purpose": "Check quiz evidence trace.",
+            "skill_key": "sectioned_verifier",
+            "purpose": "检查章节契约与逐陈述证据依据",
             "optional": false,
             "node_kind": "VERIFY",
-            "prompt_recipe_id": "node.evidence_guard.v1",
+            "prompt_recipe_id": "node.sectioned_verifier.v1",
             "input_schema": {
               "type": "object",
               "additionalProperties": false,
@@ -4353,6 +6567,53 @@
                   },
                   "minItems": 1,
                   "maxItems": 80
+                },
+                "chapter_plan": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "section_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "key_points": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "minItems": 1,
+                        "maxItems": 80
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "section_id",
+                      "heading",
+                      "key_points",
+                      "chunk_ids"
+                    ]
+                  }
                 },
                 "material_passages": {
                   "type": "array",
@@ -4582,35 +6843,140 @@
                       "type": "object"
                     }
                   }
+                },
+                "citation_assignments": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "chunk_ids"
+                    ]
+                  }
+                },
+                "consistency_trace": {
+                  "type": "object"
                 }
               },
               "required": [
                 "sections",
+                "chapter_plan",
                 "material_passages",
                 "section_materials",
-                "generation_context"
+                "generation_context",
+                "citation_assignments",
+                "consistency_trace"
               ]
             },
             "output_schema": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
+                "sections": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "body": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "source_refs": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 80
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "body",
+                      "source_refs"
+                    ]
+                  },
+                  "minItems": 1,
+                  "maxItems": 80
+                },
                 "verification": {
+                  "type": "object"
+                },
+                "citation_assignments": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "chunk_ids"
+                    ]
+                  }
+                },
+                "consistency_trace": {
                   "type": "object"
                 }
               },
               "required": [
-                "verification"
+                "sections",
+                "verification",
+                "citation_assignments",
+                "consistency_trace"
               ]
             }
           },
           {
             "node_id": "repair",
-            "skill_key": "generic_section_repair",
-            "purpose": "根据失败项修复章节并重新校验",
+            "skill_key": "sectioned_repair",
+            "purpose": "最多两轮修复失败章节并重新引用与校验",
             "optional": false,
             "node_kind": "REPAIR",
-            "prompt_recipe_id": "node.generic_section_repair.v1",
+            "prompt_recipe_id": "node.sectioned_repair.v1",
             "input_schema": {
               "type": "object",
               "additionalProperties": false,
@@ -4649,6 +7015,53 @@
                   },
                   "minItems": 1,
                   "maxItems": 80
+                },
+                "chapter_plan": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "section_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "key_points": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "minItems": 1,
+                        "maxItems": 80
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "section_id",
+                      "heading",
+                      "key_points",
+                      "chunk_ids"
+                    ]
+                  }
                 },
                 "verification": {
                   "type": "object"
@@ -4881,14 +7294,49 @@
                       "type": "object"
                     }
                   }
+                },
+                "citation_assignments": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "chunk_ids"
+                    ]
+                  }
+                },
+                "consistency_trace": {
+                  "type": "object"
                 }
               },
               "required": [
                 "sections",
+                "chapter_plan",
                 "verification",
                 "material_passages",
                 "section_materials",
-                "generation_context"
+                "generation_context",
+                "citation_assignments",
+                "consistency_trace"
               ]
             },
             "output_schema": {
@@ -4968,12 +7416,46 @@
                     "reason",
                     "failed_checks"
                   ]
+                },
+                "citation_assignments": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "chunk_ids"
+                    ]
+                  }
+                },
+                "consistency_trace": {
+                  "type": "object"
                 }
               },
               "required": [
                 "sections",
                 "verification",
-                "repair_trace"
+                "repair_trace",
+                "citation_assignments",
+                "consistency_trace"
               ]
             }
           }
@@ -4981,16 +7463,26 @@
         "edges": [
           {
             "from_node": "digest",
+            "to_node": "outline",
+            "edge_type": "PREREQUISITE"
+          },
+          {
+            "from_node": "outline",
             "to_node": "design",
             "edge_type": "PREREQUISITE"
           },
           {
             "from_node": "design",
-            "to_node": "normalize",
+            "to_node": "consistency",
             "edge_type": "PREREQUISITE"
           },
           {
-            "from_node": "normalize",
+            "from_node": "consistency",
+            "to_node": "cite",
+            "edge_type": "PREREQUISITE"
+          },
+          {
+            "from_node": "cite",
             "to_node": "guard",
             "edge_type": "PREREQUISITE"
           },
@@ -5001,10 +7493,12 @@
           }
         ],
         "schema_contract": [
-          "Quiz graph must preserve goals, questions, answers, and scoring criteria.",
-          "Quiz output must expose beginner, intermediate, and challenge difficulty layers."
+          "先规划章节，章节仅使用已分配的冻结素材。",
+          "全文一致性修改后执行独立引用分配与陈述级证据校验。",
+          "最多两轮修复失败章节，保留已通过章节。"
         ]
-      }
+      },
+      "generation_mode": "SECTIONED"
     },
     {
       "skill_key": "wiki_page",
@@ -5134,7 +7628,7 @@
           {
             "node_id": "digest",
             "skill_key": "workspace_material_digest",
-            "purpose": "Compile workspace material digest for wiki drafting.",
+            "purpose": "按章节检索冻结素材",
             "optional": false,
             "node_kind": "RETRIEVE",
             "prompt_recipe_id": "node.workspace_material_digest.v1",
@@ -5392,12 +7886,12 @@
             }
           },
           {
-            "node_id": "write",
-            "skill_key": "generic_section_writer",
-            "purpose": "Generate wiki-aligned draft sections.",
+            "node_id": "outline",
+            "skill_key": "outline_planner",
+            "purpose": "规划章节要点与允许引用的片段",
             "optional": false,
             "node_kind": "LLM_STEP",
-            "prompt_recipe_id": "node.generic_section_writer.v1",
+            "prompt_recipe_id": "node.outline_planner.v1",
             "input_schema": {
               "type": "object",
               "additionalProperties": false,
@@ -5642,6 +8136,358 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
+                "chapter_plan": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "section_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "key_points": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "minItems": 1,
+                        "maxItems": 80
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "section_id",
+                      "heading",
+                      "key_points",
+                      "chunk_ids"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "chapter_plan"
+              ]
+            }
+          },
+          {
+            "node_id": "write",
+            "skill_key": "section_writer",
+            "purpose": "每个章节独立调用模型，只读取本章素材",
+            "optional": false,
+            "node_kind": "LLM_STEP",
+            "prompt_recipe_id": "node.section_writer.v1",
+            "input_schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "chapter_plan": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "section_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "key_points": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "minItems": 1,
+                        "maxItems": 80
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "section_id",
+                      "heading",
+                      "key_points",
+                      "chunk_ids"
+                    ]
+                  }
+                },
+                "material_passages": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "chunk_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "content": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "source_id": {
+                        "type": "string"
+                      },
+                      "source_snapshot_id": {
+                        "type": "string"
+                      },
+                      "chunk_no": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "location": {
+                        "type": "string"
+                      },
+                      "score": {
+                        "type": "number"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "origin": {
+                        "type": "string"
+                      },
+                      "truncated": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "chunk_id",
+                      "title",
+                      "content"
+                    ]
+                  },
+                  "maxItems": 1600
+                },
+                "section_materials": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "passages": {
+                        "type": "array",
+                        "maxItems": 20,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "chunk_id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "\\S"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "\\S"
+                            },
+                            "selected_chars": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "truncated": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "chunk_id",
+                            "title",
+                            "selected_chars",
+                            "truncated"
+                          ]
+                        }
+                      },
+                      "query": {
+                        "type": "string"
+                      },
+                      "method": {
+                        "type": "string"
+                      },
+                      "budget_chars": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "used_chars": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "degradation_reasons": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 80
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "passages"
+                    ]
+                  }
+                },
+                "generation_context": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "goal": {
+                      "type": "string"
+                    },
+                    "audience": {
+                      "type": "string"
+                    },
+                    "output_language": {
+                      "type": "string"
+                    },
+                    "user_requirement": {
+                      "type": "string"
+                    },
+                    "generation_brief": {
+                      "type": "string"
+                    },
+                    "focus_points": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "style_directives": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "constraints": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "outline": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "style_constraints": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "structure_constraints": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "forbidden_patterns": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "required_phrases": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "prompt_recipe": {
+                      "type": "object"
+                    },
+                    "output_contract": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              "required": [
+                "chapter_plan",
+                "material_passages",
+                "section_materials",
+                "generation_context"
+              ]
+            },
+            "output_schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
                 "sections": {
                   "type": "array",
                   "items": {
@@ -5684,12 +8530,12 @@
             }
           },
           {
-            "node_id": "enforce",
-            "skill_key": "wiki_structure_enforcer",
-            "purpose": "Enforce wiki structure and related-page formatting.",
+            "node_id": "consistency",
+            "skill_key": "document_consistency",
+            "purpose": "检查全文术语与重复段落，仅修改有问题内容",
             "optional": false,
             "node_kind": "LLM_STEP",
-            "prompt_recipe_id": "node.wiki_structure_enforcer.v1",
+            "prompt_recipe_id": "node.document_consistency.v1",
             "input_schema": {
               "type": "object",
               "additionalProperties": false,
@@ -5783,6 +8629,81 @@
                     ]
                   },
                   "maxItems": 1600
+                },
+                "section_materials": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "passages": {
+                        "type": "array",
+                        "maxItems": 20,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "chunk_id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "\\S"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "\\S"
+                            },
+                            "selected_chars": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "truncated": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "chunk_id",
+                            "title",
+                            "selected_chars",
+                            "truncated"
+                          ]
+                        }
+                      },
+                      "query": {
+                        "type": "string"
+                      },
+                      "method": {
+                        "type": "string"
+                      },
+                      "budget_chars": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "used_chars": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "degradation_reasons": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 80
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "passages"
+                    ]
+                  }
                 },
                 "generation_context": {
                   "type": "object",
@@ -5887,6 +8808,7 @@
               "required": [
                 "sections",
                 "material_passages",
+                "section_materials",
                 "generation_context"
               ]
             },
@@ -5928,20 +8850,430 @@
                   },
                   "minItems": 1,
                   "maxItems": 80
+                },
+                "consistency_trace": {
+                  "type": "object"
                 }
               },
               "required": [
-                "sections"
+                "sections",
+                "consistency_trace"
+              ]
+            }
+          },
+          {
+            "node_id": "cite",
+            "skill_key": "section_citer",
+            "purpose": "为陈述选择真实片段引用，正文保持不变",
+            "optional": false,
+            "node_kind": "LLM_STEP",
+            "prompt_recipe_id": "node.section_citer.v1",
+            "input_schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "sections": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "body": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "source_refs": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 80
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "body",
+                      "source_refs"
+                    ]
+                  },
+                  "minItems": 1,
+                  "maxItems": 80
+                },
+                "chapter_plan": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "section_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "key_points": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "minItems": 1,
+                        "maxItems": 80
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "section_id",
+                      "heading",
+                      "key_points",
+                      "chunk_ids"
+                    ]
+                  }
+                },
+                "material_passages": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "chunk_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "content": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "source_id": {
+                        "type": "string"
+                      },
+                      "source_snapshot_id": {
+                        "type": "string"
+                      },
+                      "chunk_no": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "location": {
+                        "type": "string"
+                      },
+                      "score": {
+                        "type": "number"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "origin": {
+                        "type": "string"
+                      },
+                      "truncated": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "chunk_id",
+                      "title",
+                      "content"
+                    ]
+                  },
+                  "maxItems": 1600
+                },
+                "section_materials": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "passages": {
+                        "type": "array",
+                        "maxItems": 20,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "chunk_id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "\\S"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "\\S"
+                            },
+                            "selected_chars": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "truncated": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "chunk_id",
+                            "title",
+                            "selected_chars",
+                            "truncated"
+                          ]
+                        }
+                      },
+                      "query": {
+                        "type": "string"
+                      },
+                      "method": {
+                        "type": "string"
+                      },
+                      "budget_chars": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "used_chars": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "degradation_reasons": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 80
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "passages"
+                    ]
+                  }
+                },
+                "generation_context": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "goal": {
+                      "type": "string"
+                    },
+                    "audience": {
+                      "type": "string"
+                    },
+                    "output_language": {
+                      "type": "string"
+                    },
+                    "user_requirement": {
+                      "type": "string"
+                    },
+                    "generation_brief": {
+                      "type": "string"
+                    },
+                    "focus_points": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "style_directives": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "constraints": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "outline": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "style_constraints": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "structure_constraints": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "forbidden_patterns": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "required_phrases": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "maxItems": 80
+                    },
+                    "prompt_recipe": {
+                      "type": "object"
+                    },
+                    "output_contract": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              "required": [
+                "sections",
+                "chapter_plan",
+                "material_passages",
+                "section_materials",
+                "generation_context"
+              ]
+            },
+            "output_schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "sections": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "body": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "source_refs": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 80
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "body",
+                      "source_refs"
+                    ]
+                  },
+                  "minItems": 1,
+                  "maxItems": 80
+                },
+                "citation_assignments": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "chunk_ids"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "sections",
+                "citation_assignments"
               ]
             }
           },
           {
             "node_id": "guard",
-            "skill_key": "evidence_guard",
-            "purpose": "Check wiki evidence trace.",
+            "skill_key": "sectioned_verifier",
+            "purpose": "检查章节契约与逐陈述证据依据",
             "optional": false,
             "node_kind": "VERIFY",
-            "prompt_recipe_id": "node.evidence_guard.v1",
+            "prompt_recipe_id": "node.sectioned_verifier.v1",
             "input_schema": {
               "type": "object",
               "additionalProperties": false,
@@ -5980,6 +9312,53 @@
                   },
                   "minItems": 1,
                   "maxItems": 80
+                },
+                "chapter_plan": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "section_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "key_points": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "minItems": 1,
+                        "maxItems": 80
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "section_id",
+                      "heading",
+                      "key_points",
+                      "chunk_ids"
+                    ]
+                  }
                 },
                 "material_passages": {
                   "type": "array",
@@ -6209,35 +9588,140 @@
                       "type": "object"
                     }
                   }
+                },
+                "citation_assignments": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "chunk_ids"
+                    ]
+                  }
+                },
+                "consistency_trace": {
+                  "type": "object"
                 }
               },
               "required": [
                 "sections",
+                "chapter_plan",
                 "material_passages",
                 "section_materials",
-                "generation_context"
+                "generation_context",
+                "citation_assignments",
+                "consistency_trace"
               ]
             },
             "output_schema": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
+                "sections": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "body": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "source_refs": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 80
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "body",
+                      "source_refs"
+                    ]
+                  },
+                  "minItems": 1,
+                  "maxItems": 80
+                },
                 "verification": {
+                  "type": "object"
+                },
+                "citation_assignments": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "chunk_ids"
+                    ]
+                  }
+                },
+                "consistency_trace": {
                   "type": "object"
                 }
               },
               "required": [
-                "verification"
+                "sections",
+                "verification",
+                "citation_assignments",
+                "consistency_trace"
               ]
             }
           },
           {
             "node_id": "repair",
-            "skill_key": "generic_section_repair",
-            "purpose": "根据失败项修复章节并重新校验",
+            "skill_key": "sectioned_repair",
+            "purpose": "最多两轮修复失败章节并重新引用与校验",
             "optional": false,
             "node_kind": "REPAIR",
-            "prompt_recipe_id": "node.generic_section_repair.v1",
+            "prompt_recipe_id": "node.sectioned_repair.v1",
             "input_schema": {
               "type": "object",
               "additionalProperties": false,
@@ -6276,6 +9760,53 @@
                   },
                   "minItems": 1,
                   "maxItems": 80
+                },
+                "chapter_plan": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "section_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "key_points": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "minItems": 1,
+                        "maxItems": 80
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "section_id",
+                      "heading",
+                      "key_points",
+                      "chunk_ids"
+                    ]
+                  }
                 },
                 "verification": {
                   "type": "object"
@@ -6508,14 +10039,49 @@
                       "type": "object"
                     }
                   }
+                },
+                "citation_assignments": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "chunk_ids"
+                    ]
+                  }
+                },
+                "consistency_trace": {
+                  "type": "object"
                 }
               },
               "required": [
                 "sections",
+                "chapter_plan",
                 "verification",
                 "material_passages",
                 "section_materials",
-                "generation_context"
+                "generation_context",
+                "citation_assignments",
+                "consistency_trace"
               ]
             },
             "output_schema": {
@@ -6595,12 +10161,46 @@
                     "reason",
                     "failed_checks"
                   ]
+                },
+                "citation_assignments": {
+                  "type": "array",
+                  "maxItems": 80,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "heading": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "chunk_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "maxItems": 20,
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "heading",
+                      "chunk_ids"
+                    ]
+                  }
+                },
+                "consistency_trace": {
+                  "type": "object"
                 }
               },
               "required": [
                 "sections",
                 "verification",
-                "repair_trace"
+                "repair_trace",
+                "citation_assignments",
+                "consistency_trace"
               ]
             }
           }
@@ -6608,16 +10208,26 @@
         "edges": [
           {
             "from_node": "digest",
+            "to_node": "outline",
+            "edge_type": "PREREQUISITE"
+          },
+          {
+            "from_node": "outline",
             "to_node": "write",
             "edge_type": "PREREQUISITE"
           },
           {
             "from_node": "write",
-            "to_node": "enforce",
+            "to_node": "consistency",
             "edge_type": "PREREQUISITE"
           },
           {
-            "from_node": "enforce",
+            "from_node": "consistency",
+            "to_node": "cite",
+            "edge_type": "PREREQUISITE"
+          },
+          {
+            "from_node": "cite",
             "to_node": "guard",
             "edge_type": "PREREQUISITE"
           },
@@ -6628,10 +10238,12 @@
           }
         ],
         "schema_contract": [
-          "Wiki graph must preserve overview, mechanisms, and related pages sections.",
-          "Wiki related pages section must reference stable documentation entry points."
+          "先规划章节，章节仅使用已分配的冻结素材。",
+          "全文一致性修改后执行独立引用分配与陈述级证据校验。",
+          "最多两轮修复失败章节，保留已通过章节。"
         ]
-      }
+      },
+      "generation_mode": "SECTIONED"
     },
     {
       "skill_key": "mindmap_from_workspace",
@@ -7994,7 +11606,8 @@
           "Execution graph must preserve requested section outline.",
           "Section drafts must retain source trace when workspace materials exist."
         ]
-      }
+      },
+      "generation_mode": "SINGLE"
     },
     {
       "skill_key": "bilibili_course_note_pdf",
@@ -9363,7 +12976,8 @@
           "Execution graph must preserve requested section outline.",
           "Section drafts must retain source trace when workspace materials exist."
         ]
-      }
+      },
+      "generation_mode": "SINGLE"
     },
     {
       "skill_key": "video_learning_deck",
@@ -10010,7 +13624,8 @@
           "video-deck-ir-v1",
           "artifact-content-v1"
         ]
-      }
+      },
+      "generation_mode": "SINGLE"
     },
     {
       "skill_key": "knowledge_blog",
@@ -10530,7 +14145,8 @@
           "video-derived-text-v1",
           "artifact-content-v1"
         ]
-      }
+      },
+      "generation_mode": "SINGLE"
     },
     {
       "skill_key": "interview_qa",
@@ -11050,7 +14666,8 @@
           "video-derived-text-v1",
           "artifact-content-v1"
         ]
-      }
+      },
+      "generation_mode": "SINGLE"
     },
     {
       "skill_key": "report_draft",
@@ -12379,7 +15996,8 @@
           "Execution graph must preserve requested section outline.",
           "Section drafts must retain source trace when workspace materials exist."
         ]
-      }
+      },
+      "generation_mode": "SINGLE"
     },
     {
       "skill_key": "faq_draft",
@@ -13708,7 +17326,8 @@
           "Execution graph must preserve requested section outline.",
           "Section drafts must retain source trace when workspace materials exist."
         ]
-      }
+      },
+      "generation_mode": "SINGLE"
     },
     {
       "skill_key": "structured_note",
@@ -15037,7 +18656,8 @@
           "Execution graph must preserve requested section outline.",
           "Section drafts must retain source trace when workspace materials exist."
         ]
-      }
+      },
+      "generation_mode": "SINGLE"
     },
     {
       "skill_key": "video_summary",
@@ -16401,7 +20021,8 @@
           "Execution graph must preserve requested section outline.",
           "Section drafts must retain source trace when workspace materials exist."
         ]
-      }
+      },
+      "generation_mode": "SINGLE"
     },
     {
       "skill_key": "audio_minutes",
@@ -17733,7 +21354,8 @@
           "Execution graph must preserve requested section outline.",
           "Section drafts must retain source trace when workspace materials exist."
         ]
-      }
+      },
+      "generation_mode": "SINGLE"
     },
     {
       "skill_key": "course_notes",
@@ -19072,7 +22694,8 @@
           "Execution graph must preserve requested section outline.",
           "Section drafts must retain source trace when workspace materials exist."
         ]
-      }
+      },
+      "generation_mode": "SINGLE"
     },
     {
       "skill_key": "reading_digest",
@@ -20437,7 +24060,8 @@
           "Execution graph must preserve requested section outline.",
           "Section drafts must retain source trace when workspace materials exist."
         ]
-      }
+      },
+      "generation_mode": "SINGLE"
     }
   ],
   "aliases": {

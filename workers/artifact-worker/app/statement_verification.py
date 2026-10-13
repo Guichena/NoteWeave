@@ -157,13 +157,16 @@ def _chapter_passages(heading, global_passages, section_materials):
     return passages, errors
 
 
-def _resolve_citations(refs, passages):
+def _resolve_citations(refs, passages, ref_kind="AUTO"):
     titles = defaultdict(list)
     for key, passage in passages.items():
         titles[str(passage.get("title") or "")].append(key)
     chunks, unknown = [], []
     for ref in dict.fromkeys(refs):
         by_chunk = {ref} if ref in passages else set()
+        if ref_kind == "CHUNK":
+            (chunks if by_chunk else unknown).append(ref)
+            continue
         by_title = set(titles.get(ref, []))
         if by_chunk and by_title and by_chunk != by_title:
             # 兼容展示标题和片段标识时，不猜测名称碰撞的引用目标。
@@ -211,7 +214,9 @@ def _section_support(statements):
 
 
 def verify_statement_support(sections, material_passages, *, llm_client=None,
-        citation_density="PER_SECTION", section_materials=None):
+        citation_density="PER_SECTION", section_materials=None, citation_ref_kind="AUTO"):
+    if citation_ref_kind not in {"AUTO", "CHUNK"}:
+        raise ValueError("陈述引用类型必须为自动兼容或明确片段标识")
     """按章节批量判断陈述，保留未执行项并据实计算两个引用指标。"""
     passages, conflicts = _passage_index(material_passages)
     material_limit_exceeded = len(material_passages) > MAX_TOTAL_PASSAGES \
@@ -225,7 +230,7 @@ def verify_statement_support(sections, material_passages, *, llm_client=None,
         heading = str(section.get("heading") or "")
         scoped, scope_errors = _chapter_passages(heading, passages, section_materials)
         refs = section.get("source_refs", [])
-        chunks, unknown = _resolve_citations(refs, scoped)
+        chunks, unknown = _resolve_citations(refs, scoped, citation_ref_kind)
         selected = [scoped[key] for key in chunks]
         reasons = list(scope_errors)
         if unknown:

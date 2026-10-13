@@ -6,6 +6,12 @@ from app.node_contracts import node_contract_for_skill, validate_node_contract
 
 SUPPORTED_RUNTIME_NODE_SKILL_KEYS = frozenset(
     {
+        "outline_planner",
+        "section_writer",
+        "section_citer",
+        "document_consistency",
+        "sectioned_verifier",
+        "sectioned_repair",
         "workspace_material_digest",
         "resume_highlight_extractor",
         "resume_impact_normalizer",

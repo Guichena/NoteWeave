@@ -6,7 +6,7 @@ from app.action_resolver import resolve_requested_action
 from app.capability_resolver import resolve_capability_bindings
 from app.content_runtime import build_content_acquisition_plan
 from app.intent_compiler import compile_execution_spec
-from app.artifact_skill_catalog import resolve_output_contract
+from app.artifact_skill_catalog import resolve_generation_mode, resolve_output_contract
 from app.models import (
     ArtifactExecutionPlan,
     ArtifactRuntimePlan,
@@ -67,6 +67,9 @@ def build_execution_plan(task_input: ArtifactTaskInput, llm_client=None) -> Arti
         raise ValueError("schema gate rejected plan: source scope must not be empty")
 
     node_sequence = _resolve_node_sequence(skill_graph.graph_key)
+    generation_mode = resolve_generation_mode(execution_spec.skill_key, action_key)
+    if action.action_origin == "CUSTOM" and any(node.prompt_recipe_id == "node.section_writer.v1" for node in node_sequence):
+        generation_mode = "SECTIONED"
     lazy_loaded_capabilities = _collect_required_capabilities(
         content_acquisition_plan.required_capabilities,
         writeback_capabilities,
@@ -149,6 +152,7 @@ def build_execution_plan(task_input: ArtifactTaskInput, llm_client=None) -> Arti
     )
 
     return ArtifactExecutionPlan(
+        generation_mode=generation_mode,
         plan_id=f"plan-{task_input.task_id}",
         declared_output_contract=resolve_output_contract(execution_spec.skill_key, action_key),
         skill_key=execution_spec.skill_key,

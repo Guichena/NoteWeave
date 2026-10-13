@@ -69,12 +69,16 @@ PRE_STATEMENT_CATALOG_DIGESTS = {
     "6213388175d1399d6a98f2692bbf76165665fcc40e9cefb3dc09e0bc5a3ea7d1",
     "409075da8e53f72951f12409345c38de513c83b9c112745d94044ae7c73f7de1",
 }
+PRE_SECTION_CATALOG_DIGESTS = {
+    "0d632b23ee593fdd861cc657e9a134d48a226654102f1b506a95552d8b036e83",
+    "2d0d504383f1d3edfdbcee9e95f76c872aced89ad7f37e6d5671c6f8f9552acd",
+}
 
 
 def _require_published_catalog(task_input: ArtifactTaskInput) -> None:
     if task_input.catalog_digest and task_input.catalog_digest not in {
             CATALOG_DIGEST, PRE_VIDEO_POLICY_CATALOG_DIGEST, PRE_OUTPUT_CONTRACT_CATALOG_DIGEST, PRE_TYPED_NODE_CATALOG_DIGEST,
-            *PRE_STATEMENT_CATALOG_DIGESTS}:
+            *PRE_STATEMENT_CATALOG_DIGESTS, *PRE_SECTION_CATALOG_DIGESTS}:
         raise ValueError("artifact Skill catalog digest does not match the frozen Run")
     if task_input.catalog_digest == PRE_VIDEO_POLICY_CATALOG_DIGEST:
         inputs = task_input.input_payload.inputs
@@ -112,14 +116,17 @@ def resume_artifact_task(
     raw_plan = resume_checkpoint.get("execution_plan")
     if not isinstance(raw_plan, dict):
         raise ValueError("artifact resume checkpoint is missing execution_plan")
-    if task_input.catalog_digest in PRE_STATEMENT_CATALOG_DIGESTS and raw_plan.get("action_origin") == "BUILTIN":
+    if task_input.catalog_digest in {*PRE_STATEMENT_CATALOG_DIGESTS, *PRE_SECTION_CATALOG_DIGESTS} and raw_plan.get("action_origin") == "BUILTIN":
         # 只重绑当前注册图声明，检查点里的冻结意图、权限和输入仍原样读取。
         from app.compiler import _resolve_node_sequence
         from app.registry import resolve_production_action
         action = resolve_production_action(raw_plan["action_key"])
-        if raw_plan.get("skill_graph_key") == action.default_skill_graph_key:
-            raw_plan = {**raw_plan, "node_sequence": [node.model_dump(mode="json")
-                for node in _resolve_node_sequence(raw_plan["skill_graph_key"])]}
+        if _is_frozen_default_graph(raw_plan["action_key"], raw_plan.get("skill_graph_key"), action):
+            from app.artifact_skill_catalog import resolve_generation_mode
+            raw_plan = {**raw_plan, "skill_graph_key": action.default_skill_graph_key,
+                "generation_mode": resolve_generation_mode(raw_plan.get("skill_key", ""), raw_plan["action_key"]),
+                "node_sequence": [node.model_dump(mode="json")
+                    for node in _resolve_node_sequence(action.default_skill_graph_key)]}
     validated_plan = ArtifactExecutionPlan.model_validate(raw_plan)
     _migrate_frozen_builtin_graph(task_input, validated_plan)
     raw_content_objects = resume_checkpoint.get("canonical_content_objects")
@@ -148,14 +155,19 @@ def _migrate_frozen_builtin_graph(task_input, plan):
     """旧内置图仅迁移执行声明，保留输入、意图、权限和已发生的模型调用。"""
     if task_input.catalog_digest not in {PRE_VIDEO_POLICY_CATALOG_DIGEST,
             PRE_OUTPUT_CONTRACT_CATALOG_DIGEST, PRE_TYPED_NODE_CATALOG_DIGEST,
-            *PRE_STATEMENT_CATALOG_DIGESTS} or plan.action_origin != "BUILTIN":
+            *PRE_STATEMENT_CATALOG_DIGESTS, *PRE_SECTION_CATALOG_DIGESTS} or plan.action_origin != "BUILTIN":
         return
     from app.compiler import _resolve_node_sequence
-    from app.registry import resolve_production_action, resolve_prompt_recipe
+    from app.registry import resolve_production_action, resolve_prompt_recipe, resolve_skill_graph
+    from app.artifact_skill_catalog import resolve_generation_mode
     action = resolve_production_action(plan.action_key)
-    if plan.skill_graph_key != action.default_skill_graph_key:
+    if not _is_frozen_default_graph(plan.action_key, plan.skill_graph_key, action):
         return
+    plan.skill_graph_key = action.default_skill_graph_key
+    plan.generation_mode = resolve_generation_mode(plan.skill_key, plan.action_key)
     plan.node_sequence = _resolve_node_sequence(plan.skill_graph_key)
+    plan.runtime_plan.graph_key = plan.skill_graph_key
+    plan.runtime_plan.graph_name = resolve_skill_graph(plan.skill_graph_key).graph_name
     plan.runtime_plan.activated_nodes = [node.skill_key for node in plan.node_sequence]
     plan.required_phrases = []
     if plan.prompt_recipe.recipe_id == action.default_prompt_recipe_id:
@@ -163,6 +175,11 @@ def _migrate_frozen_builtin_graph(task_input, plan):
     note = "旧内置图已迁移到类型化节点，原冻结意图和权限保留"
     if note not in plan.notes:
         plan.notes.append(note)
+
+
+def _is_frozen_default_graph(action_key, graph_key, action):
+    previous = {"STUDY_GUIDE": "generic_artifact_v1"}
+    return graph_key == action.default_skill_graph_key or graph_key == previous.get(action_key)
 
 
 def _run_artifact_task(

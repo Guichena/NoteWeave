@@ -2,9 +2,11 @@
 
 from copy import deepcopy
 from types import SimpleNamespace
+import re
 
 from app.node_contracts import STATE_FIELDS
 from app.node_executor import NodeExecutionError, NodeExecutor, validate_resume_bullets
+from app.sectioned_runtime import paragraph_texts
 
 
 def _schema(properties, required=None):
@@ -33,6 +35,7 @@ def repair_failed_sections(inputs, *, llm_client, verify, is_resume=False):
         if not headings:
             headings = [section["heading"] for section in state["sections"]]
         original = deepcopy(state["sections"])
+        original_citations = {row["heading"]: row["chunk_ids"] for row in state.get("citation_assignments", [])}
         failed_sections = [section for section in original if section["heading"] in headings]
         failed_sections.extend({"heading": heading, "body": "", "source_refs": []}
             for heading in verification.get("missing_sections", [])
@@ -53,10 +56,17 @@ def repair_failed_sections(inputs, *, llm_client, verify, is_resume=False):
             "material_passages": materials, "generation_context": state["generation_context"],
             "section_materials": material_assignments,
             "failed_diagnostics": [section for section in verification.get("sections", []) if section["heading"] in known]}
+        paragraph_constraints = verification.get("paragraph_constraints", {})
+        if paragraph_constraints:
+            request["failed_paragraphs"] = [{"heading": section["heading"], "paragraph_index": index,
+                "text": paragraph_texts(section["body"])[index]}
+                for section in failed_sections for index in paragraph_constraints.get(section["heading"], [])]
         if is_resume:
             request.update(normalized_facts=state["normalized_facts"], bullets=state["bullets"])
         properties = {key: STATE_FIELDS[key] for key in ("material_passages", "generation_context", "section_materials")}
         properties["failed_diagnostics"] = {"type": "array", "items": {"type": "object"}, "maxItems": 80}
+        if paragraph_constraints:
+            properties["failed_paragraphs"] = {"type": "array", "items": {"type": "object"}, "maxItems": 160}
         requested_schema = deepcopy(STATE_FIELDS["sections"])
         requested_schema["items"]["properties"]["body"] = {"type": "string"}
         properties.update(failed_sections=requested_schema,
@@ -72,6 +82,23 @@ def repair_failed_sections(inputs, *, llm_client, verify, is_resume=False):
             if len(returned) != len(set(returned)) or set(returned) != known:
                 raise ValueError("修复只能返回全部失败章节，不能遗漏或改写已通过章节")
             by_heading = {section["heading"]: section for section in value["sections"]}
+            for section in original:
+                positions = paragraph_constraints.get(section["heading"])
+                if positions is None:
+                    continue
+                before = re.split(r"(\n[ \t]*\n)", section["body"])
+                after = re.split(r"(\n[ \t]*\n)", by_heading[section["heading"]]["body"])
+                if len(before) != len(after) or before[1::2] != after[1::2]:
+                    raise ValueError("全文一致性修复必须保留原段落分隔与空行格式")
+                paragraph_index = 0
+                for offset in range(0, len(before), 2):
+                    allowed = before[offset].strip() and paragraph_index in positions
+                    if before[offset].strip():
+                        paragraph_index += 1
+                    if not allowed and before[offset] != after[offset]:
+                        raise ValueError("全文一致性修复只能修改已判有问题的段落，其他段落必须逐字保留")
+                if not by_heading[section["heading"]]["body"].strip():
+                    raise ValueError("全文一致性修复只能修改已判有问题的段落，其他段落必须逐字保留")
             candidate = _merge_sections(original, by_heading, state["generation_context"].get("outline", []))
             if is_resume:
                 validate_resume_bullets({"sections": candidate,
@@ -107,6 +134,11 @@ def repair_failed_sections(inputs, *, llm_client, verify, is_resume=False):
         calls += trace.get("llm_calls", 0)
         verification = verify(state)
         state["verification"] = verification
+        record["repaired_sections"] = [section["heading"] for section in state["sections"]
+            if section not in original]
+        record["repaired_sections"].extend(row["heading"] for row in state.get("citation_assignments", [])
+            if row["heading"] not in record["repaired_sections"]
+            and row["chunk_ids"] != original_citations.get(row["heading"]))
         calls += verification.get("llm_calls", 0)
         traces.extend(verification.get("execution_traces", []))
         record.update(status=verification["status"], remaining_failed_checks=verification.get("failed_checks", []))
@@ -125,4 +157,6 @@ def _result(state, status, reason, rounds, traces, calls, is_resume):
             "llm_calls": calls, "execution_traces": traces}}
     if is_resume:
         result["bullets"] = state["bullets"]
+    if "citation_assignments" in state:
+        result.update({key: deepcopy(state[key]) for key in ("citation_assignments", "consistency_trace")})
     return result

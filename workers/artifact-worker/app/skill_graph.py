@@ -12,6 +12,9 @@ from app.verification_runtime import verify_draft
 from app.retrieval_runtime import execute_retrieve_node
 from app.registry import resolve_skill_definition
 from app.runtime_node_registry import ensure_runtime_node_contract_registered
+from app.sectioned_runtime import (
+    plan_outline, write_sections, cite_sections, check_document_consistency, document_content_digest,
+)
 
 
 def execute_skill_graph(task_input, plan, *, llm_client=None, canonical_content_objects=None, passage_search=None):
@@ -21,17 +24,62 @@ def execute_skill_graph(task_input, plan, *, llm_client=None, canonical_content_
     verification_cache = {}
     evidence_traces = []
     repair_history = []
+    citation_cache = {}
+
+    def citation_key(section, inputs):
+        return json.dumps({"section": section,
+            "chapter": [chapter for chapter in inputs["chapter_plan"] if chapter["heading"] == section["heading"]],
+            "materials": inputs["material_passages"],
+            "assignments": [pack for pack in inputs["section_materials"] if pack["heading"] == section["heading"]]},
+            sort_keys=True, ensure_ascii=False)
+
+    def cite(inputs, node=None):
+        result = cite_sections(inputs, llm_client)
+        for section, assignment in zip(result.output["sections"], result.output["citation_assignments"]):
+            citation_cache[citation_key(section, inputs)] = (deepcopy(section), deepcopy(assignment))
+        return result
+
+    def synchronize_sectioned(inputs):
+        steps = []
+        changed = [section for section in inputs["sections"] if citation_key(section, inputs) not in citation_cache]
+        if changed:
+            headings = {section["heading"] for section in changed}
+            scoped = {**inputs, "sections": changed,
+                "chapter_plan": [chapter for chapter in inputs["chapter_plan"] if chapter["heading"] in headings]}
+            result = cite(scoped)
+            steps.extend(result.trace["steps"])
+            updated = {section["heading"]: section for section in result.output["sections"]}
+            inputs["sections"] = [deepcopy(updated.get(section["heading"], section)) for section in inputs["sections"]]
+            # 子集执行时缓存键使用子集计划；完整视图下仍以真实单章规划作为标识。
+        sections, assignments = [], []
+        for section in inputs["sections"]:
+            cached_section, assignment = citation_cache[citation_key(section, inputs)]
+            sections.append(deepcopy(cached_section))
+            assignments.append(deepcopy(assignment))
+        inputs.update(sections=sections, citation_assignments=assignments)
+        digest = document_content_digest(sections)
+        if inputs["consistency_trace"].get("checked_content_digest") != digest:
+            result = check_document_consistency(inputs, llm_client, repair=False)
+            inputs["consistency_trace"] = result.output["consistency_trace"]
+            steps.extend(result.trace["steps"])
+        return steps
 
     def checked(inputs):
+        auxiliary = synchronize_sectioned(inputs) if plan.generation_mode == "SECTIONED" else []
         key = json.dumps({name: inputs.get(name) for name in (
-            "sections", "material_passages", "section_materials", "normalized_facts", "bullets")},
+            "sections", "material_passages", "section_materials", "normalized_facts", "bullets",
+            "citation_assignments", "consistency_trace")},
             sort_keys=True, ensure_ascii=False)
         if key in verification_cache:
-            return {**deepcopy(verification_cache[key]), "llm_calls": 0, "execution_traces": [], "cached": True,
+            return {**deepcopy(verification_cache[key]),
+                    "llm_calls": sum(step.get("llm_calls", 0) for step in auxiliary),
+                    "execution_traces": auxiliary, "cached": True,
                     "repair_rounds": deepcopy(repair_history)}
         verdict = verify_draft(inputs, task_input, plan, llm_client)
         verification_cache[key] = deepcopy(verdict)
         evidence_traces.extend(verdict["execution_traces"])
+        verdict["llm_calls"] += sum(step.get("llm_calls", 0) for step in auxiliary)
+        verdict["execution_traces"] = [*auxiliary, *verdict["execution_traces"]]
         verdict["repair_rounds"] = deepcopy(repair_history)
         return verdict
 
@@ -54,11 +102,22 @@ def execute_skill_graph(task_input, plan, *, llm_client=None, canonical_content_
         return {"material_passages": passages, "section_materials": assigned, "retrieval_trace": trace}
 
     def verify(inputs, node):
-        return {"verification": checked(inputs)}
+        verdict = checked(inputs)
+        result = {"verification": verdict}
+        if "citation_assignments" in node.output_schema["properties"]:
+            result.update({key: inputs[key] for key in ("sections", "citation_assignments", "consistency_trace")})
+        return result
 
     def repair(inputs, node):
         scoped = {**inputs, "verification": {**inputs["verification"], "repair_rounds": deepcopy(repair_history)}}
-        output = repair_failed_sections(scoped, llm_client=llm_client, verify=checked,
+        def recheck(repaired):
+            if plan.generation_mode == "SECTIONED":
+                failed = set(repaired["verification"].get("failed_sections", []))
+                for section in repaired["sections"]:
+                    if section["heading"] in failed:
+                        citation_cache.pop(citation_key(section, repaired), None)
+            return checked(repaired)
+        output = repair_failed_sections(scoped, llm_client=llm_client, verify=recheck,
                                        is_resume="normalized_facts" in inputs)
         repair_history[:] = deepcopy(output["repair_trace"]["rounds"])
         return output
@@ -68,6 +127,12 @@ def execute_skill_graph(task_input, plan, *, llm_client=None, canonical_content_
         raise ValueError(f"通用产物图未绑定可执行工具：{node.skill_key}")
 
     executor = NodeExecutor(llm_client, handlers={"RETRIEVE": retrieve, "VERIFY": verify, "REPAIR": repair, "TOOL": tool})
+    executor.llm_handlers.update({
+        "node.outline_planner.v1": lambda inputs, _node: plan_outline(inputs, llm_client),
+        "node.section_writer.v1": lambda inputs, _node: write_sections(inputs, llm_client),
+        "node.section_citer.v1": cite,
+        "node.document_consistency.v1": lambda inputs, _node: check_document_consistency(inputs, llm_client),
+    })
     def run_node(node):
         prior_rounds = len(repair_history)
         ensure_runtime_node_contract_registered(node, resolve_skill_definition(node.skill_key),
@@ -111,7 +176,7 @@ def execute_skill_graph(task_input, plan, *, llm_client=None, canonical_content_
         verification = final_check
         state["verification"] = verification
         if final_check.get("llm_calls", 0):
-            skill = "resume_verifier" if "normalized_facts" in state else "evidence_guard"
+            skill = "sectioned_verifier" if plan.generation_mode == "SECTIONED" else "resume_verifier" if "normalized_facts" in state else "evidence_guard"
             declaration = node_contract_for_skill(skill)
             traces.append(ArtifactSkillNodeTrace(node_id="final_verify", skill_key=skill,
                 node_kind="VERIFY", prompt_recipe_id=declaration["prompt_recipe_id"],
@@ -121,7 +186,7 @@ def execute_skill_graph(task_input, plan, *, llm_client=None, canonical_content_
                 execution_trace={"status": "COMPLETED", "steps": final_check["execution_traces"]}))
         if final_check["status"] == "FAIL" and len(final_check["repair_rounds"]) < 2 \
                 and state.get("repair_trace", {}).get("status") != "NOT_RUN":
-            skill = "resume_local_repair" if "normalized_facts" in state else "generic_section_repair"
+            skill = "sectioned_repair" if plan.generation_mode == "SECTIONED" else "resume_local_repair" if "normalized_facts" in state else "generic_section_repair"
             final_node = ArtifactSkillNodePlan(node_id="final_repair", skill_key=skill,
                 purpose="对后置变换的失败章节执行剩余修复轮次", **node_contract_for_skill(skill))
             run_node(final_node)
@@ -129,6 +194,7 @@ def execute_skill_graph(task_input, plan, *, llm_client=None, canonical_content_
             verification = checked(state)
             verification["repair_rounds"] = state["repair_trace"]["rounds"]
             state["verification"] = verification
+    sections = [ArtifactSectionDraft.model_validate(item) for item in state.get("sections", [])]
     if not sections or verification.get("status") == "FAIL":
         failure = {"status": "FAILED", "reason_code": "ARTIFACT_NODE_CONTRACT_FAILED",
             "failed_checks": verification.get("failed_checks", []),
@@ -143,8 +209,10 @@ def execute_skill_graph(task_input, plan, *, llm_client=None, canonical_content_
         "model": getattr(llm_client, "model_name", "unknown"), "attempted": bool(purposes), "applied": True,
         "generated_section_count": len(sections), "source_count": len(state.get("material_passages", [])),
         "llm_calls": total_calls, "purposes": purposes,
+        "generation_mode": plan.generation_mode,
         "retrieval": state.get("retrieval_trace", {}),
-        "state": {key: state[key] for key in ("facts", "normalized_facts", "bullets", "verification", "repair_trace") if key in state}}
+        "state": {key: state[key] for key in ("facts", "normalized_facts", "bullets", "verification", "repair_trace",
+            "chapter_plan", "citation_assignments", "consistency_trace") if key in state}}
     return sections, traces, generation_trace
 
 
@@ -169,6 +237,8 @@ def _markdown(sections):
 
 
 def _verification_state(node, output):
+    if node.prompt_recipe_id == "node.document_consistency.v1":
+        return output["consistency_trace"]["status"], ["全文术语与重复段落检查"]
     if node.node_kind == "VERIFY":
         verdict = output["verification"]
         checks = [check.get("detail", "") for check in verdict.get("checks", []) if check.get("detail")]

@@ -18,7 +18,11 @@ final class ArtifactNodeGraphPublicationPolicy {
             "prompt_recipe_id", "input_schema", "output_schema");
     private static final Set<String> STATE_FIELDS = Set.of(
             "generation_context", "material_passages", "section_materials", "facts", "normalized_facts",
-            "bullets", "sections", "verification", "retrieval_trace", "repair_trace");
+            "bullets", "sections", "verification", "retrieval_trace", "repair_trace",
+            "chapter_plan", "citation_assignments", "consistency_trace");
+    private static final List<String> SECTIONED_SKILLS = List.of(
+            "workspace_material_digest", "outline_planner", "section_writer", "document_consistency",
+            "section_citer", "sectioned_verifier", "sectioned_repair");
     private static final Map<String, String> SKILL_KINDS = Map.ofEntries(
             Map.entry("workspace_material_digest", "RETRIEVE"),
             Map.entry("resume_highlight_extractor", "LLM_STEP"),
@@ -26,6 +30,9 @@ final class ArtifactNodeGraphPublicationPolicy {
             Map.entry("resume_bullet_writer", "LLM_STEP"),
             Map.entry("resume_verifier", "VERIFY"), Map.entry("resume_local_repair", "REPAIR"),
             Map.entry("generic_section_repair", "REPAIR"),
+            Map.entry("outline_planner", "LLM_STEP"), Map.entry("section_writer", "LLM_STEP"),
+            Map.entry("section_citer", "LLM_STEP"), Map.entry("document_consistency", "LLM_STEP"),
+            Map.entry("sectioned_verifier", "VERIFY"), Map.entry("sectioned_repair", "REPAIR"),
             Map.entry("generic_section_writer", "LLM_STEP"), Map.entry("quiz_designer", "LLM_STEP"),
             Map.entry("quiz_difficulty_normalizer", "LLM_STEP"), Map.entry("wiki_structure_enforcer", "LLM_STEP"),
             Map.entry("style_polisher", "LLM_STEP"), Map.entry("evidence_guard", "VERIFY"),
@@ -33,6 +40,11 @@ final class ArtifactNodeGraphPublicationPolicy {
             Map.entry("frozen_video_deriver", "TOOL"));
 
     static void validate(Object graphKey, Object rawDefinition, Object rawContract) {
+        validate(graphKey, rawDefinition, rawContract, "SINGLE");
+    }
+
+    static void validate(Object graphKey, Object rawDefinition, Object rawContract, String generationMode) {
+        require(generationMode != null && Set.of("SINGLE", "SECTIONED").contains(generationMode));
         Map<?, ?> graph = object(rawDefinition);
         require(graph.keySet().equals(GRAPH_FIELDS) && graphKey.equals(graph.get("graph_key")));
         require(graph.get("graph_name") instanceof String name && !name.isBlank());
@@ -87,9 +99,38 @@ final class ArtifactNodeGraphPublicationPolicy {
             }
         }
         require(visited == nodes.size());
+        validateGenerationMode(generationMode, nodes, adjacency);
         Map<?, ?> contract = object(rawContract);
         for (Object rule : array(contract.get("rules"))) {
             require(ids.contains(String.valueOf(object(rule).get("backtrack_to"))));
+        }
+    }
+
+    private static void validateGenerationMode(String mode, List<?> nodes, Map<String, List<String>> adjacency) {
+        Map<String, String> ids = new HashMap<>();
+        Map<String, Integer> counts = new HashMap<>();
+        for (Object raw : nodes) {
+            Map<?, ?> node = object(raw);
+            String skill = String.valueOf(node.get("skill_key"));
+            counts.merge(skill, 1, Integer::sum);
+            ids.put(skill, String.valueOf(node.get("node_id")));
+        }
+        if ("SINGLE".equals(mode)) {
+            require(SECTIONED_SKILLS.subList(1, SECTIONED_SKILLS.size()).stream().noneMatch(ids::containsKey));
+            return;
+        }
+        require(SECTIONED_SKILLS.stream().allMatch(skill -> counts.getOrDefault(skill, 0) == 1));
+        for (int index = 0; index < SECTIONED_SKILLS.size() - 1; index++) {
+            String from = ids.get(SECTIONED_SKILLS.get(index));
+            String to = ids.get(SECTIONED_SKILLS.get(index + 1));
+            ArrayDeque<String> pending = new ArrayDeque<>();
+            Set<String> visited = new HashSet<>();
+            pending.add(from);
+            while (!pending.isEmpty()) {
+                String current = pending.remove();
+                if (visited.add(current)) pending.addAll(adjacency.get(current));
+            }
+            require(visited.contains(to));
         }
     }
 

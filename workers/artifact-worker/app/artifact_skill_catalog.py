@@ -14,9 +14,42 @@ _ENTRY_FIELDS = {
     "capability_allowlist", "action_key", "output_contract", "graph_definition",
 }
 # presentation 是前端卡片的展示信息；definition 让新产物只在目录里声明动作和提示词配方
-_OPTIONAL_FIELDS = {"presentation", "definition"}
+_OPTIONAL_FIELDS = {"presentation", "definition", "generation_mode"}
 _FILE_ROLES = {"PRIMARY_MARKDOWN", "PRIMARY_PDF", "PRIMARY_PPTX", "SOURCE_MD", "SLIDE_PREVIEW"}
-_CATALOG_GRAPHS = {"generic_artifact_v1"}
+_CATALOG_GRAPHS = {"generic_artifact_v1", "sectioned_artifact_v1"}
+_SECTIONED_SKILLS = (
+    "workspace_material_digest", "outline_planner", "section_writer", "document_consistency",
+    "section_citer", "sectioned_verifier", "sectioned_repair",
+)
+
+
+def _validate_generation_mode(entry, graph):
+    mode = entry.get("generation_mode", "SINGLE")
+    if not isinstance(mode, str) or mode not in {"SINGLE", "SECTIONED"}:
+        raise ValueError("产物生成模式必须是 SINGLE 或 SECTIONED")
+    sectioned = set(_SECTIONED_SKILLS[1:])
+    if mode == "SINGLE":
+        if any(node.skill_key in sectioned for node in graph.nodes):
+            raise ValueError("单次生成模式不能使用按章节生成图")
+        return
+    ids = {}
+    for skill in _SECTIONED_SKILLS:
+        matches = [node.node_id for node in graph.nodes if node.skill_key == skill]
+        if len(matches) != 1:
+            raise ValueError("按章节生成图必须包含唯一的规划、写作、一致性、引用、验证和修复节点")
+        ids[skill] = matches[0]
+    adjacency = {node.node_id: [] for node in graph.nodes}
+    for edge in graph.edges:
+        adjacency[edge.from_node].append(edge.to_node)
+    for previous, following in zip(_SECTIONED_SKILLS, _SECTIONED_SKILLS[1:]):
+        pending, visited = [ids[previous]], set()
+        while pending:
+            node_id = pending.pop()
+            if node_id not in visited:
+                visited.add(node_id)
+                pending.extend(adjacency[node_id])
+        if ids[following] not in visited:
+            raise ValueError("按章节生成图的必需节点依赖顺序不正确")
 
 
 def _published_graph(entry):
@@ -61,6 +94,7 @@ def _published_graph(entry):
                 raise ValueError("专用视频节点与冻结执行契约不一致")
     else:
         _validate_skill_graph_template(graph)
+    _validate_generation_mode(entry, graph)
     return graph
 
 
@@ -254,3 +288,12 @@ def resolve_output_contract(skill_key, action_key):
     if entry is None:
         entry = next((e for e in _CATALOG["skills"] if e["action_key"] == action_key), None)
     return deepcopy(entry["output_contract"]) if entry else {}
+
+
+def resolve_generation_mode(skill_key, action_key=""):
+    """执行计划使用目录策略；历史或自定义动作缺少策略时保留单次生成。"""
+    canonical = _resolve_canonical_skill_key(skill_key)
+    entry = next((e for e in _CATALOG["skills"] if e["skill_key"] == canonical), None)
+    if entry is None:
+        entry = next((e for e in _CATALOG["skills"] if e["action_key"] == action_key), None)
+    return str(entry.get("generation_mode", "SINGLE")) if entry else "SINGLE"

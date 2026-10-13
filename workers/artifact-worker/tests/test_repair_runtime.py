@@ -16,8 +16,8 @@ def task():
     return ArtifactTaskInput.model_validate({
         "task_id": "repair-task", "workspace_id": "workspace", "target_id": "artifact",
         "source_scope": [{"source_id": "source", "title": "报告", "sample_text": "延迟降低 20%。"}],
-        "control_pack": {"pack_type": "artifact", "target_key": "study_guide", "task_neighborhood": "ARTIFACT"},
-        "input_payload": {"skill_key": "study_guide", "user_requirement": "依据资料解释设计与局限"}})
+        "control_pack": {"pack_type": "artifact", "target_key": "report_draft", "task_neighborhood": "ARTIFACT"},
+        "input_payload": {"skill_key": "report_draft", "user_requirement": "依据资料解释设计与局限"}})
 
 
 class RepairProvider:

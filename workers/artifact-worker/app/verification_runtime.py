@@ -64,18 +64,40 @@ def verify_draft(inputs, task, plan, llm_client):
             failed.append(str(exc))
             affected.extend(s.heading for s in sections)
     density = plan.declared_output_contract.get("citation", {}).get("density", "PER_SECTION")
-    evidence = verify_statement_support(raw_sections, passages, llm_client=llm_client,
-        citation_density=density, section_materials=inputs.get("section_materials"))
+    semantic_sections = raw_sections
+    if "citation_assignments" in inputs:
+        assignments = {row["heading"]: row["chunk_ids"] for row in inputs["citation_assignments"]}
+        semantic_sections = [{**section, "source_refs": assignments.get(section["heading"], [])}
+            for section in raw_sections]
+    evidence = verify_statement_support(semantic_sections, passages, llm_client=llm_client,
+        citation_density=density, section_materials=inputs.get("section_materials"),
+        citation_ref_kind="CHUNK" if "citation_assignments" in inputs else "AUTO")
     affected.extend(section["heading"] for section in evidence["sections"]
                     if section["support"] != "SUPPORTED" and density == "PER_SECTION")
     contract_failed = bool(failed)
     failed.extend(evidence["failed_checks"])
     warnings.extend(evidence["warnings"])
+    other_affected = set(affected)
+    paragraph_constraints = {}
+    consistency = inputs.get("consistency_trace")
+    if consistency is not None and consistency.get("status") != "PASS":
+        for issue in consistency.get("issues", []):
+            index, position = issue["section_index"], issue["paragraph_index"]
+            heading = sections[index].heading
+            failed.append(f"章节 {heading} 的段落 {position + 1} 全文一致性检查失败：{issue['detail']}")
+            affected.append(heading)
+            if heading not in other_affected:
+                paragraph_constraints.setdefault(heading, []).append(position)
+        if not consistency.get("issues"):
+            failed.append("全文一致性判断未完成，不能提交产物")
+            affected.extend(section.heading for section in sections)
+        contract_failed = True
     return {"status": "FAIL" if failed else "WARN" if warnings else "PASS",
         "statement_verification_version": "artifact-statement-verification.v1", "verification_mode": "TYPED_GRAPH_STATEMENTS",
         "contract_status": "FAIL" if contract_failed else "PASS", "evidence_status": evidence["status"],
         "failed_checks": failed, "warnings": warnings, "failed_sections": list(dict.fromkeys(affected)),
         "backtrack_nodes": list(dict.fromkeys(backtrack)), "repair_rounds": [],
+        "paragraph_constraints": paragraph_constraints,
         "missing_sections": missing,
         "checks": [check.model_dump(mode="json") for check in checks],
         **{key: evidence[key] for key in ("sections", "citation_recall", "citation_precision", "llm_calls", "execution_traces")}}

@@ -54,6 +54,27 @@ class ContractArtifactTestProvider:
         context = raw_context if isinstance(raw_context, dict) else {}
         raw_passages = inputs.get("material_passages")
         passages = raw_passages if isinstance(raw_passages, list) else []
+        if purpose == "artifact.node.outline_planner":
+            packs = {pack["heading"]: pack for pack in inputs["section_materials"]}
+            return json.dumps({"chapter_plan": [
+                {"section_id": f"section-{index + 1}", "heading": heading,
+                 "key_points": [context.get("goal") or "依据本章原文组织正文。"],
+                 "chunk_ids": [item["chunk_id"] for item in packs[heading]["passages"]
+                               if item.get("selected_chars", 1) > 0]}
+                for index, heading in enumerate(context["outline"])
+            ]}, ensure_ascii=False)
+        if purpose == "artifact.node.section_citer":
+            return json.dumps({"citation_assignment": {"heading": inputs["section"]["heading"],
+                               "chunk_ids": [passage["chunk_id"] for passage in passages]}},
+                              ensure_ascii=False)
+        if purpose == "artifact.node.document_consistency":
+            return '{"issues": []}'
+        if purpose == "artifact.node.paragraph_reviser":
+            return json.dumps({"patches": [
+                {"section_index": paragraph["section_index"],
+                 "paragraph_index": paragraph["paragraph_index"], "text": paragraph["text"]}
+                for paragraph in inputs["problem_paragraphs"]
+            ]}, ensure_ascii=False)
         if purpose == "artifact.node.statement_support_judge":
             return _statement_assessments(inputs)
         if purpose == "artifact.node.section_repair":
@@ -100,6 +121,9 @@ class ContractArtifactTestProvider:
             if isinstance(raw_outline, list)
             else []
         ) or ["Generated artifact"]
+        global_outline = list(outline)
+        if purpose == "artifact.node.section_writer":
+            outline = [inputs["chapter"]["heading"]]
         body_parts = [
             str(payload.get("user_requirement", "")).strip(),
             str(payload.get("goal", "")).strip(),
@@ -127,7 +151,8 @@ class ContractArtifactTestProvider:
         generation_mode = str(recipe.get("generation_mode", "")).strip().upper()
 
         sections: list[dict[str, object]] = []
-        for index, heading in enumerate(outline):
+        for position, heading in enumerate(outline):
+            index = global_outline.index(heading) if heading in global_outline else position
             body = grounded_body
             guidance = str(section_guidance.get(heading, "")).strip()
             if guidance:
@@ -143,7 +168,7 @@ class ContractArtifactTestProvider:
                 )
                 if first_node_guidance:
                     body = f"{body}\n\n节点侧重：{first_node_guidance}"
-            if recipe.get("recipe_id") == "wiki_page_writer_v1" and index == len(outline) - 1:
+            if recipe.get("recipe_id") == "wiki_page_writer_v1" and index == len(global_outline) - 1:
                 body = "\n".join([
                     *[f"- {title}：对照原文资料。" for title in source_titles],
                     "- 来源索引：保留资料引用以便复核。", "", body,
@@ -158,7 +183,7 @@ class ContractArtifactTestProvider:
                         body,
                     ]
                 )
-            if generation_mode == "QUIZ_SYNTHESIS" and index == len(outline) - 1:
+            if generation_mode == "QUIZ_SYNTHESIS" and index == len(global_outline) - 1:
                 body = "\n".join(
                     [
                         "- 基础：准确复述资料中的直接信息。",
@@ -174,9 +199,11 @@ class ContractArtifactTestProvider:
                 {
                     "heading": heading,
                     "body": body,
-                    "source_refs": source_titles,
+                    "source_refs": [] if purpose == "artifact.node.section_writer" else source_titles,
                 }
             )
+        if purpose == "artifact.node.section_writer":
+            return json.dumps({"section": sections[0]}, ensure_ascii=False)
         return json.dumps(
             {"sections": sections},
             ensure_ascii=False,

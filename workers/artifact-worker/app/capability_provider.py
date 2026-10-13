@@ -69,7 +69,7 @@ _BUILTIN_PROVIDER_CANDIDATE_CATALOG = [
         "mapping_source": "capability_mapping",
         "supported_routes": ["WEB_URL", "VIDEO_URL"],
         "supported_actions": ["REPORT", "QUIZ", "STUDY_GUIDE", "WIKI_PAGE"],
-        "supported_skill_graphs": ["generic_artifact_v1"],
+        "supported_skill_graphs": ["generic_artifact_v1", "sectioned_artifact_v1"],
         "preference_rank": 200,
     },
     {
@@ -237,7 +237,7 @@ _BUILTIN_PROVIDER_CANDIDATE_CATALOG = [
         "mapping_source": "builtin_mapping",
         "supported_routes": ["*"],
         "supported_actions": ["*"],
-        "supported_skill_graphs": ["generic_artifact_v1"],
+        "supported_skill_graphs": ["generic_artifact_v1", "sectioned_artifact_v1"],
         "preference_rank": 100,
     },
     {
@@ -251,7 +251,7 @@ _BUILTIN_PROVIDER_CANDIDATE_CATALOG = [
         "mapping_source": "builtin_mapping",
         "supported_routes": ["*"],
         "supported_actions": ["*"],
-        "supported_skill_graphs": ["generic_artifact_v1"],
+        "supported_skill_graphs": ["generic_artifact_v1", "sectioned_artifact_v1"],
         "preference_rank": 100,
     },
 ]

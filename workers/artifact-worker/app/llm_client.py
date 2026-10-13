@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import urllib.error
 import urllib.request
 from typing import Protocol
@@ -105,6 +106,8 @@ class OpenAICompatibleLlmClient:
         self.max_total_calls = max(0, max_total_calls)
         self.call_records = []
         self.prior_call_count = 0
+        self._usage_lock = threading.RLock()
+        self._thread_usage = threading.local()
         self.api_key = api_key
         self.model_name = model
         self.base_url = (base_url.strip() or "https://api.openai.com/v1").rstrip("/")
@@ -146,10 +149,13 @@ class OpenAICompatibleLlmClient:
             "Return only valid JSON with a sections array; every section must contain "
             "heading, body, and source_refs. source_refs may only use supplied source titles."
         )
-        if self.prior_call_count + len(self.call_records) >= self.max_total_calls:
-            return ""
-        record = {"purpose": purpose, "status": "REQUESTED"}
-        self.call_records.append(record)
+        # 预算检查与请求预留必须同时完成，网络请求在锁外并发执行。
+        with self._usage_lock:
+            if self.prior_call_count + len(self.call_records) >= self.max_total_calls:
+                return ""
+            record = {"purpose": purpose, "status": "REQUESTED"}
+            self.call_records.append(record)
+            self._thread_usage.call_count = self.current_thread_call_count() + 1
         try:
             completion = self.client.chat.completions.create(
                 model=self.model_name,
@@ -173,13 +179,15 @@ class OpenAICompatibleLlmClient:
                 response_format={"type": "json_object"},
             )
         except (OpenAIError, ValueError) as exc:
-            record["status"] = "FAILED"
+            with self._usage_lock:
+                record["status"] = "FAILED"
             logger.warning("Artifact LLM completion failed for %s: %s", purpose, exc)
             return ""
-        record["status"] = "COMPLETED"
         usage = getattr(completion, "usage", None)
-        record["input_tokens"] = int(getattr(usage, "prompt_tokens", 0) or 0)
-        record["output_tokens"] = int(getattr(usage, "completion_tokens", 0) or 0)
+        with self._usage_lock:
+            record["status"] = "COMPLETED"
+            record["input_tokens"] = int(getattr(usage, "prompt_tokens", 0) or 0)
+            record["output_tokens"] = int(getattr(usage, "completion_tokens", 0) or 0)
         choices = getattr(completion, "choices", None)
         if not isinstance(choices, list) or not choices:
             return ""
@@ -190,13 +198,19 @@ class OpenAICompatibleLlmClient:
 
 
     def usage_summary(self):
-        return {"current_call_count": len(self.call_records), "prior_call_count": self.prior_call_count,
-                "call_count": self.prior_call_count + len(self.call_records), "max_total_calls": self.max_total_calls,
-                "input_tokens": sum(c.get("input_tokens", 0) for c in self.call_records),
-                "output_tokens": sum(c.get("output_tokens", 0) for c in self.call_records), "calls": list(self.call_records)}
+        with self._usage_lock:
+            records = [dict(record) for record in self.call_records]
+            return {"current_call_count": len(records), "prior_call_count": self.prior_call_count,
+                    "call_count": self.prior_call_count + len(records), "max_total_calls": self.max_total_calls,
+                    "input_tokens": sum(c.get("input_tokens", 0) for c in records),
+                    "output_tokens": sum(c.get("output_tokens", 0) for c in records), "calls": records}
+
+    def current_thread_call_count(self):
+        return getattr(self._thread_usage, "call_count", 0)
 
     def reserve_prior_calls(self, count):
-        self.prior_call_count = max(0, int(count))
+        with self._usage_lock:
+            self.prior_call_count = max(0, int(count))
 
 
 def build_default_llm_client() -> LlmClient | None:

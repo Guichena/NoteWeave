@@ -64,6 +64,12 @@ from app.main import (
 )
 
 
+_SECTIONED_NODE_SKILLS = [
+    "workspace_material_digest", "outline_planner", "section_writer",
+    "document_consistency", "section_citer", "sectioned_verifier", "sectioned_repair",
+]
+
+
 def _build_task_input(
     *,
     task_id: str,
@@ -1210,22 +1216,10 @@ def test_run_artifact_task_should_generate_quiz_artifact() -> None:
     assert result.version_snapshot.artifact_type == "QUIZ"
     assert result.result_payload["execution_plan"]["skill_graph_key"] == "quiz_artifact_v1"
     assert result.result_payload["runtime_plan"]["graph_key"] == "quiz_artifact_v1"
-    assert result.result_payload["runtime_plan"]["activated_nodes"] == [
-        "workspace_material_digest",
-        "quiz_designer",
-        "quiz_difficulty_normalizer",
-        "evidence_guard",
-        "generic_section_repair",
-    ]
+    assert result.result_payload["runtime_plan"]["activated_nodes"] == _SECTIONED_NODE_SKILLS
     assert result.result_payload["execution_plan"]["prompt_recipe"]["recipe_id"] == "quiz_writer_v1"
     assert result.result_payload["verification"]["status"] == "PASS"
-    assert [trace["skill_key"] for trace in result.result_payload["node_traces"]] == [
-        "workspace_material_digest",
-        "quiz_designer",
-        "quiz_difficulty_normalizer",
-        "evidence_guard",
-        "generic_section_repair",
-    ]
+    assert [trace["skill_key"] for trace in result.result_payload["node_traces"]] == _SECTIONED_NODE_SKILLS
     assert len(result.result_payload["context_pack"]["output_contract"]) == 4
     assert result.result_payload["approval_trace"]["status"] == "NOT_REQUIRED"
     assert result.result_payload["evidence_coverage"]["covered_section_count"] == 4
@@ -1255,22 +1249,22 @@ def test_run_artifact_task_should_generate_quiz_artifact() -> None:
     quiz_design_trace = next(
         trace
         for trace in result.result_payload["node_traces"]
-        if trace["skill_key"] == "quiz_designer"
+        if trace["node_id"] == "design"
     )
     quiz_normalize_trace = next(
         trace
         for trace in result.result_payload["node_traces"]
-        if trace["skill_key"] == "quiz_difficulty_normalizer"
+        if trace["skill_key"] == "document_consistency"
     )
     assert quiz_design_trace["verification_status"] == "PASS"
-    assert quiz_design_trace["purpose"] == "artifact.node.quiz_designer"
-    assert quiz_design_trace["llm_calls"] == 1
+    assert quiz_design_trace["purpose"] == "artifact.node.section_writer"
+    assert quiz_design_trace["llm_calls"] == 4
     assert quiz_normalize_trace["verification_status"] == "PASS"
-    assert quiz_normalize_trace["purpose"] == "artifact.node.quiz_difficulty_normalizer"
+    assert quiz_normalize_trace["purpose"] == "artifact.node.document_consistency"
     assert quiz_normalize_trace["llm_calls"] == 1
 
 
-def test_run_artifact_task_should_generate_wiki_page_artifact_with_wiki_structure_enforcer() -> None:
+def test_run_artifact_task_should_generate_wiki_page_with_independent_citation_step() -> None:
     task_input = _build_generic_task_input("wiki_page", style_profile_key="wiki")
 
     _, result = run_artifact_task(task_input)
@@ -1278,13 +1272,7 @@ def test_run_artifact_task_should_generate_wiki_page_artifact_with_wiki_structur
     assert result.job_snapshot.action_key == "WIKI_PAGE"
     assert result.version_snapshot.artifact_type == "WIKI_PAGE"
     assert result.result_payload["execution_plan"]["skill_graph_key"] == "wiki_artifact_v1"
-    assert [trace["skill_key"] for trace in result.result_payload["node_traces"]] == [
-        "workspace_material_digest",
-        "generic_section_writer",
-        "wiki_structure_enforcer",
-        "evidence_guard",
-        "generic_section_repair",
-    ]
+    assert [trace["skill_key"] for trace in result.result_payload["node_traces"]] == _SECTIONED_NODE_SKILLS
     related_pages_section = next(
         section
         for section in result.result_payload["sections"]
@@ -1297,10 +1285,11 @@ def test_run_artifact_task_should_generate_wiki_page_artifact_with_wiki_structur
     wiki_trace = next(
         trace
         for trace in result.result_payload["node_traces"]
-        if trace["skill_key"] == "wiki_structure_enforcer"
+        if trace["skill_key"] == "section_citer"
     )
     assert wiki_trace["verification_status"] == "PASS"
-    assert wiki_trace["purpose"] == "artifact.node.wiki_structure_enforcer"
+    assert wiki_trace["purpose"] == "artifact.node.section_citer"
+    assert wiki_trace["llm_calls"] == 3
     assert wiki_trace["repair_actions"] == []
     assert wiki_trace["repaired"] is False
 
@@ -1338,6 +1327,9 @@ def test_build_execution_plan_should_support_multiple_default_actions(
         assert plan.skill_graph_key == "quiz_artifact_v1"
     elif action_key == "wiki_page":
         assert plan.skill_graph_key == "wiki_artifact_v1"
+    elif action_key == "study_guide":
+        assert plan.skill_graph_key == "sectioned_artifact_v1"
+        assert plan.generation_mode == "SECTIONED"
     else:
         assert plan.skill_graph_key == "generic_artifact_v1"
     assert plan.outline == expected_outline
@@ -1349,22 +1341,13 @@ def test_build_execution_plan_should_support_multiple_default_actions(
     else:
         assert plan.approval_gate.decision == "NOT_REQUIRED"
     if action_key == "quiz":
-        assert [node.skill_key for node in plan.node_sequence] == [
-            "workspace_material_digest",
-            "quiz_designer",
-            "quiz_difficulty_normalizer",
-            "evidence_guard",
-            "generic_section_repair",
-        ]
+        assert [node.skill_key for node in plan.node_sequence] == _SECTIONED_NODE_SKILLS
     elif action_key == "wiki_page":
-        assert [node.skill_key for node in plan.node_sequence] == [
-            "workspace_material_digest",
-            "generic_section_writer",
-            "wiki_structure_enforcer",
-            "evidence_guard",
-            "generic_section_repair",
-        ]
+        assert [node.skill_key for node in plan.node_sequence] == _SECTIONED_NODE_SKILLS
+    elif action_key == "study_guide":
+        assert [node.skill_key for node in plan.node_sequence] == _SECTIONED_NODE_SKILLS
     else:
+        assert plan.generation_mode == "SINGLE"
         assert [node.skill_key for node in plan.node_sequence] == [
             "workspace_material_digest",
             "generic_section_writer",
@@ -1386,13 +1369,7 @@ def test_build_execution_plan_should_support_quiz_default_action() -> None:
     assert len(plan.outline) == 4
     assert plan.approval_gate.decision == "NOT_REQUIRED"
     assert "READ_WORKSPACE_DOC" in plan.lazy_loaded_capabilities
-    assert [node.skill_key for node in plan.node_sequence] == [
-        "workspace_material_digest",
-        "quiz_designer",
-        "quiz_difficulty_normalizer",
-        "evidence_guard",
-        "generic_section_repair",
-    ]
+    assert [node.skill_key for node in plan.node_sequence] == _SECTIONED_NODE_SKILLS
 
 
 def test_build_execution_plan_should_support_wiki_page_default_action() -> None:
@@ -1405,13 +1382,7 @@ def test_build_execution_plan_should_support_wiki_page_default_action() -> None:
     assert plan.skill_graph_key == "wiki_artifact_v1"
     assert plan.prompt_recipe.recipe_id == "wiki_page_writer_v1"
     assert plan.prompt_recipe.generation_mode == "SECTION_SYNTHESIS"
-    assert [node.skill_key for node in plan.node_sequence] == [
-        "workspace_material_digest",
-        "generic_section_writer",
-        "wiki_structure_enforcer",
-        "evidence_guard",
-        "generic_section_repair",
-    ]
+    assert [node.skill_key for node in plan.node_sequence] == _SECTIONED_NODE_SKILLS
 
 
 def test_build_execution_plan_should_adapt_mixed_sources_into_fusion_plan() -> None:
@@ -1719,22 +1690,10 @@ def test_run_artifact_task_should_generate_multiple_default_artifacts(
     assert result.result_payload["capability_resolution"]["resolved_bindings"]
     if action_key == "quiz":
         assert result.result_payload["execution_plan"]["skill_graph_key"] == "quiz_artifact_v1"
-        assert [trace["skill_key"] for trace in result.result_payload["node_traces"]] == [
-            "workspace_material_digest",
-            "quiz_designer",
-            "quiz_difficulty_normalizer",
-            "evidence_guard",
-            "generic_section_repair",
-        ]
+        assert [trace["skill_key"] for trace in result.result_payload["node_traces"]] == _SECTIONED_NODE_SKILLS
     elif action_key == "wiki_page":
         assert result.result_payload["execution_plan"]["skill_graph_key"] == "wiki_artifact_v1"
-        assert [trace["skill_key"] for trace in result.result_payload["node_traces"]] == [
-            "workspace_material_digest",
-            "generic_section_writer",
-            "wiki_structure_enforcer",
-            "evidence_guard",
-            "generic_section_repair",
-        ]
+        assert [trace["skill_key"] for trace in result.result_payload["node_traces"]] == _SECTIONED_NODE_SKILLS
     assert result.result_payload["context_pack"]["output_contract"] == expected_headings
     assert result.result_payload["capability_union_trace"]["status"] == "ALLOW"
     assert result.result_payload["capability_union_trace"]["decision"] == "ALLOW"
@@ -1809,7 +1768,7 @@ def test_run_artifact_task_should_emit_card_web_and_mixed_context_ccos() -> None
     assert web_binding["tool_name"] == "read_article_page"
     assert web_binding["selection_reason"] == "action_skill_graph_preferred_provider"
     assert web_binding["action_basis"] == "STUDY_GUIDE"
-    assert web_binding["skill_graph_basis"] == "generic_artifact_v1"
+    assert web_binding["skill_graph_basis"] == "sectioned_artifact_v1"
 
 
 def test_run_artifact_task_should_emit_acquisition_receipt_with_provider_provenance() -> None:
@@ -3008,20 +2967,8 @@ def test_debug_skill_registries_should_expose_default_catalogs() -> None:
     assert "action_type" not in quiz_graph
     assert "action_type" not in wiki_graph
     assert len(generic_graph["nodes"]) >= 3
-    assert [node["skill_key"] for node in quiz_graph["nodes"]] == [
-        "workspace_material_digest",
-        "quiz_designer",
-        "quiz_difficulty_normalizer",
-        "evidence_guard",
-        "generic_section_repair",
-    ]
-    assert [node["skill_key"] for node in wiki_graph["nodes"]] == [
-        "workspace_material_digest",
-        "generic_section_writer",
-        "wiki_structure_enforcer",
-        "evidence_guard",
-        "generic_section_repair",
-    ]
+    assert [node["skill_key"] for node in quiz_graph["nodes"]] == _SECTIONED_NODE_SKILLS
+    assert [node["skill_key"] for node in wiki_graph["nodes"]] == _SECTIONED_NODE_SKILLS
 
 
 def test_debug_capability_bindings_should_expose_default_catalog() -> None:
@@ -3558,10 +3505,10 @@ def test_quiz_with_one_question_should_fail_without_count_backfill(monkeypatch: 
     class IncompleteQuizProvider(ContractArtifactTestProvider):
         def complete_json(self, purpose, payload):
             raw = super().complete_json(purpose, payload)
-            if purpose != "artifact.node.quiz_designer":
+            if purpose != "artifact.node.section_writer" or payload["inputs"]["chapter"]["heading"] != "题目设计":
                 return raw
             output = json.loads(raw)
-            next(section for section in output["sections"] if section["heading"] == "题目设计")["body"] = "1. 解释资料中的核心概念。"
+            output["section"]["body"] = "1. 解释资料中的核心概念。"
             return json.dumps(output, ensure_ascii=False)
 
     fake = IncompleteQuizProvider()

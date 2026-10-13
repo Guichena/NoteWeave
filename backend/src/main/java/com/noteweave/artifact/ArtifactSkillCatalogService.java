@@ -137,7 +137,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
             "description", "input_schema", "output_schema_ref", "graph_key", "prompt_recipe_id",
             "required_file_roles", "capability_allowlist", "action_key", "output_contract", "graph_definition");
     /** presentation 是展示信息；definition 让新产物只在目录里声明动作和提示词配方，由 Worker 加载。 */
-    private static final Set<String> OPTIONAL_ENTRY_FIELDS = Set.of("presentation", "definition");
+    private static final Set<String> OPTIONAL_ENTRY_FIELDS = Set.of("presentation", "definition", "generation_mode");
 
     static void validatePublishedEntry(Map<?, ?> entry, Map<?, ?> schema) {
         Set<String> fields = new java.util.HashSet<>();
@@ -160,7 +160,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         }
         ArtifactOutputContractPublicationPolicy.validate(entry.get("output_contract"));
         ArtifactNodeGraphPublicationPolicy.validate(
-                entry.get("graph_key"), entry.get("graph_definition"), entry.get("output_contract"));
+                entry.get("graph_key"), entry.get("graph_definition"), entry.get("output_contract"), generationMode(entry));
         Object required = schema.containsKey("required") ? schema.get("required") : List.of();
         if (!(required instanceof List<?> requiredKeys) || !properties.keySet().containsAll(requiredKeys)) {
             throw new IllegalStateException("published Skill has invalid required inputs");
@@ -172,6 +172,14 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
                 throw new IllegalStateException("unsupported published Skill input field");
             }
         }
+    }
+
+    private static String generationMode(Map<?, ?> entry) {
+        Object value = entry.containsKey("generation_mode") ? entry.get("generation_mode") : "SINGLE";
+        if (!(value instanceof String mode) || !Set.of("SINGLE", "SECTIONED").contains(mode)) {
+            throw new IllegalStateException("产物生成模式必须是 SINGLE 或 SECTIONED");
+        }
+        return mode;
     }
 
     private static boolean validPresentation(Object value) {
