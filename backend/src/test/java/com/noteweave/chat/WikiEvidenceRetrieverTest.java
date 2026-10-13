@@ -12,6 +12,7 @@ import com.noteweave.answer.strategy.AnswerMode;
 import com.noteweave.answer.strategy.EvidenceBundle;
 import com.noteweave.answer.strategy.RetrievalPlan;
 import com.noteweave.knowledge.KnowledgePageHit;
+import com.noteweave.knowledge.WikiResolvedLink;
 import com.noteweave.knowledge.WikiLexicalBoost;
 import com.noteweave.knowledge.WikiPageContext;
 import com.noteweave.knowledge.WikiRetrievalQueryPort;
@@ -186,6 +187,39 @@ class WikiEvidenceRetrieverTest {
                 .containsExactly("knowledge-version:version");
     }
 
+    @Test
+    void expandedPageCarriesTheTitlePathAndSeedPageDoesNot() {
+        WikiRetrievalSnapshotCodec codec =
+                new WikiRetrievalSnapshotCodec(new ObjectMapper().findAndRegisterModules());
+        WikiPageContext seed = scoredPage("item-a", "version-a", "Seed", 10);
+        WikiPageContext neighbor = new WikiPageContext(
+                new KnowledgePageHit("item-b", "version-b", 1, "Neighbor", "body", "near", 0),
+                List.of(), List.of(), List.of());
+        WikiEvidenceRetriever retriever = new WikiEvidenceRetriever(new GraphPort(seed, neighbor), codec);
+        RetrievalPlan.Step step = new RetrievalPlan.Step(WikiEvidenceRetriever.CHANNEL, 5, 1, Map.of());
+        RetrievalPlan plan = new RetrievalPlan(
+                "wiki-test-v1", AnswerMode.WIKI, List.of(step),
+                new RetrievalPlan.Budget(35, 20_000, 3, 30, 60, 4_000));
+
+        var result = retriever.retrieve(
+                new AnswerContext("workspace", "conversation", "message", "query",
+                        Set.of(), Map.of(), Instant.now()),
+                plan,
+                step);
+
+        assertThat(result.evidence()).extracting(EvidenceBundle.Evidence::knowledgeItemId)
+                .containsExactly("item-a", "item-b");
+        assertThat(result.evidence().get(0).metadata()).doesNotContainKey(WikiEvidenceRetriever.GRAPH_PATH_METADATA);
+        assertThat(codec.decodeGraphPath(result.evidence().get(1).metadata()
+                .get(WikiEvidenceRetriever.GRAPH_PATH_METADATA)))
+                .containsExactly("Seed", "Neighbor");
+        assertThat(result.measurements())
+                .containsEntry("graph_hops_used", 1L)
+                .containsEntry("graph_nodes_used", 1L)
+                .containsEntry("graph_edges_used", 1L)
+                .containsEntry("graph_characters_used", 4L);
+    }
+
     private WikiPageContext page(String itemId, String versionId, String title) {
         return scoredPage(itemId, versionId, title, 1);
     }
@@ -194,5 +228,48 @@ class WikiEvidenceRetrieverTest {
         return new WikiPageContext(
                 new KnowledgePageHit(itemId, versionId, 1, title, "content", "summary", score),
                 List.of(), List.of(), List.of());
+    }
+
+    private static final class GraphPort implements WikiRetrievalQueryPort {
+        private final WikiPageContext seed;
+        private final WikiPageContext neighbor;
+
+        private GraphPort(WikiPageContext seed, WikiPageContext neighbor) {
+            this.seed = seed;
+            this.neighbor = neighbor;
+        }
+
+        @Override
+        public List<WikiPageContext> findRelevantWikiPageContexts(String workspaceId, String query) {
+            return List.of(seed);
+        }
+
+        @Override
+        public List<String> citationIdsForWikiPages(String workspaceId, List<KnowledgePageHit> pages) {
+            return List.of();
+        }
+
+        @Override
+        public List<WikiResolvedLink> loadResolvedWikiLinks(String workspaceId, List<String> itemIds) {
+            if (itemIds == null || !itemIds.contains(seed.page().itemId())) {
+                return List.of();
+            }
+            return List.of(new WikiResolvedLink(
+                    seed.page().itemId(), neighbor.page().itemId(),
+                    seed.page().title(), neighbor.page().title(), 1));
+        }
+
+        @Override
+        public Map<String, Integer> loadWikiInDegrees(String workspaceId, List<String> itemIds) {
+            return Map.of(neighbor.page().itemId(), 1);
+        }
+
+        @Override
+        public List<WikiPageContext> loadWikiPagesByIds(String workspaceId, List<String> itemIds) {
+            if (itemIds != null && itemIds.contains(neighbor.page().itemId())) {
+                return List.of(neighbor);
+            }
+            return List.of();
+        }
     }
 }

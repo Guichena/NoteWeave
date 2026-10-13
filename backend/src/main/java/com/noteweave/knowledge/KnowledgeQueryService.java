@@ -5,13 +5,18 @@ import com.noteweave.research.ResearchGeneratedSourceReadGate;
 import com.noteweave.workspace.WorkspaceQueryPort;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -397,6 +402,145 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
                 where knowledge_version_id in (%s)
                 order by sort_order asc
                 """.formatted(placeholders), String.class, versionIds.toArray());
+    }
+
+    @Override
+    public List<WikiResolvedLink> loadResolvedWikiLinks(String workspaceId, List<String> itemIds) {
+        List<String> ids = distinctIds(itemIds);
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        String slots = placeholders(ids.size());
+        Object[] args = new Object[1 + ids.size() * 2];
+        args[0] = workspaceId;
+        for (int index = 0; index < ids.size(); index++) {
+            args[index + 1] = ids.get(index);
+            args[ids.size() + index + 1] = ids.get(index);
+        }
+        List<WikiResolvedLink> edges = jdbcTemplate.query("""
+                select l.source_item_id, l.target_item_id,
+                       coalesce(src.title, '') as source_title,
+                       coalesce(tgt.title, l.target_title) as target_title,
+                       l.mention_count
+                from knowledge_item_link l
+                left join knowledge_item src on src.id = l.source_item_id
+                left join knowledge_item tgt on tgt.id = l.target_item_id
+                where l.workspace_id = ?
+                  and l.relation_status = 'RESOLVED'
+                  and l.target_item_id is not null
+                  and (l.source_item_id in (%s) or l.target_item_id in (%s))
+                """.formatted(slots, slots), (rs, rowNum) -> new WikiResolvedLink(
+                rs.getString("source_item_id"),
+                rs.getString("target_item_id"),
+                rs.getString("source_title"),
+                rs.getString("target_title"),
+                rs.getInt("mention_count")
+        ), args);
+        List<String> endpoints = new ArrayList<>();
+        for (WikiResolvedLink edge : edges) {
+            endpoints.add(edge.sourceItemId());
+            endpoints.add(edge.targetItemId());
+        }
+        Set<String> readable = citationReadGate.readableWikiItemIds(workspaceId, distinctIds(endpoints));
+        if (readable == null) {
+            return List.of();
+        }
+        return edges.stream()
+                .filter(edge -> readable.contains(edge.sourceItemId()) && readable.contains(edge.targetItemId()))
+                .toList();
+    }
+
+    @Override
+    public Map<String, Integer> loadWikiInDegrees(String workspaceId, List<String> itemIds) {
+        List<String> ids = distinctIds(itemIds);
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        Object[] args = new Object[ids.size() + 1];
+        args[0] = workspaceId;
+        for (int index = 0; index < ids.size(); index++) {
+            args[index + 1] = ids.get(index);
+        }
+        Map<String, Integer> degrees = new HashMap<>();
+        jdbcTemplate.query("""
+                select target_item_id, count(*) as in_degree
+                from knowledge_item_link
+                where workspace_id = ?
+                  and relation_status = 'RESOLVED'
+                  and target_item_id in (%s)
+                group by target_item_id
+                """.formatted(placeholders(ids.size())), (RowCallbackHandler) rs ->
+                degrees.put(rs.getString("target_item_id"), rs.getInt("in_degree")), args);
+        return degrees;
+    }
+
+    @Override
+    public List<WikiPageContext> loadWikiPagesByIds(String workspaceId, List<String> itemIds) {
+        List<String> ids = distinctIds(itemIds);
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        Object[] args = new Object[ids.size() + 1];
+        args[0] = workspaceId;
+        for (int index = 0; index < ids.size(); index++) {
+            args[index + 1] = ids.get(index);
+        }
+        Map<String, KnowledgePageHit> hits = new LinkedHashMap<>();
+        jdbcTemplate.query("""
+                select i.id, v.id as version_id, v.version_no, i.title,
+                       v.content, coalesce(v.summary, '') as summary
+                from knowledge_item i
+                join knowledge_version v on v.id = i.latest_version_id
+                where i.workspace_id = ?
+                  and i.item_type = 'WIKI'
+                  and i.status = 'ACTIVE'
+                  and i.id in (%s)
+                """.formatted(placeholders(ids.size())), (RowCallbackHandler) rs -> hits.put(
+                rs.getString("id"), new KnowledgePageHit(
+                        rs.getString("id"),
+                        rs.getString("version_id"),
+                        rs.getInt("version_no"),
+                        rs.getString("title"),
+                        rs.getString("content"),
+                        rs.getString("summary"),
+                        0
+                )), args);
+        List<String> versionIds = hits.values().stream().map(KnowledgePageHit::versionId).toList();
+        Set<String> readable = citationReadGate.readableVersionIds(workspaceId, versionIds);
+        if (readable == null) {
+            return List.of();
+        }
+        List<WikiPageContext> contexts = new ArrayList<>();
+        for (String itemId : ids) {
+            KnowledgePageHit page = hits.get(itemId);
+            if (page == null || !readable.contains(page.versionId())) {
+                continue;
+            }
+            contexts.add(new WikiPageContext(
+                    page,
+                    listOutgoingLinks(workspaceId, page.itemId()).stream().limit(5).toList(),
+                    listBacklinks(workspaceId, page.itemId()).stream().limit(5).toList(),
+                    citationsForVersion(page.versionId()).stream().limit(5).toList()
+            ));
+        }
+        return contexts;
+    }
+
+    private static List<String> distinctIds(List<String> itemIds) {
+        if (itemIds == null || itemIds.isEmpty()) {
+            return List.of();
+        }
+        List<String> ids = new ArrayList<>();
+        for (String itemId : itemIds) {
+            if (itemId != null && !itemId.isBlank() && !ids.contains(itemId)) {
+                ids.add(itemId);
+            }
+        }
+        return ids;
+    }
+
+    private static String placeholders(int count) {
+        return String.join(",", java.util.Collections.nCopies(count, "?"));
     }
 
     private List<WikiSearchRow> readableWikiRows(String workspaceId, List<WikiSearchRow> rows) {

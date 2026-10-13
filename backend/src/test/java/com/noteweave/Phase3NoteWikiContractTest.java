@@ -214,11 +214,11 @@ class Phase3NoteWikiContractTest {
         JsonNode wikiRetrievalSummary = objectMapper.readTree(wikiRetrievalSummaryPayload);
         JsonNode graphMeasurements = wikiRetrievalSummary.path("execution_trace")
                 .path("steps").get(0).path("measurements");
-        assertThat(graphMeasurements.path("graph_hop_limit").asInt()).isEqualTo(1);
+        assertThat(graphMeasurements.path("graph_hop_limit").asInt()).isEqualTo(3);
         assertThat(graphMeasurements.path("graph_node_limit").asInt()).isEqualTo(30);
         assertThat(graphMeasurements.path("graph_edge_limit").asInt()).isEqualTo(60);
         assertThat(graphMeasurements.path("graph_character_limit").asInt()).isEqualTo(4_000);
-        assertThat(graphMeasurements.path("graph_hops_used").asInt()).isBetween(0, 1);
+        assertThat(graphMeasurements.path("graph_hops_used").asInt()).isBetween(0, 3);
         assertThat(graphMeasurements.path("graph_nodes_used").asInt()).isBetween(0, 30);
         assertThat(graphMeasurements.path("graph_edges_used").asInt()).isBetween(0, 60);
         assertThat(graphMeasurements.path("graph_characters_used").asInt()).isBetween(0, 4_000);

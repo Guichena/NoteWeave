@@ -322,6 +322,79 @@ class KnowledgeQueryServiceTest {
                 .extracting(WikiIndexSourceResponse::sourceId).containsExactly("source");
     }
 
+    @Test
+    void graphLoadKeepsResolvedEdgesAndCountsUnreadableInLinks() {
+        insertWikiPage("item-hidden", "version-hidden", "Hidden", "hidden body", "hidden");
+        jdbcTemplate.update("""
+                update knowledge_item set status = 'ARCHIVED' where id = 'item-hidden'
+                """);
+        jdbcTemplate.update("""
+                insert into knowledge_item(
+                    id, workspace_id, item_type, page_kind, title, status, latest_version_id, updated_at
+                ) values ('item-note', 'workspace', 'NOTE', 'TOPIC', 'Note page', 'ACTIVE', 'version-note',
+                          timestamp '2026-07-15 10:00:00')
+                """);
+        jdbcTemplate.update("""
+                insert into knowledge_version(
+                    id, item_id, version_no, content, summary, source_message_id, created_at
+                ) values ('version-note', 'item-note', 1, 'note body', 'note', null,
+                          timestamp '2026-07-15 10:00:00')
+                """);
+        jdbcTemplate.update("""
+                insert into knowledge_item_link(
+                    workspace_id, source_item_id, target_item_id, target_title, relation_type,
+                    relation_status, mention_count, updated_at
+                ) values ('workspace', 'item-hidden', 'item-b', 'Beta Detail', 'WIKI_LINK', 'RESOLVED', 4,
+                          timestamp '2026-07-15 12:00:00')
+                """);
+        jdbcTemplate.update("""
+                insert into knowledge_item_link(
+                    workspace_id, source_item_id, target_item_id, target_title, relation_type,
+                    relation_status, mention_count, updated_at
+                ) values ('workspace', 'item-a', 'item-note', 'Note page', 'WIKI_LINK', 'RESOLVED', 1,
+                          timestamp '2026-07-15 12:01:00')
+                """);
+        jdbcTemplate.update("""
+                insert into knowledge_item_link(
+                    workspace_id, source_item_id, target_item_id, target_title, relation_type,
+                    relation_status, mention_count, updated_at
+                ) values ('workspace', 'item-a', 'item-b', 'Beta Detail', 'WIKI_LINK', 'UNRESOLVED', 9,
+                          timestamp '2026-07-15 12:02:00')
+                """);
+        jdbcTemplate.update("""
+                insert into knowledge_item_link(
+                    workspace_id, source_item_id, target_item_id, target_title, relation_type,
+                    relation_status, mention_count, updated_at
+                ) values ('other', 'item-a', 'item-b', 'Beta Detail', 'WIKI_LINK', 'RESOLVED', 7,
+                          timestamp '2026-07-15 12:03:00')
+                """);
+
+        assertThat(queryService.loadResolvedWikiLinks("workspace", List.of("item-b")))
+                .extracting(WikiResolvedLink::sourceItemId, WikiResolvedLink::targetItemId,
+                        WikiResolvedLink::mentionCount)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple("item-a", "item-b", 2),
+                        org.assertj.core.groups.Tuple.tuple("item-b", "item-a", 1));
+        assertThat(queryService.loadWikiInDegrees("workspace", List.of("item-a", "item-b", "item-note")))
+                .containsEntry("item-a", 1)
+                .containsEntry("item-b", 2)
+                .containsEntry("item-note", 1);
+
+        List<WikiPageContext> pages = queryService.loadWikiPagesByIds(
+                "workspace", List.of("item-b", "item-hidden", "item-note", "missing"));
+
+        assertThat(pages).extracting(page -> page.page().itemId()).containsExactly("item-b");
+        assertThat(pages.get(0).page().title()).isEqualTo("Beta Detail");
+        assertThat(pages.get(0).page().summary()).isEqualTo("detail");
+        assertThat(pages.get(0).outgoingLinks()).extracting(WikiLinkResponse::targetItemId)
+                .containsExactly("item-a");
+        // 页面卡片沿用原来的链接查询，未解析链接和其他工作台的同名端点仍可能出现。
+        // 图扩展用的已解析边不走这条查询。归档页不能作为反链来源展示。
+        assertThat(pages.get(0).backlinks()).extracting(WikiLinkResponse::sourceItemId)
+                .contains("item-a")
+                .doesNotContain("item-hidden");
+    }
+
     private void createSchema(DataSource dataSource) {
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
         jdbc.execute("""

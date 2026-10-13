@@ -433,7 +433,7 @@ public class AnswerRunService {
         List<AnswerEvidenceManifestResponse.Evidence> evidence = jdbcTemplate.query("""
                 select rank_no, evidence_id, evidence_kind, source_id, source_snapshot_id, passage_id,
                        knowledge_item_id, knowledge_version_id, title, excerpt, content_hash,
-                       location_info, fresh_at, character_cost
+                       location_info, fresh_at, character_cost, graph_path_json
                 from answer_run_evidence_manifest
                 where workspace_id = ? and answer_run_id = ?
                 order by rank_no asc
@@ -443,7 +443,8 @@ public class AnswerRunService {
                 rs.getString("knowledge_item_id"), rs.getString("knowledge_version_id"), rs.getString("title"),
                 rs.getString("excerpt"), rs.getString("content_hash"), rs.getString("location_info"),
                 rs.getTimestamp("fresh_at") == null ? null : rs.getTimestamp("fresh_at").toInstant(),
-                rs.getInt("character_cost")
+                rs.getInt("character_cost"),
+                graphPath(rs.getString("graph_path_json"))
         ), workspaceId, runId);
         String planJson = jdbcTemplate.query("""
                 select retrieval_plan_json from answer_run
@@ -601,13 +602,14 @@ public class AnswerRunService {
                     insert into answer_run_evidence_manifest(
                         id, workspace_id, answer_run_id, rank_no, evidence_id, evidence_kind,
                         source_id, source_snapshot_id, passage_id, knowledge_item_id, knowledge_version_id,
-                        title, excerpt, content_hash, location_info, fresh_at, character_cost
-                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        title, excerpt, content_hash, location_info, fresh_at, character_cost, graph_path_json
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, Ids.newId(), workspaceId, runId, index + 1, item.evidenceId(), item.kind(),
                     blank(item.sourceId()), blank(item.sourceSnapshotId()), blank(item.passageId()),
                     blank(item.knowledgeItemId()), blank(item.knowledgeVersionId()), blank(item.title()), excerpt,
                     sha256(excerpt), blank(item.location()),
-                    item.freshAt() == null ? null : Timestamp.from(item.freshAt()), item.characterCost());
+                    item.freshAt() == null ? null : Timestamp.from(item.freshAt()), item.characterCost(),
+                    blank(item.metadata().get("graph_path")));
         }
     }
 
@@ -617,6 +619,19 @@ public class AnswerRunService {
                     .digest(value.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException("SHA-256 is unavailable", ex);
+        }
+    }
+
+    private List<String> graphPath(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            List<String> path = objectMapper.readValue(json, new TypeReference<List<String>>() {
+            });
+            return path == null || path.isEmpty() ? null : List.copyOf(path);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+            return null;
         }
     }
 

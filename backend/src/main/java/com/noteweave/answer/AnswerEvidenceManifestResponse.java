@@ -28,6 +28,11 @@ public record AnswerEvidenceManifestResponse(
     public record Evidence(
             int rank, String evidenceId, String kind, String sourceId, String sourceSnapshotId,
             String passageId, String knowledgeItemId, String knowledgeVersionId, String title,
-            String excerpt, String contentHash, String location, Instant freshAt, int characterCost
-    ) { }
+            String excerpt, String contentHash, String location, Instant freshAt, int characterCost,
+            @JsonInclude(JsonInclude.Include.NON_EMPTY) List<String> graphPath
+    ) {
+        public Evidence {
+            graphPath = graphPath == null || graphPath.isEmpty() ? null : List.copyOf(graphPath);
+        }
+    }
 }
