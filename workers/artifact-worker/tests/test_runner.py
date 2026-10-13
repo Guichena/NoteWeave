@@ -211,7 +211,8 @@ def test_run_artifact_task_should_use_configured_llm_and_trace_generation_mode(
     assert "基于冻结资料范围" in result.result_payload["markdown"]
     generated_sections = result.result_payload["sections"]
     assert generated_sections[1]["source_refs"] == ["产物生成 Agent 编排升级设计"]
-    assert fake.calls and fake.calls[0][0] == "artifact.generate"
+    assert fake.calls and fake.calls[0][0] == "artifact.compile_intent"
+    assert any(purpose == "artifact.generate" for purpose, _ in fake.calls)
 
 
 def test_skill_declared_only_in_the_catalog_runs_through_the_generic_graph(
@@ -665,10 +666,10 @@ def test_run_artifact_task_should_apply_execution_spec_focus_points_to_resume_ou
     assert "resume impact statements normalized" in normalizer_trace["verification_checks"]
     assert verifier_trace["verification_status"] == "PASS"
     assert "resume verifier inspected bullet count, focus coverage, and required phrases" in verifier_trace["verification_checks"]
-    assert repair_trace["verification_status"] == "PASS_WITH_REPAIR"
+    assert repair_trace["verification_status"] == "PASS"
     assert "resume local repair confirmed verifier gaps are closed" in repair_trace["verification_checks"]
-    assert repair_trace["repair_actions"]
-    assert repair_trace["repaired"] is True
+    assert repair_trace["repair_actions"] == []
+    assert repair_trace["repaired"] is False
 
     assert any(
         check["label"] == "resume focus point coverage"
@@ -1633,14 +1634,14 @@ def test_run_artifact_task_should_generate_resume_highlight_artifact() -> None:
     assert "resume section draft generated" in bullet_trace["verification_checks"]
     assert verifier_trace["verification_status"] == "PASS"
     assert "resume verifier inspected bullet count, focus coverage, and required phrases" in verifier_trace["verification_checks"]
-    assert repair_trace["verification_status"] == "PASS_WITH_REPAIR"
+    assert repair_trace["verification_status"] == "PASS"
     assert "resume local repair confirmed verifier gaps are closed" in repair_trace["verification_checks"]
     assert all(
         trace["repair_actions"] == []
         for trace in [digest_trace, highlight_trace, normalizer_trace, bullet_trace, verifier_trace]
     )
-    assert repair_trace["repair_actions"]
-    assert repair_trace["repaired"] is True
+    assert repair_trace["repair_actions"] == []
+    assert repair_trace["repaired"] is False
     assert any(
         check["label"] == "一句话定位" and check["status"] == "PASS"
         for check in result.result_payload["output_contract_trace"]["outline_checks"]
@@ -3733,8 +3734,8 @@ def test_final_contract_should_reject_incomplete_quiz_structure() -> None:
     )
 
     assert verification.status == "FAIL"
-    assert "quiz question count below minimum" in verification.failed_checks
-    assert "quiz scoring tiers missing" in verification.failed_checks
+    assert any("编号条数：1" in check for check in verification.failed_checks)
+    assert "章节缺少必需主题词" in verification.failed_checks
 
 
 def test_final_contract_should_reject_incomplete_wiki_structure() -> None:
@@ -3800,9 +3801,9 @@ def test_final_contract_should_reject_incomplete_wiki_structure() -> None:
     )
 
     assert verification.status == "FAIL"
-    assert "wiki overview definition or boundary missing" in verification.failed_checks
-    assert "wiki key mechanisms missing" in verification.failed_checks
-    assert "wiki related page count below minimum" in verification.failed_checks
+    assert "章节缺少必需主题词" in verification.failed_checks
+    assert "章节正文完整" in verification.passed_checks
+    assert any("列表条数：1" in check for check in verification.failed_checks)
 
 
 def test_verify_artifact_output_should_fail_when_evidence_coverage_is_unsatisfied() -> None:

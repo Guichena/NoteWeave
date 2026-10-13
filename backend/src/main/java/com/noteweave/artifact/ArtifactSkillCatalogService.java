@@ -119,7 +119,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
 
     private static final Set<String> REQUIRED_ENTRY_FIELDS = Set.of("skill_key", "version", "display_name",
             "description", "input_schema", "output_schema_ref", "graph_key", "prompt_recipe_id",
-            "required_file_roles", "capability_allowlist", "action_key");
+            "required_file_roles", "capability_allowlist", "action_key", "output_contract");
     /** presentation 是展示信息；definition 让新产物只在目录里声明动作和提示词配方，由 Worker 加载。 */
     private static final Set<String> OPTIONAL_ENTRY_FIELDS = Set.of("presentation", "definition");
 
@@ -132,7 +132,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
                 || (entry.containsKey("presentation") && !validPresentation(entry.get("presentation")))
                 || (entry.containsKey("definition") && !(entry.get("definition") instanceof Map<?, ?>))
                 || !"1.0.0".equals(entry.get("version"))
-                || !"artifact-content-v1".equals(entry.get("output_schema_ref"))
+                || !("artifact-" + entry.get("skill_key") + "-output.v1").equals(entry.get("output_schema_ref"))
                 || !schema.keySet().stream().allMatch(Set.of("type", "properties", "required")::contains)
                 || !"object".equals(schema.get("type"))
                 || !(schema.get("properties") instanceof Map<?, ?> properties)
@@ -142,6 +142,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
                         "CAPTURE_VIDEO_FRAMES", "ANALYZE_FRAME").containsAll(capabilities)) {
             throw new IllegalStateException("unsupported artifact Skill publication policy");
         }
+        ArtifactOutputContractPublicationPolicy.validate(entry.get("output_contract"));
         Object required = schema.containsKey("required") ? schema.get("required") : List.of();
         if (!(required instanceof List<?> requiredKeys) || !properties.keySet().containsAll(requiredKeys)) {
             throw new IllegalStateException("published Skill has invalid required inputs");

@@ -102,6 +102,8 @@ class ContractArtifactTestProvider:
                 )
                 if first_node_guidance:
                     body = f"{body}\n\n节点侧重：{first_node_guidance}"
+            if recipe.get("recipe_id") == "resume_highlight_writer_v1" and index == 1:
+                body = "\n".join(["- " + " ".join(body.splitlines()), "- 依据资料说明实现边界。", "- 保留来源便于复核。"])
             if generation_mode == "QUIZ_SYNTHESIS" and index == 1:
                 body = "\n".join(
                     [

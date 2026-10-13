@@ -63,9 +63,12 @@ PHASE_SEQUENCE = [
 PRE_VIDEO_POLICY_CATALOG_DIGEST = "8a7ad34dd197854251c65a234f1915e0b44fe9621d2d1caa4581b9eb3ca2eec8"
 
 
+PRE_OUTPUT_CONTRACT_CATALOG_DIGEST = "08108539a76c23dc3fcc4c23fee6c6cd3f8bba29895cd6ccc50f3425dadcb2f0"
+
+
 def _require_published_catalog(task_input: ArtifactTaskInput) -> None:
     if task_input.catalog_digest and task_input.catalog_digest not in {
-            CATALOG_DIGEST, PRE_VIDEO_POLICY_CATALOG_DIGEST}:
+            CATALOG_DIGEST, PRE_VIDEO_POLICY_CATALOG_DIGEST, PRE_OUTPUT_CONTRACT_CATALOG_DIGEST}:
         raise ValueError("artifact Skill catalog digest does not match the frozen Run")
     if task_input.catalog_digest == PRE_VIDEO_POLICY_CATALOG_DIGEST:
         inputs = task_input.input_payload.inputs
@@ -138,7 +141,10 @@ def _run_artifact_task(
         raise ArtifactConfigurationRequiredError(
             "Artifact LLM is not configured and the task has no source content to extract"
         )
-    plan = compiled_plan or build_execution_plan(task_input)
+    plan = compiled_plan or build_execution_plan(task_input, llm_client=llm_client)
+    reserve = getattr(llm_client, "reserve_prior_calls", None)
+    if compiled_plan is not None and callable(reserve):
+        reserve(plan.execution_spec.compilation_trace.get("llm_calls", 0))
     canonical_content_objects = (
         list(checkpoint_content_objects)
         if checkpoint_content_objects is not None
@@ -321,6 +327,8 @@ def _run_artifact_task(
             "sections": [section.model_dump(mode="json") for section in repaired_sections],
             "node_traces": [trace.model_dump(mode="json") for trace in node_traces],
             "generation_trace": generation_trace,
+            "intent_compilation_trace": plan.execution_spec.compilation_trace,
+            "llm_usage": llm_client.usage_summary() if callable(getattr(llm_client, "usage_summary", None)) else {},
             "export_trace": export_trace,
             "canonical_content_objects": [
                 cco.model_dump(mode="json") for cco in canonical_content_objects

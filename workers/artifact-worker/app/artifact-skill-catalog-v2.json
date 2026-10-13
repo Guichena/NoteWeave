@@ -29,7 +29,7 @@
           }
         }
       },
-      "output_schema_ref": "artifact-content-v1",
+      "output_schema_ref": "artifact-resume_highlight-output.v1",
       "graph_key": "resume_highlight_v1",
       "prompt_recipe_id": "resume_highlight_writer_v1",
       "required_file_roles": [
@@ -59,6 +59,50 @@
         "badges": [
           "推荐",
           "聊天生成"
+        ]
+      },
+      "output_contract": {
+        "schema_version": "artifact-output-contract.v1",
+        "sections": {
+          "min": 3,
+          "max": 5,
+          "required_headings": [
+            "一句话定位",
+            "简历亮点",
+            "关键词"
+          ]
+        },
+        "fields": {},
+        "citation": {
+          "density": "PER_SECTION",
+          "ref_kind": "SOURCE"
+        },
+        "rules": [
+          {
+            "name": "bullet_count",
+            "level": "ASSERT",
+            "backtrack_to": "write",
+            "parameters": {
+              "section_index": 1,
+              "min": 3,
+              "max": 5
+            },
+            "label": "resume highlight bullet count"
+          },
+          {
+            "name": "focus_coverage",
+            "level": "ASSERT",
+            "backtrack_to": "write",
+            "parameters": {},
+            "label": "resume focus point coverage"
+          },
+          {
+            "name": "no_fabricated_metrics",
+            "level": "ASSERT",
+            "backtrack_to": "normalize",
+            "parameters": {},
+            "label": ""
+          }
         ]
       }
     },
@@ -90,7 +134,7 @@
           }
         }
       },
-      "output_schema_ref": "artifact-content-v1",
+      "output_schema_ref": "artifact-study_guide-output.v1",
       "graph_key": "generic_artifact_v1",
       "prompt_recipe_id": "study_guide_writer_v1",
       "required_file_roles": [
@@ -122,6 +166,24 @@
           "常用",
           "结构化"
         ]
+      },
+      "output_contract": {
+        "schema_version": "artifact-output-contract.v1",
+        "sections": {
+          "min": 3,
+          "max": 5,
+          "required_headings": [
+            "学习目标",
+            "核心概念",
+            "练习路径"
+          ]
+        },
+        "fields": {},
+        "citation": {
+          "density": "PER_SECTION",
+          "ref_kind": "SOURCE"
+        },
+        "rules": []
       }
     },
     {
@@ -152,7 +214,7 @@
           }
         }
       },
-      "output_schema_ref": "artifact-content-v1",
+      "output_schema_ref": "artifact-quiz_pack-output.v1",
       "graph_key": "quiz_artifact_v1",
       "prompt_recipe_id": "quiz_writer_v1",
       "required_file_roles": [
@@ -184,6 +246,69 @@
           "练习",
           "结构化"
         ]
+      },
+      "output_contract": {
+        "schema_version": "artifact-output-contract.v1",
+        "sections": {
+          "min": 4,
+          "max": 6,
+          "required_headings": [
+            "测验目标",
+            "题目设计",
+            "答案与解析",
+            "评分要点"
+          ]
+        },
+        "fields": {},
+        "citation": {
+          "density": "PER_SECTION",
+          "ref_kind": "SOURCE"
+        },
+        "rules": [
+          {
+            "name": "numbered_item_count",
+            "level": "ASSERT",
+            "backtrack_to": "design",
+            "parameters": {
+              "section_index": 1,
+              "min": 3,
+              "max": 20
+            },
+            "label": "quiz question count"
+          },
+          {
+            "name": "section_terms",
+            "level": "ASSERT",
+            "backtrack_to": "design",
+            "parameters": {
+              "section_index": 3,
+              "groups": [
+                [
+                  "基础",
+                  "basic"
+                ],
+                [
+                  "进阶",
+                  "advanced"
+                ],
+                [
+                  "挑战",
+                  "challenge"
+                ]
+              ]
+            },
+            "label": "quiz scoring tiers"
+          },
+          {
+            "name": "quiz_answer_in_options",
+            "level": "ASSERT",
+            "backtrack_to": "design",
+            "parameters": {
+              "section_index": 1
+            },
+            "label": ""
+          }
+        ]
       }
     },
     {
@@ -214,7 +339,7 @@
           }
         }
       },
-      "output_schema_ref": "artifact-content-v1",
+      "output_schema_ref": "artifact-wiki_page-output.v1",
       "graph_key": "wiki_artifact_v1",
       "prompt_recipe_id": "wiki_page_writer_v1",
       "required_file_roles": [
@@ -245,6 +370,65 @@
         "badges": [
           "知识沉淀",
           "需校验"
+        ]
+      },
+      "output_contract": {
+        "schema_version": "artifact-output-contract.v1",
+        "sections": {
+          "min": 3,
+          "max": 5,
+          "required_headings": [
+            "概览",
+            "关键机制",
+            "相关页面"
+          ]
+        },
+        "fields": {},
+        "citation": {
+          "density": "PER_SECTION",
+          "ref_kind": "SOURCE"
+        },
+        "rules": [
+          {
+            "name": "section_terms",
+            "level": "ASSERT",
+            "backtrack_to": "write",
+            "parameters": {
+              "section_index": 0,
+              "groups": [
+                [
+                  "定义",
+                  "definition"
+                ],
+                [
+                  "边界",
+                  "boundary",
+                  "scope"
+                ]
+              ]
+            },
+            "label": "wiki overview definition and boundary"
+          },
+          {
+            "name": "section_nonempty",
+            "level": "ASSERT",
+            "backtrack_to": "write",
+            "parameters": {
+              "section_index": 1
+            },
+            "label": "wiki key mechanisms"
+          },
+          {
+            "name": "bullet_count",
+            "level": "ASSERT",
+            "backtrack_to": "write",
+            "parameters": {
+              "section_index": 2,
+              "min": 3,
+              "max": 80
+            },
+            "label": "wiki related page count"
+          }
         ]
       }
     },
@@ -308,7 +492,7 @@
           }
         }
       },
-      "output_schema_ref": "artifact-content-v1",
+      "output_schema_ref": "artifact-mindmap_from_workspace-output.v1",
       "graph_key": "generic_artifact_v1",
       "prompt_recipe_id": "mindmap_writer_v1",
       "required_file_roles": [
@@ -340,6 +524,26 @@
           "可视化",
           "推荐"
         ]
+      },
+      "output_contract": {
+        "schema_version": "artifact-output-contract.v1",
+        "sections": {
+          "min": 5,
+          "max": 80,
+          "required_headings": [
+            "主题中心",
+            "关键概念",
+            "证据脉络",
+            "核心结论",
+            "后续行动"
+          ]
+        },
+        "fields": {},
+        "citation": {
+          "density": "PER_SECTION",
+          "ref_kind": "SOURCE"
+        },
+        "rules": []
       }
     },
     {
@@ -405,7 +609,7 @@
           "url"
         ]
       },
-      "output_schema_ref": "artifact-content-v1",
+      "output_schema_ref": "artifact-bilibili_course_note_pdf-output.v1",
       "graph_key": "generic_artifact_v1",
       "prompt_recipe_id": "course_notes_writer_v1",
       "required_file_roles": [
@@ -441,6 +645,25 @@
           "System MCP",
           "异步"
         ]
+      },
+      "output_contract": {
+        "schema_version": "artifact-output-contract.v1",
+        "sections": {
+          "min": 4,
+          "max": 6,
+          "required_headings": [
+            "课程概要",
+            "知识点",
+            "重点难点",
+            "复习题"
+          ]
+        },
+        "fields": {},
+        "citation": {
+          "density": "PER_SECTION",
+          "ref_kind": "SOURCE"
+        },
+        "rules": []
       }
     },
     {
@@ -492,7 +715,7 @@
           "video_material_bundle_id"
         ]
       },
-      "output_schema_ref": "artifact-content-v1",
+      "output_schema_ref": "artifact-video_learning_deck-output.v1",
       "graph_key": "video_deck_v1",
       "prompt_recipe_id": "video_deck_frozen_v1",
       "required_file_roles": [
@@ -511,6 +734,20 @@
         ],
         "group": "video_material",
         "order": 106
+      },
+      "output_contract": {
+        "schema_version": "artifact-output-contract.v1",
+        "sections": {
+          "min": 1,
+          "max": 80,
+          "required_headings": []
+        },
+        "fields": {},
+        "citation": {
+          "density": "PER_SECTION",
+          "ref_kind": "SOURCE"
+        },
+        "rules": []
       }
     },
     {
@@ -562,7 +799,7 @@
           "video_material_bundle_id"
         ]
       },
-      "output_schema_ref": "artifact-content-v1",
+      "output_schema_ref": "artifact-knowledge_blog-output.v1",
       "graph_key": "video_derived_text_v1",
       "prompt_recipe_id": "knowledge_blog_frozen_v1",
       "required_file_roles": [
@@ -581,6 +818,20 @@
         ],
         "group": "video_material",
         "order": 107
+      },
+      "output_contract": {
+        "schema_version": "artifact-output-contract.v1",
+        "sections": {
+          "min": 1,
+          "max": 80,
+          "required_headings": []
+        },
+        "fields": {},
+        "citation": {
+          "density": "PER_SECTION",
+          "ref_kind": "SOURCE"
+        },
+        "rules": []
       }
     },
     {
@@ -632,7 +883,7 @@
           "video_material_bundle_id"
         ]
       },
-      "output_schema_ref": "artifact-content-v1",
+      "output_schema_ref": "artifact-interview_qa-output.v1",
       "graph_key": "video_derived_text_v1",
       "prompt_recipe_id": "interview_qa_frozen_v1",
       "required_file_roles": [
@@ -651,6 +902,20 @@
         ],
         "group": "video_material",
         "order": 108
+      },
+      "output_contract": {
+        "schema_version": "artifact-output-contract.v1",
+        "sections": {
+          "min": 1,
+          "max": 80,
+          "required_headings": []
+        },
+        "fields": {},
+        "citation": {
+          "density": "PER_SECTION",
+          "ref_kind": "SOURCE"
+        },
+        "rules": []
       }
     },
     {
@@ -681,7 +946,7 @@
           }
         }
       },
-      "output_schema_ref": "artifact-content-v1",
+      "output_schema_ref": "artifact-report_draft-output.v1",
       "graph_key": "generic_artifact_v1",
       "prompt_recipe_id": "report_writer_v1",
       "required_file_roles": [
@@ -713,6 +978,24 @@
           "综合",
           "可追溯"
         ]
+      },
+      "output_contract": {
+        "schema_version": "artifact-output-contract.v1",
+        "sections": {
+          "min": 3,
+          "max": 5,
+          "required_headings": [
+            "问题定义",
+            "证据综述",
+            "建议方案"
+          ]
+        },
+        "fields": {},
+        "citation": {
+          "density": "PER_SECTION",
+          "ref_kind": "SOURCE"
+        },
+        "rules": []
       }
     },
     {
@@ -743,7 +1026,7 @@
           }
         }
       },
-      "output_schema_ref": "artifact-content-v1",
+      "output_schema_ref": "artifact-faq_draft-output.v1",
       "graph_key": "generic_artifact_v1",
       "prompt_recipe_id": "faq_writer_v1",
       "required_file_roles": [
@@ -775,6 +1058,24 @@
           "帮助中心",
           "问答"
         ]
+      },
+      "output_contract": {
+        "schema_version": "artifact-output-contract.v1",
+        "sections": {
+          "min": 3,
+          "max": 5,
+          "required_headings": [
+            "问题集",
+            "标准回答",
+            "使用说明"
+          ]
+        },
+        "fields": {},
+        "citation": {
+          "density": "PER_SECTION",
+          "ref_kind": "SOURCE"
+        },
+        "rules": []
       }
     },
     {
@@ -805,7 +1106,7 @@
           }
         }
       },
-      "output_schema_ref": "artifact-content-v1",
+      "output_schema_ref": "artifact-structured_note-output.v1",
       "graph_key": "generic_artifact_v1",
       "prompt_recipe_id": "structured_note_writer_v1",
       "required_file_roles": [
@@ -837,6 +1138,24 @@
           "知识对象",
           "可写回"
         ]
+      },
+      "output_contract": {
+        "schema_version": "artifact-output-contract.v1",
+        "sections": {
+          "min": 3,
+          "max": 5,
+          "required_headings": [
+            "主题快照",
+            "关键摘录",
+            "后续问题"
+          ]
+        },
+        "fields": {},
+        "citation": {
+          "density": "PER_SECTION",
+          "ref_kind": "SOURCE"
+        },
+        "rules": []
       }
     },
     {
@@ -899,7 +1218,7 @@
           "url"
         ]
       },
-      "output_schema_ref": "artifact-content-v1",
+      "output_schema_ref": "artifact-video_summary-output.v1",
       "graph_key": "generic_artifact_v1",
       "prompt_recipe_id": "video_summary_writer_v1",
       "required_file_roles": [
@@ -932,6 +1251,26 @@
           "媒体",
           "时间线"
         ]
+      },
+      "output_contract": {
+        "schema_version": "artifact-output-contract.v1",
+        "sections": {
+          "min": 5,
+          "max": 7,
+          "required_headings": [
+            "一句话总结",
+            "时间线摘要",
+            "核心观点",
+            "关键概念",
+            "可沉淀要点"
+          ]
+        },
+        "fields": {},
+        "citation": {
+          "density": "PER_SECTION",
+          "ref_kind": "SOURCE"
+        },
+        "rules": []
       }
     },
     {
@@ -962,7 +1301,7 @@
           }
         }
       },
-      "output_schema_ref": "artifact-content-v1",
+      "output_schema_ref": "artifact-audio_minutes-output.v1",
       "graph_key": "generic_artifact_v1",
       "prompt_recipe_id": "audio_minutes_writer_v1",
       "required_file_roles": [
@@ -995,6 +1334,26 @@
           "会议",
           "行动项"
         ]
+      },
+      "output_contract": {
+        "schema_version": "artifact-output-contract.v1",
+        "sections": {
+          "min": 5,
+          "max": 7,
+          "required_headings": [
+            "总体摘要",
+            "主要议题",
+            "关键结论",
+            "行动项",
+            "待确认问题"
+          ]
+        },
+        "fields": {},
+        "citation": {
+          "density": "PER_SECTION",
+          "ref_kind": "SOURCE"
+        },
+        "rules": []
       }
     },
     {
@@ -1031,7 +1390,7 @@
           }
         }
       },
-      "output_schema_ref": "artifact-content-v1",
+      "output_schema_ref": "artifact-course_notes-output.v1",
       "graph_key": "generic_artifact_v1",
       "prompt_recipe_id": "course_notes_writer_v1",
       "required_file_roles": [
@@ -1066,6 +1425,25 @@
           "学习",
           "章节"
         ]
+      },
+      "output_contract": {
+        "schema_version": "artifact-output-contract.v1",
+        "sections": {
+          "min": 4,
+          "max": 6,
+          "required_headings": [
+            "课程概要",
+            "知识点",
+            "重点难点",
+            "复习题"
+          ]
+        },
+        "fields": {},
+        "citation": {
+          "density": "PER_SECTION",
+          "ref_kind": "SOURCE"
+        },
+        "rules": []
       }
     },
     {
@@ -1096,7 +1474,7 @@
           }
         }
       },
-      "output_schema_ref": "artifact-content-v1",
+      "output_schema_ref": "artifact-reading_digest-output.v1",
       "graph_key": "generic_artifact_v1",
       "prompt_recipe_id": "reading_digest_writer_v1",
       "required_file_roles": [
@@ -1162,6 +1540,26 @@
             "缺少证据时回到资料原文补齐，不要编造。"
           ]
         }
+      },
+      "output_contract": {
+        "schema_version": "artifact-output-contract.v1",
+        "sections": {
+          "min": 5,
+          "max": 7,
+          "required_headings": [
+            "核心论点",
+            "关键证据",
+            "方法与假设",
+            "局限与争议",
+            "待追问问题"
+          ]
+        },
+        "fields": {},
+        "citation": {
+          "density": "PER_SECTION",
+          "ref_kind": "SOURCE"
+        },
+        "rules": []
       }
     }
   ],

@@ -6,6 +6,7 @@ from app.action_resolver import resolve_requested_action
 from app.capability_resolver import resolve_capability_bindings
 from app.content_runtime import build_content_acquisition_plan
 from app.intent_compiler import compile_execution_spec
+from app.artifact_skill_catalog import resolve_output_contract
 from app.models import (
     ArtifactExecutionPlan,
     ArtifactRuntimePlan,
@@ -29,7 +30,8 @@ from app.registry import (
 )
 
 
-def build_execution_plan(task_input: ArtifactTaskInput) -> ArtifactExecutionPlan:
+def build_execution_plan(task_input: ArtifactTaskInput, llm_client=None) -> ArtifactExecutionPlan:
+    # 先进行本地绑定和门控，再允许模型编译用户意图。
     execution_spec = compile_execution_spec(task_input)
     action_resolution = resolve_requested_action(task_input)
     action_key = action_resolution.resolved_action_key
@@ -136,6 +138,8 @@ def build_execution_plan(task_input: ArtifactTaskInput) -> ArtifactExecutionPlan
             "forbidden patterns: "
             + "; ".join(task_input.control_pack.forbidden_patterns)
         )
+    if llm_client is not None:
+        execution_spec = compile_execution_spec(task_input, llm_client=llm_client)
     runtime_plan = _build_runtime_plan(
         graph_key=skill_graph.graph_key,
         graph_name=skill_graph.graph_name,
@@ -146,6 +150,7 @@ def build_execution_plan(task_input: ArtifactTaskInput) -> ArtifactExecutionPlan
 
     return ArtifactExecutionPlan(
         plan_id=f"plan-{task_input.task_id}",
+        declared_output_contract=resolve_output_contract(execution_spec.skill_key, action_key),
         skill_key=execution_spec.skill_key,
         action_key=action_key,
         action_display_name=action.display_name,

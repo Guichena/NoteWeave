@@ -144,6 +144,9 @@ class ArtifactSkillDefinition(BaseModel):
 
 
 class ExecutionSpec(BaseModel):
+    output_language: str = "zh"
+    compilation_method: str = "RULE"
+    compilation_trace: dict[str, object] = Field(default_factory=dict)
     skill_key: str = ""
     requested_action_key: str = ""
     resolved_action_key: str = ""
@@ -595,6 +598,7 @@ class ArtifactRuntimePlan(BaseModel):
 
 
 class ArtifactExecutionPlan(BaseModel):
+    declared_output_contract: dict[str, object] = Field(default_factory=dict)
     plan_id: str
     skill_key: str = ""
     action_key: str

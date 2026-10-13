@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 
 from app.artifact_content_ir import build_content_ir
+from app.output_contract import verify_native_skill_result
 from app.candidate_file_manifest import build_required_files
 from app.models import (
     ArtifactJobSnapshot, ArtifactProgressEvent, ArtifactSectionDraft,
@@ -99,5 +100,6 @@ def run_video_deck_task(task_input: ArtifactTaskInput) -> tuple[
             version_id="", artifact_type="SLIDE_DECK", title=ir.title,
             status="DRAFT", summary="Original frames and frozen video evidence"),
     )
+    verify_native_skill_result(result, "video_learning_deck", "SLIDE_DECK")
     return ([ArtifactProgressEvent(phase="VERIFYING", progress_percent=85,
                                    message="frozen deck evidence verified")], result)

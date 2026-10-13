@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 
 from app.artifact_content_ir import build_content_ir
+from app.output_contract import verify_native_skill_result
 from app.candidate_file_manifest import build_required_files
 from app.models import (
     ArtifactJobSnapshot, ArtifactProgressEvent, ArtifactSectionDraft,
@@ -102,6 +103,7 @@ def run_video_derived_text_task(
             version_id="", artifact_type=action, title=ir.title, status="DRAFT",
             summary="Derived from frozen video evidence"),
     )
+    verify_native_skill_result(result, skill_key, action)
     return ([ArtifactProgressEvent(phase="VERIFYING", progress_percent=85,
                                    message="frozen evidence and output contract verified"),
              ArtifactProgressEvent(phase="EXPORTING", progress_percent=100,

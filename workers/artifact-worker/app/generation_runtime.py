@@ -43,7 +43,8 @@ def generate_artifact_sections(
             "constraints": plan.execution_spec.constraints,
             "outline": plan.outline,
             "required_phrases": plan.required_phrases,
-            "output_contract": plan.output_contract,
+            "output_contract": plan.declared_output_contract,
+            "output_language": plan.execution_spec.output_language,
             "prompt_recipe": plan.prompt_recipe.model_dump(mode="json"),
             "control_pack": {
                 "style_constraints": task_input.control_pack.style_constraints,

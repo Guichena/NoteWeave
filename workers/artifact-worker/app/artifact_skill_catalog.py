@@ -11,7 +11,7 @@ from app.registry import PRODUCTION_ACTIONS, PROMPT_RECIPES, SKILL_GRAPH_TEMPLAT
 _ENTRY_FIELDS = {
     "skill_key", "version", "display_name", "description", "input_schema",
     "output_schema_ref", "graph_key", "prompt_recipe_id", "required_file_roles",
-    "capability_allowlist", "action_key",
+    "capability_allowlist", "action_key", "output_contract",
 }
 # presentation 是前端卡片的展示信息；definition 让新产物只在目录里声明动作和提示词配方
 _OPTIONAL_FIELDS = {"presentation", "definition"}
@@ -105,6 +105,10 @@ def validate_published_catalog(catalog: dict[str, object]) -> None:
                 or entry["prompt_recipe_id"] not in PROMPT_RECIPES \
                 or entry["capability_allowlist"] != action.supported_capabilities:
             raise ValueError("published Skill execution policy disagrees with production action")
+        from app.output_contract import validate_output_contract
+        validate_output_contract(entry["output_contract"], {n.node_id for n in SKILL_GRAPH_TEMPLATES[entry["graph_key"]].nodes})
+        if entry["output_schema_ref"] != f"artifact-{key}-output.v1":
+            raise ValueError("产物输出契约引用与 Skill 不一致")
         roles = entry["required_file_roles"]
         if not isinstance(roles, list) or not roles or len(roles) != len(set(roles)) \
                 or "PRIMARY_MARKDOWN" not in roles or not set(roles) <= _FILE_ROLES:
@@ -175,3 +179,13 @@ def resolve_artifact_skill_action_key(skill_key: str) -> str:
 def _resolve_canonical_skill_key(value: str) -> str:
     normalized_skill_key = value.strip().lower().replace("-", "_").replace(" ", "_")
     return _ALIASES.get(normalized_skill_key, normalized_skill_key)
+
+
+def resolve_output_contract(skill_key, action_key):
+    """执行时加载契约，公开 Skill 列表不携带执行策略。"""
+    from copy import deepcopy
+    canonical = _resolve_canonical_skill_key(skill_key)
+    entry = next((e for e in _CATALOG["skills"] if e["skill_key"] == canonical), None)
+    if entry is None:
+        entry = next((e for e in _CATALOG["skills"] if e["action_key"] == action_key), None)
+    return deepcopy(entry["output_contract"]) if entry else {}
