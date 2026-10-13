@@ -89,14 +89,13 @@ public class UploadTempObjectCleanupService {
     }
 
     private void cleanupUpload(String uploadId) {
-        List<String> objectKeys = jdbcTemplate.queryForList(
+        List<String> objectKeys = new ArrayList<>(jdbcTemplate.queryForList(
                 "select object_key from upload_chunk where upload_id = ?",
                 String.class,
                 uploadId
-        );
-        if (objectKeys.isEmpty()) {
-            return;
-        }
+        ));
+        List<String> workspaces = jdbcTemplate.queryForList("select workspace_id from document_upload where id = ?", String.class, uploadId);
+        if (!workspaces.isEmpty()) objectKeys.add("workspace/%s/upload_tmp/%s/merged".formatted(workspaces.get(0), uploadId));
         for (String objectKey : objectKeys) {
             try {
                 storage.delete(BUCKET_SOURCE, objectKey);

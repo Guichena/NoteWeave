@@ -8,6 +8,11 @@ import com.noteweave.config.NoteWeaveProperties;
 import com.noteweave.storage.ObjectStorage;
 import com.noteweave.task.TaskCommandPort;
 import com.noteweave.security.AuditActorProvider;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -23,7 +28,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
@@ -72,25 +76,46 @@ public class SourceParseService implements SourceParsePort {
         this.transcriptionPort = transcriptionPort;
     }
 
-    @Transactional
+    @Override
     public void parseAndIndex(String workspaceId, String sourceId, String snapshotId, byte[] bytes) {
-        SourceMeta sourceMeta = loadSourceMetaForProcessing(workspaceId, sourceId, snapshotId);
-        if (!sourceMeta.processable()) {
+        Path original = null;
+        try {
+            original = Files.createTempFile("noteweave-source-sync-", ".bin");
+            Files.write(original, bytes);
+            parseAndIndex(workspaceId, sourceId, snapshotId, original);
+        } catch (IOException exception) {
+            throw new BusinessException("SOURCE_DOCUMENT_READ_FAILED", "资料原件读取失败");
+        } finally {
+            deleteQuietly(original);
+        }
+    }
+
+    @Override
+    public void parseAndIndex(String workspaceId, String sourceId, String snapshotId, Path original) {
+        SourceMeta sourceMeta = loadSourceMeta(workspaceId, sourceId, snapshotId, false);
+        if (!sourceMeta.extractable()) {
             throw new SourceParseNoLongerProcessableException(sourceId, snapshotId);
         }
         if (SourceMediaTypes.isMedia(sourceMeta.mimeType())) {
             // 转写可能持续数分钟，只能在异步流水线里由 Worker 完成
             throw new BusinessException("SOURCE_MEDIA_REQUIRES_ASYNC", "音视频资料需要开启异步处理后才能转写");
         }
-        SourceDocumentTextExtractor.ExtractedDocument extracted = documentTextExtractor.extract(
-                sourceMeta.title(), sourceMeta.mimeType(), bytes);
-        String sourceParseTaskId = findSourceParseTaskId(sourceId);
-        if (messagingMode.isAsyncEnabled() && elasticsearchEnabled && sourceParseTaskId == null) {
-            sourceParseTaskId = taskCommandPort.createTask(
-                    workspaceId, "SOURCE_PARSE", "SOURCE", sourceId, "PARSING", "生成资料解析与索引");
-            taskCommandPort.startTask(sourceParseTaskId);
-        }
-        writeChunksAndQueueEmbedding(workspaceId, sourceId, snapshotId, sourceMeta, extracted, sourceParseTaskId);
+        SourceDocumentTextExtractor.ExtractedDocument extracted = extract(workspaceId, sourceId, snapshotId, sourceMeta, original);
+        // 长时间的解析调用结束后重新锁定身份和状态，只有当前快照可以提交片段。
+        transactionTemplate.executeWithoutResult(ignored -> {
+            SourceMeta locked = loadSourceMetaForProcessing(workspaceId, sourceId, snapshotId);
+            if (!locked.extractable() || !locked.sha256().equals(sourceMeta.sha256())) {
+                throw new SourceParseNoLongerProcessableException(sourceId, snapshotId);
+            }
+            persistParsedDocument(workspaceId, sourceId, snapshotId, locked.sha256(), extracted);
+            String sourceParseTaskId = findSourceParseTaskId(sourceId);
+            if (messagingMode.isAsyncEnabled() && elasticsearchEnabled && sourceParseTaskId == null) {
+                sourceParseTaskId = taskCommandPort.createTask(
+                        workspaceId, "SOURCE_PARSE", "SOURCE", sourceId, "PARSING", "生成资料解析与索引");
+                taskCommandPort.startTask(sourceParseTaskId);
+            }
+            writeChunksAndQueueEmbedding(workspaceId, sourceId, snapshotId, locked, extracted, sourceParseTaskId);
+        });
     }
 
     /**
@@ -104,17 +129,18 @@ public class SourceParseService implements SourceParsePort {
         String text = extracted.text();
         String actor = auditActorProvider.currentOrSystem("SOURCE_PARSE");
         boolean projectionEnabled = elasticsearchEnabled;
-        List<DocumentChunker.DocumentChunk> chunks = documentChunker.chunk(text, extracted.mimeType());
+        List<DocumentChunker.DocumentChunk> chunks = documentChunker.chunk(extracted);
         for (int i = 0; i < chunks.size(); i++) {
             String chunkId = Ids.newId();
             DocumentChunker.DocumentChunk chunk = chunks.get(i);
             jdbcTemplate.update("""
                     insert into source_chunk(id, workspace_id, source_id, source_snapshot_id, chunk_no, heading, content,
-                                             token_estimate, location_info, page_start, page_end)
-                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                             token_estimate, location_info, page_start, page_end, structure_metadata_json)
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, chunkId, workspaceId, sourceId, snapshotId, i, chunk.headingPath(), chunk.content(),
-                    Math.max(1, chunk.tokens()), chunk.location(i), chunk.pageStart(), chunk.pageEnd());
-            List<String> windows = documentChunker.windows(chunk.content());
+                    Math.max(1, chunk.tokens()), chunk.location(i), chunk.pageStart(), chunk.pageEnd(),
+                    chunk.structureMetadata() == null ? null : writeJson(chunk.structureMetadata()));
+            List<String> windows = documentChunker.windows(chunk);
             for (int windowNo = 0; windowNo < windows.size(); windowNo++) {
                 jdbcTemplate.update("""
                         insert into source_window(id, source_chunk_id, window_no, content, location_info)
@@ -131,13 +157,17 @@ public class SourceParseService implements SourceParsePort {
         metadata.put("mime_type", extracted.mimeType());
         metadata.put("chunk_count", chunks.size());
         metadata.put("char_count", text.length());
+        metadata.put("parser", extracted.parser());
+        metadata.put("truncated", extracted.truncated());
+        metadata.put("degradation", extracted.degradation());
+        metadata.put("warnings", extracted.warnings());
         if (extracted.pageCount() > 0) {
             metadata.put("page_count", extracted.pageCount());
         }
         if (!outline.isEmpty()) {
             metadata.put("outline", outline);
         }
-        metadata.put("chunking", "structure_aware_token_v2");
+        metadata.put("chunking", extracted.elements().isEmpty() ? "structure_aware_token_v2" : "typed_elements_token_v3");
         metadata.put("entry_strategy", "marginalia_structured_reading_funnel");
         jdbcTemplate.update("""
                 update source
@@ -217,22 +247,22 @@ public class SourceParseService implements SourceParsePort {
                         sourceId, snapshotId);
                 return false;
             }
-            String objectKey = jdbcTemplate.queryForObject("""
-                    select object_key from source_snapshot where id = ?
-                    """, String.class, snapshotId);
             SourceMeta meta = loadSourceMeta(workspaceId, sourceId, snapshotId, false);
+            if (!meta.extractable()) return false;
             original = java.nio.file.Files.createTempFile("noteweave-source-", ".bin");
-            storage.readToFile(BUCKET_SOURCE, objectKey, original);
+            storage.readToFile(BUCKET_SOURCE, meta.objectKey(), original);
             if (SourceMediaTypes.isMedia(meta.mimeType())) {
                 return submitTranscription(workspaceId, sourceId, snapshotId, meta, original);
             }
             SourceDocumentTextExtractor.ExtractedDocument extracted =
-                    documentTextExtractor.extract(meta.title(), meta.mimeType(), original);
+                    extract(workspaceId, sourceId, snapshotId, meta, original);
             String textKey = SourcePipelineStages.extractedTextKey(workspaceId, sourceId, snapshotId);
-            storage.write(SourcePipelineStages.BUCKET_DERIVED, textKey,
-                    extracted.text().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            Boolean queued = transactionTemplate.execute(ignored ->
-                    queueChunkStage(workspaceId, sourceId, snapshotId, textKey, extracted));
+            Boolean queued = transactionTemplate.execute(ignored -> {
+                SourceMeta locked = loadSourceMetaForProcessing(workspaceId, sourceId, snapshotId);
+                if (!locked.extractable() || !locked.sha256().equals(meta.sha256())) return false;
+                persistParsedDocument(workspaceId, sourceId, snapshotId, locked.sha256(), extracted);
+                return queueChunkStage(workspaceId, sourceId, snapshotId, textKey, extracted);
+            });
             if (Boolean.TRUE.equals(queued)) {
                 log.info("SourceParseService extracted text: sourceId={}, snapshotId={}, chars={}",
                         sourceId, snapshotId, extracted.text().length());
@@ -255,12 +285,13 @@ public class SourceParseService implements SourceParsePort {
     private boolean queueChunkStage(String workspaceId, String sourceId, String snapshotId, String textKey,
                                     SourceDocumentTextExtractor.ExtractedDocument extracted) {
         SourceMeta meta = loadSourceMetaForProcessing(workspaceId, sourceId, snapshotId);
+        if (!meta.extractable()) return false;
         int moved = jdbcTemplate.update("""
                 update source_snapshot set processing_stage = ?
                 where id = ? and parse_status = 'PENDING'
                   and (processing_stage is null or processing_stage = ?)
                 """, SourcePipelineStages.STAGE_CHUNKING, snapshotId, SourcePipelineStages.STAGE_EXTRACTING);
-        if (!meta.processable() || moved != 1) {
+        if (moved != 1) {
             return false;
         }
         return insertChunkOutbox(workspaceId, sourceId, snapshotId, textKey, extracted,
@@ -281,12 +312,13 @@ public class SourceParseService implements SourceParsePort {
                 workspaceId, sourceId, snapshotId, meta.title(), meta.mimeType()), original);
         Boolean moved = transactionTemplate.execute(ignored -> {
             SourceMeta locked = loadSourceMetaForProcessing(workspaceId, sourceId, snapshotId);
+            if (!locked.extractable()) return false;
             int updated = jdbcTemplate.update("""
                     update source_snapshot set processing_stage = ?
                     where id = ? and parse_status = 'PENDING'
                       and (processing_stage is null or processing_stage = ?)
                     """, SourcePipelineStages.STAGE_TRANSCRIBING, snapshotId, SourcePipelineStages.STAGE_EXTRACTING);
-            if (!locked.processable() || updated != 1) return false;
+            if (updated != 1) return false;
             // updated_at 记录进入转写阶段的时间，供超时检查使用
             jdbcTemplate.update("update source set updated_at = current_timestamp where id = ?", sourceId);
             String taskId = findSourceParseTaskId(sourceId);
@@ -314,11 +346,12 @@ public class SourceParseService implements SourceParsePort {
                 transcript.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         Boolean queued = transactionTemplate.execute(ignored -> {
             SourceMeta meta = loadSourceMetaForProcessing(workspaceId, sourceId, snapshotId);
+            if (!meta.processable()) return false;
             int moved = jdbcTemplate.update("""
                     update source_snapshot set processing_stage = ?
                     where id = ? and parse_status = 'PENDING' and processing_stage = ?
                     """, SourcePipelineStages.STAGE_CHUNKING, snapshotId, SourcePipelineStages.STAGE_TRANSCRIBING);
-            if (!meta.processable() || moved != 1) return false;
+            if (moved != 1) return false;
             String duration = durationSeconds == null || durationSeconds <= 0 ? ""
                     : "（时长约 " + Math.max(1, Math.round(durationSeconds / 60)) + " 分钟）";
             return insertChunkOutbox(workspaceId, sourceId, snapshotId, textKey,
@@ -361,23 +394,118 @@ public class SourceParseService implements SourceParsePort {
      * 异步切片阶段：读取解析阶段写入的文本，生成片段和阅读窗口，再投递向量化阶段。
      * 快照不在切片阶段（已处理、已删除或被重新处理）时返回 false，消息直接确认。
      */
-    @Transactional
     public boolean chunkStage(String workspaceId, String sourceId, String snapshotId, String textObjectKey,
                               String mimeType, int pageCount) {
+        return Boolean.TRUE.equals(transactionTemplate.execute(ignored ->
+                chunkStageLocked(workspaceId, sourceId, snapshotId, textObjectKey, mimeType, pageCount)));
+    }
+
+    private boolean chunkStageLocked(String workspaceId, String sourceId, String snapshotId, String textObjectKey,
+                                     String mimeType, int pageCount) {
         SourceMeta meta = loadSourceMetaForProcessing(workspaceId, sourceId, snapshotId);
-        String stage = jdbcTemplate.queryForObject(
-                "select processing_stage from source_snapshot where id = ?", String.class, snapshotId);
+        String stage = meta.processingStage();
         if (!meta.processable() || !SourcePipelineStages.STAGE_CHUNKING.equals(stage)) {
             log.info("Skip source chunk stage: sourceId={}, snapshotId={}, stage={}", sourceId, snapshotId, stage);
             return false;
         }
-        String text = new String(storage.read(SourcePipelineStages.BUCKET_DERIVED, textObjectKey),
-                java.nio.charset.StandardCharsets.UTF_8);
+        String expectedTextKey = SourcePipelineStages.extractedTextKey(workspaceId, sourceId, snapshotId);
+        if (!expectedTextKey.equals(textObjectKey)) {
+            throw new BusinessException("SOURCE_PARSED_DOCUMENT_IDENTITY_MISMATCH", "切片文本对象不属于当前快照");
+        }
+        SourceDocumentTextExtractor.ExtractedDocument extracted = loadParsedDocument(
+                workspaceId, sourceId, snapshotId, meta, expectedTextKey, mimeType, pageCount);
         writeChunksAndQueueEmbedding(workspaceId, sourceId, snapshotId, meta,
-                new SourceDocumentTextExtractor.ExtractedDocument(text, mimeType, pageCount),
+                extracted,
                 findSourceParseTaskId(sourceId));
         return true;
     }
+
+    private SourceDocumentTextExtractor.ExtractedDocument extract(String workspaceId, String sourceId, String snapshotId,
+                                                                  SourceMeta meta, Path original) {
+        return documentTextExtractor.extract(new SourceDocumentParserPort.Request(workspaceId, sourceId, snapshotId,
+                meta.title(), meta.mimeType(), meta.sha256(), 20_000_000), original);
+    }
+
+    static String parsedDocumentKey(String workspaceId, String sourceId, String snapshotId) {
+        return "workspace/%s/source/%s/snapshot/%s/parsed-document.json".formatted(workspaceId, sourceId, snapshotId);
+    }
+
+    /** 结构文档与兼容文本均按快照隔离写入，失败时不会推进数据库阶段。 */
+    private void persistParsedDocument(String workspaceId, String sourceId, String snapshotId, String sha256,
+                                       SourceDocumentTextExtractor.ExtractedDocument document) {
+        Path json = null, text = null;
+        try {
+            json = Files.createTempFile("noteweave-parsed-", ".json");
+            text = Files.createTempFile("noteweave-extracted-", ".txt");
+            objectMapper.writeValue(json.toFile(), new StoredParsedDocument(1, workspaceId, sourceId, snapshotId, sha256, document));
+            Files.writeString(text, document.text(), StandardCharsets.UTF_8);
+            storage.writeFile(SourcePipelineStages.BUCKET_DERIVED, parsedDocumentKey(workspaceId, sourceId, snapshotId), json);
+            storage.writeFile(SourcePipelineStages.BUCKET_DERIVED,
+                    SourcePipelineStages.extractedTextKey(workspaceId, sourceId, snapshotId), text);
+        } catch (IOException exception) {
+            throw new BusinessException("SOURCE_PARSED_DOCUMENT_WRITE_FAILED", "解析结构文档写入失败");
+        } finally {
+            deleteQuietly(json);
+            deleteQuietly(text);
+        }
+    }
+
+    private SourceDocumentTextExtractor.ExtractedDocument loadParsedDocument(String workspaceId, String sourceId,
+                                                                           String snapshotId, SourceMeta meta,
+                                                                           String textKey, String mimeType, int pageCount) {
+        String key = parsedDocumentKey(workspaceId, sourceId, snapshotId);
+        // 转写稿继续使用原来的文字稿路径，不混入先前的文档结构。
+        if (!SourceMediaTypes.isMedia(meta.mimeType()) && storage.exists(SourcePipelineStages.BUCKET_DERIVED, key)) {
+            Path file = null;
+            try {
+                file = Files.createTempFile("noteweave-parsed-read-", ".json");
+                storage.readToFile(SourcePipelineStages.BUCKET_DERIVED, key, file);
+                try (InputStream input = new HttpSourceDocumentParserClient.BoundedInputStream(Files.newInputStream(file),
+                        256L * 1024 * 1024)) {
+                    StoredParsedDocument stored = objectMapper.readValue(input, StoredParsedDocument.class);
+                    var document = stored.document();
+                    if (stored.schemaVersion() != 1 || !workspaceId.equals(stored.workspaceId())
+                            || !sourceId.equals(stored.sourceId()) || !snapshotId.equals(stored.snapshotId())
+                            || !meta.sha256().equals(stored.sha256()) || document == null
+                            || document.text() == null || document.text().length() > 20_000_000
+                            || !meta.mimeType().equals(document.mimeType())) {
+                        throw new BusinessException("SOURCE_PARSED_DOCUMENT_IDENTITY_MISMATCH", "解析结构文档与当前快照不一致");
+                    }
+                    return document;
+                }
+            } catch (IOException exception) {
+                throw new BusinessException("SOURCE_PARSED_DOCUMENT_INVALID", "解析结构文档不可读取或结构无效");
+            } finally {
+                deleteQuietly(file);
+            }
+        }
+        if (!meta.mimeType().equals(mimeType)) {
+            throw new BusinessException("SOURCE_PARSED_DOCUMENT_IDENTITY_MISMATCH", "切片消息资料类型与当前快照不一致");
+        }
+        Path file = null;
+        try {
+            file = Files.createTempFile("noteweave-legacy-text-", ".txt");
+            storage.readToFile(SourcePipelineStages.BUCKET_DERIVED, textKey, file);
+            StringBuilder text = new StringBuilder();
+            try (var reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+                char[] buffer = new char[8192];
+                int read;
+                while ((read = reader.read(buffer)) >= 0) {
+                    if (text.length() + read > 20_000_000) throw new BusinessException(
+                            "SOURCE_PARSED_DOCUMENT_INVALID", "旧解析文本超出字符上限");
+                    text.append(buffer, 0, read);
+                }
+            }
+            return new SourceDocumentTextExtractor.ExtractedDocument(text.toString(), mimeType, pageCount);
+        } catch (IOException exception) {
+            throw new BusinessException("SOURCE_PARSED_DOCUMENT_INVALID", "旧解析文本读取失败");
+        } finally {
+            deleteQuietly(file);
+        }
+    }
+
+    public record StoredParsedDocument(int schemaVersion, String workspaceId, String sourceId, String snapshotId,
+                                       String sha256, SourceDocumentTextExtractor.ExtractedDocument document) {}
 
     private void recordStage(String taskId, String stage, String message) {
         try {
@@ -404,7 +532,9 @@ public class SourceParseService implements SourceParsePort {
     public SourceParseAssessment assessProcessability(String workspaceId, String sourceId, String snapshotId) {
         return jdbcTemplate.query("""
                 select s.status as source_status, ss.parse_status as snapshot_parse_status,
-                       ss.index_status as snapshot_index_status, ss.processing_stage
+                       ss.index_status as snapshot_index_status, ss.processing_stage, ss.version_no,
+                       (select max(current_snapshot.version_no) from source_snapshot current_snapshot
+                        where current_snapshot.source_id = s.id) as latest_version
                 from source s
                 left join source_snapshot ss on ss.id = ? and ss.source_id = s.id
                 where s.id = ? and s.workspace_id = ?
@@ -422,6 +552,9 @@ public class SourceParseService implements SourceParsePort {
             if ("DELETED".equals(sourceStatus) || "DELETED".equals(snapshotParseStatus)) {
                 return new SourceParseAssessment(
                         SourceParseDisposition.TARGET_DELETED, sourceStatus, snapshotParseStatus);
+            }
+            if (rs.getInt("version_no") != rs.getInt("latest_version")) {
+                return new SourceParseAssessment(SourceParseDisposition.ALREADY_HANDLED, sourceStatus, snapshotParseStatus);
             }
             String stage = rs.getString("processing_stage");
             boolean laterStage = stage != null && !SourcePipelineStages.STAGE_EXTRACTING.equals(stage)
@@ -446,23 +579,27 @@ public class SourceParseService implements SourceParsePort {
 
     private SourceMeta loadSourceMeta(String workspaceId, String sourceId, String snapshotId, boolean lock) {
         return jdbcTemplate.query("""
-                select s.title, s.source_type, s.status, ss.parse_status,
+                select s.title, s.source_type, s.status, ss.parse_status, ss.processing_stage,
+                       ss.sha256, ss.object_key, ss.version_no,
+                       (select max(current_snapshot.version_no) from source_snapshot current_snapshot
+                        where current_snapshot.source_id = s.id) as latest_version,
                        coalesce(fo.mime_type, 'text/markdown') as mime_type
                 from source s
                 join source_snapshot ss on ss.id = ? and ss.source_id = s.id
-                left join file_object fo on fo.id = s.file_object_id
+                left join file_object fo on fo.id = ss.file_object_id
                 where s.id = ? and s.workspace_id = ?
                 """ + (lock ? " for update" : ""), rs -> {
             if (!rs.next()) {
                 throw new BusinessException("SOURCE_NOT_FOUND", "资料不存在");
             }
             boolean processable = !"DELETED".equals(rs.getString("status"))
-                    && "PENDING".equals(rs.getString("parse_status"));
+                    && "PENDING".equals(rs.getString("parse_status"))
+                    && rs.getInt("version_no") == rs.getInt("latest_version");
             return new SourceMeta(
                     rs.getString("title"),
                     rs.getString("source_type"),
-                    rs.getString("mime_type"),
-                    processable
+                    rs.getString("mime_type").split(";", 2)[0].trim().toLowerCase(Locale.ROOT),
+                    processable, rs.getString("sha256"), rs.getString("object_key"), rs.getString("processing_stage")
             );
         }, snapshotId, sourceId, workspaceId);
     }
@@ -589,7 +726,11 @@ public class SourceParseService implements SourceParsePort {
         }
     }
 
-    private record SourceMeta(String title, String sourceType, String mimeType, boolean processable) {
+    private record SourceMeta(String title, String sourceType, String mimeType, boolean processable,
+                              String sha256, String objectKey, String processingStage) {
+        boolean extractable() {
+            return processable && (processingStage == null || SourcePipelineStages.STAGE_EXTRACTING.equals(processingStage));
+        }
     }
 
     public record SourceParseAssessment(

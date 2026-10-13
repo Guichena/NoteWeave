@@ -218,6 +218,12 @@ services:
       NOTEWEAVE_RERANK_MAX_ATTEMPTS: ${NOTEWEAVE_RERANK_MAX_ATTEMPTS:-3}
       NOTEWEAVE_STORAGE_LOCAL_ROOT: /app/storage
       NOTEWEAVE_WORKER_ARTIFACT_BASE_URL: http://artifact-worker-api:18092
+      NOTEWEAVE_PARSE_ENABLED: ${NOTEWEAVE_PARSE_ENABLED:-true}
+      NOTEWEAVE_PARSE_BASE_URL: http://parse-worker:8000
+      NOTEWEAVE_PARSE_INTERNAL_AUTH_TOKEN: ${NOTEWEAVE_PARSE_INTERNAL_AUTH_TOKEN:?Set NOTEWEAVE_PARSE_INTERNAL_AUTH_TOKEN}
+      NOTEWEAVE_PARSE_TIMEOUT_SECONDS: ${NOTEWEAVE_PARSE_TIMEOUT_SECONDS:-180}
+      NOTEWEAVE_PARSE_CONNECT_TIMEOUT_SECONDS: ${NOTEWEAVE_PARSE_CONNECT_TIMEOUT_SECONDS:-3}
+      NOTEWEAVE_PARSE_MAX_CHARS: ${NOTEWEAVE_PARSE_MAX_CHARS:-20000000}
       NOTEWEAVE_WORKER_CONNECT_TIMEOUT_SECONDS: ${NOTEWEAVE_WORKER_CONNECT_TIMEOUT_SECONDS:-3}
       NOTEWEAVE_WORKER_READ_TIMEOUT_SECONDS: ${NOTEWEAVE_WORKER_READ_TIMEOUT_SECONDS:-30}
       NOTEWEAVE_INTERNAL_AUTH_TOKEN: ${NOTEWEAVE_INTERNAL_AUTH_TOKEN:?Set NOTEWEAVE_INTERNAL_AUTH_TOKEN}
@@ -424,6 +430,30 @@ services:
       timeout: 5s
       retries: 12
 
+  parse-worker:
+    build:
+      context: ./workers/parse-worker
+    container_name: noteweave-v2-parse-worker
+    restart: unless-stopped
+    ports:
+      - "18103:8000"
+    environment:
+      NOTEWEAVE_PARSE_INTERNAL_AUTH_TOKEN: ${NOTEWEAVE_PARSE_INTERNAL_AUTH_TOKEN:?Set NOTEWEAVE_PARSE_INTERNAL_AUTH_TOKEN}
+      NOTEWEAVE_PARSE_MAX_CHARS: ${NOTEWEAVE_PARSE_MAX_CHARS:-20000000}
+      NOTEWEAVE_PARSE_MAX_FILE_BYTES: ${NOTEWEAVE_PARSE_MAX_FILE_BYTES:-268435456}
+      NOTEWEAVE_PARSE_MAX_CONCURRENT_DOCUMENTS: ${NOTEWEAVE_PARSE_MAX_CONCURRENT_DOCUMENTS:-1}
+      NOTEWEAVE_PARSE_DOCUMENT_TIMEOUT_SECONDS: ${NOTEWEAVE_PARSE_DOCUMENT_TIMEOUT_SECONDS:-120}
+      NOTEWEAVE_PARSE_ARTIFACTS_PATH: ${NOTEWEAVE_PARSE_ARTIFACTS_PATH:-}
+      HF_HOME: /model-cache
+      HF_HUB_DISABLE_XET: ${HF_HUB_DISABLE_XET:-1}
+    volumes:
+      - noteweave_v2_parse_models:/model-cache
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
 volumes:
   noteweave_v2_mysql:
   noteweave_v2_redis:
@@ -435,3 +465,4 @@ volumes:
   noteweave_v2_backend_storage:
   noteweave_v2_artifact_worker_runtime:
   noteweave_v2_whisper_models:
+  noteweave_v2_parse_models:

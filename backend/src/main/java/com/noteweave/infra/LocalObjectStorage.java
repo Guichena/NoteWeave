@@ -46,6 +46,36 @@ public class LocalObjectStorage implements ObjectStorage {
     }
 
     @Override
+    public java.io.InputStream openStream(String bucket, String objectKey) {
+        try { return Files.newInputStream(resolveTarget(bucket, objectKey)); }
+        catch (IOException ex) { throw new IllegalStateException("对象读取失败：" + bucket + "/" + objectKey, ex); }
+    }
+
+    @Override
+    public void compose(String sourceBucket, List<String> sourceKeys, String targetBucket, String targetKey) {
+        if (sourceKeys == null || sourceKeys.isEmpty()) throw new IllegalArgumentException("合并对象列表不能为空");
+        Path target = resolveTarget(targetBucket, targetKey);
+        List<Path> sources = sourceKeys.stream().map(key -> resolveTarget(sourceBucket, key)).toList();
+        if (sources.contains(target)) throw new IllegalArgumentException("合并目标不能覆盖输入对象");
+        Path temporary = null;
+        try {
+            Files.createDirectories(target.getParent());
+            temporary = Files.createTempFile(target.getParent(), ".compose-", ".tmp");
+            try (var output = Files.newOutputStream(temporary)) {
+                for (Path source : sources) {
+                    try (var input = Files.newInputStream(source)) { input.transferTo(output); }
+                }
+            }
+            Files.move(temporary, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException ex) { throw new IllegalStateException("本地对象合并失败", ex); }
+        finally {
+            if (temporary != null) {
+                try { Files.deleteIfExists(temporary); } catch (IOException ignored) { }
+            }
+        }
+    }
+
+    @Override
     public void writeFile(String bucket, String objectKey, Path file) {
         try {
             Path target = resolveTarget(bucket, objectKey);

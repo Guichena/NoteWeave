@@ -14,6 +14,27 @@ class LocalObjectStorageTest {
     Path tempDir;
 
     @Test
+    void composeKeepsSourceOrderAndUsesStreamingEvenIfByteArrayReadIsDisabled() throws Exception {
+        NoteWeaveProperties properties = new NoteWeaveProperties(
+                new NoteWeaveProperties.Storage("local", tempDir, null), null, null, null, null, null);
+        LocalObjectStorage storage = new LocalObjectStorage(properties) {
+            @Override public byte[] read(String bucket, String key) {
+                throw new AssertionError("流式上传合并不能调用整体读取");
+            }
+        };
+        storage.write("source", "part-0", "first".getBytes());
+        storage.write("source", "part-1", "second".getBytes());
+        storage.compose("source", java.util.List.of("part-0", "part-1"), "source", "merged");
+        try (var stream = storage.openStream("source", "merged")) {
+            assertThat(new String(stream.readNBytes(11))).isEqualTo("firstsecond");
+        }
+        assertThatThrownBy(() -> storage.compose("source", java.util.List.of("../outside"), "source", "bad"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> storage.compose("source", java.util.List.of("merged"), "source", "merged"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void deleteShouldRemoveObjectAndRejectBucketEscape() {
         NoteWeaveProperties properties = new NoteWeaveProperties(
                 new NoteWeaveProperties.Storage("local", tempDir, null),

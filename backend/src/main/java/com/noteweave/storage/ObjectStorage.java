@@ -13,6 +13,32 @@ public interface ObjectStorage {
 
     byte[] read(String bucket, String objectKey);
 
+    /** 调用方负责关闭流；生产实现不把整个对象读入堆内存。 */
+    default java.io.InputStream openStream(String bucket, String objectKey) {
+        return new java.io.ByteArrayInputStream(read(bucket, objectKey));
+    }
+
+    /** 按顺序合并对象。支持服务端合并的实现覆盖此方法。 */
+    default void compose(String sourceBucket, List<String> sourceKeys, String targetBucket, String targetKey) {
+        if (sourceKeys == null || sourceKeys.isEmpty()) throw new IllegalArgumentException("合并对象列表不能为空");
+        Path temporary = null;
+        try {
+            temporary = Files.createTempFile("noteweave-compose-", ".bin");
+            try (var output = Files.newOutputStream(temporary)) {
+                for (String key : sourceKeys) {
+                    try (var input = openStream(sourceBucket, key)) { input.transferTo(output); }
+                }
+            }
+            writeFile(targetBucket, targetKey, temporary);
+        } catch (IOException ex) {
+            throw new IllegalStateException("对象合并失败", ex);
+        } finally {
+            if (temporary != null) {
+                try { Files.deleteIfExists(temporary); } catch (IOException ignored) { }
+            }
+        }
+    }
+
     boolean exists(String bucket, String objectKey);
 
     void delete(String bucket, String objectKey);

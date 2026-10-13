@@ -45,7 +45,9 @@ public class WorkspaceAuthorizationInterceptor implements HandlerInterceptor {
             guard.requireTaskPermission(matcher.group(1), WorkspacePermission.WORKSPACE_READ);
         } else if ((matcher = CONVERSATION_PATH.matcher(path)).matches()) {
             guard.requireConversationPermission(matcher.group(1), WorkspacePermission.ANSWER_RUN);
-        } else if ((matcher = UPLOAD_PATH.matcher(path)).matches()) {
+        } else if (!("/api/v2/uploads/formats".equals(path)
+                && (HttpMethod.GET.matches(method) || HttpMethod.HEAD.matches(method)))
+                && (matcher = UPLOAD_PATH.matcher(path)).matches()) {
             guard.requireUploadPermission(matcher.group(1), WorkspacePermission.SOURCE_WRITE);
         } else if ((matcher = CHAT_REQUEST_PATH.matcher(path)).matches()) {
             guard.requireChatRequestPermission(matcher.group(1), WorkspacePermission.WORKSPACE_READ);

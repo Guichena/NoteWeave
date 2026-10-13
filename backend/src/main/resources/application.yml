@@ -189,6 +189,13 @@ noteweave:
   document:
     chunk-max-tokens: ${NOTEWEAVE_DOCUMENT_CHUNK_MAX_TOKENS:600}
     chunk-overlap-tokens: ${NOTEWEAVE_DOCUMENT_CHUNK_OVERLAP_TOKENS:80}
+  source-parser:
+    enabled: ${NOTEWEAVE_PARSE_ENABLED:true}
+    base-url: ${NOTEWEAVE_PARSE_BASE_URL:http://localhost:18103}
+    timeout-seconds: ${NOTEWEAVE_PARSE_TIMEOUT_SECONDS:180}
+    connect-timeout-seconds: ${NOTEWEAVE_PARSE_CONNECT_TIMEOUT_SECONDS:3}
+    max-chars: ${NOTEWEAVE_PARSE_MAX_CHARS:20000000}
+    internal-auth-token: ${NOTEWEAVE_PARSE_INTERNAL_AUTH_TOKEN:}
   kafka:
     enabled: ${NOTEWEAVE_KAFKA_ENABLED:true}
     topics:

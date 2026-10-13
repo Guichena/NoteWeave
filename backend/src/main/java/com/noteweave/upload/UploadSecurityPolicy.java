@@ -21,11 +21,30 @@ public class UploadSecurityPolicy {
             Map.entry("txt", "text/plain"),
             Map.entry("json", "application/json"),
             Map.entry("csv", "text/csv"),
-            Map.entry("pdf", "application/pdf")
+            Map.entry("pdf", "application/pdf"),
+            Map.entry("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+            Map.entry("pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+            Map.entry("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            Map.entry("html", "text/html"), Map.entry("htm", "text/html"),
+            Map.entry("epub", "application/epub+zip"), Map.entry("rtf", "application/rtf")
     );
+    private static final Map<String, String> ARCHIVE_MARKERS = Map.of(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "word/document.xml",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation", "ppt/presentation.xml",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xl/workbook.xml",
+            "application/epub+zip", "META-INF/container.xml");
+
+    public java.util.List<UploadFormatResponse> formats() {
+        Map<String, String> supported = new java.util.TreeMap<>(EXTENSION_MIME);
+        supported.putAll(com.noteweave.source.SourceMediaTypes.EXTENSION_MIME);
+        return supported.entrySet().stream().map(entry -> new UploadFormatResponse(entry.getKey(), entry.getValue())).toList();
+    }
 
     public void validateMetadata(CreateUploadRequest request) {
         String fileName = request.fileName() == null ? "" : request.fileName().trim();
+        if (request.sha256() != null && !request.sha256().matches("[a-f0-9]{64}")) {
+            throw new BusinessException("UPLOAD_SHA256_INVALID", "SHA-256 必须是64位小写十六进制字符串");
+        }
         if (fileName.contains("/") || fileName.contains("\\") || fileName.contains("..")
                 || fileName.chars().anyMatch(character -> Character.isISOControl(character))) {
             throw new BusinessException("UPLOAD_FILE_NAME_INVALID", "文件名包含非法路径或控制字符");
@@ -50,7 +69,7 @@ public class UploadSecurityPolicy {
         if (expectedMime == null || !expectedMime.equals(actualMime)) {
             throw new BusinessException(
                     "UPLOAD_FILE_TYPE_UNSUPPORTED",
-                    "仅支持 pdf、md、txt、json、csv 文档和 mp3、m4a、wav、ogg、flac、webm、mp4 音视频，且 MIME 必须匹配扩展名"
+                    "文件扩展名或 MIME 不受支持，请使用格式列表中的匹配类型"
             );
         }
     }
@@ -73,6 +92,20 @@ public class UploadSecurityPolicy {
             throw new BusinessException("UPLOAD_FILE_TOO_LARGE", "单文件最大允许 128MB");
         }
         String normalizedMime = normalizeMime(mimeType);
+        if (ARCHIVE_MARKERS.containsKey(normalizedMime)) {
+            java.nio.file.Path temporary = null;
+            try {
+                temporary = java.nio.file.Files.createTempFile("noteweave-upload-validation-", ".zip");
+                java.nio.file.Files.write(temporary, content);
+                validateMergedFile(normalizedMime, declaredSize, temporary);
+                return;
+            } catch (java.io.IOException ex) { throw new BusinessException("UPLOAD_MERGE_FAILED", "上传文件类型校验失败"); }
+            finally {
+                if (temporary != null) {
+                    try { java.nio.file.Files.deleteIfExists(temporary); } catch (java.io.IOException ignored) { }
+                }
+            }
+        }
         if (com.noteweave.source.SourceMediaTypes.isMedia(normalizedMime)) {
             requireMediaSignature(normalizedMime, java.util.Arrays.copyOf(content, Math.min(content.length, 16)));
             return;
@@ -89,6 +122,7 @@ public class UploadSecurityPolicy {
         try {
             requireSupportedTextEncoding(new java.io.ByteArrayInputStream(content),
                     () -> new java.io.ByteArrayInputStream(content));
+            requireTextSignature(normalizedMime, java.util.Arrays.copyOf(content, Math.min(content.length, 512)));
         } catch (java.io.IOException ex) {
             throw new BusinessException("UPLOAD_MERGE_FAILED", "上传分片合并失败");
         }
@@ -115,6 +149,10 @@ public class UploadSecurityPolicy {
             throw new BusinessException("UPLOAD_FILE_TOO_LARGE", "单文件最大允许 128MB");
         }
         String normalizedMime = normalizeMime(mimeType);
+        if (ARCHIVE_MARKERS.containsKey(normalizedMime)) {
+            validateArchive(normalizedMime, file);
+            return;
+        }
         try (java.io.InputStream input = java.nio.file.Files.newInputStream(file)) {
             if (com.noteweave.source.SourceMediaTypes.isMedia(normalizedMime)) {
                 // 音视频是二进制内容，只核对文件头
@@ -133,6 +171,65 @@ public class UploadSecurityPolicy {
         }
         if (!EXTENSION_MIME.containsValue(normalizedMime)) {
             throw new BusinessException("UPLOAD_FILE_TYPE_UNSUPPORTED", "不支持该文件类型");
+        }
+        try (java.io.InputStream input = java.nio.file.Files.newInputStream(file)) {
+            requireTextSignature(normalizedMime, input.readNBytes(512));
+        } catch (java.io.IOException ex) { throw new BusinessException("UPLOAD_MERGE_FAILED", "上传文件类型校验失败"); }
+    }
+
+    private void requireTextSignature(String mime, byte[] head) {
+        String text = new String(head, StandardCharsets.ISO_8859_1).stripLeading();
+        if (text.startsWith("\u00ef\u00bb\u00bf")) text = text.substring(3).stripLeading();
+        if ("application/rtf".equals(mime) && !text.startsWith("{\\rtf")) {
+            throw new BusinessException("UPLOAD_DOCUMENT_SIGNATURE_INVALID", "RTF 文件头与声明类型不一致");
+        }
+        if ("text/html".equals(mime) && !text.startsWith("<")) {
+            throw new BusinessException("UPLOAD_DOCUMENT_SIGNATURE_INVALID", "HTML 文件头与声明类型不一致");
+        }
+    }
+
+    private void validateArchive(String mime, java.nio.file.Path file) {
+        try (java.io.InputStream input = java.nio.file.Files.newInputStream(file)) {
+            byte[] head = input.readNBytes(4);
+            if (head.length != 4 || head[0] != 'P' || head[1] != 'K' || head[2] != 3 || head[3] != 4) {
+                throw new BusinessException("UPLOAD_DOCUMENT_SIGNATURE_INVALID", "Office 或 EPUB 文件必须是有效的 ZIP 容器");
+            }
+        } catch (java.io.IOException ex) { throw new BusinessException("UPLOAD_DOCUMENT_SIGNATURE_INVALID", "文档容器读取失败"); }
+        try (java.util.zip.ZipFile archive = new java.util.zip.ZipFile(file.toFile())) {
+            long expandedSize = 0;
+            int count = 0;
+            var entries = archive.entries();
+            while (entries.hasMoreElements()) {
+                var entry = entries.nextElement();
+                String name = entry.getName().replace('\\', '/');
+                if (++count > 10_000 || name.startsWith("/") || name.matches("^[A-Za-z]:.*")
+                        || java.util.Arrays.stream(name.split("/")).anyMatch(".."::equals)
+                        || name.chars().anyMatch(Character::isISOControl) || entry.getSize() < 0) {
+                    throw new BusinessException("UPLOAD_DOCUMENT_CONTAINER_INVALID", "文档容器包含无效路径或过多内容");
+                }
+                expandedSize = Math.addExact(expandedSize, entry.getSize());
+                if (expandedSize > 512L * 1024 * 1024) {
+                    throw new BusinessException("UPLOAD_DOCUMENT_CONTAINER_INVALID", "文档容器展开后超过允许大小");
+                }
+            }
+            if (archive.getEntry(ARCHIVE_MARKERS.get(mime)) == null) {
+                throw new BusinessException("UPLOAD_DOCUMENT_SIGNATURE_INVALID", "文档容器与声明格式不一致");
+            }
+            if ("application/epub+zip".equals(mime)) {
+                var marker = archive.getEntry("mimetype");
+                if (marker == null || marker.getSize() > 128) {
+                    throw new BusinessException("UPLOAD_DOCUMENT_SIGNATURE_INVALID", "EPUB 缺少类型声明");
+                }
+                try (var stream = archive.getInputStream(marker)) {
+                    if (!"application/epub+zip".equals(new String(stream.readNBytes(129), StandardCharsets.US_ASCII).strip())) {
+                        throw new BusinessException("UPLOAD_DOCUMENT_SIGNATURE_INVALID", "EPUB 类型声明不一致");
+                    }
+                }
+            } else if (archive.getEntry("[Content_Types].xml") == null) {
+                throw new BusinessException("UPLOAD_DOCUMENT_SIGNATURE_INVALID", "Office 文档缺少内容类型声明");
+            }
+        } catch (java.io.IOException | ArithmeticException ex) {
+            throw new BusinessException("UPLOAD_DOCUMENT_CONTAINER_INVALID", "文档容器无效或超过允许大小");
         }
     }
 
@@ -158,7 +255,7 @@ public class UploadSecurityPolicy {
         }
         if (utf8 == TextDecodeResult.MALFORMED) {
             try (java.io.InputStream again = reopen.open()) {
-                if (decodeStrictly(again, GB18030, false) == TextDecodeResult.VALID) {
+                if (decodeStrictly(again, GB18030, true) == TextDecodeResult.VALID) {
                     return;
                 }
             }

@@ -1,5 +1,6 @@
 package com.noteweave.source;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.noteweave.config.NoteWeaveProperties;
 import com.noteweave.conversation.ContextTokenEstimator;
 import java.util.ArrayList;
@@ -70,8 +71,13 @@ public class DocumentChunker {
             Integer pageEnd,
             String timeStart,
             String timeEnd,
-            int tokens
+            int tokens,
+            StructureMetadata structureMetadata
     ) {
+        public DocumentChunk(String headingPath, String content, Integer pageStart, Integer pageEnd,
+                             String timeStart, String timeEnd, int tokens) {
+            this(headingPath, content, pageStart, pageEnd, timeStart, timeEnd, tokens, null);
+        }
         /** 人类可读的定位：页码、时间与章节，前缀保留 chunk 序号，长度受数据库列限制。 */
         public String location(int chunkNo) {
             StringBuilder builder = new StringBuilder("chunk:").append(chunkNo);
@@ -105,6 +111,23 @@ public class DocumentChunker {
         }
     }
 
+    /** 元素位置与预算诊断独立于旧定位字符串保存，坐标不会因正文切分而丢失。 */
+    public record StructureMetadata(
+            @JsonProperty("schema_version") int schemaVersion,
+            @JsonProperty("heading_path") List<String> headingPath,
+            @JsonProperty("element_types") List<DocumentElement.ElementType> elementTypes,
+            List<ElementLocation> elements,
+            boolean indivisible,
+            @JsonProperty("exceeds_token_budget") boolean exceedsTokenBudget
+    ) {}
+
+    public record ElementLocation(@JsonProperty("element_index") int elementIndex,
+                                  @JsonProperty("element_type") DocumentElement.ElementType elementType,
+                                  Integer page, DocumentElement.BoundingBox bbox,
+                                  @JsonProperty("heading_level") Integer headingLevel) {}
+
+    private record TypedPart(int elementIndex, DocumentElement element, String text, List<String> path) {}
+
     private enum Kind { HEADING, PARAGRAPH, ATOMIC, LINE, ROW }
 
     private enum Mode { MARKDOWN, PLAIN, TRANSCRIPT, CSV }
@@ -128,6 +151,82 @@ public class DocumentChunker {
         };
         List<DocumentChunk> chunks = mode == Mode.CSV ? assembleCsv(blocks) : assemble(blocks, mode);
         return chunks.isEmpty() ? List.of(new DocumentChunk("", "", null, null, null, null, 0)) : chunks;
+    }
+
+    /** Docling 元素直接参与切片，表格、图注和公式独立保留，超过预算也不拆开。 */
+    public List<DocumentChunk> chunk(SourceDocumentTextExtractor.ExtractedDocument document) {
+        if (document.elements().isEmpty()) return chunk(document.text(), document.mimeType());
+        List<DocumentChunk> chunks = new ArrayList<>();
+        List<TypedPart> buffer = new ArrayList<>();
+        List<String> path = new ArrayList<>();
+        List<Integer> levels = new ArrayList<>();
+        for (int index = 0; index < document.elements().size(); index++) {
+            DocumentElement element = document.elements().get(index);
+            if (element.text() == null || element.text().isBlank()) continue;
+            boolean heading = element.elementType() == DocumentElement.ElementType.TITLE
+                    || element.elementType() == DocumentElement.ElementType.SECTION_HEADER;
+            if (heading) {
+                flushTyped(chunks, buffer);
+                int level = element.headingLevel() == null
+                        ? (element.elementType() == DocumentElement.ElementType.TITLE ? 1 : 2) : element.headingLevel();
+                while (!levels.isEmpty() && levels.get(levels.size() - 1) >= level) {
+                    levels.remove(levels.size() - 1);
+                    path.remove(path.size() - 1);
+                }
+                levels.add(level);
+                path.add(clean(element.text()));
+            }
+            if (element.indivisible()) {
+                flushTyped(chunks, buffer);
+                chunks.add(typedChunk(List.of(new TypedPart(index, element, element.text(), List.copyOf(path))), true));
+                continue;
+            }
+            for (String piece : splitToFit(element.text(), maxTokens)) {
+                TypedPart part = new TypedPart(index, element, piece, List.copyOf(path));
+                String candidate = buffer.stream().map(TypedPart::text).collect(java.util.stream.Collectors.joining("\n\n"));
+                if (!buffer.isEmpty() && tokens(candidate + "\n\n" + piece) > maxTokens) flushTyped(chunks, buffer);
+                buffer.add(part);
+            }
+        }
+        flushTyped(chunks, buffer);
+        // 有结构却没有可用正文时仍使用实际 Markdown，避免图片说明以外的正文被丢弃。
+        return chunks.isEmpty() ? chunk(document.text(), document.mimeType()) : chunks;
+    }
+
+    private void flushTyped(List<DocumentChunk> chunks, List<TypedPart> buffer) {
+        if (buffer.isEmpty()) return;
+        chunks.add(typedChunk(buffer, false));
+        buffer.clear();
+    }
+
+    private DocumentChunk typedChunk(List<TypedPart> parts, boolean indivisible) {
+        String text = parts.stream().map(TypedPart::text).collect(java.util.stream.Collectors.joining("\n\n"));
+        Integer start = null, end = null;
+        List<ElementLocation> locations = new ArrayList<>();
+        List<DocumentElement.ElementType> types = new ArrayList<>();
+        java.util.Set<Integer> seen = new java.util.HashSet<>();
+        for (TypedPart part : parts) {
+            DocumentElement element = part.element();
+            if (element.page() != null) {
+                start = start == null ? element.page() : Math.min(start, element.page());
+                end = end == null ? element.page() : Math.max(end, element.page());
+            }
+            if (seen.add(part.elementIndex())) locations.add(new ElementLocation(part.elementIndex(),
+                    element.elementType(), element.page(), element.bbox(), element.headingLevel()));
+            if (!types.contains(element.elementType())) types.add(element.elementType());
+        }
+        List<String> path = parts.get(0).path();
+        int estimate = tokens(text);
+        StructureMetadata metadata = new StructureMetadata(1, path, List.copyOf(types), List.copyOf(locations),
+                indivisible, estimate > maxTokens);
+        return new DocumentChunk(truncate(String.join(PATH_SEPARATOR, path), HEADING_PATH_MAX_CHARS), text,
+                start, end, null, null, estimate, metadata);
+    }
+
+    /** 不可拆结构也不在阅读窗口阶段被重新切开。 */
+    public List<String> windows(DocumentChunk chunk) {
+        return chunk.structureMetadata() != null && chunk.structureMetadata().indivisible()
+                ? List.of(chunk.content()) : windows(chunk.content());
     }
 
     /** 把片段切成阅读窗口：按段落和句子边界组装，窗口之间重叠上一窗口的最后一句。 */
