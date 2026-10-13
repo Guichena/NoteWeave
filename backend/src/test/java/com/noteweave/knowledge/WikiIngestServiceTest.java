@@ -53,6 +53,29 @@ class WikiIngestServiceTest {
     }
 
     @Test
+    void readySourceIngestRunsWithoutUserSessionCheck() {
+        // 资料索引完成事件在 Kafka 消费线程中触发，没有登录用户，只能按数据库里的工作台开关判断
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq("workspace-1")))
+                .thenReturn(1);
+        when(messagingMode.isAsyncEnabled()).thenReturn(true);
+        when(transactionExecutor.execute(any())).thenReturn("task-9");
+
+        org.assertj.core.api.Assertions.assertThat(
+                service.enqueueSourceIngestForReadySource("workspace-1", "source-1")).isEqualTo("task-9");
+        verifyNoInteractions(workspaceQueryPort);
+    }
+
+    @Test
+    void readySourceIngestSkipsWorkspacesWithWikiDisabled() {
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq("workspace-1")))
+                .thenReturn(0);
+
+        org.assertj.core.api.Assertions.assertThat(
+                service.enqueueSourceIngestForReadySource("workspace-1", "source-1")).isEmpty();
+        verifyNoInteractions(workspaceQueryPort, transactionExecutor);
+    }
+
+    @Test
     void disabledWikiShouldCancelIngestTaskWithoutStartingWork() {
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq("workspace-1")))
                 .thenReturn(0);

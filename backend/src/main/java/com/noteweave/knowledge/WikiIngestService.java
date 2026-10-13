@@ -80,6 +80,16 @@ public class WikiIngestService {
     }
 
     /**
+     * 系统内部（资料索引完成事件）触发的编译。后台线程没有登录用户，不能走需要访问权限的 isWikiEnabled。
+     */
+    public String enqueueSourceIngestForReadySource(String workspaceId, String sourceId) {
+        if (!isWikiEnabledForInternalExecution(workspaceId)) {
+            return "";
+        }
+        return enqueueAndRunSourceIngest(workspaceId, sourceId, "ingest", "资料索引完成，已进入 Wiki ingest 队列");
+    }
+
+    /**
      * Kafka 消费者回调入口：直接执行 source ingest。
      */
     public void runSourceIngestNow(String taskId, String workspaceId, String sourceId) {

@@ -18,6 +18,6 @@ public class WikiSourceReadyListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onSourceReady(SourceRetrievalReadyEvent event) {
-        wikiIngestService.enqueueAndRunSourceIngestIfEnabled(event.workspaceId(), event.sourceId());
+        wikiIngestService.enqueueSourceIngestForReadySource(event.workspaceId(), event.sourceId());
     }
 }

@@ -45,7 +45,7 @@ class SourceRetrievalReadyEventTest {
         new WikiSourceReadyListener(wikiIngestService)
                 .onSourceReady(new SourceRetrievalReadyEvent("workspace-1", "source-1"));
 
-        verify(wikiIngestService).enqueueAndRunSourceIngestIfEnabled("workspace-1", "source-1");
+        verify(wikiIngestService).enqueueSourceIngestForReadySource("workspace-1", "source-1");
     }
 
     private JdbcTemplate database() {
