@@ -127,7 +127,8 @@ public class AnswerRunService {
             String model,
             EvidenceBundle evidenceBundle,
             String promptVersion,
-            int maximumOutputTokens
+            int maximumOutputTokens,
+            String evidenceSufficiency
     ) {
         String actor = actor();
         EvidenceBundleSnapshot bundleSnapshot = EvidenceBundleSnapshot.from(evidenceBundle);
@@ -135,11 +136,13 @@ public class AnswerRunService {
         int updated = jdbcTemplate.update("""
                 update answer_run
                 set answer_message_id = ?, assistant_request_id = ?, model = ?,
-                    maximum_output_tokens = ?, evidence_bundle_json = ?, status = 'GENERATING',
+                    maximum_output_tokens = ?, evidence_bundle_json = ?, evidence_sufficiency = ?,
+                    status = 'GENERATING',
                     version = version + 1, updated_by = ?, updated_at = current_timestamp
                 where workspace_id = ? and id = ? and status = 'RETRIEVING'
                 """, answerMessageId, assistantRequestId, model,
                 maximumOutputTokens, Json.write(objectMapper, bundleSnapshot),
+                EvidenceSufficiency.canonical(evidenceSufficiency),
                 actor, workspaceId, runId);
         requireTransition(updated, runId, "GENERATING");
         jdbcTemplate.update("""
@@ -413,7 +416,7 @@ public class AnswerRunService {
                 select r.id, r.workspace_id, r.conversation_id, r.mode, r.status,
                        r.query_message_id, r.answer_message_id, r.assistant_request_id,
                        r.retrieval_plan_version, r.retrieval_plan_json, r.model, r.maximum_output_tokens,
-                       r.evidence_bundle_json,
+                       r.evidence_bundle_json, r.evidence_sufficiency,
                        r.started_at, r.first_token_at, r.finished_at,
                        r.error_code, r.error_message,
                        mr.revision_no, mr.status as revision_status, mr.content
@@ -446,12 +449,20 @@ public class AnswerRunService {
                 rs.getInt("character_cost"),
                 graphPath(rs.getString("graph_path_json"))
         ), workspaceId, runId);
-        String planJson = jdbcTemplate.query("""
-                select retrieval_plan_json from answer_run
+        record StoredPlan(String planJson, String evidenceSufficiency) {
+        }
+        StoredPlan storedPlan = jdbcTemplate.query("""
+                select retrieval_plan_json, evidence_sufficiency from answer_run
                 where workspace_id = ? and id = ?
-                """, rs -> rs.next() ? rs.getString("retrieval_plan_json") : null, workspaceId, runId);
+                """, rs -> rs.next()
+                ? new StoredPlan(rs.getString("retrieval_plan_json"), rs.getString("evidence_sufficiency"))
+                : new StoredPlan(null, null), workspaceId, runId);
         return new AnswerEvidenceManifestResponse(
-                runId, evidence, QueryRewrite.viewFromPlanJson(planJson), compiledMemoryReferences(workspaceId, runId));
+                runId,
+                evidence,
+                QueryRewrite.viewFromPlanJson(storedPlan.planJson()),
+                compiledMemoryReferences(workspaceId, runId),
+                storedPlan.evidenceSufficiency());
     }
 
     /** 从这次回答的输入快照读出实际编入的记忆。回放被降级时不带出展示文本。 */
@@ -508,7 +519,7 @@ public class AnswerRunService {
                 select r.id, r.workspace_id, r.conversation_id, r.mode, r.status,
                        r.query_message_id, r.answer_message_id, r.assistant_request_id,
                        r.retrieval_plan_version, r.retrieval_plan_json, r.model, r.maximum_output_tokens,
-                       r.evidence_bundle_json,
+                       r.evidence_bundle_json, r.evidence_sufficiency,
                        r.started_at, r.first_token_at, r.finished_at,
                        r.error_code, r.error_message,
                        mr.revision_no, mr.status as revision_status, mr.content
@@ -712,7 +723,8 @@ public class AnswerRunService {
                 text(rs.getString("content")), instant(rs.getTimestamp("started_at")),
                 instant(rs.getTimestamp("first_token_at")), instant(rs.getTimestamp("finished_at")),
                 text(rs.getString("error_code")), text(rs.getString("error_message")),
-                QueryRewrite.viewFromPlanJson(rs.getString("retrieval_plan_json"))
+                QueryRewrite.viewFromPlanJson(rs.getString("retrieval_plan_json")),
+                rs.getString("evidence_sufficiency")
         );
     }
 

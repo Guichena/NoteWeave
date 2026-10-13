@@ -58,6 +58,7 @@ public class ChatService {
     private final ConversationContextProjectionService contextProjectionService;
     private final ConversationRetrievalContextAssembler conversationContextAssembler;
     private final QueryRewriteService queryRewriteService;
+    private final EvidenceSufficiencyJudge evidenceSufficiencyJudge;
     private final ContextV2RolloutService contextV2Rollout;
     private final ContextV2ShadowSnapshotService contextV2Snapshots;
 
@@ -77,6 +78,7 @@ public class ChatService {
             ConversationContextProjectionService contextProjectionService,
             ConversationRetrievalContextAssembler conversationContextAssembler,
             QueryRewriteService queryRewriteService,
+            EvidenceSufficiencyJudge evidenceSufficiencyJudge,
             ContextV2RolloutService contextV2Rollout,
             ContextV2ShadowSnapshotService contextV2Snapshots
     ) {
@@ -95,6 +97,7 @@ public class ChatService {
         this.contextProjectionService = contextProjectionService;
         this.conversationContextAssembler = conversationContextAssembler;
         this.queryRewriteService = queryRewriteService;
+        this.evidenceSufficiencyJudge = evidenceSufficiencyJudge;
         this.contextV2Rollout = contextV2Rollout;
         this.contextV2Snapshots = contextV2Snapshots;
     }
@@ -121,7 +124,8 @@ public class ChatService {
                 draft.promptSpec(),
                 draft.contextProjection(),
                 draft.frozenContextV2(),
-                draft.maximumOutputTokens()
+                draft.maximumOutputTokens(),
+                draft.evidenceSufficiency()
         );
     }
 
@@ -159,7 +163,8 @@ public class ChatService {
                 material.retrievalPlan(),
                 material.evidenceBundle(),
                 material.promptVersion(),
-                material.maximumOutputTokens()
+                material.maximumOutputTokens(),
+                material.evidenceSufficiency()
         );
     }
 
@@ -290,7 +295,10 @@ public class ChatService {
             strategyContractValidator.validatePlan(mode, context, plan);
             bundle = unifiedRetrievalOrchestrator.execute(context, plan);
         }
-        PromptSpec prompt = strategy.compose(context, bundle);
+        EvidenceSufficiencyJudge.Judgement sufficiency = evidenceSufficiencyJudge.judge(
+                context.query(), bundle);
+        PromptSpec prompt = EvidenceSufficiencyPrompts.apply(
+                strategy.compose(context, bundle), sufficiency.verdict(), bundle);
         AnswerPolicy policy = strategy.policy();
         strategyContractValidator.validatePromptAndPolicy(
                 plan, bundle, prompt, policy);
@@ -304,7 +312,8 @@ public class ChatService {
                 prompt,
                 conversationContext.inputProjection(),
                 conversationContext.frozenV2(),
-                policy.maximumOutputTokens()
+                policy.maximumOutputTokens(),
+                sufficiency.verdict().name()
         );
     }
 
@@ -450,7 +459,8 @@ public class ChatService {
             PromptSpec promptSpec,
             ConversationContextProjectionService.Projection contextProjection,
             ContextV2ShadowSnapshotService.FrozenAnswer frozenContextV2,
-            int maximumOutputTokens
+            int maximumOutputTokens,
+            String evidenceSufficiency
     ) {
         private String promptVersion() {
             return promptSpec == null ? retrievalPlan.version() : promptSpec.promptVersion();
@@ -466,8 +476,24 @@ public class ChatService {
             PromptSpec promptSpec,
             ConversationContextProjectionService.Projection contextProjection,
             ContextV2ShadowSnapshotService.FrozenAnswer frozenContextV2,
-            int maximumOutputTokens
+            int maximumOutputTokens,
+            String evidenceSufficiency
     ) {
+        public PreparedAnswerMaterial(
+                String answer,
+                List<String> existingCitationIds,
+                MemoryControlPackResponse chatControlPack,
+                RetrievalPlan retrievalPlan,
+                EvidenceBundle evidenceBundle,
+                PromptSpec promptSpec,
+                ConversationContextProjectionService.Projection contextProjection,
+                ContextV2ShadowSnapshotService.FrozenAnswer frozenContextV2,
+                int maximumOutputTokens
+        ) {
+            this(answer, existingCitationIds, chatControlPack, retrievalPlan, evidenceBundle, promptSpec,
+                    contextProjection, frozenContextV2, maximumOutputTokens, null);
+        }
+
         public PreparedAnswerMaterial {
             existingCitationIds = existingCitationIds == null ? List.of() : List.copyOf(existingCitationIds);
             contextProjection = contextProjection == null

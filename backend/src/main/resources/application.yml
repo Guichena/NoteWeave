@@ -96,6 +96,8 @@ noteweave:
   retrieval:
     query-rewrite:
       enabled: ${NOTEWEAVE_QUERY_REWRITE_ENABLED:true}
+    evidence-sufficiency:
+      enabled: ${NOTEWEAVE_EVIDENCE_SUFFICIENCY_ENABLED:true}
     qa:
       mysql-fallback-enabled: ${NOTEWEAVE_QA_MYSQL_FALLBACK_ENABLED:false}
     note:

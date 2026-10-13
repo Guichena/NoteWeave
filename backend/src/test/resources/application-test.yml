@@ -28,6 +28,8 @@ noteweave:
   retrieval:
     query-rewrite:
       enabled: true
+    evidence-sufficiency:
+      enabled: true
     qa:
       mysql-fallback-enabled: true
     note:

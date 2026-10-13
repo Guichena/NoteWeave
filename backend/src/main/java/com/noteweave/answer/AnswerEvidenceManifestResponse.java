@@ -10,11 +10,22 @@ public record AnswerEvidenceManifestResponse(
         String runId,
         List<Evidence> evidence,
         @JsonInclude(JsonInclude.Include.NON_NULL) QueryRewrite.View retrievalRewrite,
-        List<MemoryReferenceResponse> memoryReferences
+        List<MemoryReferenceResponse> memoryReferences,
+        @JsonInclude(JsonInclude.Include.NON_NULL) String evidenceSufficiency
 ) {
     public AnswerEvidenceManifestResponse {
         evidence = evidence == null ? List.of() : List.copyOf(evidence);
         memoryReferences = memoryReferences == null ? List.of() : List.copyOf(memoryReferences);
+        evidenceSufficiency = EvidenceSufficiency.canonical(evidenceSufficiency);
+    }
+
+    public AnswerEvidenceManifestResponse(
+            String runId,
+            List<Evidence> evidence,
+            QueryRewrite.View retrievalRewrite,
+            List<MemoryReferenceResponse> memoryReferences
+    ) {
+        this(runId, evidence, retrievalRewrite, memoryReferences, null);
     }
 
     public AnswerEvidenceManifestResponse(
@@ -22,7 +33,7 @@ public record AnswerEvidenceManifestResponse(
             List<Evidence> evidence,
             QueryRewrite.View retrievalRewrite
     ) {
-        this(runId, evidence, retrievalRewrite, List.of());
+        this(runId, evidence, retrievalRewrite, List.of(), null);
     }
 
     public record Evidence(
