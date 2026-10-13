@@ -71,6 +71,10 @@ class ArtifactCallbackHttpError(RuntimeError):
         super().__init__(f"Java callback failed: {status_code} {detail}")
 
 
+class ArtifactCallbackTransportError(RuntimeError):
+    """宿主连接失败；与权限或响应内容错误分开处理。"""
+
+
 class ArtifactCallbackClient(Protocol):
     def fetch_task_input(self, task_id: str) -> ArtifactTaskInput:
         ...
@@ -136,6 +140,8 @@ class JavaArtifactCallbackClient:
                 windows, gap, cursor = select_frozen_windows(
                     query=task_input.input_payload.user_requirement + " " + source.title,
                     fetch_page=fetch_page,
+                    max_selected_windows=256,
+                    max_selected_bytes=1_048_576,
                 )
             except ArtifactCallbackHttpError as exc:
                 if exc.status_code != 404:
@@ -152,6 +158,22 @@ class JavaArtifactCallbackClient:
         response = self._request(
             "GET", f"/internal/worker/video-material-tasks/{quote(task_id, safe='')}/input")
         return VideoMaterialTaskInput.model_validate(_unwrap_api_response(response))
+
+    def retrieve_passages(self, task_id: str, query: str, limit: int, *, input_snapshot_id: str = "") -> dict[str, object]:
+        # 只对服务不可用降级；认证、投递所有权和冻结输入资格失败必须传给调用方。
+        try:
+            return _unwrap_api_response(self._request("POST",
+                f"/internal/worker/artifact-tasks/{quote(task_id, safe='')}/retrieve",
+                {"query": query, "limit": limit}))
+        except ArtifactCallbackHttpError as exc:
+            missing_route = exc.status_code == 404 and not re.search(r'"code"\s*:', str(exc))
+            if not missing_route and exc.status_code not in {429, 500, 502, 503, 504}:
+                raise
+            reason = "ARTIFACT_RETRIEVAL_ENDPOINT_UNAVAILABLE"
+        except (ArtifactCallbackTransportError, TimeoutError):
+            reason = "ARTIFACT_RETRIEVAL_ENDPOINT_UNAVAILABLE"
+        return {"task_id": task_id, "input_snapshot_id": input_snapshot_id,
+                "passages": [], "degraded": True, "degradation_reasons": [reason]}
 
     def publish_parent_material(self, task_id: str, bundle: VideoMaterialBundleV1) -> dict[str, object]:
         digest = bundle.content_digest()
@@ -377,7 +399,9 @@ class JavaArtifactCallbackClient:
             detail = sanitize_error_message(exc.read().decode("utf-8", errors="replace"))
             raise ArtifactCallbackHttpError(exc.code, detail) from exc
         except error.URLError as exc:
-            raise RuntimeError(f"Java callback unavailable: {sanitize_error_message(str(exc.reason))}") from exc
+            raise ArtifactCallbackTransportError(
+                f"Java 回调不可用：{sanitize_error_message(str(exc.reason))}"
+            ) from exc
         return json.loads(text) if text else {}
 
 
@@ -408,7 +432,11 @@ def run_artifact_task_with_callbacks(
                     task_id, referenced_id, referenced=True)
                 plan.verify_against_bundle(bundle)
                 task_input.frozen_video_knowledge_plan = plan.model_dump(mode="json")
-        events, result = run_artifact_task(task_input)
+        if isinstance(callback_client, JavaArtifactCallbackClient):
+            events, result = run_artifact_task(task_input, passage_search=lambda task_id, query, limit:
+                callback_client.retrieve_passages(task_id, query, limit, input_snapshot_id=task_input.input_snapshot_id))
+        else:
+            events, result = run_artifact_task(task_input)
     except Exception as exc:
         if _report_execution_failure(callback_client, task_id, "WORKER_EXECUTION", exc):
             setattr(exc, "artifact_failure_reported", True)
@@ -556,6 +584,10 @@ def resume_waiting_artifact_task_with_callbacks(
     waiting_record = get_waiting_task(task_id)
     task_input = (ArtifactTaskInput.model_validate(waiting_record["task_input"])
                   if waiting_record is not None else None)
+    retrieval_options = {}
+    if task_input is not None and isinstance(callback_client, JavaArtifactCallbackClient) and callback_client.delivery_token:
+        retrieval_options["passage_search"] = lambda task_id, query, limit: callback_client.retrieve_passages(
+            task_id, query, limit, input_snapshot_id=task_input.input_snapshot_id)
     try:
         events, result = wake_waiting_task(
             task_id,
@@ -563,6 +595,7 @@ def resume_waiting_artifact_task_with_callbacks(
             callback_receipt=callback_receipt,
             callback_operation=callback_operation,
             remove_on_success=False,
+            **retrieval_options,
         )
     except ValueError:
         raise

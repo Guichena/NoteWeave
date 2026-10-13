@@ -227,6 +227,7 @@ def wake_waiting_task(
     callback_receipt: dict[str, object] | None = None,
     callback_operation: dict[str, object] | None = None,
     remove_on_success: bool = True,
+    passage_search=None,
 ) -> tuple[list[object], object]:
     return _wake_waiting_task(
         task_id,
@@ -234,6 +235,7 @@ def wake_waiting_task(
         callback_receipt=callback_receipt,
         callback_operation=callback_operation,
         remove_on_success=remove_on_success,
+        passage_search=passage_search,
     )
 
 
@@ -244,6 +246,7 @@ def _wake_waiting_task(
     callback_receipt: dict[str, object] | None = None,
     callback_operation: dict[str, object] | None = None,
     remove_on_success: bool = True,
+    passage_search=None,
 ) -> tuple[list[object], object]:
     record = _claim_waiting_task(task_id)
     matched_operation = _match_blocked_operation(record, request_id=request_id)
@@ -271,7 +274,10 @@ def _wake_waiting_task(
             raise ValueError(
                 "artifact waiting record is missing resume_checkpoint; legacy full-task restart is disabled"
             )
-        events, result = resume_artifact_task(task_input, resume_checkpoint)
+        if passage_search is None:
+            events, result = resume_artifact_task(task_input, resume_checkpoint)
+        else:
+            events, result = resume_artifact_task(task_input, resume_checkpoint, passage_search=passage_search)
     except ValueError as exc:
         replay_record = mark_waiting_task_replay_required(task_id, str(exc))
         if replay_record is None:

@@ -198,7 +198,7 @@ def test_run_artifact_task_should_use_configured_llm_and_trace_generation_mode(
 
     _, result = run_artifact_task(_build_resume_task_input())
 
-    assert result.result_payload["generation_trace"] == {
+    assert {key: value for key, value in result.result_payload["generation_trace"].items() if key != "retrieval"} == {
         "mode": "LLM_GENERATION",
         "provider": "fake",
         "model": "fake-artifact-model",
@@ -206,7 +206,7 @@ def test_run_artifact_task_should_use_configured_llm_and_trace_generation_mode(
         "applied": True,
         "fallback_reason": "",
         "generated_section_count": 3,
-        "source_count": 3,
+        "source_count": 2,
     }
     assert "基于冻结资料范围" in result.result_payload["markdown"]
     generated_sections = result.result_payload["sections"]
@@ -1247,6 +1247,7 @@ def test_run_artifact_task_should_generate_quiz_artifact() -> None:
     assert result.result_payload["execution_plan"]["prompt_recipe"]["recipe_id"] == "quiz_writer_v1"
     assert result.result_payload["verification"]["status"] == "PASS"
     assert [trace["skill_key"] for trace in result.result_payload["node_traces"]] == [
+        "material_retrieve",
         "workspace_material_digest",
         "quiz_designer",
         "quiz_difficulty_normalizer",
@@ -1304,6 +1305,7 @@ def test_run_artifact_task_should_generate_wiki_page_artifact_with_wiki_structur
     assert result.version_snapshot.artifact_type == "WIKI_PAGE"
     assert result.result_payload["execution_plan"]["skill_graph_key"] == "wiki_artifact_v1"
     assert [trace["skill_key"] for trace in result.result_payload["node_traces"]] == [
+        "material_retrieve",
         "workspace_material_digest",
         "generic_section_writer",
         "wiki_structure_enforcer",
@@ -1543,7 +1545,7 @@ def test_run_artifact_task_should_generate_resume_highlight_artifact() -> None:
     assert result.result_payload["execution_plan"]["prompt_recipe"]["recipe_id"] == "resume_highlight_writer_v1"
     assert result.result_payload["context_pack"]["prompt_recipe"]["recipe_name"] == "Resume Highlight Writer"
     assert result.result_payload["context_pack"]["user_preference"]["action_resolution"]["resolved_action_key"] == "RESUME_HIGHLIGHT"
-    assert len(result.result_payload["node_traces"]) == 6
+    assert len(result.result_payload["node_traces"]) == 7
     assert result.result_payload["verification"]["status"] == "PASS"
     assert len(result.result_payload["canonical_content_objects"]) == 3
     assert result.result_payload["canonical_content_objects"][-1]["kind"] == "MIXED_CONTEXT"
@@ -1785,6 +1787,7 @@ def test_run_artifact_task_should_generate_multiple_default_artifacts(
     if action_key == "quiz":
         assert result.result_payload["execution_plan"]["skill_graph_key"] == "quiz_artifact_v1"
         assert [trace["skill_key"] for trace in result.result_payload["node_traces"]] == [
+            "material_retrieve",
             "workspace_material_digest",
             "quiz_designer",
             "quiz_difficulty_normalizer",
@@ -1794,6 +1797,7 @@ def test_run_artifact_task_should_generate_multiple_default_artifacts(
     elif action_key == "wiki_page":
         assert result.result_payload["execution_plan"]["skill_graph_key"] == "wiki_artifact_v1"
         assert [trace["skill_key"] for trace in result.result_payload["node_traces"]] == [
+            "material_retrieve",
             "workspace_material_digest",
             "generic_section_writer",
             "wiki_structure_enforcer",

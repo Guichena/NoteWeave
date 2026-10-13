@@ -48,6 +48,7 @@ from app.verifier import build_output_contract_trace, verify_artifact_output
 from app.writeback_runtime import register_writeback_request
 from app.video_derived_runtime import run_video_derived_text_task
 from app.video_deck_runtime import run_video_deck_task
+from app.retrieval_runtime import execute_retrieve_node
 
 
 PHASE_SEQUENCE = [
@@ -77,18 +78,19 @@ def _require_published_catalog(task_input: ArtifactTaskInput) -> None:
             raise ValueError("legacy catalog Run cannot declare a new acquisition policy")
 
 
-def run_artifact_task(task_input: ArtifactTaskInput) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
+def run_artifact_task(task_input: ArtifactTaskInput, *, passage_search=None) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
     _require_published_catalog(task_input)
     if task_input.input_payload.skill_key in {"knowledge_blog", "interview_qa"}:
         return run_video_derived_text_task(task_input)
     if task_input.input_payload.skill_key == "video_learning_deck":
         return run_video_deck_task(task_input)
-    return _run_artifact_task(task_input)
+    return _run_artifact_task(task_input, passage_search=passage_search)
 
 
 def resume_artifact_task(
     task_input: ArtifactTaskInput,
     resume_checkpoint: dict[str, object],
+    *, passage_search=None,
 ) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
     _require_published_catalog(task_input)
     try:
@@ -124,6 +126,7 @@ def resume_artifact_task(
         ],
         checkpoint_context_pack=ContextPack.model_validate(raw_context_pack),
         resume_stage=checkpoint_stage,
+        passage_search=passage_search,
     )
 
 
@@ -134,6 +137,7 @@ def _run_artifact_task(
     checkpoint_content_objects: list[CanonicalContentObject] | None = None,
     checkpoint_context_pack: ContextPack | None = None,
     resume_stage: str = "",
+    passage_search=None,
 ) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
     llm_client = build_default_llm_client()
     has_direct_input = any(str(value).strip() for value in task_input.input_payload.inputs.values())
@@ -237,6 +241,18 @@ def _run_artifact_task(
     if task_input.input_payload.writeback_mode == "MATERIAL_ONLY":
         return _build_material_only_result(
             task_input, plan, capability_resolution, canonical_content_objects)
+    section_materials, retrieved_sources, retrieval_trace, retrieval_node_trace = execute_retrieve_node(
+        task_input, plan, canonical_content_objects, passage_search)
+    for source in retrieved_sources:
+        if source.get("origin") != "HOST_FROZEN_CHUNK" or any(
+                source["title"] == cco.title and source["content"] in cco.plain_text
+                for cco in canonical_content_objects):
+            continue
+        canonical_content_objects.append(CanonicalContentObject(
+            cco_id=f"retrieved-{source['chunk_id']}", kind="RETRIEVED_PASSAGE", title=source["title"],
+            plain_text=source["content"], metadata={"chunk_id": source["chunk_id"],
+                "source_snapshot_id": source["source_snapshot_id"], "location": source["location"]},
+            source_trace=[f"workspace:{task_input.workspace_id}", f"source:{source['source_id']}"]))
     repaired_sections, node_traces, generation_trace = execute_skill_graph(
         task_input,
         plan,
@@ -245,10 +261,14 @@ def _run_artifact_task(
             plan=plan,
             canonical_content_objects=canonical_content_objects,
             llm_client=llm_client,
+            section_materials=section_materials,
+            retrieved_sources=retrieved_sources,
+            retrieval_trace=retrieval_trace,
         ),
     )
     if generation_trace is None:
         raise RuntimeError("artifact skill graph did not produce a section draft")
+    node_traces.insert(0, retrieval_node_trace)
     repaired_checks: list[str] = []
     artifact_title = resolve_artifact_title(task_input, plan)
     rendered_markdown = render_markdown(task_input, plan, repaired_sections)
@@ -266,7 +286,7 @@ def _run_artifact_task(
                 "outline_sections": len(plan.outline),
                 "source_count": len(task_input.source_scope),
                 "repaired_checks": len(repaired_checks),
-                "skill_nodes": len(plan.node_sequence),
+                "skill_nodes": len(plan.node_sequence) + 1,
             },
         )
         for phase, progress_percent, message in PHASE_SEQUENCE

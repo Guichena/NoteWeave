@@ -69,9 +69,9 @@ def test_artifact_commit_should_persist_version_and_retrieval_entry() -> None:
         ],
     }
     assert version_detail["runtime_trace"]["verification"]["status"] == "PASS"
-    assert len(version_detail["runtime_trace"]["node_traces"]) == 4
-    assert version_detail["runtime_trace"]["node_traces"][0]["skill_key"] == "workspace_material_digest"
-    assert "source trace captured for digested materials" in version_detail["runtime_trace"]["node_traces"][0]["verification_checks"]
+    assert len(version_detail["runtime_trace"]["node_traces"]) == 5
+    assert version_detail["runtime_trace"]["node_traces"][0]["skill_key"] == "material_retrieve"
+    assert "source trace captured for digested materials" in version_detail["runtime_trace"]["node_traces"][1]["verification_checks"]
     assert version_detail["runtime_trace"]["node_traces"] == result.result_payload["node_traces"]
     assert version_detail["runtime_trace"]["verification"] == result.result_payload["verification"]
     assert (
@@ -329,7 +329,7 @@ def test_debug_repository_views_should_support_filters_and_rollback() -> None:
     assert detail_response.version["artifact_preview"]["section_count"] == 3
     assert "action_key" not in detail_response.version["execution_plan_summary"]
     assert detail_response.version["runtime_trace"]["verification"]["status"] == "PASS"
-    assert detail_response.version["runtime_trace"]["node_traces"][0]["skill_key"] == "workspace_material_digest"
+    assert detail_response.version["runtime_trace"]["node_traces"][0]["skill_key"] == "material_retrieve"
     assert retrieval_detail_response.entry["memory_promotion_preview"]["candidate_memory_count"] >= 1
     assert rollback_response.receipt["commit_status"] == "ROLLED_BACK"
     rolled_back_detail = debug_get_artifact_version_detail(

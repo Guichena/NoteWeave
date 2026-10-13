@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
+from typing import Literal
 
 
 class SourceScopeItem(BaseModel):
@@ -597,7 +598,15 @@ class ArtifactRuntimePlan(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class ArtifactRetrievalNodePlan(BaseModel):
+    node_id: str = "material_retrieve"
+    node_kind: Literal["RETRIEVE"] = "RETRIEVE"
+    max_passages_per_section: int = Field(default=6, ge=1, le=20)
+    total_context_chars: int = Field(default=24_000, ge=1000, le=64_000)
+
+
 class ArtifactExecutionPlan(BaseModel):
+    retrieval_node: ArtifactRetrievalNodePlan = Field(default_factory=ArtifactRetrievalNodePlan)
     declared_output_contract: dict[str, object] = Field(default_factory=dict)
     plan_id: str
     skill_key: str = ""

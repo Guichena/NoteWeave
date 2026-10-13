@@ -1,12 +1,8 @@
 package com.noteweave.artifact;
 
 import com.noteweave.common.ApiResponse;
-import com.noteweave.common.BusinessException;
-import com.noteweave.config.ProductionConfigurationGuard;
 import com.noteweave.infra.outbox.DurableOutboxDispatcher;
-import com.noteweave.infra.outbox.OutboxDispatchPolicy;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,9 +21,7 @@ public class ArtifactWorkerInputController {
 
     private final ArtifactJobService artifactJobService;
     private final ArtifactVideoMaterialService videoMaterials;
-    private final DurableOutboxDispatcher outboxDispatcher;
-    private final String environment;
-    private final boolean unfencedInputEnabled;
+    private final ArtifactWorkerDeliveryGuard deliveryGuard;
 
     public ArtifactWorkerInputController(
             ArtifactJobService artifactJobService,
@@ -39,9 +33,7 @@ public class ArtifactWorkerInputController {
     ) {
         this.artifactJobService = artifactJobService;
         this.videoMaterials = videoMaterials;
-        this.outboxDispatcher = outboxDispatcher;
-        this.environment = environment == null ? "development" : environment;
-        this.unfencedInputEnabled = unfencedInputEnabled;
+        this.deliveryGuard = new ArtifactWorkerDeliveryGuard(outboxDispatcher, environment, unfencedInputEnabled);
     }
 
     @GetMapping("/{taskId}/input")
@@ -162,28 +154,6 @@ public class ArtifactWorkerInputController {
     }
 
     private void requireDelivery(String taskId, String deliveryToken) {
-        if (deliveryToken.isBlank() && !allowsUnfencedInput()) {
-            throw new BusinessException(
-                    "WORKER_INPUT_DELIVERY_TOKEN_REQUIRED",
-                    "Production Artifact input requests require an active outbox delivery token",
-                    HttpStatus.CONFLICT
-            );
-        }
-        if (!deliveryToken.isBlank() && !outboxDispatcher.renewTaskMessage(
-                "noteweave.artifact.job",
-                taskId,
-                deliveryToken,
-                OutboxDispatchPolicy.ARTIFACT_LEASE_DURATION
-        )) {
-            throw new BusinessException(
-                    "WORKER_INPUT_DELIVERY_STALE",
-                    "Artifact input request does not own the active outbox delivery",
-                    HttpStatus.CONFLICT
-            );
-        }
-    }
-
-    private boolean allowsUnfencedInput() {
-        return unfencedInputEnabled && !ProductionConfigurationGuard.isProduction(environment);
+        deliveryGuard.requireDelivery(taskId, deliveryToken);
     }
 }
