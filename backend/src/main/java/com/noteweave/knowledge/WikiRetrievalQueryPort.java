@@ -14,4 +14,9 @@ public interface WikiRetrievalQueryPort {
     }
 
     List<String> citationIdsForWikiPages(String workspaceId, List<KnowledgePageHit> pages);
+
+    /** 取走最近一次 Wiki 检索的降级原因。没有检索过时返回空列表。 */
+    default List<String> consumeWikiDegradationReasons() {
+        return List.of();
+    }
 }

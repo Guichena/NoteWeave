@@ -6,7 +6,9 @@ import com.noteweave.security.AuditActorProvider;
 import com.noteweave.workspace.WorkspaceQueryPort;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +22,7 @@ public class KnowledgeCommandService {
     private final KnowledgeVersionService knowledgeVersionService;
     private final KnowledgeWikiMutationService wikiMutationService;
     private final KnowledgeCitationReadGate citationReadGate;
+    private final WikiIndexOutbox wikiIndexOutbox;
 
     public KnowledgeCommandService(
             JdbcTemplate jdbcTemplate,
@@ -29,12 +32,27 @@ public class KnowledgeCommandService {
             KnowledgeWikiMutationService wikiMutationService,
             KnowledgeCitationReadGate citationReadGate
     ) {
+        this(jdbcTemplate, workspaceQueryPort, auditActorProvider, knowledgeVersionService,
+                wikiMutationService, citationReadGate, null);
+    }
+
+    @Autowired
+    public KnowledgeCommandService(
+            JdbcTemplate jdbcTemplate,
+            WorkspaceQueryPort workspaceQueryPort,
+            AuditActorProvider auditActorProvider,
+            KnowledgeVersionService knowledgeVersionService,
+            KnowledgeWikiMutationService wikiMutationService,
+            KnowledgeCitationReadGate citationReadGate,
+            WikiIndexOutbox wikiIndexOutbox
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.workspaceQueryPort = workspaceQueryPort;
         this.auditActorProvider = auditActorProvider;
         this.knowledgeVersionService = knowledgeVersionService;
         this.wikiMutationService = wikiMutationService;
         this.citationReadGate = citationReadGate;
+        this.wikiIndexOutbox = wikiIndexOutbox;
     }
 
     @Transactional
@@ -87,6 +105,7 @@ public class KnowledgeCommandService {
                 where id = ?
                 """, nextTitle, pageKind, actor, itemId);
         if ("WIKI".equals(item.itemType())) {
+            List<String> related = relatedWikiItemIds(item.workspaceId(), itemId, item.title());
             refreshWikiLinksAfterPageTitleChange(
                     item.workspaceId(), itemId, item.title(), nextTitle, currentContent);
             wikiMutationService.logWiki(
@@ -94,6 +113,10 @@ public class KnowledgeCommandService {
                     itemId,
                     "RENAME_PAGE",
                     "重命名 Wiki 页面：" + item.title() + " -> " + nextTitle);
+            enqueueUpsert(item.workspaceId(), itemId);
+            for (String relatedId : related) {
+                enqueueUpsert(item.workspaceId(), relatedId);
+            }
         }
         return itemResponse(itemId);
     }
@@ -109,6 +132,7 @@ public class KnowledgeCommandService {
                 where id = ?
                 """, actor, itemId);
         if ("WIKI".equals(item.itemType())) {
+            List<String> related = relatedWikiItemIds(item.workspaceId(), itemId, item.title());
             jdbcTemplate.update(
                     "delete from knowledge_item_link where source_item_id = ?", itemId);
             jdbcTemplate.update("""
@@ -120,6 +144,10 @@ public class KnowledgeCommandService {
             wikiMutationService.logWiki(
                     item.workspaceId(), itemId, "DELETE_PAGE",
                     "删除 Wiki 页面：" + item.title());
+            enqueueDelete(item.workspaceId(), itemId);
+            for (String relatedId : related) {
+                enqueueUpsert(item.workspaceId(), relatedId);
+            }
         }
     }
 
@@ -363,6 +391,39 @@ public class KnowledgeCommandService {
                     toInstant(rs.getTimestamp("updated_at")),
                     0, 0, 0, 0);
         }, itemId);
+    }
+
+    private List<String> relatedWikiItemIds(String workspaceId, String itemId, String title) {
+        if (wikiIndexOutbox == null) {
+            return List.of();
+        }
+        List<String> related = new ArrayList<>();
+        related.addAll(jdbcTemplate.queryForList("""
+                select distinct source_item_id from knowledge_item_link
+                where workspace_id = ?
+                  and source_item_id <> ?
+                  and (target_item_id = ? or lower(target_title) = lower(?))
+                """, String.class, workspaceId, itemId, itemId, title == null ? "" : title));
+        related.addAll(jdbcTemplate.queryForList("""
+                select distinct target_item_id from knowledge_item_link
+                where workspace_id = ?
+                  and source_item_id = ?
+                  and target_item_id is not null
+                  and target_item_id <> ?
+                """, String.class, workspaceId, itemId, itemId));
+        return related.stream().distinct().toList();
+    }
+
+    private void enqueueUpsert(String workspaceId, String itemId) {
+        if (wikiIndexOutbox != null && itemId != null) {
+            wikiIndexOutbox.enqueueUpsert(workspaceId, itemId);
+        }
+    }
+
+    private void enqueueDelete(String workspaceId, String itemId) {
+        if (wikiIndexOutbox != null && itemId != null) {
+            wikiIndexOutbox.enqueueDelete(workspaceId, itemId);
+        }
     }
 
     private KnowledgeItemRef loadKnowledgeItem(String itemId) {

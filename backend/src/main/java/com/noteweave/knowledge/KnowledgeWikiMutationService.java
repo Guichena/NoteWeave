@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -16,9 +17,16 @@ import org.springframework.stereotype.Service;
 public class KnowledgeWikiMutationService {
 
     private final JdbcTemplate jdbcTemplate;
+    private final WikiIndexOutbox wikiIndexOutbox;
 
     public KnowledgeWikiMutationService(JdbcTemplate jdbcTemplate) {
+        this(jdbcTemplate, null);
+    }
+
+    @Autowired
+    public KnowledgeWikiMutationService(JdbcTemplate jdbcTemplate, WikiIndexOutbox wikiIndexOutbox) {
         this.jdbcTemplate = jdbcTemplate;
+        this.wikiIndexOutbox = wikiIndexOutbox;
     }
 
     public PreparedWikiContent prepareContent(
@@ -70,8 +78,17 @@ public class KnowledgeWikiMutationService {
             String sourceTitle,
             String content
     ) {
+        List<String> previousTargets = wikiIndexOutbox == null
+                ? List.of()
+                : jdbcTemplate.queryForList("""
+                        select distinct target_item_id from knowledge_item_link
+                        where source_item_id = ? and target_item_id is not null
+                        """, String.class, sourceItemId);
         jdbcTemplate.update("delete from knowledge_item_link where source_item_id = ?", sourceItemId);
         upsertWikiLinks(workspaceId, sourceItemId, sourceTitle, content);
+        for (String targetId : previousTargets) {
+            enqueueUpsert(workspaceId, targetId);
+        }
     }
 
     public void upsertWikiLinks(
@@ -113,7 +130,11 @@ public class KnowledgeWikiMutationService {
                     draft.relationType(),
                     targetItemId == null ? "UNRESOLVED" : "RESOLVED",
                     draft.mentionCount());
+            if (targetItemId != null) {
+                enqueueUpsert(workspaceId, targetItemId);
+            }
         }
+        enqueueUpsert(workspaceId, sourceItemId);
     }
 
     public void resolveIncomingLinksForCreatedWikiPage(
@@ -121,6 +142,15 @@ public class KnowledgeWikiMutationService {
             String itemId,
             String title
     ) {
+        List<String> sources = wikiIndexOutbox == null
+                ? List.of()
+                : jdbcTemplate.queryForList("""
+                        select distinct source_item_id from knowledge_item_link
+                        where workspace_id = ?
+                          and relation_status = 'UNRESOLVED'
+                          and lower(target_title) = lower(?)
+                          and source_item_id <> ?
+                        """, String.class, workspaceId, title, itemId);
         jdbcTemplate.update("""
                 update knowledge_item_link
                 set target_item_id = ?, target_title = ?, relation_status = 'RESOLVED',
@@ -129,6 +159,15 @@ public class KnowledgeWikiMutationService {
                   and relation_status = 'UNRESOLVED'
                   and lower(target_title) = lower(?)
                 """, itemId, title, workspaceId, title);
+        for (String sourceId : sources) {
+            enqueueUpsert(workspaceId, sourceId);
+        }
+    }
+
+    private void enqueueUpsert(String workspaceId, String itemId) {
+        if (wikiIndexOutbox != null && itemId != null) {
+            wikiIndexOutbox.enqueueUpsert(workspaceId, itemId);
+        }
     }
 
     public void logWiki(

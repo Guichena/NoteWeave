@@ -75,6 +75,10 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
                 .stream()
                 .limit(Math.max(0, step.candidateLimit()))
                 .toList();
+        List<String> degradationReasons = wikiRetrievalQueryPort.consumeWikiDegradationReasons();
+        if (degradationReasons == null) {
+            degradationReasons = List.of();
+        }
         WikiGraphBudgeter.Result graph = graphBudgeter.apply(candidateContexts, plan.budget());
         List<WikiPageContext> contexts = graph.contexts();
         List<String> citationIds = wikiRetrievalQueryPort.citationIdsForWikiPages(context.workspaceId(),
@@ -100,8 +104,8 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
         return new EvidenceRetrievalResult(
                 evidence,
                 metadata,
-                false,
-                List.of(),
+                !degradationReasons.isEmpty(),
+                degradationReasons,
                 Map.of(
                         "graph_hops_used", (long) graph.graphHopsUsed(),
                         "graph_nodes_used", (long) graph.expandedNodeCount(),

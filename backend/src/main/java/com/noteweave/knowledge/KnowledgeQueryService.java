@@ -25,6 +25,7 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
     private final MeterRegistry meterRegistry;
     private final KnowledgeCitationReadGate citationReadGate;
     private final ResearchGeneratedSourceReadGate generatedSourceGate;
+    private final ThreadLocal<List<String>> wikiDegradation = new ThreadLocal<>();
 
     public KnowledgeQueryService(
             JdbcTemplate jdbcTemplate,
@@ -319,9 +320,13 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
     }
 
     public List<KnowledgeItemResponse> searchWikiPages(String workspaceId, String query) {
-        return readableWikiRows(workspaceId, wikiSearchEngine.search(workspaceId, query)).stream()
-                .map(WikiSearchRow::toItemResponse)
-                .toList();
+        try {
+            return readableWikiRows(workspaceId, wikiSearchEngine.search(workspaceId, query)).stream()
+                    .map(WikiSearchRow::toItemResponse)
+                    .toList();
+        } finally {
+            rememberWikiDegradation();
+        }
     }
 
     public List<KnowledgePageHit> findRelevantWikiPages(String workspaceId, String query) {
@@ -333,11 +338,26 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
             String query,
             WikiLexicalBoost boost
     ) {
-        List<KnowledgePageHit> pages = wikiSearchEngine.findRelevantPages(workspaceId, query, boost);
-        Set<String> readable = citationReadGate.readableVersionIds(workspaceId,
-                pages.stream().map(KnowledgePageHit::versionId).toList());
-        return pages.stream().filter(page -> readable.contains(page.versionId()))
-                .limit(5).toList();
+        try {
+            List<KnowledgePageHit> pages = wikiSearchEngine.findRelevantPages(workspaceId, query, boost);
+            Set<String> readable = citationReadGate.readableVersionIds(workspaceId,
+                    pages.stream().map(KnowledgePageHit::versionId).toList());
+            return pages.stream().filter(page -> readable.contains(page.versionId()))
+                    .limit(5).toList();
+        } finally {
+            rememberWikiDegradation();
+        }
+    }
+
+    @Override
+    public List<String> consumeWikiDegradationReasons() {
+        List<String> reasons = wikiDegradation.get();
+        wikiDegradation.remove();
+        return reasons == null ? List.of() : reasons;
+    }
+
+    private void rememberWikiDegradation() {
+        wikiDegradation.set(wikiSearchEngine.consumeDegradationReasons());
     }
 
     @Override

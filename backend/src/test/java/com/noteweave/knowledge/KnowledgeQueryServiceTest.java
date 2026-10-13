@@ -92,6 +92,8 @@ class KnowledgeQueryServiceTest {
 
         // 没有页面命中时不再用最近更新的页面充当证据
         assertThat(queryService.findRelevantWikiPages("workspace", "no-match-token")).isEmpty();
+        assertThat(queryService.consumeWikiDegradationReasons())
+                .containsExactly(WikiHybridRanker.INDEX_UNAVAILABLE);
     }
 
     @Test

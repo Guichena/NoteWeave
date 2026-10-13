@@ -217,6 +217,9 @@ noteweave:
       minimum-auto-promotion-utility: ${NOTEWEAVE_MEMORY_MIN_PROMOTION_UTILITY:0.60}
       review-required-risk: ${NOTEWEAVE_MEMORY_REVIEW_RISK:0.70}
       maximum-posterior-variance: ${NOTEWEAVE_MEMORY_MAX_POSTERIOR_VARIANCE:0.04}
+  knowledge:
+    wiki-index-name: ${NOTEWEAVE_WIKI_INDEX_NAME:noteweave-wiki}
+    wiki-index-dispatch-delay-ms: ${NOTEWEAVE_WIKI_INDEX_DISPATCH_DELAY_MS:30000}
   elasticsearch:
     enabled: ${NOTEWEAVE_ES_ENABLED:true}
     host: ${NOTEWEAVE_ES_HOST:localhost}

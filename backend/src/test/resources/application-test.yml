@@ -23,6 +23,8 @@ noteweave:
   conversation:
     boundary-review-enabled: false
     boundary-review-delay-ms: 3600000
+  knowledge:
+    wiki-index-dispatch-delay-ms: 3600000
   retrieval:
     query-rewrite:
       enabled: true
