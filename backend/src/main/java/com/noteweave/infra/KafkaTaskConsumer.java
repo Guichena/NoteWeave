@@ -102,7 +102,7 @@ public class KafkaTaskConsumer {
         this.memoryExtractionService = service;
     }
 
-    @KafkaListener(topics = "${noteweave.kafka.topics.source-parse}",
+    @KafkaListener(id = "source-parse", topics = "${noteweave.kafka.topics.source-parse}",
                    groupId = "${spring.kafka.consumer.group-id}",
                    containerFactory = "kafkaListenerContainerFactory")
     public void onSourceParse(ConsumerRecord<String, String> record) {
@@ -137,7 +137,7 @@ public class KafkaTaskConsumer {
     }
 
     /** 切片阶段：读取解析阶段提取的文本，生成片段和阅读窗口，然后投递向量化阶段。 */
-    @KafkaListener(topics = "${noteweave.kafka.topics.source-chunk}",
+    @KafkaListener(id = "source-chunk", topics = "${noteweave.kafka.topics.source-chunk}",
                    groupId = "${spring.kafka.consumer.group-id}",
                    containerFactory = "kafkaListenerContainerFactory")
     public void onSourceChunk(ConsumerRecord<String, String> record) {
@@ -157,7 +157,7 @@ public class KafkaTaskConsumer {
     }
 
     /** 向量化阶段：计算片段和资料的向量，写入派生存储后投递索引阶段。 */
-    @KafkaListener(topics = "${noteweave.kafka.topics.source-embed}",
+    @KafkaListener(id = "source-embed", topics = "${noteweave.kafka.topics.source-embed}",
                    groupId = "${spring.kafka.consumer.group-id}",
                    containerFactory = "kafkaListenerContainerFactory")
     public void onSourceEmbed(ConsumerRecord<String, String> record) {
@@ -171,12 +171,23 @@ public class KafkaTaskConsumer {
             if (projectionCoordinator == null) {
                 throw new IllegalStateException("retrieval projection coordinator is unavailable");
             }
-            projectionCoordinator.embedStage(workspaceId, sourceId, snapshotId, text(payload.get("taskId")));
+            if (payload.containsKey("batchNo")) {
+                Object batch = payload.get("batchNo");
+                if (!(batch instanceof Integer number) || number < 0) {
+                    throw new IllegalArgumentException("向量批次编号必须为非负整数");
+                }
+                String version = text(payload.get("batchVersion"));
+                requirePayloadValue(version, "batchVersion");
+                projectionCoordinator.embedStage(workspaceId, sourceId, snapshotId,
+                        text(payload.get("taskId")), number, version);
+            } else {
+                projectionCoordinator.embedStage(workspaceId, sourceId, snapshotId, text(payload.get("taskId")));
+            }
         });
     }
 
     /** 索引阶段：把片段和资料写入检索索引，并完成资料的就绪收尾。 */
-    @KafkaListener(topics = "${noteweave.kafka.topics.source-index}",
+    @KafkaListener(id = "source-index", topics = "${noteweave.kafka.topics.source-index}",
                    groupId = "${spring.kafka.consumer.group-id}",
                    containerFactory = "kafkaListenerContainerFactory")
     public void onSourceIndex(ConsumerRecord<String, String> record) {
@@ -195,7 +206,7 @@ public class KafkaTaskConsumer {
         });
     }
 
-    @KafkaListener(topics = "${noteweave.kafka.topics.retrieval-projection}",
+    @KafkaListener(id = "retrieval-projection", topics = "${noteweave.kafka.topics.retrieval-projection}",
                    groupId = "${spring.kafka.consumer.group-id}",
                    containerFactory = "kafkaListenerContainerFactory")
     public void onRetrievalProjection(ConsumerRecord<String, String> record) {
@@ -214,7 +225,7 @@ public class KafkaTaskConsumer {
         });
     }
 
-    @KafkaListener(topics = "${noteweave.kafka.topics.wiki-ingest}",
+    @KafkaListener(id = "wiki-ingest", topics = "${noteweave.kafka.topics.wiki-ingest}",
                    groupId = "${spring.kafka.consumer.group-id}",
                    containerFactory = "kafkaListenerContainerFactory")
     public void onWikiIngest(ConsumerRecord<String, String> record) {
@@ -228,7 +239,7 @@ public class KafkaTaskConsumer {
         });
     }
 
-    @KafkaListener(topics = "${noteweave.kafka.topics.wiki-retract}",
+    @KafkaListener(id = "wiki-retract", topics = "${noteweave.kafka.topics.wiki-retract}",
                    groupId = "${spring.kafka.consumer.group-id}",
                    containerFactory = "kafkaListenerContainerFactory")
     public void onWikiRetract(ConsumerRecord<String, String> record) {
@@ -242,7 +253,7 @@ public class KafkaTaskConsumer {
         });
     }
 
-    @KafkaListener(topics = "${noteweave.kafka.topics.conversation-summary}",
+    @KafkaListener(id = "conversation-summary", topics = "${noteweave.kafka.topics.conversation-summary}",
                    groupId = "${spring.kafka.consumer.group-id}",
                    containerFactory = "kafkaListenerContainerFactory")
     public void onConversationSummary(ConsumerRecord<String, String> record) {
@@ -288,7 +299,7 @@ public class KafkaTaskConsumer {
      * 从对话中提取记忆候选。提取是尽力而为的后台任务：失败时把任务标记为失败，不再重试，
      * 也不影响回答本身。
      */
-    @KafkaListener(topics = "${noteweave.kafka.topics.memory-extraction:noteweave.memory.extraction}",
+    @KafkaListener(id = "memory-extraction", topics = "${noteweave.kafka.topics.memory-extraction:noteweave.memory.extraction}",
                    groupId = "${spring.kafka.consumer.group-id}",
                    containerFactory = "kafkaListenerContainerFactory")
     public void onMemoryExtraction(ConsumerRecord<String, String> record) {

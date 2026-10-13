@@ -49,9 +49,8 @@ public class RetrievalBackfillService {
         requireStableCatalog(workspaceId, sourceCatalogVersion);
         long qaExpected = targets.stream().mapToLong(SnapshotTarget::chunkCount).sum();
         long noteExpected = targets.size();
-        String model = properties.embedding().model();
         int dimensions = properties.embedding().dimensions();
-        String embeddingVersion = model + ":" + dimensions;
+        String embeddingVersion = projectionService.effectiveProjectionEmbeddingVersion();
         String generation = "build-" + UUID.randomUUID().toString().substring(0, 8);
         String qaTarget = RetrievalIndexNames.physical(
                 ProjectionType.QA_CHUNK, SourceRetrievalProjectionService.QA_SCHEMA_VERSION,

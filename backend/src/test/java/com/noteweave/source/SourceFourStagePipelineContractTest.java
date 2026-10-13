@@ -108,8 +108,10 @@ class SourceFourStagePipelineContractTest {
         // 向量化：计算片段和资料的向量写入派生存储，投递索引阶段
         assertThat(pipeline.coordinator().embedStage(fixture.workspaceId(), fixture.sourceId(),
                 fixture.snapshotId(), fixture.taskId())).isTrue();
+        assertThat(stage(fixture)).isEqualTo("EMBEDDING");
+        consumeEmbeddingBatches(pipeline, fixture);
         assertThat(stage(fixture)).isEqualTo("INDEXING");
-        verify(pipeline.embeddings(), times(2)).embedDocuments(anyList());
+        verify(pipeline.embeddings(), times((chunks + 63) / 64 + 1)).embedDocuments(anyList());
         assertThat(pipeline.coordinator().embedStage(fixture.workspaceId(), fixture.sourceId(),
                 fixture.snapshotId(), fixture.taskId())).isFalse();
         JsonNode indexPayload = lastPayload(SourcePipelineStages.TOPIC_INDEX, fixture.snapshotId());
@@ -117,7 +119,7 @@ class SourceFourStagePipelineContractTest {
         // 索引：直接使用已保存的向量，不再调用向量服务
         assertThat(pipeline.coordinator().indexStage(fixture.workspaceId(), fixture.sourceId(),
                 fixture.snapshotId(), fixture.taskId(), indexPayload.path("embeddingsObjectKey").asText())).isTrue();
-        verify(pipeline.embeddings(), times(2)).embedDocuments(anyList());
+        verify(pipeline.embeddings(), times((chunks + 63) / 64 + 1)).embedDocuments(anyList());
         verify(pipeline.writer(), times(chunks)).writeQaChunk(anyString(), any());
         assertThat(stage(fixture)).isEqualTo("READY");
         assertThat(jdbc.queryForMap("select status, index_status from source where id = ?", fixture.sourceId()))
@@ -134,6 +136,26 @@ class SourceFourStagePipelineContractTest {
     }
 
     @Test
+    void corruptBatchManifestFailsWithoutRecomputingWholeSnapshot() throws Exception {
+        Fixture fixture = pendingSource("manifest.md", "# 检查点\n\n" + "持久化批次结果。\n\n".repeat(20));
+        Pipeline pipeline = pipeline(fakeEmbeddings());
+        pipeline.parse().parseAndIndexAsyncIfProcessable(fixture.workspaceId(), fixture.sourceId(), fixture.snapshotId());
+        chunk(pipeline, fixture, lastPayload(SourcePipelineStages.TOPIC_CHUNK, fixture.snapshotId()));
+        pipeline.coordinator().embedStage(fixture.workspaceId(), fixture.sourceId(), fixture.snapshotId(), fixture.taskId());
+        consumeEmbeddingBatches(pipeline, fixture);
+        int chunks = count("select count(*) from source_chunk where source_snapshot_id = ?", fixture.snapshotId());
+        JsonNode payload = lastPayload(SourcePipelineStages.TOPIC_INDEX, fixture.snapshotId());
+        String key = payload.path("embeddingsObjectKey").asText();
+        storage.write(SourcePipelineStages.BUCKET_DERIVED, key, "not-json".getBytes(StandardCharsets.UTF_8));
+        assertThatThrownBy(() -> pipeline.coordinator().indexStage(fixture.workspaceId(), fixture.sourceId(), fixture.snapshotId(),
+                fixture.taskId(), key)).hasMessageContaining("MANIFEST_INVALID");
+        assertThatThrownBy(() -> pipeline.coordinator().indexStage(fixture.workspaceId(), fixture.sourceId(), fixture.snapshotId(),
+                fixture.taskId(), "missing.bin")).hasMessageContaining("MANIFEST_INVALID");
+        verify(pipeline.embeddings(), times((chunks + 63) / 64 + 1)).embedDocuments(anyList());
+        assertThat(stage(fixture)).isEqualTo("INDEXING");
+    }
+
+    @Test
     void failedIndexRetriesAutomaticallyWithBackoffAndCanBeReprocessedByHand() throws Exception {
         Fixture fixture = pendingSource("retry.md", "# 延迟双删\n\n" + "删除缓存后等待一段时间再删一次。\n\n".repeat(40));
         EmbeddingClient failing = mock(EmbeddingClient.class);
@@ -144,8 +166,9 @@ class SourceFourStagePipelineContractTest {
         pipeline.parse().parseAndIndexAsyncIfProcessable(fixture.workspaceId(), fixture.sourceId(), fixture.snapshotId());
         chunk(pipeline, fixture, lastPayload(SourcePipelineStages.TOPIC_CHUNK, fixture.snapshotId()));
 
-        assertThatThrownBy(() -> pipeline.coordinator().embedStage(fixture.workspaceId(), fixture.sourceId(),
-                fixture.snapshotId(), fixture.taskId())).isInstanceOf(RetrievalProviderException.class);
+        assertThat(pipeline.coordinator().embedStage(fixture.workspaceId(), fixture.sourceId(),
+                fixture.snapshotId(), fixture.taskId())).isTrue();
+        assertThatThrownBy(() -> consumeEmbeddingBatches(pipeline, fixture)).isInstanceOf(RetrievalProviderException.class);
         // 消费者重试耗尽进入死信后的收尾：可重试的错误写入下次自动重试时间，任务标记为可重试
         finalizer.finalizeFailed(fixture.workspaceId(), fixture.sourceId(), fixture.snapshotId(), fixture.taskId(),
                 "EMBEDDING_PROVIDER_TIMEOUT");
@@ -318,6 +341,18 @@ class SourceFourStagePipelineContractTest {
         return pipeline.parse().chunkStage(fixture.workspaceId(), fixture.sourceId(), fixture.snapshotId(),
                 payload.path("textObjectKey").asText(), payload.path("mimeType").asText(),
                 payload.path("pageCount").asInt());
+    }
+
+    private void consumeEmbeddingBatches(Pipeline pipeline, Fixture fixture) throws Exception {
+        List<Map<String, Object>> batches = jdbc.queryForList("""
+                select batch_no, batch_version from source_embedding_batch
+                where source_snapshot_id = ? and task_id = ? order by batch_no
+                """, fixture.snapshotId(), fixture.taskId());
+        assertThat(batches).isNotEmpty();
+        for (Map<String, Object> row : batches) {
+            assertThat(pipeline.coordinator().embedStage(fixture.workspaceId(), fixture.sourceId(), fixture.snapshotId(),
+                    fixture.taskId(), ((Number) row.get("batch_no")).intValue(), (String) row.get("batch_version"))).isTrue();
+        }
     }
 
     /** 通过上传接口建立资料，再把快照恢复到等待解析的状态，模拟异步流水线的起点。 */

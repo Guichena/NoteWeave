@@ -29,8 +29,19 @@ public interface RetrievalProjectionWriter {
             String embeddingVersion,
             String projectionVersion,
             boolean currentSnapshot,
-            List<Float> contentEmbedding
+            List<Float> contentEmbedding,
+            String contextText
     ) {
+        public QaChunkDocument(String workspaceId, String sourceId, String sourceSnapshotId, String chunkId,
+                               int chunkNo, String heading, String title, String sourceType, String content,
+                               String embeddingTextHash, String embeddingModel, int embeddingDimensions,
+                               String embeddingVersion, String projectionVersion, boolean currentSnapshot,
+                               List<Float> contentEmbedding) {
+            this(workspaceId, sourceId, sourceSnapshotId, chunkId, chunkNo, heading, title, sourceType, content,
+                    embeddingTextHash, embeddingModel, embeddingDimensions, embeddingVersion, projectionVersion,
+                    currentSnapshot, contentEmbedding, "");
+        }
+
         public QaChunkDocument {
             contentEmbedding = contentEmbedding == null ? List.of() : List.copyOf(contentEmbedding);
         }

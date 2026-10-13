@@ -196,8 +196,19 @@ noteweave:
     connect-timeout-seconds: ${NOTEWEAVE_PARSE_CONNECT_TIMEOUT_SECONDS:3}
     max-chars: ${NOTEWEAVE_PARSE_MAX_CHARS:20000000}
     internal-auth-token: ${NOTEWEAVE_PARSE_INTERNAL_AUTH_TOKEN:}
+  source-context:
+    enabled: ${NOTEWEAVE_SOURCE_CONTEXT_ENABLED:true}
+    prompt-version: ${NOTEWEAVE_SOURCE_CONTEXT_PROMPT_VERSION:source-context-v1}
+    chunk-excerpt-chars: ${NOTEWEAVE_SOURCE_CONTEXT_CHUNK_EXCERPT_CHARS:1000}
+    max-input-chars: ${NOTEWEAVE_SOURCE_CONTEXT_MAX_INPUT_CHARS:48000}
+    max-context-chars: ${NOTEWEAVE_SOURCE_CONTEXT_MAX_CONTEXT_CHARS:600}
+    max-output-tokens: ${NOTEWEAVE_SOURCE_CONTEXT_MAX_OUTPUT_TOKENS:12000}
+  pipeline:
+    embedding-lease-seconds: ${NOTEWEAVE_EMBEDDING_LEASE_SECONDS:7200}
   kafka:
     enabled: ${NOTEWEAVE_KAFKA_ENABLED:true}
+    instance-id: ${NOTEWEAVE_KAFKA_INSTANCE_ID:${HOSTNAME:noteweave-backend-local}}
+    max-poll-interval-ms: ${NOTEWEAVE_KAFKA_MAX_POLL_INTERVAL_MS:1800000}
     topics:
       source-parse: ${NOTEWEAVE_KAFKA_TOPIC_SOURCE_PARSE:noteweave.source.parse}
       source-chunk: ${NOTEWEAVE_KAFKA_TOPIC_SOURCE_CHUNK:noteweave.source.chunk}

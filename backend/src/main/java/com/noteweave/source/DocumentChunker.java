@@ -63,6 +63,11 @@ public class DocumentChunker {
         this.minSectionTokens = Math.max(32, this.maxTokens / 8);
     }
 
+    /** 保存切片时真实生效的实现版本和预算，后续配置变化不会改写历史片段的版本。 */
+    public String version() {
+        return "document-chunker-v3:" + maxTokens + ":" + overlapTokens;
+    }
+
     /** 片段：章节路径、正文、页码范围、时间范围和 Token 估算。页码与时间不可用时为 null。 */
     public record DocumentChunk(
             String headingPath,

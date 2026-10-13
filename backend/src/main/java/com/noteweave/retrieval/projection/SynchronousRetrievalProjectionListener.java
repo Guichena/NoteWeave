@@ -7,6 +7,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 
 @Component
 public class SynchronousRetrievalProjectionListener {
@@ -27,6 +29,7 @@ public class SynchronousRetrievalProjectionListener {
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void onRequested(SynchronousRetrievalProjectionRequested event) {
         try {
             coordinator.projectAndFinalize(event.workspaceId(), event.sourceId(),

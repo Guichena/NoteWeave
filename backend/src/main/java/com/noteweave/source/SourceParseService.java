@@ -168,6 +168,7 @@ public class SourceParseService implements SourceParsePort {
             metadata.put("outline", outline);
         }
         metadata.put("chunking", extracted.elements().isEmpty() ? "structure_aware_token_v2" : "typed_elements_token_v3");
+        metadata.put("chunker_version", documentChunker.version());
         metadata.put("entry_strategy", "marginalia_structured_reading_funnel");
         jdbcTemplate.update("""
                 update source
@@ -210,6 +211,10 @@ public class SourceParseService implements SourceParsePort {
         projectionPayload.put("sourceSnapshotId", snapshotId);
         String projectionOutboxId = Ids.newId();
         boolean asyncStages = messagingMode.isAsyncEnabled();
+        if (asyncStages) {
+            jdbcTemplate.update("update source_snapshot set embedding_task_id = ? where id = ? and source_id = ?",
+                    sourceParseTaskId, snapshotId, sourceId);
+        }
         if (asyncStages && sourceParseTaskId != null) {
             recordStage(sourceParseTaskId, SourcePipelineStages.STAGE_EMBEDDING,
                     "切片完成，共 " + chunks.size() + " 个片段，等待向量化");

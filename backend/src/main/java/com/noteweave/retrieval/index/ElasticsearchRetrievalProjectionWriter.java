@@ -96,6 +96,7 @@ public class ElasticsearchRetrievalProjectionWriter implements RetrievalProjecti
         map.put("chunk_no", document.chunkNo());
         map.put("heading", text(document.heading()));
         map.put("content", text(document.content()));
+        map.put("context_text", text(document.contextText()));
         map.put("content_embedding", document.contentEmbedding());
         return map;
     }
