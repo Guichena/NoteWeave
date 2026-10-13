@@ -204,14 +204,17 @@ def main(argv: list[str] | None = None) -> int:
     source_ids = upload_corpus(client, workspace_id, dataset)
     wait_until(lambda: sources_indexed(client, workspace_id, source_ids),
                args.ingest_timeout_seconds, args.poll_seconds * 5, "corpus indexing")
-    if needs_wiki:
-        last: dict[str, int] = {}
-        wait_until(lambda: wiki_stable(client, workspace_id, last),
-                   args.ingest_timeout_seconds, args.poll_seconds * 10, "wiki compilation")
 
     outputs = []
-    for name in sets:
+    wiki_ready = False
+    # 不依赖 Wiki 的问题集先跑，Wiki 页面编译期间不空等
+    for name in sorted(sets, key=lambda item: dataset["sets"][item]["answer_mode"] == "WIKI"):
         definition = dataset["sets"][name]
+        if definition["answer_mode"] == "WIKI" and not wiki_ready:
+            last: dict[str, int] = {}
+            wait_until(lambda: wiki_stable(client, workspace_id, last),
+                       args.ingest_timeout_seconds, args.poll_seconds * 10, "wiki compilation")
+            wiki_ready = True
         for case in definition["cases"]:
             outputs.append(str(run_case(client, workspace_id, name, definition["answer_mode"], case, source_ids,
                                         args.timeout_seconds, args.poll_seconds).relative_to(ROOT)))

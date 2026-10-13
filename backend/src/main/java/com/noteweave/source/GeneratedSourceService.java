@@ -19,7 +19,6 @@ public class GeneratedSourceService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectStorage storage;
     private final SourceParsePort sourceParsePort;
-    private final SourceWikiCommandPort wikiCommandPort;
     private final AuditActorProvider auditActorProvider;
     private final SourceCatalogVersionService sourceCatalogVersionService;
 
@@ -27,14 +26,12 @@ public class GeneratedSourceService {
             JdbcTemplate jdbcTemplate,
             ObjectStorage storage,
             SourceParsePort sourceParsePort,
-            SourceWikiCommandPort wikiCommandPort,
             AuditActorProvider auditActorProvider,
             SourceCatalogVersionService sourceCatalogVersionService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.storage = storage;
         this.sourceParsePort = sourceParsePort;
-        this.wikiCommandPort = wikiCommandPort;
         this.auditActorProvider = auditActorProvider;
         this.sourceCatalogVersionService = sourceCatalogVersionService;
     }
@@ -101,11 +98,8 @@ public class GeneratedSourceService {
                 ) values (?, ?, ?, 1, ?, ?, 'PENDING', 'PENDING')
                 """, snapshotId, sourceId, fileObject.id(), snapshotObjectKey, digest);
         sourceParsePort.parseAndIndex(workspaceId, sourceId, snapshotId, bytes);
-        GeneratedSourceResult result = load(workspaceId, sourceId);
-        if (!"DISABLED".equals(result.indexStatus())) {
-            wikiCommandPort.requestSourceIngest(workspaceId, sourceId);
-        }
-        return result;
+        // Wiki 编译由资料索引完成后的 SourceRetrievalReadyEvent 触发
+        return load(workspaceId, sourceId);
     }
 
     private GeneratedSourceResult load(String workspaceId, String sourceId) {

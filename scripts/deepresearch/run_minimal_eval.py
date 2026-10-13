@@ -54,8 +54,19 @@ class ApiClient:
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
         self.token: str | None = None
+        # 登录凭据：长时间运行时访问令牌会过期，收到 401 后用它重新登录一次
+        self.credentials: tuple[str, str, str] | None = None
 
     def request(self, method: str, path: str, body: dict[str, object] | None = None) -> dict[str, object]:
+        try:
+            return self._send(method, path, body)
+        except EvalRunError as error:
+            if not self.credentials or "(401)" not in str(error) or path.startswith("/api/v2/auth/"):
+                raise
+            authenticate(self, *self.credentials)
+            return self._send(method, path, body)
+
+    def _send(self, method: str, path: str, body: dict[str, object] | None = None) -> dict[str, object]:
         headers = {"Accept": "application/json"}
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
@@ -90,6 +101,7 @@ def authenticate(client: ApiClient, username: str, email: str, password: str) ->
             "display_name": "Deep Research Minimal Eval",
         })
     client.token = str(session["access_token"])
+    client.credentials = (username, email, password)
 
 
 def wait_for_terminal(client: ApiClient, workspace_id: str, run_id: str,

@@ -7,7 +7,6 @@ import com.noteweave.common.Json;
 import com.noteweave.storage.ObjectStorage;
 import com.noteweave.source.SourceMessagingMode;
 import com.noteweave.source.SourceParsePort;
-import com.noteweave.source.SourceWikiCommandPort;
 import com.noteweave.source.SourceCatalogVersionService;
 import com.noteweave.task.TaskCommandPort;
 import com.noteweave.security.WorkspaceAccessGuard;
@@ -41,7 +40,6 @@ public class UploadService {
     private final WorkspaceAccessGuard workspaceAccessGuard;
     private final ObjectStorage storage;
     private final SourceParsePort sourceParsePort;
-    private final SourceWikiCommandPort wikiCommandPort;
     private final TaskCommandPort taskCommandPort;
     private final ObjectMapper objectMapper;
     private final SourceMessagingMode messagingMode;
@@ -65,7 +63,6 @@ public class UploadService {
             WorkspaceAccessGuard workspaceAccessGuard,
             ObjectStorage storage,
             SourceParsePort sourceParsePort,
-            SourceWikiCommandPort wikiCommandPort,
             TaskCommandPort taskCommandPort,
             ObjectMapper objectMapper,
             SourceMessagingMode messagingMode,
@@ -78,7 +75,6 @@ public class UploadService {
         this.workspaceAccessGuard = workspaceAccessGuard;
         this.storage = storage;
         this.sourceParsePort = sourceParsePort;
-        this.wikiCommandPort = wikiCommandPort;
         this.taskCommandPort = taskCommandPort;
         this.objectMapper = objectMapper;
         this.messagingMode = messagingMode;
@@ -312,12 +308,8 @@ public class UploadService {
             finalIndexStatus = sourceState.get("index_status");
         }
 
-        // Wiki ingest only accepts a source that can enter the indexed READY lifecycle.
-        // A local-only parse must remain usable as PARSED/DISABLED without turning upload
-        // completion into a false 500 or fabricating an indexed state.
-        if (!"DISABLED".equals(finalIndexStatus)) {
-            wikiCommandPort.requestSourceIngest(upload.workspaceId(), sourceId);
-        }
+        // Wiki 编译由资料索引完成后的 SourceRetrievalReadyEvent 触发；这里资料可能仍在解析，提前投递会因未就绪而失败。
+        // 本地解析且未建索引（DISABLED）的资料不进入 Wiki，与之前一致。
 
         int completed = jdbcTemplate.update("""
                 update document_upload
