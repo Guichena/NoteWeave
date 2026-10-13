@@ -436,7 +436,7 @@ public class AnswerRunService {
         List<AnswerEvidenceManifestResponse.Evidence> evidence = jdbcTemplate.query("""
                 select rank_no, evidence_id, evidence_kind, source_id, source_snapshot_id, passage_id,
                        knowledge_item_id, knowledge_version_id, title, excerpt, content_hash,
-                       location_info, fresh_at, character_cost, graph_path_json
+                       location_info, fresh_at, character_cost, graph_path_json, text_origin, ocr_confidence
                 from answer_run_evidence_manifest
                 where workspace_id = ? and answer_run_id = ?
                 order by rank_no asc
@@ -447,7 +447,8 @@ public class AnswerRunService {
                 rs.getString("excerpt"), rs.getString("content_hash"), rs.getString("location_info"),
                 rs.getTimestamp("fresh_at") == null ? null : rs.getTimestamp("fresh_at").toInstant(),
                 rs.getInt("character_cost"),
-                graphPath(rs.getString("graph_path_json"))
+                graphPath(rs.getString("graph_path_json")), rs.getString("text_origin"),
+                rs.getObject("ocr_confidence", Double.class)
         ), workspaceId, runId);
         record StoredPlan(String planJson, String evidenceSufficiency) {
         }
@@ -609,20 +610,48 @@ public class AnswerRunService {
         for (int index = 0; index < bundle.evidence().size(); index++) {
             EvidenceBundle.Evidence item = bundle.evidence().get(index);
             String excerpt = item.excerpt() == null ? "" : item.excerpt();
+            PassageTextSource source = passageTextSource(workspaceId, item);
             jdbcTemplate.update("""
                     insert into answer_run_evidence_manifest(
                         id, workspace_id, answer_run_id, rank_no, evidence_id, evidence_kind,
                         source_id, source_snapshot_id, passage_id, knowledge_item_id, knowledge_version_id,
-                        title, excerpt, content_hash, location_info, fresh_at, character_cost, graph_path_json
-                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        title, excerpt, content_hash, location_info, fresh_at, character_cost, graph_path_json,
+                        text_origin, ocr_confidence
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, Ids.newId(), workspaceId, runId, index + 1, item.evidenceId(), item.kind(),
                     blank(item.sourceId()), blank(item.sourceSnapshotId()), blank(item.passageId()),
                     blank(item.knowledgeItemId()), blank(item.knowledgeVersionId()), blank(item.title()), excerpt,
                     sha256(excerpt), blank(item.location()),
                     item.freshAt() == null ? null : Timestamp.from(item.freshAt()), item.characterCost(),
-                    blank(item.metadata().get("graph_path")));
+                    blank(item.metadata().get("graph_path")), source.origin(), source.confidence());
         }
     }
+
+    private PassageTextSource passageTextSource(String workspaceId, EvidenceBundle.Evidence evidence) {
+        if (!"PASSAGE".equals(evidence.kind()) || blank(evidence.passageId()) == null
+                || blank(evidence.sourceId()) == null || blank(evidence.sourceSnapshotId()) == null) {
+            return new PassageTextSource(null, null);
+        }
+        // 不信任检索附带的同名 metadata；按完整冻结身份读取实际片段，并复制到回答自己的清单。
+        List<PassageTextSource> rows = jdbcTemplate.query("""
+                select text_origin, ocr_confidence from source_chunk
+                where workspace_id = ? and source_id = ? and source_snapshot_id = ? and id = ?
+                """, (rs, row) -> new PassageTextSource(rs.getString("text_origin"),
+                        rs.getObject("ocr_confidence", Double.class)), workspaceId, evidence.sourceId(),
+                evidence.sourceSnapshotId(), evidence.passageId());
+        if (rows.size() != 1 || !("TEXT_LAYER".equals(rows.get(0).origin()) || "OCR".equals(rows.get(0).origin()))) {
+            return new PassageTextSource(null, null);
+        }
+        PassageTextSource source = rows.get(0);
+        Double confidence = source.confidence();
+        if (!"OCR".equals(source.origin()) || confidence == null || !Double.isFinite(confidence)
+                || confidence < 0 || confidence > 1) {
+            confidence = null;
+        }
+        return new PassageTextSource(source.origin(), confidence);
+    }
+
+    private record PassageTextSource(String origin, Double confidence) {}
 
     private String sha256(String value) {
         try {

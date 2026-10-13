@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     upload_timeout_seconds: float = Field(default=120.0, gt=0, le=600)
     artifacts_path: Path | None = None
     temp_root: Path | None = None
+    ocr_enabled: bool = True
+    ocr_min_native_chars: int = Field(default=20, ge=1, le=1000)
 
     @field_validator("artifacts_path", "temp_root", mode="before")
     @classmethod

@@ -5,6 +5,7 @@ requires-python = ">=3.12,<3.14"
 dependencies = [
   "docling==2.138.0",
   "docling-slim[format-opendocument]==2.138.0",
+  "docling-slim[feat-ocr-rapidocr-onnx]==2.138.0",
   "fastapi>=0.115.0,<1",
   "pydantic-settings>=2.6.0,<3",
   "uvicorn>=0.32.0,<1",

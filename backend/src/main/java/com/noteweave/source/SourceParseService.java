@@ -49,6 +49,7 @@ public class SourceParseService implements SourceParsePort {
     private final SourceCatalogVersionService sourceCatalogVersionService;
     private final ApplicationEventPublisher eventPublisher;
     private SourceTranscriptionPort transcriptionPort;
+    private SourceTranscriptionSubmissionService transcriptionSubmissions;
 
     public SourceParseService(JdbcTemplate jdbcTemplate, DocumentChunker documentChunker,
                               SourceDocumentTextExtractor documentTextExtractor, ObjectMapper objectMapper,
@@ -74,6 +75,11 @@ public class SourceParseService implements SourceParsePort {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     void setTranscriptionPort(SourceTranscriptionPort transcriptionPort) {
         this.transcriptionPort = transcriptionPort;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setTranscriptionSubmissions(SourceTranscriptionSubmissionService submissions) {
+        this.transcriptionSubmissions = submissions;
     }
 
     @Override
@@ -135,11 +141,13 @@ public class SourceParseService implements SourceParsePort {
             DocumentChunker.DocumentChunk chunk = chunks.get(i);
             jdbcTemplate.update("""
                     insert into source_chunk(id, workspace_id, source_id, source_snapshot_id, chunk_no, heading, content,
-                                             token_estimate, location_info, page_start, page_end, structure_metadata_json)
-                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                             token_estimate, location_info, page_start, page_end, structure_metadata_json,
+                                             text_origin, ocr_confidence)
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, chunkId, workspaceId, sourceId, snapshotId, i, chunk.headingPath(), chunk.content(),
                     Math.max(1, chunk.tokens()), chunk.location(i), chunk.pageStart(), chunk.pageEnd(),
-                    chunk.structureMetadata() == null ? null : writeJson(chunk.structureMetadata()));
+                    chunk.structureMetadata() == null ? null : writeJson(chunk.structureMetadata()),
+                    chunk.textOrigin() == null ? null : chunk.textOrigin().name(), chunk.ocrConfidence());
             List<String> windows = documentChunker.windows(chunk);
             for (int windowNo = 0; windowNo < windows.size(); windowNo++) {
                 jdbcTemplate.update("""
@@ -161,6 +169,7 @@ public class SourceParseService implements SourceParsePort {
         metadata.put("truncated", extracted.truncated());
         metadata.put("degradation", extracted.degradation());
         metadata.put("warnings", extracted.warnings());
+        if (!extracted.pageSources().isEmpty()) metadata.put("page_sources", extracted.pageSources());
         if (extracted.pageCount() > 0) {
             metadata.put("page_count", extracted.pageCount());
         }
@@ -254,6 +263,9 @@ public class SourceParseService implements SourceParsePort {
             }
             SourceMeta meta = loadSourceMeta(workspaceId, sourceId, snapshotId, false);
             if (!meta.extractable()) return false;
+            if (SourceMediaTypes.isMedia(meta.mimeType()) && transcriptionSubmissions != null) {
+                return submitTranscription(workspaceId, sourceId, snapshotId, meta, null);
+            }
             original = java.nio.file.Files.createTempFile("noteweave-source-", ".bin");
             storage.readToFile(BUCKET_SOURCE, meta.objectKey(), original);
             if (SourceMediaTypes.isMedia(meta.mimeType())) {
@@ -306,15 +318,18 @@ public class SourceParseService implements SourceParsePort {
 
     /**
      * 音视频资料的解析阶段：原件交给 Worker 转写，快照进入转写阶段，等待 Worker 回调文字稿。
-     * 先提交再改状态：提交失败时快照仍停在解析阶段，Kafka 重试会重新提交。
+     * 生产环境先持久化阶段和待提交记录，再由调度器发送，快速回调也能读取正确阶段。
      */
     private boolean submitTranscription(String workspaceId, String sourceId, String snapshotId, SourceMeta meta,
                                         java.nio.file.Path original) {
-        if (transcriptionPort == null) {
+        if (transcriptionPort == null && transcriptionSubmissions == null) {
             throw new BusinessException("SOURCE_TRANSCRIPTION_UNAVAILABLE", "转写服务未配置，无法处理音视频资料");
         }
-        transcriptionPort.submit(new SourceTranscriptionPort.Request(
-                workspaceId, sourceId, snapshotId, meta.title(), meta.mimeType()), original);
+        // 保留手动构造旧服务时的兼容入口；生产环境使用持久提交调度器。
+        if (transcriptionSubmissions == null) {
+            transcriptionPort.submit(new SourceTranscriptionPort.Request(
+                    workspaceId, sourceId, snapshotId, meta.title(), meta.mimeType()), original);
+        }
         Boolean moved = transactionTemplate.execute(ignored -> {
             SourceMeta locked = loadSourceMetaForProcessing(workspaceId, sourceId, snapshotId);
             if (!locked.extractable()) return false;
@@ -327,8 +342,15 @@ public class SourceParseService implements SourceParsePort {
             // updated_at 记录进入转写阶段的时间，供超时检查使用
             jdbcTemplate.update("update source set updated_at = current_timestamp where id = ?", sourceId);
             String taskId = findSourceParseTaskId(sourceId);
+            if (transcriptionSubmissions != null) {
+                transcriptionSubmissions.enqueue(new SourceTranscriptionPort.Request(
+                        workspaceId, sourceId, snapshotId, locked.title(), locked.mimeType(), taskId),
+                        locked.objectKey(), locked.sha256());
+            }
             if (taskId != null) {
-                recordStage(taskId, SourcePipelineStages.STAGE_TRANSCRIBING, "已提交音视频转写，等待 MCP 转写工具返回文字稿");
+                recordStage(taskId, SourcePipelineStages.STAGE_TRANSCRIBING, transcriptionSubmissions == null
+                        ? "已提交音视频转写，等待 MCP 转写工具返回文字稿"
+                        : "等待转写服务接纳并返回文字稿");
             }
             sourceCatalogVersionService.bump(workspaceId);
             return true;

@@ -205,6 +205,10 @@ noteweave:
     max-output-tokens: ${NOTEWEAVE_SOURCE_CONTEXT_MAX_OUTPUT_TOKENS:12000}
   pipeline:
     embedding-lease-seconds: ${NOTEWEAVE_EMBEDDING_LEASE_SECONDS:7200}
+  source:
+    transcription-submission-delay-ms: ${NOTEWEAVE_TRANSCRIPTION_SUBMISSION_DELAY_MS:5000}
+    transcription-submission-batch-size: ${NOTEWEAVE_TRANSCRIPTION_SUBMISSION_BATCH_SIZE:4}
+    transcription-submission-lease-seconds: ${NOTEWEAVE_TRANSCRIPTION_SUBMISSION_LEASE_SECONDS:300}
   kafka:
     enabled: ${NOTEWEAVE_KAFKA_ENABLED:true}
     instance-id: ${NOTEWEAVE_KAFKA_INSTANCE_ID:${HOSTNAME:noteweave-backend-local}}

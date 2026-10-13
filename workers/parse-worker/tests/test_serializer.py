@@ -151,7 +151,7 @@ def test_picture_with_real_text_preserves_it_and_counts_towards_limit():
 
 @pytest.mark.parametrize("rows", [[], [item("picture", "")], [item(text="  ")]])
 def test_no_text_content_is_error(rows):
-    with pytest.raises(ParseFailure, match="当前阶段未启用 OCR") as failure:
+    with pytest.raises(ParseFailure, match="未启用 OCR") as failure:
         serialize(rows)
     assert failure.value.code == "NO_TEXT_CONTENT"
 

@@ -25,6 +25,6 @@ public class SourceTranscriptionCallbackController {
             @RequestBody SourceTranscriptionService.TranscriptionCallback callback
     ) {
         boolean accepted = transcriptionService.handle(snapshotId, callback);
-        return ApiResponse.success(Map.of("snapshot_id", snapshotId, "accepted", accepted));
+        return ApiResponse.success(Map.of("snapshot_id", snapshotId, "accepted", accepted, "discarded", !accepted));
     }
 }

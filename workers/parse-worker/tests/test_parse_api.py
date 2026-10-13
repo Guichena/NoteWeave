@@ -23,14 +23,26 @@ def test_success_uses_local_file_and_exact_metadata(make_app, tmp_path):
     assert response.status_code == 200
     value = response.json()
     assert set(value) == {"schema_version", "workspace_id", "source_id", "snapshot_id", "sha256",
-        "mime_type", "markdown", "page_count", "elements", "parser", "truncated", "warnings"}
+        "mime_type", "markdown", "page_count", "elements", "parser", "truncated", "warnings", "page_sources"}
     assert {key: value[key] for key in ("workspace_id", "source_id", "snapshot_id", "sha256", "mime_type")} == {
         key: params()[key] for key in ("workspace_id", "source_id", "snapshot_id", "sha256", "mime_type")}
     assert value["schema_version"] == 1 and value["parser"] == "DOCLING"
+    assert value["page_sources"] == []
+    assert "page" in value["elements"][0] and value["elements"][0]["page"] is None
+    assert value["elements"][0]["bbox"] is None and value["elements"][0]["heading_level"] is None
     assert value["markdown"] == "真实文档正文"
     assert fake.calls[0]["bytes"] == DATA and fake.calls[0]["raises_on_error"] is True
     assert fake.calls[0]["path"].name == "input.pdf"
     assert not list(tmp_path.iterdir())
+
+
+def test_non_pdf_without_page_audit_returns_an_empty_page_sources_array(make_app):
+    fake = FakeConverter(actual_format="md")
+    app, _ = make_app(fake)
+    response = post(app, query=params(file_name="document.md", mime_type="text/markdown"))
+    assert response.status_code == 200
+    assert response.json()["page_sources"] == []
+    assert response.json()["elements"][0]["page"] is None
 
 
 @pytest.mark.parametrize("token", [None, "wrong-token"])

@@ -1,6 +1,7 @@
 package com.noteweave.source;
 
 import com.noteweave.common.BusinessException;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -118,7 +119,7 @@ public class SourceDocumentTextExtractor {
                     throw new BusinessException("SOURCE_PARSER_RESPONSE_INVALID", "文档解析响应与请求不一致");
                 }
                 return new ExtractedDocument(parsed.markdown(), parsed.mimeType(), parsed.pageCount(),
-                        parsed.elements(), parsed.parser(), parsed.truncated(), parsed.warnings(), null);
+                        parsed.elements(), parsed.parser(), parsed.truncated(), parsed.warnings(), null, parsed.pageSources());
             } catch (RuntimeException exception) {
                 degradation = exception instanceof BusinessException business ? business.code() : "SOURCE_PARSER_UNAVAILABLE";
             }
@@ -237,12 +238,17 @@ public class SourceDocumentTextExtractor {
         PDFTextStripper stripper = new PDFTextStripper();
         stripper.setSortByPosition(true);
         List<String> pages = new ArrayList<>(pageCount);
+        List<SourceDocumentParserPort.PageSource> pageSources = new ArrayList<>();
         int collectedChars = 0;
         boolean truncated = false;
         for (int page = 1; page <= pageCount; page++) {
             stripper.setStartPage(page);
             stripper.setEndPage(page);
             String pageText = stripper.getText(document);
+            int nativeCharacters = (int) pageText.codePoints().filter(character -> !Character.isWhitespace(character)).count();
+            pageSources.add(new SourceDocumentParserPort.PageSource(page,
+                    nativeCharacters == 0 ? null : DocumentElement.TextOrigin.TEXT_LAYER,
+                    null, nativeCharacters, null, false));
             int remaining = Math.max(0, maxChars - collectedChars - (page > 1 ? 1 : 0));
             if (pageText.length() > remaining) {
                 pages.add(pageText.substring(0, remaining));
@@ -261,7 +267,7 @@ public class SourceDocumentTextExtractor {
             );
         }
         return new ExtractedDocument(text, "application/pdf", pageCount, List.of(), "PDFBOX", truncated,
-                truncated ? List.of("MAX_CHARS_REACHED") : List.of(), degradation);
+                truncated ? List.of("MAX_CHARS_REACHED") : List.of(), degradation, pageSources);
     }
 
     /** 去掉页眉页脚和页码、合并句中断行，再用换页符拼接各页。 */
@@ -405,10 +411,16 @@ public class SourceDocumentTextExtractor {
     }
 
     public record ExtractedDocument(String text, String mimeType, int pageCount, List<DocumentElement> elements,
-                                    String parser, boolean truncated, List<String> warnings, String degradation) {
+                                    String parser, boolean truncated, List<String> warnings, String degradation,
+                                    @JsonProperty("page_sources") List<SourceDocumentParserPort.PageSource> pageSources) {
         public ExtractedDocument {
             elements = elements == null ? List.of() : List.copyOf(elements);
             warnings = warnings == null ? List.of() : List.copyOf(warnings);
+            pageSources = pageSources == null ? List.of() : List.copyOf(pageSources);
+        }
+        public ExtractedDocument(String text, String mimeType, int pageCount, List<DocumentElement> elements,
+                                  String parser, boolean truncated, List<String> warnings, String degradation) {
+            this(text, mimeType, pageCount, elements, parser, truncated, warnings, degradation, List.of());
         }
         public ExtractedDocument(String text, String mimeType, int pageCount) {
             this(text, mimeType, pageCount, List.of(), "LEGACY", false, List.of(), null);

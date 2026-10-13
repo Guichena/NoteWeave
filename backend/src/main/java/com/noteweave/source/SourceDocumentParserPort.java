@@ -23,6 +23,35 @@ public interface SourceDocumentParserPort {
             List<DocumentElement> elements,
             String parser,
             boolean truncated,
-            List<String> warnings
-    ) {}
+            List<String> warnings,
+            @JsonProperty("page_sources") List<PageSource> pageSources
+    ) {
+        public ParsedDocument {
+            elements = elements == null ? List.of() : List.copyOf(elements);
+            warnings = warnings == null ? List.of() : List.copyOf(warnings);
+            pageSources = pageSources == null ? List.of() : List.copyOf(pageSources);
+        }
+
+        public ParsedDocument(int schemaVersion, String workspaceId, String sourceId, String snapshotId,
+                              String sha256, String mimeType, String markdown, int pageCount,
+                              List<DocumentElement> elements, String parser, boolean truncated, List<String> warnings) {
+            this(schemaVersion, workspaceId, sourceId, snapshotId, sha256, mimeType, markdown, pageCount,
+                    elements, parser, truncated, warnings, List.of());
+        }
+    }
+
+    /** 只记录实际检查过的页面，缺失的页码或诊断不得由客户端补造。 */
+    record PageSource(int page,
+                      @JsonProperty("text_origin") DocumentElement.TextOrigin textOrigin,
+                      @JsonProperty("ocr_confidence") Double ocrConfidence,
+                      @JsonProperty("native_char_count") Integer nativeCharCount,
+                      @JsonProperty("has_images") Boolean hasImages,
+                      @JsonProperty("ocr_attempted") boolean ocrAttempted) {
+        public PageSource {
+            if (page < 1 || (nativeCharCount != null && nativeCharCount < 0)) {
+                throw new IllegalArgumentException("页面来源的页码或实际文字数量无效");
+            }
+            DocumentElement.validateTextSource(textOrigin, ocrConfidence);
+        }
+    }
 }

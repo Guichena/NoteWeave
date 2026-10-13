@@ -54,7 +54,8 @@ class SourceStructuredParsingTest {
                 create table source_chunk(id varchar(64) primary key, workspace_id varchar(64), source_id varchar(64),
                     source_snapshot_id varchar(64), chunk_no int, heading varchar(300), content clob,
                     token_estimate int, location_info varchar(300), page_start int, page_end int,
-                    structure_metadata_json clob, projection_status varchar(32), projected_at timestamp);
+                    structure_metadata_json clob, projection_status varchar(32), projected_at timestamp,
+                    text_origin varchar(16), ocr_confidence double);
                 create table source_window(id varchar(64) primary key, source_chunk_id varchar(64), window_no int,
                     content clob, location_info varchar(300));
                 create table task(id varchar(64) primary key, task_type varchar(64), target_id varchar(64), created_at timestamp);
@@ -188,6 +189,34 @@ class SourceStructuredParsingTest {
         assertThat(stage()).isEqualTo("READY");
         var metadata = mapper.readTree(jdbc.queryForObject("select metadata_json from source where id='source-1'", String.class));
         assertThat(metadata.path("mime_type").asText()).isEqualTo("text/plain");
+    }
+
+    @Test
+    void structuredOcrSourcesSurviveDerivedStorageChunkingAndPageAuditMetadata() throws Exception {
+        var service = service((request, file) -> new SourceDocumentParserPort.ParsedDocument(1,
+                request.workspaceId(), request.sourceId(), request.snapshotId(), request.sha256(), request.mimeType(),
+                "# 实验报告\n\n" + table, 2, List.of(
+                new DocumentElement(DocumentElement.ElementType.TITLE, "实验报告", 1, null, 1,
+                        DocumentElement.TextOrigin.TEXT_LAYER, null),
+                new DocumentElement(DocumentElement.ElementType.TABLE, table, 2, null, null,
+                        DocumentElement.TextOrigin.OCR, 0.0)), "DOCLING", false, List.of(),
+                List.of(new SourceDocumentParserPort.PageSource(1, DocumentElement.TextOrigin.TEXT_LAYER,
+                                null, 4, false, false),
+                        new SourceDocumentParserPort.PageSource(2, DocumentElement.TextOrigin.OCR,
+                                0.0, 0, true, true))), true);
+        assertThat(service.parseAndIndexAsyncIfProcessable("workspace-1", "source-1", "snapshot-1")).isTrue();
+        var stored = mapper.readValue(storage.read(SourcePipelineStages.BUCKET_DERIVED, parsedKey()),
+                SourceParseService.StoredParsedDocument.class);
+        assertThat(stored.document().pageSources()).hasSize(2);
+        assertThat(stored.document().elements().get(1).textOrigin()).isEqualTo(DocumentElement.TextOrigin.OCR);
+        assertThat(service.chunkStage("workspace-1", "source-1", "snapshot-1", textKey(), "application/pdf", 2)).isTrue();
+        assertThat(jdbc.queryForObject("select text_origin from source_chunk where content = ?", String.class, table))
+                .isEqualTo("OCR");
+        assertThat(jdbc.queryForObject("select ocr_confidence from source_chunk where content = ?", Double.class, table))
+                .isZero();
+        var metadata = mapper.readTree(jdbc.queryForObject("select metadata_json from source where id = 'source-1'", String.class));
+        assertThat(metadata.path("page_sources").size()).isEqualTo(2);
+        assertThat(metadata.path("page_sources").get(1).path("ocr_confidence").doubleValue()).isZero();
     }
 
     private SourceDocumentParserPort.ParsedDocument parsed(SourceDocumentParserPort.Request request) {

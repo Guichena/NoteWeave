@@ -15,24 +15,29 @@ class RecordedOptions:
         self.values = values
 
 
-def test_docling_sdk_factory_disables_ocr_remote_fetch_and_plugins(monkeypatch, tmp_path):
+@pytest.mark.parametrize("ocr_enabled", [True, False])
+def test_docling_sdk_factory_selects_safe_ocr_and_disables_remote_fetch_and_plugins(monkeypatch, tmp_path, ocr_enabled):
     formats = Enum("InputFormat", {name: name.lower() for name in (
         "PDF", "DOCX", "DOC", "RTF", "PPTX", "XLSX", "EPUB", "ODT", "HTML", "MD", "CSV")})
     modules = {name: ModuleType(name) for name in ("docling", "docling.datamodel",
         "docling.datamodel.base_models", "docling.datamodel.backend_options",
-        "docling.datamodel.pipeline_options", "docling.document_converter")}
+        "docling.datamodel.pipeline_options", "docling.document_converter", "docling.pipeline",
+        "docling.pipeline.standard_pdf_pipeline")}
     modules["docling.datamodel.base_models"].InputFormat = formats
     for name in ("CsvBackendOptions", "DeclarativeBackendOptions", "EpubBackendOptions", "HTMLBackendOptions",
                  "MarkdownBackendOptions", "MsExcelBackendOptions", "MsPowerpointBackendOptions", "MsWordBackendOptions"):
         setattr(modules["docling.datamodel.backend_options"], name, type(name, (RecordedOptions,), {}))
-    for name in ("ConvertPipelineOptions", "PdfPipelineOptions"):
+    for name in ("ConvertPipelineOptions", "PdfPipelineOptions", "RapidOcrOptions"):
         setattr(modules["docling.datamodel.pipeline_options"], name, type(name, (RecordedOptions,), {}))
+    modules["docling.datamodel.pipeline_options"].OcrMode = Enum("OcrMode", {
+        "PDF_AWARE_LAYOUT_REGIONS": "pdf_aware_layout_regions"})
+    modules["docling.pipeline.standard_pdf_pipeline"].StandardPdfPipeline = type("StandardPdfPipeline", (), {})
     for name in ("CsvFormatOption", "DocumentConverter", "EpubFormatOption", "ExcelFormatOption", "HTMLFormatOption",
                  "MarkdownFormatOption", "OdtFormatOption", "PdfFormatOption", "PowerpointFormatOption", "WordFormatOption"):
         setattr(modules["docling.document_converter"], name, type(name, (RecordedOptions,), {}))
     for name, module in modules.items():
         monkeypatch.setitem(sys.modules, name, module)
-    converter = build_converter(Settings(artifacts_path=tmp_path, document_timeout_seconds=90))
+    converter = build_converter(Settings(artifacts_path=tmp_path, document_timeout_seconds=90, ocr_enabled=ocr_enabled))
     options = converter.values["format_options"]
     assert set(converter.values["allowed_formats"]) == set(formats)
     assert type(options[formats.RTF]).__name__ == "WordFormatOption"
@@ -45,7 +50,11 @@ def test_docling_sdk_factory_disables_ocr_remote_fetch_and_plugins(monkeypatch, 
     assert options[formats.PPTX].values["backend_options"].values["render_chart_images"] is False
     assert options[formats.XLSX].values["backend_options"].values["render_chart_images"] is False
     pdf = options[formats.PDF].values["pipeline_options"].values
-    assert pdf["do_ocr"] is False and pdf["do_table_structure"] is True
+    assert pdf["do_ocr"] is ocr_enabled and pdf["do_table_structure"] is True
+    assert pdf["ocr_options"].values["lang"] == ["ch"]
+    assert pdf["ocr_options"].values["backend"] == "onnxruntime"
+    assert pdf["ocr_options"].values["mode"].value == "pdf_aware_layout_regions"
+    assert options[formats.PDF].values["pipeline_cls"].__name__ == "SelectivePdfPipeline"
     for name in ("do_picture_description", "do_picture_classification", "do_code_enrichment", "do_formula_enrichment"):
         assert pdf[name] is False
     for option in options.values():
@@ -71,13 +80,14 @@ def test_missing_docling_is_explicit_unavailable_not_empty_success(monkeypatch):
 def test_documented_environment_names(monkeypatch, tmp_path):
     for name, value in {"INTERNAL_AUTH_TOKEN": "env-token", "MAX_CHARS": "1000",
         "MAX_FILE_BYTES": "2048", "MAX_CONCURRENT_DOCUMENTS": "2", "DOCUMENT_TIMEOUT_SECONDS": "60",
-        "ARTIFACTS_PATH": str(tmp_path)}.items():
+        "ARTIFACTS_PATH": str(tmp_path), "OCR_ENABLED": "false", "OCR_MIN_NATIVE_CHARS": "25"}.items():
         monkeypatch.setenv("NOTEWEAVE_PARSE_" + name, value)
     settings = Settings()
     assert settings.internal_auth_token.get_secret_value() == "env-token"
     assert settings.max_output_chars == 1000 and settings.max_upload_bytes == 2048
     assert settings.max_concurrency == 2 and settings.document_timeout_seconds == 60
     assert settings.artifacts_path == tmp_path
+    assert settings.ocr_enabled is False and settings.ocr_min_native_chars == 25
 
 
 @pytest.mark.parametrize("value", ["", "   "])

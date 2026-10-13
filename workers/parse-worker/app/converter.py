@@ -28,24 +28,27 @@ def build_converter(settings):
             CsvBackendOptions, DeclarativeBackendOptions, EpubBackendOptions, HTMLBackendOptions,
             MarkdownBackendOptions, MsExcelBackendOptions, MsPowerpointBackendOptions, MsWordBackendOptions,
         )
-        from docling.datamodel.pipeline_options import ConvertPipelineOptions, PdfPipelineOptions
+        from docling.datamodel.pipeline_options import ConvertPipelineOptions, OcrMode, PdfPipelineOptions, RapidOcrOptions
         from docling.document_converter import (
             CsvFormatOption, DocumentConverter, EpubFormatOption, ExcelFormatOption, HTMLFormatOption,
             MarkdownFormatOption, OdtFormatOption, PdfFormatOption, PowerpointFormatOption, WordFormatOption,
         )
+        from app.ocr_pipeline import selective_pipeline_type
+        pdf_pipeline = selective_pipeline_type(settings)
     except ImportError as exc:
         raise ParseFailure(503, "DOCLING_UNAVAILABLE", "本地 Docling 依赖尚未就绪") from exc
     common = {"document_timeout": settings.document_timeout_seconds,
         "enable_remote_services": False, "allow_external_plugins": False,
         "artifacts_path": settings.artifacts_path}
-    pdf = PdfPipelineOptions(**common, do_ocr=False, do_table_structure=True,
+    pdf = PdfPipelineOptions(**common, do_ocr=settings.ocr_enabled, do_table_structure=True,
+        ocr_options=RapidOcrOptions(lang=["ch"], backend="onnxruntime", mode=OcrMode.PDF_AWARE_LAYOUT_REGIONS),
         do_picture_description=False, do_picture_classification=False,
         do_code_enrichment=False, do_formula_enrichment=False)
     simple = ConvertPipelineOptions(**common)
     word_backend = MsWordBackendOptions(enable_remote_fetch=False, enable_local_fetch=False,
                                         render_chart_images=False)
     options = {
-        InputFormat.PDF: PdfFormatOption(pipeline_options=pdf),
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pdf, pipeline_cls=pdf_pipeline),
         InputFormat.DOCX: WordFormatOption(pipeline_options=simple, backend_options=word_backend),
         InputFormat.DOC: WordFormatOption(pipeline_options=simple, backend_options=word_backend),
         InputFormat.RTF: WordFormatOption(pipeline_options=simple, backend_options=word_backend),

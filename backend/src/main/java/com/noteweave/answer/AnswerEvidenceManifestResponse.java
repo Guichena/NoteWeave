@@ -1,6 +1,7 @@
 package com.noteweave.answer;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.noteweave.memory.MemoryReferenceResponse;
 import com.noteweave.retrieval.QueryRewrite;
 import java.time.Instant;
@@ -40,10 +41,20 @@ public record AnswerEvidenceManifestResponse(
             int rank, String evidenceId, String kind, String sourceId, String sourceSnapshotId,
             String passageId, String knowledgeItemId, String knowledgeVersionId, String title,
             String excerpt, String contentHash, String location, Instant freshAt, int characterCost,
-            @JsonInclude(JsonInclude.Include.NON_EMPTY) List<String> graphPath
+            @JsonInclude(JsonInclude.Include.NON_EMPTY) List<String> graphPath,
+            @JsonProperty("text_origin") @JsonInclude(JsonInclude.Include.NON_NULL) String textOrigin,
+            @JsonProperty("ocr_confidence") @JsonInclude(JsonInclude.Include.NON_NULL) Double ocrConfidence
     ) {
         public Evidence {
             graphPath = graphPath == null || graphPath.isEmpty() ? null : List.copyOf(graphPath);
+        }
+
+        public Evidence(int rank, String evidenceId, String kind, String sourceId, String sourceSnapshotId,
+                        String passageId, String knowledgeItemId, String knowledgeVersionId, String title,
+                        String excerpt, String contentHash, String location, Instant freshAt, int characterCost,
+                        List<String> graphPath) {
+            this(rank, evidenceId, kind, sourceId, sourceSnapshotId, passageId, knowledgeItemId, knowledgeVersionId,
+                    title, excerpt, contentHash, location, freshAt, characterCost, graphPath, null, null);
         }
     }
 }

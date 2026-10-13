@@ -77,8 +77,19 @@ public class DocumentChunker {
             String timeStart,
             String timeEnd,
             int tokens,
-            StructureMetadata structureMetadata
+            StructureMetadata structureMetadata,
+            @JsonProperty("text_origin") DocumentElement.TextOrigin textOrigin,
+            @JsonProperty("ocr_confidence") Double ocrConfidence
     ) {
+        public DocumentChunk {
+            DocumentElement.validateTextSource(textOrigin, ocrConfidence);
+        }
+
+        public DocumentChunk(String headingPath, String content, Integer pageStart, Integer pageEnd,
+                             String timeStart, String timeEnd, int tokens, StructureMetadata structureMetadata) {
+            this(headingPath, content, pageStart, pageEnd, timeStart, timeEnd, tokens, structureMetadata, null, null);
+        }
+
         public DocumentChunk(String headingPath, String content, Integer pageStart, Integer pageEnd,
                              String timeStart, String timeEnd, int tokens) {
             this(headingPath, content, pageStart, pageEnd, timeStart, timeEnd, tokens, null);
@@ -129,7 +140,14 @@ public class DocumentChunker {
     public record ElementLocation(@JsonProperty("element_index") int elementIndex,
                                   @JsonProperty("element_type") DocumentElement.ElementType elementType,
                                   Integer page, DocumentElement.BoundingBox bbox,
-                                  @JsonProperty("heading_level") Integer headingLevel) {}
+                                  @JsonProperty("heading_level") Integer headingLevel,
+                                  @JsonProperty("text_origin") DocumentElement.TextOrigin textOrigin,
+                                  @JsonProperty("ocr_confidence") Double ocrConfidence) {
+        public ElementLocation(int elementIndex, DocumentElement.ElementType elementType, Integer page,
+                               DocumentElement.BoundingBox bbox, Integer headingLevel) {
+            this(elementIndex, elementType, page, bbox, headingLevel, null, null);
+        }
+    }
 
     private record TypedPart(int elementIndex, DocumentElement element, String text, List<String> path) {}
 
@@ -160,7 +178,17 @@ public class DocumentChunker {
 
     /** Docling 元素直接参与切片，表格、图注和公式独立保留，超过预算也不拆开。 */
     public List<DocumentChunk> chunk(SourceDocumentTextExtractor.ExtractedDocument document) {
-        if (document.elements().isEmpty()) return chunk(document.text(), document.mimeType());
+        if (document.elements().isEmpty()) {
+            List<DocumentChunk> chunks = chunk(document.text(), document.mimeType());
+            if ("PDFBOX".equals(document.parser()) && "application/pdf".equals(document.mimeType())) {
+                // 本轮 PDFBox 只读取文字层；历史或其他解析器缺少来源时仍保持未知。
+                return chunks.stream().map(chunk -> new DocumentChunk(chunk.headingPath(), chunk.content(),
+                        chunk.pageStart(), chunk.pageEnd(), chunk.timeStart(), chunk.timeEnd(), chunk.tokens(),
+                        chunk.structureMetadata(), chunk.content().isBlank() ? null : DocumentElement.TextOrigin.TEXT_LAYER,
+                        null)).toList();
+            }
+            return chunks;
+        }
         List<DocumentChunk> chunks = new ArrayList<>();
         List<TypedPart> buffer = new ArrayList<>();
         List<String> path = new ArrayList<>();
@@ -217,15 +245,33 @@ public class DocumentChunker {
                 end = end == null ? element.page() : Math.max(end, element.page());
             }
             if (seen.add(part.elementIndex())) locations.add(new ElementLocation(part.elementIndex(),
-                    element.elementType(), element.page(), element.bbox(), element.headingLevel()));
+                    element.elementType(), element.page(), element.bbox(), element.headingLevel(),
+                    element.textOrigin(), element.ocrConfidence()));
             if (!types.contains(element.elementType())) types.add(element.elementType());
         }
         List<String> path = parts.get(0).path();
         int estimate = tokens(text);
         StructureMetadata metadata = new StructureMetadata(1, path, List.copyOf(types), List.copyOf(locations),
                 indivisible, estimate > maxTokens);
+        DocumentElement.TextOrigin origin = parts.get(0).element().textOrigin();
+        for (TypedPart part : parts) {
+            if (origin == null || part.element().textOrigin() != origin) {
+                origin = null;
+                break;
+            }
+        }
+        Double confidence = null;
+        if (origin == DocumentElement.TextOrigin.OCR
+                && parts.stream().allMatch(part -> part.element().ocrConfidence() != null)) {
+            // 仅使用每个实际输出片段对应的真实分数，按输出字符长度求均值；缺分数不补默认值。
+            long characters = parts.stream().mapToLong(part -> part.text().length()).sum();
+            if (characters > 0) {
+                confidence = parts.stream().mapToDouble(part -> part.text().length() * part.element().ocrConfidence()).sum()
+                        / characters;
+            }
+        }
         return new DocumentChunk(truncate(String.join(PATH_SEPARATOR, path), HEADING_PATH_MAX_CHARS), text,
-                start, end, null, null, estimate, metadata);
+                start, end, null, null, estimate, metadata, origin, confidence);
     }
 
     /** 不可拆结构也不在阅读窗口阶段被重新切开。 */

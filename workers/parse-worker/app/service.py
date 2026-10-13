@@ -66,7 +66,8 @@ class ParseService:
             actual_format = str(getattr(actual_format, "value", actual_format)).upper()
             if actual_format != expected_format:
                 raise ParseFailure(415, "DOCUMENT_TYPE_MISMATCH", "实际文档格式与声明类型不一致")
-            return serialize_document(result.document, metadata, max_chars, self.settings.max_elements)
+            return serialize_document(result.document, metadata, max_chars, self.settings.max_elements,
+                                      conversion_result=result)
 
     def close(self):
         self.executor.shutdown(wait=False, cancel_futures=True)

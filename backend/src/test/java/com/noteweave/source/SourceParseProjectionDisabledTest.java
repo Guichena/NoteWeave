@@ -141,6 +141,8 @@ class SourceParseProjectionDisabledTest {
                     page_start int,
                     page_end int,
                     structure_metadata_json clob,
+                    text_origin varchar(16),
+                    ocr_confidence double,
                     projection_status varchar(32) default 'PENDING',
                     projected_at timestamp
                 )

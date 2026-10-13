@@ -28,6 +28,9 @@ public class HttpSourceDocumentParserClient implements SourceDocumentParserPort 
             "snapshot_id", "sha256", "mime_type", "markdown", "page_count", "elements", "parser",
             "truncated", "warnings");
     private static final Set<String> ELEMENT_FIELDS = Set.of("element_type", "text", "page", "bbox", "heading_level");
+    private static final Set<String> TEXT_SOURCE_FIELDS = Set.of("text_origin", "ocr_confidence");
+    private static final Set<String> PAGE_SOURCE_FIELDS = Set.of("page", "text_origin", "ocr_confidence",
+            "native_char_count", "has_images", "ocr_attempted");
     private static final Set<String> BBOX_FIELDS = Set.of("left", "top", "right", "bottom", "coord_origin");
     private final RestClient worker;
     private final ObjectMapper mapper;
@@ -100,7 +103,7 @@ public class HttpSourceDocumentParserClient implements SourceDocumentParserPort 
             parser.enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
             JsonNode node = mapper.readTree(parser);
             if (parser.nextToken() != null) throw invalid("文档解析服务响应包含多份 JSON");
-            exactFields(node, DOCUMENT_FIELDS);
+            fields(node, DOCUMENT_FIELDS, Set.of("page_sources"));
             integer(node, "schema_version", 1, 1);
             identity(node, "workspace_id", request.workspaceId());
             identity(node, "source_id", request.sourceId());
@@ -122,7 +125,8 @@ public class HttpSourceDocumentParserClient implements SourceDocumentParserPort 
             if (elements.size() > MAX_ELEMENTS) throw invalid("结构元素数量超过 100000 上限");
             long textChars = 0;
             for (JsonNode element : elements) {
-                exactFields(element, ELEMENT_FIELDS);
+                fields(element, ELEMENT_FIELDS, TEXT_SOURCE_FIELDS);
+                validateTextSource(element);
                 try { DocumentElement.ElementType.valueOf(string(element, "element_type")); }
                 catch (IllegalArgumentException exception) { throw invalid("未知的结构元素类型"); }
                 textChars += string(element, "text").length();
@@ -147,6 +151,26 @@ public class HttpSourceDocumentParserClient implements SourceDocumentParserPort 
                     }
                 }
             }
+            JsonNode pageSources = node.get("page_sources");
+            if (pageSources != null) {
+                if (!pageSources.isArray() || pageSources.size() > MAX_ELEMENTS) {
+                    throw invalid("page_sources 必须是有界的页面来源数组");
+                }
+                Set<Integer> recordedPages = new HashSet<>();
+                for (JsonNode pageSource : pageSources) {
+                    exactFields(pageSource, PAGE_SOURCE_FIELDS);
+                    int page = integer(pageSource, "page", 1, pageCount == 0 ? Integer.MAX_VALUE : pageCount);
+                    if (!recordedPages.add(page)) throw invalid("页面来源记录的页码不能重复");
+                    validateTextSource(pageSource);
+                    if (!pageSource.get("native_char_count").isNull()) {
+                        integer(pageSource, "native_char_count", 0, Integer.MAX_VALUE);
+                    }
+                    if (!pageSource.get("has_images").isNull() && !pageSource.get("has_images").isBoolean()) {
+                        throw invalid("has_images 必须是布尔值或未知空值");
+                    }
+                    if (!pageSource.get("ocr_attempted").isBoolean()) throw invalid("ocr_attempted 必须是布尔值");
+                }
+            }
             return mapper.treeToValue(node, ParsedDocument.class);
         } catch (BusinessException exception) {
             throw exception;
@@ -156,10 +180,30 @@ public class HttpSourceDocumentParserClient implements SourceDocumentParserPort 
     }
 
     private static void exactFields(JsonNode node, Set<String> expected) {
+        fields(node, expected, Set.of());
+    }
+
+    private static void fields(JsonNode node, Set<String> required, Set<String> optional) {
         if (node == null || !node.isObject()) throw invalid("响应对象结构无效");
         Set<String> actual = new HashSet<>();
         node.fieldNames().forEachRemaining(actual::add);
-        if (!actual.equals(expected)) throw invalid("响应字段与解析契约不一致");
+        Set<String> allowed = new HashSet<>(required);
+        allowed.addAll(optional);
+        if (!actual.containsAll(required) || !allowed.containsAll(actual)) throw invalid("响应字段与解析契约不一致");
+    }
+
+    private static void validateTextSource(JsonNode node) {
+        JsonNode origin = node.get("text_origin");
+        if (origin != null && !origin.isNull() && (!origin.isTextual()
+                || !Set.of("TEXT_LAYER", "OCR").contains(origin.textValue()))) {
+            throw invalid("文字来源必须是 TEXT_LAYER、OCR 或未知空值");
+        }
+        JsonNode confidence = node.get("ocr_confidence");
+        if (confidence != null && !confidence.isNull() && (!confidence.isNumber()
+                || !Double.isFinite(confidence.doubleValue()) || confidence.doubleValue() < 0
+                || confidence.doubleValue() > 1 || origin == null || !"OCR".equals(origin.textValue()))) {
+            throw invalid("识别置信度只能用于 OCR 来源，并且必须是 0 到 1 的有限数值");
+        }
     }
 
     private static String string(JsonNode node, String key) {

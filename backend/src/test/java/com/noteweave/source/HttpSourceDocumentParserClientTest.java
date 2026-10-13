@@ -152,6 +152,102 @@ class HttpSourceDocumentParserClientTest {
                 .isInstanceOf(BusinessException.class);
     }
 
+    @Test
+    void optionalOcrFieldsPreserveZeroConfidenceAndRealPageAuditsWithoutInventingLegacyValues() throws Exception {
+        var legacy = read(valid(request));
+        assertThat(legacy.pageSources()).isEmpty();
+        assertThat(legacy.elements().get(0).textOrigin()).isNull();
+        assertThat(legacy.elements().get(0).ocrConfidence()).isNull();
+
+        ObjectNode response = valid(request);
+        response.put("page_count", 2);
+        ObjectNode element = (ObjectNode) response.get("elements").get(0);
+        element.put("text_origin", "OCR").put("ocr_confidence", 0.0);
+        response.putArray("page_sources").add(pageSource(1, "OCR", 0.0)).add(pageSource(2, null, null));
+        var parsed = read(response);
+        assertThat(parsed.elements().get(0).textOrigin()).isEqualTo(DocumentElement.TextOrigin.OCR);
+        assertThat(parsed.elements().get(0).ocrConfidence()).isZero();
+        assertThat(parsed.pageSources()).hasSize(2);
+        assertThat(parsed.pageSources().get(0).ocrConfidence()).isZero();
+        assertThat(parsed.pageSources().get(1).textOrigin()).isNull();
+        assertThat(parsed.pageSources().get(1).nativeCharCount()).isNull();
+        assertThat(parsed.pageSources().get(1).hasImages()).isNull();
+    }
+
+    @Test
+    void illegalOcrSourcesConfidenceTypesAndConfidenceWithoutOcrAreRejected() throws Exception {
+        for (String source : List.of("MIXED", "ocr", "")) {
+            ObjectNode response = valid(request);
+            ((ObjectNode) response.get("elements").get(0)).put("text_origin", source);
+            rejects(response);
+        }
+        for (double value : new double[]{-0.1, 1.1, Double.NaN, Double.POSITIVE_INFINITY}) {
+            ObjectNode response = valid(request);
+            ((ObjectNode) response.get("elements").get(0)).put("text_origin", "OCR").put("ocr_confidence", value);
+            rejects(response);
+        }
+        ObjectNode wrongType = valid(request);
+        ObjectNode element = (ObjectNode) wrongType.get("elements").get(0);
+        element.put("text_origin", "OCR").put("ocr_confidence", "0.5");
+        rejects(wrongType);
+        element.put("ocr_confidence", true);
+        rejects(wrongType);
+        element.put("text_origin", "TEXT_LAYER").put("ocr_confidence", 0.0);
+        rejects(wrongType);
+        element.remove("text_origin");
+        rejects(wrongType);
+        element.putNull("text_origin");
+        rejects(wrongType);
+        element.putNull("ocr_confidence").put("unrecognized_ocr_field", 0.5);
+        rejects(wrongType);
+    }
+
+    @Test
+    void pageAuditsRejectDuplicatesImpossiblePageNumbersAndCoercionButAllowUnknownTotal() throws Exception {
+        ObjectNode response = valid(request);
+        response.putArray("page_sources").add(pageSource(1, "OCR", 0.8)).add(pageSource(1, "OCR", 0.8));
+        rejects(response);
+        for (int page : new int[]{0, -1, 2}) {
+            response.putArray("page_sources").add(pageSource(page, "OCR", 0.8));
+            rejects(response);
+        }
+        response.put("page_count", 0);
+        response.putArray("page_sources").add(pageSource(7, "OCR", 0.8));
+        assertThat(read(response).pageSources().get(0).page()).isEqualTo(7);
+        ObjectNode audit = (ObjectNode) response.get("page_sources").get(0);
+        audit.put("page", "7");
+        rejects(response);
+        audit.put("page", 7).put("native_char_count", -1);
+        rejects(response);
+        audit.put("native_char_count", 1.5);
+        rejects(response);
+        audit.put("native_char_count", "0");
+        rejects(response);
+        audit.putNull("native_char_count").put("has_images", "true");
+        rejects(response);
+        audit.putNull("has_images").put("ocr_attempted", "false");
+        rejects(response);
+        audit.put("ocr_attempted", true).put("extra", "拒绝未知字段");
+        rejects(response);
+        audit.remove("extra");
+        audit.remove("native_char_count");
+        rejects(response);
+        response.putNull("page_sources");
+        rejects(response);
+    }
+
+    private SourceDocumentParserPort.ParsedDocument read(ObjectNode response) throws Exception {
+        return client().readResponse(new ByteArrayInputStream(mapper.writeValueAsBytes(response)), 10000, request);
+    }
+
+    private ObjectNode pageSource(int page, String origin, Double confidence) {
+        ObjectNode node = mapper.createObjectNode().put("page", page);
+        if (origin == null) node.putNull("text_origin"); else node.put("text_origin", origin);
+        if (confidence == null) node.putNull("ocr_confidence"); else node.put("ocr_confidence", confidence);
+        node.putNull("native_char_count").putNull("has_images").put("ocr_attempted", origin != null && origin.equals("OCR"));
+        return node;
+    }
+
     private HttpSourceDocumentParserClient client() {
         return new HttpSourceDocumentParserClient(new SourceDocumentParserProperties(
                 true, "http://127.0.0.1:18103", 5, 1, 1000, ""), mapper);
