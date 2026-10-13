@@ -57,12 +57,13 @@ export type ArtifactVersionDetail = {
 
 export type ArtifactSectionSupport = "SUPPORTED" | "PARTIAL" | "UNSUPPORTED" | "NOT_RUN";
 
+/** 4D 之前生成的版本只有旧的 status 与检查列表，contract_status 和 sections 为空。 */
 export type ArtifactVerification = {
-  contract_status: "PASS" | "FAIL" | string;
-  repair_rounds: Array<{ round: number; failed_checks: string[]; repaired_sections: string[] }>;
-  citation_recall: number | null;
-  citation_precision: number | null;
-  sections: Array<{ heading: string; support: ArtifactSectionSupport | string }>;
+  contract_status?: "PASS" | "FAIL" | string | null;
+  repair_rounds?: Array<{ round: number; failed_checks: string[]; repaired_sections: string[] }> | null;
+  citation_recall?: number | null;
+  citation_precision?: number | null;
+  sections?: Array<{ heading: string; support: ArtifactSectionSupport | string }> | null;
 };
 
 export type ArtifactVersionSummary = {

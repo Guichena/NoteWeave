@@ -60,9 +60,9 @@ export class SourcesApi {
     return this.uploadBlob(workspaceId, file, file.name, mimeType, onProgress);
   }
 
-  /** 后端支持的资料格式，用于文件选择器过滤。 */
-  listFormats(workspaceId: string) {
-    return this.client.get<SourceFormat[]>(`/api/v2/workspaces/${workspaceId}/uploads/formats`);
+  /** 后端支持的资料格式，用于文件选择器过滤；格式列表不区分工作台。 */
+  listFormats() {
+    return this.client.get<SourceFormat[]>("/api/v2/uploads/formats");
   }
 
   private async uploadBytes(

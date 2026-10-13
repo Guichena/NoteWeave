@@ -90,8 +90,9 @@ public class ResearchRunCommandService {
                 workspaceId, "RESEARCH_RUN", "RESEARCH_RUN", researchRunId, "QUEUED",
                 "Deep Research 任务已创建"
         );
+        // 研究问题作为相关度查询，按需记忆按这次研究选取
         MemoryControlPackResponse controlPack = memoryCompilerService.compileResearchControlPack(
-                workspaceId, profileKey);
+                workspaceId, profileKey, request.question());
         ResearchAcquisitionPolicy acquisitionPolicy = ResearchAcquisitionPolicy.compile(
                 request, externalEvidencePolicy);
         List<String> sourceScopeIds = resolveRequestedSourceScopeIds(

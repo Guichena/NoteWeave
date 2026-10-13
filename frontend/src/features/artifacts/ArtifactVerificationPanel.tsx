@@ -15,6 +15,8 @@ function percent(value: number | null | undefined) {
 export function ArtifactVerificationPanel({ verification }: { verification?: ArtifactVerification | null }) {
   if (!verification) return null;
   const sections = verification.sections ?? [];
+  // 旧版本只有生成过程面板里的检查结果，这里不重复展示
+  if (!verification.contract_status && sections.length === 0) return null;
   const rounds = verification.repair_rounds ?? [];
   const unsupported = sections.filter((section) => section.support === "UNSUPPORTED").length;
   const notRun = sections.filter((section) => section.support === "NOT_RUN").length;
@@ -23,9 +25,11 @@ export function ArtifactVerificationPanel({ verification }: { verification?: Art
   return (
     <section className="artifact-verification" aria-label="内容校验">
       <div className="artifact-verification-summary">
-        <span className={`artifact-badge tone-${passed ? "ok" : "danger"}`}>
-          {passed ? "输出契约通过" : "输出契约未通过"}
-        </span>
+        {verification.contract_status ? (
+          <span className={`artifact-badge tone-${passed ? "ok" : "danger"}`}>
+            {passed ? "输出契约通过" : "输出契约未通过"}
+          </span>
+        ) : null}
         <span>引用召回率 {percent(verification.citation_recall)}</span>
         <span>引用精确率 {percent(verification.citation_precision)}</span>
         <span>{rounds.length > 0 ? `修复 ${rounds.length} 轮` : "未经修复"}</span>

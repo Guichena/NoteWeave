@@ -17,7 +17,7 @@ export function useSourceFormats(workspaceId: string | undefined, api: Pick<Sour
     if (!workspaceId) return undefined;
     let active = true;
     setFormats(cachedSourceFormats(workspaceId));
-    api.listFormats(workspaceId).then(
+    api.listFormats().then(
       (loaded) => {
         const valid = loaded.filter((format) => format.extension && format.mime_type)
           .map((format) => ({ extension: format.extension.replace(/^\./, "").toLowerCase(), mime_type: format.mime_type }));

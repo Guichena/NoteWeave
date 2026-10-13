@@ -38,8 +38,10 @@ describe("ArtifactVerificationPanel", () => {
     expect(screen.getByText(/1 个章节因模型不可用没有完成证据校验/)).toBeTruthy();
   });
 
-  it("旧版本没有校验结果时不渲染", () => {
-    const { container } = render(<ArtifactVerificationPanel verification={null} />);
+  it("旧版本没有校验结果或只有旧的检查列表时不渲染", () => {
+    const { container, rerender } = render(<ArtifactVerificationPanel verification={null} />);
+    expect(container.innerHTML).toBe("");
+    rerender(<ArtifactVerificationPanel verification={{ contract_status: null, sections: [], repair_rounds: [] }} />);
     expect(container.innerHTML).toBe("");
   });
 });

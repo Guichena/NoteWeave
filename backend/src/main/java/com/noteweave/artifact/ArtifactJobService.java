@@ -118,10 +118,11 @@ public class ArtifactJobService {
                         "QUEUED", "右侧产物 Skill 任务已创建")
                 : taskService.createTaskForActor(workspaceId, "ARTIFACT_JOB", "ARTIFACT_JOB", artifactJobId,
                         "QUEUED", "右侧产物 Skill 任务已创建", actorUserId);
+        // 用户的产物要求作为相关度查询，按需记忆才会按这次任务选取
         MemoryControlPackResponse controlPack = actorUserId == null
-                ? memoryCompilerService.compileArtifactControlPack(workspaceId, skillKey)
+                ? memoryCompilerService.compileArtifactControlPack(workspaceId, skillKey, userRequirement)
                 : memoryCompilerService.compileArtifactControlPackForActor(
-                        workspaceId, skillKey, actorUserId);
+                        workspaceId, skillKey, actorUserId, userRequirement);
         artifactJobWriteRepository.persistInitialJob(
                 artifactJobId,
                 workspaceId,
