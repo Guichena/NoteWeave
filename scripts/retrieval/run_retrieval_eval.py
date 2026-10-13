@@ -122,7 +122,8 @@ def ask(client: ApiClient, workspace_id: str, conversation_id: str, content: str
         "content": content,
         "answer_mode": mode,
         "client_request_id": f"retrieval-eval-{uuid.uuid4()}",
-        "source_scope_source_ids": source_ids,
+        # 只有 QA 模式接受显式资料范围，Note 与 Wiki 使用工作台全部资料
+        "source_scope_source_ids": source_ids if mode == "QA" else [],
     })
     run_id = str(receipt["answer_run_id"])
     run = wait_until(
