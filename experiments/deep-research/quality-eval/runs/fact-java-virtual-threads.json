@@ -1,0 +1,1477 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "fact-java-virtual-threads",
+  "run_id": "a52c8ceb-30ba-4bdd-a41a-1e64c09f99d0",
+  "workspace_id": "29f72a32-1e17-4292-8b58-e596a315591f",
+  "started_at": "2026-10-14T15:33:07.062300+00:00",
+  "finished_at": "2026-10-14T15:41:04.584151+00:00",
+  "wall_seconds": 477.5,
+  "run_detail": {
+    "research_run_id": "a52c8ceb-30ba-4bdd-a41a-1e64c09f99d0",
+    "workspace_id": "29f72a32-1e17-4292-8b58-e596a315591f",
+    "task_id": "bdcdc6fd-13a6-472f-95bd-503dc9fd21a8",
+    "question": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "FAILED",
+    "completion_terminal_state": "",
+    "final_report_title": "",
+    "final_report_markdown": "",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": null,
+    "research_artifact": null,
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 0,
+        "blocked_row_count": 2,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 2,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 2,
+        "guardrailed_row_count": 2,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 2,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [
+          {
+            "row_id": "entity-af4e1edddc67b447",
+            "source_id": "",
+            "source_title": "synchronized pinning 改善版本（JEP 491）",
+            "evidence_id": "",
+            "search_query": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          },
+          {
+            "row_id": "entity-9c2a77d6a8b1f4a2",
+            "source_id": "",
+            "source_title": "Java 虚拟线程正式发布版本（JEP 444）",
+            "evidence_id": "",
+            "search_query": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "guardrailed_row_samples": [
+          {
+            "row_id": "entity-af4e1edddc67b447",
+            "source_id": "",
+            "source_title": "synchronized pinning 改善版本（JEP 491）",
+            "evidence_id": "",
+            "search_query": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          },
+          {
+            "row_id": "entity-9c2a77d6a8b1f4a2",
+            "source_id": "",
+            "source_title": "Java 虚拟线程正式发布版本（JEP 444）",
+            "evidence_id": "",
+            "search_query": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 2,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-af4e1edddc67b447",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "synchronized pinning 改善版本（JEP 491）",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+            "read_focus": "确定 Java 虚拟线程（Virtual Threads）在哪个 JDK 版本正式发布（对应 JEP 编号），以及由 synchronized 引起的虚拟线程固定（pinning）问题在哪个 JDK 版本得到改善（对应 JEP 编号），并给出可逐项引用的证据。",
+            "evidence_id": "",
+            "row_status": "DISCOVERED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          },
+          {
+            "row_id": "entity-9c2a77d6a8b1f4a2",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Java 虚拟线程正式发布版本（JEP 444）",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+            "read_focus": "确定 Java 虚拟线程（Virtual Threads）在哪个 JDK 版本正式发布（对应 JEP 编号），以及由 synchronized 引起的虚拟线程固定（pinning）问题在哪个 JDK 版本得到改善（对应 JEP 编号），并给出可逐项引用的证据。",
+            "evidence_id": "",
+            "row_status": "DISCOVERED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-af4e1edddc67b447:dim-1aa9874f68815f77",
+            "row_id": "entity-af4e1edddc67b447",
+            "branch_id": "branch-main",
+            "column_key": "dim-1aa9874f68815f77",
+            "column_label": "JDK 版本",
+            "candidate_value": "*JEP 491 improves the scalability of Java code that uses synchronized methods and statements by arranging for virtual threads that block in such constructs to release their underlying platform threads for use by other virtual threads.",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:4f13238e5a7e465d2b2bbbe943f24674bc0c3911d224f7c9"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-9c2a77d6a8b1f4a2:dim-e0719431dee9f5c8",
+            "row_id": "entity-9c2a77d6a8b1f4a2",
+            "branch_id": "branch-main",
+            "column_key": "dim-e0719431dee9f5c8",
+            "column_label": "发布前预览轮次",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-9c2a77d6a8b1f4a2:dim-7dbbb6a946170637",
+            "row_id": "entity-9c2a77d6a8b1f4a2",
+            "branch_id": "branch-main",
+            "column_key": "dim-7dbbb6a946170637",
+            "column_label": "JEP 状态",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-9c2a77d6a8b1f4a2:dim-df9252d6390b4c20",
+            "row_id": "entity-9c2a77d6a8b1f4a2",
+            "branch_id": "branch-main",
+            "column_key": "dim-df9252d6390b4c20",
+            "column_label": "受影响版本范围",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-af4e1edddc67b447:dim-12b9073c1b0f4e0f",
+            "row_id": "entity-af4e1edddc67b447",
+            "branch_id": "branch-main",
+            "column_key": "dim-12b9073c1b0f4e0f",
+            "column_label": "synchronized pinning 行为说明",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-af4e1edddc67b447:dim-ce3afc0851add1ad",
+            "row_id": "entity-af4e1edddc67b447",
+            "branch_id": "branch-main",
+            "column_key": "dim-ce3afc0851add1ad",
+            "column_label": "残留 pinning 风险",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-af4e1edddc67b447:dim-d196f794de700c50",
+            "row_id": "entity-af4e1edddc67b447",
+            "branch_id": "branch-main",
+            "column_key": "dim-d196f794de700c50",
+            "column_label": "JEP 编号与标题",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-9c2a77d6a8b1f4a2:dim-1aa9874f68815f77",
+            "row_id": "entity-9c2a77d6a8b1f4a2",
+            "branch_id": "branch-main",
+            "column_key": "dim-1aa9874f68815f77",
+            "column_label": "JDK 版本",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-af4e1edddc67b447:dim-1ac527554aa980fb",
+            "row_id": "entity-af4e1edddc67b447",
+            "branch_id": "branch-main",
+            "column_key": "dim-1ac527554aa980fb",
+            "column_label": "官方引用来源",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-af4e1edddc67b447:dim-df9252d6390b4c20",
+            "row_id": "entity-af4e1edddc67b447",
+            "branch_id": "branch-main",
+            "column_key": "dim-df9252d6390b4c20",
+            "column_label": "受影响版本范围",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-9c2a77d6a8b1f4a2:dim-d196f794de700c50",
+            "row_id": "entity-9c2a77d6a8b1f4a2",
+            "branch_id": "branch-main",
+            "column_key": "dim-d196f794de700c50",
+            "column_label": "JEP 编号与标题",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-9c2a77d6a8b1f4a2:dim-ce3afc0851add1ad",
+            "row_id": "entity-9c2a77d6a8b1f4a2",
+            "branch_id": "branch-main",
+            "column_key": "dim-ce3afc0851add1ad",
+            "column_label": "残留 pinning 风险",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-af4e1edddc67b447:dim-e0719431dee9f5c8",
+            "row_id": "entity-af4e1edddc67b447",
+            "branch_id": "branch-main",
+            "column_key": "dim-e0719431dee9f5c8",
+            "column_label": "发布前预览轮次",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-9c2a77d6a8b1f4a2:dim-1ac527554aa980fb",
+            "row_id": "entity-9c2a77d6a8b1f4a2",
+            "branch_id": "branch-main",
+            "column_key": "dim-1ac527554aa980fb",
+            "column_label": "官方引用来源",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-9c2a77d6a8b1f4a2:dim-12b9073c1b0f4e0f",
+            "row_id": "entity-9c2a77d6a8b1f4a2",
+            "branch_id": "branch-main",
+            "column_key": "dim-12b9073c1b0f4e0f",
+            "column_label": "synchronized pinning 行为说明",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-af4e1edddc67b447:dim-7dbbb6a946170637",
+            "row_id": "entity-af4e1edddc67b447",
+            "branch_id": "branch-main",
+            "column_key": "dim-7dbbb6a946170637",
+            "column_label": "JEP 状态",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 0,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-af4e1edddc67b447",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "synchronized pinning 改善版本（JEP 491）",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+          "read_focus": "确定 Java 虚拟线程（Virtual Threads）在哪个 JDK 版本正式发布（对应 JEP 编号），以及由 synchronized 引起的虚拟线程固定（pinning）问题在哪个 JDK 版本得到改善（对应 JEP 编号），并给出可逐项引用的证据。",
+          "evidence_id": "",
+          "row_status": "DISCOVERED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        },
+        {
+          "row_id": "entity-9c2a77d6a8b1f4a2",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Java 虚拟线程正式发布版本（JEP 444）",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+          "read_focus": "确定 Java 虚拟线程（Virtual Threads）在哪个 JDK 版本正式发布（对应 JEP 编号），以及由 synchronized 引起的虚拟线程固定（pinning）问题在哪个 JDK 版本得到改善（对应 JEP 编号），并给出可逐项引用的证据。",
+          "evidence_id": "",
+          "row_status": "DISCOVERED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-af4e1edddc67b447:dim-1aa9874f68815f77",
+          "row_id": "entity-af4e1edddc67b447",
+          "branch_id": "branch-main",
+          "column_key": "dim-1aa9874f68815f77",
+          "column_label": "JDK 版本",
+          "candidate_value": "*JEP 491 improves the scalability of Java code that uses synchronized methods and statements by arranging for virtual threads that block in such constructs to release their underlying platform threads for use by other virtual threads.",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:4f13238e5a7e465d2b2bbbe943f24674bc0c3911d224f7c9"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-9c2a77d6a8b1f4a2:dim-e0719431dee9f5c8",
+          "row_id": "entity-9c2a77d6a8b1f4a2",
+          "branch_id": "branch-main",
+          "column_key": "dim-e0719431dee9f5c8",
+          "column_label": "发布前预览轮次",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-9c2a77d6a8b1f4a2:dim-7dbbb6a946170637",
+          "row_id": "entity-9c2a77d6a8b1f4a2",
+          "branch_id": "branch-main",
+          "column_key": "dim-7dbbb6a946170637",
+          "column_label": "JEP 状态",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-9c2a77d6a8b1f4a2:dim-df9252d6390b4c20",
+          "row_id": "entity-9c2a77d6a8b1f4a2",
+          "branch_id": "branch-main",
+          "column_key": "dim-df9252d6390b4c20",
+          "column_label": "受影响版本范围",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-af4e1edddc67b447:dim-12b9073c1b0f4e0f",
+          "row_id": "entity-af4e1edddc67b447",
+          "branch_id": "branch-main",
+          "column_key": "dim-12b9073c1b0f4e0f",
+          "column_label": "synchronized pinning 行为说明",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-af4e1edddc67b447:dim-ce3afc0851add1ad",
+          "row_id": "entity-af4e1edddc67b447",
+          "branch_id": "branch-main",
+          "column_key": "dim-ce3afc0851add1ad",
+          "column_label": "残留 pinning 风险",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-af4e1edddc67b447:dim-d196f794de700c50",
+          "row_id": "entity-af4e1edddc67b447",
+          "branch_id": "branch-main",
+          "column_key": "dim-d196f794de700c50",
+          "column_label": "JEP 编号与标题",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-9c2a77d6a8b1f4a2:dim-1aa9874f68815f77",
+          "row_id": "entity-9c2a77d6a8b1f4a2",
+          "branch_id": "branch-main",
+          "column_key": "dim-1aa9874f68815f77",
+          "column_label": "JDK 版本",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-af4e1edddc67b447:dim-1ac527554aa980fb",
+          "row_id": "entity-af4e1edddc67b447",
+          "branch_id": "branch-main",
+          "column_key": "dim-1ac527554aa980fb",
+          "column_label": "官方引用来源",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-af4e1edddc67b447:dim-df9252d6390b4c20",
+          "row_id": "entity-af4e1edddc67b447",
+          "branch_id": "branch-main",
+          "column_key": "dim-df9252d6390b4c20",
+          "column_label": "受影响版本范围",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-9c2a77d6a8b1f4a2:dim-d196f794de700c50",
+          "row_id": "entity-9c2a77d6a8b1f4a2",
+          "branch_id": "branch-main",
+          "column_key": "dim-d196f794de700c50",
+          "column_label": "JEP 编号与标题",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-9c2a77d6a8b1f4a2:dim-ce3afc0851add1ad",
+          "row_id": "entity-9c2a77d6a8b1f4a2",
+          "branch_id": "branch-main",
+          "column_key": "dim-ce3afc0851add1ad",
+          "column_label": "残留 pinning 风险",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-af4e1edddc67b447:dim-e0719431dee9f5c8",
+          "row_id": "entity-af4e1edddc67b447",
+          "branch_id": "branch-main",
+          "column_key": "dim-e0719431dee9f5c8",
+          "column_label": "发布前预览轮次",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-9c2a77d6a8b1f4a2:dim-1ac527554aa980fb",
+          "row_id": "entity-9c2a77d6a8b1f4a2",
+          "branch_id": "branch-main",
+          "column_key": "dim-1ac527554aa980fb",
+          "column_label": "官方引用来源",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-9c2a77d6a8b1f4a2:dim-12b9073c1b0f4e0f",
+          "row_id": "entity-9c2a77d6a8b1f4a2",
+          "branch_id": "branch-main",
+          "column_key": "dim-12b9073c1b0f4e0f",
+          "column_label": "synchronized pinning 行为说明",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-af4e1edddc67b447:dim-7dbbb6a946170637",
+          "row_id": "entity-af4e1edddc67b447",
+          "branch_id": "branch-main",
+          "column_key": "dim-7dbbb6a946170637",
+          "column_label": "JEP 状态",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:4f13238e5a7e465d2b2bbbe943f24674bc0c3911d224f7c9",
+          "window_id": "window-2",
+          "source_id": "web-81fca429e0772a99",
+          "source_title": "Java 24 Stops Pinning Virtual Threads (Almost) - Inside Java Newscast #80 - Inside.java",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://inside.java/2024/11/21/newscast-80",
+          "provider": "tavily_mcp",
+          "adapter": "external_url",
+          "search_query": "Java virtual threads synchronized pinning JEP 491",
+          "read_focus": "Read external URL Java 24 Stops Pinning Virtual Threads (Almost) - Inside Java Newscast #80 - Inside.java for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: synchronized pinning 改善版本（JEP 491）. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "*JEP 491 improves the scalability of Java code that uses synchronized methods and statements by arranging for virtual threads that block in such constructs to release their underlying platform threads for use by other virtual threads.",
+          "claim_text": "*JEP 491 improves the scalability of Java code that uses synchronized methods and statements by arranging for virtual threads that block in such constructs to release their underlying platform threads for use by other virtual threads.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/9dbbebb5-b12c-4ded-897e-df5baa0a1893/91900e212db2abde3a86fe6484b91c222d13dec007b9feb4c0319d442df07116"
+        },
+        {
+          "evidence_id": "evidence:cf17754c11669c3357be5b2f08ebc76768010f2c1b5f0264",
+          "window_id": "window-2",
+          "source_id": "web-81fca429e0772a99",
+          "source_title": "Java 24 Stops Pinning Virtual Threads (Almost) - Inside Java Newscast #80 - Inside.java",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://inside.java/2024/11/21/newscast-80",
+          "provider": "tavily_mcp",
+          "adapter": "external_url",
+          "search_query": "Java virtual threads synchronized pinning JEP 491",
+          "read_focus": "Read external URL Java 24 Stops Pinning Virtual Threads (Almost) - Inside Java Newscast #80 - Inside.java for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: synchronized pinning 改善版本（JEP 491）. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "This change is already integrated into Java 24 and available in the latest JDK 24 EA builds.",
+          "claim_text": "This change is already integrated into Java 24 and available in the latest JDK 24 EA builds.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/9dbbebb5-b12c-4ded-897e-df5baa0a1893/91900e212db2abde3a86fe6484b91c222d13dec007b9feb4c0319d442df07116"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "entity-af4e1edddc67b447:dim-1aa9874f68815f77",
+          "row_id": "entity-af4e1edddc67b447",
+          "evidence_id": "evidence:4f13238e5a7e465d2b2bbbe943f24674bc0c3911d224f7c9",
+          "source_id": "web-81fca429e0772a99",
+          "source_title": "Java 24 Stops Pinning Virtual Threads (Almost) - Inside Java Newscast #80 - Inside.java",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://inside.java/2024/11/21/newscast-80"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "fd1965c7-2b17-46e3-a0e3-6cb7eb4dd45e",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "profile_key": "DEFAULT",
+          "question": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+          "source_scope_count": 0,
+          "retrieval_mode": "WEB_ONLY"
+        },
+        "created_at": "2026-10-14T15:33:07Z"
+      },
+      {
+        "trace_id": "ddc29941-0574-43af-8467-9286d80783ea",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "columns": 8,
+          "reason_codes": [],
+          "planner_version": "llm-matrix.v1",
+          "rows": 2
+        },
+        "created_at": "2026-10-14T15:33:43Z"
+      },
+      {
+        "trace_id": "27c84670-b13f-4036-b82a-fd768d6e0339",
+        "trace_type": "RUN_FAILED",
+        "trace_message": "RESEARCH_WEB_PROVIDER_UNAVAILABLE",
+        "payload": {},
+        "created_at": "2026-10-14T15:41:03Z"
+      }
+    ],
+    "created_at": "2026-10-14T15:33:07Z",
+    "updated_at": "2026-10-14T15:41:03Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "candidates": [
+        {
+          "confidence": 0.95,
+          "base_cell_version": 0,
+          "task_id": "9dbbebb5-b12c-4ded-897e-df5baa0a1893",
+          "cell_key": "entity-af4e1edddc67b447:dim-1aa9874f68815f77",
+          "candidate_id": "3ca18f42-f367-4706-a2ff-8c2a00eca6de"
+        }
+      ],
+      "tasks": [
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-2",
+          "task_key": "planning:a52c8ceb-30ba-4bdd-a41a-1e64c09f99d0",
+          "task_id": "9bf4afab-090f-4cb5-b486-eefa5207293c",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-14T15:34:38Z",
+          "status": "SUBMITTED"
+        },
+        {
+          "attempt_count": 0,
+          "fencing_token": 0,
+          "worker_instance_id": "",
+          "task_key": "deep-cell:96c9c53ce9c5d20c8c52929bd025ccf0",
+          "task_id": "0bf3f342-890f-446a-b65a-096bd1b7204a",
+          "lease_epoch": 0,
+          "lease_expires_at": "",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "",
+          "task_key": "deep-cell:de4226fa7a0950f5d273381cd0496297:slot:2",
+          "task_id": "0ee95690-f431-4a1b-82e9-e804f63c5a3f",
+          "lease_epoch": 1,
+          "lease_expires_at": "",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 0,
+          "fencing_token": 0,
+          "worker_instance_id": "",
+          "task_key": "deep-cell:7698ce7cd490ee80dac4a626da1967e9",
+          "task_id": "1b3f4c5b-c4fb-467b-b259-73e3437fc45d",
+          "lease_epoch": 0,
+          "lease_expires_at": "",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "",
+          "task_key": "deep-cell:de4226fa7a0950f5d273381cd0496297:slot:1",
+          "task_id": "313ff572-ce94-464e-bc4f-9aed789fd762",
+          "lease_epoch": 1,
+          "lease_expires_at": "",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 0,
+          "fencing_token": 0,
+          "worker_instance_id": "",
+          "task_key": "deep-cell:39e94c09eda109aa1089869f65f47b45",
+          "task_id": "57663fb4-a7aa-41e7-a824-88acdcb91ca2",
+          "lease_epoch": 0,
+          "lease_expires_at": "",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 0,
+          "fencing_token": 0,
+          "worker_instance_id": "",
+          "task_key": "deep-cell:33167a632c1257c03ef6f989659354c9",
+          "task_id": "58c4dd9f-2294-4202-9812-5da228c646e6",
+          "lease_epoch": 0,
+          "lease_expires_at": "",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 0,
+          "fencing_token": 0,
+          "worker_instance_id": "",
+          "task_key": "deep-cell:a6eec5f4db0b215b2e4f570c98c514e3",
+          "task_id": "6ed0865f-729f-46fd-98ab-51f427bd99ed",
+          "lease_epoch": 0,
+          "lease_expires_at": "",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 0,
+          "fencing_token": 0,
+          "worker_instance_id": "",
+          "task_key": "deep-cell:940db5d8295d65e7777902c7d778a05e",
+          "task_id": "825e87da-2d0b-4f77-9a7f-141c43a00e24",
+          "lease_epoch": 0,
+          "lease_expires_at": "",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 0,
+          "fencing_token": 0,
+          "worker_instance_id": "",
+          "task_key": "deep-cell:395ebe509550a2e168c693ba978c7f53",
+          "task_id": "84a38ce9-5117-41b3-a870-0926f0b50e56",
+          "lease_epoch": 0,
+          "lease_expires_at": "",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 0,
+          "fencing_token": 0,
+          "worker_instance_id": "",
+          "task_key": "deep-cell:89916f2f520cd7fea2010976ec23d2c4",
+          "task_id": "98c6e297-f68b-4a0b-8da8-e671b7e3fc65",
+          "lease_epoch": 0,
+          "lease_expires_at": "",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-3",
+          "task_key": "deep-cell:de8b1a3d47ba9c2eecfce301e5176173",
+          "task_id": "9dbbebb5-b12c-4ded-897e-df5baa0a1893",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-14T15:39:39Z",
+          "status": "SUBMITTED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "",
+          "task_key": "deep-cell:29333292cbe347ea217da5063cec615b:slot:1",
+          "task_id": "a251e380-405e-490c-9233-36e76e52c634",
+          "lease_epoch": 1,
+          "lease_expires_at": "",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 0,
+          "fencing_token": 0,
+          "worker_instance_id": "",
+          "task_key": "deep-cell:049b6d3679bfa3d880511e14f2680272",
+          "task_id": "a3eacd72-48c8-4001-ba3d-3dcf96ac848a",
+          "lease_epoch": 0,
+          "lease_expires_at": "",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "",
+          "task_key": "deep-cell:29333292cbe347ea217da5063cec615b:slot:2",
+          "task_id": "b5ac10c2-1c49-44c4-adc4-11af2ac6a665",
+          "lease_epoch": 1,
+          "lease_expires_at": "",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "",
+          "task_key": "deep-cell:c7e66968acd07c5b887dfadd8d0a84a9",
+          "task_id": "e01816c3-4cc8-4309-8bfc-ba51e75b2aa9",
+          "lease_epoch": 1,
+          "lease_expires_at": "",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "",
+          "task_key": "deep-cell:30bbc6b2a8edc386c0f923837aa99f58",
+          "task_id": "f191a874-e279-4c89-8289-1e6081ad09dd",
+          "lease_epoch": 1,
+          "lease_expires_at": "",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-1",
+          "task_key": "deep-cell:44d4ebe9df8fb2b3a8631d83c9d4a0d8",
+          "task_id": "f1bbb694-4a97-4004-abbd-2e3799535556",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-14T15:41:48Z",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 0,
+          "fencing_token": 0,
+          "worker_instance_id": "",
+          "task_key": "deep-cell:c44469eb76ea48f157adfbd698d2a536",
+          "task_id": "fc54343f-782e-4637-ad9d-9a3a9136bb59",
+          "lease_epoch": 0,
+          "lease_expires_at": "",
+          "status": "FAILED"
+        }
+      ],
+      "checkpoints": [],
+      "merges": [
+        {
+          "candidate_id": "3ca18f42-f367-4706-a2ff-8c2a00eca6de",
+          "merge_id": "merge:063260a5e5eea491b2079ef3a43b26cb83cb4b5c028eec0178e01623d5e6dcf4",
+          "cell_key": "entity-af4e1edddc67b447:dim-1aa9874f68815f77",
+          "result_cell_version": 1,
+          "expected_cell_version": 0,
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "decision": "ACCEPTED"
+        }
+      ],
+      "execution_mode": "INCREMENTAL_V1",
+      "merge_count": 1,
+      "task_count": 19,
+      "candidate_count": 1
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-9c2a77d6a8b1f4a2",
+            "label": "Java 虚拟线程正式发布版本（JEP 444）"
+          },
+          {
+            "entity_key": "entity-af4e1edddc67b447",
+            "label": "synchronized pinning 改善版本（JEP 491）"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-12b9073c1b0f4e0f",
+            "label": "synchronized pinning 行为说明",
+            "description": "官方文档对 synchronized 代码块/方法中虚拟线程阻塞导致 pinning 的行为描述，以及 JEP 491 引入的变更。",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-1aa9874f68815f77",
+            "label": "JDK 版本",
+            "description": "官方 JEP 页面或 JDK 发布说明中标注的该 JEP 目标/正式发布 JDK 版本号。",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-1ac527554aa980fb",
+            "label": "官方引用来源",
+            "description": "可逐项引用的权威来源 URL，优先 openjdk.org JEP 页面与 Oracle/OpenJDK 官方文档。",
+            "answer_format": "LIST",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-7dbbb6a946170637",
+            "label": "JEP 状态",
+            "description": "JEP 页面上标注的状态（如 Closed/Delivered/Final/Preview），用于判断是否已正式发布。",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-ce3afc0851add1ad",
+            "label": "残留 pinning 风险",
+            "description": "JEP 491 之后仍然存在的 pinning 场景（native 方法、Foreign Function & Memory API），用于界定结论边界。",
+            "answer_format": "LONG_TEXT",
+            "high_risk": true
+          },
+          {
+            "column_key": "dim-d196f794de700c50",
+            "label": "JEP 编号与标题",
+            "description": "OpenJDK JEP 官方页面给出的 JEP 编号与准确标题，用于消除同名混淆。",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-df9252d6390b4c20",
+            "label": "受影响版本范围",
+            "description": "从哪个 JDK 版本起存在 synchronized pinning 问题、到哪个版本通过 JEP 491 改善。",
+            "answer_format": "LIST",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-e0719431dee9f5c8",
+            "label": "发布前预览轮次",
+            "description": "虚拟线程正式化前在哪些 JDK 版本进行预览（如 JDK 19、JDK 20），用于确认正式化时点。",
+            "answer_format": "LIST",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "仅覆盖 OpenJDK/JDK 官方 JEP 与 Oracle/OpenJDK 官方文档中关于虚拟线程正式化（JEP 444）与 synchronized pinning 改善（JEP 491）的版本与引用；不涉及第三方实现或非 JEP 的调度细节。",
+          "objective": "确定 Java 虚拟线程（Virtual Threads）在哪个 JDK 版本正式发布（对应 JEP 编号），以及由 synchronized 引起的虚拟线程固定（pinning）问题在哪个 JDK 版本得到改善（对应 JEP 编号），并给出可逐项引用的证据。",
+          "exclusions": [
+            "非 OpenJDK 的第三方虚拟线程实现或分叉版本",
+            "平台线程与虚拟线程的通用性能基准测试结论",
+            "Project Loom 早期孵化阶段的全部历史 JEP 细节",
+            "native 方法与 Foreign Function & Memory API 相关的剩余 pinning 场景"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown research report with citation audit（含 exact quote、snapshot 与 URL 的引用审计表）"
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "openjdk.org",
+          "docs.oracle.com",
+          "oracle.com",
+          "java.net"
+        ],
+        "perspectives": [
+          {
+            "name": "JDK 版本使用者（practitioner）",
+            "questions": [
+              "虚拟线程在哪个 JDK 版本正式发布、对应哪个 JEP？",
+              "synchronized 导致的虚拟线程 pinning 问题在哪个 JDK 版本改善、对应哪个 JEP？",
+              "在那之前，哪些 JDK 版本存在该 pinning 问题？"
+            ]
+          },
+          {
+            "name": "JEP 规范实现者（implementer）",
+            "questions": [
+              "JEP 444 的标题、状态与目标版本分别是什么？",
+              "JEP 491 的标题、状态与目标版本分别是什么？",
+              "JEP 491 对 synchronized 中阻塞的虚拟线程行为做了哪些规范变更？"
+            ]
+          },
+          {
+            "name": "怀疑论审查者（critic）",
+            "questions": [
+              "正式发布与改善是否可以由官方 JEP 页面直接引用证实？",
+              "是否存在把 JDK 21 的正式化与 JDK 24 的改善混淆的说法？",
+              "native/FFM 相关的 pinning 是否仍未被消除，从而限制结论范围？"
+            ]
+          },
+          {
+            "name": "技术决策者（decision maker）",
+            "questions": [
+              "要使用稳定的虚拟线程，最低 JDK 版本是什么？",
+              "要获得 synchronized pinning 改善，最低 JDK 版本是什么？",
+              "剩余风险（如 native/FFM pinning）是否需要在选型说明中注明？"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-9c2a77d6a8b1f4a2:dim-12b9073c1b0f4e0f",
+          "entity_label": "Java 虚拟线程正式发布版本（JEP 444）",
+          "column_label": "synchronized pinning 行为说明",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-9c2a77d6a8b1f4a2:dim-1aa9874f68815f77",
+          "entity_label": "Java 虚拟线程正式发布版本（JEP 444）",
+          "column_label": "JDK 版本",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-9c2a77d6a8b1f4a2:dim-1ac527554aa980fb",
+          "entity_label": "Java 虚拟线程正式发布版本（JEP 444）",
+          "column_label": "官方引用来源",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-9c2a77d6a8b1f4a2:dim-7dbbb6a946170637",
+          "entity_label": "Java 虚拟线程正式发布版本（JEP 444）",
+          "column_label": "JEP 状态",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-9c2a77d6a8b1f4a2:dim-ce3afc0851add1ad",
+          "entity_label": "Java 虚拟线程正式发布版本（JEP 444）",
+          "column_label": "残留 pinning 风险",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-9c2a77d6a8b1f4a2:dim-d196f794de700c50",
+          "entity_label": "Java 虚拟线程正式发布版本（JEP 444）",
+          "column_label": "JEP 编号与标题",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-9c2a77d6a8b1f4a2:dim-df9252d6390b4c20",
+          "entity_label": "Java 虚拟线程正式发布版本（JEP 444）",
+          "column_label": "受影响版本范围",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-9c2a77d6a8b1f4a2:dim-e0719431dee9f5c8",
+          "entity_label": "Java 虚拟线程正式发布版本（JEP 444）",
+          "column_label": "发布前预览轮次",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-af4e1edddc67b447:dim-12b9073c1b0f4e0f",
+          "entity_label": "synchronized pinning 改善版本（JEP 491）",
+          "column_label": "synchronized pinning 行为说明",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-af4e1edddc67b447:dim-1aa9874f68815f77",
+          "entity_label": "synchronized pinning 改善版本（JEP 491）",
+          "column_label": "JDK 版本",
+          "cell_status": "SEMANTIC_PENDING",
+          "candidate_value": "*JEP 491 improves the scalability of Java code that uses synchronized methods and statements by arranging for virtual threads that block in such constructs to release their underlying platform threads for use by other virtual threads.",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:4f13238e5a7e465d2b2bbbe943f24674bc0c3911d224f7c9",
+              "claim_text": "*JEP 491 improves the scalability of Java code that uses synchronized methods and statements by arranging for virtual threads that block in such constructs to release their underlying platform threads for use by other virtual threads.",
+              "source_domain": "inside.java"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-af4e1edddc67b447:dim-1ac527554aa980fb",
+          "entity_label": "synchronized pinning 改善版本（JEP 491）",
+          "column_label": "官方引用来源",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-af4e1edddc67b447:dim-7dbbb6a946170637",
+          "entity_label": "synchronized pinning 改善版本（JEP 491）",
+          "column_label": "JEP 状态",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-af4e1edddc67b447:dim-ce3afc0851add1ad",
+          "entity_label": "synchronized pinning 改善版本（JEP 491）",
+          "column_label": "残留 pinning 风险",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-af4e1edddc67b447:dim-d196f794de700c50",
+          "entity_label": "synchronized pinning 改善版本（JEP 491）",
+          "column_label": "JEP 编号与标题",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-af4e1edddc67b447:dim-df9252d6390b4c20",
+          "entity_label": "synchronized pinning 改善版本（JEP 491）",
+          "column_label": "受影响版本范围",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-af4e1edddc67b447:dim-e0719431dee9f5c8",
+          "entity_label": "synchronized pinning 改善版本（JEP 491）",
+          "column_label": "发布前预览轮次",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": []
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}
