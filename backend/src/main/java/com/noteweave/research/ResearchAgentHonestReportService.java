@@ -47,6 +47,7 @@ class ResearchAgentHonestReportService {
         StringBuilder report = new StringBuilder("# 研究报告\n\n")
                 .append(question == null ? "" : question).append("\n\n")
                 .append("**结果：** `").append(decision.terminalState().name()).append("`\n\n");
+        appendSummaryTable(report, runId);
         if (!decision.promotableClaims().isEmpty()) {
             report.append("## 已验证结论\n\n");
             for (ResearchAgentRunCompletionGate.PromotableClaim claim : decision.promotableClaims()) {
@@ -85,6 +86,89 @@ class ResearchAgentHonestReportService {
         }
         return ResearchRepairExecutionService.appendCounterAudit(jdbcTemplate, runId, report.toString());
     }
+
+    /**
+     * 研究对象 × 研究维度的汇总表，放在逐项证据之前，让读者先看到对比结果。只填已核验的值，
+     * 其余按状态标为未找到证据、证据冲突或待核验；没有规划记录或只有一个单元格时不生成。
+     */
+    private void appendSummaryTable(StringBuilder report, String runId) {
+        MatrixAxes axes = matrixAxes(runId);
+        if (axes.rows().isEmpty() || axes.columns().isEmpty()
+                || axes.rows().size() * axes.columns().size() < 2) return;
+        Map<String, String[]> cells = new java.util.HashMap<>();
+        jdbcTemplate.query("select cell_key, cell_status, candidate_value from research_cell where research_run_id = ?",
+                (org.springframework.jdbc.core.RowCallbackHandler) rs ->
+                        cells.put(rs.getString(1), new String[] {rs.getString(2), rs.getString(3)}),
+                runId);
+        if (cells.isEmpty()) return;
+        report.append("## 结论汇总\n\n| 研究对象 |");
+        axes.columns().forEach(column -> report.append(' ').append(tableCell(column[1])).append(" |"));
+        report.append("\n|---|");
+        axes.columns().forEach(column -> report.append("---|"));
+        report.append('\n');
+        for (String[] row : axes.rows()) {
+            report.append("| ").append(tableCell(row[1])).append(" |");
+            for (String[] column : axes.columns()) {
+                report.append(' ').append(summaryValue(cells.get(row[0] + ":" + column[0]))).append(" |");
+            }
+            report.append('\n');
+        }
+        report.append('\n');
+    }
+
+    static String summaryValue(String[] cell) {
+        if (cell == null) return "-";
+        String status = cell[0] == null ? "" : cell[0];
+        String value = cell[1] == null ? "" : cell[1].strip();
+        if ("VERIFIED".equals(status) && !value.isBlank()) {
+            return tableCell(value.length() <= 80 ? value : value.substring(0, 80) + "…");
+        }
+        if (status.startsWith("CONFLICT")) return "证据冲突";
+        if ("GAP".equals(status) || "EMPTY".equals(status) || status.isBlank()) return "未找到证据";
+        return "待核验";
+    }
+
+    private static String tableCell(String value) {
+        return value == null ? "" : value.replace("|", "\\|").replaceAll("\\s+", " ").strip();
+    }
+
+    /**
+     * 按规划记录中的顺序取行与列，元素为 {键, 显示名}；限制说明类的列不进入汇总表。
+     * 局部重规划记录不含行列，取最近一条带行列的矩阵规划。
+     */
+    private MatrixAxes matrixAxes(String runId) {
+        List<String> plans = jdbcTemplate.queryForList("""
+                select plan_json from research_matrix_plan where research_run_id = ?
+                order by created_at desc, id desc
+                """, String.class, runId);
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        for (String json : plans) {
+            List<String[]> rows = new java.util.ArrayList<>();
+            List<String[]> columns = new java.util.ArrayList<>();
+            try {
+                com.fasterxml.jackson.databind.JsonNode plan = mapper.readTree(json);
+                if (plan.isTextual()) plan = mapper.readTree(plan.asText());
+                plan.path("rows").forEach(node -> addAxis(rows, node));
+                plan.path("columns").forEach(node -> {
+                    if (!ResearchAgentRunCompletionGate.LIMITATION_COLUMN_KEYS.contains(node.path("key").asText(""))) {
+                        addAxis(columns, node);
+                    }
+                });
+            } catch (Exception ignored) {
+                // 规划记录损坏时跳过，继续看更早的记录；都不可用时不生成汇总表
+                continue;
+            }
+            if (!rows.isEmpty() && !columns.isEmpty()) return new MatrixAxes(rows, columns);
+        }
+        return new MatrixAxes(List.of(), List.of());
+    }
+
+    private static void addAxis(List<String[]> axis, com.fasterxml.jackson.databind.JsonNode node) {
+        String key = node.path("key").asText("");
+        if (!key.isBlank()) axis.add(new String[] {key, ResearchDisplayLabels.of(key, node.path("label").asText(""))});
+    }
+
+    private record MatrixAxes(List<String[]> rows, List<String[]> columns) { }
 
     /**
      * Cells that passed verification but were not promoted (the Run as a whole lacks evidence)

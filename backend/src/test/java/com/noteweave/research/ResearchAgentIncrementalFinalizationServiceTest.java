@@ -262,6 +262,46 @@ class ResearchAgentIncrementalFinalizationServiceTest {
     }
 
     @Test
+    void honestReportShouldLeadWithAnEntityByDimensionSummaryTable() {
+        jdbcTemplate.update("""
+                insert into research_matrix_plan(id, research_run_id, planner_version, plan_mode, plan_status,
+                    row_count, column_count, cell_count, bounded, reason_codes_json, plan_json, plan_digest, created_at)
+                values (?, ?, 'intent-matrix.v2', 'INTENT_MATRIX_V2', 'ACTIVE', 2, 3, 6, false, '[]', ?, ?,
+                    timestampadd(second, -10, current_timestamp))
+                """, Ids.newId(), runId,
+                "{\"rows\":[{\"key\":\"entity-1\",\"label\":\"PostgreSQL 17\"},{\"key\":\"entity-2\",\"label\":\"MySQL 8.4\"}],"
+                        + "\"columns\":[{\"key\":\"claim\",\"label\":\"索引类型\"},{\"key\":\"cost\",\"label\":\"索引代价\"},"
+                        + "{\"key\":\"limitations\",\"label\":\"局限\"}]}",
+                "sha256:" + "6".repeat(64));
+        // 较新的局部重规划记录没有行列，不能挡住汇总表
+        jdbcTemplate.update("""
+                insert into research_matrix_plan(id, research_run_id, planner_version, plan_mode, plan_status,
+                    row_count, column_count, cell_count, bounded, reason_codes_json, plan_json, plan_digest)
+                values (?, ?, 'local-replan.v1', 'LOCAL_REPAIR', 'ACTIVE', 1, 2, 2, false, '[]',
+                    '{"schema_version":"research-local-replan.v1","affected_cells":["entity-2:claim"]}', ?)
+                """, Ids.newId(), runId, "sha256:" + "7".repeat(64));
+        String rowId = jdbcTemplate.queryForObject(
+                "select id from research_row where research_run_id = ? and row_key = 'entity-1'", String.class, runId);
+        jdbcTemplate.update("insert into research_cell(id, research_run_id, research_row_id, cell_key, column_key, candidate_value, cell_status, evidence_refs_json, repair_count) values (?, ?, ?, 'entity-1:cost', 'cost', null, 'GAP', '[]', 0)", Ids.newId(), runId, rowId);
+        jdbcTemplate.update("insert into research_cell(id, research_run_id, research_row_id, cell_key, column_key, candidate_value, cell_status, evidence_refs_json, repair_count) values (?, ?, ?, 'entity-2:claim', 'claim', 'B-tree | GIN', 'CONFLICTED', '[]', 0)", Ids.newId(), runId, rowId);
+        var decision = new ResearchAgentRunCompletionGate.CompletionDecision(
+                ResearchAgentRunCompletionGate.CompletionTerminalState.COMPLETED_WITH_LIMITATIONS,
+                java.util.List.of(new ResearchAgentRunCompletionGate.PromotableClaim(
+                        "entity-1:claim", "claim", "Verified answer", java.util.List.of("evidence-1"))),
+                java.util.List.of(), java.util.List.of(), java.util.List.of("REQUIRED_CELLS_PARTIALLY_RESOLVED"));
+
+        String report = honestReports.renderAndPersist(runId, decision);
+
+        assertThat(report).contains(
+                "## 结论汇总",
+                "| 研究对象 | 索引类型 | 索引代价 |",
+                "| PostgreSQL 17 | Verified answer | 未找到证据 |",
+                "| MySQL 8.4 | 证据冲突 | - |");
+        assertThat(report).doesNotContain("| 局限 |");
+        assertThat(report.indexOf("## 结论汇总")).isLessThan(report.indexOf("## 已验证结论"));
+    }
+
+    @Test
     void shouldRollbackRunReportAndParentTaskWhenFinalizationFailsBeforeCommit() {
         doThrow(new IllegalStateException("injected finalization crash")).when(finalizationFaults)
                 .checkpoint(ResearchAgentIncrementalFinalizationFaultInjector.Stage.AFTER_RUN_REPORT_WRITE);

@@ -145,6 +145,13 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems) -> o
             "merging overlaps.",
             "When the question compares named things, each compared thing is one entity. Otherwise use one entity "
             "naming the research subject.",
+            "Entities are concrete things such as products, versions, standards or systems, never sub-questions. "
+            "When the question asks several facts about one subject, use that subject as the single entity and "
+            "make each asked fact a dimension.",
+            "Keep only dimensions needed to answer the question; perspectives help choose them but must not add "
+            "dimensions the question does not need. Prefer the smallest table that fully answers the question.",
+            "Cell limits by effort_tier: SIMPLE at most 2 entities and 6 cells, STANDARD at most 12 cells, "
+            "COMPLEX at most 24 cells.",
             "Each dimension needs a short label, a one-sentence description of what evidence answers it, an "
             "answer_format, and 1 to 3 search_intents phrased as search topics.",
             "Mark high_risk when a wrong value could cause legal, safety, medical, financial or security harm.",
@@ -185,6 +192,15 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems) -> o
     return parsed if parsed is not None else {"_unparsable": True}
 
 
+# 按投入等级限制表格规模：(最多实体数, 最多单元格数)，实体数为 None 时只受总上限约束。
+# 单元格越多，深挖任务、检索调用和耗时越多，也越难全部核验，简单事实题不应展开成大表。
+EFFORT_TIER_LIMITS: dict[str, tuple[int | None, int]] = {
+    "SIMPLE": (2, 6),
+    "STANDARD": (None, 12),
+    "COMPLEX": (None, 24),
+}
+
+
 def validate_plan(raw: object, planning_input: dict[str, object]) -> PlanDraft:
     """按与 Java 相同的上限检查模型输出；Java 还会再做一次权威校验。"""
     if not isinstance(raw, dict) or raw.get("_unparsable"):
@@ -208,6 +224,12 @@ def validate_plan(raw: object, planning_input: dict[str, object]) -> PlanDraft:
         problems.append(f"entities must not exceed {max_rows}")
     if entities and dimensions and len(entities) * len(dimensions) > max_cells:
         problems.append(f"entities times dimensions must not exceed {max_cells}")
+    effort_tier = str(raw.get("effort_tier") or "STANDARD").upper()
+    tier_rows, tier_cells = EFFORT_TIER_LIMITS.get(effort_tier, EFFORT_TIER_LIMITS["STANDARD"])
+    if tier_rows is not None and len(entities) > tier_rows:
+        problems.append(f"effort_tier {effort_tier} allows at most {tier_rows} entities")
+    if entities and dimensions and len(entities) * len(dimensions) > tier_cells:
+        problems.append(f"effort_tier {effort_tier} allows at most {tier_cells} cells (entities times dimensions)")
     for dimension in dimensions:
         answer_format = str(dimension.get("answer_format") or "").upper()
         if answer_format and answer_format not in formats:

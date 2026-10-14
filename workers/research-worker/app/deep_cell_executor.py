@@ -219,6 +219,7 @@ class DeepCellExecutor:
             hits = _prepend_explicit_allowed_urls(snapshot, plan, hits)
             hits = _filter_external_hits_by_domain(snapshot, hits, plan)
             hits = _interleave_hits_by_domain(hits)
+            hits = _prioritize_authoritative_hits(snapshot, hits)
             workspace_hits = (_search_workspace_windows(snapshot, task_input, plan, self.permit_client, workspace_queries)
                               if plan.query_specs else [])
             if workspace_hits:
@@ -515,6 +516,34 @@ def _filter_external_hits_by_domain(
         if any(host == domain or host.endswith("." + domain) for domain in allowed):
             filtered.append(hit)
     return filtered
+
+
+_HIGH_TRUST_QUALITIES = frozenset({"OFFICIAL_DOC", "GOVERNMENT_SOURCE", "ACADEMIC_SOURCE"})
+
+
+def _prioritize_authoritative_hits(snapshot: ResearchAgentTaskSnapshot, hits: list[object]) -> list[object]:
+    """抓取和阅读只处理前几条结果，把规划给出的官方域名和高可信来源排到前面，其余保持原顺序。"""
+    domains = [str(item).strip().lower().rstrip(".") for item in snapshot.query_policy.get("authoritative_domains", [])
+               if isinstance(item, str) and item.strip()] if isinstance(
+        snapshot.query_policy.get("authoritative_domains"), list) else []
+
+    def tier(hit: object) -> int:
+        if str(getattr(hit, "adapter", "")) == "workspace":
+            return 0
+        host = str(getattr(hit, "source_domain", "") or "").strip().lower().rstrip(".")
+        if not host:
+            host = (urlsplit(str(getattr(hit, "url", "") or "")).hostname or "").lower().rstrip(".")
+        if host and any(host == domain or host.endswith("." + domain) for domain in domains):
+            return 1
+        if str(getattr(hit, "source_quality", "")) in _HIGH_TRUST_QUALITIES:
+            return 2
+        return 3
+
+    ordered = sorted(hits, key=tier)
+    return [
+        hit.model_copy(update={"rank": index}) if hasattr(hit, "model_copy") else hit
+        for index, hit in enumerate(ordered, start=1)
+    ]
 
 
 def _interleave_hits_by_domain(hits: list[object]) -> list[object]:

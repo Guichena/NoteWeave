@@ -210,6 +210,42 @@ def test_validate_plan_should_enforce_cell_limits_and_dedupe_labels() -> None:
     assert [entity["label"] for entity in deduped.plan["entities"]] == ["MySQL"]
 
 
+def test_validate_plan_should_limit_table_size_by_effort_tier() -> None:
+    def dims(count: int) -> list[dict[str, object]]:
+        return [{"label": f"维度{index}"} for index in range(count)]
+
+    simple = validate_plan(_plan(effort_tier="SIMPLE", entities=[{"label": f"问题{index}"} for index in range(3)],
+                                 dimensions=dims(2)), PLANNING_INPUT)
+    assert simple.plan is None
+    assert any("SIMPLE allows at most 2 entities" in problem for problem in simple.problems)
+
+    simple_wide = validate_plan(_plan(effort_tier="SIMPLE", entities=[{"label": "Java 虚拟线程"}, {"label": "JDK"}],
+                                      dimensions=dims(4)), PLANNING_INPUT)
+    assert any("SIMPLE allows at most 6 cells" in problem for problem in simple_wide.problems)
+
+    standard = validate_plan(_plan(effort_tier="STANDARD", dimensions=dims(7)), PLANNING_INPUT)
+    assert any("STANDARD allows at most 12 cells" in problem for problem in standard.problems)
+
+    complex_plan = validate_plan(_plan(effort_tier="COMPLEX", entities=[{"label": f"实体{index}"} for index in range(4)],
+                                       dimensions=dims(6)), PLANNING_INPUT)
+    assert complex_plan.plan is not None
+    assert complex_plan.plan["effort_tier"] == "COMPLEX"
+
+
+def test_planning_policy_should_forbid_sub_questions_as_entities() -> None:
+    from types import SimpleNamespace
+
+    from app.planning_executor import _call_model
+
+    llm = _SequenceLlm(_plan())
+    snapshot = SimpleNamespace(query_policy={}, source_policy={})
+    _call_model(llm, snapshot, PLANNING_INPUT, [], [])
+
+    policy_text = " ".join(llm.calls[0][1]["policy"])
+    assert "never sub-questions" in policy_text
+    assert "COMPLEX at most 24 cells" in policy_text
+
+
 def test_router_should_dispatch_planning_and_reject_cell_targets() -> None:
     executor = _executor(_SequenceLlm(_plan()))
     router = AuthoritativeRoleRouter({"PLANNING": executor}, enabled_roles={"PLANNING"})

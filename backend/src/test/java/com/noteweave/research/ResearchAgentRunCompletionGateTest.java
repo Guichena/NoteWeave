@@ -69,6 +69,44 @@ class ResearchAgentRunCompletionGateTest {
     }
 
     @Test
+    void shouldReportAPartialConclusionWhenAtLeastHalfOfTheRequiredCellsAreVerified() {
+        var decision = gate.evaluate(
+                table("run-partial",
+                        cell("entity-1:answer", "answer", "VERIFIED", "A1", "ev-1"),
+                        cell("entity-2:answer", "answer", "VERIFIED", "A2", "ev-2"),
+                        cell("entity-1:key_evidence", "key_evidence", "GAP", null),
+                        cell("entity-2:key_evidence", "key_evidence", "GAP", null)),
+                noVerifier(), noBudget(), noInfrastructure());
+
+        assertThat(decision.terminalState())
+                .isEqualTo(ResearchAgentRunCompletionGate.CompletionTerminalState.COMPLETED_WITH_LIMITATIONS);
+        assertThat(decision.promotableClaims())
+                .extracting(ResearchAgentRunCompletionGate.PromotableClaim::cellKey)
+                .containsExactly("entity-1:answer", "entity-2:answer");
+        assertThat(decision.unresolvedCells())
+                .extracting(ResearchAgentRunCompletionGate.UnresolvedCell::reasonCode)
+                .containsOnly("REQUIRED_CELL_UNRESOLVED");
+        assertThat(decision.reasonCodes())
+                .containsExactly("REQUIRED_CELLS_PARTIALLY_RESOLVED", "UNRESOLVED_CELLS_REMAIN");
+    }
+
+    @Test
+    void shouldStayInsufficientWhenLessThanHalfOfTheRequiredCellsAreVerified() {
+        var decision = gate.evaluate(
+                table("run-mostly-missing",
+                        cell("entity-1:answer", "answer", "VERIFIED", "A1", "ev-1"),
+                        cell("entity-2:answer", "answer", "GAP", null),
+                        cell("entity-1:key_evidence", "key_evidence", "GAP", null),
+                        cell("entity-2:key_evidence", "key_evidence", "CONFLICTED", "X")),
+                noVerifier(), noBudget(), noInfrastructure());
+
+        assertThat(decision.terminalState())
+                .isEqualTo(ResearchAgentRunCompletionGate.CompletionTerminalState.INSUFFICIENT_EVIDENCE);
+        assertThat(decision.promotableClaims()).isEmpty();
+        assertThat(decision.reasonCodes()).contains("INSUFFICIENT_EVIDENCE", "CONFLICTED_CELL");
+    }
+
+    @Test
     void shouldReportInsufficientEvidenceWhenTheBudgetIsExhaustedWithoutAcceptableEvidence() {
         var decision = gate.evaluate(
                 table("run-insufficient",

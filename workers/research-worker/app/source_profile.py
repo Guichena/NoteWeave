@@ -18,6 +18,15 @@ HIGH_TRUST_QUALITY_SCORES = {
 }
 
 
+# 标准组织与语言、项目的规范站点；按注册域名或域名后缀匹配
+_STANDARDS_DOMAINS = (
+    "rfc-editor.org", "ietf.org", "w3.org", "whatwg.org", "openid.net", "iso.org", "ecma-international.org",
+    "openjdk.org", "peps.python.org", "jcp.org", "khronos.org", "unicode.org", "oasis-open.org",
+)
+# 官方文档常见的路径前缀，例如 postgresql.org/docs、dev.mysql.com/doc
+_DOC_PATH_PREFIXES = ("/docs/", "/doc/", "/documentation/", "/reference/", "/manual/", "/refman/", "/jeps/", "/specs/")
+
+
 def infer_source_domain(url: str) -> str:
     normalized = (url or "").strip()
     if not normalized:
@@ -49,7 +58,8 @@ def infer_source_quality(
         return _adjust_for_content_quality("GOVERNMENT_SOURCE", HIGH_TRUST_QUALITY_SCORES["GOVERNMENT_SOURCE"], content_text)
     if domain.endswith(".edu"):
         return _adjust_for_content_quality("ACADEMIC_SOURCE", HIGH_TRUST_QUALITY_SCORES["ACADEMIC_SOURCE"], content_text)
-    if any(token in domain for token in ["docs.", "developer.", "api.", "support."]):
+    if any(token in domain for token in ["docs.", "developer.", "api.", "support."]) or _is_standards_or_doc_path(
+            domain, url):
         return _adjust_for_content_quality("OFFICIAL_DOC", HIGH_TRUST_QUALITY_SCORES["OFFICIAL_DOC"], content_text)
     if "github.com" in domain or "gitlab.com" in domain:
         return _adjust_for_content_quality("REPOSITORY_SOURCE", HIGH_TRUST_QUALITY_SCORES["REPOSITORY_SOURCE"], content_text)
@@ -60,6 +70,18 @@ def infer_source_quality(
     if any(token in title_lower for token in ["official", "documentation", "report", "study"]):
         return _adjust_for_content_quality("OFFICIAL_DOC", HIGH_TRUST_QUALITY_SCORES["OFFICIAL_DOC"] - 0.05, content_text)
     return _adjust_for_content_quality("GENERAL_WEB", HIGH_TRUST_QUALITY_SCORES["GENERAL_WEB"], content_text)
+
+
+def _is_standards_or_doc_path(domain: str, url: str) -> bool:
+    if any(domain == item or domain.endswith("." + item) for item in _STANDARDS_DOMAINS):
+        return True
+    if any(token in domain for token in ["medium.com", "substack.com", "blog", "dev.to", "zenn.dev"]):
+        return False
+    try:
+        path = urlparse(url).path.lower()
+    except ValueError:
+        return False
+    return any(path.startswith(prefix) or f"{prefix}" in path[:40] for prefix in _DOC_PATH_PREFIXES)
 
 
 def _adjust_for_content_quality(source_quality: str, score: float, content_text: str) -> tuple[str, float]:

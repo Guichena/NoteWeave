@@ -109,3 +109,42 @@ def test_empty_results_without_fatal_failure_do_not_fail_the_research() -> None:
     ])
 
     assert composite.search(task_input, build_research_plan(task_input)) == []
+
+
+def _hit(url: str) -> dict[str, object]:
+    return {"title": url, "link": url, "snippet": "virtual threads JDK 21"}
+
+
+def test_fallback_mode_stops_after_the_first_provider_with_results() -> None:
+    task_input = _task_input()
+    serper = _Transport(results=[_hit("https://openjdk.org/jeps/444")])
+    tavily = _Transport(results=[_hit("https://example.com/b")])
+    composite = CompositeSearchAdapter([_adapter("serper_mcp", serper), _adapter("tavily_mcp", tavily)], mode="fallback")
+
+    hits = composite.search(task_input, build_research_plan(task_input))
+
+    assert [hit.url for hit in hits] == ["https://openjdk.org/jeps/444"]
+    assert tavily.calls == 0
+    first_round_calls = serper.calls
+    assert first_round_calls >= 1
+
+
+def test_fallback_mode_moves_on_when_the_first_provider_is_empty_and_skips_the_second_pass() -> None:
+    task_input = _task_input()
+    serper = _Transport()
+    tavily = _Transport(results=[_hit("https://example.com/b")])
+    composite = CompositeSearchAdapter([_adapter("serper_mcp", serper), _adapter("tavily_mcp", tavily)], mode="fallback")
+
+    hits = composite.search(task_input, build_research_plan(task_input))
+    serper_calls, tavily_calls = serper.calls, tavily.calls
+
+    assert [hit.url for hit in hits] == ["https://example.com/b"]
+    # 第二轮补充会让两个渠道再各被调用一遍；fallback 模式不应发生
+    merge = CompositeSearchAdapter([_adapter("serper_mcp", _Transport()), _adapter("tavily_mcp", _Transport(
+        results=[_hit("https://example.com/b")]))])
+    merge.search(task_input, build_research_plan(task_input))
+    assert serper_calls < merge.adapters[0].transport.calls
+
+
+def test_unknown_mode_falls_back_to_merge() -> None:
+    assert CompositeSearchAdapter([], mode="other").mode == "merge"

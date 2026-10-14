@@ -489,8 +489,16 @@ class ExternalSearchAdapter:
 
 
 class CompositeSearchAdapter:
-    def __init__(self, adapters: list[SearchAdapter]) -> None:
+    """组合多个搜索渠道。
+
+    merge（默认）：每个外部渠道各分一部分名额，名额有剩余时再让所有渠道补一轮。
+    fallback：外部渠道按顺序尝试，某个渠道返回结果后不再调用后面的渠道，也不补第二轮；
+    按调用计费的搜索服务用这种方式，避免每条检索词被多个渠道重复计费。
+    """
+
+    def __init__(self, adapters: list[SearchAdapter], mode: str = "merge") -> None:
         self.adapters = adapters
+        self.mode = mode if mode in {"merge", "fallback"} else "merge"
 
     def search(
         self,
@@ -503,13 +511,16 @@ class CompositeSearchAdapter:
         attempted_external_providers: list[str] = []
         provider_quota = max(1, global_limit // max(1, len(self.adapters)))
         overflow: list[ResearchSearchHit] = []
+        fallback = self.mode == "fallback"
         for adapter_index, adapter in enumerate(self.adapters):
             if len(merged) >= global_limit:
                 break
+            is_external = isinstance(adapter, ExternalSearchAdapter)
             adapter_hits = adapter.search(
                 task_input,
                 plan,
-                remaining_budget=min(provider_quota, global_limit - len(merged)),
+                remaining_budget=(global_limit - len(merged)) if fallback
+                else min(provider_quota, global_limit - len(merged)),
             )
             adapter_hits = _annotate_provider_orchestration(
                 adapter_hits,
@@ -519,9 +530,11 @@ class CompositeSearchAdapter:
             provider_name = _adapter_provider_name(adapter)
             if provider_name:
                 attempted_external_providers.append(provider_name)
+            if fallback and is_external and adapter_hits:
+                break
         # If provider quotas leave capacity unused, let adapters contribute
         # overflow in a second pass without sacrificing the first diverse slot.
-        if len(merged) < global_limit:
+        if len(merged) < global_limit and not fallback:
             for adapter in self.adapters:
                 if getattr(adapter, "last_fatal_failure", ""):
                     continue
@@ -546,7 +559,7 @@ def build_default_search_adapter() -> SearchAdapter:
     if not external_adapters:
         return SeedSourceSearchAdapter()
 
-    return CompositeSearchAdapter([SeedSourceSearchAdapter(), *external_adapters])
+    return CompositeSearchAdapter([SeedSourceSearchAdapter(), *external_adapters], mode=_search_chain_mode())
 
 
 def build_web_search_adapter() -> SearchAdapter:
@@ -554,7 +567,7 @@ def build_web_search_adapter() -> SearchAdapter:
     external_adapters = _build_external_search_adapters()
     if not external_adapters:
         raise RuntimeError("RESEARCH_WEB_PROVIDER_UNAVAILABLE")
-    return CompositeSearchAdapter(external_adapters)
+    return CompositeSearchAdapter(external_adapters, mode=_search_chain_mode())
 
 
 def build_web_plus_seed_search_adapter() -> SearchAdapter:
@@ -562,7 +575,12 @@ def build_web_plus_seed_search_adapter() -> SearchAdapter:
     external_adapters = _build_external_search_adapters()
     if not external_adapters:
         raise RuntimeError("RESEARCH_WEB_PROVIDER_UNAVAILABLE")
-    return CompositeSearchAdapter([SeedSourceSearchAdapter(), *external_adapters])
+    return CompositeSearchAdapter([SeedSourceSearchAdapter(), *external_adapters], mode=_search_chain_mode())
+
+
+def _search_chain_mode() -> str:
+    """NOTEWEAVE_RESEARCH_SEARCH_CHAIN_MODE：merge（默认）或 fallback。"""
+    return os.getenv("NOTEWEAVE_RESEARCH_SEARCH_CHAIN_MODE", "merge").strip().lower() or "merge"
 
 
 def run_research_search(
