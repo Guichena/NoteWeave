@@ -118,12 +118,13 @@ def wiki_stable(client: ApiClient, workspace_id: str, last: dict[str, int]) -> b
 def fetch_retrieval_summary(client: ApiClient, workspace_id: str, run_id: str) -> dict[str, Any]:
     """从回答事件流里读出 retrieval.summary，其中的 execution_trace 带有挑选前的候选排序。
 
-    回答结束后事件流会先重放已存储的事件再关闭，读到该事件即可返回。
+    回答结束后事件流会先重放已存储的事件再关闭。读到流结束再返回，提前断开会让服务端记录连接中断错误。
     """
     path = f"/api/v2/workspaces/{workspace_id}/answer-runs/{run_id}/events"
     request = urllib.request.Request(client.base_url + path, headers={
         "Accept": "text/event-stream", "Authorization": f"Bearer {client.token}"})
     event_name, data_lines = "", []
+    summary: dict[str, Any] | None = None
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             for raw in response:
@@ -133,12 +134,13 @@ def fetch_retrieval_summary(client: ApiClient, workspace_id: str, run_id: str) -
                 elif line.startswith("data:"):
                     data_lines.append(line[5:].lstrip())
                 elif not line:
-                    if event_name == "retrieval.summary" and data_lines:
-                        return json.loads("\n".join(data_lines))
+                    if event_name == "retrieval.summary" and data_lines and summary is None:
+                        summary = json.loads("\n".join(data_lines))
                     event_name, data_lines = "", []
     except (urllib.error.URLError, TimeoutError, ValueError) as error:
-        return {"unavailable": str(error)}
-    return {"unavailable": "retrieval.summary not found"}
+        if summary is None:
+            return {"unavailable": str(error)}
+    return summary if summary is not None else {"unavailable": "retrieval.summary not found"}
 
 
 def ask(client: ApiClient, workspace_id: str, conversation_id: str, content: str, mode: str,
