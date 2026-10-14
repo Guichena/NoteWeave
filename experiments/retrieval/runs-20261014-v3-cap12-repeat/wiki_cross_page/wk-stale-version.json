@@ -1,0 +1,359 @@
+{
+  "schema_version": "retrieval-eval-run.v1",
+  "set": "wiki_cross_page",
+  "case_key": "wk-stale-version",
+  "captured_at": "2026-10-14T11:52:24.417218+00:00",
+  "final_status": "COMPLETED",
+  "latency_ms": 15272,
+  "evidence": {
+    "run_id": "5fbdf563-4f4e-45ea-b199-5055d1299e96",
+    "evidence": [
+      {
+        "rank": 1,
+        "evidence_id": "knowledge-version:3b9a9c91-cd0e-4f33-8d51-3a401aea5dcb",
+        "kind": "KNOWLEDGE_VERSION",
+        "source_id": null,
+        "source_snapshot_id": null,
+        "passage_id": null,
+        "knowledge_item_id": "28d7b9a6-d2e0-488e-b842-01e478ab2cbe",
+        "knowledge_version_id": "3b9a9c91-cd0e-4f33-8d51-3a401aea5dcb",
+        "title": "Wiki Index",
+        "excerpt": "# Wiki Index  ## 工作台概览  - workspace_id: `4eb8737e-bd0a-4e91-8a32-b09e2deb834b` - READY 资料数: 3 - 活跃 Wiki 页面数: 18 - 最近触发资料: [[memory.md]]  ## 治理概览  - 页面总数: 18 - 链接总数: 108 - 已解析链接: 90 - 断链数: 18 - 问题总数: 18 - 可自动修复: 18 - 需人工...",
+        "content_hash": "b36afa515ef62c42f0045727da1e93b8e837ea37800a52939eaec6c6797b453c",
+        "location": "knowledge-version:3b9a9c91-cd0e-4f33-8d51-3a401aea5dcb",
+        "fresh_at": "2026-10-14T11:52:14Z",
+        "character_cost": 222
+      },
+      {
+        "rank": 2,
+        "evidence_id": "knowledge-version:e7383c13-803d-46f5-88f9-bd92bda80a44",
+        "kind": "KNOWLEDGE_VERSION",
+        "source_id": null,
+        "source_snapshot_id": null,
+        "passage_id": null,
+        "knowledge_item_id": "fa8c2b70-a398-458b-b654-28a961771b77",
+        "knowledge_version_id": "e7383c13-803d-46f5-88f9-bd92bda80a44",
+        "title": "wiki.md",
+        "excerpt": "# wiki.md  ## 资料摘要  Wiki 把用户确认过的知识组织成可导航页面。页面需要不可变版本、当前 Head、显式链接、反链、来源回链、搜索、关系图、治理状态和修复记录。检索能找到文本不代表知识已经被发布，也不代表旧版本仍可见。 Wiki 不把模型生成的回答自动当成页面真源，不用图数据库或 Elasticsearch 保存页面权威版本，也不允许自动修复绕过审批和 Workspace ACL。 用户可以创建知识项、追加版本、...",
+        "content_hash": "092aa584d608fafc64650e5a5767a67011e6c85a11f1ac60b239ee31c9bee152",
+        "location": "knowledge-version:e7383c13-803d-46f5-88f9-bd92bda80a44",
+        "fresh_at": "2026-10-14T11:52:14Z",
+        "character_cost": 222
+      },
+      {
+        "rank": 3,
+        "evidence_id": "knowledge-version:17581dae-cc77-44c8-b860-5a93c90bd19e",
+        "kind": "KNOWLEDGE_VERSION",
+        "source_id": null,
+        "source_snapshot_id": null,
+        "passage_id": null,
+        "knowledge_item_id": "4f793f3d-06c4-47aa-899d-e017f4ebedd8",
+        "knowledge_version_id": "17581dae-cc77-44c8-b860-5a93c90bd19e",
+        "title": "不可变版本",
+        "excerpt": "# 不可变版本  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `不可变版本` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[wiki.md]]：Wiki 把用户确认过的知识组织成可导航页面。页面需要不可变版本、当前 Head、显式链接、反链、来源回链、搜索、关系图、治理状态和修复记录。检索能找到文本不...  ## 关键依据  - 《wiki.md》...",
+        "content_hash": "be06faf55dca62e02fc9064644d30bfbc0c4f14ca8d0c6b7cae2c43b00ddfb38",
+        "location": "knowledge-version:17581dae-cc77-44c8-b860-5a93c90bd19e",
+        "fresh_at": "2026-10-14T11:52:14Z",
+        "character_cost": 222
+      },
+      {
+        "rank": 4,
+        "evidence_id": "knowledge-version:be9da690-c5c7-4b6e-8b67-7b6397682d1b",
+        "kind": "KNOWLEDGE_VERSION",
+        "source_id": null,
+        "source_snapshot_id": null,
+        "passage_id": null,
+        "knowledge_item_id": "33e07770-d822-4aab-be60-6a94b58c874b",
+        "knowledge_version_id": "be9da690-c5c7-4b6e-8b67-7b6397682d1b",
+        "title": "qa-rag.md",
+        "excerpt": "# qa-rag.md  ## 资料摘要  QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样性和上下文预算。 QA 不负责开放式网页研究，不在证据不足时继续搜索到无限步骤，也不把 Memory 偏好当作事实引用。跨来源冲突、复杂多跳和长报告交给 Research；连续阅读和草稿写回交给 Note；页面关系与治理交给 Wiki。...",
+        "content_hash": "301ec3d3d8148de862c94acf3543ceba2bfc869afe77c57e56416415d52e3879",
+        "location": "knowledge-version:be9da690-c5c7-4b6e-8b67-7b6397682d1b",
+        "fresh_at": "2026-10-14T11:52:14Z",
+        "character_cost": 222
+      },
+      {
+        "rank": 5,
+        "evidence_id": "knowledge-version:994bdfd7-59c5-4a3c-8daf-4165b8aa7c63",
+        "kind": "KNOWLEDGE_VERSION",
+        "source_id": null,
+        "source_snapshot_id": null,
+        "passage_id": null,
+        "knowledge_item_id": "5a4a22b6-ab83-4696-a31b-d791e990f363",
+        "knowledge_version_id": "994bdfd7-59c5-4a3c-8daf-4165b8aa7c63",
+        "title": "反链",
+        "excerpt": "# 反链  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `反链` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[wiki.md]]：Wiki 把用户确认过的知识组织成可导航页面。页面需要不可变版本、当前 Head、显式链接、反链、来源回链、搜索、关系图、治理状态和修复记录。检索能找到文本不...  ## 关键依据  - 《wiki.md》：Wiki：...",
+        "content_hash": "fdeff89c0fb9ff5fa8aa4d76382d844c368f97bc4d5e78a5313913d60120ef8f",
+        "location": "knowledge-version:994bdfd7-59c5-4a3c-8daf-4165b8aa7c63",
+        "fresh_at": "2026-10-14T11:52:14Z",
+        "character_cost": 222
+      }
+    ],
+    "retrieval_rewrite": {
+      "standalone_query": "QA 和 Wiki 怎么防止索引里的旧版本被返回给用户？",
+      "keyword_query": "QA 和 Wiki 怎么防止索引里的旧版本被返回给用户？",
+      "method": "RULE",
+      "degradation_reasons": [],
+      "is_standalone": true
+    },
+    "memory_references": [],
+    "evidence_sufficiency": "PARTIAL"
+  },
+  "ranked_candidates": [],
+  "selection_policy": "",
+  "retrieval_rewrite": {
+    "standalone_query": "QA 和 Wiki 怎么防止索引里的旧版本被返回给用户？",
+    "keyword_query": "QA 和 Wiki 怎么防止索引里的旧版本被返回给用户？",
+    "method": "RULE",
+    "degradation_reasons": [],
+    "is_standalone": true
+  },
+  "evidence_sufficiency": "PARTIAL",
+  "retrieval_degraded": false,
+  "retrieval_degradation_reasons": [],
+  "turns": [
+    {
+      "run_id": "5fbdf563-4f4e-45ea-b199-5055d1299e96",
+      "receipt": {
+        "submission_id": "f923c256-8397-46ba-9583-06716e3a6c8b",
+        "execution_kind": "ANSWER",
+        "message_id": "2bb3f077-18d2-4604-9cf8-d8c8a7a7a202",
+        "assistant_message_id": "2e19c5c4-1d6a-4607-ba40-4ffa05d4ef74",
+        "assistant_request_id": "d09ba4ca-976e-4c14-9804-1b47397b9278",
+        "stream_url": "/api/v2/chat/requests/d09ba4ca-976e-4c14-9804-1b47397b9278/stream",
+        "answer_run_id": "5fbdf563-4f4e-45ea-b199-5055d1299e96",
+        "research_run_id": null,
+        "answer_stream_url": "/api/v2/workspaces/4eb8737e-bd0a-4e91-8a32-b09e2deb834b/answer-runs/5fbdf563-4f4e-45ea-b199-5055d1299e96/events",
+        "retrieval_degraded": false,
+        "retrieval_degradation_reasons": [],
+        "reused": false
+      },
+      "run": {
+        "id": "5fbdf563-4f4e-45ea-b199-5055d1299e96",
+        "workspace_id": "4eb8737e-bd0a-4e91-8a32-b09e2deb834b",
+        "conversation_id": "84060fd8-b0b3-4ba0-82e3-633b6f3f7d44",
+        "mode": "WIKI",
+        "status": "COMPLETED",
+        "query_message_id": "2bb3f077-18d2-4604-9cf8-d8c8a7a7a202",
+        "answer_message_id": "2e19c5c4-1d6a-4607-ba40-4ffa05d4ef74",
+        "assistant_request_id": "d09ba4ca-976e-4c14-9804-1b47397b9278",
+        "retrieval_plan_version": "wiki-page-graph-v1",
+        "model": "configured-llm",
+        "maximum_output_tokens": 1800,
+        "retrieval_degraded": true,
+        "retrieval_degradation_reasons": [
+          "WIKI_RERANK_UNAVAILABLE"
+        ],
+        "revision_no": 1,
+        "revision_status": "FINAL",
+        "content": "## 基于全量 Wiki 的回答\n\n我优先检索当前工作台已经沉淀的 Wiki Index、页面正文、页面链接、反向链接和来源回链，再基于多页面知识网络综合回答，而不是退回普通资料 chunk 问答。\n\n## 相关 Wiki 页面\n\n- 《Wiki Index》v1：# Wiki Index  ## 工作台概览  - workspace_id: `4eb8737e-bd0a-4e91-8a32-b09e2deb834b` - READY 资料数: 3 - 活跃 Wiki 页面数: 18 - 最近触发资料: [[memory.md]]  ## 治理概览  - 页面总数: 18 - 链接总数: 108 - 已解析链接: 9...\n- 《wiki.md》v1：# wiki.md  ## 资料摘要  Wiki 把用户确认过的知识组织成可导航页面。页面需要不可变版本、当前 Head、显式链接、反链、来源回链、搜索、关系图、治理状态和修复记录。检索能找到文本不代表知识已经被发布，也不代表旧版本仍可见。 Wiki 不把模型生成的回答自动当成页面真源，不用图数据库或 Elasticsearch 保存页面权威版本，也不允许...\n- 《不可变版本》v1：# 不可变版本  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `不可变版本` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[wiki.md]]：Wiki 把用户确认过的知识组织成可导航页面。页面需要不可变版本、当前 Head、显式链接、反链、来源回链、搜索、关系图、治理状...\n- 《qa-rag.md》v1：# qa-rag.md  ## 资料摘要  QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样性和上下文预算。 QA 不负责开放式网页研究，不在证据不足时继续搜索到无限步骤，也不把 Memory 偏好当作事实引用。跨来源冲突、复杂多跳和长报告交给 R...\n- 《反链》v1：# 反链  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `反链` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[wiki.md]]：Wiki 把用户确认过的知识组织成可导航页面。页面需要不可变版本、当前 Head、显式链接、反链、来源回链、搜索、关系图、治理状态和修复记录...\n\n## 综合结论\n\n《Wiki Index》指出：当前工作台处于就绪状态，近期触发的资料是 [[memory.md]]，并汇总了工作台概览与治理概览。\n\n《wiki.md》指出：Wiki 把用户确认过的知识组织成可导航页面。页面需要不可变版本、当前 Head、显式链接、反链、来源回链、搜索、关系图、治理状态和修复记录。检索能找到文本不代表知识已经被发布，也不代表旧版本仍可见。同时，Wiki 不把模型生成的回答自动当成页面真源，也不使用图数据库或 Elasticsearch 保存页面的权威版本。[1]\n\n《不可变版本》指出：该概念页由工作台级 Wiki ingest 自动汇聚，与 `不可变版本` 相关的资料页和片段会持续回流到这里，相关资料包括 [[Wiki Index]] 和 [[wiki.md]]。\n\n《qa-rag.md》指出：QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样性和上下文预算。QA 不负责开放式网页研究，不在证据不足时继续搜索到无限步骤，也不把 Memory 偏好当作事实引用。\n\n《反链》指出：该概念页同样由工作台级 Wiki ingest 自动汇聚，与 `反链` 相关的资料页和片段会持续回流到这里，相关资料包括 [[Wiki Index]] 和 [[wiki.md]]。\n\n## 关键页面关系\n\nSignal、不可变版本、Revision、来源回链、Revoke 以及 Wiki Index 在页面关系中都已被解析，说明这些概念在当前工作台中已形成可导航的关联节点。\n\n## 反向引用关系\n\n带引用回答、Revision、证据选择、memory.md、查询改写以及 Wiki Index 都出现在反向引用关系中，其中 Wiki Index 被引用了 2 次，其余各为 1 次。\n\n## 来源回链\n\n- Memory 机制详细设计：Memory 机制详细设计\n\n本文是 Signal、Candidate、Review、Revision、Revoke、Control Pack 与 Outcome 的权威设计。Memory 不是聊天存档，也不是 Evidence 的替代品。（chunk:0 · Memory 机制详细设计）\n- 1. 业务问题、产物与非目标：1. 业务问题、产物与非目标\n\nMemory 解决的是跨运行复用稳定偏好、约束、工作方式和经审核事实的问题。它的最终产物不是一段永久文本，而是一个可追溯、可版本化、可撤销、按运行类型编译的 Control Pack。Chat、Resear...（chunk:1 · 1. 业务问题、产物与非目标）\n- 2. 当前事实与目标边界：2. 当前事实与目标边界\n\n[当前实现]\n\n迁移包含两代数据模型：\n\nmemory_signal\n\n、\n\nmemory_candidate\n\n、\n\nmemory_outcome\n\n、\n\nmemory_usage_log\n\n等候选与反馈结构...（chunk:2 · 2. 当前事实与目标边界）\n- 3. Evidence 与 Memory 的信任域：3. Evidence 与 Memory 的信任域（chunk:3 · 3. Evidence 与 Memory 的信任域）\n- Wiki：版本化知识、链接与治理：Wiki：版本化知识、链接与治理（chunk:0 · Wiki：版本化知识、链接与治理）\n- 业务问题与非目标：业务问题与非目标\n\nWiki 把用户确认过的知识组织成可导航页面。页面需要不可变版本、当前 Head、显式链接、反链、来源回链、搜索、关系图、治理状态和修复记录。检索能找到文本不代表知识已经被发布，也不代表旧版本仍可见。\n\nWiki 不把...（chunk:1 · 业务问题与非目标）\n\n## 页面关系\n\n相关页面关系、图谱、待处理任务、问题分层和治理动作都可以在默认 Wiki 工作台中继续查看。\n\n## 默认 Wiki 工作台\n\n/workspaces/4eb8737e-bd0a-4e91-8a32-b09e2deb834b/wiki\n\n资料只覆盖了问题的一部分。请只回答资料已经覆盖的部分，没有覆盖的部分要明确说明缺什么。\n\n[1] [[wiki.md]]",
+        "started_at": "2026-10-14T11:52:09Z",
+        "first_token_at": "2026-10-14T11:52:16Z",
+        "finished_at": "2026-10-14T11:52:22Z",
+        "error_code": "",
+        "error_message": "",
+        "retrieval_rewrite": {
+          "standalone_query": "QA 和 Wiki 怎么防止索引里的旧版本被返回给用户？",
+          "keyword_query": "QA 和 Wiki 怎么防止索引里的旧版本被返回给用户？",
+          "method": "RULE",
+          "degradation_reasons": [],
+          "is_standalone": true
+        },
+        "evidence_sufficiency": "PARTIAL"
+      },
+      "evidence": {
+        "run_id": "5fbdf563-4f4e-45ea-b199-5055d1299e96",
+        "evidence": [
+          {
+            "rank": 1,
+            "evidence_id": "knowledge-version:3b9a9c91-cd0e-4f33-8d51-3a401aea5dcb",
+            "kind": "KNOWLEDGE_VERSION",
+            "source_id": null,
+            "source_snapshot_id": null,
+            "passage_id": null,
+            "knowledge_item_id": "28d7b9a6-d2e0-488e-b842-01e478ab2cbe",
+            "knowledge_version_id": "3b9a9c91-cd0e-4f33-8d51-3a401aea5dcb",
+            "title": "Wiki Index",
+            "excerpt": "# Wiki Index  ## 工作台概览  - workspace_id: `4eb8737e-bd0a-4e91-8a32-b09e2deb834b` - READY 资料数: 3 - 活跃 Wiki 页面数: 18 - 最近触发资料: [[memory.md]]  ## 治理概览  - 页面总数: 18 - 链接总数: 108 - 已解析链接: 90 - 断链数: 18 - 问题总数: 18 - 可自动修复: 18 - 需人工...",
+            "content_hash": "b36afa515ef62c42f0045727da1e93b8e837ea37800a52939eaec6c6797b453c",
+            "location": "knowledge-version:3b9a9c91-cd0e-4f33-8d51-3a401aea5dcb",
+            "fresh_at": "2026-10-14T11:52:14Z",
+            "character_cost": 222
+          },
+          {
+            "rank": 2,
+            "evidence_id": "knowledge-version:e7383c13-803d-46f5-88f9-bd92bda80a44",
+            "kind": "KNOWLEDGE_VERSION",
+            "source_id": null,
+            "source_snapshot_id": null,
+            "passage_id": null,
+            "knowledge_item_id": "fa8c2b70-a398-458b-b654-28a961771b77",
+            "knowledge_version_id": "e7383c13-803d-46f5-88f9-bd92bda80a44",
+            "title": "wiki.md",
+            "excerpt": "# wiki.md  ## 资料摘要  Wiki 把用户确认过的知识组织成可导航页面。页面需要不可变版本、当前 Head、显式链接、反链、来源回链、搜索、关系图、治理状态和修复记录。检索能找到文本不代表知识已经被发布，也不代表旧版本仍可见。 Wiki 不把模型生成的回答自动当成页面真源，不用图数据库或 Elasticsearch 保存页面权威版本，也不允许自动修复绕过审批和 Workspace ACL。 用户可以创建知识项、追加版本、...",
+            "content_hash": "092aa584d608fafc64650e5a5767a67011e6c85a11f1ac60b239ee31c9bee152",
+            "location": "knowledge-version:e7383c13-803d-46f5-88f9-bd92bda80a44",
+            "fresh_at": "2026-10-14T11:52:14Z",
+            "character_cost": 222
+          },
+          {
+            "rank": 3,
+            "evidence_id": "knowledge-version:17581dae-cc77-44c8-b860-5a93c90bd19e",
+            "kind": "KNOWLEDGE_VERSION",
+            "source_id": null,
+            "source_snapshot_id": null,
+            "passage_id": null,
+            "knowledge_item_id": "4f793f3d-06c4-47aa-899d-e017f4ebedd8",
+            "knowledge_version_id": "17581dae-cc77-44c8-b860-5a93c90bd19e",
+            "title": "不可变版本",
+            "excerpt": "# 不可变版本  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `不可变版本` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[wiki.md]]：Wiki 把用户确认过的知识组织成可导航页面。页面需要不可变版本、当前 Head、显式链接、反链、来源回链、搜索、关系图、治理状态和修复记录。检索能找到文本不...  ## 关键依据  - 《wiki.md》...",
+            "content_hash": "be06faf55dca62e02fc9064644d30bfbc0c4f14ca8d0c6b7cae2c43b00ddfb38",
+            "location": "knowledge-version:17581dae-cc77-44c8-b860-5a93c90bd19e",
+            "fresh_at": "2026-10-14T11:52:14Z",
+            "character_cost": 222
+          },
+          {
+            "rank": 4,
+            "evidence_id": "knowledge-version:be9da690-c5c7-4b6e-8b67-7b6397682d1b",
+            "kind": "KNOWLEDGE_VERSION",
+            "source_id": null,
+            "source_snapshot_id": null,
+            "passage_id": null,
+            "knowledge_item_id": "33e07770-d822-4aab-be60-6a94b58c874b",
+            "knowledge_version_id": "be9da690-c5c7-4b6e-8b67-7b6397682d1b",
+            "title": "qa-rag.md",
+            "excerpt": "# qa-rag.md  ## 资料摘要  QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样性和上下文预算。 QA 不负责开放式网页研究，不在证据不足时继续搜索到无限步骤，也不把 Memory 偏好当作事实引用。跨来源冲突、复杂多跳和长报告交给 Research；连续阅读和草稿写回交给 Note；页面关系与治理交给 Wiki。...",
+            "content_hash": "301ec3d3d8148de862c94acf3543ceba2bfc869afe77c57e56416415d52e3879",
+            "location": "knowledge-version:be9da690-c5c7-4b6e-8b67-7b6397682d1b",
+            "fresh_at": "2026-10-14T11:52:14Z",
+            "character_cost": 222
+          },
+          {
+            "rank": 5,
+            "evidence_id": "knowledge-version:994bdfd7-59c5-4a3c-8daf-4165b8aa7c63",
+            "kind": "KNOWLEDGE_VERSION",
+            "source_id": null,
+            "source_snapshot_id": null,
+            "passage_id": null,
+            "knowledge_item_id": "5a4a22b6-ab83-4696-a31b-d791e990f363",
+            "knowledge_version_id": "994bdfd7-59c5-4a3c-8daf-4165b8aa7c63",
+            "title": "反链",
+            "excerpt": "# 反链  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `反链` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[wiki.md]]：Wiki 把用户确认过的知识组织成可导航页面。页面需要不可变版本、当前 Head、显式链接、反链、来源回链、搜索、关系图、治理状态和修复记录。检索能找到文本不...  ## 关键依据  - 《wiki.md》：Wiki：...",
+            "content_hash": "fdeff89c0fb9ff5fa8aa4d76382d844c368f97bc4d5e78a5313913d60120ef8f",
+            "location": "knowledge-version:994bdfd7-59c5-4a3c-8daf-4165b8aa7c63",
+            "fresh_at": "2026-10-14T11:52:14Z",
+            "character_cost": 222
+          }
+        ],
+        "retrieval_rewrite": {
+          "standalone_query": "QA 和 Wiki 怎么防止索引里的旧版本被返回给用户？",
+          "keyword_query": "QA 和 Wiki 怎么防止索引里的旧版本被返回给用户？",
+          "method": "RULE",
+          "degradation_reasons": [],
+          "is_standalone": true
+        },
+        "memory_references": [],
+        "evidence_sufficiency": "PARTIAL"
+      },
+      "retrieval_summary": {
+        "selection_policy": "",
+        "plan_version": "wiki-page-graph-v1",
+        "retrieval_latency_micros": 2197577,
+        "degradation_reasons": [
+          "WIKI_RERANK_UNAVAILABLE"
+        ],
+        "strategy_profile": "",
+        "selected_evidence_count": 5,
+        "execution_trace": {
+          "schema_version": "retrieval-execution-trace-v1",
+          "plan_version": "wiki-page-graph-v1",
+          "total_latency_micros": 2197577,
+          "raw_candidate_count": 19,
+          "admitted_candidate_count": 5,
+          "selected_evidence_count": 5,
+          "selected_evidence_characters": 1110,
+          "steps": [
+            {
+              "step_index": 0,
+              "channel": "WIKI_PAGE_GRAPH",
+              "candidate_limit": 5,
+              "raw_candidate_count": 19,
+              "admitted_candidate_count": 5,
+              "latency_micros": 2197458,
+              "degraded": true,
+              "degradation_reasons": [
+                "WIKI_RERANK_UNAVAILABLE"
+              ],
+              "measurements": {
+                "graph_node_limit": 30,
+                "graph_hops_used": 1,
+                "graph_characters_used": 3108,
+                "graph_hop_limit": 3,
+                "graph_character_limit": 4000,
+                "graph_edges_used": 14,
+                "graph_edge_limit": 60,
+                "graph_nodes_used": 14
+              },
+              "ranked_candidates": []
+            }
+          ],
+          "selected_evidence": [
+            {
+              "rank": 1,
+              "evidence_id": "knowledge-version:3b9a9c91-cd0e-4f33-8d51-3a401aea5dcb",
+              "kind": "KNOWLEDGE_VERSION",
+              "raw_score": 4.0,
+              "fused_score": 4.0,
+              "rerank_score": 4.0,
+              "character_cost": 222
+            },
+            {
+              "rank": 2,
+              "evidence_id": "knowledge-version:e7383c13-803d-46f5-88f9-bd92bda80a44",
+              "kind": "KNOWLEDGE_VERSION",
+              "raw_score": 4.0,
+              "fused_score": 4.0,
+              "rerank_score": 4.0,
+              "character_cost": 222
+            },
+            {
+              "rank": 3,
+              "evidence_id": "knowledge-version:17581dae-cc77-44c8-b860-5a93c90bd19e",
+              "kind": "KNOWLEDGE_VERSION",
+              "raw_score": 4.0,
+              "fused_score": 4.0,
+              "rerank_score": 4.0,
+              "character_cost": 222
+            },
+            {
+              "rank": 4,
+              "evidence_id": "knowledge-version:be9da690-c5c7-4b6e-8b67-7b6397682d1b",
+              "kind": "KNOWLEDGE_VERSION",
+              "raw_score": 4.0,
+              "fused_score": 4.0,
+              "rerank_score": 4.0,
+              "character_cost": 222
+            },
+            {
+              "rank": 5,
+              "evidence_id": "knowledge-version:994bdfd7-59c5-4a3c-8daf-4165b8aa7c63",
+              "kind": "KNOWLEDGE_VERSION",
+              "raw_score": 4.0,
+              "fused_score": 4.0,
+              "rerank_score": 4.0,
+              "character_cost": 222
+            }
+          ]
+        },
+        "admitted_candidate_count": 5,
+        "degraded": true,
+        "relevance_policy": "",
+        "trace_schema_version": "retrieval-execution-trace-v1",
+        "maximum_output_tokens": 1800,
+        "selected_evidence_characters": 1110,
+        "candidate_count": 19
+      },
+      "latency_ms": 15272
+    }
+  ]
+}

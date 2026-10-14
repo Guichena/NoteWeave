@@ -1,0 +1,359 @@
+{
+  "schema_version": "retrieval-eval-run.v1",
+  "set": "wiki_cross_page",
+  "case_key": "wk-vector-truth",
+  "captured_at": "2026-10-14T13:52:17.366248+00:00",
+  "final_status": "COMPLETED",
+  "latency_ms": 15264,
+  "evidence": {
+    "run_id": "554eb12c-b3e6-4360-a1fb-4def1204f026",
+    "evidence": [
+      {
+        "rank": 1,
+        "evidence_id": "knowledge-version:0bd3d961-02de-4f1e-b6d7-6ab5458b093a",
+        "kind": "KNOWLEDGE_VERSION",
+        "source_id": null,
+        "source_snapshot_id": null,
+        "passage_id": null,
+        "knowledge_item_id": "56125485-6b9b-49de-b3b4-31c4218294a4",
+        "knowledge_version_id": "0bd3d961-02de-4f1e-b6d7-6ab5458b093a",
+        "title": "memory.md",
+        "excerpt": "# memory.md  ## 资料摘要  本文是 Signal、Candidate、Review、Revision、Revoke、Control Pack 与 Outcome 的权威设计。Memory 不是聊天存档，也不是 Evidence 的替代品。 Memory 解决的是跨运行复用稳定偏好、约束、工作方式和经审核事实的问题。它的最终产物不是一段永久文本，而是一个可追溯、可版本化、可撤销、按运行类型编译的 Control Pack...",
+        "content_hash": "9eb103e503f9e3f48a5dca99347f251fc89632470382472b3a9c7edf53bd2787",
+        "location": "knowledge-version:0bd3d961-02de-4f1e-b6d7-6ab5458b093a",
+        "fresh_at": "2026-10-14T13:52:06Z",
+        "character_cost": 222
+      },
+      {
+        "rank": 2,
+        "evidence_id": "knowledge-version:9bdaa1f4-7e6e-43a0-8958-c7a794ee9ab7",
+        "kind": "KNOWLEDGE_VERSION",
+        "source_id": null,
+        "source_snapshot_id": null,
+        "passage_id": null,
+        "knowledge_item_id": "cb5d6c01-9613-414e-9926-50546526b793",
+        "knowledge_version_id": "9bdaa1f4-7e6e-43a0-8958-c7a794ee9ab7",
+        "title": "qa-rag.md",
+        "excerpt": "# qa-rag.md  ## 资料摘要  QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样性和上下文预算。 QA 不负责开放式网页研究，不在证据不足时继续搜索到无限步骤，也不把 Memory 偏好当作事实引用。跨来源冲突、复杂多跳和长报告交给 Research；连续阅读和草稿写回交给 Note；页面关系与治理交给 Wiki。...",
+        "content_hash": "301ec3d3d8148de862c94acf3543ceba2bfc869afe77c57e56416415d52e3879",
+        "location": "knowledge-version:9bdaa1f4-7e6e-43a0-8958-c7a794ee9ab7",
+        "fresh_at": "2026-10-14T13:52:06Z",
+        "character_cost": 222
+      },
+      {
+        "rank": 3,
+        "evidence_id": "knowledge-version:edf111b5-dbbf-4f0b-a9cc-2b5dada855aa",
+        "kind": "KNOWLEDGE_VERSION",
+        "source_id": null,
+        "source_snapshot_id": null,
+        "passage_id": null,
+        "knowledge_item_id": "ad580ed8-fec4-434f-98e3-2ae27cc9b9ce",
+        "knowledge_version_id": "edf111b5-dbbf-4f0b-a9cc-2b5dada855aa",
+        "title": "Review",
+        "excerpt": "# Review  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `Review` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[memory.md]]：本文是 Signal、Candidate、Review、Revision、Revoke、Control Pack 与 Outcome 的权威设计。Memory...  ## 关键依据  - 《memo...",
+        "content_hash": "1988c056b4ca9e07fa92b9316e1c619dc03743643ec93e30dc82525cca481ee6",
+        "location": "knowledge-version:edf111b5-dbbf-4f0b-a9cc-2b5dada855aa",
+        "fresh_at": "2026-10-14T13:52:06Z",
+        "character_cost": 222
+      },
+      {
+        "rank": 4,
+        "evidence_id": "knowledge-version:e4ec2a12-c0aa-44ef-ae25-4003c79e47c4",
+        "kind": "KNOWLEDGE_VERSION",
+        "source_id": null,
+        "source_snapshot_id": null,
+        "passage_id": null,
+        "knowledge_item_id": "01d6dbbc-6a4a-46e9-8790-b4f0c9152c40",
+        "knowledge_version_id": "e4ec2a12-c0aa-44ef-ae25-4003c79e47c4",
+        "title": "Weighted RRF",
+        "excerpt": "# Weighted RRF  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `Weighted RRF` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[qa-rag.md]]：QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样...  ## 关...",
+        "content_hash": "18acbfad759c09f50799914badaf7e68950a2d4a93beb507595c420125c1ff98",
+        "location": "knowledge-version:e4ec2a12-c0aa-44ef-ae25-4003c79e47c4",
+        "fresh_at": "2026-10-14T13:52:06Z",
+        "character_cost": 222
+      },
+      {
+        "rank": 5,
+        "evidence_id": "knowledge-version:1b884683-ff4d-47a8-9eca-129d3507e29f",
+        "kind": "KNOWLEDGE_VERSION",
+        "source_id": null,
+        "source_snapshot_id": null,
+        "passage_id": null,
+        "knowledge_item_id": "05205f72-7424-4d28-9e62-cc774a5104aa",
+        "knowledge_version_id": "1b884683-ff4d-47a8-9eca-129d3507e29f",
+        "title": "Wiki Index",
+        "excerpt": "# Wiki Index  ## 工作台概览  - workspace_id: `3d215b8f-e550-43a2-bfbe-818562924aec` - READY 资料数: 3 - 活跃 Wiki 页面数: 11 - 最近触发资料: [[wiki.md]]  ## 治理概览  - 页面总数: 11 - 链接总数: 51 - 已解析链接: 40 - 断链数: 11 - 问题总数: 11 - 可自动修复: 11 - 需人工确认:...",
+        "content_hash": "7572cdb0184f5466160d6a273594809b6291a16e133931474fc16ee585e5b0d4",
+        "location": "knowledge-version:1b884683-ff4d-47a8-9eca-129d3507e29f",
+        "fresh_at": "2026-10-14T13:52:06Z",
+        "character_cost": 222
+      }
+    ],
+    "retrieval_rewrite": {
+      "standalone_query": "为什么 QA 不只用向量检索，Memory 也不用向量库做真源？",
+      "keyword_query": "为什么 QA 不只用向量检索，Memory 也不用向量库做真源？",
+      "method": "RULE",
+      "degradation_reasons": [],
+      "is_standalone": true
+    },
+    "memory_references": [],
+    "evidence_sufficiency": "PARTIAL"
+  },
+  "ranked_candidates": [],
+  "selection_policy": "",
+  "retrieval_rewrite": {
+    "standalone_query": "为什么 QA 不只用向量检索，Memory 也不用向量库做真源？",
+    "keyword_query": "为什么 QA 不只用向量检索，Memory 也不用向量库做真源？",
+    "method": "RULE",
+    "degradation_reasons": [],
+    "is_standalone": true
+  },
+  "evidence_sufficiency": "PARTIAL",
+  "retrieval_degraded": false,
+  "retrieval_degradation_reasons": [],
+  "turns": [
+    {
+      "run_id": "554eb12c-b3e6-4360-a1fb-4def1204f026",
+      "receipt": {
+        "submission_id": "2b409ad2-bac1-49cf-bb85-1328dfaf1ea2",
+        "execution_kind": "ANSWER",
+        "message_id": "4dc96a30-c5c4-480a-a613-63ca45efdc01",
+        "assistant_message_id": "64c0258e-c8bb-4a2d-9948-563285608532",
+        "assistant_request_id": "e8d56b23-43ce-4205-8dbf-cb5265207b41",
+        "stream_url": "/api/v2/chat/requests/e8d56b23-43ce-4205-8dbf-cb5265207b41/stream",
+        "answer_run_id": "554eb12c-b3e6-4360-a1fb-4def1204f026",
+        "research_run_id": null,
+        "answer_stream_url": "/api/v2/workspaces/3d215b8f-e550-43a2-bfbe-818562924aec/answer-runs/554eb12c-b3e6-4360-a1fb-4def1204f026/events",
+        "retrieval_degraded": false,
+        "retrieval_degradation_reasons": [],
+        "reused": false
+      },
+      "run": {
+        "id": "554eb12c-b3e6-4360-a1fb-4def1204f026",
+        "workspace_id": "3d215b8f-e550-43a2-bfbe-818562924aec",
+        "conversation_id": "9296736c-3a96-49b4-8633-ecf66b8770b9",
+        "mode": "WIKI",
+        "status": "COMPLETED",
+        "query_message_id": "4dc96a30-c5c4-480a-a613-63ca45efdc01",
+        "answer_message_id": "64c0258e-c8bb-4a2d-9948-563285608532",
+        "assistant_request_id": "e8d56b23-43ce-4205-8dbf-cb5265207b41",
+        "retrieval_plan_version": "wiki-page-graph-v1",
+        "model": "configured-llm",
+        "maximum_output_tokens": 1800,
+        "retrieval_degraded": true,
+        "retrieval_degradation_reasons": [
+          "WIKI_RERANK_UNAVAILABLE"
+        ],
+        "revision_no": 1,
+        "revision_status": "FINAL",
+        "content": "## 基于全量 Wiki 的回答\n我优先检索当前工作台已经沉淀的 Wiki Index、页面正文、页面链接、反向链接和来源回链，再基于多页面知识网络综合回答，而不是退回普通资料 chunk 问答。\n\n## 相关 Wiki 页面\n- 《memory.md》v1：# memory.md  ## 资料摘要  本文是 Signal、Candidate、Review、Revision、Revoke、Control Pack 与 Outcome 的权威设计。Memory 不是聊天存档，也不是 Evidence 的替代品。 Memory 解决的是跨运行复用稳定偏好、约束、工作方式和经审核事实的问题。它的最终产物不是一段永久文...\n- 《qa-rag.md》v1：# qa-rag.md  ## 资料摘要  QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样性和上下文预算。 QA 不负责开放式网页研究，不在证据不足时继续搜索到无限步骤，也不把 Memory 偏好当作事实引用。跨来源冲突、复杂多跳和长报告交给 R...\n- 《Review》v1：# Review  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `Review` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[memory.md]]：本文是 Signal、Candidate、Review、Revision、Revoke、Control Pack 与 O...\n- 《Weighted RRF》v1：# Weighted RRF  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `Weighted RRF` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[qa-rag.md]]：QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高...\n- 《Wiki Index》v1：# Wiki Index  ## 工作台概览  - workspace_id: `3d215b8f-e550-43a2-bfbe-818562924aec` - READY 资料数: 3 - 活跃 Wiki 页面数: 11 - 最近触发资料: [[wiki.md]]  ## 治理概览  - 页面总数: 11 - 链接总数: 51 - 已解析链接: 40 -...\n\n## 综合结论\n《memory.md》指出：本文是 Signal、Candidate、Review、Revision、Revoke、Control Pack 与 Outcome 的权威设计。Memory 不是聊天存档，也不是 Evidence 的替代品。Memory 解决的是跨运行复用稳定偏好、约束、工作方式和经审核事实的问题，它的最终产物是一个可追溯、可版本化、可撤销、按运行类型编译的 Control Pack。\n《qa-rag.md》指出：QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样性和上下文预算。QA 不负责开放式网页研究，不在证据不足时继续搜索到无限步骤，也不把 Memory 偏好当作事实引用；跨来源冲突、复杂多跳和长报告交给其他流程处理。\n《Review》指出：该概念页由工作台级 Wiki ingest 自动汇聚，与 `Review` 相关的资料页和片段会持续回流到这里。\n\n## 关键页面关系\n- Wiki Index：1 次提及\n- Control Pack：1 次提及\n- Outcome：1 次提及\n- Revision：1 次提及\n- Review：1 次提及\n- Weighted RRF：1 次提及\n\n## 反向引用关系\n- Wiki Index：2 次提及\n- Control Pack：1 次提及\n- Revision：1 次提及\n- Outcome：1 次提及\n- Revoke：1 次提及\n- Wiki Index：2 次提及\n\n## 来源回链\n- Memory 机制详细设计：本文是 Signal、Candidate、Review、Revision、Revoke、Control Pack 与 Outcome 的权威设计。Memory 不是聊天存档，也不是 Evidence 的替代品。（chunk:0 · Memory 机制详细设计）\n- 1. 业务问题、产物与非目标：Memory 解决的是跨运行复用稳定偏好、约束、工作方式和经审核事实的问题。它的最终产物不是一段永久文本，而是一个可追溯、可版本化、可撤销、按运行类型编译的 Control Pack。Chat、Resear...（chunk:1 · 1. 业务问题、产物与非目标）\n- 2. 当前事实与目标边界：迁移包含两代数据模型：memory_signal、memory_candidate、memory_outcome、memory_usage_log 等候选与反馈结构...（chunk:2 · 2. 当前事实与目标边界）\n- QA：带引用回答与场景化 RAG（chunk:0 · QA：带引用回答与场景化 RAG）\n- 业务问题与非目标：QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样性和上下文预算。QA 不负责开放式网页研究，不在证据不足...（chunk:1 · 业务问题与非目标）\n- 用户操作与产物：用户在 Conversation 中提交问题，得到流式回答、引用列表、来源片段、运行状态和可恢复事件。运行结束后，AnswerRun 保存 Evidence Manifest 与输入快照，资料更新后仍能解释旧回答使用的版...（chunk:2 · 用户操作与产物）\n\n## 页面关系\n相关页面关系、图谱、待处理任务、问题分层和治理动作都可以在默认 Wiki 工作台中继续查看。\n\n## 默认 Wiki 工作台\n/workspaces/3d215b8f-e550-43a2-bfbe-818562924aec/wiki\n\n资料只覆盖了问题的一部分。现有证据能说明 Memory 的定位（跨运行复用稳定偏好、约束、工作方式与经审核事实，产物是按运行类型编译的 Control Pack）、QA 的边界（限当前 Workspace 资料、必须可回原文核对、不把 Memory 偏好当事实、不负责开放式网页研究），以及 Review 作为自动汇聚概念页的角色。但资料未覆盖的部分——例如具体的评分或排序算法细节、Weighted RRF 的完整公式与参数、各类运行类型的编译规则，以及跨来源冲突、复杂多跳和长报告具体交给哪条流程——尚未在证据中给出，需要补充相应页面后才能回答。\n\n[[Wiki Index]]",
+        "started_at": "2026-10-14T13:52:02Z",
+        "first_token_at": "2026-10-14T13:52:09Z",
+        "finished_at": "2026-10-14T13:52:15Z",
+        "error_code": "",
+        "error_message": "",
+        "retrieval_rewrite": {
+          "standalone_query": "为什么 QA 不只用向量检索，Memory 也不用向量库做真源？",
+          "keyword_query": "为什么 QA 不只用向量检索，Memory 也不用向量库做真源？",
+          "method": "RULE",
+          "degradation_reasons": [],
+          "is_standalone": true
+        },
+        "evidence_sufficiency": "PARTIAL"
+      },
+      "evidence": {
+        "run_id": "554eb12c-b3e6-4360-a1fb-4def1204f026",
+        "evidence": [
+          {
+            "rank": 1,
+            "evidence_id": "knowledge-version:0bd3d961-02de-4f1e-b6d7-6ab5458b093a",
+            "kind": "KNOWLEDGE_VERSION",
+            "source_id": null,
+            "source_snapshot_id": null,
+            "passage_id": null,
+            "knowledge_item_id": "56125485-6b9b-49de-b3b4-31c4218294a4",
+            "knowledge_version_id": "0bd3d961-02de-4f1e-b6d7-6ab5458b093a",
+            "title": "memory.md",
+            "excerpt": "# memory.md  ## 资料摘要  本文是 Signal、Candidate、Review、Revision、Revoke、Control Pack 与 Outcome 的权威设计。Memory 不是聊天存档，也不是 Evidence 的替代品。 Memory 解决的是跨运行复用稳定偏好、约束、工作方式和经审核事实的问题。它的最终产物不是一段永久文本，而是一个可追溯、可版本化、可撤销、按运行类型编译的 Control Pack...",
+            "content_hash": "9eb103e503f9e3f48a5dca99347f251fc89632470382472b3a9c7edf53bd2787",
+            "location": "knowledge-version:0bd3d961-02de-4f1e-b6d7-6ab5458b093a",
+            "fresh_at": "2026-10-14T13:52:06Z",
+            "character_cost": 222
+          },
+          {
+            "rank": 2,
+            "evidence_id": "knowledge-version:9bdaa1f4-7e6e-43a0-8958-c7a794ee9ab7",
+            "kind": "KNOWLEDGE_VERSION",
+            "source_id": null,
+            "source_snapshot_id": null,
+            "passage_id": null,
+            "knowledge_item_id": "cb5d6c01-9613-414e-9926-50546526b793",
+            "knowledge_version_id": "9bdaa1f4-7e6e-43a0-8958-c7a794ee9ab7",
+            "title": "qa-rag.md",
+            "excerpt": "# qa-rag.md  ## 资料摘要  QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样性和上下文预算。 QA 不负责开放式网页研究，不在证据不足时继续搜索到无限步骤，也不把 Memory 偏好当作事实引用。跨来源冲突、复杂多跳和长报告交给 Research；连续阅读和草稿写回交给 Note；页面关系与治理交给 Wiki。...",
+            "content_hash": "301ec3d3d8148de862c94acf3543ceba2bfc869afe77c57e56416415d52e3879",
+            "location": "knowledge-version:9bdaa1f4-7e6e-43a0-8958-c7a794ee9ab7",
+            "fresh_at": "2026-10-14T13:52:06Z",
+            "character_cost": 222
+          },
+          {
+            "rank": 3,
+            "evidence_id": "knowledge-version:edf111b5-dbbf-4f0b-a9cc-2b5dada855aa",
+            "kind": "KNOWLEDGE_VERSION",
+            "source_id": null,
+            "source_snapshot_id": null,
+            "passage_id": null,
+            "knowledge_item_id": "ad580ed8-fec4-434f-98e3-2ae27cc9b9ce",
+            "knowledge_version_id": "edf111b5-dbbf-4f0b-a9cc-2b5dada855aa",
+            "title": "Review",
+            "excerpt": "# Review  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `Review` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[memory.md]]：本文是 Signal、Candidate、Review、Revision、Revoke、Control Pack 与 Outcome 的权威设计。Memory...  ## 关键依据  - 《memo...",
+            "content_hash": "1988c056b4ca9e07fa92b9316e1c619dc03743643ec93e30dc82525cca481ee6",
+            "location": "knowledge-version:edf111b5-dbbf-4f0b-a9cc-2b5dada855aa",
+            "fresh_at": "2026-10-14T13:52:06Z",
+            "character_cost": 222
+          },
+          {
+            "rank": 4,
+            "evidence_id": "knowledge-version:e4ec2a12-c0aa-44ef-ae25-4003c79e47c4",
+            "kind": "KNOWLEDGE_VERSION",
+            "source_id": null,
+            "source_snapshot_id": null,
+            "passage_id": null,
+            "knowledge_item_id": "01d6dbbc-6a4a-46e9-8790-b4f0c9152c40",
+            "knowledge_version_id": "e4ec2a12-c0aa-44ef-ae25-4003c79e47c4",
+            "title": "Weighted RRF",
+            "excerpt": "# Weighted RRF  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `Weighted RRF` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[qa-rag.md]]：QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样...  ## 关...",
+            "content_hash": "18acbfad759c09f50799914badaf7e68950a2d4a93beb507595c420125c1ff98",
+            "location": "knowledge-version:e4ec2a12-c0aa-44ef-ae25-4003c79e47c4",
+            "fresh_at": "2026-10-14T13:52:06Z",
+            "character_cost": 222
+          },
+          {
+            "rank": 5,
+            "evidence_id": "knowledge-version:1b884683-ff4d-47a8-9eca-129d3507e29f",
+            "kind": "KNOWLEDGE_VERSION",
+            "source_id": null,
+            "source_snapshot_id": null,
+            "passage_id": null,
+            "knowledge_item_id": "05205f72-7424-4d28-9e62-cc774a5104aa",
+            "knowledge_version_id": "1b884683-ff4d-47a8-9eca-129d3507e29f",
+            "title": "Wiki Index",
+            "excerpt": "# Wiki Index  ## 工作台概览  - workspace_id: `3d215b8f-e550-43a2-bfbe-818562924aec` - READY 资料数: 3 - 活跃 Wiki 页面数: 11 - 最近触发资料: [[wiki.md]]  ## 治理概览  - 页面总数: 11 - 链接总数: 51 - 已解析链接: 40 - 断链数: 11 - 问题总数: 11 - 可自动修复: 11 - 需人工确认:...",
+            "content_hash": "7572cdb0184f5466160d6a273594809b6291a16e133931474fc16ee585e5b0d4",
+            "location": "knowledge-version:1b884683-ff4d-47a8-9eca-129d3507e29f",
+            "fresh_at": "2026-10-14T13:52:06Z",
+            "character_cost": 222
+          }
+        ],
+        "retrieval_rewrite": {
+          "standalone_query": "为什么 QA 不只用向量检索，Memory 也不用向量库做真源？",
+          "keyword_query": "为什么 QA 不只用向量检索，Memory 也不用向量库做真源？",
+          "method": "RULE",
+          "degradation_reasons": [],
+          "is_standalone": true
+        },
+        "memory_references": [],
+        "evidence_sufficiency": "PARTIAL"
+      },
+      "retrieval_summary": {
+        "retrieval_latency_micros": 2165081,
+        "plan_version": "wiki-page-graph-v1",
+        "selection_policy": "",
+        "candidate_count": 12,
+        "selected_evidence_characters": 1110,
+        "maximum_output_tokens": 1800,
+        "trace_schema_version": "retrieval-execution-trace-v1",
+        "relevance_policy": "",
+        "degraded": true,
+        "admitted_candidate_count": 5,
+        "execution_trace": {
+          "schema_version": "retrieval-execution-trace-v1",
+          "plan_version": "wiki-page-graph-v1",
+          "total_latency_micros": 2165081,
+          "raw_candidate_count": 12,
+          "admitted_candidate_count": 5,
+          "selected_evidence_count": 5,
+          "selected_evidence_characters": 1110,
+          "steps": [
+            {
+              "step_index": 0,
+              "channel": "WIKI_PAGE_GRAPH",
+              "candidate_limit": 5,
+              "raw_candidate_count": 12,
+              "admitted_candidate_count": 5,
+              "latency_micros": 2164986,
+              "degraded": true,
+              "degradation_reasons": [
+                "WIKI_RERANK_UNAVAILABLE"
+              ],
+              "measurements": {
+                "graph_hops_used": 1,
+                "graph_node_limit": 30,
+                "graph_nodes_used": 7,
+                "graph_edge_limit": 60,
+                "graph_edges_used": 7,
+                "graph_character_limit": 4000,
+                "graph_hop_limit": 3,
+                "graph_characters_used": 1554
+              },
+              "ranked_candidates": []
+            }
+          ],
+          "selected_evidence": [
+            {
+              "rank": 1,
+              "evidence_id": "knowledge-version:0bd3d961-02de-4f1e-b6d7-6ab5458b093a",
+              "kind": "KNOWLEDGE_VERSION",
+              "raw_score": 4.0,
+              "fused_score": 4.0,
+              "rerank_score": 4.0,
+              "character_cost": 222
+            },
+            {
+              "rank": 2,
+              "evidence_id": "knowledge-version:9bdaa1f4-7e6e-43a0-8958-c7a794ee9ab7",
+              "kind": "KNOWLEDGE_VERSION",
+              "raw_score": 4.0,
+              "fused_score": 4.0,
+              "rerank_score": 4.0,
+              "character_cost": 222
+            },
+            {
+              "rank": 3,
+              "evidence_id": "knowledge-version:edf111b5-dbbf-4f0b-a9cc-2b5dada855aa",
+              "kind": "KNOWLEDGE_VERSION",
+              "raw_score": 4.0,
+              "fused_score": 4.0,
+              "rerank_score": 4.0,
+              "character_cost": 222
+            },
+            {
+              "rank": 4,
+              "evidence_id": "knowledge-version:e4ec2a12-c0aa-44ef-ae25-4003c79e47c4",
+              "kind": "KNOWLEDGE_VERSION",
+              "raw_score": 4.0,
+              "fused_score": 4.0,
+              "rerank_score": 4.0,
+              "character_cost": 222
+            },
+            {
+              "rank": 5,
+              "evidence_id": "knowledge-version:1b884683-ff4d-47a8-9eca-129d3507e29f",
+              "kind": "KNOWLEDGE_VERSION",
+              "raw_score": 4.0,
+              "fused_score": 4.0,
+              "rerank_score": 4.0,
+              "character_cost": 222
+            }
+          ]
+        },
+        "selected_evidence_count": 5,
+        "strategy_profile": "",
+        "degradation_reasons": [
+          "WIKI_RERANK_UNAVAILABLE"
+        ]
+      },
+      "latency_ms": 15264
+    }
+  ]
+}
