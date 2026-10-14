@@ -323,13 +323,13 @@ class Phase1And2ContractTest {
         assertThat(persistedPlan.path("version").asText()).isEqualTo("qa-weknora-hybrid-v1");
         assertThat(persistedPlan.path("steps").get(0).path("channel").asText())
                 .isEqualTo("QA_PASSAGE");
-        assertThat(persistedPlan.path("budget").path("max_evidence").asInt()).isEqualTo(6);
+        assertThat(persistedPlan.path("budget").path("max_evidence").asInt()).isEqualTo(12);
         assertThat(persistedPlan.path("steps").get(0).path("filters")
                 .path("relevance_policy").asText()).isEqualTo("qa-lexical-sufficiency-v2");
         assertThat(persistedPlan.path("steps").get(0).path("filters")
-                .path("selection_policy").asText()).isEqualTo("qa-source-diverse-budget-v2");
+                .path("selection_policy").asText()).isEqualTo("qa-mmr-token-budget-v3");
         assertThat(persistedPlan.path("steps").get(0).path("filters")
-                .path("strategy_profile").asText()).isEqualTo("qa-weknora-hybrid-v1");
+                .path("strategy_profile").asText()).isEqualTo("qa-hybrid-mmr-token-v3");
         assertThat(persistedBundle.path("schema_version").asText())
                 .isEqualTo("evidence-bundle-snapshot-v1");
         assertThat(persistedBundle.path("evidence").get(0).path("source_snapshot_id").asText())
@@ -348,11 +348,11 @@ class Phase1And2ContractTest {
         assertThat(retrievalSummary.path("trace_schema_version").asText())
                 .isEqualTo("retrieval-execution-trace-v1");
         assertThat(retrievalSummary.path("plan_version").asText()).isEqualTo("qa-weknora-hybrid-v1");
-        assertThat(retrievalSummary.path("strategy_profile").asText()).isEqualTo("qa-weknora-hybrid-v1");
+        assertThat(retrievalSummary.path("strategy_profile").asText()).isEqualTo("qa-hybrid-mmr-token-v3");
         assertThat(retrievalSummary.path("relevance_policy").asText())
                 .isEqualTo("qa-lexical-sufficiency-v2");
         assertThat(retrievalSummary.path("selection_policy").asText())
-                .isEqualTo("qa-source-diverse-budget-v2");
+                .isEqualTo("qa-mmr-token-budget-v3");
         assertThat(retrievalSummary.path("candidate_count").asInt()).isGreaterThanOrEqualTo(1);
         assertThat(retrievalSummary.path("admitted_candidate_count").asInt()).isGreaterThanOrEqualTo(1);
         assertThat(retrievalSummary.path("selected_evidence_count").asInt()).isGreaterThanOrEqualTo(1);

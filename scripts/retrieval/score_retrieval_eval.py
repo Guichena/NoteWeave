@@ -30,9 +30,38 @@ def fact_matches(fact: dict[str, Any], text: str) -> bool:
     return any(all(normalize(term) in text for term in alternative) for alternative in fact["any_of"])
 
 
-def ranked_evidence(record: dict[str, Any]) -> list[dict[str, Any]]:
+def final_evidence(record: dict[str, Any]) -> list[dict[str, Any]]:
+    """最终进入回答上下文的全部证据（条数受预算限制，可能超过 10 条）。"""
     evidence = (record.get("evidence") or {}).get("evidence") or []
-    return sorted(evidence, key=lambda item: item.get("rank", 0))[:TOP_K]
+    return sorted(evidence, key=lambda item: item.get("rank", 0))
+
+
+def ranked_evidence(record: dict[str, Any]) -> list[dict[str, Any]]:
+    return final_evidence(record)[:TOP_K]
+
+
+def ranked_candidates(record: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """证据挑选前的候选排序；旧记录没有这一项时返回 None。"""
+    candidates = record.get("ranked_candidates")
+    if not candidates:
+        return None
+    return sorted(candidates, key=lambda item: item.get("rank", 0))[:TOP_K]
+
+
+def context_metrics(facts: list[dict[str, Any]], evidence: list[dict[str, Any]]) -> dict[str, Any]:
+    """最终证据覆盖了多少要点、条数和其中有用的比例。"""
+    matched: set[int] = set()
+    useful = 0
+    for item in evidence:
+        text = normalize(f"{item.get('title', '')} {item.get('excerpt', '')}")
+        hits = {index for index, fact in enumerate(facts) if fact_matches(fact, text)}
+        matched |= hits
+        useful += 1 if hits else 0
+    return {
+        "context_recall": round(len(matched) / len(facts), 4),
+        "context_count": len(evidence),
+        "context_precision": round(useful / len(evidence), 4) if evidence else 0.0,
+    }
 
 
 def ranking_metrics(facts: list[dict[str, Any]], evidence: list[dict[str, Any]]) -> dict[str, Any]:
@@ -70,7 +99,12 @@ def score_case(case: dict[str, Any], record: dict[str, Any] | None) -> dict[str,
     result["latency_ms"] = record.get("latency_ms")
     result["retrieval_rewrite"] = record.get("retrieval_rewrite")
     if case["facts"]:
-        result.update(ranking_metrics(case["facts"], ranked_evidence(record)))
+        # 排序指标优先按挑选前的候选列表计算；旧记录没有候选排序时退回最终证据
+        candidates = ranked_candidates(record)
+        result["ranking_source"] = "candidates" if candidates is not None else "final_evidence"
+        result.update(ranking_metrics(case["facts"], candidates if candidates is not None
+                                      else ranked_evidence(record)))
+        result.update(context_metrics(case["facts"], final_evidence(record)))
     expected = EXPECTED_SUFFICIENCY.get(case.get("answerability") or "")
     if expected:
         actual = record.get("evidence_sufficiency")
@@ -107,6 +141,9 @@ def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
         "recall_at_10": mean([result["recall_at_10"] for result in ranked]),
         "mrr": mean([result["mrr"] for result in ranked]),
         "ndcg_at_10": mean([result["ndcg_at_10"] for result in ranked]),
+        "context_recall": mean([result["context_recall"] for result in ranked]),
+        "context_precision": mean([result["context_precision"] for result in ranked]),
+        "context_count": mean([float(result["context_count"]) for result in ranked]),
         "latency_p50_ms": percentile(latencies, 0.5),
         "latency_p95_ms": percentile(latencies, 0.95),
     }
@@ -147,14 +184,19 @@ def render_markdown(report: dict[str, Any]) -> str:
         return f"{value:.3f}" if isinstance(value, float) else str(value)
 
     lines = [f"# {report['dataset_key']} 评测报告", "",
-             f"生成时间 {report['generated_at']}；数据集版本 {report['dataset_version']}。", ""]
-    header = "| 分组 | 用例 | 缺失 | Recall@10 | MRR | nDCG@10 | P50 ms | P95 ms | 充分性准确率 |"
+             f"生成时间 {report['generated_at']}；数据集版本 {report['dataset_version']}。", "",
+             "Recall@10、MRR、nDCG@10 按证据挑选前的候选排序计算（旧记录退回最终证据）；"
+             "上下文召回、上下文精确率和平均条数按最终进入回答的证据计算。", ""]
+    header = ("| 分组 | 用例 | 缺失 | Recall@10 | MRR | nDCG@10 | 上下文召回 | 上下文精确率 | 平均条数 "
+              "| P50 ms | P95 ms | 充分性准确率 |")
     for set_name, data in report["sets"].items():
-        lines += [f"## {set_name}", "", header, "|---|---|---|---|---|---|---|---|---|"]
+        lines += [f"## {set_name}", "", header, "|" + "---|" * 12]
         for name, row in [("全部", data["overall"]), *data["by_group"].items()]:
             lines.append(
                 f"| {name} | {row['cases']} | {row['missing_runs']} | {fmt(row['recall_at_10'])} | {fmt(row['mrr'])} | "
-                f"{fmt(row['ndcg_at_10'])} | {fmt(row['latency_p50_ms'])} | {fmt(row['latency_p95_ms'])} | "
+                f"{fmt(row['ndcg_at_10'])} | {fmt(row.get('context_recall'))} | "
+                f"{fmt(row.get('context_precision'))} | {fmt(row.get('context_count'))} | "
+                f"{fmt(row['latency_p50_ms'])} | {fmt(row['latency_p95_ms'])} | "
                 f"{fmt(row.get('sufficiency_accuracy'))} |")
         lines.append("")
     return "\n".join(lines)
@@ -168,6 +210,8 @@ def main(argv: list[str] | None = None) -> int:
     report = score_dataset(dataset, args.runs_dir)
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    if args.runs_dir.resolve() != RUNS_DIR.resolve():
+        stamp += f"-{args.runs_dir.name}"
     (REPORTS_DIR / f"retrieval-{stamp}.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     (REPORTS_DIR / f"retrieval-{stamp}.md").write_text(render_markdown(report), encoding="utf-8")

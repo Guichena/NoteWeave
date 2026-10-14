@@ -111,6 +111,39 @@ class RetrievalEvalTest(unittest.TestCase):
             self.assertIn(f"## {name}", markdown)
         self.assertEqual(20, report["sets"]["first_turn"]["overall"]["missing_runs"])
 
+    def test_ranking_uses_candidates_and_context_uses_final_evidence(self):
+        case = {"case_key": "c", "question_type": "EXACT", "turns": ["q"], "facts": [FACT_A, FACT_B]}
+        record = {
+            **evidence(("QA", "RRF K 60"), ("无关", "别的内容")),
+            "ranked_candidates": [
+                {"rank": 2, "title": "", "excerpt": "缓存 600s"},
+                {"rank": 1, "title": "", "excerpt": "RRF K 60"},
+            ],
+        }
+        result = self.score.score_case(case, record)
+
+        self.assertEqual("candidates", result["ranking_source"])
+        self.assertEqual(1.0, result["recall_at_10"])
+        self.assertEqual(1.0, result["mrr"])
+        self.assertEqual(0.5, result["context_recall"])
+        self.assertEqual(0.5, result["context_precision"])
+        self.assertEqual(2, result["context_count"])
+
+    def test_old_records_without_candidates_fall_back_to_final_evidence(self):
+        case = {"case_key": "o", "question_type": "EXACT", "turns": ["q"], "facts": [FACT_A]}
+        result = self.score.score_case(case, evidence(("无关", "x"), ("QA", "RRF K 60")))
+        self.assertEqual("final_evidence", result["ranking_source"])
+        self.assertEqual(0.5, result["mrr"])
+
+    def test_runner_collects_ranked_candidates_from_every_step(self):
+        summary = {"execution_trace": {"steps": [
+            {"ranked_candidates": [{"rank": 1, "excerpt": "a"}]},
+            {"ranked_candidates": [{"rank": 1, "excerpt": "b"}]},
+            {},
+        ]}}
+        self.assertEqual(["a", "b"], [item["excerpt"] for item in self.runner.ranked_candidates(summary)])
+        self.assertEqual([], self.runner.ranked_candidates({"unavailable": "x"}))
+
     def test_runner_rejects_unknown_set(self):
         with self.assertRaises(self.runner.EvalRunError):
             self.runner.selected_sets(self.dataset, {"nope"})

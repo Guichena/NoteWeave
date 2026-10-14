@@ -18,8 +18,22 @@ public enum QaRetrievalStrategyProfile {
             QaEvidenceSelectionPolicy.POLICY_VERSION,
             QaEvidenceSelectionPolicy.DEFAULT_BUNDLE_EVIDENCE_LIMIT,
             QaEvidenceSelectionPolicy.DEFAULT_BUNDLE_CHARACTER_LIMIT,
+            0,
+            true
+    ),
+    /** 新建问答使用 V3；V2 只用于解析和重放历史计划。 */
+    V3(
+            "qa-hybrid-mmr-token-v3",
+            "qa-weknora-hybrid-v1",
+            QaEvidenceRelevancePolicy.POLICY_VERSION_V2,
+            QaEvidenceSelectionPolicy.POLICY_VERSION_V3,
+            QaEvidenceSelectionPolicy.V3_MAX_EVIDENCE,
+            QaEvidenceSelectionPolicy.V3_BUNDLE_CHARACTER_CEILING,
+            QaEvidenceSelectionPolicy.V3_EVIDENCE_TOKEN_BUDGET,
             true
     );
+
+    public static final QaRetrievalStrategyProfile CURRENT = V3;
 
     public static final String CHANNEL = "QA_PASSAGE";
     public static final int CANDIDATE_LIMIT = 12;
@@ -55,6 +69,7 @@ public enum QaRetrievalStrategyProfile {
     public static final String FILTER_KEYWORD_WEIGHT = "keyword_weight";
     public static final String FILTER_VECTOR_THRESHOLD = "vector_threshold";
     public static final String FILTER_KEYWORD_THRESHOLD = "keyword_threshold";
+    public static final String FILTER_EVIDENCE_TOKEN_BUDGET = "evidence_token_budget";
 
     private final String profileVersion;
     private final String planVersion;
@@ -62,6 +77,7 @@ public enum QaRetrievalStrategyProfile {
     private final String selectionPolicyVersion;
     private final int maxEvidence;
     private final int maxEvidenceCharacters;
+    private final int evidenceTokenBudget;
     private final boolean v2Enabled;
 
     QaRetrievalStrategyProfile(
@@ -71,6 +87,7 @@ public enum QaRetrievalStrategyProfile {
             String selectionPolicyVersion,
             int maxEvidence,
             int maxEvidenceCharacters,
+            int evidenceTokenBudget,
             boolean v2Enabled
     ) {
         this.profileVersion = profileVersion;
@@ -79,6 +96,7 @@ public enum QaRetrievalStrategyProfile {
         this.selectionPolicyVersion = selectionPolicyVersion;
         this.maxEvidence = maxEvidence;
         this.maxEvidenceCharacters = maxEvidenceCharacters;
+        this.evidenceTokenBudget = evidenceTokenBudget;
         this.v2Enabled = v2Enabled;
     }
 
@@ -104,6 +122,15 @@ public enum QaRetrievalStrategyProfile {
 
     public int maxEvidenceCharacters() {
         return maxEvidenceCharacters;
+    }
+
+    /** 证据 token 预算；0 表示沿用 V2 的条数加字符预算。 */
+    public int evidenceTokenBudget() {
+        return evidenceTokenBudget;
+    }
+
+    public boolean usesTokenBudget() {
+        return evidenceTokenBudget > 0;
     }
 
     public boolean v2Enabled() {
@@ -148,7 +175,9 @@ public enum QaRetrievalStrategyProfile {
                 && selectionPolicyVersion.equals(filters.get(FILTER_SELECTION_POLICY))
                 && Boolean.toString(v2Enabled).equals(filters.get(FILTER_V2_ENABLED))
                 && plan.budget().maxEvidence() == maxEvidence
-                && plan.budget().maxEvidenceCharacters() == maxEvidenceCharacters;
+                && plan.budget().maxEvidenceCharacters() == maxEvidenceCharacters
+                && (evidenceTokenBudget <= 0 || Integer.toString(evidenceTokenBudget)
+                        .equals(filters.get(FILTER_EVIDENCE_TOKEN_BUDGET)));
     }
 
     private static IllegalArgumentException unsupportedPlan() {

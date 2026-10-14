@@ -25,7 +25,7 @@ class QaPassageEvidenceRetrieverTest {
         QaPassageRetriever passageRetriever = mock(QaPassageRetriever.class);
         when(passageRetriever.retrieveWithDiagnostics(
                 "workspace", "query", Set.of("source"),
-                QaRetrievalStrategyProfile.V2)).thenReturn(new RetrievalResult(List.of(
+                QaRetrievalStrategyProfile.CURRENT)).thenReturn(new RetrievalResult(List.of(
                 new RetrievedChunk(
                         "chunk", "source", "snapshot", 3, "Report", "content",
                         "chunk:3", "MARKDOWN", "research_agent", "run-1",
@@ -56,13 +56,13 @@ class QaPassageEvidenceRetrieverTest {
                 .containsEntry("match_reason", "fulltext:bm25, source-diversity");
         assertThat(result.degraded()).isFalse();
         assertThat(result.metadata())
-                .containsEntry("strategy_profile", "qa-weknora-hybrid-v1")
+                .containsEntry("strategy_profile", "qa-hybrid-mmr-token-v3")
                 .containsEntry("relevance_policy", "qa-lexical-sufficiency-v2")
-                .containsEntry("selection_policy", "qa-source-diverse-budget-v2");
+                .containsEntry("selection_policy", "qa-mmr-token-budget-v3");
         assertThat(result.measurements()).containsEntry("mysql_fallback_used", 0L);
         verify(passageRetriever).retrieveWithDiagnostics(
                 "workspace", "query", Set.of("source"),
-                QaRetrievalStrategyProfile.V2);
+                QaRetrievalStrategyProfile.CURRENT);
     }
 
     @Test
@@ -70,7 +70,7 @@ class QaPassageEvidenceRetrieverTest {
         QaPassageRetriever passageRetriever = mock(QaPassageRetriever.class);
         when(passageRetriever.retrieveWithDiagnostics(
                 "workspace", "query", Set.of(),
-                QaRetrievalStrategyProfile.V2)).thenReturn(new RetrievalResult(
+                QaRetrievalStrategyProfile.CURRENT)).thenReturn(new RetrievalResult(
                 List.of(),
                 true,
                 List.of("qa_primary_search_error", "qa_mysql_fallback"),
@@ -97,7 +97,7 @@ class QaPassageEvidenceRetrieverTest {
         QaPassageRetriever passageRetriever = mock(QaPassageRetriever.class);
         when(passageRetriever.retrieveWithDiagnostics(
                 "workspace", "query", Set.of(),
-                QaRetrievalStrategyProfile.V2)).thenReturn(new RetrievalResult(
+                QaRetrievalStrategyProfile.CURRENT)).thenReturn(new RetrievalResult(
                 List.of(), false, List.of(), Map.of("strategy_v2_enabled", 1L)));
         QaPassageEvidenceRetriever retriever =
                 new QaPassageEvidenceRetriever(passageRetriever);
@@ -110,13 +110,13 @@ class QaPassageEvidenceRetrieverTest {
         var result = retriever.retrieve(context, plan, plan.steps().get(0));
 
         assertThat(result.metadata())
-                .containsEntry("strategy_profile", "qa-weknora-hybrid-v1")
+                .containsEntry("strategy_profile", "qa-hybrid-mmr-token-v3")
                 .containsEntry("relevance_policy", "qa-lexical-sufficiency-v2")
-                .containsEntry("selection_policy", "qa-source-diverse-budget-v2");
+                .containsEntry("selection_policy", "qa-mmr-token-budget-v3");
         assertThat(result.measurements()).containsEntry("strategy_v2_enabled", 1L);
         verify(passageRetriever).retrieveWithDiagnostics(
                 "workspace", "query", Set.of(),
-                QaRetrievalStrategyProfile.V2);
+                QaRetrievalStrategyProfile.CURRENT);
     }
 
     @Test

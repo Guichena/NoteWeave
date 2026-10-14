@@ -36,7 +36,7 @@ public class QaAnswerModeStrategy implements AnswerModeStrategy {
 
     @Override
     public RetrievalPlan plan(AnswerContext context) {
-        QaRetrievalStrategyProfile profile = QaRetrievalStrategyProfile.V2;
+        QaRetrievalStrategyProfile profile = QaRetrievalStrategyProfile.CURRENT;
         Map<String, String> filters = new LinkedHashMap<>();
         filters.put("workspace_id", context.workspaceId());
         filters.put("snapshot_status", "ACTIVE");
@@ -79,6 +79,10 @@ public class QaAnswerModeStrategy implements AnswerModeStrategy {
                 Double.toString(QaRetrievalStrategyProfile.VECTOR_THRESHOLD));
         filters.put(QaRetrievalStrategyProfile.FILTER_KEYWORD_THRESHOLD,
                 Double.toString(QaRetrievalStrategyProfile.KEYWORD_THRESHOLD));
+        if (profile.usesTokenBudget()) {
+            filters.put(QaRetrievalStrategyProfile.FILTER_EVIDENCE_TOKEN_BUDGET,
+                    Integer.toString(profile.evidenceTokenBudget()));
+        }
         if (!context.sourceScope().isEmpty()) {
             filters.put("source_ids", String.join(",", context.sourceScope().stream().sorted().toList()));
         }

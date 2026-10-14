@@ -33,7 +33,8 @@ public class EvidenceSufficiencyJudge {
     static final double INSUFFICIENT_BELOW = 0.15d;
     private static final double WIKI_SCORE_SCALE = 100.0d;
     private static final int OUTPUT_TOKENS = 200;
-    private static final int EXCERPT_LIMIT = 400;
+    /** 每条证据给判定模型看的命中段落长度上限。 */
+    private static final int EXCERPT_LIMIT = 800;
     private static final Set<String> VERDICTS = Set.of("SUFFICIENT", "PARTIAL", "INSUFFICIENT");
 
     private static final String SYSTEM_PROMPT = """
@@ -190,11 +191,32 @@ public class EvidenceSufficiencyJudge {
     }
 
     private static String trim(String value) {
-        String text = value == null ? "" : value.trim();
+        String text = hitText(value);
         if (text.length() <= EXCERPT_LIMIT) {
             return text;
         }
         return text.substring(0, EXCERPT_LIMIT);
+    }
+
+    /**
+     * QA 证据正文在命中段落前后拼有相邻段落。只截取开头时，看到的大多是前一段，
+     * 命中段落反而被截掉，所以先去掉前后的相邻段落块；只剩相邻段落时退回原文。
+     */
+    static String hitText(String value) {
+        String original = value == null ? "" : value.trim();
+        String text = original;
+        while (text.startsWith(QaHybridRetriever.ADJACENT_MARKER)) {
+            int end = text.indexOf("\n\n");
+            if (end < 0) {
+                return original;
+            }
+            text = text.substring(end + 2).trim();
+        }
+        int next = text.indexOf("\n\n" + QaHybridRetriever.ADJACENT_MARKER);
+        if (next >= 0) {
+            text = text.substring(0, next).trim();
+        }
+        return text.isEmpty() ? original : text;
     }
 
     private static String text(String value) {

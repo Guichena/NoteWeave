@@ -115,6 +115,32 @@ def wiki_stable(client: ApiClient, workspace_id: str, last: dict[str, int]) -> b
     return stable
 
 
+def fetch_retrieval_summary(client: ApiClient, workspace_id: str, run_id: str) -> dict[str, Any]:
+    """从回答事件流里读出 retrieval.summary，其中的 execution_trace 带有挑选前的候选排序。
+
+    回答结束后事件流会先重放已存储的事件再关闭，读到该事件即可返回。
+    """
+    path = f"/api/v2/workspaces/{workspace_id}/answer-runs/{run_id}/events"
+    request = urllib.request.Request(client.base_url + path, headers={
+        "Accept": "text/event-stream", "Authorization": f"Bearer {client.token}"})
+    event_name, data_lines = "", []
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            for raw in response:
+                line = raw.decode("utf-8").rstrip("\r\n")
+                if line.startswith("event:"):
+                    event_name = line[6:].strip()
+                elif line.startswith("data:"):
+                    data_lines.append(line[5:].lstrip())
+                elif not line:
+                    if event_name == "retrieval.summary" and data_lines:
+                        return json.loads("\n".join(data_lines))
+                    event_name, data_lines = "", []
+    except (urllib.error.URLError, TimeoutError, ValueError) as error:
+        return {"unavailable": str(error)}
+    return {"unavailable": "retrieval.summary not found"}
+
+
 def ask(client: ApiClient, workspace_id: str, conversation_id: str, content: str, mode: str,
         source_ids: list[str], timeout_seconds: int, poll_seconds: int) -> dict[str, Any]:
     started = time.monotonic()
@@ -135,7 +161,17 @@ def ask(client: ApiClient, workspace_id: str, conversation_id: str, content: str
         evidence = client.request("GET", f"/api/v2/workspaces/{workspace_id}/answer-runs/{run_id}/evidence")
     except EvalRunError as error:
         evidence = {"unavailable": str(error)}
-    return {"run_id": run_id, "receipt": receipt, "run": run, "evidence": evidence, "latency_ms": latency_ms}
+    summary = fetch_retrieval_summary(client, workspace_id, run_id)
+    return {"run_id": run_id, "receipt": receipt, "run": run, "evidence": evidence,
+            "retrieval_summary": summary, "latency_ms": latency_ms}
+
+
+def ranked_candidates(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    steps = ((summary.get("execution_trace") or {}).get("steps")) or []
+    candidates: list[dict[str, Any]] = []
+    for step in steps:
+        candidates.extend(step.get("ranked_candidates") or [])
+    return candidates
 
 
 def run_case(client: ApiClient, workspace_id: str, set_name: str, mode: str, case: dict[str, Any],
@@ -157,6 +193,8 @@ def run_case(client: ApiClient, workspace_id: str, set_name: str, mode: str, cas
         "final_status": last["run"].get("status"),
         "latency_ms": last["latency_ms"],
         "evidence": last["evidence"],
+        "ranked_candidates": ranked_candidates(last.get("retrieval_summary") or {}),
+        "selection_policy": (last.get("retrieval_summary") or {}).get("selection_policy"),
         "retrieval_rewrite": field("retrieval_rewrite"),
         "evidence_sufficiency": field("evidence_sufficiency"),
         "retrieval_degraded": last["receipt"].get("retrieval_degraded"),

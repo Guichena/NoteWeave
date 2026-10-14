@@ -170,6 +170,17 @@ class EvidenceSufficiencyJudgeTest {
         return EvidenceSufficiencyJudge.combine(verdict, List.of(evidence));
     }
 
+    @Test
+    void judgeReadsTheHitPassageInsteadOfTheLeadingAdjacentContext() {
+        String content = "[adjacent chunk 3 - 背景]\n" + "前".repeat(300) + "\n\n命中段落：RRF K 取 60"
+                + "\n\n[adjacent chunk 5]\n后续内容";
+
+        assertThat(EvidenceSufficiencyJudge.hitText(content)).isEqualTo("命中段落：RRF K 取 60");
+        assertThat(EvidenceSufficiencyJudge.hitText("没有相邻段落\n\n第二段")).isEqualTo("没有相邻段落\n\n第二段");
+        assertThat(EvidenceSufficiencyJudge.hitText("[adjacent chunk 1]\n只有相邻段落"))
+                .isEqualTo("[adjacent chunk 1]\n只有相邻段落");
+    }
+
     private EvidenceSufficiencyJudge judge(ChatLlmClient llm, boolean enabled) {
         return new EvidenceSufficiencyJudge(llm, objectMapper, enabled);
     }

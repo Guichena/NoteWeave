@@ -122,7 +122,8 @@ public class RetrievalOrchestrator {
                     toMicros(latencyNanos),
                     result.degraded(),
                     result.degradationReasons(),
-                    result.measurements()
+                    result.measurements(),
+                    result.rankedCandidates()
             ));
             recordStepMetrics(
                     plan.version(), step.channel(), latencyNanos,

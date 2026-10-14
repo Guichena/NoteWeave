@@ -54,7 +54,8 @@ public class QaPassageEvidenceRetriever implements EvidenceRetriever {
                         "selection_policy", profile.selectionPolicyVersion()),
                 retrieval.degraded(),
                 retrieval.degradationReasons(),
-                retrieval.measurements()
+                retrieval.measurements(),
+                retrieval.rankedCandidates()
         );
     }
 
