@@ -228,3 +228,12 @@ Java 端的状态治理（单元格版本、Fencing、预算预留、Replan 审�
 - 重复计划摘要增加查询用途字段，排除查询历史、降级记录和反证计数，防止运行记账不断变化导致重复计划保护失效。查询预算为 0 时不发查询，也不生成种子命中。
 - 验证：Worker 758 项通过（新增 28 项回归）；Backend 全部 265 个测试类、1312 项已核对，1301 项通过、11 项既有跳过，无失败、错误、遗漏或陈旧报告；Frontend 320 项通过，`tsc -b` 与 `ui:check` 通过。评测脚本 17 项测试通过，20 题数据集试运行清单完整。旧测试改为检查结构化用途与真实判定；抽取夹具显式指定研究类型，预算耗尽断言按列数计算。
 - 模块一真实质量对比尚未运行：本机没有评测账号环境变量，评测接口未监听。`experiments/deep-research/upgrade-1f/evaluation-readiness.json` 保存冻结数据集摘要、20 题清单、运行条件及 `NOT_RUN` 原因，不填模拟质量分数。旧基线使用不同数据集，仍需在同一冻结数据集上补跑改造前后两组。真实模型、真实外部检索与完整服务栈的验证继续待补。
+
+### 搜索代理 MCP 接入（2026-10-14，Claude）
+
+- 背景：Serper 直连账户额度用尽，Jina 与 Wikipedia 在本机容器内无法直连，E1 冒烟中深挖单元全部为 `NO_SUPPORTED_CANDIDATE`。用户提供了搜索代理 MCP 服务（Streamable HTTP，Bearer 鉴权），可调用 Serper、Tavily、Exa；按用户决定只用 Serper 与 Tavily。
+- 新增 `app/mcp_search_client.py`：只用标准库，经 `credential_safe_urlopen` 发送 JSON-RPC，拒绝重定向；初始化一次并复用会话，会话过期时重新初始化一次。工具返回 `isError` 时按文本判断是否可重试（429、5xx、容量不足）。
+- 搜索：链路新增 `serper_mcp`（`search_proxy_serper_search`，支持翻页）与 `tavily_mcp`（`search_proxy_tavily_search`，只取第一页），结果字段沿用现有映射。本机配置 `NOTEWEAVE_RESEARCH_SEARCH_PROVIDER_CHAIN=serper_mcp,tavily_mcp`。
+- 正文读取：配置了 MCP 地址与密钥时，`TavilyMcpUrlSnapshotTransport`（`search_proxy_tavily_extract`）排在 Jina 和直接抓取之前。目标地址仍先做公网校验，正文按查询挑选相关段落，状态记为 `FETCHED`、方法 `TAVILY_EXTRACT`；失败时回退到后续读取方式或搜索摘要。
+- 配置：`NOTEWEAVE_RESEARCH_MCP_SEARCH_URL`、`NOTEWEAVE_RESEARCH_MCP_SEARCH_API_KEY`，Compose 透传，`.env.example` 留空。未配置时行为不变。
+- 验证：新增 9 项测试（协议与会话、可重试错误、两种搜索的参数与翻页、链路构造、正文读取成功、失败回退、私网地址拦截），Research Worker 全部 767 项通过；真实服务上 Serper、Tavily 各返回 5 条结果，Tavily Extract 读到 MySQL 官方文档正文。Exa 测试时返回 503 容量不足，未接入。

@@ -13,6 +13,13 @@ import urllib.request
 from typing import Protocol
 
 from app.http_security import credential_safe_urlopen
+from app.mcp_search_client import (
+    SERPER_SEARCH_TOOL,
+    TAVILY_SEARCH_TOOL,
+    McpSearchClient,
+    McpToolError,
+    default_mcp_search_client,
+)
 from app.models import ResearchPlan, ResearchSearchHit, ResearchTaskInput
 from app.query_specs import find_query_spec
 from app.search import run_seed_source_search
@@ -158,6 +165,50 @@ class HttpJsonSearchTransport:
         if self.provider_name.lower() == "serper":
             payload["page"] = max(1, page)
         return payload
+
+
+class McpSearchTransport:
+    """经搜索代理 MCP 服务调用 Serper 或 Tavily。
+
+    Serper 支持翻页；Tavily 没有翻页参数，只返回第一页。
+    """
+
+    TOOLS = {"serper_mcp": SERPER_SEARCH_TOOL, "tavily_mcp": TAVILY_SEARCH_TOOL}
+
+    def __init__(self, provider_name: str, client: McpSearchClient, max_retries: int = 3) -> None:
+        self.provider_name = provider_name.strip().lower()
+        if self.provider_name not in self.TOOLS:
+            raise ValueError(f"unsupported MCP search provider: {provider_name}")
+        self.client = client
+        self.max_retries = max(1, max_retries)
+        self.last_attempt_count = 0
+
+    def search(self, query: str, limit: int, page: int = 1) -> list[dict[str, object]]:
+        if limit <= 0:
+            return []
+        if self.provider_name == "tavily_mcp":
+            if page > 1:
+                return []
+            arguments: dict[str, object] = {"query": query, "max_results": min(limit, 20)}
+        else:
+            arguments = {"q": query, "num": limit, "page": max(1, page), "autocorrect": False}
+        self.last_attempt_count = 0
+        for attempt in range(1, self.max_retries + 1):
+            self.last_attempt_count = attempt
+            try:
+                data = self.client.call_tool(self.TOOLS[self.provider_name], arguments)
+                return _extract_raw_results(data, limit)
+            except McpToolError as error:
+                if not error.retryable:
+                    break
+            except urllib.error.HTTPError as error:
+                if not _is_retryable_search_http_status(error.code):
+                    break
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError):
+                pass
+            if attempt < self.max_retries:
+                time.sleep(min(2 ** (attempt - 1), 4))
+        return []
 
 
 class HttpGetSearchTransport:
@@ -936,6 +987,17 @@ def _build_external_search_adapters() -> list[ExternalSearchAdapter]:
     adapters: list[ExternalSearchAdapter] = []
     authenticated_provider_index = 0
     for provider_name in provider_chain:
+        if provider_name.lower() in McpSearchTransport.TOOLS:
+            client = default_mcp_search_client()
+            if client is None:
+                continue
+            adapters.append(ExternalSearchAdapter(
+                provider_name=provider_name.lower(),
+                transport=McpSearchTransport(provider_name, client),
+                max_provider_pages=_max_provider_pages(),
+                requires_api_key=False,
+            ))
+            continue
         if provider_name.lower() in {"wikipedia", "mediawiki"}:
             if os.getenv("NOTEWEAVE_RESEARCH_PUBLIC_SEARCH_ENABLED", "").strip().lower() not in {
                 "1", "true", "yes", "on"

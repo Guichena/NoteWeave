@@ -25,7 +25,8 @@ public final class QaEvidenceSelectionPolicy {
      * 条数上限只作兜底，实际条数由预算决定；字符上限是防止估算偏差的硬性保护，正常情况下不会触发。
      */
     public static final String POLICY_VERSION_V3 = "qa-mmr-token-budget-v3";
-    public static final int V3_MAX_EVIDENCE = 12;
+    /** 平均每条约 350 token，8000 token 约可放 20 条；上限取 20，让预算决定大多数情况下的条数。 */
+    public static final int V3_MAX_EVIDENCE = 20;
     public static final int V3_EVIDENCE_TOKEN_BUDGET = 8_000;
     public static final int V3_BUNDLE_CHARACTER_CEILING = 32_000;
     /** MMR 中相关度的权重，其余部分用于惩罚与已选证据的重复。 */

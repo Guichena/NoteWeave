@@ -371,6 +371,9 @@ services:
       NOTEWEAVE_RESEARCH_ENABLE_URL_READER: ${NOTEWEAVE_RESEARCH_ENABLE_URL_READER:-false}
       NOTEWEAVE_RESEARCH_JINA_API_KEY: ${NOTEWEAVE_RESEARCH_JINA_API_KEY:-}
       NOTEWEAVE_RESEARCH_JINA_BASE_URL: ${NOTEWEAVE_RESEARCH_JINA_BASE_URL:-https://r.jina.ai/}
+      # 搜索代理 MCP 服务：链路里写 serper_mcp、tavily_mcp 时用于搜索，配置后网页正文优先用 Tavily Extract 读取
+      NOTEWEAVE_RESEARCH_MCP_SEARCH_URL: ${NOTEWEAVE_RESEARCH_MCP_SEARCH_URL:-}
+      NOTEWEAVE_RESEARCH_MCP_SEARCH_API_KEY: ${NOTEWEAVE_RESEARCH_MCP_SEARCH_API_KEY:-}
       # Docker Desktop may expose public DNS through its RFC 2544 synthetic
       # address pool. The worker still rejects literal/private targets.
       NOTEWEAVE_ALLOW_DOCKER_SYNTHETIC_DNS: ${NOTEWEAVE_ALLOW_DOCKER_SYNTHETIC_DNS:-true}

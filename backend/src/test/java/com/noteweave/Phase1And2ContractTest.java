@@ -323,7 +323,7 @@ class Phase1And2ContractTest {
         assertThat(persistedPlan.path("version").asText()).isEqualTo("qa-weknora-hybrid-v1");
         assertThat(persistedPlan.path("steps").get(0).path("channel").asText())
                 .isEqualTo("QA_PASSAGE");
-        assertThat(persistedPlan.path("budget").path("max_evidence").asInt()).isEqualTo(12);
+        assertThat(persistedPlan.path("budget").path("max_evidence").asInt()).isEqualTo(20);
         assertThat(persistedPlan.path("steps").get(0).path("filters")
                 .path("relevance_policy").asText()).isEqualTo("qa-lexical-sufficiency-v2");
         assertThat(persistedPlan.path("steps").get(0).path("filters")

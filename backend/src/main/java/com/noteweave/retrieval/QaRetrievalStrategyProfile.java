@@ -19,6 +19,7 @@ public enum QaRetrievalStrategyProfile {
             QaEvidenceSelectionPolicy.DEFAULT_BUNDLE_EVIDENCE_LIMIT,
             QaEvidenceSelectionPolicy.DEFAULT_BUNDLE_CHARACTER_LIMIT,
             0,
+            QaRetrievalStrategyProfile.CANDIDATE_LIMIT,
             true
     ),
     /** 新建问答使用 V3；V2 只用于解析和重放历史计划。 */
@@ -30,6 +31,7 @@ public enum QaRetrievalStrategyProfile {
             QaEvidenceSelectionPolicy.V3_MAX_EVIDENCE,
             QaEvidenceSelectionPolicy.V3_BUNDLE_CHARACTER_CEILING,
             QaEvidenceSelectionPolicy.V3_EVIDENCE_TOKEN_BUDGET,
+            QaEvidenceSelectionPolicy.V3_MAX_EVIDENCE,
             true
     );
 
@@ -78,6 +80,7 @@ public enum QaRetrievalStrategyProfile {
     private final int maxEvidence;
     private final int maxEvidenceCharacters;
     private final int evidenceTokenBudget;
+    private final int stepCandidateLimit;
     private final boolean v2Enabled;
 
     QaRetrievalStrategyProfile(
@@ -88,6 +91,7 @@ public enum QaRetrievalStrategyProfile {
             int maxEvidence,
             int maxEvidenceCharacters,
             int evidenceTokenBudget,
+            int stepCandidateLimit,
             boolean v2Enabled
     ) {
         this.profileVersion = profileVersion;
@@ -97,6 +101,7 @@ public enum QaRetrievalStrategyProfile {
         this.maxEvidence = maxEvidence;
         this.maxEvidenceCharacters = maxEvidenceCharacters;
         this.evidenceTokenBudget = evidenceTokenBudget;
+        this.stepCandidateLimit = stepCandidateLimit;
         this.v2Enabled = v2Enabled;
     }
 
@@ -129,6 +134,11 @@ public enum QaRetrievalStrategyProfile {
         return evidenceTokenBudget;
     }
 
+    /** 检索步交给编排器的候选上限；V2 为 12，V3 与证据条数上限一致。 */
+    public int stepCandidateLimit() {
+        return stepCandidateLimit;
+    }
+
     public boolean usesTokenBudget() {
         return evidenceTokenBudget > 0;
     }
@@ -147,7 +157,6 @@ public enum QaRetrievalStrategyProfile {
                 || plan.steps().size() != 1
                 || !step.equals(plan.steps().get(0))
                 || !CHANNEL.equals(step.channel())
-                || step.candidateLimit() != CANDIDATE_LIMIT
                 || Double.compare(step.weight(), STEP_WEIGHT) != 0
                 || plan.budget() == null
                 || plan.budget().maxGraphHops() != 0
@@ -161,15 +170,16 @@ public enum QaRetrievalStrategyProfile {
             throw unsupportedPlan();
         }
         for (QaRetrievalStrategyProfile profile : values()) {
-            if (profile.matches(plan, filters)) {
+            if (profile.matches(plan, step, filters)) {
                 return profile;
             }
         }
         throw unsupportedPlan();
     }
 
-    private boolean matches(RetrievalPlan plan, Map<String, String> filters) {
+    private boolean matches(RetrievalPlan plan, RetrievalPlan.Step step, Map<String, String> filters) {
         return planVersion.equals(plan.version())
+                && step.candidateLimit() == stepCandidateLimit
                 && profileVersion.equals(filters.get(FILTER_PROFILE))
                 && relevancePolicyVersion.equals(filters.get(FILTER_RELEVANCE_POLICY))
                 && selectionPolicyVersion.equals(filters.get(FILTER_SELECTION_POLICY))

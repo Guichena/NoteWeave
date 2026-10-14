@@ -23,7 +23,21 @@ class QaRetrievalStrategyProfileV3Test {
                 .isEqualTo(QaRetrievalStrategyProfile.V3);
         assertThat(plan.steps().get(0).filters())
                 .containsEntry(QaRetrievalStrategyProfile.FILTER_EVIDENCE_TOKEN_BUDGET, "8000");
-        assertThat(plan.budget().maxEvidence()).isEqualTo(12);
+        assertThat(plan.budget().maxEvidence()).isEqualTo(20);
+        assertThat(plan.steps().get(0).candidateLimit()).isEqualTo(20);
+    }
+
+    @Test
+    void v3PlanWithTheV2CandidateLimitIsRejected() {
+        RetrievalPlan current = newPlan();
+        RetrievalPlan.Step step = new RetrievalPlan.Step(
+                current.steps().get(0).channel(), QaRetrievalStrategyProfile.CANDIDATE_LIMIT,
+                current.steps().get(0).weight(), current.steps().get(0).filters());
+        RetrievalPlan mismatched = new RetrievalPlan(current.version(), current.mode(),
+                java.util.List.of(step), current.budget());
+
+        assertThatThrownBy(() -> QaRetrievalStrategyProfile.fromPlan(mismatched, step))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -34,7 +48,7 @@ class QaRetrievalStrategyProfileV3Test {
         filters.put(QaRetrievalStrategyProfile.FILTER_SELECTION_POLICY, "qa-source-diverse-budget-v2");
         filters.remove(QaRetrievalStrategyProfile.FILTER_EVIDENCE_TOKEN_BUDGET);
         RetrievalPlan.Step step = new RetrievalPlan.Step(
-                current.steps().get(0).channel(), current.steps().get(0).candidateLimit(),
+                current.steps().get(0).channel(), QaRetrievalStrategyProfile.CANDIDATE_LIMIT,
                 current.steps().get(0).weight(), filters);
         RetrievalPlan legacy = new RetrievalPlan(current.version(), current.mode(),
                 java.util.List.of(step), new RetrievalPlan.Budget(6, 8_000, 0, 0));

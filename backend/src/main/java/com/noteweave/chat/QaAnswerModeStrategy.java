@@ -92,7 +92,7 @@ public class QaAnswerModeStrategy implements AnswerModeStrategy {
                 AnswerMode.QA,
                 List.of(new RetrievalPlan.Step(
                         QaPassageEvidenceRetriever.CHANNEL,
-                        QaRetrievalStrategyProfile.CANDIDATE_LIMIT,
+                        profile.stepCandidateLimit(),
                         QaRetrievalStrategyProfile.STEP_WEIGHT,
                         filters
                 )),

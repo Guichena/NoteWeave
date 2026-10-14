@@ -44,7 +44,7 @@ class QaAnswerModeStrategyTest {
                 .containsEntry("vector_weight", "0.7")
                 .containsEntry("keyword_weight", "0.3")
                 .containsEntry("source_ids", "source-a,source-b"));
-        assertThat(plan.budget().maxEvidence()).isEqualTo(12);
+        assertThat(plan.budget().maxEvidence()).isEqualTo(20);
         assertThat(plan.budget().maxEvidenceCharacters()).isEqualTo(32_000);
         assertThat(prompt.userPrompt()).contains("内部检索边界：用户显式选择的 2 份资料。不要在回答中提及。");
     }
@@ -116,7 +116,7 @@ class QaAnswerModeStrategyTest {
                 .containsEntry("relevance_policy", "qa-lexical-sufficiency-v2")
                 .containsEntry("selection_policy", "qa-mmr-token-budget-v3")
                 .containsEntry("strategy_v2_enabled", "true"));
-        assertThat(plan.budget().maxEvidence()).isEqualTo(12);
+        assertThat(plan.budget().maxEvidence()).isEqualTo(20);
         assertThat(plan.budget().maxEvidenceCharacters()).isEqualTo(32_000);
         assertThat(prompt.promptVersion()).isEqualTo(QaAnswerModeStrategy.V2_PLAN_VERSION);
         assertThat(prompt.refusal()).isTrue();
