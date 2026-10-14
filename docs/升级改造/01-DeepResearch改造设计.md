@@ -237,3 +237,10 @@ Java 端的状态治理（单元格版本、Fencing、预算预留、Replan 审�
 - 正文读取：配置了 MCP 地址与密钥时，`TavilyMcpUrlSnapshotTransport`（`search_proxy_tavily_extract`）排在 Jina 和直接抓取之前。目标地址仍先做公网校验，正文按查询挑选相关段落，状态记为 `FETCHED`、方法 `TAVILY_EXTRACT`；失败时回退到后续读取方式或搜索摘要。
 - 配置：`NOTEWEAVE_RESEARCH_MCP_SEARCH_URL`、`NOTEWEAVE_RESEARCH_MCP_SEARCH_API_KEY`，Compose 透传，`.env.example` 留空。未配置时行为不变。
 - 验证：新增 9 项测试（协议与会话、可重试错误、两种搜索的参数与翻页、链路构造、正文读取成功、失败回退、私网地址拦截），Research Worker 全部 767 项通过；真实服务上 Serper、Tavily 各返回 5 条结果，Tavily Extract 读到 MySQL 官方文档正文。Exa 测试时返回 503 容量不足，未接入。
+
+### 搜索渠道全部不可用时立即失败（2026-10-14，Claude）
+
+- 背景：E1 冒烟时搜索代理额度用尽，每次调用返回 HTTP 402。搜索静默返回空结果，研究继续跑约 40 分钟，最终给出证据不足的报告，掩盖了真实原因。
+- 搜索渠道把额度用尽（402、insufficient quota、Not enough credits 等）和鉴权失败（401、403）记为不可恢复的失败，限流、超时、容量不足仍按可重试处理。某个渠道出现不可恢复的失败后，本次搜索不再向它发送后续查询。
+- 组合搜索在没有任何结果、且所有外部渠道都遇到不可恢复的失败时抛出 `RESEARCH_WEB_PROVIDER_UNAVAILABLE`。Worker 按原有路径上报投递失败，后端已有的处理会让整次研究以该原因立即失败。只要有一个渠道可用或已有结果，研究照常继续。
+- 新增 12 项测试，Research Worker 全部 779 项通过。

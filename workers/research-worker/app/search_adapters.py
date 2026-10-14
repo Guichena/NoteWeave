@@ -112,8 +112,10 @@ class HttpJsonSearchTransport:
         self.timeout_seconds = timeout_seconds
         self.max_retries = max(1, max_retries)
         self.last_attempt_count = 0
+        self.last_fatal_failure = ""
 
     def search(self, query: str, limit: int, page: int = 1) -> list[dict[str, object]]:
+        self.last_fatal_failure = ""
         if not self.api_key.strip() or limit <= 0:
             return []
         payload = json.dumps(self._payload(query, limit, page)).encode("utf-8")
@@ -133,7 +135,8 @@ class HttpJsonSearchTransport:
                 return _extract_raw_results(data, limit)
             except urllib.error.HTTPError as error:
                 last_error = error
-                if not _is_retryable_search_http_status(error.code):
+                self.last_fatal_failure = _fatal_provider_failure(error.code, _http_error_text(error))
+                if self.last_fatal_failure or not _is_retryable_search_http_status(error.code):
                     break
                 if attempt < self.max_retries:
                     time.sleep(min(2 ** (attempt - 1), 4))
@@ -182,8 +185,10 @@ class McpSearchTransport:
         self.client = client
         self.max_retries = max(1, max_retries)
         self.last_attempt_count = 0
+        self.last_fatal_failure = ""
 
     def search(self, query: str, limit: int, page: int = 1) -> list[dict[str, object]]:
+        self.last_fatal_failure = ""
         if limit <= 0:
             return []
         if self.provider_name == "tavily_mcp":
@@ -199,10 +204,12 @@ class McpSearchTransport:
                 data = self.client.call_tool(self.TOOLS[self.provider_name], arguments)
                 return _extract_raw_results(data, limit)
             except McpToolError as error:
-                if not error.retryable:
+                self.last_fatal_failure = _fatal_provider_failure(None, str(error))
+                if self.last_fatal_failure or not error.retryable:
                     break
             except urllib.error.HTTPError as error:
-                if not _is_retryable_search_http_status(error.code):
+                self.last_fatal_failure = _fatal_provider_failure(error.code, _http_error_text(error))
+                if self.last_fatal_failure or not _is_retryable_search_http_status(error.code):
                     break
             except (urllib.error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError):
                 pass
@@ -354,6 +361,8 @@ class ExternalSearchAdapter:
         self.max_provider_pages = max(1, max_provider_pages)
         self.requires_api_key = requires_api_key
         self.last_attempt_count = 0
+        # 最近一次搜索因额度用尽或鉴权失败而完全没有结果时记录原因，否则为空
+        self.last_fatal_failure = ""
 
     def search(
         self,
@@ -362,6 +371,7 @@ class ExternalSearchAdapter:
         remaining_budget: int | None = None,
     ) -> list[ResearchSearchHit]:
         del task_input
+        self.last_fatal_failure = ""
         if self.requires_api_key and not self.api_key:
             return []
         budget = _resolve_budget(plan, remaining_budget)
@@ -393,6 +403,15 @@ class ExternalSearchAdapter:
                 self.last_attempt_count += max(
                     1, int(getattr(self.transport, "last_attempt_count", 1) or 1)
                 )
+                fatal_failure = str(getattr(self.transport, "last_fatal_failure", "") or "")
+                if fatal_failure and not raw_results:
+                    # 额度和鉴权问题与查询内容无关，继续发后续查询只会重复失败
+                    if not hits:
+                        self.last_fatal_failure = fatal_failure
+                    return [
+                        hit.model_copy(update={"provider_attempt_count": max(1, self.last_attempt_count)})
+                        for hit in _prioritize_hits_for_recovery(plan, hits)
+                    ]
                 for raw_result in raw_results:
                     if len(hits) >= budget:
                         break
@@ -504,6 +523,8 @@ class CompositeSearchAdapter:
         # overflow in a second pass without sacrificing the first diverse slot.
         if len(merged) < global_limit:
             for adapter in self.adapters:
+                if getattr(adapter, "last_fatal_failure", ""):
+                    continue
                 adapter_hits = adapter.search(
                     task_input,
                     plan,
@@ -511,6 +532,12 @@ class CompositeSearchAdapter:
                 )
                 overflow = _merge_hits(overflow, adapter_hits, global_limit)
             merged = _merge_hits(merged, overflow, global_limit)
+        external_adapters = [adapter for adapter in self.adapters if isinstance(adapter, ExternalSearchAdapter)]
+        if not merged and external_adapters and all(
+                getattr(adapter, "last_fatal_failure", "") for adapter in external_adapters):
+            # 所有外部搜索渠道都因额度用尽或鉴权失败不可用，继续研究只会得到空结论。
+            # 抛出后 Worker 上报投递失败，后端按该原因码让整次研究立即失败。
+            raise RuntimeError("RESEARCH_WEB_PROVIDER_UNAVAILABLE")
         return _finalize_ranking(merged[:global_limit])
 
 
@@ -945,6 +972,27 @@ def _default_base_url(provider_name: str) -> str:
     if provider_name.lower() in {"wikipedia", "mediawiki"}:
         return "https://en.wikipedia.org/w/api.php"
     return provider_name
+
+
+_QUOTA_MARKERS = ("insufficient quota", "not enough credits", "quota exceeded", "out of credits",
+                  "insufficient balance", "insufficient credits")
+
+
+def _fatal_provider_failure(status: int | None, text: str) -> str:
+    """识别与查询无关、重试也不会恢复的搜索失败：额度用尽或鉴权失败。"""
+    lowered = text.lower()
+    if status == 402 or "http 402" in lowered or any(marker in lowered for marker in _QUOTA_MARKERS):
+        return "QUOTA_EXHAUSTED"
+    if status in {401, 403} or "http 401" in lowered or "http 403" in lowered:
+        return "AUTH_FAILED"
+    return ""
+
+
+def _http_error_text(error: urllib.error.HTTPError) -> str:
+    try:
+        return error.read().decode("utf-8", "replace")[:500]
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def _is_retryable_search_http_status(status: int) -> bool:
