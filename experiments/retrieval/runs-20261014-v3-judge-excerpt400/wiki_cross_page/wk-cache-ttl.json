@@ -1,0 +1,359 @@
+{
+  "schema_version": "retrieval-eval-run.v1",
+  "set": "wiki_cross_page",
+  "case_key": "wk-cache-ttl",
+  "captured_at": "2026-10-14T09:34:04.046575+00:00",
+  "final_status": "COMPLETED",
+  "latency_ms": 6361,
+  "evidence": {
+    "run_id": "733da7d1-a258-46c6-8d7e-c03f989d32e6",
+    "evidence": [
+      {
+        "rank": 1,
+        "evidence_id": "knowledge-version:aa9c1149-6ee3-49c6-a5aa-897c3842e550",
+        "kind": "KNOWLEDGE_VERSION",
+        "source_id": null,
+        "source_snapshot_id": null,
+        "passage_id": null,
+        "knowledge_item_id": "28b2e269-7034-4f95-a703-ce4b724196d7",
+        "knowledge_version_id": "aa9c1149-6ee3-49c6-a5aa-897c3842e550",
+        "title": "memory.md",
+        "excerpt": "# memory.md  ## 资料摘要  本文是 Signal、Candidate、Review、Revision、Revoke、Control Pack 与 Outcome 的权威设计。Memory 不是聊天存档，也不是 Evidence 的替代品。 Memory 解决的是跨运行复用稳定偏好、约束、工作方式和经审核事实的问题。它的最终产物不是一段永久文本，而是一个可追溯、可版本化、可撤销、按运行类型编译的 Control Pack...",
+        "content_hash": "9eb103e503f9e3f48a5dca99347f251fc89632470382472b3a9c7edf53bd2787",
+        "location": "knowledge-version:aa9c1149-6ee3-49c6-a5aa-897c3842e550",
+        "fresh_at": "2026-10-14T09:33:59Z",
+        "character_cost": 222
+      },
+      {
+        "rank": 2,
+        "evidence_id": "knowledge-version:331a1c16-02c8-49f8-bbc3-7c4b5dbeff09",
+        "kind": "KNOWLEDGE_VERSION",
+        "source_id": null,
+        "source_snapshot_id": null,
+        "passage_id": null,
+        "knowledge_item_id": "706efa96-70d4-4dfd-a693-f7f26b82e909",
+        "knowledge_version_id": "331a1c16-02c8-49f8-bbc3-7c4b5dbeff09",
+        "title": "Wiki Index",
+        "excerpt": "# Wiki Index  ## 工作台概览  - workspace_id: `71e5bc34-a2aa-4d84-ab86-03459fc78f2d` - READY 资料数: 3 - 活跃 Wiki 页面数: 14 - 最近触发资料: [[wiki.md]]  ## 治理概览  - 页面总数: 14 - 链接总数: 74 - 已解析链接: 60 - 断链数: 14 - 问题总数: 14 - 可自动修复: 14 - 需人工确认:...",
+        "content_hash": "480e2179299a7b98183d544d72c501e7f1ee255250fa0d55a1396f9cb1e4ce7c",
+        "location": "knowledge-version:331a1c16-02c8-49f8-bbc3-7c4b5dbeff09",
+        "fresh_at": "2026-10-14T09:33:59Z",
+        "character_cost": 222
+      },
+      {
+        "rank": 3,
+        "evidence_id": "knowledge-version:7e6a6d8d-61dd-4909-813f-c258e2870f1f",
+        "kind": "KNOWLEDGE_VERSION",
+        "source_id": null,
+        "source_snapshot_id": null,
+        "passage_id": null,
+        "knowledge_item_id": "96e6ebea-4a93-487c-9e0a-93f8d00a25f8",
+        "knowledge_version_id": "7e6a6d8d-61dd-4909-813f-c258e2870f1f",
+        "title": "Signal",
+        "excerpt": "# Signal  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `Signal` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[memory.md]]：本文是 Signal、Candidate、Review、Revision、Revoke、Control Pack 与 Outcome 的权威设计。Memory...  ## 关键依据  - 《memo...",
+        "content_hash": "1ff98e456e35d0f7ce29341161f210303920399d1de3f990c9ce736cee0cba4d",
+        "location": "knowledge-version:7e6a6d8d-61dd-4909-813f-c258e2870f1f",
+        "fresh_at": "2026-10-14T09:33:59Z",
+        "character_cost": 222
+      },
+      {
+        "rank": 4,
+        "evidence_id": "knowledge-version:7f31457f-5011-4cf5-b5fd-a4a4cdb7790c",
+        "kind": "KNOWLEDGE_VERSION",
+        "source_id": null,
+        "source_snapshot_id": null,
+        "passage_id": null,
+        "knowledge_item_id": "7ff9f1be-7a97-4216-9325-5555d60810a0",
+        "knowledge_version_id": "7f31457f-5011-4cf5-b5fd-a4a4cdb7790c",
+        "title": "Revision",
+        "excerpt": "# Revision  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `Revision` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[memory.md]]：本文是 Signal、Candidate、Review、Revision、Revoke、Control Pack 与 Outcome 的权威设计。Memory...  ## 关键依据  - 《...",
+        "content_hash": "ffd3963b4714dfcdf7e336d8fa49eb2652e3832b33a04171d3772ffaf099ca0f",
+        "location": "knowledge-version:7f31457f-5011-4cf5-b5fd-a4a4cdb7790c",
+        "fresh_at": "2026-10-14T09:33:59Z",
+        "character_cost": 222
+      },
+      {
+        "rank": 5,
+        "evidence_id": "knowledge-version:86da349f-6e78-4a76-a5e1-5e4cac8e4ec9",
+        "kind": "KNOWLEDGE_VERSION",
+        "source_id": null,
+        "source_snapshot_id": null,
+        "passage_id": null,
+        "knowledge_item_id": "f66bdada-1fbb-4233-8211-916a6c5ef1f4",
+        "knowledge_version_id": "86da349f-6e78-4a76-a5e1-5e4cac8e4ec9",
+        "title": "Control Pack",
+        "excerpt": "# Control Pack  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `Control Pack` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[memory.md]]：本文是 Signal、Candidate、Review、Revision、Revoke、Control Pack 与 Outcome 的权威设计。Memory...  ## 关...",
+        "content_hash": "90af503b9cf76e643cc6f5beb5713ff3b81fc67b8f766085903ae742f39907db",
+        "location": "knowledge-version:86da349f-6e78-4a76-a5e1-5e4cac8e4ec9",
+        "fresh_at": "2026-10-14T09:33:59Z",
+        "character_cost": 222
+      }
+    ],
+    "retrieval_rewrite": {
+      "standalone_query": "Memory 编译结果缓存和 Wiki 页面缓存的过期时间分别是多少？",
+      "keyword_query": "Memory 编译结果缓存和 Wiki 页面缓存的过期时间分别是多少？",
+      "method": "RULE",
+      "degradation_reasons": [],
+      "is_standalone": true
+    },
+    "memory_references": [],
+    "evidence_sufficiency": "INSUFFICIENT"
+  },
+  "ranked_candidates": [],
+  "selection_policy": "",
+  "retrieval_rewrite": {
+    "standalone_query": "Memory 编译结果缓存和 Wiki 页面缓存的过期时间分别是多少？",
+    "keyword_query": "Memory 编译结果缓存和 Wiki 页面缓存的过期时间分别是多少？",
+    "method": "RULE",
+    "degradation_reasons": [],
+    "is_standalone": true
+  },
+  "evidence_sufficiency": "INSUFFICIENT",
+  "retrieval_degraded": false,
+  "retrieval_degradation_reasons": [],
+  "turns": [
+    {
+      "run_id": "733da7d1-a258-46c6-8d7e-c03f989d32e6",
+      "receipt": {
+        "submission_id": "75059e83-a245-4023-a8cc-95c2829af623",
+        "execution_kind": "ANSWER",
+        "message_id": "59c7b246-f69e-48fb-bdf9-d4169add7deb",
+        "assistant_message_id": "bb58395a-7524-4ba9-83b9-4507c952f28b",
+        "assistant_request_id": "f3c38081-44c3-435f-9e8f-b6b83e4dce79",
+        "stream_url": "/api/v2/chat/requests/f3c38081-44c3-435f-9e8f-b6b83e4dce79/stream",
+        "answer_run_id": "733da7d1-a258-46c6-8d7e-c03f989d32e6",
+        "research_run_id": null,
+        "answer_stream_url": "/api/v2/workspaces/71e5bc34-a2aa-4d84-ab86-03459fc78f2d/answer-runs/733da7d1-a258-46c6-8d7e-c03f989d32e6/events",
+        "retrieval_degraded": false,
+        "retrieval_degradation_reasons": [],
+        "reused": false
+      },
+      "run": {
+        "id": "733da7d1-a258-46c6-8d7e-c03f989d32e6",
+        "workspace_id": "71e5bc34-a2aa-4d84-ab86-03459fc78f2d",
+        "conversation_id": "53beb377-505b-4521-a893-ad05c02e23e5",
+        "mode": "WIKI",
+        "status": "COMPLETED",
+        "query_message_id": "59c7b246-f69e-48fb-bdf9-d4169add7deb",
+        "answer_message_id": "bb58395a-7524-4ba9-83b9-4507c952f28b",
+        "assistant_request_id": "f3c38081-44c3-435f-9e8f-b6b83e4dce79",
+        "retrieval_plan_version": "wiki-page-graph-v1",
+        "model": "configured-llm",
+        "maximum_output_tokens": 1800,
+        "retrieval_degraded": true,
+        "retrieval_degradation_reasons": [
+          "WIKI_RERANK_UNAVAILABLE"
+        ],
+        "revision_no": 1,
+        "revision_status": "FINAL",
+        "content": "现有资料不足以回答这个问题。\n\n目前可参考的资料主要包括：\n\n- [[memory.md]]\n- [[Wiki Index]]\n- [[Signal]]\n- [[Revision]]\n- [[Control Pack]]\n\n这些资料只能说明相关主题可能涉及的范围，但缺少足够证据来形成确定结论。因此，这里不能补充具体判断、来源、链接、引用或数字，以免造成误导。",
+        "started_at": "2026-10-14T09:33:57Z",
+        "first_token_at": "2026-10-14T09:34:02Z",
+        "finished_at": "2026-10-14T09:34:02Z",
+        "error_code": "",
+        "error_message": "",
+        "retrieval_rewrite": {
+          "standalone_query": "Memory 编译结果缓存和 Wiki 页面缓存的过期时间分别是多少？",
+          "keyword_query": "Memory 编译结果缓存和 Wiki 页面缓存的过期时间分别是多少？",
+          "method": "RULE",
+          "degradation_reasons": [],
+          "is_standalone": true
+        },
+        "evidence_sufficiency": "INSUFFICIENT"
+      },
+      "evidence": {
+        "run_id": "733da7d1-a258-46c6-8d7e-c03f989d32e6",
+        "evidence": [
+          {
+            "rank": 1,
+            "evidence_id": "knowledge-version:aa9c1149-6ee3-49c6-a5aa-897c3842e550",
+            "kind": "KNOWLEDGE_VERSION",
+            "source_id": null,
+            "source_snapshot_id": null,
+            "passage_id": null,
+            "knowledge_item_id": "28b2e269-7034-4f95-a703-ce4b724196d7",
+            "knowledge_version_id": "aa9c1149-6ee3-49c6-a5aa-897c3842e550",
+            "title": "memory.md",
+            "excerpt": "# memory.md  ## 资料摘要  本文是 Signal、Candidate、Review、Revision、Revoke、Control Pack 与 Outcome 的权威设计。Memory 不是聊天存档，也不是 Evidence 的替代品。 Memory 解决的是跨运行复用稳定偏好、约束、工作方式和经审核事实的问题。它的最终产物不是一段永久文本，而是一个可追溯、可版本化、可撤销、按运行类型编译的 Control Pack...",
+            "content_hash": "9eb103e503f9e3f48a5dca99347f251fc89632470382472b3a9c7edf53bd2787",
+            "location": "knowledge-version:aa9c1149-6ee3-49c6-a5aa-897c3842e550",
+            "fresh_at": "2026-10-14T09:33:59Z",
+            "character_cost": 222
+          },
+          {
+            "rank": 2,
+            "evidence_id": "knowledge-version:331a1c16-02c8-49f8-bbc3-7c4b5dbeff09",
+            "kind": "KNOWLEDGE_VERSION",
+            "source_id": null,
+            "source_snapshot_id": null,
+            "passage_id": null,
+            "knowledge_item_id": "706efa96-70d4-4dfd-a693-f7f26b82e909",
+            "knowledge_version_id": "331a1c16-02c8-49f8-bbc3-7c4b5dbeff09",
+            "title": "Wiki Index",
+            "excerpt": "# Wiki Index  ## 工作台概览  - workspace_id: `71e5bc34-a2aa-4d84-ab86-03459fc78f2d` - READY 资料数: 3 - 活跃 Wiki 页面数: 14 - 最近触发资料: [[wiki.md]]  ## 治理概览  - 页面总数: 14 - 链接总数: 74 - 已解析链接: 60 - 断链数: 14 - 问题总数: 14 - 可自动修复: 14 - 需人工确认:...",
+            "content_hash": "480e2179299a7b98183d544d72c501e7f1ee255250fa0d55a1396f9cb1e4ce7c",
+            "location": "knowledge-version:331a1c16-02c8-49f8-bbc3-7c4b5dbeff09",
+            "fresh_at": "2026-10-14T09:33:59Z",
+            "character_cost": 222
+          },
+          {
+            "rank": 3,
+            "evidence_id": "knowledge-version:7e6a6d8d-61dd-4909-813f-c258e2870f1f",
+            "kind": "KNOWLEDGE_VERSION",
+            "source_id": null,
+            "source_snapshot_id": null,
+            "passage_id": null,
+            "knowledge_item_id": "96e6ebea-4a93-487c-9e0a-93f8d00a25f8",
+            "knowledge_version_id": "7e6a6d8d-61dd-4909-813f-c258e2870f1f",
+            "title": "Signal",
+            "excerpt": "# Signal  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `Signal` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[memory.md]]：本文是 Signal、Candidate、Review、Revision、Revoke、Control Pack 与 Outcome 的权威设计。Memory...  ## 关键依据  - 《memo...",
+            "content_hash": "1ff98e456e35d0f7ce29341161f210303920399d1de3f990c9ce736cee0cba4d",
+            "location": "knowledge-version:7e6a6d8d-61dd-4909-813f-c258e2870f1f",
+            "fresh_at": "2026-10-14T09:33:59Z",
+            "character_cost": 222
+          },
+          {
+            "rank": 4,
+            "evidence_id": "knowledge-version:7f31457f-5011-4cf5-b5fd-a4a4cdb7790c",
+            "kind": "KNOWLEDGE_VERSION",
+            "source_id": null,
+            "source_snapshot_id": null,
+            "passage_id": null,
+            "knowledge_item_id": "7ff9f1be-7a97-4216-9325-5555d60810a0",
+            "knowledge_version_id": "7f31457f-5011-4cf5-b5fd-a4a4cdb7790c",
+            "title": "Revision",
+            "excerpt": "# Revision  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `Revision` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[memory.md]]：本文是 Signal、Candidate、Review、Revision、Revoke、Control Pack 与 Outcome 的权威设计。Memory...  ## 关键依据  - 《...",
+            "content_hash": "ffd3963b4714dfcdf7e336d8fa49eb2652e3832b33a04171d3772ffaf099ca0f",
+            "location": "knowledge-version:7f31457f-5011-4cf5-b5fd-a4a4cdb7790c",
+            "fresh_at": "2026-10-14T09:33:59Z",
+            "character_cost": 222
+          },
+          {
+            "rank": 5,
+            "evidence_id": "knowledge-version:86da349f-6e78-4a76-a5e1-5e4cac8e4ec9",
+            "kind": "KNOWLEDGE_VERSION",
+            "source_id": null,
+            "source_snapshot_id": null,
+            "passage_id": null,
+            "knowledge_item_id": "f66bdada-1fbb-4233-8211-916a6c5ef1f4",
+            "knowledge_version_id": "86da349f-6e78-4a76-a5e1-5e4cac8e4ec9",
+            "title": "Control Pack",
+            "excerpt": "# Control Pack  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `Control Pack` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[memory.md]]：本文是 Signal、Candidate、Review、Revision、Revoke、Control Pack 与 Outcome 的权威设计。Memory...  ## 关...",
+            "content_hash": "90af503b9cf76e643cc6f5beb5713ff3b81fc67b8f766085903ae742f39907db",
+            "location": "knowledge-version:86da349f-6e78-4a76-a5e1-5e4cac8e4ec9",
+            "fresh_at": "2026-10-14T09:33:59Z",
+            "character_cost": 222
+          }
+        ],
+        "retrieval_rewrite": {
+          "standalone_query": "Memory 编译结果缓存和 Wiki 页面缓存的过期时间分别是多少？",
+          "keyword_query": "Memory 编译结果缓存和 Wiki 页面缓存的过期时间分别是多少？",
+          "method": "RULE",
+          "degradation_reasons": [],
+          "is_standalone": true
+        },
+        "memory_references": [],
+        "evidence_sufficiency": "INSUFFICIENT"
+      },
+      "retrieval_summary": {
+        "relevance_policy": "",
+        "degraded": true,
+        "admitted_candidate_count": 5,
+        "execution_trace": {
+          "schema_version": "retrieval-execution-trace-v1",
+          "plan_version": "wiki-page-graph-v1",
+          "total_latency_micros": 942455,
+          "raw_candidate_count": 15,
+          "admitted_candidate_count": 5,
+          "selected_evidence_count": 5,
+          "selected_evidence_characters": 1110,
+          "steps": [
+            {
+              "step_index": 0,
+              "channel": "WIKI_PAGE_GRAPH",
+              "candidate_limit": 5,
+              "raw_candidate_count": 15,
+              "admitted_candidate_count": 5,
+              "latency_micros": 942131,
+              "degraded": true,
+              "degradation_reasons": [
+                "WIKI_RERANK_UNAVAILABLE"
+              ],
+              "measurements": {
+                "graph_edges_used": 10,
+                "graph_character_limit": 4000,
+                "graph_hop_limit": 3,
+                "graph_characters_used": 2220,
+                "graph_hops_used": 1,
+                "graph_node_limit": 30,
+                "graph_nodes_used": 10,
+                "graph_edge_limit": 60
+              },
+              "ranked_candidates": []
+            }
+          ],
+          "selected_evidence": [
+            {
+              "rank": 1,
+              "evidence_id": "knowledge-version:aa9c1149-6ee3-49c6-a5aa-897c3842e550",
+              "kind": "KNOWLEDGE_VERSION",
+              "raw_score": 4.0,
+              "fused_score": 4.0,
+              "rerank_score": 4.0,
+              "character_cost": 222
+            },
+            {
+              "rank": 2,
+              "evidence_id": "knowledge-version:331a1c16-02c8-49f8-bbc3-7c4b5dbeff09",
+              "kind": "KNOWLEDGE_VERSION",
+              "raw_score": 4.0,
+              "fused_score": 4.0,
+              "rerank_score": 4.0,
+              "character_cost": 222
+            },
+            {
+              "rank": 3,
+              "evidence_id": "knowledge-version:7e6a6d8d-61dd-4909-813f-c258e2870f1f",
+              "kind": "KNOWLEDGE_VERSION",
+              "raw_score": 4.0,
+              "fused_score": 4.0,
+              "rerank_score": 4.0,
+              "character_cost": 222
+            },
+            {
+              "rank": 4,
+              "evidence_id": "knowledge-version:7f31457f-5011-4cf5-b5fd-a4a4cdb7790c",
+              "kind": "KNOWLEDGE_VERSION",
+              "raw_score": 4.0,
+              "fused_score": 4.0,
+              "rerank_score": 4.0,
+              "character_cost": 222
+            },
+            {
+              "rank": 5,
+              "evidence_id": "knowledge-version:86da349f-6e78-4a76-a5e1-5e4cac8e4ec9",
+              "kind": "KNOWLEDGE_VERSION",
+              "raw_score": 4.0,
+              "fused_score": 4.0,
+              "rerank_score": 4.0,
+              "character_cost": 222
+            }
+          ]
+        },
+        "selected_evidence_count": 5,
+        "strategy_profile": "",
+        "degradation_reasons": [
+          "WIKI_RERANK_UNAVAILABLE"
+        ],
+        "retrieval_latency_micros": 942455,
+        "plan_version": "wiki-page-graph-v1",
+        "selection_policy": "",
+        "candidate_count": 15,
+        "selected_evidence_characters": 1110,
+        "maximum_output_tokens": 1800,
+        "trace_schema_version": "retrieval-execution-trace-v1"
+      },
+      "latency_ms": 6361
+    }
+  ]
+}
