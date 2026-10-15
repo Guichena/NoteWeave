@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 @Service
 class ResearchAgentRoleWorkflowService {
     private static final String AUDIT_DIGEST_DOMAIN = "research-evidence-audit-input.v1";
+    private static final int MAX_STALE_AUDIT_REGENERATIONS = 3;
     private static final String LEDGER_DIGEST_DOMAIN = "research-synthesis-ledger.v1";
 
     private final JdbcTemplate jdbcTemplate;
@@ -145,8 +146,18 @@ class ResearchAgentRoleWorkflowService {
             jdbcTemplate.update("update research_discovery_loop set phase = 'STOPPED', stop_reason = 'LOOP_BUDGET_EXHAUSTED' where research_run_id = ?", runId);
             return null;
         }
-        return createRoleTask(run, cells, waveNo, "EVIDENCE_AUDIT", "evidence-audit:" + inputDigest.substring(7, 39),
-                policy);
+        // 审计任务因目标过期被取消后，相同输入会算出相同的幂等键，直接重放已取消的任务，研究会停住；
+        // 按已取消的次数换一个键重新创建，最多重试 3 次
+        Integer staleCancellations = jdbcTemplate.queryForObject("""
+                select count(*) from research_agent_task
+                where research_run_id = ? and role = 'EVIDENCE_AUDIT' and status = 'CANCELLED'
+                  and terminal_reason = 'TARGET_STALE'
+                """, Integer.class, runId);
+        int regeneration = staleCancellations == null ? 0 : staleCancellations;
+        if (regeneration > MAX_STALE_AUDIT_REGENERATIONS) return null;
+        String logicalKey = "evidence-audit:" + inputDigest.substring(7, 39)
+                + (regeneration == 0 ? "" : ":regen-" + regeneration);
+        return createRoleTask(run, cells, waveNo, "EVIDENCE_AUDIT", logicalKey, policy);
     }
 
     private ResearchAgentTaskCoordinatorService.CoordinatorReceipt taskizeSynthesis(

@@ -592,3 +592,31 @@ def test_client_complete_should_bound_receipt_body_before_decode_and_retry_same_
     assert client.complete(completion).idempotent_replay is True
     assert read_limits == [256 * 1024 + 1, 256 * 1024 + 1]
     assert request_bodies[0] == request_bodies[1]
+
+
+def test_backend_error_code_becomes_the_delivery_failure_reason(monkeypatch) -> None:
+    from app.agent_kafka_consumer import _dlq_record
+    from app.agent_task_client import AgentTaskApiError, JavaResearchAgentTaskClient
+
+    client = JavaResearchAgentTaskClient("http://backend", "token", "worker-a")
+    calls: list[tuple[str, str, dict, str]] = []
+
+    def fake_request(method, path, payload=None, idempotency_key=""):
+        calls.append((method, path, payload or {}, idempotency_key))
+        return {"data": {"failure_id": "failure-1"}}
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    command = ResearchAgentCommand(
+        schema_version="research-agent-command.v1",
+        command_id="outbox-1",
+        research_run_id="run-1",
+        agent_task_id="task-1",
+        idempotency_key="delivery-1",
+        delivery_attempt=1,
+    )
+    record = _dlq_record("{}", AgentTaskApiError(400, "RESEARCH_AGENT_TASK_TARGET_STALE"), 1, False)
+
+    client.report_delivery_failure(command, record)
+
+    assert record["error_code"] == "RESEARCH_AGENT_TASK_TARGET_STALE"
+    assert calls[0][2]["reason_code"] == "RESEARCH_AGENT_TASK_TARGET_STALE"

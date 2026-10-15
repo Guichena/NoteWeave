@@ -350,8 +350,11 @@ class JavaResearchAgentTaskClient:
 
     def report_delivery_failure(self, command: ResearchAgentCommand, failure: dict[str, object]) -> None:
         error_message = str(failure.get("error_message") or "").strip()
+        error_code = str(failure.get("error_code") or "").strip()
         reason_code = (
-            error_message
+            error_code
+            if re.fullmatch(r"[A-Z][A-Z0-9_]{2,127}", error_code)
+            else error_message
             if re.fullmatch(r"[A-Z][A-Z0-9_]{2,127}", error_message)
             else str(failure.get("error_type") or "AGENT_COMMAND_FAILURE")[:128]
         )

@@ -255,6 +255,59 @@ class ResearchAgentLifecycleServiceTest {
                 Integer.class, parentTaskId)).isEqualTo(1);
     }
 
+    @Test
+    void staleTargetDeliveryFailureCancelsTheUnclaimableTaskAndReleasesItsReservation() {
+        String taskId = createTask("stale-target-task");
+        String outboxId = outboxService.enqueue(taskId).outboxId();
+        String reservationId = budgetService.reserve(new ResearchBudgetAndCheckpointService.ReserveCommand(
+                runId, taskId, "reserve-stale-target", Map.of("llm_calls", 1L))).reservationId();
+
+        lifecycleService.recordDeliveryFailure(new ResearchAgentLifecycleService.DeliveryFailureCommand(
+                runId, taskId, outboxId,
+                outboxId + ":delivery:1:RESEARCH_AGENT_TASK_TARGET_STALE",
+                "RESEARCH_AGENT_TASK_TARGET_STALE", "sha256:stale", 1));
+
+        assertThat(jdbcTemplate.queryForMap(
+                "select status, terminal_reason from research_agent_task where id = ?", taskId))
+                .containsEntry("status", "CANCELLED")
+                .containsEntry("terminal_reason", "TARGET_STALE");
+        assertThat(jdbcTemplate.queryForObject(
+                "select state from research_budget_reservation where id = ?", String.class, reservationId))
+                .isEqualTo("RELEASED");
+        // 只取消这一个过期任务，研究本身继续，由下一次协调重新规划
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from research_run where id = ?", String.class, runId)).isEqualTo("RUNNING");
+    }
+
+    @Test
+    void orphanedBindingsOfFinishedTasksAndQuorumGroupsAreReleasedButActiveOnesStay() {
+        String rowId = Ids.newId();
+        jdbcTemplate.update("insert into research_row(id, research_run_id, row_key, row_status) values (?, ?, 'row-orphan', 'CANDIDATE_READY')",
+                rowId, runId);
+        String finished = createTask("orphan-finished");
+        String active = createTask("orphan-active");
+        jdbcTemplate.update("update research_agent_task set status = 'SUBMITTED' where id = ?", finished);
+        jdbcTemplate.update("update research_agent_task set quorum_group_key = 'quorum:finished' where id = ?", finished);
+        insertBoundCell(rowId, "entity-1:by-task", finished);
+        insertBoundCell(rowId, "entity-1:by-quorum", "quorum:finished");
+        insertBoundCell(rowId, "entity-1:by-active", active);
+
+        int released = lifecycleService.releaseOrphanedCellBindings(runId);
+
+        assertThat(released).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForList(
+                "select cell_key from research_cell where research_run_id = ? and active_task_id is not null", String.class, runId))
+                .containsExactly("entity-1:by-active");
+    }
+
+    private void insertBoundCell(String rowId, String cellKey, String activeTaskId) {
+        jdbcTemplate.update("""
+                insert into research_cell(id, research_run_id, research_row_id, cell_key, column_key,
+                    candidate_value, cell_status, repair_count, cell_version, plan_revision, entity_set_version, active_task_id)
+                values (?, ?, ?, ?, 'method', null, 'GAP', 0, 0, 1, 1, ?)
+                """, Ids.newId(), runId, rowId, cellKey, activeTaskId);
+    }
+
     private String createAndClaim(String taskKey) {
         String taskId = createTask(taskKey);
         taskService.claimTask(new ResearchAgentTaskService.ClaimCommand(taskId, "worker-a", 30));

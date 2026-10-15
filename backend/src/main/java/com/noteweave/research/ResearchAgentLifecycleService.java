@@ -288,7 +288,50 @@ public class ResearchAgentLifecycleService {
         if ("RESEARCH_WEB_PROVIDER_UNAVAILABLE".equals(command.reasonCode().trim())) {
             failRun(command.researchRunId(), command.reasonCode());
         }
+        if (TARGET_STALE_REASON.equals(command.reasonCode().trim())) {
+            cancelStaleTask(command.taskId());
+        }
         return new DeliveryFailureReceipt(id, false);
+    }
+
+    static final String TARGET_STALE_REASON = "RESEARCH_AGENT_TASK_TARGET_STALE";
+
+    /**
+     * 释放已结束任务仍占着的单元格绑定。高风险单元格的双路取证（DEEP_CELL 与 COUNTERFACTUAL 同组）
+     * 在两路结论不一致时，组内任务都已结束但单元格仍绑定在组上，后续证据审计任务认领时因此判为目标过期，
+     * 研究会一直停住。绑定的任务或任务组里已经没有未结束的任务时，绑定没有意义，直接清掉。
+     *
+     * @return 释放的单元格数
+     */
+    @Transactional
+    public int releaseOrphanedCellBindings(String runId) {
+        return jdbcTemplate.update("""
+                update research_cell set active_task_id = null, updated_at = current_timestamp
+                where research_run_id = ? and active_task_id is not null
+                  and not exists (
+                    select 1 from research_agent_task task
+                    where task.research_run_id = research_cell.research_run_id
+                      and (task.id = research_cell.active_task_id or task.quorum_group_key = research_cell.active_task_id)
+                      and task.status not in ('SUBMITTED', 'FAILED', 'CANCELLED')
+                  )
+                """, runId);
+    }
+
+    /**
+     * 任务创建后它的目标单元格被其他任务更新，版本已过期，这个任务永远无法被认领，
+     * 留在待认领状态会让整次研究停住。取消它并释放预算和单元格绑定，下一次协调时按最新版本重新规划。
+     */
+    private void cancelStaleTask(String taskId) {
+        int updated = jdbcTemplate.update("""
+                update research_agent_task set status = 'CANCELLED', terminal_reason = 'TARGET_STALE',
+                    cancelled_at = current_timestamp, terminal_at = current_timestamp,
+                    worker_instance_id = null, lease_expires_at = null, updated_at = current_timestamp
+                where id = ? and status in ('PENDING', 'RETRY_WAIT', 'EXPIRED')
+                """, taskId);
+        if (updated > 0) {
+            releaseReservationsForTask(taskId);
+            releaseCellBindings(taskId);
+        }
     }
 
     @Transactional

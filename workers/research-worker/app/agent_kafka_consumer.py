@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -542,7 +543,7 @@ def _is_retryable_agent_error(exc: Exception | None) -> bool:
 
 def _dlq_record(original_message: object, exc: Exception, attempt_count: int, retryable: bool) -> dict[str, object]:
     sanitized = sanitize_error_message(exc)
-    return {
+    record: dict[str, object] = {
         "original_message": _sanitize_dead_letter_message(original_message),
         "error_type": type(exc).__name__,
         "error_message": sanitized,
@@ -550,6 +551,11 @@ def _dlq_record(original_message: object, exc: Exception, attempt_count: int, re
         "attempt_count": attempt_count,
         "retryable": retryable,
     }
+    # 后端接口返回的错误码（如 RESEARCH_AGENT_TASK_TARGET_STALE）比异常类型更能说明原因，上报失败时优先使用
+    error_code = str(getattr(exc, "error_code", "") or "").strip()
+    if re.fullmatch(r"[A-Z][A-Z0-9_]{2,127}", error_code):
+        record["error_code"] = error_code
+    return record
 
 
 def _sanitize_dead_letter_message(original_message: object) -> str:

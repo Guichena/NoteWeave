@@ -71,6 +71,8 @@ public class ResearchAgentCoordinatorTickService {
         // snapshot, so a conflict demotion is visible to readyForFinalization()/nonFinalizableCellCount
         // and the terminal gate can never finalize a Run over a mutually-exclusive cell.
         globalConflictService.adjudicateRun(runId);
+        // 已结束任务留下的单元格绑定会让后续任务认领失败，先清掉再判断下一步
+        lifecycle.releaseOrphanedCellBindings(runId);
         ResearchAgentCoordinatorSnapshotService.Snapshot auditSnapshot = snapshots.snapshot(runId);
         if (auditSnapshot.activeTaskCount() == 0) {
             var audit = roleWorkflow.advancePendingAudit(runId, auditSnapshot.currentWaveNo());

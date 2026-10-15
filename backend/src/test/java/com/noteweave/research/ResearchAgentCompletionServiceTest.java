@@ -134,6 +134,43 @@ class ResearchAgentCompletionServiceTest {
         assertThat(jdbcTemplate.queryForObject("select cell_version from research_cell where research_run_id = ?", Integer.class, pair.first().runId())).isZero();
     }
 
+    @Test
+    void conflictingQuorumMustNotBlockTheEvidenceAuditForever() {
+        QuorumPair pair = quorumPair();
+        String runId = pair.first().runId();
+        jdbcTemplate.update("update research_run set agent_feature_flags_json = '{\"evidence_audit_v1\":true}', research_intent_json = ?, control_pack_json = ? where id = ?",
+                "{\"depth\":\"STANDARD\",\"research_type\":\"AUTO\"}",
+                "{\"pack_type\":\"RESEARCH_AGENT\",\"target_key\":\"DEFAULT\",\"task_neighborhood\":\"RESEARCH_DEFAULT\"}", runId);
+        completionService.complete(pair.first().taskId(), envelopeForSource(pair.first(), "worker-a", "source-0", "Source 0", "trusted quote 0"));
+        // 线上出现的情形：一路提出候选，另一路没找到任何证据
+        Map<String, Long> emptyUsage = Map.of("llm_calls", 0L, "search_calls", 1L, "fetch_calls", 1L, "read_calls", 1L,
+                "extract_calls", 1L, "evidence_cards", 0L, "candidates_submitted", 0L);
+        completionService.complete(pair.second().taskId(), signed(new ResearchAgentCompletionEnvelope(
+                "research-agent-completion.v1", pair.second().taskId(), "worker-b", pair.second().leaseEpoch(),
+                pair.second().fencingToken(), pair.second().executionKey(), pair.second().snapshotDigest(),
+                "NO_SUPPORTED_CANDIDATE", emptyUsage, Map.of("search_hits", 0L, "documents", 0L, "windows", 0L),
+                "sha256:" + "3".repeat(64), List.of(), List.of(), null)));
+        // 组内任务都已结束，单元格却仍绑定在任务组上
+        assertThat(jdbcTemplate.queryForObject("select active_task_id from research_cell where research_run_id = ?", String.class, runId)).isNotNull();
+
+        assertThat(roleWorkflow.advancePendingAudit(runId, 1).outcome()).isEqualTo("AUDIT_TASKIZED");
+        String staleAudit = jdbcTemplate.queryForObject("select id from research_agent_task where research_run_id = ? and role = 'EVIDENCE_AUDIT'", String.class, runId);
+        assertThatThrownBy(() -> taskService.claimTask(new ResearchAgentTaskService.ClaimCommand(staleAudit, "worker-a", 300)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(error -> ((BusinessException) error).code())
+                .isEqualTo("RESEARCH_AGENT_TASK_TARGET_STALE");
+
+        // 修复一：协调时释放已结束任务留下的绑定；修复二：过期审计被取消后重新创建，而不是重放已取消的任务
+        jdbcTemplate.update("update research_agent_task set status = 'CANCELLED', terminal_reason = 'TARGET_STALE' where id = ?", staleAudit);
+        assertThat(lifecycleService.releaseOrphanedCellBindings(runId)).isEqualTo(1);
+        assertThat(roleWorkflow.advancePendingAudit(runId, 1).outcome()).isEqualTo("AUDIT_TASKIZED");
+        String regenerated = jdbcTemplate.queryForObject(
+                "select id from research_agent_task where research_run_id = ? and role = 'EVIDENCE_AUDIT' and status = 'PENDING'", String.class, runId);
+        assertThat(regenerated).isNotEqualTo(staleAudit);
+        assertThat(taskService.claimTask(new ResearchAgentTaskService.ClaimCommand(regenerated, "worker-a", 300)).taskId())
+                .isEqualTo(regenerated);
+    }
+
     private void completeSemanticAudit(Fixture fixture, String verdict, String equality) throws Exception {
         // 审计采用 v3 快照，测试 Run 同样保留必需的研究意图与控制包。
         jdbcTemplate.update("update research_run set research_intent_json = ?, control_pack_json = ? where id = ?",
