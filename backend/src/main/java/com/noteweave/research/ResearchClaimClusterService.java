@@ -28,7 +28,12 @@ class ResearchClaimClusterService {
 
     static void validateClusters(Object raw) {
         JsonNode clusters = new ObjectMapper().valueToTree(raw);
-        if (!clusters.isArray() || clusters.size() > 6) throw invalid();
+        // 每个单元格最多 6 个候选簇；一个任务最多覆盖 6 个单元格
+        if (!clusters.isArray() || clusters.size() > 36) throw invalid();
+        java.util.Map<String, Integer> perCell = new java.util.HashMap<>();
+        for (JsonNode cluster : clusters) {
+            if (perCell.merge(cluster.path("cell_key").asText(""), 1, Integer::sum) > 6) throw invalid();
+        }
         Set<String> seen = new HashSet<>(), evidence = new HashSet<>();
         for (JsonNode cluster : clusters) {
             if (!cluster.isObject() || !fields(cluster).equals(FIELDS)) throw invalid();

@@ -56,6 +56,13 @@ def execute_case(client: ApiClient, workspace_id: str, case: dict[str, object], 
     })
     run_id = str(created["research_run_id"])
     started = datetime.now(timezone.utc)
+    return capture_run(client, workspace_id, case, dataset_version, run_id, started,
+                       timeout_seconds, poll_seconds)
+
+
+def capture_run(client: ApiClient, workspace_id: str, case: dict[str, object], dataset_version: str,
+                run_id: str, started: datetime, timeout_seconds: int, poll_seconds: int) -> Path:
+    """等待 Run 结束并保存记录；也用于接上评测脚本中断后仍在运行的 Run。"""
     detail = wait_for_terminal(client, workspace_id, run_id, timeout_seconds, poll_seconds)
     finished = datetime.now(timezone.utc)
     base = f"/api/v2/workspaces/{workspace_id}/research-runs/{run_id}"
@@ -84,6 +91,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--timeout-seconds", type=int, default=1200)
     parser.add_argument("--poll-seconds", type=int, default=5)
+    parser.add_argument(
+        "--attach", default="",
+        help="接上已存在的 Run 并保存记录，格式 case_key:workspace_id:run_id:started_at（ISO 时间），不新建 Run",
+    )
     args = parser.parse_args(argv)
     dataset = json.loads(DATASET.read_text(encoding="utf-8"))
     cases = selected_cases(dataset, set(args.case_keys))
@@ -99,6 +110,14 @@ def main(argv: list[str] | None = None) -> int:
         raise EvalRunError("set NOTEWEAVE_EVAL_USERNAME, NOTEWEAVE_EVAL_EMAIL and NOTEWEAVE_EVAL_PASSWORD")
     client = ApiClient(args.base_url)
     authenticate(client, username, email, password)
+    if args.attach:
+        case_key, workspace_id, run_id, started_at = args.attach.split(":", 3)
+        case = selected_cases(dataset, {case_key})[0]
+        output = capture_run(client, workspace_id, case, str(dataset["dataset_version"]), run_id,
+                             datetime.fromisoformat(started_at), args.timeout_seconds, args.poll_seconds)
+        print(json.dumps({"workspace_id": workspace_id, "run_files": [str(output.relative_to(ROOT))]},
+                         ensure_ascii=False, indent=2))
+        return 0
     workspace = client.request("POST", "/api/v2/workspaces", {
         "name": f"Research quality eval {datetime.now(timezone.utc):%Y%m%d-%H%M%S}",
         "description": "research-quality-v1 automated evaluation workspace",

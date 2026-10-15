@@ -989,3 +989,38 @@ def test_bundled_cells_extract_one_column_at_a_time_with_distinct_evidence_keys(
     assert {candidate.cell_key for candidate in completion.candidates} == {"entity-1:method", "entity-1:result"}
     assert all(len(candidate.evidence_keys) == 1 and candidate.evidence_keys[0] in keys
                for candidate in completion.candidates)
+
+
+def test_three_cell_bundle_stays_inside_the_completion_contract() -> None:
+    from app.deep_cell_executor import DeepCellExecutor
+    from app.deterministic_fake_toolchain import DeterministicFakeToolchain
+
+    class ManyCardsToolchain(DeterministicFakeToolchain):
+        """每个单元格抽出 6 张卡，三个单元格合计 18 张，超过一次完成的证据上限 12。"""
+
+        def extract(self, task_input, plan, windows, *, llm_client):
+            result = super().extract(task_input, plan, windows, llm_client=llm_client)
+            cards = tuple(
+                card.model_copy(update={"evidence_id": f"{card.evidence_id}-{index}",
+                                        "claim_text": f"{card.claim_text} variant {index}"})
+                for card in result.accepted_cards for index in range(6)
+            )
+            return result.model_copy(update={"accepted_cards": cards})
+
+    snapshot = _snapshot(
+        source_scope=[{"source_id": "source-1", "title": "Trusted note",
+                       "sample_text": "Method line.\nResult line.\nCost line."}],
+        target_cells=[
+            {"cell_id": "entity-1:method", "expected_version": 1},
+            {"cell_id": "entity-1:result", "expected_version": 1},
+            {"cell_id": "entity-1:cost", "expected_version": 1},
+        ],
+    )
+    completion = DeepCellExecutor(_Permit(), "worker-a", toolchain=ManyCardsToolchain(), enable_llm=False)(
+        _command(), _claim(snapshot))
+
+    assert len(completion.evidence) <= 12
+    assert {candidate.cell_key for candidate in completion.candidates} == {
+        "entity-1:method", "entity-1:result", "entity-1:cost"}
+    # 没有模型时每张卡自成一簇，三个单元格合计超过 6 个簇，按单元格计数后仍能通过完成协议
+    assert len(completion.extraction_diagnostics.claim_clusters) > 6

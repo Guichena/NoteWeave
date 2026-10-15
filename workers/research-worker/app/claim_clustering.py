@@ -93,9 +93,20 @@ def build_claim_clusters(rows, llm=None):
     return sorted(result, key=lambda c: (c["cell_key"], -c["confidence_ppm"], c["claim_text"]))
 
 
+# 每个单元格最多 6 张证据卡，因此最多 6 个候选簇；一个任务最多覆盖 6 个单元格
+MAX_CLUSTERS_PER_CELL = 6
+MAX_CLUSTERS_PER_TASK = 36
+
+
 def validate_clusters(clusters):
-    if not isinstance(clusters, list) or len(clusters) > 6:
+    if not isinstance(clusters, list) or len(clusters) > MAX_CLUSTERS_PER_TASK:
         raise ValueError("候选簇列表超过上限或格式不符合约定")
+    per_cell: dict[object, int] = {}
+    for cluster in clusters:
+        cell_key = cluster.get("cell_key") if isinstance(cluster, dict) else None
+        per_cell[cell_key] = per_cell.get(cell_key, 0) + 1
+        if per_cell[cell_key] > MAX_CLUSTERS_PER_CELL:
+            raise ValueError("候选簇列表超过上限或格式不符合约定")
     seen, evidence = set(), set()
     for cluster in clusters:
         if not isinstance(cluster, dict) or set(cluster) != {

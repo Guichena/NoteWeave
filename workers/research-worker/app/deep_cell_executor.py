@@ -81,6 +81,8 @@ from app.task_snapshot_contract import ResearchAgentTaskSnapshot, require_truste
 # Extraction may return more cards, but the agent boundary deliberately admits
 # only the six strongest deterministic cards for a single target cell.
 MAX_EVIDENCE_CARDS_PER_CELL = 6
+# 一次完成最多提交的证据条数，与后端完成协议一致；多单元格任务按单元格平分
+MAX_EVIDENCE_PER_COMPLETION = 12
 
 class PermitClient(Protocol):
     def require_permit(self, snapshot: ResearchAgentTaskSnapshot, tool_identity: str) -> None:
@@ -435,6 +437,7 @@ def _extract_per_target_column(toolchain, snapshot: ResearchAgentTaskSnapshot, t
     results: list[ExtractionResult] = []
     cards: list[object] = []
     evidence: list[dict[str, object]] = []
+    per_cell_limit = max(1, min(MAX_EVIDENCE_CARDS_PER_CELL, MAX_EVIDENCE_PER_COMPLETION // len(columns)))
     for column in columns:
         require_active()
         column_plan = plan.model_copy(update={
@@ -447,7 +450,7 @@ def _extract_per_target_column(toolchain, snapshot: ResearchAgentTaskSnapshot, t
         cards.extend(column_cards)
         seen = {str(item["evidence_key"]) for item in evidence}
         # 同一段原文可能同时支撑多个单元格，证据只保留一份，候选按证据键引用
-        for item in _trusted_evidence_payload(snapshot, column_cards, windows)[:MAX_EVIDENCE_CARDS_PER_CELL]:
+        for item in _trusted_evidence_payload(snapshot, column_cards, windows)[:per_cell_limit]:
             if str(item["evidence_key"]) not in seen:
                 seen.add(str(item["evidence_key"]))
                 evidence.append(item)
