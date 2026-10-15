@@ -469,6 +469,34 @@ class ResearchAgentTaskCoordinatorServiceTest {
     }
 
     @Test
+    void submittedTasksThatLeftCellsWithoutAnswersGetOneRepairEach() {
+        coordinator.planAndEnqueueForWave(runId, 1);
+        // 合并任务提交成功，但部分单元格没有拿到候选，任务本身不算失败
+        jdbcTemplate.update("update research_agent_task set status = 'SUBMITTED', terminal_reason = 'CANDIDATES_PROPOSED', terminal_at = current_timestamp where research_run_id = ?", runId);
+        jdbcTemplate.update("update research_cell set cell_status = 'GAP', active_task_id = null where research_run_id = ?", runId);
+        String originalSource = jdbcTemplate.queryForObject("select id from source where workspace_id = ?", String.class, workspaceId);
+        String independentSource = insertReadySource("Independent gap repair source");
+        jdbcTemplate.update("update research_run set source_scope_json = ? where id = ?",
+                "[\"" + originalSource + "\",\"" + independentSource + "\"]", runId);
+        int gapCells = jdbcTemplate.queryForObject(
+                "select count(*) from research_cell where research_run_id = ? and cell_status = 'GAP'", Integer.class, runId);
+
+        var first = coordinatorTick.tick(runId, "scheduler-a");
+        jdbcTemplate.update("update research_agent_task set status = 'SUBMITTED', terminal_at = current_timestamp where research_run_id = ? and role = 'COUNTERFACTUAL'", runId);
+        var afterRepair = coordinatorTick.tick(runId, "scheduler-b");
+
+        assertThat(first.outcome()).isEqualTo("GAP_REPAIR_TASKIZED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from research_agent_task where research_run_id = ? and role = 'COUNTERFACTUAL'", Integer.class, runId))
+                .isEqualTo(gapCells);
+        // 每个单元格只补查一次，补查后仍无结论就如实收尾
+        assertThat(afterRepair.outcome()).isEqualTo("RUN_COMPLETED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select completion_terminal_state from research_run where id = ?", String.class, runId))
+                .isEqualTo("INSUFFICIENT_EVIDENCE");
+    }
+
+    @Test
     void shouldLocallyReplanOnlyTheUnresolvedCellAndPersistItsAudit() throws Exception {
         coordinator.planAndEnqueueForWave(runId, 1);
         jdbcTemplate.update("""

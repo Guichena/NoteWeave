@@ -73,6 +73,8 @@ public class ResearchAgentCoordinatorTickService {
         globalConflictService.adjudicateRun(runId);
         // 已结束任务留下的单元格绑定会让后续任务认领失败，先清掉再判断下一步
         lifecycle.releaseOrphanedCellBindings(runId);
+        // 收到消息时还不能认领的任务会被 Worker 跳过，投递后长时间无人认领的重新投递一次
+        lifecycle.redriveStrandedDeliveries(runId);
         ResearchAgentCoordinatorSnapshotService.Snapshot auditSnapshot = snapshots.snapshot(runId);
         if (auditSnapshot.activeTaskCount() == 0) {
             var audit = roleWorkflow.advancePendingAudit(runId, auditSnapshot.currentWaveNo());
@@ -107,7 +109,11 @@ public class ResearchAgentCoordinatorTickService {
             // through to the shared terminal decision instead of reporting a no-op as progress.
             snapshot = snapshots.snapshot(runId);
         }
-        if (snapshot.failedTaskCount() > 0 || snapshot.verifierRepairRequiredCount() > 0) {
+        // 合并任务里没拿到结论的单元格也走同一套补查；每个单元格只补一次，补查后不再计入。
+        // 模型或搜索服务不可用导致的缺口补查也没用，交给后面的收尾判断按基础设施故障处理
+        boolean gapRepairDue = snapshot.gapRepairCellCount() > 0
+                && !completionGate.evaluateForRun(runId).terminalState().isInfrastructureFailure();
+        if (snapshot.failedTaskCount() > 0 || snapshot.verifierRepairRequiredCount() > 0 || gapRepairDue) {
             ResearchAgentRepairAdvancementService.RepairReceipt receipt = recovery.recoverRepairableWave(
                     snapshot, coordinatorInstanceId.trim());
             faultInjector.checkpoint(ResearchAgentCoordinatorTickFaultInjector.Stage.AFTER_FAILED_WAVE_RECOVERY);
@@ -115,8 +121,14 @@ public class ResearchAgentCoordinatorTickService {
                     || receipt.taskization().idempotentReplayCount() > 0;
             String outcome = snapshot.failedTaskCount() > 0
                     ? (taskized ? "FAILED_WAVE_REPAIR_TASKIZED" : "FAILED_WAVE_STOPPED")
-                    : (taskized ? "VERIFIER_REPAIR_TASKIZED" : "VERIFIER_REPAIR_STOPPED");
-            if (!taskized) {
+                    : snapshot.verifierRepairRequiredCount() > 0
+                    ? (taskized ? "VERIFIER_REPAIR_TASKIZED" : "VERIFIER_REPAIR_STOPPED")
+                    : (taskized ? "GAP_REPAIR_TASKIZED" : "GAP_REPAIR_STOPPED");
+            boolean gapOnly = snapshot.failedTaskCount() == 0 && snapshot.verifierRepairRequiredCount() == 0;
+            if (!taskized && gapOnly) {
+                // 缺口补查没派出任务（预算用完或没有可换的来源）时，照常走后面的宽搜索与收尾判断
+                snapshot = snapshots.snapshot(runId);
+            } else if (!taskized) {
                 // Tasks that only failed to find usable evidence, with the bounded repair budget
                 // spent, are the same honest evidence outcome as the verifier-only case below: the
                 // verified cells still deserve a report.  Runtime failures (lease exhaustion,
@@ -146,8 +158,9 @@ public class ResearchAgentCoordinatorTickService {
                 lifecycle.completeRun(runId, decision.terminalState().name());
                 return new TickReceipt(evidenceOnlyStop ? "FAILED_WAVE_STOPPED_COMPLETED" : "VERIFIER_REPAIR_STOPPED_COMPLETED",
                         snapshot, receipt.taskization());
+            } else {
+                return new TickReceipt(outcome, snapshot, receipt.taskization());
             }
-            return new TickReceipt(outcome, snapshot, receipt.taskization());
         }
         var discovery = discoveryLoop.advance(runId, snapshot.currentWaveNo());
         if (!Set.of("DISABLED", "STOPPED").contains(discovery.outcome()))

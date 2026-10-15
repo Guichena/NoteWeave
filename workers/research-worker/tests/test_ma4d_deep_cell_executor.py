@@ -1024,3 +1024,38 @@ def test_three_cell_bundle_stays_inside_the_completion_contract() -> None:
         "entity-1:method", "entity-1:result", "entity-1:cost"}
     # 没有模型时每张卡自成一簇，三个单元格合计超过 6 个簇，按单元格计数后仍能通过完成协议
     assert len(completion.extraction_diagnostics.claim_clusters) > 6
+
+
+def test_bundled_extraction_sees_column_labels_and_reads_more_documents() -> None:
+    from app.deep_cell_executor import BASE_DOCUMENTS_PER_TASK, DeepCellExecutor
+    from app.deterministic_fake_toolchain import DeterministicFakeToolchain
+
+    class RecordingToolchain(DeterministicFakeToolchain):
+        def __init__(self) -> None:
+            super().__init__()
+            self.seen: list[tuple[str, str, str, int]] = []
+
+        def extract(self, task_input, plan, windows, *, llm_client):
+            column = plan.research_schema.columns[0]
+            self.seen.append((column.key, column.label, column.description,
+                              int(plan.stop_contract["tool_response_retention_budget"])))
+            return super().extract(task_input, plan, windows, llm_client=llm_client)
+
+    payload = _snapshot(target_cells=[
+        {"cell_id": "entity-1:dim-a", "expected_version": 1},
+        {"cell_id": "entity-1:dim-b", "expected_version": 1},
+    ])
+    payload.pop("snapshot_digest")
+    payload["query_policy"] = {**payload["query_policy"], "entity_label": "MySQL 8.4", "column_specs": [
+        {"key": "dim-a", "label": "JSON 数据类型", "description": "JSON 列的存储格式"},
+        {"key": "dim-b", "label": "索引方式", "description": "可加速 JSON 查询的索引"},
+    ]}
+    snapshot = {**payload, "snapshot_digest": snapshot_digest(payload)}
+    toolchain = RecordingToolchain()
+
+    DeepCellExecutor(_Permit(), "worker-a", toolchain=toolchain, enable_llm=False)(_command(), _claim(snapshot))
+
+    assert toolchain.seen == [
+        ("dim-a", "JSON 数据类型", "JSON 列的存储格式", BASE_DOCUMENTS_PER_TASK + 2),
+        ("dim-b", "索引方式", "可加速 JSON 查询的索引", BASE_DOCUMENTS_PER_TASK + 2),
+    ]

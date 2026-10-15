@@ -298,9 +298,26 @@ public class ResearchAgentTaskService {
                             """, bindingOwner, task.leaseEpoch(), task.fencingToken(), task.researchRunId(), cellKey,
                             version.intValue(), task.planRevision(), task.entitySetVersion(), bindingOwner);
             if (updated != 1) {
+                // 版本仍然匹配、只是被别的任务占着时，任务还在排队，不能当作过期取消
+                if (targetHeldByAnotherTask(task, cellKey, version.intValue(), bindingOwner)) {
+                    throw new BusinessException(TARGET_BUSY, "A task target is still held by another task");
+                }
                 throw new BusinessException("RESEARCH_AGENT_TASK_TARGET_STALE", "A task target no longer matches its snapshot");
             }
         }
+    }
+
+    static final String TARGET_BUSY = "RESEARCH_AGENT_TASK_TARGET_BUSY";
+
+    private boolean targetHeldByAnotherTask(TaskRow task, String cellKey, int version, String bindingOwner) {
+        Integer held = jdbcTemplate.queryForObject("""
+                select count(*) from research_cell
+                where research_run_id = ? and cell_key = ? and cell_version = ?
+                  and plan_revision <= ? and entity_set_version = ?
+                  and active_task_id is not null and active_task_id <> ?
+                """, Integer.class, task.researchRunId(), cellKey, version, task.planRevision(),
+                task.entitySetVersion(), bindingOwner);
+        return held != null && held > 0;
     }
 
     private void releaseCellBindings(String taskId) {

@@ -348,16 +348,17 @@ class ResearchAgentRunCompletionGateTest {
                     id, workspace_id, task_id, question, profile_key, source_scope_json, status, agent_execution_mode)
                 values (?, ?, ?, 'Can missing evidence complete honestly?', 'DEFAULT', '[]', 'RUNNING', 'INCREMENTAL_V1')
                 """, runId, workspaceId, parentTaskId);
+        // 单元格已补查过一次，协调时只剩收尾判断
         jdbcTemplate.update(
                 "insert into research_row(id, research_run_id, row_key, row_status) values (?, ?, 'entity-1', 'GAP')",
                 rowId, runId);
         jdbcTemplate.update("""
                 insert into research_cell(id, research_run_id, research_row_id, cell_key, column_key, cell_status, repair_count)
-                values (?, ?, ?, 'entity-1:answer', 'answer', 'GAP', 0)
+                values (?, ?, ?, 'entity-1:answer', 'answer', 'GAP', 1)
                 """, Ids.newId(), runId, rowId);
         jdbcTemplate.update("""
                 insert into research_cell(id, research_run_id, research_row_id, cell_key, column_key, cell_status, repair_count)
-                values (?, ?, ?, 'entity-1:key_evidence', 'key_evidence', 'GAP', 0)
+                values (?, ?, ?, 'entity-1:key_evidence', 'key_evidence', 'GAP', 1)
                 """, Ids.newId(), runId, rowId);
         jdbcTemplate.update("""
                 insert into research_agent_task(

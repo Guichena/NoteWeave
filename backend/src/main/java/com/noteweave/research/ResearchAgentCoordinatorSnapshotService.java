@@ -52,14 +52,22 @@ public class ResearchAgentCoordinatorSnapshotService {
                   and (cell_status <> 'VERIFIED' or evidence_refs_json is null or evidence_refs_json = '[]'
                        or semantic_audit_status not in ('NOT_REQUIRED','PASS'))
                 """, Long.class, runId);
+        long gapRepairCells = ResearchAgentGapProjectionService.unrepairedGapCellKeys(jdbcTemplate, runId).size();
         return new Snapshot(runId, checkpoint == null ? 0 : checkpoint, wave == null ? 1 : wave,
                 taskCount == null ? 0 : taskCount, active == null ? 0 : active, failed == null ? 0 : failed,
                 verifierRepairs == null ? 0 : verifierRepairs,
-                verifiedCells == null ? 0 : verifiedCells, nonFinalizableCells == null ? 0 : nonFinalizableCells);
+                verifiedCells == null ? 0 : verifiedCells, nonFinalizableCells == null ? 0 : nonFinalizableCells,
+                gapRepairCells);
     }
     public record Snapshot(String runId, int checkpointSeq, int currentWaveNo, long taskCount,
                            long activeTaskCount, long failedTaskCount, long verifierRepairRequiredCount,
-                           long verifiedCellCount, long nonFinalizableCellCount) {
+                           long verifiedCellCount, long nonFinalizableCellCount, long gapRepairCellCount) {
+        public Snapshot(String runId, int checkpointSeq, int currentWaveNo, long taskCount,
+                        long activeTaskCount, long failedTaskCount, long verifierRepairRequiredCount,
+                        long verifiedCellCount, long nonFinalizableCellCount) {
+            this(runId, checkpointSeq, currentWaveNo, taskCount, activeTaskCount, failedTaskCount,
+                    verifierRepairRequiredCount, verifiedCellCount, nonFinalizableCellCount, 0);
+        }
         public boolean readyForFinalization() { return verifiedCellCount > 0 && nonFinalizableCellCount == 0; }
     }
 }

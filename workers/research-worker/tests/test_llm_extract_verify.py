@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from app.extractor import extract_evidence_cards, extract_evidence_cards_detailed
+from app.extractor import EXCERPT_MAX_CHARS, extract_evidence_cards, extract_evidence_cards_detailed
 from app.extraction_result import ExtractionFailureReason
 from app.llm_client import FakeLlmClient
 from app.models import ResearchStateLedger, ResearchStateRow, ResearchTaskInput
@@ -139,7 +139,7 @@ def test_llm_extractor_should_send_relevant_page_excerpt_instead_of_navigation_p
 
     sent_text = llm_client.calls[0][1]["windows"][0]["text"]
     assert relevant in sent_text
-    assert len(sent_text) <= 1200
+    assert len(sent_text) <= EXCERPT_MAX_CHARS
 
 
 def test_deep_cell_extractor_should_preserve_server_owned_target_entity_id() -> None:

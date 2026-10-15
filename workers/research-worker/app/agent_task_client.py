@@ -410,8 +410,9 @@ class JavaResearchAgentTaskClient:
                 raw = raw_bytes.decode("utf-8", errors="strict")
         except error.HTTPError as exc:
             error_code = _read_error_code(exc)
+            # TARGET_BUSY：目标单元格还被别的任务占着，任务仍在排队；跳过这条消息，由后端在占用释放后重新投递
             if not_claimable_is_normal and error_code in {
-                "RESEARCH_AGENT_TASK_NOT_CLAIMABLE", "RESEARCH_AGENT_RUN_TERMINAL"
+                "RESEARCH_AGENT_TASK_NOT_CLAIMABLE", "RESEARCH_AGENT_RUN_TERMINAL", "RESEARCH_AGENT_TASK_TARGET_BUSY"
             }:
                 raise AgentTaskNotClaimableError(error_code) from exc
             raise AgentTaskApiError(exc.code, error_code) from exc

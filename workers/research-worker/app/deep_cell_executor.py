@@ -83,6 +83,10 @@ from app.task_snapshot_contract import ResearchAgentTaskSnapshot, require_truste
 MAX_EVIDENCE_CARDS_PER_CELL = 6
 # 一次完成最多提交的证据条数，与后端完成协议一致；多单元格任务按单元格平分
 MAX_EVIDENCE_PER_COMPLETION = 12
+# 每个深挖任务抓取的网页数：基数加单元格数，封顶避免抓取与抽取输入过大
+BASE_DOCUMENTS_PER_TASK = 4
+MAX_DOCUMENTS_PER_TASK = 10
+PER_QUERY_RESULTS = 5
 
 class PermitClient(Protocol):
     def require_permit(self, snapshot: ResearchAgentTaskSnapshot, tool_identity: str) -> None:
@@ -499,12 +503,18 @@ def _build_task_scope(snapshot: ResearchAgentTaskSnapshot) -> tuple[ResearchTask
     if (retrieval_mode != "SOURCES_ONLY") != allow_external:
         raise ValueError("DEEP_CELL snapshot retrieval_mode conflicts with external tool policy")
     columns: list[ResearchColumn] = []
+    # 列键是哈希编号，抽取模型只看键名无法判断这一列要找什么，需要带上规划时的列名与说明
+    specs = _column_labels(snapshot.query_policy)
     for target in snapshot.target_cells:
         entity, separator, column = target.cell_id.partition(":")
         if not separator or entity != snapshot.entity_id or not column.strip():
             raise ValueError("DEEP_CELL target cell is outside the snapshot entity scope")
         if column not in {item.key for item in columns}:
-            columns.append(ResearchColumn(key=column, label=column, required=True))
+            spec = specs.get(column, {})
+            columns.append(ResearchColumn(
+                key=column, label=str(spec.get("label") or column), required=True,
+                description=str(spec.get("description") or ""),
+                search_intents=list(spec.get("search_intents") or ())))
     entity_label = str(snapshot.query_policy.get("entity_label") or "").strip()
     scoped_query = raw_query.strip()
     if entity_label:
@@ -541,7 +551,21 @@ def _build_task_scope(snapshot: ResearchAgentTaskSnapshot) -> tuple[ResearchTask
         "research_type": snapshot.role,
     })
     plan.stop_contract["deep_cell_entity_id"] = snapshot.entity_id
+    plan.stop_contract["deep_cell_entity_label"] = entity_label
     plan.stop_contract["retrieval_mode"] = retrieval_mode
+    # 合并任务要用同一批网页回答多个单元格，抓取与阅读的网页数按单元格数增加
+    document_budget = min(MAX_DOCUMENTS_PER_TASK, BASE_DOCUMENTS_PER_TASK + len(columns))
+    plan.stop_contract["tool_response_retention_budget"] = max(
+        int(plan.stop_contract.get("tool_response_retention_budget", 5)), document_budget)
+    plan.stop_contract["evidence_horizon_window_budget"] = max(
+        int(plan.stop_contract.get("evidence_horizon_window_budget", 5)), document_budget)
+    # 搜索接口每次本来就返回多条结果，多保留几条不增加搜索费用，排序后再挑官方来源抓取
+    execution_profile = dict(plan.stop_contract.get("execution_profile", {}))
+    execution_profile["per_query_result_limit"] = max(
+        int(execution_profile.get("per_query_result_limit", 2)), PER_QUERY_RESULTS)
+    plan.stop_contract["execution_profile"] = execution_profile
+    plan.stop_contract["global_search_limit"] = max(
+        int(plan.stop_contract.get("global_search_limit", 8)), document_budget * 2)
     return task_input, plan, allow_external
 
 
@@ -593,11 +617,28 @@ def _prioritize_authoritative_hits(snapshot: ResearchAgentTaskSnapshot, hits: li
             return 2
         return 3
 
-    ordered = sorted(hits, key=tier)
+    versions = _entity_versions(str(snapshot.query_policy.get("entity_label") or ""))
+    ordered = sorted(hits, key=lambda hit: (tier(hit), _version_mismatch(versions, hit)))
     return [
         hit.model_copy(update={"rank": index}) if hasattr(hit, "model_copy") else hit
         for index, hit in enumerate(ordered, start=1)
     ]
+
+
+def _entity_versions(label: str) -> set[str]:
+    """研究对象名称里的版本号，例如 MySQL 8.4 得到 8.4，JDK 21 得到 21。"""
+    return set(re.findall(r"(?<![\w.])(\d+(?:\.\d+)*)(?![\w.])", label))
+
+
+def _version_mismatch(versions: set[str], hit: object) -> int:
+    """官方文档的网址常带版本号（如 /refman/9.3/），与研究对象的版本不一致时排到同一档的后面。"""
+    if not versions:
+        return 0
+    path = urlsplit(str(getattr(hit, "url", "") or "")).path
+    found = set(re.findall(r"(?<![\w.])(\d+\.\d+(?:\.\d+)*)(?![\w.])", path))
+    if not found:
+        return 0
+    return 0 if found & versions else 1
 
 
 def _interleave_hits_by_domain(hits: list[object]) -> list[object]:

@@ -300,6 +300,31 @@ class ResearchAgentLifecycleServiceTest {
                 .containsExactly("entity-1:by-active");
     }
 
+    @Test
+    void unclaimedDeliveriesAreSentAgainOnlyAfterTheWaitAndWhileTheTaskIsStillWaiting() {
+        String stranded = createTask("redrive-stranded");
+        String fresh = createTask("redrive-fresh");
+        String claimed = createTask("redrive-claimed");
+        for (String taskId : List.of(stranded, fresh, claimed)) {
+            outboxService.enqueue(taskId);
+        }
+        jdbcTemplate.update("update research_agent_outbox set status = 'SENT', sent_at = timestampadd(second, -300, current_timestamp) where research_agent_task_id in (?, ?)",
+                stranded, claimed);
+        jdbcTemplate.update("update research_agent_outbox set status = 'SENT', sent_at = current_timestamp where research_agent_task_id = ?", fresh);
+        taskService.claimTask(new ResearchAgentTaskService.ClaimCommand(claimed, "worker-a", 30));
+
+        assertThat(lifecycleService.redriveStrandedDeliveries(runId)).isEqualTo(1);
+
+        assertThat(jdbcTemplate.queryForMap(
+                "select status, delivery_no from research_agent_outbox where research_agent_task_id = ?", stranded))
+                .containsEntry("status", "READY")
+                .containsEntry("delivery_no", 2);
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from research_agent_outbox where research_agent_task_id = ?", String.class, fresh)).isEqualTo("SENT");
+        // 重新投递后状态回到 READY，下一轮不会重复计入
+        assertThat(lifecycleService.redriveStrandedDeliveries(runId)).isZero();
+    }
+
     private void insertBoundCell(String rowId, String cellKey, String activeTaskId) {
         jdbcTemplate.update("""
                 insert into research_cell(id, research_run_id, research_row_id, cell_key, column_key,

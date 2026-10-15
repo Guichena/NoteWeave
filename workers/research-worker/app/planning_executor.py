@@ -150,6 +150,13 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems) -> o
             "make each asked fact a dimension.",
             "Keep only dimensions needed to answer the question; perspectives help choose them but must not add "
             "dimensions the question does not need. Prefer the smallest table that fully answers the question.",
+            "When the question compares organizations, studies, vendors or implementations without naming them, "
+            "name 2 to 4 specific ones as entities (for example a published study with its organization and year), "
+            "preferring ones seen in probe_results; never use a collective entity such as 'organizations' or "
+            "'empirical studies'.",
+            "Keep version numbers written in the question in the entity labels, for example 'MySQL 8.4'.",
+            "Never add meta dimensions such as source, official link, citation, evidence strength or confidence; "
+            "every cell already carries its quoted evidence and source.",
             "Cell limits by effort_tier: SIMPLE at most 2 entities and 6 cells, STANDARD at most 12 cells, "
             "COMPLEX at most 24 cells.",
             "Each dimension needs a short label, a one-sentence description of what evidence answers it, an "

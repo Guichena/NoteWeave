@@ -317,6 +317,34 @@ public class ResearchAgentLifecycleService {
                 """, runId);
     }
 
+    /** 投递后多久仍无人认领就重新投递；Worker 正在处理长任务时消息排队也属正常，所以留出余量。 */
+    static final int REDRIVE_AFTER_SECONDS = 90;
+    /** 单个任务的投递次数上限，防止目标一直被占用时无限重发。 */
+    static final int MAX_DELIVERIES = 30;
+
+    /**
+     * Worker 收到消息时任务可能还不能认领（目标单元格被别的任务占着、运行状态短暂不允许），
+     * Worker 只能跳过并提交这条消息，任务就一直停在待认领。这里把已投递一段时间仍未被认领的任务重新投递，
+     * 重复投递是安全的：任务一旦被认领，后到的消息会因不可认领而被跳过。
+     *
+     * @return 重新投递的任务数
+     */
+    @Transactional
+    public int redriveStrandedDeliveries(String runId) {
+        List<String> taskIds = jdbcTemplate.query("""
+                select task.id from research_agent_task task
+                join research_agent_outbox outbox on outbox.research_agent_task_id = task.id
+                where task.research_run_id = ? and outbox.status = 'SENT'
+                  and outbox.sent_at <= timestampadd(second, ?, current_timestamp)
+                  and outbox.delivery_no < ?
+                  and (task.status = 'PENDING'
+                    or (task.status = 'RETRY_WAIT' and (task.next_attempt_at is null or task.next_attempt_at <= current_timestamp)))
+                order by task.id
+                """, (rs, rowNum) -> rs.getString(1), runId, -REDRIVE_AFTER_SECONDS, MAX_DELIVERIES);
+        taskIds.forEach(outboxService::enqueueRetry);
+        return taskIds.size();
+    }
+
     /**
      * 任务创建后它的目标单元格被其他任务更新，版本已过期，这个任务永远无法被认领，
      * 留在待认领状态会让整次研究停住。取消它并释放预算和单元格绑定，下一次协调时按最新版本重新规划。

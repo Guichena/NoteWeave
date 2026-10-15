@@ -98,3 +98,20 @@ def test_doc_paths_and_standards_sites_count_as_official_docs() -> None:
     assert quality("https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1") == "OFFICIAL_DOC"
     assert quality("https://medium.com/@someone/docs/postgres-json") == "SECONDARY_SOURCE"
     assert quality("https://example.com/blog/postgres-json") != "OFFICIAL_DOC"
+
+
+def test_doc_url_with_another_version_moves_behind_the_matching_version() -> None:
+    snapshot = SimpleNamespace(query_policy={"authoritative_domains": ["dev.mysql.com"], "entity_label": "MySQL 8.4"})
+    hits = [
+        SimpleNamespace(url="https://dev.mysql.com/doc/refman/9.3/en/json.html", source_domain="dev.mysql.com",
+                        source_quality="OFFICIAL_DOC", adapter="serper"),
+        SimpleNamespace(url="https://dev.mysql.com/doc/refman/8.4/en/json.html", source_domain="dev.mysql.com",
+                        source_quality="OFFICIAL_DOC", adapter="serper"),
+        SimpleNamespace(url="https://dev.mysql.com/doc/relnotes/", source_domain="dev.mysql.com",
+                        source_quality="OFFICIAL_DOC", adapter="serper"),
+    ]
+
+    ordered = _prioritize_authoritative_hits(snapshot, hits)
+
+    assert [hit.url.split("/doc/")[1] for hit in ordered] == [
+        "refman/8.4/en/json.html", "relnotes/", "refman/9.3/en/json.html"]

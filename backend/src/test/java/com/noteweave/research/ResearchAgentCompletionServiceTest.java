@@ -154,13 +154,40 @@ class ResearchAgentCompletionServiceTest {
         assertThat(jdbcTemplate.queryForObject("select active_task_id from research_cell where research_run_id = ?", String.class, runId)).isNotNull();
 
         assertThat(roleWorkflow.advancePendingAudit(runId, 1).outcome()).isEqualTo("AUDIT_TASKIZED");
-        String staleAudit = jdbcTemplate.queryForObject("select id from research_agent_task where research_run_id = ? and role = 'EVIDENCE_AUDIT'", String.class, runId);
-        assertThatThrownBy(() -> taskService.claimTask(new ResearchAgentTaskService.ClaimCommand(staleAudit, "worker-a", 300)))
+        String audit = jdbcTemplate.queryForObject("select id from research_agent_task where research_run_id = ? and role = 'EVIDENCE_AUDIT'", String.class, runId);
+        // 单元格版本没变，只是仍被已结束的任务组占着：任务在排队，不能按过期取消
+        assertThatThrownBy(() -> taskService.claimTask(new ResearchAgentTaskService.ClaimCommand(audit, "worker-a", 300)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(error -> ((BusinessException) error).code())
-                .isEqualTo("RESEARCH_AGENT_TASK_TARGET_STALE");
+                .isEqualTo("RESEARCH_AGENT_TASK_TARGET_BUSY");
+        assertThat(jdbcTemplate.queryForObject("select status from research_agent_task where id = ?", String.class, audit))
+                .isEqualTo("PENDING");
 
-        // 修复一：协调时释放已结束任务留下的绑定；修复二：过期审计被取消后重新创建，而不是重放已取消的任务
+        // 协调时释放已结束任务留下的绑定后，同一个审计任务就能认领
+        assertThat(lifecycleService.releaseOrphanedCellBindings(runId)).isEqualTo(1);
+        assertThat(taskService.claimTask(new ResearchAgentTaskService.ClaimCommand(audit, "worker-a", 300)).taskId())
+                .isEqualTo(audit);
+    }
+
+    @Test
+    void cancelledStaleAuditIsRegeneratedUnderANewKey() {
+        QuorumPair pair = quorumPair();
+        String runId = pair.first().runId();
+        jdbcTemplate.update("update research_run set agent_feature_flags_json = '{\"evidence_audit_v1\":true}', research_intent_json = ?, control_pack_json = ? where id = ?",
+                "{\"depth\":\"STANDARD\",\"research_type\":\"AUTO\"}",
+                "{\"pack_type\":\"RESEARCH_AGENT\",\"target_key\":\"DEFAULT\",\"task_neighborhood\":\"RESEARCH_DEFAULT\"}", runId);
+        completionService.complete(pair.first().taskId(), envelopeForSource(pair.first(), "worker-a", "source-0", "Source 0", "trusted quote 0"));
+        Map<String, Long> emptyUsage = Map.of("llm_calls", 0L, "search_calls", 1L, "fetch_calls", 1L, "read_calls", 1L,
+                "extract_calls", 1L, "evidence_cards", 0L, "candidates_submitted", 0L);
+        completionService.complete(pair.second().taskId(), signed(new ResearchAgentCompletionEnvelope(
+                "research-agent-completion.v1", pair.second().taskId(), "worker-b", pair.second().leaseEpoch(),
+                pair.second().fencingToken(), pair.second().executionKey(), pair.second().snapshotDigest(),
+                "NO_SUPPORTED_CANDIDATE", emptyUsage, Map.of("search_hits", 0L, "documents", 0L, "windows", 0L),
+                "sha256:" + "3".repeat(64), List.of(), List.of(), null)));
+        assertThat(roleWorkflow.advancePendingAudit(runId, 1).outcome()).isEqualTo("AUDIT_TASKIZED");
+        String staleAudit = jdbcTemplate.queryForObject("select id from research_agent_task where research_run_id = ? and role = 'EVIDENCE_AUDIT'", String.class, runId);
+
+        // 真正过期的审计被取消后重新创建，而不是重放已取消的任务
         jdbcTemplate.update("update research_agent_task set status = 'CANCELLED', terminal_reason = 'TARGET_STALE' where id = ?", staleAudit);
         assertThat(lifecycleService.releaseOrphanedCellBindings(runId)).isEqualTo(1);
         assertThat(roleWorkflow.advancePendingAudit(runId, 1).outcome()).isEqualTo("AUDIT_TASKIZED");

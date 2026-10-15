@@ -47,6 +47,18 @@ public class ResearchAgentGapProjectionService {
                 aggregate.excludedSources.addAll(sourceIds(task.executionContextJson()));
             }
         }
+        // 合并任务只要有一个单元格拿到候选就算成功，其余单元格留在 GAP 也不会进入失败任务的补查；
+        // 失败任务所在轮次被证据审计推过去后同样看不到。这些单元格按研究范围各补查一次。
+        for (String cellKey : unrepairedGapCellKeys(jdbcTemplate, runId)) {
+            Aggregate aggregate = byCell.computeIfAbsent(cellKey, ignored -> new Aggregate());
+            for (FailedTask task : evidenceTasksFor(runId, cellKey)) {
+                aggregate.taskIds.add(task.id());
+                aggregate.statuses.add(task.status());
+                if ("FAILED".equals(task.status()) && !task.terminalReason().isBlank()) aggregate.reasons.add(task.terminalReason());
+                aggregate.excludedSources.addAll(sourceIds(task.executionContextJson()));
+            }
+            aggregate.reasons.add(GAP_REPAIR_REASON);
+        }
         List<VerifierRepair> verifierRepairs = jdbcTemplate.query("""
                 select id, target_id, reason_code, evidence_ids_json
                 from research_verifier_decision
@@ -77,6 +89,55 @@ public class ResearchAgentGapProjectionService {
                     aggregate.reasons.stream().sorted().toList()));
         }
         return result.stream().sorted(Comparator.comparing(RepairGap::cellKey)).toList();
+    }
+
+    static final String GAP_REPAIR_REASON = "NO_SUPPORTED_CANDIDATE";
+    /** 每轮最多补查的缺口单元格数，规模大的研究分几轮补，避免一次派出过多任务。 */
+    static final int GAP_REPAIR_MAX_CELLS = 8;
+
+    /**
+     * 已经被深挖或补查任务处理过、仍然没有结论且从未补查过的单元格。
+     * 快照计数与补查投影共用这一查询，触发条件和实际补查目标不会不一致。
+     */
+    static List<String> unrepairedGapCellKeys(JdbcTemplate jdbcTemplate, String runId) {
+        return jdbcTemplate.query("""
+                select cell.cell_key from research_cell cell
+                where cell.research_run_id = ? and cell.cell_status = 'GAP'
+                  and cell.repair_count = 0 and cell.active_task_id is null
+                  and exists (
+                    select 1 from research_agent_task task
+                    where task.research_run_id = cell.research_run_id
+                      and task.role in ('DEEP_CELL', 'COUNTERFACTUAL')
+                      and task.status in ('SUBMITTED', 'FAILED')
+                      and task.target_cells_json like concat('%"', cell.cell_key, '"%')
+                  )
+                  and not exists (
+                    select 1 from research_agent_task task
+                    where task.research_run_id = cell.research_run_id
+                      and task.status not in ('SUBMITTED', 'FAILED', 'CANCELLED')
+                      and task.target_cells_json like concat('%"', cell.cell_key, '"%')
+                  )
+                  and not exists (
+                    select 1 from research_verifier_decision decision
+                    where decision.research_run_id = cell.research_run_id
+                      and decision.target_id = cell.cell_key
+                      and decision.decision_status = 'OPEN'
+                  )
+                order by cell.cell_key
+                limit ?
+                """, (rs, rowNum) -> rs.getString(1), runId, GAP_REPAIR_MAX_CELLS);
+    }
+
+    private List<FailedTask> evidenceTasksFor(String runId, String cellKey) {
+        return jdbcTemplate.query("""
+                select id, status, coalesce(terminal_reason, ''), target_cells_json, execution_context_json
+                from research_agent_task
+                where research_run_id = ? and role in ('DEEP_CELL', 'COUNTERFACTUAL')
+                  and status in ('SUBMITTED', 'FAILED')
+                  and target_cells_json like concat('%"', ?, '"%')
+                order by cast(id as binary)
+                """, (rs, rowNum) -> new FailedTask(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5)),
+                runId, cellKey);
     }
 
     private CellState loadCell(String runId, String cellKey) {

@@ -49,6 +49,7 @@ class ResearchAgentCoordinatorRolloutGuardTest {
         verifyNoInteractions(coordinator, recovery, faults, finalization, runnableWork);
         // 每次协调都会先清理已结束任务留下的单元格绑定，除此之外不做任何生命周期操作
         org.mockito.Mockito.verify(lifecycle).releaseOrphanedCellBindings(org.mockito.ArgumentMatchers.anyString());
+        org.mockito.Mockito.verify(lifecycle).redriveStrandedDeliveries(org.mockito.ArgumentMatchers.anyString());
         org.mockito.Mockito.verifyNoMoreInteractions(lifecycle);
     }
 }

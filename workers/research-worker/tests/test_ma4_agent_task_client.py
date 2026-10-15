@@ -189,6 +189,24 @@ def test_client_should_classify_not_claimable_without_leaking_backend_body(monke
     assert "never-log-this" not in str(exc.value)
 
 
+def test_busy_target_is_a_skip_and_stale_target_is_still_a_failure(monkeypatch) -> None:
+    from app.agent_task_client import AgentTaskApiError, AgentTaskNotClaimableError, JavaResearchAgentTaskClient
+
+    client = JavaResearchAgentTaskClient("http://backend", "token", "worker-a")
+    bodies = iter([b'{"code":"RESEARCH_AGENT_TASK_TARGET_BUSY"}', b'{"code":"RESEARCH_AGENT_TASK_TARGET_STALE"}'])
+
+    def fake_urlopen(*_args, **_kwargs):
+        raise error.HTTPError("http://backend/task", 400, "bad request", {}, io.BytesIO(next(bodies)))
+
+    monkeypatch.setattr("app.agent_task_client.request.urlopen", fake_urlopen)
+
+    with pytest.raises(AgentTaskNotClaimableError):
+        client.claim("agent-task-1")
+    with pytest.raises(AgentTaskApiError) as stale:
+        client.claim("agent-task-1")
+    assert stale.value.error_code == "RESEARCH_AGENT_TASK_TARGET_STALE"
+
+
 def test_client_should_report_delivery_failure_with_outbox_and_delivery_identity(monkeypatch) -> None:
     from app.agent_task_client import JavaResearchAgentTaskClient
 
