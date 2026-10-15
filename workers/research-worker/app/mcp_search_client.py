@@ -134,18 +134,71 @@ def _is_retryable_tool_error(text: str) -> bool:
     ))
 
 
-_default_client: McpSearchClient | None = None
+# 搜索代理的 REST 接口与 Serper、Tavily 官方接口兼容：(路径, 鉴权方式)
+_REST_ROUTES: dict[str, tuple[str, str]] = {
+    SERPER_SEARCH_TOOL: ("/serper/search", "x-api-key"),
+    TAVILY_SEARCH_TOOL: ("/tavily/search", "bearer"),
+    TAVILY_EXTRACT_TOOL: ("/tavily/extract", "bearer"),
+}
+
+
+class SearchProxyRestClient:
+    """搜索代理的 REST 客户端，接口与 McpSearchClient 相同，省去 MCP 的会话初始化。
+
+    HTTP 错误原样抛出 HTTPError，由调用方按状态码与响应正文判断是否可重试、是否额度用尽。
+    """
+
+    def __init__(self, base_url: str, api_key: str, timeout_seconds: float = 30) -> None:
+        self.url = base_url.strip().rstrip("/")
+        self.api_key = api_key.strip()
+        self.timeout_seconds = timeout_seconds
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.url and self.api_key)
+
+    def call_tool(self, name: str, arguments: dict[str, object]) -> dict[str, object]:
+        route = _REST_ROUTES.get(name)
+        if route is None:
+            raise McpToolError(f"unsupported search proxy tool: {name}", retryable=False)
+        path, auth = route
+        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        if auth == "x-api-key":
+            headers["X-API-KEY"] = self.api_key
+        else:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        request = urllib.request.Request(
+            self.url + path, data=json.dumps(arguments).encode("utf-8"), headers=headers, method="POST"
+        )
+        with credential_safe_urlopen(request, timeout=self.timeout_seconds) as response:
+            payload = json.loads(response.read().decode("utf-8") or "{}")
+        if not isinstance(payload, dict):
+            raise McpToolError("search proxy returned a non-object payload", retryable=False)
+        return payload
+
+
+_default_client: McpSearchClient | SearchProxyRestClient | None = None
 _default_lock = threading.Lock()
 
 
-def default_mcp_search_client() -> McpSearchClient | None:
-    """按环境变量构造进程内共享的客户端；未配置地址或密钥时返回 None。"""
+def default_mcp_search_client() -> McpSearchClient | SearchProxyRestClient | None:
+    """按环境变量构造进程内共享的搜索代理客户端；未配置地址或密钥时返回 None。
+
+    配置了 NOTEWEAVE_RESEARCH_SEARCH_PROXY_BASE_URL 时用 REST 接口，否则用 MCP 接口；
+    密钥优先取 NOTEWEAVE_RESEARCH_SEARCH_PROXY_API_KEY，未配置时沿用 MCP 的密钥。
+    """
     global _default_client
-    url = os.getenv("NOTEWEAVE_RESEARCH_MCP_SEARCH_URL", "").strip()
-    api_key = os.getenv("NOTEWEAVE_RESEARCH_MCP_SEARCH_API_KEY", "").strip()
+    rest_url = os.getenv("NOTEWEAVE_RESEARCH_SEARCH_PROXY_BASE_URL", "").strip()
+    mcp_url = os.getenv("NOTEWEAVE_RESEARCH_MCP_SEARCH_URL", "").strip()
+    api_key = (os.getenv("NOTEWEAVE_RESEARCH_SEARCH_PROXY_API_KEY", "").strip()
+               or os.getenv("NOTEWEAVE_RESEARCH_MCP_SEARCH_API_KEY", "").strip())
+    url = rest_url or mcp_url
     if not url or not api_key:
         return None
+    client_type = SearchProxyRestClient if rest_url else McpSearchClient
     with _default_lock:
-        if _default_client is None or _default_client.url != url or _default_client.api_key != api_key:
-            _default_client = McpSearchClient(url, api_key)
+        current = _default_client
+        if (not isinstance(current, client_type) or current.url.rstrip("/") != url.rstrip("/")
+                or current.api_key != api_key):
+            _default_client = client_type(url, api_key)
         return _default_client

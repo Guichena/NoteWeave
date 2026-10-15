@@ -182,3 +182,46 @@ def test_tavily_extract_rejects_private_targets_before_calling_the_service(monke
 
     assert snapshot["fetch_status"] != "FETCHED"
     assert server.requests == []
+
+
+def test_rest_client_routes_tools_to_proxy_paths_with_matching_auth(monkeypatch) -> None:
+    from app.mcp_search_client import SearchProxyRestClient
+
+    seen: list[tuple[str, dict[str, str], dict[str, object]]] = []
+
+    def fake_urlopen(request, *, timeout):  # noqa: ANN001, ANN202
+        del timeout
+        seen.append((request.full_url, {k.lower(): v for k, v in request.header_items()},
+                     json.loads(request.data.decode("utf-8"))))
+        return _FakeResponse(json.dumps({"organic": [], "results": []}), {"Content-Type": "application/json"})
+
+    monkeypatch.setattr(mcp_search_client, "credential_safe_urlopen", fake_urlopen)
+    client = SearchProxyRestClient("https://search.example.test/", "proxy-secret")
+
+    client.call_tool("search_proxy_serper_search", {"q": "a"})
+    client.call_tool("search_proxy_tavily_search", {"query": "a"})
+    client.call_tool("search_proxy_tavily_extract", {"urls": ["https://example.com"]})
+
+    assert [url for url, _, _ in seen] == [
+        "https://search.example.test/serper/search",
+        "https://search.example.test/tavily/search",
+        "https://search.example.test/tavily/extract",
+    ]
+    assert seen[0][1]["x-api-key"] == "proxy-secret" and "authorization" not in seen[0][1]
+    assert seen[1][1]["authorization"] == "Bearer proxy-secret"
+    with pytest.raises(McpToolError):
+        client.call_tool("search_proxy_exa_search", {"query": "a"})
+
+
+def test_rest_base_url_takes_precedence_over_mcp(monkeypatch) -> None:
+    from app.mcp_search_client import SearchProxyRestClient, default_mcp_search_client
+
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_MCP_SEARCH_URL", "https://search.example.test/mcp")
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_MCP_SEARCH_API_KEY", "proxy-secret")
+    monkeypatch.delenv("NOTEWEAVE_RESEARCH_SEARCH_PROXY_BASE_URL", raising=False)
+    assert isinstance(default_mcp_search_client(), McpSearchClient)
+
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_SEARCH_PROXY_BASE_URL", "https://search.example.test")
+    client = default_mcp_search_client()
+    assert isinstance(client, SearchProxyRestClient)
+    assert client.api_key == "proxy-secret"

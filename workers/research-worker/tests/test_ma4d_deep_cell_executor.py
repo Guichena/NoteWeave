@@ -951,3 +951,41 @@ def test_deterministic_fake_completion_should_cover_every_target_for_multi_cell_
     assert {item.quote_text for item in completion.evidence} == {
         "Method evidence line.", "Result evidence line."
     }
+
+
+def test_bundled_cells_extract_one_column_at_a_time_with_distinct_evidence_keys() -> None:
+    from app.deep_cell_executor import DeepCellExecutor
+    from app.deterministic_fake_toolchain import DeterministicFakeToolchain
+
+    class SharedQuoteToolchain(DeterministicFakeToolchain):
+        """每次抽取都引用同一段原文，模拟一段话同时支撑两个单元格。"""
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.extracted_columns: list[list[str]] = []
+
+        def extract(self, task_input, plan, windows, *, llm_client):
+            self.extracted_columns.append(list(plan.state_columns))
+            result = super().extract(task_input, plan, windows, llm_client=llm_client)
+            cards = tuple(card.model_copy(update={"evidence_id": "shared-evidence"}) for card in result.accepted_cards)
+            return result.model_copy(update={"accepted_cards": cards})
+
+    toolchain = SharedQuoteToolchain()
+    snapshot = _snapshot(
+        source_scope=[{"source_id": "source-1", "title": "Trusted note",
+                       "sample_text": "Method and result are both stated here."}],
+        target_cells=[
+            {"cell_id": "entity-1:method", "expected_version": 3},
+            {"cell_id": "entity-1:result", "expected_version": 5},
+        ],
+    )
+    completion = DeepCellExecutor(_Permit(), "worker-a", toolchain=toolchain, enable_llm=False)(
+        _command(), _claim(snapshot))
+
+    assert toolchain.extracted_columns == [["method"], ["result"]]
+    # 证据键包含单元格字段，同一段原文支撑两个单元格时是两条键不同的证据，不会重复
+    keys = [item.evidence_key for item in completion.evidence]
+    assert len(keys) == len(set(keys)) == 2
+    assert {candidate.cell_key for candidate in completion.candidates} == {"entity-1:method", "entity-1:result"}
+    assert all(len(candidate.evidence_keys) == 1 and candidate.evidence_keys[0] in keys
+               for candidate in completion.candidates)

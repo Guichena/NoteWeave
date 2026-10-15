@@ -23,10 +23,11 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class ResearchAgentTaskCoordinatorService {
-    // A DeepCell extraction is only reliable when the LLM has one authoritative
-    // target field. Bundling several schema columns lets one salient field consume
-    // the whole response and leaves sibling Cells without candidates.
-    private static final int MAX_CELLS_PER_TASK = 1;
+    // 同一研究对象的普通单元格合并为一个任务，检索、抓取与阅读只做一次。
+    // 抽取仍按单元格逐个进行（Worker 每次只给模型一个字段），避免一个显著字段占满
+    // 整次抽取、其余单元格拿不到候选。高风险单元格仍单独成任务并做双路取证。
+    private static final int DEFAULT_MAX_CELLS_PER_TASK = 3;
+    private int maxCellsPerTask = DEFAULT_MAX_CELLS_PER_TASK;
     // Must match deep_cell_executor.MAX_EVIDENCE_CARDS_PER_CELL. The worker
     // deterministically caps admitted evidence before building candidates.
     private static final int MAX_EVIDENCE_CARDS_PER_CELL = 6;
@@ -48,6 +49,18 @@ public class ResearchAgentTaskCoordinatorService {
         this.budgetService = budgetService; this.outboxService = outboxService;
         this.externalEvidencePolicy = externalEvidencePolicy;
         this.researchBriefCompiler = researchBriefCompiler;
+    }
+
+    /** 一个深挖任务最多覆盖的普通单元格数，取值 1 到 6；1 表示每个单元格单独成任务。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setMaxCellsPerTask(
+            @org.springframework.beans.factory.annotation.Value(
+                    "${noteweave.research.agent.max-cells-per-task:" + DEFAULT_MAX_CELLS_PER_TASK + "}") int value) {
+        this.maxCellsPerTask = Math.max(1, Math.min(6, value));
+    }
+
+    int maxCellsPerTask() {
+        return maxCellsPerTask;
     }
 
     @Transactional
@@ -640,8 +653,8 @@ public class ResearchAgentTaskCoordinatorService {
         return result;
     }
     private void appendNormalBundles(List<List<CellScope>> result, List<CellScope> cells) {
-        for (int i = 0; i < cells.size(); i += MAX_CELLS_PER_TASK) {
-            result.add(List.copyOf(cells.subList(i, Math.min(cells.size(), i + MAX_CELLS_PER_TASK))));
+        for (int i = 0; i < cells.size(); i += maxCellsPerTask) {
+            result.add(List.copyOf(cells.subList(i, Math.min(cells.size(), i + maxCellsPerTask))));
         }
     }
 
@@ -706,9 +719,9 @@ public class ResearchAgentTaskCoordinatorService {
         long cells = Math.max(1, targetCellCount);
         long evidence = cells * MAX_EVIDENCE_CARDS_PER_CELL;
         return Map.of(
-                // Worker 按调用次数结算：检索词规划最多 2 次（生成一次，输出不合规时修复一次），
-                // 证据抽取最多 2 次；最多 6 张卡产生 15 对等价判定，每对最多 2 次。
-                "llm_calls", 34L,
+                // Worker 按调用次数结算：检索词规划最多 2 次（生成一次，输出不合规时修复一次）；
+                // 每个单元格单独抽取最多 2 次，最多 6 张卡产生 15 对等价判定，每对最多 2 次。
+                "llm_calls", 2L + cells * 32L,
                 // Tool grants from earlier leases are charged at completion time. Reserve
                 // the task's three-attempt recovery ceiling so a legal retry can settle.
                 "search_calls", 3L,

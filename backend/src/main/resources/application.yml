@@ -73,6 +73,10 @@ noteweave:
     wide-discovery-precision-threshold: ${NOTEWEAVE_RESEARCH_WIDE_DISCOVERY_PRECISION_THRESHOLD:0.90}
     distributed-replay-observation: ${NOTEWEAVE_RESEARCH_DISTRIBUTED_REPLAY_OBSERVATION:false}
     agent:
+      # 一个深挖任务最多覆盖同一研究对象的几个普通单元格（检索与阅读共用，抽取逐个进行）
+      max-cells-per-task: ${NOTEWEAVE_RESEARCH_AGENT_MAX_CELLS_PER_TASK:3}
+      # 允许宽搜索的规划投入等级，逗号分隔，ANY 表示不限制
+      wide-discovery-effort-tiers: ${NOTEWEAVE_RESEARCH_AGENT_WIDE_DISCOVERY_EFFORT_TIERS:COMPLEX}
       external-evidence-enabled: ${NOTEWEAVE_RESEARCH_AGENT_EXTERNAL_EVIDENCE_ENABLED:true}
       lifecycle-reaper-enabled: ${NOTEWEAVE_RESEARCH_AGENT_LIFECYCLE_REAPER_ENABLED:false}
       lifecycle-reaper-delay-ms: ${NOTEWEAVE_RESEARCH_AGENT_LIFECYCLE_REAPER_DELAY_MS:1000}

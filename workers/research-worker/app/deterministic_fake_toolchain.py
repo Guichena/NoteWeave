@@ -86,7 +86,10 @@ class DeterministicFakeToolchain:
         if not entity_id:
             return ExtractionResult(termination_reason=ExtractionTerminationReason.MISSING_EVIDENCE_CARDS)
         if len(plan.state_columns) == 1:
-            quotes = [sample]
+            # 多单元格任务按单元格逐个抽取时，每次只给一个字段；样本按行写了各字段时取包含该字段名的那一行
+            column = plan.state_columns[0].casefold()
+            lines = [line.strip() for line in sample.splitlines() if line.strip()]
+            quotes = [next((line for line in lines if column in line.casefold()), sample)]
         else:
             quotes = [line.strip() for line in sample.splitlines() if line.strip()]
             if len(quotes) < len(plan.state_columns) or len(set(quotes[:len(plan.state_columns)])) < len(plan.state_columns):
@@ -103,7 +106,7 @@ class DeterministicFakeToolchain:
         )
         cards = [
             ResearchEvidenceCard(
-                evidence_id=f"fake-evidence-{index}",
+                evidence_id=f"fake-evidence-{column_key}",
                 window_id=window_id,
                 source_id=source.source_id,
                 source_title=source_title,

@@ -109,6 +109,57 @@ class ResearchAgentTaskCoordinatorServiceTest {
     }
 
     @Test
+    void productionDefaultBundlesCellsOfOneEntityIntoOneTaskWithAPerCellBudget() {
+        // 生产默认值：同一研究对象的普通单元格共用一次检索与阅读，模型调用预算按单元格数放大
+        coordinator.setMaxCellsPerTask(3);
+        try {
+            ResearchAgentTaskCoordinatorService.CoordinatorReceipt receipt = coordinator.planAndEnqueue(runId);
+
+            assertThat(receipt.createdTaskCount()).isEqualTo(1);
+            assertThat(receipt.scopedCellCount()).isEqualTo(2);
+            assertThat(jdbcTemplate.queryForObject(
+                    "select target_cells_json from research_agent_task where research_run_id = ?", String.class, runId))
+                    .contains("entity-1:method", "entity-1:evidence");
+            assertThat(ResearchAgentTaskCoordinatorService.deepCellBudget(2))
+                    .containsEntry("llm_calls", 66L)
+                    .containsEntry("search_calls", 3L)
+                    .containsEntry("evidence_cards", 12L);
+        } finally {
+            coordinator.setMaxCellsPerTask(1);
+        }
+    }
+
+    @Test
+    void wideDiscoveryRunsOnlyForComplexPlansByDefault() throws Exception {
+        jdbcTemplate.update("update research_run set agent_feature_flags_json = ? where id = ?", "{\"wide_discovery_v1\":true}", runId);
+        var gated = new ResearchDiscoveryLoopService(jdbcTemplate, objectMapper, featureFlags, coordinator);
+        gated.setWideDiscoveryEffortTiers("COMPLEX");
+        assertThat(gated.enabled(runId)).as("no model plan means no wide discovery").isFalse();
+
+        insertLlmPlan("STANDARD");
+        assertThat(gated.enabled(runId)).isFalse();
+        insertLlmPlan("COMPLEX");
+        assertThat(gated.enabled(runId)).isTrue();
+
+        gated.setWideDiscoveryEffortTiers("ANY");
+        insertLlmPlan("SIMPLE");
+        assertThat(gated.enabled(runId)).isTrue();
+    }
+
+    private void insertLlmPlan(String effortTier) throws Exception {
+        jdbcTemplate.update("""
+                insert into research_matrix_plan(
+                    id, research_run_id, planner_version, plan_mode, plan_status,
+                    row_count, column_count, cell_count, bounded, reason_codes_json,
+                    plan_json, plan_digest, created_at)
+                values (?, ?, ?, 'LLM_MATRIX', 'ACTIVE', 1, 2, 2, false, '[]', ?, ?,
+                    timestampadd(second, (select count(*) from research_matrix_plan), current_timestamp))
+                """, Ids.newId(), runId, "llm-planning.v1-" + effortTier,
+                objectMapper.writeValueAsString(Map.of("effort_tier", effortTier)),
+                "sha256:" + Integer.toHexString(effortTier.hashCode()).repeat(16).substring(0, 64));
+    }
+
+    @Test
     void shouldCarryTargetColumnLabelsFromPlanIntoQueryPolicy() throws Exception {
         jdbcTemplate.update("""
                 insert into research_matrix_plan(
@@ -914,6 +965,7 @@ class ResearchAgentTaskCoordinatorServiceTest {
         settleDiscoveryRound();
         // 重新创建服务，状态完全从数据库恢复。
         var restarted = new ResearchDiscoveryLoopService(jdbcTemplate, objectMapper, featureFlags, coordinator);
+        restarted.setWideDiscoveryEffortTiers("ANY");
         assertThat(restarted.advance(runId, 4).outcome()).isEqualTo("STOPPED");
         assertThat(jdbcTemplate.queryForObject("select stop_reason from research_discovery_loop where research_run_id = ?", String.class, runId)).isEqualTo("DISCOVERY_SATURATED");
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_discovery_round where research_run_id = ?", Integer.class, runId)).isEqualTo(2);

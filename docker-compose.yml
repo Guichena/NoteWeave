@@ -376,6 +376,9 @@ services:
       # 搜索代理 MCP 服务：链路里写 serper_mcp、tavily_mcp 时用于搜索，配置后网页正文优先用 Tavily Extract 读取
       NOTEWEAVE_RESEARCH_MCP_SEARCH_URL: ${NOTEWEAVE_RESEARCH_MCP_SEARCH_URL:-}
       NOTEWEAVE_RESEARCH_MCP_SEARCH_API_KEY: ${NOTEWEAVE_RESEARCH_MCP_SEARCH_API_KEY:-}
+      # 搜索代理的 REST 地址；配置后优先于 MCP，密钥未单独配置时沿用 MCP 的密钥
+      NOTEWEAVE_RESEARCH_SEARCH_PROXY_BASE_URL: ${NOTEWEAVE_RESEARCH_SEARCH_PROXY_BASE_URL:-}
+      NOTEWEAVE_RESEARCH_SEARCH_PROXY_API_KEY: ${NOTEWEAVE_RESEARCH_SEARCH_PROXY_API_KEY:-}
       # Docker Desktop may expose public DNS through its RFC 2544 synthetic
       # address pool. The worker still rejects literal/private targets.
       NOTEWEAVE_ALLOW_DOCKER_SYNTHETIC_DNS: ${NOTEWEAVE_ALLOW_DOCKER_SYNTHETIC_DNS:-true}

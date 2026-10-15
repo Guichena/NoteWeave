@@ -26,7 +26,7 @@ from app.agent_command_contract import ResearchAgentCommand
 from app.agent_task_client import AgentTaskClaim, ArchivedExternalSnapshot
 from app.config import load_settings
 from app.execution_control import require_execution_active
-from app.extraction_result import ExtractionResult
+from app.extraction_result import ExtractionResult, ExtractionTerminationReason
 from app.extractor import extract_evidence_cards_detailed
 from app.fetch_adapters import (
     CompositeFetchAdapter,
@@ -272,12 +272,10 @@ class DeepCellExecutor:
         context.toolbox.require("extract")
         self.permit_client.require_permit(snapshot, "extract")
         require_active()
-        extraction = self.toolchain.extract(task_input, plan, windows, llm_client=llm_client)
-        cards = list(extraction.accepted_cards)
+        extraction, cards, trusted_evidence = _extract_per_target_column(
+            self.toolchain, snapshot, task_input, plan, windows, llm_client, require_active)
         context.usage.add("extract_calls")
         require_active()
-
-        trusted_evidence = _trusted_evidence_payload(snapshot, cards, windows)[:MAX_EVIDENCE_CARDS_PER_CELL]
         claim_clusters = []
         candidates = _candidate_payload(snapshot, cards, trusted_evidence, windows=windows,
                                         llm=llm_client, clusters_out=claim_clusters)
@@ -421,6 +419,59 @@ class DeepCellExecutor:
                 report["counter_checks"].append({"cell_key": cell_key, "original_claim": original,
                     "claim_text": fact["claim_text"], "verdict": verdict, "queries": [query],
                     "refuting_evidence_keys": refs if verdict == "REFUTED" else []})
+def _extract_per_target_column(toolchain, snapshot: ResearchAgentTaskSnapshot, task_input: ResearchTaskInput,
+                               plan: ResearchPlan, windows: list[object], llm_client: object | None,
+                               require_active) -> tuple[ExtractionResult, list[object], list[dict[str, object]]]:
+    """一个任务覆盖同一研究对象的多个单元格时，检索、抓取与阅读共用一次，抽取按单元格逐个进行。
+
+    一次抽取同时面对多个字段时，模型容易只顾最显著的字段，其余单元格拿不到候选，
+    所以每次抽取只给一个字段；证据卡上限也按单元格分别计算。
+    """
+    columns = list(plan.research_schema.columns)
+    if len(columns) <= 1:
+        extraction = toolchain.extract(task_input, plan, windows, llm_client=llm_client)
+        cards = list(extraction.accepted_cards)
+        return extraction, cards, _trusted_evidence_payload(snapshot, cards, windows)[:MAX_EVIDENCE_CARDS_PER_CELL]
+    results: list[ExtractionResult] = []
+    cards: list[object] = []
+    evidence: list[dict[str, object]] = []
+    for column in columns:
+        require_active()
+        column_plan = plan.model_copy(update={
+            "research_schema": plan.research_schema.model_copy(update={"columns": [column], "required_column_count": 1}),
+            "state_columns": [column.key],
+        })
+        result = toolchain.extract(task_input, column_plan, windows, llm_client=llm_client)
+        results.append(result)
+        column_cards = [card for card in result.accepted_cards if getattr(card, "column_key", "") == column.key]
+        cards.extend(column_cards)
+        seen = {str(item["evidence_key"]) for item in evidence}
+        # 同一段原文可能同时支撑多个单元格，证据只保留一份，候选按证据键引用
+        for item in _trusted_evidence_payload(snapshot, column_cards, windows)[:MAX_EVIDENCE_CARDS_PER_CELL]:
+            if str(item["evidence_key"]) not in seen:
+                seen.add(str(item["evidence_key"]))
+                evidence.append(item)
+    return _merge_extractions(results, cards), cards, evidence
+
+
+def _merge_extractions(results: list[ExtractionResult], cards: list[object]) -> ExtractionResult:
+    receipts = [result.provider_receipt for result in results]
+    first = receipts[0]
+    receipt = first.model_copy(update={
+        "call_count": sum(item.call_count for item in receipts),
+        "response_chars": sum(item.response_chars for item in receipts),
+        "response_digest": receipts[-1].response_digest,
+    })
+    reason = (ExtractionTerminationReason.ACCEPTED_CARDS
+              if any(result.accepted_cards for result in results) else results[-1].termination_reason)
+    return ExtractionResult(
+        accepted_cards=list(cards),
+        rejected_cards=[card for result in results for card in result.rejected_cards],
+        provider_receipt=receipt,
+        termination_reason=reason,
+    )
+
+
 def _build_task_scope(snapshot: ResearchAgentTaskSnapshot) -> tuple[ResearchTaskInput, ResearchPlan, bool]:
     raw_query = snapshot.query_policy.get("query")
     raw_scope = snapshot.source_policy.get("source_scope")

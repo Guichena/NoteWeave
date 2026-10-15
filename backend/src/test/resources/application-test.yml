@@ -67,6 +67,9 @@ noteweave:
     enabled: false
   research:
     agent:
+      # 现有协调器测试按每个单元格一个任务、宽搜索不限投入等级编写；新默认值由专门的测试覆盖
+      max-cells-per-task: 1
+      wide-discovery-effort-tiers: ANY
       coordinator-enabled: false
       rollout-guard-enabled: false
   elasticsearch:
