@@ -25,6 +25,8 @@ import org.springframework.test.context.ActiveProfiles;
 @SpringBootTest
 @ActiveProfiles("test")
 class ResearchAgentTaskCoordinatorServiceTest {
+    @Autowired
+    private ResearchAgentLocalReplanRecorder localReplanRecorder;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private ResearchAgentTaskCoordinatorService coordinator;
@@ -494,6 +496,26 @@ class ResearchAgentTaskCoordinatorServiceTest {
         assertThat(jdbcTemplate.queryForObject(
                 "select completion_terminal_state from research_run where id = ?", String.class, runId))
                 .isEqualTo("INSUFFICIENT_EVIDENCE");
+    }
+
+    @Test
+    void repeatedRepairRoundsOnTheSameObservedRevisionGetIncreasingLocalPlanRevisions() throws Exception {
+        jdbcTemplate.update("""
+                insert into research_matrix_plan(
+                    id, research_run_id, planner_version, plan_mode, plan_status,
+                    row_count, column_count, cell_count, bounded, reason_codes_json,
+                    plan_json, plan_digest)
+                values (?, ?, 'test-plan.v1', 'INTENT_MATRIX_V2', 'ACTIVE', 1, 2, 2, false, '[]', '{}', ?)
+                """, Ids.newId(), runId, "sha256:" + "1".repeat(64));
+        var target = List.of(new ResearchAgentRepairStopPolicy.RepairTarget("entity-1:evidence", "sha256:reason", List.of()));
+
+        // 失败任务补查与缺口补查先后发生，第二轮看到的单元格最大版本可能没变
+        localReplanRecorder.record(runId, 2, "sha256:first", "NO_VALID_QUOTE", target);
+        localReplanRecorder.record(runId, 2, "sha256:second", "NO_VALID_QUOTE", target);
+
+        assertThat(jdbcTemplate.queryForList(
+                "select planner_version from research_matrix_plan where research_run_id = ? and plan_mode = 'LOCAL_REPAIR' order by planner_version",
+                String.class, runId)).containsExactly("local-replan.v1:r3", "local-replan.v1:r4");
     }
 
     @Test

@@ -29,7 +29,7 @@ class ResearchAgentLocalReplanRecorder {
         this.audits = audits;
     }
 
-    void record(String runId, int revisionFrom, String decisionDigest, String repairCause,
+    void record(String runId, int observedRevision, String decisionDigest, String repairCause,
                 List<ResearchAgentRepairStopPolicy.RepairTarget> targets) {
         if (targets.isEmpty()) return;
         PlanRow previous = latestPlan(runId);
@@ -38,6 +38,9 @@ class ResearchAgentLocalReplanRecorder {
         // rows merely to make an audit record look complete.
         if (previous == null) return;
 
+        // 同一研究可能有多轮补查（失败任务补查、缺口补查），补查目标的单元格版本不一定是最大版本，
+        // 只按观察到的版本加一会与上一轮的记录同号；修订号取已记录的最大值之后，保证单调递增
+        int revisionFrom = Math.max(observedRevision, latestLocalRevision(runId));
         int revisionTo = revisionFrom + 1;
         List<String> affectedCells = targets.stream()
                 .map(ResearchAgentRepairStopPolicy.RepairTarget::cellKey).sorted().toList();
@@ -68,8 +71,8 @@ class ResearchAgentLocalReplanRecorder {
         for (String cell : affectedCells) {
             jdbcTemplate.update("""
                     update research_cell set plan_revision = ?, updated_at = current_timestamp
-                    where research_run_id = ? and cell_key = ? and plan_revision = ?
-                    """, revisionTo, runId, cell, revisionFrom);
+                    where research_run_id = ? and cell_key = ? and plan_revision < ?
+                    """, revisionTo, runId, cell, revisionTo);
         }
         long targetCount = affectedCells.size();
         Map<String, Long> budgetDelta = new LinkedHashMap<>();
@@ -93,6 +96,16 @@ class ResearchAgentLocalReplanRecorder {
             return ResearchReplanDeviationTypes.PROVIDER_FAILURE;
         }
         return ResearchReplanDeviationTypes.MARGINAL_GAIN_EXHAUSTED;
+    }
+
+    private int latestLocalRevision(String runId) {
+        return jdbcTemplate.queryForList("""
+                select planner_version from research_matrix_plan
+                where research_run_id = ? and planner_version like ?
+                """, String.class, runId, PLANNER_VERSION_PREFIX + "%").stream()
+                .map(version -> version.substring(PLANNER_VERSION_PREFIX.length()))
+                .filter(value -> value.matches("\\d+"))
+                .mapToInt(Integer::parseInt).max().orElse(0);
     }
 
     private PlanRow latestPlan(String runId) {

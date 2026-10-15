@@ -8,6 +8,7 @@ FALLBACK，Java 保留规则生成的骨架表格。Worker 只提出方案，是
 
 from __future__ import annotations
 
+import logging
 import unicodedata
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
@@ -22,6 +23,8 @@ from app.query_specs import with_query_specs
 from app.research_agent_completion_contract import require_worker_instance_id
 from app.role_executor import RoleExecutorFactory
 from app.task_snapshot_contract import ResearchAgentTaskSnapshot, require_trusted_claim_snapshot
+
+logger = logging.getLogger(__name__)
 
 PURPOSE = "research.plan.matrix"
 RESULT_SCHEMA = "research-plan-matrix.v1"
@@ -86,6 +89,9 @@ class PlanningExecutor:
                 break
         if draft.plan is None and "PLANNING_LLM_CALL_FAILED" not in reasons:
             reasons.append("PLANNING_LLM_OUTPUT_INVALID")
+            # 只记录校验问题，不记录模型输出原文
+            logger.warning("Research planning output rejected task_id=%s problems=%s",
+                           claim.agent_task_id, "; ".join(draft.problems)[:800])
         return self._complete(
             claim, snapshot, planning_input, draft.plan, reasons, _llm_call_count(llm_client), search_calls,
         )
