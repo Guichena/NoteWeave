@@ -1,0 +1,283 @@
+{
+  "dataset_key": "research-quality-v1",
+  "dataset_version": "1.0.0",
+  "generated_at": "2026-10-15T14:28:00.884948+00:00",
+  "cases_total": 20,
+  "runs_found": 4,
+  "judge_scored": 4,
+  "judge_not_run": 0,
+  "pass_rate": 0.0,
+  "dimension_means": {
+    "factual_accuracy": 0.4375,
+    "citation_accuracy": 0.475,
+    "completeness": 0.2,
+    "source_quality": 0.4,
+    "tool_efficiency": 0.2625
+  },
+  "effective_cell_rate": 0.3529,
+  "runs_without_cells": 0,
+  "by_question_type": {
+    "COMPARISON": {
+      "scored": 1,
+      "pass_rate": 0.0,
+      "factual_accuracy": 0.2,
+      "citation_accuracy": 0.2,
+      "completeness": 0.15,
+      "source_quality": 0.3,
+      "tool_efficiency": 0.4
+    },
+    "SURVEY": {
+      "scored": 1,
+      "pass_rate": 0.0,
+      "factual_accuracy": 0.15,
+      "citation_accuracy": 0.4,
+      "completeness": 0.05,
+      "source_quality": 0.5,
+      "tool_efficiency": 0.05
+    },
+    "FACT": {
+      "scored": 1,
+      "pass_rate": 0.0,
+      "factual_accuracy": 0.5,
+      "citation_accuracy": 0.4,
+      "completeness": 0.6,
+      "source_quality": 0.8,
+      "tool_efficiency": 0.4
+    },
+    "CONFLICT": {
+      "scored": 1,
+      "pass_rate": 0.0,
+      "factual_accuracy": 0.9,
+      "citation_accuracy": 0.9,
+      "completeness": 0.0,
+      "source_quality": 0.0,
+      "tool_efficiency": 0.2
+    }
+  },
+  "results": [
+    {
+      "case_key": "cmp-postgres-mysql-json",
+      "question_type": "COMPARISON",
+      "run_id": "a49bbb7b-6f15-48d0-809c-1ed04b80cd53",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "COMPLETED_WITH_LIMITATIONS",
+        "wall_seconds": 160.8,
+        "search_query_count": 6,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "expected_entity_coverage": 1.0,
+        "cells_available": true,
+        "planned_cells": 6,
+        "effective_cells": 4,
+        "effective_cell_rate": 0.6667,
+        "status_counts": {
+          "GAP": 2,
+          "VERIFIED": 4
+        },
+        "queries_per_effective_cell": 1.5
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.2,
+          "citation_accuracy": 0.2,
+          "completeness": 0.15,
+          "source_quality": 0.3,
+          "tool_efficiency": 0.4
+        },
+        "rationales": {
+          "factual_accuracy": "PostgreSQL 部分关于 jsonb_ops/jsonb_path_ops 的陈述大体正确，但整体比较几乎缺失：MySQL 8.4 的 JSON 索引类型和可加速运算符均未回答，且引用的 MySQL 片段来自 9.3 文档，与问题要求的 MySQL 8.4 不一致。结论汇总表把同一段话填入不同列，事实层面无法支撑比较结论。",
+          "citation_accuracy": "唯一与结论一致的引用是 PostgreSQL 官方文档关于 jsonb_ops 默认及 jsonb_path_ops 的说明。MySQL 引用片段残缺（以 'ly difference' 开头）且来自 MySQL 9.3 而非 8.4，无法支撑 MySQL 8.4 索引代价结论；PostgreSQL 索引代价结论引用 medium.com 而非官方文档，且原文未出现在所附引用列表中。",
+          "completeness": "must_cover 三项中，仅 PostgreSQL 索引形式/运算符部分有实质回答；MySQL 索引形式与可加速运算符均标注未找到证据，索引写入开销/限制也只是残缺片段，未做实质比较。",
+          "source_quality": "PostgreSQL 部分使用了 postgresql.org 官方文档，属一手来源；但 MySQL 引用来自 9.3（版本不匹配）且片段残缺，PostgreSQL 索引代价依赖 medium.com 二手来源，未优先官方 8.4/17 文档。",
+          "tool_efficiency": "6 次检索仅产生 4 个有效单元，且 MySQL 两个必需单元未解决，关键比较对象缺失；有限检索次数下覆盖不足，存在明显效率浪费。"
+        },
+        "must_cover": [
+          {
+            "item": "两者各自支持的 JSON 索引形式",
+            "covered": false
+          },
+          {
+            "item": "哪些运算符或函数能用上索引",
+            "covered": false
+          },
+          {
+            "item": "索引的写入开销或限制",
+            "covered": false
+          }
+        ],
+        "judge_pass": false,
+        "summary": "报告仅部分覆盖 PostgreSQL jsonb GIN 运算符类，MySQL 8.4 的 JSON 索引类型与可加速运算符均缺失且引用版本不匹配，无法构成有效比较。"
+      },
+      "passed": false
+    },
+    {
+      "case_key": "survey-oauth-oidc",
+      "question_type": "SURVEY",
+      "run_id": "1455eeea-5b5c-4055-a2c7-3d7bae4e1807",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "INSUFFICIENT_EVIDENCE",
+        "wall_seconds": 6358.5,
+        "search_query_count": 71,
+        "counter_check_not_run": 6,
+        "counter_check_refuted": 0,
+        "cells_available": true,
+        "planned_cells": 12,
+        "effective_cells": 2,
+        "effective_cell_rate": 0.1667,
+        "status_counts": {
+          "GAP": 10,
+          "VERIFIED": 2
+        },
+        "queries_per_effective_cell": 35.5
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.15,
+          "citation_accuracy": 0.4,
+          "completeness": 0.05,
+          "source_quality": 0.5,
+          "tool_efficiency": 0.05
+        },
+        "rationales": {
+          "factual_accuracy": "报告实质上没有回答核心问题：OAuth 2.1 的三项关键调整（移除 Implicit、强制 PKCE、收紧重定向 URI/客户端认证）全部标为『未找到证据』，尽管这些是公开规范（draft-ietf-oauth-v2-1）中明确的内容，且反证记录里已有相关 NOT_REFUTED 事实（如 Implicit grant 被移除、PKCE 为必需）。OIDC 部分仅确认了 OP 定义与 ID Token 用途，未系统说明新增的 ID Token、UserInfo 端点、身份 Claims 等。整体结论以 INSUFFICIENT_EVIDENCE 收尾，未给出应有的规范结论，事实覆盖严重不足。未编造结论，故非零分。",
+          "citation_accuracy": "两条引用均为 openid.net 规范原文，且与其所支撑的陈述（OP 定义、ID Token 用途）一致，引用本身准确。但引用量极少，且被放在『被弃用/移除的授权类型』等不匹配的单元格下，未能支撑问题所需的 OAuth 2.1 调整结论，引用与问题目标的对应性差。",
+          "completeness": "must_cover 三项中，仅 OIDC 的 ID Token 有部分原文提及，但未展开身份信息（Claims/UserInfo）；PKCE 要求完全未回答（尽管反证记录显示已有相关证据检索）；OAuth 2.1 移除/强制的授权方式未回答。三项要点基本未实质覆盖。",
+          "source_quality": "仅有的两条来源是 openid.net 官方规范（一手来源），来源类型合格。但缺少 OAuth 2.1 权威来源（draft-ietf-oauth-v2-1 / RFC 9700），一手来源覆盖面严重不足。",
+          "tool_efficiency": "检索次数高达 71 次，但有效结论仅 2 条，且最终以 INSUFFICIENT_EVIDENCE / PROVIDER_FAILED 收尾，反证记录中大量 NOT_RUN 与重复检索。检索投入与有效产出严重失衡，效率极低。"
+        },
+        "must_cover": [
+          {
+            "item": "OAuth 2.1 移除或强制的授权方式",
+            "covered": false
+          },
+          {
+            "item": "PKCE 的要求",
+            "covered": false
+          },
+          {
+            "item": "OIDC 增加的 ID Token 与身份信息",
+            "covered": false
+          }
+        ],
+        "judge_pass": false,
+        "summary": "报告仅确认了两条 OIDC 规范原文，对 OAuth 2.1 的三项关键调整与 PKCE 要求几乎全部未答，检索 71 次却仅得 2 条有效结论，整体不合格。"
+      },
+      "passed": false
+    },
+    {
+      "case_key": "fact-java-virtual-threads",
+      "question_type": "FACT",
+      "run_id": "7cc3740c-b01c-4a58-a229-83893e4d44fe",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "COMPLETED_WITH_LIMITATIONS",
+        "wall_seconds": 120.6,
+        "search_query_count": 11,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "cells_available": true,
+        "planned_cells": 10,
+        "effective_cells": 6,
+        "effective_cell_rate": 0.6,
+        "status_counts": {
+          "GAP": 4,
+          "VERIFIED": 6
+        },
+        "queries_per_effective_cell": 1.83
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.5,
+          "citation_accuracy": 0.4,
+          "completeness": 0.6,
+          "source_quality": 0.8,
+          "tool_efficiency": 0.4
+        },
+        "rationales": {
+          "factual_accuracy": "报告引用的 JEP 444 确认虚拟线程在 JDK 21 finalize（正式发布），JEP 491 指向 JDK 24 改善 synchronized pinning，核心结论基本正确。但报告表格字段错位严重：JEP 编号/标题、版本号、固定问题相关性被随机填入引文片段，甚至出现“JDK 21 虚拟线程 GA | Virtual threads are pinned in synchronized methods | 未找到证据”这类明显错误映射，影响了事实呈现的准确性。",
+          "citation_accuracy": "引文本身多为一手 openjdk.org/JEP 或邮件列表内容，但被放置到不匹配结论下：例如把“Virtual threads are pinned in synchronized methods”当作 JDK 版本号证据，把 JEP 444 邮件标题当作 synchronized 相关性证据。结论与所附引用不能一一对应，citation 与 claim 匹配度低。",
+          "completeness": "must_cover 三项中，正式发布版本（JDK 21，JEP 444）实际由引文支撑；线程固定原因有引文提及但未清晰解释为 synchronized 监视器持有阻塞虚拟线程；改善版本（JDK 24，JEP 491）有支撑。但报告自认多项 REQUIRED_CELL_UNRESOLVED，结构化输出未明确作答，覆盖不完整。",
+          "source_quality": "主要使用 openjdk.org、openjdk 邮件列表等一手来源，JEP 444 与 JEP 491 均为官方规范；仅 mikemybytes 为二手博客。来源选择总体较高。",
+          "tool_efficiency": "11 次检索、10 个计划单元仅 6 个有效结论，且多个必需单元标记未解决；核心答案本可由 JEP 444 与 JEP 491 官方页面直接回答，检索存在明显浪费与字段错配。"
+        },
+        "must_cover": [
+          {
+            "item": "正式发布的 JDK 版本与 JEP 编号",
+            "covered": true
+          },
+          {
+            "item": "线程固定问题的原因",
+            "covered": true
+          },
+          {
+            "item": "改善该问题的 JEP 与版本",
+            "covered": true
+          }
+        ],
+        "judge_pass": false,
+        "summary": "核心事实（虚拟线程 JDK 21 / JEP 444 正式发布，JDK 24 / JEP 491 改善 synchronized pinning）有官方来源支撑，但报告表格字段错位、证据与结论不匹配且多项必需项自认未解决，整体质量不达标。"
+      },
+      "passed": false
+    },
+    {
+      "case_key": "conflict-coverage-threshold",
+      "question_type": "CONFLICT",
+      "run_id": "47283439-4319-48d2-bc4a-441cf2ca550a",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "INSUFFICIENT_EVIDENCE",
+        "wall_seconds": 80.3,
+        "search_query_count": 6,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "cells_available": true,
+        "planned_cells": 6,
+        "effective_cells": 0,
+        "effective_cell_rate": 0.0,
+        "status_counts": {
+          "GAP": 6
+        },
+        "queries_per_effective_cell": null
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.9,
+          "citation_accuracy": 0.9,
+          "completeness": 0.0,
+          "source_quality": 0.0,
+          "tool_efficiency": 0.2
+        },
+        "rationales": {
+          "factual_accuracy": "报告未做出任何事实性结论，仅声明证据不足，未发现错误或过时陈述，扣分极少。",
+          "citation_accuracy": "无引用，也无结论依赖引用，故不存在引用不一致；扣分仅因无可验证引用内容。",
+          "completeness": "must_cover 三项（支持的实证、不支持的实证、覆盖率之外的混杂因素）均未被实质回答，只标记为未解决。",
+          "source_quality": "未使用任何来源，无法体现优先使用官方文档、规范或论文。",
+          "tool_efficiency": "检索 6 次但有效结论为 0，存在明显检索浪费；但以证据不足收尾，未编造结论。"
+        },
+        "must_cover": [
+          {
+            "item": "支持的实证",
+            "covered": false
+          },
+          {
+            "item": "不支持的实证",
+            "covered": false
+          },
+          {
+            "item": "覆盖率之外的混杂因素",
+            "covered": false
+          }
+        ],
+        "judge_pass": false,
+        "summary": "报告正确以证据不足收尾，但未回答任何 must_cover 要点且无引用，整体不通过。"
+      },
+      "passed": false
+    }
+  ]
+}

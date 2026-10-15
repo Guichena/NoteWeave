@@ -1,0 +1,924 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "conflict-coverage-threshold",
+  "run_id": "47283439-4319-48d2-bc4a-441cf2ca550a",
+  "workspace_id": "94d6c0d4-460d-4e87-8dc7-e082213c076c",
+  "started_at": "2026-10-15T14:23:57.188824+00:00",
+  "finished_at": "2026-10-15T14:25:17.537174+00:00",
+  "wall_seconds": 80.3,
+  "run_detail": {
+    "research_run_id": "47283439-4319-48d2-bc4a-441cf2ca550a",
+    "workspace_id": "94d6c0d4-460d-4e87-8dc7-e082213c076c",
+    "task_id": "568a54a4-bd1a-44b7-b76d-cb3cdfaf1b34",
+    "question": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "INSUFFICIENT_EVIDENCE",
+    "final_report_title": "研究报告：提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+    "final_report_markdown": "# 研究报告\n\n提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\n**结果：** `INSUFFICIENT_EVIDENCE`\n\n## 结论汇总\n\n| 研究对象 | 组织与样本 | 门槛设定 | 实证方法 | 缺陷逃逸率变化 | 相关性强度 | 证据强度与局限 |\n|---|---|---|---|---|---|---|\n| 组织级实证研究 | 未找到证据 | 未找到证据 | 未找到证据 | 未找到证据 | 未找到证据 | 未找到证据 |\n\n## 局限与未解决项\n\n- **组织级实证研究 · 相关性强度**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **组织级实证研究 · 实证方法**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **组织级实证研究 · 门槛设定**：未解决（`SEMANTIC_BLOCKED`，`SEMANTIC_BLOCKED`）\n- **组织级实证研究 · 组织与样本**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **组织级实证研究 · 证据强度与局限**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **组织级实证研究 · 缺陷逃逸率变化**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n\n## 完成判定原因\n\n- INSUFFICIENT_EVIDENCE",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/94d6c0d4-460d-4e87-8dc7-e082213c076c/research/47283439-4319-48d2-bc4a-441cf2ca550a/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 1279,
+      "sha256": "70725d9651c7db22af9371867c6ac5432dd3c284ace7895edeebf5d868320ad8"
+    },
+    "research_artifact": {
+      "artifact_id": "47283439-4319-48d2-bc4a-441cf2ca550a",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "47283439-4319-48d2-bc4a-441cf2ca550a",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/94d6c0d4-460d-4e87-8dc7-e082213c076c/research/47283439-4319-48d2-bc4a-441cf2ca550a/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 1279,
+        "sha256": "70725d9651c7db22af9371867c6ac5432dd3c284ace7895edeebf5d868320ad8"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "测试覆盖率 缺陷逃逸率",
+          "site:dl.acm.org code coverage threshold defect escape rate organization",
+          "code coverage defect escape rate empirical study correlation",
+          "raise code coverage threshold reduce defect escape rate before after study site:ieeexplore.ieee.org",
+          "组织级实证研究 测试覆盖率门槛 缺陷逃逸率",
+          "code coverage threshold defect escape rate empirical study organization sample"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 0,
+        "blocked_row_count": 1,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 1,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 1,
+        "guardrailed_row_count": 1,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 1,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [
+          {
+            "row_id": "entity-a6855b766f2815b2",
+            "source_id": "",
+            "source_title": "组织级实证研究",
+            "evidence_id": "",
+            "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "guardrailed_row_samples": [
+          {
+            "row_id": "entity-a6855b766f2815b2",
+            "source_id": "",
+            "source_title": "组织级实证研究",
+            "evidence_id": "",
+            "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 1,
+      "branch_count": 1,
+      "verifier_decision_count": 1,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-a6855b766f2815b2",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "组织级实证研究",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+            "read_focus": "综合不同组织的实证证据，判断提高测试覆盖率门槛是否降低缺陷逃逸率，并给出可逐项引用的研究结论与证据缺口说明。",
+            "evidence_id": "",
+            "row_status": "DISCOVERED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-a6855b766f2815b2:dim-3f77d7c80c850c63",
+            "row_id": "entity-a6855b766f2815b2",
+            "branch_id": "branch-main",
+            "column_key": "dim-3f77d7c80c850c63",
+            "column_label": "实证方法",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-a6855b766f2815b2:dim-b537a72f65ff8240",
+            "row_id": "entity-a6855b766f2815b2",
+            "branch_id": "branch-main",
+            "column_key": "dim-b537a72f65ff8240",
+            "column_label": "缺陷逃逸率变化",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-a6855b766f2815b2:dim-9c36a830791b99c3",
+            "row_id": "entity-a6855b766f2815b2",
+            "branch_id": "branch-main",
+            "column_key": "dim-9c36a830791b99c3",
+            "column_label": "组织与样本",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-a6855b766f2815b2:dim-0793c59d8ac38d96",
+            "row_id": "entity-a6855b766f2815b2",
+            "branch_id": "branch-main",
+            "column_key": "dim-0793c59d8ac38d96",
+            "column_label": "相关性强度",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-a6855b766f2815b2:dim-9eedc0c76a22ea0d",
+            "row_id": "entity-a6855b766f2815b2",
+            "branch_id": "branch-main",
+            "column_key": "dim-9eedc0c76a22ea0d",
+            "column_label": "证据强度与局限",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-a6855b766f2815b2:dim-6527dabdc6de8f23",
+            "row_id": "entity-a6855b766f2815b2",
+            "branch_id": "branch-main",
+            "column_key": "dim-6527dabdc6de8f23",
+            "column_label": "门槛设定",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [
+          {
+            "decision_id": "d498076a-b2d8-4cf9-a245-65166ad31222",
+            "branch_id": "",
+            "decision_scope": "CELL",
+            "decision_type": "EVIDENCE_AUDIT_REPAIR_REQUIRED",
+            "reason_code": "AUDIT_EVIDENCE_NOT_QUALIFIED",
+            "target_id": "entity-a6855b766f2815b2:dim-6527dabdc6de8f23",
+            "evidence_ids": [
+              "evidence:c17c82e8d51c1d124fa7c142a8843649b410778772826a8d"
+            ],
+            "action": "COUNTERFACTUAL_REPAIR",
+            "status": "OPEN",
+            "notes": {
+              "role_result_id": "1d12e75b-01f0-4d5f-a1c0-cb3215a8e2da"
+            },
+            "source_samples": [
+              {
+                "evidence_id": "evidence:c17c82e8d51c1d124fa7c142a8843649b410778772826a8d",
+                "source_id": "web-6ea49194706e5398",
+                "source_title": "What Makes Software Bugs Escape Testing? Evidence ...",
+                "generated_by": "",
+                "generated_ref_id": "",
+                "search_query": "code coverage defect escape rate empirical study correlation",
+                "read_focus": "Read external URL What Makes Software Bugs Escape Testing? Evidence ... for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: 组织级实证研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+                "relation_type": "SUPPORTS"
+              }
+            ],
+            "source_sample_count": 1
+          }
+        ],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 0,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-a6855b766f2815b2",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "组织级实证研究",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+          "read_focus": "综合不同组织的实证证据，判断提高测试覆盖率门槛是否降低缺陷逃逸率，并给出可逐项引用的研究结论与证据缺口说明。",
+          "evidence_id": "",
+          "row_status": "DISCOVERED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-a6855b766f2815b2:dim-3f77d7c80c850c63",
+          "row_id": "entity-a6855b766f2815b2",
+          "branch_id": "branch-main",
+          "column_key": "dim-3f77d7c80c850c63",
+          "column_label": "实证方法",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-a6855b766f2815b2:dim-b537a72f65ff8240",
+          "row_id": "entity-a6855b766f2815b2",
+          "branch_id": "branch-main",
+          "column_key": "dim-b537a72f65ff8240",
+          "column_label": "缺陷逃逸率变化",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-a6855b766f2815b2:dim-9c36a830791b99c3",
+          "row_id": "entity-a6855b766f2815b2",
+          "branch_id": "branch-main",
+          "column_key": "dim-9c36a830791b99c3",
+          "column_label": "组织与样本",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-a6855b766f2815b2:dim-0793c59d8ac38d96",
+          "row_id": "entity-a6855b766f2815b2",
+          "branch_id": "branch-main",
+          "column_key": "dim-0793c59d8ac38d96",
+          "column_label": "相关性强度",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-a6855b766f2815b2:dim-9eedc0c76a22ea0d",
+          "row_id": "entity-a6855b766f2815b2",
+          "branch_id": "branch-main",
+          "column_key": "dim-9eedc0c76a22ea0d",
+          "column_label": "证据强度与局限",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-a6855b766f2815b2:dim-6527dabdc6de8f23",
+          "row_id": "entity-a6855b766f2815b2",
+          "branch_id": "branch-main",
+          "column_key": "dim-6527dabdc6de8f23",
+          "column_label": "门槛设定",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [
+        {
+          "decision_id": "d498076a-b2d8-4cf9-a245-65166ad31222",
+          "branch_id": "",
+          "decision_scope": "CELL",
+          "decision_type": "EVIDENCE_AUDIT_REPAIR_REQUIRED",
+          "reason_code": "AUDIT_EVIDENCE_NOT_QUALIFIED",
+          "target_id": "entity-a6855b766f2815b2:dim-6527dabdc6de8f23",
+          "evidence_ids": [
+            "evidence:c17c82e8d51c1d124fa7c142a8843649b410778772826a8d"
+          ],
+          "action": "COUNTERFACTUAL_REPAIR",
+          "status": "OPEN",
+          "notes": {
+            "role_result_id": "1d12e75b-01f0-4d5f-a1c0-cb3215a8e2da"
+          },
+          "source_samples": [
+            {
+              "evidence_id": "evidence:c17c82e8d51c1d124fa7c142a8843649b410778772826a8d",
+              "source_id": "web-6ea49194706e5398",
+              "source_title": "What Makes Software Bugs Escape Testing? Evidence ...",
+              "generated_by": "",
+              "generated_ref_id": "",
+              "search_query": "code coverage defect escape rate empirical study correlation",
+              "read_focus": "Read external URL What Makes Software Bugs Escape Testing? Evidence ... for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: 组织级实证研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+              "relation_type": "SUPPORTS"
+            }
+          ],
+          "source_sample_count": 1
+        }
+      ],
+      "checkpoints": [],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:c17c82e8d51c1d124fa7c142a8843649b410778772826a8d",
+          "window_id": "window-1",
+          "source_id": "web-6ea49194706e5398",
+          "source_title": "What Makes Software Bugs Escape Testing? Evidence ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://arxiv.org/html/2604.26672v1",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "code coverage defect escape rate empirical study correlation",
+          "read_focus": "Read external URL What Makes Software Bugs Escape Testing? Evidence ... for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: 组织级实证研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "This reinforces the picture of a different internal correlation structure among size, complexity, and change metrics depending on whether a defect is caught before or after release.",
+          "claim_text": "This reinforces the picture of a different internal correlation structure among size, complexity, and change metrics depending on whether a defect is caught before or after release.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.6,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/02964552-5c83-4ff6-b141-ce04e357f626/cd0347e6d3cd48122681f5b0779b82b7d0bc6743b90d9f3bad7cf4438e3628a6"
+        },
+        {
+          "evidence_id": "evidence:67b23f1bd965fcdcad1b663914f9e226caf90ffa80b07d3b",
+          "window_id": "window-1",
+          "source_id": "web-caa3f5937b68b559",
+          "source_title": "四种常见的代码覆盖率类型| Articles",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://web.dev/articles/ta-code-coverage?hl=zh-cn",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "组织级实证研究 测试覆盖率门槛 缺陷逃逸率",
+          "read_focus": "Read external URL 四种常见的代码覆盖率类型| Articles for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: 组织级实证研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "随着您添加新功能和测试，提高代码覆盖率有助于您更放心地确定应用已得到全面测试。",
+          "claim_text": "随着您添加新功能和测试，提高代码覆盖率有助于您更放心地确定应用已得到全面测试。",
+          "relation_type": "WEAK_SUPPORT",
+          "support_score": 0.3,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/7a6a363a-6c75-4741-8e1a-9100739378a2/441e1297e937fa1a6ac7950065cdedcbc4bccd004b815d33e1d65295774bef77"
+        }
+      ],
+      "cell_evidence": [],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "4394c88d-2cec-451a-a87c-de89b8ca3cc8",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "question": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+          "source_scope_count": 0,
+          "retrieval_mode": "WEB_ONLY",
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "profile_key": "DEFAULT"
+        },
+        "created_at": "2026-10-15T14:23:57Z"
+      },
+      {
+        "trace_id": "17163749-914c-41de-a3f2-326ceeb13209",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "columns": 6,
+          "reason_codes": [],
+          "planner_version": "llm-matrix.v1",
+          "rows": 1
+        },
+        "created_at": "2026-10-15T14:24:11Z"
+      },
+      {
+        "trace_id": "4cd764c8-fc7c-4bd0-8426-234c24ec5d48",
+        "trace_type": "RUN_BUSINESS_COMPLETED",
+        "trace_message": "INSUFFICIENT_EVIDENCE",
+        "payload": {},
+        "created_at": "2026-10-15T14:25:16Z"
+      }
+    ],
+    "created_at": "2026-10-15T14:23:57Z",
+    "updated_at": "2026-10-15T14:25:16Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "merges": [
+        {
+          "result_cell_version": 0,
+          "expected_cell_version": 0,
+          "reason_code": "EVIDENCE_QUALIFICATION_REJECTED",
+          "decision": "REJECTED",
+          "candidate_id": "70eb3f5d-cb51-455b-96a1-c880b4c00816",
+          "merge_id": "merge:a976b05f6f5963c8494b85cdfbbcfc58d26aa408916012ed168d9a7d802ba7eb",
+          "cell_key": "entity-a6855b766f2815b2:dim-6527dabdc6de8f23"
+        }
+      ],
+      "execution_mode": "INCREMENTAL_V1",
+      "merge_count": 1,
+      "task_count": 4,
+      "candidate_count": 1,
+      "candidates": [
+        {
+          "task_id": "02964552-5c83-4ff6-b141-ce04e357f626",
+          "cell_key": "entity-a6855b766f2815b2:dim-6527dabdc6de8f23",
+          "candidate_id": "70eb3f5d-cb51-455b-96a1-c880b4c00816",
+          "confidence": 0.6,
+          "base_cell_version": 0
+        }
+      ],
+      "tasks": [
+        {
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-2",
+          "task_key": "planning:47283439-4319-48d2-bc4a-441cf2ca550a",
+          "task_id": "0d581c54-e449-4e6a-b2b0-ccd7a16c55d2",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-15T14:24:57Z",
+          "status": "SUBMITTED",
+          "attempt_count": 1
+        },
+        {
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-3",
+          "task_key": "deep-cell:6a75fc9bb29776d948cc68e7df7f276a",
+          "task_id": "02964552-5c83-4ff6-b141-ce04e357f626",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-15T14:25:58Z",
+          "status": "SUBMITTED",
+          "attempt_count": 1
+        },
+        {
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-1",
+          "task_key": "deep-cell:ffeeb6803ae5dd956a330f7c9a3ad048",
+          "task_id": "7a6a363a-6c75-4741-8e1a-9100739378a2",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-15T14:26:13Z",
+          "status": "FAILED",
+          "attempt_count": 1
+        },
+        {
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-2",
+          "task_key": "evidence-audit:d7389873d3486222169f4e186626f4b8",
+          "task_id": "428d26fc-366a-4c49-9672-d999e4a06bfd",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-15T14:26:16Z",
+          "status": "SUBMITTED",
+          "attempt_count": 1
+        }
+      ],
+      "checkpoints": []
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-a6855b766f2815b2",
+            "label": "组织级实证研究"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-0793c59d8ac38d96",
+            "label": "相关性强度",
+            "description": "能给出覆盖率与缺陷逃逸率之间相关系数、回归系数或效应量估计的证据。",
+            "answer_format": "NUMBER",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-3f77d7c80c850c63",
+            "label": "实证方法",
+            "description": "能说明研究采用的方法类型（相关性分析、前后对照、准实验、行业调查）及关键统计手段的证据。",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-6527dabdc6de8f23",
+            "label": "门槛设定",
+            "description": "能说明研究中介入的覆盖率门槛形式（行/分支/语句覆盖率阈值、增量门槛或全量门槛）及具体取值的证据。",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-9c36a830791b99c3",
+            "label": "组织与样本",
+            "description": "能识别研究覆盖的组织类型（行业、规模、团队数）以及样本量与数据时间窗口的证据。",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-9eedc0c76a22ea0d",
+            "label": "证据强度与局限",
+            "description": "能说明研究结论的可推广性、混杂因素控制、样本局限或利益冲突披露的证据。",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-b537a72f65ff8240",
+            "label": "缺陷逃逸率变化",
+            "description": "能给出门槛提高前后缺陷逃逸率的具体变化值、方向或效应量（含置信区间或显著性）的证据。",
+            "answer_format": "NUMBER",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "覆盖软件行业的组织级实证研究：覆盖率门槛（或阈值）设定与缺陷逃逸率（生产环境缺陷漏出比例）之间的相关性或因果证据；包含对照实验、行业基准与案例研究。",
+          "objective": "综合不同组织的实证证据，判断提高测试覆盖率门槛是否降低缺陷逃逸率，并给出可逐项引用的研究结论与证据缺口说明。",
+          "exclusions": [
+            "单项目内部博客中无组织级数据支撑的轶事证据",
+            "覆盖率工具的功能对比与实现原理",
+            "与缺陷逃逸率无关的代码质量指标（如圈复杂度、重复率）"
+          ],
+          "time_range": "current（截至 2026 年 2 月）",
+          "deliverable": "Markdown 研究报告，含引用审计（exact quote、snapshot、URL）与逐项结论表"
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "ieeexplore.ieee.org",
+          "dl.acm.org",
+          "link.springer.com",
+          "arxiv.org",
+          "web.dev"
+        ],
+        "perspectives": [
+          {
+            "name": "质量工程实践者",
+            "questions": [
+              "不同组织提高覆盖率门槛后，缺陷逃逸率实际变化了多少？",
+              "这些结论基于哪类组织、多大规模、多长时间的数据？"
+            ]
+          },
+          {
+            "name": "实证研究者",
+            "questions": [
+              "现有研究对覆盖率与缺陷逃逸率（或生产缺陷密度）的相关性给出了什么系数或显著性？",
+              "研究设计是相关性分析、前后对照还是准实验？"
+            ]
+          },
+          {
+            "name": "质量决策者",
+            "questions": [
+              "这些证据是否足以支撑设定一个具体覆盖率门槛？",
+              "门槛设定的副作用（如测试膨胀、抑制重构）是否被记录？"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-a6855b766f2815b2:dim-0793c59d8ac38d96",
+          "entity_label": "组织级实证研究",
+          "column_label": "相关性强度",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-a6855b766f2815b2:dim-3f77d7c80c850c63",
+          "entity_label": "组织级实证研究",
+          "column_label": "实证方法",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-a6855b766f2815b2:dim-6527dabdc6de8f23",
+          "entity_label": "组织级实证研究",
+          "column_label": "门槛设定",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-a6855b766f2815b2:dim-9c36a830791b99c3",
+          "entity_label": "组织级实证研究",
+          "column_label": "组织与样本",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-a6855b766f2815b2:dim-9eedc0c76a22ea0d",
+          "entity_label": "组织级实证研究",
+          "column_label": "证据强度与局限",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-a6855b766f2815b2:dim-b537a72f65ff8240",
+          "entity_label": "组织级实证研究",
+          "column_label": "缺陷逃逸率变化",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": []
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}
