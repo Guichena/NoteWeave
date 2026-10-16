@@ -34,8 +34,11 @@ class ResearchAgentSynthesisValidationService {
             String value = text(cell.get("candidate_value"));
             Set<String> evidence = new HashSet<>(strings(cell.get("evidence_keys")));
             boolean guarded = Boolean.TRUE.equals(cell.get("guarded"));
+            // 研究对象名、列名与支撑原文都来自已核验的账本，成文时可以引用其中的数字与版本
+            String context = String.join(" ", text(cell.get("entity_label")), text(cell.get("column_label")),
+                    String.join(" ", strings(cell.get("supporting_quotes"))));
             if (key.isBlank() || value.isBlank() || evidence.isEmpty() || byKey.put(
-                    key, new FrozenCell(value, evidence, guarded)) != null) {
+                    key, new FrozenCell(value, evidence, guarded, context)) != null) {
                 throw invalid("Frozen synthesis ledger contains an invalid or duplicate cell");
             }
         }
@@ -102,7 +105,7 @@ class ResearchAgentSynthesisValidationService {
                     FrozenCell cell = byKey.get(cellKey);
                     if (cell == null) throw stale("Reader report paragraph targets an unknown cell");
                     allowedEvidence.addAll(cell.evidenceKeys());
-                    sourceText.append(' ').append(cell.value());
+                    sourceText.append(' ').append(cell.value()).append(' ').append(cell.context());
                 }
                 if (!allowedEvidence.containsAll(evidenceKeys)) {
                     throw invalid("Reader report paragraph cites evidence outside its bound cells");
@@ -148,7 +151,7 @@ class ResearchAgentSynthesisValidationService {
                 FrozenCell cell = byKey.get(cellKey);
                 if (cell == null) throw stale("Reader report comparison row targets an unknown cell");
                 allowedEvidence.addAll(cell.evidenceKeys());
-                sourceText.append(' ').append(cell.value());
+                sourceText.append(' ').append(cell.value()).append(' ').append(cell.context());
             }
             if (!allowedEvidence.containsAll(evidenceKeys)) {
                 throw invalid("Reader report comparison row cites evidence outside its bound cells");
@@ -208,5 +211,5 @@ class ResearchAgentSynthesisValidationService {
         return new BusinessException("RESEARCH_AGENT_SYNTHESIS_STALE", message);
     }
 
-    private record FrozenCell(String value, Set<String> evidenceKeys, boolean guarded) { }
+    private record FrozenCell(String value, Set<String> evidenceKeys, boolean guarded, String context) { }
 }

@@ -67,6 +67,14 @@ class NarrativeReportPolisher:
                 "Write a cohesive professional research article, not an audit log.",
                 "Return JSON only.",
                 "For a comparison question, comparison_table is required and must contain at least two evidence-bound rows.",
+                "Write title, summary, headings, prose and table in the same language as research_question; keep "
+                "product names, API names and quoted terms in their original form.",
+                "Use entity_label and column_label to say which subject and aspect each fact belongs to; "
+                "supporting_quotes are verified source text you may draw details from.",
+                "State each fact with exactly the scope its quote supports: a statement about one option, operator "
+                "class, version or mode must not be generalized to the whole product or topic.",
+                "When known_limitations is not empty, say briefly in the summary which parts of the question remain "
+                "unanswered, and copy the relevant items into limitations.",
             ],
             "frozen_cells": cells,
             "research_question": question,
@@ -101,6 +109,9 @@ def _validated_cells(synthesis_input: dict[str, object]) -> list[dict[str, objec
             "candidate_value": value,
             "evidence_keys": evidence_keys,
             "guarded": bool(raw.get("guarded", False)),
+            "entity_label": str(raw.get("entity_label") or "").strip(),
+            "column_label": str(raw.get("column_label") or "").strip(),
+            "supporting_quotes": _clean_strings(raw.get("supporting_quotes")),
         })
     if not cells:
         raise ValueError("SYNTHESIS input has no frozen cells")
@@ -145,7 +156,7 @@ def _normalize_narrative(
             }
             if any(key not in allowed_evidence for key in evidence_keys):
                 raise ValueError("NARRATIVE_UNKNOWN_EVIDENCE")
-            source_text = " ".join([trusted_context, *(str(cell["candidate_value"]) for cell in bound_cells)])
+            source_text = " ".join([trusted_context, *(_cell_source_text(cell) for cell in bound_cells)])
             source_tokens = {_canonical_token(token) for token in _TYPED_TOKEN.findall(source_text)}
             paragraph_tokens = {_canonical_token(token) for token in _TYPED_TOKEN.findall(text)}
             if not paragraph_tokens.issubset(source_tokens):
@@ -186,7 +197,7 @@ def _fallback(
         if cell["guarded"]:
             value += " (limited by unresolved evidence)"
         sections.append({
-            "heading": _reader_heading(str(cell["cell_key"])),
+            "heading": _cell_heading(cell),
             "paragraphs": [{
                 "text": value,
                 "cell_keys": [str(cell["cell_key"])],
@@ -224,7 +235,7 @@ def _render_markdown(narrative: dict[str, object]) -> str:
         lines.append("")
     limitations = narrative.get("limitations")
     if isinstance(limitations, list) and limitations:
-        lines.extend(["## Limitations", ""])
+        lines.extend(["## 局限" if _writes_chinese(str(narrative["title"])) else "## Limitations", ""])
         lines.extend(f"- {item}" for item in limitations)
         lines.append("")
     return "\n".join(lines).strip() + "\n"
@@ -264,7 +275,7 @@ def _normalize_comparison_table(
         }
         if any(key not in allowed_evidence for key in evidence_keys):
             raise ValueError("NARRATIVE_UNKNOWN_EVIDENCE")
-        source_text = " ".join([trusted_context, *(str(cell["candidate_value"]) for cell in bound_cells)])
+        source_text = " ".join([trusted_context, *(_cell_source_text(cell) for cell in bound_cells)])
         source_tokens = {_canonical_token(token) for token in _TYPED_TOKEN.findall(source_text)}
         row_tokens = {
             _canonical_token(token)
@@ -299,6 +310,25 @@ def _string_items(value: object) -> list[str]:
 
 def _canonical_token(value: str) -> str:
     return re.sub(r"\s+", "", value).lower().replace(",", "")
+
+
+def _cell_source_text(cell: dict[str, object]) -> str:
+    """成文时可以使用的已核验内容：结论、研究对象名、列名与支撑原文，与 Java 侧校验口径一致。"""
+    quotes = cell.get("supporting_quotes") or []
+    return " ".join([str(cell["candidate_value"]), str(cell.get("entity_label") or ""),
+                     str(cell.get("column_label") or ""), *(str(item) for item in quotes)])
+
+
+def _cell_heading(cell: dict[str, object]) -> str:
+    entity = str(cell.get("entity_label") or "")
+    column = str(cell.get("column_label") or "")
+    if entity and column:
+        return f"{entity} · {column}"
+    return column or entity or _reader_heading(str(cell["cell_key"]))
+
+
+def _writes_chinese(question: str) -> bool:
+    return any(0x4E00 <= ord(char) <= 0x9FFF for char in question)
 
 
 def _reader_heading(cell_key: str) -> str:

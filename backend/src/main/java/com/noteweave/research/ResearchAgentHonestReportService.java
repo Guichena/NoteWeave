@@ -41,15 +41,36 @@ class ResearchAgentHonestReportService {
         return markdown;
     }
 
+    /** 交给综合撰写的局限说明：每个未解决的单元格一行，写明研究项和原因。 */
+    List<String> limitationLines(String runId, ResearchAgentRunCompletionGate.CompletionDecision decision) {
+        Map<String, String> labels = ResearchAgentIncrementalFinalizationService.matrixLabels(jdbcTemplate, runId);
+        List<String> lines = new java.util.ArrayList<>();
+        for (ResearchAgentRunCompletionGate.UnresolvedCell cell : decision.unresolvedCells()) {
+            lines.add(heading(cell.cellKey(), labels) + "：" + reasonText(cell.reasonCode()));
+        }
+        lines.addAll(decision.limitations());
+        return lines;
+    }
+
     private String render(String question, String runId,
                           ResearchAgentRunCompletionGate.CompletionDecision decision) {
         Map<String, String> labels = ResearchAgentIncrementalFinalizationService.matrixLabels(jdbcTemplate, runId);
-        StringBuilder report = new StringBuilder("# 研究报告\n\n")
-                .append(question == null ? "" : question).append("\n\n")
-                .append("**结果：** `").append(decision.terminalState().name()).append("`\n\n");
+        Synthesis synthesis = validatedSynthesis(runId);
+        StringBuilder report;
+        if (synthesis != null) {
+            // 综合撰写的正文在前，后面保留结论汇总、逐条引用核对和局限说明
+            report = new StringBuilder(synthesis.markdown().strip()).append("\n\n")
+                    .append("**结果：** `").append(decision.terminalState().name()).append("`\n\n");
+            jdbcTemplate.update("update research_agent_synthesis_candidate set status = 'PROMOTED' where id = ? and status = 'VALIDATED'",
+                    synthesis.id());
+        } else {
+            report = new StringBuilder("# 研究报告\n\n")
+                    .append(question == null ? "" : question).append("\n\n")
+                    .append("**结果：** `").append(decision.terminalState().name()).append("`\n\n");
+        }
         appendSummaryTable(report, runId);
         if (!decision.promotableClaims().isEmpty()) {
-            report.append("## 已验证结论\n\n");
+            report.append(synthesis != null ? "## 引用核对\n\n" : "## 已验证结论\n\n");
             for (ResearchAgentRunCompletionGate.PromotableClaim claim : decision.promotableClaims()) {
                 report.append("### ").append(markdown(claim.value())).append("\n\n")
                         .append("- 研究项：`").append(markdown(heading(claim.cellKey(), labels))).append("`\n");
@@ -214,6 +235,16 @@ class ResearchAgentHonestReportService {
             return List.of();
         }
     }
+
+    private Synthesis validatedSynthesis(String runId) {
+        return jdbcTemplate.query("""
+                select id, markdown from research_agent_synthesis_candidate
+                where research_run_id = ? and status = 'VALIDATED'
+                order by created_at desc, id desc limit 1
+                """, rs -> rs.next() ? new Synthesis(rs.getString(1), rs.getString(2)) : null, runId);
+    }
+
+    private record Synthesis(String id, String markdown) { }
 
     private String heading(String cellKey, Map<String, String> labels) {
         return ResearchAgentIncrementalFinalizationService.cellHeading(cellKey, labels);

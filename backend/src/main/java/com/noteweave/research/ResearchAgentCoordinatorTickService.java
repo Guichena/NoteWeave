@@ -154,6 +154,8 @@ public class ResearchAgentCoordinatorTickService {
                     lifecycle.failRun(runId, completionGate.infrastructureTerminalReason(decision));
                     return new TickReceipt("RUN_FAILED_INFRASTRUCTURE", snapshot, receipt.taskization());
                 }
+                TickReceipt waiting = awaitPartialSynthesis(runId, snapshot, decision);
+                if (waiting != null) return waiting;
                 honestReports.renderAndPersist(runId, decision);
                 lifecycle.completeRun(runId, decision.terminalState().name());
                 return new TickReceipt(evidenceOnlyStop ? "FAILED_WAVE_STOPPED_COMPLETED" : "VERIFIER_REPAIR_STOPPED_COMPLETED",
@@ -197,9 +199,28 @@ public class ResearchAgentCoordinatorTickService {
             lifecycle.failRun(runId, completionGate.infrastructureTerminalReason(decision));
             return new TickReceipt("RUN_FAILED_INFRASTRUCTURE", snapshot, null);
         }
+        TickReceipt waiting = awaitPartialSynthesis(runId, snapshot, decision);
+        if (waiting != null) return waiting;
         honestReports.renderAndPersist(runId, decision);
         lifecycle.completeRun(runId, decision.terminalState().name());
         return new TickReceipt("RUN_COMPLETED", snapshot, null);
+    }
+
+    /**
+     * 带局限收尾时，先让已核验的单元格经过综合撰写再出报告，否则报告只是逐条罗列引用。
+     * 综合任务已派出或仍在进行时返回等待回执，下一轮再判断；其余情况返回 null，照常收尾。
+     */
+    private TickReceipt awaitPartialSynthesis(String runId, ResearchAgentCoordinatorSnapshotService.Snapshot snapshot,
+                                              ResearchAgentRunCompletionGate.CompletionDecision decision) {
+        if (decision.terminalState() != ResearchAgentRunCompletionGate.CompletionTerminalState.COMPLETED_WITH_LIMITATIONS) {
+            return null;
+        }
+        ResearchAgentRoleWorkflowService.WorkflowReceipt workflow = roleWorkflow.advancePartialSynthesis(
+                runId, snapshot.currentWaveNo(), honestReports.limitationLines(runId, decision));
+        if (Set.of("SYNTHESIS_TASKIZED", "SYNTHESIS_PENDING").contains(workflow.outcome())) {
+            return new TickReceipt("PARTIAL_" + workflow.outcome(), snapshot, workflow.taskization());
+        }
+        return null;
     }
 
     public record TickReceipt(String outcome, ResearchAgentCoordinatorSnapshotService.Snapshot snapshot,

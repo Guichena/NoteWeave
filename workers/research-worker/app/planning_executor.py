@@ -84,7 +84,7 @@ class PlanningExecutor:
             if raw is None:
                 reasons.append("PLANNING_LLM_CALL_FAILED")
                 break
-            draft = validate_plan(raw, planning_input)
+            draft = validate_plan(raw, planning_input, final_attempt=attempt == 1)
             if draft.plan is not None:
                 break
         if draft.plan is None and "PLANNING_LLM_CALL_FAILED" not in reasons:
@@ -214,8 +214,12 @@ EFFORT_TIER_LIMITS: dict[str, tuple[int | None, int]] = {
 }
 
 
-def validate_plan(raw: object, planning_input: dict[str, object]) -> PlanDraft:
-    """按与 Java 相同的上限检查模型输出；Java 还会再做一次权威校验。"""
+def validate_plan(raw: object, planning_input: dict[str, object], *, final_attempt: bool = False) -> PlanDraft:
+    """按与 Java 相同的上限检查模型输出；Java 还会再做一次权威校验。
+
+    第一次不合规时把问题交给模型修复；最后一次仍超出上限时就地修正（升投入等级、截断多余的行列），
+    不退回规则生成的通用表格。通用表格的列与问题无关，对结果的影响远大于多几个单元格。
+    """
     if not isinstance(raw, dict) or raw.get("_unparsable"):
         return PlanDraft(None, ["output is not a JSON object"])
     problems: list[str] = []
@@ -227,6 +231,22 @@ def validate_plan(raw: object, planning_input: dict[str, object]) -> PlanDraft:
 
     entities = _dedupe_by_label(raw.get("entities"))
     dimensions = _dedupe_by_label(raw.get("dimensions"))
+    # 答案格式不在允许范围内时 Java 会按 SHORT_TEXT 处理，这里同样处理，不因此拒绝整张表
+    dimensions = [
+        dimension if str(dimension.get("answer_format") or "").upper() in formats
+        else {**dimension, "answer_format": "SHORT_TEXT"}
+        for dimension in dimensions
+    ]
+    if final_attempt:
+        raw = {**raw, "effort_tier": _fitting_tier(str(raw.get("effort_tier") or "STANDARD").upper(),
+                                                   len(entities), len(dimensions))}
+        entities = entities[:max_rows]
+        dimensions = dimensions[:max_columns]
+        while entities and dimensions and len(entities) * len(dimensions) > min(max_cells, EFFORT_TIER_LIMITS["COMPLEX"][1]):
+            if len(dimensions) > min_columns:
+                dimensions = dimensions[:-1]
+            else:
+                entities = entities[:-1]
     if not entities:
         problems.append("entities must contain at least one item with a non-empty label")
     if len(dimensions) < min_columns:
@@ -243,10 +263,6 @@ def validate_plan(raw: object, planning_input: dict[str, object]) -> PlanDraft:
         problems.append(f"effort_tier {effort_tier} allows at most {tier_rows} entities")
     if entities and dimensions and len(entities) * len(dimensions) > tier_cells:
         problems.append(f"effort_tier {effort_tier} allows at most {tier_cells} cells (entities times dimensions)")
-    for dimension in dimensions:
-        answer_format = str(dimension.get("answer_format") or "").upper()
-        if answer_format and answer_format not in formats:
-            problems.append(f"answer_format of '{dimension['label']}' must be one of {sorted(formats)}")
     if problems:
         return PlanDraft(None, problems)
     plan = {
@@ -262,6 +278,17 @@ def validate_plan(raw: object, planning_input: dict[str, object]) -> PlanDraft:
         ][:8] if isinstance(raw.get("authoritative_domains"), list) else [],
     }
     return PlanDraft(plan, [])
+
+
+def _fitting_tier(declared: str, entity_count: int, dimension_count: int) -> str:
+    """从模型给出的等级起，取第一个能容纳这张表的投入等级；都容纳不下时取 COMPLEX，再由调用方截断。"""
+    order = ["SIMPLE", "STANDARD", "COMPLEX"]
+    start = order.index(declared) if declared in order else 1
+    for tier in order[start:]:
+        tier_rows, tier_cells = EFFORT_TIER_LIMITS[tier]
+        if (tier_rows is None or entity_count <= tier_rows) and entity_count * dimension_count <= tier_cells:
+            return tier
+    return "COMPLEX"
 
 
 def _dedupe_by_label(value: object) -> list[dict[str, object]]:

@@ -232,3 +232,53 @@ def test_comparison_report_falls_back_when_llm_omits_required_table() -> None:
 
     assert result.mode == "FALLBACK"
     assert result.reason == "NARRATIVE_COMPARISON_TABLE_REQUIRED"
+
+
+def test_supporting_quotes_and_labels_are_trusted_and_reach_the_model() -> None:
+    enriched = {
+        "question": "比较 PostgreSQL 17 的 JSON 索引",
+        "cells": [{
+            "cell_key": "entity-pg:dim-index",
+            "candidate_value": "jsonb_path_ops supports fewer operators but offers better performance.",
+            "evidence_keys": ["evidence-a"],
+            "guarded": False,
+            "entity_label": "PostgreSQL 17",
+            "column_label": "索引类型",
+            "supporting_quotes": ["The default GIN operator class for jsonb supports 4 operators."],
+        }],
+        "limitations": ["MySQL 8.4 · 索引类型：必需研究项未找到足够证据"],
+    }
+    client = FakeLlmClient({"research.synthesis": json.dumps({
+        "title": "PostgreSQL 17 的 JSON 索引",
+        "executive_summary": "已核验 PostgreSQL 17 的部分索引事实，MySQL 8.4 的对应项仍缺证据。",
+        "sections": [{
+            "heading": "PostgreSQL 17 · 索引类型",
+            "paragraphs": [{
+                # 数字 17 与 4 来自研究对象名和支撑原文，不在单元格结论里
+                "text": "PostgreSQL 17 默认的 jsonb GIN 操作符类支持 4 个操作符，jsonb_path_ops 支持的更少但性能更好。",
+                "cell_keys": ["entity-pg:dim-index"],
+                "evidence_keys": ["evidence-a"],
+            }],
+        }],
+        "limitations": ["MySQL 8.4 · 索引类型：必需研究项未找到足够证据"],
+    })})
+
+    result = NarrativeReportPolisher(client).polish(enriched)
+
+    assert result.mode == "LLM"
+    assert "## 局限" in result.markdown
+    request = client.calls[0][1]
+    assert request["frozen_cells"][0]["entity_label"] == "PostgreSQL 17"
+    assert request["frozen_cells"][0]["supporting_quotes"]
+    rules = " ".join(request["rules"])
+    assert "same language as research_question" in rules
+    assert "must not be generalized" in rules
+
+
+def test_fallback_headings_use_entity_and_column_labels() -> None:
+    result = NarrativeReportPolisher(None).polish({
+        "cells": [{"cell_key": "entity-1:dim-a", "candidate_value": "Value", "evidence_keys": ["e"],
+                   "entity_label": "MySQL 8.4", "column_label": "索引类型"}],
+    })
+
+    assert "## MySQL 8.4 · 索引类型" in result.markdown

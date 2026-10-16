@@ -92,7 +92,36 @@ class ResearchAgentRoleWorkflowService {
         if (activeRoleTask(runId, "SYNTHESIS")) return new WorkflowReceipt("SYNTHESIS_PENDING", null);
         if (!new ResearchDiscoveryBudget(jdbcTemplate, objectMapper).allows(runId, Map.of("llm_calls", 2L), 1))
             return new WorkflowReceipt("FALLBACK_READY", null);
-        return new WorkflowReceipt("SYNTHESIS_TASKIZED", taskizeSynthesis(runId, waveNo + 2, audit));
+        return new WorkflowReceipt("SYNTHESIS_TASKIZED", taskizeSynthesis(runId, waveNo + 2, audit, List.of()));
+    }
+
+    /**
+     * 带局限收尾前的综合撰写：只针对已核验的单元格成文，未解决的单元格作为局限交给模型说明。
+     * 返回 SYNTHESIS_TASKIZED 或 SYNTHESIS_PENDING 时调用方先等待；SYNTHESIS_READY 时报告用综合结果；
+     * FALLBACK_READY 时照旧用模板报告。综合任务已经结束却没有通过校验的结果时也退回模板，不会反复派发。
+     */
+    WorkflowReceipt advancePartialSynthesis(String runId, int waveNo, List<String> limitations) {
+        if (!synthesisEnabled || !featureFlags.enabledForRun(runId, ResearchAgentFeatureFlagService.WORKER_SYNTHESIS)) {
+            return new WorkflowReceipt("FALLBACK_READY", null);
+        }
+        Integer validated = jdbcTemplate.queryForObject("""
+                select count(*) from research_agent_synthesis_candidate
+                where research_run_id = ? and status = 'VALIDATED'
+                """, Integer.class, runId);
+        if (validated != null && validated > 0) return new WorkflowReceipt("SYNTHESIS_READY", null);
+        if (activeRoleTask(runId, "SYNTHESIS")) return new WorkflowReceipt("SYNTHESIS_PENDING", null);
+        Integer finished = jdbcTemplate.queryForObject("""
+                select count(*) from research_agent_task
+                where research_run_id = ? and role = 'SYNTHESIS' and status in ('SUBMITTED', 'FAILED', 'CANCELLED')
+                """, Integer.class, runId);
+        if (finished != null && finished > 0) return new WorkflowReceipt("FALLBACK_READY", null);
+        RoleResult audit = latestRoleResult(runId, "EVIDENCE_AUDIT");
+        if (audit == null || !"PASS".equals(audit.status()) || verifiedCells(runId).isEmpty()) {
+            return new WorkflowReceipt("FALLBACK_READY", null);
+        }
+        if (!new ResearchDiscoveryBudget(jdbcTemplate, objectMapper).allows(runId, Map.of("llm_calls", 2L), 1))
+            return new WorkflowReceipt("FALLBACK_READY", null);
+        return new WorkflowReceipt("SYNTHESIS_TASKIZED", taskizeSynthesis(runId, waveNo + 1, audit, limitations));
     }
 
     private ResearchAgentTaskCoordinatorService.CoordinatorReceipt taskizeAudit(String runId, int waveNo) {
@@ -163,24 +192,53 @@ class ResearchAgentRoleWorkflowService {
     private ResearchAgentTaskCoordinatorService.CoordinatorReceipt taskizeSynthesis(
             String runId,
             int waveNo,
-            RoleResult audit
+            RoleResult audit,
+            List<String> limitations
     ) {
         RunScope run = runScope(runId);
         List<CellScope> cells = verifiedCells(runId);
-        List<Map<String, Object>> synthesisCells = cells.stream().map(cell -> Map.<String, Object>of(
-                "cell_key", cell.key(),
-                "candidate_value", cell.value(),
-                "evidence_keys", cell.evidenceKeys(),
-                "guarded", false)).toList();
+        Map<String, String> labels = ResearchAgentIncrementalFinalizationService.matrixLabels(jdbcTemplate, runId);
+        // 只给编号和一句结论时，模型不知道这一格属于哪个对象、哪一列，容易把一句话的适用范围说大；
+        // 带上名称和几段支撑原文，成文时能按原文的范围下结论
+        List<Map<String, Object>> synthesisCells = cells.stream().map(cell -> {
+            String[] parts = cell.key().split(":", 2);
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("cell_key", cell.key());
+            item.put("candidate_value", cell.value());
+            item.put("evidence_keys", cell.evidenceKeys());
+            item.put("guarded", false);
+            item.put("entity_label", labels.getOrDefault(parts[0], ""));
+            item.put("column_label", parts.length > 1 ? labels.getOrDefault(parts[1], "") : "");
+            item.put("supporting_quotes", supportingQuotes(runId, cell.evidenceKeys()));
+            return item;
+        }).toList();
         String ledgerDigest = canonicalizer.domainSeparatedDigest(LEDGER_DIGEST_DOMAIN, synthesisCells);
         Map<String, Object> synthesisInput = Map.of(
                 "question", run.question(),
                 "ledger_digest", ledgerDigest,
                 "audit_digest", audit.digest(),
                 "cells", synthesisCells,
-                "limitations", List.of());
+                "limitations", List.copyOf(limitations));
         return createRoleTask(run, cells, waveNo, "SYNTHESIS", "synthesis:" + ledgerDigest.substring(7, 39),
                 Map.of("allowed_tools", List.of(), "synthesis_input", synthesisInput));
+    }
+
+    private static final int MAX_SUPPORTING_QUOTES = 3;
+    private static final int MAX_QUOTE_CHARS = 400;
+
+    private List<String> supportingQuotes(String runId, List<String> evidenceKeys) {
+        List<String> quotes = new ArrayList<>();
+        for (String key : evidenceKeys) {
+            if (quotes.size() >= MAX_SUPPORTING_QUOTES) break;
+            jdbcTemplate.queryForList("""
+                    select quote_text from source_evidence
+                    where research_run_id = ? and evidence_key = ? and quote_text is not null
+                    """, String.class, runId, key).stream().findFirst()
+                    .map(String::strip).filter(quote -> !quote.isEmpty())
+                    .map(quote -> quote.length() > MAX_QUOTE_CHARS ? quote.substring(0, MAX_QUOTE_CHARS) : quote)
+                    .ifPresent(quotes::add);
+        }
+        return quotes;
     }
 
     private ResearchAgentTaskCoordinatorService.CoordinatorReceipt createRoleTask(

@@ -254,3 +254,31 @@ def test_router_should_dispatch_planning_and_reject_cell_targets() -> None:
     # 带单元格目标的 PLANNING 快照在校验阶段就被拒绝
     with pytest.raises(TaskSnapshotTrustError):
         router(_command(), _claim(target_cells=[{"cell_id": "entity-1:answer", "expected_version": 1}]))
+
+
+def test_final_attempt_repairs_an_oversized_plan_instead_of_falling_back() -> None:
+    def dims(count: int) -> list[dict[str, object]]:
+        return [{"label": f"维度{index}", "answer_format": "TEXT"} for index in range(count)]
+
+    # 声明 SIMPLE 却规划了 2×6：最后一次升到能容纳的 STANDARD，不认识的格式按 SHORT_TEXT
+    upgraded = validate_plan(_plan(effort_tier="SIMPLE", entities=[{"label": "OAuth 2.1"}, {"label": "OIDC"}],
+                                   dimensions=dims(6)), PLANNING_INPUT, final_attempt=True)
+    assert upgraded.plan is not None
+    assert upgraded.plan["effort_tier"] == "STANDARD"
+    assert {item["answer_format"] for item in upgraded.plan["dimensions"]} == {"SHORT_TEXT"}
+
+    # 超出 COMPLEX 上限时截断多余的列
+    trimmed = validate_plan(_plan(effort_tier="COMPLEX", entities=[{"label": f"实体{index}"} for index in range(5)],
+                                  dimensions=dims(8)), PLANNING_INPUT, final_attempt=True)
+    assert trimmed.plan is not None
+    assert len(trimmed.plan["entities"]) * len(trimmed.plan["dimensions"]) <= 24
+
+
+def test_second_oversized_plan_is_repaired_and_planned() -> None:
+    oversized = _plan(effort_tier="SIMPLE", entities=[{"label": f"问题{index}"} for index in range(3)])
+    llm = _SequenceLlm(oversized, oversized)
+
+    completion = _executor(llm)(_command(), _claim())
+
+    assert completion.role_result["status"] == "PLANNED"
+    assert len(llm.calls) == 2

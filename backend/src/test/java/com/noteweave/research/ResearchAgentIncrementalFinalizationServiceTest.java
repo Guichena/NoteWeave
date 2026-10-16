@@ -217,6 +217,44 @@ class ResearchAgentIncrementalFinalizationServiceTest {
     }
 
     @Test
+    void limitationReportShouldLeadWithTheValidatedSynthesisAndKeepTheCitationAudit() {
+        String synthesisId = Ids.newId();
+        // 只验证报告拼装，候选所属的任务与角色结果不在本测试范围内
+        jdbcTemplate.execute("set referential_integrity false");
+        try {
+            jdbcTemplate.update("""
+                    insert into research_agent_synthesis_candidate(
+                        id, research_run_id, task_id, role_result_id, ledger_digest, audit_digest,
+                        markdown, claims_json, limitations_json, status)
+                    values (?, ?, 'synthesis-task', 'synthesis-result', 'sha256:ledger', 'sha256:audit',
+                        '# 综合结论' || char(10) || char(10) || '已核验的回答。 [evidence-1]', '[]', '[]', 'VALIDATED')
+                    """, synthesisId, runId);
+        } finally {
+            jdbcTemplate.execute("set referential_integrity true");
+        }
+        var decision = new ResearchAgentRunCompletionGate.CompletionDecision(
+                ResearchAgentRunCompletionGate.CompletionTerminalState.COMPLETED_WITH_LIMITATIONS,
+                java.util.List.of(new ResearchAgentRunCompletionGate.PromotableClaim(
+                        "entity-1:claim", "claim", "Verified answer", java.util.List.of("evidence-1"))),
+                java.util.List.of(new ResearchAgentRunCompletionGate.UnresolvedCell(
+                        "entity-1:limitations", "limitations", "GAP", "OPTIONAL_CELL_UNRESOLVED")),
+                java.util.List.of("UNRESOLVED_CELLS_REMAIN"),
+                java.util.List.of("UNRESOLVED_CELLS_REMAIN"));
+
+        String report = honestReports.renderAndPersist(runId, decision);
+
+        assertThat(report).startsWith("# 综合结论");
+        assertThat(report).contains("COMPLETED_WITH_LIMITATIONS", "## 引用核对",
+                "Exact quote: “Verified citation excerpt”", "OPTIONAL_CELL_UNRESOLVED");
+        assertThat(report).doesNotContain("## 已验证结论");
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from research_agent_synthesis_candidate where id = ?", String.class, synthesisId))
+                .isEqualTo("PROMOTED");
+        assertThat(honestReports.limitationLines(runId, decision))
+                .containsExactly("entity-1:limitations：可选研究项未找到足够证据", "UNRESOLVED_CELLS_REMAIN");
+    }
+
+    @Test
     void limitationReportShouldTraceAClaimThroughCandidateEvidenceSnapshotAndUrl() {
         String candidateId = Ids.newId();
         jdbcTemplate.update("""
